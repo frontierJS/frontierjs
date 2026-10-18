@@ -12,39 +12,17 @@
  * This is that missing step.
  *
  * ── Composition ───────────────────────────────────────────────────────────
- * A route renders inside its layout chain, and Mesa has two unrelated protocols
- * for handing a component its children:
- *
- *   <Layout><Page /></Layout>      → the THIRD argument (the `block` in
- *                                    `(anchor, props, block)`), which is what
- *                                    Mesa's native `<slot />` reads
- *   <Layout children={snippet} />  → a PROP, which is what
- *                                    `{@render children?.()}` reads
- *
- * Nothing bridges them: a `<slot />` layout handed the prop form renders an
- * empty slot, and vice versa. Both renderers agree on that — it is a protocol
- * mismatch, not an SSR limitation.
- *
- * Which one a layout speaks depends on how it was written, and the prerenderer
- * cannot know. Authored source uses `<slot />`; slot-rewrite.js converts that to
- * `{@render children?.()}` on the Vite path, but no rewrite runs here, so raw
- * `<slot />` reaches Mesa — where it works natively. Layouts written directly
- * against the prop form (Sierra's own fixtures, for one) are equally valid.
- *
- * So the wrapper supplies both, and each layout picks up whichever it reads:
+ * A route renders inside its layout chain. Mesa hands a component its content
+ * as snippets only (`FJS-D668`): `<Layout><Page /></Layout>` and
+ * `<Layout children={snippet} />` are the same call, and a layout's `<slot />`
+ * and `{@render children?.()}` read the same `children` prop. So the wrapper
+ * states the prop form and every layout picks it up:
  *
  *   {#snippet s0()}<Page {data} />{/snippet}
- *   <L0 children={s0}>{@render s0()}</L0>
+ *   <L0 children={s0} />
  *
- * The element children render the same snippet rather than repeating its body,
- * so the page is instantiated exactly once whichever protocol the layout uses,
- * and the wrapper stays linear in the length of the chain. A layout that reads
- * *both* would render its children twice, but that layout is broken on the
- * client too.
- *
- * This composed with the prop form only until 2026-08-02, which silently
- * dropped the page from every `<slot />` layout — the layout rendered, the page
- * inside it did not, with no error.
+ * The page is instantiated exactly once, and the wrapper stays linear in the
+ * length of the chain.
  *
  * ── Data ──────────────────────────────────────────────────────────────────
  * `load()` runs at build time with a plain fetch. Relative URLs throw with a
@@ -259,13 +237,8 @@ export async function pathsForRoute(node, root) {
  * Build the synthetic wrapper module that composes layouts around the page.
  * Returned as source text; the caller renders it with Mesa.
  *
- * `elementChildren: false` is for a render whose layouts went through Sierra's
- * own preparation (`prepareForCompile`), which rewrites a layout's `<slot />`
- * to `{@render children?.()}` exactly as dev does. Such a layout reads the prop
- * alone, and element children it cannot render make Mesa warn *was given
- * children and renders no <slot />* on every build (`FJS-1491`).
  */
-export function composeWrapper(pageFile, layoutChain, { elementChildren = true } = {}) {
+export function composeWrapper(pageFile, layoutChain) {
   // The wrapper commits `page` before any layout renders, and does it through
   // its own import of the router — the one the layouts share. The prerender's
   // own import can be a different instance of the module (a test runner loads
@@ -278,8 +251,8 @@ export function composeWrapper(pageFile, layoutChain, { elementChildren = true }
   layoutChain.forEach((l, i) => imports.push(`  import L${i} from ${JSON.stringify(l)}`))
 
   // Work outward from the page. Each layout gets a snippet holding everything
-  // it wraps, and is handed that snippet both ways — as the `children` prop and
-  // as element children that render it.
+  // it wraps, and is handed that snippet as the `children` prop, which is what
+  // both `<slot />` and `{@render children?.()}` read.
   //
   // Declaration order is innermost-first, and load-bearing: s0's body contains
   // `<L1 children={s1}>`, so s1 must already exist when s0 is declared. The
@@ -288,9 +261,7 @@ export function composeWrapper(pageFile, layoutChain, { elementChildren = true }
   let body = `<Page {data} />`
   for (let i = layoutChain.length - 1; i >= 0; i--) {
     snippets.push(`{#snippet s${i}()}${body}{/snippet}`)
-    body = elementChildren
-      ? `<L${i} children={s${i}}>{@render s${i}()}</L${i}>`
-      : `<L${i} children={s${i}} />`
+    body = `<L${i} children={s${i}} />`
   }
 
   const template = [...snippets, body].join('\n')
@@ -541,7 +512,7 @@ export async function prerenderRoutes(opts) {
     }
 
     const chain    = layoutChainFor(pageFile, routesDirAbs)
-    const wrapper  = composeWrapper(pageFile, chain, { elementChildren: !transformSource })
+    const wrapper  = composeWrapper(pageFile, chain)
     const companion = node.companion ? resolve(root, node.companion) : null
     const mod      = await importCompanion(companion, node.id)
 

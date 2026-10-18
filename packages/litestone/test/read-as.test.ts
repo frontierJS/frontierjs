@@ -315,3 +315,70 @@ model Tag {
     expect(db.asSystem().$fromReach('shift')).toEqual(['Assignment'])
   })
 })
+
+describe('$readColumns — which columns of a reached model a verdict reads', () => {
+  // A heartbeat stamped on a reached row moves nobody's access; only the
+  // columns a policy or a join reads can (`FJS-3127`).
+  const COLS = `
+database main { path ":memory:" }
+
+model Project {
+  id      Int     @id @default(autoincrement())
+  ownerId String
+  runs    Run[]
+  @@allow('read', ownerId == auth().id)
+}
+
+model Run {
+  id          Int       @id @default(autoincrement())
+  projectId   Int
+  project     Project   @relation(fields: [projectId], references: [id])
+  heartbeatAt DateTime?
+  chunks      Chunk[]
+  @@allow('read', check(project))
+}
+
+model Chunk {
+  id     Int    @id @default(autoincrement())
+  runId  Int
+  run    Run    @relation(fields: [runId], references: [id])
+  body   String
+  @@allow('read', check(run))
+}
+
+model Note {
+  id        Int       @id @default(autoincrement())
+  body      String
+  deletedAt DateTime?
+  @@softDelete
+}
+
+model Doc {
+  id     Int  @id @default(autoincrement())
+  noteId Int
+  note   Note @relation(fields: [noteId], references: [id])
+  @@allow('read', note.body != null)
+}
+`
+  const colsClient = () => createClient({ schema: COLS, resolveFrom: import.meta.dir })
+
+  test('a check() chain lists the policy fields and the join keys, not the rest', async () => {
+    const db = await colsClient()
+    expect(db.$readColumns('chunk')).toEqual({
+      Chunk:   ['runId'],
+      Project: ['id', 'ownerId'],
+      Run:     ['id', 'projectId'],
+    })
+  })
+
+  test('a model every read filters by soft delete lists its deletedAt', async () => {
+    const db = await colsClient()
+    expect(db.$readColumns('doc')).toEqual({ Doc: ['noteId'], Note: ['body', 'deletedAt', 'id'] })
+  })
+
+  test('every flavor answers alike, and an unknown accessor answers nothing', async () => {
+    const db = await colsClient()
+    expect(db.asSystem().$readColumns('chunk')).toEqual(db.$readColumns('chunk'))
+    expect(db.$readColumns('nope')).toEqual({})
+  })
+})

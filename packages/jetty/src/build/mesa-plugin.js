@@ -212,15 +212,15 @@ export function mesaPlugin(options = {}) {
  * but jetty's own dev-client triggers the swap (no import.meta.hot bridge).
  *
  * Compiled component shape:
- *   export default function Name(__anchor, __props, __block) { ... $$runtime.pop_component(); }
+ *   export default function Name(__anchor, __props) { ... $$runtime.pop_component(); }
  *   $$runtime.$$delegate([...]);  // optional
  *
  * After wrapping:
  *   - export default = thin wrapper that creates an hmrMark comment node
- *     before each mount, calls __mesaOrigFn(anchor, props, block)
+ *     before each mount, calls __mesaOrigFn(anchor, props)
  *   - export { __mesaOrigFn, __setMark } — used by HMR re-imports
  *   - inside __mesaOrigFn, after pop_component, register the instance with
- *     globalThis.__jettyMesa.register(id, hmrMark, anchor, props, block, fn)
+ *     globalThis.__jettyMesa.register(id, hmrMark, anchor, props, fn)
  *
  * @param {string} js — compiled Mesa output
  * @param {string} id — absolute path of the .mesa file
@@ -236,12 +236,12 @@ export function injectJettyHMR(js, id, root) {
   const escapedId = normalId.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
   const shortName = id.split(/[\\/]/).pop()
 
-  // Step 1 — rename `export default function Name(__anchor, __props, __block)`
+  // Step 1 — rename `export default function Name(__anchor, __props)`
   // so we can swap in our own default export wrapper. The original fn is
   // preserved as __mesaOrigFn (also exported by name for the HMR re-import).
   let result = js.replace(
-    /export default function (\w+)\(__anchor,\s*__props,\s*__block\)/,
-    () => `function __mesaOrigFn(__anchor, __props, __block)`
+    /export default function (\w+)\(__anchor,\s*__props\)/,
+    () => `function __mesaOrigFn(__anchor, __props)`
   )
 
   // Step 2 — register the mounted instance after pop_component(). We match
@@ -262,7 +262,7 @@ export function injectJettyHMR(js, id, root) {
       const reg = `
   // ── Jetty HMR registration ────────────────────────────────────────────
   if (typeof globalThis !== 'undefined' && globalThis.__jettyMesa) {
-    globalThis.__jettyMesa.register('${escapedId}', __hmrMark, __anchor, __props, __block, __mesaOrigFn)
+    globalThis.__jettyMesa.register('${escapedId}', __hmrMark, __anchor, __props, __mesaOrigFn)
   }`
       return `${pop}${rest.replace(/^(\n\})/, `${reg}$1`)}`
     }
@@ -289,10 +289,10 @@ export function injectJettyHMR(js, id, root) {
   result += `
 let __hmrMark
 export function __setMark(mark) { __hmrMark = mark }
-export default function __mesaJettyHMRWrap(__anchor, __props, __block) {
+export default function __mesaJettyHMRWrap(__anchor, __props) {
   __hmrMark = document.createComment(' mesa:hmr:${shortName} ')
   __anchor.before(__hmrMark)
-  __mesaOrigFn(__anchor, __props, __block)
+  __mesaOrigFn(__anchor, __props)
 }
 export { __mesaOrigFn }
 `

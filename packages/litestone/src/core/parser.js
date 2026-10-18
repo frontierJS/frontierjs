@@ -12,7 +12,7 @@ import { expandCapabilityType } from './capabilities.js'
 import { parseGateString, validateGate } from '../plugins/gate.js'
 // One owner for the range a value round-trips through a JS number in — the
 // validator's, so a refusal here and a refusal at the boundary name one number.
-import { EXACT_INT_MAX, validateJsonPatch } from './validate.js'
+import { EXACT_INT_MAX, validateTypedBinding } from './validate.js'
 import { suggestKey } from './args.js'
 import { compileStatic, policyExprToString } from './policy.js'
 import { pointColumnNames, isStoredField, mapIdentifiers, labelColumn, COLLATIONS } from './ddl.js'
@@ -174,10 +174,18 @@ class Parser {
   // The grammar in toolbelt throws what this returns, so its messages carry a position here.
   fail(msg, pos) { return new ParseError(msg, pos) }
 
-  // Collect leading /// doc comments
+  // Collect leading /// doc comments. A `///` documents the member BELOW it, so
+  // one met by the closing brace documents nothing; refused here, once, rather
+  // than as each block's own "unexpected '}'" that never names the comment.
   docComments() {
     const comments = []
+    const first = this.peek()
     while (this.check(TK.COMMENT)) comments.push(this.advance().value)
+    if (comments.length && this.check(TK.RBRACE))
+      throw new ParseError(
+        `A /// doc comment documents the member BELOW it, and nothing follows it in this block — ` +
+        `move it above the member it describes, write it on the line the member ends on, or make it a // note`,
+        first)
     return comments
   }
 
@@ -1536,6 +1544,13 @@ class Parser {
       case 'type': {
         this.eat(TK.LPAREN)
         const typeName = this.eat(TK.IDENT).value
+        // `T[]` binds a LIST of the type, the shape a type member already takes.
+        let array = false
+        if (this.check(TK.LBRACKET)) {
+          this.eat(TK.LBRACKET)
+          this.eat(TK.RBRACKET)
+          array = true
+        }
         let strict = true
         if (this.check(TK.COMMA)) {
           this.eat(TK.COMMA)
@@ -1546,7 +1561,7 @@ class Parser {
           strict = val === true || val === 'true'
         }
         this.eat(TK.RPAREN)
-        return { kind: 'type', name: typeName, strict }
+        return array ? { kind: 'type', name: typeName, strict, array } : { kind: 'type', name: typeName, strict }
       }
 
       default:
@@ -2927,13 +2942,10 @@ class Parser {
   }
 
   /**
-   * `@unit(ms)` · `@unit("%")`
-   *
-   * Bare where the symbol is an identifier, quoted where it is not — `%` is a
-   * token this lexer already spends on something else, and a unit that cannot
-   * be written bare is better quoted than renamed. The symbol is NOT folded to
-   * a case: `MB` is a megabyte and `Mb` a megabit everywhere a reader has seen
-   * them, so a wrong case is a wrong unit and is refused as one.
+   * `@unit(ms)` · `@unit(%)` · `@unit("ms")` — bare and quoted are one
+   * declaration. The symbol is NOT folded to a case: `MB` is a megabyte and
+   * `Mb` a megabit everywhere a reader has seen them, so a wrong case is a
+   * wrong unit and is refused as one.
    */
   parseSyntax() {
     const t = this.peek()
@@ -2948,9 +2960,11 @@ class Parser {
   parseUnit() {
     const t = this.peek()
     if (!this.check(TK.LPAREN))
-      throw new ParseError('@unit takes a symbol — @unit(ms), @unit(kg), @unit("%")', { line: t.line, col: t.col })
+      throw new ParseError('@unit takes a symbol — @unit(ms), @unit(kg), @unit(%)', { line: t.line, col: t.col })
     this.eat(TK.LPAREN)
-    const symbol = this.check(TK.STRING) ? this.eat(TK.STRING).value : this.eat(TK.IDENT).value
+    const symbol = this.check(TK.STRING) ? this.eat(TK.STRING).value
+      : this.check(TK.PERCENT) ? this.eat(TK.PERCENT).value
+      : this.eat(TK.IDENT).value
     this.eat(TK.RPAREN)
     return { kind: 'unit', symbol: String(symbol) }
   }
@@ -5598,7 +5612,12 @@ function validate(schema) {
       if (!call) continue
       const fn = schema.functions.find(f => f.name === call.fn)
       if (!fn) {
-        errors.push(`Model '${model.name}', field '${field.name}': '@${call.fn}' is neither a field attribute nor a function this schema declares`)
+        // @slug is a field attribute bare, so the parenthesized form reads as one that takes a
+        // source field -- it is the call to a declared `function slug`, and the stamp is @default.
+        const hint = call.fn === 'slug' && call.args.length === 1
+          ? `; @slug(${call.args[0]}) calls a \`function slug\` the schema declares -- without one, write @default(${call.args[0]}) @slug`
+          : ''
+        errors.push(`Model '${model.name}', field '${field.name}': '@${call.fn}' is neither a field attribute nor a function this schema declares${hint}`)
         continue
       }
       if (call.args.length !== fn.params.length) {
@@ -6839,7 +6858,8 @@ function validate(schema) {
           continue
         }
 
-        const errs = validateJsonPatch(parsed, typeAttr.name, typeMap, typeAttr.strict !== false, [], 'full', enums)
+        const errs = []
+        validateTypedBinding(parsed, typeAttr, typeMap, [], errs, 'full', enums)
         if (!errs.length) continue
         const said = errs.map(e => `${e.path.join('.') || '(root)'}: ${e.message}`).join('; ')
         errors.push(
@@ -7692,7 +7712,8 @@ function validate(schema) {
       // the coordinate keys must exist IN it, or the point validates and never
       // matches anything.
       const typeAttr = field.attributes.find(a => a.kind === 'type')
-      if (typeAttr) {
+      if (typeAttr?.array) errors.push(`${at}: @point is one location and the column is @type(${typeAttr.name}[]), a list of them`)
+      if (typeAttr && !typeAttr.array) {
         const decl = (schema.types ?? []).find(t => t.name === typeAttr.name)
         if (decl) {
           for (const key of [pt.lat, pt.lng]) {
@@ -8086,9 +8107,16 @@ function validate(schema) {
       // The @default is where every row starts, whoever creates it (`FJS-D470`),
       // so a machine without one has no legal create.
       const stateField = model.fields.find(f => f.name === attr.field)
-      if (stateField && !stateField.attributes.some(a => a.kind === 'default'))
+      if (stateField && !stateField.attributes.some(a => a.kind === 'default')) {
+        // null is not a state a move can leave, so a column only some rows
+        // enter still needs a state meaning "not in the machine".
+        const nullable = stateField.type.optional
+          ? ` '${attr.field}' is nullable, but null is not a state a move can leave: ` +
+            `add a state that means "none", make it the @default, and drop the '?'.`
+          : ''
         errors.push(`Model '${model.name}': @@transitions(${attr.field}) — '${attr.field}' has no @default. ` +
-                    `A new row starts at the default and reaches every other state by a move, so the machine needs one.`)
+                    `A new row starts at the default and reaches every other state by a move, so the machine needs one.${nullable}`)
+      }
 
       if (attr.fromEnum) continue
 

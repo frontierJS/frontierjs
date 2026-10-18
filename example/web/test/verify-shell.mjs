@@ -35,6 +35,7 @@ import { dirname, join }       from 'node:path'
 import { fileURLToPath }       from 'node:url'
 import { portFor }             from '@frontierjs/cli/core/ports.js'
 import { PORTS }               from './lib/preflight.mjs'
+import { watchReloads } from './lib/reload.mjs'
 import { openChrome, createNetwork } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -118,6 +119,7 @@ if (!await waitFor(UI, 'preview'))                { stopAll(); process.exit(1) }
 const browser = await openChrome({ windowSize: '1400,1000' }).catch((e) => {
   console.error(e.message); stopAll(); process.exit(1)
 })
+watchReloads(browser)
 const { cmd } = browser
 
 // An EXPRESSION, answered by value — the driver evaluates a function body.

@@ -28,7 +28,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createClient } from '../../litestone/src/index.js'
 import { createApp } from '../src/core/app.ts'
-import { createService, buildBase } from '../src/core/service.ts'
+import { createService } from '../src/core/service.ts'
 import { channels } from '../src/transport/channels.ts'
 
 const SCHEMA = `
@@ -466,7 +466,7 @@ describe('a count reaches a per-tenant function channel (FJS-1741)', () => {
 // Everything above declares `model: 'Order'` by hand, and that is the whole
 // reason the mechanism could be dead for two months without a red test.
 //
-// No real service file writes that. `buildBase({})` in orders.service.ts
+// No real service file writes that. `createService({})` in orders.service.ts
 // is the canonical shape — the accessor is resolved per call from the service
 // NAME through accessorCandidates — and the model → service index this file
 // exercises was built from `svc.model ?? singularize(name)`, where `svc.model`
@@ -475,7 +475,7 @@ describe('a count reaches a per-tenant function channel (FJS-1741)', () => {
 // service in every app.
 //
 // Two spellings are legal and both have to resolve: the accessor may be the
-// singular or the plural (`buildBase({ model: 'posts' })` is
+// singular or the plural (`createService({ model: 'posts' })` is
 // documented), and Litestone announces the model name.
 
 describe('the model → service index (FJS-464)', () => {
@@ -517,16 +517,6 @@ describe('the model → service index (FJS-464)', () => {
     await sys(db).order.create({ data: { status: 'from-job' } })
     await tick()
     expect(seen).toEqual(['created#1'])
-  })
-
-  // The option-drop half of the same defect: `buildBase` returned an
-  // object with no `model` key, so the loader's `createService({ name, ...base })`
-  // saw none and substituted the file name. A service declaring which model it
-  // is reported a different one.
-  test('buildBase carries its declared model through createService', async () => {
-    const base = buildBase({ model: 'Order' }) as unknown as Record<string, unknown>
-    expect(base.model).toBe('Order')
-    expect((createService({ name: 'orders', ...base }) as { model?: string }).model).toBe('Order')
   })
 })
 
@@ -881,5 +871,63 @@ describe('a delete that cascades announces the children (FJS-2255)', () => {
     await sys.follow.delete({ where: { id: 1 } })
     await tick(); await tick()
     expect(seen.sort()).toEqual(['follows:removed#1', 'posts:removed#10', 'posts:removed#11'])
+  })
+})
+
+// FJS-3127 — a write to a column no read policy reads regraded every dependent
+// service: a runner stamping `Run.heartbeatAt` every 2 s sent each open LogChunk
+// list a `changed`, and a live store re-read its whole window to learn nothing.
+describe('a write to a column no read verdict reads regrades nothing (FJS-3127)', () => {
+  const RUNS = `
+    model Project { id Int @id  open Boolean  runs Run[]
+                    @@allow('read', open) }
+    model Run     { id Int @id  projectId Int  project Project @relation(fields: [projectId], references: [id])
+                    heartbeatAt DateTime?  chunks Chunk[]
+                    @@allow('read', check(project)) }
+    model Chunk   { id Int @id  runId Int  run Run @relation(fields: [runId], references: [id])  body String
+                    @@allow('read', check(run)) }
+  `
+  type Sys = Record<string, Record<string, (a: unknown) => Promise<unknown>>>
+
+  async function mk() {
+    const db  = await createClient({ db: ':memory:', schema: RUNS })
+    const app = createApp({ db: db as never })
+    for (const [name, model] of [['projects', 'Project'], ['runs', 'Run'], ['chunks', 'Chunk']])
+      app.services.register(createService({ name, model, db: db as never }))
+    await app._startForTest()
+    const sys = () => (db as never as { asSystem(): Sys }).asSystem()
+    await sys().project.create({ data: { id: 1, open: true } })
+    await sys().run.create({ data: { id: 1, projectId: 1 } })
+    await tick(); await tick()
+    const seen: string[] = []
+    for (const s of ['projects', 'runs', 'chunks'])
+      app.events.on(`${s}:changed`, (d: { operation: string }) => { seen.push(`${s}:changed:${d.operation}`) })
+    return { sys, seen }
+  }
+
+  test('a heartbeat on the run leaves the chunk list alone', async () => {
+    const { sys, seen } = await mk()
+    await sys().run.update({ where: { id: 1 }, data: { heartbeatAt: new Date() } })
+    await tick(); await tick()
+    expect(seen).toEqual([])
+  })
+
+  test('a column the policy reads still regrades, through the whole chain', async () => {
+    const { sys, seen } = await mk()
+    await sys().project.update({ where: { id: 1 }, data: { open: false } })
+    await tick(); await tick()
+    expect(seen.sort()).toEqual(['chunks:changed:regrade', 'runs:changed:regrade'])
+  })
+
+  test('a join key moving regrades, and so does a write that names no row', async () => {
+    const { sys, seen } = await mk()
+    await sys().project.create({ data: { id: 2, open: false } })
+    await sys().run.update({ where: { id: 1 }, data: { projectId: 2 } })
+    await tick(); await tick()
+    expect(seen).toContain('chunks:changed:regrade')
+    seen.length = 0
+    await sys().run.updateMany({ where: { id: 1 }, data: { heartbeatAt: new Date() } })
+    await tick(); await tick()
+    expect(seen).toContain('chunks:changed:regrade')
   })
 })

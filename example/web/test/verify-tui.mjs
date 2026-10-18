@@ -98,7 +98,7 @@ check(settings.stdout.includes('theme theme-default ·'), 'and its footer names 
 function screen(stream, rows = 30, cols = 100) {
   const grid = Array.from({ length: rows }, () => Array(cols).fill(' '))
   let r = 0, c = 0
-  const seq = /\x1b\[([0-9;?<>]*)([a-zA-Z~])|\x1b[()][A-Z0-9]|\x1b[=>]|\x1b[\]P][^\x07\x1b]*(?:\x07|\x1b\\)/y
+  const seq = /\x1b\[([0-9;?<>$ ]*)([a-zA-Z~])|\x1b[()][A-Z0-9]|\x1b[=>78]|\x1b[\]P_][^\x07\x1b]*(?:\x07|\x1b\\)/y
   for (let i = 0; i < stream.length;) {
     seq.lastIndex = i
     const m = seq.exec(stream)
@@ -118,7 +118,7 @@ function screen(stream, rows = 30, cols = 100) {
 }
 const seen = (text) => screen(out).includes(text)
 
-const plain = (s) => s.replace(/\x1b\[[0-9;?<>]*[a-zA-Z~]|\x1b[()][A-Z0-9]|\x1b[=>]|\x1b[\]P][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+const plain = (s) => s.replace(/\x1b\[[0-9;?<>$ ]*[a-zA-Z~]|\x1b[()][A-Z0-9]|\x1b[=>78]|\x1b[\]P_][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
 
 const shell = spawn('script', ['-qfec', `stty rows 30 cols 100; bun ${TUI} --api ${API}`, '/dev/null'], {
   cwd: WEB, stdio: ['pipe', 'pipe', 'inherit'],
@@ -209,6 +209,7 @@ await new Promise((r) => setTimeout(r, 300))
 shell.stdin.write('\r')
 check(await until(() => /│ New employee +│/.test(screen(out)) && /│ \[ Save \] \[ Cancel \] +│/.test(screen(out))),
   'its Drawer opens in a border over the page', screen(out))
+check(/│ \[ Close \] +│/.test(screen(out)), 'and its icon-only close button paints its aria-label', screen(out))
 mark = out.length
 shell.stdin.write('\x1b')
 check(await until(() => !/│ New employee/.test(screen(out))), 'Esc closes the Drawer', screen(out))
@@ -310,6 +311,18 @@ check(seen('/confirm/ · Esc goes back'), 'and leaves the route open', screen(ou
 mark = out.length
 walk.stdin.write('\x1b')
 check(await until(() => seen('j/k moves, Enter opens')), 'a second Esc leaves the route', screen(out))
+// A route whose only control paints after it mounts has nothing to focus when
+// shell.js looks (FJS-3165): the mode line said the last route's INSERT, and
+// Enter pressed nothing until a Tab.
+mark = out.length
+walk.stdin.write('\t'.repeat(Math.max(0, fixtureButtons.indexOf('/late/'))) + '\r')
+check(await until(() => seen('/late/ · Esc goes back') && seen('[ Late ]')), '/late/ opens and paints its control after the mount', screen(out))
+await new Promise((r) => setTimeout(r, 300))
+walk.stdin.write('\r')
+check(await until(() => seen('Pressed: 1')), 'Enter presses a control that painted after the mount, with no Tab first', screen(out))
+mark = out.length
+walk.stdin.write('\x1b')
+check(await until(() => seen('j/k moves, Enter opens')), 'and Esc leaves the route', screen(out))
 walk.stdin.write('\x03')
 const walkCode = await Promise.race([walked, new Promise((r) => setTimeout(() => r('timeout'), 5000))])
 if (walkCode === 'timeout') walk.kill('SIGKILL')

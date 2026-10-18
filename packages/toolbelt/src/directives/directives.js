@@ -161,6 +161,14 @@ export const DIRECTIVE_SCHEMAS = Object.freeze(Object.fromEntries(DIRECTIVES.map
  */
 export const TRANSPORT_PARAMS = Object.freeze(['$first', '$wrap'])
 
+/*
+ * The third class: filters written with a `$`. `$or`/`$and` hold a list of
+ * filter bags and `$not` one, in the grammar `parseWhere` and `matchesQuery`
+ * both read (`FJS-D910`). They stay in the filters, so neither the refusal nor
+ * the split may treat them as directives or as unknown.
+ */
+export const COMBINATORS = Object.freeze(['$or', '$and', '$not'])
+
 /** Every `$` key the wire understands. Neither kind is a filter. */
 export const RESERVED_PARAMS = new Set([...DIRECTIVE_PARAMS, ...TRANSPORT_PARAMS])
 
@@ -250,7 +258,7 @@ const SINGLE_VALUED_PARAMS = Object.freeze([
  */
 export function unknownDirectives(params) {
   if (!params || typeof params !== 'object') return []
-  return Object.keys(params).filter((k) => k.startsWith('$') && !RESERVED_PARAMS.has(k))
+  return Object.keys(params).filter((k) => k.startsWith('$') && !RESERVED_PARAMS.has(k) && !COMBINATORS.includes(k))
 }
 
 /**
@@ -429,9 +437,9 @@ export function orderByValue(key, dir = 'asc') {
 /**
  * One bag of parameters → the two things it was carrying.
  *
- * `query` is the filters, with every `$` key removed — a directive left in it
- * is a WHERE clause on a column that does not exist. `directives` is the
- * structured form. Neither half ever contains a `$`.
+ * `query` is the filters, with every `$` key removed but the combinators — a
+ * directive left in it is a WHERE clause on a column that does not exist.
+ * `directives` is the structured form and never contains a `$`.
  *
  * @param {Record<string, unknown>} params
  * @returns {{ query: Record<string, unknown>, directives: object }}
@@ -452,7 +460,7 @@ export function splitParams(params) {
       // in the filters as a WHERE on a column that cannot exist, which is the
       // consequence this function's own contract names (FJS-988). The
       // recognized names were removed correctly, so nothing failed.
-      if (k.startsWith('$') || RESERVED_PARAMS.has(k)) continue
+      if ((k.startsWith('$') && !COMBINATORS.includes(k)) || RESERVED_PARAMS.has(k)) continue
       Object.defineProperty(query, k, { value: params[k], writable: true, enumerable: true, configurable: true })
     }
   }

@@ -227,8 +227,10 @@ Measured over 341 components in this repo — `example`, `basecamp`, the kit, or
 the website and sierra's own — plus linear's 40: **three** uncovered reads, all in a
 `const`, none in a template. The kit's `Avatar` sized a fixed tone table in a
 `const` and now takes the size in a `var`. linear's two issue and user pages read
-`const id = page.params.id` with no watch, and Sierra keeps a route's component
-across a change of parameter, so that `id` is the first one visited.
+`const id = page.params.id` with no watch, and that needs none: Sierra remounts
+a leaf route when its own params change (`remountKey`), so each `id` is read by a
+fresh component. A layout above it is kept, and so is a route with
+`remount: false` — those do need the watch.
 
 2, 3 and 4 stay written down because a package outside this repo can still export
 a signal, and `externalSignals` is still the answer for it.

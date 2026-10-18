@@ -65,8 +65,8 @@ describe('locLines — each prepared line back to the file\'s', () => {
     expect(locLines('<p>a</p>\n', '<p>a</p>\n')).toBeNull()
   })
 
-  test('an auto-import and a slot prop, inserted after the script tag', () => {
-    const src = '<script>\n  let a = 1\n</script>\n\n<main>\n  <slot />\n  <p>after</p>\n</main>\n'
+  test('an auto-import, inserted after the script tag', () => {
+    const src = '<script>\n  let a = 1\n</script>\n\n<main>\n  <Hero />\n  <p>after</p>\n</main>\n'
     const prepared = prepareForCompile(src, '/app/content/routes/_module.mesa', map)
     expect(prepared).not.toBe(src)
     expect(line(src, prepared, '<p>after</p>')).toBe(7)

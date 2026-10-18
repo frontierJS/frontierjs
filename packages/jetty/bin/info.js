@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// jetty-info — print extension structure + config summary.
+// jetty info — print extension structure + config summary.
 //
 // Usage:
-//   jetty-info --root=. [--browser=chrome]
+//   jetty info --root=. [--browser=chrome]
 //
 // Useful for: CI sanity checks, "what's in this extension", debugging
 // discover-vs-config mismatches.
@@ -69,7 +69,7 @@ try {
     for (const w of found.warnings) console.log(`  ⚠ ${w}`)
   }
 } catch (e) {
-  console.error('✗ jetty-info failed:', e.message)
+  console.error('✗ jetty info failed:', e.message)
   process.exit(1)
 }
 

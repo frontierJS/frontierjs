@@ -15,11 +15,7 @@
     "./junction": "./src/junction/junction-adapter.js"
   },
   "bin": {
-    "jetty-build-ext": "./bin/build-ext.js",
-    "jetty-dev-ext": "./bin/dev-ext.js",
-    "jetty-info": "./bin/info.js",
-    "jetty-audit": "./bin/audit.js",
-    "jetty-manifest": "./bin/manifest.js"
+    "jetty": "./bin/jetty.js"
   },
   "files": [
     "src",

@@ -613,7 +613,7 @@ describe('compile() output shape', () => {
     it('emits track() for plain let', async () => {
       const out = await cx(`<script>let count = 0;</script><p>{count}</p>`)
       expect(out).toContain('$$sig_count')
-      expect(out).toContain('$$runtime.track(0,')
+      expect(out).toContain('$$runtime.track(0)')
       expect(out).not.toContain('createSignal')
     })
     it('does NOT emit makeExternalProperty for plain let', async () => {
@@ -1101,7 +1101,7 @@ function provide(n, f) { return null }
     it('calls child component directly with anchor', async () => {
       const out = await cx(`<script>let n = 0;</script><Child qty={n}/>`)
       expect(out).not.toContain('callComponent')
-      // new pattern: Child(anchorVar, props, null)
+      // new pattern: Child(anchorVar, props)
       expect(out).toMatch(/Child\([\w$]+,/)
     })
     it('emits pushProps effect for reactive prop', async () => {

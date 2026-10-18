@@ -2642,7 +2642,7 @@ export function mount(label, component, option) {
   try {
     createRoot((dispose) => {
       disposeRoot = dispose
-      component(anchor, option?.props ?? {}, null)
+      component(anchor, option?.props ?? {})
     })
   } catch (e) {
     _unwindComponents(comps, ctxs)
@@ -2690,7 +2690,7 @@ export function mountStatic(label, component, option) {
     )
   const anchor = document.createComment(ANCHOR_DATA)
   label.appendChild(anchor)
-  component(anchor, option?.props ?? {}, null)
+  component(anchor, option?.props ?? {})
   return { $dom: anchor }
 }
 
@@ -5554,7 +5554,7 @@ const _componentRegistry = new WeakMap()
 const _componentExports  = new WeakMap()
 
 export function registerComponentAnchor(anchor) {
-  // Called immediately after ComponentFn(anchor, props, null) returns.
+  // Called immediately after ComponentFn(anchor, props) returns.
   // At that point _owner is back to the parent, and the child rootNode is the
   // last child of the current owner (added by push_component's rootNode setup).
   const parentOwner = _owner
@@ -5722,7 +5722,7 @@ export function pushProps(anchor, newProps) {
 // `mount` inserts its anchor immediately after the node it is given and the
 // component renders before that, so the component lands exactly in the range
 // the prerendered markup vacated. It must be `mount` and not a bare
-// `Comp(anchor, props, null)`: a direct call produces the right markup and
+// `Comp(anchor, props)`: a direct call produces the right markup and
 // registers no delegation root, so the island comes back inert. Pinned by a
 // click in render-ssr.test.js.
 
@@ -5827,16 +5827,15 @@ function islandPayload(props, meta) {
  * @param {Comment}  anchor — the call site's anchor node
  * @param {Function} Comp   — the component factory
  * @param {object}   props
- * @param {object|null} block — slots object, as passed to a normal component call
  * @param {{component: string, directive: string, media?: string}} meta
  */
-export function island(anchor, Comp, props, block, meta) {
-  if (_isClient || !_isBrowser) return Comp(anchor, props, block)
+export function island(anchor, Comp, props, meta) {
+  if (_isClient || !_isBrowser) return Comp(anchor, props)
 
   const parent = anchor?.parentNode
   // Block directives already bail when an anchor is detached; matching that
   // means a marker can never be the thing that breaks a render.
-  if (!parent) return Comp(anchor, props, block)
+  if (!parent) return Comp(anchor, props)
 
   const open  = document.createComment(ISLAND_OPEN + islandPayload(props, meta))
   const close = document.createComment(ISLAND_CLOSE)
@@ -5847,7 +5846,7 @@ export function island(anchor, Comp, props, block, meta) {
   // and any block content queued during setup appends at anchors that are
   // themselves already inside this range, so the whole subtree lands between
   // the two markers — including content that only materializes at flushSync.
-  return Comp(close, props, block)
+  return Comp(close, props)
 }
 
 
@@ -5869,7 +5868,7 @@ export function island(anchor, Comp, props, block, meta) {
  * generated from a callback the user passed — both are `() => …` — so the
  * compiler now says which it means by calling trackDerived() instead.
  */
-export function track(value, _getInterceptor, _setInterceptor, _block, _alwaysNotify) {
+export function track(value, _getInterceptor, _setInterceptor, _alwaysNotify) {
   const [read, write] = createSignal(value, _alwaysNotify ? { equals: () => false } : undefined)
   // _directWrite is now identical to write since createSignal no longer has an
   // updater-function check. Kept for API compatibility with pushProps.
@@ -5896,7 +5895,7 @@ export function track(value, _getInterceptor, _setInterceptor, _block, _alwaysNo
  * The counterpart to track(): the caller states the intent rather than the
  * runtime guessing it from the shape of the value.
  */
-export function trackDerived(fn, _getInterceptor, _setInterceptor, _block) {
+export function trackDerived(fn) {
   const memo = createMemo(fn)
   return {
     _isMemo: true,

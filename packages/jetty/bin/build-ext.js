@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// jetty-build-ext — production build CLI.
+// jetty build — production build CLI.
 //
 // Usage:
-//   jetty-build-ext --root=. --browser=chrome  [--verbose]
-//   jetty-build-ext --root=. --browser=firefox [--verbose]
-//   jetty-build-ext --root=. --browser=both    [--verbose]
+//   jetty build --root=. --browser=chrome  [--verbose]
+//   jetty build --root=. --browser=firefox [--verbose]
+//   jetty build --root=. --browser=both    [--verbose]
 
 import { resolve } from 'node:path'
 import { buildExtension, buildBoth } from '../src/build/index.js'

@@ -35,10 +35,10 @@ const STUB = fileURLToPath(new URL('./fixtures/stub-compiler.mjs', import.meta.u
 // component here is a JSON document describing the output a compiler emits.
 const component = (body) => JSON.stringify({ result: body })
 
-const WRAPPABLE = `export default function Stub(__anchor, __props, __block) {
+const WRAPPABLE = `export default function Stub(__anchor, __props) {
   $$runtime.pop_component();
 }`
-const NOT_WRAPPABLE = `export default function Stub(__anchor, __props, __block) {
+const NOT_WRAPPABLE = `export default function Stub(__anchor, __props) {
   $$runtime.somethingElse();
 }`
 

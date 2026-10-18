@@ -142,6 +142,29 @@ describe('a method that answers a projection announces the row anyway', () => {
     expect(warnings).toHaveLength(1)
   })
 
+  test('a custom method\'s warning names the read declaration (FJS-2791)', async () => {
+    const db  = await mkDb()
+    const svc = buildService({
+      name: 'servers', model: 'server',
+      async heartbeat() { return { id: 1, status: 'online' } },
+    } as never)
+
+    await announce(svc, ctxFor(db, { id: 1 }))
+    expect(warnings[0]).toContain("methods: [{ method: 'heartbeat', read: true }]")
+  })
+
+  test('a CRUD verb\'s warning does not offer read: true', async () => {
+    const db  = await mkDb()
+    const svc = buildService({
+      name: 'servers', model: 'server',
+      async patch() { return { id: 1, status: 'online' } },
+    } as never)
+
+    await announce(svc, ctxFor(db, { method: 'patch', id: 1, data: { status: 'online' } }))
+    expect(warnings[0]).toContain('ctx.dispatch')
+    expect(warnings[0]).not.toContain('read: true')
+  })
+
   test('an id-less answer is re-read from the ROUTE id', async () => {
     // `{ ok, server_id, status }` — the heartbeat that could not be matched to
     // a row by anything downstream.

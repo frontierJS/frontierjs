@@ -12,7 +12,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createClient }   from '../../litestone/src/index.js'
-import { buildBase, callService, resolveTransactional, buildService } from '../src/core/service.ts'
+import { callService, resolveTransactional, buildService } from '../src/core/service.ts'
 import { withLitestoneDb } from '../src/core/litestone.ts'
 import type { ServiceContext } from '../src/core/context.ts'
 
@@ -165,21 +165,15 @@ describe('the scope survives into the transaction', () => {
 
 describe('the derived hook installs once', () => {
 
-  test('a base spread back through createService does not stack a second scope', async () => {
-    // The FJS-231 shape: the autoloader spreads a base straight back through
-    // createService, and a base returns the MERGED hook map. An unmarked hook
-    // appended unconditionally installs itself again. A second scope would still
-    // be CORRECT — it nests as a savepoint — so the only way to see it is to
-    // count the opens.
+  test('a built service opens one scope, not a nested second', async () => {
+    // A second scope would still be CORRECT — it nests as a savepoint — so the
+    // only way to see a doubled install is to count the opens.
     const db: any = await mkDb()
     let opens = 0
     const orig = db.$transaction.bind(db)
     db.$transaction = (fn: any, p: any) => { opens++; return orig(fn, p) }
 
-    // The loader's actual shape: a factory returns a BASE, the loader spreads it
-    // into createService with the filename-derived name.
-    const base  = buildBase({ model: 'Post', transactional: true } as never)
-    const built = buildService({ name: 'posts', ...(base as unknown as Record<string, unknown>) } as never)
+    const built = buildService({ name: 'posts', model: 'Post', transactional: true } as never)
 
     await callService(built, ctx(db))
     expect(opens).toBe(1)

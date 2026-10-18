@@ -183,7 +183,7 @@ src/
                          outright, with nothing said. `localDbWorkerPlugins`
                          is what the WORKER is built with, and it stubs
                          litestone's parser out of it (`FJS-2318`)
-    slot-rewrite.js      compile-time slot rewriting
+    slot-rewrite.js      named slots only (`page.slots`); the default `<slot />` is Mesa's to lower
     prerender.js         routes declaring `render: static` → HTML
     document-shell.js    a static app's `document` applied to index.html, dev and build
     island-bundle.js     one chunk per island the static build needs
@@ -883,8 +883,8 @@ a `$:` path watch; there is no cross-package signal registry.
 | | |
 | --- | --- |
 | Created per | **navigation** — mutated in place through the router's write handle so path watches fire |
-| Carries | `pathname`, `search`, `params`, `query`, `directives`, `meta`, `route`, `pending`, `data`, `error`, `slots` — **plus the route's frontmatter spread onto it**, so `{page.title}` works |
-| Reserved | those eleven names. Frontmatter using one is shadowed and the scanner warns |
+| Carries | `pathname`, `search`, `hash`, `params`, `query`, `directives`, `meta`, `route`, `pending`, `data`, `error`, `slots` — **plus the route's frontmatter spread onto it**, so `{page.title}` works |
+| Reserved | those twelve names. Frontmatter using one is shadowed and the scanner warns |
 
 Two crossings with the API realm, both worth stating outright:
 

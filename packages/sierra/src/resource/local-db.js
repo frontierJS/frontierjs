@@ -54,7 +54,22 @@ let _closing = null
  */
 export function configureLocalDb(config) {
   _config = config
+  _watchPage()
   localDb().catch(() => {})
+}
+
+// Litestone's client rejects an open in flight when the page hides, and that is
+// a navigation, not a database that failed to open. Registered here, before the
+// client's own `pagehide` listener exists, so this one runs first and the
+// rejection finds the flag already set. A page restored from the back/forward
+// cache is a live page again.
+let _leaving = false
+let _watching = false
+function _watchPage() {
+  if (_watching || typeof globalThis.addEventListener !== 'function') return
+  _watching = true
+  globalThis.addEventListener('pagehide', () => { _leaving = true })
+  globalThis.addEventListener('pageshow', () => { _leaving = false })
 }
 
 /** Is there one to talk to? Asked before every write-through, which must cost nothing when off. */
@@ -108,6 +123,7 @@ export async function localDb() {
       })
       return _client
     } catch (err) {
+      if (_leaving) return null
       console.warn(`[Sierra] the local database did not open, so reads fall back to the list cache: ${err?.message ?? err}`)
       return null
     } finally {
@@ -360,7 +376,7 @@ export async function clearLocalDb() {
 }
 
 /** Test seam: forget the configuration and the open client. */
-export function _resetLocalDb() { _config = null; _client = null; _opening = null; _closing = null; _warned.clear() }
+export function _resetLocalDb() { _config = null; _client = null; _opening = null; _closing = null; _leaving = false; _watching = false; _warned.clear() }
 
 /**
  * Test seam: stand a client in for the one a worker would have opened.

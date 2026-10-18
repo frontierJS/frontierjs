@@ -31,7 +31,8 @@ src/
                  `app`) · active-port (the page's port and Harbor's session)
                  · mesa-bridge (that session as Mesa signals)
   peer.js        loadPeer — vite and ws are the APP's, not jetty's
-bin/             build-ext.js · dev-ext.js
+bin/             jetty.js (the one bin; dispatches to) build-ext · dev-ext ·
+                 info · audit · manifest
 test/            phase0 … phase9 (11 files, incl. phase2.5)
 ```
 
@@ -47,7 +48,7 @@ It is the only place that scheme is written down.
 - **An app gets this package as the `extension/` surface** — a sub-project at the
   app root beside `api/`, `web/` and `widgets/`, with the same six folders
   (Invariant 3). `fli make:extension` writes it; `fli extension:{dev,build,audit}`
-  wrap the `jetty-*` binaries with `--root` pointed at it. That layout is the
+  wrap the one `jetty <command>` bin with `--root` pointed at it. That layout is the
   reason **the Mesa compiler lookup walks UP from both roots**: an app has one
   `package.json`, at its root, so the install is never at
   `extension/node_modules` and the two fixed guesses this used to make found

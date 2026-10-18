@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// jetty-dev-ext — Phase 5 CLI. Wraps startDev(); future `fli dev:ext` calls this.
+// jetty dev — wraps startDev(); `fli dev:extension` calls it through bin/jetty.js.
 //
 // Usage:
-//   jetty-dev-ext --root=. [--browser=chrome|firefox|both] [--verbose]
+//   jetty dev --root=. [--browser=chrome|firefox|both] [--verbose]
 //                          [--launch] [--start-url=https://example.com]
 //
 // Flags:

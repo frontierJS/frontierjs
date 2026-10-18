@@ -276,6 +276,13 @@ describe('format-column-with-no-validator', () => {
     expect(found(`model C { id Int @id  email String @email }`, ID)).toEqual([])
   })
 
+  // FJS-3049: a honeypot is `website @transient @regex("^$")`. The pattern IS
+  // its validator, and a @transient column is validated with the model's rules.
+  test('silent where a pattern validator grades the column, @transient or not', () => {
+    expect(found(`model C { id Int @id  website String @transient @regex("^$") }`, ID)).toEqual([])
+    expect(found(`model C { id Int @id  phone String @regex("^[0-9]+$") }`, ID)).toEqual([])
+  })
+
   // FJS-1887: auth's `OauthFlow.link` — an invitation token, not a URL — was
   // reported to every app as theirs to fix, and an app cannot edit a package's
   // field. A model a package ships is the package's; one the app imports from
@@ -338,6 +345,12 @@ describe('json-column-with-no-shape', () => {
   test('silent once a type is bound', () => {
     expect(found(`type M { note String }\nmodel A { id Int @id  meta Json @type(M) }`, ID))
       .toEqual([])
+  })
+
+  // FJS-3049: @point describes the column (two numeric keys, ±90/±180) and
+  // validates a write, so it is not an undescribed document.
+  test('silent on a @point column', () => {
+    expect(found(`model A { id Int @id  loc Json @point(lat, lng) }`, ID)).toEqual([])
   })
 
   // FJS-1292: @type on an @@extensible column is a parse error, and the

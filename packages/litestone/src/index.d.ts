@@ -717,6 +717,14 @@ export interface LitestoneClient {
    */
   $readReach(accessor: string): string[]
   /**
+   * `$readReach` with the columns of each reached model a read verdict reads
+   * (policy fields, relation keys, and the soft-delete / template / window
+   * columns every read filters on), by model name. A write to a reached model
+   * that changes none of its listed columns cannot move who may read a row.
+   * An unknown accessor answers `{}`.
+   */
+  $readColumns(accessor: string): Record<string, string[]>
+  /**
    * The model names an `@from` on this model is computed off — a write to one
    * moves a value on a row the write never touched, so a holder of that row
    * must ask again. Read off the schema; an unknown accessor answers `[]`.

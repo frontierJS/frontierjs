@@ -19,7 +19,7 @@
 // service.
 
 import { describe, test, expect } from 'bun:test'
-import { buildBase, buildService } from '../src/core/service.ts'
+import { buildService } from '../src/core/service.ts'
 import { createApp, defaultConfig } from '../index.ts'
 import { gateAuth, autoValidate, accessorCandidates, resolveDefsKey } from '../src/core/litestone.ts'
 import type { ServiceContext } from '../src/core/context.ts'
@@ -93,9 +93,8 @@ describe('the query resolves under every spelling', () => {
   }
 
   test('model omitted entirely — resolved from the service name', async () => {
-    // The DX target: services/posts.service.ts containing only the factory.
-    const base = buildBase({})
-    const svc  = buildService({ name: 'posts', ...(base as object) } as never)
+    // The DX target: services/posts.service.ts containing only createService({}).
+    const svc  = buildService({ name: 'posts' })
     const out  = await svc.find(ctx('posts')) as { data: unknown[] }
     expect(out.data).toHaveLength(1)
   })

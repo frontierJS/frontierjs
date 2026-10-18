@@ -244,3 +244,23 @@ describe('a $limit past paginate.max is refused, not clamped', () => {
     expect(res).toBeDefined()
   })
 })
+
+// ─── Combinators are filters (FJS-D910, FJS-2213) ───────────────────────────
+
+describe('$or / $and / $not over the wire', () => {
+  test('?$or[][name]=a reaches ctx.query whole, and is not refused', async () => {
+    const q = (await seen('?$or[][name]=a&$or[][name]=b')).query as { $or: unknown[] }
+    expect(q.$or).toEqual([{ name: 'a' }, { name: 'b' }])
+  })
+
+  test('?$not[name]=a reaches ctx.query whole', async () => {
+    const q = (await seen('?$not[name]=a')).query as Record<string, unknown>
+    expect(q.$not).toEqual({ name: 'a' })
+  })
+
+  test('another $ name is still refused beside a combinator', async () => {
+    const app = await createTestApp({ services: [echoService()] })
+    const res = await request(app).get('/things?$or[][name]=a&$nope=1')
+    expect(res.status).toBe(400)
+  })
+})

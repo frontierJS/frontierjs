@@ -54,6 +54,8 @@ auth() != null        — authenticated check
 now()                 — current UTC timestamp, ONE instant per evaluation
 check(field)          — delegates to the related model's policy for THIS rule's operation
 check(field, 'read')  — delegates to the related model's read policy, whatever the rule's operation
+check(field, 'update') — the same, for any operation: read · create · update · post-update · delete
+!check(field, 'update') — the delegation negated; legal in a @@deny, and in a field @allow('write', …)
 relation.column       — a column ONE relation away (to-one only)
 field == value        field != value  field > value  field >= value  field < value  field <= value
 value in list         membership — the list is always the RIGHT operand
@@ -517,6 +519,38 @@ model Doc   { id Int @id  vaultId Int  vault Vault @relation(fields: [vaultId], 
 
 Give the parent an `@@allow` for that operation, or say what the child requires
 in its own terms.
+
+**The delegation is an expression, so it goes where an expression goes.** It
+takes any operation (`check(org, 'update')`), a `!` in front of it, and a seat in
+a field's `@allow('write', …)` as well as in a model rule:
+
+```lite
+model User { id Int @id  @@auth }
+model Org  { id Int @id  ownerId Int  items Item[]
+  @@allow('read', true)
+  @@allow('update', ownerId == auth().id)
+}
+
+model Item {
+  id     Int     @id
+  orgId  Int
+  org    Org     @relation(fields: [orgId], references: [id])
+  title  String?
+  secret String? @allow('write', check(org, 'update'))      // only whoever may update the org may write it
+  @@allow('read',   check(org, 'read'))
+  @@allow('update', true)
+  @@deny('post-update', !check(org, 'update'))              // no edit leaves a row its caller could not edit
+}
+```
+
+A field `@allow('write', check(…))` is graded against the STORED row, like any
+write predicate, so the org it asks about is the one the row is in now, never one
+the payload names. `check(org, 'update')` is written for the parent's `update`
+policy and `!check(org, 'update')` is exactly its complement: a parent with no
+`update` policy admits, so the negation never fires and the `@@deny` denies
+nothing. `litestone advise`
+raises nothing on either form (`test/policy-delegation.test.ts`, *an operation
+named in a check()*).
 
 **A cycle is refused at startup.** Two models delegating to each other — or a
 self-relation delegating to its own parent — re-enter a model already on the

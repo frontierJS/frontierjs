@@ -228,3 +228,39 @@ describe('both names are the router\'s', () => {
     expect(page.directives).toEqual({})
   })
 })
+
+// ─── The fragment ─────────────────────────────────────────────────────────────
+
+describe('the fragment is on page', () => {
+  // A route that reads `location.hash` throws where there is no window.location
+  // (the terminal), so the router states the fragment it navigated to (`FJS-2280`).
+  test('page.hash is the fragment with its `#`, or empty', async () => {
+    installWindowMock('/orders/')
+    initRouter(TREE, components(), {}, { trailingSlash: 'always' })
+    await settle()
+    expect(page.hash).toBe('')
+
+    await goto('/orders/#h=abc')
+    expect(page.hash).toBe('#h=abc')
+    expect(page.search).toBe('')
+
+    await goto('/orders/', {}, { replace: true })
+    expect(page.hash).toBe('')
+  })
+
+  test('the fragment is not in search or query', async () => {
+    installWindowMock('/orders/?status=active#top')
+    initRouter(TREE, components(), {}, { trailingSlash: 'always' })
+    await settle()
+    expect(page.hash).toBe('#top')
+    expect(page.search).toBe('?status=active')
+    expect(page.query).toEqual({ status: 'active' })
+  })
+
+  test('frontmatter cannot claim it, and _resetPage clears it', async () => {
+    expect(PAGE_RESERVED).toContain('hash')
+    await goto('/orders/#x')
+    _resetPage()
+    expect(page.hash).toBe('')
+  })
+})

@@ -72,6 +72,7 @@ import { dirname, join }       from 'node:path'
 import { fileURLToPath }       from 'node:url'
 import { PORTS } from './lib/preflight.mjs'
 import { authenticator, wrongCode, enrolledAccount } from './lib/authenticator.mjs'
+import { watchReloads } from './lib/reload.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -544,6 +545,7 @@ check('…with no secret and no recovery code in any of it',
 const browser = await openChrome({ windowSize: '1400,1000' }).catch((e) => {
   console.error(e.message); stopAll(); process.exit(1)
 })
+watchReloads(browser)
 const { cmd } = browser
 // Asked as an EXPRESSION that answers a value; the driver evaluates a body.
 const evaluate = (expr) => browser.evaluate(`return (${expr})`)

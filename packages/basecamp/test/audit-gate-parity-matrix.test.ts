@@ -15,11 +15,15 @@ import { Driver, summarize, type PathName, type Who2 } from './audit-parity-path
 
 let fx: Fixture, d: Driver
 const uniq = () => Math.random().toString(36).slice(2, 8)
-beforeAll(async () => { fx = await build(); d = new Driver(fx) }, 180_000)
-afterAll(async () => { await d?.close(); await fx?.env?.close() })
-
 const WIRE: PathName[] = ['http', 'ws', 'mcp', 'job-caller-svc', 'job-caller-db']
 const MEMBERS: Who2[] = ['outsider', 'viewer', 'developer', 'admin', 'owner']
+// The Driver connects an MCP client per standing on first use, so the first
+// 'via mcp' case paid five handshakes inside bun's 5s default timeout.
+beforeAll(async () => {
+  fx = await build(); d = new Driver(fx)
+  for (const w of MEMBERS) await d.mcpClient(w)
+}, 180_000)
+afterAll(async () => { await d?.close(); await fx?.env?.close() })
 const LEVEL: Record<string, number> = { stranger: 0, outsider: 1, viewer: 2, developer: 4, admin: 5, owner: 6 }
 // service -> [read, create, update, delete], the model's @@gate
 const GATE: Record<string, number[]> = {
@@ -96,10 +100,10 @@ describe('writes follow the create/update/delete digits on every path', () => {
     const row = await sys().auditEvent.create({ data: { workspaceId: fx.ws.id, action: 'f.did', subjectType: 'x', subjectId: 'x' } })
     expect((await d.call('job-app', 'owner', 'audit', 'patch', row.id, { action: 'z' })).body).toMatch(/LOCKED/)
     expect((await d.call('job-app', 'owner', 'audit', 'remove', row.id)).body).toMatch(/LOCKED/)
-  })
+  }, 60_000)
 })
 
-describe('User (1.8.1.5): own row at every standing, the rest at 4, created and deleted by nobody a caller can be', () => {
+describe('User (1.8.1.5): own row at every standing and no other, created and deleted by nobody a caller can be', () => {
   test('the users service answers the caller\'s own row on every wire, and drops the columns a person may not write', async () => {
     const sys = fx.env.system as any
     for (const path of ['http', 'ws', 'mcp', 'job-caller-svc'] as PathName[]) for (const w of MEMBERS) {
@@ -114,12 +118,10 @@ describe('User (1.8.1.5): own row at every standing, the rest at 4, created and 
       expect(after.displayName).not.toBe(before.displayName)
     }
   })
-  test('at the Data boundary: below 4 one reads only oneself, at 4 everybody; nobody updates another; create needs SYSTEM; delete needs 5', async () => {
+  test('at the Data boundary: at every level one reads only oneself; nobody updates another; create needs SYSTEM; delete needs 5', async () => {
     const sys = fx.env.system as any
-    const total = await sys.user.count()
     const n = async (w: Who2) => summarize(await d.call('job-caller-db', w, 'users', 'find')).n
-    expect([await n('outsider'), await n('viewer')]).toEqual([1, 1])
-    for (const w of ['developer', 'admin', 'owner'] as Who2[]) expect(await n(w)).toBe(total)
+    for (const w of ['outsider', 'viewer', 'developer', 'admin', 'owner'] as Who2[]) expect([w, await n(w)]).toEqual([w, 1])
     const victim = fx.ids.outsider!
     for (const w of ['developer', 'owner'] as Who2[]) {
       await d.call('job-caller-db', w, 'users', 'patch', victim, { displayName: 'pwn-' + uniq() })

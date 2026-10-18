@@ -55,9 +55,14 @@ function toEpoch(value, name = 'value') {
         `as in 2026-07-04T16:05:03Z. A time with no zone is a wall clock: read it with fromWall().`
       )
     }
-    // Date.parse accepts three fraction digits and no more on every engine.
-    const ms = Date.parse(m[1] + (m[2] ? '.' + (m[2] + '00').slice(0, 3) : '') + m[3])
-    if (Number.isFinite(ms)) return ms
+    // Date.parse rolls 02-30 into 03-02 and T24:00 into the next day, where readDate refuses both.
+    const [year, month, day] = m[1].slice(0, 10).split('-').map(Number)
+    const hour = Number(m[1].slice(11, 13))
+    if (month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth(year, month) && hour < 24) {
+      // Date.parse accepts three fraction digits and no more on every engine.
+      const ms = Date.parse(m[1] + (m[2] ? '.' + (m[2] + '00').slice(0, 3) : '') + m[3])
+      if (Number.isFinite(ms)) return ms
+    }
   }
   throw new TypeError(`datetime: ${name} ${JSON.stringify(value)} is not an instant — pass epoch milliseconds, a valid Date, or an ISO string with a Z or an offset`)
 }
@@ -100,11 +105,15 @@ const PARTS = {
 
 // Whole seconds: Intl answers no finer, and local mean time before 1900 carries
 // offsets with seconds in them, so rounding to the minute here would misplace them.
+// Intl's year counts within an era, so 2 BC prints as 2 -- without the era it reads as year 2.
 function wallOf(ms, timeZone) {
   const f = {}
-  for (const { type, value } of formatterFor('en-US', { ...PARTS, timeZone }).formatToParts(ms)) {
-    if (type in PARTS) f[type] = Number(value)
+  let bc = false
+  for (const { type, value } of formatterFor('en-US', { ...PARTS, era: 'narrow', timeZone }).formatToParts(ms)) {
+    if (type === 'era') bc = value === 'B'
+    else if (type in PARTS) f[type] = Number(value)
   }
+  if (bc) f.year = 1 - f.year
   f.hour %= 24
   return f
 }
@@ -593,6 +602,36 @@ export function relative(instant, now, { locale = 'en-US', style = 'long' } = {}
   return new Intl.RelativeTimeFormat(locale, { style, numeric: 'auto' }).format(0, 'second')
 }
 
+const capitalize = (text, locale) => text.charAt(0).toLocaleUpperCase(locale) + text.slice(1)
+
+/**
+ * The heading a list grouped by day puts over a row: 'Today', 'Yesterday',
+ * 'Tomorrow', a weekday ('Thursday') for the five days before yesterday, and a
+ * date ('Jun 27', 'Dec 31, 2025') for anything else.
+ *
+ * CALENDAR days in `timeZone`, where `relative` is elapsed time: 23:00 last
+ * night is 'Yesterday' at 01:00 and '2 hours ago' to `relative`. Two instants
+ * answer the same text exactly when they fall on the same day, so grouping by
+ * the header is grouping by the day. A weekday is offered only for the past —
+ * ahead of tomorrow it would repeat the name of a day already behind.
+ *
+ * `timeZone` and `now` are required, as in `format` and `relative`.
+ */
+export function dayHeader(instant, now, { locale = 'en-US', timeZone } = {}) {
+  const ms = toEpoch(instant, 'instant')
+  if (now === undefined) {
+    throw new TypeError('datetime: dayHeader() needs now — this kit reads no clock. Pass one, or make an instance with createDatetime({ now }) and call dayHeaderNow().')
+  }
+  const reference = toEpoch(now, 'now')
+  const ago = daysBetween(plainDateIn(ms, timeZone), plainDateIn(reference, timeZone))
+  if (ago >= -1 && ago <= 1) {
+    return capitalize(new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(-ago, 'day'), locale)
+  }
+  if (ago >= 2 && ago <= 6) return capitalize(format(ms, 'DDDD', { locale, timeZone }), locale)
+  const sameYear = partsIn(ms, timeZone).year === partsIn(reference, timeZone).year
+  return format(ms, sameYear ? 'MMM D' : 'MMM D, YYYY', { locale, timeZone })
+}
+
 // ─── an instance ──────────────────────────────────────────────────────────
 
 /**
@@ -622,6 +661,8 @@ export function createDatetime({ locale = 'en-US', timeZone, now } = {}) {
     fromWall:      (fields, options = {}) => fromWall(fields, options.timeZone ?? timeZone, options),
     relative:      (instant, reference, options) => relative(instant, reference, { locale, ...options }),
     relativeToNow: (instant, options) => relative(instant, toEpoch(now(), 'now()'), { locale, ...options }),
+    dayHeader:     (instant, reference, options) => dayHeader(instant, reference, { locale, timeZone, ...options }),
+    dayHeaderNow:  (instant, options) => dayHeader(instant, toEpoch(now(), 'now()'), { locale, timeZone, ...options }),
     plainDateIn:   (instant, zone = timeZone) => plainDateIn(instant, zone),
     startOfDay:    (date, zone = timeZone) => startOfDay(date, zone),
     today:         (zone = timeZone) => plainDateIn(toEpoch(now(), 'now()'), zone),

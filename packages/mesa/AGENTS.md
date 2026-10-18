@@ -220,7 +220,7 @@ or no component watching that object hears it.
 `$.transition` `$.entrance` `$.fade` `$.slide` `$.fly` — always through `$.`.
 **Five data members are written bare**: `$props`, `$attributes`, `$slots`,
 `$context`, `$async`. `$` may not be destructured, aliased, passed or shadowed,
-and no `$$`-prefixed name or `__anchor`/`__props`/`__block`/`__prev` may be declared. `const ready =
+and no `$$`-prefixed name or `__anchor`/`__props`/`__prev` may be declared. `const ready =
 $.mounted(async () => …)` plus `<mesa:mounted />` gates the whole template; one
 per component.
 

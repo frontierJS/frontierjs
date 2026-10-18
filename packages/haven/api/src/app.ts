@@ -55,8 +55,8 @@ export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
     db,
     auth,
     // Stated, not probed: under a test runner the entry file is the test.
-    autoload:   new URL('./services', import.meta.url).pathname,
-    configPath: new URL('../config', import.meta.url).pathname,
+    // services/ beside this file, ../config above it (`FJS-D1080`).
+    root:       import.meta.url,
     principal:  standing(db),
     config: {
       ...(opts.port !== undefined ? { port: opts.port } : {}),

@@ -38,7 +38,8 @@ flags:
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { resolve } from 'path'
 
-const { servicePlural } = await import(resolve(global.fliRoot, 'core/resource-template.js'))
+const { servicePlural }     = await import(resolve(global.fliRoot, 'core/resource-template.js'))
+const { schemaApplyStep }   = await import(resolve(global.fliRoot, 'core/schema-apply.js'))
 
 // ─── The stanza ───────────────────────────────────────────────────────────────
 // Litestone's scalars are String, Int, Float, Boolean, DateTime, Bytes, Json and
@@ -158,7 +159,7 @@ if (declared) {
   writeFileSync(schemaPath, existing + makeLiteModel(model, flag['soft-delete']), 'utf8')
   log.success(`Appended model ${model} to schema.lite`)
   created.push(schemaPath)
-  log.info('Run fli db:push to apply the schema change')
+  log.info(`Run ${schemaApplyStep($.paths.db, model).command} to apply the schema change`)
 }
 
 // ─── 2. Service ───────────────────────────────────────────────────────────────

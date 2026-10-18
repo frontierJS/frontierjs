@@ -10,7 +10,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSyn
 import { join, relative } from 'path'
 import { tmpdir } from 'os'
 
-import { keyLiteral, weakLiteral, buildIndex } from '../core/seams.js'
+import { keyLiteral, weakLiteral, buildIndex, identifierOf, readKeyList } from '../core/seams.js'
 import { spawnSync } from 'child_process'
 import { RULES, runChecks, findApps, applyFixes, verdictOf, blindSkips,
          BASELINE_FILE, readBaseline, gradeBaseline, writeBaseline, AUTH_SERVICES } from '../core/checks.js'
@@ -3592,6 +3592,33 @@ model Invoice {
       "export default defineJob({ handler: async (ctx) => ctx.app.db.order.count({}) })\n" })
     expect(only(root, 'commitment-swept').findings).toEqual([])
   })
+
+  // The grader of a state-machine row works on rows a commitment lands in the
+  // to-state, so it names that state to read it and moves them elsewhere.
+  test('a job reading the to-state as a guard or a filter, and moving the row elsewhere, is silent', () => {
+    const job = (body) => ({ 'db/schema.lite': ORDER, 'api/src/jobs/orders-ship.job.ts':
+      `export default defineJob({ handler: async (ctx) => {\n${body}\n} })\n` })
+    for (const [name, body] of [
+      ['not-equals guard',  "  const o = await ctx.app.db.order.findUnique({ where: { id: 1 } })\n  if (o.status !== 'cancelled') return\n  await ctx.app.db.order.transition(o.id, 'ship')"],
+      ['equals guard',      "  const o = await ctx.app.db.order.findUnique({ where: { id: 1 } })\n  if ('cancelled' === o.status) return\n  await ctx.app.db.order.transition(o.id, 'ship')"],
+      ['includes guard',    "  const o = await ctx.app.db.order.findUnique({ where: { id: 1 } })\n  if (['cancelled', 'shipped'].includes(o.status)) return\n  await ctx.app.db.order.transition(o.id, 'ship')"],
+      ['where filter',      "  const rows = await ctx.app.db.order.findMany({ where: { status: 'cancelled' } })\n  for (const o of rows) await ctx.app.db.order.transition(o.id, 'ship')"],
+    ]) {
+      const root = tree(`cs-read-${name.replace(/\W/g, '-')}`, job(body))
+      expect(only(root, 'commitment-swept').findings, name).toEqual([])
+    }
+  })
+
+  test('a job writing the to-state still fires beside a guard that reads it', () => {
+    const root = tree('cs-read-then-write', { 'db/schema.lite': ORDER, 'api/src/jobs/orders-tidy.job.ts':
+      "export default defineJob({ handler: async (ctx) => {\n" +
+      "  if (o.status !== 'cancelled') return\n" +
+      "  await ctx.app.db.order.update({ where: { id: 1 }, data: { status: 'cancelled' } })\n" +
+      "} })\n" })
+    const { findings } = only(root, 'commitment-swept')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].line).toBe(3)
+  })
 })
 
 describe('polymorphic-subject', () => {
@@ -4736,6 +4763,12 @@ describe('doc-examples-run', () => {
     expect(check(root).findings).toEqual([])
   })
 
+  test('a script that walks and then runs another command is still a walk', () => {
+    const root = pkg('chained', { 'README.md': README, 'test/doc-examples.test.ts': '//\n' },
+      { test: "node ../../scripts/tmp-run.mjs 'bun test test/ && bun bench/statements.mjs'" })
+    expect(check(root).findings).toEqual([])
+  })
+
   test('a runner no test script reaches is a finding', () => {
     const root = pkg('unrun', { 'README.md': README, 'test/doc-examples.test.ts': '//\n' },
       { test: 'bun test test/a.test.js' })
@@ -4851,6 +4884,21 @@ describe('seam-owner', () => {
     expect(keyLiteral('*.mount.js')).toBe('mount')
     expect(keyLiteral('ctx.$raw.rawBody')).toBe('rawBody')
     expect(keyLiteral('client.auth.*')).toBe('auth')
+  })
+
+  test('identifierOf drops a wildcard and an extension the way keyLiteral does', () => {
+    expect(identifierOf('*.mount.js')).toBe('mount')
+    expect(identifierOf('stage.js')).toBe('stage')
+    expect(identifierOf('client.auth.*')).toBe('auth')
+    expect(identifierOf('app.runAs(id, fn)')).toBe('runAs')
+    expect(identifierOf('@label')).toBe('label')
+  })
+
+  test('the key list holds the entry lines only, not the prose naming the skill', () => {
+    const root = tree('keylist-prose', {
+      'CLAUDE.md': '# x\n\n## Bridge index\n\n**Entries are the `bridge-index` skill** (`.claude/skills/`).\n\n**Data → API** — `*.mount.js` · `client.auth.*`\n\n## Next\n',
+    })
+    expect([...readKeyList(root)].sort()).toEqual(['auth', 'mount'])
   })
 
   test('a weak check is marked weak, not passed off as a strong one', () => {

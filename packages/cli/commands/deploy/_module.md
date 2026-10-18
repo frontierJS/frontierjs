@@ -15,7 +15,13 @@ const { vendorWorkspacePackages, linkedDeps, GENERATED_DIR } = await import(new 
 const { createMachine, shQuote } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
 const { dockerLogArgs } = await import(new URL('file://' + global.fliRoot + '/core/docker-logging.js'))
 const { apiContainerName } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
-const { EDGE_HOPS } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
+const { EDGE_HOPS, edgeNames: edgeNamesOf } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
+const { crossOrigins } = await import(new URL('file://' + global.fliRoot + '/core/shell-origins.js'))
+
+// The origins the API admits besides its own, for `swapContainer`'s
+// `corsOrigins`. Asked by the forward swap and the revert alike, so a revert
+// does not restart the container without the list the deploy gave it.
+const derivedOrigins = ($, deployConf) => crossOrigins(edgeNamesOf(deployConf), $.paths.root)
 
 // The container this deploy's API runs in. One reading of the name, shared by
 // the pipeline and by every standalone command that has to find it again —
@@ -512,7 +518,7 @@ const lockRefusal = async (lock, { verb = 'deploy' } = {}) => {
 // every real deploy threw `ReferenceError: deployConf is not defined` while
 // building the `docker run` line. By then the running container had been renamed
 // to `_replaced` and stopped, and the new one was never started (`FJS-726`).
-const swapContainer = ($, { host, container, image, apiPort, dbPath, envFile, build, deployConf, configuration = {}, log }) => {
+const swapContainer = ($, { host, container, image, apiPort, dbPath, envFile, build, deployConf, configuration = {}, corsOrigins = [], log }) => {
   const machine  = machineFor($, host)
   const replaced = `${container}_replaced`
 
@@ -553,6 +559,9 @@ fi`)
     // failed logins lock out the site (`FJS-1841`). A trustProxy the app
     // declares still wins.
     `--env FJS_TRUST_PROXY=${EDGE_HOPS}`,
+    // The web domain and a wrapped shell's schemes, which the API's cors and
+    // csrf lists would otherwise each have to spell by hand (`FJS-D912`).
+    ...(corsOrigins.length ? [`--env FJS_CORS_ORIGINS=${shQuote(corsOrigins.join(','))}`] : []),
     // Docker's default json-file driver caps nothing, so a chatty container
     // fills the disk and the database stops writing before anybody reads a log.
     // `deploy.logs` is the escape for a daemon already pointed somewhere.
@@ -1285,7 +1294,10 @@ served the page and anything else the API. Every deploy rewrites the routes when
 builds the web surface with `VITE_API_URL=https://api.myapp.com` — refusing when the bundle
 does not contain it, which is what a `sierra.config.js` that never reads the variable
 produces. Sign-in with a Bearer token works across the two names with the scaffold's CORS
-default; a cookie session across them is `FJS-1090`.
+default. A cookie session across them needs the web origin in the API's cors and csrf lists, which the
+deploy hands the container as `FJS_CORS_ORIGINS`: `https://<web.domain>` under two origins, plus
+`tauri://localhost` and `http://tauri.localhost` when the app has a `desktop/` surface. The API
+merges it into whatever `junction.config.js` declares; `cors.credentials` stays the app's to set.
 
 ### Splitting the API and the web onto different machines
 

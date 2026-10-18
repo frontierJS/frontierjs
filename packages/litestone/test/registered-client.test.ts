@@ -244,3 +244,85 @@ describe('a nested select and a write are typed by what they asked for (FJS-2898
     expect(ok).toBe(true)
   })
 })
+
+// FJS-3079 -- `system: [...]` is the documented way to write a @system column
+// or lift @@gate, and the generated TableClient had no such key, so the
+// runtime-correct call was a TS2353 excess-property error.
+const SYSTEMIC = `
+  model Component {
+    id          Int     @id
+    name        String
+    lastCheckOk Boolean? @system
+  }
+`
+
+const SYSTEM_WRITES = `
+  import { createClient } from '@frontierjs/litestone'
+
+  export async function run() {
+    const db = await createClient({ schema: 'model X { id Int @id }', db: ':memory:' })
+    const sys = db.asSystem()
+
+    await sys.component.create({ data: { name: 'a' }, system: ['lastCheckOk', '@@gate'] })
+    await sys.component.update({ where: { id: 1 }, data: { lastCheckOk: true }, system: ['lastCheckOk'] })
+    await sys.component.updateMany({ where: { name: 'a' }, data: { lastCheckOk: false }, system: ['lastCheckOk'] })
+    await sys.component.upsert({ where: { id: 1 }, create: { name: 'a' }, update: { lastCheckOk: true }, system: ['lastCheckOk'] })
+    await sys.component.createMany({ data: [{ name: 'a' }], system: ['@@gate'] })
+    await sys.component.upsertMany({ data: [{ name: 'a' }], system: ['@@gate'] })
+
+    // @ts-expect-error -- a name that is neither a column nor '@@gate'
+    await sys.component.update({ where: { id: 1 }, data: {}, system: ['nope'] })
+  }
+`
+
+describe('a write may name what it supplies as the application (FJS-3079)', () => {
+  test('system: [...] is accepted on every write and refuses a name that is no column', () => {
+    const { ok, out } = compile('system', SYSTEMIC, SYSTEM_WRITES)
+    expect(out).toBe('')
+    expect(ok).toBe(true)
+  })
+})
+
+// FJS-3273 -- a @system column is writable only through `system`, so the types
+// say so: it is absent from the Create/Update a bare write takes and arrives
+// with the name in `system: [...]`.
+const SYSTEM_ONLY = `
+  import { createClient } from '@frontierjs/litestone'
+
+  export async function run() {
+    const db = await createClient({ schema: 'model X { id Int @id }', db: ':memory:' })
+    const sys = db.asSystem()
+
+    await sys.component.create({ data: { name: 'a', lastCheckOk: true }, system: ['lastCheckOk'] })
+    await sys.component.update({ where: { id: 1 }, data: { lastCheckOk: null }, system: ['lastCheckOk'] })
+    await sys.component.updateMany({ where: {}, data: { lastCheckOk: false }, system: ['lastCheckOk', '@@gate'] })
+    await sys.component.upsert({ where: { id: 1 }, create: { name: 'a', lastCheckOk: true }, update: { lastCheckOk: true }, system: ['lastCheckOk'] })
+    await sys.component.createMany({ data: [{ name: 'a', lastCheckOk: true }], system: ['lastCheckOk'] })
+
+    // @ts-expect-error -- named in data and not in system: refused at run time
+    await sys.component.create({ data: { name: 'a', lastCheckOk: true } })
+    // @ts-expect-error -- same on update
+    await sys.component.update({ where: { id: 1 }, data: { lastCheckOk: true } })
+    // @ts-expect-error -- '@@gate' lifts the gate, not the column
+    await sys.component.update({ where: { id: 1 }, data: { lastCheckOk: true }, system: ['@@gate'] })
+    // @ts-expect-error -- the value is still typed
+    await sys.component.update({ where: { id: 1 }, data: { lastCheckOk: 'yes' }, system: ['lastCheckOk'] })
+    // an ordinary column needs no system
+    await sys.component.update({ where: { id: 1 }, data: { name: 'b' } })
+  }
+`
+
+describe('a @system column is writable only through system (FJS-3273)', () => {
+  test('data names it only where system does, on every write', () => {
+    const { ok, out } = compile('system', SYSTEMIC, SYSTEM_ONLY)
+    expect(out).toBe('')
+    expect(ok).toBe(true)
+  })
+
+  test('the row still carries the column', () => {
+    const ts = generateTypeScript(parse(SYSTEMIC).schema, { audience: 'system' })
+    expect(ts).toMatch(/export interface Component \{[^}]*lastCheckOk\?: boolean/)
+    expect(ts).not.toMatch(/export interface ComponentCreate \{[^}]*lastCheckOk/)
+    expect(ts).not.toMatch(/export interface ComponentUpdate \{[^}]*lastCheckOk/)
+  })
+})

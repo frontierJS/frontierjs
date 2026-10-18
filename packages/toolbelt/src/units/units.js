@@ -25,12 +25,15 @@ const UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
  * `Number(null)`, `Number('')` and `Number([])` are all 0 — the one place
  * JavaScript hands you a plausible answer to a question nobody asked, and the
  * reason every function here has to ask before it divides. Only a number or a
- * non-blank string is one; what each caller then DOES about NaN is its own
- * surface's answer, and they differ.
+ * non-blank string of decimal digits is one — `Number('0x10')` is 16, and a
+ * hex, binary or octal literal read as an amount is a different amount. What
+ * each caller then DOES about NaN is its own surface's answer, and they differ.
  */
+const DECIMAL = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i
+
 function asNumber(value) {
   if (typeof value === 'number') return value
-  if (typeof value === 'string' && value.trim() !== '') return Number(value)
+  if (typeof value === 'string' && DECIMAL.test(value.trim())) return Number(value)
   return NaN
 }
 
@@ -152,7 +155,9 @@ export function formatMoney(amount, currency = 'USD', opts = {}) {
     // An unknown code is a RangeError from Intl, and a thrown formatter takes
     // the screen with it. The code itself is the honest fallback — it says
     // which currency and admits it could not be rendered.
-    return `${code} ${n.toFixed(opts.decimals ?? 2)}`
+    // toFixed refuses past 100, and a throw here would escape the catch.
+    const d = Number.isInteger(opts.decimals) ? Math.min(Math.max(opts.decimals, 0), 100) : 2
+    return `${code} ${n.toFixed(d)}`
   }
 }
 
@@ -212,16 +217,16 @@ const NO_MINOR_UNIT = new Set([
   'XTS', 'XXX',
 ])
 
-let _known = null
+const KNOWN = new Set(ACTIVE)
 
-/** The ISO 4217 codes, as a Set. The same set on every runtime. */
+/** The ISO 4217 codes, as a Set. The same set on every runtime. A copy: the caller's edits stay theirs. */
 export function knownCurrencies() {
-  return _known ??= new Set(ACTIVE)
+  return new Set(KNOWN)
 }
 
 /** Is this an ISO 4217 code? */
 export function isKnownCurrency(code) {
-  return knownCurrencies().has(String(code ?? '').toUpperCase())
+  return KNOWN.has(String(code ?? '').toUpperCase())
 }
 
 /**
@@ -312,7 +317,11 @@ export function toMinor(major, currency, places = 0) {
   const n = asNumber(major)
   if (!Number.isFinite(n))
     throw new Error(`toMinor: ${JSON.stringify(major)} is not a finite number of ${String(currency).toUpperCase()}`)
-  return Math.round(n * 10 ** (minorUnits(currency) + places))
+  const minor = Math.round(n * 10 ** (minorUnits(currency) + places))
+  // Past 2^53 the product is a neighbor of the amount, not the amount.
+  if (!Number.isSafeInteger(minor))
+    throw new Error(`toMinor: ${JSON.stringify(major)} ${String(currency).toUpperCase()} is past 2^53 minor units, where a JS number stops being exact`)
+  return minor
 }
 
 /*
@@ -417,6 +426,10 @@ export function allocate(amount, ratios) {
   const sign  = n < 0 ? -1 : 1
   const mag   = Math.abs(n)
   const exact = list.map((r) => (mag * r) / total)
+  // A sum or a product past 1.8e308 is Infinity, and the shares come out NaN
+  // or all zero while the leftover hands units to the first lines.
+  if (!Number.isFinite(total) || exact.some((e) => !Number.isFinite(e)))
+    throw new Error('allocate: the ratios are too large to divide by their sum')
   const parts = exact.map(Math.floor)
 
   // What the floors left behind. Rounded because the subtraction is over
@@ -459,26 +472,24 @@ export const LENGTH_UNITS = Object.freeze(Object.keys(LENGTH))
 /**
  * `'5mi'` → metres.
  *
- * A bare number is METRES rather than an error, because a caller who computed
- * one has already made the choice this function exists to record; a string
- * without a unit is refused, since `'5'` in a URL is a radius somebody meant to
- * spell and the silent reading of it is the bug the unit suffix prevents.
+ * A bare number is refused, like a string without a unit (`FJS-D319`). A query
+ * string hands `within=25` over as the Number 25, so reading a number as metres
+ * answers a 200 with the rows within 25 m, where the caller meant a spelled
+ * radius. A caller holding metres writes `${m}m`.
  *
  * The unit is matched case-insensitively and `KM`/`Km` are the same unit. A
  * negative or zero radius is refused: a filter that admits nothing is a mistake
  * with no second reading.
  *
- * @param {string|number} value
+ * @param {string} value
  * @returns {number} metres
  */
 export function parseLength(value) {
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value) || value <= 0)
-      throw new Error(`parseLength: a distance must be a positive number, got ${value}`)
-    return value
-  }
+  if (typeof value === 'number')
+    throw new Error(
+      `parseLength: cannot read the bare number ${value} — expected a number and a unit, one of ${LENGTH_UNITS.join(', ')}`)
   if (typeof value !== 'string' || value.trim() === '')
-    throw new Error('parseLength: expected a string like \'5mi\' or a number of metres')
+    throw new Error('parseLength: expected a string like \'5mi\'')
 
   const m = /^\s*(-?\d+(?:\.\d+)?)\s*([a-z]+)\s*$/i.exec(value)
   if (!m)
@@ -491,8 +502,8 @@ export function parseLength(value) {
     throw new Error(`parseLength: unknown unit '${rawUnit}' — one of ${LENGTH_UNITS.join(', ')}`)
 
   const metres = Number(magnitude) * LENGTH[unit]
-  if (!(metres > 0))
-    throw new Error(`parseLength: a distance must be greater than zero, got '${value}'`)
+  if (!(metres > 0) || !Number.isFinite(metres))
+    throw new Error(`parseLength: a distance must be greater than zero and finite, got '${value.slice(0, 40)}'`)
   return metres
 }
 
@@ -548,11 +559,13 @@ const BASE = Object.freeze({
   information: 'B',
   length:      'm',
   mass:        'g',
+  pixel:       'px',
   ratio:       '1',
 })
 
 const DURATION = { ms: 0.001, s: 1, min: 60, h: 3600, d: 86400, wk: 604800, mo: null, yr: null }
 const MASS     = { mg: 0.001, g: 1, kg: 1000, t: 1e6, oz: 28.349523125, lb: 453.59237 }
+const PIXEL    = { px: 1 }
 const RATIO    = { '%': 0.01 }
 
 const MEASURES = Object.freeze(Object.fromEntries([
@@ -560,6 +573,7 @@ const MEASURES = Object.freeze(Object.fromEntries([
   ...UNITS.map((symbol, i) => [symbol, { symbol, dimension: 'information', factor: STEP ** i }]),
   ...Object.entries(LENGTH).map(([symbol, factor]) => [symbol, { symbol, dimension: 'length', factor }]),
   ...Object.entries(MASS).map(([symbol, factor]) => [symbol, { symbol, dimension: 'mass', factor }]),
+  ...Object.entries(PIXEL).map(([symbol, factor]) => [symbol, { symbol, dimension: 'pixel', factor }]),
   ...Object.entries(RATIO).map(([symbol, factor]) => [symbol, { symbol, dimension: 'ratio', factor }]),
 ].map(([symbol, info]) => [symbol, Object.freeze(info)])))
 

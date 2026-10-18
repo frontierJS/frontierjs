@@ -298,7 +298,7 @@ model Job {
   timeout   Int  @unit(s)
   size      Int  @unit(MB)
   retention Int  @unit(mo)
-  share     Float @unit("%")
+  share     Float @unit(%)
 }
 ```
 

@@ -23,7 +23,7 @@
 <script>
   import { cart, refresh, setQuantity, remove, checkout, applyDiscount,
            removeDiscount, setShipping, loadShippingOptions, dismissReceipt,
-           bootShop, redeemHandoff, handoffCodeFromUrl } from '@/cart.js'
+           bootShop, redeemHandoff, handoffCodeFromHash } from '@/cart.js'
   import { money } from '@/money.js'
   import { toFieldErrors } from '@frontierjs/sierra/field-rules'
 
@@ -39,7 +39,7 @@
     // never sent to a server and reaches no log. It is redeemed HERE because
     // this is the page a widget sends somebody to, and erased immediately: a
     // one-time code left on the URL is one a reload tries to spend twice.
-    const code = handoffCodeFromUrl()
+    const code = handoffCodeFromHash(location.hash)
     if (code) {
       history.replaceState(null, '', location.pathname + location.search)
       try { await redeemHandoff(code) } catch { /* fall through to this browser's own basket */ }

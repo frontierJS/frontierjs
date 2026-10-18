@@ -587,14 +587,15 @@ describe('the gate ladder', () => {
   // the column their own level is graded from. The policies are what make the
   // level safe to hold, and none of them is a level: a row policy for whose
   // row, and a field write policy for which columns.
-  test('a member reads every person and writes only their own row', async () => {
+  test('a member reads and writes only their own row', async () => {
     const db  = await client()
     const sys = db.asSystem()
     const other = await sys.user.create({ data: { email: 'other@example.com', name: 'Other' } })
     await sys.user.create({ data: { id: 'u1', email: 'u1@example.com', name: 'Me' } })
 
     const dev = db.$setAuth(as('developer'))
-    expect((await dev.user.findMany({ limit: 10 })).length).toBe(2)
+    expect((await dev.user.findMany({ limit: 10 })).map((u: any) => u.id)).toEqual(['u1'])
+    expect(await dev.user.findUnique({ where: { id: other.id } })).toBeNull()
     expect((await dev.user.update({ where: { id: 'u1' }, data: { displayName: 'mine' } })).displayName)
       .toBe('mine')
 

@@ -168,6 +168,9 @@ function _reportError(type, context, err) {
  *
  * @property {string}      pathname the path with no search — `/invoices/`
  * @property {string}      search   the raw query string, leading `?` — or `''`
+ * @property {string}      hash     the fragment, leading `#` — or `''`. A route
+ *                                  that needs it reads it here: `location` is
+ *                                  not there in the terminal
  * @property {object}      params   route params — { slug: 'x' }. PATH captures
  *                                  only; the search string is `query`
  * @property {object}      query    the URL's filters — { status: 'active' }
@@ -192,6 +195,7 @@ export const page = {
   // (Invariant 10). They live one level apart and mean different things.
   pathname: '/',
   search:   '',
+  hash:     '',
   params:  {},
   query:      {},
   directives: {},
@@ -233,6 +237,7 @@ const _w = () => watchProxy(page)
 export function _resetPage() {
   _w().pathname = '/'
   _w().search   = ''
+  _w().hash     = ''
   _w().params  = {}
   _w().query      = {}
   _w().directives = {}
@@ -1035,6 +1040,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   _w().meta    = _meta
   _w().pathname = normalized
   _w().search   = search
+  _w().hash     = hash
   _w().params  = toContext.params
   // Only when they changed. `page` fields are assigned every navigation, which
   // is right for the ones a navigation always changes — but a LAYOUT outlives

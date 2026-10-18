@@ -27,6 +27,7 @@ const { container, replaced } = swapContainer($, {
   // build on both sides of the wire — the server states it, the browser compares.
   build:   $.config.commit,
   deployConf,
+  corsOrigins: derivedOrigins($, deployConf),
   configuration: configurationSet(deployConf, $.config.target).values,
   log,
 })

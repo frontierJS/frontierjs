@@ -34,8 +34,8 @@
  * because the new render registers a fresh entry of its own. Working from a
  * snapshot is what makes that safe — re-rendering adds to the same Set.
  *
- * @param {Set<{hmrMark: Node, anchor: Node, props: any, block: any}>} entries
- * @param {Function} newFn        the new component fn — `(anchor, props, block)`
+ * @param {Set<{hmrMark: Node, anchor: Node, props: any}>} entries
+ * @param {Function} newFn        the new component fn — `(anchor, props)`
  * @param {Function} [newSetMark] the new module's `__setMark`, seeded before each call
  * @param {string} [label]        what to name in a remount error
  * @returns {number} how many instances were re-rendered
@@ -45,7 +45,7 @@ export function swapInstances(entries, newFn, newSetMark, label = 'component') {
   let count = 0
 
   for (const entry of snapshot) {
-    const { hmrMark, anchor, props, block } = entry
+    const { hmrMark, anchor, props } = entry
 
     // An instance whose anchor has been detached is gone for good — the page
     // navigated, a parent block tore it down. Dropping it here is what keeps
@@ -69,7 +69,7 @@ export function swapInstances(entries, newFn, newSetMark, label = 'component') {
 
     try {
       if (typeof newSetMark === 'function') newSetMark(hmrMark)
-      newFn(anchor, props, block)
+      newFn(anchor, props)
       count++
     } catch (err) {
       // One instance throwing must not cost the others their update — the

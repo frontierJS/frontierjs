@@ -1,8 +1,8 @@
 /**
  * vite-hmr-registry.test.js — what the HMR client's registry HOLDS (`FJS-875`).
  *
- * Every mounted component adds an entry carrying its marker, its anchor, its
- * props and its block, and until this the only thing that removed one was a
+ * Every mounted component adds an entry carrying its marker, its anchor and its
+ * props, and until this the only thing that removed one was a
  * swap — which runs when that particular file is edited and never otherwise. A
  * route the developer navigates away from, an `{#if}` that flips, a list that
  * re-renders: each left a detached DOM node and its props retained for the life
@@ -28,7 +28,7 @@ function mount(id, { connected = true } = {}) {
   if (connected) {
     document.body.append(mark, anchor)
   }
-  return __mesa_register(id, mark, anchor, { a: 1 }, {}, () => {})
+  return __mesa_register(id, mark, anchor, { a: 1 }, () => {})
 }
 
 /** What a teardown does: the nodes leave the document, the entry does not. */
@@ -51,7 +51,7 @@ beforeEach(() => {
 describe('a component that mounts and unmounts', () => {
   test('a torn-down instance does not outlive the next mount of the same file', () => {
     // Navigating to a route and away from it, over and over. Each entry retains
-    // the detached anchor, the marker, the props and the block; unswept, this
+    // the detached anchor, the marker and the props; unswept, this
     // ends at six.
     for (let i = 0; i < 5; i++) {
       mount(ID)

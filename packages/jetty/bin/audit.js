@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-// jetty-audit — standalone permission audit.
+// jetty audit — standalone permission audit.
 //
 // Usage:
-//   jetty-audit --root=. [--browser=chrome]
+//   jetty audit --root=. [--browser=chrome]
 //
 // Runs against an existing build (does NOT trigger a rebuild). Exits 1 if
 // the audit reports issues — useful for CI pipelines.
 //
-// Run after `jetty-build-ext`. To get continuous auditing during dev,
+// Run after `fli extension:build`. To get continuous auditing during dev,
 // set `permissions.audit: 'warn'` in jetty.config.js.
 
 import { resolve, join } from 'node:path'
@@ -24,7 +24,7 @@ const manifestPath = join(distDir, 'manifest.json')
 
 if (!existsSync(distDir)) {
   console.error(`✗ no dist/${browser}/ directory found at ${distDir}`)
-  console.error(`  Run \`jetty-build-ext --browser=${browser}\` first.`)
+  console.error(`  Run \`fli extension:build --browser=${browser}\` first.`)
   process.exit(1)
 }
 if (!existsSync(manifestPath)) {

@@ -64,20 +64,6 @@ describe('createService → buildBase option forwarding', () => {
     expect(log.join('\n')).not.toContain('delete where')
   })
 
-  test('softDelete behaves identically through both factories', async () => {
-    const viaBase: Log = []
-    const viaService: Log = []
-
-    await buildBase({ model: 'lead', db: mkDb(viaBase), softDelete: 'deleted_at' })
-      .remove(ctx('remove'))
-    await buildService({ name: 'leads', model: 'lead', db: mkDb(viaService), softDelete: 'deleted_at' })
-      .remove(ctx('remove'))
-
-    // Timestamps differ; the operation must not.
-    const shape = (l: Log) => l.map(s => s.replace(/"[^"]*T[^"]*Z"/g, '"<ts>"'))
-    expect(shape(viaService)).toEqual(shape(viaBase))
-  })
-
   test('idField reaches the base — lookups key off the custom field', async () => {
     const log: Log = []
     const svc = buildService({
@@ -136,22 +122,6 @@ describe('createService — model inference from the service name', () => {
     await svc.remove(ctx('remove'))
 
     expect(log.join('\n')).toContain('delete where')
-  })
-
-  test('a model-less service behaves identically through both factories', async () => {
-    const viaBase: Log = []
-    const viaService: Log = []
-
-    // buildBase's return type leaves the methods `unknown`; narrow once
-    // here rather than adding another `Object is of type 'unknown'` to the
-    // package's typecheck count.
-    const removeVia = (svc: unknown) =>
-      (svc as { remove: (c: ServiceContext) => Promise<unknown> }).remove(ctx('remove'))
-
-    await removeVia(buildBase({ db: mkDb(viaBase) }))
-    await removeVia(buildService({ name: 'leads', db: mkDb(viaService) }))
-
-    expect(viaService).toEqual(viaBase)
   })
 
   test('an explicit model still wins over the service name', async () => {

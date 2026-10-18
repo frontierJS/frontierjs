@@ -37,7 +37,7 @@ import {
   buildPolicyMap, buildScopeMap, compileScope, compileStatic, policyExprToString,
   buildPolicyFilter, checkCreatePolicy, checkPostUpdatePolicy, policyVerdict, withLiteralDefaults, evalJs,
   compileFieldPredicate, delegationProblems, buildClaimSet, checkFieldPolicies,
-  authClaimsUsed, readReach, fromReach,
+  authClaimsUsed, readReach, readColumns, fromReach,
 } from './policy.js'
 import {
   encryptField, decryptField, encryptDeterministic, hashField, normalizeKey,
@@ -3031,6 +3031,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
         if (mf.attributes.some(a => a.kind === 'encrypted' || a.kind === 'secret'))
           refuseOp(key, `${key} is @${mf.attributes.some(a => a.kind === 'secret') ? 'secret' : 'encrypted'}, so what is stored is ciphertext and "${MERGE_OP}" would patch that rather than the document. Read it, change it and write it back`)
 
+        if (mf.attributes.some(a => a.kind === 'type' && a.array))
+          refuseOp(key, `"${MERGE_OP}" merges into a document and ${key} is Json @type(${mf.attributes.find(a => a.kind === 'type').name}[]), a list that json_patch replaces whole. State the list itself`)
+
         const patch = val[MERGE_OP]
         if (patch === null || typeof patch !== 'object' || Array.isArray(patch))
           refuseOp(key, `"${MERGE_OP}" takes an object of the keys to change, got ${patch === null ? 'null' : Array.isArray(patch) ? 'an array' : typeof patch}`)
@@ -4849,7 +4852,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       if (!typeAttr) continue
       const typeDecl = ctx.typeMap.get(typeAttr.name)
       if (!typeDecl) continue
-      localMap[f.name] = typeDecl
+      localMap[f.name] = typeAttr.array ? { ...typeDecl, list: true } : typeDecl
       anyTyped = true
     }
     if (anyTyped) {
@@ -5817,6 +5820,20 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return sqlJoin([_selectRow, T, where && KW.where, where], '')
   }
 
+  // The sentence the schema authored for the update policy that excluded the
+  // row `where` reaches, or undefined when the rule states none or cannot be
+  // graded here. A refusal for the author's reason must reach the caller as
+  // that reason (FJS-3129).
+  function authoredUpdateRefusal(where) {
+    try {
+      const q = selectWhere(where)
+      const raw = readDb.query(q.sql).get(...q.params)
+      if (!raw) return undefined
+      const v = policyVerdict(modelName, read(raw, { mode: 'single' }), ctx, 'update')
+      return v.ok ? undefined : v.message
+    } catch { return undefined }
+  }
+
   // Why a single statement reached no row, in the order the WHERE narrowed:
   // the caller's where, the policy, the move's from-state, the version, the
   // seals. Each conjunct only narrows, so the diagnosis is these reads. Every
@@ -5852,7 +5869,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       const t = r.transition
       const cur = readState(t.field)
       if (t.policy && cur && cur.v === t.from) throw new AccessDeniedError(
-        `"${modelName}.${t.transitionName}" was refused by an @@allow/@@deny policy on update`,
+        authoredUpdateRefusal(r.where) ?? `"${modelName}.${t.transitionName}" was refused by an @@allow/@@deny policy on update`,
         { model: modelName, operation: 'update' },
       )
       // Still at `from` means no writer moved it, so the refusal is one of
@@ -12246,6 +12263,15 @@ function makeLockPrimitive(rawWriteDb) {
     return model?.name ? readReach(model.name, ctx) : []
   }
 
+  // $readColumns(accessor) → $readReach with the columns of each reached model
+  // a read verdict reads, as { Model: [column] }. A write to a reached model that
+  // changes none of its listed columns cannot move who may read (`FJS-3127`).
+  // An unknown accessor answers {}.
+  function $readColumns(accessor) {
+    const model = modelForAccessor(accessor)
+    return model?.name ? readColumns(model.name, ctx) : {}
+  }
+
   // $fromReach(accessor) → the model names an `@from` on this one is computed
   // off. A write to one moves a value on a row the write never touched, so a
   // holder of that row asks again. An unknown accessor reaches nothing.
@@ -13101,7 +13127,7 @@ function makeLockPrimitive(rawWriteDb) {
       })
     }
 
-    const sysOwnProps = ['asSystem', '$close', '$schema', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const sysOwnProps = ['asSystem', '$close', '$schema', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
     const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $search: (q, opts) => $searchWith(sysTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
@@ -13131,6 +13157,7 @@ function makeLockPrimitive(rawWriteDb) {
       if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
       if (prop === '$readReach')       return $readReach
+      if (prop === '$readColumns')     return $readColumns
       if (prop === '$fromReach')       return $fromReach
         if (prop === '$softDelete') return softDeleteInfo()
         if (prop === '$commitments') return commitmentsInfo()
@@ -13239,7 +13266,7 @@ function makeLockPrimitive(rawWriteDb) {
       })
     }
 
-    const authOwnProps = ['$close', '$schema', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
+    const authOwnProps = ['$close', '$schema', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
     const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $search: (q, opts) => $searchWith(authTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
@@ -13266,6 +13293,7 @@ function makeLockPrimitive(rawWriteDb) {
       if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
       if (prop === '$readReach')       return $readReach
+      if (prop === '$readColumns')     return $readColumns
       if (prop === '$fromReach')       return $fromReach
         if (prop === '$softDelete')     return softDeleteInfo()
         if (prop === '$commitments')    return commitmentsInfo()
@@ -13416,7 +13444,7 @@ function makeLockPrimitive(rawWriteDb) {
     scopedFlavor.tables = rawTables
     sCtx.tables = rawTables
     const tables = installScopesLazy(rawTables, () => sCtx)
-    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
     const target = {
       $scopedBy: (b) => _makeScopedProxy({ ...overrides, scopedBy: { ...(overrides.scopedBy ?? {}), ...(b ?? {}) } }),
       $setAuth:  (u) => _makeScopedProxy({ ...overrides, auth: u }),
@@ -13452,6 +13480,7 @@ function makeLockPrimitive(rawWriteDb) {
       if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
       if (prop === '$readReach')       return $readReach
+      if (prop === '$readColumns')     return $readColumns
       if (prop === '$fromReach')       return $fromReach
         if (prop === '$softDelete') return softDeleteInfo()
         if (prop === '$commitments') return commitmentsInfo()
@@ -13648,7 +13677,7 @@ function makeLockPrimitive(rawWriteDb) {
     return result
   }
 
-  const rootOwnProps = ['$close', '$attached', '$schema', '$search', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
+  const rootOwnProps = ['$close', '$attached', '$schema', '$search', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
   clientProxy = new Proxy({ sql, query, $transaction, $search: (q, opts) => $searchWith(scopedTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
     get(target, prop) {
       if (typeof prop === 'symbol')   return undefined
@@ -13691,6 +13720,7 @@ function makeLockPrimitive(rawWriteDb) {
       if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
       if (prop === '$readReach')       return $readReach
+      if (prop === '$readColumns')     return $readColumns
       if (prop === '$fromReach')       return $fromReach
       if (prop === '$scopes')         return $scopes
       if (prop === '$checkOrderBy')   return $checkOrderBy

@@ -285,8 +285,8 @@ export function extensionDevDeps() {
 /** The scripts an app with this surface runs. Merged by the caller. */
 export function extensionScripts({ dir = 'extension' } = {}) {
   return {
-    'dev:extension':   `bunx jetty-dev-ext --root=${dir} --browser=chrome`,
-    'build:extension': `bunx jetty-build-ext --root=${dir} --browser=chrome`,
-    'audit:extension': `bunx jetty-audit --root=${dir}`,
+    'dev:extension':   `bunx jetty dev --root=${dir} --browser=chrome`,
+    'build:extension': `bunx jetty build --root=${dir} --browser=chrome`,
+    'audit:extension': `bunx jetty audit --root=${dir}`,
   }
 }

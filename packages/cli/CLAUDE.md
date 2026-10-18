@@ -441,7 +441,9 @@ core/
                 land the schema they edited — `migrate dev` in an app with a
                 migration history, `db push` in one with none. A push there
                 leaves a table in app.db and in no file, and the next
-                `db:migrate` refuses it (`FJS-1797`)
+                `db:migrate` refuses it (`FJS-1797`). `.command` is the verb
+                `make:model` and `make:scaffold` tell a person to run
+                (`FJS-1870`)
   app-config.js what a scaffolded app is GIVEN — deps, scripts, configs, workflow,
                 and AGENTS.md: `AGENT_DOCS` is the packages whose TARBALL carries one,
                 held to `exports.snapshot.md` in both directions, so a package that
@@ -1385,7 +1387,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
   works in dev and fails in the build is the normal case.
 - **`core/extension-surface.js` is the same again for jetty.** An `extension/`
   surface is written by one function, called by `fli new --extension` and by
-  `fli make:extension`, and `fli extension:*` wraps jetty's binaries rather than
+  `fli make:extension`, and `fli extension:*` wraps jetty's bin rather than
   reimplementing the build. What it must keep right is the install: an app has
   ONE `package.json`, at its root, so the surface has no `node_modules` of its
   own and jetty resolves Mesa by walking up. Scaffolding a package.json inside

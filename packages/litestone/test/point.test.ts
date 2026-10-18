@@ -407,6 +407,8 @@ describe('what a point refuses', () => {
     await refusesQuery({ where: { site: { near: 'over there' } } },        /takes \{ lat, lng, within \}/)
     await refusesQuery({ where: { site: { near: { lat: 1, lng: 2, within: '5 parsecs' } } } }, /unknown unit/)
     await refusesQuery({ where: { site: { near: { lat: 1, lng: 2, within: '5' } } } }, /number and a unit/)
+    // A query string hands over `within=25` as the Number 25 (FJS-3119).
+    await refusesQuery({ where: { site: { near: { lat: 1, lng: 2, within: 25 } } } }, /number and a unit/)
   })
 
   it('refuses sorting the document, and points at the shape that works', async () => {

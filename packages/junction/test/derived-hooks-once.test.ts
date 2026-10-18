@@ -1,13 +1,8 @@
 // test/derived-hooks-once.test.ts — the schema-derived layer installs once.
 //
-// `buildBase` returns the MERGED hook map, not the caller's, and the
-// autoloader spreads a built base straight back through `createService`
-// (loader.ts:52 — its discriminant is `typeof service.hooks !== 'function'`, and
-// a base's hooks is a map). `createService` forwards that map into a second
-// `buildBase`, which appended the derived layer again. Every autoloaded
-// one-line service therefore graded its @@gate and ran its validator twice per
-// request — not wrong on the wire, which is exactly why nothing caught it
-// (`FJS-231`).
+// A built service graded its @@gate and ran its validator twice per request when
+// the derived layer was appended again — not wrong on the wire, which is
+// exactly why nothing caught it (`FJS-231`).
 //
 // The dedupe keys on a MARK, never on a name: a user hook called `gateAuth` is
 // not ours, and letting it suppress the real one is fail-open on access.
@@ -59,12 +54,7 @@ const db = () => ({
 
 describe('the derived layer installs once', () => {
 
-  // Exactly what loader.ts:52-56 builds for `export function createLeadsService()
-  // { return buildBase({ model: 'lead' }) }`.
-  const throughTheLoader = () => buildService({
-    name: 'leads',
-    ...(buildBase({ model: 'lead', db }) as object),
-  } as never)
+  const throughTheLoader = () => buildService({ name: 'leads', model: 'lead', db })
 
   test('the loader shape installs each derived hook once per method', () => {
     for (const [method, counts] of Object.entries(derivedCounts(throughTheLoader()))) {
@@ -85,16 +75,6 @@ describe('the derived layer installs once', () => {
     expect(Object.keys(counts.find  ?? {}).sort()).toEqual(['autoFilter', 'autoSort'])
     expect(Object.keys(counts.create ?? {}).sort()).toEqual(['autoValidate'])
     expect(counts.remove).toBeUndefined()
-  })
-
-  test('a hand-spread base is the same case', () => {
-    const svc = buildService({
-      name: 'leads',
-      ...(buildBase({ model: 'lead', db }) as object),
-    } as never)
-    for (const counts of Object.values(derivedCounts(svc))) {
-      for (const n of Object.values(counts)) expect(n).toBe(1)
-    }
   })
 
   test('the gate wraps the chain, the validator trails the user hook (FJS-403)', () => {
@@ -140,20 +120,16 @@ describe('the derived layer installs once', () => {
   })
 })
 
-describe('a service over no model, through the loader', () => {
-  // `model: null` derives only the gate, so its layer has no `before` map. The
-  // loader's re-spread merged `derivedHooks.before` unguarded, and every
-  // `buildBase({ model: null })` file threw at boot — reported as
-  // "threw while loading … Object.entries requires that input parameter not be
-  // null or undefined", and its service answered 404.
-  const noModel = () => buildBase({
+describe('a service over no model', () => {
+  // `model: null` derives only the gate, so its layer has no `before` map.
+  const noModel = () => ({
     model: null,
     hello: async () => 'hi',
     methods: [{ method: 'hello', gate: 0 }],
-  } as never)
+  })
 
   test('registers, with its gate once', () => {
-    const svc = buildService({ name: 'greetings', ...(noModel() as object) } as never)
+    const svc = buildService({ name: 'greetings', ...noModel() } as never)
     expect(derivedCounts(svc)['around.all']).toEqual({ gateAuth: 1 })
     expect(Object.values(hooksOf(svc)).flat().filter(isDerivedHook)).toEqual([])
   })

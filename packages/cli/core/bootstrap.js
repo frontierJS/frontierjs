@@ -510,7 +510,7 @@ export async function run(process) {
     //   1. namespace match     fli github  →  github:create, github:clone
     //   2. partial title       fli cr      →  github:create, gh:create
     //   3. alias substring     fli gc      →  git:commit (alias gc)
-    //   4. description keyword fli deploy  →  api:deploy, web:deploy, deploy:all
+    //   4. description keyword fli deploy  →  deploy:local, deploy:status
     const { uniqueCommands } = await import('./registry.js')
     const all = uniqueCommands(registry)
     const q = cmd.toLowerCase()

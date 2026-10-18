@@ -39,6 +39,9 @@ export const DIRECTIVE_SCHEMAS: Readonly<Record<keyof Directives, Readonly<Recor
 /** Transport-only `$` names: they shape the answer, not the question. */
 export const TRANSPORT_PARAMS: readonly string[]
 
+/** `$or`, `$and`, `$not`: filters written with a `$`, so they stay in the filters and are never unknown. */
+export const COMBINATORS: readonly string[]
+
 /** Every `$` key the wire understands. Neither kind is a filter. */
 export const RESERVED_PARAMS: ReadonlySet<string>
 

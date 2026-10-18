@@ -50,6 +50,7 @@ import { spawn, execFileSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PORTS } from './lib/preflight.mjs'
+import { watchReloads } from './lib/reload.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 import { SESSION_MODULE } from './lib/session.mjs'
 
@@ -134,6 +135,7 @@ for (const want of ['flows', 'runs', 'flowCredentials', 'customers']) {
 // ─── CDP ──────────────────────────────────────────────────────────────────
 
 const browser = await openChrome().catch((e) => { console.error(e.message); stopAll(); process.exit(1) })
+watchReloads(browser)
 const { cmd, evaluate } = browser
 
 // The driver's own `errors` promote only a [Mesa] warning; this drive fails on

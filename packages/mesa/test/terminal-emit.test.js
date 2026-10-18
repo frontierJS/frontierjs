@@ -291,12 +291,12 @@ describe('terminal target', () => {
     expect(() => acorn.parse(result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
     const props = "{title: 'A', count: $$runtime.get($$sig_n), flag: true, 'aria-label': 'x', onpick: () => $$runtime.postUpdate($$sig_n, $$set_n, +1), actions: $$snip0_actions, children: $$snip1_children}"
     expect(result).toContain('const $$m0 = $$host.marker();\n    $$host.append($$parentElement, $$m0);')
-    expect(result).toContain(`Card($$m0, ${props}, null);`)
+    expect(result).toContain(`Card($$m0, ${props});`)
     expect(result).toContain("const $$snip0_actions = $$runtime.content((__anchor) => {\n      const $$b = $$host.fragment();\n      const $$el0 = $$host.element('b');")
     expect(result).toContain("const $$snip1_children = $$runtime.content((__anchor) => {\n      const $$b = $$host.fragment();\n      const $$el1 = $$host.element('p');")
     expect(result).toContain(`$$runtime.registerComponentAnchor($$m0);\n    $$runtime.createEffect(() => { $$runtime.pushProps($$m0, ${props}); });`)
     // All-static props: nothing to push, so no registration either.
-    expect(result).toContain('Card($$m1, {}, null);\n    $$host.append(__anchor, $$parentElement);')
+    expect(result).toContain('Card($$m1, {});\n    $$host.append(__anchor, $$parentElement);')
   })
 
   it('hands an element spread to $$host.spread in attribute order, after the static attributes', async () => {
@@ -322,7 +322,7 @@ describe('terminal target', () => {
 `, 'P.mesa')
     expect(() => acorn.parse(result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
     const props = "Object.assign({}, ($$runtime.get($$sig_card)), {title: 'W'})"
-    expect(result).toContain(`Card($$m0, ${props}, null);`)
+    expect(result).toContain(`Card($$m0, ${props});`)
     expect(result).toContain(`$$runtime.registerComponentAnchor($$m0);\n    $$runtime.createEffect(() => { $$runtime.pushProps($$m0, ${props}); });`)
   })
 
@@ -340,8 +340,8 @@ describe('terminal target', () => {
     expect(tui.out).toEqual(dom.out)
     expect(tui.out.map((m) => m.split(' ')[0])).toEqual(['<Card', '<Card', '<Card', '<Card', '{@attach}'])
     expect(tui.out.every((m) => m.endsWith('P.mesa:2:1'))).toBe(true)
-    expect(tui.result).toContain("Card($$m0, {title: 'A'}, null);")
-    expect(dom.result).toContain("Card($$el0, {title: `A`}, null);")
+    expect(tui.result).toContain("Card($$m0, {title: 'A'});")
+    expect(dom.result).toContain("Card($$el0, {title: `A`});")
   })
 
   // Both halves the DOM path wires, in its order: the bound value is a live
@@ -353,7 +353,7 @@ describe('terminal target', () => {
 <Foo bind:value />
 `, 'F.mesa')
     const m0 = [
-      "Foo($$m0, {value: $$runtime.get($$sig_v)}, null);",
+      "Foo($$m0, {value: $$runtime.get($$sig_v)});",
       '$$runtime.registerComponentAnchor($$m0);',
       "$$runtime.bindProp($$m0, 'value', (v) => $$set_v(v));",
       '$$set_r($$runtime.componentApi($$m0));',
@@ -377,7 +377,7 @@ describe('terminal target', () => {
       expect.stringMatching(/^bind:value=\{c\} — 'c' must be a writable top-level `let`.* — P\.mesa:3:1$/),
       expect.stringMatching(/^bind:this=\{c\} — 'c' must be a top-level let variable — P\.mesa:3:1$/),
     ])
-    expect(tui.result).toContain('Foo($$m0, {}, null);')
+    expect(tui.result).toContain('Foo($$m0, {});')
     expect(tui.result).not.toMatch(/bindProp|componentApi|registerComponentAnchor/)
   })
 
@@ -490,8 +490,8 @@ describe('terminal target', () => {
 <T>{#snippet row(r)}<b>{r}</b>{/snippet}</T>
 <mesa:element this={'h' + l}>x</mesa:element>
 `)
-    expect(result).toContain('T($$m0, {row: $$snip0_row}, null);')
-    expect(result).toContain('T($$m1, {row: $$snip1_row}, null);')
+    expect(result).toContain('T($$m0, {row: $$snip0_row});')
+    expect(result).toContain('T($$m1, {row: $$snip1_row});')
     expect(result).toContain("$$host.keyBlock($$m2, () => ('h' + $$runtime.get($$sig_l)), ($$tag) => {")
     expect(result).toContain('$$host.element($$tag);')
   })

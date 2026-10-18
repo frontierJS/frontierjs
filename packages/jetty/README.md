@@ -85,12 +85,12 @@ walks up from `extension/` to find it — see [Using it in an app](#using-it-in-
 ## CLI tools
 
 ```bash
-jetty-build-ext --root=. --browser=chrome|firefox|both [--verbose]
-jetty-dev-ext   --root=. --browser=chrome|firefox|both [--verbose]
-                                                       [--launch] [--start-url=URL]
-jetty-info      --root=. [--browser=chrome]   # print structure summary
-jetty-audit     --root=. [--browser=chrome]   # standalone permission audit
-jetty-manifest  --root=. [--browser=chrome|firefox|both]  # print manifest only
+jetty build    --root=. --browser=chrome|firefox|both [--verbose]
+jetty dev      --root=. --browser=chrome|firefox|both [--verbose]
+                                                      [--launch] [--start-url=URL]
+jetty info     --root=. [--browser=chrome]   # print structure summary
+jetty audit    --root=. [--browser=chrome]   # standalone permission audit
+jetty manifest --root=. [--browser=chrome|firefox|both]  # print manifest only
 ```
 
 ## Permission audit
@@ -152,7 +152,7 @@ fli extension:build         # → extension/dist/chrome/ (--browser both for Fir
 fli extension:audit         # permissions declared vs. chrome.* actually called
 ```
 
-Those wrap the `jetty-*` binaries with `--root=extension`, so an app's build and
+Those wrap the `jetty` bin with `--root=extension`, so an app's build and
 this package's tests are one program. `fli new --extension` adds the surface to
 any template; `fli new --template extension-only` is a project whose whole
 product is the extension — no `api/`, no `web/`.

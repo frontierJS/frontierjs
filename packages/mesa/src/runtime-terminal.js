@@ -594,6 +594,7 @@ export function element(tag, attrs = {}) {
       node = new FlowBox(r, { flexDirection: 'row', focusable: true })
       const open = text('[ ')
       const tail = text(' ]')
+      open.__chrome = tail.__chrome = true
       node.add(open)
       node.add(tail)
       node.__tail = tail
@@ -730,23 +731,47 @@ function tabStop(node) {
   }
 }
 
+/** Whether anything under `node` paints a character: a button's brackets, its
+ *  announcement and a block's marker do not, nor does a hidden box. */
+function paintsText(node) {
+  return node.getChildren().some((c) => {
+    if (c === node.__announce || c.__marker || c.__chrome || c.visible === false) return false
+    return c instanceof TextRenderable ? (c.__t ?? c.plainText) !== '' : paintsText(c)
+  })
+}
+
+/** A button or a link is named by its `aria-label` where its content paints no
+ *  text, as an icon's does; a widget role also reads its value. */
+const named = (node) => node.__tag === 'button' || (node.__tag === 'a' && node.__link)
+
 /** What a screen reader says for a widget with a name and no content: the
  *  `aria-label`, then the value. A box with content of its own paints that
  *  and nothing more, so the text goes empty while one is there; a block's
  *  marker holds none. */
 function announce(node) {
-  if (TERMINAL_TAGS[node.__tag]?.role !== 'box') return
+  const role = TERMINAL_TAGS[node.__tag]?.role
+  if (role !== 'box' && role !== 'button') return
   const a = node.__attrs
-  const words = WIDGET_ROLES.has(a.role) ? [a['aria-label'], a['aria-valuetext'] ?? a['aria-valuenow']] : []
+  const words = named(node) ? [a['aria-label']]
+    : WIDGET_ROLES.has(a.role) ? [a['aria-label'], a['aria-valuetext'] ?? a['aria-valuenow']] : []
   let str = words.filter((w) => w != null && w !== '').join(' ')
   if (!node.__announce) {
     if (!str) return
     node.__announce = text('')
     const [first] = node.getChildren()
-    first ? node.insertBefore(node.__announce, first) : node.add(node.__announce)
+    // A button's content sits between its brackets.
+    role === 'button' ? node.insertBefore(node.__announce, node.__tail) : first ? node.insertBefore(node.__announce, first) : node.add(node.__announce)
   }
-  if (node.getChildren().some((c) => c !== node.__announce && !c.__marker)) str = ''
+  if (named(node) ? paintsText(node) : node.getChildren().some((c) => c !== node.__announce && !c.__marker)) str = ''
   set_text(node.__announce, str)
+}
+
+/** Text arriving or leaving under a control named by its label gives the
+ *  label up or takes it back. */
+function reannounce(node) {
+  for (let p = node.parent; p; p = p.parent) {
+    if (p.__announce && named(p)) { announce(p); return }
+  }
 }
 
 export function set_attribute(node, name, value) {
@@ -930,7 +955,11 @@ export function markup() {
 
 export function set_text(node, value) {
   const str = value == null ? '' : String(value)
-  if (str !== node.__t) { node.__t = str; node.content = str }
+  if (str === node.__t) return
+  const was = node.__t ?? node.plainText
+  node.__t = str
+  node.content = str
+  if ((was === '') !== (str === '')) reannounce(node)
 }
 
 export function marker() {
@@ -1653,6 +1682,7 @@ export function followLinks(renderer, fn) {
  *  Without one it is text again, unless something listens to its `click`. */
 function link(node, on) {
   node.__link = on
+  announce(node)
   if (on) {
     activatable(node)
     invertWhileFocused(node)
@@ -1964,7 +1994,7 @@ export function mount(Component, { renderer, props = {}, parent = null } = {}) {
   try {
     createRoot((dispose) => {
       disposeRoot = dispose
-      Component(parent, props, null)
+      Component(parent, props)
     })
   } catch (e) {
     release()

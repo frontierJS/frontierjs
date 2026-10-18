@@ -21,7 +21,7 @@ const build = async (tpl) => {
     { filename: '/P.mesa', warning: (w) => warnings.push(w.message ?? String(w)) })
   // The props the call passes: every slot is a snippet prop by now (`FJS-D668`),
   // the default slot's under `children`.
-  const call = ctx.result.match(/Child\(\$\$el\d+, (\{[\s\S]*?\}), null\);\n/)?.[1] ?? ''
+  const call = ctx.result.match(/Child\(\$\$el\d+, (\{[\s\S]*?\})\);\n/)?.[1] ?? ''
   return { call, warnings: warnings.filter((w) => w.includes('slot')) }
 }
 
@@ -129,9 +129,9 @@ describe('a slot is a snippet with no arguments (FJS-D668)', () => {
     const src = `<script>import Form from './Form.mesa'\nexport let actions = null</script>\n` +
       `<Form {actions}><b slot="actions">go</b></Form>`
     const dom = await compileSource(src, { filename: '/O.mesa' })
-    expect(dom.result).toMatch(/Form\(\$\$el\d+, \{actions: \(\$\$runtime\.get\(\$\$sig_actions\)\) \?\? \$\$snip\d+_actions\}, null\)/)
+    expect(dom.result).toMatch(/Form\(\$\$el\d+, \{actions: \(\$\$runtime\.get\(\$\$sig_actions\)\) \?\? \$\$snip\d+_actions\}\)/)
     const tui = await compileSource(src, { filename: '/O.mesa', target: 'terminal' })
-    expect(tui.result).toMatch(/Form\(\$\$m\d+, \{actions: \(\$\$runtime\.get\(\$\$sig_actions\)\) \?\? \$\$snip\d+_actions\}, null\)/)
+    expect(tui.result).toMatch(/Form\(\$\$m\d+, \{actions: \(\$\$runtime\.get\(\$\$sig_actions\)\) \?\? \$\$snip\d+_actions\}\)/)
   })
 
   it('a <slot> declares the prop it reads, once, beside one the script declares', async () => {

@@ -37,6 +37,7 @@ import { join, relative, basename, extname, resolve, dirname } from 'path'
 
 import { singularize, pluralize, modelName, camel } from '@frontierjs/toolbelt/inflect'
 import { parseFrontmatter }                from '@frontierjs/toolbelt/frontmatter'
+import { docFences, isRunnable }           from '@frontierjs/toolbelt/docfences'
 
 // ─── the rule table ───────────────────────────────────────────────────────────
 //
@@ -3401,7 +3402,12 @@ const CHECKS = {
       const bodies = Object.entries(pkg.scripts ?? {})
         .filter(([name]) => /^test(:|$)/.test(name) && !name.endsWith(':watch'))
         .map(([, body]) => body)
-      const walks = bodies.some(b => /\bbun\s+test\b/.test(b) && !/[\w.-]+\.[cm]?[jt]s\b/.test(b))
+      // A script wraps and chains (`node tmp-run.mjs 'bun test test/ && bun bench/x.mjs'`), so
+      // the file-name test reads from `bun test` to the end of that command, not the whole body.
+      const walks = bodies.some(b => b.split(/&&|\|\||[;|]/).some(cmd => {
+        const at = cmd.search(/\bbun\s+test\b/)
+        return at >= 0 && !/[\w.-]+\.[cm]?[jt]s\b/.test(cmd.slice(at))
+      }))
       const runs  = runner && (walks || bodies.some(b => b.includes('doc-examples.test')))
       if (runs) continue
 
@@ -3653,7 +3659,9 @@ const CHECKS = {
   // move of the same model sharing a from-state and the to-state, or the
   // to-state itself (`transition-methods`' either-spelling argument). It must
   // also name the MODEL, by accessor or by a service resolving to it, or every
-  // job mentioning `'cancelled'` would be one.
+  // job mentioning `'cancelled'` would be one. A name that is compared, listed
+  // for `.includes` or filtered on in `where:` is a read, not the move: the
+  // grader of rows a commitment lands guards on the to-state (`readsState`).
   //
   // Job files only: a service making the move is somebody asking for it early,
   // and a commitment hook runs inside the fire. A warning, because a job may
@@ -3686,8 +3694,10 @@ const CHECKS = {
         const same  = moves.filter(m => m.model === c.target && m.to === move.to &&
                                         m.from.some(f => f === '*' || move.from.includes(f)))
         // The move's name before its target, so the line reported is the call
-        // rather than the status filter that picked the rows.
-        const quoted = (words) => code.match(new RegExp(`['"\`](${words.join('|')})['"\`]`))
+        // rather than the status filter that picked the rows. A literal that
+        // only READS the state moves nothing.
+        const quoted = (words) => [...code.matchAll(new RegExp(`['"\`](${words.join('|')})['"\`]`, 'g'))]
+          .find(m => !readsState(code, m.index, m[0].length))
         const hit    = quoted(same.map(m => m.move)) ?? quoted([move.to])
         if (!hit) continue
 
@@ -5640,11 +5650,6 @@ function safeRead(dir) {
   try { return readdirSync(dir) } catch { return [] }
 }
 
-// The fence tags a doc-example runner executes (FJS-D860), by the names the
-// pages use for them; `prisma` is deliberately absent — litestone's language
-// is fenced ```lite, and a `prisma` block is an unverified one.
-const RUNNABLE_FENCE = new Set(['lite', 'js', 'javascript', 'mjs', 'ts', 'typescript', 'mesa'])
-
 /** A package's hand-written docs: the three root files plus everything under docs/. */
 function docPages(dir) {
   const out = ['README.md', 'AGENTS.md', 'CLAUDE.md'].filter(f => existsSync(join(dir, f)))
@@ -5661,17 +5666,8 @@ function runnableFences(dir) {
   for (const file of docPages(dir)) {
     let text
     try { text = readFileSync(join(dir, file), 'utf8') } catch { continue }
-    const lines = text.split('\n')
-    for (let i = 0; i < lines.length; i++) {
-      const m = lines[i].match(/^\s*(`{3,}|~{3,})([\w+-]*)\s*(.*)$/)
-      if (!m) continue
-      const [, fence, lang, info] = m
-      let j = i + 1
-      while (j < lines.length && !lines[j].trim().startsWith(fence.slice(0, 3))) j++
-      const words = info.split(/\s+/).filter(Boolean)
-      if (RUNNABLE_FENCE.has(lang.toLowerCase()) && !words.includes('fragment')) out.push({ file, line: i + 1, lang: lang.toLowerCase() })
-      i = j
-    }
+    for (const f of docFences(text))
+      if (isRunnable(f)) out.push({ file, line: f.line, lang: f.lang })
   }
   return out
 }
@@ -5714,6 +5710,25 @@ console.log(JSON.stringify(out))
 `
 
 const lineOf = (text, index) => text.slice(0, index).split('\n').length
+
+// A quoted state at [index, index + length) that is compared, listed for
+// `.includes`, or sitting in a `where:` filter picks rows in that state and
+// moves none. `commitment-swept` reads a job working on the rows a
+// commitment lands, which names the to-state to refuse or select it.
+const readsState = (code, index, length) => {
+  const before = code.slice(0, index)
+  const after  = code.slice(index + length)
+  if (/[!=]==?\s*$/.test(before) || /^\s*[!=]==?/.test(after)) return true
+  if (/^[^\]\n]*\]\s*\.\s*includes\s*\(/.test(after)) return true
+  const where = [...before.matchAll(/\bwhere\s*:\s*\{/g)].pop()
+  if (!where) return false
+  let depth = 1
+  for (const ch of before.slice(where.index + where[0].length)) {
+    if (ch === '{') depth++
+    else if (ch === '}' && --depth === 0) return false
+  }
+  return true
+}
 
 // What `drive-holds` reads as binding a resource: the port block is asked for,
 // the database is a path literal with no space in it, so a sentence naming

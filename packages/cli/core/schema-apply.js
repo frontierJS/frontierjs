@@ -19,11 +19,13 @@ export function hasMigrationHistory(dbDir) {
     e.isDirectory() && readdirSync(join(dir, e.name)).some(f => f.endsWith('.sql')))
 }
 
-// The litestone argv (after the binary) and the sentence that names it.
+// The litestone argv (after the binary), the sentence that names it, and the
+// `fli` verb a generator tells a person to run for the same step.
 export function schemaApplyStep(dbDir, label) {
   if (hasMigrationHistory(dbDir)) {
     return {
       kind:  'migrate',
+      command: 'fli db:migrate',
       argv:  `migrate dev ${label} --schema db/schema.lite`,
       dry:   `litestone migrate dev ${label}`,
       done:  `Migration db/migrations/*_${label}.sql written and applied`,
@@ -31,6 +33,7 @@ export function schemaApplyStep(dbDir, label) {
   }
   return {
     kind:  'push',
+    command: 'fli db:push',
     argv:  'db push --schema db/schema.lite',
     dry:   'litestone db push',
     done:  'Schema pushed',

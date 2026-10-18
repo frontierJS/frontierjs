@@ -209,6 +209,17 @@ describe('the declaration', () => {
     } finally { cleanup() }
   })
 
+  test('seams written as file names group by their stem, not by the extension', () => {
+    const { root, cleanup } = fixture([
+      S3('FJS-001', 'cli', 'One.', '[a](src/a.js) · seam: stage.js'),
+      S3('FJS-002', 'cli', 'Two.', '[a](src/a.js) · seam: other.js'),
+    ])
+    try {
+      const { ready } = rankNext(root, { touched: new Set() })
+      expect(bySeam(ready).seams.map(g => [g.seam, g.count])).toEqual([['stage.js', 1], ['other.js', 1]])
+    } finally { cleanup() }
+  })
+
   test('an env row stays ranked and carries its cause', () => {
     const { root, cleanup } = fixture([
       S3('FJS-001', 'cli', 'Fails after another drive ran.', '[a](src/a.js) · env: shared db'),

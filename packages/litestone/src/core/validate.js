@@ -363,13 +363,14 @@ function fillTypeDefaults(value, typeName, typeMap) {
       continue
     }
 
-    const nested = field.type.name === 'Json'
-      ? field.attributes?.find(a => a.kind === 'type')?.name
+    const memberAttr = field.type.name === 'Json' ? field.attributes?.find(a => a.kind === 'type') : null
+    const nested = memberAttr
+      ? memberAttr.name
       : (typeMap.has(field.type.name) ? field.type.name : null)
     if (!nested) continue
 
     const v = value[field.name]
-    if (field.type.array) {
+    if (field.type.array || memberAttr?.array) {
       if (!Array.isArray(v)) continue
       const filled = v.map(el => fillTypeDefaults(el, nested, typeMap))
       if (filled.some((el, i) => el !== v[i])) set(field.name, filled)
@@ -392,7 +393,14 @@ export function applyTypedDefaults(data, model, typeMap) {
     const typeAttr = field.attributes.find(a => a.kind === 'type')
     if (!typeAttr) continue
     const v = data[field.name]
-    const filled = fillTypeDefaults(v, typeAttr.name, typeMap)
+    let filled
+    if (typeAttr.array) {
+      if (!Array.isArray(v)) continue
+      const els = v.map(el => fillTypeDefaults(el, typeAttr.name, typeMap))
+      filled = els.some((el, i) => el !== v[i]) ? els : v
+    } else {
+      filled = fillTypeDefaults(v, typeAttr.name, typeMap)
+    }
     if (filled === v) continue
     if (out === data) out = { ...data }
     out[field.name] = filled
@@ -516,7 +524,7 @@ function validateTypedJson(value, typeName, typeMap, strict, path, errors, mode 
         // Nested Json @type(Other) — recurse
         const nestedTypeAttr = field.attributes.find(a => a.kind === 'type')
         if (nestedTypeAttr) {
-          validateTypedJson(v, nestedTypeAttr.name, typeMap, nestedTypeAttr.strict !== false, p, errors, childMode, enums)
+          validateTypedBinding(v, nestedTypeAttr, typeMap, p, errors, childMode, enums)
         }
       }
       // An enum is checked before a type because the two share a namespace and
@@ -568,6 +576,25 @@ function validateTypedJson(value, typeName, typeMap, strict, path, errors, mode 
       errors.push({ path: [...path, ...err.path], message: err.message })
     }
   }
+}
+
+/**
+ * Grade a value against what a field's `@type` attribute binds: the type, or a
+ * LIST of it for `@type(T[])`. The one place `array` is read, so a caller
+ * holding the attribute never branches on it.
+ */
+export function validateTypedBinding(value, attr, typeMap, path, errors, mode = 'full', enums = null) {
+  const strict = attr.strict !== false
+  if (!attr.array) return validateTypedJson(value, attr.name, typeMap, strict, path, errors, mode, enums)
+  if (value == null) return
+  if (!Array.isArray(value)) {
+    errors.push({ path, message: `must be an array of ${attr.name}` })
+    return
+  }
+  value.forEach((el, i) => {
+    if (el == null) errors.push({ path: [...path, i], message: `must be a ${attr.name}` })
+    else validateTypedJson(el, attr.name, typeMap, strict, [...path, i], errors, mode, enums)
+  })
 }
 
 /**
@@ -804,7 +831,7 @@ export function validate(data, model, computedFns, typeMap, enums = null) {
     if (typeMap && field.type.name === 'Json' && value != null) {
       const typeAttr = field.attributes.find(a => a.kind === 'type')
       if (typeAttr) {
-        validateTypedJson(value, typeAttr.name, typeMap, typeAttr.strict !== false, [field.name], errors, 'full', enums)
+        validateTypedBinding(value, typeAttr, typeMap, [field.name], errors, 'full', enums)
       }
     }
   }

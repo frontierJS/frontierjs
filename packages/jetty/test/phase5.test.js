@@ -284,7 +284,7 @@ group('Mesa HMR registry')
     const anchor = doc.createComment('')
     host.append(mark, anchor)
     host.insertBefore(doc.createTextNode(text), anchor)
-    jm.register(id, mark, anchor, { seq: 1 }, null, () => {})
+    jm.register(id, mark, anchor, { seq: 1 }, () => {})
     return { mark, anchor }
   }
 
@@ -292,12 +292,12 @@ group('Mesa HMR registry')
   function newVersion(id, text, marks, { throwsOnce = false } = {}) {
     let mark = null
     let thrown = false
-    const fn = (anchor, props, block) => {
+    const fn = (anchor, props) => {
       if (throwsOnce && !thrown) { thrown = true; throw new Error('boom') }
       anchor.parentNode.insertBefore(anchor.ownerDocument.createTextNode(text), anchor)
       // A compiled component's wrapper registers on every render. Without this
       // the entry is gone after one update and the next edit finds nothing.
-      jm.register(id, mark, anchor, props, block, fn)
+      jm.register(id, mark, anchor, props, fn)
     }
     fn.__setMark = (m) => { mark = m; marks.push(m) }
     return fn

@@ -169,7 +169,8 @@ carry the math functions this needs; that was measured rather than assumed.
 
 **The radius carries its unit** (`FJS-D319`) — `'5mi'`, `'800m'`, `'2km'`,
 parsed by `parseLength` in `@frontierjs/toolbelt/units`. A bare `'5'` is refused
-by name rather than guessed at, and so is `'5 parsecs'`.
+by name rather than guessed at, and so is a bare number — a query string hands
+`within=25` over as the Number 25 — and `'5 parsecs'`.
 
 **The ordering is the query's, not the page's** (`FJS-D321`). A list sorted
 after it was selected is the wrong twenty rows the moment there is a second

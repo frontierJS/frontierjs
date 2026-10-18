@@ -554,7 +554,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 ### `User`
 
-- allow **read** — `id == auth().id || auth().level >= 4`
+- allow **read** — `id == auth().id`
 - allow **update** — `id == auth().id`
 
 ### `Variable`

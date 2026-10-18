@@ -1076,8 +1076,41 @@ function rulesFor(modelName, op, ctx, tenancyOnly = false) {
 // hop widens the set with nothing to remember. The gate is not here: a level
 // is the app's synchronous mapping of the principal and reads no row.
 export function readReach(modelName, ctx, op = 'read') {
-  const reach  = new Set([modelName])
-  const walked = new Set()
+  return [...walkReads(modelName, ctx, op).reach].sort()
+}
+
+// The COLUMNS of each reached model a verdict on `modelName` reads, by model
+// (`FJS-3127`). A write to a reached model that changes only columns outside
+// its entry cannot change who may read a row, so a tap skips the regrade. A
+// column is listed when the policy names it, when a relation joins on it, or
+// when a filter every read of the model carries reads it (soft delete, the
+// template marker, the effective window, a capability column) — over-listing
+// costs a re-read, a missed column costs a screen that stays wrong.
+export function readColumns(modelName, ctx, op = 'read') {
+  const { reach, columns } = walkReads(modelName, ctx, op)
+  const out = {}
+  for (const model of [...reach].sort()) {
+    const set  = columns.get(model) ?? new Set()
+    const shape = shapeOf(ctx, model)
+    if (shape.softDelete) set.add('deletedAt')
+    if (shape.hasTemplates) set.add(shape.hasTemplates)
+    if (shape.effective?.from) set.add(shape.effective.from)
+    if (shape.effective?.to) set.add(shape.effective.to)
+    for (const c of shape.capabilities?.columns ?? []) set.add(c)
+    out[model] = [...set].sort()
+  }
+  return out
+}
+
+function walkReads(modelName, ctx, op) {
+  const reach   = new Set([modelName])
+  const columns = new Map()
+  const walked  = new Set()
+  const read = (model, names) => {
+    let set = columns.get(model)
+    if (!set) columns.set(model, set = new Set())
+    for (const n of [names].flat(2)) if (n != null) set.add(n)
+  }
   const delegate = (model, operation) => {
     reach.add(model)
     if (walked.has(`${model} ${operation}`)) return
@@ -1089,18 +1122,28 @@ export function readReach(modelName, ctx, op = 'read') {
     if (!node || typeof node !== 'object') return
     if (Array.isArray(node)) { for (const n of node) walk(n, model, operation); return }
     const rels = relationsOf(ctx, model)
-    if (node.type === 'path' && rels[node.rel]) reach.add(rels[node.rel].targetModel)
+    if (node.type === 'field') read(model, [node.name])
+    if (node.type === 'path' && rels[node.rel]) {
+      reach.add(rels[node.rel].targetModel)
+      read(model, rels[node.rel].foreignKeys)
+      read(rels[node.rel].targetModel, [rels[node.rel].referencedKeys, node.name])
+    }
     if (node.type === 'some' && rels[node.rel]) {
       reach.add(rels[node.rel].targetModel)
+      read(model, rels[node.rel].referencedKeys)
+      read(rels[node.rel].targetModel, rels[node.rel].foreignKeys)
       walk(node.where, rels[node.rel].targetModel, operation)
       return
     }
-    if (node.type === 'check' && rels[node.field])
+    if (node.type === 'check' && rels[node.field]) {
+      read(model, rels[node.field].foreignKeys)
+      read(rels[node.field].targetModel, rels[node.field].referencedKeys)
       delegate(rels[node.field].targetModel, node.operation ?? operation)
+    }
     for (const v of Object.values(node)) if (v && typeof v === 'object') walk(v, model, operation)
   }
   delegate(modelName, op)
-  return [...reach].sort()
+  return { reach, columns }
 }
 
 // ─── What a value reads ──────────────────────────────────────────────────────

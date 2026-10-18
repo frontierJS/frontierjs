@@ -28,6 +28,22 @@ describe('what may be declared', () => {
       }
   })
 
+  // FJS-3046: `%` was the one symbol the lexer refused bare.
+  test('every symbol the table holds parses bare, and means what the quoted one does', () => {
+    for (const symbols of Object.values(MEASURE_UNITS))
+      for (const s of symbols) {
+        const bare = field(`v Int @unit(${s})`)
+        expect({ s, errors: bare.errors }).toEqual({ s, errors: [] })
+        expect(bare.schema.models[0].fields[1].attributes)
+          .toEqual(field(`v Int @unit("${s}")`).schema.models[0].fields[1].attributes)
+      }
+  })
+
+  test('a bare % outside @unit is still refused, by the grammar that met it', () => {
+    expect(err('v Int @default(%)')).not.toBe('')
+    expect(err('v Int @unit(% %)')).not.toBe('')
+  })
+
   test('a bare symbol and a quoted one are the same declaration', () => {
     const bare = field('v Int @unit(ms)').schema.models[0].fields[1].attributes
     const quot = field('v Int @unit("ms")').schema.models[0].fields[1].attributes
@@ -157,9 +173,9 @@ describe('the advice that makes the declaration takeable', () => {
     expect(found.message).toContain('timeout Int @unit(s)')
   })
 
-  // FJS-2143: `%` is not an identifier, so the spelling the advice recommends
-  // for it has to be the quoted one or the advice is a lexer error.
-  test('every spelling the advice recommends parses, % quoted', () => {
+  // FJS-2143: the advice is built from the symbol table, so every spelling it
+  // recommends has to parse.
+  test('every spelling the advice recommends parses', () => {
     for (const name of ['taxPercent', 'taxPct', 'timeoutSeconds', 'sizeKb']) {
       const [found] = checkRules(parse(`model M { id Int @id\n ${name} Int }`).schema)
         .filter(r => r.id === 'unit-in-the-column-name')
@@ -169,13 +185,13 @@ describe('the advice that makes the declaration takeable', () => {
     }
     const [pct] = checkRules(parse('model M { id Int @id\n taxPercent Int }').schema)
       .filter(r => r.id === 'unit-in-the-column-name')
-    expect(pct.message).toContain('tax Int @unit("%")')
+    expect(pct.message).toContain('tax Int @unit(%)')
   })
 
-  test('the catalog entry for @unit lists % quoted', () => {
+  test('the catalog entry for @unit lists % beside the other bare symbols', () => {
     const blurb = lookup('@unit')!.blurb
-    expect(blurb).toContain('ratio "%"')
-    expect(blurb).not.toContain('ratio %')
+    expect(blurb).toContain('ratio %')
+    expect(blurb).not.toContain('"%"')
   })
 
   test('a column that already answers is not asked again', () => {
@@ -216,5 +232,18 @@ describe('the table behind it', () => {
 
   test('converting across dimensions is refused rather than answered', () => {
     expect(() => convertUnit(1, 'kg', 'm')).toThrow('measures mass')
+  })
+})
+
+describe('an image is measured in pixels', () => {
+  // FJS-3056: width and height of an image were the one common number with no unit.
+  test('@unit(px) parses on an Int and resolves to the pixel dimension', () => {
+    const r = field('width Int @unit(px)')
+    expect({ valid: r.valid, errors: r.errors }).toEqual({ valid: true, errors: [] })
+    expect(unitInfo('px')).toEqual({ symbol: 'px', dimension: 'pixel', factor: 1 })
+  })
+
+  test('pixels convert to nothing else', () => {
+    expect(() => convertUnit(10, 'px', 'mm')).toThrow('measures pixel')
   })
 })

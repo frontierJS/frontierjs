@@ -163,19 +163,25 @@ const artRows = square.picture()
 const view = square.view
 check(shape.rows === view.h && shape.cols === view.w && square.width > view.w,
   `the tab draws the view at ${shape.cols}×${shape.rows}, the terminal's size, of a square ${square.width} wide`, JSON.stringify(shape))
-// Each screen is fogged for its own figure (6.3): Bea at the spawn sees the
-// bottom wall round her, and Sam, who started there, has seen every cell she
-// sees and four columns more. So the tab's bottom row is a part of the
-// terminal's, glyph for glyph, and the top wall — nobody has walked near it
-// — is blank on both.
+// While the square names the fog layer (6.3), each screen is fogged for its
+// own figure: Bea at the spawn sees the bottom wall round her, and Sam, who
+// started there, has seen every cell she sees and four columns more. So the
+// tab's bottom row is a part of the terminal's, glyph for glyph, and the top
+// wall — nobody has walked near it — is blank on both. With the fog off both
+// draw the square whole, so the rows are the terminal's whole and the top
+// wall is drawn on both.
+const FOG        = square.layers.includes('fog')
 const termTop    = cellOf(term.screen(), 0, 0, shape.cols, square).padEnd(shape.cols)
 const termBottom = cellOf(term.screen(), 0, view.h - 1, shape.cols, square).padEnd(shape.cols)
 const drawnCols  = [...shape.bottom].map((ch, i) => (ch !== ' ' ? i : -1)).filter((i) => i >= 0)
 const darkCol    = [...artRows[view.h - 1]].findIndex((ch, i) => ch !== ' ' && !litAt(square, i, view.h - 1, square.spawn))
-check(drawnCols.length > 0 && drawnCols.every((i) => shape.bottom[i] === termBottom[i]) && drawnCols.length < artRows[view.h - 1].trim().length,
-  `the tab's bottom row of art, ${drawnCols.length} lit cells of it, is the terminal's cell for cell`, `tab:  ${shape.bottom}\nterm: ${termBottom}`)
-check(darkCol >= 0 && shape.bottom[darkCol] === ' ' && termBottom[darkCol] === ' ' && shape.top.trim() === '' && termTop.trim() === '',
-  `and the wall at ${darkCol},${view.h - 1} and the whole top wall are blank on both: nobody has walked near them`, `tab:  ${shape.bottom}\nterm: ${termBottom}\ntab:  ${shape.top}\nterm: ${termTop}`)
+check(drawnCols.length > 0 && drawnCols.every((i) => shape.bottom[i] === termBottom[i]) && (!FOG || drawnCols.length < artRows[view.h - 1].trim().length),
+  `the tab's bottom row of art, ${drawnCols.length} ${FOG ? 'lit ' : ''}cells of it, is the terminal's cell for cell`, `tab:  ${shape.bottom}\nterm: ${termBottom}`)
+check(FOG
+  ? darkCol >= 0 && shape.bottom[darkCol] === ' ' && termBottom[darkCol] === ' ' && shape.top.trim() === '' && termTop.trim() === ''
+  : shape.top.trim() !== '' && shape.top.trimEnd() === termTop.trimEnd(),
+  FOG ? `and the wall at ${darkCol},${view.h - 1} and the whole top wall are blank on both: nobody has walked near them`
+    : 'and the whole top wall is drawn, the same on both', `tab:  ${shape.bottom}\nterm: ${termBottom}\ntab:  ${shape.top}\nterm: ${termTop}`)
 
 // A cell the palette colors, no clock but the sky moves (the same time of day three days on), and Bea sees from the spawn, read for its color in the tab.
 const still = (() => {

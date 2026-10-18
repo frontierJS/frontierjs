@@ -26,7 +26,7 @@ jetty's own indirection are invisible to it. `permissions.audit: 'strict'` in
 
 ```js
 $.exec({
-  command: `bunx jetty-audit --root=${$.paths.extension} --browser=${flag.browser || 'chrome'}`,
+  command: `bunx jetty audit --root=${$.paths.extension} --browser=${flag.browser || 'chrome'}`,
   dry: flag.dry,
 })
 ```

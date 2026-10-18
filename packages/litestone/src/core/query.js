@@ -1075,6 +1075,11 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
     //      are valid and what types they have.
     const typedJsonInfo = typedJsonMap?.[key]
     if (typedJsonInfo && val !== null && typeof val === 'object' && !Array.isArray(val) && isTypedJsonPath(val)) {
+      // A path into a LIST reads json_extract('$.name') on an array, which is
+      // NULL for every row: a wrong answer that raises nothing.
+      if (typedJsonInfo.list) throw new Error(
+        `"${key}" is Json @type(${typedJsonInfo.name}[]), a list of them, so a where cannot name a path into it ` +
+        `(every row's '$.${Object.keys(val)[0]}' is NULL on an array). Read the rows and filter the list, or hold the records in a model`)
       const colExpr = `${aliasPrefix}${quoteIdent(key)}`
       const subClauses = buildTypedJsonClauses(colExpr, val, typedJsonInfo, [], params, typedJsonMap, key)
       if (subClauses.length) clauses.push(subClauses.join(' AND '))

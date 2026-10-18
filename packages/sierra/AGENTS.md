@@ -132,6 +132,10 @@ export function head({ params, data, url }) { return { title: data.title } }
 export async function getStaticPaths() { return [{ slug: 'a' }] } // static target only
 ```
 
+`url` in `load` and `head` is a STRING — path plus search, `'/surveys/?status=open'` —
+not a `URL`: `url.search` is `String.prototype.search`, so a redirect built from it
+silently drops the query. A static build hands the path alone.
+
 A thrown `load()` lands in `page.error` and the router stays on the route. A
 returned string that is a path on this origin redirects. `fetch` is
 `sierraFetch`, which attaches the session to the app's own origin and to nothing

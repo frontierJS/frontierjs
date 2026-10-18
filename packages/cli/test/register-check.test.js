@@ -36,7 +36,9 @@ beforeAll(() => {
   writeFileSync(join(ROOT, 'CLAUDE.md'), [
     '## Bridge index',
     '',
-    '**Data → API** — `$setAuth(user)` / `asSystem()` · `withLitestoneDb(db)`',
+    '**The entries are the `bridge-index` skill** (`.claude/skills/`); this is the KEY LIST.',
+    '',
+    '**Data → API** — `$setAuth(user)` / `asSystem()` · `withLitestoneDb(db)` · `*.mount.js`',
     '',
     '## Where to look',
   ].join('\n'))
@@ -78,6 +80,10 @@ beforeAll(() => {
     // it holds is silent however the call is spelled.
     '| <a id="fjs-043"></a>FJS-043 | cli | **Scope lost across the handoff.** | open | 2026-08-17 | [d](src/real.js) · seam: setAuthority |',
     '| <a id="fjs-044"></a>FJS-044 | cli | **Scope lost again.** | open | 2026-08-17 | [d](src/real.js) · seam: `$setAuth` |',
+    // A file name reduces to its extension, and a prose span above the entries
+    // is not a key.
+    '| <a id="fjs-048"></a>FJS-048 | cli | **Mount lost.** | open | 2026-08-17 | [d](src/real.js) · seam: stage.js |',
+    '| <a id="fjs-049"></a>FJS-049 | cli | **Skill named.** | open | 2026-08-17 | [d](src/real.js) · seam: bridge-index |',
     '',
     '## Decisions awaiting a ruling',
     '| Id | Pkg | Question | Detail |',
@@ -263,7 +269,7 @@ describe('warnings', () => {
 
   test('seam: a name outside the Bridge index key list errors, a listed one is silent', () => {
     const result = runRegisterCheck({ root: ROOT, staleDays: 0, today: TODAY })
-    expect(of(result, 'seam-name').map(h => h.id)).toEqual(['FJS-043'])
+    expect(of(result, 'seam-name').map(h => h.id)).toEqual(['FJS-043', 'FJS-048', 'FJS-049'])
   })
 
   test('staleDays 0 turns the clock rule off, so the answer is reproducible', () => {

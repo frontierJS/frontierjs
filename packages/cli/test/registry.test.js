@@ -50,6 +50,21 @@ describe('buildRegistry', () => {
     expect(registry.has('make:command')).toBe(true)
   })
 
+  // FJS-2985: these answer one person's servers and browser. A command like
+  // them belongs in $XDG_CONFIG_HOME/fli/commands, where the registry already
+  // reads it, not in the tool every app installs.
+  test('the framework ships no CapRover, bare-ssh deploy or personal-browser command', () => {
+    const registry = buildRegistry()
+    const personal = [
+      'caprover:backup', 'caprover:create', 'caprover:login', 'caprover:setup',
+      'caprover:ssl', 'caprover:update',
+      'api:deploy', 'web:deploy',
+      'browser:captain', 'browser:live', 'browser:servers',
+      'utils:vpn',
+    ]
+    expect(personal.filter(name => registry.has(name))).toEqual([])
+  })
+
   test('every entry has a non-empty title', () => {
     const registry = buildRegistry()
     for (const [, entry] of registry.entries()) {

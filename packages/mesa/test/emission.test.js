@@ -1489,9 +1489,8 @@ describe('class passthrough — the accepted surface', () => {
 /**
  * The calling convention is reserved too (`FJS-482`).
  *
- * `__anchor` and `__props` are the component function's own parameters,
- * `__block` is threaded into every `track()` call, and `__prev` is the render
- * callback's. A top-level declaration of one lands in the same scope and WINS,
+ * `__anchor` and `__props` are the component function's own parameters and
+ * `__prev` is the render callback's. A top-level declaration of one lands in the same scope and WINS,
  * which is a shadow rather than a redeclaration — so unlike `FJS-471`'s
  * builtins these compiled to valid JavaScript and failed later, or not at all:
  *
@@ -1504,7 +1503,6 @@ describe('class passthrough — the accepted surface', () => {
 describe('a component may not declare the calling convention', () => {
   for (const [label, body] of Object.entries({
     'function __anchor()': `function __anchor(){ return 1 }`,
-    'function __block()':  `function __block(){ return 1 }`,
     'const __prev':        `const __prev = 9`,
     'let __props':         `let __props = 9`,
   })) {
@@ -1587,5 +1585,17 @@ describe('{@const} bound to an object literal', () => {
     const c = mount(C)
     expect(c.querySelector('p').textContent).toBe('4')
     c.remove()
+  })
+})
+
+describe('a component takes two parameters', () => {
+  // A third `__block` was threaded into every track() and was always null once
+  // slots lowered to snippets (`FJS-D668`); the HMR wrappers matched its
+  // signature (`FJS-3149`).
+  it('is (__anchor, __props) with no __block anywhere in the output', async () => {
+    const ctx = await compile(
+      `<script>export let a = 1\nlet n = 0\n$: d = n + a</script><p>{d}</p>`, 'T.mesa')
+    expect(ctx.result).toContain('export default function T(__anchor, __props) {')
+    expect(ctx.result).not.toContain('__block')
   })
 })

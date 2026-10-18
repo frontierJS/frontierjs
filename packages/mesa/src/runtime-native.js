@@ -577,7 +577,7 @@ export function mount(Component, { props = {} } = {}) {
   let disposeRoot = () => {}
   createRoot((dispose) => {
     disposeRoot = dispose
-    Component(root, props, null)
+    Component(root, props)
   })
   __FlushElementTree()
   return { root, dispose: disposeRoot }

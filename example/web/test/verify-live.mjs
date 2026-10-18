@@ -41,6 +41,7 @@ export const holds = ['ports']
 
 import { requireServers, PORTS } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
+import { watchReloads } from './lib/reload.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const UI     = process.env.UI_URL  ?? `http://localhost:${PORTS.ui}`
@@ -70,6 +71,7 @@ await requireServers([['api (bun run api)', `${API}/api/health`], ['web (bun run
 // ─── CDP ──────────────────────────────────────────────────────────────────
 
 const browser = await openChrome().catch((e) => { console.error(e.message); process.exit(1) })
+watchReloads(browser)
 const { cmd, evaluate } = browser
 
 // The driver's own `errors` promote only a [Mesa] warning; this drive fails on

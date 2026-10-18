@@ -1028,8 +1028,7 @@ export const RULES = [
           // duration and `holidays` is not a count of days.
           if (!/[a-z0-9]$/.test(f.name.slice(0, -suffix.length))) continue
 
-          // A symbol that is not an identifier (`%`) parses only quoted.
-          const symbol = /^[A-Za-z_]\w*$/.test(SUFFIXES[suffix]) ? SUFFIXES[suffix] : JSON.stringify(SUFFIXES[suffix])
+          const symbol = SUFFIXES[suffix]
           const bare   = f.name.slice(0, -suffix.length)
           out.push({
             model: model.name, field: f.name,
@@ -1316,6 +1315,59 @@ export const RULES = [
               `who passes the gate carries no ${list}, so the rule admits nobody. Lower the ${op} gate to 0 ` +
               `or add a branch the gated callers can satisfy.`,
           })
+        }
+      }
+      return out
+    },
+  },
+
+  {
+    id:       'deny-reads-nullable-column',
+    severity: 'warn',
+    title:    'an @@deny compares a column that can be NULL, and a NULL row is refused',
+    blurb:    'SQL compares with three values and a `@@deny` fires on TRUE and on UNKNOWN alike, so ' +
+              '`@@deny(\'update\', ok == false)` over an optional `ok` refuses every row where `ok` is ' +
+              'NULL, not only the ones where it is false. `x == null` is the one compare that answers a ' +
+              'boolean. Say what NULL does: `ok != null && ok == false` to let a NULL row through, or ' +
+              '`ok == null || ok == false` to refuse it on purpose.',
+    run(schema) {
+      const branches = (node, type) => node?.type === type ? [...branches(node.left, type), ...branches(node.right, type)] : [node]
+      const nullTest = (node, op) => node?.type === 'compare' && node.op === op &&
+        node.right?.type === 'literal' && node.right.value === null && node.left?.type === 'field'
+      const isNull = node => node?.type === 'literal' && node.value === null
+
+      const out = []
+      for (const model of schema.models ?? []) {
+        const nullable = new Set((model.fields ?? [])
+          .filter(f => f.type?.kind === 'scalar' && f.type.optional && !f.type.array).map(f => f.name))
+        if (!nullable.size) continue
+
+        for (const attr of model.attributes ?? []) {
+          if (attr.kind !== 'deny' || attr.generated) continue
+          const hit = new Set()
+          // A conjunct `f != null` or a disjunct `f == null` is the rule stating what NULL does.
+          const visit = (node, said) => {
+            if (!node || typeof node !== 'object') return
+            if (node.type === 'and' || node.type === 'or') {
+              const op   = node.type === 'and' ? '!=' : '=='
+              const list = branches(node, node.type)
+              const next = new Set([...said, ...list.filter(b => nullTest(b, op)).map(b => b.left.name)])
+              for (const b of list) visit(b, next)
+              return
+            }
+            if (node.type === 'not') return visit(node.expr, said)
+            if (node.type !== 'compare' || isNull(node.left) || isNull(node.right)) return
+            for (const side of [node.left, node.right])
+              if (side?.type === 'field' && nullable.has(side.name) && !said.has(side.name)) hit.add(side.name)
+          }
+          visit(attr.expr, new Set())
+          for (const field of hit)
+            out.push({
+              model: model.name,
+              message: `${model.name}: @@deny compares ${field}, which can be NULL, and a deny fires on UNKNOWN, ` +
+                `so a row where ${field} is NULL is refused too. Write \`${field} != null && …\` to let a NULL row through, ` +
+                `or \`${field} == null || …\` to refuse it on purpose.`,
+            })
         }
       }
       return out

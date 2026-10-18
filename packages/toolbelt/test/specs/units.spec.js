@@ -9,7 +9,7 @@
  */
 
 import { formatBytes, formatMoney, BYTE_UNITS, minorUnits, isKnownCurrency, knownCurrencies, fromMinor, toMinor, roundMinor, allocate,
-         MEASURE_UNITS, LENGTH_UNITS, unitInfo, isKnownUnit, baseUnit, suggestUnit, convertUnit } from '../../src/units/units.js'
+         MEASURE_UNITS, LENGTH_UNITS, parseLength, unitInfo, isKnownUnit, baseUnit, suggestUnit, convertUnit } from '../../src/units/units.js'
 
 /* ── The ladder ────────────────────────────────────────────────────── */
 
@@ -238,6 +238,17 @@ test('units: the table is a few hundred codes, and the odd ones are the point', 
     try { return minorUnits(c) !== 2 } catch { return false }
   })
   assert.equal(odd.length, 26)
+})
+
+test('units: knownCurrencies hands out a copy, so a caller\'s add or delete changes nothing', function () {
+  const copy = knownCurrencies()
+  copy.add('BTC')
+  copy.delete('USD')
+  assert.equal(isKnownCurrency('BTC'), false)
+  assert.equal(isKnownCurrency('USD'), true)
+  assert.equal(minorUnits('USD'), 2)
+  assert.equal(knownCurrencies().size, 183)
+  assert.throws(() => minorUnits('BTC'))
 })
 
 test('units: the minor-unit conversion is the currency\'s, not a hundred', function () {
@@ -504,4 +515,39 @@ test('units: formatMoney reuses its formatter instead of building one per call',
   } finally {
     Intl.NumberFormat = Real
   }
+})
+
+// FJS-2222: numeric edges. Each row pairs a refusal with a value that must
+// still go through.
+test('units: toMinor refuses an amount past 2^53, where the integer stops being exact', function () {
+  assert.throws(() => toMinor(90071992547409.93, 'USD'), /toMinor:.*2\^53/)
+  assert.throws(() => toMinor(1e300, 'USD'), /toMinor:/)
+  assert.equal(toMinor(90071992547409.91, 'USD'), 9007199254740991)
+})
+
+test('units: a numeric string is decimal, never hex, binary or octal', function () {
+  for (const v of ['0x10', '0b11', '0o7', '1_000']) {
+    assert.throws(() => toMinor(v, 'USD'), /toMinor:/, v)
+    assert.equal(formatMoney(v), '', v)
+  }
+  assert.equal(toMinor(' 12.5 ', 'USD'), 1250)
+  assert.equal(toMinor('1e2', 'USD'), 10000)
+  assert.equal(toMinor('-.5', 'USD'), -50)
+  assert.equal(formatBytes('0x10'), '')
+})
+
+test('units: parseLength refuses a magnitude that overflows to Infinity', function () {
+  assert.throws(() => parseLength('9'.repeat(400) + 'mi'), /parseLength:/)
+  assert.equal(parseLength('5mi'), 8046.72)
+})
+
+test('units: allocate refuses ratios whose sum or share overflows', function () {
+  assert.throws(() => allocate(100, [1e308, 1e308]), /allocate:/)
+  assert.throws(() => allocate(100, [1.7e308, 1]), /allocate:/)
+  assert.deepEqual(allocate(100, [1e300, 1e300]), [50, 50])
+  assert.deepEqual(allocate(100, [1e10, 1e10]), [50, 50])
+})
+
+test('units: formatMoney with decimals past 100 falls back instead of throwing', function () {
+  for (const decimals of [200, -1, 1.5]) assert.equal(typeof formatMoney(1, 'USD', { decimals }), 'string')
 })

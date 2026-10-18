@@ -78,7 +78,11 @@ export function readKeyList(root) {
   const to   = rest.slice(1).search(/^## /m)
   const body = to < 0 ? rest : rest.slice(0, to + 1)
 
-  return new Set([...body.matchAll(/`([^`]+)`/g)].map(m => identifierOf(m[1])))
+  // Only the entry lines — `**Group** — names` — hold keys. The sentence above
+  // them names the skill and a directory in backticks, and a typo matching one
+  // of those would pass.
+  const entries = body.split('\n').filter(l => /^\*\*[^*]+\*\* — /.test(l))
+  return new Set([...entries.join('\n').matchAll(/`([^`]+)`/g)].map(m => identifierOf(m[1])))
 }
 
 /** Seams the skill explains and the key list has never named. */
@@ -169,10 +173,17 @@ export function weakLiteral(lit) {
   return lit.length < 7 && !/[-@$_A-Z]/.test(lit)
 }
 
-/** `app.runAs(id, fn)` → `runAs`. The identifier a parser would find. */
+/**
+ * `app.runAs(id, fn)` → `runAs`. The identifier a parser would find.
+ *
+ * A wildcard and a file extension are not names: `*.mount.js` is `mount` and
+ * `client.auth.*` is `auth`, where the last segment alone made every `.js` seam
+ * one group called `js`.
+ */
 export function identifierOf(name) {
-  const bare = name.split('(')[0].trim()
-  const last = bare.split('.').pop()
+  const bare  = name.split('(')[0].trim()
+  const parts = bare.split('.').filter(x => x && x !== '*' && !EXT.has(x))
+  const last  = parts[parts.length - 1] ?? bare
   return last.replace(/^@/, '')
 }
 

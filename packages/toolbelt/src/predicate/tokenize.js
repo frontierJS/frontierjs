@@ -22,6 +22,7 @@ export const TK = {
   ARROW:    'ARROW',    // ->
   FATARROW: 'FATARROW', // => — a lambda, in a flow expression
   DOLLAR:   'DOLLAR',   // $  — the run, in a flow expression
+  PERCENT:  'PERCENT',  // %  — the one unit symbol that is not an identifier; no expression grammar takes it
   LBRACE:   'LBRACE',   // {
   RBRACE:   'RBRACE',   // }
   LBRACKET: 'LBRACKET', // [
@@ -146,7 +147,7 @@ export function tokenize(src) {
     const single = { '{': TK.LBRACE, '}': TK.RBRACE, '[': TK.LBRACKET, ']': TK.RBRACKET,
                      '(': TK.LPAREN, ')': TK.RPAREN, ',': TK.COMMA,    ':': TK.COLON,
                      '?': TK.QUESTION, '.': TK.DOT,  '@': TK.AT,
-                     '$': TK.DOLLAR }
+                     '$': TK.DOLLAR, '%': TK.PERCENT }
     if (single[src[i]]) {
       tokens.push({ type: single[src[i]], value: src[i], ...pos })
       advance(); continue

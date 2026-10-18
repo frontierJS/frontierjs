@@ -3,7 +3,8 @@ import { occurrenceKey }        from '@frontierjs/toolbelt/history'
 import { createIntent, createRefund } from '../providers/psp/index.ts'
 import { orderIdFromCheckoutCode }     from '../domain/shop'
 import { settleOrder, refundOrder }   from '../domain/shop'
-import { settleInvoice, declineKind } from '../domain/billing'
+import { settleInvoice, declineKind, RETRY_DAYS } from '../domain/billing'
+import collectInvoice                  from '../jobs/invoice-collect.job.ts'
 
 // Money, in two methods that face opposite directions.
 //
@@ -492,6 +493,19 @@ const record = async () => {
         // a move the machine refuses is a 409 to the provider, which reads as
         // *retry this forever*.
         if (sub?.status === 'active') await system.subscription.transition(sub.id, 'lapse')
+      }
+
+      // A soft decline is presented again (`FJS-D907`). Caravan's ladder cannot
+      // do it: a decline is an answer returned as a value, so the collect job
+      // that received it finished successfully. The attempt is the invoice's
+      // failed payments, this one included, so no column keeps count.
+      if (!hard && !stale && invoice) {
+        const failed = await system.payment.count({ where: { invoiceId: invoice.id, status: 'failed' } }) as number
+        const days   = RETRY_DAYS[failed - 1]
+        if (days !== undefined) {
+          await $.app?.jobs?.dispatch(collectInvoice, { invoiceId: invoice.id },
+            { delay: days * 86_400_000, unique: occurrenceKey('collect', String(invoice.id), String(failed)) })
+        }
       }
       return { status: stale ? 'stale' : 'recorded', eventId, payment: payment.id,
                invoice: invoice?.id ?? null,

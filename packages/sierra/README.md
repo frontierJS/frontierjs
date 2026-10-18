@@ -454,6 +454,11 @@ export async function getStaticPaths() {        // static builds only
   geocoding a postcode with it is not handing that vendor a replayable session. In cookie
   mode there is no token to attach and the request carries `credentials: 'include'` to
   that same audience instead.
+- **`url` is a STRING — the path plus the search (`'/surveys/?status=open'`) — never a
+  `URL`.** `url.search` is therefore `String.prototype.search`, a function, and a redirect
+  built from it carries no query; read the query off the string (`url.split('?')[1]`,
+  or `new URL(url, 'http://x').searchParams`). A static build hands `load()` and `head()`
+  the page's path alone, since a prerendered page has no query.
 - Returning a string starting with `/` performs a redirect.
 - A thrown error lands in `page.error` and the router **stays on the route** so the page
   can render its own error state. Data failures are not routing failures — there is no

@@ -60,7 +60,7 @@ const HAVEN_PACKAGE = '@frontierjs/haven'
 // serves the same hostname; a change to one is a change to the other.
 const HOSTED = 'https://haven.knightly.dev'
 
-const signInOf = (haven) => join(haven, 'web', 'src', 'sign-in.js')
+const signInOf = (haven) => join(haven, 'web', 'src', 'lib', 'session', 'sign-in.js')
 
 // Under node_modules a sibling is whatever an install left beside fli, never
 // the version the server runs, so only a checkout's sibling counts.

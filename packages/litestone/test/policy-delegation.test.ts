@@ -290,3 +290,81 @@ describe('a check() at protection the compiler cannot see is warned about', () =
     db.$close?.()
   })
 })
+
+// FJS-3070 — the forms access-control.md's table now names: an operation in a
+// field `@allow('write', …)`, and a negated one in a `@@deny('post-update', …)`.
+describe('an operation named in a check()', () => {
+  const orgs = `
+    model User { id Int @id  @@auth }
+    model Org  { id Int @id  ownerId Int  items Item[]
+      @@allow('read', true)
+      @@allow('create', true)
+      @@allow('update', ownerId == auth().id)
+    }
+  `
+  const seed = async (schema: string) => {
+    const db = await open(schema)
+    const sys = db.asSystem()
+    await sys.org.create({ data: { id: 1, ownerId: 1 } })
+    await sys.org.create({ data: { id: 2, ownerId: 2 } })
+    await sys.item.create({ data: { id: 1, orgId: 1, title: 'mine', secret: 'a' } })
+    await sys.item.create({ data: { id: 2, orgId: 2, title: 'theirs', secret: 'b' } })
+    return { db, sys, me: db.$setAuth({ id: 1 }) }
+  }
+
+  test("a field @allow('write', check(org, 'update')) drops the column on a row whose org the caller may not update", async () => {
+    const { db, sys, me } = await seed(`${orgs}
+      model Item {
+        id     Int     @id
+        orgId  Int
+        org    Org     @relation(fields: [orgId], references: [id])
+        title  String?
+        secret String? @allow('write', check(org, 'update'))
+        @@allow('read',   true)
+        @@allow('update', true)
+      }
+    `)
+    await me.item.update({ where: { id: 1 }, data: { secret: 'x' } })
+    await me.item.update({ where: { id: 2 }, data: { secret: 'x', title: 't' } })
+    const rows = await sys.item.findMany({ orderBy: { id: 'asc' } })
+    expect(rows.map((r: any) => [r.secret, r.title])).toEqual([['x', 'mine'], ['b', 't']])
+    db.$close?.()
+  })
+
+  test("!check(org, 'update') in a @@deny('post-update') refuses an edit to a row the caller could not edit, and admits the rest", async () => {
+    const { db, me } = await seed(`${orgs}
+      model Item {
+        id     Int     @id
+        orgId  Int
+        org    Org     @relation(fields: [orgId], references: [id])
+        title  String?
+        secret String?
+        @@allow('read',   true)
+        @@allow('update', true)
+        @@deny('post-update', !check(org, 'update'))
+      }
+    `)
+    await me.item.update({ where: { id: 1 }, data: { title: 't' } })
+    await expect(me.item.update({ where: { id: 2 }, data: { title: 't' } })).rejects.toThrow(/post-update/)
+    db.$close?.()
+  })
+
+  test("the negation of a parent with no 'update' policy denies nothing — the delegation admits, so its complement never fires", async () => {
+    const { db, me } = await seed(`
+      model User { id Int @id  @@auth }
+      model Org  { id Int @id  ownerId Int  items Item[]  @@allow('read', true) }
+      model Item {
+        id     Int     @id
+        orgId  Int
+        org    Org     @relation(fields: [orgId], references: [id])
+        title  String?
+        secret String?
+        @@allow('read',   true)
+        @@allow('update', true)
+        @@deny('post-update', !check(org, 'update'))
+      }
+    `)
+    await expect(me.item.update({ where: { id: 1 }, data: { title: 't' } })).resolves.toBeDefined()
+    db.$close?.()
+  })
+})

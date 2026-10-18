@@ -15,21 +15,21 @@
  *
  * The transform applied to compiled output:
  *
- *   export default function Name(__anchor, __props, __block) { … }
+ *   export default function Name(__anchor, __props) { … }
  *
  * becomes
  *
  *   import { __mesa_register, __mesa_hot_update } from '<client>'
- *   function __mesaOrigFn(__anchor, __props, __block) {
+ *   function __mesaOrigFn(__anchor, __props) {
  *     …
- *     if (import.meta.hot) __mesa_register(id, __hmrMark, __anchor, __props, __block, __mesaOrigFn)
+ *     if (import.meta.hot) __mesa_register(id, __hmrMark, __anchor, __props, __mesaOrigFn)
  *   }
  *   let __hmrMark
  *   export function __setMark(mark) { __hmrMark = mark }
- *   export default function __mesaHMRWrap(__anchor, __props, __block) {
+ *   export default function __mesaHMRWrap(__anchor, __props) {
  *     __hmrMark = document.createComment(' mesa:hmr:Name ')
  *     __anchor.before(__hmrMark)
- *     __mesaOrigFn(__anchor, __props, __block)
+ *     __mesaOrigFn(__anchor, __props)
  *   }
  *   import.meta.hot.accept(m => { … __mesa_hot_update(id, m.__mesaOrigFn ?? m.default) })
  *
@@ -44,7 +44,7 @@
 // changes, `canInject` fails CLOSED and the caller keeps the old full-reload
 // behavior rather than emitting broken code — which is what a bare pair of
 // `.replace()` calls does, since a pattern that matches nothing is silent.
-const RE_DEFAULT_FN = /export default function (\w+)\(__anchor,\s*__props,\s*__block\)/
+const RE_DEFAULT_FN = /export default function (\w+)\(__anchor,\s*__props\)/
 const RE_POP        = /(\.pop_component\(\);)([\s\S]*?\n\})(?=\n\$\$runtime\.\$\$delegate|\s*$)/
 
 /** Can this compiled output be wrapped? Ask before calling injectHMR. */
@@ -71,14 +71,14 @@ export function injectHMR(js, id, root, clientId) {
   // Renaming the component also hides any collision on its name, so a module
   // that redeclares it parses here and fails `vite build` (FJS-1751). The
   // compiler's safeComponentIdent is what keeps that name free.
-  let out = js.replace(RE_DEFAULT_FN, 'function __mesaOrigFn(__anchor, __props, __block)')
+  let out = js.replace(RE_DEFAULT_FN, 'function __mesaOrigFn(__anchor, __props)')
 
   // Registration goes after pop_component(), and takes __hmrMark explicitly so
   // the client never has to search the DOM for it.
   out = out.replace(RE_POP, (_, pop, rest) => {
     const reg = `
   if (import.meta.hot) {
-    __mesa_register('${escapedId}', __hmrMark, __anchor, __props, __block, __mesaOrigFn)
+    __mesa_register('${escapedId}', __hmrMark, __anchor, __props, __mesaOrigFn)
   }`
     return `${pop}${rest.replace(/^(\n\})/, `${reg}$1`)}`
   })
@@ -96,10 +96,10 @@ export function injectHMR(js, id, root, clientId) {
   out += `
 let __hmrMark
 export function __setMark(mark) { __hmrMark = mark }
-export default function __mesaHMRWrap(__anchor, __props, __block) {
+export default function __mesaHMRWrap(__anchor, __props) {
   __hmrMark = document.createComment(' mesa:hmr:${shortName} ')
   __anchor.before(__hmrMark)
-  __mesaOrigFn(__anchor, __props, __block)
+  __mesaOrigFn(__anchor, __props)
 }
 export { __mesaOrigFn }
 if (import.meta.hot) {

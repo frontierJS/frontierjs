@@ -40,6 +40,7 @@ const SCHEMA = `
     pageId Int
     page   Page   @relation(fields: [pageId], references: [id])
     userId String
+    seenAt String @default("")
   }
 
   model Note {
@@ -186,10 +187,38 @@ describe('a write the read policy reaches asks every member again', () => {
     expect(app.channel(`page:${page.id}`).length).toBe(2)
 
     // The control: a Share is in the reach, so the same count moves.
-    await sys.share.update({ where: { id: share.id }, data: { userId: GUEST } })
+    await sys.share.create({ data: { pageId: page.id, userId: '3' } })
     await settle()
     expect(asked).toBeGreaterThan(0)
     expect(app.channel(`page:${page.id}`).length).toBe(2)
+  })
+
+  // FJS-3272 -- a Share column the page's read policy never reads (a stamp
+  // written every few seconds) asked every member again, as a Run.heartbeatAt
+  // regraded every open chunk list before FJS-3127.
+  test('a write to a column the policy does not read asks nobody, and one it reads still does', async () => {
+    let asked = 0
+    const { port, sys, app, page, share, db } = await mkApp()
+    const readAs = db.$readAs.bind(db)
+    db.$readAs = (...args: unknown[]) => { asked++; return readAs(...args) }
+    await open(port, OWNER)
+    await open(port, GUEST)
+    await settle()
+
+    asked = 0
+    await sys.share.update({ where: { id: share.id }, data: { seenAt: 'now' } })
+    await settle()
+    expect(asked).toBe(0)
+
+    await sys.share.updateMany({ where: { id: share.id }, data: { seenAt: 'later' } })
+    await settle()
+    expect(asked).toBeGreaterThan(0)
+
+    asked = 0
+    await sys.share.update({ where: { id: share.id }, data: { userId: '3', seenAt: 'again' } })
+    await settle()
+    expect(asked).toBeGreaterThan(0)
+    expect(app.channel(`page:${page.id}`).length).toBe(1)
   })
 })
 

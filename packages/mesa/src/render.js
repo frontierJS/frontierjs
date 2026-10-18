@@ -305,7 +305,7 @@ export async function renderToHTML(ComponentFactory, props = {}, options = {}) {
       // Inside the try: a throw under a `<mesa:boundary>` leaves the flush
       // rather than rendering `failed` into the page (`FJS-D377`).
       try {
-        ComponentFactory(anchor, props ?? {}, null)
+        ComponentFactory(anchor, props ?? {})
         flushSync()
       } catch (e) {
         dispose()

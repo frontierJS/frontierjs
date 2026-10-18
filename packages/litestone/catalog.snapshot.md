@@ -221,3 +221,4 @@ Shapes the parser accepts and something later refuses.
 | `create-reaches-unpickable-relation` | warn | a create policy reaches through a relation the picker cannot be narrowed by |
 | `read-allow-hides-tenant-members` | warn | a read @@allow written for a claim the tenant's members do not carry hides the model from them |
 | `allow-needs-bearer-claim-under-gate` | warn | an @@allow only a bearer can satisfy sits under a gate a bearer cannot pass |
+| `deny-reads-nullable-column` | warn | an @@deny compares a column that can be NULL, and a NULL row is refused |

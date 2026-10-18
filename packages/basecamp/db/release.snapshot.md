@@ -1965,7 +1965,7 @@ table `user` · db `main` · gate `1.8.1.5` · @@softDelete
 @@unique(accountId, username)
 @@index(accountId)
 @@index(email)
-@@allow('read', id == auth().id || auth().level >= 4)
+@@allow('read', id == auth().id)
 @@allow('update', id == auth().id)
 ```
 

@@ -56,3 +56,18 @@ test('the printed outbox wiring names the scaffold\'s file and the $ spelling', 
   expect(text).not.toContain('ctx.locals')
   expect(text).not.toContain('jobsDir')
 })
+
+// FJS-1870. The sentence a generator prints after it edits schema.lite names the
+// verb the install commands would run, so the scaffold and AGENTS.md agree.
+test('the verb a generator tells you to run follows the migration history', () => {
+  expect(schemaApplyStep(dbDir(['20260801000000_initial_schema.sql']), 'x').command).toBe('fli db:migrate')
+  expect(schemaApplyStep(dbDir(), 'x').command).toBe('fli db:push')
+})
+
+test('make:scaffold and make:model name the verb through schemaApplyStep', () => {
+  for (const name of ['scaffold', 'model']) {
+    const text = readFileSync(resolve(import.meta.dir, `../commands/make/${name}.md`), 'utf8')
+    expect(text).toContain('schemaApplyStep(')
+    expect(text).not.toMatch(/(Next|Run): ?fli db:push|Run fli db:push to apply/)
+  }
+})

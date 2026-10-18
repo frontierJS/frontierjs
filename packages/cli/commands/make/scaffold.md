@@ -194,12 +194,15 @@ const { resourceFile, servicePlural } =
 const { resourceRoutePage, routeSegment, withNavEntry } =
   await import(resolve(global.fliRoot, 'core/crud-templates.js'))
 
+const { schemaApplyStep } = await import(resolve(global.fliRoot, 'core/schema-apply.js'))
+
 </script>
 
 Generates a complete vertical slice from a single model name — one stanza in
 `db/schema.lite`, one Junction service, one Sierra Resource, and three Mesa
 routes. Each layer is wired to the next, and every one of them traces back to
-the schema. Run `fli db:push` afterwards to apply the schema change.
+the schema. It ends by naming the command that applies the schema change —
+`fli db:migrate` in an app with a migration history, `fli db:push` in one without.
 
 Use `--fields` to seed real fields across all layers from the start:
 
@@ -266,7 +269,7 @@ if (flag['skip-schema']) {
   log.info('Skipping schema.lite — assumed to already contain model ' + modelName)
 } else {
   if (!existsSync(schemaPath)) {
-    log.error('schema.lite not found — run fli db:push in an existing project first')
+    log.error('schema.lite not found — run this in an existing project, beside its db/ folder')
     return
   }
 
@@ -347,7 +350,7 @@ if (!flag.dry && created.length) {
   echo(`  ${created.length} file${created.length === 1 ? '' : 's'} created for ${modelName}`)
   echo('')
   if (created.some(f => f.endsWith('schema.lite'))) {
-    echo('  Next: fli db:push to apply the schema change')
+    echo(`  Next: ${schemaApplyStep($.paths.db, modelName).command} to apply the schema change`)
   }
   if (!skipRoutes) {
     const url = routeSegment(plural)

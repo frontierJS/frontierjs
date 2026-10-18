@@ -115,7 +115,7 @@ for (const [port, what] of [[API_PORT, 'the API'], [SITE_PORT, 'the storefront o
 // dist/chrome is a drive that passes against the previous edit — the same trap
 // as a dev server serving the code it started with. It is a second's work.
 // The API origin is a host permission the build writes into the manifest.
-execFileSync('bunx', ['jetty-build-ext', '--root=extension', '--browser=chrome'],
+execFileSync('bunx', ['jetty', 'build', '--root=extension', '--browser=chrome'],
              { cwd: ROOT, stdio: process.env.DEBUG ? 'inherit' : 'ignore',
                env: { ...process.env, VITE_API_URL: API } })
 

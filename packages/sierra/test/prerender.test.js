@@ -96,28 +96,16 @@ describe('composeWrapper', () => {
     expect(out).not.toContain('{#snippet')
   })
 
-  test('passes children BOTH ways, because layouts read one protocol or the other', () => {
-    // Mesa's native <slot /> reads the third argument (element children); a
-    // layout written as {@render children?.()} reads the `children` prop.
-    // Nothing bridges them, and a caller that renders layouts as written runs no
-    // slot-rewrite, so the wrapper cannot know which one a layout speaks. Supplying both
-    // renders correctly either way; the element children render the same
-    // snippet, so the page is instantiated exactly once.
+  // A `<slot />` layout and a `{@render children?.()}` layout both read the
+  // `children` prop (`FJS-D668`), so element children would only repeat it.
+  test('passes children as the prop alone', () => {
     const out = composeWrapper('/app/routes/index.mesa', ['/app/routes/_module.mesa'])
     expect(out).toContain('{#snippet s0()}')
-    expect(out).toContain('<L0 children={s0}>{@render s0()}</L0>')
-  })
-
-  // Sierra's own build prepares every layout the way dev does, which rewrites
-  // `<slot />` to `{@render children?.()}`. Element children then have nowhere
-  // to render, and Mesa said so on every build (`FJS-1491`).
-  test('passes only the prop when the layouts were prepared, so nothing is dropped', () => {
-    const out = composeWrapper('/app/routes/index.mesa', ['/app/routes/_module.mesa'], { elementChildren: false })
     expect(out).toContain('<L0 children={s0} />')
     expect(out).not.toContain('{@render s0()}')
   })
 
-  test('does not repeat the wrapped body — element children re-render the snippet', () => {
+  test('does not repeat the wrapped body', () => {
     const out = composeWrapper('/app/routes/index.mesa', ['/app/routes/_module.mesa'])
     expect(out.match(/<Page \{data\} \/>/g)).toHaveLength(1)
   })
@@ -130,11 +118,11 @@ describe('composeWrapper', () => {
     expect(out).toContain('import L0 from "/app/routes/_module.mesa"')
     expect(out).toContain('import L1 from "/app/routes/a/_module.mesa"')
     // L1 (inner) wraps the page; L0 (outer) wraps L1.
-    expect(out).toContain('<L0 children={s0}>{@render s0()}</L0>')
+    expect(out).toContain('<L0 children={s0} />')
     // s0's body references s1, so s1 must be declared first — the other order
     // compiles and then throws "s1 is not defined" at render time.
     expect(out.indexOf('{#snippet s1()}')).toBeLessThan(out.indexOf('{#snippet s0()}'))
-    expect(out.indexOf('{#snippet s0()}')).toBeLessThan(out.indexOf('<L0 children={s0}>'))
+    expect(out.indexOf('{#snippet s0()}')).toBeLessThan(out.indexOf('<L0 children={s0} />'))
   })
 
   test('declares the data prop the page receives', () => {

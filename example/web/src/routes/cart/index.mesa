@@ -16,12 +16,12 @@ title: Basket
   // is shown and the number `checkout` writes onto the order have to be one
   // calculation and not two that agree today.
   import { cart, refresh, setQuantity, remove, checkout, clear, dismissReceipt,
-           redeemHandoff, handoffCodeFromUrl,
+           redeemHandoff, handoffCodeFromHash,
            applyDiscount, removeDiscount, setShipping, loadShippingOptions } from '@/stores/cart.js'
   import { money } from '@/lib/money.js'
   import { prefs } from '@/stores/prefs.js'
   import { toFieldErrors } from '@frontierjs/sierra/resource'
-  import { goto } from '@frontierjs/sierra/router'
+  import { goto, page } from '@frontierjs/sierra/router'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
@@ -84,10 +84,10 @@ title: Basket
   // Ahead of `refresh()`, because a shopper arriving with a handoff wants THAT
   // basket and not whatever this browser was holding last week.
   let handoffError = null
-  const code = handoffCodeFromUrl()
+  const code = handoffCodeFromHash(page.hash)
 
   if (code) {
-    history.replaceState(null, '', location.pathname + location.search)
+    goto(page.pathname + page.search, {}, { replace: true })
     redeemHandoff(code).catch(err => { handoffError = err.message })
   } else {
     // What this browser is holding a token for. A basket checked out in another

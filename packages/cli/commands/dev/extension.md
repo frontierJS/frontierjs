@@ -31,5 +31,5 @@ to it.
 const cliArgs = [`--root=${$.paths.extension}`, `--browser=${flag.browser || 'chrome'}`]
 if (flag.launch)  cliArgs.push('--launch')
 if (flag.verbose) cliArgs.push('--verbose')
-$.exec({ command: `bunx jetty-dev-ext ${cliArgs.join(' ')}`, dry: flag.dry })
+$.exec({ command: `bunx jetty dev ${cliArgs.join(' ')}`, dry: flag.dry })
 ```

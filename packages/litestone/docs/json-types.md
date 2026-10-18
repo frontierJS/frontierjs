@@ -86,7 +86,13 @@ type <n> {
 fieldName Json @type(TypeName)
 fieldName Json @type(TypeName, strict: false)
 fieldName Json? @type(TypeName)         // optional + nullable
+fieldName Json @type(TypeName[])        // a list of them
 ```
+
+`@type(T[])` grades every element as a `T` and names the index that fails
+(`fields.1.name`). A `where` cannot name a path into a list and `$merge` does
+not apply to one -- both are refused by name, since a path on an array matches
+nothing and `json_patch` replaces a list whole.
 
 ## What can go inside a type
 

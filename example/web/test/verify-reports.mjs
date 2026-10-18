@@ -33,6 +33,7 @@ export const holds = ['ports']
 import { spawn, execFileSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { watchReloads } from './lib/reload.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 import { SESSION_MODULE } from './lib/session.mjs'
 import { PORTS } from './lib/preflight.mjs'
@@ -122,6 +123,7 @@ for (const want of ['revenue', 'orders']) {
 // ─── CDP ──────────────────────────────────────────────────────────────────
 
 const browser = await openChrome().catch((e) => { console.error(e.message); stopAll(); process.exit(1) })
+const reload = watchReloads(browser)
 const { cmd, evaluate } = browser
 
 // The driver's own `errors` promote only a [Mesa] warning; this drive fails on
@@ -141,9 +143,11 @@ const consoleErrors = noise
 
 /** Navigate and wait for the shell — the SPA boots once and routes after. */
 async function go(path) {
-  await evaluate(`window.__nav = ${JSON.stringify(path)}; location.href = ${JSON.stringify(UI + path)}`)
-    .catch(() => {})
-  await cmd('Page.navigate', { url: UI + path })
+  await reload.during(async () => {
+    await evaluate(`window.__nav = ${JSON.stringify(path)}; location.href = ${JSON.stringify(UI + path)}`)
+      .catch(() => {})
+    await cmd('Page.navigate', { url: UI + path })
+  })
   await evaluate(`
     const t0 = Date.now();
     while (Date.now() - t0 < 20000) {

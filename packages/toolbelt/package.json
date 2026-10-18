@@ -45,6 +45,7 @@
       "types": "./src/geo/geo.d.ts",
       "default": "./src/geo/geo.js"
     },
+    "./docfences": "./src/docfences/docfences.js",
     "./frontmatter": "./src/frontmatter/frontmatter.js",
     "./glow": "./src/glow/glow.js",
     "./history": "./src/history/history.js",

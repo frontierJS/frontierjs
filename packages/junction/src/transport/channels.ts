@@ -39,6 +39,7 @@ import { unwrapResult }         from '../core/envelope.ts'
 import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel, declaredCallHeaders } from '../core/litestone.ts'
 import { PROTOCOL_CALL_HEADERS, acceptedRequestId } from '../core/context.ts'
 import { serviceAccessor }      from '../core/service.ts'
+import { columnsUnmoved }       from '../core/write-narrowing.ts'
 import { wsSend }               from './send-queue.ts'
 import { firstUnsafeInteger, UnsafeIntegerError } from './body.ts'
 import { logSocketCall }        from './middleware.ts'
@@ -46,6 +47,10 @@ import type { ServiceContext } from '../core/context.ts'
 import type { App, Plugin }    from '../core/app.ts'
 import { SESSION_SOCKET }       from './types.ts'
 import type { WsContext }      from './types.ts'
+
+// A committed write as the litestone tap hands it over: what a bound room needs
+// to tell a write that moved a grade from one that did not.
+type RoomWrite = { model: string; event?: string; scope?: string; before?: unknown; result?: unknown }
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -887,7 +892,7 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
     if (tenant === undefined || tappedRoomClients.has(db)) return
     tappedRoomClients.add(db)
     if (typeof db.$tapEvents !== 'function') return
-    untapRoomClients.add(db.$tapEvents((e: { model?: string }) => { if (e?.model) noteWrite(e.model, tenant) }))
+    untapRoomClients.add(db.$tapEvents((e: Partial<RoomWrite>) => { if (e?.model) noteWrite(e as RoomWrite, tenant) }))
   }
 
   // The models whose writes can take a room's row from a reader. Null where
@@ -896,20 +901,51 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
   // is app code whose reads are not on the policy AST (a Member row behind
   // auth().memberRole), so with one installed the reach is unknowable and every
   // write asks again (`FJS-2521`).
-  const reachCache = new Map<string, Set<string> | null>()
+  //
+  // Beside the reach, the columns of each reached model the verdict reads: an
+  // update of a reached row that leaves them all as they were moves nobody's
+  // grade, so a stamp written every few seconds asks nobody (`FJS-3272`).
+  const reachCache   = new Map<string, Set<string> | null>()
+  const columnsCache = new Map<string, Map<string, Set<string>>>()
   function primeReach(model: string, db: Record<string, any>): void {
     if (reachCache.has(model)) return
     let reach: Set<string> | null = null
     try {
-      if (!claimsFor && '$readReach' in db) reach = new Set(db.$readReach(resolveAccessor(db, model)) as string[])
+      if (!claimsFor && '$readReach' in db) {
+        const accessor = resolveAccessor(db, model)
+        reach = new Set(db.$readReach(accessor) as string[])
+        if (typeof db.$readColumns === 'function') {
+          const answer = db.$readColumns(accessor) as Record<string, string[]>
+          columnsCache.set(model, new Map(Object.entries(answer).map(([m, c]) => [m, new Set(c)])))
+        }
+      }
     } catch { reach = null }
     reachCache.set(model, reach)
   }
   const reachOf = (model: string): Set<string> | null => reachCache.get(model) ?? null
 
+  // The writes of a model that could move a room model's grade: every write
+  // counted under the model, less those counted quiet under `room\0model`. A
+  // room model not primed yet has no quiet count, so it asks on every write.
+  const quietKey = (roomModel: string, model: string) => `${roomModel}\0${model}`
+  const movedBy  = (counts: Map<string, number>, roomModel: string, model: string): number =>
+    (counts.get(model) ?? 0) - (counts.get(quietKey(roomModel, model)) ?? 0)
+
+  function tally(counts: Map<string, number>, w: RoomWrite): void {
+    counts.set(w.model, (counts.get(w.model) ?? 0) + 1)
+    if (w.event !== 'update' || w.scope !== 'row') return
+    for (const [roomModel, byModel] of columnsCache) {
+      const read = byModel.get(w.model)
+      if (read && columnsUnmoved(read, w.before, w.result)) {
+        const key = quietKey(roomModel, w.model)
+        counts.set(key, (counts.get(key) ?? 0) + 1)
+      }
+    }
+  }
+
   // Writes are counted per tenant: a write in one shop asks nobody in another.
   const writeCount = new Map<string, Map<string, number>>()
-  const written    = new Map<string, Set<string>>()
+  const written    = new Map<string, Map<string, number>>()
   let roomTimer: ReturnType<typeof setTimeout> | null = null
 
   const snapshotWrites = (room: RoomRow) => new Map(writeCount.get(room.tenant ?? '') ?? [])
@@ -917,9 +953,9 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
   function writesSince(room: RoomRow, before: Map<string, number>): boolean {
     const now   = writeCount.get(room.tenant ?? '')
     const reach = reachOf(room.model)
-    for (const [m, n] of now ?? []) {
-      if (reach && !reach.has(m)) continue
-      if (n !== (before.get(m) ?? 0)) return true
+    for (const m of now?.keys() ?? []) {
+      if (m.includes('\0') || (reach && !reach.has(m))) continue
+      if (movedBy(now!, room.model, m) !== movedBy(before, room.model, m)) return true
     }
     return false
   }
@@ -961,7 +997,7 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
       const models = pending.get(room.tenant ?? '')
       if (!models) continue
       const reach = reachOf(room.model)
-      if (reach && ![...models].some(m => reach.has(m))) continue
+      if (![...models.keys()].some(m => !m.includes('\0') && (!reach || reach.has(m)) && movedBy(models, room.model, m) > 0)) continue
       const members = [...ch.connections]
       const keep = await roomAdmits(room, ch.name, members)
       for (const conn of members) if (!keep.has(conn) && ch.connections.has(conn)) evict(ch, conn)
@@ -971,15 +1007,15 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
   // Called with the model of every committed write, and the tenant whose
   // client made it where the app has tenants. Coalesced to one pass, which
   // asks each bound room the write reaches once per cohort.
-  function noteWrite(model: string, tenant?: string): void {
+  function noteWrite(w: RoomWrite, tenant?: string): void {
     if (!rooms) return
     const key = tenant ?? ''
     let counts = writeCount.get(key)
     if (!counts) writeCount.set(key, counts = new Map())
-    counts.set(model, (counts.get(model) ?? 0) + 1)
+    tally(counts, w)
     let models = written.get(key)
-    if (!models) written.set(key, models = new Set())
-    models.add(model)
+    if (!models) written.set(key, models = new Map())
+    tally(models, w)
     if (!roomTimer) roomTimer = setTimeout(() => { reaskRooms().catch(() => {}) }, 0)
   }
 
@@ -1064,7 +1100,7 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
 
     // Called by `channels({ rooms })` with the model of every committed write
     // on the app's one client; a tenant's client is tapped by the manager.
-    roomWritten(model: string): void { noteWrite(model) },
+    roomWritten(w: RoomWrite): void { noteWrite(w) },
 
     // Exposed for the WS service dispatcher — read-only access to live connections
     get connections(): ReadonlyMap<string, Connection> {
@@ -1207,7 +1243,8 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
       event:     string,
       data:      T,
       ctx:       ServiceContext,
-      fn:        AnnounceFn<T>
+      fn:        AnnounceFn<T>,
+      accessor?: string
     ): Promise<void> {
       const result = fn(data, ctx)
       if (!result) return
@@ -1243,7 +1280,9 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
       const svc = ctx.app?.services?.get?.(ctx.service ?? '') as { model?: string | null } | undefined
       const graded = await gradeRecipients(targets, event, payload, {
         db:       (ctx as { locals?: { db?: unknown } }).locals?.db,
-        accessor: serviceAccessor({ name: (ctx as { service?: string }).service ?? '', model: svc?.model }) ?? '',
+        // A method that declared `answers:` states the accessor itself: the
+        // row it answers belongs to another model (`FJS-D914`).
+        accessor: accessor ?? serviceAccessor({ name: (ctx as { service?: string }).service ?? '', model: svc?.model }) ?? '',
         label:    (ctx as { service?: string }).service,
       }, 'row', claimsFor, channelsOf)
       if (graded) {
@@ -2019,8 +2058,8 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
         if (typeof tap !== 'function') throw new Error(
           `[Junction] channels({ rooms }) binds a channel to a row, which needs the app's Litestone client ` +
           `— createApp({ db }) or createApp({ tenants }). This app has neither, so no join could be graded.`)
-        _untapRooms = (tap as (fn: (e: { model?: string }) => void) => () => void)
-          .call((app as { db?: unknown }).db, (e) => { if (e?.model) _manager?.roomWritten(e.model) })
+        _untapRooms = (tap as (fn: (e: Partial<RoomWrite>) => void) => () => void)
+          .call((app as { db?: unknown }).db, (e) => { if (e?.model) _manager?.roomWritten(e as RoomWrite) })
       }
 
       if (!_manager?.defaultAnnouncer) return

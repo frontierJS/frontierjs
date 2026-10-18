@@ -757,6 +757,8 @@ app.configure(csrf({ origins: ['https://admin.myapp.com'] })) // and these
 
 For every `POST/PUT/PATCH/DELETE` request: `Sec-Fetch-Site: same-origin` or `none` passes; an `Origin` (else the origin of `Referer`) on the list passes; `Sec-Fetch-Site: cross-site` or `same-site` is refused, the latter because a sibling subdomain is the same *site* and `SameSite` sends it the cookie; a browser with no `Sec-Fetch-Site` passes when its `Origin` names the request's `Host`; and a request with no origin information at all passes, since only a browser can be made to send a forged request. Behind a proxy the `Host` comparison needs the host header to survive the hop.
 
+**`FJS_CORS_ORIGINS` — the list a deploy derives.** A comma-separated environment variable that `fli deploy` sets on the container (the web domain's `https://` origin when the API has a domain of its own, plus a desktop shell's `tauri://localhost` and `http://tauri.localhost`). It is joined onto `middleware.cors.origins`, and onto `middleware.csrf.origins` when that declares its own list; a declared `'*'` stays as written, and unset changes nothing. `cors.credentials` is still the app's to set.
+
 **`combineOrigins()` — share one list between cors and csrf:**
 
 ```typescript
@@ -1848,7 +1850,7 @@ app.configure(webhooks({
   receive: async (ev, { subscription }) => {
     // ev: { id, event, timestamp, payload } — verified. No principal: run as
     // whom the app decides; the route never mints one.
-    await app.service('orders').call('record', null, ev.payload, { auth: { user: SYSTEM } })
+    await app.runAs(null, () => app.service('orders').call('record', null, ev.payload))
     return 'applied'          // or 'ignored' — both make a redelivery a duplicate
                               // or 'parked' — the subject is not here yet; the sender's retry runs this again
   },

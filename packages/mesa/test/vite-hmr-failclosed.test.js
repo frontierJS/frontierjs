@@ -36,10 +36,10 @@ const CLIENT = '\0@frontierjs/mesa-client'
 // What the wrap needs: the default export's exact signature, and a component
 // body ending in pop_component(). Removing the second line is the whole of the
 // difference between the two fixtures.
-const WRAPPABLE = `export default function Stub(__anchor, __props, __block) {
+const WRAPPABLE = `export default function Stub(__anchor, __props) {
   $$runtime.pop_component();
 }`
-const NOT_WRAPPABLE = `export default function Stub(__anchor, __props, __block) {
+const NOT_WRAPPABLE = `export default function Stub(__anchor, __props) {
   $$runtime.somethingElse();
 }`
 
