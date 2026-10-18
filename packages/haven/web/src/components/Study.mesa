@@ -18,6 +18,11 @@
   // tab's session reopens by `--resume` at its next line. What it said before
   // the restart is not drawn.
   //
+  // An image goes with a line (study.md 2.4, `images.js`): a path the line
+  // names to an image file, or Ctrl+V, which reads the clipboard's picture and
+  // puts `[Image #n]` in the line. Deleting the tag drops the picture. What
+  // cannot be sent is a red row over the input, and the line stays.
+  //
   // `/work <id>` hands a `#workers` session in (study.md 3.3): the tab whose
   // session it is, else a tab READING ALONG its transcript (`transcript.js`).
   // A read-along sends nothing and never starts a process, since its own
@@ -43,6 +48,7 @@
   import { keptOf, readStudy, writeStudy } from '@/lib/study/kept.js'
   import { startSession } from '@/lib/study/session.js'
   import { readAlong } from '@/lib/study/transcript.js'
+  import { clipboardImage, imagesOf, pastedTag } from '@/lib/study/images.js'
   import { askRows, rowsOf, waitRows, windowOf, wrapped } from '@/lib/study/rows.js'
   import { cycled, modelOf, studyLine, tabBar } from '@/lib/study/tabs.js'
 
@@ -60,6 +66,9 @@
   let w     = 40
   let h     = 20
   let draft = ''
+  // The clipboard's pictures the line's `[Image #n]` tags stand for, `n` from 1; and what could not be sent.
+  let pasted = []
+  let note  = null
   // A tab is held in place and `tabs` assigned again, since its session's
   // state arrives on the session's own subscription.
   let tabs  = kept ? kept.tabs.map((t) => t.reads ? alongOf(t.reads, t.transcript) : tabOf(t.model, t.sessionId)) : [tabOf()]
@@ -115,7 +124,7 @@
     for (const t of tabs) { t.off?.(); t.session?.end() }
   })
 
-  const hint = (model, resume, reads, transcript) => wrapped(reads ? `Reading along ${transcript ?? reads}. Its own terminal answers it; /close leaves.` : `${resume ? `Session ${resume.slice(0, 8)} reopens at your next line. ` : ''}Claude in ${cwd}${model ? ` on ${model}` : ''}. Enter sends a line, PageUp reads back, Ctrl+J and Ctrl+K the next and last tab, /new [model] opens one, /close ends this one, Ctrl+O is the scene.`, w - 1)
+  const hint = (model, resume, reads, transcript) => wrapped(reads ? `Reading along ${transcript ?? reads}. Its own terminal answers it; /close leaves.` : `${resume ? `Session ${resume.slice(0, 8)} reopens at your next line. ` : ''}Claude in ${cwd}${model ? ` on ${model}` : ''}. Enter sends a line, Ctrl+V pastes an image, PageUp reads back, Ctrl+J and Ctrl+K the next and last tab, /new [model] opens one, /close ends this one, Ctrl+O is the scene.`, w - 1)
     .map((text) => ({ text, ink: TONES.muted }))
 
   // Each reads `tabs[at]` itself: a tab is the same object after a change,
@@ -124,8 +133,9 @@
   $: said  = [...tabs[at].earlier, ...(state?.messages ?? [])]
   $: all   = said.length ? rowsOf(said, w - 1) : hint(tabs[at].model, tabs[at].resume, tabs[at].reads, tabs[at].transcript)
   $: asking = state?.asking ?? []
-  $: panel = asking.length ? askRows(asking[0], asking.length - 1, w - 1, Math.max(3, h - 8))
-    : state?.waiting ? waitRows(state.waiting, w - 1) : []
+  $: noted = note ? wrapped(`! ${note}`, w - 1).map((text) => ({ text, ink: TONES.danger })) : []
+  $: panel = [...noted, ...(asking.length ? askRows(asking[0], asking.length - 1, w - 1, Math.max(3, h - 8))
+    : state?.waiting ? waitRows(state.waiting, w - 1) : [])]
   $: room  = Math.max(1, h - 3 - panel.length)
   $: shown = windowOf(all, room, tabs[at].top)
   $: pad   = Math.max(0, room - shown.rows.length)
@@ -168,6 +178,8 @@
     if (asked.close) { close(); draft = ''; return }
     const t = tabs[at]
     if (t.reads) return
+    let images
+    try { images = imagesOf(text, { cwd, pasted }) } catch (e) { note = e.message; return }
     if (t.session?.state.asking.length) t.session.answer('deny')
     if (!t.session || t.session.state.exit) {
       const resume = t.session?.state.sessionId ?? t.resume ?? undefined
@@ -176,8 +188,9 @@
       t.session = startSession({ cwd, resume, model: t.model ?? undefined })
       t.off = t.session.subscribe(changed)
     }
-    if (!t.session.send(text)) return changed()
+    if (!t.session.send(text, images)) return changed()
     draft = ''
+    pasted = []
     t.top = null
     t.since = now = Date.now()
     changed()
@@ -185,7 +198,16 @@
 
   const step = () => Math.max(1, room - 1)
   const CHOICE = { 1: 'allow', 2: 'always', 3: 'deny' }
+  function paste() {
+    if (tabs[at].reads) { note = 'a read-along sends nothing'; return }
+    // A line with no tag left holds none of what was pasted before, so the count starts again.
+    if (!/\[Image #\d+\]/.test(draft)) pasted = []
+    try { pasted = [...pasted, clipboardImage()] } catch (e) { note = e.message; return }
+    draft = `${draft}${draft && !draft.endsWith(' ') ? ' ' : ''}${pastedTag(pasted.length)} `
+  }
+
   function keydown(e) {
+    note = null
     // `code`, the key's name: a legacy terminal's Ctrl+K is a control byte.
     if (asking.length && !draft && !e.ctrlKey && !e.metaKey && !e.altKey && CHOICE[e.key]) {
       // Before the field sees it, so the letter answers rather than starting a line.
@@ -197,6 +219,9 @@
       e.preventDefault()
       at = cycled(at, tabs.length, e.code === 'j' ? 1 : -1)
       keep()
+    } else if (e.ctrlKey && e.code === 'v') {
+      e.preventDefault()
+      paste()
     } else if (e.key === 'PageUp') {
       e.preventDefault()
       tabs[at].top = Math.max(0, shown.start - step())

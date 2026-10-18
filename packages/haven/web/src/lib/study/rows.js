@@ -35,7 +35,10 @@ const secs = (ms) => ms < 10_000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(
 function rowsOfOne(m, w) {
   switch (m.kind) {
     case 'you':
-      return wrapped(m.text, w - 2).map((text, i) => ({ text: `${i ? '  ' : '› '}${text}`, ink: TONES.info }))
+      return [
+        ...wrapped(m.text, w - 2).map((text, i) => ({ text: `${i ? '  ' : '› '}${text}`, ink: TONES.info })),
+        ...(m.images ? [{ text: clip(`  + ${m.images} image${m.images > 1 ? 's' : ''}`, w), ink: TONES.muted }] : []),
+      ]
     case 'said':
       return wrapped(m.text, w).map((text) => ({ text }))
     case 'thought':

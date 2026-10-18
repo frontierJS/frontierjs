@@ -36,8 +36,9 @@ export function foldEntry(state, entry) {
   const content = entry.message?.content
   const text = typeof content === 'string' ? plain(content)
     : Array.isArray(content) ? content.filter((b) => b.type === 'text').map((b) => plain(b.text)).filter(Boolean).join('\n') : ''
+  const images = Array.isArray(content) ? content.filter((b) => b.type === 'image').length : 0
   const next = fold(state, { type: 'user', message: entry.message })
-  return text ? { ...next, messages: [...next.messages, { kind: 'you', text }] } : next
+  return text || images ? { ...next, messages: [...next.messages, { kind: 'you', text, ...(images ? { images } : {}) }] } : next
 }
 
 /**
