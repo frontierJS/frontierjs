@@ -2860,7 +2860,12 @@ async function cmdMutate(cfg) {
   //
   // A fragment that could not be read is named rather than skipped: its models
   // are absent, so every rule they declare is silently outside the run.
-  const { text: schemaText, origins, missing } = inlineImportsFromDisk(schemaPath)
+  //
+  // A model an imported PACKAGE shipped is mutated by no one here: its rules are
+  // the package's to test, and its survivors would sit in a file the app does
+  // not own. The checks still run over those models; only the mutants skip them.
+  const { text: schemaText, origins, missing, shipped } = inlineImportsFromDisk(schemaPath)
+  const skip = new Set(shipped.keys())
   // A mutant's line is a line of the SPLICED text, which no file has; the
   // report names the file and line the rule is written on.
   const whereIs = (lineNo) => {
@@ -2871,7 +2876,7 @@ async function cmdMutate(cfg) {
     `  ${yellow('⚠')}  ${missing.length === 1 ? 'an import' : `${missing.length} imports`} could not be read ` +
     `(${missing.join(', ')}) — the models they declare are outside this run`)
 
-  const all = schemaMutants(schemaText, { kinds })
+  const all = schemaMutants(schemaText, { kinds, skip })
   if (!all.length) fatal(
     `No mutants for ${rel(schemaPath)}${kinds ? ` with --kinds=${kinds.join(',')}` : ''}. ` +
     `A schema declaring no @@gate, @@allow, @guarded or field validator has nothing to mutate.`
@@ -2914,6 +2919,7 @@ async function cmdMutate(cfg) {
   const result  = await mutationScore({
     schema: schemaText,
     kinds,
+    skip,
     suite,
     // `getEncKey()` is where every other command in this file reads the key —
     // env, because a key is not config. This alone read `cfg.encryptionKey`,

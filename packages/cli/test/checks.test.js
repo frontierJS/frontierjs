@@ -126,6 +126,8 @@ const CLEAN = {
     SCHEMA + '\ndatabase audit { path env("AUDIT_PATH", "./db/audit/") driver trail retention 90d }\n',
   'frontier.config.js': "export default { deploy: { server: 'x.test', path: '/apps/x' } }\n",
   '.env.example':       'AUDIT_PATH=/db/audit/\n',
+  // The trail directory is the one path `db-path-committed` grades here.
+  '.gitignore':         'node_modules/\ndb/audit/\n',
   // A dependency that ships a schema fragment, and no copy of its model here.
   // Present so `package-model-drift` RUNS on the clean tree rather than skipping
   // — a rule that only ever skips is the failure this file exists to prevent —
@@ -1530,6 +1532,7 @@ describe('the silent config hazards', () => {
       'api/test/listen.test.js':    "server.listen(4000)\n",
       'api/test/browser.test.js':   "const b = await openChrome()\n",
       'api/test/probe.test.js':     "const CHROME = findChrome()\n",
+      'api/test/mocked.test.ts':    "import { mock } from 'bun:test'\nmock.module('../src/mail.ts', () => ({}))\n",
       'api/test/hermetic.test.ts':
         "const s = Bun.serve({ port: 0, fetch })\n" +
         "await handler(new Request('http://localhost:8110/x'))\n" +
@@ -1549,6 +1552,7 @@ describe('the silent config hazards', () => {
       ['api/test/browser.test.js', 1, 'launches Chrome'],
       ['api/test/listen.test.js',  1, 'binds a literal port'],
       ['api/test/literal.test.ts', 2, 'binds a literal port'],
+      ['api/test/mocked.test.ts',  2, 'mocks a module for the whole bun process'],
       ['api/test/probe.test.js',   1, 'launches Chrome'],
     ])
     expect(findings[0].message).toMatch(/port: 0.*specs\//s)
@@ -2742,6 +2746,26 @@ describe('detail-read-dead', () => {
       "  orders.service.get(id)\n" +
       "    .then(row => { record = row })\n" +
       "    .catch(e => { failed = e.message })\n</script>\n"))
+    const { findings } = only(root, 'detail-read-dead')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/`record` keeps a row/)
+  })
+
+  test('FJS-2741: an assignment in .catch is the error path, never the row kept', () => {
+    const root = tree('drd-catch-only', screen(
+      "<script>\n  function open(id) {\n" +
+      "    clients.service.get(id)\n" +
+      "      .then((c) => pick(c))\n" +
+      "      .catch((e) => { error = e.message })\n" +
+      "  }\n</script>\n"))
+    expect(only(root, 'detail-read-dead').findings).toEqual([])
+  })
+
+  test('FJS-2741: the .then on a line shared with .catch names the kept row', () => {
+    const root = tree('drd-then-catch-line', screen(
+      "<script>\n  let record = null\n  function open(id) {\n" +
+      "    clients.service.get(id).then((c) => { record = c }).catch((e) => { error = e.message })\n" +
+      "  }\n</script>\n"))
     const { findings } = only(root, 'detail-read-dead')
     expect(findings).toHaveLength(1)
     expect(findings[0].message).toMatch(/`record` keeps a row/)
@@ -5203,6 +5227,41 @@ describe('app-layout grades the src/ layout (FJS-1888)', () => {
     expect(f).toHaveLength(2)
     expect(f.map(x => x.message).join('\n')).toMatch(/service/)
   })
+
+  // FJS-3087: a prerender cannot fetch the API at build time, so a route's .meta.js reads
+  // through the client the static config's `db:` names, which lives in api/.
+  describe('a prerendered route reaching the db: client', () => {
+    const SITE = "export default { target: 'static', db: '../api/src/core/db.ts' }\n"
+    const files = (extra) => ({
+      'site/config/sierra.config.js': SITE,
+      'api/src/core/db.ts':           'export const sys = {}\n',
+      'api/src/domain/fees.ts':       'export const fee = 1\n',
+      ...extra,
+    })
+
+    test('the .meta.js importing the module db: names is the one allowed import', () => {
+      const f = layout('lay-meta-db', files({
+        'site/src/routes/products/[slug].meta.js': "import { sys } from '../../../../api/src/core/db.ts'\n",
+      }))
+      expect(f.filter(x => /imports api\//.test(x.message))).toEqual([])
+    })
+
+    test('any other import from api/, in a .meta.js or beside it, is still found', () => {
+      const f = layout('lay-meta-other', files({
+        'site/src/routes/a.meta.js': "import { fee } from '../../../api/src/domain/fees.ts'\n",
+        'site/src/routes/b.mesa':    "<script module>\nimport { sys } from '../../../api/src/core/db.ts'\n</script>\n",
+      }))
+      expect(f.map(x => x.file.replace(/.*\/site\//, 'site/')).sort()).toEqual(['site/src/routes/a.meta.js', 'site/src/routes/b.mesa'])
+    })
+
+    test('a surface whose config names no db: has nothing to exempt', () => {
+      const f = layout('lay-meta-nodb', files({
+        'site/config/sierra.config.js':       "export default { target: 'static' }\n",
+        'site/src/routes/p/[slug].meta.js':   "import { sys } from '../../../../api/src/core/db.ts'\n",
+      }))
+      expect(f.filter(x => /imports api\//.test(x.message))).toHaveLength(1)
+    })
+  })
 })
 
 // FJS-373: css-token-undefined and css-raw-literal read a stylesheet; the class
@@ -5381,5 +5440,44 @@ describe('a kit component is passed only props it declares or attributes HTML ha
 
   test('an app importing no kit component is skipped', () => {
     expect(only(tree('kpu-skip', CLEAN), 'kit-prop-unknown').skipped).toBeTruthy()
+  })
+})
+
+describe('db-path-committed', () => {
+  const MAIN = 'database main { path env("DATABASE_URL", "./db/app.db") }\n'
+  const DBS = (path) => SCHEMA + `\ndatabase audit { path "${path}" driver trail retention 90d }\n`
+
+  test('a trail directory no .gitignore names is reported', () => {
+    // FJS-1297's shape: the hand-written `./db/audit/` a `db/*.db` rule never reaches.
+    const root = tree('dpc-dir', { 'db/schema.lite': DBS('./db/audit/'), '.gitignore': 'node_modules/\ndb/*.db\n' })
+    const { findings } = only(root, 'db-path-committed')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/db\/audit\/.*no \.gitignore covers/s)
+  })
+
+  test('a directory rule, an unanchored name and a covering parent all clear it', () => {
+    for (const [name, ignore] of [['anchored', 'db/audit/\n'], ['bare', 'audit/\n'], ['parent', 'db/\n']]) {
+      const root = tree(`dpc-ok-${name}`, { 'db/schema.lite': DBS('./db/audit/'), '.gitignore': ignore })
+      expect(only(root, 'db-path-committed').findings).toEqual([])
+    }
+  })
+
+  test('a later negation puts the directory back', () => {
+    const file = tree('dpc-negated', { 'db/schema.lite': DBS('./db/audit/'), '.gitignore': 'db/audit/\n!db/audit/\n' })
+    expect(only(file, 'db-path-committed').findings).toHaveLength(1)
+  })
+
+  test('a sqlite file is graded by db/*.db', () => {
+    const covered = tree('dpc-sqlite', { 'db/schema.lite': SCHEMA + MAIN, '.gitignore': 'db/*.db\n' })
+    expect(only(covered, 'db-path-committed').findings).toEqual([])
+    const bare = tree('dpc-sqlite-bare', { 'db/schema.lite': SCHEMA + MAIN, '.gitignore': 'node_modules/\n' })
+    expect(only(bare, 'db-path-committed').findings).toHaveLength(1)
+  })
+
+  test('no .gitignore is skipped, not passed', () => {
+    const root = tree('dpc-none', { 'db/schema.lite': DBS('./db/audit/') })
+    const { findings, skipped } = only(root, 'db-path-committed')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
   })
 })

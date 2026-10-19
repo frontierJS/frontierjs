@@ -113,10 +113,15 @@ describe('validateAgainstFields', () => {
     expect(errs.map(e => e.field).sort()).toEqual(['email', 'plan'])
   })
 
+  test('a minimum length of one is "1 character" (FJS-2104)', () => {
+    const errs = validateAgainstFields(fields(), { name: '', email: 'a@b.co', plan: 'pro' })
+    expect(errs.find(e => e.field === 'name').message).toBe('Name must be at least 1 character')
+  })
+
   test('an explicit null on a required field is the make() case', () => {
     // make() leaves a required enum null — no blank value is a member of it.
     const errs = validateAgainstFields(fields(), { name: 'Ada', email: 'a@b.co', plan: null })
-    expect(errs).toEqual([{ field: 'plan', message: 'plan is required' }])
+    expect(errs).toEqual([{ field: 'plan', message: 'Plan is required' }])
   })
 
   test('an empty string satisfies required, exactly as it does server-side', () => {
@@ -128,7 +133,7 @@ describe('validateAgainstFields', () => {
 
   test('rejects a value outside the enum', () => {
     const errs = validateAgainstFields(fields(), { name: 'A', email: 'a@b.co', plan: 'gold' })
-    expect(errs[0].message).toBe('plan must be one of: starter, pro, enterprise')
+    expect(errs[0].message).toBe('Plan must be one of: starter, pro, enterprise')
   })
 
   test('checks types', () => {
@@ -136,9 +141,9 @@ describe('validateAgainstFields', () => {
       name: 42, email: 'a@b.co', plan: 'pro', count: 1.5, tags: 'x',
     })
     const byField = Object.fromEntries(errs.map(e => [e.field, e.message]))
-    expect(byField.name).toBe('name must be a string')
-    expect(byField.count).toBe('count must be an integer')
-    expect(byField.tags).toBe('tags must be an array')
+    expect(byField.name).toBe('Name must be a string')
+    expect(byField.count).toBe('Count must be an integer')
+    expect(byField.tags).toBe('Tags must be an array')
   })
 
   test('checks string, number and array constraints', () => {
@@ -146,20 +151,20 @@ describe('validateAgainstFields', () => {
       name: 'x'.repeat(21), email: 'nope', plan: 'pro', score: 101, site: 'not a url', tags: [],
     })
     const byField = Object.fromEntries(errs.map(e => [e.field, e.message]))
-    expect(byField.name).toBe('name must be at most 20 characters')
-    expect(byField.email).toBe('email must be a valid email address')
-    expect(byField.score).toBe('score must be at most 100')
-    expect(byField.site).toBe('site must be a valid URL')
-    expect(byField.tags).toBe('tags must have at least 1 items')
+    expect(byField.name).toBe('Name must be at most 20 characters')
+    expect(byField.email).toBe('Email must be a valid email address')
+    expect(byField.score).toBe('Score must be at most 100')
+    expect(byField.site).toBe('Site must be a valid URL')
+    expect(byField.tags).toBe('Tags must have at least 1 items')
   })
 
   test('a date field takes an ISO calendar day and nothing else (FJS-2684)', () => {
     const rules = { day: { type: 'string', format: 'date', required: false, nullable: false } }
     const bad = (v) => validateAgainstFields(rules, { day: v }).map(e => e.message)
     expect(bad('2026-10-18')).toEqual([])
-    expect(bad('nope')).toEqual(['day must be a valid date'])
-    expect(bad('2026-02-30')).toEqual(['day must be a valid date'])
-    expect(bad('March 3')).toEqual(['day must be a valid date'])
+    expect(bad('nope')).toEqual(['Day must be a valid date'])
+    expect(bad('2026-02-30')).toEqual(['Day must be a valid date'])
+    expect(bad('March 3')).toEqual(['Day must be a valid date'])
   })
 
   test('an untyped Json field accepts anything', () => {
@@ -420,7 +425,7 @@ describe('coerceToSchema — the DOM only ever produces strings', () => {
   })
 
   test('a float string is NOT silently truncated into an integer field', () => {
-    // Left alone so validate() can say "count must be an integer" rather than
+    // Left alone so validate() can say "Count must be an integer" rather than
     // the value quietly changing.
     expect(coerceToSchema(fields(), { count: '7.5' })).toEqual({ count: '7.5' })
   })
@@ -594,10 +599,10 @@ describe('toFieldErrors — a thrown value becomes a form\'s error map', () => {
 
   test('first message per field wins — one control, one line', () => {
     const err = new ResourceValidationError('leads', [
-      { field: 'name', message: 'Name must be at least 1 characters' },
+      { field: 'name', message: 'Name must be at least 1 character' },
       { field: 'name', message: 'Name must be a string' },
     ])
-    expect(toFieldErrors(err).fields.name).toBe('Name must be at least 1 characters')
+    expect(toFieldErrors(err).fields.name).toBe('Name must be at least 1 character')
   })
 
   test('per-field messages suppress the form-level line', () => {

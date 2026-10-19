@@ -211,7 +211,7 @@ export function checkEnvField(key: string, field: EnvFieldSpec, raw: string | un
 
   if (typeof value === 'string') {
     if (field.minLength !== undefined && value.length < field.minLength)
-      return fail(`${key}: must be at least ${field.minLength} characters (got ${value.length})`)
+      return fail(`${key}: must be at least ${field.minLength} character${field.minLength === 1 ? '' : 's'} (got ${value.length})`)
     if (field.maxLength !== undefined && value.length > field.maxLength)
       return fail(`${key}: must be at most ${field.maxLength} characters (got ${value.length})`)
     if (field.enum && !field.enum.includes(value))

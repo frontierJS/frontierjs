@@ -903,6 +903,35 @@ describe('the three registers', () => {
   })
 })
 
+// ─── a project whose registers are not at its root under FJS ─────────────────
+//
+// `registers.dir` and `registers.prefix` move all three readers together. One
+// that kept `join(root, …)` or a literal `FJS-` returns null, and the page then
+// renders without a register pane instead of failing.
+
+describe('registers declared elsewhere', () => {
+  test('issues, rulings and ideas are read from the declared dir under the declared prefix', () => {
+    const dir = tree('elsewhere', {
+      'package.json': JSON.stringify({ name: 'ws', registers: { prefix: 'ELA', dir: '.project' } }),
+      '.project/ISSUES.md': [
+        '# Issues', '', '## S2 — high', '',
+        '| ID | Pkg | Title | Status | Verified | Detail |',
+        '| --- | --- | --- | --- | --- | --- |',
+        '| ELA-1 | api | **A broken thing.** | open | 2026-01-01 | x |',
+        '',
+      ].join('\n'),
+      '.project/DECISIONS.md': '# Decisions\n\n## Section\n\n### 2026-01-01 · `ELA-D1` — A ruling stated flatly\n\nbody.\n',
+      '.project/IDEAS/one.md': '# Idea one\n\n**Status: IDEA.**\n',
+    })
+    const m = collect({ root: dir })
+
+    expect(m.issues.open).toBe(1)
+    expect(m.issues.bySeverity.S2.map(r => r.id)).toEqual(['ELA-1'])
+    expect(m.decisions.count).toBe(1)
+    expect(m.ideas.papers.map(p => p.file)).toEqual(['.project/IDEAS/one.md'])
+  })
+})
+
 // ─── how big is this package ──────────────────────────────────────────────────
 //
 // A reference number, and the only interesting thing about it is which files

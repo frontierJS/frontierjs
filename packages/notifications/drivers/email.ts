@@ -32,6 +32,13 @@ import type { App, MailLine, MailMessage, Recipient } from '../types.ts'
  * lines are the nicer authoring API, and IMail is the wire format.
  */
 
+/** The mail's address: the builder's override, else the recipient's. An empty list is no address. */
+export function addressOf(message: MailMessage | undefined, recipient: Recipient): string | string[] | undefined {
+  const to = message?.to ?? recipient.email
+  if (Array.isArray(to)) return to.length ? to : undefined
+  return to || undefined
+}
+
 /** Escape the five characters that matter in HTML text/attribute context. */
 function esc(s: string): string {
   return s
@@ -70,7 +77,7 @@ export async function sendEmail(
     )
   }
 
-  const to = message.to ?? recipient.email
+  const to = addressOf(message, recipient)
   if (!to) {
     throw new Error(
       `Email notification could not resolve a recipient address. ` +

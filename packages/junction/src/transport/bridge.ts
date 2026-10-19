@@ -164,10 +164,8 @@ export const bridge = {
       // (Files are multipart, which is never an array body.)
       if (Array.isArray(envelopeBody)) return envelopeBody as Record<string, unknown>[]
 
-      const body: Record<string, unknown> =
-        envelopeBody && typeof envelopeBody === 'object'
-          ? { ...envelopeBody as Record<string, unknown> }
-          : {}
+      const sent = !!envelopeBody && typeof envelopeBody === 'object'
+      const body: Record<string, unknown> = sent ? { ...envelopeBody as Record<string, unknown> } : {}
 
       if (raw.files?.length) {
         for (const f of raw.files) {
@@ -175,7 +173,9 @@ export const bridge = {
         }
       }
 
-      return Object.keys(body).length > 0 ? body : null
+      // A sent `{}` stays `{}`: the input validators read null as "no body" and
+      // answer 400, and the WebSocket path already carries it as `{}` (`FJS-1262`).
+      return sent || Object.keys(body).length > 0 ? body : null
     })()
 
     // ── Upsert routing ─────────────────────────────────────────────────

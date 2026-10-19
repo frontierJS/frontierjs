@@ -73,6 +73,11 @@ Key properties of the output:
 - **`render()` dirty-checking** — groups multiple text/attr bindings into one `createEffect`, compares with a `__prev` object, only updates changed nodes
 - **`$slots`** — reads the compiler-injected `$$slots`, which answers whether the caller passed content under a name (`$slots.default` is the `children` prop); fixed by the caller's markup, so not reactive. It indicates which named slots have content (used as `{#if $slots.sidebar}`)
 
+> **RULE 21** — The compiler's target is `@frontierjs/mesa/runtime`, which Mesa owns
+> end to end. Compiled output imports nothing from a third-party reactivity library,
+> so the signal graph, the flush and the DOM calls are one stack that can change
+> together.
+
 ### Static Component Detection
 
 The compiler automatically detects when a component is fully static — no reactive state,
@@ -105,6 +110,10 @@ required rather than to the whole script (`FJS-846`). Svelte 4 hoisted literal `
 pure functions out of the instance body wholesale and it cost three bugs (#2687, #1895,
 #2542); Svelte 5's sync mode preserves source order exactly.
 
+> **RULE 1b** — An instance script runs in source order. A declaration is pulled up
+> only when something already emitted needs it — a class a `const` above it uses, a
+> memo another memo reads — and nothing else moves (`FJS-846`).
+
 ### 2.1 `let` — Mutable Reactive State
 
 A top-level `let` declaration is the primary reactive primitive in Mesa. The compiler tracks
@@ -129,6 +138,10 @@ let selectedCity = cities[0]       // snapshot of cities[0] at init — independ
 $: selectedCity = cities[0]        // writable derived — re-derives when cities changes,
                                    // but can still be overridden by bind:value
 ```
+
+> **RULE 14** — `let` initializers are snapshots. The initializer runs once at
+> component init and the variable is independent of it afterwards; `$: name = expr`
+> is the form that keeps re-deriving.
 
 > **RULE 1** — `$:` annotations are top-level scope only — never inside functions, blocks,
 > or callbacks. **Enforced**: a nested one is a compile error naming the line. It used to
@@ -290,6 +303,28 @@ Both directions are live: the parent's writes push into the child's prop signal,
 and the child's writes are read back out. Nothing loops — the value that comes
 back from the child is the one already in the parent's signal, so its equality
 check stops there.
+
+### 3.5 What an Instance Script Exports
+
+An instance `<script>` exports props and methods and nothing else, in four forms:
+
+| Form | Is | The parent's later values | The child may write it |
+|---|---|---|---|
+| `export let` | a prop (§3.1) | arrive | yes |
+| `export const` | a prop (§3.2) | arrive | no — a compile error naming the prop |
+| `export var` | a prop SNAPSHOTTED at mount (§3.3) | never arrive | — |
+| `export function` | a method on what `bind:this` hands the parent (RULE 36) | — | — |
+
+> **RULE 56** — An instance `<script>` exports exactly those four forms. `export default`,
+> `export *` and a bare `export { … }` are compiler errors — module scope is
+> `<script module>` (§11), where an export is an ordinary ES export.
+
+**`var` is the one form whose behavior cannot be read off its keyword.** `let` reads
+*mutable* and `const` reads *the child may not write it*, but `var` reads *the same as
+`let`, older* — which is the opposite of what it does. It is a prop that is read once when
+the component mounts and never updated by the parent again. Reach for `export let` unless
+a frozen value is what is meant; a snapshot is a stale screen wherever it is not
+([FJS-D211](../../../DECISIONS.md#fjs-d211)).
 
 ---
 
@@ -1206,6 +1241,10 @@ component state, replay CSS enter animations, or force `$.onMount` to re-run.
 {/key}
 ```
 
+> **RULE 27** — `{#key expr}` destroys and recreates its content on every change of
+> `expr`. Nothing inside survives the change: component state, DOM nodes and
+> `$.onMount` all start over.
+
 ### 9.5 Snippets — `{#snippet}` / `{@render}`
 
 Snippets define reusable template fragments inline. They close over reactive
@@ -1229,6 +1268,13 @@ variables from the outer component scope. Arguments are plain values — not sig
   {/each}
 </table>
 ```
+
+> **RULE 28** — `{#snippet name(args)}` defines a reusable template fragment and
+> `{@render name(args)}` mounts it, at any number of places.
+
+> **RULE 29** — A snippet closes over the outer component's reactive variables, and
+> its arguments are written as plain values. The compiler reads each argument through
+> a getter (below), which is why the body updates when one changes.
 
 **Snippet props** — snippets can be passed to child components as props. On the child side,
 a snippet prop is declared with `export let` — it is just a function under the hood.
@@ -1394,6 +1440,9 @@ preferred spelling: it needs no declaration and takes fallback content
 directly. The `children` pattern is the form for doing what a slot cannot —
 passing a value to the caller.
 
+> **RULE 35** — A snippet prop is declared with `export let`, being a function under
+> the hood. `<slot />` is the preferred way to receive content from the parent (35a).
+
 > **RULE 35a** — `<slot />` is the preferred mechanism for receiving
 > unattributed content. The `export let children` + `{@render children?.()}`
 > pattern is the form for content the child must parameterize, and is not
@@ -1427,6 +1476,10 @@ Options, written last — after the optional `(key)`:
 
 An unrecognized option is refused by name at compile time.
 
+> **RULE 34** — `{#virtual each}` takes `height=N`, a fixed item height in pixels, and
+> `viewport="Npx"`. A height not declared is measured from the first rendered row;
+> variable height is not supported.
+
 The rows and two spacer divs are appended **inside the element the block sits in**;
 that element is the scroller, either because `viewport=` sized it or because the
 caller gave it a height and `overflow-y`. On scroll, a `requestAnimationFrame`
@@ -1456,6 +1509,10 @@ void elements need no end tag, and `<span />` is accepted as a self-close on any
 element. The refusal names the rule when the tag is one HTML would have let you
 omit (`FJS-882`), because otherwise an author who wrote correct HTML is told only
 that something is still open.
+
+> **RULE 29b** — Every non-void element closes explicitly. HTML's optional end tags
+> (`</li>`, `</p>`, `</td>`, `</option>` …) are a parse error; `<br>` and `<span />`
+> are not (`FJS-882`).
 
 Svelte went the other way and then walked it back. It implements the WHATWG
 tag-omission table (`html-tree-validation.js`), and since 5.32 it *warns* on every
@@ -1544,6 +1601,10 @@ export function increment() { count++ }
 Multi-root components and single-root components behave identically — `bind:this` on a
 component always gives the exported API, never a DOM node.
 
+> **RULE 36** — `bind:this` on a **component** exposes its exported `let` props and
+> exported functions — never a DOM node. On an element it is the node. Handing the parent
+> the child's anchor comment instead would fail silently.
+
 ### 10.3 Group Binding — `bind:group`
 
 Checkboxes — the signal is an array:
@@ -1608,6 +1669,9 @@ expression changes. Previous nodes are removed before the new HTML is inserted.
 
 > **Warning** — `{@html}` does not sanitize input. Only use with trusted content.
 
+> **RULE 33** — `{@html expr}` injects raw HTML and nothing sanitizes it. Use it only
+> with content you trust; anything a stranger wrote goes in as text.
+
 ### 10.8 Class Prop Passthrough
 
 `class` is a JavaScript reserved word and cannot be used as an identifier.
@@ -1638,6 +1702,14 @@ composable: `bindClassPassthrough` removes only the tokens it previously added,
 so the element's own classes, its scope hash, and anything another binding put
 there all survive. The element is chosen by where the marker sits — it is not
 required to be the root, and several elements may carry it.
+
+> **RULE 31** — `class="..."` or `class={expr}` on a component is forwarded to the
+> child's class prop automatically. The parent writes nothing special; the child
+> chooses the element that receives it with `{class}`.
+
+> **RULE 32** — `{class}` on an element wires the parent's class through, merged into
+> the element's own classes. `bind:class` is the same on a COMPONENT, where it is a
+> two-way prop, and is refused on an element (RULE 31b).
 
 > **RULE 22a** — on an ELEMENT, `bind:` means the DOM WRITES BACK, which it does
 > for a form value and nothing else: `value`, `checked`, `files`, plus `group`
@@ -1688,6 +1760,9 @@ attribute forms are supported.
 Module script content is emitted at ES module scope, before the component function.
 Named exports from `<script module>` are available to other modules that import
 this component file.
+
+> **RULE 30** — `<script module>` runs once at module load and is shared by every
+> instance of the component. `$` does not exist there (RULE 18b).
 
 ---
 
@@ -1758,11 +1833,16 @@ element rather than rendering a stray node. Render nothing with `{#if}` instead.
 Changing the tag **rebuilds** the element and its subtree — an element's tag is
 not writable, so there is nothing else it could mean.
 
+> **RULE 57** — `<mesa:element this={expr}>` takes a non-empty tag name; changing it
+> rebuilds the element. A tag selector in a scoped `<style>` cannot match it.
+
 One limit: a **tag selector** in a scoped `<style>` cannot reach it. The scoper
 runs on the parsed template, where the tag is still the compiler's placeholder.
 Match on a class.
 
-Any other `mesa:` name is a compile error listing the ones that exist.
+> **RULE 58** — An unknown `mesa:` name is a compiler error listing the ones that exist,
+> never a silently dropped element. It used to emit nothing, which made a typo and a
+> missing feature the same event.
 
 ### 12.6 `<mesa:boundary>` and `<mesa:mounted>`
 
@@ -2185,12 +2265,22 @@ parses and the component throws at mount inside a line nobody wrote. Reserving
 the prefix costs nothing measured — 0 uses across 372 `.mesa` files — and it is
 what lets every generated identifier be minted without a uniquifier.
 
+> **RULE 18d** — Four prefixes, each a different kind of thing: `$` the door, `$:` the
+> label, `$$` the compiler's locals and `__` the calling convention. The whole `$$`
+> prefix is reserved, as are the three `__` names (`__anchor`, `__props`, `__prev`);
+> declaring one at the top level of a script is a compile error (`FJS-D137`,
+> `FJS-482`, `FJS-883`).
+
 **Two names wear a single `$` and are neither the door nor a local**: `$class`,
 the prop the `{class}` shorthand travels under, and `$dom`, the key a block
 factory answers with. Both are read BY NAME from outside the compiler, which is
 what puts them in the protocol namespace rather than either tier — so a
 single-`$` name in compiled output is correct for exactly these two and nothing
 else (`FJS-D134`). Neither is ever authored.
+
+> **RULE 18e** — `$class` and `$dom` wear a single `$` and are PROTOCOL, read by name
+> from outside the compiler. They are the only single-`$` names in compiled output
+> (`FJS-D134`).
 
 > **RULE 18** — Mesa's builtins are reached through `$`. The compiler provides it
 > inside the component function; no import is written for it, and only the
@@ -2661,7 +2751,6 @@ components hydrate to their initial render and serialize cleanly.
 |---|---|
 | Getter on reactive object | Getter deps not tracked — use derived `const` |
 | Function call inside template `${}` | Internal deps not tracked |
-| `var` used in template binding | `var` is non-reactive — template will not update |
 
 ---
 
@@ -2707,7 +2796,7 @@ components hydrate to their initial render and serialize cleanly.
 | 9 | Store files cannot import from component files — not compiler-checked |
 | 10 | Circular reactive store imports are a compiler error |
 | 11 | Static paths → targeted accessors; dynamic paths → runtime effects |
-| 12 | Template path references always safe — compiler wraps with `?.` and `?? ''` |
+| 12 | A template path is an ordinary expression — the compiler does not rewrite it with `?.`; a nullish value renders empty (`FJS-D208`) |
 | 13 | `var` is a non-reactive sampler — reads without subscribing, writes without notifying; in the template it is the declared snapshot |
 | 13a | `bind:` on a `var` is a compile error naming `oninput` — the capability keeps its road, the half-binding does not |
 | 14 | `let` initializers are snapshots — use `$: name = expr` for ongoing re-derivation |
@@ -2719,7 +2808,7 @@ components hydrate to their initial render and serialize cleanly.
 | 18 | Mesa's builtins are reached through `$`, which the compiler provides inside the component function — no import, and only the members used are wired |
 | 18a | `$` may not be destructured, aliased or shadowed; it is legal only as the object of a member expression (`FJS-D132`) |
 | 18b | `$` does not exist in `<script module>`, which runs outside any instance — import from the runtime there (`FJS-D132`) |
-| 18d | Four prefixes: `$` the door, `$:` the label, `$$` the compiler's locals, `__` the calling convention — the whole `$$` prefix is reserved and all four `__` names are (`FJS-D137`, `FJS-482`, `FJS-883`) |
+| 18d | Four prefixes: `$` the door, `$:` the label, `$$` the compiler's locals, `__` the calling convention — the whole `$$` prefix is reserved and all three `__` names are (`FJS-D137`, `FJS-482`, `FJS-883`) |
 | 18e | `$class` and `$dom` wear a single `$` and are PROTOCOL, read by name from outside the compiler — the only single-`$` names in compiled output (`FJS-D134`) |
 | 18c | The five data members — `$props`, `$attributes`, `$slots`, `$context`, `$async` — also carry a bare spelling, which is canonical; the bare names stay reserved. The other seven and the animation helpers are refused bare (`FJS-D135`) |
 | 19 | SSR: signals synchronous, `$.onMount` no-op, `$context` instance-scoped |

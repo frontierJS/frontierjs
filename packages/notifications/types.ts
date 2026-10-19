@@ -40,7 +40,7 @@ export interface MailLine {
 export interface MailMessage {
   subject:  string
   lines:    MailLine[]
-  to?:      string    // optional override — defaults to recipient.email
+  to?:      string | string[]    // optional override — defaults to recipient.email
 
   /**
    * A rendered body, when the builder's lines are not enough.
@@ -115,7 +115,8 @@ export interface NotificationDriver {
  */
 export interface Recipient {
   id?:     number | string
-  email?:  string
+  /** A list is ONE mail addressed to all of them, not one mail each. */
+  email?:  string | string[]
   phone?:  string
   [key: string]: unknown
 }
@@ -130,7 +131,7 @@ export interface Recipient {
  * invisible. Keep in sync with junction's `MailMessage` in `src/mail/index.ts`.
  */
 export interface OutgoingMail {
-  to:       string
+  to:       string | string[]
   subject:  string
   text?:    string
   html?:    string

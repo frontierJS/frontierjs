@@ -300,6 +300,7 @@ Router-owned fields — these are reserved, and the scanner warns if frontmatter
 | --- | --- |
 | `pathname` | current pathname |
 | `search` | current query string |
+| `hash` | the fragment, leading `#` — or `''` |
 | `params` | path params — `/leads/:leadId/` → `{ leadId }`. Path captures only |
 | `query` | the URL's filters, coerced — `?status=active&tier=3` → `{ status: 'active', tier: 3 }` |
 | `directives` | the URL's `$` params, structured — `?$limit=20&$orderBy=-name` → `{ limit: 20, orderBy: '-name' }` |

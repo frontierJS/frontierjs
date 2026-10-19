@@ -62,7 +62,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@opaque` | Hide or lock a value |  |  |  |  |
 | `@personal` | Hide or lock a value | [(<category>)] |  | category: contact · device · location · government · financial · employment · communication · demographic · health · genetic · biometric · characteristic · criminal |  |
 | `@secret` | Hide or lock a value | [(rotate: …)] | on a model's field · on a trait's field |  |  |
-| `@check` | Hide or lock a value | ("sql expression") |  |  |  |
+| `@check` | Hide or lock a value | ("sql expression"[, "message"]) |  |  |  |
 | `@allow` | Decide who may | ('read'\|'write'\|'all', <expression>) | on a model's field · on a trait's field |  |  |
 | `@updatedAt` | Record who and when |  | on a model's field · on a trait's field |  |  |
 | `@updatedBy` | Record who and when | [(<authField>)] |  |  |  |

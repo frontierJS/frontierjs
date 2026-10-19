@@ -33,7 +33,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join }                        from 'node:path'
 
 import { readRegisters, withRegisterGuard }        from './registers.js'
-import { errorKeys, newErrors, envSmells } from './register-check.js'
+import { errorKeys, newErrors, envSmells, describeNewErrors } from './register-check.js'
 import { oneCell, isoDate }     from './close.js'
 import { nextDecisionNumber }   from './decide.js'
 import { envCause }             from './next.js'
@@ -112,7 +112,7 @@ function fileUnguarded({ root, severity, area, title, detail, blocks, dry = fals
   const added = newErrors(baseline, root)
   if (added.length) {
     writeFileSync(abs, before)
-    return refuse(`the row was put back: register:check found ${added.map(f => `${f.rule} — ${f.message}`).join('; ')}`)
+    return refuse(`the row was put back: register:check found ${describeNewErrors(added)}`)
   }
 
   return { ok: true, ...filed }

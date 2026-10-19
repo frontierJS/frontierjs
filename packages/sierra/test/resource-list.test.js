@@ -300,6 +300,24 @@ describe("state: 'local' — embedded, and must not navigate", () => {
     expect(last().get('status')).toBe('open')
   })
 
+  // FJS-2623: a tab is state, so it moves through `query:` and `apply()`; a
+  // tab stated as `where` is laid over every load and the apply cannot move it.
+  test('a tab moves through `apply()` over `query:`, and cannot through `where`', async () => {
+    await boot('/invoices/')
+    const tabs = track(invoicesResource().list({ state: 'local', query: { status: 'open' } }))
+    await settle()
+    expect(last().get('status')).toBe('open')
+    tabs.apply({ ...tabs.query, status: 'paid' }, tabs.directives)
+    await settle()
+    expect(last().get('status')).toBe('paid')
+
+    const pinned = track(invoicesResource().list({ state: 'local', where: { status: 'open' } }))
+    await settle()
+    pinned.apply({ status: 'paid' }, pinned.directives)
+    await settle()
+    expect(last().get('status')).toBe('open')
+  })
+
   test('an unknown state is refused by name rather than read as local', async () => {
     await boot('/invoices/')
     expect(() => invoicesResource().list({ state: 'session' })).toThrow(/state must be 'url' or 'local'/)

@@ -101,3 +101,37 @@ describe('cross-site requests (FJS-691)', () => {
     expect(res.status).toBe(200)
   })
 })
+
+// FJS-D461: everything that acts on a queue is POST-only, so a link preview or a
+// prefetch of the URL cannot retry, cancel or run a job.
+describe('job actions are POST-only (FJS-D461)', () => {
+
+  test('retry, cancel and run answer nothing to any other method, and act on POST', async () => {
+    const acted: string[] = []
+    const app: any = createApp({ logLevel: 'silent', config: { port: 0 } })
+    app.jobs = {
+      list: () => [], find: () => null,
+      registrations: () => [{ name: 'send-invoices' }],
+      retry:    async (id: string) => { acted.push(`retry ${id}`);  return true },
+      cancel:   async (id: string) => { acted.push(`cancel ${id}`); return true },
+      dispatch: async (name: string) => { acted.push(`run ${name}`); return 'job-1' },
+    }
+    app.configure(devtools({ port: 0 }))
+    await app.start()
+    running.push(app)
+
+    const base  = app._devtools.url.replace('localhost', '127.0.0.1')
+    const paths = ['/api/jobs/j1/retry', '/api/jobs/j1/cancel', '/api/jobs/run/send-invoices']
+
+    for (const path of paths) {
+      for (const method of ['GET', 'PUT', 'PATCH', 'DELETE']) {
+        const res = await fetch(base + path, { method })
+        expect(res.ok, `${method} ${path}`).toBe(false)
+      }
+    }
+    expect(acted).toEqual([])
+
+    for (const path of paths) expect((await fetch(base + path, { method: 'POST' })).status).toBe(200)
+    expect(acted).toEqual(['retry j1', 'cancel j1', 'run send-invoices'])
+  })
+})

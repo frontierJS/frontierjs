@@ -1144,6 +1144,39 @@ carry forward exists** — `@hashed` has no plaintext to re-key, and
 
 ---
 
+## Relations
+
+`@relation` goes on the **belongsTo** side, the model holding the foreign key. The other side (`Post[]`) is inferred, and two `[]` sides make an implicit many-to-many. A relation field names the MODEL, never a table.
+
+```lite
+model User { id Int @id  name String  posts Post[] }
+model Post {
+  id       Int    @id
+  title    String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId Int
+  tags     Tag[]
+}
+model Tag { id Int @id  label String  posts Post[] }
+```
+
+A relation is read with `include` and written with a nested `create` / `connect`:
+
+```js
+const ann = await db.user.create({ data: { id: 1, name: 'Ann',
+  posts: { create: [{ title: 'Hello', tags: { create: [{ label: 'intro' }] } }] } } })
+
+const posts = await db.post.findMany({ include: { author: true, tags: true } })
+const slim  = await db.post.findMany({ include: { author: { select: { id: true, name: true } } } })
+const counted = await db.user.findMany({ include: { _count: true } })   // → _count: { posts: 1 }
+
+await db.post.create({ data: { title: 'Again', author: { connect: { id: ann.id } } } })
+```
+
+`where` and `orderBy` reach through a belongsTo relation too. `docs/relations.md` has the rest: filtered counts, one-to-one, `@@relator`, the implicit join table, `@from` and recursive trees.
+
+---
+
 ## Query API
 
 The models the examples in this section read:

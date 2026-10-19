@@ -950,20 +950,20 @@ email String @personal(contact)
 
 tier: **common** · legal in: on a model's field, on a trait's field · see also: `encrypted`, `guarded`, `trail`
 
-Expands at parse into @encrypted @guarded @trail(<trail db>). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both. Beside @hashed (`token String @secret @hashed`) it is one-way instead: no @encrypted half, matchable in a where, never readable even by asSystem(), @guarded and logged, and skipped by $rotateKey unless orphaned by name — a device token a server verifies and never shows.
+Expands at parse into @encrypted @guarded @trail(<trail db>). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both. Beside @hashed (`token String @secret @hashed`) it is one-way instead: no @encrypted half, matchable in a where, never readable even by asSystem(), @guarded and logged, and skipped by $rotateKey unless orphaned by name — a device token a server verifies and never shows. It is @guarded, so a REQUIRED @secret column leaves the model uncreatable below level 8: only asSystem(), or a call naming the column in system: [...], writes it. A key the caller writes and nobody reads back, one an admin pastes in from a provider's dashboard, is @encrypted.
 
 ```lite
 apiKey String @secret
 ```
 
-#### `@check` ("sql expression")
+#### `@check` ("sql expression"[, "message"])
 
 tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · also called: invariant
 
-A SQL CHECK constraint on the column. Enforced by SQLite, so it holds against raw statements too.
+A SQL CHECK constraint on the column. Enforced by SQLite, so it holds against raw statements too. The optional message is the sentence a form shows under the control; without it a refusal reads `is not valid`.
 
 ```lite
-age Int @check("age >= 0")
+age Int @check("age >= 0", "must not be negative")
 ```
 
 **Record who and when**

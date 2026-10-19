@@ -252,8 +252,11 @@ export function _closingParen(line, open) {
  * without knowing anything about how it was produced. `parses: false` means the
  * parser refused it — a kill, made by the parser rather than by the suite, and
  * counted as one.
+ *
+ * `skip` names models whose attributes are not this schema's to test — the ones
+ * an imported package shipped, which that package's own suite grades.
  */
-export function schemaMutants(schemaText, { kinds = null } = {}) {
+export function schemaMutants(schemaText, { kinds = null, skip = null } = {}) {
   const lines   = schemaText.split('\n')
   const mutants = []
   let model = null
@@ -282,7 +285,7 @@ export function schemaMutants(schemaText, { kinds = null } = {}) {
     if (!wasOpen && /^\s*}\s*$/.test(code)) { model = null; continue }
     const inlineModel = wasOpen && /}\s*$/.test(code.trim())
 
-    if (model && code.trim()) {
+    if (model && code.trim() && !skip?.has(model)) {
       for (const mutation of MUTATIONS) {
         if (kinds && !kinds.includes(mutation.kind)) continue
         for (const raw of mutation.apply(code)) {
@@ -341,7 +344,7 @@ export function schemaMutants(schemaText, { kinds = null } = {}) {
  * `suite: 'killed'` and counted in `suiteKilled`; `score` stays the derived
  * checks' alone, since scripts/mutate-baselines.json floors it.
  */
-export async function mutationScore({ schema, build, check, suite = null, kinds = null, onMutant = null }) {
+export async function mutationScore({ schema, build, check, suite = null, kinds = null, skip = null, onMutant = null }) {
   const original = parse(schema)
   if (!original.valid) throw new Error(`mutationScore: the original schema does not parse:\n${original.errors.join('\n')}`)
 
@@ -398,7 +401,7 @@ export async function mutationScore({ schema, build, check, suite = null, kinds 
       `so nothing can be graded — every mutant would be reported killed by a failure that is not about the mutation.`)
   }
 
-  const mutants  = schemaMutants(schema, { kinds })
+  const mutants  = schemaMutants(schema, { kinds, skip })
   const survived = []
   let suiteKilled = 0
   const errored  = []

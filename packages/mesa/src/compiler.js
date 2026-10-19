@@ -6963,7 +6963,9 @@ export function routeSlots(node, preserveComments) {
         { ...child, attributes: child.attributes.filter((a) => a.name !== 'slot') })
       continue
     }
-    const target = child.type !== 'text' && child.type !== 'comment'
+    // An element or a call is routed by its own `slot=` only: one beneath it
+    // names a slot of the call nearest that child, never of this one.
+    const target = child.type !== 'text' && child.type !== 'comment' && child.type !== 'node'
       ? blockSlotTarget(child, preserveComments)
       : null
     if (target?.name) { into(target.name, withoutSlotAttrs(child)); continue }

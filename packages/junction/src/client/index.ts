@@ -3102,7 +3102,8 @@ function _hasId(record: unknown, idField: string): boolean {
 function _warnNoId(idField: string): void {
   console.warn(
     `[Junction] ignored an update with no ${idField} — it cannot be matched to a row. ` +
-    `An announcement carries the record it is about.`
+    `An announcement carries the record it is about: a custom method whose answer is a report ` +
+    `names the row to announce with $.dispatch = row, or announces nothing with $.dispatch = false.`
   )
 }
 

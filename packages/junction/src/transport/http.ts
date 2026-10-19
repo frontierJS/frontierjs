@@ -21,7 +21,7 @@ import { REFUSE, resolvePrincipal, resolveCaller, bearerPrincipal, type Credenti
 import type { StaticOptions }             from './static.ts'
 import { BAKED_CACHE_CONTROL, errorResponse } from './bridge.ts'
 import { enterRequest }                  from '../core/context.ts'
-import { TooManyRequests, type ErrorMapper } from '../core/errors.ts'
+import { BadRequest, TooManyRequests, type ErrorMapper } from '../core/errors.ts'
 import { createStats, SESSION_SOCKET }    from './types.ts'
 import { wsSend, flushSendQueue, dropSendQueue, setMaxQueuedBytes } from './send-queue.ts'
 import type { TransportStats }            from './types.ts'
@@ -951,6 +951,13 @@ export class HttpTransport {
     }).catch(() => null)
     if (principal === REFUSE) return new Response('Unauthorized', { status: 401 })
     user = principal
+
+    // After the credential, which may be a signature over exactly these bytes.
+    // Before the service, which would otherwise be handed no body and answer
+    // about a field the sender never got to omit (`FJS-1415`).
+    if (parsed.malformed) {
+      return this._withSecurityHeaders(this._errorResponse(new BadRequest('The request body is not valid JSON')))
+    }
 
     // Parse query once and pass to _buildContext to avoid double parsing.
     // Past a limit the parser throws QueryLimitError (status 400); a filter cut

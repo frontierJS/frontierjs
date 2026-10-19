@@ -736,7 +736,7 @@ model Example {
 
 #### `@secret` `[(rotate: …)]` <a id="secret-field"></a>
 
-Expands at parse into @encrypted @guarded @trail(&lt;trail db&gt;). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both. Beside @hashed (`token String @secret @hashed`) it is one-way instead: no @encrypted half, matchable in a where, never readable even by asSystem(), @guarded and logged, and skipped by $rotateKey unless orphaned by name — a device token a server verifies and never shows.
+Expands at parse into @encrypted @guarded @trail(&lt;trail db&gt;). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both. Beside @hashed (`token String @secret @hashed`) it is one-way instead: no @encrypted half, matchable in a where, never readable even by asSystem(), @guarded and logged, and skipped by $rotateKey unless orphaned by name — a device token a server verifies and never shows. It is @guarded, so a REQUIRED @secret column leaves the model uncreatable below level 8: only asSystem(), or a call naming the column in system: [...], writes it. A key the caller writes and nobody reads back, one an admin pastes in from a provider's dashboard, is @encrypted.
 
 ```lite
 model Example {
@@ -749,14 +749,14 @@ model Example {
 - **Deeper** — [encryption.md](encryption.md)
 - **See also** — [`@encrypted`](#encrypted-field) · [`@guarded`](#guarded-field) · [`@trail`](#trail-field)
 
-#### `@check` `("sql expression")` <a id="check-field"></a>
+#### `@check` `("sql expression"[, "message"])` <a id="check-field"></a>
 
-A SQL CHECK constraint on the column. Enforced by SQLite, so it holds against raw statements too.
+A SQL CHECK constraint on the column. Enforced by SQLite, so it holds against raw statements too. The optional message is the sentence a form shows under the control; without it a refusal reads `is not valid`.
 
 ```lite
 model Example {
   id Int @id
-  age Int @check("age >= 0")
+  age Int @check("age >= 0", "must not be negative")
 }
 ```
 

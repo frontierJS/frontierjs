@@ -128,3 +128,50 @@ describe('Grant under row tenancy', () => {
       .find((a: any) => a.kind === 'unique').global).toBe(true)
   })
 })
+
+// ─── Organization's policies assume a claim, and the file says so ────────────
+//
+// `auth().orgId` and `auth().memberRole` resolve only where each person
+// belongs to one org (`claim … from Member(userId)` needs a unique subject,
+// FJS-D359) or under `strategy row` (FJS-D361). A host with several orgs per
+// person and no tenancy block read the file as universal and had no spelling
+// to swap in (FJS-1800). The spelling it is told to use is checked here, so
+// the note cannot name a form the parser refuses.
+describe('Organization.lite without a claim', () => {
+  const src = readFileSync(join(DIR, 'Organization.lite'), 'utf8')
+
+  it('says its policies assume a claim and names the spelling for a host without one', () => {
+    expect(src).toContain('assume a claim')
+    expect(src).toContain('members.some(userId == auth().id)')
+    expect(src).toContain("members.some(userId == auth().id && role == 'admin')")
+    expect(src).toContain("check(org, 'update')")
+  })
+
+  it('the claim-free spelling it names parses clean', () => {
+    const host = `
+model User { id String @id @default(ulid()) }
+model Organization {
+  id      String   @id @default(ulid())
+  members Member[]
+  @@gate(4.8.5.8)
+  @@allow(read,   members.some(userId == auth().id))
+  @@allow(update, members.some(userId == auth().id && role == 'admin'))
+}
+model Member {
+  id     String       @id @default(ulid())
+  orgId  String
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId String
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   String       @default("member") @allow(write, check(org, 'update'))
+  @@relator([orgId, userId], once)
+  @@gate(4.5.5.5)
+  @@allow(read,   userId == auth().id || check(org, 'read'))
+  @@allow(create, check(org, 'update'))
+  @@allow(update, check(org, 'update'))
+  @@allow(delete, check(org, 'update'))
+}`
+    const { errors, warnings } = parse(host)
+    expect([...(errors ?? []), ...(warnings ?? [])].map((e: any) => e.message ?? String(e))).toEqual([])
+  })
+})

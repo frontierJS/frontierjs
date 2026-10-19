@@ -98,7 +98,7 @@ export function inApp(): InAppBuilder {
 class MailBuilder {
   private _subject: string = ''
   private _lines:   MailLine[] = []
-  private _to?:     string
+  private _to?:     string | string[]
   private _html?:   string
   private _text?:   string
   private _attachments: MailAttachment[] = []
@@ -137,8 +137,9 @@ class MailBuilder {
 
   /**
    * Override recipient address. Defaults to user.email when omitted.
+   * A list is one mail to all of them.
    */
-  to(address: string): this {
+  to(address: string | string[]): this {
     this._to = address
     return this
   }

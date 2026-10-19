@@ -385,7 +385,7 @@ function validateField(field: string, value: unknown, def: FieldDef): FieldResul
       if (def.uppercase) v = (v as string).toUpperCase()
 
       if (def.minLength !== undefined && (v as string).length < def.minLength)
-        errors.push({ field, message: _say(def, 'minLength', `${_label(field, def)} must be at least ${def.minLength} characters`) })
+        errors.push({ field, message: _say(def, 'minLength', `${_label(field, def)} must be at least ${def.minLength} character${def.minLength === 1 ? '' : 's'}`) })
 
       if (def.maxLength !== undefined && (v as string).length > def.maxLength)
         errors.push({ field, message: _say(def, 'maxLength', `${_label(field, def)} must be at most ${def.maxLength} characters`) })

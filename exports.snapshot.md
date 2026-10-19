@@ -35,6 +35,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `.` | `index.ts` | yes |
 | exports | `./schema` | `schema.ts` | yes |
 | exports | `./console` | `console.ts` | yes |
+| exports | `./totp` | `totp.ts` | yes |
 | exports | `./schema.lite` | `db/auth.lite` | yes |
 | exports | `./user.lite` | `db/user.lite` | yes |
 | main | `main` | `index.ts` | yes |
@@ -319,6 +320,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./postbuild` | `src/postbuild/index.js` | yes |
 | exports | `./components/RouterView` | `src/components/RouterView.mesa` | yes |
 | exports | `./components/ChainRenderer` | `src/components/ChainRenderer.mesa` | yes |
+| exports | `./components/SupportBanner` | `src/resource/SupportBanner.mesa` | yes |
 | exports | `./presence` | `src/presence/index.js` | yes |
 | exports | `./devtools` | `src/devtools/index.js` | yes |
 | exports | `./widget` | `src/widget/index.js` | yes |

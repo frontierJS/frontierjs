@@ -445,6 +445,7 @@ function readIssues({ root, dir, ids }) {
         verified: wide ? plain(cells[4]) : '',
         closed,
         body:     plain(body),
+        raw:      line.trim(),
         refs:     refsIn(body, ids),
         files:    linkedFiles(cells[cells.length - 1]),
         form:     'table',
@@ -505,6 +506,7 @@ function readDecisions({ root, dir, ids }) {
     const bodyLines = lines.slice(open.line + 1, endLine)
     const body = lines.slice(open.line, endLine).join('\n')
     open.record.body  = plain(body).trim()
+    open.record.raw   = body.trim()
     open.record.refs  = refsIn(body, ids)
     open.record.files = linkedFiles(body)
     open.record.livesIn = livesIn(body)

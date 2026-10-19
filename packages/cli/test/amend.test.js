@@ -12,7 +12,7 @@ import { tmpdir } from 'os'
 
 import { amendIssue }       from '../core/amend.js'
 import { readRegisters }    from '../core/registers.js'
-import { runRegisterCheck } from '../core/register-check.js'
+import { runRegisterCheck, describeNewErrors } from '../core/register-check.js'
 
 const TODAY = new Date('2026-09-29T12:00:00Z')
 
@@ -123,6 +123,20 @@ describe('what it refuses', () => {
     expect(out.ok).toBe(false)
     expect(out.reason).toMatch(/put back.*unknown-ref/)
     expect(file(root)).toBe(ISSUES.join('\n'))
+  })
+
+  // FJS-2328: one message per row printed hundreds of times, naming neither the row nor its text.
+  test('the refusal names where the finding is, once, and counts the repeats', () => {
+    const root = project()
+    const out  = amendIssue({ root, id: 'ELA-001', detail: 'duplicates ELA-999', today: TODAY })
+    expect(out.reason).toMatch(/unknown-ref.*ELA-001 \.project\/ISSUES\.md:\d+/)
+
+    const f = { rule: 'unparsed-record', level: 'error', id: null, file: 'ISSUES.md', line: 9,
+                message: 'has a record\'s shape and produced no record', detail: '| FJS-1 | x |' }
+    const said = describeNewErrors(Array.from({ length: 200 }, (_, i) => ({ ...f, line: 9 + i })))
+    expect(said.match(/unparsed-record/g)).toHaveLength(1)
+    expect(said).toContain('ISSUES.md:9: | FJS-1 | x |')
+    expect(said).toContain('×200')
   })
 
 })

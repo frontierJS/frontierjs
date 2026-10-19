@@ -86,9 +86,11 @@ export default {
     // built as a second script.
     dir:    'src/Embeds',
     outDir: 'dist/embeds',
-    // Every widget's tag and class take this. Two vendors' widgets land on the
-    // same page more often than anyone expects, and a prefix is what keeps
-    // <booking> from being a name both of them claimed.
+    // Every widget's tag and class take this, glued to the name with no
+    // separator, so end it in a dash: 'mt-' gives <mt-basic-lead>, 'mt' gives
+    // <mtbasic-lead>. Two vendors' widgets land on the same page more often
+    // than anyone expects, and a prefix is what keeps <booking> from being a
+    // name both of them claimed.
     prefix: ${JSON.stringify(prefix)},
   },
 }
@@ -297,6 +299,13 @@ export function scaffoldWidgetSurface({
     throw new Error(
       `"${name}" is not a widget name — PascalCase, singular, like a component ` +
       `(Invariant 19). It is also the tag a host page writes.`
+    )
+  }
+
+  if (prefix && !prefix.endsWith('-')) {
+    throw new Error(
+      `--prefix ${JSON.stringify(prefix)} is glued to the widget name, so ${name} would be ` +
+      `<${widgetTag(name, prefix)}>, not <${widgetTag(name, prefix + '-')}>. End the prefix in a dash (e.g. '${prefix}-').`
     )
   }
 

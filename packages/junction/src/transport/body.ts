@@ -70,6 +70,13 @@ export interface ParsedBody {
    * reads the body its caller sent rather than nothing (`FJS-1180`).
    */
   bytes?: ArrayBuffer
+  /**
+   * A JSON body whose text did not parse. `data` is null either way, and a body
+   * that IS the literal `null` is not this — so the transport can refuse the
+   * first without refusing the second (`FJS-1415`). It is a flag rather than a
+   * throw because a credential verifier is owed the bytes first.
+   */
+  malformed?: true
 }
 
 // ─── The size bound ───────────────────────────────────────────────────────
@@ -276,7 +283,9 @@ export async function parseBody(
     try {
       data = JSON.parse(text)
     } catch {
-      return { type: 'json', data: null, files: [], size, bytes: buffer }
+      // A DELETE or a bodiless POST still carries the client's content-type.
+      if (size === 0) return { type: 'json', data: null, files: [], size, bytes: buffer }
+      return { type: 'json', data: null, files: [], size, bytes: buffer, malformed: true }
     }
     const unsafe = firstUnsafeInteger(text)
     if (unsafe) throw new UnsafeIntegerError(unsafe)

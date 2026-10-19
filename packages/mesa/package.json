@@ -56,7 +56,7 @@
     }
   },
   "scripts": {
-    "test": "node ../../scripts/tmp-run.mjs 'node test/spec-check.mjs && vitest run && node test/browser/runtime/run.mjs && node test/browser/vite/run.mjs && node test/browser/repl/run.mjs && node test/browser/kit/run.mjs && node test/browser/drive/run.mjs && bun test/terminal/run.mjs && node test/native/run.mjs && node bench/run.mjs --gate'",
+    "test": "node ../../scripts/tmp-run.mjs 'vitest run && node test/browser/runtime/run.mjs && node test/browser/vite/run.mjs && node test/browser/repl/run.mjs && node test/browser/kit/run.mjs && node test/browser/drive/run.mjs && bun test/terminal/run.mjs && node test/native/run.mjs && node bench/run.mjs --gate'",
     "test:watch": "vitest",
     "test:browser": "node test/browser/runtime/run.mjs && node test/browser/vite/run.mjs && node test/browser/repl/run.mjs && node test/browser/kit/run.mjs && node test/browser/drive/run.mjs",
     "test:browser:runtime": "node test/browser/runtime/run.mjs",

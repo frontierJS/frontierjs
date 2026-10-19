@@ -79,6 +79,10 @@ export interface AppConfig {
       // the URL — and a shared assets directory is a real deployment, so it
       // is named rather than followed blindly (`FJS-746`).
       allowOutside?: string[]
+      // Bytes strangers uploaded: anything outside the inline allow-list is
+      // answered as an attachment (`FJS-D314`). The block reaches
+      // `serveStatic` whole, so a key it reads is named here.
+      untrusted?: boolean
     }
     powered:      string
     /**

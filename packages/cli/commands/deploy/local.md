@@ -46,7 +46,7 @@ const container  = `${appId}-local`
 const dbDir      = './db'
 
 // ─── Check Dockerfile exists ──────────────────────────────────────────────────
-const { existsSync } = await import('fs')
+const { existsSync, mkdirSync } = await import('fs')
 const { resolve }    = await import('path')
 
 const dockerfilePath = resolve($.paths.root, dockerfile)
@@ -138,9 +138,17 @@ log.success(`Image built → ${tag}`)
 log.info(`Starting ${container} on port ${port}...`)
 
 const envArg = existsSync(envFilePath) ? `--env-file ${envFilePath}` : ''
+
+// The mount is the developer's own ./db, not a server directory deploy:setup chowned
+// to the image's uid, so the process runs as whoever owns it. Docker also creates a
+// missing bind source as root, which the developer's next run could not write.
+mkdirSync(resolve($.paths.root, dbDir), { recursive: true })
+const userArg = process.getuid ? `--user ${process.getuid()}:${process.getgid()}` : ''
+
 const runCmd = [
   'docker run -d',
   `--name ${container}`,
+  userArg,
   `-p 127.0.0.1:${port}:3000`,
   `--volume ${resolve($.paths.root, dbDir)}:${CONTAINER_DB_DIR}`,
   envArg,

@@ -123,8 +123,9 @@ export const REDACTED = '[redacted]'
  *
  * **A cycle is answered rather than followed.** An object that points at itself
  * is not worth a stack overflow inside a log call. Only an ANCESTOR is a cycle:
- * a value reached twice by two paths is walked twice, or a response body that
- * names one object in two places reads `[circular]` the second time.
+ * a value reached twice by two paths is not a cycle, or a response body that
+ * names one object in two places reads `[circular]` the second time. Its copy
+ * is shared between the two places, so the output of a DAG is a DAG.
  *
  * **A non-plain object with nothing to walk is returned untouched.** A `Date`, a
  * `URL`, an `Error` with no own members: walking one rebuilds it as a bare
@@ -186,11 +187,19 @@ function keyedView(v) {
 // An explicit stack, not recursion: junction runs this over every response of
 // a model with a protected field, and a stored Json value nested deeper than
 // the call stack made every later read of that model a 500 (FJS-2183).
+//
+// A finished copy is reused when the same object is reached again by another
+// path: `{l: x, r: x}` nested n deep is 2^n paths over n objects. A copy that
+// holds a `[circular]` answer depends on which ancestors it was reached under,
+// so only a cycle-free one is kept.
 function walk(value, isSecret, replace, ancestors) {
   const stack = []
+  const done = new Map()
+  let circulars = 0
   const enter = (v) => {
     if (!v || typeof v !== 'object') return v
-    if (ancestors.has(v)) return '[circular]'
+    if (ancestors.has(v)) { circulars++; return '[circular]' }
+    if (done.has(v)) return done.get(v)
     const isArray = Array.isArray(v)
     const proto = Object.getPrototypeOf(v)
     let from = v
@@ -200,7 +209,7 @@ function walk(value, isSecret, replace, ancestors) {
     }
     ancestors.add(v)
     const out = isArray ? new Array(v.length) : {}
-    stack.push({ src: v, from, out, keys: isArray ? null : Object.keys(from), i: 0 })
+    stack.push({ src: v, from, out, keys: isArray ? null : Object.keys(from), i: 0, circulars })
     return out
   }
 
@@ -211,6 +220,7 @@ function walk(value, isSecret, replace, ancestors) {
       const { src, from, out, keys } = frame
       if (frame.i === (keys ? keys.length : src.length)) {
         ancestors.delete(src)
+        if (circulars === frame.circulars) done.set(src, out)
         stack.pop()
         continue
       }

@@ -588,8 +588,9 @@ replaced was out of date in both columns without ever rendering wrong:
 | `snippet-parent-state` | A snippet the parent passes to a child, whose body reads the parent's state — its own `let` and an imported object — tracking as the parent's own template would, in a copy the child mounts later and in one it rebuilds |
 | `repl` | REPL module graph, example compile + coverage, interactivity |
 
-`test/spec-check.mjs` is separate — a plain `node test/spec-check.mjs` script that
-checks every claim VISION §4 makes against the compiler. `bun run test` runs it first.
+`test/spec-check.mjs` is a plain script that checks every claim VISION §4 makes
+against the compiler; `test/spec-check.test.js` runs it under vitest, so the suite
+fails when a claim does. Every other fence in `docs/` is graded by `docs-fences.test.js`.
 
 `test/mutants.mjs` is the other one, and it grades the suite rather than the
 compiler. Most of `compiler.test.js` asserts on the emitted JavaScript as text,

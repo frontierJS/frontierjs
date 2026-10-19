@@ -11,6 +11,7 @@
     ".": "./index.ts",
     "./schema": "./schema.ts",
     "./console": "./console.ts",
+    "./totp": "./totp.ts",
     "./schema.lite": "./db/auth.lite",
     "./user.lite": "./db/user.lite"
   },

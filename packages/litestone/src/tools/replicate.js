@@ -158,12 +158,19 @@ export async function getReplicaFile(base, name) {
 // Litestream's config is simple enough that a string template is cleaner than
 // pulling in a YAML library. No nested unknowns here.
 
-function buildYaml(targets, opts) {
+export function buildYaml(targets, opts) {
   // l0-retention is the STORE's setting in v0.5: read at the top of the file
   // and ignored, without a word, on a replica — where it was written, which
-  // left every replica on the 5m default while this said 24h.
+  // left every replica on the 5m default while this said 24h. A replica has no
+  // `retention` either (FJS-1396): how long snapshots live is `snapshot.retention`
+  // at the top, and the YAML is not parsed strictly, so a misplaced key is
+  // dropped and the 24h default stays.
   const l0    = opts.l0Retention ?? '24h'
-  const lines = [...(l0 ? [`l0-retention: ${l0}`] : []), 'dbs:']
+  const lines = [
+    ...(l0 ? [`l0-retention: ${l0}`] : []),
+    ...(opts.retentionPeriod ? ['snapshot:', `  retention: ${opts.retentionPeriod}`] : []),
+    'dbs:',
+  ]
 
   for (const t of targets) {
     // A directory target is every file matching the pattern, and `watch`
@@ -179,7 +186,6 @@ function buildYaml(targets, opts) {
     lines.push(`    replicas:`)
     lines.push(`      - url: ${t.url}`)
     if (opts.syncInterval)    lines.push(`        sync-interval: ${opts.syncInterval}`)
-    if (opts.retentionPeriod) lines.push(`        retention: ${opts.retentionPeriod}`)
   }
 
   return lines.join('\n') + '\n'
@@ -321,7 +327,7 @@ export async function replicate({ targets, options, dir, verbose = true }) {
       console.log(`     ${c.dim}replica:${c.reset}  ${t.url}`)
     }
     if (options.syncInterval)    console.log(`   ${c.dim}interval:${c.reset}     ${options.syncInterval}`)
-    if (options.retentionPeriod) console.log(`   ${c.dim}retention:${c.reset}    ${options.retentionPeriod}`)
+    if (options.retentionPeriod) console.log(`   ${c.dim}snapshot-retention:${c.reset} ${options.retentionPeriod}`)
     console.log(`   ${c.dim}l0-retention:${c.reset} ${options.l0Retention ?? '24h'}`)
     console.log(`   ${c.dim}config:${c.reset}       ${ymlPath}`)
     console.log(`   ${c.dim}binary:${c.reset}       ${binary}`)

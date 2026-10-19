@@ -288,7 +288,8 @@ core/
                 of an unmeasured timing row to name its way out
   find.js       the reader behind `register:find` — issue rows, archive and
                 rulings holding every term, answered as id, title and file:line
-                and never the body; title hits and open rows first
+                and never the body unless `show` asks for it (`--show`, which
+                replaces `sed -n Np ISSUES.md`); title hits and open rows first
   next.js       the open register ranked — severity, then citations, `blocked by`
                 edges, code touched recently and REACH (packages depending on the
                 row's, via `workspaceDeps` in runnables.js), every term printed with its

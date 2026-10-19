@@ -931,8 +931,14 @@ async function _callService(
       // about that. Skipped when the app stated the payload itself; ctx.dispatch
       // is a declaration of what to send, and second-guessing it would make the
       // switch mean two things.
+      // A bulk write answers a LIST, and a list is not a row with every column
+      // missing: each element is graded on its own (`FJS-2157`).
       if (ctx.dispatch === undefined && announcedAccessor !== null) {
-        payload = await announcementPayload(ctx, payload, announcedAccessor, announcedIdField)
+        const accessor = announcedAccessor
+        const gradeOne = (p: unknown) => announcementPayload(ctx, p, accessor, announcedIdField)
+        payload = Array.isArray(payload)
+          ? await Promise.all(payload.map(gradeOne))
+          : await gradeOne(payload)
       }
 
       // null means announce nothing — and it has to skip the fan-out WITHOUT

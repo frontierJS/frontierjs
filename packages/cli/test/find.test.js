@@ -99,6 +99,19 @@ describe('searching', () => {
     expect(out.total).toBe(5)
   })
 
+  test('show carries the whole row for the hits, and only then', () => {
+    const plain = findRows({ root: project(), terms: 'ela-002' }).hits[0]
+    expect(plain).not.toHaveProperty('body')
+    const [hit] = findRows({ root: project(), terms: 'ela-002', show: true }).hits
+    expect(hit.body).toContain('handleKeywords')
+    expect(hit.body).toContain('patches two fields')
+  })
+
+  test('show prints a table row as written, markdown intact', () => {
+    const [hit] = findRows({ root: project(), terms: 'ela-002', show: true }).hits
+    expect(hit.body.startsWith('|')).toBe(true)
+  })
+
   test('a closed row states no severity', () => {
     const [hit] = findRows({ root: project(), terms: 'ELA-001' }).hits
     expect(hit.status).toBe('closed')

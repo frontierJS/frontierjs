@@ -81,17 +81,31 @@ export function declaredLogDatabases(dbDir) {
   let text = ''
   try { text = readFileSync(schemaPath, 'utf8') } catch { return [] }
 
-  return databaseBlocks(text)
-    .filter(b => b.driver !== 'sqlite')
-    .map(({ name, body, driver }) => ({
-      name,
-      driver,
-      // The DEFAULT, not what the variable currently holds: this is asked about
-      // a server, from a laptop, so the local environment is not the answer.
-      path:   body.match(/\bpath\s+env\(\s*['"`][^'"`]+['"`]\s*,\s*['"`]([^'"`]+)['"`]\s*\)/)?.[1]
-           ?? body.match(/\bpath\s+['"`]([^'"`]+)['"`]/)?.[1] ?? null,
-      envVar: body.match(/\bpath\s+env\(\s*['"`]([^'"`]+)['"`]/)?.[1] ?? null,
-    }))
+  return declaredPaths(text).filter(b => b.driver !== 'sqlite')
+}
+
+/**
+ * Every `database` block with the path it names by default, SQLite or not.
+ * `declaredLogDatabases` is the non-SQLite half; `db-path-committed` wants both.
+ *
+ * @returns {Array<{ name: string, driver: string, path: string|null, envVar: string|null }>}
+ */
+export function declaredDatabasePaths(dbDir) {
+  const schemaPath = resolve(dbDir, 'schema.lite')
+  if (!existsSync(schemaPath)) return []
+  try { return declaredPaths(readFileSync(schemaPath, 'utf8')) } catch { return [] }
+}
+
+function declaredPaths(text) {
+  return databaseBlocks(text).map(({ name, body, driver }) => ({
+    name,
+    driver,
+    // The DEFAULT, not what the variable currently holds: this is asked about
+    // a server, from a laptop, so the local environment is not the answer.
+    path:   body.match(/\bpath\s+env\(\s*['"`][^'"`]+['"`]\s*,\s*['"`]([^'"`]+)['"`]\s*\)/)?.[1]
+         ?? body.match(/\bpath\s+['"`]([^'"`]+)['"`]/)?.[1] ?? null,
+    envVar: body.match(/\bpath\s+env\(\s*['"`]([^'"`]+)['"`]/)?.[1] ?? null,
+  }))
 }
 
 /**

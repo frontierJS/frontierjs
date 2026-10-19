@@ -10,6 +10,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { serveStatic } from '../src/transport/static.ts'
+import type { AppConfig } from '../src/config/index.ts'
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join }   from 'node:path'
@@ -185,5 +186,13 @@ describe('untrusted: true', () => {
     )
     expect(res?.status).toBe(206)
     expect(res!.headers.get('content-disposition')).toBe('attachment; filename="logo.svg"')
+  })
+})
+
+describe('the config type names what serveStatic reads (FJS-1303)', () => {
+  it('http.static accepts untrusted, so the documented spelling typechecks', () => {
+    // Pinned by `bun run typecheck`: the key missing from AppConfig is TS2353.
+    const block: NonNullable<AppConfig['http']['static']> = { root: '/srv/uploads', maxAge: 3600, untrusted: true }
+    expect(block.untrusted).toBe(true)
   })
 })

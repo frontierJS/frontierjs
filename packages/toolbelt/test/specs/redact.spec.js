@@ -82,7 +82,7 @@ test('redact: a cycle is answered, not followed', function () {
   assert.equal(out.self, '[circular]')
 })
 
-test('redact: a value reached by two paths is walked twice, not called a cycle', function () {
+test('redact: a value reached by two paths is not called a cycle', function () {
   const shared = { token: 't', label: 'x' }
   const out = redactSecrets({ a: shared, b: shared, list: [shared, shared] })
   assert.deepEqual(out.b, { token: REDACTED, label: 'x' })
@@ -280,4 +280,27 @@ test('redact: an own __proto__ member survives the walk as a member', function (
     assert.deepEqual(Object.getOwnPropertyDescriptor(out, '__proto__').value, { isAdmin: true })
     assert.deepEqual(Object.getOwnPropertyDescriptor(out.list[0], '__proto__').value, { x: 1 })
   }
+})
+
+test('redact: a shared-reference DAG is walked once per node, not once per path', function () {
+  // {l: x, r: x} nested 22 deep is 2^22 paths and 22 distinct objects.
+  let x = { token: 't' }
+  for (let i = 0; i < 22; i++) x = { l: x, r: x }
+  let asked = 0
+  const out = redactBy(x, (k) => { asked++; return k === 'token' })
+  assert.ok(asked < 200, `isSecret asked ${asked} times`)
+  let leaf = out
+  for (let i = 0; i < 22; i++) leaf = leaf.r
+  assert.deepEqual(leaf, { token: REDACTED })
+})
+
+test('redact: a shared value that holds a cycle reads [circular] on every path that reaches it', function () {
+  const a = { name: 'a' }
+  const b = { a }
+  a.b = b
+  // b is reached from the root and again from inside a: under the first path its
+  // `a.b` is a cycle, under the second it is not, so a reused copy would be wrong.
+  const out = redactSecrets({ first: a, second: b })
+  assert.equal(out.first.b.a, '[circular]')
+  assert.equal(out.second.a.b, '[circular]')
 })

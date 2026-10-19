@@ -60,6 +60,21 @@ describe('the shipped command passes an absolute -f', () => {
   })
 })
 
+// FJS-3181. The image runs as uid 1000 and the bind mount is the developer's own
+// ./db, so a developer whose uid is not 1000 gets a container that cannot open it.
+describe('deploy:local runs the container as the owner of the db dir it mounts', () => {
+  test('docker run carries --user from the invoking uid and gid', () => {
+    const run = LOCAL.slice(LOCAL.indexOf('const runCmd = ['), LOCAL.indexOf('$.exec({ command: runCmd })'))
+    expect(run).toContain('userArg')
+    expect(LOCAL).toMatch(/process\.getuid/)
+    expect(LOCAL).toMatch(/--user \$\{process\.getuid\(\)\}:\$\{process\.getgid\(\)\}/)
+  })
+
+  test('the db dir exists before docker run, or docker creates it root-owned', () => {
+    expect(LOCAL).toMatch(/mkdirSync\(resolve\(\$\.paths\.root, dbDir\)/)
+  })
+})
+
 describe.skipIf(!hasDocker)('a real docker, from a cwd that is not the app root', () => {
   // A confined daemon cannot read a private /tmp, and that failure (`path ...
   // not found`) is a DIFFERENT one that would mask this test entirely — so the

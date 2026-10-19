@@ -11,7 +11,7 @@ import { describe, test, expect } from 'bun:test'
 import { readFileSync } from 'fs'
 import { createHash } from 'crypto'
 import {
-  edgeNames, apiOrigin, edgeRoutes, applyEdge, routeId, accessLogPath, INGRESS_SERVER,
+  edgeNames, apiOrigin, edgeRoutes, plainRoutes, applyEdge, routeId, accessLogPath, INGRESS_SERVER, PLAIN_SERVER,
   parseConfigRead, parseConfigWrite, writeConfigScript, EdgeError, inlineScriptHashes,
 } from '../core/edge.js'
 import { guardId } from '../core/pause.js'
@@ -162,6 +162,68 @@ describe('applyEdge', () => {
     expect(out.logging.logs.default.exclude).toEqual([`http.log.access.${routeId('shop')}`])
     const again = applyEdge(out, { appId: 'shop', routes })
     expect(again.logging.logs.default.exclude).toEqual([`http.log.access.${routeId('shop')}`])
+  })
+})
+
+// FJS-3210: Caddy's automatic http→https redirect covers every host it routes,
+// so a client sending the API plaintext was upgraded and never learned its
+// first request had leaked. A :80 route refuses the API's paths first; the
+// redirect stays for pages.
+describe('plaintext on :80', () => {
+  const plainFor = (deploy, paths = null) => {
+    const names = edgeNames(deploy)
+    return plainRoutes({ appId: 'shop', web: names.web, api: names.api, paths })
+  }
+  const refusals = (r) => r.handle[0].routes
+  const one = plainFor({ web: { domain: 'shop.example' } })
+
+  test('one origin: the API paths and /ws are answered 403, not redirected', () => {
+    expect(one.map(r => r['@id'])).toEqual([routeId('shop', 'web', true)])
+    const [r] = one
+    expect(r.match).toEqual([{ host: ['shop.example'] }])
+    expect(r.terminal).toBeUndefined()
+    const [refuse] = refusals(r)
+    expect(refuse.match).toEqual([{ path: ['/api', '/api/*', '/ws', '/ws/*'] }])
+    expect(refuse.handle[0]).toMatchObject({ handler: 'static_response', status_code: 403 })
+    expect(refuse.handle[0].body).toMatch(/https/i)
+    expect(refuse.terminal).toBe(true)
+  })
+
+  // The route is not terminal and the pages are not matched, so a page request
+  // falls through to the redirect Caddy adds for the host.
+  test('pages are left to the redirect', () => {
+    expect(refusals(one[0])).toHaveLength(1)
+  })
+
+  test('unprefixed, a navigation is a page and still redirects', () => {
+    const [r] = plainFor({ web: { domain: 'shop.example' } }, { prefix: null, roots: ['/projects'] })
+    const [refuse] = refusals(r)
+    expect(refuse.match[0].path).toEqual(['/projects', '/projects/*', '/ws', '/ws/*'])
+    expect(refuse.match[0].not).toEqual([{ header: { Accept: ['*text/html*'] }, not: [{ path: ['/auth/oauth/*'] }] }])
+  })
+
+  test('two origins: every path on the API host, and nothing on the web host', () => {
+    const rs = plainFor({ web: { domain: 'app.shop.example' }, api: { domain: 'api.shop.example' } })
+    expect(rs.map(r => r['@id'])).toEqual([routeId('shop', 'api', true)])
+    expect(rs[0].match).toEqual([{ host: ['api.shop.example'] }])
+    expect(refusals(rs[0])[0].match).toBeUndefined()
+  })
+
+  test('applyEdge writes them to a :80 server beside ingress, and drops them with the app', () => {
+    const routes = routesFor({ web: { domain: 'shop.example' } })
+    const plain  = plainFor({ web: { domain: 'shop.example' } })
+    const out    = applyEdge({}, { appId: 'shop', routes, plain })
+    expect(out.apps.http.servers[PLAIN_SERVER].listen).toEqual([':80'])
+    expect(out.apps.http.servers[PLAIN_SERVER].routes.map(r => r['@id'])).toEqual([routeId('shop', 'web', true)])
+    expect(applyEdge(out, { appId: 'shop', routes, plain })).toEqual(out)
+    const gone = applyEdge(out, { appId: 'shop', routes: [] })
+    expect(gone.apps.http.servers[PLAIN_SERVER]).toBeUndefined()
+  })
+
+  test('the pipeline hands them to the write', () => {
+    expect(src('_module.md')).toContain('plainRoutes(')
+    expect(src('_steps-setup/05-caddy.md')).toContain('plain')
+    expect(src('_steps-docker/07b-edge.md')).toContain('plain')
   })
 })
 

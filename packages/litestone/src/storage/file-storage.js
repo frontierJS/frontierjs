@@ -361,7 +361,9 @@ class FileStoragePlugin extends ExternalRefPlugin {
 
   // resolve: ref object → public URL string
   // autoResolve defaults to true — file fields return URLs directly on read.
-  // Use asSystem() to get the raw ref object if needed.
+  // A ref with no publicBase and no endpoint has no address and resolves to null
+  // for every client, asSystem() included. `select: { file: { resolve: false } }`
+  // is how a caller allowed to see the ref reads it.
   // fileUrl() still works for manual resolution of raw ref strings.
   async resolve(ref, { field, model, ctx }) {
     if (!ref) return null

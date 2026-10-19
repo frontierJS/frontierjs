@@ -31,7 +31,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join }                        from 'node:path'
 
 import { readRegisters, withRegisterGuard }                 from './registers.js'
-import { errorKeys, newErrors }          from './register-check.js'
+import { errorKeys, newErrors, describeNewErrors } from './register-check.js'
 import { oneCell, isoDate, splitRow }    from './close.js'
 
 /**
@@ -80,7 +80,7 @@ function amendUnguarded({ root, id, detail, drop = null, dry = false, today = ne
   const found = newErrors(baseline, root)
   if (found.length) {
     writeFileSync(abs, before)
-    return refuse(`the amend was put back: register:check found ${found.map(f => `${f.rule} — ${f.message}`).join('; ')}`)
+    return refuse(`the amend was put back: register:check found ${describeNewErrors(found)}`)
   }
 
   return { ok: true, id: record.id, file: record.file, line: record.line, dropped: kept.dropped }

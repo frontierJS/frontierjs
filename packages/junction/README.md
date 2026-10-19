@@ -2079,6 +2079,8 @@ posts.on('publish', (post) => updateRow(post))
 
 Reads never announce. A method that only reads says so with `ctx.dispatch =
 false`, which suppresses the broadcast to browsers and the in-process bus alike.
+A write whose answer is a report around a row sets `ctx.dispatch = row` instead:
+the announcement carries the row, and the caller still gets the report.
 
 **`resource()`** — convenience wrapper that combines a service proxy, a reactive `Tether`, and a `load()` function. The tether stays in sync with real-time events automatically:
 
@@ -2273,7 +2275,7 @@ SQLite-backed background job queue. Zero external dependencies. Jobs survive pro
 import { caravan } from '@frontierjs/caravan'
 
 const queue = caravan({
-  db:      './jobs.db',       // default
+  db:      './db/jobs.db',    // default
   queues: {
     default:  { concurrency: 2 },
     critical: { concurrency: 5 },
@@ -2331,10 +2333,16 @@ Job stats are automatically included in `GET /metrics` under `jobs`:
 
 ```json
 "jobs": {
-  "queues": { "default": { "pending": 4, "running": 2, "dead": 1 } },
-  "total":  { "pending": 4, "running": 2, "dead": 1 }
+  "queues": {
+    "default": { "pending": 4, "running": 2, "done": 91, "dead": 1, "cancelled": 0,
+                 "oldestRunningMs": 1200, "pausedMs": null }
+  },
+  "total": { "pending": 4, "running": 2, "done": 91, "dead": 1, "cancelled": 0,
+             "oldestRunningMs": 1200, "pausedMs": null }
 }
 ```
+
+`done` is the retention window, not all time; the field list is Caravan's `queue.stats()`.
 
 Dead jobs (exhausted retries) stay in the database — use `app.jobs.retry(id)` to re-queue them.
 

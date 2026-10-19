@@ -16,7 +16,7 @@
 
 import { glow }        from '@frontierjs/toolbelt/glow'
 import { parseFrontmatter, splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
-import { compile }     from './compiler.js'
+import { compile, parseText } from './compiler.js'
 import { missingPeer } from './optional-peer.js'
 
 const MD = 'Compiling a .md file'
@@ -155,13 +155,49 @@ const _defaultProcessor = unified()
   .use(remarkParse)
   .use(remarkGfm)
   .use(remarkRehype, { allowDangerousHtml: true })
-  .use(rehypeSlug)
+  .use(slugHeadings)
   .use(rehypeStringify, { allowDangerousHtml: true })
+
+// rehypeSlug slugs the Markdown text, and Mesa fills `{path}` in later, so an
+// interpolated heading was served with its variable name as the id
+// (`see-how-company_name-can-help-you`) over words the reader sees differently
+// (FJS-1500). Such a heading has no static slug and gets no id. rehypeSlug skips
+// a heading that has one, so the held heading is given a placeholder for its
+// run, which also keeps it from taking a slug a later duplicate would then miss.
+// An escaped brace is a sentinel here, whose name would otherwise be slugged.
+const HELD_ID = 'mesa-held-heading'
+const HEADING = /^h[1-6]$/
+
+function slugHeadings() {
+  const slug = rehypeSlug()
+  return (tree) => {
+    const held = []
+    const swapped = []
+    const walk = (node, inCode, heading) => {
+      if (node.type === 'text' && heading) {
+        if (!inCode && parseText(node.value, { pathOnly: true }).parts.some((p) => p.type === 'exp')) held.push(heading)
+        if (node.value.includes(BRACE_ESCAPE)) {
+          swapped.push([node, node.value])
+          node.value = node.value.split(BRACE_ESCAPE).join('{')
+        }
+      }
+      const isHeading = node.type === 'element' && HEADING.test(node.tagName)
+      for (const child of node.children ?? []) {
+        walk(child, inCode || node.tagName === 'code', isHeading ? node : heading)
+      }
+    }
+    walk(tree, false, null)
+    for (const h of held) h.properties.id = HELD_ID
+    slug(tree)
+    for (const h of held) delete h.properties.id
+    for (const [node, value] of swapped) node.value = value
+  }
+}
 
 /**
  * Build a processor with user-supplied remark/rehype plugins inserted
  * after the built-in plugins. User remark plugins run after remarkGfm;
- * user rehype plugins run after rehypeSlug.
+ * user rehype plugins run after slugHeadings.
  *
  * Each entry in remarkPlugins/rehypePlugins is either:
  *   - a function (the plugin itself)
@@ -178,7 +214,7 @@ function buildProcessor(remarkPlugins = [], rehypePlugins = [], lineBase = null)
   }
 
   p = p.use(remarkRehype, { allowDangerousHtml: true })
-       .use(rehypeSlug)
+       .use(slugHeadings)
 
   for (const entry of rehypePlugins) {
     const [plugin, opts] = Array.isArray(entry) ? entry : [entry]

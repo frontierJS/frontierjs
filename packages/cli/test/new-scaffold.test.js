@@ -35,6 +35,27 @@ test('scaffoldWidgetSurface with no name scaffolds rather than refusing', () => 
   expect(existsSync(join(root, 'widgets/src/Embeds/HelloWidget.mesa'))).toBe(true)
 })
 
+// FJS-2534: the prefix is glued to the name, so 'mt' scaffolds <mtbasic-lead>,
+// a legal tag no host page writes.
+test('scaffoldWidgetSurface refuses a prefix that does not end in a dash', () => {
+  const root = mkdtempSync(join(tmpdir(), 'fjs-new-widget-prefix-'))
+  roots.push(root)
+  expect(() => scaffoldWidgetSurface({ root, name: 'BasicLead', prefix: 'mt' })).toThrow(/mt-/)
+  expect(existsSync(join(root, 'widgets'))).toBe(false)
+  expect(() => scaffoldWidgetSurface({ root, name: 'BasicLead', prefix: 'mt-' })).not.toThrow()
+})
+
+// FJS-1874: a one-word name under no prefix is <lead>, which no browser will
+// register, and writing the surface first would leave a dead widget behind.
+test('scaffoldWidgetSurface refuses a tag with no dash and writes nothing', () => {
+  const root = mkdtempSync(join(tmpdir(), 'fjs-new-widget-nodash-'))
+  roots.push(root)
+  expect(() => scaffoldWidgetSurface({ root, name: 'Lead' })).toThrow(/must contain a dash/)
+  expect(existsSync(join(root, 'widgets'))).toBe(false)
+  expect(() => scaffoldWidgetSurface({ root, name: 'Lead', prefix: 'mt-' })).not.toThrow()
+  expect(() => scaffoldWidgetSurface({ root, name: 'BasicLead' })).not.toThrow()
+})
+
 // FJS-1990: importing a .mesa mounts nothing, so a dev.js that only imported
 // the starter widget showed an empty tag and no error.
 test('the dev harness entry loads the module that embeds every widget', () => {
@@ -247,3 +268,21 @@ test('a --no-auth scaffold leaves a database that holds its schema', () => {
   audit.close()
   expect(tables).toContain('audit_trail')
 }, 180_000)
+
+// FJS-D454 — the API holds a system client and sees `@guarded` columns; the
+// browser never does. One shared types file would tell browser code a column
+// exists that every response strips, and the junction augmentation names the
+// browser's module, so it belongs on the client file alone.
+test('db:types writes one types file per audience, and only the browser one augments junction', () => {
+  const app = scaffold('typed')
+  const { scripts } = JSON.parse(readFileSync(join(app, 'package.json'), 'utf8'))
+  const [api, web, ...rest] = scripts['db:types'].split(' && ')
+
+  expect(rest).toEqual([])
+  expect(api).toContain('--audience system')
+  expect(api).toContain('--out db/schema.d.ts')
+  expect(api).not.toContain('--augment')
+  expect(web).toContain('--audience client')
+  expect(web).toContain('--augment junction')
+  expect(web).toContain('--out web/src/db.d.ts')
+}, 60_000)

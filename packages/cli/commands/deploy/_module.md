@@ -723,16 +723,23 @@ fi`
 // paths come off the app's surface snapshot and a service added since setup is
 // a path the edge would hand the SPA.
 //
-// `{ routes, paths }`, or `{ error }` for an EdgeError. `paths` null means no
+// `{ routes, plain, paths }`, or `{ error }` for an EdgeError. `plain` is the
+// :80 refusals for the API's paths. `paths` null means no
 // snapshot, and the routes fall back to `/api/`. `html` is the `index.html` the
 // route will serve, read off the target: its inline scripts are hashed into the
 // CSP, and a page whose hash is missing has its theme and service worker refused.
 const edgeRoutesFor = async ({ root, appId, serverPath, apiPort, edge, html = '' }) => {
-  const { edgeRoutes, apiPaths, inlineScriptHashes, EdgeError } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
+  const { edgeRoutes, plainRoutes, apiPaths, inlineScriptHashes, EdgeError } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
   const { readAppSnapshot } = await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
   const paths   = apiPaths(readAppSnapshot(root))
   const scripts = inlineScriptHashes(html)
-  try { return { routes: edgeRoutes({ appId, serverPath, apiPort, web: edge.web, api: edge.api, paths, scripts }), paths } }
+  try {
+    return {
+      routes: edgeRoutes({ appId, serverPath, apiPort, web: edge.web, api: edge.api, paths, scripts }),
+      plain:  plainRoutes({ appId, web: edge.web, api: edge.api, paths }),
+      paths,
+    }
+  }
   catch (e) { if (e instanceof EdgeError) return { error: e.message }; throw e }
 }
 
@@ -743,7 +750,7 @@ const edgeRoutesFor = async ({ root, appId, serverPath, apiPort, edge, html = ''
 // page the guard serves.
 //
 // Answers 'written' | 'unchanged' | 'absent', or `{ error }`.
-const writeEdge = async (machine, { appId, routes, ifPresent = false }) => {
+const writeEdge = async (machine, { appId, routes, plain = [], ifPresent = false }) => {
   const { routeId, applyEdge, readConfigScript, parseConfigRead, writeConfigScript, parseConfigWrite, INGRESS_SERVER, EdgeError } =
     await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -752,7 +759,7 @@ const writeEdge = async (machine, { appId, routes, ifPresent = false }) => {
       read = parseConfigRead(machine.capture(readConfigScript()))
       const present = (read.config?.apps?.http?.servers?.[INGRESS_SERVER]?.routes ?? []).some(r => r['@id'] === routeId(appId))
       if (ifPresent && !present) return 'absent'
-      next = applyEdge(read.config, { appId, routes })
+      next = applyEdge(read.config, { appId, routes, plain })
     } catch (e) {
       if (!(e instanceof EdgeError)) throw e
       return ifPresent ? 'absent' : { error: e.message }

@@ -137,7 +137,9 @@ everything beneath it. Layouts nest rather than replace.
 path's last segment says which page it is — the same three `fli make:scaffold`
 writes. `invoices/[id]` is the detail page, `invoices/create` the create page
 rendering `<Invoice />` as its form, and anything else the list, written as
-`invoices/index.mesa` so the other two can live beside it. It does not write the
+`invoices/index.mesa` so the other two can live beside it — and writing the list
+writes `create.mesa` and `[id].mesa` there too, since its New button and its
+rows link to them; one already present is kept. It does not write the
 resource — `fli make:resource` owns that template, and this command tells you to
 run it when the resource is missing.
 
@@ -208,6 +210,24 @@ if (flag.dry) {
   writeFileSync(file, content, 'utf8')
   log.success(`Created route:     ${file}`)
   created.push(file)
+}
+
+// The list's New button links `<list>/create/` and each row `<list>/<id>/`;
+// a list written alone made both a 404. A sibling someone already wrote is
+// theirs and is kept.
+if (wired?.kind === 'list') {
+  const listPath = wired.file.replace(/\/index\.mesa$/, '')
+  for (const leaf of ['create', '[id]']) {
+    const sibling = resourceRoutePage({ path: `${listPath}/${leaf}`, model, service })
+    const target  = resolve($.paths.webPages, sibling.file)
+    if (flag.dry) log.dry(`Would create route:     ${target}`)
+    else if (existsSync(target)) log.info(`${sibling.file} already exists — skipping`)
+    else {
+      writeFileSync(target, sibling.content, 'utf8')
+      log.success(`Created route:     ${target}`)
+      created.push(target)
+    }
+  }
 }
 
 // ─── Named component ──────────────────────────────────────────────────────────

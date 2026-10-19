@@ -26,7 +26,8 @@ schema.ts    reads those two: authUserModel / authMachineryModels /
              authSchemaFragments (both) / retargetDb
 crypto.ts    hashing / token generation
 totp.ts      RFC 6238 codes, base32, recovery codes — clockless, `at` is a
-             parameter (`FJS-D261`)
+             parameter (`FJS-D261`). Published as `@frontierjs/auth/totp` so a
+             seed or drive types a code with this copy, not its own HOTP.
 cleanup.ts   expired-row pruning — `auth.cleanup` on the instance, started in
              the plugin's work() and stopped at shutdown
 errors.ts    the auth error classes (each carries its own `status`)

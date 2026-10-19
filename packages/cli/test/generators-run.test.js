@@ -58,7 +58,8 @@ const LEAD_SERVICE  = { 'api/src/services/leads.service.ts': 'export default {}\
 
 const CASES = [
   { cmd: 'make:model',     arg: ['Invoice'], flag: { resource: true },   wrote: 'web/src/resources/Invoice.mesa' },
-  { cmd: 'make:route',     arg: ['leads'],   flag: { resource: 'Lead' }, before: [LEAD_RESOURCE], wrote: 'web/src/routes/leads/index.mesa' },
+  { cmd: 'make:route',     arg: ['leads'],   flag: { resource: 'Lead' }, before: [LEAD_RESOURCE],
+    wrote: ['web/src/routes/leads/index.mesa', 'web/src/routes/leads/create.mesa', 'web/src/routes/leads/[id].mesa'] },
   { cmd: 'admin:generate', arg: [],          flag: {}, before: [LEAD_RESOURCE], files: LEAD_SERVICE, wrote: 'web/src/routes/admin' },
 ]
 
@@ -69,7 +70,7 @@ describe('a generator writes what `fli check` accepts', () => {
       try {
         for (const [cmd, arg, flag] of c.before ?? []) await run(root, cmd, arg, flag)
         await run(root, c.cmd, c.arg, c.flag)
-        if (c.wrote) expect(existsSync(join(root, c.wrote))).toBe(true)
+        for (const w of [c.wrote ?? []].flat()) expect(existsSync(join(root, w)), w).toBe(true)
         const { findings, ran } = await grade(root)
         // A rule that skipped proves nothing about the file it would have judged.
         expect(ran).toContain('resource-file-name')

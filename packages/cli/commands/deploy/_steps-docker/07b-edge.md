@@ -26,8 +26,8 @@ const machine = machineFor($, host, serverPath)
 const docRoot = $.config.releaseDir ?? `${serverPath}/current`
 const html    = machine.capture(`cat ${docRoot}/index.html 2>/dev/null || true`)
 
-const { routes, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort, edge, html })
-const written = error ? { error } : await writeEdge(machine, { appId, routes, ifPresent: true })
+const { routes, plain, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort, edge, html })
+const written = error ? { error } : await writeEdge(machine, { appId, routes, plain, ifPresent: true })
 
 if (written === 'written') log.success('Routes rewritten — the API mounts paths it did not at the last write')
 else if (written === 'unchanged') log.info('Routes unchanged')

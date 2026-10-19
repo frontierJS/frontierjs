@@ -322,7 +322,9 @@ function read(text, offset) {
       if (!width || !/^[0-9a-fA-F]+$/.test(digits) || digits.length !== width) {
         fail(`\`\\${e ?? ''}\` is not an escape in a double-quoted value`, line)
       }
-      out += String.fromCodePoint(parseInt(digits, 16))
+      const point = parseInt(digits, 16)
+      if (point > 0x10FFFF) fail(`\`\\${e}${digits}\` is not a code point (the most is 10FFFF)`, line)
+      out += String.fromCodePoint(point)
       k += width
     }
     return out

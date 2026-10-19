@@ -127,3 +127,32 @@ describe('an app that started no second listener', () => {
     }
   })
 })
+
+// FJS-D460: an announcement and nothing else. The caller already holds the
+// process handle; a register that probed, started or health-checked would be a
+// process manager inside the framework.
+describe('registerDevService supervises nothing', () => {
+  it('opens no connection to the url it was given, at register or at boot', async () => {
+    let connections = 0
+    const probe = Bun.listen({
+      hostname: '127.0.0.1', port: 0,
+      socket: { open() { connections++ }, data() {}, close() {} },
+    })
+    const quiet = createApp({
+      logger: capturingLogger(),
+      config: { port: 0, http: { ...defaultConfig.http, drainTimeout: 200 } },
+    }) as any
+    try {
+      quiet.registerDevService({ name: 'probe', url: `http://127.0.0.1:${probe.port}` })
+      await quiet.start()
+      await new Promise(r => setTimeout(r, 50))
+
+      expect(connections).toBe(0)
+      // Stored as stated: no handle, pid or health the framework added.
+      expect(Object.keys(quiet._devServices.get('probe')).sort()).toEqual(['name', 'url'])
+    } finally {
+      await quiet.stop()
+      probe.stop(true)
+    }
+  })
+})

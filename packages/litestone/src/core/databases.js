@@ -476,7 +476,8 @@ function statedDbPath(pathDef) {
 
 // Whether the stated path leaves its directory to the working directory. The
 // minted-directory warning is about that and nothing else (`FJS-449`): an
-// absolute path names its directory, so creating it is the caller's own doing.
+// absolute path names its directory, so creating it is the caller's own doing,
+// and so is a declared path under a `resolveFrom` anchor.
 /**
  * @param {string | undefined} stated
  */

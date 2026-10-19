@@ -81,6 +81,16 @@ describe('litestone explain', () => {
     expect(out).toContain('not expressible')   // the combination that is not a word
   })
 
+  // FJS-1807: @secret is @guarded, so a REQUIRED one leaves the model creatable by
+  // asSystem() alone; the entry a reader lands on for "an API key" has to say so
+  // and name the word for a key the caller pastes in.
+  test('@secret says a required one is uncreatable below level 8 and points at @encrypted', () => {
+    const { out } = run('@secret')
+    expect(out).toContain('uncreatable')
+    expect(out).toContain('@encrypted')
+    expect(out).toMatch(/caller (writes|pastes|supplies)/)
+  })
+
   test('a field attribute in that table points at it', () => {
     expect(run('@system').out).toContain('--visibility')
   })

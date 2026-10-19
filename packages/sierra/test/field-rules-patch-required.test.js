@@ -57,9 +57,9 @@ describe('a non-null defaulted column is necessary on a patch', () => {
 
   test('a blank box and an explicit null are refused as required on a patch', () => {
     expect(validateAgainstFields(fields, { extraHours: '' }, 'patch'))
-      .toEqual([{ field: 'extraHours', message: 'extraHours is required' }])
+      .toEqual([{ field: 'extraHours', message: 'Extra Hours is required' }])
     expect(validateAgainstFields(fields, { extraHours: null }, 'patch'))
-      .toEqual([{ field: 'extraHours', message: 'extraHours is required' }])
+      .toEqual([{ field: 'extraHours', message: 'Extra Hours is required' }])
   })
 
   test('a create leaves a blank defaulted column to its default', () => {

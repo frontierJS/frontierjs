@@ -85,6 +85,23 @@ describe('what a shell is made of', () => {
     expect(shell).not.toContain('/downloads/terms.pdf')
   })
 
+  test('the device database engine is precached when db is asked for, and only then', async () => {
+    const files = {
+      'index.html':                 PAGE,
+      'fjs-sqlite/index.js':        'export {}',
+      'fjs-sqlite/sqlite3.wasm':    'wasm',
+    }
+    const dbDir = await build(files)
+    await writeOfflineShell({ db: true }, dbDir)
+    const withDb = shellOf(await sw(dbDir))
+    expect(withDb).toContain('/fjs-sqlite/index.js')
+    expect(withDb).toContain('/fjs-sqlite/sqlite3.wasm')
+
+    const plainDir = await build(files)
+    await writeOfflineShell(true, plainDir)
+    expect(shellOf(await sw(plainDir))).not.toContain('/fjs-sqlite/sqlite3.wasm')
+  })
+
   test('include widens it by name', async () => {
     const dir = await build({
       'index.html':     PAGE,
