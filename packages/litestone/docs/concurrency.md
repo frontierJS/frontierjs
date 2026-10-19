@@ -229,6 +229,11 @@ same seam, so nothing above Litestone can tell a foreign event from a local one.
 It costs a measurable fraction of a single-row write and nothing on a bulk one,
 which is why it is declared rather than default.
 
+**One process meant is declared too.** Junction warns at boot about a database
+that never wrote `announce`, since it cannot count the replicas itself; writing
+`announce inProcess` states the default and silences it (`FJS-D851`). A
+scaffolded app writes it.
+
 Three things it does not promise, all stated rather than approximated:
 
 - **One machine.** Two processes share a file; a second machine shares nothing

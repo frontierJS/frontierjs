@@ -12,10 +12,10 @@
 // `digest`, and that is the whole of what makes a release addressable:
 //   POST /pull         { image }                          → { digest }
 //   POST /build        { app_id, source, image }          → { digest, commit_sha }; a git source, built on the machine that runs it
-//   POST /deploy      { deployment_id, image, digest, hosts, … } → { digest }, once healthy;
+//   POST /deploy      { deployment_id, image, digest, hosts, paths, … } → { digest }, once healthy;
 //                      a release that fails puts the previous container back (FJS-1765)
 //   POST /stop         { app_id }                          → container and route gone (sent by apps.remove, never by a release)
-//   POST /route        { app_id, hosts, port? }            → Caddy re-routed, no restart (sent by domain:dns;
+//   POST /route        { app_id, hosts, paths?, port? }            → Caddy re-routed, no restart (sent by domain:dns;
 //                                                            `port` only by a preview's Open, core/preview.ts)
 //   POST /health-check { app_id, digest }                  → { healthy }
 //   POST /exec         { step, deployment_id }             → run the step
@@ -50,7 +50,7 @@ import { runsAsCaller }         from './context.ts'
 import domainDns                from './domain-dns.job.ts'
 import { isInline, isGit, inlineFilesFor } from '../core/app-source.ts'
 import { releaseEnv } from '../core/variables.ts'
-import { runtimeOf, routedHosts, routedRedirects, markRunning, type Runtime } from '../core/runtime.ts'
+import { runtimeOf, routedHosts, routedPaths, routedRedirects, markRunning, type Runtime } from '../core/runtime.ts'
 import type { App }         from '@frontierjs/junction'
 import type { StepStatus } from '../../../db/schema.d.ts'
 
@@ -326,6 +326,7 @@ function runner(app: App) {
         },
         source:        ctx.config.source ?? service.source ?? {},
         hosts:         await routedHosts(app.db, deploy.appId),
+        paths:         await routedPaths(app.db, deploy.appId),
         redirects:     await routedRedirects(app.db, deploy.appId),
         // The live App, as the hosts are: a rollback puts back old bytes, never
         // an exposure somebody has since withdrawn. The machine's firewall
@@ -424,6 +425,7 @@ function runner(app: App) {
         // The live Domain rows, as `/deploy` sends them: a hostname deleted
         // since the last release drops out here.
         hosts:         await routedHosts(app.db, deploy.appId),
+        paths:         await routedPaths(app.db, deploy.appId),
         redirects:     await routedRedirects(app.db, deploy.appId),
       })
       if (reply.error) throw new Error(`Activate failed: ${reply.error.message}`)

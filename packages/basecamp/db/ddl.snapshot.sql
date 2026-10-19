@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 70 models · 2 databases
+-- 71 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -1252,6 +1252,20 @@ CREATE TABLE IF NOT EXISTS "dashboard_widget" (
 CREATE INDEX IF NOT EXISTS "idx_dashboard_widget_dashboardId" ON "dashboard_widget" ("dashboardId");
 CREATE INDEX IF NOT EXISTS "idx_dashboard_widget_serverId" ON "dashboard_widget" ("serverId");
 CREATE INDEX IF NOT EXISTS "idx_dashboard_widget_appId" ON "dashboard_widget" ("appId");
+
+CREATE TABLE IF NOT EXISTS "domain_route" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "workspaceId" TEXT NOT NULL,
+  "domainId" TEXT NOT NULL,
+  "appId" TEXT NOT NULL,
+  "pathPrefix" TEXT NOT NULL,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  UNIQUE ("domainId", "pathPrefix"),
+  FOREIGN KEY ("domainId") REFERENCES "domain" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_domain_route_appId" ON "domain_route" ("appId");
 
 CREATE TABLE IF NOT EXISTS "deployment_step" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),

@@ -68,12 +68,19 @@ export interface INameCatalog {
   names(): readonly string[]
 }
 
+// A service is named and then asked what it answers. `undefined` is a service
+// the host cannot describe, and its method is left to the run.
+export interface IServiceCatalog extends INameCatalog {
+  methods?(service: string): readonly string[] | undefined
+}
+
 // Everything the compiler types a flow against. Each part absent means the host
 // has nothing to check that node against, and the run is the only check.
 export interface HostCatalog {
   models?:        IModelCatalog
   jobs?:          INameCatalog
   notifications?: INameCatalog
+  services?:      IServiceCatalog
 }
 
 // ─── http.request ──────────────────────────────

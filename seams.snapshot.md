@@ -125,7 +125,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `svc.pipelines(appHooks)` | `packages/junction/src/core/service.ts` | yes | — |
 | `svc.describe()` | `packages/junction/src/core/service.ts` | yes | 9 |
 | `isBuiltService(v)` / `Symbol.for('junction.service')` | `packages/junction/src/core/service.ts` | yes | — |
-| `normalizePrefix()` | `packages/junction/src/core/app.ts` | yes | — |
+| `normalizePrefix()` | `packages/junction/src/core/app.ts` | yes | 1 |
 | `ctx.enqueue(job, payload)` / `deliverOutbox(app)` | `packages/junction/src/plugins/outbox/engine.ts` | yes | 4 |
 | `claimIdempotency(ctx, key, config)` | `packages/junction/src/core/idempotency.ts` | yes | — |
 | `runStartPhases(bindHost)` | `packages/junction/src/core/app.ts` | yes | — |

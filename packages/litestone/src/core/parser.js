@@ -300,6 +300,11 @@ class Parser {
     let maxSize     = null
     let trailModel    = null   // 'auto' (implicit) or a model name (user-defined)
     let announce    = 'inProcess'
+    // Junction's boot report cannot see the replica count, so a written
+    // `announce inProcess` is the one way an app says one process is meant
+    // (`FJS-D851`) — the default and the declaration reach alike and must not
+    // read alike.
+    let announceStated = false
 
     while (!this.check(TK.RBRACE)) {
       const key = this.eat(TK.IDENT).value
@@ -348,7 +353,8 @@ class Parser {
           if (val !== 'inProcess' && val !== 'crossProcess')
             throw new ParseError(
               `database '${name}': announce must be 'inProcess' or 'crossProcess', got '${val}'`, this.peek())
-          announce = val
+          announce       = val
+          announceStated = true
           break
         }
         default:
@@ -370,7 +376,7 @@ class Parser {
         `database '${name}': announce crossProcess needs driver 'sqlite' — a '${driver}' database is a log file, ` +
         `so there is no table to record an announcement in and no transaction to record it with`, this.peek())
 
-    return { name, path, driver, replication, retention, maxSize, trailModel, announce }
+    return { name, path, driver, replication, retention, maxSize, trailModel, announce, announceStated }
   }
 
   // ── Tenancy block ────────────────────────────────────────────────────────────

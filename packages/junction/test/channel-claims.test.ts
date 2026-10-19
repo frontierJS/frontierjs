@@ -529,3 +529,62 @@ describe('a fixed channel carries rows of every tenant', () => {
     expect(member.sent()).toEqual([])
   })
 })
+
+// ─── a count names no row, so the tenant is the event's (`FJS-1811`, `FJS-D1038`) ──
+//
+// A bulk write announces `{ model, operation, count }` graded by the gate alone.
+// Under `strategy row` the gate does not know a workspace, so every signed-in tab
+// in every workspace heard when another workspace's rows changed. The event
+// carries the tenants the write touched; a recipient is admitted only at a level
+// held under a claim naming one of them.
+
+describe('a count is graded by the tenant the write touched', () => {
+  const gated = () => ({
+    ...tenantBoundary().db,
+    $schema: { models: [{ name: 'Server', attributes: [{ kind: 'gate', value: '5' }] }] },
+    // Standing is the app's mapping, and here it is the same in every workspace:
+    // the gate alone cannot tell one workspace from another.
+    $levelOf: (_a: string, principal: any) => (principal?.userId ? 5 : 0),
+  })
+  const count = { model: 'Server', operation: 'update', count: 1 }
+  const send  = (manager: Manager, db: unknown, tenants: unknown[] | null) =>
+    manager.sendGraded('flows', 'servers changed', count, { db, accessor: 'server', tenants } as never, 'gate')
+
+  test('a tab in another workspace is not told, and the workspace’s own member is', async () => {
+    const manager = createChannelManager(undefined, workspaceClaims)
+    const inA     = subscriber(manager, ['flows', `workspace:${WS_A}`], { userId: 'u-1' })
+    const inB     = subscriber(manager, ['flows', `workspace:${WS_B}`], { userId: 'u-2' })
+
+    await send(manager, gated(), [WS_A])
+
+    expect(inA.rows()).toEqual([count])
+    expect(inB.sent()).toEqual([])
+  })
+
+  test('a recipient whose tenant cannot be established is refused', async () => {
+    const manager = createChannelManager(undefined, workspaceClaims)
+    const loner   = subscriber(manager, ['flows'], { userId: 'u-3' })
+
+    await send(manager, gated(), [WS_A])
+
+    expect(loner.sent()).toEqual([])
+  })
+
+  test('a person in both workspaces hears a write to either', async () => {
+    const manager = createChannelManager(undefined, workspaceClaims)
+    const both    = subscriber(manager, ['flows', `workspace:${WS_A}`, `workspace:${WS_B}`], { userId: 'u-1' })
+
+    await send(manager, gated(), [WS_B])
+
+    expect(both.rows()).toEqual([count])
+  })
+
+  test('an app with no claims resolver is single-tenant on the wire and unchanged', async () => {
+    const manager = createChannelManager()
+    const anyone  = subscriber(manager, ['flows'], { userId: 'u-1', isAdmin: true })
+
+    await send(manager, gated(), [WS_A])
+
+    expect(anyone.sent().length).toBe(1)
+  })
+})

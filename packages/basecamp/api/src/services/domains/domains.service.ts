@@ -90,6 +90,7 @@ export default createService({
   name:  'domains',
   scope: keyScope('domains'),
   model: 'Domain',
+  paginate: { default: 20, max: 200 },
   // The whole surface: a service gaining `input:` lists every verb it answers.
   methods: [
     'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',

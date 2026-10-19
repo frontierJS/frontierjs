@@ -840,8 +840,8 @@ const app = createApp({
 just the service routes: `/api/v1/health`, `/api/v1/auth/login`,
 `/api/v1/webhooks`. A route that must sit at a fixed path — a callback URL
 somebody else owns, a probe path an orchestrator owns — is registered on
-`app.http.router` directly, the layer beneath the shortcuts, which applies
-nothing.
+`app.http.router` directly, the layer beneath the shortcuts, which applies no
+prefix. Every route handler, on either layer, runs inside the request scope.
 
 Default is `''` — services mount at `/{service}`. Handles missing/extra slashes automatically, so `api`, `/api` and `/api/` all mean the same thing.
 
@@ -941,6 +941,7 @@ Row by row rather than one `UPDATE` because that is what applies the schema. Lit
 | `http.maxBodySize` | `number` | `262144` | max request body bytes. A body declaring no length is read incrementally and cancelled at the bound, so it is a memory limit and not only a check |
 | `http.idleTimeout` | `number` | the runtime's `10` | seconds a connection may go without progress before the RUNTIME closes it. `0` disables; above `255` is refused at boot. Coarse — measured, it closes at about twice the value with a floor near four seconds, so it is not a deadline |
 | `http.requestTimeout` | `number` | off | ms a handler may take before the app answers `503` itself. Absent means no bound. Setting it raises the runtime's per-request timer, so this answer wins the race instead of the socket resetting. It does not stop the handler |
+| `http.tls` | `{ cert, key }` | off | Serve https from a PEM cert and key, given as paths (a missing file is refused at boot, naming it). Development only: a client that refuses `http://`, localhost included (the Bitwarden CLI), needs the app itself to speak TLS; in production a proxy does |
 | `http.maxConcurrentRequests` | `number` | off | requests being handled at once before the next is refused `503` + `Retry-After: 1` with a `retryable: true` body, before any work. Counts requests, not sockets — Bun has no connection hook, so an idle keep-alive socket is invisible. A WebSocket upgrade is not counted; `http.ws.maxConnections` bounds those and the two are never summed. `0` or absent is unlimited |
 | `http.ws.maxFrameBytes` | `number` | `maxBodySize` | largest inbound frame this app accepts. Refused by name — 1009 `frame_too_large` — because Bun's own ceiling closes with a bare 1006 that reads as the network dropping. Follows `maxBodySize` by default: a socket must not be a wider door than a POST |
 | `http.ws.maxPayloadLength` | `number` | `1048576` | the runtime's ceiling — what this process will buffer at all |

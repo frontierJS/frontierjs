@@ -811,6 +811,7 @@ function validateModelActions(ctx: PipelineContext): void {
 const APP_ACTIONS: Record<string, { key: string; code: ErrorCode; what: string; catalog: keyof HostCatalog }> = {
   "job.dispatch": { key: "job",          code: "UNKNOWN_JOB",          what: "job",          catalog: "jobs" },
   "notify":       { key: "notification", code: "UNKNOWN_NOTIFICATION", what: "notification", catalog: "notifications" },
+  "service.call": { key: "service",      code: "UNKNOWN_SERVICE",      what: "service",      catalog: "services" },
 }
 
 function validateAppActions(ctx: PipelineContext): void {
@@ -833,6 +834,14 @@ function validateAppActions(ctx: PipelineContext): void {
     const names = catalog.names().filter(n => node.type !== "job.dispatch" || !n.startsWith(RESERVED_JOB_PREFIX))
     if (!names.includes(name)) {
       fail(action.code, `Node "${id}" (${node.type}) names ${action.what} "${name}", which this app does not have (it has: ${[...names].sort().join(", ") || "none"})`)
+      continue
+    }
+    if (node.type === "service.call") {
+      const method  = literalOf(node.config["method"])
+      const answers = typeof method === "string" ? ctx.catalog.services?.methods?.(name) : undefined
+      if (answers && !answers.includes(method as string)) {
+        fail("UNKNOWN_METHOD", `Node "${id}" (service.call) names method "${method}", which service "${name}" does not answer (it answers: ${[...answers].sort().join(", ") || "none"})`)
+      }
     }
   }
 }

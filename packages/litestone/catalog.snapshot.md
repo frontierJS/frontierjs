@@ -17,7 +17,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | word | arity | accepts |
 | --- | --- | --- |
 | `import` | "path" [into <database>] |  |
-| `database` | <name> { path · driver · replication · retention · maxSize · model } | driver: sqlite · jsonl · trail |
+| `database` | <name> { path · driver · replication · retention · maxSize · model · announce } | driver: sqlite · jsonl · trail<br>announce: inProcess · crossProcess |
 | `tenancy` | { strategy database \| row, … } | strategy: database · row |
 | `claim` | <name> [from <Model>(<subject>)[.<column>]] |  |
 | `model` | <PascalCaseSingular> { … } |  |

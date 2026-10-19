@@ -21,7 +21,7 @@ import { mail as mailPlugin } from '@frontierjs/junction/mail'
 import { conduit }           from '@frontierjs/conduit'
 import { createSQLiteStore } from '@frontierjs/conduit/stores/sqlite'
 import { caravan }     from '@frontierjs/caravan'
-import { orion, DEFAULT_SERVICE_NAMES } from '@frontierjs/orion/plugin'
+import { orion, DEFAULT_SERVICE_NAMES } from '@frontierjs/orion'
 import { mcp }         from '@frontierjs/mcp'
 
 import { env }                       from './core/env.ts'

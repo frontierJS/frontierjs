@@ -50,6 +50,13 @@ describe('the announce-reach report', () => {
     expect(await bootWith('announce crossProcess')).toHaveLength(0)
   })
 
+  // FJS-D851: the default and a written inProcess reach alike, and only the
+  // written one says a single process is meant.
+  test('silent once the database states inProcess, and the warning names that spelling', async () => {
+    expect(await bootWith('announce inProcess')).toHaveLength(0)
+    expect((await bootWith(''))[0]).toContain('announce inProcess')
+  })
+
   test('silent without channels — nothing is listening to be missed', async () => {
     expect(await bootWith('', false)).toHaveLength(0)
   })

@@ -237,9 +237,12 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   dialog is in the top layer and makes the page inert, so an overlay on
   `<body>` is drawn under it and a press at it lands on the backdrop and
   closes the dialog — a toast's Undo closed the modal and never ran
-  (`FJS-2599`). An overlay mounted once at the root (`Toaster`) must read its
-  own state in the `to={…}` expression, or it asks once, at load, and stays
-  on `<body>`. Its toasts then go with the modal when it closes.
+  (`FJS-2599`). An overlay mounted once at the root (`Toaster`) must ask again
+  when its state changes, or it asks once, at load, and stays on `<body>` —
+  and its toasts then go with the modal when it closes. **It asks a task AFTER
+  the change** (`FJS-2905`): a confirm handler closes its dialog and raises
+  the toast in one turn, so asked during it the answer is the dialog that is
+  shut a tick later, and a loading toast mounts invisible.
   `overlay-host.spec.mjs` hit-tests each one inside a Modal. `DropdownMenu`
   and `Popover` still portal to `<body>` (`FJS-2109`).
 - **A `@point` column is a `Json` column and must not get the document editor.**

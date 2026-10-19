@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-145 definitions · 70 models · 1 view · 30 types · 44 enums · 0 other
+146 definitions · 71 models · 1 view · 30 types · 44 enums · 0 other
 ```
 
 ## Definitions
@@ -60,6 +60,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `App` | model |
 | `Variable` | model |
 | `Domain` | model |
+| `DomainRoute` | model |
 | `AppEditor` | model |
 | `AppServer` | model |
 | `AppBackup` | model |
@@ -862,6 +863,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `appServers` — hasMany `AppServer`
 - relation `appNetworks` — hasMany `AppNetwork`
 - relation `domains` — hasMany `Domain`
+- relation `domainRoutes` — hasMany `DomainRoute`
 - relation `variables` — hasMany `Variable`
 - relation `editors` — hasMany `AppEditor`
 
@@ -911,6 +913,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 - gate `read:2 create:5 update:5 delete:5` · version field `version` · closed (`additionalProperties: false`)
 - relation `app` — belongsTo `App` via `appId` · on delete Cascade
+- relation `routes` — hasMany `DomainRoute`
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -930,6 +933,22 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `appId`, `hostname` · not accepted — `id`, `version`
+
+### `DomainRoute`
+
+- gate `read:2 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+- relation `domain` — belongsTo `Domain` via `domainId` · on delete Cascade
+- relation `app` — belongsTo `App` via `appId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
+| `domainId` | `string` | yes | — | — | — |
+| `appId` | `string` | yes | — | — | — |
+| `pathPrefix` | `string` | yes | — | `minLength: 2` `maxLength: 200` `x-transforms` | — |
+
+**On create**: required — `domainId`, `appId`, `pathPrefix` · not accepted — `id`
 
 ### `AppEditor`
 

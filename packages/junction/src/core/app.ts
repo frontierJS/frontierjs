@@ -1022,31 +1022,6 @@ export function createApp(opts: AppOptions = {}): App {
     _apiPrefix = next
   }
 
-  /**
-   * A raw route handler, run inside the request scope.
-   *
-   * `enterRequest` is the one owner of that store and the service dispatch has
-   * opened one for years; a route registered with `app.get`/`app.post` never
-   * did, so `requestMeta()` answered `undefined` inside `/auth/login`, inside a
-   * webhook, inside any callback URL a plugin mounts — and every reader that
-   * has no `ctx` in hand was blind exactly there.
-   *
-   * The principal is deliberately absent: a raw route is below the service
-   * pipeline and `ctx.user` is the transport's own answer, which the route can
-   * read directly. What this puts in reach is the REQUEST — its headers, its
-   * correlation id, its client — which is what a tenant is resolved from.
-   */
-  const scoped = <H extends (ctx: any, ...rest: any[]) => unknown>(handler: H): H =>
-    (async function scopedRoute(ctx: any, ...rest: any[]) {
-      return enterRequest({
-        origin:        'http',
-        headers:       ctx?.headers ?? {},
-        correlationId: ctx?.requestId,
-        user:          ctx?.user ?? null,
-        caller:        { ip: ctx?.ip, userAgent: ctx?.headers?.['user-agent'], headers: ctx?.headers ?? {} },
-      }, () => handler(ctx, ...rest))
-    }) as unknown as H
-
   // ── Subsystems ───────────────────────────────────────────────────────
   const logger    = opts.logger ?? createLogger({ level: opts.logLevel })
   // The parsed schema, for the moves a model declares (`FJS-1255`). A tenanted
@@ -1748,20 +1723,11 @@ export function createApp(opts: AppOptions = {}): App {
     // (FJS-012). A route that must sit at the root — a fixed callback URL, a
     // probe path an orchestrator owns — goes through app.http.router directly,
     // which is the layer beneath this one and applies nothing.
-    //
-    // The handler also runs inside the REQUEST SCOPE. A service call has opened
-    // one since `enterRequest` got an owner; a raw route never did, so
-    // `requestMeta()` was undefined inside every route an app or a plugin
-    // registers — `/auth/login`, a webhook, a callback URL — and everything
-    // that reads the request without holding a `ctx` was blind there. Under
-    // `tenancy { strategy database }` that is the difference between a sign-in
-    // reaching the caller's own shop and reaching whichever one the provider
-    // was built against.
-    get(path, handler, opts)    { http.router.get(prefixPath('GET', path), scoped(handler), opts);       return app },
-    post(path, handler, opts)   { http.router.post(prefixPath('POST', path), scoped(handler), opts);     return app },
-    put(path, handler, opts)    { http.router.put(prefixPath('PUT', path), scoped(handler), opts);       return app },
-    patch(path, handler, opts)  { http.router.patch(prefixPath('PATCH', path), scoped(handler), opts);   return app },
-    delete(path, handler, opts) { http.router.delete(prefixPath('DELETE', path), scoped(handler), opts); return app },
+    get(path, handler, opts)    { http.router.get(prefixPath('GET', path), handler, opts);       return app },
+    post(path, handler, opts)   { http.router.post(prefixPath('POST', path), handler, opts);     return app },
+    put(path, handler, opts)    { http.router.put(prefixPath('PUT', path), handler, opts);       return app },
+    patch(path, handler, opts)  { http.router.patch(prefixPath('PATCH', path), handler, opts);   return app },
+    delete(path, handler, opts) { http.router.delete(prefixPath('DELETE', path), handler, opts); return app },
 
     // ── WebSocket shortcut ────────────────────────────────────────
     ws(path, handlers, opts)  { http.ws(prefixPath('WS', path), handlers, opts); return app },

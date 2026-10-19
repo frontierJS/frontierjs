@@ -317,6 +317,14 @@ export interface GradingSource {
   before?:  object | null
   /** Send the removals the before-image owes and nothing else; the admitted frames go out elsewhere. */
   removalsOnly?: boolean
+  /**
+   * The tenants a count-only write touched. A count names no row and so no
+   * tenant, and the gate alone admits a signed-in tab in every workspace; given
+   * these, `gate` mode admits a recipient only at a level held under a claim
+   * naming one of them (`FJS-D1038`). Read only under `strategy row` with a
+   * claims resolver — otherwise the app is single-tenant on the wire.
+   */
+  tenants?: readonly unknown[] | null
 }
 
 // A channel that grades to nobody is either a correct refusal or a wiring
@@ -369,6 +377,13 @@ async function resolveClaims(
     return null
   }
   return answer && typeof answer === 'object' && Object.keys(answer).length > 0 ? answer : null
+}
+
+/** The claim name the tenancy deny reads, under `strategy row` only. */
+function rowTenancyClaim(db: unknown): string | null {
+  if (!db || typeof db !== 'object' || !('$tenancy' in db)) return null
+  const t = (db as { $tenancy?: { strategy?: string; claim?: string } }).$tenancy
+  return t?.strategy === 'row' && t.claim ? t.claim : null
 }
 
 function warnRefusedAll(label: string, accessor: string, size: number, hint = ''): void {
@@ -607,10 +622,13 @@ export async function gradeRecipients(
   // row's own tenant is never copied onto the recipient — that claim nobody
   // verified would pass the deny for everybody.
   //
-  // `gate` mode is left alone: a count names no row and so no tenant, and a
-  // claim from any workspace would admit a count of another's writes.
+  // `gate` mode asks the same pass only for the tenants the write touched
+  // (`wantedTenants`): a claim from any OTHER workspace would admit a count of
+  // another's writes.
+  const tenantClaim = mode === 'gate' && claimsFor && src.tenants?.length ? rowTenancyClaim(db) : null
+  const wantedTenants = new Set((src.tenants ?? []).map(String))
   const elsewhere = new Map<unknown, Record<string, unknown>[]>()
-  if (mode === 'row' && claimsFor && channelsOf) {
+  if ((mode === 'row' || tenantClaim) && claimsFor && channelsOf) {
     for (const [key, group] of byPrincipal) {
       const bare = group.byClaims.get('')
       if (!bare) continue
@@ -667,7 +685,17 @@ export async function gradeRecipients(
       // standing that is not a column on the session — a membership row, a
       // workspace role — is invisible to `sessionGateLevel` and is most of what
       // decides a level in a tenanted app.
-      if (principalGateLevel(db, accessor, who, group.user) < (readLevel as number)) continue
+      //
+      // Under row tenancy the standing is read under a claim naming a tenant the
+      // write touched, from this channel or, for a fixed one, from the others the
+      // recipient holds. None, and the recipient's tenant is not established:
+      // refused.
+      const standings = tenantClaim
+        ? [...(claims ? [claims] : elsewhere.get(key) ?? [])]
+            .filter(held => wantedTenants.has(String(held[tenantClaim])))
+            .map(held => ({ ...(base as object ?? {}), ...held }))
+        : [who]
+      if (!standings.some(s => principalGateLevel(db, accessor, s, group.user) >= (readLevel as number))) continue
       admitted++
       out.push({ conns, frame: encodeEventFrame(event, payload) })
       continue
@@ -2105,13 +2133,14 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
  * puts nothing on the first replica's sockets and its live screens go stale
  * with nothing marking it (`FJS-2146`). Junction cannot see how many processes
  * the deploy runs, so this says what the default reaches, once, at the layer
- * that fans events out to sockets.
+ * that fans events out to sockets. A database that WROTE `announce`, either
+ * value, has said how many it runs and is not reported (`FJS-D851`).
  */
 function reportAnnounceReach(app: App): void {
-  const databases = (app.db as { $schema?: { databases?: Array<{ name: string; driver?: string; announce?: string }> } } | undefined)
+  const databases = (app.db as { $schema?: { databases?: Array<{ name: string; driver?: string; announceStated?: boolean }> } } | undefined)
     ?.$schema?.databases
   const inProcess = (databases ?? [])
-    .filter(d => (!d.driver || d.driver === 'sqlite') && d.announce !== 'crossProcess')
+    .filter(d => (!d.driver || d.driver === 'sqlite') && !d.announceStated)
     .map(d => d.name)
   if (inProcess.length === 0) return
   // `fli dev` starts one API process, which inProcess reaches whole.
@@ -2119,7 +2148,8 @@ function reportAnnounceReach(app: App): void {
 
   console.warn(
     `[Junction] channels: ${inProcess.join(', ')} announce inProcess, so another process's writes ` +
-    `reach no socket here — a replica or worker needs \`announce crossProcess\``
+    `reach no socket here — a replica or worker needs \`announce crossProcess\`, ` +
+    `and one process meant states \`announce inProcess\``
   )
 }
 

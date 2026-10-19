@@ -69,6 +69,13 @@ WORKDIR /app
 
 COPY --from=build /app /app
 
+# core/site-checkout.ts runs git for every draft read and save, and an ssh
+# remote needs the ssh client; the slim base ships neither, so /drafts fails
+# only once deployed. The build itself runs on the App's machine (FJS-D1251).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git openssh-client \
+ && rm -rf /var/lib/apt/lists/*
+
 # The live database is a bind mount, never the image: `fli deploy` and compose
 # both mount it at /db, and a DATABASE_URL anywhere else is in the container's
 # own layer, so the next swap starts it empty and the app opens on /setup. The

@@ -61,6 +61,27 @@ export async function routedRedirects(db: any, appId: string): Promise<{ host: s
 }
 
 /**
+ * The prefixes of other Domains this app answers (`FJS-D1040`), sent beside
+ * `hosts` on every route push: `/api` of `shop.example.com` goes to the App
+ * holding the route while the Domain's own App keeps the rest. Redirecting
+ * Domains are left out, since a redirect answers the whole host. The Domain
+ * must be live — `@@softDelete` takes a deleted one out of this read.
+ */
+export async function routedPaths(db: any, appId: string): Promise<{ host: string, prefix: string }[]> {
+  const sys   = db.asSystem()
+  const rows  = await sys.domainRoute.findMany({ where: { appId } }) as { domainId: string, pathPrefix: string }[]
+  if (!rows.length) return []
+  const hosts = await sys.domain.findMany({
+    where: { id: { in: [...new Set(rows.map(r => r.domainId))] }, redirectTo: null },
+  }) as { id: string, hostname: string }[]
+  const byId  = new Map(hosts.map(d => [d.id, d.hostname]))
+  return rows
+    .filter(r => byId.has(r.domainId))
+    .map(r => ({ host: byId.get(r.domainId)!, prefix: r.pathPrefix }))
+    .sort((a, b) => (a.host + a.prefix).localeCompare(b.host + b.prefix))
+}
+
+/**
  * The addresses an app's INGRESS RECORD holds (`FJS-D561`): each server this
  * app has a `running` placement on that is `online` — the executor's rule for
  * a machine that can take work, so a draining or unreachable machine drops out

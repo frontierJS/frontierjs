@@ -41,6 +41,20 @@ export async function run(t) {
   await t.eventually(undos, '1', 'pressing Undo runs it')
   t.is(await t.evaluate(`return ${state};`), 'open', 'and the modal stays open')
 
+  /* -- a toast raised as the modal closes ---------------------------------- */
+
+  // A confirm dialog closes and its handler announces the move in the same
+  // turn. The dialog is still the modal when the toast is raised, so a stack
+  // that asks once would mount in a dialog that is shut a tick later.
+  await t.clickAt('#close-toast')
+  await t.eventually(state, 'shut', 'the modal closes')
+  await t.evaluate(`await waitFor(() => byText('.toast', 'Working…')); return true;`)
+  await t.eventually(`!!byText('.toast', 'Working…')?.closest('dialog')`, false,
+    'a toast raised as the modal closes is not left inside it')
+  await t.evaluate(`window.toasts.clear(); return true;`)
+  await t.clickAt('#open-modal')
+  await t.evaluate(`return await waitVisible('dialog.dialog');`)
+
   /* -- the global alert ---------------------------------------------------- */
 
   await t.clickAt('#alert')

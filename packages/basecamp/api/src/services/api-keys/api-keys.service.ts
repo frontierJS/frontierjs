@@ -215,6 +215,7 @@ function present(row: Record<string, unknown>): Record<string, unknown> {
 export default createService({
   name:  'api-keys',
   model: 'ApiKey',
+  paginate: { default: 20, max: 200 },
   // The whole surface. `owners` reads the roster through the app, so no model's
   // gate grades it and the level is stated here.
   methods: [

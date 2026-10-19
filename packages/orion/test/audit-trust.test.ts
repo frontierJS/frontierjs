@@ -80,8 +80,7 @@ describe("audit 1.5 — service.call names what the host has", () => {
   const typed = new Compiler(registry, {
     jobs:          { names: () => ["leads.touch"] },
     notifications: { names: () => ["LeadAssigned"] },
-    // The shape a services catalog would take; HostCatalog has no slot for it.
-    ...({ services: { names: () => ["leads"] } } as object),
+    services:      { names: () => ["leads", "flows"] },
   })
 
   test("a job and a notification are refused by name at author time", () => {
@@ -89,18 +88,24 @@ describe("audit 1.5 — service.call names what the host has", () => {
     expect(codes(typed.compile(flowWith("n", "notify", { notification: lit("Nope"), to: lit({ id: 1 }) })))).toEqual(["UNKNOWN_NOTIFICATION"])
   })
 
-  // FJS-2337: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  //
-  // `service.call` is the third app action and the one with no catalog: a
-  // service or a method that does not exist compiles, activates, and is found
-  // by the first run as a NotFound the node records as failed.
-  test.failing("a service the app does not have is refused at author time", () => {
+  test("a service the app does not have is refused at author time", () => {
     const result = typed.compile(flowWith("s", "service.call", { service: lit("laeds"), method: lit("find") }))
     expect(codes(result) as string[]).toEqual(["UNKNOWN_SERVICE"])
   })
 
-  test("the observed shape: an unknown service compiles", () => {
-    expect(typed.compile(flowWith("s", "service.call", { service: lit("laeds"), method: lit("find") })).ok).toBe(true)
+  test("a service the app has compiles", () => {
+    expect(typed.compile(flowWith("s", "service.call", { service: lit("leads"), method: lit("find") })).ok).toBe(true)
+  })
+
+  // FJS-3324: the method is checked against what the named service answers.
+  test("a method the service lacks is refused at author time", () => {
+    const withMethods = new Compiler(registry, {
+      services: { names: () => ["leads"], methods: (s) => s === "leads" ? ["find", "get", "touch"] : undefined },
+    })
+    expect(withMethods.compile(flowWith("s", "service.call", { service: lit("leads"), method: lit("touch") })).ok).toBe(true)
+    expect(codes(withMethods.compile(flowWith("s", "service.call", { service: lit("leads"), method: lit("fnid") }))) as string[]).toEqual(["UNKNOWN_METHOD"])
+    // A method named by an expression is the run's to check.
+    expect(withMethods.compile(flowWith("s", "service.call", { service: lit("leads"), method: { type: "ref", path: "$.trigger.method" } as never })).ok).toBe(true)
   })
 
   // FJS-2338: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.

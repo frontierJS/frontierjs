@@ -57,6 +57,10 @@ A UI row that leaves **Under** blank takes its tier from
 `Block tier` without this file saying so. State one here only where it differs
 from css's, as Switch does by sitting under its task.
 
+## The sign `$`
+
+**`$` is a character the house uses five ways, and only one is on the wire.** A `$`-PREFIXED KEY in a query or a frame is a directive (`$limit`, `$offset`, `$after`, `$orderBy`, `$select`, `$populate`, `$search`, the `$with*`/`$only*` flags, `$asOf`, `$scope`, `$recursive`) or a transport flag (`$first`, `$wrap`), and the table in `@frontierjs/toolbelt/directives` is the whole list — a `$` key it does not name is refused by name (Invariant 10), and `$or`/`$and`/`$not` are the filters written with a `$`. The other four are not that and never travel: litestone's system verbs on a client (`db.$setAuth`, `db.$checkWhere`), Junction's ambient Call `$` and `ctx.$raw` (the Call row below), Mesa's `$:` effects and `$context`, and JSON Schema's `$ref`/`$defs`. A name that starts with `$` and is not in the directives table is one of these four or a typo, and the first place to ask is which side of the bridge it is on.
+
 ## Terms
 
 Seeded from `fli ws:terms` at spread ≥ 4 — a term used in four or more

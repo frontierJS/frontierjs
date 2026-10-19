@@ -281,6 +281,14 @@ try {
   t('ingress.plainHttpRedirects', /^30[18] https:\/\/verify-docker\.test/.test(plain))
   // FJS-D565: nothing else notices this answering.
   t('ingress.portRefusesOffLoopback', await answers(APP_PORT, offLoopback) === false)
+  // FJS-1928: Caddy accepted the logger and the requests above reached the app's
+  // own file, one JSON line per request carrying the host traffic analysis splits on.
+  let accessLine = ''
+  for (let i = 0; i < 20 && !accessLine; i++) {
+    accessLine = sh('docker', 'exec', CADDY, 'cat', `/var/log/caddy/${NAME}.access.log`).stdout.split('\n').find(l => l.includes(`"host":"${HOST}`)) ?? ''
+    if (!accessLine) await sleep(250)
+  }
+  t('ingress.writesItsOwnAccessLog', accessLine !== '')
   // FJS-D564's owed answer: Caddy's own --resume puts the routes back.
   sh('docker', 'restart', CADDY)
   t('ingress.survivesACaddyRestart', await untilHttps())
@@ -357,6 +365,22 @@ try {
   t('redirect.answers308WithTheRequestUri', /^HTTP\/\S+ 308/.test(hop) && new RegExp(`^location: https://${HOST}/cart\\?x=1\\r?$`, 'im').test(hop))
   await call('/route', { app_id: APP, hosts: [HOST] })
   t('redirect.droppedWithTheLastOne', (await admin(`/id/${NAME}-redirects`)).status === 404)
+
+  // Two apps on one hostname (FJS-D1040): Caddy has to accept the path matcher,
+  // keep it ahead of the whole-host route that was there first, and answer
+  // the prefix from the second app. Its upstream is a dead port, so a 502 on
+  // /api and the app's own 200 on / say which route each request took.
+  const SPLIT = 'split-api'
+  const pathed = await call('/route', { app_id: SPLIT, port: 7199, paths: [{ host: HOST, prefix: '/api/' }] })
+  if (pathed.status !== 200) console.log(pathed.body)
+  const order = await admin('/config/apps/http/servers/ingress/routes').then(r => r.json(), () => [])
+  t('path.sitsAheadOfTheWholeHost', order.map(r => r['@id']).join() === `fjs-${SPLIT}-path-0,${NAME}`)
+  const status = (path) => sh('curl', '-s', '-o', '/dev/null', '-w', '%{http_code}', '--max-time', '5',
+    '--resolve', `${HOST}:${CADDY_HTTPS}:127.0.0.1`, '--cacert', rootPath, `https://${HOST}:${CADDY_HTTPS}${path}`).stdout
+  t('path.prefixGoesToItsApp',     status('/api/users') === '502' && status('/api') === '502')
+  t('path.restStaysWithTheHost',   status('/') === '200' && status('/apix') === '200')
+  await call('/stop', { app_id: SPLIT })
+  t('path.stopTakesEveryPrefix',   (await admin(`/id/fjs-${SPLIT}-path-0`)).status === 404)
 
   // ─── stop ───────────────────────────────────────────────────────────────
 
@@ -457,13 +481,14 @@ const expected = [
   'deploy.startsAContainer', 'deploy.runsTheDigestItWasGiven', 'deploy.passesTheEnv', 'deploy.capsTheLog',
   'deploy.answersOnItsPort',
   'ingress.routeNamesTheHost', 'ingress.answersOverHttpsByName', 'ingress.plainHttpRedirects',
-  'ingress.portRefusesOffLoopback', 'ingress.survivesACaddyRestart',
+  'ingress.portRefusesOffLoopback', 'ingress.writesItsOwnAccessLog', 'ingress.survivesACaddyRestart',
   'health.saysRunning', 'logs.readTheContainer', 'exec.runsOnTheMachine',
   'deploy.replacesRatherThanAdds', 'ingress.redeployKeepsOneRoute',
   'restore.whenDockerRefusesTheRun', 'restore.routeDialsTheRestoredPort',
   'restore.whenTheStartIsNotHealthy', 'restore.answersOverHttpsAgain',
   'route.readsThePublishedPort', 'route.restartsNothing', 'route.answersTheNewName', 'route.emptyTakesTheRoute',
   'redirect.answers308WithTheRequestUri', 'redirect.droppedWithTheLastOne',
+  'path.sitsAheadOfTheWholeHost', 'path.prefixGoesToItsApp', 'path.restStaysWithTheHost', 'path.stopTakesEveryPrefix',
   'stop.removesTheContainer', 'stop.takesTheRoute', 'health.saysNotRunning', 'logs.sayNoSuchContainer',
   'route.unknownIs404',
   'volume.restoresIntoTheVolume', 'volume.refusesANonEmptyOne', 'volume.refusesAPathOffTheRoot',

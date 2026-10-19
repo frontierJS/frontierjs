@@ -15,7 +15,7 @@
 // **A dry run pages nobody** (`FJS-D283`): it answers which channel it would
 // have reached, and the channel's `lastDeliveryAt` does not move.
 
-import type { JunctionActor, INodeImplementation, NodeContext, NodeResult, PluginManifest } from '@frontierjs/orion/plugin'
+import type { JunctionActor, INodeImplementation, NodeContext, NodeResult, PluginManifest } from '@frontierjs/orion'
 import type { App }         from '@frontierjs/junction'
 import { deliverToChannel, type Message } from '../core/delivery.ts'
 

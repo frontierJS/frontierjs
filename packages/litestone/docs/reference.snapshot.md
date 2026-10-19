@@ -66,9 +66,9 @@ import "./auth.lite" into auth
 - **Deeper** — [schema.md](schema.md)
 - **See also** — [`@@db`](#db-model)
 
-### `database` `<name> { path · driver · replication · retention · maxSize · model }` <a id="database-declaration"></a>
+### `database` `<name> { path · driver · replication · retention · maxSize · model · announce }` <a id="database-declaration"></a>
 
-A named database. `driver` is sqlite (default), jsonl or trail; `path` takes env("VAR", "./default") or a literal. A second database keeps its declared path even when createClient({ db }) moves main.
+A named database. `driver` is sqlite (default), jsonl or trail; `path` takes env("VAR", "./default") or a literal. A second database keeps its declared path even when createClient({ db }) moves main. `announce` is how far a write announcement reaches: inProcess (default) or crossProcess, and writing either one states how many processes the app runs, which silences Junction's boot report.
 
 ```lite
 database logs {
@@ -78,6 +78,7 @@ database logs {
 ```
 
 - **`driver`** — `sqlite` · `jsonl` · `trail`
+- **`announce`** — `inProcess` · `crossProcess`
 - **Deeper** — [multi-database.md](multi-database.md)
 - **See also** — [`@@db`](#db-model) · [`@@trail`](#trail-model)
 

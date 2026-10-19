@@ -780,6 +780,8 @@ describe('the ingress — Caddy, through its admin API', () => {
       const id   = path.startsWith('/id/') ? path.slice(4) : null
       const at   = id ? routes()?.findIndex(r => r['@id'] === id) ?? -1 : -1
       if (method === 'GET' && path === '/config/') return answer(200, config)
+      if (path === '/config/apps/http/servers/ingress/routes' && method === 'GET') return routes() ? answer(200, routes()) : answer(400, { error: 'invalid traversal path' })
+      if (path === '/config/apps/http/servers/ingress/routes' && method === 'PATCH') { config.apps.http.servers.ingress.routes = data; return answer(200) }
       if (method === 'PUT' && path === '/config/apps/http/servers/ingress') {
         config ??= {}; config.apps ??= {}; config.apps.http ??= {}; config.apps.http.servers ??= {}
         config.apps.http.servers.ingress = data
@@ -788,6 +790,12 @@ describe('the ingress — Caddy, through its admin API', () => {
       if (method === 'POST' && path === '/config/apps/http/servers/ingress/routes') {
         if (!routes()) return answer(400, { error: 'invalid traversal path at: config/apps/http/servers/ingress' })
         routes().push(data)
+        return answer(200)
+      }
+      if (method === 'POST' && path === '/config/logging') { config.logging = data; return answer(200) }
+      if (method === 'POST' && path === '/config/apps/http/servers/ingress/logs') {
+        if (!config?.apps?.http?.servers?.ingress) return answer(400, { error: 'invalid traversal path' })
+        config.apps.http.servers.ingress.logs = data
         return answer(200)
       }
       if (id && at < 0) return answer(404, { error: `unknown object ID '${id}'` })
@@ -880,6 +888,34 @@ describe('the ingress — Caddy, through its admin API', () => {
     const { server, fake: stopped } = serverWith(fakeCaddy())
     await send(server, 'POST', '/stop', { app_id: 'app-1' })
     expect(stopped.calls.some(c => c[0] === 'nft')).toBe(true)
+  })
+
+  test('a routed app gets its own access log, and a stop takes it away (FJS-1928)', async () => {
+    // Without a logger on the route, Caddy writes no access line for it:
+    // traffic-analysis reads one file per route (FJS-D763).
+    const caddy = fakeCaddy({ logging: { logs: { default: { exclude: ['http.log.access.fli-other'] } } } })
+    const { server } = serverWith(caddy)
+    await deploy(server, { hosts: ['Shop.Example.com', 'www.example.com'] })
+    const ingress = caddy.config.apps.http.servers.ingress
+    expect(ingress.logs.skip_unmapped_hosts).toBe(true)
+    expect(ingress.logs.logger_names).toEqual({ 'shop.example.com': ['fjs-app-1'], 'www.example.com': ['fjs-app-1'] })
+    const logs = caddy.config.logging.logs
+    expect(logs['fjs-app-1']).toEqual({
+      writer:  { output: 'file', filename: '/var/log/caddy/fjs-app-1.access.log' },
+      encoder: { format: 'json' },
+      include: ['http.log.access.fjs-app-1'],
+    })
+    expect(logs.default.exclude).toEqual(['http.log.access.fli-other', 'http.log.access.fjs-app-1'])
+
+    // A redeploy to other hostnames moves the logger with them, and writes the exclusion once.
+    await deploy(server, { hosts: ['store.example.com'] })
+    expect(ingress.logs.logger_names).toEqual({ 'store.example.com': ['fjs-app-1'] })
+    expect(caddy.config.logging.logs.default.exclude).toEqual(['http.log.access.fli-other', 'http.log.access.fjs-app-1'])
+
+    await send(server, 'POST', '/stop', { app_id: 'app-1' })
+    expect(caddy.config.apps.http.servers.ingress.logs.logger_names).toEqual({})
+    expect(caddy.config.logging.logs['fjs-app-1']).toBeUndefined()
+    expect(caddy.config.logging.logs.default.exclude).toEqual(['http.log.access.fli-other'])
   })
 
   test('a redeploy replaces the route rather than adding a second', async () => {
@@ -1075,6 +1111,69 @@ describe('the ingress — Caddy, through its admin API', () => {
     })
   })
 
+  describe('two apps share one hostname by path (FJS-2647, FJS-D1040)', () => {
+    const web = (server, extra = {}) => send(server, 'POST', '/route', { app_id: 'web', static: true, hosts: ['shop.example.com'], ...extra })
+    const api = (server, extra = {}) => send(server, 'POST', '/route', { app_id: 'api', port: 7302, paths: [{ host: 'Shop.example.com', prefix: '/api/' }], ...extra })
+    const none = () => fakeRunner({ 'docker inspect --format': { exitCode: 1, stderr: 'Error: No such object' } })
+    const withStatic = (caddy) => createOutpostServer({ ...CONFIG, staticPort: 7181 }, {
+      docker: createDocker({ run: none().run }), inspector: createInspector({ run: none().run }),
+      ingress: createIngress({ fetch: caddy.fetch }), log: { warn() {}, error() {} },
+    })
+
+    test('a prefix routes to its own app, ahead of the whole-host route that was there first', async () => {
+      const caddy  = fakeCaddy()
+      const server = withStatic(caddy)
+      expect((await web(server)).status).toBe(200)
+      const res = await api(server)
+      expect(res.status).toBe(200)
+      expect((await res.json()).paths).toEqual([{ host: 'shop.example.com', prefix: '/api' }])
+      const routes = caddy.config.apps.http.servers.ingress.routes
+      expect(routes.map(r => r['@id'])).toEqual(['fjs-api-path-0', 'fjs-web'])
+      expect(routes[0].match).toEqual([{ host: ['shop.example.com'], path: ['/api', '/api/*'] }])
+      expect(routes[0].handle[0].upstreams[0].dial).toBe('127.0.0.1:7302')
+    })
+
+    test('the longest prefix leads, whichever app was routed last', async () => {
+      const caddy  = fakeCaddy()
+      const server = withStatic(caddy)
+      await api(server, { paths: [{ host: 'shop.example.com', prefix: '/api' }] })
+      await web(server)
+      await send(server, 'POST', '/route', { app_id: 'v2', port: 7303, paths: [{ host: 'shop.example.com', prefix: '/api/v2' }] })
+      expect(caddy.config.apps.http.servers.ingress.routes.map(r => r['@id'])).toEqual(['fjs-v2-path-0', 'fjs-api-path-0', 'fjs-web'])
+    })
+
+    test('only the same host and prefix is refused, and a repeat of the app\'s own route is not', async () => {
+      const caddy  = fakeCaddy()
+      const server = withStatic(caddy)
+      await web(server)
+      await api(server)
+      expect((await api(server)).status).toBe(200)
+      const taken = await send(server, 'POST', '/route', { app_id: 'other', port: 7303, paths: [{ host: 'shop.example.com', prefix: '/api' }] })
+      expect((await taken.json()).error).toContain('already routed to fjs-api-path-0')
+      const wholeHost = await send(server, 'POST', '/route', { app_id: 'other', port: 7303, hosts: ['shop.example.com'] })
+      expect((await wholeHost.json()).error).toContain('already routed to fjs-web')
+    })
+
+    test('a prefix the app dropped leaves its route, and a stop takes every one', async () => {
+      const caddy  = fakeCaddy()
+      const server = withStatic(caddy)
+      await api(server, { paths: [{ host: 'shop.example.com', prefix: '/api' }, { host: 'shop.example.com', prefix: '/ws' }] })
+      await api(server, { paths: [{ host: 'shop.example.com', prefix: '/ws' }] })
+      expect(caddy.config.apps.http.servers.ingress.routes.map(r => r['@id'])).toEqual(['fjs-api-path-0'])
+      expect(caddy.config.apps.http.servers.ingress.routes[0].match[0].path[0]).toBe('/ws')
+      await send(server, 'POST', '/stop', { app_id: 'api' })
+      expect(caddy.config.apps.http.servers.ingress.routes).toEqual([])
+    })
+
+    test('a prefix Caddy would expand, or one that is the whole host, is refused', async () => {
+      const caddy  = fakeCaddy()
+      const server = withStatic(caddy)
+      for (const prefix of ['/', '', 'api', '/api/*', '/{env.SECRET}', '/a/../b', '/a//b'])
+        expect((await api(server, { paths: [{ host: 'shop.example.com', prefix }] })).status).toBeGreaterThanOrEqual(400)
+      expect(caddy.config).toBeNull()
+    })
+  })
+
   describe('/route — hostnames changed between releases (FJS-1610)', () => {
     const bound = (HostIp, HostPort = '7300') => fakeRunner({
       'docker run': { stdout: 'container-1\n' },
@@ -1089,7 +1188,7 @@ describe('the ingress — Caddy, through its admin API', () => {
       fake.calls.length = 0
 
       const body = await (await route(server, ['shop.example.com', 'New.Example.com'])).json()
-      expect(body).toEqual({ hosts: ['shop.example.com', 'new.example.com'], port: 7302, rebind: null })
+      expect(body).toEqual({ hosts: ['shop.example.com', 'new.example.com'], paths: [], port: 7302, rebind: null })
       const routes = caddy.config.apps.http.servers.ingress.routes
       expect(routes).toHaveLength(1)
       expect(routes[0].match[0].host).toEqual(['shop.example.com', 'new.example.com'])
@@ -1135,7 +1234,7 @@ describe('the ingress — Caddy, through its admin API', () => {
       const caddy = fakeCaddy()
       const gone  = fakeRunner({ 'docker inspect --format': { exitCode: 1, stderr: 'Error: No such object: fjs-app-1' } })
       const res   = await send(serverWith(caddy, gone).server, 'POST', '/route', { app_id: 'app-1', hosts: ['try.preview.example.com'], port: 18020 })
-      expect(await res.json()).toEqual({ hosts: ['try.preview.example.com'], port: 18020, rebind: null })
+      expect(await res.json()).toEqual({ hosts: ['try.preview.example.com'], paths: [], port: 18020, rebind: null })
       expect(caddy.config.apps.http.servers.ingress.routes[0].handle[0].upstreams[0].dial).toBe('127.0.0.1:18020')
 
       // A machine with no docker at all is the same answer.

@@ -637,6 +637,32 @@ describe('sync', () => {
     expect(out.routed.map(r => r.hosts)).toEqual([['paste.example.test']])
   })
 
+  test('a path route pushes both Apps, the prefix to the one holding it and the host to the Domain\'s own (FJS-2647)', async () => {
+    const { routeDomainApp } = await import('../src/jobs/domain-dns.job.ts')
+    const { routedPaths }    = await import('../src/core/runtime.ts')
+    const sys    = env.system as any
+    const front  = await sys.app.create({ data: { workspaceId: site.id, environmentId: web.environmentId, name: 'front', slug: 'front',
+      source: { kind: 'inline', files: [] } } })
+    const back   = await sys.app.create({ data: { workspaceId: site.id, environmentId: web.environmentId, name: 'back', slug: 'back' } })
+    await sys.appServer.create({ data: { appId: front.id, serverId: online1.id, status: 'running' } })
+    await sys.appServer.create({ data: { appId: back.id,  serverId: online1.id, status: 'running' } })
+    const d = await sys.domain.create({ data: { workspaceId: site.id, appId: front.id, hostname: 'split.example.test' } })
+    await sys.domainRoute.create({ data: { workspaceId: site.id, domainId: d.id, appId: back.id, pathPrefix: '/api' } })
+
+    expect(await routedPaths(app.db, back.id)).toEqual([{ host: 'split.example.test', prefix: '/api' }])
+    expect(await routedPaths(app.db, front.id)).toEqual([])
+
+    const out = await routeDomainApp(app, d.id)
+    expect(out.failed).toEqual([])
+    const by = Object.fromEntries(out.routed.map(r => [r.appId, r]))
+    expect(by[front.id]).toMatchObject({ hosts: ['split.example.test'], paths: [] })
+    expect(by[back.id]).toMatchObject({ hosts: [], paths: [{ host: 'split.example.test', prefix: '/api' }] })
+
+    // A deleted Domain takes its routes with it: a prefix of a host nobody answers is not routed.
+    await sys.domain.delete({ where: { id: d.id } })
+    expect(await routedPaths(app.db, back.id)).toEqual([])
+  })
+
   test('a machine with no outpost to take its route is a failure naming it, so the job retries', async () => {
     const { routeDomainApp } = await import('../src/jobs/domain-dns.job.ts')
     delete process.env.BASECAMP_STUB_OUTPOST

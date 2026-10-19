@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-54 services · 40 routes · 18 plugins · prefix (none)
+55 services · 40 routes · 18 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -536,6 +536,22 @@ name when it declares none.
 | before | `stepStatus` | `internalOnly` |
 | before | `finishRun` | `internalOnly` |
 | before | `rebind` | `internalOnly` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `domain-routes` · model `DomainRoute`
+
+- **methods** — `find`, `get`, `create`, `patch`, `remove`
+- **broadcasts on** — `(computed)`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |

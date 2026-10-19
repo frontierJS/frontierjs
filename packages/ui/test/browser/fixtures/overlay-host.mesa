@@ -37,6 +37,7 @@
   commandPalette.hide()
   window.commandPalette = commandPalette
   window.alert_         = alert
+  window.toasts         = toasts
 </script>
 
 <Toaster />
@@ -52,6 +53,8 @@
 <Modal bind:open={open} title="Card">
   <button type="button" id="toast" class="btn"
           onclick={() => toasts.info('Card archived', 0, { label: 'Undo', run: () => undos++ })}>Archive</button>
+  <button type="button" id="close-toast" class="btn"
+          onclick={() => { open = false; toasts.loading('Working…') }}>Confirm</button>
   <button type="button" id="alert" class="btn"
           onclick={() => alert.error('Could not save', 0)}>Save</button>
   <button type="button" id="palette" class="btn"

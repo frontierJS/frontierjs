@@ -81,6 +81,10 @@ const NOT_SEEDED: Record<string, string> = {
   // minutes and is swept after. Seeding one would seed a refusal (FJS-376).
   outpost_nonce: 'a signature already used, which nothing here has sent',
 
+  // A prefix of a seeded Domain sent to a second App is a choice an owner makes about
+  // their own pair of Apps; the seeded fleet has no such pair (FJS-D1040).
+  domain_route: 'a choice about two Apps sharing a hostname, which no seeded Domain makes',
+
   // Empty because they describe something that has not happened.
   //
   // `alert_event` is no longer *nothing evaluates a rule* — `alert-evaluate`
@@ -195,15 +199,9 @@ describe('db/seed.js', () => {
   }, 120_000)
 
   test('…and --force re-seeds the same database', async () => {
-    // The half that rotted. `--force` deletes by an explicit model list, so a
-    // model added to the schema and forgotten there survives the wipe and the
-    // next run collides with a row it cannot see — `UNIQUE constraint failed`,
-    // naming a table nobody touched. Running it twice is what asks.
-    //
-    // What it catches, measured by removing entries and rerunning: a model
-    // whose rows do NOT cascade — dropping `account` fails here exactly as it
-    // did by hand, on `account.slug`. A cascading child (`server`) left out
-    // passes, and correctly: the workspace delete takes those rows anyway.
+    // `--force` removes the database file: a row delete cannot clear a
+    // Workspace that has AuditEvent rows (a locked child under a Cascade, FJS-D1281).
+    // Running it twice is what asks.
     const dir = scratch()
     expect((await runSeed(dir)).code).toBe(0)
     const first = counts(dir)

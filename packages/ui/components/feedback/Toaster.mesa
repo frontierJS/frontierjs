@@ -56,9 +56,17 @@
   // `visibleItems` to ask `overlayHost()` again whenever the stack changes: a
   // toast raised with a modal open lands in it, where its action can be
   // pressed, and the next one after the modal closes comes back to <body>.
+  //
+  // Asked a task AFTER the change, not during it: a confirm handler closes its
+  // dialog and announces the move in one turn, and the dialog is still the
+  // topmost modal when the toast is raised. Asked then, the stack mounts in a
+  // dialog that is shut a tick later — a loading toast nobody can see, and a
+  // settle that moves the stack and replaces the node it was updating.
+  let host = overlayHost()
+  $: toasts.items, () => setTimeout(() => { host = overlayHost() })
 </script>
 
-<mesa:portal to={visibleItems && overlayHost()}>
+<mesa:portal to={host}>
   <div
     class="toast-stack"
     {class}

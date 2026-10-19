@@ -43,7 +43,7 @@
 import { defineJob }     from '@frontierjs/caravan'
 import { runsEitherWay } from './context.ts'
 import { executorOn, isExecutor } from '../providers/executor.ts'
-import { routedHosts, routedRedirects } from '../core/runtime.ts'
+import { routedHosts, routedPaths, routedRedirects } from '../core/runtime.ts'
 import { isInline }      from '../core/app-source.ts'
 import type { App }         from '@frontierjs/junction'
 
@@ -119,7 +119,10 @@ export async function pushAppsOn(app: App, serverId: string, status: string, at:
   const placed = await sys.appServer.findMany({ where: { serverId, status: 'running' }, select: { appId: true } }) as { appId: string }[]
   const appIds = [...new Set(placed.map(p => p.appId))]
   if (!appIds.length) return 0
-  const domains = await sys.domain.findMany({ where: { appId: { in: appIds } }, select: { id: true } }) as { id: string }[]
+  const own     = await sys.domain.findMany({ where: { appId: { in: appIds } }, select: { id: true } }) as { id: string }[]
+  // An App holding only a path route on someone else's Domain is reached by that Domain.
+  const held    = await sys.domainRoute.findMany({ where: { appId: { in: appIds } }, select: { domainId: true } }) as { domainId: string }[]
+  const domains = [...new Map([...own, ...held.map(h => ({ id: h.domainId }))].map(d => [d.id, d])).values()]
   for (const d of domains)
     await app.jobs.dispatch(domainDns, { domainId: d.id },
       { id: `dns:${d.id}:server:${serverId}:${status}:${at}`, actor: null })
@@ -128,7 +131,7 @@ export async function pushAppsOn(app: App, serverId: string, status: string, at:
 
 interface RoutePush {
   appId:  string | null
-  routed: { serverId: string; hosts: string[]; redirects: { host: string; to: string }[]; rebind: string | null }[]
+  routed: { serverId: string; appId: string; hosts: string[]; paths: { host: string; prefix: string }[]; redirects: { host: string; to: string }[]; rebind: string | null }[]
   failed: { server: string; error: string }[]
 }
 
@@ -140,6 +143,10 @@ interface RoutePush {
  * Domain drops out, and an App with none left is unrouted. A redirecting Domain
  * rides beside them as `redirects`, answered by Caddy itself (`FJS-1615`).
  *
+ * The Domain's own App is pushed, and so is every App holding a path route on
+ * it (`FJS-D1040`): the route those Apps answer changed with the row that
+ * brought us here, and their machine is the only one that can serve it.
+ *
  * An inline App is routed to the static origin (`static: true`), as its
  * release's Activate does, so a Domain changed between releases does not wait
  * for the next one.
@@ -150,22 +157,27 @@ export async function routeDomainApp(app: App, domainId: string): Promise<RouteP
   const domain = await sys.domain.findFirst({ where: { id: domainId }, withDeleted: true, select: { appId: true } }) as { appId: string } | null
   if (!domain) return out
   out.appId = domain.appId
-  const row = await sys.app.findFirst({ where: { id: domain.appId }, select: { source: true } }) as { source: unknown } | null
-  if (!row) return out
+  const routes = await sys.domainRoute.findMany({ where: { domainId }, select: { appId: true } }) as { appId: string }[]
 
-  const isStatic  = isInline(row.source)
-  const hosts     = await routedHosts(app.db, domain.appId)
-  const redirects = await routedRedirects(app.db, domain.appId)
-  const placed = await sys.appServer.findMany({ where: { appId: domain.appId, status: 'running' }, include: { server: true } }) as any[]
-  const servers = new Map<string, string>()
-  for (const p of placed) if (p.server?.status === 'online') servers.set(p.serverId, p.server.name ?? p.serverId)
+  for (const appId of new Set([domain.appId, ...routes.map(r => r.appId)])) {
+    const row = await sys.app.findFirst({ where: { id: appId }, select: { source: true } }) as { source: unknown } | null
+    if (!row) continue
 
-  for (const [serverId, name] of servers) {
-    const executor = await executorOn(app, serverId, name)
-    if (!isExecutor(executor)) { out.failed.push({ server: name, error: executor.reason }); continue }
-    const reply = await executor.call('/route', { app_id: domain.appId, hosts, redirects, ...(isStatic ? { static: true } : {}) })
-    if (reply.error) { out.failed.push({ server: name, error: reply.error.message }); continue }
-    out.routed.push({ serverId, hosts, redirects, rebind: (reply.data?.rebind as string | null | undefined) ?? null })
+    const isStatic  = isInline(row.source)
+    const hosts     = await routedHosts(app.db, appId)
+    const paths     = await routedPaths(app.db, appId)
+    const redirects = await routedRedirects(app.db, appId)
+    const placed = await sys.appServer.findMany({ where: { appId, status: 'running' }, include: { server: true } }) as any[]
+    const servers = new Map<string, string>()
+    for (const p of placed) if (p.server?.status === 'online') servers.set(p.serverId, p.server.name ?? p.serverId)
+
+    for (const [serverId, name] of servers) {
+      const executor = await executorOn(app, serverId, name)
+      if (!isExecutor(executor)) { out.failed.push({ server: name, error: executor.reason }); continue }
+      const reply = await executor.call('/route', { app_id: appId, hosts, paths, redirects, ...(isStatic ? { static: true } : {}) })
+      if (reply.error) { out.failed.push({ server: name, error: reply.error.message }); continue }
+      out.routed.push({ serverId, appId, hosts, paths, redirects, rebind: (reply.data?.rebind as string | null | undefined) ?? null })
+    }
   }
   return out
 }

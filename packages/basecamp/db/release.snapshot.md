@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-70 model(s) · 44 enum(s) · 2 database(s)
+71 model(s) · 44 enum(s) · 2 database(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -227,6 +227,7 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |
 | `deployments` | `Deployment[]` | — | — | relation |
+| `domainRoutes` | `DomainRoute[]` | — | — | relation |
 | `domains` | `Domain[]` | — | — | relation |
 | `editors` | `AppEditor[]` | — | — | relation |
 | `environment` | `Environment` | — | — | relation |
@@ -842,6 +843,7 @@ table `domain` · db `main` · gate `2.5` · @@softDelete
 | `port` | `Int` | no | `443` | — |
 | `proxied` | `Boolean` | no | `0` | — |
 | `redirectTo` | `String` | yes | — | — |
+| `routes` | `DomainRoute[]` | — | — | relation |
 | `sslMode` | `String` | no | `'full_strict'` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `version` | `Int` | no | `1` | — |
@@ -849,6 +851,32 @@ table `domain` · db `main` · gate `2.5` · @@softDelete
 
 ```
 @@unique(hostname, workspaceId)
+@@index(appId)
+@@deny(create, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
+@@deny(delete, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
+@@deny(postUpdate, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
+@@deny(read, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
+@@deny(update, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
+```
+
+### `DomainRoute`
+
+table `domain_route` · db `main` · gate `2.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `app` | `App` | — | — | relation |
+| `appId` | `String` | no | — | **required on write** |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `domain` | `Domain` | — | — | relation |
+| `domainId` | `String` | no | — | **required on write** |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `pathPrefix` | `String` | no | — | **required on write** |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `workspaceId` | `String` | no | — | **required on write** |
+
+```
+@@unique(domainId, pathPrefix)
 @@index(appId)
 @@deny(create, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
 @@deny(delete, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)

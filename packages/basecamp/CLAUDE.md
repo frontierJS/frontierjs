@@ -501,7 +501,7 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   material is written into the registry, which `GET /conduit-targets` returns.
   `core/credentials.ts` resolves `secret:<id>` and `env:<NAME>`. Nothing had
   ever sent to an outpost, so neither half showed for two phases.
-- **`bun run db:seed` is the only thing here that writes every model, and `db/test/seed.test.ts` runs it** — as a process, in a throwaway cwd, including `--force`. **It discovers the tables rather than listing them**: every table in the seeded database must have rows unless it is named in `NOT_SEEDED` with a reason, and the exemptions are asserted empty too, so neither list can go stale. A hand-written list of models here is the same drift as the `--force` list it was written to catch: six models can land in one afternoon without it noticing. Adding a model is now a choice between seeding it and saying why not.
+- **`bun run db:seed` is the only thing here that writes every model, and `db/test/seed.test.ts` runs it** — as a process, in a throwaway cwd, including `--force`. **It discovers the tables rather than listing them**: every table in the seeded database must have rows unless it is named in `NOT_SEEDED` with a reason, and the exemptions are asserted empty too, so neither list can go stale. Adding a model is a choice between seeding it and saying why not. **`--force` deletes the database file**, not rows: AuditEvent is locked at delete and a locked child blocks its parent's Cascade (`FJS-D1281`), so a Workspace with a trail row cannot be row-deleted even by `asSystem()`.
 - **Migrations are per DATABASE — `db/migrations/main/`** — and both the boot
   path and the seeder apply them with litestone's `apply()`, never junction's
   `dbClient.migrate(dir)`, which globs one level and reports success for a
@@ -654,6 +654,10 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   beside `hosts`, on `/deploy`, `/static/activate` and `/route`, and Caddy
   answers it with a 308 itself (`FJS-1615`). An inline app's `/route` carries
   `static: true`, which dials the static origin the way Activate does.
+  A prefix of a Domain that ANOTHER App answers is a `DomainRoute` (`FJS-D1040`):
+  `routedPaths()` sends it as `paths` beside `hosts`, and `routeDomainApp` pushes the
+  Domain's own App and every App holding a route on it. Both Apps must run on the
+  machine the zone points at — one Caddy cannot route between machines.
 - **A status column with a machine behind it is declared, and the level for a
   move goes on the move.** `Server`, `Deployment` and `Job` carry
   `@@transitions(status, …)`, so a move is `db.<model>.transition(id, name)` and

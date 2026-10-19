@@ -844,6 +844,33 @@ describe('a write moves a @from on another model (FJS-2632)', () => {
   })
 })
 
+// FJS-2919 — a model counting its own children: the child write announces the
+// child row, and the parent whose count moved was dropped as the written
+// model's own service.
+describe('a write moves a @from on its own table (FJS-2919)', () => {
+  const TREE = `
+    model Task { id Int @id  parentId Int?  parent Task? @relation("sub", fields: [parentId], references: [id])
+                 subs Task[] @relation("sub")
+                 subCount Int @from(Task, count: true, via: parent) }
+  `
+  type Sys = Record<string, Record<string, (a: unknown) => Promise<unknown>>>
+
+  test('creating a sub-task tells the task\'s own service to re-read', async () => {
+    const db  = await createClient({ db: ':memory:', schema: TREE })
+    const app = createApp({ db: db as never })
+    app.services.register(createService({ name: 'tasks', model: 'Task', db: db as never }))
+    await app._startForTest()
+    const sys = () => (db as never as { asSystem(): Sys }).asSystem()
+    await sys().task.create({ data: { id: 1 } })
+    await tick(); await tick()
+    const seen: string[] = []
+    app.events.on('tasks:changed', (d: { operation: string }) => { seen.push(`tasks:changed:${d.operation}`) })
+    await sys().task.create({ data: { id: 2, parentId: 1 } })
+    await tick(); await tick()
+    expect(seen).toEqual(['tasks:changed:regrade'])
+  })
+})
+
 // FJS-2255 — the service announces the row it removed and SQLite removes the
 // cascade children inside the same statement, so no `removed` frame named them
 // and every other open tab kept showing rows that no longer exist.

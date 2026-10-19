@@ -143,16 +143,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
 | exports | `.` | `index.ts` | yes |
-| exports | `./transport` | `src/transport/http.ts` | yes |
-| exports | `./config` | `src/config/index.ts` | yes |
-| exports | `./errors` | `src/core/errors.ts` | yes |
-| exports | `./hooks` | `src/core/hooks.ts` | yes |
-| exports | `./service` | `src/core/service.ts` | yes |
-| exports | `./schema` | `src/core/schema.ts` | yes |
-| exports | `./env` | `src/core/env.ts` | yes |
-| exports | `./logger` | `src/core/logger.ts` | yes |
 | exports | `./litestone` | `src/core/litestone.ts` | yes |
-| exports | `./events` | `src/events/index.ts` | yes |
 | exports | `./cache` | `src/cache/index.ts` | yes |
 | exports | `./scheduler` | `src/scheduler/index.ts` | yes |
 | exports | `./mail` | `src/mail/index.ts` | yes |
@@ -172,10 +163,6 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./search` | `src/plugins/search/index.ts` | yes |
 | exports | `./metrics` | `src/plugins/metrics/index.ts` | yes |
 | exports | `./client` | `src/client/index.ts` | yes |
-| exports | `./channels` | `src/transport/channels.ts` | yes |
-| exports | `./middleware` | `src/transport/middleware.ts` | yes |
-| exports | `./health` | `src/transport/health.ts` | yes |
-| exports | `./auth` | `src/auth/types.ts` | yes |
 | exports | `./outbox.lite` | `db/outbox.lite` | yes |
 | exports | `./backfill.lite` | `db/backfill.lite` | yes |
 | exports | `./metrics.lite` | `db/metrics.lite` | yes |
@@ -278,7 +265,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
-| exports | `./plugin` | `src/plugin.ts` | yes |
+| exports | `.` | `src/plugin.ts` | yes |
 | exports | `./routes` | `web/routes.js` | yes |
 | exports | `./orion.lite` | `db/orion.lite` | yes |
 

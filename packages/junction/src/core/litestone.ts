@@ -5338,7 +5338,7 @@ export function announceDataWrites(
       channel?:    (n: string) => { send?: (event: string, data: unknown) => void }
       sendGraded?: (
         targets: Target | Target[], event: string, payload: unknown,
-        src: { db: unknown; accessor: string; label?: string; before?: object; removalsOnly?: boolean },
+        src: { db: unknown; accessor: string; label?: string; before?: object; removalsOnly?: boolean; tenants?: readonly unknown[] | null },
         mode?: 'row' | 'gate'
       ) => Promise<void>
       defaultAnnouncer?: unknown
@@ -5391,6 +5391,7 @@ export function announceDataWrites(
         db:       db,
         accessor: serviceAccessor({ name, model: svc?.model }) ?? '',
         label:    name,
+        ...(mode === 'gate' ? { tenants } : {}),
         ...(narrowed ?? {}),
       }, mode).catch(() => { /* a dead socket is not a background job's problem */ })
       return
@@ -5433,6 +5434,7 @@ export function announceDataWrites(
   let dependentsAt: number | undefined
   const modelOf = new Map<string, string>()
   const readColumnsOf = new Map<string, Set<string>>()
+  const selfFrom = new Set<string>()
 
   const dependentsOf = (model: string): string[] => {
     if (!dependents || dependentsAt !== app.services.version) {
@@ -5440,6 +5442,7 @@ export function announceDataWrites(
       dependentsAt = app.services.version
       modelOf.clear()
       readColumnsOf.clear()
+      selfFrom.clear()
       for (const name of app.services.list()) {
         const svc      = app.services.get(name) as { model?: string | null } | undefined
         const accessor = serviceAccessor({ name, model: svc?.model })
@@ -5475,13 +5478,20 @@ export function announceDataWrites(
         // `$fromReach` joins `$readReach` as a reason to re-read: an `@from`
         // count moves when a CHILD is written and the parent row never does, so
         // no frame names it (`FJS-2632`). A model reading its own table through
-        // an `@from` is announced by its own write already, so only the others.
+        // an `@from` (a Task counting sub-Tasks) is announced for the CHILD row
+        // by its own write and not for the parent whose count moved, so that
+        // service is regraded too (`FJS-2919`); a self-reach through a read
+        // policy is the written row itself and stays out.
         // A value computed off a child's columns is not narrowed: every write
         // to that child regrades.
         const fromReached = new Set(reachBy('$fromReach').map(m => m.toLowerCase()))
         for (const reached of [...reachBy('$readReach'), ...reachBy('$fromReach')]) {
           const key = reached.toLowerCase()
-          if (spellings.has(key)) { modelOf.set(name, reached); continue }
+          if (spellings.has(key)) {
+            modelOf.set(name, reached)
+            if (!fromReached.has(key)) continue
+            selfFrom.add(name)
+          }
           let set = dependents.get(key)
           if (!set) dependents.set(key, set = new Set())
           set.add(name)
@@ -5492,7 +5502,7 @@ export function announceDataWrites(
     const hit = dependents.get(model.toLowerCase())
     if (!hit) return []
     const own = new Set(servicesFor(model))
-    return [...hit].filter(name => !own.has(name))
+    return [...hit].filter(name => !own.has(name) || selfFrom.has(name))
   }
 
   // The tenants a write touched: its row's column, or the list a count carries.

@@ -2919,6 +2919,24 @@ describe('a service over no model is graded by the level it declares (FJS-D408)'
   // FJS-2566: the app's error mapper turns the method gate's refusal into a
   // role, in-process and over the wire alike; a level no role reaches (the
   // hub's SYSADMIN) keeps its level.
+  // FJS-3183: the screens and both verify drives page these at 200 or 500, and a
+  // `$limit` above a service's `paginate.max` is a 400 (`FJS-D896`).
+  test('a list the web asks for 200 or 500 rows of answers that many', async () => {
+    const email = `page-${Math.random().toString(36).slice(2, 8)}@x.co`
+    const inv   = await env.as(owner).service('invitations').create({ email, role: 'owner' }) as any
+    const acc   = await env.http.post('/invitations').set('x-service-method', 'accept')
+      .send({ token: inv.token, name: 'Pager', password: 'correct-horse' })
+    const asked: Array<[string, number]> = [
+      ['servers', 200], ['apps', 200], ['variables', 200], ['channels', 200], ['volumes', 200],
+      ['api-keys', 200], ['recipes', 200], ['domains', 200], ['registry', 500],
+    ]
+    for (const [name, limit] of asked) {
+      const res = await env.http.get(`/${name}?$limit=${limit}`)
+        .set('Authorization', `Bearer ${acc.body.sessionToken}`).set('X-Workspace-Id', ws.id)
+      expect(res.status, `${name}?$limit=${limit}`).not.toBe(400)
+    }
+  })
+
   test('over HTTP the same refusal names the role, and a level no role reaches keeps its level', async () => {
     const sys   = env.system as any
     const email = `wire-${Math.random().toString(36).slice(2, 8)}@x.co`

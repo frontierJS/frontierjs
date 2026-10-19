@@ -942,6 +942,9 @@ export interface DatabaseBlock {
   retention:  string | null
   maxSize:    string | null
   trailModel:   string | null
+  announce:   'inProcess' | 'crossProcess'
+  /** `announce` was written, not defaulted — the one-process declaration (`FJS-D851`) */
+  announceStated: boolean
 }
 
 export interface ModelDef {

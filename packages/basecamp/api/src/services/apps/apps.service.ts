@@ -222,6 +222,7 @@ export default createService({
   name:  'apps',
   scope: keyScope('apps'),
   model: 'App',
+  paginate: { default: 20, max: 200 },
   // The whole surface. `place` and `unplace` write AppServer as the app, which
   // is `@@gate(2.8)`, so the level is stated here rather than read off it.
   methods: [

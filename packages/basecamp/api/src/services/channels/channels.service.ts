@@ -79,6 +79,7 @@ export default createService({
   name:  'channels',
   scope: keyScope('channels'),
   model: 'NotificationChannel',
+  paginate: { default: 20, max: 200 },
   // The whole surface. `test` sends real traffic to a third party under the
   // workspace's name, so it is not a read, and no model's gate grades it.
   methods: [

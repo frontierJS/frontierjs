@@ -19,7 +19,7 @@
 
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { execFileSync }           from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir }                 from 'node:os'
 import { join }                   from 'node:path'
 import { createTestEnv, session } from '@frontierjs/testing'
@@ -206,5 +206,16 @@ describe('a draft\'s preview', () => {
     expect((await refusal(drafts(admin).call('preview', undefined, { appId: site.id, draft: 'no-account' }))).code).toBe(404)
     const again = await drafts(editor).call('preview', undefined, { appId: site.id, draft: 'no-account' })
     expect(again.preview.state).toMatch(/queued|building|failed/)
+  })
+})
+
+// FJS-3280: site-checkout.ts shells out to git, and an ssh remote needs the ssh
+// client; oven/bun:1-slim ships neither, so /drafts failed only once deployed.
+describe('the deployed image', () => {
+  test('the runtime stage installs git and an ssh client', () => {
+    const dockerfile = readFileSync(join(import.meta.dir, '../../deploy/Dockerfile'), 'utf8')
+    const runtime = dockerfile.slice(dockerfile.lastIndexOf('FROM oven/bun:1-slim'))
+    expect(runtime).toMatch(/apt-get install[^\n]*(\\\n[^\n]*)*\bgit\b/)
+    expect(runtime).toMatch(/apt-get install[^\n]*(\\\n[^\n]*)*openssh-client/)
   })
 })

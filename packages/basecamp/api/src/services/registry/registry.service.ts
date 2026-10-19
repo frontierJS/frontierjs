@@ -35,6 +35,7 @@ export default createService({
   name:  'registry',
   scope: keyScope('registry'),
   model: 'RegistryImage',
+  paginate: { default: 20, max: 500 },
   reservedQuery: WORKSPACE_QUERY,
 
   methods: ['find', 'get', 'repositories'],

@@ -210,6 +210,10 @@ export function orion(options: OrionOptions = {}): Plugin {
           // notification the loader finds late is still in the list.
           jobs:          { names: () => (app.jobs as unknown as { registrations(): Array<{ name: string }> }).registrations().map(r => r.name) },
           notifications: { names: () => [...((app as unknown as NotifyingApp).notifications?.keys() ?? [])] },
+          services:      {
+            names:   () => app.services.list(),
+            methods: (name) => app.services.get(name)?.describe().methods,
+          },
         },
         // The owner re-resolved, in the run's tenant, with the client a service
         // call of theirs would get — the tenant's database, the resolver's claims.

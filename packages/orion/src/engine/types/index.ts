@@ -296,6 +296,8 @@ export type ErrorCode =
   | "INVALID_APP_ACTION"       // job.dispatch or notify whose target is not a literal, or is orion's own job
   | "UNKNOWN_JOB"              // job.dispatch naming a job the host does not register
   | "UNKNOWN_NOTIFICATION"     // notify naming a notification the host does not declare
+  | "UNKNOWN_SERVICE"          // service.call naming a service the host does not have
+  | "UNKNOWN_METHOD"           // service.call naming a method its service does not answer
 
 export interface CompilationError {
   code:    ErrorCode

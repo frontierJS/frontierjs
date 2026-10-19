@@ -20,6 +20,7 @@ import { REFUSE, resolvePrincipal, resolveCaller, bearerPrincipal, type Credenti
 // 'StaticOptions'". Bun transpiles fully so it never noticed.
 import type { StaticOptions }             from './static.ts'
 import { BAKED_CACHE_CONTROL, errorResponse } from './bridge.ts'
+import { enterRequest }                  from '../core/context.ts'
 import { TooManyRequests, type ErrorMapper } from '../core/errors.ts'
 import { createStats, SESSION_SOCKET }    from './types.ts'
 import { wsSend, flushSendQueue, dropSendQueue, setMaxQueuedBytes } from './send-queue.ts'
@@ -995,8 +996,22 @@ export class HttpTransport {
 
     let response: Response
 
+    // The request scope opens here, around every route handler, so a route on
+    // app.http.router has it as much as one on app.get: without it an audit
+    // row written from /identity/connect/token carries no origin, ip,
+    // correlationId or userAgent. The principal is the transport's own answer;
+    // a service route opens its own around the pipeline and shadows this.
+    // Middleware runs outside it.
+    const run = (): Promise<unknown> | unknown => enterRequest({
+      origin:        'http',
+      headers:       ctx.headers ?? {},
+      correlationId: (ctx as unknown as { requestId?: string }).requestId,
+      user:          ctx.user ?? null,
+      caller:        { ip: ctx.ip, userAgent: ctx.headers?.['user-agent'], headers: ctx.headers ?? {} },
+    }, () => handler(ctx))
+
     if (!middleware.length) {
-      response = toResponse(await handler(ctx), ctx)
+      response = toResponse(await run(), ctx)
     } else {
       // Middleware chain — each calls next()
       let idx = 0
@@ -1006,7 +1021,7 @@ export class HttpTransport {
         if (idx < middleware.length) {
           await middleware[idx++](ctx, next)
         } else {
-          finalResponse = toResponse(await handler(ctx), ctx)
+          finalResponse = toResponse(await run(), ctx)
           // Stamp status so middleware (e.g. requestLogger) can read it
           ;(ctx).__status = finalResponse.status
         }

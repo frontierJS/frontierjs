@@ -18,7 +18,7 @@
 import { verifyRequest, nonceMemory } from '@frontierjs/toolbelt/signature'
 import { createDocker, createInspector, checkRunConfig } from './docker.js'
 import { createStatic } from './static.js'
-import { createIngress, hostsOf, redirectsOf } from './ingress.js'
+import { createIngress, hostsOf, pathsOf, redirectsOf } from './ingress.js'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
@@ -101,8 +101,10 @@ export function createOutpostServer(config, {
       const appId = body.app_id ?? body.deployment_id
       const hosts     = hostsOf(body.hosts)
       const redirects = redirectsOf(body.redirects)
+      const paths     = pathsOf(body.paths)
+      const fronted   = hosts.length > 0 || paths.length > 0
       const port      = body.config?.port
-      if (hosts.length && !port) throw new Error('hosts need a published port to route to — config.port is not set')
+      if (fronted && !port) throw new Error('hosts need a published port to route to — config.port is not set')
       checkRunConfig(body.config)
 
       const image = body.image ?? `fjs-${body.deployment_id}`
@@ -111,7 +113,7 @@ export function createOutpostServer(config, {
         built = await docker.build({ appId, source: body.source, image })
 
       // A release that dropped its last hostname drops its route too.
-      if (hosts.length || redirects.length) await ingress.route({ appId, hosts, port, redirects })
+      if (fronted || redirects.length) await ingress.route({ appId, hosts, port, redirects, paths })
       else await ingress.unroute({ appId })
 
       let started
@@ -122,7 +124,7 @@ export function createOutpostServer(config, {
           digest:   built.digest ?? body.digest,
           config:   body.config ?? {},
           port,
-          loopback:    hosts.length > 0,
+          loopback:    fronted,
           exposesPort: body.exposes_port === true,
         })
       } catch (err) {
@@ -130,16 +132,16 @@ export function createOutpostServer(config, {
         // The route already moved to the new port. A put-back container
         // answers on the port IT published, so a route left dialing the new
         // one sends the restored app's hostnames a 502.
-        if (err.restored && hosts.length) {
+        if (err.restored && fronted) {
           const live = await docker.published({ appId }).catch(() => null)
           if (live?.port && live.port !== port)
-            await ingress.route({ appId, hosts, port: live.port, redirects })
+            await ingress.route({ appId, hosts, port: live.port, redirects, paths })
               .catch(e => log.error?.(`outpost: re-routing fjs-${appId} to the restored container failed — ${e.message}`))
         }
         throw err
       }
       await syncExposed()
-      return { ...started, hosts, commit_sha: built.commitSha ?? null }
+      return { ...started, hosts, paths, commit_sha: built.commitSha ?? null }
     },
 
     // The app's hostnames, changed between releases (`FJS-1610`): a Domain
@@ -161,35 +163,37 @@ export function createOutpostServer(config, {
       if (!appId) throw new Error('a route needs the app_id it is for')
       const hosts     = hostsOf(body.hosts)
       const redirects = redirectsOf(body.redirects)
-      const routed    = hosts.length || redirects.length
+      const paths     = pathsOf(body.paths)
+      const fronted   = hosts.length > 0 || paths.length > 0
+      const routed    = fronted || redirects.length
       // An inline app has no container: its hostnames go to the static origin,
       // the way `/static/activate` routes them.
       if (body.static) {
-        if (hosts.length && !config.staticPort) throw new Error('this machine serves no static origin (OUTPOST_STATIC_PORT=0), so nothing can route a hostname to these files')
-        if (routed) await ingress.route({ appId, hosts, port: config.staticPort, host: `${appId}.localhost`, redirects })
+        if (fronted && !config.staticPort) throw new Error('this machine serves no static origin (OUTPOST_STATIC_PORT=0), so nothing can route a hostname to these files')
+        if (routed) await ingress.route({ appId, hosts, port: config.staticPort, host: `${appId}.localhost`, redirects, paths })
         else await ingress.unroute({ appId })
-        return { hosts, port: config.staticPort, rebind: null }
+        return { hosts, paths, port: config.staticPort, rebind: null }
       }
       if (body.port != null) {
         // A machine with no docker holds no container to collide with.
         if (await docker.published({ appId }).catch(() => null)) throw new Error(`fjs-${appId} is a container on this machine and is routed to the port it published — send no port`)
         const port = Number(body.port)
-        if (routed) await ingress.route({ appId, hosts, port, redirects })
+        if (routed) await ingress.route({ appId, hosts, port, redirects, paths })
         else await ingress.unroute({ appId })
-        return { hosts, port, rebind: null }
+        return { hosts, paths, port, rebind: null }
       }
       const live  = await docker.published({ appId })
-      if (hosts.length && !live) throw new Error(`no container fjs-${appId} on this machine to route to — deploy it first`)
-      if (hosts.length && !live.port) throw new Error(`fjs-${appId} publishes no port to route to — set the app's port and redeploy`)
+      if (fronted && !live) throw new Error(`no container fjs-${appId} on this machine to route to — deploy it first`)
+      if (fronted && !live.port) throw new Error(`fjs-${appId} publishes no port to route to — set the app's port and redeploy`)
 
-      if (routed) await ingress.route({ appId, hosts, port: live?.port, redirects })
+      if (routed) await ingress.route({ appId, hosts, port: live?.port, redirects, paths })
       else await ingress.unroute({ appId })
 
       const rebind = !live?.port ? null
-        : hosts.length && !live.loopback ? `port ${live.port} still answers off this machine, around Caddy, until the next release binds it to loopback`
-        : !hosts.length && live.loopback ? `port ${live.port} is bound to loopback with no route in front of it, so nothing reaches the app until the next release`
+        : fronted && !live.loopback ? `port ${live.port} still answers off this machine, around Caddy, until the next release binds it to loopback`
+        : !fronted && live.loopback ? `port ${live.port} is bound to loopback with no route in front of it, so nothing reaches the app until the next release`
         : null
-      return { hosts, port: live?.port ?? null, rebind }
+      return { hosts, paths, port: live?.port ?? null, rebind }
     },
 
     // Two callers, two shapes: `fleet.engine.ts` sends a recipe as `command`,
@@ -236,11 +240,12 @@ export function createOutpostServer(config, {
     'POST /static/activate': async (body) => {
       const hosts     = hostsOf(body.hosts)
       const redirects = redirectsOf(body.redirects)
-      if (hosts.length && !config.staticPort) throw new Error('this machine serves no static origin (OUTPOST_STATIC_PORT=0), so nothing can route a hostname to these files')
-      if (hosts.length || redirects.length)
-        await ingress.route({ appId: body.app_id, hosts, port: config.staticPort, host: `${body.app_id}.localhost`, redirects })
-      else if (body.hosts || body.redirects) await ingress.unroute({ appId: body.app_id })
-      return { ...await statics.activate({ appId: body.app_id, slug: body.slug, digest: body.digest }), hosts }
+      const paths     = pathsOf(body.paths)
+      if ((hosts.length || paths.length) && !config.staticPort) throw new Error('this machine serves no static origin (OUTPOST_STATIC_PORT=0), so nothing can route a hostname to these files')
+      if (hosts.length || paths.length || redirects.length)
+        await ingress.route({ appId: body.app_id, hosts, port: config.staticPort, host: `${body.app_id}.localhost`, redirects, paths })
+      else if (body.hosts || body.redirects || body.paths) await ingress.unroute({ appId: body.app_id })
+      return { ...await statics.activate({ appId: body.app_id, slug: body.slug, digest: body.digest }), hosts, paths }
     },
     'POST /static/health':   (body) => statics.healthCheck({ appId: body.app_id, digest: body.digest }),
     // Off the air means off every hostname too, whichever port the route dialed.

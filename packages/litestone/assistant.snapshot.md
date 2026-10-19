@@ -513,11 +513,11 @@ Pull another .lite file in. `into` names the database everything it brings lands
 import "./auth.lite" into auth
 ```
 
-#### `database` <name> { path · driver · replication · retention · maxSize · model }
+#### `database` <name> { path · driver · replication · retention · maxSize · model · announce }
 
 tier: **essential** · see also: `db`, `trail`
 
-A named database. `driver` is sqlite (default), jsonl or trail; `path` takes env("VAR", "./default") or a literal. A second database keeps its declared path even when createClient({ db }) moves main.
+A named database. `driver` is sqlite (default), jsonl or trail; `path` takes env("VAR", "./default") or a literal. A second database keeps its declared path even when createClient({ db }) moves main. `announce` is how far a write announcement reaches: inProcess (default) or crossProcess, and writing either one states how many processes the app runs, which silences Junction's boot report.
 
 ```lite
 database logs {

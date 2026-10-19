@@ -58,6 +58,7 @@ export default createService({
   name:  'variables',
   scope: keyScope('variables'),
   model: 'Variable',
+  paginate: { default: 20, max: 200 },
   channel: workspaceChannel,
   reservedQuery: WORKSPACE_QUERY,
   // No `restore`: a variable comes back with the app or environment that

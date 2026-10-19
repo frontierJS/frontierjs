@@ -78,6 +78,14 @@ beforeAll(async () => {
     const rows = await app.service('probe').find()
     return new Response(JSON.stringify(rows).length + ' bytes', { headers: { 'content-type': 'text/plain' } })
   })
+  // A route that must sit outside apiPrefix goes through the router directly;
+  // FJS-3104: it ran with no store, so audit rows written from it were blank.
+  let routerSeen: RequestMeta | undefined
+  app.http.router.post('/root-route', async () => {
+    routerSeen = requestMeta()
+    return new Response('ok')
+  })
+  app.__routerSeen = () => routerSeen
   await app.start()
 })
 
@@ -135,6 +143,20 @@ describe('every entry point opens the request scope', () => {
     expect(res.headers.get('content-type')).toContain('text/plain')
     expect(seen!.origin).toBe('http')
     expect((seenAuth as SessionContext | undefined)?.userId).toBe('u-alice')
+  })
+
+  test('a route on app.http.router opens the scope too (FJS-3104)', async () => {
+    const res = await fetch(`${BASE}/root-route`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer alice', 'x-request-id': 'root-1', 'user-agent': 'bw-probe' },
+    })
+    expect(res.status).toBe(200)
+    const meta = app.__routerSeen()
+    expect(meta.origin).toBe('http')
+    expect(meta.correlationId).toBe('root-1')
+    expect(meta.caller.userAgent).toBe('bw-probe')
+    expect(typeof meta.caller.ip).toBe('string')
+    expect(meta.user?.userId).toBe('u-alice')
   })
 
   test('HTTP — the store is open, and carries who and where', async () => {

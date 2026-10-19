@@ -1240,11 +1240,11 @@ function makeSchemaLiteEmpty() {
 // This path is the app's. createClient's \`db:\` option OVERRIDES it and is
 // resolved against the working directory, so api/src/core/db.ts passes none.
 
-database main  { path env("DATABASE_URL", "./db/app.db") }
+database main  { path env("DATABASE_URL", "./db/app.db") announce inProcess }
 
 import "@frontierjs/litestone/references/AuditTrail.lite"
 
-database audit { path env("AUDIT_PATH", "./db/audit.db") retention 90d model AuditTrail }
+database audit { path env("AUDIT_PATH", "./db/audit.db") retention 90d model AuditTrail announce inProcess }
 
 model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate(8) }
 

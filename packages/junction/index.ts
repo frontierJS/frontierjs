@@ -171,5 +171,5 @@ export type { RouteManifest, HookManifest }                        from './src/c
 
 // ─── Batteries ────────────────────────────────────────────────────────────
 // Not re-exported here (`FJS-D639`). Each is its own subpath — `/mail`, `/ai`,
-// `/cache`, `/scheduler`, `/email`, `/webhooks`, `/openapi`, `/outbox`,
+// `/cache`, `/scheduler`, `/webhooks`, `/openapi`, `/outbox`,
 // `/backfill`, `/commitments`, `/manifest`, `/devtools`, `/export`, `/metrics`.

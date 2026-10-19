@@ -1669,6 +1669,7 @@ model App {
   appServers    AppServer[]
   appNetworks   AppNetwork[]
   domains       Domain[]
+  domainRoutes  DomainRoute[]
   variables     Variable[]
   editors       AppEditor[]
 
@@ -1760,6 +1761,7 @@ model Domain {
   workspaceId   String
   appId         String
   app           App       @relation(fields: [appId], references: [id], onDelete: Cascade)
+  routes        DomainRoute[]
 
   hostname      String    @trim @length(1, 253)
   isPrimary     Boolean   @default(false)
@@ -1782,6 +1784,30 @@ model Domain {
   @@softDelete
   @@trail(audit)
   @@unique([workspaceId, hostname])
+  @@index([appId])
+}
+
+// A prefix of a Domain that another App answers (`FJS-D1040`): `/api` and
+// `/ws` to the API App while the Domain's own App serves the rest, the pair
+// `fli deploy`'s Caddy serves as one origin. Longest prefix wins and the prefix
+// is kept, so the API sees `/api/...`. Both Apps must run on the machine the
+// Domain's zone points at: one Caddy cannot route between machines.
+model DomainRoute {
+  id          String   @id @default(uuid())
+  workspaceId String
+  domainId    String
+  domain      Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  appId       String
+  app         App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  pathPrefix  String   @trim @length(2, 200)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@gate(2.5)
+  @@trail(audit)
+  @@unique([domainId, pathPrefix])
   @@index([appId])
 }
 

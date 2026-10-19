@@ -1,7 +1,7 @@
 // db/seed.js — example data for local work.
 //
 //   bun run db:seed            seed once; a second run is a no-op
-//   bun run db:seed --force    re-seed from scratch (deletes the seeded rows)
+//   bun run db:seed --force    re-seed from scratch (deletes the database file)
 //
 // This is development data, not a fixture the tests depend on: the test suite
 // builds its own throwaway databases (db/test/schema.test.ts). What it is for
@@ -25,6 +25,7 @@
 // if a field is not in the schema it is not here, and a wrong enum value fails
 // the CHECK constraint at insert rather than sliding through.
 
+import { rmSync } from 'node:fs'
 import { Factory, Seeder, runSeeder } from '@frontierjs/litestone'
 import { apply } from '@frontierjs/litestone/migrations'
 import { createLitestoneAuth } from '@frontierjs/auth'
@@ -1136,65 +1137,23 @@ if (import.meta.main) {
   // declares `database main`, and a runner that globs one level up finds
   // nothing and reports success.
   const migrationsDir = new URL('./migrations/main', import.meta.url).pathname
+
+  // --force starts from no database. Deleting rows cannot do it: AuditEvent is
+  // @@gate(5.8.9.9) and a locked child travels with its parent's Cascade
+  // (FJS-D1281), so no Workspace that has a trail row can be deleted, asSystem()
+  // included. The file is the one reset that is not a write through the gate.
+  if (process.argv.includes('--force')) {
+    const file = env.DATABASE_URL.replace(/^file:/, '')
+    for (const suffix of ['', '-wal', '-shm']) rmSync(file + suffix, { force: true })
+    console.log('cleared previous data')
+  }
+
   const raw = openSqlite(env.DATABASE_URL)
   const migrated = await apply(raw, migrationsDir)
   if (migrated.unmatched) throw new Error(`[seed] ${migrated.message} — db/migrations/main`)
   raw.close()
 
   const db = await createBasecampDb()
-
-  if (process.argv.includes('--force')) {
-    // Children before parents — foreign keys are ON. Account and Workspace
-    // cascade, but the seed-history row has to go or once() will skip.
-    const sys = db.asSystem()
-    // Every model, children before parents — foreign keys are ON. It is the
-    // whole list rather than the seeded subset on purpose: a model added later
-    // and left out here survives a --force, and the next run collides with a
-    // row it cannot see. Six had already been left out this way.
-    for (const model of [
-      // Orion's, children first. `wait` and `runStep` hang off `run`, `run` and
-      // `flowLayout` off `flow`, and `flowVersion` is what `flow.currentVersion`
-      // points at — so the flow goes last of the six. `flowCredential` and
-      // `kvEntry` stand alone.
-      'wait', 'runStep', 'run', 'flowLayout', 'flowVersion', 'flow',
-      'flowCredential', 'kvEntry',
-      'jobRun', 'job', 'deploymentStep', 'deployment', 'appNetwork', 'appBackup', 'appServer',
-      'dashboardWidget', 'dashboard', 'recipeRun', 'recipe', 'cleanupRun', 'diskUsage', 'serverPosture',
-      'domain', 'app', 'flagOverride', 'featureFlag', 'environment', 'project',
-      'monitorChannel', 'monitorEvent', 'monitorCheck', 'monitor',
-      'alertEvent', 'alertRuleChannel', 'alertRule', 'notificationChannel',
-      'apiKey', 'secret', 'serverNetwork', 'network', 'volume', 'serverEvent',
-      'registryImage', 'dependencyUse', 'dependency',
-      'server', 'workspaceMember', 'workspace', 'session',
-      // Ahead of `user`, which they cascade from — listed anyway, because a
-      // cascade is a property of the schema and this list is what says what
-      // --force means.
-      'notificationPreference',
-      'credential', 'verification', 'user', 'account',
-      // The installation's own rows. None carries a workspaceId, so nothing
-      // above takes them with it — a --force that left the catalog behind
-      // fails on the first blueprint's `@unique` slug, and one that left
-      // `HubConfig` behind fails on its constant primary key. Both would read
-      // as a broken seeder rather than as an incomplete clear.
-      'blueprintParam', 'blueprint', 'backup', 'hubConfig',
-    ]) await sys[model].deleteMany({})
-
-    // auditEvent is NOT in that list and must not be: AuditEvent is
-    // @@gate(5.8.9.9), and 9 is LOCKED — a level asSystem() does not pass
-    // either, which is the one gate that protects the trail from the
-    // application itself. Almost nothing is left behind: the column is
-    // `onDelete: Cascade`, so SQLite takes every row belonging to a workspace
-    // deleted above — including the fourteen this seeder writes below. What
-    // survives is the rows with a NULL workspaceId, which are the ones a
-    // system-level action wrote, and a --force that erased those would be
-    // erasing the only record that they happened.
-
-    // A database that has never been seeded has no history table — which is
-    // every database `bun run verify --reset` leaves behind — and forget()
-    // answers that as a no-op.
-    await new BasecampSeeder().forget(db, 'basecamp:example-fleet')
-    console.log('cleared previous data')
-  }
 
   // asSystem(), not the root client. Seeding is not a request — there is no
   // caller to scope to — and every model declares a @@gate, so the root client

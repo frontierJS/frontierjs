@@ -11,7 +11,7 @@
     "directory": "packages/orion"
   },
   "exports": {
-    "./plugin": "./src/plugin.ts",
+    ".": "./src/plugin.ts",
     "./routes": "./web/routes.js",
     "./orion.lite": "./db/orion.lite"
   },

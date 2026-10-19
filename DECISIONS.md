@@ -7836,6 +7836,13 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d851"></a>2026-10-19 · `FJS-D851` — How does an app say "one process, meant" so the announce-reach boot warning stops firing on every single-process app — The parser records whether `announce` was written, and an explicit `announce inProcess` is the "meant" declaration that silences the report. No new keyword (the spelling already parses); the default stays quiet-on-nothing only when written.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (soften the report to `console.info`, once, with the same text. Nothing to declare; every one-process app still prints a line at every boot, which is the trained-out-warning failure `channels.boot`'s own comment names), **C** (report only when a replica signal exists (a cluster/replica env var, or a second process holding the db file). Silent default, but junction guessing at a deploy it has said it cannot see).
+
+The paper's recommendation, taken as written: it reuses a spelling the grammar already has, makes the reach a stated fact in the schema as `FJS-D173` asks, and fires only on the app that never said; B keeps the noise and C approximates what D173 refuses to.
+*Lives in:* `litestone/src/core/parser.js` (`announceStated`), `junction/src/transport/channels.ts` — `reportAnnounceReach`; the scaffold writes it in `cli/commands/project/new.md`. Closes `FJS-2158`.
+
 ### <a id="fjs-d1309"></a>2026-10-19 · `FJS-D1309` — Is an `Idempotency-Key` replay graded against the caller's standing at replay, or is the stored answer final — The stored answer is final: `FJS-D451` gains the sentence that the skipped gate is the price, bounded by bytes already sent and by `ttl`, and that revocation is a session or key matter, which already ends replay. No code; the ruling's ninth question gains the test that a revoked session's replay is refused.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (re-grade at replay: before `ctx.result = idem.result`, `callService` asks the grader `gateAuth` asks, `callerGateLevel(db, accessor, session)` (`core/litestone.ts:3392`), against the verb's level (a CRUD verb's `@@gate`, a custom method's `customMethodGrade`), and throws the gate's own refusal when the caller no longer reaches it. No hook, no method, no row read; a row policy is not re-asked, since a replay reads no row. `FJS-D451` is amended to "runs nothing but the level check").

@@ -129,6 +129,7 @@ export default createService({
   name:  'volumes',
   scope: keyScope('volumes'),
   model: 'Volume',
+  paginate: { default: 20, max: 200 },
   // Announced by the service DEFINITION, not by an after hook: `callService`
   // is junction's one announcement point and it excludes `find`/`get` by name,
   // where an `after: { all: [...] }` hook broadcast every read to every browser

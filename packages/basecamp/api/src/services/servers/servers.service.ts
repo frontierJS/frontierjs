@@ -137,6 +137,7 @@ export default createService({
   name:  'servers',
   scope: keyScope('servers'),
   model: 'Server',   // ← schema-derived validation; see note at the bottom
+  paginate: { default: 20, max: 500 },
   // Announced by the service DEFINITION, not by an after hook: `callService`
   // is junction's one announcement point and it excludes `find`/`get` by name,
   // where an `after: { all: [...] }` hook broadcast every read to every browser
@@ -324,12 +325,16 @@ export default createService({
       throw new BadRequest(`The outpost on '${server.name}' did not answer (${res.error.kind}): ${res.error.message}`)
     const live = res.data!
 
-    const appIds = [...new Set(live.routes.map(r => /^fjs-(.+?)(-redirects)?$/.exec(r.id ?? '')?.[1]).filter(Boolean))] as string[]
+    const appIds = [...new Set(live.routes.map(r => /^fjs-(.+?)(-redirects|-path-\d+)?$/.exec(r.id ?? '')?.[1]).filter(Boolean))] as string[]
     const apps:    { id: string, name: string }[]        = appIds.length ? await db().app.findMany({ where: { id: { in: appIds } } }) : []
     const domains: { appId: string, hostname: string }[] = appIds.length ? await db().domain.findMany({ where: { appId: { in: appIds } } }) : []
+    // A host an App answers only a prefix of is named by a path route, not by a Domain of its own.
+    const held = appIds.length ? await db().domainRoute.findMany({ where: { appId: { in: appIds } }, include: { domain: true } }) : []
+    for (const h of held as { appId: string, domain?: { hostname: string } }[])
+      if (h.domain) domains.push({ appId: h.appId, hostname: h.domain.hostname })
 
     const routes = live.routes.map(r => {
-      const outpost = /^fjs-(.+?)(-redirects)?$/.exec(r.id ?? '')
+      const outpost = /^fjs-(.+?)(-redirects|-path-\d+)?$/.exec(r.id ?? '')
       if (!outpost) return { ...r, owner: r.id?.startsWith('fli-') ? 'fli' : 'hand', app: null, stray: [] }
       const app   = apps.find(a => a.id === outpost[1]) ?? null
       const named = new Set(domains.filter(d => d.appId === outpost[1]).map(d => d.hostname.toLowerCase()))

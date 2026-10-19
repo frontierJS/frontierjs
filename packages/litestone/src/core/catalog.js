@@ -139,8 +139,8 @@ const TOP = [
     'database',
     'schema',
     'declare',
-    '<name> { path · driver · replication · retention · maxSize · model }',
-    'A named database. `driver` is sqlite (default), jsonl or trail; `path` takes env("VAR", "./default") or a literal. A second database keeps its declared path even when createClient({ db }) moves main.',
+    '<name> { path · driver · replication · retention · maxSize · model · announce }',
+    'A named database. `driver` is sqlite (default), jsonl or trail; `path` takes env("VAR", "./default") or a literal. A second database keeps its declared path even when createClient({ db }) moves main. `announce` is how far a write announcement reaches: inProcess (default) or crossProcess, and writing either one states how many processes the app runs, which silences Junction\'s boot report.',
     'database logs {\n  path   env("LOGS_PATH", "./logs.db")\n  driver jsonl\n}',
     {
       seeAlso: ['db', 'model:trail'],
@@ -149,6 +149,11 @@ const TOP = [
           'driver',
           ['sqlite', 'jsonl', 'trail'],
           'database probe {\n  path   "./probe.db"\n  driver %s\n}'
+        ),
+        vals(
+          'announce',
+          ['inProcess', 'crossProcess'],
+          'database probe {\n  path     "./probe.db"\n  announce %s\n}'
         )
       ]
     }
