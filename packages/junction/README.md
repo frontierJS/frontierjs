@@ -904,7 +904,7 @@ Bulk `patch` and `remove` without an `id` are disabled by default — a guard ag
 createService({
   name:      'logs',
   allowBulk: true,    // opt in explicitly
-  bulkMax:   1000,    // optional — rows one filtered write may touch (default 1000)
+  bulkMax:   1000,    // optional — rows one filtered write or one array create may carry (default 1000)
 })
 // DELETE /logs?status=archived  ← now allowed
 // DELETE /logs                  ← still rejected (no filter conditions)
@@ -919,7 +919,7 @@ createService({
 
 Row by row rather than one `UPDATE` because that is what applies the schema. Litestone skips `@@transitions` on `updateMany` and bumps `@version` without requiring it, so a single `UPDATE` walks past a state machine that refuses the same move by id. What follows from the loop:
 
-- **`bulkMax` refuses before it writes.** One statement per row means an unbounded filter is unbounded work under SQLite's single write lock. Over the cap the call is a 400 naming the count.
+- **`bulkMax` refuses before it writes.** One statement per row means an unbounded filter is unbounded work under SQLite's single write lock. Over the cap the call is a 400 naming the count. An array create is the same loop and the same cap: more rows than `bulkMax` in one POST is refused before the first is written.
 - **Only rows the caller can read are touched.** Selecting the targets applies the read policy; the write applies the update/delete one.
 - **A caller-supplied `@version` is refused** — one value cannot be right for N rows. Each row is written against the version selected with it, so a row that moved underneath lands in `errors` as a `VersionConflictError` instead of being overwritten.
 - **No atomicity**, the same trade bulk create makes. `transactional: true` on the service buys all-or-nothing back: one failed row is a 422 carrying the failures, and nothing is written.
@@ -1287,7 +1287,7 @@ app.services.register(createService({
   schema:     jsonSchema,   // optional — enables auto-validation
   softDelete: 'deletedAt',  // optional — soft-delete via a nullable DateTime field
   allowBulk:  false,        // optional — default false, blocks bulk patch/delete
-  bulkMax:    1000,         // optional — rows one filtered patch/remove may touch
+  bulkMax:    1000,         // optional — rows one filtered patch/remove or array create may carry
   cache:      true,         // optional — cache find/get responses, bust on writes
   methods:    ['find','get'],  // optional — narrow what this service answers.
                                //   Omitted = everything. See below.

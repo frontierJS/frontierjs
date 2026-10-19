@@ -17,6 +17,7 @@
 //   // → only mounted in non-production
 
 import type { App, DevService, Plugin } from '../../core/app.ts'
+import { isDevelopmentEnv } from '../../core/errors.ts'
 import { buildRoutes, serializeHookMap } from '../../core/app-model.ts'
 import type { RouteManifest, HookManifest } from '../../core/app-model.ts'
 
@@ -25,7 +26,7 @@ import type { RouteManifest, HookManifest } from '../../core/app-model.ts'
 export interface ManifestPluginOptions {
   /** Route to serve on. Default: '/manifest' */
   path?: string
-  /** If true, skip mounting in production (NODE_ENV === 'production'). Default: true */
+  /** If true, skip mounting unless NODE_ENV is unset, 'development' or 'test'. Default: true */
   devOnly?: boolean
   /**
    * Litestone client — enables schema embedding + migrations endpoint.
@@ -90,7 +91,7 @@ export function manifest(opts: ManifestPluginOptions = {}): Plugin {
     // and consistent.)
     // Synchronous: the awaits below are inside route handlers, not here.
     register(app: App): void {
-      if (devOnly && process.env.NODE_ENV === 'production') return
+      if (devOnly && !isDevelopmentEnv()) return
 
       // app.get applies apiPrefix — see the route shortcuts in core/app.ts.
       app.get(route, async () =>

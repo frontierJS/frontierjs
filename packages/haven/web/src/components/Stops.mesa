@@ -15,14 +15,14 @@
   // focus off the line. A partial `/word` is Tab's to complete, which
   // `Scene.mesa` asks before any verb.
   //
-  // Enter walks there a step a `WALK_MS` in the `walk` mode, `f`'s
+  // Enter sprints there a step a `SPRINT_MS` in the `walk` mode, `f`'s
   // (`HomeRow.mesa`), so any key stops it and a bolt landing here does too,
   // the stop still marked. Each step is re-planned from where the figure stands and taken by
   // `stepTo`, as an arrow's is, so every screen sees it and nothing crosses
   // a wall or finds a hidden door. A door's walk ends on the door, which is the
   // door taken; a verb's ends inside its reach.
   import { reaches } from '@/lib/hash/commands.js'
-  import { walked, pathTo, STEPS, WALK_MS } from '@/lib/scene/paths.js'
+  import { walked, pathTo, STEPS, SPRINT_MS } from '@/lib/scene/paths.js'
   import { at, tint } from '#cell'
 
   export let stage
@@ -116,7 +116,7 @@
     })
     going = stop
     tell(`→ ${stop.name}`)
-    walking = setInterval(stepToward, WALK_MS)
+    walking = setInterval(stepToward, SPRINT_MS)
   }
 
   /** The cells a stop marks on the art: each reach's own cell, in the view. */

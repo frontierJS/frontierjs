@@ -185,11 +185,12 @@
     if (start.x === x && start.y === y) return
     x = start.x
     y = start.y
-    here.updateMeta(meta())
+    sync()
   })
   $.onDestroy(() => {
     clearInterval(flickTimer)
     clearTimeout(idle)
+    clearTimeout(held)
     for (const t of timers) clearTimeout(t)
   })
 
@@ -272,7 +273,7 @@
   function setTyping(on) {
     if (on === typing) return
     typing = on
-    here.updateMeta(meta())
+    sync()
   }
   function typed(text) {
     clearTimeout(idle)
@@ -283,6 +284,20 @@
   $: { if (here) typed(draft) }
 
   // ─── the figure ────────────────────────────────────────────────────────────
+  // The room takes 10 moves a second (`presenceUpdatesPerSecond`, `api/src/rooms.ts`)
+  // and drops the rest in silence, so a sprint or a held arrow would leave every
+  // other screen drawing this figure short of where it stopped. A send inside the
+  // window is held to its end and carries the figure as it is then.
+  const SYNC_MS = 100
+  var synced = 0
+  var held   = null
+  function sync() {
+    if (held) return
+    const wait = synced + SYNC_MS - Date.now()
+    if (wait <= 0) { synced = Date.now(); here.updateMeta(meta()); return }
+    held = setTimeout(() => { held = null; synced = Date.now(); here.updateMeta(meta()) }, wait)
+  }
+
   function meta() {
     return { x, y, facing, ...(typing && { typing: true }), ...(shape && { shape }), ...(ink && { ink }), ...(hushed && { hushed }), ...(emote && { emote }), ...(pet && { pet: true }) }
   }
@@ -299,7 +314,7 @@
     ink = worn.ink = stage.dyeAt(x, y, Date.now()) ?? ink
     // A step stands a figure up and ends a wave; `Emotes` sits it again on a seat.
     emote = null
-    here.updateMeta(meta())
+    sync()
     if (walked) tread([{ x, y }])
   }
 
@@ -308,7 +323,7 @@
   function shapeTo(ch) {
     if (!stands(x, y, ch)) return false
     shape = ch
-    here.updateMeta(meta())
+    sync()
     return true
   }
 
@@ -352,7 +367,7 @@
         commands.close('walk')
         x = s.to.x
         y = s.to.y
-        here.updateMeta(meta())
+        sync()
       }
     }
     if (blast.struck?.length) flicker()
@@ -427,7 +442,7 @@
     // wall's corner and between two pieces touching at theirs.
     const squeezed = step[0] && step[1] && !(stands(nx, y) && stands(x, ny))
     if (!squeezed && stepTo(nx, ny)) return
-    if (turned !== facing) { facing = turned; here.updateMeta(meta()) }
+    if (turned !== facing) { facing = turned; sync() }
   }
 
   /** A step as a key takes it: onto a door is through it; false where it is refused. */
@@ -488,9 +503,9 @@
     <Mod />
     <Season {stage} />
     <Weather {stage} />
-    <Hush {here} hush={(id) => { hushed = id; here.updateMeta(meta()) }} />
-    <Emotes {stage} {here} {x} {y} {view} {spawn} {emote} {moveTo} emoteTo={(e) => { emote = e; here.updateMeta(meta()) }} />
-    <Pets {stage} {here} {x} {y} {view} {spawn} {facing} {ink} {pet} petTo={(p) => { pet = worn.pet = p; here.updateMeta(meta()) }} />
+    <Hush {here} hush={(id) => { hushed = id; sync() }} />
+    <Emotes {stage} {here} {x} {y} {view} {spawn} {emote} {moveTo} emoteTo={(e) => { emote = e; sync() }} />
+    <Pets {stage} {here} {x} {y} {view} {spawn} {facing} {ink} {pet} petTo={(p) => { pet = worn.pet = p; sync() }} />
     <Work />
   {/if}
 </div>

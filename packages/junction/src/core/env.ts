@@ -218,18 +218,25 @@ export function checkEnvField(key: string, field: EnvFieldSpec, raw: string | un
       return fail(`${key}: must be one of [${field.enum.join(', ')}], got "${quote(value)}"`)
   }
 
-  // Graded BY NAME and only when the app declares them. Junction reads none of
-  // them — a session issued by @frontierjs/auth is a row found by a random
-  // token, and there is no `auth.secret` in AppConfig — so this is a courtesy
-  // to an app holding its own signing key, never a sign that the framework is
-  // using the value. Reading it the other way is how `AUTH_SECRET` came to be
-  // generated, declared and required across three packages with no reader
-  // anywhere (FJS-360).
-  if (key === 'AUTH_SECRET' || key === 'JWT_SECRET' || key === 'SESSION_SECRET') {
-    if (typeof value === 'string' && value.length < 32)
-      warnings.push(`${key} is only ${value.length} chars — use at least 32 for security`)
+  // Graded BY NAME and only when the app declares them. `ENCRYPTION_KEY` is the
+  // one the framework reads (litestone takes it as 64 hex characters, and a
+  // shorter one fails at the first encrypted write, not at boot). Junction reads
+  // none of the others — a session issued by @frontierjs/auth is a row found by
+  // a random token, and there is no `auth.secret` in AppConfig — so those are a
+  // courtesy to an app holding its own signing key, never a sign that the
+  // framework is using the value. Reading it the other way is how `AUTH_SECRET`
+  // came to be generated, declared and required across three packages with no
+  // reader anywhere (FJS-360).
+  const minSecretLength = key === 'ENCRYPTION_KEY' ? 64
+    : key === 'AUTH_SECRET' || key === 'JWT_SECRET' || key === 'SESSION_SECRET' ? 32
+    : 0
+  if (minSecretLength) {
+    if (typeof value === 'string' && value.length < minSecretLength)
+      warnings.push(`${key} is only ${value.length} chars — use at least ${minSecretLength} for security`)
     const weakValues = ['change-me', 'secret', 'password', 'demo', 'dev', 'test', '12345']
-    if (typeof value === 'string' && weakValues.some(w => value.toLowerCase().includes(w))) {
+    // Random hex is what `fli keygen` writes; 1 key in ~16,000 holds "12345".
+    const randomHex = typeof value === 'string' && value.length >= 32 && /^[0-9a-f]+$/i.test(value)
+    if (!randomHex && typeof value === 'string' && weakValues.some(w => value.toLowerCase().includes(w))) {
       if (process.env.NODE_ENV === 'production')
         return fail(`${key} looks like a placeholder — set a real secret in production`)
       warnings.push(`${key} looks like a placeholder — replace before going to production`)

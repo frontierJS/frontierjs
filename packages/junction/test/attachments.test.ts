@@ -356,4 +356,31 @@ describe('checkEnvField', () => {
     expect(r.error).toBeUndefined()
     expect(r.warnings.join(' ')).toContain('at least 32')
   })
+
+  // FJS-3206: ENCRYPTION_KEY is the one key the framework reads, and the scaffold
+  // declares it with no minLength.
+  it('warns about an ENCRYPTION_KEY that is not 64 characters', () => {
+    const r = checkEnvField('ENCRYPTION_KEY', {}, 'short')
+    expect(r.error).toBeUndefined()
+    expect(r.warnings.join(' ')).toContain('64')
+  })
+
+  it('does not call a random 64-hex ENCRYPTION_KEY a placeholder because it holds 12345', () => {
+    const key = '12345' + 'a'.repeat(59)
+    const prev = process.env.NODE_ENV
+    process.env.NODE_ENV = 'production'
+    try {
+      const r = checkEnvField('ENCRYPTION_KEY', {}, key)
+      expect(r.error).toBeUndefined()
+      expect(r.warnings).toEqual([])
+    } finally { process.env.NODE_ENV = prev }
+  })
+
+  it('refuses a placeholder ENCRYPTION_KEY in production', () => {
+    const prev = process.env.NODE_ENV
+    process.env.NODE_ENV = 'production'
+    try {
+      expect(checkEnvField('ENCRYPTION_KEY', {}, 'change-me').error).toContain('placeholder')
+    } finally { process.env.NODE_ENV = prev }
+  })
 })

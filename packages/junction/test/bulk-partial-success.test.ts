@@ -458,6 +458,29 @@ describe('bulkMax', () => {
     expect(out.data).toHaveLength(3)
   })
 
+  test('an array create over the cap is refused, naming the count, before anything is written', async () => {
+    const db  = await mkDb(ORDERS)
+    const svc = buildService({ name: 'orders', model: 'Order', allowBulk: true, bulkMax: 3 }) as never as
+      { create(c: ServiceContext): Promise<unknown> }
+
+    const rows = [1, 2, 3, 4].map(id => ({ id }))
+    const err  = await svc.create(ctx(db, { method: 'create', data: rows })).catch(e => e as Error)
+
+    expect((err as Error).message).toContain('4 rows')
+    expect((err as Error).message).toContain('limit of 3')
+    const stored = await (db as never as { order: { findMany(a?: unknown): Promise<unknown[]> } }).order.findMany({})
+    expect(stored).toHaveLength(0)
+  })
+
+  test('an array create at the cap exactly goes through', async () => {
+    const db  = await mkDb(ORDERS)
+    const svc = buildService({ name: 'orders', model: 'Order', allowBulk: true, bulkMax: 3 }) as never as
+      { create(c: ServiceContext): Promise<Bulk> }
+
+    const out = await svc.create(ctx(db, { method: 'create', data: [1, 2, 3].map(id => ({ id })) }))
+    expect(out.data).toHaveLength(3)
+  })
+
   test('the declaration survives the autoloader spread and reaches describe()', async () => {
     // Same shape as FJS-231/the transactional: carry-through — a base spread
     // into createService must not drop the option, or the service runs on the

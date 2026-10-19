@@ -271,13 +271,22 @@ export function redactProtected(
   return redactBy(value, (k) => Object.hasOwn(fields, k), seen)
 }
 
+/**
+ * Is this a development machine? Unset reads as development, as `loadConfig`
+ * does; any OTHER value but `development` and `test` is a deployment, so a
+ * `staging`, a `Production` or a trailing space closes what only the exact
+ * word `production` used to (`FJS-3207`).
+ */
+export function isDevelopmentEnv(): boolean {
+  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } })
+    .process?.env?.NODE_ENV
+  return env === undefined || env === 'development' || env === 'test'
+}
+
 /** Is this app allowed to say what actually went wrong? */
 function inDebug(debug: boolean | undefined): boolean {
   if (typeof debug === 'boolean' && debug) return true
-  // Absent a stated flag the environment decides, and only the literal
-  // 'production' closes it — the same reading the rest of the stack uses.
-  return (globalThis as { process?: { env?: Record<string, string | undefined> } })
-    .process?.env?.NODE_ENV !== 'production'
+  return isDevelopmentEnv()
 }
 
 export function sanitizeError(fe: FrameworkError, opts: SanitizeOptions = {}): FrameworkError {

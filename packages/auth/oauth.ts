@@ -193,6 +193,14 @@ const PRESETS: Record<string, Preset> = {
 
 export const PROVIDER_PRESETS = Object.keys(PRESETS)
 
+function isSecureEndpoint(raw: string): boolean {
+  let url: URL
+  try { url = new URL(raw) } catch { return false }
+  if (url.protocol === 'https:') return true
+  return url.protocol === 'http:' &&
+    (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]')
+}
+
 /**
  * Preset + what the app stated → a provider.
  *
@@ -229,6 +237,17 @@ export function defineProvider(spec: OAuthProviderSpec): OAuthProvider {
   for (const key of ['authorizeUrl', 'tokenUrl', 'userinfoUrl'] as const) {
     if (!provider[key]) {
       throw new OAuthError(`OAuth provider '${name}' (preset '${preset}') needs ${key}`)
+    }
+  }
+
+  // The token request carries client_secret and the code, the userinfo request
+  // the bearer token: over http:// any hop between here and the provider reads
+  // them. Loopback is exempt so a provider run on the dev machine still works.
+  for (const key of ['tokenUrl', 'userinfoUrl'] as const) {
+    if (!isSecureEndpoint(provider[key])) {
+      throw new OAuthError(
+        `OAuth provider '${name}' (preset '${preset}') needs ${key} to be https:// (got '${provider[key]}')`
+      )
     }
   }
 

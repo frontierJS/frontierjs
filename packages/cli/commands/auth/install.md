@@ -175,6 +175,11 @@ export const auth = createLitestoneAuth(db, {
   //     html:    \`<a href="\${env.WEB_URL}/verify-email/?token=\${token}">Verify email</a>\`,
   //   })
   // },
+  // The person who did not change their password, email or two-step sign-in
+  // learns of it here or nowhere:
+  // onCredentialChanged: async ({ event, email }) => {
+  //   await mailer.send({ to: email, subject: 'Your sign-in settings changed', text: event })
+  // },
 })
 `
 

@@ -425,9 +425,12 @@ auth().isAdmin)\` so nobody promotes themselves on the way in.
 
 There is no mailer yet, so nothing is sent. A password reset requested at
 \`/reset/\` prints its link in the terminal running the API, and the link opens
-\`/reset/?token=…\` on \`WEB_URL\`. Wire \`app.mail.send()\` into the two
+\`/reset/?token=…\` on \`WEB_URL\`. Wire \`app.mail.send()\` into the three
 callbacks in \`api/src/core/auth.ts\` to send them for real; set \`WEB_URL\` in
-production so the link names the deployed site.
+production so the link names the deployed site. The third,
+\`onCredentialChanged\`, is the notice that a password, email address or
+two-step sign-in changed: it only logs until there is a mailer, and a person who
+did not make the change hears of it nowhere else.
 ` : ''}
 
 ## Checking it
@@ -716,7 +719,7 @@ import { defineEnv } from '@frontierjs/junction'
 export const env = defineEnv({
   // Required — used for HMAC of API keys, encrypted columns, OAuth state.
   // Generate with: openssl rand -hex 32
-  ENCRYPTION_KEY: { type: 'string', required: true },
+  ENCRYPTION_KEY: { type: 'string', required: true, minLength: 64 },
 
   // Database file path. Use ':memory:' for tests.
   DATABASE_URL: { type: 'string', default: './db/app.db' },
@@ -1114,6 +1117,15 @@ export const auth = createLitestoneAuth(db, {
   onEmailVerificationRequested: async (email, token) => {
     const link = \`\${env.WEB_URL}/verify-email/?token=\${encodeURIComponent(token)}\`
     console.log(\`[auth] verify \${email} — no mailer, so here is the link:\\n  \${link}\`)
+  },
+
+  // Runs after a password change or reset, an email change, TOTP on or off,
+  // an API key, a linked provider. The person who did NOT make the change
+  // learns of it here or nowhere, so send it with app.mail.send() once the
+  // app has a mailer. A throw is logged and refuses nothing. Say what changed
+  // and never put a link in it that undoes it: a forged copy would be the phish.
+  onCredentialChanged: async ({ event, email }) => {
+    console.log(\`[auth] \${event} on the account of \${email} — no mailer, so nobody was told\`)
   },
 })
 

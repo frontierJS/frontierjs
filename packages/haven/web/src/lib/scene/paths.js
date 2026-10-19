@@ -6,8 +6,10 @@
 
 export const STEPS = [[0, 1], [0, -1], [1, 0], [-1, 0]]
 
-// A walk's pace, `f`'s and Enter's: 120 ms a step is under the room's 10 moves a second.
+// `f`'s pace: 120 ms a step is under the room's 10 moves a second.
 export const WALK_MS = 120
+// Enter's walk to a stop, a sprint past that rate; `Scene.mesa` sends it at the room's.
+export const SPRINT_MS = 25
 
 const key = (x, y) => `${x},${y}`
 

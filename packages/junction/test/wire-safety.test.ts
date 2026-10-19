@@ -201,6 +201,35 @@ describe('what a failure may say (FJS-686)', () => {
     await app.stop()
   })
 
+  // FJS-3207 — only the exact word 'production' used to close the sentence.
+  for (const env of ['staging', 'Production', 'production ']) {
+    test(`NODE_ENV=${JSON.stringify(env)} is a deployment, so a 500 is generic`, async () => {
+      process.env.NODE_ENV = env
+      const app = await mkApp()
+      const res = await http(app, 'POST', '/notes', { 'x-service-method': 'boom' })
+      process.env.NODE_ENV = ENV
+      expect(res.status).toBe(500)
+      expect(res.text).not.toContain('no_such_table')
+      await app.stop()
+    })
+  }
+
+  test('manifest devOnly stays unmounted on a NODE_ENV that is not development', async () => {
+    const { manifest } = await import('../src/plugins/manifest/index.ts')
+    const seen: Record<string, number> = {}
+    for (const env of ['staging', 'Production', 'development']) {
+      process.env.NODE_ENV = env
+      const app = createApp({ logLevel: 'silent', config: { port: 0 } })
+      app.configure(manifest())
+      await app.start()
+      const res = await app.http.fetch(new Request('http://localhost/manifest'))
+      seen[env] = res.status
+      process.env.NODE_ENV = ENV
+      await app.stop()
+    }
+    expect(seen).toEqual({ staging: 404, Production: 404, development: 200 })
+  })
+
   test('a protected column on an error payload is [redacted]', async () => {
     const app = await mkApp()
     const res = await http(app, 'POST', '/notes', { 'x-service-method': 'withRow' })

@@ -1653,6 +1653,14 @@ const columns = writableColumns(db, m.accessor)
       const q     = parseQuery(ctx.query, 1, 1, ctx.directives)
 
       if (Array.isArray(ctx.data)) {
+        if (ctx.data.length > bulkMax) {
+          throw new BadRequest(
+            `Bulk create carried ${ctx.data.length} rows, above this service's limit of ${bulkMax}. ` +
+            `A bulk create runs one statement per row, so the limit is what stops one ` +
+            `request holding the write lock for the length of the array. Send fewer rows per ` +
+            `request, or raise bulkMax on the service.`
+          )
+        }
 
         // Partial success: rows are created individually so ONE bad row does
         // not reject the other forty-nine. Successes land in `data`, failures

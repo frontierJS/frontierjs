@@ -536,4 +536,16 @@ describe('the scaffolded auth plugin is handed the app’s getLevel', () => {
     expect(auth).toContain("import { getLevel }")
     expect(auth).toMatch(/authRoutes\(\{\s*auth,[\s\S]*services:\s*\{\s*level:\s*getLevel\s*\}/)
   })
+
+  // FJS-3200 -- the observer is the only trace of a change the person did not make.
+  test('project/new.md wires onCredentialChanged for every CREDENTIAL_EVENTS name', async () => {
+    const text = readFileSync(join(CLI, 'commands', 'project', 'new.md'), 'utf8')
+    const auth = text.slice(text.indexOf('function makeApiCoreAuthTs'), text.indexOf('function makeJunctionConfig'))
+    expect(auth).toContain('onCredentialChanged')
+    const types = readFileSync(join(CLI, '..', 'auth', 'types.ts'), 'utf8')
+    const events = types.match(/CREDENTIAL_EVENTS = \[([\s\S]*?)\] as const/)[1].match(/'([a-zA-Z.]+)'/g).map(s => s.slice(1, -1))
+    expect(events.length).toBeGreaterThan(5)
+    // The scaffold names none of them one by one: a new event must not need an edit here.
+    expect(auth).toContain('${event}')
+  })
 })

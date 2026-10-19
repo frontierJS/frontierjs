@@ -231,3 +231,28 @@ describe('oauthCallback', () => {
     )
   })
 })
+
+// FJS-3202: the token request carries client_secret and the code, and the
+// userinfo request carries the bearer token, so neither may leave in cleartext.
+describe('defineProvider endpoint scheme', () => {
+  const spec = { name: 'okta', preset: 'oidc', clientId: 'c', clientSecret: 's',
+    authorizeUrl: 'https://o.test/a', tokenUrl: 'https://o.test/t', userinfoUrl: 'https://o.test/u' } as const
+
+  test('refuses an http:// tokenUrl', () => {
+    expect(() => defineProvider({ ...spec, tokenUrl: 'http://o.test/t' })).toThrow(/tokenUrl.*https/)
+  })
+
+  test('refuses an http:// userinfoUrl', () => {
+    expect(() => defineProvider({ ...spec, userinfoUrl: 'http://o.test/u' })).toThrow(/userinfoUrl.*https/)
+  })
+
+  test('refuses an unparseable endpoint', () => {
+    expect(() => defineProvider({ ...spec, tokenUrl: 'not a url' })).toThrow(/tokenUrl/)
+  })
+
+  test('allows http:// on a loopback host, for a provider run on the dev machine', () => {
+    expect(() => defineProvider({
+      ...spec, tokenUrl: 'http://localhost:9000/t', userinfoUrl: 'http://127.0.0.1:9000/u',
+    })).not.toThrow()
+  })
+})
