@@ -175,6 +175,13 @@ export interface TransportContext {
     path?:     string
   }) => void
 
+  /**
+   * Aborts when the client hangs up. The request's own signal, here so a
+   * handler need not reach through `$raw` and a replayed `$req` for it; a
+   * service call sees the same signal as `ctx.signal`.
+   */
+  signal?: AbortSignal
+
   // escape hatch to raw request
   $raw: RawRequest
 

@@ -215,6 +215,7 @@ export const bridge = {
       error:     null,
       statusCode: undefined,
       dispatch:   undefined,
+      signal:    raw.signal ?? new AbortController().signal,
       $raw:      raw
     }))
   },
@@ -315,6 +316,7 @@ export const bridge = {
       error:     null,
       statusCode: undefined,
       dispatch:   undefined,
+      signal:    opts.signal ?? new AbortController().signal,
       $raw:      null
     }))
   }

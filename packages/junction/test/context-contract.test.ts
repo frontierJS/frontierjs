@@ -390,7 +390,8 @@ const FIELD_AXIS: Record<string, Axis> = {
   caller:       'carriage',
   route:        'carriage',
   statusCode:   'carriage',
-  $raw:         'carriage',
+  signal:       'carriage',
+  $raw:        'carriage',
   dispatch:     'announcement',
 }
 

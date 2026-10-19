@@ -45,6 +45,12 @@ export interface AppConfig {
      */
     requestTimeout?: number // ms, default off
     /**
+     * Serve https from a PEM cert and key, given as paths. Development only:
+     * a client that refuses `http://` (the Bitwarden CLI, localhost included)
+     * needs the app itself to speak TLS, and in production a proxy does.
+     */
+    tls?: { cert: string; key: string }
+    /**
      * Requests being handled at once before the next is refused 503 with
      * `Retry-After`. Counts requests, not sockets (Bun has no connection
      * hook); a WebSocket upgrade falls under `ws.maxConnections`. 0 or absent

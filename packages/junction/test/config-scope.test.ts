@@ -149,8 +149,7 @@ describe('createApp({ tenantConfig })', () => {
   const withTenants = (over: Record<string, Record<string, unknown>>, keys = ['name', 'mail.from']) =>
     createApp({
       config: { name: 'floor', version: '1.0.0', mail: { from: 'noreply@floor.test', replyTo: 'x@floor.test' } } as never,
-      tenantConfig:     async (id: string) => over[id] ?? {},
-      tenantConfigKeys: keys,
+      tenantConfig: { resolve: async (id: string) => over[id] ?? {}, keys },
     })
 
   test('a tenant reads its own value and the floor for everything else', async () => {
@@ -195,27 +194,25 @@ describe('the allow-list is the safe half', () => {
   test('a reserved path is refused at BOOT, not per request', () => {
     expect(() => createApp({
       config: {} as never,
-      tenantConfig:     async () => ({}),
-      tenantConfigKeys: ['name', 'database.url'],
+      tenantConfig: { resolve: async () => ({}), keys: ['name', 'database.url'] },
     })).toThrow(/'database\.url'.*may never override/s)
   })
 
   test('every reserved root is refused, and so is a path under one', () => {
     for (const key of ['port', 'database', 'http.cors.origin', 'auth.cookie', 'apiPrefix'])
-      expect(() => createApp({ config: {} as never, tenantConfig: async () => ({}), tenantConfigKeys: [key] }))
+      expect(() => createApp({ config: {} as never, tenantConfig: { resolve: async () => ({}), keys: [key] } }))
         .toThrow(/may never override/)
   })
 
   test('a resolver with no keys at all is refused — the list is not optional', () => {
-    expect(() => createApp({ config: {} as never, tenantConfig: async () => ({}) }))
-      .toThrow(/needs tenantConfigKeys/)
+    expect(() => createApp({ config: {} as never, tenantConfig: { resolve: async () => ({}), keys: [] } }))
+      .toThrow(/needs tenantConfig\.keys/)
   })
 
   test('a key the list does not name is REFUSED, not dropped', async () => {
     const app = createApp({
       config: { name: 'floor' } as never,
-      tenantConfig:     async () => ({ name: 'Acme', sneaky: 'value' }),
-      tenantConfigKeys: ['name'],
+      tenantConfig: { resolve: async () => ({ name: 'Acme', sneaky: 'value' }), keys: ['name'] },
     })
     // Dropping it means a tenant whose configuration silently does not apply,
     // which reads as *the feature is broken* and is a support ticket rather than
@@ -229,8 +226,7 @@ describe('memoization and invalidation', () => {
     let calls = 0
     const app = createApp({
       config: { name: 'floor' } as never,
-      tenantConfig:     async () => { calls++; return { name: 'Acme' } },
-      tenantConfigKeys: ['name'],
+      tenantConfig: { resolve: async () => { calls++; return { name: 'Acme' } }, keys: ['name'] },
     })
 
     await Promise.all([app.loadTenantConfig('acme'), app.loadTenantConfig('acme'), app.loadTenantConfig('acme')])
@@ -242,8 +238,7 @@ describe('memoization and invalidation', () => {
     let name = 'First'
     const app = createApp({
       config: { name: 'floor' } as never,
-      tenantConfig:     async () => ({ name }),
-      tenantConfigKeys: ['name'],
+      tenantConfig: { resolve: async () => ({ name }), keys: ['name'] },
     })
 
     await app.loadTenantConfig('acme')
@@ -262,8 +257,7 @@ describe('memoization and invalidation', () => {
     let fail = true
     const app = createApp({
       config: { name: 'floor' } as never,
-      tenantConfig:     async () => { if (fail) throw new Error('no row yet'); return { name: 'Acme' } },
-      tenantConfigKeys: ['name'],
+      tenantConfig: { resolve: async () => { if (fail) throw new Error('no row yet'); return { name: 'Acme' } }, keys: ['name'] },
     })
 
     await expect(app.loadTenantConfig('acme')).rejects.toThrow('no row yet')
@@ -287,8 +281,7 @@ describe('the hook warms it, which is what makes the sync read correct', () => {
   // one tenant's mail going out under another's name, with nothing saying so.
   const appFor = (over: Record<string, Record<string, unknown>>) => createApp({
     config: { name: 'floor', mail: { from: 'noreply@floor.test' } } as never,
-    tenantConfig:     async (id: string) => over[id] ?? {},
-    tenantConfigKeys: ['name', 'mail.from'],
+    tenantConfig: { resolve: async (id: string) => over[id] ?? {}, keys: ['name', 'mail.from'] },
   })
 
   test('a call carrying a tenant reads that tenant inside the method', async () => {
@@ -321,8 +314,7 @@ describe('the hook warms it, which is what makes the sync read correct', () => {
   test('a resolver that throws fails the call rather than quietly serving the floor', async () => {
     const app = createApp({
       config: { name: 'floor' } as never,
-      tenantConfig:     async () => { throw new Error('settings row unreadable') },
-      tenantConfigKeys: ['name'],
+      tenantConfig: { resolve: async () => { throw new Error('settings row unreadable') }, keys: ['name'] },
     })
     const hook = withLitestoneDb({} as never)
     const ctx  = { app, locals: { tenantId: 'acme' }, auth: { user: null }, caller: {}, route: {} }

@@ -19,7 +19,7 @@ import { slug } from '@frontierjs/toolbelt/inflect'
 import { openDatabase } from './engine.js'
 import {
   introspect, buildPristineForDatabase, diffSchemas,
-  generateMigrationSQL, summarizeDiff, checksum, splitStatements, normalizeTableDdl,
+  generateMigrationSQL, summarizeDiff, checksum, splitStatements, normalizeTableDdl, normalizeDdl,
 } from './migrate.js'
 import { resolveOperations, checkAgainstHistory, renameStatement, describeOperation, guessRenames } from './operations.js'
 import { generateDDLForDatabase, schemaForDatabase, detectM2MPairs, generateJoinTableDDL, planEdgeStorage, generateEdgeSideTableDDL } from './ddl.js'
@@ -982,7 +982,7 @@ function onlyDrops(diffResult) {
     if (t.cols?.modified?.length)  return false
     if (t.indexes?.added?.length)  return false
     // A constraint that changed is an edit, not a removal.
-    if (t.fkChanged || t.strictChanged || t.checksChanged || t.uniquesChanged) return false
+    if (t.fkChanged || t.strictChanged || t.autoincrementChanged || t.checksChanged || t.uniquesChanged) return false
   }
   return true
 }
@@ -1015,9 +1015,21 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
       // recorded while the schema hash holds still, so a comparison that learned
       // better (`FJS-1092`: column POSITION) would go on announcing the old
       // verdict on every boot of every database that heard it once.
+      //
+      // And re-graded against the database as it is NOW, not as it was when the
+      // residue was stored. A file migration (`migrate apply`) changes the live
+      // tables without changing this hash, so the one that fixed a residue went
+      // on hearing it announced on every boot — measured on an app whose
+      // AUTOINCREMENT rebuild had landed. One SELECT per held object.
       const stored = acceptResidue ? null : readAutoResidue(rawDb)
-      const held   = (stored ?? []).filter(r => !(r.type === 'table' && r.pristine && r.live &&
-                                                  normalizeTableDdl(r.pristine) === normalizeTableDdl(r.live)))
+      const held   = (stored ?? []).filter(r => {
+        const now = r.type === 'table' || r.type === 'index' || r.type === 'trigger'
+          ? (rawDb.query(`SELECT sql FROM sqlite_master WHERE type = ? AND name = ?`).get(r.type, r.name)?.sql ?? null)
+          : r.live
+        const norm = r.type === 'table' ? normalizeTableDdl : normalizeDdl
+        const same = (live) => r.pristine && live && norm(r.pristine) === norm(live)
+        return !(same(r.live) || same(now))
+      })
       if (acceptResidue || (stored && held.length !== stored.length)) writeAutoResidue(rawDb, held)
       if (held.length) announceResidue(dbName, held)
       results[dbName] = held.length ? { state: 'in-sync', applied: 0, residue: held } : { state: 'in-sync', applied: 0 }

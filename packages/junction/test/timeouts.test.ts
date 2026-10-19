@@ -178,3 +178,51 @@ describe('http.maxConcurrentRequests', () => {
     expect(() => new HttpTransport({ port: 0, maxConcurrentRequests: 0 })).not.toThrow()
   })
 })
+
+// FJS-3105: a client that refuses http:// (the Bitwarden CLI since 2025.11,
+// localhost included) cannot reach a dev API unless the server itself speaks
+// TLS. The cert and key are PATHS, so an app points at files mkcert wrote.
+describe('http.tls', () => {
+
+  async function selfSigned() {
+    const { mkdtempSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const dir  = mkdtempSync(join(tmpdir(), 'fjs-tls-'))
+    const cert = join(dir, 'cert.pem')
+    const key  = join(dir, 'key.pem')
+    const p = Bun.spawnSync(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+      '-keyout', key, '-out', cert, '-days', '1', '-subj', '/CN=localhost'])
+    if (p.exitCode !== 0) throw new Error('openssl failed')
+    return { cert, key }
+  }
+
+  it('serves https when a cert and key are given', async () => {
+    const tls = await selfSigned()
+    const t = new HttpTransport({ port: 0, tls })
+    t.router.get('/fast', () => new Response('quick'))
+    t.router.build()
+    t.start(0)
+    try {
+      const r = await fetch(`https://localhost:${t.port}/fast`, { tls: { rejectUnauthorized: false } })
+      expect(r.status).toBe(200)
+      expect(await r.text()).toBe('quick')
+    } finally { await t.stop(100) }
+  })
+
+  it('without it the same port is plain http', async () => {
+    const t = new HttpTransport({ port: 0 })
+    t.router.get('/fast', () => new Response('quick'))
+    t.router.build()
+    t.start(0)
+    try {
+      const r = await fetch(`http://localhost:${t.port}/fast`)
+      expect(r.status).toBe(200)
+    } finally { await t.stop(100) }
+  })
+
+  it('a missing file is refused at boot, naming the path', () => {
+    expect(() => new HttpTransport({ port: 0, tls: { cert: '/nope/cert.pem', key: '/nope/key.pem' } }))
+      .toThrow(/http\.tls[\s\S]*\/nope\/cert\.pem/)
+  })
+})

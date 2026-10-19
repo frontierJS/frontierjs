@@ -231,6 +231,18 @@ export interface ServiceContext {
   statusCode?: number          // override HTTP status
   dispatch?:   unknown | false // separate payload for real-time broadcast; false = suppress
 
+  /**
+   * Aborts when whoever made this call stops waiting for it: the HTTP client
+   * hung up, the socket closed, or an in-process caller passed
+   * `{ signal }` in its options. Always present and never aborted when no
+   * caller can leave, so `fetch(url, { signal: ctx.signal })` needs no guard.
+   *
+   * Per call and NOT inherited by a nested `app.service(x)` call: a write the
+   * caller left behind has still committed, and what follows it (an
+   * `afterCommit` email) must not be cut short by the departure.
+   */
+  signal: AbortSignal
+
   // escape hatch — never use in services or hooks (type-only upward ref)
   $raw: import('../transport/types.ts').TransportContext | null
 
@@ -420,6 +432,13 @@ export interface CallOptions {
    * merges exactly as one arriving over the wire does.
    */
   base?: Record<string, unknown> | null
+
+  /**
+   * `ctx.signal` of the callee: abort it to tell the call its caller has gone.
+   * Not read from the call in progress, so a sub-call that should stop with
+   * its parent passes `{ signal: ctx.signal }`.
+   */
+  signal?: AbortSignal
 }
 
 // ─── Reserved query params ────────────────────────────────────────────────

@@ -4,6 +4,7 @@
 //       gzip, response helpers, DDoS protection, stats tracking.
 // App code never sees Request or Response directly.
 
+import { existsSync }                     from 'node:fs'
 import { Router }                         from './router.ts'
 import { BUILD_HEADER } from '../core/build-id.ts'
 import { WS_PROTOCOL, bearerFromProtocols, withoutBearer, CREDENTIAL_HEADER, CREDENTIAL_CHANGED } from '../core/ws-auth.ts'
@@ -122,6 +123,14 @@ export interface HttpTransportOptions {
    * rather than at the first request.
    */
   idleTimeout?: number     // seconds, default 10 (Bun's)
+  /**
+   * Serve https from this cert and key, as PATHS to PEM files. For development,
+   * where a client that refuses `http://` (the Bitwarden CLI, localhost
+   * included) must still reach the app and nothing in front of it terminates
+   * TLS; in production a reverse proxy does and this stays absent. A path that
+   * does not exist is refused at boot, naming it.
+   */
+  tls?: { cert: string; key: string }
   /**
    * Milliseconds a handler may take before this app answers 503 itself.
    *
@@ -391,6 +400,13 @@ export class HttpTransport {
       )
     }
 
+    for (const part of ['cert', 'key'] as const) {
+      const path = this._opts.tls?.[part]
+      if (this._opts.tls && (typeof path !== 'string' || !existsSync(path))) {
+        throw new Error(`http.tls.${part} must be the path of an existing PEM file (got ${JSON.stringify(path)}).`)
+      }
+    }
+
     const cap = this._opts.maxConcurrentRequests
     if (cap !== undefined && (!Number.isInteger(cap) || cap < 0)) {
       throw new Error(`http.maxConcurrentRequests must be a whole number, 0 for unlimited (got ${cap}).`)
@@ -439,6 +455,7 @@ export class HttpTransport {
       port:     port ?? this._opts.port,
       hostname: hostname ?? this._opts.hostname,
       ...(this._opts.idleTimeout !== undefined ? { idleTimeout: this._opts.idleTimeout } : {}),
+      ...(this._opts.tls ? { tls: { cert: Bun.file(this._opts.tls.cert), key: Bun.file(this._opts.tls.key) } } : {}),
       // Bun refuses a declared length over this before `fetch` runs, with an
       // empty 413 and no log line, so a `maxBodySize` above its 128 MB default
       // meant 128 MB (`FJS-3090`). Never lowered below that default: under it
@@ -1081,22 +1098,24 @@ export class HttpTransport {
       const own = response.headers.get('cache-control')
       const handlerSet = own !== null && own !== BAKED_CACHE_CONTROL
 
+      const varyOnCredential = () => {
+        const existing = headers.get('vary')
+        headers.set('vary', existing ? `${existing}, Authorization, Cookie` : 'Authorization, Cookie')
+      }
+
       if (handlerSet) {
         // The handler's word stands. An authenticated read still varies on
-        // the token, whatever it allowed, so no shared cache serves it across.
-        if (isRead && ctx.user?.userId != null) {
-          const existing = headers.get('vary')
-          headers.set('vary', existing ? `${existing}, Authorization` : 'Authorization')
-        }
+        // the credential, whatever it allowed, so no shared cache serves it across.
+        if (isRead && ctx.user?.userId != null) varyOnCredential()
       } else if (!isRead) {
         // Writes must never be cached anywhere
         headers.set('cache-control', 'no-store')
       } else if (ctx.user?.userId != null) {
-        // Authenticated read — private cache, must revalidate before reuse.
-        // Vary on Authorization so any shared cache always keys per-token.
-        headers.set('cache-control', 'private, no-cache')
-        const existing = headers.get('vary')
-        headers.set('vary', existing ? `${existing}, Authorization` : 'Authorization')
+        // A credentialed answer is not kept on disk: `private, no-cache` lets
+        // a browser store it. Cookie mode carries no Authorization, so the
+        // Vary names both.
+        headers.set('cache-control', 'no-store')
+        varyOnCredential()
       } else {
         // Public read — no-store keeps CDN out; Junction's server-side
         // cache (cache: true on the service) is the intended layer.
@@ -1171,6 +1190,7 @@ export class HttpTransport {
       protocol: url.protocol.startsWith('https') ? 'https' : 'http',
       host:     url.host,
       user,
+      signal:   req.signal,
 
       file: async (filePath, download) => {
         this.stats.response.file++

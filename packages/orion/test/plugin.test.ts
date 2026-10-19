@@ -22,7 +22,7 @@ import { join } from "node:path"
 
 import { createTestEnv } from "../../litestone/src/testing.js"
 import { channels, createApp, createService, createStubAuth, request } from "../../junction/index.ts"
-import { AIRegistry } from "../../junction/src/ai/index.ts"
+import { AIRegistry, ai as aiPlugin } from "../../junction/src/ai/index.ts"
 import { mail } from "../../junction/src/mail/index.ts"
 import { notifications } from "../../notifications/plugin.ts"
 import { caravan } from "../../caravan/src/index"
@@ -62,7 +62,6 @@ beforeAll(async () => {
   app = createApp({
     root: join(import.meta.dir, "fixtures"),
     db:   env.db,
-    ai,
     auth: createStubAuth({ users: [
       { id: "u-user",  role: "member" },
       { id: "u-admin", role: "admin", isAdmin: true },
@@ -72,6 +71,7 @@ beforeAll(async () => {
   app.services.register(createService({ name: "invoices", model: "Invoice", db: env.db }))
   app.services.register(createService({ name: "memos",    model: "Memo",    db: env.db }))
   app.configure(caravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 }))
+  app.configure(aiPlugin({ registry: ai }))
   app.configure(channels())
   const send = async (m: any) => { mailed.push({ to: m.to, subject: m.subject }); return { id: String(mailed.length), message: "captured" } }
   app.configure(mail({ mailer: { send, batch: (ms: any[]) => Promise.all(ms.map(send)) } as never }))

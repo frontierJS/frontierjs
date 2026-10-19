@@ -264,6 +264,19 @@ describe('autoMigrate carries the residue', () => {
     expect(second.main.residue).toHaveLength(1)
   })
 
+  it('goes quiet off the fast path once a file migration has fixed the table — the schema hash never moved', () => {
+    // `migrate apply` changes the live table and not the recorded hash, so the
+    // fast path is what runs next — and it used to replay the stored verdict
+    // about a table that no longer looks like that.
+    const { shim, parsed } = withConflictClause()
+    expect(autoMigrate(shim, parsed).main.residue).toHaveLength(1)
+    const live = shim.$rawDbs.main
+    live.run(`DROP TABLE "account"`)
+    live.run(AS_DECLARED)
+    expect(autoMigrate(shim, parsed).main.residue).toBeUndefined()
+    expect(live.query(`SELECT value FROM "_litestone_meta" WHERE key = 'autoMigrate.residue'`).get()).toBeNull()
+  })
+
   it('goes quiet when the caller states it, and stays quiet', () => {
     const { shim, parsed } = withConflictClause()
     autoMigrate(shim, parsed)

@@ -14,6 +14,7 @@ Detail: `references/ctx-and-the-call.md`
 
 - **`ctx.params` does not exist anywhere in Junction, and `ctx.route` is not it.**
 - **Absent is not null on `auth`.**
+- **`ctx.signal` aborts when the caller leaves, and a nested call does not inherit it.**
 - **A payload key that is not a column is declared `@transient`, and it arrives at `ctx.transients` — never at `ctx.data`.**
 - **A payload key that names no field of the model is a 400; one that names a field the caller may not WRITE is dropped in silence** (`FJS-889`)
 - **`PUT` to an id that does not exist is 404 and does not create the row** (`FJS-D207`)

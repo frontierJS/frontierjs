@@ -24,7 +24,7 @@ import { quoteIdent } from './query.js'
 
 // ─── Introspect ───────────────────────────────────────────────────────────────
 // Works on any db handle with .prepare() (Bun Database).
-// Returns: { tableName: { columns, indexes, foreignKeys, strict, checks, uniques } }
+// Returns: { tableName: { columns, indexes, foreignKeys, strict, autoincrement, checks, uniques } }
 
 // Underscore prefix = machinery tables: _litestone_*, implicit-m2m join tables
 // (_task_user, _members, _TagToTag), matching Prisma's convention.
@@ -247,9 +247,13 @@ export function introspect(db) {
     )
 
     const strict = /\)\s*STRICT\s*;?\s*$/i.test(tblSql)
+    // Only the CREATE statement says it — no pragma reports AUTOINCREMENT — and
+    // since FJS-D887 every lone Int @id emits it, so a table created before
+    // that ruling differs from its schema here and nowhere else.
+    const autoincrement = /\bPRIMARY\s+KEY\s+AUTOINCREMENT\b/i.test(tblSql)
     const checks = parseChecks(tblSql)
 
-    schema[t] = { columns, indexes, foreignKeys, strict, checks, uniques: tableUniques(db, t) }
+    schema[t] = { columns, indexes, foreignKeys, strict, autoincrement, checks, uniques: tableUniques(db, t) }
   }
 
   // Views — stored separately under __views (filtered out of table comparisons)
@@ -954,6 +958,10 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
     const indexes      = diffIndexes(p.indexes, l.indexes, name)
     const fkChanged    = !fksEqual(p.foreignKeys, l.foreignKeys)
     const strictChanged = p.strict !== l.strict
+    // SQLite cannot ALTER a key into AUTOINCREMENT, so gaining it is a rebuild.
+    // Unread, a table created before FJS-D887 compared equal on every dimension
+    // and was reported as residue the differ could not name.
+    const autoincrementChanged = !!p.autoincrement !== !!l.autoincrement
 
     // ── A CHECK constraint that moved ────────────────────────────────────
     //
@@ -1016,6 +1024,7 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
       rebuildAdds.length   > 0 ||
       fkChanged            ||
       strictChanged        ||
+      autoincrementChanged ||
       checksChanged        ||
       uniquesChanged
 
@@ -1034,7 +1043,7 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
       indexes.dropped.length > 0
 
     if (hasChanges) {
-      tableDiffs.push({ name, needsRebuild, simpleAdds, blockedAdds, cols, indexes, fkChanged, strictChanged, checksChanged, uniques, uniquesChanged })
+      tableDiffs.push({ name, needsRebuild, simpleAdds, blockedAdds, cols, indexes, fkChanged, strictChanged, autoincrementChanged, checksChanged, uniques, uniquesChanged })
     }
   }
 
@@ -1701,6 +1710,7 @@ export function summarizeDiff(diffResult) {
         lines.push(`      ~ col  ${c.name}  ${ch.field}: ${JSON.stringify(ch.from)} → ${JSON.stringify(ch.to)}`)
     if (d.fkChanged)     lines.push(`      ~ foreign keys changed`)
     if (d.strictChanged) lines.push(`      ~ strict mode changed`)
+    if (d.autoincrementChanged) lines.push(`      ~ AUTOINCREMENT changed (a table created before FJS-D887)`)
     // Named, because the commonest cause is an enum gaining a member and the
     // rebuild that follows is the whole table — worth seeing in a plan rather
     // than discovering in the row count.

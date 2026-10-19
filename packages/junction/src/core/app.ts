@@ -796,17 +796,17 @@ export interface AppOptions {
    * a row for one app, a file for another and a control plane for a third.
    *
    *   createApp({
-   *     tenantConfig:     id => db.asSystem().tenantSettings.findUnique({ where: { id } }),
-   *     tenantConfigKeys: ['name', 'mail.from', 'branding.logo'],
+   *     tenantConfig: {
+   *       resolve: id => db.asSystem().tenantSettings.findUnique({ where: { id } }),
+   *       keys:    ['name', 'mail.from', 'branding.logo'],
+   *     },
    *   })
    *
-   * `tenantConfigKeys` is required with it and is the half that makes it safe:
-   * only the paths it names apply, a resolver answering anything else is refused
-   * by name, and `RESERVED_CONFIG_PATHS` is refused at boot.
+   * `keys` is required and is the half that makes it safe: only the paths it
+   * names apply, a resolver answering anything else is refused by name, and
+   * `RESERVED_CONFIG_PATHS` is refused at boot.
    */
-  tenantConfig?:     TenantConfigOptions['resolve']
-  /** The dotted config paths a tenant may override. Required with `tenantConfig`. */
-  tenantConfigKeys?: string[]
+  tenantConfig?: TenantConfigOptions
   /**
    * The tenant registry, for a schema declaring `tenancy { strategy database }`
    * — one SQLite file per tenant, so the CLIENT changes per request.
@@ -822,8 +822,6 @@ export interface AppOptions {
    * policies scope every query — so pass `db` there as usual.
    */
   tenants?:     import('./litestone.ts').TenantRegistryLike
-  mail?:        AppMail
-  ai?:          AppAI
 }
 
 // ─── ServiceCaller — returned by app.service(name) ───────────────────────
@@ -933,8 +931,8 @@ export interface ServiceCaller {
 
 const APP_SLOTS = {
   auth:            "createApp({ auth }) or app.configure(auth({ auth })) from '@frontierjs/auth'",
-  mail:            "createApp({ mail }) or app.configure(mail({ mailer })) from '@frontierjs/junction/mail'",
-  ai:              'createApp({ ai })',
+  mail:            "app.configure(mail({ mailer })) from '@frontierjs/junction/mail'",
+  ai:              "app.configure(ai({ registry })) from '@frontierjs/junction/ai'",
   conduit:         "app.configure(conduit()) from '@frontierjs/conduit'",
   jobs:            "app.configure(caravan()) from '@frontierjs/caravan'",
   outbox:          'app.configure(outbox())',
@@ -984,16 +982,23 @@ export function createApp(opts: AppOptions = {}): App {
   // The floor is passed as a thunk: `junction.config.js` is deep-merged into
   // `config` during the `load-config` phase, long after this runs, so a captured
   // reference would resolve every tenant over the pre-file defaults.
-  if (opts.tenantConfig && !opts.tenantConfigKeys?.length)
+  if (opts.db && opts.tenants)
     throw new Error(
-      '[Junction] createApp({ tenantConfig }) needs tenantConfigKeys — the dotted ' +
+      '[Junction] createApp({ db, tenants }) — db and tenants are alternatives, not a pair: ' +
+      'each installs the hook that assigns ctx.locals.db, and two hooks leave the winner to ' +
+      "hook order. A tenanted app passes `tenants`; `strategy row` passes `db`."
+    )
+
+  if (opts.tenantConfig && !opts.tenantConfig.keys?.length)
+    throw new Error(
+      '[Junction] createApp({ tenantConfig }) needs tenantConfig.keys — the dotted ' +
       'config paths a tenant may override. Without it the resolver could reach any ' +
       'key at all, and which keys a tenant may set is the half that makes per-tenant ' +
       'configuration safe rather than the half that makes it work.'
     )
 
   const tenantConfigStore: TenantConfigStore | null = opts.tenantConfig
-    ? createTenantConfigStore(() => config, { resolve: opts.tenantConfig, keys: opts.tenantConfigKeys ?? [] })
+    ? createTenantConfigStore(() => config, opts.tenantConfig)
     : null
 
   // Every route registered through app.get/post/put/patch/delete is mounted
@@ -1143,6 +1148,7 @@ export function createApp(opts: AppOptions = {}): App {
     // request with no status and no log line (`FJS-756`).
     idleTimeout:    config.http.idleTimeout,
     requestTimeout: config.http.requestTimeout,
+    tls:            config.http.tls,
     maxConcurrentRequests: config.http.maxConcurrentRequests,
     ddos:       config.http.ddos,
     static:      config.http.static,
@@ -1208,8 +1214,6 @@ export function createApp(opts: AppOptions = {}): App {
     scheduler,
     http,
     auth:    opts.auth,
-    mail:    opts.mail,
-    ai:      opts.ai,
 
     // ── Service caller ────────────────────────────────────────────────
     service(name: string): ServiceCaller {
@@ -1270,6 +1274,7 @@ export function createApp(opts: AppOptions = {}): App {
           error:     null,
           statusCode: undefined,
           dispatch:   undefined,
+          signal:     opts.signal ?? new AbortController().signal,
           $raw:       null,
         }))
       }

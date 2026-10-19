@@ -153,7 +153,7 @@ export function assertOverridable(keys: string[]): void {
     RESERVED_CONFIG_PATHS.some(r => k === r || k.startsWith(`${r}.`)))
   if (!bad.length) return
   throw new Error(
-    `[Junction] createApp({ tenantConfigKeys }) names ${bad.map(k => `'${k}'`).join(', ')}, ` +
+    `[Junction] createApp({ tenantConfig: { keys } }) names ${bad.map(k => `'${k}'`).join(', ')}, ` +
     `which a tenant may never override. Reserved: ${RESERVED_CONFIG_PATHS.join(', ')} — ` +
     `a database path handed to a tenant is every other tenant's rows, and the rest are read ` +
     `at boot with no tenant in scope, so a per-tenant answer would be written and never read.`
@@ -207,7 +207,7 @@ export function mergeTenantConfig(
 
   if (refused.length) throw new Error(
     `[Junction] the tenant config resolver answered ${refused.map(k => `'${k}'`).join(', ')} ` +
-    `for tenant '${tenantId}', which createApp({ tenantConfigKeys }) does not name. ` +
+    `for tenant '${tenantId}', which createApp({ tenantConfig: { keys } }) does not name. ` +
     `Add the key, or stop answering it — a key that is silently dropped is a tenant ` +
     `whose configuration does not apply, with nothing saying so.`
   )

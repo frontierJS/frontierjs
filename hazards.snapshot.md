@@ -10,7 +10,7 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 182**.
+Graded: **13 of 183**.
 
 ## data — 3 of 63
 
@@ -127,7 +127,7 @@ Graded: **13 of 182**.
 | ↳ A sort key carries WHERE ITS NULLS SIT, and a cursor compares against that | **none** |
 | ↳ `buildCursorWhere` never answers `''` when it was given a cursor. | **none** |
 
-## api — 6 of 67
+## api — 6 of 68
 
 ### `ctx` and the call
 
@@ -135,6 +135,7 @@ Graded: **13 of 182**.
 | --- | --- |
 | `ctx.params` does not exist anywhere in Junction, and `ctx.route` is not it. | `ctx-params` |
 | Absent is not null on `auth`. | **none** |
+| `ctx.signal` aborts when the caller leaves, and a nested call does not inherit it. | **none** |
 | A payload key that is not a column is declared `@transient`, and it arrives at `ctx.transients` — never at `ctx.data`. | **none** |
 | A payload key that names no field of the model is a 400; one that names a field the caller may not WRITE is dropped in silence | **none** |
 | `PUT` to an id that does not exist is 404 and does not create the row | **none** |

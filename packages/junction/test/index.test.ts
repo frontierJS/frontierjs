@@ -367,6 +367,7 @@ function makeCtx(overrides: Partial<CtxSeed> = {}): ServiceContext {
     app:       {} as import('../src/core/app.ts').App,
     result:    null,
     error:     null,
+    signal:    new AbortController().signal,
     $raw:      null,
     ...overrides
   })
@@ -4458,7 +4459,7 @@ describe('createService — model-less (explicit CRUD methods)', () => {
 
 describe('Cache-Control headers', () => {
 
-  it('authenticated GET returns private, no-cache', async () => {
+  it('authenticated GET returns no-store (FJS-3208)', async () => {
     const app = await createTestApp({
       services: [buildService({
         name: 'items',
@@ -4471,11 +4472,10 @@ describe('Cache-Control headers', () => {
       .get('/items')
       .set('authorization', 'Bearer test-token-u1')
     expect(res.status).toBe(200)
-    expect(res.headers['cache-control']).toContain('private')
-    expect(res.headers['cache-control']).toContain('no-cache')
+    expect(res.headers['cache-control']).toBe('no-store')
   })
 
-  it('authenticated GET includes Vary: Authorization', async () => {
+  it('authenticated GET includes Vary: Authorization, Cookie', async () => {
     const app = await createTestApp({
       services: [buildService({
         name: 'items',
@@ -4488,6 +4488,7 @@ describe('Cache-Control headers', () => {
       .get('/items')
       .set('authorization', 'Bearer test-token-u1')
     expect(res.headers['vary']).toContain('Authorization')
+    expect(res.headers['vary']).toContain('Cookie')
   })
 
   it('public GET returns no-store', async () => {

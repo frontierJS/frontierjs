@@ -50,7 +50,7 @@ describe('a generated column through a rebuild', () => {
     // column is incidental, and it is what used to fail the whole thing.
     const live = new Database(':memory:')
     live.run(`CREATE TABLE "customer" (
-      "id" INTEGER NOT NULL PRIMARY KEY, "firstName" TEXT NOT NULL, "lastName" TEXT NOT NULL,
+      "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "firstName" TEXT NOT NULL, "lastName" TEXT NOT NULL,
       "nickname" TEXT,
       "fullName" TEXT GENERATED ALWAYS AS (concat_ws(' ', "firstName", "lastName")) STORED
     ) STRICT`)
@@ -72,7 +72,7 @@ describe('a generated column through a rebuild', () => {
   it('carries its GENERATED clause into the rebuilt table', () => {
     const live = new Database(':memory:')
     live.run(`CREATE TABLE "customer" (
-      "id" INTEGER NOT NULL PRIMARY KEY, "firstName" TEXT NOT NULL, "lastName" TEXT NOT NULL,
+      "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "firstName" TEXT NOT NULL, "lastName" TEXT NOT NULL,
       "nickname" TEXT,
       "fullName" TEXT GENERATED ALWAYS AS (concat_ws(' ', "firstName", "lastName")) STORED
     ) STRICT`)
@@ -89,7 +89,7 @@ describe('FJS-407 — the diff can see a generated column', () => {
   const live407 = (extra = '') => {
     const live = new Database(':memory:')
     live.run(`CREATE TABLE "customer" (
-      "id" INTEGER NOT NULL PRIMARY KEY, "firstName" TEXT NOT NULL, "lastName" TEXT NOT NULL${extra}
+      "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "firstName" TEXT NOT NULL, "lastName" TEXT NOT NULL${extra}
     ) STRICT`)
     live.run(`INSERT INTO "customer" ("id","firstName","lastName") VALUES (1,'Ada','Lovelace')`)
     return live

@@ -154,7 +154,7 @@ export function orion(options: OrionOptions = {}): Plugin {
 
       const ai: IAIModels = {
         complete: (actor, model, req) => asOwner(actor, () => {
-          if (!('ai' in app)) throw new Error("This app registered no AI models: createApp({ ai })")
+          if (!('ai' in app)) throw new Error("This app registered no AI models: app.configure(ai({ registry }))")
           return app.ai.get(model).complete(req)
         }),
       }

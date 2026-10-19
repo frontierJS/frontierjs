@@ -243,17 +243,19 @@ const app = createApp({
   // declare the source: basecamp's would be a row, an app deployed per customer
   // would use a file, and this one already had somewhere to put it.
   //
-  // `tenantConfigKeys` is the half that makes it safe rather than the half that
+  // `keys` is the half that makes it safe rather than the half that
   // makes it work — only these paths apply, a resolver answering anything
   // else is refused by name, and `database` could not be listed here even by
   // mistake: junction refuses the reserved paths at boot, and a shop naming its
   // own database file is every other shop's orders.
   // Under `.config` rather than at the top of the blob: the registry's meta is
   // general-purpose and a shop may keep anything there, while junction refuses a
-  // key `tenantConfigKeys` does not name — so reading the blob whole would make
+  // key `keys` does not name — so reading the blob whole would make
   // one unrelated field break every request for that shop.
-  tenantConfig:     (shop: string) => (shops.meta(shop).config ?? {}) as Record<string, unknown>,
-  tenantConfigKeys: ['name', 'mail.from', 'timeZone'],
+  tenantConfig: {
+    resolve: (shop: string) => (shops.meta(shop).config ?? {}) as Record<string, unknown>,
+    keys:    ['name', 'mail.from', 'timeZone'],
+  },
 
   config: {
     name: 'shop', port: PORT, apiPrefix: '/api',

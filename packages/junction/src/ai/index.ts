@@ -43,7 +43,7 @@
 //     async stream(req, onChunk) { … },
 //   }
 //
-// `createApp({ ai })` takes an `AIRegistry`; `app.ai` is where it lands.
+// `app.configure(ai({ registry }))` takes an `AIRegistry`; `app.ai` is where it lands.
 
 // ─── IAI interface ────────────────────────────────────────────────────────
 
@@ -148,7 +148,7 @@ export class AIRegistry {
   private _models = new Map<string, IAIModel>()
 
   // Chainable, like the builder beside it, so `new AIRegistry().register(m)` is
-  // an expression a `createApp({ ai })` can take. It returned void, which made
+  // an expression `ai({ registry })` can take. It returned void, which made
   // the one-line form in every doc set `ai` to undefined.
   register(model: IAIModel): this {
     this._models.set(model.name, model)
@@ -177,4 +177,17 @@ export class AIRegistry {
 // The battery fills its own slot (`FJS-D640`); augment, never redeclare `App.ai`.
 declare module '../core/app.ts' {
   interface AppAI extends AIRegistry {}
+}
+
+/**
+ * Install the app's models: `app.configure(ai({ registry }))` puts `registry`
+ * on `app.ai`, the way `mail({ mailer })` puts a mailer on `app.mail`.
+ */
+export function ai({ registry }: { registry: AIRegistry }): import('../core/app.ts').Plugin {
+  return {
+    name: 'ai',
+    register(app: import('../core/app.ts').App): void {
+      app.own('ai', registry)
+    },
+  }
 }

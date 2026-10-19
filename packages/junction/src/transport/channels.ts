@@ -70,6 +70,10 @@ export interface Connection {
   // same shape and same reason as the socket's frame bucket: a per-window
   // counter lets twice the allowance through across a boundary.
   __presenceRate?: { tokens: number; refilled: number }
+
+  // Every call this socket makes carries its signal as `ctx.signal`; it aborts
+  // when the connection goes, however it went.
+  __gone?: AbortController
 }
 
 // Minimal interface used by Channel.send() broadcast loop.
@@ -1119,6 +1123,7 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
         socket,
         data,
         user:   session,
+        __gone: new AbortController(),
       }
 
       connections.set(conn.id, conn)
@@ -1168,6 +1173,7 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
       if (!conn) return
 
       connections.delete(connId)
+      conn.__gone?.abort()
 
       // Close the socket if it's still open. On a normal close event this
       // is a no-op; on HEARTBEAT EVICTION it's essential — previously the
@@ -1807,6 +1813,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
                   query: wsQuery,
                   auth:  { user: (conn?.user ?? null) as import('../auth/types.ts').SessionContext | null },
                   transport: 'websocket',
+                  signal: conn?.__gone?.signal,
                   base: (_base && typeof _base === 'object' && !Array.isArray(_base)
                     ? _base as Record<string, unknown>
                     : null),

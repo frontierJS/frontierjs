@@ -12,7 +12,7 @@ import { createService, $ } from '@frontierjs/junction'
 // It reads `$.config`, which resolves the calling shop's own answer over the
 // app's floor — so a shop that has set nothing reads the deployment's defaults
 // and costs nothing, and a shop that has set both reads both. What it may set is
-// `tenantConfigKeys` in `api/src/app.ts` and nothing else: the port this is
+// `tenantConfig.keys` in `api/src/app.ts` and nothing else: the port this is
 // served on is the deployment's, and junction refuses the reserved paths at boot
 // rather than trusting the list to be written carefully.
 //
@@ -22,7 +22,7 @@ import { createService, $ } from '@frontierjs/junction'
 
 declare module '@frontierjs/junction' {
   interface AppConfig {
-    /** The IANA zone this shop's calendar is read in — `tenantConfigKeys` in app.ts. */
+    /** The IANA zone this shop's calendar is read in — `tenantConfig.keys` in app.ts. */
     timeZone: string
   }
 }
