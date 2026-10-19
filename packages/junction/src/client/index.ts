@@ -968,11 +968,15 @@ export class AuthClient {
     location.assign(this.oauthUrl(provider, opts))
   }
 
-  /** Register and sign in — the plugin's /register does both in one call. */
-  async signUp(data: { email: string; password: string; name?: string }): Promise<AuthResult> {
-    return this._adopt(
-      await this._c._request('POST', `${this._prefix}/register`, data, { skipAuth: true })
-    )
+  /**
+   * Register. Where the app mails no verification the plugin's /register makes
+   * the account and signs in, in one call. Where it does, the answer is
+   * `{ ok: true }` for every address and the account is made at the mailed
+   * link (`FJS-D1310`), so there is nothing to adopt: discriminate on `'user' in result`.
+   */
+  async signUp(data: { email: string; password: string; name?: string }): Promise<AuthResult | RegistrationPending> {
+    const raw = await this._c._request('POST', `${this._prefix}/register`, data, { skipAuth: true })
+    return (raw as { user?: unknown } | null)?.user ? this._adopt(raw) : { ok: true }
   }
 
   /**
@@ -1135,6 +1139,11 @@ export class AuthClient {
     this._c.emit('authenticated', r)
     return r
   }
+}
+
+/** What `signUp` answers where a mailed link makes the account: the same for a held address and a free one. */
+export interface RegistrationPending {
+  ok: true
 }
 
 export interface AuthResult {

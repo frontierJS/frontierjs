@@ -124,13 +124,13 @@ model Session {
   @@index([expiresAt])
 }
 
-/// What a `Verification` row is for. Five acts and one question — does this
+/// What a `Verification` row is for. Six acts and one question — does this
 /// person control this address? — which is what makes them one table rather
 /// than four, and what `purpose` stops them being: without it both lookups
 /// matched on the token alone, so a token minted for one act was accepted by
 /// another's endpoint and refused two steps later by a coincidence of string
 /// handling (FJS-476).
-enum VerificationPurpose { passwordReset emailVerify oauthLink magicLink emailChange }
+enum VerificationPurpose { passwordReset emailVerify oauthLink magicLink emailChange registration }
 
 model Verification {
   id          String               @id @default(uuid())
@@ -151,6 +151,13 @@ model Verification {
   /// The identifier is the NEW address, which belongs to nobody yet, so the
   /// account cannot be found from it the way every other purpose finds one.
   userId      String?
+
+  /// registration only: the password hash and name the person typed, held until
+  /// the click makes the account (`FJS-D1310`). No user row exists before it, so
+  /// this is where they wait; the hash is made before it is stored, never the
+  /// password.
+  secret      String?              @guarded
+  registrant  String?
 
   /// magicLink only: the six digits a person types on a device other than the
   /// one reading the mail. Found by `identifier` and compared, never looked up

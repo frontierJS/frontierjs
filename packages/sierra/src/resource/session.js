@@ -282,7 +282,11 @@ function _isChallenge(result) {
   return Boolean(result) && !result.user
 }
 
-/** Register and sign in — the plugin's /auth/register does both. */
+/**
+ * Register and sign in -- the plugin's /auth/register does both. Where the app
+ * mails a verification it answers `{ ok: true }` instead and the account is made
+ * at the mailed link, so there is no `user` in the result and no session to load.
+ */
 export async function signUp(data) {
   return _attempt(() => _client.auth.signUp(data))
 }

@@ -254,11 +254,25 @@ describe('the scaffold verification link lands on a page fli new writes', () => 
 
   test('every route the auth callbacks link to is in the file list', async () => {
     const text = await newMd()
-    const links = [...text.matchAll(/\$\{env\.WEB_URL\}\/([a-z-]+)\/\?token=/g)].map(m => m[1])
+    const links = [...text.matchAll(/\$\{env\.WEB_URL\}\/([a-z-]+)\/#token=/g)].map(m => m[1])
     expect(links).toContain('verify-email')
+    expect(links).toContain('reset')
     for (const route of links) {
       expect(text).toContain(`'web/src/routes/${route}/index.mesa'`)
       expect(text).toContain(`'web/src/routes/${route}'`)
+    }
+  })
+
+  // FJS-3205 / FJS-D1311 — a token in the query string is read by the analytics
+  // tag from location.href; a fragment never leaves the browser.
+  test('no link carries the token in the query, and both token pages read the fragment', async () => {
+    const text = await newMd()
+    expect(text).not.toMatch(/\$\{env\.WEB_URL\}\/[a-z-]+\/\?token=/)
+    for (const make of ['makeRouteReset', 'makeRouteVerifyEmail']) {
+      const src = text.match(new RegExp(`\\nfunction ${make}\\(\\) \\{[\\s\\S]*?\\n\\}\\n`))[0]
+      const page = new Function('sc', `${src}\nreturn ${make}`)('</' + 'script>')()
+      expect(page).toContain('page.hash')
+      expect(page).not.toContain('page.query')
     }
   })
 

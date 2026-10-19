@@ -97,6 +97,17 @@ describe('each change to how an account signs in tells the person', () => {
     expect(changes[0]).toMatchObject({ userId: u.userId, email: u.email })
   })
 
+  test('registration.attempted — a stranger registering a held address tells its owner; a free one tells nobody', async () => {
+    const u = await makeUser()
+    const changes = await tell(async () => {
+      await h.auth.requestRegistration!({ email: u.email, password: 'stranger-pw-1' })
+      await h.auth.requestRegistration!({ email: `free-${u.email}`, password: 'stranger-pw-1' })
+      for (let i = 0; i < 200 && told.length === 0; i++) await new Promise(r => setTimeout(r, 10))
+    })
+    expect(changes.map(c => c.event)).toEqual(['registration.attempted'])
+    expect(changes[0]).toMatchObject({ userId: u.userId, email: u.email })
+  })
+
   test('totp.enabled on confirm — and setup, which enables nothing, tells nobody', async () => {
     const u = await makeUser()
     let secret = ''

@@ -7,10 +7,9 @@ title: Set a password
   // own port, where nothing answers, so every reset and every invitation this
   // app sent led to a 404 in the person's browser.
   //
-  // The token is read off the URL and handed to `/auth/password-reset/confirm`
-  // untouched. It is `String()`ed because the query reader turns a value that
-  // round-trips as a number into one, and a token of digits would otherwise
-  // arrive as a number the route refuses.
+  // The token is read off the URL FRAGMENT (/reset/#token=…) and handed to
+  // `/auth/password-reset/confirm` untouched. A fragment is in no request, no
+  // Referer and no access log, and the analytics tag does not forward it.
   //
   // Nothing here signs the person in. Confirming a reset ends every session the
   // account holds, so the next step is the sign-in page with the new password —
@@ -25,7 +24,7 @@ title: Set a password
   import Input         from '@frontierjs/ui/components/forms/Input.mesa'
   import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
 
-  $: page.query
+  $: page.hash
 
   let password = ''
   let again    = ''
@@ -33,7 +32,7 @@ title: Set a password
   let error    = null
   let done     = false
 
-  const token = () => String(page.query?.token ?? '')
+  const token = () => new URLSearchParams(String(page.hash ?? '').replace(/^#/, '')).get('token') ?? ''
 
   async function submit() {
     error = null

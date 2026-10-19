@@ -2,7 +2,7 @@
 title: Reset password
 ---
 <script>
-  // Two screens on one URL. Without `?token=` it asks for an address and sends
+  // Two screens on one URL. Without `#token=` it asks for an address and sends
   // the link; with one — the link from that mail — it takes the new password.
   //
   // Open to anybody, signed in or not: the guard in App.mesa lets it through,
@@ -22,14 +22,14 @@ title: Reset password
   import Alert  from '@frontierjs/ui/components/feedback/Alert.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
 
-  $: (page.query, session.canMail)
+  $: (page.hash, session.canMail)
 
   let email    = ''
   let password = ''
   let confirm  = ''
   let sentTo   = null
 
-  $: token = typeof page.query?.token === 'string' ? page.query.token : null
+  $: token = new URLSearchParams(String(page.hash ?? '').replace(/^#/, '')).get('token')
 
   async function request() {
     await getClient().auth.requestPasswordReset(email.trim())

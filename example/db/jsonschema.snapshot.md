@@ -126,7 +126,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 A value removed here is a row already in the database that no longer
 validates, and a select that silently drops an option.
 
-- `VerificationPurpose` — `passwordReset`, `emailVerify`, `oauthLink`, `magicLink`, `emailChange`
+- `VerificationPurpose` — `passwordReset`, `emailVerify`, `oauthLink`, `magicLink`, `emailChange`, `registration`
 - `MetricType` — `counter`, `gauge`, `histogram`
 - `FlowStatus` — `draft`, `active`, `paused`, `archived`
 - `FlowRunStatus` — `pending`, `running`, `waiting`, `completed`, `failed`, `cancelled`
@@ -205,6 +205,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `provider` | `string`? | — | — | — | — |
 | `subject` | `string`? | — | — | — | — |
 | `userId` | `string`? | — | — | — | — |
+| `registrant` | `string`? | — | — | — | — |
 | `attempts` | `integer` = `0` | — | — | — | — |
 | `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
 

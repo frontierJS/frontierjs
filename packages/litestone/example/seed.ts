@@ -136,7 +136,7 @@ const widgetPro = await sys.product.findUnique({ where: { id: 1 } })
 console.log(`  ✓  products (main):  ${prodResult.count} created`)
 console.log(`       "Widget Pro" → slug: "${widgetPro!.slug}"  salePrice: $${(widgetPro!.salePrice / 100).toFixed(2)}`)
 
-// Leads — demonstrate @@deny(update, status == 'archived')
+// Leads — demonstrate @@require(update, status != 'archived')
 const leadResult = await sys.lead.createMany({ data: [
   { id: 1, accountId: acme.id,    firstName: 'Sara',  lastName: 'Park',   email: 'sara@co.co',       status: 'active',    score: 87.5 },
   { id: 2, accountId: acme.id,    firstName: 'James', lastName: 'Wright', email: 'james@biz.io',     status: 'converted', score: 94.0 },
@@ -148,12 +148,12 @@ const leadResult = await sys.lead.createMany({ data: [
 ] })
 console.log(`  ✓  leads (main):     ${leadResult.count} created`)
 
-// Show @@deny in action — archived lead cannot be updated by regular user
+// Show @@require in action — archived lead cannot be updated by regular user
 // Session objects carry the fields the default gate resolver reads
 // (verifiedAt/activatedAt/role → level 4 USER; see FrontierGateGetLevel).
 const acmeMember = db.$setAuth({ id: 1, accountId: 1, role: 'member', verifiedAt: '2026-01-01', activatedAt: '2026-01-01' })
 const archivedUpdate = await acmeMember.lead.update({ where: { id: 5 }, data: { score: 50 } })
-console.log(`       update archived lead (Mia):  ${archivedUpdate === null ? 'null ✓ (@@deny blocked it)' : 'updated ✗'}`)
+console.log(`       update archived lead (Mia):  ${archivedUpdate === null ? 'null ✓ (@@require blocked it)' : 'updated ✗'}`)
 
 // Messages — FTS5 indexed
 const msgResult = await sys.message.createMany({ data: [

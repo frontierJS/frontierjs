@@ -26,8 +26,8 @@ export async function appWith(auth: any, plugin: Omit<AuthPluginOptions, 'auth'>
   const app: any = await createTestApp({ auth, config })
   app.setAuth(auth)
   app.configure(authPlugin({
-    auth,
-    loginRateLimit:         { max: 10_000, window: '15 minutes' },
+    auth: { ...auth, requestRegistration: undefined },
+    loginRateLimit:        { max: 10_000, window: '15 minutes' },
     registerRateLimit:      { max: 10_000, window: '15 minutes' },
     passwordResetRateLimit: { max: 10_000, window: '15 minutes' },
     ...plugin,

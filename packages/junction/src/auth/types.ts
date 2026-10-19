@@ -179,6 +179,14 @@ export interface IAuth {
   verifyEmail?(token: string):                         Promise<SessionContext>
 
   /**
+   * Register through the mailbox: answers before it knows whether the address is
+   * held. A free address is mailed a link whose click (`verifyEmail`) makes the
+   * account; a held one is told its owner. Optional, and the register route
+   * keeps `createUser` + `login` where a provider has no mail to send.
+   */
+  requestRegistration?(data: CreateUserInput):         Promise<void>
+
+  /**
    * Passwordless sign-in: mail a link and a code, then spend either one.
    *
    * Optional, and the plugin mounts its routes only where both exist. The

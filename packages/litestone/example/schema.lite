@@ -176,7 +176,7 @@ model Lead {
   @@allow(read,   accountId == auth().accountId)
   @@allow(create, accountId == auth().accountId)
   @@allow(update, accountId == auth().accountId)
-  @@deny(update,  status == 'archived')
+  @@require(update, status != 'archived')
 }
 
 // ─── Messages ─────────────────────────────────────────────────────────────────

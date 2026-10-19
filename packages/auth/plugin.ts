@@ -210,6 +210,14 @@ export function auth(opts: AuthPluginOptions): Plugin {
         if (!email)    throw new BadRequest('email is required')
         if (!password) throw new BadRequest('password is required')
 
+        // Where the app mails a verification the answer is the same for a held
+        // address and a free one, and the account is made at the click
+        // (`FJS-D1310`). Where it cannot, there is no mailbox to equalize with.
+        if (auth.requestRegistration) {
+          await auth.requestRegistration({ email, password, name })
+          return ctx.json({ ok: true }, 202)
+        }
+
         await auth.createUser({ email, password, name })
         const result = await auth.login(email, password)
 

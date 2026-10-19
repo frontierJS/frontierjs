@@ -36,7 +36,9 @@ title: Verify email
     }
   }
 
-  spend(typeof page.query?.token === 'string' ? page.query.token : null)
+  // The token rides the fragment (/verify-email/#token=…), which no request or
+  // analytics tag carries.
+  spend(new URLSearchParams(String(page.hash ?? '').replace(/^#/, '')).get('token'))
 </script>
 
 <div class="section-header">

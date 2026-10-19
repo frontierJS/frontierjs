@@ -1806,9 +1806,9 @@ model Example {
 - **Deeper** — [access-control.md](access-control.md)
 - **See also** — [`@@allow`](#allow-model) · [`@@tenant`](#tenant-model)
 
-#### `@@require` `(create|postUpdate, <expression>[, message])` <a id="require-model"></a>
+#### `@@require` `(create|postUpdate|update|delete, <expression>[, message])` <a id="require-model"></a>
 
-A rule about the DATA, in the policy language and graded for every writer: `asSystem()` drops a @@deny and keeps this, so a job, a webhook and a migration are refused as a member is. The expression must be TRUE for the row as it lands — an unknown (an absent claim, a null) refuses — and it may read one hop across a to-one, which is the reach @@check lacks (SQLite refuses a subquery in a CHECK). Graded in JS on the row in hand, so only create and postUpdate are legal; no `read`, `update` or `delete`, which have a WHERE and no landing row. Write the allowed case and not the forbidden one: `direction == 'inbound' || conversation.optedOutAt == null` is a consent to contact.
+A rule about the DATA, in the policy language and graded for every writer: `asSystem()` drops a @@deny and keeps this, so a job, a webhook and a migration are refused as a member is. The expression must be TRUE — an unknown (an absent claim, a null) refuses — and it may read one hop across a to-one, which is the reach @@check lacks (SQLite refuses a subquery in a CHECK). `create` and `postUpdate` grade the row as it lands, in JS. `update` and `delete` grade the row as STORED, through the WHERE the write already carries, so `@@require(update, status != 'archived')` freezes an archived row for every writer: a single write that reaches no row answers null and a bulk write narrows to the rows it admits, as an update policy does. No `read`. Write the allowed case and not the forbidden one: `direction == 'inbound' || conversation.optedOutAt == null` is a consent to contact.
 
 ```lite
 model Conversation {

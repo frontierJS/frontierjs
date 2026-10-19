@@ -9,7 +9,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createTestApp, request } from '@frontierjs/junction'
 import { auth } from '../plugin.ts'
-import { makeAuth, type Harness, TEST_KEY } from './harness.ts'
+import { makeAuth, type Harness, TEST_KEY, withoutRegistrationMail } from './harness.ts'
 
 let h: Harness
 let app: any
@@ -20,7 +20,7 @@ beforeAll(async () => {
   app = await createTestApp({ auth: h.auth as any })
   app.setAuth(h.auth as any)
   app.configure(auth({
-    auth: h.auth,
+    auth: withoutRegistrationMail(h.auth),
     loginRateLimit:    { max: 10_000, window: '15 minutes' },
     registerRateLimit: { max: 10_000, window: '15 minutes' },
     services:          { level: () => 4, reauthenticationRateLimit: { max: 10_000, window: '15 minutes' } },

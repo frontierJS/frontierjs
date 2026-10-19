@@ -13,7 +13,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createTestApp, request } from '@frontierjs/junction'
 import { auth } from '../plugin.ts'
 import { createAuthServices } from '../services.ts'
-import { makeAuth, type Harness, TEST_KEY } from './harness.ts'
+import { makeAuth, type Harness, TEST_KEY, withoutRegistrationMail } from './harness.ts'
 
 let h: Harness
 let app: any
@@ -33,7 +33,7 @@ beforeAll(async () => {
   app = await createTestApp({ auth: h.auth as any })
   app.setAuth(h.auth as any)
   app.configure(auth({
-    auth: h.auth,
+    auth: withoutRegistrationMail(h.auth),
     loginRateLimit:    { max: 10_000, window: '15 minutes' },
     registerRateLimit: { max: 10_000, window: '15 minutes' },
     services:          { level: () => 4, reauthenticationRateLimit: { max: 10_000, window: '15 minutes' } },
@@ -190,7 +190,7 @@ describe('account — TOTP over HTTP', () => {
   test('a provider without them says so by name rather than 500ing', async () => {
     const scoped = await makeAuth()
     const partial = { ...scoped.auth } as any
-    for (const m of ['totpStatus', 'setupTotp', 'confirmTotp', 'disableTotp', 'regenerateRecoveryCodes']) {
+    for (const m of ['totpStatus', 'setupTotp', 'confirmTotp', 'disableTotp', 'regenerateRecoveryCodes', 'requestRegistration']) {
       delete partial[m]
     }
 
@@ -226,7 +226,7 @@ describe('account — the password, asked again, is bounded per account', () => 
     const bounded = await createTestApp({ auth: scoped.auth as any })
     bounded.setAuth(scoped.auth as any)
     bounded.configure(auth({
-      auth: scoped.auth,
+      auth: withoutRegistrationMail(scoped.auth),
       loginRateLimit:    { max: 10_000, window: '15 minutes' },
       registerRateLimit: { max: 10_000, window: '15 minutes' },
       services:          { reauthenticationRateLimit: { max: 3, window: '15 minutes' } },

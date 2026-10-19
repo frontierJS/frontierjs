@@ -26,7 +26,7 @@ export interface WhereBase {
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 
-export type VerificationPurpose = 'passwordReset' | 'emailVerify' | 'oauthLink' | 'magicLink' | 'emailChange'
+export type VerificationPurpose = 'passwordReset' | 'emailVerify' | 'oauthLink' | 'magicLink' | 'emailChange' | 'registration'
 
 export type MetricType = 'counter' | 'gauge' | 'histogram'
 
@@ -581,6 +581,15 @@ export interface Verification {
    */
   userId?: string | null
   /**
+   * registration only: the password hash and name the person typed, held until
+   * the click makes the account (`FJS-D1310`). No user row exists before it, so
+   * this is where they wait; the hash is made before it is stored, never the
+   * password.
+   * @guarded
+   */
+  secret?: string | null
+  registrant?: string | null
+  /**
    * magicLink only: the six digits a person types on a device other than the
    * one reading the mail. Found by `identifier` and compared, never looked up
    * by itself — a million values cannot be unique across every address in
@@ -624,6 +633,14 @@ export interface VerificationCreate {
    */
   userId?: string | null
   /**
+   * registration only: the password hash and name the person typed, held until
+   * the click makes the account (`FJS-D1310`). No user row exists before it, so
+   * this is where they wait; the hash is made before it is stored, never the
+   * password.
+   */
+  secret?: string | null
+  registrant?: string | null
+  /**
    * magicLink only: the six digits a person types on a device other than the
    * one reading the mail. Found by `identifier` and compared, never looked up
    * by itself — a million values cannot be unique across every address in
@@ -647,6 +664,8 @@ export interface VerificationUpdate {
   provider?: string | null
   subject?: string | null
   userId?: string | null
+  secret?: string | null
+  registrant?: string | null
   code?: string | null
   attempts?: number
   expiresAt?: string | Date
@@ -660,6 +679,8 @@ export interface VerificationWhere extends WhereBase {
   provider?: string | WhereOp<string> | null
   subject?: string | WhereOp<string> | null
   userId?: string | WhereOp<string> | null
+  secret?: string | WhereOp<string> | null
+  registrant?: string | WhereOp<string> | null
   code?: string | WhereOp<string> | null
   attempts?: number | WhereOp<number> | null
   expiresAt?: string | Date | WhereOp<string | Date> | null
@@ -5806,7 +5827,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'appEditor' | 'appServer' | 'appBackup' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'cleanupRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardWidget' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'backup' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
   readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere, CredentialRelations, never, 'value' | 'accessToken' | 'refreshToken' | '@@gate'>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'token' | '@@gate'>
-  readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere, VerificationRelations, never, 'value' | 'code' | '@@gate'>
+  readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere, VerificationRelations, never, 'value' | 'secret' | 'code' | '@@gate'>
   readonly loginChallenge: TableClient<LoginChallenge, LoginChallengeCreate, LoginChallengeUpdate, LoginChallengeWhere, LoginChallengeRelations, never, 'value' | '@@gate'>
   readonly oauthFlow: TableClient<OauthFlow, OauthFlowCreate, OauthFlowUpdate, OauthFlowWhere, OauthFlowRelations, never, 'state' | 'verifier' | 'invitation' | '@@gate'>
   readonly metricSeries: TableClient<MetricSeries, MetricSeriesCreate, MetricSeriesUpdate, MetricSeriesWhere, MetricSeriesRelations, never, '@@gate'>

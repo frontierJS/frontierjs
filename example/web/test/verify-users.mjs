@@ -754,7 +754,7 @@ const link = JSON.stringify(resetMail[0] ?? {}).match(/https?:\/\/[^\s"\\]+token
 check('one link reached that address, and none reached the address with no account',
       [resetMail.length, ((await (await fetch(`${MAIL}/outbox`)).json().catch(() => [])) ?? [])
         .some(m => JSON.stringify(m).includes(`nobody-${tag}`))], [1, false])
-check('…and it opens THIS console\'s reset page, not a path on the API', link?.startsWith(`${UI}/reset/?token=`), true)
+check('…and it opens THIS console\'s reset page, not a path on the API', link?.startsWith(`${UI}/reset/#token=`), true)
 
 await cmd('Page.navigate', { url: link })
 await until(has('#rp-password'))

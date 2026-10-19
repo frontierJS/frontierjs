@@ -425,7 +425,7 @@ auth().isAdmin)\` so nobody promotes themselves on the way in.
 
 There is no mailer yet, so nothing is sent. A password reset requested at
 \`/reset/\` prints its link in the terminal running the API, and the link opens
-\`/reset/?token=…\` on \`WEB_URL\`. Wire \`app.mail.send()\` into the three
+\`/reset/#token=…\` on \`WEB_URL\` (the fragment keeps the token out of requests and logs). Wire \`app.mail.send()\` into the three
 callbacks in \`api/src/core/auth.ts\` to send them for real; set \`WEB_URL\` in
 production so the link names the deployed site. The third,
 \`onCredentialChanged\`, is the notice that a password, email address or
@@ -1110,12 +1110,14 @@ export const auth = createLitestoneAuth(db, {
   // Wire app.mail.send() in here once the app has a mailer.
   onPasswordResetRequested: async (email, token) => {
     // WEB_URL, not APP_URL: the link lands on web/src/routes/reset/, and the
-    // API's own origin has no page to answer it.
-    const link = \`\${env.WEB_URL}/reset/?token=\${encodeURIComponent(token)}\`
+    // API's own origin has no page to answer it. The token rides the fragment:
+    // a fragment is never sent in a request, a Referer or an access log, and
+    // an analytics tag that reads location.href does not forward it.
+    const link = \`\${env.WEB_URL}/reset/#token=\${encodeURIComponent(token)}\`
     console.log(\`[auth] password reset for \${email} — no mailer, so here is the link:\\n  \${link}\`)
   },
   onEmailVerificationRequested: async (email, token) => {
-    const link = \`\${env.WEB_URL}/verify-email/?token=\${encodeURIComponent(token)}\`
+    const link = \`\${env.WEB_URL}/verify-email/#token=\${encodeURIComponent(token)}\`
     console.log(\`[auth] verify \${email} — no mailer, so here is the link:\\n  \${link}\`)
   },
 
@@ -1962,16 +1964,15 @@ title: Reset your password
   // an address; the link that request produces lands back here WITH one, and
   // then this sets the new password.
   //
-  // The token is String()ed because the query reader turns a value that round-
-  // trips as a number into one, and a token of digits would otherwise reach the
-  // route as a number it refuses.
+  // The token is read from the fragment (/reset/#token=…), which no request,
+  // Referer or access log carries and an analytics tag does not forward.
   //
   // Nothing here signs anybody in. Confirming a reset ends every session the
   // account holds, so the next stop is the sign-in page.
   import { page }      from '@frontierjs/sierra/router'
   import { getClient } from '@frontierjs/sierra/resource'
 
-  $: page.query
+  $: page.hash
 
   let email    = ''
   let password = ''
@@ -1981,7 +1982,7 @@ title: Reset your password
   let sent     = false
   let done     = false
 
-  const token = () => String(page.query?.token ?? '')
+  const token = () => new URLSearchParams(String(page.hash ?? '').replace(/^#/, '')).get('token') ?? ''
 
   async function run(fn) {
     busy  = true
@@ -2061,21 +2062,20 @@ function makeRouteVerifyEmail() {
 title: Verify your email
 ---
 <script>
-  // String()ed for the reason the reset page gives: a token of digits would
-  // otherwise reach the route as a number it refuses.
+  // The token is read from the fragment, for the reason the reset page gives.
   //
   // Nothing here signs anybody in; verifying an address is proof of the mailbox
   // and not of a password.
   import { page }      from '@frontierjs/sierra/router'
   import { getClient } from '@frontierjs/sierra/resource'
 
-  $: page.query
+  $: page.hash
 
   let busy  = false
   let error = ''
   let done  = false
 
-  const token = () => String(page.query?.token ?? '')
+  const token = () => new URLSearchParams(String(page.hash ?? '').replace(/^#/, '')).get('token') ?? ''
 
   async function confirm() {
     busy  = true
@@ -2278,6 +2278,7 @@ title: Create an account
   let name     = ''
   let error    = ''
   let loading  = false
+  let sent     = false
 
   // The API mounts {apiPrefix}/auth/register whether or not a page like this
   // exists, so this screen adds no surface — it is the one that was missing.
@@ -2291,10 +2292,12 @@ title: Create an account
     loading = true
     error   = ''
     try {
-      // signUp signs the new account IN — the server answers with a token and
-      // the client stores it — so there is no second trip through /login/.
-      await signUp({ email, password, name })
-      goto('/')
+      // With a mailer wired the answer is the same for every address and the
+      // account is made when the mailed link is clicked; without one signUp
+      // signs the new account IN and there is no second trip through /login/.
+      const result = await signUp({ email, password, name })
+      if (result.user) goto('/')
+      else sent = true
     } catch (e) {
       error = e.message
     } finally {
@@ -2303,6 +2306,12 @@ title: Create an account
   }
 ${sc}
 
+{#if sent}
+<div class="auth-card card stack gap-md">
+  <h1 class="text-xl">Check your email</h1>
+  <p>If {email} can have an account, a link to finish creating it is on its way.</p>
+</div>
+{:else}
 <form class="auth-card card stack gap-md" onsubmit|preventDefault={handleSubmit}>
   <h1 class="text-xl">Create an account</h1>
 
@@ -2319,6 +2328,7 @@ ${sc}
 
   <p class="text-sm text-muted">Already have one? <a class="link" href="/login/">Sign in</a></p>
 </form>
+{/if}
 
 <style>
   .auth-card { max-width: var(--auth-card-width, 24rem); margin: var(--space-3xl) auto }

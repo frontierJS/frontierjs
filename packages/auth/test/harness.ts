@@ -145,3 +145,14 @@ export function signedIn(result: any): { token: string; user: any } {
   }
   return result
 }
+
+/**
+ * The register route as an app with no verification mail has it: `createUser` +
+ * `login`, 201 and a session. A harness always wires `onEmailVerificationRequested`
+ * (`verifyToken` reads it), and with it the route answers 202 and makes the
+ * account at the click (`FJS-D1310`) -- so a fixture that registers over HTTP just
+ * to have a user mounts the plugin over this instead.
+ */
+export function withoutRegistrationMail<A extends object>(auth: A): A {
+  return { ...auth, requestRegistration: undefined }
+}

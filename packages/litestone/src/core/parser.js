@@ -2620,15 +2620,17 @@ class Parser {
       // A rule about the DATA: the predicate must hold for the row as it will
       // land, whoever writes it. `@@deny` is the caller tier and `asSystem()`
       // drops it; this word is graded under `asSystem()` too (`FJS-D1045`).
-      // Same predicate grammar and one hop across a to-one, graded in JS, so
-      // only the operations that have a row in hand and no WHERE are legal.
+      // Same predicate grammar and one hop across a to-one. `create` and
+      // `postUpdate` grade the row as it lands, in JS; `update` and `delete`
+      // grade the row as STORED, through the WHERE the write already carries
+      // (`FJS-D1261`). `read` has no write to refuse.
       case 'require': {
         this.eat(TK.LPAREN)
         const opToken = this.peek()
-        const operations = this.parsePolicyOp('@@require', REQUIRE_OPS)
+        const operations = this.parsePolicyOp('@@require')
         if (!operations.every(o => REQUIRE_OPS.has(o)))
           throw new ParseError(
-            `@@require: cannot grade ${opToken.value}. A requirement is graded on the row as it lands, so the operations are create and postUpdate`,
+            `@@require: cannot grade ${opToken.value}. A requirement guards a write, so the operations are create, postUpdate, update and delete`,
             opToken)
         this.eat(TK.COMMA)
         const expr = this.parsePolicyExpr()
@@ -3559,7 +3561,7 @@ class Parser {
 
 const VALID_POLICY_OPS = new Set(['read', 'create', 'update', 'postUpdate', 'delete'])
 
-const REQUIRE_OPS = new Set(['create', 'postUpdate'])
+const REQUIRE_OPS = new Set(['create', 'postUpdate', 'update', 'delete'])
 
 function normalizePolicyOps(op, attr, token) {
   if (op === 'all')   return ['read', 'create', 'update', 'postUpdate', 'delete']

@@ -313,3 +313,27 @@ describe('over the socket', () => {
     } finally { await app.stop() }
   })
 })
+
+// ─── FJS-1354 / FJS-D1309 — the stored answer is final, the session is not ──
+// A replay runs no gate, so revocation is a session matter: a revoked session
+// verifies to nobody, and a key from nobody is not honored (FJS-680), so the
+// stored answer is never read back to it.
+
+describe('a replay after the session was revoked', () => {
+  test('is never answered from the stored reply', async () => {
+    const { svc, calls } = countingService('things')
+    let live = true
+    const app = await createTestApp({
+      services: [svc],
+      auth: { async verifySession(t: string) { return live && t === 'alice' ? { userId: 'u-alice', userType: 'user', roles: [], scopes: [] } : null } } as never,
+    })
+
+    const a = await request(app).post('/things').auth('alice').set('idempotency-key', 'k').send({ title: 'x' })
+    live = false
+    const b = await request(app).post('/things').auth('alice').set('idempotency-key', 'k').send({ title: 'x' })
+
+    expect(a.status).toBe(201)
+    expect(b.body).not.toEqual(a.body)
+    expect(calls.create).toBe(2)
+  })
+})

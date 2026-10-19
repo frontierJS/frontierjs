@@ -261,6 +261,17 @@ describe('client.auth — the routes', () => {
     expect(c.token).toBe('tok-2')
   })
 
+  it('signUp adopts nothing when the answer is the mailed-link one', async () => {
+    const { restore } = mockFetch([{ ok: true }])
+    cleanup = restore
+    const c = createJunctionClient({ url: 'http://x' })
+
+    const result = await c.auth.signUp({ email: 'a@b.c', password: 'pw' })
+
+    expect(result).toEqual({ ok: true })
+    expect(c.token).toBeFalsy()
+  })
+
   it('SIGNING OUT TELLS THE SERVER, then clears here', async () => {
     const { calls, restore } = mockFetch([{ ok: true }])
     cleanup = restore

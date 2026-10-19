@@ -22,7 +22,7 @@ import {
   UserNotFoundError, AuthConfigError,
 } from '../errors.ts'
 import { auth as authPlugin } from '../plugin.ts'
-import { makeAuth, type Harness, signedIn } from './harness.ts'
+import { makeAuth, type Harness, signedIn, withoutRegistrationMail } from './harness.ts'
 
 let h: Harness
 let app: any
@@ -34,7 +34,7 @@ beforeAll(async () => {
   // ctx.user is resolved by this package's verifySession.
   app.setAuth(h.auth as any)
   app.configure(authPlugin({
-    auth: h.auth,
+    auth: withoutRegistrationMail(h.auth),
     // Generous limits: these tests make far more calls than a real client.
     loginRateLimit:    { max: 10_000, window: '15 minutes' },
     registerRateLimit: { max: 10_000, window: '15 minutes' },
@@ -73,6 +73,96 @@ describe('POST /auth/register', () => {
 })
 
 // ─── login ────────────────────────────────────────────────────────────────
+
+// FJS-3197 · FJS-D1310 -- where the app mails a verification, register answers a
+// held address as it answers a free one, and the account is made at the click.
+describe('POST /auth/register where the app mails a verification', () => {
+  let mh: Harness
+  let mailApp: any
+  const mails:   Array<{ to: string; token: string }> = []
+  const changes: Array<{ event: string; email: string }> = []
+
+  const settled = async (done: () => boolean) => {
+    for (let i = 0; i < 200 && !done(); i++) await new Promise(r => setTimeout(r, 10))
+  }
+
+  async function rejectsLogin(address: string, password: string) {
+    let threw = false
+    try { await mh.auth.login(address, password) } catch { threw = true }
+    expect(threw).toBe(true)
+  }
+
+  beforeAll(async () => {
+    mh = await makeAuth({
+      onEmailVerificationRequested: async (to, token) => { mails.push({ to, token }) },
+      onCredentialChanged:          async c => { changes.push({ event: c.event, email: c.email }) },
+    })
+    mailApp = await createTestApp({ auth: mh.auth as any })
+    mailApp.setAuth(mh.auth as any)
+    mailApp.configure(authPlugin({
+      auth: mh.auth,
+      registerRateLimit: { max: 10_000, window: '15 minutes' },
+    }))
+  })
+
+  test('a held address and a free one get the same answer, and neither signs in', async () => {
+    await mh.auth.createUser({ email: email('rv-held'), password: 'pw-1' })
+
+    const held = await request(mailApp).post('/auth/register').send({ email: email('rv-held'), password: 'pw-2' })
+    const free = await request(mailApp).post('/auth/register').send({ email: email('rv-free'), password: 'pw-2' })
+
+    expect(held.status).toBe(202)
+    expect(free.status).toBe(202)
+    expect(held.body).toEqual(free.body)
+    expect((free.body as any).token).toBeUndefined()
+  })
+
+  test('a free address is mailed a link and has no account until it is clicked', async () => {
+    const address = email('rv-click')
+    await request(mailApp).post('/auth/register').send({ email: address, password: 'pw-9', name: 'Click' })
+    await settled(() => mails.some(m => m.to === address))
+    const mail = mails.find(m => m.to === address)!
+    expect(mail).toBeTruthy()
+
+    expect(await mh.sys.user.findFirst({ where: { email: address } })).toBeNull()
+    await rejectsLogin(address, 'pw-9')
+
+    const res = await request(mailApp).post('/auth/email/verify').send({ token: mail.token })
+    expect(res.status).toBe(200)
+
+    const made = await mh.sys.user.findFirst({ where: { email: address } })
+    expect(made.emailVerified).toBe(true)
+    expect(made.name).toBe('Click')
+    expect(signedIn(await mh.auth.login(address, 'pw-9')).user.email).toBe(address)
+
+    // Single-use.
+    expect((await request(mailApp).post('/auth/email/verify').send({ token: mail.token })).status).toBe(400)
+  })
+
+  test('a held address is mailed no link, and its owner is told', async () => {
+    const address = email('rv-told')
+    await mh.auth.createUser({ email: address, password: 'pw-1' })
+    await request(mailApp).post('/auth/register').send({ email: address, password: 'pw-2' })
+    await settled(() => changes.some(c => c.event === 'registration.attempted' && c.email === address))
+
+    expect(changes.filter(c => c.email === address).map(c => c.event)).toEqual(['registration.attempted'])
+    expect(mails.some(m => m.to === address)).toBe(false)
+    // The stranger's password is not on the account.
+    await rejectsLogin(address, 'pw-2')
+  })
+
+  test('the address is taken between the request and the click: the click makes nothing', async () => {
+    const address = email('rv-race')
+    await request(mailApp).post('/auth/register').send({ email: address, password: 'pw-2' })
+    await settled(() => mails.some(m => m.to === address))
+    await mh.auth.createUser({ email: address, password: 'pw-1' })
+
+    const res = await request(mailApp).post('/auth/email/verify').send({ token: mails.find(m => m.to === address)!.token })
+    expect(res.status).toBe(409)
+    expect(signedIn(await mh.auth.login(address, 'pw-1')).user.email).toBe(address)
+    await rejectsLogin(address, 'pw-2')
+  })
+})
 
 describe('POST /auth/login', () => {
   beforeAll(async () => {
@@ -268,7 +358,7 @@ describe('rate limiting', () => {
     const limited = await createTestApp({ auth: scoped.auth as any })
     limited.setAuth(scoped.auth as any)
     limited.configure(authPlugin({
-      auth: scoped.auth,
+      auth: withoutRegistrationMail(scoped.auth),
       registerRateLimit: { max: 3, window: '15 minutes' },
     }))
 
@@ -295,7 +385,7 @@ describe('cookieAuth mode', () => {
     scoped = await makeAuth()
     cookieApp = await createTestApp({ auth: scoped.auth as any })
     cookieApp.setAuth(scoped.auth as any)
-    cookieApp.configure(authPlugin({ auth: scoped.auth, cookieAuth: true }) as any)
+    cookieApp.configure(authPlugin({ auth: withoutRegistrationMail(scoped.auth), cookieAuth: true }) as any)
     await request(cookieApp).post('/auth/register').send({ email: email('cookie'), password: 'pw-1' })
   })
   afterAll(() => scoped.cleanup())

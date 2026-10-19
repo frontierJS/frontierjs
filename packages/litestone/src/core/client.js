@@ -958,6 +958,62 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return new ForeignKeyError(modelName)
   }
 
+  // A model whose `@@gate` locks delete (9) is append-only, and a parent's
+  // Cascade is SQLite removing its rows past the gate. The DELETE is refused as
+  // a Restrict child would refuse it, whoever asks, asSystem() included
+  // (`FJS-D1281`). The model walk is static and is done once; the row walk runs
+  // only when a locked model sits under a Cascade chain from this one.
+  let _lockedBelow = null
+  function lockedBelowCascade() {
+    if (_lockedBelow) return _lockedBelow
+    const locked = new Set()
+    if (ctx.gateFor) {
+      const seen = new Set([modelName])
+      const queue = [modelName]
+      while (queue.length) {
+        for (const rel of Object.values(ctx.shapes[queue.shift()].relations)) {
+          if (rel.kind !== 'hasMany' || rel.onDelete !== 'Cascade' || seen.has(rel.targetModel)) continue
+          seen.add(rel.targetModel)
+          queue.push(rel.targetModel)
+          if (ctx.gateFor(rel.targetModel, 'delete') === 9) locked.add(rel.targetModel)
+        }
+      }
+    }
+    return (_lockedBelow = locked)
+  }
+
+  function refuseLockedCascade(where) {
+    if (!lockedBelowCascade().size) return
+    const sel = selectWhere(where)
+    const rows = readAll(readDb.query(sel.sql).all(...sel.params))
+    const blockers = []
+    const seen = new Set()
+    let frontier = [[modelName, rows]]
+    while (frontier.length) {
+      const next = []
+      for (const [parent, parentRows] of frontier) {
+        for (const rel of Object.values(ctx.shapes[parent].relations)) {
+          if (rel.kind !== 'hasMany' || rel.onDelete !== 'Cascade') continue
+          const sink = ctx.cascadeSinkFor?.(rel.targetModel)
+          if (!sink) continue
+          const keys = tuplesOf(parentRows, rel.referencedKeys)
+          if (!keys.length) continue
+          const found = sink.rowsWhere(rel.foreignKeys, keys)
+            .filter(r => !seen.has(`${rel.targetModel}\0${r[sink.idField]}`))
+          if (!found.length) continue
+          for (const r of found) seen.add(`${rel.targetModel}\0${r[sink.idField]}`)
+          if (_lockedBelow.has(rel.targetModel)) blockers.push({ model: rel.targetModel, idField: sink.idField, ids: found.map(r => r[sink.idField]) })
+          next.push([rel.targetModel, found])
+        }
+      }
+      frontier = next
+    }
+    if (!blockers.length) return
+    const out = new ForeignKeyError(modelName, { child: { model: blockers[0].model, id: blockers[0].ids[0] } })
+    Object.defineProperty(out, 'blockers', { value: blockers, enumerable: false })
+    throw out
+  }
+
   // The same answer for a statement that deleted this table's rows by a WHERE
   // (deleteMany, a hard remove): the refused DELETE rolled back, so the rows it
   // named are still there to be read.
@@ -6017,6 +6073,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       const row = plan.result ? read(got, { mode: 'single', hydrateFrom: true }) : null
       return { rows: [], count: plan.result ? (row ? 1 : 0) : got?.n ?? 0, row, image: trailImage(got, row), doomed: null, affected: [], duration: 0 }
     }
+    if (plan.op === 'delete') refuseLockedCascade(where)
     const notes  = WRITE_NOTES[plan.op]
     const wSql   = where?.sql ?? null
     const wBinds = where?.params ?? []

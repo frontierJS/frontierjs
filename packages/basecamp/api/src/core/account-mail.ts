@@ -15,7 +15,7 @@ import { env } from './env.ts'
 import type { App, ILogger } from '@frontierjs/junction'
 
 const link = (path: string, token: string) =>
-  `${env.APP_URL.replace(/\/+$/, '')}${path}?token=${encodeURIComponent(token)}`
+  `${env.APP_URL.replace(/\/+$/, '')}${path}#token=${encodeURIComponent(token)}`
 
 /**
  * `app` is a getter because auth is built before the app it is handed to, and

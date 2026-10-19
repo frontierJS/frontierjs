@@ -644,6 +644,7 @@ rather than refusing the row.
 | `User` | `isSystemAdmin` | `@allow(write, auth().isSystemAdmin)` |
 | `Variable` | `secretValue` | `@encrypted` |
 | `Verification` | `value` | `@guarded` |
+| `Verification` | `secret` | `@guarded` |
 | `Verification` | `code` | `@guarded` |
 
 ## State transitions

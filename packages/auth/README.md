@@ -60,14 +60,14 @@ export const auth = createLitestoneAuth(db, {
     await mailer.send({
       to:      email,
       subject: 'Reset your password',
-      html:    `<a href="${env.APP_URL}/auth/password-reset/confirm?token=${token}">Reset</a>`,
+      html:    `<a href="${env.APP_URL}/auth/password-reset/confirm#token=${token}">Reset</a>`,
     })
   },
   onEmailVerificationRequested: async (email, token) => {
     await mailer.send({
       to:      email,
       subject: 'Verify your email',
-      html:    `<a href="${env.APP_URL}/verify-email/?token=${token}">Verify</a>`,
+      html:    `<a href="${env.APP_URL}/verify-email/#token=${token}">Verify</a>`,
     })
   },
 })
@@ -113,7 +113,7 @@ relative to `apiPrefix` for the same reason.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/auth/register` | Create account + issue session |
+| `POST` | `/auth/register` | Create account + issue session. Where `onEmailVerificationRequested` is set it answers `202 { ok: true }` for every address instead: a free one is mailed a link whose click (`POST /auth/email/verify`) makes the account, a held one is mailed its owner through `onCredentialChanged` as `registration.attempted` |
 | `POST` | `/auth/login` | Login, returns a token — or a challenge ticket when the account has a second factor |
 | `POST` | `/auth/login/challenge` | The second step: the ticket plus a TOTP or recovery code, returns a token |
 | `POST` | `/auth/logout` | Revoke current session |
@@ -209,7 +209,7 @@ const auth = createLitestoneAuth(db, {
     await mailer.send({
       to:      email,
       subject: `Your sign-in code is ${code}`,
-      html:    `<a href="${env.APP_URL}/sign-in/link?token=${token}">Sign in</a>`,
+      html:    `<a href="${env.APP_URL}/sign-in/link#token=${token}">Sign in</a>`,
     })
   },
   magicLinkTtl: '10 minutes',   // the default
@@ -357,7 +357,8 @@ createLitestoneAuth(db, {
 `event` is one of `CREDENTIAL_EVENTS` — `password.changed`, `password.reset`,
 `email.changed`, `totp.enabled`, `totp.disabled`, `totp.reset`, `recoveryCodes.regenerated`,
 `recovery.used`, `apikey.created`, `apikey.revoked`, `oauth.linked`,
-`oauth.unlinked`, `support.started` — and is the audit trail's own name for the
+`oauth.unlinked`, `support.started`, `registration.attempted` (a stranger
+registered a held address; `userId` is the owner) — and is the audit trail's own name for the
 same change. `actorId` differs from `userId` only for `totp.reset` and
 `support.started`, where it is the operator; the second carries the episode's
 `reason` and `endsAt` in `meta`. For `email.changed`, `email` is the address

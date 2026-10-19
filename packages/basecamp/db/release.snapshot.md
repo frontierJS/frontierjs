@@ -59,7 +59,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `StepStatus` | `failed` · `pending` · `running` · `skipped` · `success` |
 | `UserKind` | `ai` · `bot` · `peer` · `user` |
 | `UserStatus` | `active` · `pending_verification` · `suspended` |
-| `VerificationPurpose` | `emailChange` · `emailVerify` · `magicLink` · `oauthLink` · `passwordReset` |
+| `VerificationPurpose` | `emailChange` · `emailVerify` · `magicLink` · `oauthLink` · `passwordReset` · `registration` |
 | `WidgetKind` | `activity_feed` · `alert_status` · `app_status` · `deploy_feed` · `job_history` · `server_fleet` · `server_health` · `service_health` · `stat_counter` |
 | `WorkspaceRole` | `admin` · `billing` · `developer` · `owner` · `viewer` |
 | `WorkspaceStatus` | `active` · `suspended` |
@@ -2041,6 +2041,8 @@ table `verification` · db `main` · gate `8`
 | `identifier` | `String` | no | — | **required on write** |
 | `provider` | `String` | yes | — | — |
 | `purpose` | `VerificationPurpose` | no | — | **required on write** |
+| `registrant` | `String` | yes | — | — |
+| `secret` | `String` | yes | — | @guarded |
 | `subject` | `String` | yes | — | — |
 | `userId` | `String` | yes | — | — |
 | `value` | `String` | no | — | unique · @guarded · **required on write** |

@@ -711,9 +711,13 @@ model Message {
 
 - **Write the allowed case, not the forbidden one.** The predicate must be TRUE
   for the row as it lands; an unknown (a null, an absent claim) refuses.
-- **Only `create` and `postUpdate`.** Both grade the row in hand, in JS. A
-  `read`, `update` or `delete` has a WHERE and no landing row, and is refused at
-  parse by name.
+- **`create`, `postUpdate`, `update` and `delete`; never `read`.** `create` and
+  `postUpdate` grade the row as it lands, in JS. `update` and `delete` grade the
+  row as STORED, through the WHERE the write already carries, so
+  `@@require(update, status != 'archived')` freezes an archived row for a job
+  and a webhook as it does for a member. A single write that reaches no row
+  answers `null` and a bulk write narrows to the rows it admits, as an update
+  policy does.
 - **Messages and ordering follow `@@deny`**: the message is the third argument,
   and a refusal is an `AccessDeniedError`.
 

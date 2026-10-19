@@ -165,14 +165,14 @@ export const auth = createLitestoneAuth(db, {
   //   await mailer.send({
   //     to:      email,
   //     subject: 'Reset your password',
-  //     html:    \`<a href="\${env.APP_URL}/auth/password-reset/confirm?token=\${token}">Reset password</a>\`,
+  //     html:    \`<a href="\${env.APP_URL}/auth/password-reset/confirm#token=\${token}">Reset password</a>\`,
   //   })
   // },
   // onEmailVerificationRequested: async (email, token) => {
   //   await mailer.send({
   //     to:      email,
   //     subject: 'Verify your email',
-  //     html:    \`<a href="\${env.WEB_URL}/verify-email/?token=\${token}">Verify email</a>\`,
+  //     html:    \`<a href="\${env.WEB_URL}/verify-email/#token=\${token}">Verify email</a>\`,
   //   })
   // },
   // The person who did not change their password, email or two-step sign-in

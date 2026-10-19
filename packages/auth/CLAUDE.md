@@ -293,7 +293,8 @@ index.ts     public API
   `findFirst({ where: { email } })` as a where-operator and the address was a
   FILTER (`FJS-296`). **A new route reads its body through that reader**; a new
   field is a line in `BODY_FIELDS`.
-- **`verifyEmail` spends two purposes, `emailVerify` and `emailChange`.** A
+- **Register is verify-first wherever the app mails a verification** (`FJS-D1310`). `requestRegistration` exists only when `onEmailVerificationRequested` is set; the route then answers 202 `{ ok: true }` before the lookup, a free address gets a `registration` `Verification` row (the password HASH in `secret`, the name in `registrant`) and the link, and the `User` row is made at the click by `confirmRegistration` -- never at the request, or a stranger pre-registers a victim's address under a password of their own. A held address is told its owner as `registration.attempted`. Without the callback the route is `createUser` + `login`, 201/409. A test that registers over HTTP just to have a user mounts the plugin over `withoutRegistrationMail(h.auth)`, because the harness always wires the callback.
+- **`verifyEmail` spends three purposes, `emailVerify`, `emailChange` and `registration`.** A
   change of address is the same proof of the same mailbox, so it reuses the
   route, the mail callback and the app's landing page rather than a second set.
   The `emailChange` row's identifier is the NEW address, which names nobody, so

@@ -519,6 +519,80 @@ export function createLitestoneAuth(
     })
   }
 
+  // Registration where the app can mail (`FJS-D1310`). The answer is the same
+  // for a held address and a free one, so it goes out before the lookup does,
+  // as `requestPasswordReset`'s does (FJS-1832); the password is checked first
+  // because a weak one says nothing about the address. A free address gets the
+  // verification mail and no row in `User` until the click, so a stranger cannot
+  // pre-register somebody's address under a password of their own. A held one
+  // gets a mail to its owner instead, through `onCredentialChanged`.
+  async function requestRegistration(data: CreateUserInput): Promise<void> {
+    if (data.password != null) requireStrongPassword(data.password)
+    const address = String(data.email).trim().toLowerCase()
+    const name    = data.name ?? null
+    const secret  = data.password ?? null
+
+    setTimeout(async () => {
+      try {
+        const holder = await sys[person].findFirst({ where: { email: address } })
+        if (holder) {
+          await credentialChanged('registration.attempted', String(holder.id), {
+            model: personModel, records: [String(holder.id)], actorId: String(holder.id), actorType: 'user',
+          })
+          return
+        }
+
+        const hashed = secret ? await hashPassword(secret) : null
+        await sys.verification.deleteMany({
+          where: { purpose: 'registration', identifier: address }, ...PURGE,
+        })
+
+        const token = generateToken()
+        await sys.verification.create({
+          data: {
+            purpose:    'registration',
+            identifier: address,
+            value:      token,
+            secret:     hashed,
+            registrant: name,
+            expiresAt:  expiresAt(emailVerificationTtl, sys.$now()),
+          }
+        })
+
+        // Still in memory -- after this the token is @guarded.
+        await onEmailVerificationRequested!(address, token)
+      } catch (err) {
+        console.warn('[auth] registration request failed after answering:', (err as Error)?.message)
+      }
+    }, 0)
+  }
+
+  /** The click on a `registration` link -- `verifyEmail` finds the row and this spends it, making the account. */
+  async function confirmRegistration(row: any): Promise<SessionContext> {
+    // Spent first, by a delete that must find the row, so two clicks make one account.
+    const spent = await sys.verification.deleteMany({ where: { id: row.id } })
+    if (!spent.count) throw new InvalidTokenError('Invalid or expired verification token')
+
+    const email = String(row.identifier)
+    // Somebody may have made the account since the request -- a magic link, a
+    // provider. Telling this mailbox so discloses nothing: it holds the address.
+    if (await sys[person].findFirst({ where: { email } })) throw new EmailTakenError()
+
+    if (onRegister) await onRegister({ email, name: row.registrant ?? null })
+
+    const made = await registerUser(async tx => {
+      const user = await tx[person].create({
+        data: { email, name: row.registrant ?? null, emailVerified: true },
+      })
+      if (row.secret) await tx.credential.create({ data: { userId: user.id, type: 'password', value: row.secret } })
+      return user
+    })
+    await audit('registration.confirmed', {
+      model: personModel, records: [String(made.id)], actorId: String(made.id), actorType: 'user',
+    })
+    return toContext(made, 'verified')
+  }
+
   /** The click on an `emailChange` link — `verifyEmail` finds the row and this spends it. */
   async function confirmEmailChange(row: any): Promise<SessionContext> {
     const user = await sys[person].findUnique({ where: { id: row.userId } })
@@ -758,6 +832,10 @@ export function createLitestoneAuth(
 
     // Present only where the app mails them — see `onMagicLinkRequested`.
     ...(onMagicLinkRequested ? { requestMagicLink, verifyMagicLink } : {}),
+
+    // Present only where the app mails a verification -- there is no mailbox to
+    // equalize with otherwise, and register keeps createUser + login.
+    ...(onEmailVerificationRequested ? { requestRegistration } : {}),
 
     // Exposed so auth can read it without requiring the caller
     // to pass sessionTtl to both createLitestoneAuth and auth.
@@ -2078,12 +2156,13 @@ export function createLitestoneAuth(
       // route behind a second link.
       const verification = await sys.verification.findFirst({
         where: {
-          purpose: { in: ['emailVerify', 'emailChange'] },
+          purpose: { in: ['emailVerify', 'emailChange', 'registration'] },
           value:   token,
         }
       })
       if (!verification) throw new InvalidTokenError('Invalid or expired verification token')
       if (verification.purpose === 'emailChange') return confirmEmailChange(verification)
+      if (verification.purpose === 'registration') return confirmRegistration(verification)
 
       const email = verification.identifier
       const user  = await sys[person].findFirst({ where: { email } })

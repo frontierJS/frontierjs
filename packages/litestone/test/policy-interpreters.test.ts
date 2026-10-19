@@ -750,3 +750,59 @@ model Message {
     await expect(createClient({ schema: bad, db: ':memory:' })).rejects.toThrow(/cannot grade read/)
   })
 })
+
+// ─── @@require on update and delete: the STORED row (FJS-3284, FJS-D1261) ────
+//
+// The same rule on the other half of the write: the predicate is graded on the
+// row as stored, through the WHERE the write already carries, so `asSystem()`
+// cannot edit or remove a row the schema says is frozen.
+describe('@@require(update | delete) is graded against the stored row, under asSystem()', () => {
+  const SCHEMA = `
+model Doc {
+  id      Int    @id @default(autoincrement())
+  status  String @default('open')
+  builtIn Boolean @default(false)
+  @@require(update, status != 'archived')
+  @@require(delete, builtIn == false)
+}`
+
+  const build = async () => {
+    const db  = await createClient({ schema: SCHEMA, db: ':memory:' })
+    const sys = db.asSystem()
+    const open     = await sys.doc.create({ data: {} })
+    const archived = await sys.doc.create({ data: { status: 'archived' } })
+    const builtIn  = await sys.doc.create({ data: { builtIn: true } })
+    return { db, sys, open, archived, builtIn }
+  }
+
+  it('refuses an update of an archived row, system or not, and admits an open one', async () => {
+    const { db, sys, open, archived } = await build()
+    // The WHERE excludes the row, as an update policy does: nothing is reached.
+    expect(await sys.doc.update({ where: { id: archived.id }, data: { status: 'open' } })).toBeNull()
+    expect(await db.$setAuth({ id: 1 }).doc.update({ where: { id: archived.id }, data: { status: 'open' } })).toBeNull()
+    expect((await sys.doc.findUnique({ where: { id: archived.id } })).status).toBe('archived')
+    await sys.doc.update({ where: { id: open.id }, data: { status: 'archived' } })
+    expect((await sys.doc.findUnique({ where: { id: open.id } })).status).toBe('archived')
+    db.$close()
+  })
+
+  it('narrows a bulk update to the rows it admits', async () => {
+    const { db, sys } = await build()
+    const { count } = await sys.doc.updateMany({ where: {}, data: { status: 'touched' } })
+    expect(count).toBe(2)
+    expect(await sys.doc.count({ where: { status: 'archived' } })).toBe(1)
+    db.$close()
+  })
+
+  it('refuses a delete of a built-in row, system or not, and admits another', async () => {
+    const { db, sys, open, builtIn } = await build()
+    expect(await sys.doc.delete({ where: { id: builtIn.id } })).toBeNull()
+    expect(await sys.doc.count({ where: { id: builtIn.id } })).toBe(1)
+    await sys.doc.delete({ where: { id: open.id } })
+    expect(await sys.doc.count({ where: { id: open.id } })).toBe(0)
+    // A bulk delete narrows to the rows it may remove.
+    expect(await sys.doc.deleteMany({ where: {} })).toEqual({ count: 1 })
+    expect(await sys.doc.count()).toBe(1)
+    db.$close()
+  })
+})

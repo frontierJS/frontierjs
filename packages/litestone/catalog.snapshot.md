@@ -136,7 +136,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@export` | Decide who may | (ndjson \| csv [, since: <column>]) |  |  |  |
 | `@@allow` | Decide who may | (read\|create\|update\|postUpdate\|delete\|write\|all, <expression>[, message]) |  |  |  |
 | `@@deny` | Decide who may | ('read'\|…, <expression>[, message]) |  |  |  |
-| `@@require` | Decide who may | (create\|postUpdate, <expression>[, message]) |  |  |  |
+| `@@require` | Decide who may | (create\|postUpdate\|update\|delete, <expression>[, message]) |  |  |  |
 | `@@scope` | Decide who may | (<name>, <expression>) |  |  |  |
 | `@@tenant` | Decide who may | (<column> \| none \| via: parent) |  | mode: none |  |
 | `@@transitions` | Decide who may | (<field>, [<name>:] <from>\|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …)], …) \| (<field>, declaredBy: Model, scope: <column>) |  |  |  |

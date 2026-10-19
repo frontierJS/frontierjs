@@ -121,7 +121,7 @@ const authOptions = {
     // The CONSOLE's page, not the API's origin: this pointed at `/reset` on
     // the API port, where nothing answers, so every reset and invitation led to
     // a 404. `web/src/routes/reset/` is the page.
-    const link = `${process.env.SHOP_CONSOLE_URL ?? 'http://localhost:8010'}/reset/?token=${encodeURIComponent(token)}`
+    const link = `${process.env.SHOP_CONSOLE_URL ?? 'http://localhost:8010'}/reset/#token=${encodeURIComponent(token)}`
     if (!app?.mail) {
       console.warn(`[shop] no mailer configured — password-reset link for ${email} was not sent`)
       return
