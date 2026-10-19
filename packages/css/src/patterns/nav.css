@@ -172,9 +172,8 @@
   transition:      background var(--motion-fast), color var(--motion-fast);
 
   /* A row that opens a menu is a <button>, which arrives with a UA border,
-     face, centered label and shrink-to-fit width. All no-ops on an <a>. */
+     face and centered label. All no-ops on an <a>. */
   box-sizing:      border-box;
-  inline-size:     100%;
   border:          0;
   background:      transparent;
   font-family:     inherit;
@@ -182,6 +181,13 @@
   text-align:      start;
   cursor:          pointer;
 }
+
+/* A <button> is shrink-to-fit where an <a> already fills its list row. On
+   the <a> too, 100% put each of a Shell's section tabs — a .cluster of
+   links — on a line of its own (`FJS-3333`), and a button among them would
+   do the same, so a row-shaped parent takes it back. */
+:where(button).navlink { inline-size: 100%; }
+:where(.cluster, .group) > :where(button).navlink { inline-size: auto; }
 
 .navlink:hover {
   background: var(--surface-sunken);

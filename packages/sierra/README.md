@@ -341,6 +341,7 @@ import {
 | --- | --- |
 | `goto(path, query?, { scroll, replace, directives })` | navigate. `directives` is `page.directives` shaped and unprefixed; the router joins it to the URL as `$` params, so a page never spells one |
 | `back()` / `forward()` | history |
+| `reload(path?, query?)` | the whole app again from the code on disk, at `path` (where it is, by default) — a page load, or under `fli dev:tui` a new shell process |
 | `url(path, query?)` | build a URL with the configured trailing-slash policy |
 | `isActive(path, { exact })` | prefix match by default. **Name `page.route` in the expression too** — `aria-current={(page.route, isActive('/leads/')) ? 'page' : null}` — or the call is evaluated once at mount. Mesa reads dependencies out of the expression text, and the route read happens inside `isActive`, where it cannot see it |
 | `setParams(obj)` | replace all query params (`replace: true`, no scroll) |

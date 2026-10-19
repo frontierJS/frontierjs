@@ -281,6 +281,9 @@ click-to-source reads (`mesa-vite/inspect-client.js`), it is dev-only, and it is
 in the TEMPLATE — so an assertion comparing a compiled template string against a
 literal has to compile with `loc: false`, not merely with `dev: true`. `loc`
 defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
+The same switch sets `__fjsPlaced` on each component's anchor comment, the
+line that placed it — the inspector's only way from a package layout's own
+chrome back to the app file (`FJS-3332`).
 
 - **An instance `<script>` has exactly two export forms** — `export let` (a
   prop) and `export function` (a method on what `bind:this` hands the parent,

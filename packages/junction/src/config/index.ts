@@ -6,6 +6,7 @@
 import { join, resolve } from 'node:path'
 import { existsSync }      from 'node:fs'
 import type { TrustProxy } from '../transport/forwarded.ts'
+import type { PageBounds } from '../core/directives.ts'
 
 // ─── App config interface ─────────────────────────────────────────────────
 // Extend this in your app's config/types.ts
@@ -24,6 +25,9 @@ export interface AppConfig {
   // Default '' → routes at /{service} and /{service}/{id}
   // Set to '/api' or '/api/v1' for versioned APIs.
   apiPrefix?: string
+  // The page size of every model service that declares no `paginate` of its
+  // own. Absent, `{ default: 20, max: 100 }`.
+  paginate?:  PageBounds
   
   // Auth
   // HTTP

@@ -32,7 +32,9 @@ src/
     routes-snapshot.js   the committed routes.snapshot.md
     tui.js               `@frontierjs/sierra/tui`, what `fli dev:tui` runs —
                          under BUN, from the web root: --list, --frame, --api,
-                         --side
+                         --side, --open. Interactive, it runs the shell in a
+                         CHILD of itself and starts another at the url the
+                         router's `reload()` named, so an edit is imported fresh
 
   terminal/              — the terminal target of `web/` (`FJS-D809`): the same
                            routes, compiled with `target: 'terminal'`

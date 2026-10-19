@@ -21,6 +21,8 @@ import { createTestApp, request } from '../src/testing/index.ts'
 import { createService } from '../src/core/service.ts'
 import { bridge } from '../src/transport/bridge.ts'
 import { parseQuery } from '../src/core/litestone.ts'
+import { createApp, defaultConfig } from '../index.ts'
+import { createClient } from '../../litestone/src/index.js'
 
 // Echoes what the service layer actually received.
 function echoService() {
@@ -242,6 +244,42 @@ describe('a $limit past paginate.max is refused, not clamped', () => {
     const app = await createTestApp({ services: [capped({ default: 10, max: 50 })] })
     const res = await app.service('things').find({ query: {}, directives: { limit: 5000 } } as never)
     expect(res).toBeDefined()
+  })
+})
+
+// A service that declares no `paginate` pages by the app's `config.paginate`,
+// so an app whose lists all run past 100 states it once rather than per service.
+describe('config.paginate is the app-wide page size', () => {
+  const capped = (paginate?: { default: number; max: number }) => createService({
+    name: 'things',
+    ...(paginate ? { paginate } : {}),
+    find: async (ctx) => ({
+      total: 0, limit: 0, offset: 0, data: [{ directives: { ...ctx.directives } }],
+    }),
+  })
+
+  test('raises the max of a service that declares none', async () => {
+    const app = await createTestApp({ config: { paginate: { default: 20, max: 500 } }, services: [capped()] })
+    expect((await request(app).get('/things?$limit=500')).status).toBe(200)
+    expect((await request(app).get('/things?$limit=501')).status).toBe(400)
+  })
+
+  test('a service\'s own paginate wins over it', async () => {
+    const app = await createTestApp({ config: { paginate: { default: 20, max: 500 } }, services: [capped({ default: 10, max: 50 })] })
+    expect((await request(app).get('/things?$limit=51')).status).toBe(400)
+  })
+
+  test('its default is the page a model service serves with $limit unstated', async () => {
+    const db = await createClient({ db: ':memory:', schema: 'model Item {\n  id Int @id\n}' }) as any
+    for (let i = 1; i <= 8; i++) await db.asSystem().item.create({ data: { id: i } })
+    const app = createApp({ db, config: { ...defaultConfig, paginate: { default: 3, max: 5 } } } as never)
+    app.services.register(createService({ name: 'items', model: 'Item' }))
+    try {
+      const page = await app.service('items').find({}) as { data: unknown[] }
+      expect(page.data).toHaveLength(3)
+      const capped = await app.service('items').find({}, { directives: { limit: 50 } } as never) as { data: unknown[] }
+      expect(capped.data).toHaveLength(5)
+    } finally { db.$close() }
   })
 })
 

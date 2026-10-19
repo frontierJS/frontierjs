@@ -1,7 +1,7 @@
 # Handoff
 
-**The two most recent sessions, narrative. Older ones rotate into
-`docs/handoff-archive/`.** This is an assessment file (`PHILOSOPHY.md` §VII):
+**The two most recent sessions, narrative. `fli register:archive` rotates
+older ones into `docs/handoff-archive/`.** This is an assessment file (`PHILOSOPHY.md` §VII):
 dated, never cited as behavior, and read cold rather than consulted.
 
 **It names nothing a register does not also hold.** A defect gets an id in

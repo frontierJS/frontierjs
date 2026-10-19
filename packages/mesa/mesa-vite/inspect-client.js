@@ -26,6 +26,8 @@
  * embedded in, so both are JSON-encoded rather than interpolated raw.
  */
 
+import { LOC_ATTR, PLACED_PROP } from '../src/compiler.js'
+
 const MODIFIERS = { alt: 'altKey', meta: 'metaKey', ctrl: 'ctrlKey', shift: 'shiftKey' }
 
 /**
@@ -44,28 +46,53 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
   const ROOT = ${JSON.stringify(root)}
   const FLAG = ${JSON.stringify(flag)}
   const KEY  = ${JSON.stringify(flag.replace(/Key$/, ''))}
-  const ATTR = 'data-fjs-loc'
+  const ATTR = ${JSON.stringify(LOC_ATTR)}
+  const PLACED = ${JSON.stringify(PLACED_PROP)}
 
   // The element a pointer is over, in the shadow trees too: composedPath()[0]
   // is the real target, and walking out of a shadow root means stepping to its
   // host rather than to a parentElement that is null there. A widget mounted in
   // a shadow root is otherwise a dead zone.
   //
+  const up = (el) => el.parentElement || (el.getRootNode && el.getRootNode().host) || null
+
+  // What a pointer over a node edits: { el, loc, via }, or null when nothing
+  // can be opened, so nothing is painted and the click goes to the page.
+  //
   // A component from a package (the kit's Button, a framework layout) stamps
   // its own file, so the innermost stamp under the pointer is usually the
   // package's and almost never what the person is editing. The walk goes on to
-  // the nearest element the app wrote, and settles for the innermost stamp
-  // only when no ancestor is the app's.
+  // the nearest element the app wrote. A layout's own chrome (Shell's topbar,
+  // its padding) has none above it, since the app's page renders inside the
+  // layout, so the target is the app line that PLACED the component, with the
+  // package's stamp kept as via. An installed copy under the root opens only
+  // when no app line placed it.
   function locatedFrom(node) {
     let el = node, first = null
-    while (el) {
-      if (el.nodeType === 1 && el.hasAttribute(ATTR)) {
-        if (own(el.getAttribute(ATTR))) return el
-        first = first || el
-      }
-      el = el.parentElement || (el.getRootNode && el.getRootNode().host) || null
+    for (; el; el = up(el)) {
+      if (el.nodeType !== 1 || !el.hasAttribute(ATTR)) continue
+      const loc = el.getAttribute(ATTR)
+      if (own(loc)) return { el, loc, via: null }
+      first = first || el
     }
-    return first
+    if (!first) return null
+    const via = first.getAttribute(ATTR)
+    const placed = placedBy(first)
+    if (placed) return { el: first, loc: placed, via }
+    return absolute(via) ? { el: first, loc: via, via: null } : null
+  }
+
+  // A component's nodes sit before its anchor comment, so the first anchor the
+  // app placed after the element or an ancestor of it is the call. One the
+  // package placed is passed over. An app component slotted in beside the
+  // element answers first; it is written in the same file, a few lines off.
+  function placedBy(node) {
+    for (let el = node; el; el = up(el)) {
+      for (let s = el.nextSibling; s; s = s.nextSibling) {
+        if (s.nodeType === 8 && own(s[PLACED])) return s[PLACED]
+      }
+    }
+    return null
   }
 
   // The attribute is app-controlled — {@html} renders whatever the app was
@@ -85,8 +112,8 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
     return ROOT.replace(/[\\\\/]+$/, '') + '/' + loc
   }
 
-  function open(el) {
-    const loc = el && el.getAttribute && el.getAttribute(ATTR)
+  function open(target) {
+    const loc = target && target.loc
     if (!loc) return false
     const file = absolute(loc)
     if (!file) { console.warn('[mesa] refusing to open', loc); return false }
@@ -108,19 +135,20 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
   // A picker that throws must not leave the click swallowed and nothing done.
   // The opener rides on the pick rather than the global: a page script reaches it
   // only after a person picked something.
-  function pick(el) {
-    const loc = el.getAttribute(ATTR)
-    if (!pickers.length || !absolute(loc)) return open(el)
+  function pick(target) {
+    const { el, loc, via } = target
+    if (!pickers.length || !absolute(loc)) return open(target)
     let took = false
     for (const fn of pickers) {
-      try { fn({ el, loc, file: absolute(loc), key: KEY, open: () => open(el) }); took = true } catch (err) { console.warn('[mesa] picker failed', err) }
+      try { fn({ el, loc, via, file: absolute(loc), key: KEY, open: () => open(target) }); took = true } catch (err) { console.warn('[mesa] picker failed', err) }
     }
-    return took || open(el)
+    return took || open(target)
   }
 
-  function paint(el) {
-    current = el
-    if (!el) { if (box) box.style.display = 'none'; return }
+  function paint(target) {
+    current = target
+    if (!target) { if (box) box.style.display = 'none'; return }
+    const el = target.el
     if (!box) {
       box = document.createElement('div')
       box.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;border:1px solid #38bdf8;background:rgba(56,189,248,.15);border-radius:2px'
@@ -135,7 +163,7 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
     box.style.left   = r.left + 'px'
     box.style.width  = r.width + 'px'
     box.style.height = r.height + 'px'
-    label.textContent = el.getAttribute(ATTR)
+    label.textContent = target.via ? target.loc + ' · places ' + target.via.split('/').pop() : target.loc
   }
 
   function disarm() {
@@ -170,11 +198,11 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
   window.addEventListener('mousemove', (e) => {
     if (!mode && !e[FLAG]) { if (armed) disarm(); return }
     armed = true
-    const el = locatedFrom(e.composedPath()[0])
+    const target = locatedFrom(e.composedPath()[0])
     // Pick mode leaves the crosshair off what cannot be picked, the ask panel
     // among it, so its own buttons still look like buttons.
-    document.documentElement.style.cursor = mode && !el ? '' : 'crosshair'
-    paint(el)
+    document.documentElement.style.cursor = mode && !target ? '' : 'crosshair'
+    paint(target)
   }, true)
 
   // Capture phase, and both halves of the click: a mousedown the app handles is
@@ -182,14 +210,14 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
   // location is let through, which is what keeps a picker's own panel usable.
   const swallow = (e) => {
     if (!mode && (!armed || !e[FLAG])) return
-    const el = locatedFrom(e.composedPath()[0])
-    if (!el) return
+    const target = locatedFrom(e.composedPath()[0])
+    if (!target) return
     e.preventDefault()
     e.stopPropagation()
     if (e.type !== 'click') return
     const shifted = e.shiftKey && FLAG !== 'shiftKey'
     const opens = mode ? e[FLAG] && !shifted : !shifted
-    opens ? open(el) : pick(el)
+    opens ? open(target) : pick(target)
     disarm()
   }
   window.addEventListener('mousedown', swallow, true)
@@ -205,12 +233,12 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
   // is what a screen-reader user is on, and a hold-and-click has no equivalent.
   window.addEventListener('keydown', (e) => {
     if (!e[FLAG] || e.key !== 'z' && e.key !== 'Z') return
-    const el = locatedFrom(document.activeElement)
-    if (el) { e.preventDefault(); open(el) }
+    const target = locatedFrom(document.activeElement)
+    if (target) { e.preventDefault(); open(target) }
   }, true)
 
   window.__fjsInspect = {
-    locate: (el) => { const f = locatedFrom(el); return f && f.getAttribute(ATTR) },
+    locate: (el) => { const f = locatedFrom(el); return f && f.loc },
     root:   ROOT,
     onPick: (fn) => { pickers.push(fn); return () => { const i = pickers.indexOf(fn); if (i !== -1) pickers.splice(i, 1) } },
     // No argument reads the mode; a boolean sets it. Either way, the mode is returned.

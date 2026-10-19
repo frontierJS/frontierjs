@@ -563,3 +563,20 @@ test('navlink: a button.navlink is drawn as the same row an a.navlink is', funct
 
   cleanup();
 });
+
+test('navlink: navlinks in a .cluster sit side by side, as a Shell section bar draws its tabs', function () {
+  var bar = el(
+    '<nav class="cluster" style="inline-size:600px">' +
+      '<a class="navlink" href="#a">List</a>' +
+      '<a class="navlink" href="#b">Templates</a>' +
+      '<button type="button" class="navlink">More</button>' +
+    '</nav>'
+  );
+  var tops = Array.prototype.map.call(bar.children, function (n) { return n.getBoundingClientRect().top; });
+
+  assert.equal(tops[1], tops[0], 'a second a.navlink wrapped below the first');
+  assert.equal(tops[2], tops[0], 'a button.navlink wrapped below the links');
+  assert.ok(bar.children[0].getBoundingClientRect().width < 300, 'a.navlink fills the cluster');
+
+  cleanup();
+});

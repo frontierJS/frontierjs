@@ -326,9 +326,16 @@ export function lineDiff(before, after, context = 3) {
 // dropped, and its HTML still goes as context.
 const readLoc = loc => typeof loc === 'string' && LOC.test(loc) && !loc.includes('..') ? loc : null
 
+// The package file a pick's markup came from when its loc is the app line that
+// placed the component. Prompt text only, never opened, so an absolute path is
+// kept and anything that is not a location is dropped.
+const VIA = /^\/?[\w./@+-]{1,300}\.(mesa|md):\d+:\d+$/
+const readVia = via => typeof via === 'string' && VIA.test(via) ? via : null
+
 function readPicks(list = []) {
   return (list ?? []).map(p => ({
     loc:     readLoc(p?.loc),
+    via:     readVia(p?.via),
     html:    typeof p?.html === 'string' ? p.html : '',
     size:    Number(p?.size) || 0,
     repeats: Math.max(0, Math.floor(Number(p?.repeats) || 0)),

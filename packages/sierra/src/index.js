@@ -13,7 +13,8 @@ export {
   goto,
   back,
   forward,
-  page,            // replaces params / activeRoute / pendingRoute / meta /
+  reload,
+  page,           // replaces params / activeRoute / pendingRoute / meta /
   PAGE_RESERVED,   // node / data / loadError / pageSlots — see router/index.js
   nodes,
   router,

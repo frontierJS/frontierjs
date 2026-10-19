@@ -8,6 +8,9 @@
  *   runTerminalShell({ root, list: true })       each route and whether it lowers, printed
  *   runTerminalShell({ root, frame: '/x/7/' })   one path's frame, printed, no TTY
  *   runTerminalShell({ root, side: file })       interactive, with `file` in a pane beside it
+ *   runTerminalShell({ root, open: '/x/7/' })    interactive, opened at that path
+ *   runTerminalShell({ root, reload })           interactive, and the router's `reload(url)` hands
+ *                                                the url to `reload` and ends the shell
  *
  * The boot is `virtual:sierra`'s, minus what has no terminal meaning: the
  * Junction client from `config.junction`, the schemas from the app's `.lite`
@@ -29,6 +32,10 @@
  * most Ctrl letters. A page's own command shows and hides it
  * through Mesa's `sideToggle()`, as Ctrl+\ does, and `toggle(true)` only shows it. In the side the mode line says so, and
  * h/j/k/l and Esc are the side's own: Esc going back is the page's.
+ *
+ * A process imports a module once, so an edit is seen only by a new one:
+ * `reload` is how the caller starts it, `tools/tui.js` by running itself
+ * again with `--open` at the url.
  *
  * Not here yet, each named where a route would need it: layouts (a route
  * mounts without its `_module.mesa`) and `autoImport` (a configured one is
@@ -235,10 +242,12 @@ function paneKeys(tui, renderer, file, setMode, setZoom, say) {
  * @param {string}  [o.frame]    print the frame at this path, and return
  * @param {number}  [o.settle]   ms a `frame` waits for the route's first loads
  * @param {string}  [o.side]     a `.mesa` file for the side pane
+ * @param {string}  [o.open]     the path to open, rather than the list
+ * @param {(url: string) => void} [o.reload]  hands on the url `reload()` was asked for
  * @param {(line: string) => void} [o.print]
  * @returns {Promise<number>}    an exit code
  */
-export async function runTerminalShell({ root, apiUrl, list = false, frame = null, settle = 1500, side = null, print = console.log }) {
+export async function runTerminalShell({ root, apiUrl, list = false, frame = null, settle = 1500, side = null, open: at = null, reload = null, print = console.log }) {
   const { config, loader, tree } = await boot(root, apiUrl)
   const routes = await routeList(root, tree, loader)
   const open = routes.filter((r) => !r.refused)
@@ -264,6 +273,7 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
   // A route that does not lower is never imported: the guard refuses the
   // navigation with the reason, which the screen shows where it would have been.
   let refusedAt = null
+  let restart = null
   beforeNavigate(({ to }) => {
     const r = byId.get(to.node.id)
     if (!r?.refused) return true
@@ -278,7 +288,7 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
     const history = createMemoryHistory(path)
     let landed = false
     const off = afterNavigate(() => { landed = true })
-    try { await initRouter(tree, components, loaders, { trailingSlash, history }) } finally { off() }
+    try { await initRouter(tree, components, loaders, { trailingSlash, history, ...(restart && { reload: restart }) }) } finally { off() }
     return landed ? history : null
   }
 
@@ -311,6 +321,7 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
   let finished
   const done = new Promise((res) => { finished = res })
   const renderer = await tui.createRenderer({ exitOnCtrlC: true, onDestroy: () => finished(0) })
+  if (reload) restart = (url) => { reload(url); renderer.destroy() }
 
   // In NORMAL, h j k l are the arrows, so a route that walks or scrolls on
   // them takes vim's keys without knowing the mode. The key is renamed before
@@ -430,5 +441,6 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
     else showList()
   })
   showList()
+  if (at) await openPath(at)
   return done
 }

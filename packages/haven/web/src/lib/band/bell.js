@@ -1,6 +1,6 @@
 // bell.js — the kitchen's bells, for `#sound`: pure, so a strike sounds the
-// same on every machine and is rendered once. `chef` is two warbling strikes
-// that sag downhill, a session waiting on you; `order` is one bright strike, a
+// same on every machine and is rendered once. `chef` is two soft strikes that
+// sag downhill, a session waiting on you; `order` is one higher strike, a
 // plate on the pass.
 //
 // `createBells().ring(kind)` queues a strike and `samples(from, n)` is what
@@ -10,16 +10,16 @@
 
 export const RATE = 44100
 
-// A desk bell's partials are not whole multiples of its note; whole multiples
-// sound like an organ, not a bell.
+// A bell's partials are not whole multiples of its note; whole multiples
+// sound like an organ, not a bell. The upper ones are kept faint and short:
+// they are the ting, and a low note over a slow attack is a soft chime.
 const PARTIALS = [
-  { r: 1,    a: 1,    decay: 1.1 },
-  { r: 2.32, a: 0.45, decay: 0.45 },
-  { r: 4.25, a: 0.22, decay: 0.22 },
-  { r: 6.63, a: 0.1,  decay: 0.1 },
+  { r: 1,    a: 1,    decay: 1.0 },
+  { r: 2.32, a: 0.12, decay: 0.25 },
+  { r: 4.25, a: 0.03, decay: 0.1 },
 ]
-const LEVEL  = 0.28
-const ATTACK = 0.002
+const LEVEL  = 0.16
+const ATTACK = 0.025
 const LENGTH = 1.4
 
 /** One strike of a bell at `hz`, in -1..1. */
@@ -45,7 +45,7 @@ function wonk(hz, sag) {
   let twin = 0
   for (let i = 0; i < out.length; i++) {
     const t = i / RATE
-    const f = hz * (1 - sag * (1 - Math.exp(-t / 0.25))) * (1 + 0.03 * Math.sin(2 * Math.PI * 6.5 * t))
+    const f = hz * (1 - sag * (1 - Math.exp(-t / 0.25))) * (1 + 0.012 * Math.sin(2 * Math.PI * 5 * t))
     let v = 0
     PARTIALS.forEach((p, k) => {
       phase[k] += 2 * Math.PI * f * p.r / RATE
@@ -61,8 +61,8 @@ function wonk(hz, sag) {
 
 /** A kind's strikes, each `{ at, buf }` with `at` in samples from the first. */
 const KINDS = {
-  chef:  () => [{ at: 0, buf: wonk(1320, 0.1) }, { at: Math.floor(0.22 * RATE), buf: wonk(1050, 0.3) }],
-  order: () => [{ at: 0, buf: strike(1760) }],
+  chef:  () => [{ at: 0, buf: wonk(587, 0.1) }, { at: Math.floor(0.3 * RATE), buf: wonk(466, 0.2) }],
+  order: () => [{ at: 0, buf: strike(784) }],
 }
 
 export function createBells() {

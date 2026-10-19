@@ -933,6 +933,7 @@ Row by row rather than one `UPDATE` because that is what applies the schema. Lit
 | `port` | `number` | `3000` | HTTP port. `PORT`, else the `FLI_PORT_BE` that `fli dev` hands the process, beats the file; a `port` passed to `createApp` beats both |
 | `hostname` | `string` | `'0.0.0.0'` | Bind address |
 | `apiPrefix` | `string` | `''` | Prefix for every route the app registers — `''` mounts services at `/{service}` |
+| `paginate` | `{ default, max }` | `{ default: 20, max: 100 }` | Page size of every model service that declares no `paginate` — `default` when `$limit` is unstated, `max` the most a wire `$limit` may ask for (above it is a 400). A service's own `paginate` wins. In `junction.config.js` it goes under `app:` |
 | `http.drainTimeout` | `number` | `5000` | ms a socket gets to finish during shutdown |
 | `shutdown.timeout` | `number` | `15000` | ms the WHOLE shutdown gets. Past it the process exits **1** rather than waiting — a hung step used to end with node exiting 0 |
 | `shutdown.pluginTimeout` | `number` | `5000` | ms each plugin's `shutdown()` gets. One that never settles is logged and skipped instead of taking the rest of the list with it |
@@ -1289,6 +1290,7 @@ app.services.register(createService({
   softDelete: 'deletedAt',  // optional — soft-delete via a nullable DateTime field
   allowBulk:  false,        // optional — default false, blocks bulk patch/delete
   bulkMax:    1000,         // optional — rows one filtered patch/remove or array create may carry
+  paginate:   { default: 20, max: 100 },  // optional — omitted, config.paginate, else this
   cache:      true,         // optional — cache find/get responses, bust on writes
   methods:    ['find','get'],  // optional — narrow what this service answers.
                                //   Omitted = everything. See below.

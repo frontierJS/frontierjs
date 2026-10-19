@@ -90,7 +90,7 @@
   // (`commands.open`): an open one is handed a key before any verb or step.
   import { presence }    from '@frontierjs/sierra/presence'
   import { getClient }    from '@frontierjs/sierra/resource'
-  import { goto, page }  from '@frontierjs/sierra/router'
+  import { goto, page, reload } from '@frontierjs/sierra/router'
   import { members }     from '@/resources/Member.mesa'
   import { messages }    from '@/resources/Message.mesa'
   import { rooms }       from '@/resources/Room.mesa'
@@ -187,6 +187,12 @@
     y = start.y
     sync()
   })
+  // `stand` is what puts the figure back on its own cell rather than the spawn.
+  $.onDestroy(commands.add({
+    word: 'reload',
+    help: '/reload — this scene again, from the code on disk, where you stand',
+    run:  () => { reload(page.pathname, { x, y, stand: 1 }); return '' },
+  }))
   $.onDestroy(() => {
     clearInterval(flickTimer)
     clearTimeout(idle)

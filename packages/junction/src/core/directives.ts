@@ -92,6 +92,20 @@ export interface QueryDirectives {
 
 export interface Pagination { limit: number; offset: number }
 
+/** A model service's page size: `$limit` unstated, and the most it may ask for. */
+export interface PageBounds { default: number; max: number }
+
+export const DEFAULT_PAGE_BOUNDS: PageBounds = { default: 20, max: 100 }
+
+/**
+ * The bounds a service pages by: its own `paginate`, else the app's
+ * `config.paginate`, else the built-in. Read per call, because a service
+ * registered by hand is built before `junction.config.js` is loaded.
+ */
+export function pageBounds(declared?: PageBounds, configured?: PageBounds): PageBounds {
+  return declared ?? configured ?? DEFAULT_PAGE_BOUNDS
+}
+
 export function clampPagination(
   directives:   QueryDirectives | undefined,
   defaultLimit: number,

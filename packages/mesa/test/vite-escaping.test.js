@@ -161,22 +161,29 @@ function runInspector(root = '/app') {
   new Function('window', 'document', 'fetch', 'console',
     inspectClientSource({ root }))(window, document, fetch, console)
 
-  // A list of locations is a chain, innermost first: each is the next one's child.
-  const element = (loc, parentElement = null) => ({
+  // A list of locations is a chain, innermost first: each is the next one's
+  // child. A link written { loc, placed: [...] } is followed by component
+  // anchors, each carrying where it was placed.
+  const anchors = (placed) => placed.reduceRight((next, at) => ({ nodeType: 8, __fjsPlaced: at, nextSibling: next }), null)
+  const element = (link, parentElement = null) => ({
     nodeType: 1,
     hasAttribute: (n) => n === 'data-fjs-loc',
-    getAttribute: (n) => (n === 'data-fjs-loc' ? loc : null),
+    getAttribute: (n) => (n === 'data-fjs-loc' ? link.loc ?? link : null),
     parentElement,
+    nextSibling: anchors(link.placed ?? []),
     getBoundingClientRect: () => ({ top: 0, left: 0, width: 0, height: 0 })
   })
+  const swallowed = []
   const altClick = (loc, { shiftKey = false } = {}) => {
     const el = [loc].flat().reduceRight((parent, l) => element(l, parent), null)
-    const ev = { type: 'click', altKey: true, shiftKey, preventDefault: () => {}, stopPropagation: () => {}, composedPath: () => [el] }
+    const ev = { type: 'click', altKey: true, shiftKey, preventDefault: () => swallowed.push(ev), stopPropagation: () => {}, composedPath: () => [el] }
     for (const fn of listeners.get('mousemove')) fn({ ...ev, type: 'mousemove' })
     for (const fn of listeners.get('click')) fn(ev)
   }
-  return { window, fetched, warned, altClick }
+  return { window, fetched, warned, swallowed, altClick }
 }
+
+const opened = (loc) => '/__open-in-editor?file=' + encodeURIComponent('/app/' + loc)
 
 describe('the inspector only ever asks the editor for a file under the root', () => {
 
@@ -186,11 +193,11 @@ describe('the inspector only ever asks the editor for a file under the root', ()
     expect(i.fetched).toEqual(['/__open-in-editor?file=' + encodeURIComponent('/app/src/pages/Home.mesa:12:3')])
   })
 
-  test('a planted absolute path is refused', () => {
+  test('a planted absolute path is refused, and the click goes to the page', () => {
     const i = runInspector()
     i.altClick('/etc/shadow:1:1')
     expect(i.fetched).toEqual([])
-    expect(i.warned.join(' ')).toContain('refusing to open')
+    expect(i.swallowed).toEqual([])
   })
 
   test('traversal out of the root is refused', () => {
@@ -232,6 +239,44 @@ describe('the inspector only ever asks the editor for a file under the root', ()
     const i = runInspector()
     i.altClick('node_modules/some-kit/src/Shell.mesa:4:2')
     expect(i.fetched).toEqual(['/__open-in-editor?file=' + encodeURIComponent('/app/node_modules/some-kit/src/Shell.mesa:4:2')])
+  })
+
+  // FJS-3332: Shell's topbar has no app element above it, because the app's
+  // page renders inside the layout rather than around it.
+  test("a package's chrome opens the app line that placed the component", () => {
+    const i = runInspector()
+    const SHELL = '/home/me/packages/ui/src/Shell.mesa'
+    i.altClick([`${SHELL}:235:7`, { loc: `${SHELL}:230:3`, placed: ['src/routes/_module.mesa:83:1'] }])
+    expect(i.fetched).toEqual([opened('src/routes/_module.mesa:83:1')])
+  })
+
+  test('a component the package placed is passed over for the one the app placed', () => {
+    const i = runInspector()
+    const SHELL = '/home/me/packages/ui/src/Shell.mesa'
+    i.altClick([{ loc: `${SHELL}:235:7`, placed: [`${SHELL}:236:5`] }, { loc: `${SHELL}:230:3`, placed: ['src/routes/_module.mesa:83:1'] }])
+    expect(i.fetched).toEqual([opened('src/routes/_module.mesa:83:1')])
+  })
+
+  test('the placing line outranks an installed copy of the package', () => {
+    const i = runInspector()
+    i.altClick({ loc: 'node_modules/some-kit/src/Shell.mesa:4:2', placed: ['src/routes/_module.mesa:9:1'] })
+    expect(i.fetched).toEqual([opened('src/routes/_module.mesa:9:1')])
+  })
+
+  test('a pick of package chrome names the package file it came from', () => {
+    const i = runInspector()
+    const got = []
+    i.window.__fjsInspect.onPick(p => got.push(p))
+    i.altClick({ loc: '/home/me/packages/ui/src/Shell.mesa:235:7', placed: ['src/routes/_module.mesa:83:1'] }, { shiftKey: true })
+    expect(got[0].loc).toBe('src/routes/_module.mesa:83:1')
+    expect(got[0].via).toBe('/home/me/packages/ui/src/Shell.mesa:235:7')
+  })
+
+  test("a package's chrome nothing in the app placed is not picked at all", () => {
+    const i = runInspector()
+    i.altClick('/home/me/packages/ui/src/Shell.mesa:235:7')
+    expect(i.fetched).toEqual([])
+    expect(i.swallowed).toEqual([])
   })
 
   test('`open` is not on the global — a page script would need no gesture', () => {

@@ -329,6 +329,8 @@ export const router = {
  *        the address to navigate, where there is no `window` to read one off —
  *        the terminal shell's. The document's scroll, title and link clicks are
  *        left alone
+ * @param {(url: string) => void} [options.reload]  what `reload(url)` does
+ *        where there is no page to reload — the terminal shell's process swap
  * @param {object} [layouts]  — lazy layout map { filePath → () => import(...) }
  * @returns {Promise<void> | undefined}  the boot navigation, settled whether
  *        or not it landed; undefined where there is no address to boot from
@@ -491,6 +493,22 @@ export function back(fallback) {
 /** Navigate forward in history */
 export function forward() {
   _hist().forward()
+}
+
+/**
+ * Start the whole app again at `path`, from the code on disk — the page
+ * reloads, or the terminal shell replaces its process. A route's module ran at
+ * its first import and no new one is imported over it, so this, not a `goto`,
+ * is what shows an edit to it.
+ *
+ * @param {string} [path]  the route to open; where the app is now when omitted
+ * @param {Record<string, unknown>} [queryParams]
+ */
+export function reload(path = page.pathname, queryParams = {}) {
+  const url = buildUrl(path, queryParams, _options.trailingSlash ?? 'always')
+  if (_options.reload) return _options.reload(url)
+  if (_options.history) throw new Error('this router was handed a History and no reload, so nothing here can start it again')
+  window.location.assign(url)
 }
 
 /**

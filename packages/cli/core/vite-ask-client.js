@@ -722,6 +722,7 @@
       row.dataset.pick = p.loc
       const what = make('div', 'flex:1 1 180px;min-width:0')
       what.appendChild(make('div', 'font:12.5px/1.4 ui-monospace,monospace;color:#38bdf8;word-break:break-all', p.loc))
+      if (p.via) what.appendChild(make('div', 'color:#94a3b8;font-size:12px', `places ${p.via.split('/').pop()}, whose own markup this is`))
       const text = words(p.el)
       what.appendChild(make('div', 'color:#94a3b8;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis',
         `<${p.el.localName}>${text ? ' ' + text.slice(0, 60) : ''}`))
@@ -751,7 +752,7 @@
     planning = false
     if (!picks.some(x => x.el === p.el)) {
       if (picks.length >= MAX_PICKS) line(`${MAX_PICKS} elements is the most one ask takes`, 'error')
-      else picks.push({ el: p.el, loc: p.loc, html: outline(p.el), inner: innerLocs(p.el), repeats: drawnFrom(p.loc), open: p.open })
+      else picks.push({ el: p.el, loc: p.loc, via: p.via || null, html: outline(p.el), inner: innerLocs(p.el), repeats: drawnFrom(p.loc), open: p.open })
     }
     pickKey = p.key || 'alt'
     drawHint()
@@ -972,7 +973,7 @@
     }
   }
 
-  const wire = list => list.map(p => ({ loc: p.loc, html: p.html.slice(0, HTML_CUT), size: p.html.length, inner: p.inner, repeats: p.repeats }))
+  const wire = list => list.map(p => ({ loc: p.loc, via: p.via, html: p.html.slice(0, HTML_CUT), size: p.html.length, inner: p.inner, repeats: p.repeats }))
 
   async function handoff() {
     const session = store.get()

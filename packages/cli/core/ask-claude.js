@@ -391,6 +391,7 @@ export function editPrompt({ instruction, picks = [], page = null, followUp = fa
   picks.forEach((p, i) => {
     const lines = [picks.length > 1 ? `Element ${i + 1} of ${picks.length}:` : 'The element:']
     if (p.loc) lines.push(`- source: ${p.loc}`)
+    if (p.via) lines.push(`- drawn by ${p.via}, a package component's own markup: the source is the line that placed that component, so change what it passes (props, slot content) rather than the package's file`)
     if (p.repeats > 1) lines.push(`- drawn ${p.repeats} times on the page from that source`)
     if (p.loops?.length) lines.push(`- inside: ${p.loops.map(loop).join(' › ')}`)
     if (p.files?.length) lines.push(`- written in, under it: ${p.files.join(', ')}`)

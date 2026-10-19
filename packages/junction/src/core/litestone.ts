@@ -34,7 +34,7 @@ import type { AppDb, MirrorForward } from './app.ts'
 import { fieldError } from './field-errors.ts'
 import { CRUD_METHODS } from './methods.ts'
 import type { ServiceContext, ServiceContextLocals, QueryDirectives } from './context.ts'
-import { clampPagination } from './directives.ts'
+import { clampPagination, pageBounds, type PageBounds } from './directives.ts'
 import { columnsUnmoved } from './write-narrowing.ts'
 import { coveredWrite, freezeUser, requestMeta, currentCall } from './context.ts'
 import { toBulkFailure, partitionBulk, BULK_FAILURES, list, resultData, isServiceResult, type BulkFailure } from './envelope.ts'
@@ -742,7 +742,7 @@ export interface LitestoneServiceOptions {
    */
   model?:      string
   idField?:    string
-  paginate?:   { default: number; max: number }
+  paginate?:   PageBounds
   softDelete?: string
   allowBulk?:  boolean
   /**
@@ -895,11 +895,16 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
   const {
     model,
     idField    = 'id',
-    paginate   = { default: 20, max: 100 },
+    paginate,
     softDelete,
     allowBulk  = true,
     bulkMax    = 1000,
   } = opts
+
+  const pageOf = (ctx: ServiceContext) => {
+    const { default: dflt, max } = pageBounds(paginate, ctx.app?.config?.paginate)
+    return [dflt, max] as const
+  }
 
   // Whether the app NAMED the column, as opposed to taking the default. The
   // tuple-key refusal below turns on it: `id` is what this layer assumed, and a
@@ -1076,7 +1081,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
 
   async function restoreImpl(ctx: ServiceContext): Promise<unknown> {
     const table = getTable(ctx)
-    const q     = parseQuery(ctx.query, paginate.default, paginate.max, ctx.directives)
+    const q     = parseQuery(ctx.query, ...pageOf(ctx), ctx.directives)
 
     // By id it answers the row or a 404, as remove does. Litestone answers an
     // array for any where, so a by-id restore used to hand back `[row]` where
@@ -1456,7 +1461,7 @@ const columns = writableColumns(db, m.accessor)
   return {
     async find(ctx: ServiceContext): Promise<unknown> {
       const table = getTable(ctx)
-      const q     = parseQuery(ctx.query, paginate.default, paginate.max, ctx.directives)
+      const q     = parseQuery(ctx.query, ...pageOf(ctx), ctx.directives)
       const where = { ...q.where, ...softDeleteFilter() }
 
       // FTS5 search path — routes to table.search() when $search is present.
@@ -1547,7 +1552,7 @@ const columns = writableColumns(db, m.accessor)
     async aggregate(ctx: ServiceContext): Promise<unknown> {
       const table = getTable(ctx)
       refuseRecursive(ctx.directives?.recursive, 'a count or an aggregate', ctx)
-      const args  = parseAggregate(ctx.data, ctx.query, paginate.default, paginate.max, ctx.directives)
+      const args  = parseAggregate(ctx.data, ctx.query, ...pageOf(ctx), ctx.directives)
       const by    = args.by as unknown[] | undefined
 
       args.where = { ...(args.where as Record<string, unknown>), ...softDeleteFilter() }
@@ -1722,7 +1727,7 @@ const columns = writableColumns(db, m.accessor)
 
       assertNameable(ctx)
       const table = getTable(ctx)
-      const q     = parseQuery(ctx.query, paginate.default, paginate.max, ctx.directives)
+      const q     = parseQuery(ctx.query, ...pageOf(ctx), ctx.directives)
 
       if (softDelete && (ctx.data as Record<string, unknown>)[softDelete] !== undefined) {
         throw new BadRequest(`Cannot set ${softDelete} directly — use remove()`)
@@ -1752,7 +1757,7 @@ const columns = writableColumns(db, m.accessor)
       if (mirrored?.forward.update) return forwardUpdate(ctx, mirrored, 'patch')
 
       const table = getTable(ctx)
-      const q     = parseQuery(ctx.query, paginate.default, paginate.max, ctx.directives)
+      const q     = parseQuery(ctx.query, ...pageOf(ctx), ctx.directives)
 
       if (softDelete && (ctx.data as Record<string, unknown>)[softDelete] !== undefined) {
         throw new BadRequest(`Cannot set ${softDelete} directly — use remove()`)
@@ -1823,7 +1828,7 @@ const columns = writableColumns(db, m.accessor)
       if (mirrored?.forward.remove) return forwardRemove(ctx, mirrored)
 
       const table = getTable(ctx)
-      const q     = parseQuery(ctx.query, paginate.default, paginate.max, ctx.directives)
+      const q     = parseQuery(ctx.query, ...pageOf(ctx), ctx.directives)
 
       refuseHardDelete(ctx, q)
 

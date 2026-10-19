@@ -4549,6 +4549,16 @@ describe('source locations — the inspector\'s half of click-to-source', () => 
     const out = await withLoc('<script>\n  let injected = 1\n</script>\n<p>hi</p>', { locLines: [1, 1, 2, 3] })
     expect(out).toContain('<p data-fjs-loc="src/pages/Home.mesa:3:1"')
   })
+
+  // A package component's markup carries the package's file only; the anchor
+  // is how the inspector gets back to the line that placed it (FJS-3332).
+  it('stamps where a component was placed on its anchor, before the call', async () => {
+    const src = '<script>\n  import Shell from "./Shell.mesa"\n</script>\n<div>\n  <Shell title="x" />\n</div>'
+    const out = await withLoc(src)
+    expect(out).toMatch(/(\$\$el\d+)\.__fjsPlaced = "src\/pages\/Home\.mesa:5:3";\s*Shell\(\1, /)
+    acorn.parse(out, { ecmaVersion: 'latest', sourceType: 'module' })
+    expect(await withLoc(src, { loc: false })).not.toContain('__fjsPlaced')
+  })
 })
 
 // ── Dev instrumentation (config.dev: true) ───────────────────────────────────

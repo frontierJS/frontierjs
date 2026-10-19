@@ -8,6 +8,7 @@ import type { ServiceContext, ServiceMethod } from './context.ts'
 import { CRUD_METHODS, requestMeta, reenterAs, enterCall, currentCall, runInServiceCall, settleCoverage, withCallEffects, commitScope, runInCommitScope, runAfterCommitEffect } from './context.ts'
 import type { CommitScope, CallCoverage, OutboxRelay } from './context.ts'
 import { claimIdempotency } from './idempotency.ts'
+import { pageBounds, type PageBounds } from './directives.ts'
 import { diagnostic, isDiagnosticMode } from './diagnostics.ts'
 import {
   resolvePipelines,
@@ -298,11 +299,13 @@ export interface Service {
   bulkMax?: number
 
   /**
-   * The page size, carried because `callService` is where a wire's `$limit` is
-   * graded against `max` -- it holds nothing but the service once the context
-   * is made (`FJS-D896`). Absent on a service over no model.
+   * The page size the service DECLARED, carried because `callService` is where
+   * a wire's `$limit` is graded against `max` -- it holds nothing but the
+   * service once the context is made (`FJS-D896`). Absent when undeclared,
+   * which pages by `config.paginate` (see `pageBounds`), and on a service over
+   * no model, which does not page.
    */
-  paginate?: { default: number; max: number }
+  paginate?: PageBounds
 
   /**
    * Query keys this service owns rather than filters on — see the declaration.
@@ -663,13 +666,15 @@ async function _callService(
   // call still clamps (`clampPagination`), since its limit is code rather than a
   // request. `paginate()`'s own max is a hook's and stays a clamp.
   const stated = ctx.directives?.limit
-  if (method === 'find' && service.paginate && ctx.transport && ctx.transport !== 'internal'
-      && stated != null && Number(stated) > service.paginate.max) {
-    throw new BadRequest(
-      `$limit ${Number(stated)} is above this service's maximum page of ${service.paginate.max}. ` +
-      `Ask for ${service.paginate.max} or fewer and follow $offset (or hasMore) for the rest.`,
-      { directive: '$limit', value: Number(stated), max: service.paginate.max }
-    )
+  if (method === 'find' && service.model !== null && ctx.transport && ctx.transport !== 'internal'
+      && stated != null) {
+    const { max } = pageBounds(service.paginate, ctx.app?.config?.paginate)
+    if (Number(stated) > max)
+      throw new BadRequest(
+        `$limit ${Number(stated)} is above this service's maximum page of ${max}. ` +
+        `Ask for ${max} or fewer and follow $offset (or hasMore) for the rest.`,
+        { directive: '$limit', value: Number(stated), max }
+      )
   }
 
   // ── Idempotency-Key ──────────────────────────────────────────────────
@@ -1133,10 +1138,8 @@ export interface BaseServiceOptions {
    * so the minimal service file is just createService({ model: 'posts' }).
    */
   db?:       () => unknown
-  paginate?: {
-    default: number
-    max:     number
-  }
+  /** Omitted, the app's `config.paginate`, else `{ default: 20, max: 100 }`. */
+  paginate?: PageBounds
   // Must be explicitly true to allow DELETE/PATCH without an id.
   // Protects against accidental whole-table wipes from a missing id param.
   allowBulk?: boolean
@@ -2141,7 +2144,7 @@ export function buildBase(
     model,
     idField,
     softDelete,
-    paginate:  paginate ?? { default: 20, max: 100 },
+    ...(paginate !== undefined ? { paginate } : {}),
     allowBulk: allowBulk ?? false,
     ...(bulkMax !== undefined ? { bulkMax } : {}),
   })
@@ -2428,7 +2431,8 @@ export interface ServiceDefinition {
    */
   model?:     string | null
   db?:        () => unknown
-  paginate?:  { default: number; max: number }
+  /** Omitted, the app's `config.paginate`, else `{ default: 20, max: 100 }`. */
+  paginate?:  PageBounds
   allowBulk?: boolean
   bulkMax?:   number
 
@@ -2859,7 +2863,7 @@ export function buildService(def: ServiceDefinition): Service {
     // onto the built service, so anything reading it back saw undefined.
     allowBulk: def.allowBulk ?? false,
     bulkMax:   def.bulkMax   ?? 1000,
-    ...(def.model === null ? {} : { paginate: def.paginate ?? { default: 20, max: 100 } }),
+    ...(def.model === null || def.paginate === undefined ? {} : { paginate: def.paginate }),
     ...(reservedQuery.length ? { reservedQuery } : {}),
 
     find:    def.find    ?? base.find,

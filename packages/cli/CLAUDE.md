@@ -252,7 +252,16 @@ core/
                 40 rows moved verbatim to the top of ISSUES_ARCHIVE.md, and every
                 `.md` link RESOLVING to a moved anchor repointed (compared by
                 absolute path; code comments left alone). Put back, every file,
-                on a new `register:check` error
+                on a new `register:check` error. `rotateHandoff` is the same move
+                for HANDOFF.md — two newest sessions by heading date stay, the
+                rest go to `docs/handoff-archive/<YYYY-MM>.md` with relative
+                links rebased, refused when it would break more than it found
+  tidy.js       the reader behind `fli tidy` — records past their keep (moved
+                only under `--apply`, through `archive.js`), worktrees whose
+                directory is gone, SQLite files outside every `<app>/db/`, temp
+                entries grouped by the `mkdtemp` prefix in this repo's source
+                that writes them, and ignored directories past 500M. Deletes
+                nothing: a gitignored `.db` here is as often dev data as debris
   file.js       the writer behind `register:file` — the next id (the max the
                 registers hold anywhere, archive included, at the project's
                 width) atop its severity's table, put back on a new

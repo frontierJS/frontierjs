@@ -110,6 +110,14 @@ const MESA_DYNAMIC_TAG = 'mesa-dynamic-element'
 export const LOC_ATTR = 'data-fjs-loc'
 
 /**
+ * The property a dev build sets on a component's anchor comment, holding where
+ * the component was PLACED, in `LOC_ATTR`'s format. A package component's own
+ * markup carries only the package's file, so this is the inspector's way back
+ * to the app line that put it on the page (`FJS-3332`).
+ */
+export const PLACED_PROP = '__fjsPlaced'
+
+/**
  * A static attribute value on its way into the template string, which is parsed
  * back by `innerHTML`. The emitter wraps every value in double quotes, so a `"`
  * inside one — which only a single-quoted or unquoted source attribute can carry —
@@ -7364,16 +7372,20 @@ export function makeComponent(node, option = {}) {
     }
   }
 
+  const placedAt = ctx.locOf(node.start)
+
   // makeBind(anchorName) — called by insertComponent with the template anchor var
   const makeBind = (anchorName) => xNode(
     'component',
     { anchorName, componentName, allProps, reactiveProps, spreadProps, twoWayProps,
       snippetDefs, bindThisSetter, hasReactive, hasSpreads,
-      hasBindThis, island },
+      hasBindThis, island, placedAt },
     (w, n) => {
       // Snippet props are defined first: the call that receives them is on the
       // next line, in the same scope.
       for (const def of n.snippetDefs) w.add(def)
+
+      if (n.placedAt) w.writeLine(`${n.anchorName}.${PLACED_PROP} = ${JSON.stringify(n.placedAt)};`)
 
       const propsObj = buildPropsObj(n.allProps, n.hasSpreads ? n.spreadProps : [])
 
