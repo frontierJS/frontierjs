@@ -17,7 +17,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'vitest'
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { discoverWidgets, widgetEntrySource, CSS_PLACEHOLDER, widgetCssPlugin, widgetDevSource, widgetDevPlugin, inlineStyleImports, DEV_WIDGETS_ID } from '../src/build/widget-build.js'
+import { discoverWidgets, declaresWidget, widgetEntrySource, CSS_PLACEHOLDER, widgetCssPlugin, widgetDevSource, widgetDevPlugin, inlineStyleImports, DEV_WIDGETS_ID } from '../src/build/widget-build.js'
 import { kebab, CSS_MARK } from '../src/widget/index.js'
 import { tmpDir } from './tmp.js'
 
@@ -204,5 +204,52 @@ describe('dev harness', () => {
     expect(p.transform(`import './a.css'`, '/x/A.mesa').code).toContain('?inline')
     expect(p.transform(`import './a.css'`, '\0virtual:thing')).toBeNull()
     expect(p.apply).toBe('serve')
+  })
+})
+
+describe('a widget with no <script module>', () => {
+  // FJS-2929: the entry read `mod.widget`, which such a widget never exports.
+  test('builds without a warning about the generated entry', async () => {
+    const { build } = await import('vite')
+    const { createSierraViteConfig } = await import('../src/build/index.js')
+    const { buildWidgets } = await import('../src/build/widget-build.js')
+    const { cpSync } = await import('node:fs')
+    // Under the package, not /tmp: the entry imports `@frontierjs/sierra/widget`
+    // and only a path beneath this package resolves it.
+    const root = join(import.meta.dirname, '../bench/dist/test-nomodule-widget')
+    rmSync(root, { recursive: true, force: true })
+    try {
+      cpSync(join(import.meta.dirname, '../bench/fixtures/floor-widget'), root, { recursive: true })
+      const config = createSierraViteConfig({ target: 'widget', widgets: { dir: 'src/Embeds', prefix: 'fjs-' } })
+      const warnings = []
+      const customLogger = { info() {}, warn: m => warnings.push(m), warnOnce: m => warnings.push(m), error: m => warnings.push(m), clearScreen() {}, hasErrorLogged: () => false, hasWarned: false }
+      await buildWidgets({
+        root, dir: 'src/Embeds', outDir: 'dist/embeds', prefix: 'fjs-', plugins: config.plugins ?? [],
+        viteBuild: (cfg) => build({ ...cfg, customLogger }),
+      })
+      expect(warnings.join('\n')).not.toContain('IMPORT_IS_UNDEFINED')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 60000)
+})
+
+describe('declaresWidget', () => {
+  test.each([
+    ['<script module>\n  export const widget = { tag: "x" }\n</script>', true],
+    ['<script module>\n  export let widget = {}\n</script>', true],
+    ['export { a, widget as widget }', true],
+    ['export {\n  a,\n  widget,\n}', true],
+    ['export * from "./shared.js"', true],
+    ['<script>\n  let n = 0\n</script>\n<button>{n}</button>', false],
+    ['<script module>\n  export const widgetry = 1\n</script>', false],
+  ])('%j -> %s', (source, expected) => {
+    expect(declaresWidget(source)).toBe(expected)
+  })
+
+  test('an entry for a widget that declares none never reads the export', () => {
+    const src = widgetEntrySource({ name: 'Counter', entry: '/abs/Counter.mesa' }, { declares: false })
+    expect(src).not.toContain('mod.widget')
+    expect(src).toContain('...declared')
   })
 })

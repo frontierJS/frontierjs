@@ -2,7 +2,7 @@
 // A directory minted for an absolute path is the caller's own statement, and
 // `fli test:mutate` mints one per mutant.
 import { describe, test, expect } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { createClient } from '../src/index.js'
@@ -51,6 +51,36 @@ describe('minted-directory warning', () => {
       const schema = `database main { path "${rel}" }\nmodel Thing { id Int @id }`
       expect((await warningsFrom(schema)).length).toBe(1)
     } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  // FJS-1869 — `resolveFrom: 'schema'` names the directory, so the cwd chose nothing.
+  const ANCHORED = (audit: string) =>
+    `database main { path "./db/app.db" }\ndatabase audit { path "${audit}" driver jsonl }\n` +
+    `model Thing { id Int @id }\nmodel Note { id Int @id @default(autoincrement())  note String  @@db(audit) }`
+
+  async function anchoredWarnings(resolveFrom: string | undefined, cwd: string, root: string) {
+    mkdirSync(join(root, 'db'), { recursive: true })
+    writeFileSync(join(root, 'db', 'schema.lite'), ANCHORED('./db/audit/'))
+    const before = process.cwd()
+    process.chdir(cwd)
+    try { return await warningsFrom(undefined as any, { path: join(root, 'db', 'schema.lite'), resolveFrom, write: 'note' }) }
+    finally { process.chdir(before) }
+  }
+
+  test('a relative path anchored by resolveFrom: schema mints its directory silently', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'litestone-mint-'))
+    const elsewhere = mkdtempSync(join(tmpdir(), 'litestone-mint-cwd-'))
+    try {
+      expect(await anchoredWarnings('schema', elsewhere, root)).toEqual([])
+    } finally { rmSync(root, { recursive: true, force: true }); rmSync(elsewhere, { recursive: true, force: true }) }
+  })
+
+  test('the same schema with no anchor still warns', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'litestone-mint-'))
+    const elsewhere = mkdtempSync(join(tmpdir(), 'litestone-mint-cwd-'))
+    try {
+      expect((await anchoredWarnings(undefined, elsewhere, root)).length).toBeGreaterThan(0)
+    } finally { rmSync(root, { recursive: true, force: true }); rmSync(elsewhere, { recursive: true, force: true }) }
   })
 
   // FJS-2719 — the tenant registry and the CLI receive a path already resolved,

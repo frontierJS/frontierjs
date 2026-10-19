@@ -6,6 +6,7 @@ examples:
   - fli find stressor issues
   - fli find FJS-1546
   - fli find junction idempotency --limit 5
+  - fli find FJS-1546 --show
 args:
   -
     name: terms
@@ -17,6 +18,11 @@ flags:
     type: string
     description: How many hits to print
     defaultValue: '20'
+  show:
+    char: s
+    type: boolean
+    description: Print each hit's whole row under its title, instead of reading it by line number
+    defaultValue: false
 ---
 
 ```js
@@ -27,7 +33,7 @@ const { plural }           = await import(resolve(global.fliRoot, 'core/text.js'
 const root  = findRegisterRoot(process.cwd()) ?? $.paths.root
 const limit = Math.max(1, Number(flag.limit) || 20)
 
-const out = findRows({ root, terms: arg.terms, limit })
+const out = findRows({ root, terms: arg.terms, limit, show: Boolean(flag.show) })
 
 echo('')
 if (!out.ok) {
@@ -80,6 +86,7 @@ for (const h of out.hits) {
 
   echo(settled ? chalk.dim(`  ${head}`) : `  ${head}`)
   echo(settled ? chalk.dim(`             ${body}`) : `             ${body}`)
+  if (h.body) echo(`             ${h.body}`)
 }
 if (out.total > out.hits.length) echo(chalk.dim(`  … ${out.total - out.hits.length} more — add a term`))
 echo('')
@@ -96,9 +103,11 @@ title or body, case-folded.
 
 The id, status and severity, `file:line`, and the area and title — never the
 body, which is what made a grep over this register cost 29k characters a match.
-Hits whose id, area or title hold every term come first, and open rows before
-rulings before closed rows within that; the rest are listed under *only in the
-body*. Read one row with its `file:line`.
+`--show` adds each hit's whole row as written under its title — name the id, so
+it is one row (`fli find FJS-1546 --show`), and a row is read without `sed -n
+Np` or a grep. Hits whose id, area or title hold every term come first, and
+open rows before rulings before closed rows within that; the rest are listed
+under *only in the body*.
 
 **Run it before `fli file`.** A second sighting of a filed defect is `fli
 amend <id> --detail`, not a new row.

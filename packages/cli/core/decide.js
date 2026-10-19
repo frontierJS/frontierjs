@@ -45,7 +45,7 @@ import { basename, join, relative, resolve, sep }              from 'node:path'
 import { paperQuestions, readDecisions, rulingSections, QUESTION_ID } from './decisions.js'
 import { extractFrontmatter }        from './compiler.js'
 import { moveToClosed }                from './close.js'
-import { errorKeys, newErrors }          from './register-check.js'
+import { errorKeys, newErrors, describeNewErrors } from './register-check.js'
 import { readRegisters, registerLayout, withRegisterGuard } from './registers.js'
 
 const WHY_MAX = 2000
@@ -128,7 +128,7 @@ function decideUnguarded({ root, id, pick, why = '', section, file, dry = false,
     writeFileSync(decPath, before.dec)
     writeFileSync(paperAbs, before.paper)
     close?.undo()
-    return refuse(`the ruling was put back: register:check found ${added.map(f => `${f.rule} — ${f.message}`).join('; ')}`)
+    return refuse(`the ruling was put back: register:check found ${describeNewErrors(added)}`)
   }
 
   return { ok: true, ruling, date, question: q.question, pick: letter, closed: row?.id ?? null, files }
@@ -189,7 +189,7 @@ function settleUnguarded({ root, id, by, why = '', file, dry = false, today = ne
   if (added.length) {
     writeFileSync(paperAbs, before)
     close?.undo()
-    return refuse(`the strike was put back: register:check found ${added.map(f => `${f.rule} — ${f.message}`).join('; ')}`)
+    return refuse(`the strike was put back: register:check found ${describeNewErrors(added)}`)
   }
 
   return { ok: true, ruling: found.id, question: q.question, closed: row?.id ?? null, files }

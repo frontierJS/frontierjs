@@ -106,3 +106,19 @@ describe('the error still keys on the real field name', () => {
     expect(result.errors.map(e => e.field)).not.toContain('Customer')
   })
 })
+
+describe('a minimum length of one', () => {
+  // FJS-2104 -- `@trim @length(1, 100)` is how a schema says not blank, and a
+  // plural on one reads as a typo.
+  const named = () => createSchema({ name: { type: 'string', trim: true, minLength: 1, maxLength: 100 } } as never)
+
+  it('says "1 character", not "1 characters"', () => {
+    const result = named().validate({ name: '   ' })
+    expect(result.errors.find(e => e.field === 'name')?.message).toBe('name must be at least 1 character')
+  })
+
+  it('keeps the plural above one', () => {
+    const result = createSchema({ code: { type: 'string', minLength: 3 } } as never).validate({ code: 'ab' })
+    expect(result.errors[0]?.message).toBe('code must be at least 3 characters')
+  })
+})

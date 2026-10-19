@@ -335,6 +335,22 @@ await check(
   }
 }
 
+// ── The error sources merge in one order (FJS-D457) ─────────────────────────
+//
+// A control's own report is about the box on screen now, so it merges last over
+// the server's and the live check's. The three rarely coexist for one field in
+// a drive — editing a field retires its server message — so the order is held
+// where it is written.
+{
+  const { readFileSync } = await import('node:fs')
+  const form = readFileSync(join(ROOT, 'components', 'forms', 'Form.mesa'), 'utf8')
+  cases++
+  if (!/errors = \{ \.\.\._server, \.\.\._live\(\), \.\.\._control \}/.test(form)) {
+    console.error('✗ Form.mesa _recompute\n    `_control` must be spread last, over `_server` and `_live()`')
+    failed++
+  }
+}
+
 // ── Standing alone, nothing changes ─────────────────────────────────────────
 
 await check(

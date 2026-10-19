@@ -270,6 +270,32 @@ model ProjectTask {
 
 Existing data is preserved and immediately queryable as `db.projectTask.*`.
 
+## Seen by a person
+
+A `@scoped` filter tests a row the viewer never wrote against the field's `@default`, the value a read answers for it. That makes *unread* a filter and a count, per viewer, and opening a message marks it for the opener alone:
+
+```lite
+model User    { id Int @id  @@auth }
+model Message { id Int @id  body String  readAt DateTime? @scoped }
+```
+
+```js
+await db.user.create({ data: { id: 7 } })
+await db.user.create({ data: { id: 8 } })
+await db.message.create({ data: { id: 1, body: 'one' } })
+await db.message.create({ data: { id: 2, body: 'two' } })
+
+const ann = db.$setAuth({ id: 7 })
+await ann.message.update({ where: { id: 1 }, data: { mine: { readAt: new Date().toISOString() } } })
+
+const unread = await ann.message.count({ where: { mine: { readAt: null } } })
+if (unread !== 1) throw new Error(`expected 1 unread for Ann, got ${unread}`)
+const bob = await db.$setAuth({ id: 8 }).message.count({ where: { mine: { readAt: null } } })
+if (bob !== 2) throw new Error(`expected 2 unread for Bob, got ${bob}`)
+```
+
+The mark is a row keyed by `(message, viewer)` on the side table, so deleting either the message or the viewer deletes it (§ Lifecycle).
+
 ## Migrations
 
 `autoMigrate` handles edges incrementally: adding an `@edge` to an existing schema ALTERs the new column into the join table, or creates the side table — preserving existing rows. Fresh DDL emits everything from the start.

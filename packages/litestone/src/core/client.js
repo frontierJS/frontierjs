@@ -1444,29 +1444,50 @@ function makeTable(readDb, writeDb, shape, ctx) {
     }
     const host  = `${tableAlias ? `${tableAlias}.` : `"${tableName}".`}"id"`
     const alias = '_je'
-    const inner = [], innerParams = []
-    for (const [field, val] of Object.entries(predicate ?? {})) {
-      const desc = cols.find(c => c.field === field)
-      if (!desc) continue
-      const col = `${alias}."${desc.col}"`
-      if (val === null) { inner.push(`${col} IS NULL`); continue }
-      if (typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
-        for (const [op, v] of Object.entries(val)) {
-          if      (op === 'not') { if (v === null) inner.push(`${col} IS NOT NULL`); else { inner.push(`${col} != ?`); innerParams.push(_ecp(v)) } }
-          else if (op === 'gt')  { inner.push(`${col} > ?`);  innerParams.push(_ecp(v)) }
-          else if (op === 'gte') { inner.push(`${col} >= ?`); innerParams.push(_ecp(v)) }
-          else if (op === 'lt')  { inner.push(`${col} < ?`);  innerParams.push(_ecp(v)) }
-          else if (op === 'lte') { inner.push(`${col} <= ?`); innerParams.push(_ecp(v)) }
-          else if (op === 'in')  { inner.push(inList(col, v.map(_ecp), innerParams)) }
-          else if (op === 'contains') { inner.push(`${col} ${LIKE_SQL}`); innerParams.push(likePattern(op, v)) }
+    // Over the side row's columns, or when `atDefault` over each field's @default
+    // (a `?` with the default pushed ahead of the test).
+    const compile = (atDefault) => {
+      const inner = [], innerParams = []
+      for (const [field, val] of Object.entries(predicate ?? {})) {
+        const desc = cols.find(c => c.field === field)
+        if (!desc) continue
+        let col = `${alias}."${desc.col}"`
+        const ref = () => {
+          if (!atDefault) return col
+          innerParams.push(_ecp(edgeDefault(desc)))
+          return '?'
         }
-      } else {
-        inner.push(`${col} = ?`); innerParams.push(_ecp(val))
+        if (val === null) { col = ref(); inner.push(`${col} IS NULL`); continue }
+        if (typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
+          for (const [op, v] of Object.entries(val)) {
+            const c = ref()
+            if      (op === 'not') { if (v === null) inner.push(`${c} IS NOT NULL`); else { inner.push(`${c} != ?`); innerParams.push(_ecp(v)) } }
+            else if (op === 'gt')  { inner.push(`${c} > ?`);  innerParams.push(_ecp(v)) }
+            else if (op === 'gte') { inner.push(`${c} >= ?`); innerParams.push(_ecp(v)) }
+            else if (op === 'lt')  { inner.push(`${c} < ?`);  innerParams.push(_ecp(v)) }
+            else if (op === 'lte') { inner.push(`${c} <= ?`); innerParams.push(_ecp(v)) }
+            else if (op === 'in')  { inner.push(inList(c, v.map(_ecp), innerParams)) }
+            else if (op === 'contains') { inner.push(`${c} ${LIKE_SQL}`); innerParams.push(likePattern(op, v)) }
+          }
+        } else {
+          col = ref()
+          inner.push(`${col} = ?`); innerParams.push(_ecp(val))
+        }
       }
+      return { inner, innerParams }
     }
+    const side = `FROM "${d0.table}" ${alias} WHERE ${alias}."${d0.hostCol}" = ${host} AND ${alias}."${d0.dimCol}" = ?`
+    const { inner, innerParams } = compile(false)
     const innerSql = inner.length ? ' AND ' + inner.join(' AND ') : ''
     params.push(dimId, ...innerParams)
-    return `EXISTS (SELECT 1 FROM "${d0.table}" ${alias} WHERE ${alias}."${d0.hostCol}" = ${host} AND ${alias}."${d0.dimCol}" = ?${innerSql})`
+    const written = `EXISTS (SELECT 1 ${side}${innerSql})`
+    // A decorate edge's row is its membership, so no row is outside the dimension.
+    // A @scoped mark has none: no row reads as the default, so it filters as the
+    // default (an unread filter, `readAt: null`, would otherwise match nothing).
+    if (!d0.auth || !inner.length) return written
+    const dflt = compile(true)
+    params.push(dimId, ...dflt.innerParams)
+    return `(${written} OR (NOT EXISTS (SELECT 1 ${side}) AND ${dflt.inner.join(' AND ')}))`
   }
 
   // Dispatcher passed to buildWhere as its relFilter: edge namespace → edgeFilterSql,
@@ -3531,7 +3552,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     err.hint =
       `Name the column on the call to write it and keep every other rule:\n\n` +
       `    db.${modelName.charAt(0).toLowerCase() + modelName.slice(1)}.update({ where, data, system: [${denied.map(f => `'${f}'`).join(', ')}] })\n\n` +
-      `asSystem() writes it too, and drops the gate, the row policies and the audit actor with it.`
+      `asSystem() writes it too, and drops the gate and the row policies with it; a bare one names no audit actor.`
     throw err
   }
 
@@ -4045,7 +4066,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     //
     // The narrow hatch is `system: ['col']` on the call, which keeps every
     // other protection — the gate, the row policies, soft-delete, the audit
-    // actor — where asSystem() drops all of them to write one column. Naming
+    // actor — where a bare asSystem() drops all of them to write one column. Naming
     // the field IS the statement: an escape hatch may not disable a guarantee
     // silently.
     if (!ctx.isSystem && _systemWriteKeys.size && data && typeof data === 'object' && !Array.isArray(data)) refuseSystemWrite(data, system, stamped)

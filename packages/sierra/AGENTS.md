@@ -53,6 +53,7 @@ a create page is `<Order method="create" />`. An irregular plural states the mod
 | `orders/index.mesa`, `about.mesa` (lowercase) | a route — `/orders/`, `/about/` |
 | `orders/[id].mesa` · `[...404].mesa` · `(auth)/login.mesa` | `:id` · catch-all · a group with no URL segment |
 | `_module.mesa` | the layout for everything beneath it; renders the child with `<slot />` |
+| `reset: true` in a route's frontmatter | that route renders with **no layout** — a public page beside a staff shell. Layouts nest and there is no other opt-out |
 | `Row.mesa`, `_row.mesa` (PascalCase or `_`) | a co-located component, **never routed** |
 | `orders/[id].meta.js` | the companion — `load`, `head`, `getStaticPaths` |
 
@@ -122,7 +123,12 @@ The kit's components, their callbacks and what a `<Table>` needs are
 window. `list({ state: 'local', where: { projectId } })` is an embedded list that
 writes nothing to the address bar. A list over a filter is its own: one stating
 `where` or `query` keeps its own rows, so a page holds a list per filter, and one
-stating neither is the resource's tether. A list you wire by hand reads the tether with
+stating neither is the resource's tether. **`where` is fixed for the list's life and
+is laid over the filters on every load**, so a bar or an `apply()` can never widen
+it — and a tab that re-states `where` per tab is ANDed with the last, filtering to
+nothing. A filter the user moves (tabs, a status switch) is state, not scope: start
+it with `query: { status: 'open' }` and move it with `list.apply({ ...list.query, status })`.
+Keep `where` for what the list is scoped to (`projectId`). A list you wire by hand reads the tether with
 `useTether(orders.tether)` and re-runs on `$: page.query, page.directives, () => load()`.
 
 ```js
@@ -345,6 +351,53 @@ prerendered markup; there is no hydration. Directives are `client:load`,
 **Dev on a static surface is an SPA; only the build prerenders and checks.** The
 dev server runs a static `load()` itself and must be `bun --bun vite` — under node
 it fails with a `bun:` protocol error. A relative URL in a build-time `load()` throws.
+
+---
+
+## Widgets — an embed on a page you do not own
+
+`widgets/` is its own Vite root (`fli make:widget`). Run every widget command from
+there, not the app root; `widgets/config/sierra.config.js` paths are relative to it
+and `@` resolves to `widgets/src`.
+
+| Where | What it is |
+|---|---|
+| `src/Embeds/BuyButton.mesa` | one widget, one script. A directory holding `index.mesa` is a widget with parts |
+| `src/Embeds/BuyButton/Row.mesa` | a part of that widget, **not built** as a second script |
+| `src/lib/shop.js` | shared code. Anything under `Embeds/` that is not `.mesa`/`.js` is flagged by `widget-entry-name`, so helpers and stylesheets go beside the widget importing them or in `src/lib/`, imported as `@/lib/shop.js` |
+
+- **The tag is the file name, kebab-cased, under `widgets.prefix`.** `BuyButton.mesa`
+  with `prefix: 'fjs-'` is `<fjs-buy-button>`. The prefix is *glued* on, so it ends in
+  a dash; a custom element name needs one, and a build with a bare name and no prefix
+  is refused. The `.mesa` states no tag — export `widget = {}` from `<script module>`
+  and leave it empty. `selector` is only for host markup nobody can edit
+  (`<div class="mt-booking">`); a page that can paste a script tag can paste an element.
+- **Props are `data-*` attributes, camelCased, and every one is a STRING.**
+  `data-api-url` is `export let apiUrl`. Parse what you need; `data-sku="007"` stays
+  `'007'`. **They are read once, at mount** — a host that rewrites `data-sku` later
+  changes nothing, so a widget that needs a live value is given an endpoint to read.
+- **Dev and build are two different paths.** `bun run dev:widgets` serves
+  `widgets/src/dev.js`, which is `import 'virtual:sierra-widgets'` and nothing else —
+  Sierra's dev plugin calls `embed()` for every widget (importing a `.mesa` mounts
+  nothing). `bun run build:widgets` (`sierra widgets`) is the loop that emits one
+  self-contained IIFE per widget into `dist/embeds`; **`vite build` does not make
+  them.** Dev css is everything imported so far, so it may carry a neighbor's rules.
+- **A widget mounts in a shadow root, and its CSS goes in the root.** Write
+  `import './x.css'` in the `.mesa` and the build puts the sheet inside the script. The
+  host page's CSS cannot reach in and yours cannot leak out, so a selector written
+  against `body` or `:root` matches nothing inside it (use `:host`) and a stylesheet
+  linked in the host styles nothing in it.
+- **Reaching the API is a cross-origin `fetch`.** The origin is a prop with a default
+  (`import.meta.env.VITE_API_URL`), never a constant, since one build is embedded by
+  pages pointing at staging and production. Plain `fetch` rather than
+  `@frontierjs/junction/client`: the client opens a WebSocket on a stranger's page. A
+  custom method is `POST /api/{service}[/{id}]` with `X-Service-Method: <name>`, and a
+  bearer or token goes in its own header (`example/widgets/src/lib/shop.js`). **The
+  API must allow it**: `http: { cors: { origins: [...] } }` in the app config, and any
+  custom header named in `http.callHeaders` — a header the preflight does not list
+  never arrives and the call fails as a 404 or a CORS error, with nothing wrong in the
+  widget. `origins: ['*']` is right only while the widget authenticates by a header it
+  sets; a cookie session or `credentials: true` makes it wrong.
 
 ---
 

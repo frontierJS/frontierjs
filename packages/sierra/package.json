@@ -19,6 +19,7 @@
     "./postbuild": "./src/postbuild/index.js",
     "./components/RouterView": "./src/components/RouterView.mesa",
     "./components/ChainRenderer": "./src/components/ChainRenderer.mesa",
+    "./components/SupportBanner": "./src/resource/SupportBanner.mesa",
     "./presence": "./src/presence/index.js",
     "./devtools": "./src/devtools/index.js",
     "./widget": "./src/widget/index.js",

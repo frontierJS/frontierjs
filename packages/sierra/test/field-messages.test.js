@@ -16,7 +16,7 @@ import { describe, test, expect, vi } from 'vitest'
 
 vi.mock('@frontierjs/sierra/resource', () => ({ getClient: () => null }))
 
-const { buildFieldRules, validateAgainstFields, fieldLabel } =
+const { buildFieldRules, validateAgainstFields } =
   await import('../src/resource/field-rules.js')
 
 const ORDER = {
@@ -51,27 +51,41 @@ const DEFS = { Order: ORDER, OrderStatus: { type: 'string', enum: ['pending', 'p
 const resolve = (ref) => DEFS[String(ref).replace(/^#\/\$defs\//, '')] ?? null
 const rules = () => buildFieldRules(ORDER, resolve)
 
-describe('fieldLabel', () => {
-  test('prefers @label', () => {
-    expect(fieldLabel('customerId', rules().customerId)).toBe('Customer')
+describe('a message names a field the way its control does (FJS-2066)', () => {
+  const full = { reference: 'ORD-1', email: 'a@b.co', total: 1, plain: 1, status: 'pending', customerId: 1 }
+  const messageFor = (r, data, field) =>
+    validateAgainstFields(r, data, 'create').find(e => e.field === field)?.message
+  const bare = (properties, required = []) =>
+    buildFieldRules({ type: 'object', properties, required }, resolve)
+
+  test('@label is used verbatim', () => {
+    const r = structuredClone(ORDER)
+    delete r.properties.customerId['x-messages']
+    expect(messageFor(buildFieldRules(r, resolve), { ...full, customerId: null }, 'customerId')).toBe('Customer is required')
   })
 
-  test('falls back to the relation name for an unlabelled foreign key', () => {
+  test('an unlabelled foreign key borrows its relation, humanized', () => {
     const noLabel = structuredClone(ORDER)
     delete noLabel.properties.customerId.title
-    // No authoring at all, and it still stops saying `customerId`.
-    expect(fieldLabel('customerId', buildFieldRules(noLabel, resolve).customerId)).toBe('customer')
+    delete noLabel.properties.customerId['x-messages']
+    expect(messageFor(buildFieldRules(noLabel, resolve), { ...full, customerId: null }, 'customerId')).toBe('Customer is required')
   })
 
-  test('falls back to the field name for everything else', () => {
-    expect(fieldLabel('reference', rules().reference)).toBe('reference')
+  test('a camelCase column is humanized, as its control label is', () => {
+    const r = bare({ extraHours: { type: 'number' } })
+    expect(messageFor(r, { extraHours: 'x' }, 'extraHours')).toBe('Extra Hours must be a number')
+  })
+
+  test('a constraint refusal is humanized too', () => {
+    const r = bare({ redirectUrl: { type: 'string', pattern: '^https://' } })
+    expect(messageFor(r, { redirectUrl: 'nope' }, 'redirectUrl')).toBe('Redirect Url is not in the expected format')
   })
 
   test('never borrows a $ref target\'s title — that is the TYPE name', () => {
     // Litestone titles every enum $def with the type name, so following the ref
     // would make `status OrderStatus` introduce itself as "OrderStatus".
     expect(rules().status.title).toBeUndefined()
-    expect(fieldLabel('status', rules().status)).toBe('status')
+    expect(messageFor(rules(), { ...full, status: 'bogus' }, 'status')).toBe('Status must be one of: pending, paid')
   })
 })
 
@@ -113,7 +127,7 @@ describe('the generated sentence, when nothing is authored', () => {
   })
 
   test('is unchanged for a field with neither label nor message', () => {
-    expect(messageFor({ ...full, plain: -5 }, 'plain')).toBe('plain must be at least 0')
+    expect(messageFor({ ...full, plain: -5 }, 'plain')).toBe('Plain must be at least 0')
   })
 
   test('the error still keys on the real field name, whatever it is called', () => {

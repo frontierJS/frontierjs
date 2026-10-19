@@ -28,7 +28,7 @@ export default {
   replicate: {
     url:             's3://mybucket/myapp',
     syncInterval:    '10s',
-    retentionPeriod: '720h',    // 30 days
+    retentionPeriod: '720h',    // 30 days — litestream's snapshot.retention
     l0Retention:     '24h',     // time-travel window via PRAGMA litestream_time
   }
 }

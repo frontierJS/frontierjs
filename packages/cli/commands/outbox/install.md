@@ -42,7 +42,7 @@ const PKG = '@frontierjs/junction'
 // because this used to resolve with `createRequire(...).resolve(specifier)` and
 // bun answers that from its global install CACHE for a package the app does not
 // have. See the note on `shippedFile`.
-const { shippedFile }       = await import(resolve(global.fliRoot, 'core/app-schema.js'))
+const { shippedFile, outboxTenancyExtension } = await import(resolve(global.fliRoot, 'core/app-schema.js'))
 const { schemaApplyStep }   = await import(resolve(global.fliRoot, 'core/schema-apply.js'))
 
 const resolveFromApp = (root, subpath) =>
@@ -114,6 +114,7 @@ idempotent.
 
 What it does:
 - Appends `import "@frontierjs/junction/outbox.lite"` to `db/schema.lite`
+- Under `tenancy { strategy row }`, also appends `extend model OutboxMessage { @@tenant(none) }` — the row records its `tenantId` as data and has no tenant column
 - Creates the table: a migration file when the app has a migration history, `db push` when it has none
 - Prints the two lines to add to `api/src/app.ts`
 
@@ -174,11 +175,17 @@ echo('')
 
 const importLine = `import "${PKG}/outbox.lite"` + (flag.db === 'main' ? '' : ` into ${flag.db}`)
 
+// Under `tenancy { strategy row }` the imported model has no tenant column
+// and the first migrate warns about it; auth's models need the same line.
+const tenancyExtension = outboxTenancyExtension(schemaContents)
+
 if (flag.dry) {
   log.dry(`Would append ${importLine} to ${schemaPath}`)
+  if (tenancyExtension) log.dry('Would append extend model OutboxMessage { @@tenant(none) } (row tenancy)')
 } else {
-  writeFileSync(schemaPath, schemaContents + schemaBlock(flag.db), 'utf8')
+  writeFileSync(schemaPath, schemaContents + schemaBlock(flag.db) + tenancyExtension, 'utf8')
   log.success(`Appended ${importLine} to schema.lite`)
+  if (tenancyExtension) log.success('Appended extend model OutboxMessage { @@tenant(none) } — row tenancy')
 }
 
 // ─── 4. Push the schema ───────────────────────────────────────────────────────

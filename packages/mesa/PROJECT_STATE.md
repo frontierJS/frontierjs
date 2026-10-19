@@ -7,8 +7,8 @@ defects are `../../ISSUES.md`; the package map and its traps are `CLAUDE.md`.
 
 ## How it is proven
 
-`bun run test` runs, in order: `test/spec-check.mjs` (VISION §4's claims list),
-vitest over `test/*.test.js`, then the four gating browser drives —
+`bun run test` runs, in order: vitest over `test/*.test.js` — which includes
+`spec-check.test.js`, VISION §4's claims list — then the four gating browser drives —
 `test/browser/runtime/` (the language in a real browser),
 `test/browser/vite/` (the plugin in a real dev server),
 `test/browser/repl/` (`example/index.html`, offline off `example/vendor/`) and

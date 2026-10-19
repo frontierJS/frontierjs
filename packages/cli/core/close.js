@@ -26,7 +26,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join }                        from 'node:path'
 
 import { readRegisters, withRegisterGuard }          from './registers.js'
-import { errorKeys, newErrors }   from './register-check.js'
+import { errorKeys, newErrors, describeNewErrors } from './register-check.js'
 
 /**
  * Close one open issue.
@@ -64,7 +64,7 @@ function closeUnguarded({ root, id, how, dry = false, today = new Date() }) {
   const added = newErrors(baseline, root)
   if (added.length) {
     writeFileSync(abs, before)
-    return refuse(`the close was put back: register:check found ${added.map(f => `${f.rule} — ${f.message}`).join('; ')}`)
+    return refuse(`the close was put back: register:check found ${describeNewErrors(added)}`)
   }
 
   return { ok: true, id: record.id, file: record.file, line: moved.line }

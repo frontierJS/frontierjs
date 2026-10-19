@@ -24,9 +24,10 @@ import { readRegisters } from './registers.js'
  * Search the registers.
  *
  * Answers `{ ok: true, total, hits: [{ kind, id, status, severity, area, title, file, line, where }] }`
- * — `where` is `title` or `body` — or `{ ok: false, reason }`.
+ * — `where` is `title` or `body` — or `{ ok: false, reason }`. With `show`, each
+ * hit also carries its `body`, the row's source text as written.
  */
-export function findRows({ root, terms, limit = 20 }) {
+export function findRows({ root, terms, limit = 20, show = false }) {
   const doc = readRegisters(root)
   if (!doc.prefix) return refuse('package.json declares no usable registers.prefix, so no row can be read')
 
@@ -57,6 +58,10 @@ export function findRows({ root, terms, limit = 20 }) {
       file:     r.file,
       line:     r.line,
       where,
+      // Only on request: the body is what made a grep over this register cost
+      // 29k a match. The source text, not `body`, which drops `_` and `~` and
+      // so misspells `ISSUES_ARCHIVE.md` and `~/.claude`.
+      ...(show && { body: r.raw ?? r.body ?? '' }),
     })),
   }
 }

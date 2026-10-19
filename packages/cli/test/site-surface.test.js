@@ -159,6 +159,9 @@ describe('the ports it bakes in', () => {
     // load() reads, and node's TS stripper refuses a parameter property — which
     // Vite reports as "could not load the db", i.e. as a path problem.
     expect(scripts['build:site']).toMatch(/^cd site && bun --bun /)
+    // FJS-D463: dev runs the same loader (Sierra's static-data endpoint), and
+    // under node it fails on the `bun:` protocol naming nothing an author did.
+    expect(scripts['dev:site']).toMatch(/^cd site && bun --bun /)
     // And the app's own `.env`: both commands `cd` into the surface, so bun's
     // auto-load looks in the wrong directory and a client validating a required
     // variable refuses to load at all.

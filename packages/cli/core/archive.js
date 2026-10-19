@@ -25,7 +25,7 @@ import { join, resolve, dirname }                  from 'node:path'
 import { execFileSync }                            from 'node:child_process'
 
 import { registerLayout }         from './registers.js'
-import { errorKeys, newErrors }   from './register-check.js'
+import { errorKeys, newErrors, describeNewErrors } from './register-check.js'
 
 export const KEEP = 40
 
@@ -92,7 +92,7 @@ export function archiveClosed({ root, keep = KEEP }) {
   const added = newErrors(baseline, root)
   if (added.length) {
     putBack(written)
-    return refuse(`the trim was put back: register:check found ${added.map(f => `${f.rule} — ${f.message}`).join('; ')}`)
+    return refuse(`the trim was put back: register:check found ${describeNewErrors(added)}`)
   }
 
   return { ok: true, moved: moving.length, kept: keep, archived: countRows(archive), relinked }

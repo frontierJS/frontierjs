@@ -69,6 +69,15 @@ describe('a tag a browser will not register', () => {
     expect(viteBuild.calls).toHaveLength(1)
   })
 
+  test('a prefix with no trailing dash is refused: it is glued to the name, not joined', async () => {
+    // FJS-2534: 'mt' + 'basic-lead' is the legal tag <mtbasic-lead>, so no dash
+    // check catches it and the host page's <mt-basic-lead> stays unknown.
+    widget('BasicLead')
+    const viteBuild = recorder()
+    await expect(buildWidgets({ root, viteBuild, prefix: 'mt' })).rejects.toThrow(/mt-/)
+    expect(viteBuild.calls).toEqual([])
+  })
+
   test('a two-word widget needs no prefix', async () => {
     widget('LeadForm')
     const built = await buildWidgets({ root, viteBuild: recorder(), prefix: '' })

@@ -314,3 +314,22 @@ describe('requestMeta().tenant versus app.tenant() in a request', () => {
     expect(seen.meta).toBe('2')
   })
 })
+
+// FJS-D446: the CALL is read first and the request second. Under `strategy row`
+// a service may re-resolve a second tenant mid-request, and a request-wide
+// answer would be wrong for exactly that caller.
+describe('app.tenant() prefers the call over the request', () => {
+
+  test('a call that resolved its own tenant wins; a call with none falls to the request', async () => {
+    const db  = await seeded()
+    const { enterRequest, enterCall } = await import('../src/core/context.ts')
+    const app = createApp({ db })
+    const ctx = (tenantId?: string) => ({ locals: tenantId ? { tenantId } : {}, auth: { user: null } }) as unknown as ServiceContext
+
+    await enterRequest({ origin: 'http', tenant: 'request-tenant' } as never, async () => {
+      expect(app.tenant()).toBe('request-tenant')
+      await enterCall(ctx('call-tenant'), async () => { expect(app.tenant()).toBe('call-tenant') })
+      await enterCall(ctx(), async () => { expect(app.tenant()).toBe('request-tenant') })
+    })
+  })
+})

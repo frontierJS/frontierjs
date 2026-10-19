@@ -245,6 +245,12 @@ src/
     resource.js          createResource — coerce → blankToNull → validate
     list.js              resource.list() — where a list's state lives, its load
                          and re-run, and the window. Imports the router
+    SupportBanner.mesa   `@frontierjs/sierra/components/SupportBanner` — the
+                         "acting as another user" banner, drawn from
+                         `session.user.support` alone, Stop = `endSupport` then
+                         `refresh()`. Plain css classes, since the kit is above
+                         this package; lives here, not in `components/`,
+                         because it reads the session (Navigation may not)
     record.js            resource.record() as a component reads it — `value`,
                          `loaded` and `error()` tracked; released by a ROOT,
                          because a `$:` re-run disposes the effects it made and

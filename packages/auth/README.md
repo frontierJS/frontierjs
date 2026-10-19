@@ -368,6 +368,17 @@ It is an **observer**, unlike `onLogin` and the other three: a throw is logged
 and refuses nothing, so a mail outage cannot keep a factor on that somebody
 switched off. Optional to the type system, required in practice.
 
+## Typing a code for a secret you enrolled
+
+A seed or a drive that enrolls TOTP through `setupTotp()` / `confirmTotp()` must
+type a live code. `@frontierjs/auth/totp` is the package's own arithmetic
+(`totp(secret, at)`, `verifyTotp`, base32), so there is one copy of it:
+
+```js
+import { totp } from '@frontierjs/auth/totp'
+const code = totp(secret, new Date())
+```
+
 ## In the console
 
 `@frontierjs/auth/console` holds commands for an app's `db/repl.js`, which

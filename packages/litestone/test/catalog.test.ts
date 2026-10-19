@@ -570,6 +570,16 @@ describe('lookup and grouping', () => {
     expect(lookup('@nosuchthing')).toBeNull()
   })
 
+  // FJS-1719: the field @check takes the sentence a form shows as a second
+  // argument; an explain that omits it ships `is not valid` under the control.
+  test('@check states its message argument, as @@check does, and the example uses it', () => {
+    const row = lookup('@check')!
+    expect(row.arity).toContain('message')
+    expect(row.example).toMatch(/@check\("[^"]+",\s*"[^"]+"\)/)
+    const out = parse(`model Example {\n  id Int @id\n  ${row.example}\n}`)
+    expect(out.valid).toBe(true)
+  })
+
   test('grouped covers every row of a level exactly once', () => {
     for (const level of ['schema', 'field', 'model', 'move']) {
       const flat = grouped(level).flatMap(g => g.rows)

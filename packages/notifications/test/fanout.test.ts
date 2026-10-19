@@ -241,6 +241,29 @@ describe('failure paths', () => {
     expect((err as Error).message).toContain('recipient.email is missing')
   })
 
+  // FJS-2681
+  test('a recipient with a list of addresses is one mail to all of them', async () => {
+    await h.app.notify({ email: ['a@x.test', 'b@x.test'] }, new Welcome(['email']))
+    expect(h.sent[h.sent.length - 1].to).toEqual(['a@x.test', 'b@x.test'])
+  })
+
+  test('a mail().to() list overrides the recipient and is sent whole', async () => {
+    class Alert extends Notification {
+      get notificationType() { return 'Alert' }
+      via(): Transport[] { return ['email'] }
+      toEmail(): MailMessage {
+        return mail().subject('S').line('L').to(['c@x.test', 'd@x.test']).build() as MailMessage
+      }
+    }
+    await h.app.notify({ id: 'u1' }, new Alert())
+    expect(h.sent[h.sent.length - 1].to).toEqual(['c@x.test', 'd@x.test'])
+  })
+
+  test('an empty address list is refused like a missing address', async () => {
+    const err = await h.app.notify({ email: [] }, new Welcome(['email'])).catch((e: Error) => e)
+    expect(err).toBeInstanceOf(NotificationRecipientError)
+  })
+
   test('a failing email does not stop the in-app record — transports are isolated', async () => {
     const iso = await makeApp({ noMailer: true })
     const down = async () => { throw new Error('SMTP down') }

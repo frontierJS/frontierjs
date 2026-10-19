@@ -107,11 +107,18 @@ $.afterCommit(fn)          // runs once, on success, after the commit
 $.enqueue(job, payload)    // an outbox row inside this transaction
 $.system.add('col')        // this call supplies that @system column
 $.dispatch = false         // announce nothing for this call
+$.dispatch = row           // announce this instead of the answer; the caller still gets the answer
 ```
 
 **Only `data`, `query`, `id`, `result`, `error`, `statusCode` and `dispatch` can
 be assigned.** `$.anything = x` throws by name; per-call state goes in
 `$.locals`, app state in `app.own()`.
+
+**In an `after` hook `$.result` is the reply's envelope, not the row** —
+`{ kind: 'list' | 'single', data, … }` — so `$.result.id` is `undefined` and
+`$.enqueue('job', { id: $.result.id })` enqueues a job that throws on its first
+run. Read the row at `$.result.data` (an array when `kind` is `'list'`), or the
+id at `$.id` on a `get`, `update`, `patch` and `remove`.
 
 A raw route gets a different context: `ctx.user` (flat, may be `null`),
 `ctx.route`, `ctx.headers`, `ctx.query` with `$` keys still present, `ctx.body`,
@@ -201,6 +208,25 @@ a key itself deletes it from `$.query`.
 **`transactional:` wraps the whole pipeline**, `after` hooks included, and holds
 SQLite's write lock for that long. `find` and `get` are never wrapped.
 `$.enqueue` refuses outside a transaction.
+
+**A method that calls out BEFORE it writes — a vendor lookup, then the rows —
+does not declare `transactional:`**, because the lock would be held across the
+network. Leave it undeclared and scope the writes alone:
+
+```ts
+async locate() {
+  const match = await lookupAtVendor($.data)                          // no lock held
+  return $.db.$transaction(async (tx) => {                            // lock taken here
+    const customer = await tx.customer.create({ data: { name: match.name } })
+    await tx.property.create({ data: { customerId: customer.id, ref: match.ref } })
+    return customer
+  })
+}
+```
+
+The writes are atomic with each other and not with the call's `after` hooks.
+Reads that decide the write go inside the `$transaction` too, or another writer
+moves the row between the read and the write.
 
 **Report a rule the schema cannot state the way the schema reports its own:**
 
@@ -411,6 +437,8 @@ Everything above is loud. These are not.
   report — is declared `{ method: 'search', read: true }` in `methods:`, which
   announces nothing and keeps no answer under an `Idempotency-Key` (`FJS-D505`).
   A WRITE whose answer is not a row — a credential — sets `$.dispatch = false`.
+  A write whose answer is a REPORT around a row (`{ sheet, lines, noRate }`) sets
+  `$.dispatch = sheet`: other tabs get the record, the caller keeps the report.
   A write whose answer is ANOTHER model's row (`messages.promote()` answers the
   Task) declares `{ method: 'promote', answers: 'Task' }`: the announcement is
   checked, re-read and graded against Task, not the service's model (`FJS-D914`).
@@ -453,7 +481,8 @@ Everything above is loud. These are not.
    included.
 6. A custom method called by a machine or a stranger states its `gate:`.
 7. Irreversible effects are in `$.afterCommit` or `$.enqueue`, not `after`.
-8. A method that writes more than once is `transactional:`.
+8. A method that writes more than once is `transactional:` — unless it calls a
+   vendor first, then its writes sit in `$.db.$transaction` instead.
 9. A custom method that writes no record declares `read: true`.
 10. Raw routes use `{param}` and call services rather than the database.
 

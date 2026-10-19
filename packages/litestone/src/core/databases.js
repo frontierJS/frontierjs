@@ -476,7 +476,8 @@ function statedDbPath(pathDef) {
 
 // Whether the stated path leaves its directory to the working directory. The
 // minted-directory warning is about that and nothing else (`FJS-449`): an
-// absolute path names its directory, so creating it is the caller's own doing.
+// absolute path names its directory, so creating it is the caller's own doing,
+// and so is a declared path under a `resolveFrom` anchor.
 /**
  * @param {string | undefined} stated
  */
@@ -693,7 +694,8 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
   for (const db of schema.databases) {
     const access  = accessConfig[db.name] ?? 'readwrite'
     const absPath = pathFor(db)
-    const relative = isRelativeStated(dbOverrides[db.name]?.path || statedDbPath(db.path))
+    const override = dbOverrides[db.name]?.path
+    const relative = override ? isRelativeStated(override) : !anchor && isRelativeStated(statedDbPath(db.path))
 
     if (db.driver === 'jsonl' || db.driver === 'trail') {
       // In-memory mode: use a unique tmpdir so test runs don't pollute the filesystem.

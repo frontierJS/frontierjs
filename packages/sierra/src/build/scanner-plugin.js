@@ -186,13 +186,15 @@ export function scannerPlugin(config, sierraContext) {
         : file.endsWith('.mount.js') ? 'mount'
         : classify(relative(root, file).replace(/\\/g, '/'))
 
+      // A co-located component is not in the route table: announcing it as a
+      // route file is false, and the scan it starts changes nothing.
+      const shapesTable = (role) => role !== 'ignored' && role !== 'component'
+
       server.watcher.on('add', async (file) => {
         if (!inScope(file)) return
         const rel = relative(root, file).replace(/\\/g, '/')
-        const role = roleOf(file)
 
-        // Only rescan for route-relevant files
-        if (role === 'ignored') return
+        if (!shapesTable(roleOf(file))) return
 
         console.log(`[Sierra] New route file: ${rel}`)
         await runScan(root, (msg) => console.warn(msg), null)
@@ -202,9 +204,8 @@ export function scannerPlugin(config, sierraContext) {
       server.watcher.on('unlink', async (file) => {
         if (!inScope(file)) return
         const rel = relative(root, file).replace(/\\/g, '/')
-        const role = roleOf(file)
 
-        if (role === 'ignored') return
+        if (!shapesTable(roleOf(file))) return
 
         console.log(`[Sierra] Removed route file: ${rel}`)
         await runScan(root, (msg) => console.warn(msg), null)

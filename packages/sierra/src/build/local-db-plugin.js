@@ -35,9 +35,10 @@
  * database that silently is not there is discovered in a basement.
  */
 
-import { existsSync, readFileSync, mkdirSync, copyFileSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'fs'
 import { resolve, dirname, join, extname } from 'path'
 import { fileURLToPath } from 'url'
+import { minifySync } from 'vite'
 
 /** Where the two artefacts live, relative to the app's own origin. */
 export const WASM_DIR   = 'fjs-sqlite'
@@ -100,6 +101,21 @@ export function findWasmDist(root) {
     dir = parent
   }
   return null
+}
+
+/**
+ * The loader, minified. It ships at 643 kB with its comments and the shell
+ * precaches every byte the build emits (`FJS-2323`). It finds its `.wasm` by
+ * `import.meta.url`, which minification keeps; the license block stays, since
+ * the package's terms require it to travel with the code.
+ */
+function minifyLoader(file) {
+  const { code, errors } = minifySync(file, readFileSync(file, 'utf8'), {
+    module: true,
+    codegen: { legalComments: 'inline' },
+  })
+  if (errors?.length) throw new Error(`[Sierra] could not minify ${file}: ${errors[0].message ?? errors[0]}`)
+  return code
 }
 
 const MISSING = (root) =>
@@ -188,8 +204,10 @@ export function localDbPlugin(config, sierraContext) {
 
       const target = join(outDir, WASM_DIR)
       mkdirSync(target, { recursive: true })
-      for (const [from, to] of WASM_FILES)
-        copyFileSync(join(dist, from), join(target, to))
+      for (const [from, to] of WASM_FILES) {
+        if (extname(to) === '.js') writeFileSync(join(target, to), minifyLoader(join(dist, from)))
+        else copyFileSync(join(dist, from), join(target, to))
+      }
     },
 
     // The schema goes in as an ASSET, because it is one file under a name the

@@ -9331,10 +9331,12 @@ function retargetDbText(text, db, from = []) {
 }
 
 /** inlineImports against the working tree. Returns the text, where each of its
- *  lines came from (`origins`), and what was missing. */
+ *  lines came from (`origins`), what was missing, and which package shipped each
+ *  model it brought in (`shipped`, model name → specifier). */
 export function inlineImportsFromDisk(filePath) {
   const abs     = resolve(filePath)
   const missing = []
+  const shipped = new Map()
   const { text, origins } = inlineTraced(readFileSync(abs, 'utf8'), abs, {
     // The same resolver parseFile uses, so a bare package specifier follows to
     // the same file in both — otherwise a schema parses and its test environment
@@ -9343,8 +9345,9 @@ export function inlineImportsFromDisk(filePath) {
     read:         (p) => { try { return readFileSync(p, 'utf8') } catch { return null } },
     seen:         new Set([abs]),
     missing,
+    shipped,
   })
-  return { text, origins, missing }
+  return { text, origins, missing, shipped }
 }
 
 export function parseFile(filePath) {

@@ -88,6 +88,31 @@ export function declaredModels(text) {
 }
 
 /**
+ * Whether the seed declares `tenancy { strategy row }`. Line comments are
+ * dropped first: a doc comment quoting the block must not read as the block.
+ */
+export function declaresRowTenancy(text) {
+  const block = text.replace(/\/\/[^\n]*/g, '').match(/\btenancy\s*\{[^}]*\}/s)
+  return !!block && /\bstrategy\s+row\b/.test(block[0])
+}
+
+/**
+ * What an imported OutboxMessage needs under row tenancy, or '' elsewhere.
+ * The model carries its tenantId as data and no tenant column, so the first
+ * migrate reports it as an unscoped model unless it says it spans tenants.
+ */
+export function outboxTenancyExtension(schemaText) {
+  if (!declaresRowTenancy(schemaText)) return ''
+  return `
+// Row tenancy: the outbox records each message's tenantId as data and has no
+// tenant column, so without this the first migrate reports it as unscoped.
+extend model OutboxMessage {
+  @@tenant(none)
+}
+`
+}
+
+/**
  * One shipped file, resolved out of the APP's own node_modules.
  *
  * `fli` is global, so a package an app depends on is not beside the CLI, and

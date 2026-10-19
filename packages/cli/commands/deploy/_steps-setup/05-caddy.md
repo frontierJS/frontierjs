@@ -22,7 +22,7 @@ const { routeId } = await import(new URL('file://' + global.fliRoot + '/core/edg
 const machine = machineFor($, host, serverPath)
 const html    = machine.capture(`cat ${serverPath}/current/index.html 2>/dev/null || true`)
 
-const { routes, paths, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort, edge, html })
+const { routes, plain, paths, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort, edge, html })
 if (error) {
   log.error(error)
   $.config.abort = true
@@ -53,7 +53,7 @@ machine.run(`mkdir -p ${fliDir(serverPath)}`)
 machine.run(`cat > ${pagePath(serverPath)} << 'FLIPAGEEOF'
 ${DEFAULT_PAGE}FLIPAGEEOF`)
 
-const written = await writeEdge(machine, { appId, routes })
+const written = await writeEdge(machine, { appId, routes, plain })
 if (written.error) {
   log.error(written.error)
   log.info('01-check-deps installs Caddy as the caddy-api unit; a Caddy started from a Caddyfile has no config this can add to.')

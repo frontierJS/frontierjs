@@ -200,6 +200,24 @@ export function newErrors(baseline, root) {
   return out
 }
 
+// What a put-back write says. Findings sharing a rule, record and message are
+// one sentence with a count -- an unparsed-record per row would otherwise print
+// the same words hundreds of times -- and the first of each names where it is
+// and quotes the text the reader choked on.
+export function describeNewErrors(found) {
+  const groups = new Map()
+  for (const f of found) {
+    const k = `${f.rule}|${f.id ?? ''}|${f.message}`
+    const g = groups.get(k)
+    if (g) g.count++
+    else groups.set(k, { first: f, count: 1 })
+  }
+  return [...groups.values()].map(({ first: f, count }) => {
+    const at = f.file ? ` (${f.id ? `${f.id} ` : ''}${f.file}${f.line ? `:${f.line}` : ''}${f.detail ? `: ${f.detail}` : ''})` : ''
+    return `${f.rule} — ${f.message}${at}${count > 1 ? ` ×${count}` : ''}`
+  }).join('; ')
+}
+
 /**
  * Every finding, in register order. `staleDays: 0` disables the one rule that
  * reads the clock; `today` is injectable so a test asserts a fixed answer.

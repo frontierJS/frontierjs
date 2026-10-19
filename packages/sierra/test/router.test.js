@@ -181,6 +181,24 @@ describe('matchRoute', () => {
   })
 })
 
+// ─── buildUrl round trip ─────────────────────────────────────────────────────
+
+describe('buildUrl → parseQueryParams', () => {
+  // FJS-2020: the quotes in `?group=%227%22` are the escape that keeps a string
+  // a string; the page reads `'7'`, never a value with quotes in it.
+  test('a numeric-looking string reads back as that string', () => {
+    const url = buildUrl('/tasks/board/', { group: '7' })
+    expect(url).toBe('/tasks/board/?group=%227%22')
+    expect(parseQueryParams(url.slice(url.indexOf('?')))).toEqual({ group: '7' })
+  })
+
+  test('a number is written bare and reads back as a number', () => {
+    const url = buildUrl('/tasks/board/', { group: 7 })
+    expect(url).toBe('/tasks/board/?group=7')
+    expect(parseQueryParams(url.slice(url.indexOf('?')))).toEqual({ group: 7 })
+  })
+})
+
 // ─── parseQueryParams ────────────────────────────────────────────────────────
 
 describe('parseQueryParams', () => {

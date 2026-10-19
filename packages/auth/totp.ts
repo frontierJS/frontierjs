@@ -7,8 +7,10 @@
 // all statements about two instants, and a function that reads the wall clock
 // can only be tested by waiting.
 //
-// Nothing here is exported from the package — usage is via auth.ts and the
-// account service.
+// Published as `@frontierjs/auth/totp`, for the one caller that must TYPE a code
+// for a secret it enrolled — a seed or a drive. A second HOTP beside this one
+// drifts silently: codes that never match, and no error anywhere. Everything
+// else goes through auth.ts and the account service.
 
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
 

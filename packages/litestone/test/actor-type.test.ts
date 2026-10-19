@@ -66,6 +66,14 @@ describe('actorType grades the principal it was handed', () => {
     expect(row.actorType).toBe('system')
   })
 
+  test('asSystem composed after $setAuth keeps the person and files the type as system', async () => {
+    // `system: ['@@gate']` (`FJS-D575`) exists for the service that reaches a
+    // bare asSystem(), which names nobody (`FJS-1934`).
+    const row = await writeAs(db => db.$setAuth({ id: 'u-1' }).asSystem())
+    expect(row.actorId).toBe('u-1')
+    expect(row.actorType).toBe('system')
+  })
+
   test('no principal at all says nothing', async () => {
     // The gate is 0, so an unauthenticated caller can make this write. There
     // is nobody to name and nothing to grade, and inventing a word for it

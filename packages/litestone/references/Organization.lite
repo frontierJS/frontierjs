@@ -51,6 +51,31 @@
 /// both models below take `@@tenant(none)` because they are what the tenant
 /// column points at. That line is the host's, because this file cannot know
 /// whether the host is multi-tenant at all.
+///
+/// ─── The policies below assume a claim ────────────────────────────────────
+///
+/// `auth().orgId` and `auth().memberRole` are claims, derived with
+/// `claim orgId from Member(userId)`. That resolves only where each person
+/// belongs to ONE org (the subject must be unique, so `@@relator([orgId,
+/// userId], once)` is out) or under `strategy row`, the one place a
+/// membership row may decide a claim. A host where a person belongs to
+/// several orgs and has no tenancy block has neither, so it replaces these
+/// policies with the membership asked about directly, a correlated EXISTS:
+///
+///     // Organization
+///     @@allow(read,   members.some(userId == auth().id))
+///     @@allow(update, members.some(userId == auth().id && role == 'admin'))
+///
+///     // Member: delegate to the container, and key the role guard to it too
+///     role String @default("member") @allow(write, check(org, 'update'))
+///     @@allow(read,   userId == auth().id || check(org, 'read'))
+///     @@allow(create, check(org, 'update'))
+///     @@allow(update, check(org, 'update'))
+///     @@allow(delete, check(org, 'update'))
+///
+/// The `role == 'admin'` inside `members.some` is the line that matters:
+/// without it any member updates the container, and the membership's writes
+/// delegate there, so any member would re-role themselves to admin.
 model Organization {
   id        String   @id @default(ulid())
 

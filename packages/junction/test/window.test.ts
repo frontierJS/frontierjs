@@ -90,6 +90,20 @@ describe('the server answers a window', () => {
     expect(next.hasMore).toBe(true)
   })
 
+  // FJS-D429: the pair names no position either one means, so the cursor wins.
+  test('$after beside $offset scans from the cursor — the offset is dropped', async () => {
+    const db  = await shop()
+    const svc = buildService({ model: 'Item' })
+    const first: any = await svc.find(svcCtx(db, { directives: { limit: 10, orderBy: 'id' } }))
+    const next:  any = await svc.find(svcCtx(db, {
+      directives: { limit: 5, offset: 3, orderBy: 'id', after: first.endCursor },
+    }))
+
+    expect(next.data.map((r: any) => r.id)).toEqual([11, 12, 13, 14, 15])
+    expect(next.offset).toBe(0)
+    expect(next.total).toBeNull()
+  })
+
   test('a window walks the whole list with nothing served twice — on a NON-unique order', async () => {
     const db  = await shop()
     const svc = buildService({ model: 'Item' })

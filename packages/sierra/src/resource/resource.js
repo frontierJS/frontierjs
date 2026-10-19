@@ -901,6 +901,8 @@ export function createResource(serviceName, opts = {}, ...extra) {
   // declares `@@sync`, because stating the key is what offline creates need and
   // nothing else does.
   const mint = modelDef?.['x-mint'] ?? null
+  // The @@hasTemplates marker column's name, which `@@hasTemplates(field: ...)` may rename.
+  const templateField = modelDef?.['x-templates'] ?? null
 
   const relations = schema ? buildRelations(modelDef, registry.modelNameFor) : {}
   const gate      = schema ? buildGate(modelDef)        : null
@@ -2946,7 +2948,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
   }
 
   function _templateReach(id, data) {
-    const marker = modelDef?.['x-templates']
+    const marker = templateField
     if (!marker) return {}
     const base = _read.get(id)
     return data?.[marker] === true || base?.[marker] === true ? { withTemplates: true } : {}
@@ -3196,7 +3198,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
      */
     cachedAt: () => _cachedAt,
     fields, relations, gate, can, transitions, commitments, validate, normalize, coerce,
-    version, versionField: versionOf, conflict,
+    version, versionField: versionOf, templateField, conflict,
     formFields, columns, declaredFields, summary, children, filters, options, sealedFields, requiredFields, declined,
     withheld: withheldFor,
     labelField: labelInfo.field, labelSource: labelInfo.source, labelAlt: labelInfo.alt, labelParts: labelInfo.parts,

@@ -44,8 +44,10 @@
  * ── Certificates are Caddy's ──────────────────────────────────────────────
  *
  * A route naming a host is what makes Caddy fetch a certificate for it, and the
- * http→https redirect comes with it. There is no `ssl` key to configure, so one
- * left in a deploy block is refused rather than ignored.
+ * http→https redirect comes with it — for pages. The API's paths and `/ws` get a
+ * 403 on :80 instead (`plainRoutes`), because a redirect hides from a client
+ * that its first request was plaintext. There is no `ssl` key to configure, so
+ * one left in a deploy block is refused rather than ignored.
  *
  * Pure functions over strings and JSON. Nothing here runs a command.
  */
@@ -57,6 +59,9 @@ export class EdgeError extends Error {}
 
 /** Outpost's server name (`outpost/src/ingress.js`). Shared on purpose — see above. */
 export const INGRESS_SERVER = 'ingress'
+
+/** The :80 server holding the refusals a plaintext API request gets instead of a redirect. */
+export const PLAIN_SERVER = 'ingress-http'
 
 /** Where the routes are written, from ON the target. Caddy binds it to loopback. */
 export const CADDY_ADMIN = 'http://127.0.0.1:2019'
@@ -103,8 +108,12 @@ export function apiOrigin(names) {
   return names.api.domain ? `https://${names.api.domain}` : null
 }
 
-/** A route's `@id`, which is also its access logger's name. `fli-`, so it never meets Outpost's `fjs-<app>`. */
-export const routeId = (appId, side = 'web') => side === 'api' ? `fli-${appId}-api` : `fli-${appId}`
+/**
+ * A route's `@id`, which is also its access logger's name. `fli-`, so it never
+ * meets Outpost's `fjs-<app>`. `plain` is the route on the :80 server.
+ */
+export const routeId = (appId, side = 'web', plain = false) =>
+  `fli-${appId}${side === 'api' ? '-api' : ''}${plain ? '-http' : ''}`
 
 /** Where a route's access log is written. Caddy rolls it itself, so nothing else has to. */
 export const accessLogPath = (id) => `/var/log/caddy/${id}.access.log`
@@ -138,6 +147,39 @@ export function edgeRoutes({ appId, serverPath, apiPort, web, api, paths = null,
     inner: [caddyGuard(serverPath, guardId(appId, 'api')), apiRoute(apiPort)],
   }))
   return routes
+}
+
+/**
+ * The routes for the :80 server: the API's paths refused, never redirected.
+ *
+ * Caddy's automatic http→https redirect covers every host it routes, so a
+ * client sending the API plaintext was upgraded and never learned its first
+ * request had already crossed the wire — a token in a header included (ASVS
+ * V4.1.2). Pages keep the redirect: these routes are not terminal and match
+ * only the API's paths, so a page request falls through to the redirect Caddy
+ * adds for the host. One origin refuses the proxied paths; two refuse every
+ * path on the API host and nothing on the web host.
+ */
+export function plainRoutes({ appId, web, api, paths = null }) {
+  const { prefix = '/api', roots = ['/api'] } = paths ?? {}
+  const refuse = (match) => ({
+    ...(match ? { match: [match] } : {}),
+    handle: [{
+      handler: 'static_response', status_code: 403,
+      headers: { 'Content-Type': ['text/plain; charset=utf-8'] },
+      body: 'HTTPS required. This API does not redirect plaintext requests; send it to https://.\n',
+    }],
+    terminal: true,
+  })
+  const wrap = (id, host, inner) => ({ '@id': id, match: [{ host: [host] }], handle: [{ handler: 'subroute', routes: [inner] }] })
+
+  if (api?.domain) return [wrap(routeId(appId, 'api', true), api.domain, refuse(null))]
+  if (!web?.domain) return []
+
+  const matcher = { path: [...roots.flatMap(p => [p, `${p}/*`]), '/ws', '/ws/*'] }
+  // Unprefixed, an HTML navigation is a page (see `navigation`) and redirects.
+  if (!prefix) matcher.not = [{ header: { Accept: ['*text/html*'] }, not: [{ path: NAVIGATED }] }]
+  return [wrap(routeId(appId, 'web', true), web.domain, refuse(matcher))]
 }
 
 const route = ({ id, host, inner }) => ({
@@ -253,9 +295,10 @@ const documentHeaders = (scripts = []) => ({
  * skipped, so an Outpost app logs exactly as much as before; each route gets a
  * file of its own, excluded from the default logger so it is not written twice.
  */
-export function applyEdge(config, { appId, routes }) {
+export function applyEdge(config, { appId, routes, plain = [] }) {
   const out    = structuredClone(config ?? {})
   const ours   = new Set([routeId(appId), routeId(appId, 'api')])
+  const oursPlain = new Set([routeId(appId, 'web', true), routeId(appId, 'api', true)])
   const http   = (out.apps ??= {}).http ??= {}
   const server = (http.servers ??= {})[INGRESS_SERVER] ??= { listen: [`:${http.https_port ?? 443}`], routes: [] }
 
@@ -267,6 +310,13 @@ export function applyEdge(config, { appId, routes }) {
       throw new EdgeError(`${taken.join(', ')} is already routed to ${other['@id'] ?? 'a route nobody named'} on this machine`)
   }
   server.routes = [...(server.routes ?? []).filter(r => !ours.has(r['@id'])), ...routes]
+
+  const servers = http.servers
+  const kept    = (servers[PLAIN_SERVER]?.routes ?? []).filter(r => !oursPlain.has(r['@id']))
+  if (kept.length || plain.length) {
+    const srv  = servers[PLAIN_SERVER] ??= { listen: [`:${http.http_port ?? 80}`] }
+    srv.routes = [...kept, ...plain]
+  } else delete servers[PLAIN_SERVER]
 
   const logs  = server.logs ??= {}
   logs.skip_unmapped_hosts ??= true

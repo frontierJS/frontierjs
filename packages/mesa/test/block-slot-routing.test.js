@@ -104,6 +104,26 @@ describe('what must not change', () => {
     expect(ctx.result).toContain('a: $$snip')
     expect(ctx.result).toContain('x: $$snip')
   })
+
+  // FJS-2739
+  it('a slot= under a nested call belongs to that call, never to the outer one', async () => {
+    for (const inner of ['<Other/><span slot="why">W</span>', '<span slot="why">W</span>']) {
+      const warnings = []
+      const ctx = await compileSource(
+        `<script>import Outer from './Outer.mesa'\nimport Inner from './Inner.mesa'\nimport Other from './Other.mesa'</script>\n` +
+        `<div><Outer><Inner>${inner}</Inner></Outer></div>`,
+        { filename: '/P.mesa', warning: (w) => warnings.push(w.message ?? String(w)) })
+      expect(warnings.filter((w) => w.includes('slot'))).toEqual([])
+      expect(ctx.result.match(/Outer\(\$\$el\d+, (\{[\s\S]*?\})\);\n/)?.[1]).toMatch(/^\{children: \$\$snip\d*\w*\}$/)
+      expect(ctx.result.match(/Inner\(\$\$el\d+, (\{[\s\S]*?\})\);\n/)?.[1]).toContain('why: $$snip')
+    }
+  })
+
+  it('a slot= on a grandchild element is not the call\'s slot, and is silent', async () => {
+    const { call, warnings } = await build(`<Child><div><b slot="a">A</b></div></Child>`)
+    expect(warnings).toEqual([])
+    expect(call).not.toContain('a: $$snip')
+  })
 })
 
 describe('a slot is a snippet with no arguments (FJS-D668)', () => {

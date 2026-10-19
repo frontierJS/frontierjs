@@ -121,3 +121,33 @@ describe('a .mesa file still takes any expression (FJS-D213)', () => {
     expect(await out(src)).toContain('String(')
   })
 })
+
+// ─── a heading's id ──────────────────────────────────────────────────────────
+
+// FJS-1500. The id is slugged from the Markdown text, before Mesa fills `{…}`
+// in, so an interpolated heading was served with its variable name as the id.
+describe('a heading id is never slugged from a brace (FJS-1500)', () => {
+  const idOf = async body => (await md(body)).markdownHTML.match(/<h\d id="([^"]*)"/)?.[1]
+
+  it('an interpolated heading carries no id', async () => {
+    const ctx = await md('## See How {company_name} Can Help You\n')
+    expect(ctx.markdownHTML).not.toContain('id=')
+  })
+
+  it('an interpolated heading takes no slug from the headings after it', async () => {
+    const ctx = await md('## About {name}\n\n## About\n\n## About\n')
+    expect(ctx.markdownHTML.match(/id="[^"]*"/g)).toEqual(['id="about"', 'id="about-1"'])
+  })
+
+  it('a brace escaped with a backslash is text and slugs without its sentinel', async () => {
+    expect(await idOf('## Set \\{x} here\n')).toBe('set-x-here')
+  })
+
+  it('a brace in inline code is text', async () => {
+    expect(await idOf('## The `{x}` tag\n')).toBe('the-x-tag')
+  })
+
+  it('a brace that is not a path is text', async () => {
+    expect(await idOf('## A set {1, 2, 3}\n')).toBe('a-set-1-2-3')
+  })
+})

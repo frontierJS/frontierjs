@@ -178,6 +178,10 @@ test('frontmatter: a block YAML itself would refuse is refused', function () {
   assert.throws(() => read('a: [\n'), /never closes/)
   assert.throws(() => read('a: "x'), /never closes/)
   assert.throws(() => read('a: "\\q"'), /not an escape/)
+  assert.throws(() => read('a: 1\nb: "\\UFFFFFFFF"'), /^line 2: .*not a code point/)
+  let beyond = null
+  try { read('a: 1\nb: "\\UFFFFFFFF"') } catch (e) { beyond = e }
+  assert.equal(beyond && beyond.line, 2)
   assert.throws(() => read('- a\n- b'), /`key: value` lines/)
   assert.throws(() => read('just text'), /`key: value` lines/)
 })

@@ -67,11 +67,9 @@ title: Activity
       // Members first and separately: the trail stores an actorId, and a page
       // that says "1f3c…9a did this" is a log, not a narrative. One request for
       // the whole workspace, not one per row.
-      // A custom method's return shape is load-bearing and unwrapping is the
-      // caller's problem today (junction FJS-020), so the same tolerant read
-      // the admin screen uses rather than a second guess at the envelope.
-      const raw = await workspaces.service.invoke('members', session.workspaceId)
-      const members = raw.data
+      // `members` answers `{ total, data }`, and a custom method's answer
+      // arrives as returned (`FJS-D937`), so `.data` is the rows.
+      const members = (await workspaces.service.invoke('members', session.workspaceId)).data
       people = Object.fromEntries(members.map(m => [m.userId, m.user?.name || m.user?.email || m.userId]))
     } catch {
       // Not fatal — without it the feed still reads, with ids instead of names.

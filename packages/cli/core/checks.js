@@ -57,7 +57,8 @@ import { DRIVES_FILE, readProofs, resolveRun, reachable, rottedPaths, packageDir
 import { treePaths }              from './tree.js'
 import { readPreambles, resolveNeeds } from './preflight.js'
 import { readCourse }             from './tutorial.js'
-import { declaredLogDatabases }        from './db-preflight.js'
+import { declaredLogDatabases, declaredDatabasePaths } from './db-preflight.js'
+import { ignoredByGit }                from './gitignore.js'
 import { hostCollisions }              from './proxy.js'
 import { docWordUnknown, docCitesDead, docClaimsCount, docInvariantRef,
          COUNTABLES, checkRulesCountable, docStatusStale, docMapNarration,
@@ -102,7 +103,7 @@ export const RULES = [
   { id: 'drive-holds',          scope: 'both', severity: 'error', invariant: null,
     title: 'a drive that reaches its checkout\'s ports or dev database declares it in holds' },
   { id: 'test-not-hermetic',    scope: 'both', severity: 'error', invariant: null,
-    title: 'a collected test binds no fixed port and opens no Chrome' },
+    title: 'a collected test binds no fixed port, opens no Chrome and mocks no module' },
   { id: 'test-timeout-inline',  scope: 'both', severity: 'warn',  invariant: null,
     title: 'a package that sets its test timeout sets it in one place' },
   { id: 'body-tag-in-comment',  scope: 'app',  severity: 'error', invariant: null,
@@ -194,6 +195,8 @@ export const RULES = [
     title: 'a polymorphic pair names which models it can point at' },
   { id: 'log-db-unbound',       scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a jsonl/trail database the deploy can point at the volume' },
+  { id: 'db-path-committed',    scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'a database path the schema declares is covered by .gitignore' },
   { id: 'deploy-image-needs',   scope: 'app',  severity: 'warn',  invariant: null,
     title: 'the deploy image carries what the API needs at runtime: a Chrome to print or drive, web/src to render from' },
   { id: 'command-parses',       scope: 'app',  severity: 'error', invariant: 15,
@@ -1115,7 +1118,8 @@ const CHECKS = {
           line: lineOf(code, m.index),
           message: `this collected test ${says}, so it fails whenever the machine is not as it expects and ` +
                    'the row gets filed as environment. Bind `port: 0` and read the port back, or move the ' +
-                   'case to a `specs/` file the `run.mjs` beside it drives.',
+                   'case to a `specs/` file the `run.mjs` beside it drives. A module mock is replaced by ' +
+                   'injecting the transport, or by the real implementation.',
         })
         break
       }
@@ -2476,14 +2480,26 @@ const CHECKS = {
         // Bounded the same way and for the same reason — three lines, and only
         // while the chain is still open, so an assignment further down the file
         // is not paired with a call it has nothing to do with.
+        // Only a `.then` handler receives the row: `.catch` and `.finally`
+        // assign the error and a flag, so reading them named `error` as the
+        // variable holding the row (`FJS-2741`). A chain on one line is read
+        // from the call onward, and each handler runs to the next one.
+        const keptIn = (text) => {
+          for (const part of text.split(/(?=\.(?:then|catch|finally)\s*\()/)) {
+            if (!/^\.then\s*\(/.test(part)) continue
+            const inner = part.match(/=>\s*{?\s*([A-Za-z_$][\w$]*)\s*=(?!=)/)
+            if (inner) return inner[1]
+          }
+          return null
+        }
+        if (!kept) kept = keptIn(line.slice(at))
         for (let fwd = i + 1; !kept && fwd < lines.length && fwd - i <= 3; fwd++) {
           // The line must CONTINUE this call — a leading `.then` and nothing
           // else. Accepting any line holding an arrow was the loose version and
           // it reported `total` for `lines.forEach(x => { total = … })` three
           // lines under an unrelated one-shot read.
           if (!/^\s*\.(?:then|catch|finally)\b/.test(lines[fwd])) break
-          const inner = lines[fwd].match(/=>\s*{?\s*([A-Za-z_$][\w$]*)\s*=(?!=)/)
-          if (inner) kept = inner[1]
+          kept = keptIn(lines[fwd].trim())
         }
 
         if (!kept) continue
@@ -2955,6 +2971,36 @@ const CHECKS = {
       }
     }
     return { findings }
+  },
+
+  // ─── db-path-committed ─────────────────────────────────────────────────────
+  // A database file holds rows, and a trail or jsonl directory holds every write
+  // with who made it. `git add .` takes whichever the app's `.gitignore` does not
+  // name, and nothing complains: the app runs the same either way.
+  'db-path-committed': ({ root }) => {
+    const dbs = declaredDatabasePaths(join(root, 'db'))
+    if (!dbs.length) return { skipped: 'no database declared in db/schema.lite' }
+
+    const findings = []
+    let graded = 0
+    for (const db of dbs) {
+      // Absolute, outside the app, or not a file at all: not this tree's to commit.
+      if (!db.path || db.path === ':memory:' || db.path.startsWith('/') || db.path.startsWith('..')) continue
+      const isDir = db.driver !== 'sqlite' || db.path.endsWith('/')
+      const verdict = ignoredByGit(root, resolve(root, db.path), isDir)
+      if (verdict === null) continue
+      graded++
+      if (verdict) continue
+
+      findings.push({
+        file: 'db/schema.lite',
+        message: `database '${db.name}' writes ${db.path}, which no .gitignore covers, so the first ` +
+                 `\`git add .\` commits ${isDir ? 'every row it holds' : 'the data'}` +
+                 `${db.driver === 'sqlite' ? '' : ' — the audit trail, with who made each write —'}. ` +
+                 `Add \`${db.path.replace(/^\.\//, '')}\` to .gitignore.`,
+      })
+    }
+    return graded || findings.length ? { findings } : { skipped: 'no .gitignore applies to a declared database path' }
   },
 
   // ─── deploy-image-needs ────────────────────────────────────────────────────
@@ -4620,10 +4666,20 @@ function srcLayoutFindings(root) {
       `the app wrote goes in api/src/plugins/, which app.ts installs one by one because order matters (FJS-D625).`)
   }
 
-  // A surface never imports another by relative path (FJS-D627).
+  // A surface never imports another by relative path (FJS-D627). The one exception is a
+  // prerendered route's .meta.js reading the client its static config's `db:` names: the
+  // build cannot fetch the API, and the publish check only taps that client.
+  const staticDb = new Map()
+  for (const s of staticSurfaces(root)) {
+    const db = s.config.match(/\bdb\s*:\s*['"`]([^'"`]+)['"`]/)?.[1]
+    if (db) staticDb.set(s.surface, stem(resolve(s.surface, db)))
+  }
   for (const surface of SURFACES) {
+    const dbModule = staticDb.get(join(root, surface))
     for (const file of sources(root, [...SCRIPT_EXT, '.mesa'], `${surface}/src`)) {
+      const companion = /\.meta\.[jt]s$/.test(basename(file))
       for (const target of relativeImports(file)) {
+        if (companion && dbModule && stem(target) === dbModule) continue
         const other = SURFACES.find(s => s !== surface && inside(join(root, s), target))
         if (!other) continue
         warn(rel(root, file), `${surface}/ imports ${other}/ by relative path. Surfaces are peers (Invariant 3): ` +
@@ -5756,6 +5812,9 @@ const TEST_NOT_HERMETIC = [
   [/\bBun\.serve\s*\(\s*\{[^}]*?\bport\s*:\s*[1-9]/,          'binds a literal port'],
   [/\.listen\s*\(\s*[1-9]/,                                   'binds a literal port'],
   [/(?<!\bexpect\(\s*)\bopenChrome\s*\(|\bfindChrome\s*\(\s*\)/, 'launches Chrome'],
+  // `mock.module()` replaces the module for every file in the bun process
+  // (`FJS-D443`), so the test that calls it changes what its neighbors import.
+  [/\bmock\.module\s*\(/,                                     'mocks a module for the whole bun process'],
 ]
 
 // The calls a timeout rides on, and where it sits: a third argument to a test,

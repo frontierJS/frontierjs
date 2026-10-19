@@ -662,6 +662,34 @@ describe('a blocked column add is reported, not reported as success', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
+  // FJS-D428: the diff never consults a row count. Migrating an empty table and
+  // refusing a populated one passes on every developer's machine and blocks at
+  // the deploy.
+  test('an EMPTY table is blocked too — on the ALTER path and on the rebuild path', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'litestone-blocked-empty-'))
+    const head = (p: string) => `database main { path "${p}" }\n`
+    const answer = async (file: string, v1: string, v2: string) => {
+      const path = join(dir, file)
+      autoMigrate(await createClient({ schema: head(path) + v1, resolveFrom: dir }))
+      return autoMigrate(await createClient({ schema: head(path) + v2, resolveFrom: dir })) as
+        Record<string, { state: string, reason?: string }>
+    }
+
+    const alter = await answer('alter.db',
+      'model Doc { id Int @id @default(autoincrement())  n String }',
+      'model Doc { id Int @id @default(autoincrement())  n String  dueAt DateTime }')
+    expect(alter.main.state).toBe('blocked')
+    expect(alter.main.reason).toMatch(/doc\.dueAt/)
+
+    // A type change forces the table rebuild; the new column rides along.
+    const rebuild = await answer('rebuild.db',
+      'model Doc { id Int @id @default(autoincrement())  n String }',
+      'model Doc { id Int @id @default(autoincrement())  n Int  dueAt DateTime }')
+    expect(rebuild.main.state).toBe('blocked')
+    expect(rebuild.main.reason).toMatch(/doc\.dueAt/)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   test('an OPTIONAL column on the same table still migrates', async () => {
     // The rule has to be about the column, not about the path — otherwise the
     // fix above turns every ordinary column add into a refusal.

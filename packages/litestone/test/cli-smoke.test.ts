@@ -370,6 +370,36 @@ model Ticket {
     expect(r.exit).toBe(0)
   })
 
+  // FJS-1489. A package's models are its own to test: an app that imports
+  // `@frontierjs/auth/schema.lite` was handed a dozen survivors in Credential,
+  // Session and Verification, none of them in a file it owns.
+  test('mutate leaves a package-imported model to the package', async () => {
+    const dir = makeFixtureDir('mutate-package', {
+      schema: `
+import "vendor-pkg/schema.lite"
+
+model Team { id Int @id  name String @unique }
+`,
+      config: `export default { schema: './schema.lite', migrations: './migrations', db: './test.db' }\n`,
+    })
+    const pkg = join(dir, 'node_modules', 'vendor-pkg')
+    mkdirSync(pkg, { recursive: true })
+    writeFileSync(join(pkg, 'package.json'), '{ "name": "vendor-pkg", "version": "1.0.0" }\n', 'utf8')
+    writeFileSync(join(pkg, 'schema.lite'), `
+model Ticket {
+  id     Int    @id
+  ref    String @unique
+  @@gate(2.4.4.5)
+}
+`, 'utf8')
+
+    const r = await runCli(dir, ['mutate', '--kinds=unique-drop', '--json'], { timeoutMs: 60_000 })
+    const out = JSON.parse(r.stdout)
+    expect(out.mutants).toBe(1)
+    expect(JSON.stringify(out)).not.toMatch(/Ticket/)
+    expect(r.exit).toBe(0)
+  })
+
   // FJS-3040. A 29-model schema is minutes per run, and a piped run printed the
   // mutant count and then nothing — a slow run and a hung one read the same.
   test('mutate names the mutant it is on while piped, every ten', async () => {

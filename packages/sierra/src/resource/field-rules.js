@@ -1086,18 +1086,14 @@ function _builtinDisplay(rule) {
 }
 
 /**
- * What a column's HEADER says.
+ * What a column is CALLED: its table header, its validation message, its
+ * control's label. One answer, so a refusal names the box it sits under.
  *
  * `@label` in the seed wins, which is the whole reason it is a declaration —
  * `providerRef` reads as *Provider reference* on every table in the app without
  * one of them saying so. Failing that, the name is humanized for a READER,
  * which is the axis `@frontierjs/toolbelt/inflect` owns and the one that may
  * change without the storage and shape axes moving.
- *
- * NOT `fieldLabel`, which is the same question for a validation MESSAGE and
- * answers a bare column name rather than a humanized one — *placedAt must be a
- * string* is a sentence about a field a caller sent, and a table header is a
- * word a person reads.
  */
 export function columnLabel(name, rule) {
   // The relation name is humanized like any other, and only `@label` is taken
@@ -1609,42 +1605,30 @@ function _typeOf(value) {
 function _checkType(name, rule, value, errors) {
   switch (rule.type) {
     case 'string':
-      if (typeof value !== 'string') errors.push({ field: name, message: `${fieldLabel(name, rule)} must be a string` })
+      if (typeof value !== 'string') errors.push({ field: name, message: `${columnLabel(name, rule)} must be a string` })
       return typeof value === 'string'
     case 'integer':
-      if (!Number.isInteger(value)) errors.push({ field: name, message: `${fieldLabel(name, rule)} must be an integer` })
+      if (!Number.isInteger(value)) errors.push({ field: name, message: `${columnLabel(name, rule)} must be an integer` })
       return Number.isInteger(value)
     case 'number':
       if (typeof value !== 'number' || Number.isNaN(value)) {
-        errors.push({ field: name, message: `${fieldLabel(name, rule)} must be a number` })
+        errors.push({ field: name, message: `${columnLabel(name, rule)} must be a number` })
         return false
       }
       return true
     case 'boolean':
-      if (typeof value !== 'boolean') errors.push({ field: name, message: `${fieldLabel(name, rule)} must be a boolean` })
+      if (typeof value !== 'boolean') errors.push({ field: name, message: `${columnLabel(name, rule)} must be a boolean` })
       return typeof value === 'boolean'
     case 'array':
-      if (!Array.isArray(value)) errors.push({ field: name, message: `${fieldLabel(name, rule)} must be an array` })
+      if (!Array.isArray(value)) errors.push({ field: name, message: `${columnLabel(name, rule)} must be an array` })
       return Array.isArray(value)
     case 'object':
-      if (_typeOf(value) !== 'object') errors.push({ field: name, message: `${fieldLabel(name, rule)} must be an object` })
+      if (_typeOf(value) !== 'object') errors.push({ field: name, message: `${columnLabel(name, rule)} must be an object` })
       return _typeOf(value) === 'object'
     default:
       // No type constraint — Json columns are emitted as {}. Anything goes.
       return true
   }
-}
-
-/**
- * What to call a field in a message.
- *
- * `title` is `@label("Customer")`. Failing that, a foreign key borrows its
- * relation's name, so `customerId` reads as "customer" with nothing authored —
- * which is the common case, and the one where the raw column name under a form
- * label that says "customer" looks most like a bug.
- */
-export function fieldLabel(name, rule) {
-  return rule?.title ?? rule?.references?.relation ?? name
 }
 
 /**
@@ -1657,7 +1641,7 @@ function _say(rule, keyword, fallback) {
 }
 
 const _required = (name, rule) =>
-  _say(rule, 'required', `${fieldLabel(name, rule)} is required`)
+  _say(rule, 'required', `${columnLabel(name, rule)} is required`)
 
 // Two affix rules on one column share the one `pattern` slot, so each literal
 // is judged on its own: the sentence names the first one the value misses.
@@ -1670,7 +1654,7 @@ function _patternSentence(label, rule, value) {
 }
 
 function _checkConstraints(name, rule, value, errors) {
-  const label = fieldLabel(name, rule)
+  const label = columnLabel(name, rule)
   const add = (message) => errors.push({ field: name, message })
   const say = (keyword, fallback) => add(_say(rule, keyword, fallback))
 
@@ -1681,7 +1665,7 @@ function _checkConstraints(name, rule, value, errors) {
   }
 
   if (typeof value === 'string') {
-    if (rule.minLength != null && value.length < rule.minLength) say('minLength', `${label} must be at least ${rule.minLength} characters`)
+    if (rule.minLength != null && value.length < rule.minLength) say('minLength', `${label} must be at least ${rule.minLength} character${rule.minLength === 1 ? '' : 's'}`)
     if (rule.maxLength != null && value.length > rule.maxLength) say('maxLength', `${label} must be at most ${rule.maxLength} characters`)
     if (rule.pattern) {
       let re = null

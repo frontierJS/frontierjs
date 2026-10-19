@@ -14,7 +14,7 @@
 
 import { describe, test, expect, beforeAll, afterAll, vi } from 'vitest'
 import { cp, mkdir, rm, writeFile, readFile } from 'fs/promises'
-import { dirname, resolve }         from 'path'
+import { basename, dirname, resolve } from 'path'
 import { fileURLToPath }            from 'url'
 
 import { scannerPlugin } from '../src/build/scanner-plugin.js'
@@ -24,10 +24,19 @@ const FIXTURE   = resolve(__dirname, 'fixtures/static-site')
 const TMP       = resolve(__dirname, 'tmp-scanner-plugin')
 
 // The fixture is copied because a scan WRITES config/routes.js next to it.
+// Dotfiles are left behind: static-paths.test.js and prerender.test.js scan the
+// fixture in place, so a `.sierra-fresh-*` sidecar comes and goes beside the
+// routes while this copy walks them, and a copy that lists one and then finds
+// it gone fails with ENOENT (`FJS-1132`).
+const copyFixture = (to) => cp(FIXTURE, to, {
+  recursive: true,
+  filter: (from) => !basename(from).startsWith('.'),
+})
+
 beforeAll(async () => {
   await rm(TMP, { recursive: true, force: true })
   await mkdir(TMP, { recursive: true })
-  await cp(FIXTURE, TMP, { recursive: true })
+  await copyFixture(TMP)
 })
 
 afterAll(async () => {
@@ -87,7 +96,7 @@ describe('scannerPlugin buildStart', () => {
   test('a companion that throws on import warns with the cause, and does not crash', async () => {
     const root = resolve(__dirname, 'tmp-scanner-plugin-boom')
     await rm(root, { recursive: true, force: true })
-    await cp(FIXTURE, root, { recursive: true })
+    await copyFixture(root)
     // A companion importing something that is not there is the ordinary shape:
     // a site's own database client, absent until the app is configured.
     await rm(resolve(root, 'src/routes/blog/[tag].mesa'))
@@ -142,6 +151,26 @@ describe('the dev watcher', () => {
       expect(log).not.toHaveBeenCalled()
 
       await handlers.add(resolve(TMP, 'src/routes/blog/[tag].meta.js'))
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('New route file'))
+    } finally {
+      log.mockRestore()
+    }
+  })
+
+  // A PascalCase or `_` file beside a page is a component, not in the route
+  // table, so announcing it as a route file is wrong and the scan is wasted
+  // (`FJS-2438`).
+  test('a co-located component is neither announced nor scanned', async () => {
+    const handlers = await watch(TMP)
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      for (const name of ['Card.mesa', '_helper.mesa']) {
+        await handlers.add(resolve(TMP, 'src/routes/blog', name))
+        await handlers.unlink(resolve(TMP, 'src/routes/blog', name))
+      }
+      expect(log).not.toHaveBeenCalled()
+
+      await handlers.add(resolve(TMP, 'src/routes/blog/[tag].mesa'))
       expect(log).toHaveBeenCalledWith(expect.stringContaining('New route file'))
     } finally {
       log.mockRestore()

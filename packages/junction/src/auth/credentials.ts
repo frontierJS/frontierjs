@@ -39,6 +39,12 @@ export interface SignedRequestOptions {
    * Which caller, then which key. Answers the secret to verify against and the
    * principal a good signature becomes; `null` is a caller this app does not
    * know, and is refused rather than passed on.
+   *
+   * What the key was issued with goes on that session: the tenant claim the
+   * schema names (`agencyId`) scopes rows under `strategy row`, and a standing
+   * field (`memberRole`) reaches the gate and the policies. A `principal`
+   * resolver that answers nothing for the key leaves both standing
+   * (`test/credentials-claims.test.ts`).
    */
   keyFor: (req: InboundRequest) =>
     { secret: string | undefined; session: SessionContext } | null |

@@ -57,6 +57,32 @@ describe('the docs compile', () => {
   // A walker that matched nothing would pass every assertion above, so the
   // count is asserted too. Eleven, at the time of writing: most fences here
   // illustrate one attribute and are not components.
+  // FJS-911: a rule the compiler cites by number must have a prose section, or
+  // a reader following the citation lands in a summary-table row and cannot tell
+  // a sentence never written from one deleted. A fence has no example to
+  // compile there, so the fence test above cannot see it.
+  it('every RULE the compiler cites has a section in VISION.md', () => {
+    const vision = readFileSync(join(DOCS, 'VISION.md'), 'utf8')
+    const sections = new Set([...vision.matchAll(/^> \*\*RULE (\d+[a-z]?)\*\*/gm)].map((m) => m[1]))
+    const cited = new Set()
+    const srcDir = join(DOCS, '..', 'src')
+    for (const f of readdirSync(srcDir).filter((f) => f.endsWith('.js'))) {
+      for (const m of readFileSync(join(srcDir, f), 'utf8').matchAll(/\bRULE (\d+[a-z]?)\b/g)) cited.add(m[1])
+    }
+    expect(cited.size).toBeGreaterThan(0)
+    expect([...cited].filter((n) => !sections.has(n)).sort()).toEqual([])
+  })
+
+  // FJS-3313: the same gap for a rule the compiler does not cite. A row of the
+  // §22 table with no section is a claim with nowhere to read the reason.
+  it('every row of the VISION.md rules table has a section', () => {
+    const vision = readFileSync(join(DOCS, 'VISION.md'), 'utf8')
+    const sections = new Set([...vision.matchAll(/^> \*\*RULE (\d+[a-z]?)\*\*/gm)].map((m) => m[1]))
+    const rows = [...vision.matchAll(/^\| (\d+[a-z]?) \| /gm)].map((m) => m[1])
+    expect(rows.length).toBeGreaterThan(50)
+    expect(rows.filter((n) => !sections.has(n))).toEqual([])
+  })
+
   it('finds the component examples in VISION.md rather than nothing', () => {
     expect(files).toContain('VISION.md')
     expect(fencesOf(readFileSync(join(DOCS, 'VISION.md'), 'utf8')).length).toBeGreaterThanOrEqual(8)

@@ -225,3 +225,48 @@ describe('transactional: makes a bulk write all or nothing (FJS-2149)', () => {
     expect(await db.asSystem().event.count()).toBe(3)
   })
 })
+
+describe('a method that calls out before it writes scopes the write itself (FJS-2620)', () => {
+
+  // `transactional:` opens BEGIN IMMEDIATE before the method runs, so a vendor
+  // call inside the method holds the write lock for its whole latency. The
+  // guide's alternative is `$.db.$transaction` around the writes alone; this
+  // pins that the lock is taken there and not before the call out.
+  test('no lock before the call out, one around the writes, none after', async () => {
+    const db = await mkDb()
+    const seen: boolean[] = []
+    const svc = buildService({
+      name: 'posts',
+      async create(c: ServiceContext) {
+        const d = c.locals.db as any
+        seen.push(d.$inTransaction)                       // the vendor call happens here
+        const row = await d.$transaction(async (tx: any) => {
+          seen.push(tx.$inTransaction)
+          return tx.post.create({ data: c.data })
+        })
+        seen.push(d.$inTransaction)
+        return row
+      },
+      async find() { return [] },
+    } as never)
+
+    await callService(svc, ctx(db))
+    expect(seen).toEqual([false, true, false])
+    expect(await db.asSystem().post.count()).toBe(1)
+  })
+
+  test('declared transactional:, the call out is already inside the lock', async () => {
+    const db = await mkDb()
+    let before: boolean | undefined
+    const svc = buildService(writes({
+      transactional: true,
+      async create(c: ServiceContext) {
+        before = (c.locals.db as any).$inTransaction
+        return (c.locals.db as any).post.create({ data: c.data })
+      },
+    }) as never)
+
+    await callService(svc, ctx(db))
+    expect(before).toBe(true)
+  })
+})

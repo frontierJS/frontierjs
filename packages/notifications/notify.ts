@@ -9,7 +9,7 @@ import {
   NotificationTransportNotImplementedError,
 } from './errors.ts'
 import { sendInApp }  from './drivers/inapp.ts'
-import { sendEmail }  from './drivers/email.ts'
+import { addressOf, sendEmail } from './drivers/email.ts'
 
 // ─── Built-in transports ─────────────────────────────────────────────────────
 //
@@ -209,8 +209,7 @@ function assertAddressable(
   }
 
   if (transport === 'email') {
-    const to = (message as MailMessage | undefined)?.to ?? recipient.email
-    if (!to) {
+    if (!addressOf(message as MailMessage | undefined, recipient)) {
       throw new NotificationRecipientError(
         transport, notificationType,
         'recipient.email is missing and no .to() override was set on the mail() builder.'

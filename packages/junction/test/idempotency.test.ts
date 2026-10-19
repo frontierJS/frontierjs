@@ -151,6 +151,31 @@ describe('an Idempotency-Key executes a mutation once', () => {
 
     expect(seen).toHaveLength(1)
   })
+
+  // FJS-D451: a replay runs nothing — a hook that sends mail or bills would
+  // repeat the effect the key exists to prevent.
+  test('a replay runs no hook — before, after or around', async () => {
+    const app = await createTestApp()
+    const ran: string[] = []
+    const svc = buildService({
+      name: 'notes',
+      create: async (ctx: { data: unknown }) => { ran.push('method'); return { id: '1', ...(ctx.data as object) } },
+      hooks: {
+        around: { create: [async (_ctx: unknown, next: () => Promise<void>) => { ran.push('around'); await next() }] },
+        before: { create: [() => { ran.push('before') }] },
+        after:  { create: [() => { ran.push('after') }] },
+      },
+    } as never)
+
+    await callWithKey(app, svc, 'create', 'k1')
+    const first = [...ran]
+    await callWithKey(app, svc, 'create', 'k1')
+
+    expect(first).toContain('method')
+    expect(first).toContain('before')
+    expect(first).toContain('after')
+    expect(ran).toEqual(first)
+  })
 })
 
 // A key needs a principal, and the principal is established at the TRANSPORT —

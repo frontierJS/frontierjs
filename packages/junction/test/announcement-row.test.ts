@@ -235,6 +235,32 @@ describe('what the app states, the app owns', () => {
     expect(warnings).toEqual([])
   })
 
+  test('a write that answers a report names the row it wrote, and the caller keeps the report', async () => {
+    // FJS-1256: `timesheets.build` answers { sheet, lines, noRate }. The caller
+    // needs the report and every other tab needs the Timesheet; ctx.dispatch
+    // carries the second without costing the first.
+    const db  = await mkDb()
+    const svc = buildService({
+      name: 'servers', model: 'server',
+      async audit(ctx: ServiceContext) {
+        const server = await (ctx.locals.db as any).server.findFirst({ where: { id: 1 } })
+        ctx.dispatch = server
+        return { server, checked: 3, unreachable: ['db-02'] }
+      },
+    } as never)
+
+    const seen: unknown[] = []
+    const events = { emit: (_e: string, data: unknown) => { seen.push(data) } }
+    const ctx    = ctxFor(db, { method: 'audit' })
+    await callService(svc as never, ctx, undefined, events as never)
+
+    expect(seen).toHaveLength(1)
+    expect((seen[0] as Record<string, unknown>).name).toBe('gateway-01')
+    expect(seen[0]).not.toHaveProperty('checked')
+    expect((ctx.result as { data: Record<string, unknown> }).data.unreachable).toEqual(['db-02'])
+    expect(warnings).toEqual([])
+  })
+
   test('ctx.dispatch = false still announces nothing', async () => {
     const db  = await mkDb()
     const svc = buildService({
@@ -263,3 +289,36 @@ describe('a service with no model is left alone', () => {
 
 // Restore the console for the rest of the run.
 process.on('exit', () => { console.warn = realWarn })
+
+describe('a bulk create announces each row, not the list it answers (FJS-2157)', () => {
+
+  test('an array of whole rows is announced row by row and warns nothing', async () => {
+    const db = await mkDb()
+    const svc = buildService({
+      name: 'servers', model: 'server',
+      async create(ctx: ServiceContext) {
+        const t = (ctx.locals.db as any).server
+        await t.create({ data: { id: 2, name: 'gateway-02' } })
+        return [await t.findFirst({ where: { id: 1 } }), await t.findFirst({ where: { id: 2 } })]
+      },
+    } as never)
+
+    const seen = await announce(svc, ctxFor(db, { method: 'create', data: [{ name: 'x' }] })) as Record<string, unknown>[]
+    expect(seen.map(r => r.id)).toEqual([1, 2])
+    expect(seen.every(r => r.region === 'eu-west')).toBe(true)
+    expect(warnings).toEqual([])
+  })
+
+  test('an array of partial rows is re-read per row', async () => {
+    const db = await mkDb()
+    const svc = buildService({
+      name: 'servers', model: 'server',
+      async create() { return [{ id: 1, name: 'gateway-01' }] },
+    } as never)
+
+    const [row] = await announce(svc, ctxFor(db, { method: 'create', data: [{ name: 'x' }] })) as Record<string, unknown>[]
+    expect(row.region).toBe('eu-west')
+    expect(warnings.length).toBe(1)
+    expect(warnings[0]).toContain('answered 2 of 3 columns')
+  })
+})
