@@ -41,7 +41,7 @@ that drifts, and the form, the table and the validator stop agreeing with the se
 
 `<script module>` runs once at import; the markup is the model's default form, so
 a create page is `<Order method="create" />`. An irregular plural states the model
-(`createResource('people', { model: 'Person' })`), a resource over no model says
+(`createResource('children', { model: 'Child' })`), a resource over no model says
 `model: null`, and `fli make:resource` writes the file.
 
 ---

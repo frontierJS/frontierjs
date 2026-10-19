@@ -120,8 +120,8 @@ describe('fli make:resource', () => {
   // must be toolbelt's plural, irregulars included (`FJS-2841`).
   test('the service name is the plural the rest of the framework uses', async () => {
     const { servicePlural } = await import('../core/resource-template.js')
-    expect(['Lead', 'ProductVariant', 'Person', 'Category', 'Box'].map(servicePlural))
-      .toEqual(['leads', 'productVariants', 'people', 'categories', 'boxes'])
+    expect(['Lead', 'ProductVariant', 'Child', 'Category', 'Box'].map(servicePlural))
+      .toEqual(['leads', 'productVariants', 'children', 'categories', 'boxes'])
   })
 
   test('what it wrote passes `fli check`', async () => {

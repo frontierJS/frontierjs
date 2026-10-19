@@ -84,7 +84,7 @@ const appEntryModule = () =>
 // for).
 //
 // The service name is the FIRST POSITIONAL ARGUMENT — it is not a `service:`
-// key: `createResource('people', { model: 'Person' })`. The file name is the
+// key: `createResource('children', { model: 'Child' })`. The file name is the
 // model where a model exists (Invariant 19), so a stated `model:` means the two
 // disagree and is worth showing.
 

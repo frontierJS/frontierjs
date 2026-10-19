@@ -2484,7 +2484,7 @@ describe('auth-service-collision', () => {
 })
 
 describe('service-model', () => {
-  const SCHEMA2 = SCHEMA + 'model ProductVariant { id Int @id }\nmodel Person { id Int @id }\n'
+  const SCHEMA2 = SCHEMA + 'model ProductVariant { id Int @id }\nmodel Child { id Int @id }\n'
   const base = (body = '{}') =>
     `import { createService } from '@frontierjs/junction'\nexport default createService(${body})\n`
 
@@ -2528,12 +2528,12 @@ describe('service-model', () => {
   })
 
   test('an irregular plural resolves — the singular has one owner and this asks it', () => {
-    // `people` → `person` comes from @frontierjs/toolbelt/inflect, the module
+    // `children` → `child` comes from @frontierjs/toolbelt/inflect, the module
     // litestone derives a table name with. A rule with its own rules here would
     // grade an app by an inflection the app does not run (Invariant 2).
     const root = tree('sm-irregular', {
       ...CLEAN, 'db/schema.lite': SCHEMA2,
-      'api/src/services/people.service.ts': base(),
+      'api/src/services/children.service.ts': base(),
     })
     expect(only(root, 'service-model').findings).toEqual([])
   })
@@ -2896,8 +2896,8 @@ describe('resource-model-miss', () => {
   test('a name that resolves is silent — including an irregular', () => {
     const root = tree('rm-ok', {
       ...CLEAN,
-      'db/schema.lite':       SCHEMA + '\nmodel Person { id Int @id }\n',
-      'web/src/pages/x.mesa': "<script module>\nexport const people = createResource('people')\n" +
+      'db/schema.lite':       SCHEMA + '\nmodel Child { id Int @id }\n',
+      'web/src/pages/x.mesa': "<script module>\nexport const children = createResource('children')\n" +
                               "export const leads = createResource('leads')\n</script>\n",
     })
     expect(only(root, 'resource-model-miss').findings).toEqual([])

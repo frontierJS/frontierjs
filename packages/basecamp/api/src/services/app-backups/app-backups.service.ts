@@ -50,7 +50,7 @@ export default createService({
   // machine reported, and the base would otherwise answer all three with
   // whatever the caller wrote. `take` writes at SYSTEM, so a model gate on
   // `create` could never grade it and the method states its own.
-  methods: ['find', 'get', { method: 'take', gate: LEVELS.ADMINISTRATOR, input: 'AppBackupCreate' }],
+  methods: ['find', 'get', { method: 'take', gate: LEVELS.ADMINISTRATOR, input: 'AppBackupTake' }],
 
   async find() {
     const { limit, offset } = getPagination({ limit: 50, max: 200 })

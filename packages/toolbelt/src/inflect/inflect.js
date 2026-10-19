@@ -27,7 +27,7 @@
  * are not a dictionary and cannot become one — some ambiguities are structural,
  * not omissions: `bases` is `basis` here and never `base`. Anything a schema
  * needs that these cannot reach is said by hand: `@@map` in the Data realm,
- * `createResource('people', { model: 'Person' })` in the UI.
+ * `createResource('crew', { model: 'Member' })` in the UI.
  *
  * This kit never takes a locale. What it inflects is structural — a table name,
  * an accessor, a service path — so a Spanish caller still reads `db.person`
@@ -53,7 +53,7 @@
  * `datum` → `data` without knowing which words play.
  */
 export const IRREGULAR = {
-  person: 'people',   child: 'children', man: 'men',       woman: 'women',
+  child: 'children',  man: 'men',        woman: 'women',
   tooth: 'teeth',     foot: 'feet',      mouse: 'mice',    goose: 'geese',
   ox: 'oxen',         quiz: 'quizzes',
   index: 'indices',   matrix: 'matrices', vertex: 'vertices',
@@ -153,10 +153,10 @@ function matchCase(sample, word) {
 
 /*
  * A caller's word is usually a COMPOUND — `account_aliases` is a table name,
- * `salesPeople` an accessor, `UserStatuses` a model. English inflects the head
+ * `stepChildren` an accessor, `UserStatuses` a model. English inflects the head
  * noun and leaves the modifier alone, and the two lookups below key on a whole
  * word, so every compound missed both: `user_aliases` fell past the `-ses` list
- * to `user_aliase`, and `sales_people` matched no irregular and came back
+ * to `user_aliase`, and `step_children` matched no irregular and came back
  * unchanged. The suffix rules only ever look at the end of the word, which IS
  * the head, so routing a compound through its head is at least as good
  * everywhere and is the only thing that reaches the tables.

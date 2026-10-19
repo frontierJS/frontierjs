@@ -12,7 +12,7 @@
 import { describe, test, expect, vi } from 'vitest'
 
 const ROWS = {
-  people: [
+  persons: [
     { id: 1, name: 'Ada',  email: 'ada@x.test' },
     { id: 2, name: '',     email: 'bo@x.test' },
     { id: 3, name: null,   email: null },

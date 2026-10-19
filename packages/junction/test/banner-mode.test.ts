@@ -55,7 +55,7 @@ describe('boot banner mode', () => {
   })
 
   it('reads an unset NODE_ENV as development, the way loadConfig does', async () => {
-    expect((await banner(undefined))?.mode).toBe('development')
+    expect((await banner(undefined))?.mode).toBe('development (NODE_ENV unset)')
   })
 
   it('states debug as its own field, only when on', async () => {

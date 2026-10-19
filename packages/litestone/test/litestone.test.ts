@@ -12583,7 +12583,7 @@ describe('generateTypeScript — emits the surface a real client has', () => {
 describe('generateTypeScript — ServiceTypes', () => {
   const SERVICE_SCHEMA = `
     model Post   { id Int @id  title String }
-    model Person { id Int @id  name  String }
+    model Child  { id Int @id  name  String }
     model Status { id Int @id  label String }
   `
 
@@ -12593,9 +12593,9 @@ describe('generateTypeScript — ServiceTypes', () => {
 
     expect(map).toContain('posts: Post')
     // The irregular is the point of asking inflect rather than adding an 's':
-    // Person → people, and Sierra derives Person back from `people` with the
+    // Child → children, and Sierra derives Child back from `children` with the
     // same table.
-    expect(map).toContain('people: Person')
+    expect(map).toContain('children: Child')
     // …and a word that already ends in s does not double it.
     expect(map).toContain('statuses: Status')
   })
@@ -16640,6 +16640,25 @@ describe('generateTypeScript', () => {
     const dts = generateTypeScript(schema)
     expect(typeof dts).toBe('string')
     expect(dts.length).toBeGreaterThan(0)
+  })
+
+  // FJS-3118 / FJS-D1282: two `interface IncidentUpdate` merge in silence, and
+  // `incident.update()` then demands the timeline's required columns.
+  test('refuses a model whose name is another model\'s generated shape', () => {
+    const { schema: s } = parse(`
+      model Incident {
+        id     Integer @id
+        status String
+        posts  IncidentUpdate[]
+      }
+      model IncidentUpdate {
+        id         Integer  @id
+        incidentId Integer
+        incident   Incident @relation(fields: [incidentId], references: [id])
+        body       String
+      }
+    `)
+    expect(() => generateTypeScript(s)).toThrow(/`Incident`'s Update type collides with model `IncidentUpdate`/)
   })
 
   test('emits enum union type', () => {

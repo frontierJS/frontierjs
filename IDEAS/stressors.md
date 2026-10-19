@@ -19,7 +19,7 @@ about how a 2.9 MB schema behaves. Chatwoot appears in both, for different
 questions.
 
 **Bringing a built stressor up to date** after core changes, until `fli dev`
-boots it and `bun run check` is green again, is `IDEAS/stressor-upgrade.md`.
+boots it and `bun run check` is green again, is `docs/STRESSOR-UPGRADE.md`.
 
 ---
 

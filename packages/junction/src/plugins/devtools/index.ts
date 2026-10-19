@@ -20,6 +20,7 @@ import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { isListResult } from '../../core/envelope.ts'
 import { collectHealth, collectMetrics } from '../../transport/health.ts'
+import { isDevelopmentEnv } from '../../core/errors.ts'
 
 export interface DevtoolsOptions {
   /**
@@ -192,7 +193,7 @@ export function devtools(opts: DevtoolsOptions = {}) {
   const hostname   = opts.hostname   ?? '127.0.0.1'
   const maxEntries = opts.maxEntries ?? 200
   const _redactKeys = [...DEFAULT_REDACT, ...(opts.redact ?? [])].map(k => k.toLowerCase())
-  const isProd     = process.env.NODE_ENV === 'production'
+  const isProd     = !isDevelopmentEnv()
   const isLoopback = LOOPBACK.has(hostname)
 
   const requests:    RingBuffer<RequestEntry>    = new RingBuffer(maxEntries)
@@ -352,7 +353,7 @@ export function devtools(opts: DevtoolsOptions = {}) {
       if (isProd && !opts.auth) {
         app._devtools = { status: 'refused', reason: 'production, no auth gate' }
         console.warn(
-          '[Junction devtools] NODE_ENV=production and no `auth` option configured — ' +
+          `[Junction devtools] NODE_ENV=${process.env.NODE_ENV} and no \`auth\` option configured — ` +
           'devtools admin server NOT started. Pass devtools({ auth: async (req) => boolean }) to enable it in production.'
         )
         return

@@ -77,7 +77,7 @@ function tableNameFromModel(modelName) {
 // Table name → PascalCase singular model name
 // "users"             → "User"
 // "service_agreements" → "ServiceAgreement"
-// "people"            → "Person"
+// "children"          → "Child"
 function tableNameToModelName(tableName) {
   return toPascalCase(toSingular(tableName))
 }

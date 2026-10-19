@@ -60,6 +60,7 @@ import { assertPublicUrl, gradePublicUrl, pinTo } from '../../core/public-url.ts
 import type { PublicUrlOptions } from '../../core/public-url.ts'
 import { shapeForSubscriber, sayUnowned } from './payload.ts'
 import type { ShapeResult }    from './payload.ts'
+import { isDevelopmentEnv } from '../../core/errors.ts'
 
 // ─── Retry schedule ────────────────────────────────────────────────────────
 // Delays in ms after each failed attempt.
@@ -1030,8 +1031,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
           // it, which is a different thing from a route that is not there.
           return ctx.json({ error: 'Forbidden' }, 403)
         }
-        const isProd = process.env.NODE_ENV === 'production'
-        if (!('auth' in app) && !isProd) return null                       // dev convenience only
+        if (!('auth' in app) && isDevelopmentEnv()) return null                       // dev convenience only
         return ctx.json({ error: 'Unauthorized' }, 401)
       }
 

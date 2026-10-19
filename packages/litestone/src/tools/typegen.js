@@ -42,6 +42,33 @@ function serviceName(name) {
   return pluralizeWord(accessor(name))
 }
 
+// A model's write and read shapes are its name plus a suffix, and `XUpdate` is
+// an ordinary noun (an append-only timeline), so `model Incident` beside
+// `model IncidentUpdate` declares `interface IncidentUpdate` twice. TypeScript
+// merges the two without a word and every `incident.update()` then wants the
+// timeline's required columns (`FJS-3118`). Refused here, naming both (`FJS-D1282`).
+function refuseCollidingDeclarations(schema) {
+  const declared = new Map()
+  const declare = (name, what) => {
+    const first = declared.get(name)
+    if (first) throw new Error(
+      `litestone types: ${what} collides with ${first} — both declare \`${name}\` in the generated types, ` +
+      `and TypeScript would merge them into one. Rename one of them (FJS-D1282).`
+    )
+    declared.set(name, what)
+  }
+  for (const en of schema.enums ?? []) declare(en.name, `enum \`${en.name}\``)
+  for (const t of schema.types ?? []) declare(pascal(t.name), `type \`${t.name}\``)
+  for (const m of schema.models ?? []) declare(pascal(m.name), `model \`${m.name}\``)
+  for (const v of schema.views ?? []) declare(pascal(v.name), `view \`${v.name}\``)
+  for (const m of schema.models ?? []) {
+    const shapes = ['Create', 'Update', 'Where', 'OrderBy', 'Relations']
+    if (m.fields.some(f => f.type.kind !== 'relation' && isSystemField(f))) shapes.push('System')
+    for (const s of shapes) declare(pascal(m.name) + s, `\`${m.name}\`'s ${s} type`)
+  }
+  for (const v of schema.views ?? []) declare(pascal(v.name) + 'Where', `\`${v.name}\`'s Where type`)
+}
+
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 /**
@@ -61,6 +88,8 @@ export function generateTypeScript(schema, opts = {}) {
     includeComments = true,
     augment         = null,
   } = opts
+
+  refuseCollidingDeclarations(schema)
 
   const lines = []
 

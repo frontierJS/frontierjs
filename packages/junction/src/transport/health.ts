@@ -20,11 +20,12 @@
 //   app.configure(health({ path: '/_internal', token: process.env.METRICS_TOKEN }))
 //
 // Auth: pass a static bearer token or a custom check function. With neither,
-// both endpoints are public — except under NODE_ENV=production, where /metrics
+// both endpoints are public — except outside development (`isDevelopmentEnv`), where /metrics
 // is not mounted at all and /health stays public.
 
 import type { App }              from '../core/app.ts'
 import type { TransportContext } from './types.ts'
+import { isDevelopmentEnv }     from '../core/errors.ts'
 
 // ─── Options ──────────────────────────────────────────────────────────────
 
@@ -465,9 +466,9 @@ export function health(opts: HealthPluginOptions = {}) {
       // methods, and a scaffold declares `health: true` with no token. `/health`
       // above stays public — a deploy's rollback and a load balancer poll it.
 
-      if (process.env.NODE_ENV === 'production' && !opts.token && !opts.authFn) {
+      if (!isDevelopmentEnv() && !opts.token && !opts.authFn) {
         console.warn(
-          `[Junction health] NODE_ENV=production and no \`token\` or \`authFn\` — ${prefix}/metrics NOT served. ` +
+          `[Junction health] NODE_ENV=${process.env.NODE_ENV} and no \`token\` or \`authFn\` — ${prefix}/metrics NOT served. ` +
           `Pass health({ token }) or plugins: { health: { token } } to scrape it.`
         )
         return

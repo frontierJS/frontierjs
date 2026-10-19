@@ -658,7 +658,7 @@ There is no built-in database check — junction opens no database, so the app n
 
 **`GET /health`** — readiness: `200` when healthy, `503` when any check fails or the app is draining. **`GET /health/live`** — liveness: consults no check, so a draining process is still alive. Point a `readinessProbe` at the first and a `livenessProbe` at the second.
 
-**`GET /metrics`** — process memory, request counts, response types, WebSocket connections, cache hit rate, service registry. Under `NODE_ENV=production` it is not mounted unless `token` or `authFn` is set, since it names the pid and every service. Either option gates `/health` too.
+**`GET /metrics`** — process memory, request counts, response types, WebSocket connections, cache hit rate, service registry. Outside development — `NODE_ENV` anything but unset, `development` or `test` — it is not mounted unless `token` or `authFn` is set, since it names the pid and every service. Either option gates `/health` too.
 
 A plugin contributes its own block through `app.registerMetricsSource(name, fn)`
 rather than mounting a second endpoint: Caravan adds `jobs`, the outbox adds

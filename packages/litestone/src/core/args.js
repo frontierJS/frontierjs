@@ -527,6 +527,7 @@ function whereKeysFor(model, ctx) {
  * @param {{ ctx: Ctx, model: string } | null} [rel]  where this `where` sits, when one relation in
  * @param {string} [path]
  * @param {number} [depth]
+ * @param {Set<string> | null} [opaque]  @opaque columns, which match by equality alone
  */
 export function collectWhereKeyProblems(where, filterable, computed, encrypted, out = [], scopes = null, transient = null, rel = null, path = '', depth = 0, opaque = null) {
   if (!where || typeof where !== 'object' || Array.isArray(where)) return out

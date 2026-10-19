@@ -30,6 +30,7 @@
 //   generateEnvExample(spec)  // returns the string
 
 import { colorEnabled } from './logger.ts'
+import { isDevelopmentEnv } from './errors.ts'
 import { isSecretEnvName, redactUrl, REDACTED } from '@frontierjs/toolbelt/redact'
 
 // Env validation runs before an app — and therefore before its logger —
@@ -237,8 +238,8 @@ export function checkEnvField(key: string, field: EnvFieldSpec, raw: string | un
     // Random hex is what `fli keygen` writes; 1 key in ~16,000 holds "12345".
     const randomHex = typeof value === 'string' && value.length >= 32 && /^[0-9a-f]+$/i.test(value)
     if (!randomHex && typeof value === 'string' && weakValues.some(w => value.toLowerCase().includes(w))) {
-      if (process.env.NODE_ENV === 'production')
-        return fail(`${key} looks like a placeholder — set a real secret in production`)
+      if (!isDevelopmentEnv())
+        return fail(`${key} looks like a placeholder — set a real secret outside development`)
       warnings.push(`${key} looks like a placeholder — replace before going to production`)
     }
   }

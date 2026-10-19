@@ -2325,7 +2325,9 @@ export function createApp(opts: AppOptions = {}): App {
           // The environment, read as `loadConfig` reads it. `config.debug` is
           // DEBUG=1 and says nothing about NODE_ENV, so it is its own field —
           // folded into `mode` it labeled every non-debug dev server production.
-          mode:     process.env.NODE_ENV ?? 'development',
+          // Unset says so: it opens debug detail like `development` does, and a
+          // deploy that forgot the variable has only this line to say it did.
+          mode:     process.env.NODE_ENV ?? 'development (NODE_ENV unset)',
           debug:    config.debug ? true : undefined,
         })
 

@@ -272,7 +272,7 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `take`
 - **custom methods** — `take`
-- **input** — `take` takes `AppBackupCreate`
+- **input** — `take` takes `AppBackupTake`
 - **who may call** —
   - `take` — standing 5 or above — declared `gate: 5`; body writes as the app
 

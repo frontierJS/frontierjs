@@ -602,7 +602,7 @@ const write = (filePath, content, label) => {
 // Both halves of an existing Resource are read rather than guessed: the EXPORT
 // name, which is what the generated pages import, and the SERVICE string, which
 // is what the admin actually calls. Guessing the second is what made an
-// irregular come out as /admin/persons/ over a service named 'people' — the
+// irregular come out as /admin/childs/ over a service named 'children' — the
 // data worked and the URL, the route folder and the make:service hint were all
 // wrong together.
 const EXPORTS_RESOURCE = /export\s+const\s+([A-Za-z0-9_$]+)\s*=\s*createResource\(\s*['"]([^'"]+)['"]/

@@ -366,9 +366,9 @@ type AppVolumeRestore {
   overwrite Boolean?
 }
 
-/// What `app-backups.create` accepts: the app, and the machine whose copy of
+/// What `app-backups.take` accepts: the app, and the machine whose copy of
 /// its data volume is taken (`FJS-D679`).
-type AppBackupCreate {
+type AppBackupTake {
   appId    String
   serverId String
 }

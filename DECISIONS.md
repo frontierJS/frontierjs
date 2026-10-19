@@ -35,6 +35,16 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1330"></a>2026-10-19 · `FJS-D1330` — What does `model Person` pluralize to — `persons`. `person: 'people'` leaves toolbelt's irregular table in both directions, so `model Person` derives the service `persons` and `people` is no longer a spelling of any model.
+
+Ruled by the owner on [`FJS-2815`](ISSUES.md#fjs-2815), against the options offered (rename auth's operator service to `account-admin`, `admin` or `user-admin`, or keep it and warn before boot). The collision was auth's `people` against the name `model Person` derived; with the derived name `persons`, auth's default keeps its word and no domain model produces it. The reverse goes with the forward, because the table is one table read both ways: introspecting a legacy `people` table now yields `model People`, which the author renames (or keeps the table with `@@map("people")`). `fli make:service Person` and the derived name now agree (`FJS-1260`). An app whose `people.service.ts` declares no `model:` resolves to no model after this and moves its file to `persons.service.ts`.
+
+### <a id="fjs-d1282"></a>2026-10-19 · `FJS-D1282` — What stops a model named `<Other>Update` (or `Create`, `Where`, `OrderBy`, `Relations`) from colliding with the generated types of `<Other>` in `schema.d.ts` — Refuse: `generateTypeScript` (and `litestone check`) throws naming both declarations when two generated names are equal, e.g. "model `IncidentUpdate` collides with `Incident`'s update type". Smallest delta, no consumer moves; the author renames the timeline model (`IncidentPost`), and an ordinary noun stays unusable as a suffix.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (namespace the shapes: `Incident` stays the row and gains `Incident.Create` / `.Update` / `.Where` / `.OrderBy` / `.Relations` (an interface and a namespace of one name merge legally). A collision becomes impossible, but every importer of `IncidentCreate` etc. moves in the same change (`typegen.js` client map, `testing.d.ts`, `cli` templates, junction, the linked prototypes)), **C** (a longer, less-nouny suffix (`IncidentUpdateInput`). One rename across callers, but the collision is only rarer and a model could still take it).
+
+The paper's recommendation, taken as written: it ends the silent merge with a message that names the fix and moves no caller; B is the right shape if renaming a timeline model proves common. Confidence 2.
+
 ### <a id="fjs-d1260"></a>2026-10-18 · `FJS-D1260` — testing's exported `Announcement` type, what `announced()` returns a list of, is a second noun for an Event ([`FJS-D393`](DECISIONS.md#fjs-d393)). What is it called — `AnnouncedEvent`; `announced()` keeps its name, since *announce* is the blessed verb.
 
 Asked in the [`FJS-2428`](ISSUES.md#fjs-2428) session. **A** was picked over **B** (`Event`, the ruling's bare noun, which shadows lib.dom's `Event` inside testing's types), **C** (leave it, with an allowance on D393).
@@ -4176,6 +4186,12 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d1324"></a>2026-10-19 · `FJS-D1324` — Does a create or update answer a `File` column as the stored ref, or resolved like a read (`FJS-1504`) — Resolve the write's row like a read; `select: { f: { resolve: false } }` on the write is how a caller that wants the ref asks. `file-ref-shape` and the `file-uploads.md` fence change to read the URL, and an app needing the key reads it with `resolve: false`.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (keep the ref on a write; document that a private store's handler must not return the row as-is. The key reaches whoever the route hands the row to), **C** (resolve only when the store has no address to give, so a store with a `publicBase` keeps answering the ref and a private one answers `null`; two behaviors keyed on config).
+
+The paper's recommendation, taken as written: one answer for a column on every path is what `FJS-425` and `FJS-2422` were both after, and a ref on a write is the only path where the key leaves the server unasked.
+
 ### <a id="fjs-d885"></a>2026-10-17 · `FJS-D885` — How does a String column state a human sort order: a `@collate(nocase)` field word written into the DDL, or human order as the default for a `@label` / valueset `order` column — A field word `@collate(nocase)` (or `@collate(binary|nocase|rtrim)`, SQLite's three), emitted as `COLLATE NOCASE` on the column so ORDER BY, comparisons and an index all agree. The author states it per column; the DDL differ, `litestone introspect` (which already meets `COLLATE NOCASE` on adopted databases) and `explain` learn one word. NOCASE folds ASCII only, so `Émile` still sorts after `Zed` — a partial answer to "as a person reads them".
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (human order as the default for a `@label` / valueset `order` column: the compiler adds a case-insensitive collation to ORDER BY on those columns only, no new word. Nothing for the author to state, but the same column sorts differently by which clause names it, an index on the column stops serving the ORDER BY, and the rule lives in the query compiler rather than the schema (Invariant 6's direction runs the other way)).
@@ -7835,6 +7851,18 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d1307"></a>2026-10-19 · `FJS-D1307` — What is the one name and the one id key of the principal on both contexts — `ctx.user` on both contexts (a service gets `ctx.user` where it reads `ctx.auth.user` now), key `id`. Keeps `FJS-D392`'s ruling and the route-side sites; only the service-side sites and the id key move. The word stays *user* for a caller that may not be one.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (`ctx.principal` on both contexts, key `id` only. `ctx.user` and `ctx.auth.user` are deleted (`ctx.auth` keeps what is not the person); auth's session shape moves `userId` to `id` and `toDataPrincipal`'s copy is deleted; `SessionContext`, `services.ts` and the 249 sites move in one change. *Principal* is the ARCHITECT word and stays true when the caller is a Machine or a Peer (`FJS-D1198`), where *user* does not), **C** (keep both homes, unify only the id key to `id`. Smallest change and it closes the `userId ?? id` read; the row's first complaint (two homes) stays, with the table in `CLAUDE.md` as its documentation).
+
+The paper's recommendation, taken as written: it matches the two siblings from this question's own domain: `FJS-D392` kept `ctx.user` as the principal, and `FJS-D1196`/`FJS-D1198` ruled a machine or peer is a User (`User.kind`), which removes A's only argument for a new word; it also moves the service-side sites and the id key rather than all 249. A is the reopen path if the owner wants lockdown 3.11's `ctx.principal` spelling. Confidence 2: whether auth's session row `id` (the session itself) collides with a principal `id` is unchecked and decides how wide the auth edit is. Nine questions answered after the filing, not before.
+
+### <a id="fjs-d1329"></a>2026-10-19 · `FJS-D1329` — An unset NODE_ENV is development; the deploy path sets production and the boot banner says when nothing did
+
+Asked closing [`FJS-3316`](ISSUES.md#fjs-3316), after every exposure gate moved onto `isDevelopmentEnv()` (`FJS-3207`): a deploy that never sets the variable still serves debug detail, `/manifest`, ungated `/metrics` and unauthenticated webhook registration. **B** was picked, against the recommendation (A). The options were **A**: split the answer, so unset is a deployment for exposure and development for diagnostics, with `fli dev` and the scaffold's dev script setting `development`. **B**: keep unset as development and guard the deploy edge. **C**: unset is a deployment everywhere. **D**: unset is development only on a loopback bind.
+
+The precedent is B: Express, Rails, Django and Phoenix all read unset as development and rely on the deploy command to say production. `fli deploy` and `deploy:local` already pass `--env NODE_ENV=production` when they start the container. The edge guard is the boot banner, whose `mode` reads `development (NODE_ENV unset)` rather than a bare `development`. A build-check rule was weighed and left out, because fli's own run-time `--env` makes an image with no `ENV NODE_ENV` correct. — `isDevelopmentEnv()` in `packages/junction/src/core/errors.ts`; the banner in `packages/junction/src/core/app.ts`.
 
 ### <a id="fjs-d851"></a>2026-10-19 · `FJS-D851` — How does an app say "one process, meant" so the announce-reach boot warning stops firing on every single-process app — The parser records whether `announce` was written, and an explicit `announce inProcess` is the "meant" declaration that silences the report. No new keyword (the spelling already parses); the default stays quiet-on-nothing only when written.
 

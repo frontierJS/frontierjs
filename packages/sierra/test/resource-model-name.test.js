@@ -55,7 +55,7 @@ describe('plurals resolve without help, irregular ones included', () => {
     ['churches',  'Church'],
     ['buses',     'Bus'],
     // In the irregular table, so no `model:` is needed to say them any more.
-    ['people',    'Person'],
+    ['persons',   'Person'],
     ['children',  'Child'],
   ])('%s → %s', (service, expected) => {
     expect(createResource(service).context.model).toBe(expected)

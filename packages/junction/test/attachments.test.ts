@@ -376,9 +376,9 @@ describe('checkEnvField', () => {
     } finally { process.env.NODE_ENV = prev }
   })
 
-  it('refuses a placeholder ENCRYPTION_KEY in production', () => {
+  it.each(['production', 'staging'])('refuses a placeholder ENCRYPTION_KEY under NODE_ENV=%s (FJS-3316)', (nodeEnv) => {
     const prev = process.env.NODE_ENV
-    process.env.NODE_ENV = 'production'
+    process.env.NODE_ENV = nodeEnv
     try {
       expect(checkEnvField('ENCRYPTION_KEY', {}, 'change-me').error).toContain('placeholder')
     } finally { process.env.NODE_ENV = prev }

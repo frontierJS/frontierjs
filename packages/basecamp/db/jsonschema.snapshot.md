@@ -166,7 +166,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `AppPlace` | type |
 | `AppUnplace` | type |
 | `AppVolumeRestore` | type |
-| `AppBackupCreate` | type |
+| `AppBackupTake` | type |
 | `FlagOverrideSet` | type |
 | `FlagOverrideClear` | type |
 | `ServerProvision` | type |
@@ -1988,7 +1988,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 **On create**: required — `serverId`, `path`
 
-### `AppBackupCreate`
+### `AppBackupTake`
 
 - closed (`additionalProperties: false`)
 

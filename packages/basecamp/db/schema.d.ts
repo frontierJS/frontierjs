@@ -307,10 +307,10 @@ export interface AppVolumeRestore {
 }
 
 /**
- * What `app-backups.create` accepts: the app, and the machine whose copy of
+ * What `app-backups.take` accepts: the app, and the machine whose copy of
  * its data volume is taken (`FJS-D679`).
  */
-export interface AppBackupCreate {
+export interface AppBackupTake {
   appId: string
   serverId: string
 }
@@ -5716,7 +5716,7 @@ export interface SeedTypes {
   AppPlace: AppPlace
   AppUnplace: AppUnplace
   AppVolumeRestore: AppVolumeRestore
-  AppBackupCreate: AppBackupCreate
+  AppBackupTake: AppBackupTake
   FlagOverrideSet: FlagOverrideSet
   FlagOverrideClear: FlagOverrideClear
   ServerProvision: ServerProvision

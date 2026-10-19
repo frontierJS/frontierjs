@@ -72,9 +72,9 @@ describe('FJS-2070 — mail inside an afterCommit drain', () => {
     expect(logged).toEqual([])
   })
 
-  test('silent in production', async () => {
+  test.each(['production', 'staging'])('silent under NODE_ENV=%s', async (nodeEnv) => {
     const was = process.env.NODE_ENV
-    process.env.NODE_ENV = 'production'
+    process.env.NODE_ENV = nodeEnv
     try {
       const db = await createClient({ db: ':memory:', schema: SCHEMA }) as any
       const svc = buildService({

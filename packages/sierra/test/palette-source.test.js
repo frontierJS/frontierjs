@@ -69,7 +69,7 @@ describe('paletteSource', () => {
   test('one call answers every mounted model as rows: group, label, sub, a unique id', async () => {
     const rows = await paletteSource(client())('quasar')
     const byGroup = Object.fromEntries(rows.map(r => [r.group, r]))
-    expect(Object.keys(byGroup).sort()).toEqual(['Issues', 'People', 'Product Variants'])
+    expect(Object.keys(byGroup).sort()).toEqual(['Issues', 'Persons', 'Product Variants'])
     expect(byGroup.Issues).toMatchObject({ id: 'search:issue:i/1', label: 'quasar lattice', sub: 'ENG-1' })
     expect(byGroup['Product Variants']).toMatchObject({ id: 'search:productVariant:7', label: 'quasar blue' })
     expect(rows.every(r => typeof r.action === 'function')).toBe(true)
@@ -81,7 +81,7 @@ describe('paletteSource', () => {
   test('a row goes to the scaffolded route by default, the id encoded as one segment', async () => {
     const rows = await paletteSource(client())('quasar')
     for (const r of rows) await r.action()
-    expect(goto.mock.calls.map(c => c[0]).sort()).toEqual(['/issues/i%2F1', '/people/3', '/productvariants/7'])
+    expect(goto.mock.calls.map(c => c[0]).sort()).toEqual(['/issues/i%2F1', '/persons/3', '/productvariants/7'])
   })
 
   test('a link override wins for its model, and may answer a promise', async () => {

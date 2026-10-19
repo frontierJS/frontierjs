@@ -21,7 +21,7 @@ import { REFUSE, resolvePrincipal, resolveCaller, bearerPrincipal, type Credenti
 import type { StaticOptions }             from './static.ts'
 import { BAKED_CACHE_CONTROL, errorResponse } from './bridge.ts'
 import { enterRequest }                  from '../core/context.ts'
-import { BadRequest, TooManyRequests, type ErrorMapper } from '../core/errors.ts'
+import { BadRequest, TooManyRequests, isDevelopmentEnv, type ErrorMapper } from '../core/errors.ts'
 import { createStats, SESSION_SOCKET }    from './types.ts'
 import { wsSend, flushSendQueue, dropSendQueue, setMaxQueuedBytes } from './send-queue.ts'
 import type { TransportStats }            from './types.ts'
@@ -1153,7 +1153,7 @@ export class HttpTransport {
 
     const readStart = performance.now()
     const bytes = new Uint8Array(await response.arrayBuffer())
-    if (process.env.NODE_ENV !== 'production') {
+    if (isDevelopmentEnv()) {
       warnSlowCompress(ctx.method, ctx.path, rawContentType, performance.now() - readStart)
     }
 

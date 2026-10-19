@@ -317,7 +317,7 @@ const _inFlightLog = new Set()
 // WAL, plus the checkpoints they bring — not the entry or the pipeline, so a
 // request that writes ten rows paid ten commits for ten lines (`FJS-2317`).
 /**
- * @typedef {{ create: (args: { data: unknown }) => unknown, createMany: (args: { data: unknown[] }) => unknown }} LogTable
+ * @typedef {{ create: (args: { data: unknown }) => unknown, createMany: (args: { data: unknown[] }) => unknown, appendSync?: (rows: unknown[]) => void }} LogTable
  * @typedef {{ dropped: number, written: number, lastError?: string, lastDroppedAt?: string, lastWrittenAt?: string }} LogStats
  */
 /**

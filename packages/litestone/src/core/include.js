@@ -757,7 +757,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       const m2mFrom = !targetFrom ? ''
         : !narrowed ? `, ${fromSelectExpr(targetFrom, true)}`
         : [...parsedNested.requestedFrom].map(n => `, ${targetFrom[n].subquerySqlAliased} AS ${quoteIdent(n)}`).join('')
-      const targetCols = narrowed
+      const targetCols = parsedNested?.dbCols
         ? parsedNested.dbCols.map((/** @type {string} */ c) => `t.${quoteIdent(c)}`).join(', ')
         : 't.*'
 

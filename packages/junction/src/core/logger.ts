@@ -5,6 +5,7 @@
 // is a `LogWriter` the app supplies in `writers` or attaches with `addWriter`.
 
 import { isSecretKey, REDACTED } from '@frontierjs/toolbelt/redact'
+import { isDevelopmentEnv } from './errors.ts'
 
 // ─── Logger interface ─────────────────────────────────────────────────────
 
@@ -165,8 +166,8 @@ export interface LoggerOptions {
 export function createLogger(opts: LoggerOptions = {}): ILogger {
 
   const {
-    level:   minLevel  = (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
-    format   = (process.env.NODE_ENV === 'production' ? 'json' : 'pretty'),
+    level:   minLevel  = (isDevelopmentEnv() ? 'debug' : 'info'),
+    format   = (isDevelopmentEnv() ? 'pretty' : 'json'),
     writers: given = [consoleWriter(format)],
     ns,
     defaults = {},

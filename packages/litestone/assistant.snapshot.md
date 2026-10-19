@@ -228,7 +228,7 @@ camelCase**. Hand-written SQL assuming snake_case or epoch-ms matches nothing.
 service name to a model, so `model Leads` or `model lead` silently disconnects
 the API and the UI from the table. `@@external` is the one exemption.
 
-Irregulars resolve unaided (`people` → `Person`). Genuine ambiguity — `lens`
+Irregulars resolve unaided (`children` → `Child`). Genuine ambiguity — `lens`
 against `len` — cannot be reached by any rule and is stated by hand at the
 resource.
 

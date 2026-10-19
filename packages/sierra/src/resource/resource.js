@@ -619,7 +619,6 @@ function refuseOtherShapes(serviceName, opts, extra) {
  * Name it when they cannot: an irregular plural, or a service deliberately not
  * named after its model.
  *
- *   createResource('people',   { model: 'Person' })
  *   createResource('children', { model: 'Child'  })
  *   createResource('roster',   { model: 'Person' })
  *

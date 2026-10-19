@@ -1,10 +1,3 @@
----
-id: stressor-upgrade
-status: guide
-dated: 2026-10-19
-source: the ela port (stressors.md § 24), upgraded onto the tree at 91f792c1 — fjs-prototypes/ela PLAN.md § Core upgrade (2026-10-19)
----
-
 # Guide — moving a stressor app onto the current framework tree
 
 **For:** whoever (person or agent) brings the next app in `fjs-prototypes/`

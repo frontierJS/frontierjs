@@ -103,8 +103,8 @@ const resource = ${service}
 /**
  * Model → service name, and so the route directory a scaffold writes. Toolbelt's
  * `pluralize`, the rule litestone names the table by and sierra's
- * `serviceNameFor` reads — a copy here missing the irregulars wrote `persons`
- * where sierra's palette links `/people/` (`FJS-2841`). A word the rules cannot
+ * `serviceNameFor` reads — a copy here missing the irregulars wrote `childs`
+ * where sierra's palette links `/children/` (`FJS-2841`). A word the rules cannot
  * reach takes `--service`.
  */
 export function servicePlural(model) {

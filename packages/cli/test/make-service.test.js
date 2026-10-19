@@ -19,7 +19,7 @@ const events = []
 beforeAll(async () => {
   ROOT = mkdtempSync(join(tmpdir(), 'fli-make-service-'))
   const files = {
-    'db/schema.lite': 'model Person { id Int @id  name String }\nmodel ClockEntry { id Int @id }\n',
+    'db/schema.lite': 'model Child { id Int @id  name String }\nmodel ClockEntry { id Int @id }\n',
     'api/index.ts': "import app from './src/app.ts'\nawait app.start()\n",
     'api/src/app.ts': '// api\n',
     'api/config/junction.config.js': 'export default {}\n',
@@ -33,7 +33,7 @@ beforeAll(async () => {
   global.fliRoot     = CLI
 
   const { Command } = await import('../core/runtime.js')
-  for (const model of ['Person', 'ClockEntry']) {
+  for (const model of ['Child', 'ClockEntry']) {
     const run = await Command({ file: CMD, arg: [model], flag: {}, emit: (e) => events.push(e) })
     await run()
   }
@@ -46,15 +46,15 @@ describe('fli make:service', () => {
 
   test('the service is named as make:resource names it, irregular plurals included', async () => {
     const { servicePlural } = await import('../core/resource-template.js')
-    expect(servicePlural('Person')).toBe('people')
-    expect(existsSync(join(ROOT, 'api/src/services/people.service.ts'))).toBe(true)
-    expect(existsSync(join(ROOT, 'api/src/services/person.service.ts'))).toBe(false)
+    expect(servicePlural('Child')).toBe('children')
+    expect(existsSync(join(ROOT, 'api/src/services/children.service.ts'))).toBe(true)
+    expect(existsSync(join(ROOT, 'api/src/services/child.service.ts'))).toBe(false)
   })
 
   test('default-exports the definition junction autoloads, over a PascalCase model', () => {
-    const src = read('people.service.ts')
+    const src = read('children.service.ts')
     expect(src).toContain('export default createService({')
-    expect(src).toContain("model: 'Person'")
+    expect(src).toContain("model: 'Child'")
     expect(src).not.toContain('export function')
     expect(src).not.toContain('createBaseService')
   })

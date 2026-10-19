@@ -11,7 +11,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { parseTraceparent } from '@frontierjs/toolbelt/trace'
 import type { FrameworkError } from './errors.ts'
-import { BadRequest } from './errors.ts'
+import { BadRequest, isDevelopmentEnv } from './errors.ts'
 import type { SessionContext } from '../auth/types.ts'
 import type { QueryDirectives, Pagination } from './directives.ts'
 
@@ -1107,7 +1107,7 @@ const _warnedSites = new Set<string>()
  * first stack frame outside a battery's own source, which is the app's line.
  */
 export function warnEffectInDrain(what: string): void {
-  if (process.env.NODE_ENV === 'production') return
+  if (!isDevelopmentEnv()) return
   const call = _drainStore.getStore()
   if (call === undefined) return
   const frames = (new Error().stack ?? '').split('\n').slice(1)

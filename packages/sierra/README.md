@@ -662,8 +662,7 @@ bridges the two with English's regular plural rules, so these need no help:
 Irregular plurals are not guessable, and Sierra does not guess. Name the model:
 
 ```js
-createResource('people',   { model: 'Person' })
-createResource('children', { model: 'Child'  })
+createResource('children', { model: 'Child' })
 ```
 
 `model` is the override for any mismatch, not just plurals — use it whenever a service
@@ -975,7 +974,7 @@ One round trip per pause in typing, answering one list ranked on one scale and a
 graded by the Data boundary — a row the caller may not read is never a hit. Each hit
 becomes a row: the group is the model's plural (`Issues`), the label its `@@label` column,
 the sub its identifying key, and choosing it goes to `/<service>/<id>` lowercased —
-`/productvariants/7`, `/people/3` — the route `fli scaffold` writes. A model whose rows live elsewhere states its own `link`, which may
+`/productvariants/7`, `/persons/3` — the route `fli scaffold` writes. A model whose rows live elsewhere states its own `link`, which may
 answer a promise: a hit carries `model`, `id`, `title` and `sub` and nothing else, so
 finding a comment's issue is a read.
 

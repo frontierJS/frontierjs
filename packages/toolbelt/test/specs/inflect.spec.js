@@ -58,7 +58,7 @@ test('inflect: the table says what English says', function () {
   ;[['analysis', 'analyses'], ['basis', 'bases'], ['crisis', 'crises'],
     ['half', 'halves'], ['shelf', 'shelves'], ['wife', 'wives'],
     ['thief', 'thieves'], ['self', 'selves'], ['quiz', 'quizzes'],
-    ['person', 'people'], ['child', 'children'], ['criterion', 'criteria'],
+    ['person', 'persons'], ['child', 'children'], ['criterion', 'criteria'],
   ].forEach(function (pair) {
     assert.equal(pluralize(pair[0]), pair[1], 'pluralize(' + pair[0] + ')')
   })
@@ -196,8 +196,8 @@ test('inflect: the plural of a word ending in s comes back to it', function () {
 /* ── Case ──────────────────────────────────────────────────────────── */
 
 test('inflect: the first character keeps its case', function () {
-  assert.equal(pluralize('Person'), 'People')
-  assert.equal(singularize('People'), 'Person')
+  assert.equal(pluralize('Child'), 'Children')
+  assert.equal(singularize('Children'), 'Child')
   assert.equal(pluralize('Category'), 'Categories')
   assert.equal(singularize('Statuses'), 'Status')
 })
@@ -225,8 +225,8 @@ test('inflect: a compound survives the round trip its own rules produce', functi
   assert.equal(singularize('media_attachments'), 'media_attachment')
 
   // The irregular table stays whole-word in BOTH directions.
-  assert.equal(singularize('people'), 'person')
-  assert.equal(singularize('sales_people'), 'sales_people')
+  assert.equal(singularize('children'), 'child')
+  assert.equal(singularize('step_children'), 'step_children')
 })
 
 test('inflect: a snake_case table name inflects on the whole word', function () {
@@ -380,7 +380,7 @@ test('inflect: modelName is Invariant 2, and the six copies did not agree about 
   // the compound's head and the head is what loses its `s`.
   assert.equal(modelName('cookies'), 'Cookie')
   assert.equal(modelName('statuses'), 'Status')
-  assert.equal(modelName('people'), 'Person')
+  assert.equal(modelName('persons'), 'Person')
 })
 
 test('inflect: slug is one rule — every run of non-alphanumerics is one separator', function () {

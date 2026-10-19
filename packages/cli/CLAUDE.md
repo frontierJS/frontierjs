@@ -1248,7 +1248,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
   substrate below the dependency graph (`FJS-D26`) — `/inflect` and
   `/frontmatter`. *What is the singular of this service name* has one owner
   (Invariant 2) and five callers, and a rule answering it a sixth time would
-  grade an app by an inflection the app does not run — `people` → `person` is
+  grade an app by an inflection the app does not run — `children` → `child` is
   exactly the case `service-model` has to get right. Nothing else may be
   imported: `ci.mjs` runs on plain node.
 - **`core/invariants.js` is the enforcer per Invariant, and it may not import

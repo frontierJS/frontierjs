@@ -269,10 +269,10 @@ describe('/metrics in production needs a gate (FJS-3191)', () => {
   // `/metrics` names the pid, the runtime, every service and its methods, so a
   // scaffold's `plugins: { health: true }` served all of it to the internet.
   // `/health` is what a deploy's rollback and a load balancer poll, so it stays.
-  async function prodApp(opts: Parameters<typeof health>[0] = {}) {
+  async function prodApp(opts: Parameters<typeof health>[0] = {}, nodeEnv = 'production') {
     const was  = process.env.NODE_ENV
     const warn = console.warn
-    process.env.NODE_ENV = 'production'
+    process.env.NODE_ENV = nodeEnv
     console.warn = () => {}
     try {
       const prod = createApp({ config: { port: 0 } })
@@ -293,6 +293,13 @@ describe('/metrics in production needs a gate (FJS-3191)', () => {
       expect((await fetch(at('/health'))).status).toBe(200)
       expect((await fetch(at('/health/live'))).status).toBe(200)
     } finally { await prod.stop() }
+  })
+
+  it('staging is a deployment too: /metrics is not served (FJS-3316)', async () => {
+    const staging = await prodApp({}, 'staging')
+    try {
+      expect((await fetch(`http://localhost:${staging.http.port}/metrics`)).status).toBe(404)
+    } finally { await staging.stop() }
   })
 
   it('a token serves it to the holder and refuses everyone else', async () => {
