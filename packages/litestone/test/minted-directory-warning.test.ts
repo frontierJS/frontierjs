@@ -2,7 +2,7 @@
 // A directory minted for an absolute path is the caller's own statement, and
 // `fli test:mutate` mints one per mutant.
 import { describe, test, expect } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { createClient } from '../src/index.js'
@@ -110,5 +110,40 @@ describe('minted-directory warning', () => {
     try {
       expect(cliWarnings('./nested/a.db', root, true).length).toBe(1)
     } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+})
+
+// FJS-1869 — an anchored declared path is not the cwd's choice: `resolveFrom`
+// names the directory, so minting `db/` under it on first boot is expected.
+describe('minted-directory warning with an anchor', () => {
+  function anchored(resolveFrom: unknown) {
+    const root = mkdtempSync(join(tmpdir(), 'litestone-mint-'))
+    mkdirSync(join(root, 'db'))
+    writeFileSync(join(root, 'db', 'schema.lite'),
+      `database main { path "./data/app.db" }\ndatabase audit { path "./data/audit/" driver jsonl }\n` +
+      `model Note { id Int @id @default(autoincrement())  note String  @@db(audit) }\n`)
+    return { root, opts: { path: join(root, 'db', 'schema.lite'), resolveFrom: resolveFrom === 'root' ? root : resolveFrom } }
+  }
+
+  async function run(opts: Record<string, unknown>) {
+    const warned: string[] = []
+    const warn = console.warn
+    console.warn = (...a: unknown[]) => { warned.push(a.join(' ')) }
+    try {
+      const db: any = await createClient(opts)
+      await db.note.create({ data: { note: 'x' } })
+      db.$close()
+    } finally { console.warn = warn }
+    return warned.filter(w => MINTED.test(w))
+  }
+
+  test("resolveFrom: 'schema' mints silently", async () => {
+    const { root, opts } = anchored('schema')
+    try { expect(await run(opts)).toEqual([]) } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  test('a stated directory mints silently', async () => {
+    const { root, opts } = anchored('root')
+    try { expect(await run(opts)).toEqual([]) } finally { rmSync(root, { recursive: true, force: true }) }
   })
 })

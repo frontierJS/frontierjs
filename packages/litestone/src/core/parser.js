@@ -1208,6 +1208,11 @@ class Parser {
       // promises the value comes back.
       case 'hashed': return { kind: 'hashed' }
 
+      // ── @opaque — bytes the server stores and cannot interpret (FJS-D1157) ──
+      // A client seals the value before it arrives. Nothing here orders, matches
+      // or indexes it, and the validator refuses the declarations that would.
+      case 'opaque': return { kind: 'opaque' }
+
       // ── @personal — a column about a person (FJS-D657) ──────────────────────
       // @personal            → about a person, no category (free text, behavior)
       // @personal(contact)   → one of personal.js's closed list
@@ -5263,6 +5268,7 @@ function labelFieldRefusal(field, schema) {
   if (has('guarded'))   return `'${field.name}' is @guarded — only a system context can read it`
   if (has('encrypted')) return `'${field.name}' is @encrypted — its stored text is a ciphertext, so it neither sorts nor matches as the value`
   if (has('hashed'))    return `'${field.name}' is @hashed — it is one-way and never readable`
+  if (has('opaque'))    return `'${field.name}' is @opaque — the server holds bytes a client sealed, so a picker would title every row by ciphertext`
   if (field.attributes?.some(a => a.kind === 'omit' && a.level === 'all'))
     return `'${field.name}' is @omit(all) — it is stripped from every read`
 
@@ -5323,6 +5329,7 @@ function orderColumnRefusal(field, schema) {
   if (has('guarded'))    return `it is @guarded — the Data boundary refuses an orderBy naming it, so the picker's list would fail to load`
   if (has('encrypted'))  return `it is @encrypted — it sorts by ciphertext, which is not the order of the values`
   if (has('hashed'))     return `it is @hashed — one-way, so its order is not the values' order`
+  if (has('opaque'))     return `it is @opaque — the server cannot interpret the bytes, so their order is not the values' order`
   if (field.type.name === 'Json') return `it is Json — its text sorts, its structure does not`
   if (field.type.name === 'File') return `it is File — the column holds a storage reference, so its order is the order things were stored under`
   return null
@@ -7776,6 +7783,42 @@ function validate(schema) {
             }
           }
         }
+      }
+    }
+  }
+
+  // ── @opaque validation (FJS-D1157) ──────────────────────────────────────────
+  //
+  // The word promises the server never interprets the bytes. Each declaration
+  // below makes it interpret them -- an index over ciphertext builds and
+  // answers nothing, and an @@fts hit is titled by it -- so each is refused
+  // here, where the author is, and not discovered as a search that finds nothing.
+  for (const model of schema.models) {
+    const opaque = new Set(model.fields.filter(f => f.attributes.some(a => a.kind === 'opaque')).map(f => f.name))
+    if (!opaque.size) continue
+    for (const field of model.fields) {
+      if (!opaque.has(field.name)) continue
+      const at = `Model '${model.name}', field '${field.name}'`
+      if (schema.models.some(m => m.name === field.type.name))
+        errors.push(`${at}: @opaque on a relation -- the relation holds no bytes. Declare it on the column that does`)
+      for (const kind of ['encrypted', 'secret', 'hashed']) {
+        if (field.attributes.some(a => a.kind === kind))
+          errors.push(`${at}: @opaque cannot be combined with @${kind} -- @opaque is bytes the server cannot read and @${kind} is a value it protects, so the two promise opposite things`)
+      }
+      for (const kind of ['computed', 'from', 'derived', 'transient', 'edge']) {
+        if (field.attributes.some(a => a.kind === kind))
+          errors.push(`${at}: @opaque needs a stored column and @${kind} is not one`)
+      }
+      for (const kind of ['unique', 'id', 'index']) {
+        if (field.attributes.some(a => a.kind === kind))
+          errors.push(`${at}: @opaque cannot be @${kind} -- ${kind === 'id' ? 'a row is identified by a value the server can read' : 'two sealings of one value differ, so an index over them matches nothing'}`)
+      }
+    }
+    for (const attr of model.attributes ?? []) {
+      const named = ['index', 'uniqueIndex', 'partialUnique', 'fts', 'id'].includes(attr.kind) ? attr.fields ?? [] : []
+      for (const name of named) {
+        if (opaque.has(name))
+          errors.push(`Model '${model.name}': ${attr.kind === 'uniqueIndex' || attr.kind === 'partialUnique' ? '@@unique' : '@@' + attr.kind} names '${name}', which is @opaque -- the server stores bytes it cannot interpret, so an index over them is built and never matches`)
       }
     }
   }

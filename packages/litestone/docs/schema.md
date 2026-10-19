@@ -135,6 +135,10 @@ open editor correctly stale after one lands.
 
 - **Escape hatch:** `asSystem()` writes skip the check and still bump — a
   migration or a job is not a second editor. Same reason `asSystem()` skips gates.
+- **A named move needs no version:** `transition(id, name)` is already a
+  compare-and-swap on the from-state, so a person, a served method and a
+  `@@commitment`'s fire all make it without one on a model that declares both.
+  A version it does carry is checked, and the move still bumps it.
 - Errors: `VersionRequiredError` (400, not retryable — you left out an input) and
   `VersionConflictError` (409, **retryable** — re-read and re-apply). Both carry
   `status`, so Junction maps them with no registration.
@@ -410,6 +414,32 @@ has no equivalent moment to borrow.
 **What the schema does owe a document is the MOMENT and the FREEZE**, and those
 are declarable: `@seals` on the transition and `@immutable` on the columns, so
 nothing can restate a figure after the assertion passed.
+
+**A child column held equal to its parent's is a relation, not a check**
+(`FJS-3026`). *A posting's currency is its account's* reads one row across one
+hop, which a `@@check` cannot reach and a create + `post-update` policy would
+grade for callers only. Make the column part of the key:
+
+```lite
+model Account {
+  id       String @id
+  currency String
+  postings Posting[]
+  @@unique([id, currency])
+}
+model Posting {
+  id        String @id
+  accountId String
+  currency  String
+  account   Account @relation(fields: [accountId, currency], references: [id, currency])
+}
+```
+
+SQLite refuses a posting whose pair names no account, on a create, on an update
+of either side, and under `asSystem()`, which cannot drop a foreign key. Two
+edges: the child column must be required, because a NULL in any column of a
+composite key skips the check; and the parent's column is then frozen while a
+child points at it, the default `onUpdate` being a refusal.
 
 ### Exclusive foreign keys (`@@arc`)
 
@@ -1069,7 +1099,8 @@ await db.order.due({ where: { id } })                            // this row, as
 //      target: { model: 'Order', accessor: 'order', transition: 'abandon', id: 1 } }]
 ```
 
-`due()` makes no transition. It is a read through `findMany`, so the caller's
+`due()` answers oldest `dueAt` first, ties by transition then id, so a backlog
+fires in the order it fell due. It makes no transition. It is a read through `findMany`, so the caller's
 gate and policies apply and the sweep asks it of a system client; a row it
 returns may have moved before anybody acts, which is why a fire asks again with
 `where`. **Units follow the anchor's kind**: `mo`/`yr` are refused on a

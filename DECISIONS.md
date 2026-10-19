@@ -2086,8 +2086,10 @@ Tier: Register. ([`FJS-1702`](ISSUES_ARCHIVE.md#fjs-1702), [`FJS-1703`](ISSUES_A
 example's `Invoice`, connectteam's `SurveyEligibility` and portal's `Page` — had
 two exits. `system: ['col']` lifts one column and leaves the gate. `asSystem()`
 lifts the gate and the rest of the Warden with it: row policies, `@guarded`
-redaction and the audit actor. So the person who caused an invoice vanished from
-its trail (`FJS-1699`).
+redaction and the audit actor's KIND: the entry files as `actorType: 'system'`,
+and `actorId` survives only when a principal was set before `asSystem()`
+(`FJS-1934`). So the person who caused an invoice was filed as the application,
+and as nobody at all when the call was bare (`FJS-1699`).
 
 **The spelling.** The entry names what it lifts, which is the column hatch's own
 rule — *naming the field IS the statement* — spelled the way `.lite` declares it.

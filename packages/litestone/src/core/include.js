@@ -746,8 +746,20 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
         .filter(d => d.storage === 'decorate' && d.table === rel.joinTable)
       const edgeSelect = edgeDescs.map(d => `, j."${d.col}" AS "__edge_${d.col}"`).join('')
 
+      const parsedNested = nestedSelect
+        ? parseSelectArg(nestedSelect, rel.targetModel, shapes, nestedInclude, computedFns)
+        : null
+      const narrowed = !!parsedNested?.dbCols
+
       // The target is aliased `t` here, so the @from correlation has to be too.
-      const m2mFrom = targetFrom ? `, ${fromSelectExpr(targetFrom, true)}` : ''
+      // A narrowed select reads the target's columns by name, plus only the
+      // @from fields it asked for.
+      const m2mFrom = !targetFrom ? ''
+        : !narrowed ? `, ${fromSelectExpr(targetFrom, true)}`
+        : [...parsedNested.requestedFrom].map(n => `, ${targetFrom[n].subquerySqlAliased} AS ${quoteIdent(n)}`).join('')
+      const targetCols = narrowed
+        ? parsedNested.dbCols.map((/** @type {string} */ c) => `t.${quoteIdent(c)}`).join(', ')
+        : 't.*'
 
       // A join row outlives its target's removal, expiry and turn into a
       // template, so the target's lifecycle filters apply here as they do on
@@ -764,7 +776,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
         : ''
 
       const rawRows = runInclude(relDb, rel.targetModel, 'include',
-        `SELECT t.*, j."${rel.selfKey}" AS __jSelfKey${edgeSelect}${m2mFrom} FROM "${modelToTable(rel.targetModel)}" t ` +
+        `SELECT ${targetCols}${targetCols ? ', ' : ''}j."${rel.selfKey}" AS __jSelfKey${edgeSelect}${m2mFrom} FROM "${modelToTable(rel.targetModel)}" t ` +
         `INNER JOIN "${rel.joinTable}" j ON j."${rel.targetKey}" = t.${m2mPk} ` +
         `WHERE ${selfIn}${lifeClause}${rwM.clause}${policyInClause}${orderClause}`,
         [...selfBinds, ...(effWhere?.params ?? []), ...rwM.params, ...policyParams, ...orderParams])
@@ -786,7 +798,11 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
         return bag
       })
 
-      const related = finishRelated(rawRows, { mode: 'list' })
+      const related = finishRelated(rawRows,
+        parsedNested
+          ? { mode: 'select', selectedFields: parsedNested.requestedFields }
+          : { mode: 'list' },
+        parsedNested?.requestedFields)
 
       // Attach namespaced edge values onto each shaped target row.
       if (edgeDescs.length) {
@@ -796,15 +812,21 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
         }
       }
 
-      const mergedInclude = nestedInclude ?? {}
+      const mergedInclude = { ...(nestedInclude ?? {}), ...(parsedNested?.relationSelects ?? {}) }
       if (Object.keys(mergedInclude).length)
         resolveIncludes(readDb, related, mergedInclude, rel.targetModel, ctx)
 
+      // Edge namespaces are the join's, not columns the select could name.
+      const edgeNs = new Set(edgeDescs.map(d => d.as))
       const grouped = new Map()
       for (const row of rows) grouped.set(row[pkField], [])
       for (let i = 0; i < related.length; i++) {
         const arr = grouped.get(selfKeys[i])
-        if (arr) arr.push(related[i])
+        if (!arr) continue
+        arr.push(parsedNested
+          ? Object.fromEntries(Object.entries(related[i]).filter(([k]) =>
+            edgeNs.has(k) || (parsedNested.requestedFields.has(k) && !parsedNested.injectedFKs.has(k))))
+          : related[i])
       }
 
       for (const row of rows) {

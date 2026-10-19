@@ -106,6 +106,21 @@ model Item { id Int @id @default(autoincrement())  name String  @@trail(audit) }
       return { landed: await db.item.count(), threw, warnings: [...warnings] }
     }],
 
+    // An @opaque column's trail mark is a digest, taken where the write runs.
+    ['opaque-trail', async () => {
+      warnings.length = 0
+      const entries = []
+      const db = (await open(`
+database main  { path ":memory:" }
+database audit { path "/audit-probe/"  driver trail }
+model Vault { id Int @id @default(autoincrement())  sealed String? @opaque  @@trail(audit) }`, { onLog: (e) => entries.push(e) })).asSystem()
+      let threw = null
+      try { await db.vault.create({ data: { sealed: 'SEALED-2.bytes' } }) } catch (e) { threw = describeErr(e) }
+      await settle()
+      const after = entries.find(e => e.model === 'Vault' && e.field == null)?.after
+      return { threw, after: after ?? null, warnings: [...warnings] }
+    }],
+
     // The schema a real device is handed: deviceSchema keeps @@trail(audit) on a
     // @@sync model and drops the `audit` database block it names.
     ['trail-device', async () => {

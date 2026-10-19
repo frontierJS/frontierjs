@@ -305,3 +305,75 @@ export function comparisonEncoderFor(policy) {
   }
   return null
 }
+
+// The trail's mark for an @opaque value (FJS-D1158): a truncated digest of the
+// STORED bytes under a fixed domain label. It carries equality and nothing else
+// -- a sealed value is high-entropy under a random IV, so its digest says
+// nothing about the plaintext -- and it takes no key, because a key would make
+// the same bytes read differently in a trail written before a rotation.
+//
+// SHA-256 in plain JS, not `#host`'s createHmac: a device refuses that, WebCrypto
+// is asynchronous, and the trail is written inside a synchronous statement. A
+// server and a worker must also agree on the mark, or one value reads as two.
+const SHA_K = Uint32Array.from({ length: 64 }, (_, i) => {
+  let n = 2, seen = 0
+  for (;; n++) {
+    let prime = true
+    for (let d = 2; d * d <= n; d++) if (n % d === 0) { prime = false; break }
+    if (prime && seen++ === i) break
+  }
+  return Math.floor((n ** (1 / 3) % 1) * 2 ** 32)
+})
+const SHA_H0 = Uint32Array.from({ length: 8 }, (_, i) => {
+  const primes = [2, 3, 5, 7, 11, 13, 17, 19]
+  return Math.floor((Math.sqrt(primes[i]) % 1) * 2 ** 32)
+})
+const B64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+
+function sha256(bytes) {
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n))
+  const padded = new Uint8Array(((bytes.length + 9 + 63) >> 6) << 6)
+  padded.set(bytes)
+  padded[bytes.length] = 0x80
+  const view = new DataView(padded.buffer)
+  view.setUint32(padded.length - 8, Math.floor(bytes.length / 0x20000000))
+  view.setUint32(padded.length - 4, (bytes.length << 3) >>> 0)
+  const h = Uint32Array.from(SHA_H0)
+  const w = new Uint32Array(64)
+  for (let off = 0; off < padded.length; off += 64) {
+    for (let i = 0; i < 16; i++) w[i] = view.getUint32(off + i * 4)
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3)
+      const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10)
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0
+    }
+    let [a, b, c, d, e, f, g, hh] = h
+    for (let i = 0; i < 64; i++) {
+      const t1 = (hh + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + SHA_K[i] + w[i]) >>> 0
+      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0
+      hh = g; g = f; f = e; e = (d + t1) >>> 0
+      d = c; c = b; b = a; a = (t1 + t2) >>> 0
+    }
+    ;[a, b, c, d, e, f, g, hh].forEach((v, i) => { h[i] = (h[i] + v) >>> 0 })
+  }
+  const out = new DataView(new ArrayBuffer(32))
+  h.forEach((v, i) => out.setUint32(i * 4, v))
+  return new Uint8Array(out.buffer)
+}
+
+export function opaqueMark(value) {
+  const text = typeof value === 'string' || value instanceof Uint8Array ? value : JSON.stringify(value)
+  const enc = new TextEncoder()
+  const body = typeof text === 'string' ? enc.encode(text) : text
+  const label = enc.encode('litestone:opaque:trail\0')
+  const input = new Uint8Array(label.length + body.length)
+  input.set(label)
+  input.set(body, label.length)
+  const digest = sha256(input)
+  let mark = ''
+  for (let i = 0; i < 9; i += 3) {
+    const n = (digest[i] << 16) | (digest[i + 1] << 8) | digest[i + 2]
+    mark += B64URL[n >> 18] + B64URL[(n >> 12) & 63] + B64URL[(n >> 6) & 63] + B64URL[n & 63]
+  }
+  return '[opaque:' + mark + ']'
+}

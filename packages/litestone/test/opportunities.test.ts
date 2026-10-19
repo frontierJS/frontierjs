@@ -523,6 +523,21 @@ describe('a-document-priced-through-a-relation', () => {
       .toEqual(['D.c'])
   })
 
+  // FJS-3307: a membership links two parents and charges nothing. It is audited
+  // (@@trail) because who belongs is worth keeping, and that made it
+  // document-shaped, so Shop.taxRate read as a price every ShopMember inherits.
+  test('silent on a @@relator link beside a container holding a @money rate', () => {
+    expect(found(`database main  { path "./m.db" }
+      database audit { path "./audit/" driver trail }
+      model Shop { id Int @id  taxRate Int @money(USD, places: 4) @default(0) }
+      model U { id Int @id }
+      model ShopMember { id Int @id  shopId Int  userId Int
+        shop Shop @relation(fields: [shopId], references: [id])
+        user U @relation(fields: [userId], references: [id])
+        @@relator([shopId, userId], once)
+        @@trail(audit) }`, ID)).toEqual([])
+  })
+
   // A basket line legitimately reads the live price. Nothing about it is meant
   // to stand, and it declares none of the words that say otherwise.
   test('silent on a row that is not document-shaped', () => {

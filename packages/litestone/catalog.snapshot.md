@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**126 words** — 13 declarations · 72 field attributes · 37 model attributes · 4 move words.
+**127 words** — 13 declarations · 73 field attributes · 37 model attributes · 4 move words.
 
 ## Declarations
 
@@ -59,6 +59,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@capability` | Hide or lock a value |  |  |  |  |
 | `@encrypted` | Hide or lock a value |  | on a model's field · on a trait's field |  |  |
 | `@hashed` | Hide or lock a value |  |  |  |  |
+| `@opaque` | Hide or lock a value |  |  |  |  |
 | `@personal` | Hide or lock a value | [(<category>)] |  | category: contact · device · location · government · financial · employment · communication · demographic · health · genetic · biometric · characteristic · criminal |  |
 | `@secret` | Hide or lock a value | [(rotate: …)] | on a model's field · on a trait's field |  |  |
 | `@check` | Hide or lock a value | ("sql expression") |  |  |  |

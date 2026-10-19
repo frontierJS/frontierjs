@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**126 words** — 13 declarations · 72 field attributes · 37 model attributes · 4 move words.
+**127 words** — 13 declarations · 73 field attributes · 37 model attributes · 4 move words.
 
 ## Index
 
@@ -30,7 +30,7 @@ and shows you the diff first.
 - *Identify a row* — [`@id`](#id-field) · [`@unique`](#unique-field) · [`@map`](#map-field) · [`@default`](#default-field) · [`@sequence`](#sequence-field) · [`@rank`](#rank-field)
 - *Reach another row* — [`@relation`](#relation-field) · [`@from`](#from-field) · [`@edge`](#edge-field) · [`@scoped`](#scoped-field)
 - *Compute a value* — [`@computed`](#computed-field) · [`@transient`](#transient-field) · [`@derived`](#derived-field) · [`@generated`](#generated-field) · [`@hardDelete`](#harddelete-field) · [`@keep`](#keep-field)
-- *Hide or lock a value* — [`@omit`](#omit-field) · [`@guarded`](#guarded-field) · [`@system`](#system-field) · [`@local`](#local-field) · [`@immutable`](#immutable-field) · [`@sealed`](#sealed-field) · [`@capability`](#capability-field) · [`@encrypted`](#encrypted-field) · [`@hashed`](#hashed-field) · [`@personal`](#personal-field) · [`@secret`](#secret-field) · [`@check`](#check-field)
+- *Hide or lock a value* — [`@omit`](#omit-field) · [`@guarded`](#guarded-field) · [`@system`](#system-field) · [`@local`](#local-field) · [`@immutable`](#immutable-field) · [`@sealed`](#sealed-field) · [`@capability`](#capability-field) · [`@encrypted`](#encrypted-field) · [`@hashed`](#hashed-field) · [`@opaque`](#opaque-field) · [`@personal`](#personal-field) · [`@secret`](#secret-field) · [`@check`](#check-field)
 - *Record who and when* — [`@updatedAt`](#updatedat-field) · [`@updatedBy`](#updatedby-field) · [`@createdBy`](#createdby-field) · [`@version`](#version-field) · [`@keepVersions`](#keepversions-field) · [`@trail`](#trail-field)
 - *Clean a value on write* — [`@trim`](#trim-field) · [`@lower`](#lower-field) · [`@upper`](#upper-field) · [`@slug`](#slug-field)
 - *Refuse a bad value* — [`@values`](#values-field) · [`@label`](#label-field) · [`@required`](#required-field) · [`@email`](#email-field) · [`@url`](#url-field) · [`@phone`](#phone-field) · [`@syntax`](#syntax-field) · [`@accept`](#accept-field) · [`@date`](#date-field) · [`@datetime`](#datetime-field) · [`@time`](#time-field) · [`@zone`](#zone-field) · [`@regex`](#regex-field) · [`@length`](#length-field) · [`@startsWith`](#startswith-field) · [`@endsWith`](#endswith-field) · [`@contains`](#contains-field) · [`@lt`](#lt-field) · [`@lte`](#lte-field) · [`@gt`](#gt-field) · [`@gte`](#gte-field) · [`@minItems`](#minitems-field) · [`@maxItems`](#maxitems-field) · [`@uniqueItems`](#uniqueitems-field) · [`@type`](#type-field)
@@ -701,6 +701,21 @@ model Example {
 - **Also typed** — `password` · `bcrypt` · `argon`
 - **Deeper** — [encryption.md](encryption.md)
 - **See also** — [`@encrypted`](#encrypted-field) · [`@secret`](#secret-field)
+
+#### `@opaque` <a id="opaque-field"></a>
+
+Bytes a client sealed before they arrived: the server stores them and cannot read them, which is the opposite of @encrypted (the server holds that key). It reads back as written, for whoever the gate admits. Refused in @@index, @@unique, @@fts, @@label and a sort, and a where over it takes null and equality. The audit trail writes [opaque:&lt;digest&gt;], so an edit still says which sealed column moved.
+
+```lite
+model Example {
+  id Int @id
+  name String @opaque
+}
+```
+
+- **Also typed** — `e2ee` · `client-sealed` · `end-to-end`
+- **Deeper** — [encryption.md](encryption.md)
+- **See also** — [`@encrypted`](#encrypted-field) · [`@guarded`](#guarded-field) · [`@personal`](#personal-field)
 
 #### `@personal` `[(<category>)]` <a id="personal-field"></a>
 
@@ -1918,7 +1933,7 @@ model Example {
 
 #### `@@trail` `(<database>[, reads: false][, writes: false])` <a id="trail-model"></a>
 
-Record writes to this model in a trail database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] and @personal ones as [personal], in field entries and in before/after images alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.
+Record writes to this model in a trail database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] @personal ones as [personal] and @opaque ones as [opaque:&lt;digest&gt;], in field entries and in before/after images alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.
 
 ```lite
 database audit {

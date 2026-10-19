@@ -21,7 +21,7 @@ import {
   orderByAfterVector, vectorQueryBytes, deserializeRow, serializeRow, coerceBooleans,
   serializeBooleans, booleanBind, encodeCursor, decodeCursor, normalizeOrderBy, buildCursorWhere,
   extractCursorValues, cursorOrderSql, filterableKeysFor, sortableKeysFor,
-  aggregatableKeysFor, LIKE_SQL, likePattern, ftsWords, identifyingKeysFor, inList, keyIn, tupleOf, tuplesOf, pairsOn, blobKeyClauses,
+  aggregatableKeysFor, LIKE_SQL, likePattern, ftsWords, identifyingKeysFor, inList, keyIn, tupleOf, tuplesOf, pairsOn, blobKeyClauses, blobKeyPath,
   sqlFragment, ident, quoteIdent, and, join as sqlJoin, pageSql,
 } from './query.js'
 import { scoreByDistance, DISTANCE_FIELD } from './vector.js'
@@ -41,7 +41,7 @@ import {
 } from './policy.js'
 import {
   encryptField, decryptField, encryptDeterministic, hashField, normalizeKey,
-  comparisonEncoderFor, parseEnvelope, verifiesAs, makeKeyring, legacyForm,
+  comparisonEncoderFor, parseEnvelope, verifiesAs, makeKeyring, legacyForm, opaqueMark,
 } from './encryption.js'
 import { backupSqliteTo, readBackupStamp, clearBackupStamp } from './backup.js'
 import { resolveTenancy } from './tenancy.js'
@@ -65,7 +65,7 @@ import { REDACTED } from '@frontierjs/toolbelt/redact'
 import {
   buildAutoIdMap, buildGeneratedDefaultMap, buildAuthDefaultMap, buildLiteralDefaultMap, buildSelfRelationMap,
   buildFieldRefDefaultMap, buildUpdatedByMap, buildVersionMap, buildCreatedByMap, buildSyncMap,
-  buildSequenceMap, buildRankMap, schemaDeclaresAccessRules, buildFieldPolicyMap, shapesRead, isProtected, buildSecretMap,
+  buildSequenceMap, buildRankMap, schemaDeclaresAccessRules, buildFieldPolicyMap, shapesRead, isProtected, buildSecretMap, viewProtectedRead,
   buildJsonMap, buildGeneratedMap, buildFromMap, buildCardinalityMap, buildExclusionMap, buildComputedSet, buildBoolMap, buildBigMap,
   buildAffinityMap,
   buildFilterKindMap, buildTransitionMap, buildEnumMap, buildSoftDeleteCascadeMap,
@@ -1330,6 +1330,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       return bound
     }
     if (tn === 'Json')    return JSON.stringify(value)
+    if (value instanceof Date) return value.toISOString()   // a Date bound raw throws inside bun:sqlite
     return value
   }
 
@@ -1427,7 +1428,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // just before buildSQL; read synchronously by edgeFilterSql — no await between).
   let _scopedByForBuild = null
 
-  function _ecp(v) { return typeof v === 'boolean' ? (v ? 1 : 0) : v }
+  function _ecp(v) { return typeof v === 'boolean' ? (v ? 1 : 0) : v instanceof Date ? v.toISOString() : v }
 
   // Compile where:{ <namespace>: { field: pred } } → EXISTS against the edge's
   // join/side table, scoped to the bound dimension. Unbound non-auth → error (D3);
@@ -1444,13 +1445,20 @@ function makeTable(readDb, writeDb, shape, ctx) {
     }
     const host  = `${tableAlias ? `${tableAlias}.` : `"${tableName}".`}"id"`
     const alias = '_je'
-    const inner = [], innerParams = []
+    const rowOf = `FROM "${d0.table}" ${alias} WHERE ${alias}."${d0.hostCol}" = ${host} AND ${alias}."${d0.dimCol}" = ?`
+    const frags = []
     for (const [field, val] of Object.entries(predicate ?? {})) {
       const desc = cols.find(c => c.field === field)
       if (!desc) continue
-      const col = `${alias}."${desc.col}"`
-      if (val === null) { inner.push(`${col} IS NULL`); continue }
-      if (typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
+      const inner = [], innerParams = []
+      // An own-storage edge with no side row READS as its @default, so the filter grades that
+      // value too: "unread" is every row this viewer never marked. A decorate edge is
+      // membership, so a missing row stays a non-match.
+      const own = desc.storage === 'own'
+      const sideCol = `${alias}.${quoteIdent(desc.col)}`
+      const col = own ? '_ev."v"' : sideCol
+      if (val === null) { inner.push(`${col} IS NULL`) }
+      else if (typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
         for (const [op, v] of Object.entries(val)) {
           if      (op === 'not') { if (v === null) inner.push(`${col} IS NOT NULL`); else { inner.push(`${col} != ?`); innerParams.push(_ecp(v)) } }
           else if (op === 'gt')  { inner.push(`${col} > ?`);  innerParams.push(_ecp(v)) }
@@ -1463,10 +1471,17 @@ function makeTable(readDb, writeDb, shape, ctx) {
       } else {
         inner.push(`${col} = ?`); innerParams.push(_ecp(val))
       }
+      const innerSql = inner.length ? inner.join(' AND ') : '1'
+      if (own) {
+        params.push(dimId, dimId, edgeDefault(desc) === null ? null : _ecp(edgeDefault(desc)), ...innerParams)
+        frags.push(`EXISTS (SELECT 1 FROM (SELECT CASE WHEN EXISTS (SELECT 1 ${rowOf}) THEN (SELECT ${sideCol} ${rowOf}) ELSE ? END AS "v") _ev WHERE ${innerSql})`)
+      } else {
+        params.push(dimId, ...innerParams)
+        frags.push(`EXISTS (SELECT 1 ${rowOf} AND ${innerSql})`)
+      }
     }
-    const innerSql = inner.length ? ' AND ' + inner.join(' AND ') : ''
-    params.push(dimId, ...innerParams)
-    return `EXISTS (SELECT 1 FROM "${d0.table}" ${alias} WHERE ${alias}."${d0.hostCol}" = ${host} AND ${alias}."${d0.dimCol}" = ?${innerSql})`
+    if (!frags.length) { params.push(dimId); return `EXISTS (SELECT 1 ${rowOf})` }
+    return frags.length === 1 ? frags[0] : `(${frags.join(' AND ')})`
   }
 
   // Dispatcher passed to buildWhere as its relFilter: edge namespace → edgeFilterSql,
@@ -2515,18 +2530,24 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // in every snapshot for the trail's whole retention (FJS-D657). It logs as
   // `[personal]` so the entry still says which kind of value was dropped. A
   // column that is both protected and personal logs as `[redacted]`.
+  //
+  // An @opaque value is stored sealed by a client, so the trail writes a digest
+  // of the stored bytes and not the bytes (FJS-D1158): an edit's entry still
+  // says WHICH sealed column moved. A mark that is a function takes the value.
   const logMarks = new Map()
   for (const [f, p] of Object.entries(fieldPolicy)) {
     if (isProtected(p))   logMarks.set(f, REDACTED)
     else if (p.personal)  logMarks.set(f, '[personal]')
+    else if (p.opaque)    logMarks.set(f, opaqueMark)
   }
+  const markOf = (mark, value) => (typeof mark === 'function' ? mark(value) : mark)
   const hasProtectedLogFields = logMarks.size > 0
 
   // Field-level entries: the entry IS about this field, so it stays — only the
   // value is replaced.
   function redactValue(field, value) {
     if (value == null) return null
-    return logMarks.get(field) ?? value
+    return markOf(logMarks.get(field) ?? value, value)
   }
 
   // Model-level entries: before/after are whole rows. Copy on write — these
@@ -2537,7 +2558,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     for (const [f, mark] of logMarks) {
       if (row[f] == null) continue
       if (!out) out = { ...row }
-      out[f] = mark
+      out[f] = markOf(mark, row[f])
     }
     return out ?? row
   }
@@ -2553,7 +2574,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     for (const [f, mark] of logMarks) {
       if (raw[f] == null || f in shaped) continue
       if (!out) out = { ...shaped }
-      out[f] = mark
+      out[f] = markOf(mark, raw[f])
     }
     return out ?? shaped
   }
@@ -3267,10 +3288,31 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return {
       order:  index.fields.filter(s => kinds.has(s)),
       kind:   Object.fromEntries(kinds),
+      numeric: new Set(model.fields.filter(f => f.extKind && f.type.name === 'Float').map(f => f.extKind)),
       table:  modelToTableName(model, ctx.pluralize ?? false),
+      column: ext.column,
       mirror: `${ext.column}Slots`,
       scope:  ext.scope ?? null,
     }
+  }
+
+  // What a blob value becomes in a slot of `kind`, or undefined where it holds
+  // none. The one rule for a write's mirror and for the backfill of a promoted
+  // key, so a row written before the declaration and one written after cannot
+  // disagree.
+  function slotValue(kind, v) {
+    // An unpromoted or absent key is omitted rather than written null: a
+    // missing JSON path and a null one both read NULL through json_extract,
+    // so writing it costs bytes on every row and buys nothing.
+    if (v === undefined || v === null || v === '') return undefined
+    if (kind === 'number') {
+      // The column's affinity is REAL or TEXT and nothing coerces on the
+      // way in, so a number arriving as a string would sort as text and
+      // compare wrong.
+      const n = Number(v)
+      return Number.isFinite(n) ? n : undefined
+    }
+    return String(v)
   }
 
   function _extDeclarations(tenant, scope) {
@@ -3318,9 +3360,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
   }
 
   // Which tenant a pool read is for: the one the payload states, else the
-  // caller's claim, else the one a filter pins. A system call naming none is
-  // refused rather than read across every tenant, because the wrong tenant's
-  // declarations map a value into a slot with nothing failing.
+  // caller's claim, else the one a filter pins, else the one tenant the rows
+  // of a write's where belong to (a tenant column is @immutable, so an update
+  // cannot state it). A system call naming none is refused rather than read
+  // across every tenant, because the wrong tenant's declarations map a value
+  // into a slot with nothing failing.
   function extTenant(data, where) {
     const col = _extTenantCol
     if (data && data[col] != null) return data[col]
@@ -3328,6 +3372,12 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (claim != null) return claim
     const pinned = pinnedIn(where, col)
     if (pinned != null) return pinned
+    if (where && data && ctx.models?.[modelName]?.fields?.some(f => f.name === col)) {
+      const params = []
+      const sql = buildWhereWithEncryption(where, params)
+      const seen = readDb.query(`SELECT DISTINCT ${quoteIdent(col)} AS t FROM ${quoteIdent(tableName)}${sql ? ` WHERE ${sql}` : ''} LIMIT 2`).all(...params)
+      if (seen.length === 1 && seen[0].t != null) return seen[0].t
+    }
     throw new ValidationError([{ path: [col], message:
       `${modelName}: @@extensible under row tenancy reads declarations per tenant, and this call names none — ` +
       `state '${col}' on it, or make it as the tenant` }])
@@ -3428,41 +3478,66 @@ function makeTable(readDb, writeDb, shape, ctx) {
         const record = writeDb.query(`INSERT OR IGNORE INTO ${EXT_SLOTS} (model, tenant, scope, slot) VALUES (?, ?, ?, ?)`)
         for (const s of [...taken, slot]) record.run(...owner, s)
       }
+      const only = [], vals = []
+      if (_extTenantCol) { only.push(` AND ${quoteIdent(_extTenantCol)} = ?`); vals.push(extTenant(data)) }
+      if (pool.scope)    { only.push(` AND ${quoteIdent(pool.scope)} = ?`);    vals.push(data[pool.scope]) }
       if (held) {
         const sql  = `UPDATE "${pool.table}" SET "${pool.mirror}" = json_remove("${pool.mirror}", ?) ` +
           `WHERE ${quoteIdent(slot)} IS NOT NULL`
-        const only = [], vals = []
-        if (_extTenantCol) { only.push(` AND ${quoteIdent(_extTenantCol)} = ?`); vals.push(extTenant(data)) }
-        if (pool.scope)    { only.push(` AND ${quoteIdent(pool.scope)} = ?`);    vals.push(data[pool.scope]) }
         writeDb.run(sql + only.join(''), `$.${slot}`, ...vals)
       }
+      if (slot) backfillExtSlot(pool, slot, String(data.key), only.join(''), vals)
     }
     data    = { ...data, slot }
     stamped = stamped ? new Set([...stamped, 'slot']) : new Set(['slot'])
     return [data, stamped]
   }
 
+  // A key promoted into `slot` holds no value in the mirror of any row that
+  // existed before the declaration, because a mirror is filled by the write
+  // that carries the blob: the indexed filter answered 0 where the scan answered
+  // every match (`FJS-3028`). Filled here, by the one path that hands a slot
+  // out, for the rows of the tenant and scope it was handed in.
+  //
+  // One UPDATE takes the values whose JSON type already is the slot's kind;
+  // the rest are coerced by `slotValue`, the rule a write's mirror uses, so a
+  // row backfilled and a row written after the declaration cannot disagree. It
+  // is raw and announces nothing, on the footing of the clear above, and it
+  // holds the writer for the table's rows (20k rows/s measured at 10M).
+  function backfillExtSlot(pool, slot, key, only, vals) {
+    const col    = quoteIdent(pool.column)
+    const mirror = quoteIdent(pool.mirror)
+    const path   = blobKeyPath(key)
+    const number = pool.numeric.has(pool.kind[slot])
+    // json_type is NULL for a missing key, and for a blob that does not parse,
+    // which json_type would otherwise throw on.
+    const type   = `CASE WHEN json_valid(${col}) THEN json_type(${col}, ?) END`
+    const fast   = number ? `${type} IN ('integer', 'real')` : `${type} = 'text' AND json_extract(${col}, ?) <> ''`
+    const fastBinds = number ? [path] : [path, path]
+    writeDb.run(
+      `UPDATE ${quoteIdent(pool.table)} SET ${mirror} = json_set(COALESCE(${mirror}, '{}'), ?, json_extract(${col}, ?)) ` +
+      `WHERE ${fast}${only}`, `$.${slot}`, path, ...fastBinds, ...vals)
+    const rest = writeDb.query(
+      `SELECT rowid AS r, ${col} AS b FROM ${quoteIdent(pool.table)} ` +
+      `WHERE ${type} NOT IN ('null') AND NOT (${fast})${only}`).all(path, ...fastBinds, ...vals)
+    const set = writeDb.query(`UPDATE ${quoteIdent(pool.table)} SET ${mirror} = json_set(COALESCE(${mirror}, '{}'), ?, ?) WHERE rowid = ?`)
+    for (const { r, b } of rest) {
+      let blob
+      try { blob = JSON.parse(b) } catch { continue }
+      const v = slotValue(number ? 'number' : 'text', blob?.[key])
+      if (v !== undefined) set.run(`$.${slot}`, v, r)
+    }
+  }
+
   function mirrorExtSlots(data, stamped, where, blob = data[_extensible.column]) {
-    const declared = _extDeclarations(_extTenantCol ? extTenant(data) : undefined,
+    const declared = _extDeclarations(_extTenantCol ? extTenant(data, where) : undefined,
                                       _extensible.scope ? extScope(data, where) : undefined)
     const slots    = {}
-    // An unpromoted or absent key is omitted rather than written null: a
-    // missing JSON path and a null one both read NULL through json_extract,
-    // so writing it costs bytes on every row and buys nothing.
     if (blob && typeof blob === 'object') {
       for (const d of declared) {
         if (!d.slot) continue
-        const v = blob[d.key]
-        if (v === undefined || v === null || v === '') continue
-        // The column's affinity is REAL or TEXT and nothing coerces on the
-        // way in, so a number arriving as a string would sort as text and
-        // compare wrong.
-        if (_extensible.kindOf(d.type) === 'number') {
-          const n = Number(v)
-          if (Number.isFinite(n)) slots[d.slot] = n
-        } else {
-          slots[d.slot] = String(v)
-        }
+        const v = slotValue(_extensible.kindOf(d.type), blob[d.key])
+        if (v !== undefined) slots[d.slot] = v
       }
     }
     data = { ...data, [_extensible.mirror]: slots }
@@ -3531,7 +3606,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     err.hint =
       `Name the column on the call to write it and keep every other rule:\n\n` +
       `    db.${modelName.charAt(0).toLowerCase() + modelName.slice(1)}.update({ where, data, system: [${denied.map(f => `'${f}'`).join(', ')}] })\n\n` +
-      `asSystem() writes it too, and drops the gate, the row policies and the audit actor with it.`
+      `asSystem() writes it too, and drops the gate, the row policies and the person as the audit actor's kind with it.`
     throw err
   }
 
@@ -3610,6 +3685,22 @@ function makeTable(readDb, writeDb, shape, ctx) {
                `db.${modelToAccessor(modelName)}.rebalance({ where }) rewrites the scope with keys @rank can extend.`,
     }], { model: modelName, operation: 'create' })
     return last
+  }
+
+  // `@default(sibling)`: copy the sibling's value when the column is unnamed.
+  // Runs before writeData so @slug and the other transforms see the copy; every
+  // create-shaped verb calls it, since a bulk row that skipped it hit NOT NULL.
+  function applyFieldRefDefaults(data, stamped) {
+    const refs = shape.fieldRefDefaults
+    if (!refs?.length) return data
+    const stamps = {}
+    for (const { field, sourceField } of refs) {
+      if ((data == null || data[field] == null) && data?.[sourceField] != null) {
+        noteStamp(stamped, data, field)
+        stamps[field] = data[sourceField]
+      }
+    }
+    return Object.keys(stamps).length ? { ...(data ?? {}), ...stamps } : data
   }
 
   // `memo` carries a batch's own keys forward: the rows of a createMany are
@@ -4045,7 +4136,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     //
     // The narrow hatch is `system: ['col']` on the call, which keeps every
     // other protection — the gate, the row policies, soft-delete, the audit
-    // actor — where asSystem() drops all of them to write one column. Naming
+    // actor's kind — where asSystem() drops all of them to write one column. Naming
     // the field IS the statement: an escape hatch may not disable a guarantee
     // silently.
     if (!ctx.isSystem && _systemWriteKeys.size && data && typeof data === 'object' && !Array.isArray(data)) refuseSystemWrite(data, system, stamped)
@@ -4615,7 +4706,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (!filter || !_filterCheckKeys) return filter ?? null
     const [bad] = collectWhereKeyProblems(
       filter, _filterCheckKeys.filterable, _filterCheckKeys.computed, _filterCheckKeys.encrypted,
-      [], null, _filterCheckKeys.transient,
+      [], null, _filterCheckKeys.transient, null, '', 0, _filterCheckKeys.opaque,
     )
     if (bad) throw new ValidationError([{
       path:    ['filters', accessor, bad.key],
@@ -6389,6 +6480,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       d = applyGeneratedDefaults(d, genDefaults, stamped)
       d = applyAuthDefaults(d, authDefaults, ctx.auth, stamped)
       d = stampFromAuth(d, createdByStamps, ctx.auth, stamped)
+      d = applyFieldRefDefaults(d, stamped)
       if (versionField) { noteStamp(stamped, d, versionField); d = { ...(d ?? {}), [versionField]: 1 } }
       // Apply @sequence per row — each row gets its own counter increment
       d = applySequences(d, modelName, shape.sequences, writeDb, stamped)
@@ -6483,19 +6575,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       noteStamp(stamped, data, shape.version)
       data = { ...(data ?? {}), [shape.version]: 1 }
     }
-    // Apply @default(fieldName) — copy value from sibling field if not already provided
-    // Must run BEFORE writeData/applyTransforms so @slug and other transforms see the value
-    const fieldRefDefaults = shape.fieldRefDefaults
-    if (fieldRefDefaults?.length) {
-      const stamps = {}
-      for (const { field, sourceField } of fieldRefDefaults) {
-        if ((data == null || data[field] == null) && data?.[sourceField] != null) {
-          noteStamp(stamped, data, field)
-          stamps[field] = data[sourceField]
-        }
-      }
-      if (Object.keys(stamps).length) data = { ...(data ?? {}), ...stamps }
-    }
+    data = applyFieldRefDefaults(data, stamped)
     extractWriteOps(data, { where: 'create' })
     const refusal = firstRefusal(_crParent, _crHid)
     return { data, stamped, refusal, select, include, system, scopedBy }
@@ -6538,11 +6618,16 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // checked, because a job that read the row and wrote back after slow work
     // is a second editor and would otherwise overwrite a save in between
     // (FJS-D659).
+    //
+    // A named move may leave it out too: it is already a compare-and-swap on
+    // the from-state, and a model declaring both would otherwise be a machine
+    // only asSystem() could move — a person, the served method and the
+    // commitment's clock all refused VersionRequired (FJS-3086).
     const _versionField = shape.version
     let   _expectVersion = null
     if (_versionField) {
       const supplied = data?.[_versionField]
-      if (!_bypassVersion && (!ctx.isSystem || supplied != null)) {
+      if (!_bypassVersion && (!(ctx.isSystem || _move) || supplied != null)) {
         if (!Number.isInteger(supplied))
           throw new VersionRequiredError(modelName, _versionField)
         _expectVersion = supplied
@@ -6964,17 +7049,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       cData = applyGeneratedDefaults(cData, shape.generatedDefaults, _fpStamped)
       cData = applyAuthDefaults(cData, shape.authDefaults, ctx.auth, _fpStamped)
       cData = stampFromAuth(cData, shape.createdBy, ctx.auth, _fpStamped)
-      const _fpFieldRefs = shape.fieldRefDefaults
-      if (_fpFieldRefs?.length) {
-        const stamps = {}
-        for (const { field, sourceField } of _fpFieldRefs) {
-          if (cData[field] == null && cData[sourceField] != null) {
-            noteStamp(_fpStamped, cData, field)
-            stamps[field] = cData[sourceField]
-          }
-        }
-        if (Object.keys(stamps).length) cData = { ...cData, ...stamps }
-      }
+      cData = applyFieldRefDefaults(cData, _fpStamped)
 
       // A field write predicate has to read the STORED row, and this branch is
       // one statement with no row in hand — its DO UPDATE would grade the
@@ -8321,6 +8396,17 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       return finishWrite(plan, outcome)
     },
 
+    // The rows the engine owns, written with no await anywhere: a SQL trail's
+    // entries when the process is ending, where a `create`'s microtasks never
+    // run and the row is lost (`FJS-3101`). No plugin, hook or value-set sees
+    // them, and nothing is announced; the defaults, stamps and column
+    // encoding are createMany's.
+    appendSync(rows) {
+      if (!rows?.length) return
+      const plan = createManyPlan({ data: rows, system: true, hidden: rows.map(() => null), mode: 'collection', needRows: false })
+      tx.wrap(() => writeUnit(plan))
+    },
+
     // ── update ──────────────────────────────────────────────────────────────
     async update(args = {}) {
       const u = await prepareUpdate(args)
@@ -8548,6 +8634,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           d = applyAuthDefaults(d, authDefaults, ctx.auth, stamped)
           d = stampFromAuth(d, createdBys, ctx.auth, stamped)
           d = stampFromAuth(d, updatedBys, ctx.auth, stamped)
+          d = applyFieldRefDefaults(d, stamped)
           if (usVersion) { noteStamp(stamped, d, usVersion); d = { ...(d ?? {}), [usVersion]: 1 } }
           d = applySequences(d, modelName, shape.sequences, writeDb, stamped)
           d = applyRanks(d, stamped, _usRankMemo)
@@ -9641,7 +9728,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           })
         }
       }
-      return out
+      // Oldest due first, ties by transition then id: a sweep dispatches in
+      // this order, and the query alone answers in whatever order the planner
+      // walks. A day kind's `YYYY-MM-DD` sorts before any instant of that day.
+      const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
+      return out.sort((a, b) => cmp(String(a.dueAt), String(b.dueAt))
+        || cmp(a.transition, b.transition) || cmp(a.id, b.id))
     },
 
     // ── transitions ─────────────────────────────────────────────────────────
@@ -10354,7 +10446,16 @@ function makeLockPrimitive(rawWriteDb) {
   // 'no such column' and no view named. Preparing a SELECT over each view
   // resolves them. Only a view the file already holds: one a pending
   // migration has yet to create is the migration's to report.
+  //
+  // The same loop refuses a view whose @@sql reads a protected column (FJS-D1047):
+  // it runs for whoever the view's gate admits, and its columns take no attribute
+  // to restate the protection on.
   for (const view of schema.views ?? []) {
+    const read = viewProtectedRead(schema, view, pluralizeTableNames)
+    if (read) throw new Error(
+      `view ${view.name}: its @@sql ${read.star ? `selects * from '${read.table}', which holds` : 'names'} the protected column '${read.table}.${read.column}' ` +
+      `(@guarded, @secret, @hashed or @encrypted), which a view's reader would get in plaintext or as ciphertext. ` +
+      `Reading it is asSystem()'s: leave it out of the @@sql${read.star ? ', and name the columns instead of *' : ''}`)
     if (view.materialized) continue
     const conn = dbRegistry[view.db ?? 'main']
     if (conn?.driver !== 'sqlite' || !conn.rawWriteDb) continue
@@ -10950,7 +11051,8 @@ function makeLockPrimitive(rawWriteDb) {
     }
     if (typeof f === 'function' || !f || !model.fields) continue
     const keys = globalFilterKeysFor(model, shapes[model.name].edges)
-    const [bad] = collectWhereKeyProblems(f, keys.filterable, keys.computed, keys.encrypted, [], null, keys.transient)
+    const [bad] = collectWhereKeyProblems(f, keys.filterable, keys.computed, keys.encrypted, [], null, keys.transient,
+                                          null, '', 0, keys.opaque)
     if (bad) throw new Error(`createClient: ${globalFilterRefusal(accessor, model.name, bad)}`)
   }
 
@@ -11942,7 +12044,7 @@ function makeLockPrimitive(rawWriteDb) {
     for (const d of Object.values(shapes[model.name].edges)) keys.filterable.add(d.as)
     return collectWhereKeyProblems(where, keys.filterable, keys.computed, keys.encrypted, [],
                                    new Set(Object.keys(shapes[model.name].scopes)), keys.transient,
-                                   { ctx, model: model.name })
+                                   { ctx, model: model.name }, '', 0, keys.opaque)
       // `p.model` where the key was found through a relation — naming the model
       // it was graded against rather than the one the request addressed, which
       // is the only one a caller can look up.

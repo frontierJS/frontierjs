@@ -385,6 +385,23 @@ model Order {
     env.close?.()
   })
 
+  // The fire order is a rule, not whatever index the planner walks (FJS-3035):
+  // the sweep dispatches in the order due() answers, so a backlog released
+  // after a dead worker returns publishes oldest-due first.
+  test('rows answer in the order they fell due, whatever order they were written in (FJS-3035)', async () => {
+    const env = await createTestEnv({ schema: ORDERS, now: T0 })
+    const sys = env.db.asSystem()
+    for (const [label, createdAt] of [
+      ['c', '2025-12-03T00:00:00.000Z'], ['a', '2025-12-01T00:00:00.000Z'],
+      ['d', '2025-12-04T00:00:00.000Z'], ['b', '2025-12-02T00:00:00.000Z'],
+    ]) await sys.order.create({ data: { label, createdAt } })
+    const due = await sys.order.due()
+    expect(due.map(d => d.dueAt)).toEqual([...due.map(d => d.dueAt)].sort())
+    const byId = new Map((await sys.order.findMany({})).map(o => [o.id, o.label]))
+    expect(due.map(d => byId.get(d.id)).join('')).toBe('abcd')
+    env.close?.()
+  })
+
   test('`by` asks ahead without moving the clock — the sweep’s lookahead', async () => {
     const { env, db, newb } = await orders()
     const ahead = await db.order.due({ by: '2026-01-13T00:00:00.000Z' })

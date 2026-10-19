@@ -434,6 +434,47 @@ describe('the slot a declaration takes', () => {
     await db.customField.create({ data: { model: 'Customer', key: 'cost', type: 'number', slot: 'n1' } })
     expect(await db.customer.count({ where: { fields: { cost: 3 } } })).toBe(1)
   })
+
+  // The mirror is filled by the write that carries the blob, so a key promoted
+  // later had no value in any row that already existed and its indexed filter
+  // answered 0 where the scan answered 2,500,491 (`FJS-3028`). The declaration
+  // that takes the slot fills it for the rows already there.
+  test('a key promoted AFTER the rows exist is filterable on them', async () => {
+    const c  = await client()
+    const db = c.asSystem()
+    await db.customer.create({ data: { name: 'Ada', fields: { tier: 'gold', ltv: 9, other: 'x' } } })
+    await db.customer.create({ data: { name: 'Bo',  fields: { tier: 'bronze', ltv: '12' } } })
+    await db.customer.create({ data: { name: 'Cy',  fields: { other: 'x' } } })
+    await db.customer.create({ data: { name: 'Di',  fields: { tier: '' } } })
+    const tier = await db.customField.create({ data: { model: 'Customer', key: 'tier', type: 'text' } })
+    const ltv  = await db.customField.create({ data: { model: 'Customer', key: 'ltv',  type: 'number' } })
+    expect([tier.slot, ltv.slot]).toEqual(['t1', 'n1'])
+    expect((await db.customer.findMany({ where: { fields: { tier: 'gold' } } })).map((r: any) => r.name)).toEqual(['Ada'])
+    expect((await db.customer.findMany({ where: { fields: { ltv: { gte: 10 } } } })).map((r: any) => r.name)).toEqual(['Bo'])
+    expect(await db.sql`SELECT name, t1, n1 FROM customer ORDER BY id`).toEqual([
+      { name: 'Ada', t1: 'gold',   n1: 9 },
+      { name: 'Bo',  t1: 'bronze', n1: 12 },
+      { name: 'Cy',  t1: null,     n1: null },
+      { name: 'Di',  t1: null,     n1: null },
+    ])
+    // A key with an awkward name is a bound path, never pattern text.
+    await db.customer.create({ data: { name: 'Ed', fields: { 'a."b': 'q' } } })
+    const odd = await db.customField.create({ data: { model: 'Customer', key: 'a."b', type: 'text' } })
+    expect((await db.sql.read(`SELECT ${odd.slot} AS v FROM customer WHERE name = 'Ed'`, []))[0].v).toBe('q')
+  })
+
+  // The pair: a slot the payload states is a restore, whose values were written
+  // for it already, and a pool-less model has no mirror to fill.
+  test('a stated slot and a slotless key fill nothing', async () => {
+    const c  = await client()
+    const db = c.asSystem()
+    await db.customer.create({ data: { name: 'Ada', fields: { tier: 'gold', care: 'y' } } })
+    await db.customField.create({ data: { model: 'Customer', key: 'tier', type: 'text', slot: 't2' } })
+    expect(await db.sql`SELECT t1, t2 FROM customer`).toEqual([{ t1: null, t2: null }])
+    await db.product.create({ data: { name: 'P', fields: { care: 'y' } } })
+    const care = await db.customField.create({ data: { model: 'Product', key: 'care', type: 'text' } })
+    expect(care.slot).toBeNull()
+  })
 })
 
 describe('the mirror, derived at the Data boundary', () => {
@@ -739,8 +780,20 @@ describe('under tenancy { strategy row }', () => {
     await sys.issue.create({ data: { id: 1, workspaceId: 20, title: 'x', fields: { severity: 'sev1' } } })
     await sys.issue.create({ data: { id: 2, workspaceId: 10, title: 'y', fields: { severity: 'sev1' } } })
     expect(await sys.sql`SELECT id, t1 FROM issue ORDER BY id`).toEqual([{ id: 1, t1: null }, { id: 2, t1: 'sev1' }])
-    await expect(sys.issue.update({ where: { id: 2 }, data: { fields: { severity: 'sev2' } } }))
+    await expect(sys.issue.updateMany({ where: { id: { in: [1, 2] } }, data: { fields: { severity: 'sev2' } } }))
       .rejects.toThrow(/names none — state 'workspaceId'/)
+  })
+
+  // FJS-3039: a tenant column is @immutable, so an update cannot state it; the
+  // tenant is the one the rows the where reaches belong to.
+  test('a system update is mirrored through the workspace its rows belong to', async () => {
+    const { db, a } = await tenants()
+    await a.customField.create({ data: { model: 'Issue', key: 'severity', type: 'text' } })
+    const sys = db.asSystem()
+    await sys.issue.create({ data: { id: 2, workspaceId: 10, title: 'y', fields: { severity: 'sev1' } } })
+    await sys.issue.update({ where: { id: 2 }, data: { fields: { severity: 'sev2' } } })
+    await sys.issue.update({ where: { id: 2, workspaceId: 10 }, data: { fields: { severity: 'sev3' } } })
+    expect(await sys.sql`SELECT t1 FROM issue WHERE id = 2`).toEqual([{ t1: 'sev3' }])
   })
 
   // The filter's pinned tenant is the third place a pool read looks (`FJS-1756`).
@@ -769,6 +822,16 @@ describe('under tenancy { strategy row }', () => {
 
   // The pool is per workspace, so emptying a slot for one workspace's new key
   // must leave every other workspace's value in that column where it is.
+  test('a promoted key fills its own workspace’s rows and no other’s', async () => {
+    const { db, a } = await tenants()
+    const sys = db.asSystem()
+    await sys.issue.create({ data: { id: 1, workspaceId: 10, title: 'x', fields: { severity: 'sev1' } } })
+    await sys.issue.create({ data: { id: 2, workspaceId: 20, title: 'y', fields: { severity: 'sev1' } } })
+    await a.customField.create({ data: { model: 'Issue', key: 'severity', type: 'text' } })
+    expect(await sys.sql`SELECT id, t1 FROM issue ORDER BY id`).toEqual([{ id: 1, t1: 'sev1' }, { id: 2, t1: null }])
+    expect((await a.issue.findMany({ where: { fields: { severity: 'sev1' } } })).map((r: any) => r.id)).toEqual([1])
+  })
+
   test('a freed slot is emptied for its own workspace only', async () => {
     const { db, a, b } = await tenants()
     const sa = await a.customField.create({ data: { model: 'Issue', key: 'old', type: 'text' } })

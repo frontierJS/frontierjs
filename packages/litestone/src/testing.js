@@ -1985,8 +1985,7 @@ export function generateFactory(schema, modelName, options = {}) {
       // carrying one could not be built at all. The value is a stored ref, not
       // bytes: a JSON string is what FileStorage reads back and never uploads.
       if (field.type.name === 'File' && !field.type.optional && !field.type.array) {
-        const mime = field.attributes.find(a => a.kind === 'accept')?.types?.[0] ?? 'application/octet-stream'
-        out[field.name] = JSON.stringify({ key: `${modelName}/${seq}/${field.name}`, provider: 'local', size: 0, mime })
+        out[field.name] = _fileRef(modelName, field, seq)
         continue
       }
       if (_shouldSkipField(field, model)) continue
@@ -3842,11 +3841,21 @@ function _settable(n, { model, fkFields }) {
   const f = model.fields.find(x => x.name === n.name)
   if (!f || f.type.array || f.type.kind === 'relation' || f.type.kind === 'implicitM2M') return null
   if (fkFields.has(f.name) || f.attributes.some(a => a.kind === 'id')) return null
-  if (_shouldSkipField(f, model)) return null
+  // A create starts a machine at its `@default`; any other state is refused.
+  if (model.attributes?.some(a => a.kind === 'transitions' && a.field === f.name)) return null
+  // A File is skipped as an upload concern, but a rule that wants it set can
+  // have the stored ref a required one gets.
+  if (f.type.name !== 'File' && _shouldSkipField(f, model)) return null
   return f
 }
 
+function _fileRef(modelName, field, seq) {
+  const mime = field.attributes.find(a => a.kind === 'accept')?.types?.[0] ?? 'application/octet-stream'
+  return JSON.stringify({ key: `${modelName}/${seq}/${field.name}`, provider: 'local', size: 0, mime })
+}
+
 function _fillValue(f, { schema, model, seq }) {
+  if (f.type.name === 'File') return _fileRef(model.name, f, seq)
   const required = { ...f, type: { ...f.type, optional: false } }
   return _fieldValue(schema, model.name, required, seq, null) ?? null
 }

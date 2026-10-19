@@ -475,9 +475,11 @@ export function schemaDeclaresAccessRules(schema) {
 //   encrypted: { deterministic: bool } | null
 //   hashed:    bool
 //   personal:  { category: string | null } | null   — @personal (FJS-D657)
+//   opaque:    bool                                 — @opaque (FJS-D1157)
 //
-// An entry that carries only `personal` shapes no read: @personal decides what
-// the audit trail and a redacted copy keep, never who sees the column.
+// An entry that carries only `personal` or `opaque` shapes no read: they decide
+// what the audit trail keeps and what a filter or sort may do, never who sees
+// the column.
 // `shapesRead` is the question a read path asks before taking the slow path.
 //
 // `guarded` is a system-context lock in BOTH directions: the read strips it and
@@ -499,9 +501,10 @@ export function buildFieldPolicyMap(schema) {
       const immutableAttr = field.attributes.find(a => a.kind === 'immutable')
       const vectorAttr    = field.attributes.find(a => a.kind === 'vector')
       const personalAttr  = field.attributes.find(a => a.kind === 'personal')
+      const opaqueAttr    = field.attributes.find(a => a.kind === 'opaque')
       const fieldAllows   = field.attributes.filter(a => a.kind === 'fieldAllow')
 
-      if (!omitAttr && !guardedAttr && !encryptedAttr && !hashedAttr && !systemAttr && !immutableAttr && !vectorAttr && !personalAttr && !fieldAllows.length) continue
+      if (!omitAttr && !guardedAttr && !encryptedAttr && !hashedAttr && !systemAttr && !immutableAttr && !vectorAttr && !personalAttr && !opaqueAttr && !fieldAllows.length) continue
 
       // Build per-op allow expression lists: { read: [expr,...], write: [expr,...] }
       const allow = fieldAllows.length ? { read: [], write: [] } : null
@@ -529,6 +532,7 @@ export function buildFieldPolicyMap(schema) {
         // strips from asSystem() too, which no other protection does.
         hashed:    !!hashedAttr,
         personal:  personalAttr ? { category: personalAttr.category ?? null } : null,
+        opaque:    !!opaqueAttr,
         // @system — readable by anyone, writable only by the system. The
         // orthogonal sibling of @guarded, which locks both directions.
         system:    !!systemAttr,
@@ -582,7 +586,7 @@ export function isProtected(p) {
 /** Whether one model's field policy holds an entry that is more than @personal. */
 export function shapesRead(fieldPolicy) {
   for (const name in fieldPolicy) {
-    const { personal, json, ...rest } = fieldPolicy[name]
+    const { personal, opaque, json, ...rest } = fieldPolicy[name]
     if (Object.values(rest).some(v => v)) return true
   }
   return false
@@ -1664,4 +1668,34 @@ export function buildFtsMap(schema) {
 export function nowISO(clock) {
   const raw = typeof clock === 'function' ? clock() : new Date()
   return raw instanceof Date ? raw.toISOString() : String(raw)
+}
+
+// ─── A view's @@sql and protected columns (FJS-D1047) ─────────────────────────
+// A view's @@sql is raw SQL that runs for whoever the view's own @@gate admits,
+// and its columns take no attributes, so a @guarded/@secret/@hashed/@encrypted
+// column it selects reaches that caller in plaintext or ciphertext. Reading one
+// is asSystem()'s, so the view omits it. Matching is on the word, never on a
+// result column, because an alias (`score AS s`) walks past the second.
+//
+// Returns the first offence as { table, column, star }, or null. A word inside
+// a string literal is skipped; a column merely filtered or counted on is still
+// refused, which the ruling accepts for soundness.
+export function viewProtectedRead(schema, view, pluralize = false) {
+  const sql  = String(view.sql ?? '').replace(/'(?:[^']|'')*'/g, "''")
+  const word = (name) => new RegExp(`(?<![\\w$])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w$])`, 'i')
+  const held = []
+  for (const model of schema.models ?? []) {
+    const policy = fieldPolicyOf(model)
+    const cols   = columnMapFor(model)
+    const table  = modelToTableName(model, pluralize)
+    const bad    = (model.fields ?? []).filter(f => isProtected(policy[f.name])).map(f => cols[f.name] ?? f.name)
+    if (bad.length) held.push({ table, bad, named: word(table).test(sql) })
+  }
+  for (const h of held.filter(x => x.named).concat(held.filter(x => !x.named))) {
+    const column = h.bad.find(c => word(c).test(sql))
+    if (column) return { table: h.table, column, star: false }
+  }
+  const star = /(?:\bselect\s+(?:distinct\s+|all\s+)?|,\s*)(?:(?:"[^"]+"|\w+)\.)?\*/i.test(sql)
+  const read = star && held.find(x => x.named)
+  return read ? { table: read.table, column: read.bad[0], star: true } : null
 }

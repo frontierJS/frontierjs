@@ -193,6 +193,8 @@ const n = await db.task.count({
 if (n !== 1) throw new Error(`expected 1, got ${n}`)
 ```
 
+A row with no side row filters as its `@default`, the value a read shows for it, so `where: { mine: { readAt: null } }` is every row this viewer has not marked. A decorate edge (`@edge` on a declared m2m) is membership: a row outside the bound dimension never matches.
+
 Operators supported inside the namespace: equality, `not`, `gt`/`gte`/`lt`/`lte`, `in`, `contains`. Filtering a non-auth edge with no bound dimension is an error — bind it with `scopedBy`.
 
 ## The `scopedBy` binder

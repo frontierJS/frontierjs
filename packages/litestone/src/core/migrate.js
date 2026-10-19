@@ -1431,6 +1431,17 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
     }
   }
 
+  // Before every table: a rebuild's ALTER TABLE ... RENAME re-reads all the
+  // triggers in the schema, and a new table's search trigger already names this
+  // one -- "error in trigger ...: no such table: main._search" (FJS-3037).
+  if (changedSearch) {
+    lines.push(`-- ─── shared search index ${'─'.repeat(43)}`)
+    lines.push(``)
+    lines.push(`DROP TABLE IF EXISTS ${quoteIdent(SEARCH_TABLE)};`)
+    lines.push(createSearchIndex())
+    lines.push(``)
+  }
+
   if (newTables.length) {
     lines.push(`-- ─── new tables ${'─'.repeat(52)}`)
     lines.push(``)
@@ -1615,12 +1626,12 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
     lines.push(``)
   }
 
-  // Before the triggers: a new table's search triggers insert into it.
-  if (changedSearch || droppedSearch) {
+  // A retired index goes after the tables: a rebuild's rename reads every
+  // trigger in the schema, and the ones still naming it must find it.
+  if (droppedSearch && !changedSearch) {
     lines.push(`-- ─── shared search index ${'─'.repeat(43)}`)
     lines.push(``)
     lines.push(`DROP TABLE IF EXISTS ${quoteIdent(SEARCH_TABLE)};`)
-    if (changedSearch) lines.push(createSearchIndex())
     lines.push(``)
   }
 

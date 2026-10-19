@@ -444,6 +444,8 @@ export function globalFilterRefusal(accessor, modelName, problem) {
            : '')
 }
 
+const OPAQUE_WHERE_OPS = new Set(['equals', 'not', 'in', 'notIn'])
+
 const WHERE_REASONS = {
   computed:  (/** @type {string} */ k) => `'${k}' is a @computed field on %MODEL% — it is derived in JS after the row is read, so SQLite cannot filter by it. `
                   + `It is not a column, and comparing one is comparing string constants: it matches every row when the value happens to equal '${k}', and none otherwise. `
@@ -526,12 +528,12 @@ function whereKeysFor(model, ctx) {
  * @param {string} [path]
  * @param {number} [depth]
  */
-export function collectWhereKeyProblems(where, filterable, computed, encrypted, out = [], scopes = null, transient = null, rel = null, path = '', depth = 0) {
+export function collectWhereKeyProblems(where, filterable, computed, encrypted, out = [], scopes = null, transient = null, rel = null, path = '', depth = 0, opaque = null) {
   if (!where || typeof where !== 'object' || Array.isArray(where)) return out
   const at = (/** @type {string} */ k) => path ? `${path}.${k}` : k
   for (const [k, v] of Object.entries(where)) {
     if (k === 'AND' || k === 'OR' || k === 'NOT') {
-      for (const w of Array.isArray(v) ? v : [v]) collectWhereKeyProblems(w, filterable, computed, encrypted, out, scopes, transient, rel, path, depth)
+      for (const w of Array.isArray(v) ? v : [v]) collectWhereKeyProblems(w, filterable, computed, encrypted, out, scopes, transient, rel, path, depth, opaque)
       continue
     }
     // A scope is a NAME in the table the schema declared, so this is the one
@@ -566,6 +568,18 @@ export function collectWhereKeyProblems(where, filterable, computed, encrypted, 
       continue
     }
     if (filterable.has(k)) {
+      // An @opaque column matches by equality or not at all: the server holds a
+      // sealing it cannot read, so a range, a prefix or a substring would be
+      // answered about ciphertext and read as an answer about the value.
+      if (opaque?.has(k) && v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)) {
+        const bad = Object.keys(v).filter(op => !OPAQUE_WHERE_OPS.has(op))
+        if (bad.length) out.push({
+          key: k, path: at(k), model: rel?.model ?? null, reason: 'opaque-operator',
+          suggestion: null, allowed: [...OPAQUE_WHERE_OPS].sort(),
+          message: `'${k}' is @opaque on %MODEL% -- the server holds bytes a client sealed, so ${bad.map(o => "'" + o + "'").join(', ')} would compare ciphertext. ` +
+                   `A where over it takes null and equality (${[...OPAQUE_WHERE_OPS].sort().join(', ')}); match on a column that is not sealed`,
+        })
+      }
       // A relation is filterable AND carries a nested where. Grade that where
       // against the TARGET's columns, or the inner key reaches SQL ungraded.
       const link = depth < 12 ? rel?.ctx?.shapes[rel.model].relations[k] : null
@@ -591,7 +605,7 @@ export function collectWhereKeyProblems(where, filterable, computed, encrypted, 
             continue
           }
           collectWhereKeyProblems(inner, tk.filterable, tk.computed, tk.encrypted, out, tScopes, tk.transient,
-                                  { ctx: rel.ctx, model: targetModel.name }, at(k) + `.${mode}`, depth + 1)
+                                  { ctx: rel.ctx, model: targetModel.name }, at(k) + `.${mode}`, depth + 1, tk.opaque)
         }
       }
       continue
@@ -776,6 +790,7 @@ const OPAQUE_AGG = {
   encrypted: `@encrypted — an aggregate compares ciphertext, which orders nothing and re-shuffles on every re-encryption`,
   hashed:    `@hashed — the column holds a one-way digest, so an aggregate would answer a fact about digests rather than about values. ` +
              `A digest can be matched in a where and never read back, by any caller`,
+  opaque:    `@opaque — the column holds bytes a client sealed, so an aggregate would compare ciphertext`,
 }
 
 /**
@@ -841,7 +856,7 @@ function checkWhereKeys(where, keys, modelName, method, isWrite, scopes = null, 
     }])
   }
   const problems = collectWhereKeyProblems(where, keys.filterable, keys.computed, keys.encrypted, [], scopes, keys.transient,
-                                           ctx ? { ctx, model: modelName } : null)
+                                           ctx ? { ctx, model: modelName } : null, '', 0, keys.opaque)
   for (const p of problems) {
     // The PATH where it is nested, the bare key where it is not: `customer.is.nope`
     // names something a caller can find, and `nope` alone does not once the key

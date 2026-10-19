@@ -356,7 +356,7 @@ behavior, when built, to `packages/litestone/docs/schema.md`.
     `lock_version` (`credits/applied_prepaid_credits_service.rb:23-42`), which is
     spelling (a) plus a lock.
 
-- **Q2 — How is a direct write to the balance refused?**
+- **FJS-D1299 — Q2 — How is a direct write to the balance refused?** Held `FJS-3025`: ci-runner's `StepRun.bytes <= 10 MiB` is a `@@check` over a copy the writer keeps, and a chunk created any other way lands past the cap; the build of `@balance` (`FJS-D935`) waits on this guard.
   The literal guard (re-sum the tape) is linear and measured at 774 µs a post at
   20k rows. The narrow guard is flat at about 20 µs and needs a hidden column.
   - **A** — the narrow guard: an engine-owned `_posted` column on the source and
@@ -381,7 +381,7 @@ behavior, when built, to `packages/litestone/docs/schema.md`.
     a second origin for a number the tape already answers. Revisit if an app
     needs to find a gap in a tape it did not write.
 
-- **Q4 — A post changes the parent row. Is that announced, and does it move the parent's `@version`?**
+- **FJS-D1300 — Q4 — A post changes the parent row. Is that announced, and does it move the parent's `@version`?** Held `FJS-3025`, beside `FJS-D1299`.
   A trigger's update reaches no hook, so the live layer hears about the movement
   and not about the shelf, which is `FJS-1308`'s shape arriving through a new
   door.

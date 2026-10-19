@@ -66,6 +66,15 @@ describe('actorType grades the principal it was handed', () => {
     expect(row.actorType).toBe('system')
   })
 
+  test('asSystem over a principal keeps who, and says the application wrote it (FJS-1934)', async () => {
+    // FJS-D575 reads "the audit actor" dropped by asSystem(). What drops is the
+    // KIND: the id of a principal set before it survives, so the trail still
+    // names the person and files the write as the system's.
+    const row = await writeAs(db => db.$setAuth({ id: 'user-42' }).asSystem())
+    expect(row.actorId).toBe('user-42')
+    expect(row.actorType).toBe('system')
+  })
+
   test('no principal at all says nothing', async () => {
     // The gate is 0, so an unauthenticated caller can make this write. There
     // is nobody to name and nothing to grade, and inventing a word for it

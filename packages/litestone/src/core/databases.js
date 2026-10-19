@@ -693,7 +693,10 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
   for (const db of schema.databases) {
     const access  = accessConfig[db.name] ?? 'readwrite'
     const absPath = pathFor(db)
-    const relative = isRelativeStated(dbOverrides[db.name]?.path || statedDbPath(db.path))
+    // An anchor names the directory a declared path resolves against, so only
+    // an override (resolved against the process) can still leave it to the cwd.
+    const override = dbOverrides[db.name]?.path
+    const relative = isRelativeStated(override || (anchor ? undefined : statedDbPath(db.path)))
 
     if (db.driver === 'jsonl' || db.driver === 'trail') {
       // In-memory mode: use a unique tmpdir so test runs don't pollute the filesystem.

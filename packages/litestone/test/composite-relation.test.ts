@@ -301,3 +301,47 @@ model Assignment {
     await createClient({ schema: one, db: ':memory:' })
   })
 })
+
+// FJS-3026: "a child's column equals its parent's" is a relation over both
+// columns, so the table holds it for every writer -- a CHECK cannot reach the
+// parent and a create + post-update policy never binds asSystem().
+describe('a child column held equal to its parent\'s is a composite relation', () => {
+  const LEDGER = (currency: string) => `
+model Account {
+  id       String @id
+  currency String
+  postings Posting[]
+  @@unique([id, currency])
+}
+model Posting {
+  id        String @id
+  accountId String
+  currency  ${currency}
+  account   Account @relation(fields: [accountId, currency], references: [id, currency])
+}`
+
+  async function ledger(currency = 'String') {
+    const db: any = await createClient({ schema: LEDGER(currency), db: ':memory:' })
+    const sys = db.asSystem()
+    await sys.account.create({ data: { id: 'a', currency: 'USD' } })
+    return sys
+  }
+
+  it('refuses a create whose column disagrees, even under asSystem()', async () => {
+    const sys = await ledger()
+    expect(await sys.posting.create({ data: { id: 'p1', accountId: 'a', currency: 'USD' } })).toMatchObject({ id: 'p1' })
+    await expect(sys.posting.create({ data: { id: 'p2', accountId: 'a', currency: 'EUR' } })).rejects.toThrow(/names no Account/)
+  })
+
+  it('refuses an update of either side that would split them', async () => {
+    const sys = await ledger()
+    await sys.posting.create({ data: { id: 'p1', accountId: 'a', currency: 'USD' } })
+    await expect(sys.posting.update({ where: { id: 'p1' }, data: { currency: 'EUR' } })).rejects.toThrow()
+    await expect(sys.account.update({ where: { id: 'a' }, data: { currency: 'EUR' } })).rejects.toThrow()
+  })
+
+  it('a NULL in the child column skips the check (MATCH SIMPLE), so the column is required', async () => {
+    const sys = await ledger('String?')
+    expect(await sys.posting.create({ data: { id: 'p1', accountId: 'a' } })).toMatchObject({ id: 'p1' })
+  })
+})

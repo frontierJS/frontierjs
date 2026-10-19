@@ -74,6 +74,15 @@ d('a server global named outside #host', () => {
     expect(v.threw).toBeNull()
   })
 
+  // core/encryption.js opaqueMark took its digest from createHmac, which a
+  // device refuses (FJS-3310).
+  test('an @opaque value reaches the trail as [opaque:<digest>] and the write resolves', () => {
+    const v = answers['opaque-trail']
+    expect(v.threw).toBeNull()
+    expect(JSON.stringify(v.warnings)).not.toContain('createHmac')
+    expect(JSON.parse(v.after).sealed).toMatch(/^\[opaque:[A-Za-z0-9_-]{12}\]$/)
+  })
+
   // core/client.js mints the cross-process writer id through `#host`'s processId.
   test('`announce crossProcess` opens, or is refused by name', () => {
     const v = answers['cross-process']

@@ -75,7 +75,7 @@ export const OPPORTUNITIES = [
       for (const model of authored(schema))
         for (const f of model.fields ?? []) {
           if (!NAMES.test(f.name) || scalarOf(f) !== 'String') continue
-          if (has(f, 'hashed') || has(f, 'encrypted') || has(f, 'secret')) continue
+          if (has(f, 'hashed') || has(f, 'encrypted') || has(f, 'secret') || has(f, 'opaque')) continue
           // A value with no COLUMN cannot be at rest. `@transient` is the shape
           // this is about — a credential on its way through, validated and then
           // lifted off the payload — and basecamp's NotificationChannel.secret
@@ -369,7 +369,7 @@ export const OPPORTUNITIES = [
         if (modelAttr(model, 'fts')) continue
         const cols = (model.fields ?? []).filter(f =>
           scalarOf(f) === 'String' && PROSE.test(f.name) &&
-          !has(f, 'encrypted') && !has(f, 'hashed') && !has(f, 'guarded'))
+          !has(f, 'encrypted') && !has(f, 'hashed') && !has(f, 'guarded') && !has(f, 'opaque'))
         if (cols.length < 2) continue
         out.push({ model: model.name, field: null,
           message: `${model.name} carries ${cols.map(f => f.name).join(' and ')} and no @@fts. ` +
@@ -452,6 +452,10 @@ export const OPPORTUNITIES = [
       for (const model of authored(schema)) {
         const fields = model.fields ?? []
         if (fields.some(f => isPrice(f))) continue
+
+        // A @@relator row links two parents and charges nothing; its @@trail
+        // records who belongs, not an amount, so it is not a document.
+        if (modelAttr(model, 'relator')) continue
 
         // Document-shaped: something about this row is meant to stand. A basket
         // line legitimately reads the live price, and it declares none of these.

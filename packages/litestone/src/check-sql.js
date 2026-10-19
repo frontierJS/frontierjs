@@ -118,7 +118,8 @@ export function evalSql(n, row) {
       const v = row[n.name]
       if (v === undefined || v === null) return null
       if (typeof v === 'boolean') return v ? 1 : 0
-      if (typeof v === 'object') return null
+      // A Json column is stored as text, so a filled one is not NULL.
+      if (typeof v === 'object') return JSON.stringify(v)
       return v
     }
     case 'neg': { const v = evalSql(n.a, row); return v == null ? null : -Number(v) }

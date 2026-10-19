@@ -155,6 +155,15 @@ describe('the shared _search index through a migration', () => {
     expect(plan(db, FTS).diff.hasChanges).toBe(false)
   })
 
+  it('is there before a rebuild renames a table, when a NEW @@fts model arrives with it (FJS-3037)', () => {
+    const db = new Database(':memory:')
+    migrate(db, `model Other {\n  id Int @id\n  n Int?\n}`)
+    db.run(`INSERT INTO other (id, n) VALUES (1, 5)`)
+    migrate(db, `model Other {\n  id Int @id\n  n String?\n}\n${FTS}`)
+    db.run(`INSERT INTO note (id, title, body) VALUES (1, 'alpha', 'hello world')`)
+    expect(spans(db, 'hello')).toEqual([{ model: 'note', rid: 1, title: 'alpha' }])
+  })
+
   it('re-indexes a model whose @@label moved, and only that model', () => {
     const db = new Database(':memory:')
     migrate(db, FTS)

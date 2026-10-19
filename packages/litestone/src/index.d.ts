@@ -543,7 +543,8 @@ export interface TableClient<
    * `@@commitment` — the rows owing a declared transition by `by` (the client's
    * clock unless stated), and when each fell due. A read through `findMany`, so
    * the caller's gate and policies apply. A day-kind anchor reads `by` in
-   * `timeZone`, UTC unless stated. Makes no transition. `target` is the row
+   * `timeZone`, UTC unless stated. Answers oldest `dueAt` first, ties by
+   * transition then id. Makes no transition. `target` is the row
    * the move is made on — this one, or the one a to-one relation reaches.
    * `tenant` is the row's tenancy column, present under `strategy row` on a
    * model that carries one.

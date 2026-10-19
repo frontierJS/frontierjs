@@ -129,3 +129,24 @@ model Task {
   expect(await count({ tasks: { where: { title: 'a' } } })).toEqual({ tasks: 1 })
   db.$close()
 })
+
+// FJS-2015: the m2m branch read `t.*` whatever the include's select named.
+test('an m2m include narrows to its select, through include and through select', async () => {
+  const db = await seeded()
+  await db.task.create({ data: { id: 3, title: 'second' } })
+  await db.message.update({ where: { id: 1 }, data: { tasks: { connect: [{ id: 3 }] } } })
+  const [m] = await db.message.findMany({
+    include: { tasks: { select: { id: true }, orderBy: { id: 'asc' } } },
+  }) as any[]
+  expect(m.tasks).toEqual([{ id: 1 }, { id: 3 }])
+  const viaSelect = await db.message.findUnique({
+    where: { id: 1 },
+    select: { id: true, tasks: { select: { title: true }, orderBy: { id: 'asc' } } },
+  }) as any
+  expect(viaSelect).toEqual({ id: 1, tasks: [{ title: 'live' }, { title: 'second' }] })
+  const fromTask = await db.task.findUnique({
+    where: { id: 1 }, include: { messages: { select: { id: true } } },
+  }) as any
+  expect(fromTask.messages).toEqual([{ id: 1 }])
+  db.$close()
+})

@@ -9,6 +9,7 @@ import { describe, test, expect } from 'bun:test'
 import { mkdtempSync, rmSync, readFileSync, existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { Database } from 'bun:sqlite'
 
 const INDEX = join(import.meta.dir, '..', 'src', 'index.js')
 
@@ -44,5 +45,53 @@ describe('the audit line survives the process ending in the same tick', () => {
   })
   test('ending naturally still writes exactly one line', async () => {
     expect(await run('')).toBe(1)
+  })
+})
+
+// A SQL trail's `create` awaits its pipeline, so the jsonl driver's
+// synchronous append does not carry over: the row was in main and nothing in
+// the audit database (`FJS-3101`).
+async function runSql(write: string, ending: string) {
+  const dir = mkdtempSync(join(tmpdir(), 'fjs-logexit-sql-'))
+  try {
+    const script = `
+      import { createClient, autoMigrate } from ${JSON.stringify(INDEX)}
+      const db = await createClient({ resolveFrom: ${JSON.stringify(dir)}, schema: \`
+        database main  { path "${dir}/main.db" }
+        database audit { path "${dir}/audit.db" model AuditTrail }
+        model AuditTrail { id String @id @default(uuid())  model String  operation String  createdAt DateTime @default(now())  @@db(audit) }
+        model Thing { id String @id @default(uuid())  name String  @@trail(audit) }
+      \` })
+      await autoMigrate(db)
+      const sys = db.asSystem()
+      ${write}
+      ${ending}
+    `
+    const proc = Bun.spawn(['bun', '-e', script], { stdout: 'ignore', stderr: 'ignore' })
+    await proc.exited
+    const audit = new Database(join(dir, 'audit.db'), { readonly: true })
+    try { return (audit.query('SELECT model, operation FROM audit_trail').all() as any[]) } finally { audit.close() }
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+}
+
+describe('a SQL trail line survives the process ending in the same tick', () => {
+  const one   = "await sys.thing.create({ data: { name: 'x' } })"
+  const three = "await sys.thing.createMany({ data: [{ name: 'a' }, { name: 'b' }, { name: 'c' }] })"
+  test('process.exit right after a create', async () => {
+    expect(await runSql(one, 'process.exit(0)')).toEqual([{ model: 'Thing', operation: 'create' }])
+  })
+  test('process.exit right after a createMany', async () => {
+    const natural = await runSql(three, '')
+    expect(natural.length).toBeGreaterThan(0)
+    expect(await runSql(three, 'process.exit(0)')).toEqual(natural)
+  })
+  test('an uncaught throw right after the write', async () => {
+    expect((await runSql(one, "throw new Error('boom')")).length).toBe(1)
+  })
+  test('db.$close() right after the write', async () => {
+    expect((await runSql(one, 'await db.$close()')).length).toBe(1)
+  })
+  test('ending naturally still writes exactly one row', async () => {
+    expect((await runSql(one, '')).length).toBe(1)
   })
 })

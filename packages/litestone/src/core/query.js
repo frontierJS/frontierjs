@@ -781,6 +781,16 @@ function jsonLeafClauses(at, val, params, label) {
 }
 
 /**
+ * A tenant's declared key as a JSON path, quoted so a dot or a quote in the
+ * name is part of the key. Always bound, never written into SQL (Invariant 8).
+ * @param {string} key
+ * @returns {string}
+ */
+export function blobKeyPath(key) {
+  return '$."' + key.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
+}
+
+/**
  * The clauses for one extensible key that holds no slot: `json_extract(col, ?)`
  * with the key bound as a path, so a tenant's declared name never enters the
  * pattern (Invariant 8). Binds are pushed onto `params` in text order.
@@ -791,7 +801,7 @@ function jsonLeafClauses(at, val, params, label) {
  * @returns {string[]}
  */
 export function blobKeyClauses(colExpr, key, val, params) {
-  const path = '$."' + key.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
+  const path = blobKeyPath(key)
   return jsonLeafClauses(() => { params.push(path); return `json_extract(${colExpr}, ?)` }, val, params, key)
 }
 
@@ -2860,8 +2870,10 @@ export function filterableKeysFor(model) {
   // inside a policy predicate EVERY kind compares plaintext against stored bytes.
   const encryptedAny = new Set()
   const transient    = new Set()
+  const opaque       = new Set()
   const policy       = fieldPolicyOf(model)
   for (const f of model.fields) {
+    if (policy[f.name]?.opaque) opaque.add(f.name)
     if (policy[f.name]?.encrypted || policy[f.name]?.hashed) encryptedAny.add(f.name)
     if (f.attributes?.some(a => a.kind === 'computed')) { computed.add(f.name); continue }
     // @transient has no column at all, so this is the same hazard as @computed
@@ -2876,7 +2888,7 @@ export function filterableKeysFor(model) {
     if (enc && !enc.deterministic) { encrypted.add(f.name); continue }
     filterable.add(f.name)
   }
-  return { filterable, computed, encrypted, encryptedAny, transient }
+  return { filterable, computed, encrypted, encryptedAny, transient, opaque }
 }
 
 // Which keys of a model may appear in an orderBy, split three ways so the
@@ -2894,11 +2906,13 @@ export const OPAQUE_SORT = {
   file:      `a File column, stored as a reference document — sorting it orders rows by that JSON text, not by anything about the file`,
   encrypted: `@encrypted — sorting it orders rows by ciphertext, which is meaningless, and stable only where the IV is derived from the value`,
   hashed:    `@hashed — sorting it orders rows by the digest, which is stable and equally meaningless`,
+  opaque:    `@opaque — the server holds bytes a client sealed, so sorting it orders rows by ciphertext and tells the server nothing about the values`,
 }
 
 /** @param {FieldDef} f */
 export function opaqueSortKind(f) {
   if (f.attributes?.some(a => a.kind === 'hashed')) return 'hashed'
+  if (f.attributes?.some(a => a.kind === 'opaque')) return 'opaque'
   if (f.attributes?.some(a => a.kind === 'encrypted' || a.kind === 'secret')) return 'encrypted'
   if (f.type?.array)            return 'array'
   if (f.type?.name === 'Json')  return 'json'

@@ -19,7 +19,7 @@ const CORE = join(import.meta.dir, '../src/core')
 const CEILING: Record<string, number> = {
   'args.js':          7,
   'cardinality.js':   2,
-  'client.js':        326,
+  'client.js':        325,
   'commitment.js':    3,
   'ddl.js':           100,
   'exclusion.js':     3,

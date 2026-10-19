@@ -575,6 +575,15 @@ const FIELD = [
     { seeAlso: ['encrypted', 'secret'] }
   ),
   t(
+    'opaque',
+    'field',
+    'protect',
+    '',
+    'Bytes a client sealed before they arrived: the server stores them and cannot read them, which is the opposite of @encrypted (the server holds that key). It reads back as written, for whoever the gate admits. Refused in @@index, @@unique, @@fts, @@label and a sort, and a where over it takes null and equality. The audit trail writes [opaque:<digest>], so an edit still says which sealed column moved.',
+    'name String @opaque',
+    { seeAlso: ['encrypted', 'guarded', 'personal'] }
+  ),
+  t(
     'personal',
     'field',
     'protect',
@@ -1319,7 +1328,7 @@ const MODEL = [
     'model',
     'operate',
     '(<database>[, reads: false][, writes: false])',
-    'Record writes to this model in a trail database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] and @personal ones as [personal], in field entries and in before/after images alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.',
+    'Record writes to this model in a trail database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] @personal ones as [personal] and @opaque ones as [opaque:<digest>], in field entries and in before/after images alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.',
     '@@trail(audit)',
     {
       context: 'database audit {\n  path   "./audit.db"\n  driver trail\n}',
@@ -1637,6 +1646,7 @@ export const DOCS = {
   'field:encrypted': 'encryption.md',
   'field:hashed': 'encryption.md',
   'field:personal': 'trail.md',
+  'field:opaque': 'encryption.md',
   'field:secret': 'encryption.md',
 
   // stamp
@@ -1809,6 +1819,7 @@ export const TIERS = {
     'field:time',
     'field:hashed',
     'field:personal',
+    'field:opaque',
     'field:secret',
     'field:allow',
     'field:updatedBy',
@@ -1954,7 +1965,7 @@ export const AXES = {
   ],
   access: [
     'schema:tenancy', 'schema:claim', 'field:omit', 'field:guarded', 'field:system',
-    'field:capability', 'field:encrypted', 'field:hashed', 'field:personal',
+    'field:capability', 'field:encrypted', 'field:hashed', 'field:personal', 'field:opaque',
     'field:secret', 'field:allow', 'move:gate', 'move:system', 'model:capabilities', 'model:gate', 'model:export',
     'model:allow', 'model:deny', 'model:require', 'model:scope', 'model:tenant', 'model:auth', 'model:person',
     'model:anonymous'
@@ -2015,6 +2026,7 @@ export const SYNONYMS = {
   'field:hashed':      ['password', 'bcrypt', 'argon'],
   'field:encrypted':   ['at-rest'],
   'field:personal':    ['pii', 'gdpr', 'personal data'],
+  'field:opaque':      ['e2ee', 'client-sealed', 'end-to-end'],
   'model:person':      ['data subject'],
   'field:required':    ['not null', 'notnull', 'mandatory'],
   'field:omit':        ['hide', 'private'],

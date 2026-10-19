@@ -343,12 +343,22 @@ export function fireLog(logTable, entry, stats) {
 const _pendingLog = new Map()
 let _exitFlushArmed = false
 
-/** @param {LogTable} logTable */
-function flushLog(logTable) {
+/**
+ * @param {LogTable} logTable
+ * @param {boolean} [now]  write with no await, for a process that is ending
+ */
+function flushLog(logTable, now = false) {
   const queued = _pendingLog.get(logTable)
   if (!queued) return
   _pendingLog.delete(logTable)
   const { entries, stats } = queued
+  // A SQL trail's `create` awaits its pipeline, so on a process ending in this
+  // tick the INSERT never runs; its `appendSync` is the same rows with no await.
+  const sync = now && typeof logTable.appendSync === 'function' ? logTable.appendSync.bind(logTable) : null
+  if (sync) {
+    const each = () => { for (const entry of entries) writeLogSync(() => sync([entry]), [entry], stats) }
+    return entries.length === 1 ? each() : writeLogSync(() => sync(entries), entries, stats, each)
+  }
   if (entries.length === 1) return writeLog(() => logTable.create({ data: entries[0] }), entries, stats)
   // A batch that fails is retried one entry at a time, so one entry a SQL
   // trail's own model refuses costs that entry and not the request's others.
@@ -362,18 +372,21 @@ function flushLog(logTable) {
  * @param {LogStats | null | undefined} stats
  * @param {() => void} [fallback]
  */
+function writeLogSync(write, entries, stats, fallback) {
+  try {
+    write()
+    if (stats) { stats.written += entries.length; stats.lastWrittenAt = new Date().toISOString() }
+  } catch (err) { dropLog(err, entries, stats, fallback) }
+}
+
+/**
+ * @param {() => unknown} write
+ * @param {Array<{ model?: string }>} entries
+ * @param {LogStats | null | undefined} stats
+ * @param {() => void} [fallback]
+ */
 function writeLog(write, entries, stats, fallback) {
-  const swallow = (/** @type {any} */ err) => {
-    if (fallback) return fallback()
-    if (stats) { stats.dropped += entries.length; stats.lastError = String(err?.message ?? err); stats.lastDroppedAt = new Date().toISOString() }
-    const key = entries[0]?.model ?? 'log'
-    if (_loggedLogFailure.has(key)) return
-    _loggedLogFailure.add(key)
-    console.warn(
-      `[litestone] audit write for '${key}' failed and was dropped: ${err?.message ?? err}\n` +
-      `            The trail is incomplete from here. Further losses for this model are not reported.`
-    )
-  }
+  const swallow = (/** @type {any} */ err) => dropLog(err, entries, stats, fallback)
   try {
     const settled = Promise.resolve(write())
       .then(() => { if (stats) { stats.written += entries.length; stats.lastWrittenAt = new Date().toISOString() } })
@@ -384,11 +397,29 @@ function writeLog(write, entries, stats, fallback) {
   catch (err) { swallow(err) }   // a driver that throws before its first await
 }
 
-// The drivers' `create` and `createMany` do their file I/O before their first
-// await, so running a queued write here appends synchronously and the process
-// can end on it.
+/**
+ * @param {any} err
+ * @param {Array<{ model?: string }>} entries
+ * @param {LogStats | null | undefined} stats
+ * @param {(() => void) | undefined} fallback
+ */
+function dropLog(err, entries, stats, fallback) {
+  if (fallback) return fallback()
+  if (stats) { stats.dropped += entries.length; stats.lastError = String(err?.message ?? err); stats.lastDroppedAt = new Date().toISOString() }
+  const key = entries[0]?.model ?? 'log'
+  if (_loggedLogFailure.has(key)) return
+  _loggedLogFailure.add(key)
+  console.warn(
+    `[litestone] audit write for '${key}' failed and was dropped: ${err?.message ?? err}\n` +
+    `            The trail is incomplete from here. Further losses for this model are not reported.`
+  )
+}
+
+// A jsonl driver's `create` and `createMany` do their file I/O before their
+// first await, and a SQL trail's table has `appendSync`, so a queued write run
+// here lands before this returns and the process can end on it.
 export function flushPendingLogs() {
-  for (const logTable of [..._pendingLog.keys()]) flushLog(logTable)
+  for (const logTable of [..._pendingLog.keys()]) flushLog(logTable, true)
 }
 
 // A SQL trail's `create` runs the table's pipeline, so its INSERT lands a few

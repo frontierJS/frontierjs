@@ -21,7 +21,7 @@ import { AccessDeniedError }              from '../src/core/plugin.js'
 // The stored envelope is asserted by PARSING it rather than by a prefix
 // substring: the prefix moved once (`v1.` → `v2.<kid>.`, FJS-714) and every
 // one of these read as a green test against a format that no longer existed.
-import { parseEnvelope }           from '../src/core/encryption.js'
+import { parseEnvelope, opaqueMark } from '../src/core/encryption.js'
 import { buildWhere, buildOrderBy, sql, now, schemaRaw,
          encodeCursor, decodeCursor,
          normalizeOrderBy, buildCursorWhere,
@@ -7488,6 +7488,7 @@ describe('audit trail redaction', () => {
       guardedF String? @guarded
       hashedF  String? @hashed
       emailF   String? @personal(contact)
+      sealedF  String? @opaque
       plain    String?
 
       @@db(main)
@@ -7520,7 +7521,7 @@ describe('audit trail redaction', () => {
 
   function flush() { return new Promise<void>(res => setTimeout(res, 20)) }
 
-  const SECRETS = ['PLAINTEXT-SECRET', 'PLAINTEXT-ENC', 'PLAINTEXT-GUARDED', 'PLAINTEXT-HASHED', 'person@example.com']
+  const SECRETS = ['PLAINTEXT-SECRET', 'PLAINTEXT-ENC', 'PLAINTEXT-GUARDED', 'PLAINTEXT-HASHED', 'person@example.com', 'SEALED-2.bytes']
 
   async function captureCreate() {
     const calls: any[] = []
@@ -7528,7 +7529,7 @@ describe('audit trail redaction', () => {
     const row = await db.asSystem().vault.create({
       data: {
         name: 'k', secretF: SECRETS[0], encF: SECRETS[1],
-        guardedF: SECRETS[2], hashedF: SECRETS[3], emailF: SECRETS[4], plain: 'not-a-secret',
+        guardedF: SECRETS[2], hashedF: SECRETS[3], emailF: SECRETS[4], sealedF: SECRETS[5], plain: 'not-a-secret',
       },
     })
     await flush()
@@ -7571,6 +7572,33 @@ describe('audit trail redaction', () => {
     expect(JSON.parse(modelLog.after).emailF).toBe('[personal]')
     expect(row.emailF).toBe(SECRETS[4])
     db.$close()
+  })
+
+  // An @opaque value is stored sealed, so the trail keeps a digest of the
+  // stored bytes: equality without the value (FJS-D1158).
+  test('model-level snapshot writes [opaque:<digest>] for an @opaque field, and the digest moves with the bytes', async () => {
+    const { calls, row, db } = await captureCreate()
+    const created = JSON.parse(calls.find(e => e.model === 'Vault' && e.field == null).after)
+    expect(created.sealedF).toMatch(/^\[opaque:[A-Za-z0-9_-]{12}\]$/)
+    expect(row.sealedF).toBe(SECRETS[5])
+    await db.asSystem().vault.update({ where: { id: row.id }, data: { sealedF: 'SEALED-2.other' } })
+    await db.asSystem().vault.update({ where: { id: row.id }, data: { sealedF: SECRETS[5] } })
+    await flush()
+    const afters = calls.filter(e => e.model === 'Vault' && e.field == null).map(e => JSON.parse(e.after).sealedF)
+    expect(afters[1]).not.toBe(afters[0])
+    expect(afters[2]).toBe(afters[0])
+    db.$close()
+  })
+
+  // The mark is SHA-256 in plain JS so a worker and a server agree (FJS-3310);
+  // node's own is the oracle, across every padding boundary.
+  test('opaqueMark equals SHA-256 of the labeled bytes, whatever the length', () => {
+    const { createHash } = require('crypto')
+    const ref = (b: Uint8Array | string) => '[opaque:' + createHash('sha256').update('litestone:opaque:trail\0').update(b).digest('base64url').slice(0, 12) + ']'
+    for (const n of [0, 1, 55, 56, 63, 64, 65, 120, 1000]) {
+      expect(opaqueMark('é'.repeat(n))).toBe(ref('é'.repeat(n)))
+      expect(opaqueMark(new Uint8Array(n).fill(7))).toBe(ref(new Uint8Array(n).fill(7)))
+    }
   })
 
   // Erasing a person is itself a write the trail records: the tombstone's
@@ -15684,6 +15712,40 @@ describe('createTestEnv', () => {
     env.close()
   })
 
+  // FJS-3044: the factory read each @@check alone, so a rule that moved one
+  // column broke its sibling and the model had no fixture at all.
+  const checked = (body: string) => `
+enum Kind { login secureNote card }
+enum AStatus { active trashed deleted }
+model Cipher {
+  id         Int  @id @default(autoincrement())
+  kind       Kind @default(login)
+  login      Json?
+  secureNote Json?
+  card       Json?
+  @@check("(kind = 'login') = (login IS NOT NULL)", "login")
+  @@check("(kind = 'secureNote') = (secureNote IS NOT NULL)", "note")
+  @@check("(kind = 'card') = (card IS NOT NULL)", "card")
+  ${body}
+}
+model Asset {
+  id        Int      @id @default(autoincrement())
+  status    AStatus  @default(active)
+  file      File?
+  trashedAt DateTime?
+  @@check("status = 'deleted' OR file IS NOT NULL", "Only a tombstone has no file")
+  @@check("(status = 'trashed') = (trashedAt IS NOT NULL)", "A trashed asset says when")
+  @@transitions(status, trash: active -> trashed, untrash: trashed -> active, purge: trashed -> deleted @system)
+  ${body}
+}`
+
+  test('the factory satisfies sibling @@checks that tie a kind to nullable columns, and a machine-held column', async () => {
+    const open = '@@gate(0.4.4.4)\n  @@allow(read, true)\n  @@allow(create, true)\n  @@allow(update, true)\n  @@allow(delete, true)'
+    const env  = await createTestEnv({ schema: checked(open) })
+    expect(await env.verifyGateLadder()).toEqual([])
+    env.close()
+  })
+
   test('sampleWrites seeds a row per model and payloads whose FKs point at it', async () => {
     // The Data-realm half of deriving a call list. What it has to get right is
     // the FK: a create payload naming a parent that does not exist fails at the
@@ -22879,6 +22941,21 @@ describe('@default(fieldName)', () => {
     db.$close()
   })
 
+  // FJS-3074: the same row shape writes the same row through every verb.
+  test('createMany and upsertMany copy the sibling too', async () => {
+    const db = await makeDb(`
+      model Post { id Int @id; title String; slug String @default(title) @slug }
+    `, 'fieldref-bulk')
+    await db.post.createMany({ data: [
+      { id: 1, title: 'Hello World!' },
+      { id: 2, title: 'Two', slug: 'Custom Slug' },
+    ] })
+    await db.post.upsertMany({ data: [{ id: 3, title: 'Third One' }], conflict: 'id' })
+    const rows = await db.post.findMany({ orderBy: { id: 'asc' } })
+    expect(rows.map((r: any) => r.slug)).toEqual(['hello-world', 'custom-slug', 'third-one'])
+    db.$close()
+  })
+
   test('@default(unknown) is a parse error', () => {
     const r = parse(`
       model Post { id Int @id; title String; slug String @default(nonexistent) }
@@ -24961,6 +25038,13 @@ model Task {
     expect((await db.$setAuth(u1).task.findMany({ where: { mine: { myFlag: true } } })).map((t: any) => t.title)).toEqual(['B'])
     expect((await db.$setAuth(u2).task.findMany({ where: { mine: { myFlag: true } } })).length).toBe(0)
   })
+  test('FJS-2006 — an unmarked row filters as its @default; a decorate edge needs membership', async () => {
+    await db.$setAuth(u1).task.update({ where: { id: tasks[1].id }, data: { mine: { myFlag: true } } })
+    expect((await db.$setAuth(u1).task.findMany({ where: { mine: { myFlag: false } } })).map((t: any) => t.title).sort()).toEqual(['A', 'C'])
+    expect(await db.$setAuth(u2).task.count({ where: { mine: { myFlag: false } } })).toBe(3)
+    const p2 = await db.project.create({ data: { name: 'Other' } })
+    expect(await db.task.count({ where: { projectEdge: { isImportant: false } }, scopedBy: { projectId: p2.id } })).toBe(0)
+  })
   test('unbound non-auth filter throws', async () => {
     await expect(db.task.findMany({ where: { projectEdge: { isImportant: true } } })).rejects.toThrow(/not bound/)
   })
@@ -24978,6 +25062,38 @@ model Task {
   test('create with edge + connect in one call', async () => {
     const t = await db.task.create({ data: { title: 'D', projects: { connect: { id: p.id } }, projectEdge: { isImportant: true } }, scopedBy: { projectId: p.id } })
     expect((await db.task.findFirst({ where: { id: t.id }, scopedBy: { projectId: p.id } })).projectEdge.isImportant).toBe(true)
+  })
+})
+
+// FJS-2006: "seen by a person" is a @scoped DateTime — a Date writes, filters and counts per viewer, and goes with the row
+describe('@scoped DateTime — a per-viewer read mark', () => {
+  let db: any, a: any, b: any, m: any[]
+  beforeEach(async () => {
+    db = await createClient({ schema: `
+model User { id Int @id; name String; @@auth }
+model Message { id Int @id; body String; readAt DateTime? @scoped }`, db: ':memory:' })
+    a = await db.user.create({ data: { name: 'a' } })
+    b = await db.user.create({ data: { name: 'b' } })
+    m = []
+    for (const body of ['1', '2']) m.push(await db.message.create({ data: { body } }))
+  })
+  afterEach(() => db.$close())
+
+  test('a Date writes and reads back per viewer; unread counts and lists filter by it', async () => {
+    const at = new Date('2026-10-08T12:00:00.000Z')
+    await db.$setAuth(a).message.update({ where: { id: m[0].id }, data: { mine: { readAt: at } } })
+    const seen = await db.$setAuth(a).message.findFirst({ where: { id: m[0].id } })
+    expect(new Date(seen.mine.readAt).toISOString()).toBe(at.toISOString())
+    expect((await db.$setAuth(b).message.findFirst({ where: { id: m[0].id } })).mine.readAt).toBeNull()
+    expect(await db.$setAuth(a).message.count({ where: { mine: { readAt: null } } })).toBe(1)
+    expect(await db.$setAuth(b).message.count({ where: { mine: { readAt: null } } })).toBe(2)
+    expect((await db.$setAuth(a).message.findMany({ where: { mine: { readAt: { gte: new Date('2026-10-01') } } } })).map((r: any) => r.id)).toEqual([m[0].id])
+  })
+  test('deleting the row clears every viewer\'s mark', async () => {
+    await db.$setAuth(a).message.update({ where: { id: m[0].id }, data: { mine: { readAt: new Date() } } })
+    await db.message.delete({ where: { id: m[0].id } })
+    const [{ n }] = await db.sql`SELECT count(*) AS n FROM _message_user`
+    expect(n).toBe(0)
   })
 })
 
@@ -27337,6 +27453,25 @@ describe('a predicate that can never match is refused at startup', () => {
     db.$close()
   })
 
+  // FJS-3311: an @opaque column matches by equality only; a prefix over it
+  // compares ciphertext, and a filter has no caller to hear about it.
+  const OPAQUE_FILTER_SCHEMA = `model Doc {
+    id   Int @id @default(autoincrement())
+    name String? @opaque
+    kind String @default("a")
+  }`
+
+  test('an @opaque column in a global filter takes equality and nothing else, in both forms', async () => {
+    await expect(makeDb(OPAQUE_FILTER_SCHEMA, 'filter-opaque-static', { filters: { doc: { name: { startsWith: '2.' } } } }))
+      .rejects.toThrow(/cannot be applied.*@opaque/s)
+    const db = await makeDb(OPAQUE_FILTER_SCHEMA, 'filter-opaque-fn', { filters: { doc: () => ({ name: { startsWith: '2.' } }) } })
+    await expect(db.doc.findMany()).rejects.toThrow(/cannot be applied.*@opaque/s)
+    db.$close()
+    const ok = await makeDb(OPAQUE_FILTER_SCHEMA, 'filter-opaque-eq', { filters: { doc: { name: { not: null } } } })
+    await expect(ok.doc.findMany()).resolves.toEqual([])
+    ok.$close()
+  })
+
   test('the refusal names a near-miss, because a global filter has no caller to hint at', async () => {
     await expect(withFilter('filter-typo', { post: { titel: 'x' } }))
       .rejects.toThrow(/Did you mean: title\?/)
@@ -28242,5 +28377,75 @@ describe('plugin base class export', () => {
     const { LitestonePlugin } = await import('../src/core/plugin.js') as any
     expect(barrel.LitestonePlugin).toBe(LitestonePlugin)
     expect('Plugin' in barrel).toBe(false)
+  })
+})
+
+// FJS-3064 / FJS-D1157 — @opaque is bytes a client sealed. Every declaration
+// that would make the server interpret them is refused where the author is.
+describe('@opaque', () => {
+  const model = (extra = '', field = 'name String @opaque') => `
+    model Cipher {
+      id   Int @id
+      ${field}
+      note String?
+      ${extra}
+    }
+  `
+
+  test('a plain @opaque column parses clean', () => {
+    const r = parse(model())
+    expect(r.errors).toEqual([])
+    expect(r.valid).toBe(true)
+  })
+
+  for (const decl of ['@@index([name])', '@@unique([name])', '@@fts([name, note])']) {
+    test(`${decl} over it is refused by name`, () => {
+      const r = parse(model(decl + (decl.startsWith('@@fts') ? '\n@@label(note)' : '')))
+      expect(r.valid).toBe(false)
+      expect(r.errors.join('\n')).toMatch(/names 'name', which is @opaque/)
+    })
+  }
+
+  test('@@label over it is refused', () => {
+    const r = parse(model('@@label(name)'))
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toMatch(/@opaque/)
+  })
+
+  test('@unique and @encrypted beside it are refused', () => {
+    expect(parse(model('', 'name String @opaque @unique')).valid).toBe(false)
+    const r = parse(model('', 'name String @opaque @encrypted'))
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toMatch(/cannot be combined with @encrypted/)
+  })
+
+  async function open() {
+    const db = await createClient({ schema: model(), db: ':memory:' })
+    await db.cipher.create({ data: { name: '2.aaa', note: 'x' } })
+    await db.cipher.create({ data: { name: '2.bbb', note: 'y' } })
+    return db
+  }
+
+  test('it reads back as written, and equality and null match', async () => {
+    const db = await open()
+    const rows = await db.cipher.findMany({ where: { name: '2.aaa' } })
+    expect(rows.map((r: any) => r.name)).toEqual(['2.aaa'])
+    expect(await db.cipher.count({ where: { name: { in: ['2.aaa', '2.bbb'] } } })).toBe(2)
+    expect(await db.cipher.count({ where: { name: null } })).toBe(0)
+    db.$close()
+  })
+
+  for (const op of ['startsWith', 'contains', 'endsWith', 'gt', 'lt']) {
+    test(`where ${op} over it is refused, for the system too`, async () => {
+      const db = await open()
+      await expect(db.asSystem().cipher.findMany({ where: { name: { [op]: '2.' } } })).rejects.toThrow(/@opaque/)
+      db.$close()
+    })
+  }
+
+  test('orderBy over it is refused', async () => {
+    const db = await open()
+    await expect(db.asSystem().cipher.findMany({ orderBy: { name: 'asc' } })).rejects.toThrow(/@opaque/)
+    db.$close()
   })
 })

@@ -111,3 +111,64 @@ model M {
     db.$close()
   })
 })
+
+// FJS-3086: a named move on a @version model carries no version, because the
+// compare-and-swap on the from-state already says what a version would.
+describe('a named move on a @version model', () => {
+  const VSCHEMA = `
+enum PostState { draft  published }
+model User { id Int @id  @@auth }
+model Post {
+  id      Int       @id @default(autoincrement())
+  version Int       @version
+  title   String
+  status  PostState @default(draft)
+  @@gate(4.4.4.4)
+  @@transitions(status,
+    publish: draft -> published @gate(5),
+    release: draft -> published @system
+  )
+}`
+  async function venv() {
+    const db = await createClient({
+      schema: VSCHEMA, db: ':memory:',
+      plugins: [new GatePlugin({ getLevel: (u: { level?: number } | null) => u?.level ?? 0 })],
+    })
+    const sys = db.asSystem()
+    const post = await sys.post.create({ data: { title: 'a', version: 1 } })
+    return { db, sys, post, at: (level: number) => db.$setAuth({ id: 1, level }) }
+  }
+
+  test('a caller with the gate makes it without a version, and the version moves', async () => {
+    const { db, post, at } = await venv()
+    const moved = await at(5).post.transition(post.id, 'publish')
+    expect(moved.status).toBe('published')
+    expect(moved.version).toBe(post.version + 1)
+    db.$close()
+  })
+
+  test('a caller below the gate is refused the gate, not told to reload', async () => {
+    const { db, post, at } = await venv()
+    const err = await at(4).post.transition(post.id, 'publish').catch(e => e)
+    expect(err?.name).not.toBe('VersionRequiredError')
+    expect(err).toBeInstanceOf(Error)
+    db.$close()
+  })
+
+  test('the commitment fire, transition with system: true on a scoped client, moves a @system move', async () => {
+    const { db, post, at } = await venv()
+    const moved = await at(5).post.transition(post.id, 'release', { system: true })
+    expect(moved.status).toBe('published')
+    db.$close()
+  })
+
+  test('a move still refuses a stale from-state, and a bare update still needs the version', async () => {
+    const { db, post, at } = await venv()
+    await at(5).post.transition(post.id, 'publish')
+    await expect(at(5).post.transition(post.id, 'publish')).rejects.toBeInstanceOf(TransitionConflictError)
+    const other = await db.asSystem().post.create({ data: { title: 'b', version: 1 } })
+    const err = await at(5).post.update({ where: { id: other.id }, data: { title: 'c' } }).catch(e => e)
+    expect(err?.name).toBe('VersionRequiredError')
+    db.$close()
+  })
+})

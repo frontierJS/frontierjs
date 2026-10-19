@@ -431,6 +431,75 @@ model User {
 
 ---
 
+## Relations
+
+`@relation` goes on the **belongsTo** side, the model that holds the foreign key. The other side
+(`User[]`, `Post[]`) is inferred and takes no attribute. A relation field names the MODEL, never a
+table or a plural. Two `Tag[]`/`Post[]` fields facing each other make an implicit many-to-many with
+no join model to write.
+
+```lite
+model Account {
+  id    Int    @id
+  name  String
+  users User[]
+}
+
+model User {
+  id        Int     @id
+  email     String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId Int
+  posts     Post[]
+}
+
+model Post {
+  id       Int    @id
+  title    String
+  author   User   @relation(fields: [authorId], references: [id])
+  authorId Int
+  tags     Tag[]
+}
+
+model Tag {
+  id    Int    @id
+  label String
+  posts Post[]
+}
+```
+
+`include` loads a relation with the read, to any depth, and `select` narrows what comes back:
+
+```js
+await db.account.create({ data: { id: 1, name: 'Acme' } })
+
+// A nested write creates the children after the parent, in one call
+await db.user.create({ data: { email: 'ann@example.com', accountId: 1,
+  posts: { create: [{ title: 'Hello', tags: { create: [{ label: 'intro' }] } }] } } })
+
+const posts = await db.post.findMany({
+  include: { author: { include: { account: true } }, tags: { select: { label: true } } },
+})
+// posts[0].author.account → { id: 1, name: 'Acme' }
+// posts[0].tags           → [{ label: 'intro' }]
+
+// A count without loading the rows
+await db.post.findMany({ include: { _count: true } })   // [0]._count → { tags: 1 }
+
+// Sort by a related column, or by a relation aggregate
+await db.post.findMany({ orderBy: { author: { email: 'asc' } } })
+await db.user.findMany({ orderBy: { posts: { _count: 'desc' } } })
+```
+
+`connect` and `disconnect` on an update link existing rows, and a `where` reaches through a
+relation with `is` on a to-one and `some`/`every`/`none` on a to-many
+(`where: { author: { is: { email: 'ann@example.com' } } }`). Every read through a relation
+applies the related model's own filters and policies, so `include` cannot reach a row a direct
+read would not. One-to-one, `@@relator`, `@from`, relation `orderBy` and recursive trees are in
+[docs/relations.md](./docs/relations.md).
+
+---
+
 ## Multi-database
 
 Route models to separate SQLite files, JSONL logs, or auto-schema audit trails:

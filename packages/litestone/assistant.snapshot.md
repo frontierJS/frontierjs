@@ -926,6 +926,16 @@ One-way hashed on write. There is no read back — the comparison happens at the
 passwordHash String @hashed
 ```
 
+#### `@opaque`
+
+tier: **common** · legal in: on a model's field, on a type's field, on a trait's field · also called: e2ee, client-sealed, end-to-end · see also: `encrypted`, `guarded`, `personal`
+
+Bytes a client sealed before they arrived: the server stores them and cannot read them, which is the opposite of @encrypted (the server holds that key). It reads back as written, for whoever the gate admits. Refused in @@index, @@unique, @@fts, @@label and a sort, and a where over it takes null and equality. The audit trail writes [opaque:<digest>], so an edit still says which sealed column moved.
+
+```lite
+name String @opaque
+```
+
 #### `@personal` [(<category>)]
 
 tier: **common** · legal in: on a model's field, on a type's field, on a trait's field · also called: pii, gdpr, personal data · see also: `person`, `trail`, `omit`
@@ -1723,7 +1733,7 @@ Every row is a person — where forgetting and export start. An @@auth model is 
 
 tier: **common** · legal in: in a model, in a trait · see also: `trail`, `database`, `anonymous`
 
-Record writes to this model in a trail database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] and @personal ones as [personal], in field entries and in before/after images alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.
+Record writes to this model in a trail database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] @personal ones as [personal] and @opaque ones as [opaque:<digest>], in field entries and in before/after images alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.
 
 ```lite
 @@trail(audit)

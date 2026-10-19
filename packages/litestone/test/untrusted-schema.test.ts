@@ -95,3 +95,56 @@ describe('a view that does not compile fails the build, naming it (FJS-1632)', (
     expect(await createClient({ schema: BASE, db: ':memory:' })).toBeTruthy()
   })
 })
+
+// FJS-1656 / FJS-D1047: a view's @@sql is raw SQL that runs for whoever the
+// view's own gate admits, so a protected column it reads reaches that caller.
+describe('a view that reads a protected column fails the build, naming it (FJS-1656)', () => {
+  const schemaWith = (attr: string, sql: string) => `
+claim isStaff
+model Person {
+  id    String @id
+  name  String
+  score String ${attr}
+  mail  String ${attr === '@guarded' ? '@encrypted' : '@guarded'}
+  @@gate(4.8.8.8)
+}
+view personScore {
+  id String
+  score String
+  @@sql("${sql}")
+  @@gate(4)
+}
+`
+  const build = (text: string) => createClient({ schema: text, db: ':memory:', encryptionKey: 'ab'.repeat(32) })
+  const PROTECTED = ['@guarded', '@encrypted', '@hashed']
+
+  for (const attr of PROTECTED) {
+    it(`names ${attr} column in the select list`, async () => {
+      await expect(build(schemaWith(attr, 'SELECT id, score FROM person')))
+        .rejects.toThrow(/view personScore: .*protected column 'person\.score'/)
+    })
+  }
+
+  it('aliasing the column does not walk past it', async () => {
+    await expect(build(schemaWith('@guarded', 'SELECT id, score AS s FROM person')))
+      .rejects.toThrow(/view personScore: .*person\.score/)
+  })
+
+  it('a quoted name and another case are the same word', async () => {
+    await expect(build(schemaWith('@guarded', 'SELECT id, \\"Score\\" FROM person')))
+      .rejects.toThrow(/view personScore: .*score/i)
+  })
+
+  it('SELECT * and t.* from a table holding one', async () => {
+    await expect(build(schemaWith('@guarded', 'SELECT * FROM person')))
+      .rejects.toThrow(/view personScore: .*person.*\*/)
+    await expect(build(schemaWith('@guarded', 'SELECT p.* FROM person p')))
+      .rejects.toThrow(/view personScore: .*person.*\*/)
+  })
+
+  it('a view that omits them, counts, or multiplies builds', async () => {
+    expect(await build(schemaWith('@guarded', 'SELECT id, name FROM person'))).toBeTruthy()
+    expect(await build(schemaWith('@guarded', 'SELECT COUNT(*) AS id, 2 * 3 AS six FROM person'))).toBeTruthy()
+    expect(await build(schemaWith('@guarded', "SELECT id, 'score' AS label FROM person"))).toBeTruthy()
+  })
+})
