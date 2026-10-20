@@ -182,8 +182,8 @@ headless Chrome, which is how the three rendering bugs below were caught.
 - The API and the UI are separate processes, and Vite proxies `/api`, `/login`
   and `/ws` to the API. One origin means the Junction client derives its
   WebSocket URL from the same base as its HTTP calls, and there is no CORS.
-- `mount()`'s first argument is an anchor **node**, not an element id — Mesa
-  inserts the component after it. See `web/src/main.js`.
+- `web/index.html` loads `virtual:sierra`, which boots, imports `web/src/main.js`
+  and mounts `App.mesa` (`FJS-D1085`).
 
 ## Found by building this
 

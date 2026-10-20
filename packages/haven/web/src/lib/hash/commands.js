@@ -28,7 +28,10 @@
 // stepping, and Tab naming one would give it away. Its `reaches` are where
 // standing answers it (a door's are its own cells, within 0); with a `to` it is
 // a door. Doors come first, since every scene file puts its `<slot />`, where
-// the verbs' actors mount, after its placed tags.
+// the verbs' actors mount, after its placed tags. What an actor draws that
+// comes and goes -- a CHEF! waiting on you, a plate on the pass -- is no verb,
+// so the actor adds those stops itself (`addStops`), read afresh at each call
+// and never merged, since two plates side by side are two things to go to.
 
 const away = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y))
 
@@ -43,6 +46,7 @@ export const reaches = (verb, at) => !verb.reach || (!!at && away(verb.reach, at
 
 export function createCommands() {
   const verbs = new Set()
+  const added = new Set()
   let mode = null
 
   const nearest = (list, at) => list
@@ -109,7 +113,13 @@ export function createCommands() {
         const words = [...new Set(g.filter((v) => v.word).map((v) => `/${v.word}`))]
         return { name: (words.length ? words : [...new Set(g.map((v) => v.key))]).join(' '), reaches: [...new Set(g.map((v) => v.reach))] }
       })
-      return [...shown, ...named]
+      return [...shown, ...named, ...[...added].flatMap((read) => read())]
+    },
+
+    /** Adds stops an actor reads afresh at each `stops()`, after the verbs'; returns what takes them away. */
+    addStops(read) {
+      added.add(read)
+      return () => added.delete(read)
     },
 
     /** One line of help per word in reach, in the order Tab lists them. */

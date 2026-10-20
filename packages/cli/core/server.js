@@ -596,14 +596,17 @@ async function handleCheck(req, res) {
   try {
     const root = global.projectRoot
     const { findApps, BASELINE_FILE } = await import('./checks.js')
-    const { relative }                = await import('path')
+    const { findWorkspaceRoot }       = await import('./utils.js')
+    const { relative, resolve }       = await import('path')
 
     // Per app, then the workspace's own rules — the same two passes the
     // `structure` CI phase makes, so a rule loosened for one is loosened for
     // both. An app is a directory with a seed, which is this framework's own
-    // definition and already what every rule is graded against.
+    // definition and already what every rule is graded against. The second
+    // pass is a workspace's only: run over a lone app it grades rules
+    // `fli check` there never runs, and the panel reds a green app.
     const scopes = findApps(root).map(dir => ({ label: relative(root, dir) || '.', root: dir, scope: 'app' }))
-    scopes.push({ label: 'packages', root, scope: 'repo' })
+    if (findWorkspaceRoot(root) === resolve(root)) scopes.push({ label: 'packages', root, scope: 'repo' })
 
     // One run answers every request that arrives while it is going: the panel
     // and the page's own reload each ask for the whole set, and a second full

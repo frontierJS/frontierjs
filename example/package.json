@@ -92,7 +92,7 @@
   },
   "devDependencies": {
     "@frontierjs/cli": "workspace:*",
-    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/client": "^2.3.1",
     "@modelcontextprotocol/ext-apps": "^2.0.3",
     "vite": "^8.3.2",
     "ws": "^8.20.0"

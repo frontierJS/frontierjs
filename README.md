@@ -307,7 +307,7 @@ my-app/
                                published) and `document` (the page wrapper)
     public/
     src/
-      main.js                ← the dev entry — routes served as an app
+      main.js                ← optional side-effect imports; virtual:sierra mounts the routes
       routes/                ← file-tree routes, the same convention as web/
       islands/               ← the only JavaScript a prerendered page runs
       components/

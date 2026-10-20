@@ -2654,6 +2654,40 @@ describe('service-definition', () => {
   })
 })
 
+describe('app-entry', () => {
+  const app = (files) => ({ ...CLEAN, 'web/config/sierra.config.js': 'export default {}\n', ...files })
+
+  test('index.html naming virtual:sierra and a main.js of imports is quiet', () => {
+    const root = tree('ae-ok', app({
+      'web/index.html':  '<div id="app"></div><script type="module" src="virtual:sierra"></script>\n',
+      'web/src/main.js': "import '@frontierjs/css'\n",
+    }))
+    expect(only(root, 'app-entry').findings).toEqual([])
+  })
+
+  test('index.html naming /src/main.js is reported', () => {
+    const root = tree('ae-html', app({
+      'web/index.html': '<div id="app"></div>\n<script type="module" src="/src/main.js"></script>\n',
+    }))
+    const { findings } = only(root, 'app-entry')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].line).toBe(2)
+    expect(findings[0].message).toMatch(/FJS-D1085/)
+  })
+
+  test('a main.js that still mounts App.mesa is reported', () => {
+    const root = tree('ae-mount', app({
+      'web/index.html':  '<script type="module" src="virtual:sierra"></script>\n',
+      'web/src/main.js': "import '@frontierjs/css'\nimport { mount } from '@frontierjs/mesa/runtime'\n" +
+                         "import App from './App.mesa'\nmount(document.body, App)\n",
+    }))
+    const { findings } = only(root, 'app-entry')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].line).toBe(3)
+    expect(findings[0].message).toMatch(/two/)
+  })
+})
+
 // ─── the cross-realm hazards ──────────────────────────────────────────────────
 //
 // Four more source rules. Two of them are the same question asked twice — *does

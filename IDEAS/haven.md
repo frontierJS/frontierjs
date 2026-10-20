@@ -2036,6 +2036,44 @@ the top stay as posted and the title says how many are hidden.
   account can read his bookmarks. That is the daily check's question, not
   Haven's.
 
+### Phase 21 — What waits on you is a stop
+
+Goal: in the kitchen, Tab reaches each CHEF! waiting on Jordan and each plate
+on the pass, not only the line and the pass they stand at.
+Done when: Tab names a CHEF! and a plate by its session, Enter walks to where
+its bubble reads it, and a bare `/heard` or `/bump` there takes that one.
+
+**The reading** (owner, 2026-10-20: "tab through the chefs that need my
+attention and the servers that have sessions ready"). Phase 19's stops are
+the scene's verbs and doors, and a CHEF! is neither: it is a row the verbs
+act on, so the line was one stop however many waited. The precedent is
+NetHack's travel cursor, where `a` ("anything") reaches the monsters beside
+the stairs and doors, and a browser list whose rows each carry
+`tabindex="0"`. The other shape was ARIA's roving tabindex (Tab to the
+widget, arrows within), but an arrow in the `stops` mode already steps the
+figure.
+
+- [x] 21.1 Stops an actor adds. `commands.addStops(read)`: an actor's stops,
+  read afresh at each `stops()` after the verbs', and never merged, since two
+  plates side by side are two things to go to. `Brigade.mesa` adds a station
+  with a CHEF! not yet heard (`CHEF! aaaa mesa`, every unheard id at it), then
+  each plate (`plate cccc litestone`), left to right as drawn. Each stop's
+  reach is one cell, within 0: the middle of the station's front, and the
+  cell under the plate's middle, which is where `atStation` and `inFront`
+  read it. **Ruled 2026-10-20 (owner): mount order**, so they follow the
+  scene's own stops, and **unheard only**, so a heard CHEF! leaves the cycle
+  as a bumped plate leaves the pass. A working session is no stop either. They
+  are not merged into `/heard` or `/bump`, whose reaches they overlap, because
+  the 19.1 merge was for one verb repeated (`/ask` per stool), and these are
+  different things. Nothing guards it: no new tests while experimenting.
+  Probed in a pty
+  (scratch, deleted), five sessions seated through the real hook: `/stops`
+  listed `/tavern/`, `/menu /bump`, `/heard`, two CHEF!s and two plates with
+  their steps; Tab went round all seven; Enter on `CHEF! aaaa mesa` walked
+  past cli's station to mesa's, and a bare `/heard` heard aaaa; Tab then went
+  round six; Enter on `plate cccc` and a bare `/bump` bumped it. No drive
+  kept (no new tests while experimenting).
+
 ### Phase 10 — Hosted
 
 Goal: Haven answers at a public address, so a stranger needs no `--api`.

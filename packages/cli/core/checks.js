@@ -145,6 +145,8 @@ export const RULES = [
     title: 'no model derives the name of a service @frontierjs/auth registers' },
   { id: 'service-definition',   scope: 'app',  severity: 'error', invariant: null,
     title: 'a service file default-exports a definition, never a factory (FJS-D1079)' },
+  { id: 'app-entry',            scope: 'app',  severity: 'error', invariant: null,
+    title: 'index.html loads virtual:sierra, and main.js mounts nothing (FJS-D1085)' },
   { id: 'resource-model-miss',  scope: 'app',  severity: 'error', invariant: 2,
     title: 'a resource name resolves to the model it means' },
   { id: 'money-rendered-raw',   scope: 'app',  severity: 'warn',  invariant: null,
@@ -2063,6 +2065,44 @@ const CHECKS = {
                  `WeakMap keyed by the app (FJS-D1079).`,
       })
     }
+    return { findings }
+  },
+
+  // A page's entry is virtual:sierra: the boot, then src/main.js, then
+  // src/App.mesa mounted into #app (FJS-D1085). The build refuses an index.html
+  // naming main.js; a main.js that still mounts is a second copy of the app on
+  // the page, and nothing refuses that.
+  'app-entry': ({ root }) => {
+    if (!isAppRoot(root)) return { skipped: 'not an app root' }
+
+    const findings = []
+    let looked = 0
+    for (const surface of ['web', 'site', 'desktop']) {
+      const dir = join(root, surface)
+      if (!existsSync(join(dir, 'config', 'sierra.config.js'))) continue
+      looked++
+
+      const html = join(dir, 'index.html')
+      const page = existsSync(html) ? readFileSync(html, 'utf8') : ''
+      const named = page.search(/<script[^>]*\ssrc=["']\/?src\/main\.js["']/)
+      if (named !== -1) findings.push({
+        file: html, line: lineOf(page, named),
+        message: `${surface}/index.html loads /src/main.js. The page's entry is virtual:sierra, which ` +
+                 `imports src/main.js after its boot and mounts src/App.mesa -- ` +
+                 `<script type="module" src="virtual:sierra"></script> (FJS-D1085). The build refuses this page.`,
+      })
+
+      const main = join(dir, 'src', 'main.js')
+      if (!existsSync(main)) continue
+      const code = readCode(main)
+      const mounted = code.match(/\bimport\s+App\s+from\s*['"]\.\/App\.mesa['"]|\bimport\s*\{[^}]*\bRouterView\b[^}]*\}\s*from\s*['"]@frontierjs\/sierra\/router['"]/)
+      if (mounted && /\bmount\s*\(/.test(code)) findings.push({
+        file: main, line: lineOf(code, mounted.index),
+        message: `${surface}/src/main.js mounts the app, and virtual:sierra mounts it after importing this ` +
+                 `file, so the page holds two. main.js is side-effect imports; delete the mount (FJS-D1085).`,
+      })
+    }
+    if (!looked) return { skipped: 'no surface with config/sierra.config.js' }
     return { findings }
   },
 

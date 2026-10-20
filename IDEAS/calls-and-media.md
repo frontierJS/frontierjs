@@ -15,7 +15,7 @@ end and a ruling cites one by its `Q` number.
 fastest-adopted feature in its history and now writes AI notes from them into the
 thread; Mattermost's calls plugin does voice, screen share and recording with a
 Go SFU and a headless-browser bot; and a screen recorder already exists outside
-this repo (`~/code/Z/screen.maverickmade.tech`, Svelte + Tauri, 2.5k lines) that
+this repo (`screen.maverickmade.tech`, Svelte + Tauri, 2.5k lines) that
 is most of the browser half. The question was what FJS primitives make
 *integrating an app with the browser's media APIs* easy.
 

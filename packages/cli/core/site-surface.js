@@ -211,36 +211,19 @@ export function siteIndexHtml({ appName = 'app' } = {}) {
          built script at the first textual match and does not skip comments, so
          the build succeeds and the page loads no JavaScript. -->
     <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="virtual:sierra"></script>
   </body>
 </html>
 `
 }
 
 export function siteMainEntry() {
-  return `// site/src/main.js — the DEV entry.
+  return `// site/src/main.js — the DEV entry's side-effect imports.
 //
-// A built page mounts its islands and nothing else; this file is what makes
-// \`vite dev\` navigable while the site is being written. It is deliberately the
-// same router the SPA uses, so a link behaves the same in both.
-
-// Same three lines the SPA's entry uses, in the same order. \`virtual:sierra\`
-// boots the router and — where the app has a schema — registers it, and it is
-// imported FIRST: a route module that evaluates before the schemas are
-// registered gets a bare make() with no field rules.
-import 'virtual:sierra'
+// A built page mounts its islands and nothing else; this file is in none of
+// it. In \`vite dev\` index.html loads virtual:sierra, which boots the router,
+// imports this file and mounts the routes, so a link behaves as in the SPA.
 import '@frontierjs/css'
-
-import { mount } from '@frontierjs/mesa/runtime'
-import { RouterView } from '@frontierjs/sierra/router'
-
-// mount()'s first argument is an anchor NODE, not an element id — Mesa inserts
-// the component immediately after it, so the anchor must already be in the tree.
-const root   = document.getElementById('app')
-const anchor = document.createTextNode('')
-root.appendChild(anchor)
-
-mount(anchor, RouterView, { root })
 `
 }
 

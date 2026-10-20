@@ -21,7 +21,7 @@ Each row's requirements are `THREATS.md`'s *ASVS* column. A signed request (B8â€
 | SSRF guard on outbound URLs | `packages/junction/src/core/public-url.ts`, `packages/junction/test/webhook-targets.test.ts` | Validation / Secure Coding |
 | body size cap, 256 KB default | `packages/junction/src/config/index.ts:239` | API and Web Service |
 | no stack in production errors | `packages/junction/src/core/errors.ts:278` | Logging and Error Handling |
-| shipping-advisory dependency gate | `scripts/ci.mjs:505` | Configuration |
+| shipping-advisory dependency gate | `packages/cli/core/advisories.js` | Configuration |
 
 **Holes found while probing:**
 
@@ -53,9 +53,12 @@ Done when: `fli check` passes with the new rows.
   - Also covers the second-factor and magic-link miss ceilings (`FJS-3185`). Cited from V6.3.1, V6.3.8, V6.5.1, V6.6.3 and V11.4.2 in `docs/ASVS.md`. The row's *Open* cell names `FJS-D1193`, `FJS-3198` and `FJS-3197`.
 - [x] 1.2 B13 SSRF through a caller-supplied URL (`public-url.ts`)
   - Covers webhooks, conduit's `address_from: 'request'` and Basecamp's monitor sweep. Cited from V1.3.6, V13.2.4 and V15.3.2 in `docs/ASVS.md`. The row's *Open* cell names the denylist and `FJS-3357`, the monitor sweep's unpinned fetch.
-- [ ] 1.3 B14 oversized or flooding requests (body cap, rate limit)
-- [ ] 1.4 B15 error output as an oracle (production error shape)
-- [ ] 1.5 B16 a compromised dependency (CI advisory gate)
+- [x] 1.3 B14 oversized or flooding requests (body cap, rate limit)
+  - Covers the HTTP body cap, the WebSocket bounds (`FJS-705`), `maxLimit` and `bulkMax`. Cited from V2.4.1, V5.2.1 and V15.2.2 in `docs/ASVS.md`. The row's *Open* cell names the throttle that is off by default, `FJS-D1193`, `FJS-3132` and `FJS-3027`, so 2.4's *Open* half is done.
+- [x] 1.4 B15 error output as an oracle (production error shape)
+  - Covers the 5xx sentence on both transports, protected keys in an error's `data` and a `@unique` refusal, and the 404 a hidden row answers. Cited from V13.4.2 and V16.5.1 in `docs/ASVS.md`. The row's *Open* cell names the unset-`NODE_ENV` default and the `@unique` 409, which is by design.
+- [x] 1.5 B16 a compromised dependency (CI advisory gate)
+  - Covers the advisories phase, the workflow's `FJS_CI_REQUIRE_AUDIT` and Basecamp's post-deploy re-check (`FJS-2715`). Cited from V15.1.1 and V15.2.1 in `docs/ASVS.md`. Writing it found the gate blind to a runtime dependency whose exports map hides `package.json` (`FJS-3363`, fixed), which had let a high advisory in `@frontierjs/mcp` pass. The row's *Open* cell names the unadvised malicious release, this tree's lockfile against an app's, `FJS-3364` and V15.1.1.
 
 ### Phase 2 â€” Fix the defaults
 

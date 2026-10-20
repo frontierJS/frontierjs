@@ -35,6 +35,12 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1109"></a>2026-10-20 · `FJS-D1109` — What is the one grammar for an attribute's optional operands — A for `@values` and `@@extensible` only; `@@relator`'s `once|many` stays a bare word because it is required, with `by: col` replacing `many: col`; `max: { … }` stays as the one structured literal and is documented as the exception.
+
+Asked in [`IDEAS/lockdown.md`](IDEAS/lockdown.md) § Open questions. **B** was picked over **A** (every optional operand is a named key and only the required one is positional: `@values(Set, strength: open, dependsOn: col, matching: srcCol)`, `@@relator([a, b], once)` / `@@relator([a, b], many, by: col)`, `@@extensible(fields, declaredBy: X, max.text: 8, max.number: 4)`. The old spellings are refused by name with the new one; no alias), **C** (fix only the infix: `on <col>` becomes `matching: col`; leave `open|suggested` positional and the `{}` literal, and rule positional strength the language's one enumerated-word form).
+
+The paper's recommendation, taken as written: the infix and the keyword-as-key are the two real mixes; `strength:` is cheap and uniform, but forcing `max.text: 8` into dotted keys invents a form for a single use where the literal is already how an enum-keyed pool reads.
+
 ### <a id="fjs-d1333"></a>2026-10-19 · `FJS-D1333` — Where do junction's bare-verb exports live — Subpaths: `@frontierjs/junction/envelope` (`single`, `list`), a new `/hooks` (every built-in hook), a new `/bearer` (`header`, `cookie`, `authorization`, `bearerClaim`, `BEARER`, `bearerOf`). Call sites are unchanged; imports move.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (rename in place: `singleResult`/`listResult`, `fromHeader`/`fromCookie`/`fromAuthorization`, `protectFields`/`allowFields`/`paginateHook`), **C** (only `single`/`list` leave `.`).
@@ -12032,6 +12038,20 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d1086"></a>2026-10-20 · `FJS-D1086` — Does a resource file with only a `<script module>` half render the kit's default form implicitly — No: Invariant 18 stands, the scaffold keeps writing the half.
+
+Asked in [`IDEAS/lockdown.md`](IDEAS/lockdown.md) § Open questions. **B** was picked over **A** (yes: no markup half means the kit's `<Form resource>`; a markup half is an override. Invariant 18's second sentence becomes *the markup half, when present, overrides the model's default form*).
+
+Against the recommendation (**A**): real apps customize the form, so the scaffold's markup half is a starting point to edit rather than boilerplate to derive.
+
+### <a id="fjs-d1085"></a>2026-10-20 · `FJS-D1085` — How does an app mount — `virtual:sierra` mounts `App.mesa` itself; `main.js` is optional and holds only side-effect imports.
+
+Asked in [`IDEAS/lockdown.md`](IDEAS/lockdown.md) § Open questions. **B** was picked over **A** (`mount(App, { target: '#app' })` appends inside the target; the anchor is the runtime's business).
+
+The paper's recommendation, taken as written: the module already boots the router and the client; mounting the root is the same kind of thing, and a `main.js` that is five side-effect imports is what most apps would be left with. A is the fallback for an app that mounts somewhere else.
+
+amended: the boot is its own module, `virtual:sierra/boot`, because an import is hoisted and a boot in the entry's body would run after `main.js` had created its resources; it is also the door for the fallback, an entry that mounts somewhere other than `#app` (ksite mounts into `<body>`), and where app code imports the route table. `index.html` names `virtual:sierra`, which sierra rewrites to `/@id/` in dev since a browser reads `virtual:` as a URL scheme and fetches nothing; an `index.html` naming `/src/main.js` is refused at build. A top-level `await` in `main.js` is refused too: rolldown then splits what `main.js` imports into chunks that run before the entry chunk's boot, measured as every `example` resource finding no Junction client in the production build, so a first render that waits goes in `App.mesa` as an `{#if}`. `fli check` grades the shape as `app-entry`.
+
 ### <a id="fjs-d1240"></a>2026-10-18 · `FJS-D1240` — Is a `_module.md` with front matter and no body a pass-through for the pages beneath it, and is one with a body and no `<slot />` refused at build — Split by body: a body-less `_module.md` is a pass-through, its front matter cascading to the pages beneath, which render unwrapped; a `_module.md` with a body and no `<slot />` is refused at build by name.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (refuse every `_module.md` with no `<slot />`, body or not; `ksite port` writes the slot), **C** (pass-through for a body-less one only; a body with no slot keeps rendering empty).
@@ -17694,6 +17714,12 @@ the file puts the judgement where judgement lives.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d1354"></a>2026-10-20 · `FJS-D1354` — How a pulled page of Basecamp's event feed enters an app, and when `position` may advance — A caravan job polls, dispatches each event to an apply job with `dispatch({ id: '37signals:event:<id>' })`, and stores `position` after the page's dispatches. It does not go through `app.conduit.receive()`. Amends `FJS-D1183`: *after the page is applied* becomes *after each of its events is queued under its own id*.
+
+Asked through the question tool at `IDEAS/conduit-37signals.md` step 3.2. As recommended: **dispatch per event** was picked over **apply inline**, where the poll job re-reads and lands each event and then stores `position`. That is `FJS-D1183` as written, but it has no event-id dedupe unless the app writes a ledger, and one permanently failing event either stalls the account's cursor or is skipped silently. `receive()` was read first and does not take a page. Its two ingresses are both pushed: a route (`accept()` over a `Delivery`) and a held socket (`acceptFrame()` over a broker frame). A page is a batch, and `FJS-D899` keeps batches out until a second app asks. Neither existing puller asks: ELA's Service Autopilot syncs are caravan jobs over `send()`, and conduit-gmail's history pull is the app's own sync code, with only the push going through `receive()`. So Basecamp is the first app asking, not the second.
+
+The nine, answered before the edit: 1 origin — the event id is Basecamp's and caravan's jobs primary key holds it, so there is no second ledger · 2 concept — none; `dispatch({ id })` is caravan's · 3 complexity — the problem's: one account cursor over events that fail one at a time · 4 predictability — the same shape as the outbox relay (`FJS-D35`) and a broker handler (`FJS-D235`), which dispatch under the durable id they hold · 5 derived — the job id comes from the event id · 6 owner — caravan, which exists, and no third ingress is added to conduit · 7 boundary — the poll job does page → dispatch each → store `position`, and the apply job does 3.3's re-read, then lands the event · 8 failure — a permanently failing event goes dead in caravan, where it can be seen and re-run, and the cursor moves on. The cost is a burst of re-reads against 50 per 10 s, which comes back `rate_limited`, retryable · 9 must stay true: `position` never passes an event that is not durably queued. Dedupe holds for caravan's `cleanupAfter` (7 days by default), not for all time, which is enough because a replay only follows a crash between the dispatches and the store, and an older replay is harmless because 3.3 lands current state. What fails when it stops: the Phase 3 drive's dedupe row, **`none`** until it is built. § IV: none in tension. Tier: Register.
+
 ### <a id="fjs-d1353"></a>2026-10-20 · `FJS-D1353` — Who owns the `<KEY>_FILE` rule, since litestone's CLI reads ENCRYPTION_KEY too and cannot import junction — `@frontierjs/toolbelt/env`: `envSource(key, env)` says whether to use the variable or a file, or refuses both set, and `fileValue(text)` says what the file's bytes mean. The caller reads the file, so the kit stays pure.
 
 Asked through the question tool at `FJS-3359` step 2.2. A scaffolded app's entrypoint runs `bun run db:migrate`, which is litestone's CLI, and `createClient` throws on a schema with `@encrypted` fields and no key. So once the key moved to a file, that container would exit and the deploy would restore the old one. **A** was picked over **B** (litestone restates the rule, so two owners can drift on both-set) and **C** (defer: Basecamp only, since it migrates inside `app.ts` through junction), as recommended. The precedent is `/mailbox` (`FJS-D1091`'s amendment): a rule two packages need, where neither may import the other, lives below both.
@@ -17887,6 +17913,8 @@ Asked in [`IDEAS/conduit-connectors.md`](IDEAS/conduit-connectors.md) § Open qu
 the owner is not ready to commit connector packages into this tree; the prototypes keep maturing in the sibling workspace, and basecamp's compute connectors stay basecamp's own until then.
 
 ### <a id="fjs-d1183"></a>2026-10-16 · `FJS-D1183` — Q3 — How Basecamp reaches an app over `conduit-37signals` — The account event feed, polled; the live stream after it as a wake-up. `pollEvents` reads `/events.json` on a 60 s job and persists `position` only after the page is applied; then a stream ticket dials a `broker` target (`FJS-D1127`) whose frames only trigger a poll and never advance `position`. Legacy per-project webhooks are refused.
+
+**Status:** amended-by [`FJS-D1354`](#fjs-d1354) — when `position` advances: after the page's events are queued under their ids, not after they are applied.
 
 Asked in [`IDEAS/conduit-37signals.md`](IDEAS/conduit-37signals.md) Q3, through the question tool. **A then B** was picked over A alone, over B in one step, and over **C** (webhooks: unsigned, one hook per project to install and reconcile, deactivated after 10 failed attempts, and called legacy by 37signals' own docs). One cursor covers the whole account where a hook covers one project. Precedent: 37signals' feed docs say live ids *never advance your durable position*, which is the wake-up rule `FJS-D1127` already gives Mattermost's socket.
 

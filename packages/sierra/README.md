@@ -127,21 +127,24 @@ export default {
 }
 ```
 
-**`src/main.js`**
+**`index.html`**
+
+```html
+<div id="app"></div>
+<script type="module" src="virtual:sierra"></script>
+```
+
+`virtual:sierra` boots the router, Junction, theme and analytics, imports
+`src/main.js` if there is one, and mounts `src/App.mesa` into `#app` — or the bare
+`RouterView` when there is no `App.mesa` (`FJS-D1085`). An `index.html` that still
+loads `/src/main.js` is refused at build.
+
+**`src/main.js`** — optional, the app's side-effect imports. A top-level `await` is
+refused: a build would run main.js's imports before the boot. A first render that
+must wait goes in `App.mesa`, as an `{#if}`.
 
 ```js
-import 'virtual:sierra'                       // boots router, junction, theme, analytics
-import { mount } from '@frontierjs/mesa/runtime'
-import App from './App.mesa'
-
-// mount()'s first argument is an anchor NODE, not an element id — Mesa inserts
-// the component immediately after it, so it must already be in the DOM.
-// Passing a string fails with "anchor node has no parentNode".
-const root   = document.getElementById('app')
-const anchor = document.createTextNode('')
-root.appendChild(anchor)
-
-mount(anchor, App, { root })
+import '@frontierjs/css'
 ```
 
 **`src/App.mesa`**
@@ -1072,7 +1075,7 @@ site/                         ← beside api/ and web/, never inside either
     sierra.config.js          ← target: 'static', plus `db` and `document`
   index.html                  ← the DEV shell; a built page never uses it
   src/
-    main.js                   ← the dev entry — routes served as an app
+    main.js                   ← optional side-effect imports; virtual:sierra mounts the routes
     routes/                   ← file-tree routes, the same convention as web/
     islands/                  ← the only JavaScript a prerendered page runs
   test/                       ← what proves the BUILD: files, not a running app
@@ -1388,12 +1391,15 @@ never persisted: the answer is the host's.
 
 ## `virtual:sierra`
 
-Importing it boots the app. Sierra generates the module from your config, so it contains
-only what you configured — router init always, then Junction, schemas, analytics and theme
-if present, plus the dev-only overlay and HMR bridge. It also re-exports the route table:
+The page's entry, named by `index.html`. It imports `virtual:sierra/boot`, then
+`src/main.js`, then mounts `src/App.mesa`. The boot is generated from your config, so it
+contains only what you configured — router init always, then Junction, schemas, analytics
+and theme if present, plus the dev-only overlay and HMR bridge. An entry that mounts
+somewhere other than `#app` imports `virtual:sierra/boot` and mounts itself. The boot
+exports the route table:
 
 ```js
-import { tree, components, loaders, layouts, published, indexed, redirects } from 'virtual:sierra'
+import { tree, components, loaders, layouts, published, indexed, redirects } from 'virtual:sierra/boot'
 ```
 
 | Export | Contents |

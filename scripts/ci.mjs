@@ -43,7 +43,6 @@
 // ============================================================
 
 import { spawnSync }                       from 'node:child_process'
-import { createRequire }                   from 'node:module'
 import { existsSync, readFileSync, writeFileSync, readdirSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs'
 import { join, dirname, relative }         from 'node:path'
 import { fileURLToPath }                   from 'node:url'
@@ -58,6 +57,7 @@ import { checkSnapshots }                      from '../packages/cli/core/snapsh
 import { runRegisterCheck, RULES as REGISTER_RULES } from '../packages/cli/core/register-check.js'
 import { FJS_PACKAGES, APP_DEV_DEPS }          from '../packages/cli/core/app-config.js'
 import { openRunLog, parseCounts }             from '../packages/cli/core/ci-log.js'
+import { runtimeClosure, gradeAdvisories }     from '../packages/cli/core/advisories.js'
 import { findChrome }                          from '../packages/mesa/src/drive.js'
 import { compare as benchCompare, format as benchFormat } from './bench-ab.mjs'
 
@@ -547,28 +547,24 @@ function advisories() {
     return
   }
 
-  const advised = Object.entries(report)
-  if (!advised.length) { ok('nothing advised against'); return }
+  if (!Object.keys(report).length) { ok('nothing advised against'); return }
 
-  const ships   = runtimeClosure()
-  const known   = allowances.knownAdvisories ?? {}
-  const worst   = list => list.map(a => a.severity).sort(bySeverity)[0] ?? 'unknown'
-  const shipping = [], devOnly = []
+  const known  = allowances.knownAdvisories ?? {}
+  const worst  = list => list.map(a => a.severity).sort(bySeverity)[0] ?? 'unknown'
+  const graded = gradeAdvisories(report, runtimeClosure(ROOT, workspaceDirs()), known)
 
-  for (const [name, list] of advised) (ships.has(name) ? shipping : devOnly).push([name, list])
+  for (const { name, at } of graded.known) {
+    note(`${name}@${at} advised and shipping — known: ${known[name]}`)
+    warn(`${name} (known)`)
+  }
 
-  for (const [name, list] of shipping) {
+  for (const { name, at, list } of graded.shipping) {
     // The advisory names a PACKAGE; the closure resolved a VERSION. Both are
     // printed and neither is compared, because a range parser written here
-    // would be a security judgement made by a regex — and the two numbers side
-    // by side settle it for a reader in one line. A name installed twice (a
-    // current copy at runtime, an old one for a dev tool) is exactly the case
-    // that needs a person.
-    const at = ships.get(name)
-    const line = `${name}@${at ?? '?'} — ${list.length} advisory(ies), worst ${worst(list)}: ${list[0].title}`
-    if (name in known) { note(`${name}@${at} advised and shipping — known: ${known[name]}`); warn(`${name} (known)`) }
-    else fail(
-      `${line}\n` +
+    // would be a security judgement made by a regex. A name installed twice (a
+    // current copy at runtime, an old one for a dev tool) needs a person.
+    fail(
+      `${name}@${at ?? '?'} — ${list.length} advisory(ies), worst ${worst(list)}: ${list[0].title}\n` +
       `      Vulnerable per the advisory: ${list.map(a => a.vulnerable_versions).join(' · ')}\n` +
       `      The runtime copy resolves to ${at}, and it is reachable from a PUBLISHED package's\n` +
       `      dependencies, so every app that installs this framework installs it. Upgrade it, move\n` +
@@ -577,74 +573,34 @@ function advisories() {
     )
   }
 
-  if (devOnly.length) {
+  // An entry is keyed by package name, so one left behind would excuse the
+  // next advisory against that package with nobody looking.
+  for (const name of graded.stale) fail(
+    `knownAdvisories names ${name} and this run excused nothing by it — no advisory against it\n` +
+    `      reaches a published runtime dependency. Remove the entry.`
+  )
+
+  if (graded.devOnly.length) {
     const counts = {}
-    for (const [, list] of devOnly) for (const a of list) counts[a.severity] = (counts[a.severity] ?? 0) + 1
+    for (const { list } of graded.devOnly) for (const a of list) counts[a.severity] = (counts[a.severity] ?? 0) + 1
     const summary = Object.entries(counts).sort((a, b) => bySeverity(a[0], b[0]))
       .map(([sev, n]) => `${n} ${sev}`).join(', ')
-    note(`${devOnly.length} advised package(s) reach no published runtime dependency (${summary}): ` +
-         devOnly.map(([n]) => n).join(', '))
+    note(`${graded.devOnly.length} advised package(s) reach no published runtime dependency (${summary}): ` +
+         graded.devOnly.map(a => a.name).join(', '))
   }
 
   // The count that matters is how many SHIP, and a known one still ships — a
   // summary that says "none" over three allowances is the phase lying about the
   // thing it exists to report.
   if (clean(from)) {
-    const knownShipping = shipping.length
-    ok(`${advised.length} advised · ${knownShipping} reach a published runtime dependency` +
-       `${knownShipping ? ' (all known)' : ''} · ${devOnly.length} dev-only`)
+    const ships = graded.known.length
+    ok(`${Object.keys(report).length} advised · ${ships} reach a published runtime dependency` +
+       `${ships ? ' (all known)' : ''} · ${graded.devOnly.length} dev-only`)
   }
 }
 
 const SEVERITY = ['critical', 'high', 'moderate', 'low', 'info']
 const bySeverity = (a, b) => SEVERITY.indexOf(a) - SEVERITY.indexOf(b)
-
-/**
- * Every package reachable from a publishable package's runtime `dependencies`.
- *
- * Resolved the way node resolves, from the dependent's own directory: bun
- * installs into `node_modules/.bun/<name>@<version>/` and links, so the root
- * `node_modules` holds almost nothing and a path guess answers an empty set —
- * which would report every advisory as dev-only and make the phase useless
- * while looking like it passed.
- *
- * A workspace sibling is walked THROUGH rather than counted: `@frontierjs/mesa`
- * is not somebody else's advisory surface, but what it depends on is.
- *
- * Answers name → resolved VERSION, because an advisory names a package and a
- * package can be installed twice — a current copy at runtime and an old one for
- * some dev tool. Without the version the phase reports the second as though it
- * were the first.
- */
-function runtimeClosure() {
-  const names = new Map()
-  const seen  = new Set()
-
-  const walk = (name, fromDir, depth) => {
-    if (depth > 10) return
-    let dir = null
-    try {
-      const req = createRequire(join(fromDir, 'package.json'))
-      dir = dirname(req.resolve(`${name}/package.json`))
-    } catch { return }              // not installed, or no package.json export
-    if (seen.has(dir)) return
-    seen.add(dir)
-
-    let manifest = null
-    try { manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) } catch { return }
-    if (!name.startsWith('@frontierjs/')) names.set(name, manifest.version ?? 'unknown')
-    for (const dep of Object.keys(manifest.dependencies ?? {})) walk(dep, dir, depth + 1)
-  }
-
-  for (const rel of workspaceDirs()) {
-    const dir = join(ROOT, rel)
-    let manifest = null
-    try { manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) } catch { continue }
-    if (manifest.private) continue
-    for (const dep of Object.keys(manifest.dependencies ?? {})) walk(dep, dir, 0)
-  }
-  return names
-}
 
 // ─── phase 2 · structure ────────────────────────────────────
 // The architecture rules, run over this repo's own apps and packages with the

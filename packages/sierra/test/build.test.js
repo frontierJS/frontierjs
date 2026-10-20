@@ -270,6 +270,75 @@ describe('virtual:sierra generation', () => {
 
 })
 
+// ─── virtual:sierra, the entry ───────────────────────────────────────────────
+
+import { _generateEntry, virtualSierraPlugin } from '../src/virtual/virtual-sierra.js'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import { parseAst } from 'vite'
+
+describe('virtual:sierra, the entry (FJS-D1085)', () => {
+  function entryFor(files) {
+    const root = mkdtempSync(resolve(tmpdir(), 'sierra-entry-'))
+    try {
+      for (const f of files) {
+        mkdirSync(resolve(root, f, '..'), { recursive: true })
+        writeFileSync(resolve(root, f), '')
+      }
+      return _generateEntry(root)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+
+  test('boots before main.js, and main.js before the app', () => {
+    const src = entryFor(['src/main.js', 'src/App.mesa'])
+    const at = (s) => src.indexOf(s)
+    expect(at("import 'virtual:sierra/boot'")).toBe(0)
+    expect(at("import '/src/main.js'")).toBeGreaterThan(0)
+    expect(at("import App from '/src/App.mesa'")).toBeGreaterThan(at("import '/src/main.js'"))
+    expect(src).toContain('mount(anchor, App, { root })')
+    parseAst(src)
+  })
+
+  test('main.js is optional', () => {
+    const src = entryFor(['src/App.mesa'])
+    expect(src).not.toContain('main.js')
+    expect(src).toContain("import App from '/src/App.mesa'")
+  })
+
+  test('with no App.mesa it mounts the bare RouterView', () => {
+    const src = entryFor([])
+    expect(src).toContain("import { RouterView as App } from '@frontierjs/sierra/router'")
+    parseAst(src)
+  })
+
+  test('dev rewrites the entry tag to the URL Vite serves it at; a build leaves it', () => {
+    const tag = '<script type="module" src="virtual:sierra"></script>'
+    const dev = virtualSierraPlugin({})
+    dev.configResolved({ root: '/app', command: 'serve', base: '/shop/' })
+    expect(dev.transformIndexHtml(tag)).toBe('<script type="module" src="/shop/@id/virtual:sierra"></script>')
+    const build = virtualSierraPlugin({})
+    build.configResolved({ root: '/app', command: 'build', base: '/' })
+    expect(build.transformIndexHtml(tag)).toBe(tag)
+  })
+
+  test('an index.html naming /src/main.js is refused', () => {
+    const plugin = virtualSierraPlugin({})
+    plugin.configResolved({ root: '/app', command: 'serve' })
+    expect(() => plugin.transformIndexHtml('<script type="module" src="/src/main.js"></script>')).toThrow(/FJS-D1085/)
+  })
+
+  test('a top-level await in main.js is refused, one inside a function is not', () => {
+    const plugin = virtualSierraPlugin({})
+    plugin.configResolved({ root: '/app', command: 'build' })
+    expect(() => plugin.transform("import './a.js'\nawait load()\n", '/app/src/main.js')).toThrow(/main\.js:2 awaits/)
+    expect(() => plugin.transform('for await (const x of xs) {}\n', '/app/src/main.js')).toThrow(/top level/)
+    expect(plugin.transform('async function f() { await load() }\nconst g = async () => await f()\n', '/app/src/main.js')).toBeNull()
+    expect(plugin.transform('await load()\n', '/app/src/other.js')).toBeNull()
+  })
+})
+
 // ─── deepMerge ───────────────────────────────────────────────────────────────
 
 import { _deepMerge } from '../src/build/index.js'

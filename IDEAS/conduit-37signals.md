@@ -1,13 +1,14 @@
 ---
 id: conduit-37signals
-status: proposed
+status: partial
 dated: 2026-10-16
 ---
 
 # Idea — `conduit-37signals`: Basecamp over conduit, built in halves
 
-**Status: PROPOSED.** Dated 2026-10-16. Nothing in § Phases is built. Do not
-cite this file as behavior — see `VERIFYING.md`. The API facts below were read
+**Status: PARTIAL.** Dated 2026-10-16. The ticked boxes in § Phases are built,
+against the sink only; the rest are not. Do not cite this file as behavior —
+see `VERIFYING.md`. The API facts below were read
 from 37signals' docs on the date above, not measured; Phase 0 measures them.
 
 ---
@@ -219,11 +220,23 @@ Done when: `bun run drive` is green on the sink with a negative control, and the
 ### Phase 3 — The feed
 
 Goal: every account event reaches the app once, and nothing acts on a pointer it has not re-read.
-Done when: the drive proves resume from `position`, `409` re-entry by `since`, `410` re-entry by `resume`, dedupe by event id, and a re-read before apply.
+Done when: the drive proves resume from `position`, `409` re-entry by `since`, `410` re-entry by `resume`, dedupe by event id (a replayed page dispatches nothing new, `FJS-D1354`), and a re-read before apply.
 
-- [ ] 3.1 `pollEvents(send, { position | since, types?, buckets? })` → `{ events, position, next }`, WITHOUT `exclude_performers=self`: under Jordan's token `self` is Jordan, and excluding it would drop Jordan's own activity (`FJS-D1182`, amended). An echo of the app's own write is a no-op because 3.3 applies the recording's current state; a flow that acts on events skips the recordings the app created, kept as a ledger of its own write ids
-- [ ] 3.2 Where a pulled page enters: check whether `app.conduit.receive()` takes one (ELA polls Service Autopilot); otherwise the feed is a read and the app's caravan job runs apply and then persists `position`
-- [ ] 3.3 The re-read: an event is a pointer, so apply fetches the recording first. A `404` there is `gone` and the event is dropped, not retried
+- [x] 3.1 **Done 2026-10-20, sink only: `pollEvents(send, { since | position | url, types?, buckets? })` → `{ events, position, next? }` or `{ error }`, `FEED_TYPES`, the sink's `events.json`, and 8 drive rows (58 in all), green. Each of nine breaks tried turns a row red: `exclude_performers=self` added, no default types, the 409 code dropped, `resume` dropped, a `next` rebuilt instead of followed, `next` dropped, a time accepted as `since`, and the sink's 409 removed. The nine were answered before the code.** What it changed:
+  - **A poll is one page.** The docs say to store `position` only after the page is applied, so the caller loops: apply, store, and follow `next` with `{ url: next }` until it is gone. A walk inside the connector would hand back a position for pages the caller never applied
+  - **`url` is the third way in**, and it is followed whole, as `walk()` follows `Link`. A page's `next` and a 410's `resume` both come from Basecamp and already carry their filters, so `types` and `buckets` are not added to either. 0.3's headers show `next` carries a different token from the body's `position` (it holds the walk's frozen head), so resuming from `position` would be a different walk, not the same one continued
+  - **`FEED_TYPES` is sent when a poll names no types**: 0.4's sixteen. Without a `types` filter the feed serves its whole catalog, which grows on the deploy that adds a type. Changing the list changes the filter set, so each held position answers `filters_changed` once
+  - **Re-entry is the caller's**, as Gmail's `history_gap` resync is. A refusal is `refused` with a `code`: `invalid_position` (Basecamp's `reason`) and `filters_changed` (409) re-enter by `since` from the last event applied, `before_epoch` (410) by the failure's `resume`, and `invalid_filter` is the filters, which no cursor fixes. A 409 or 410 body has no `reason`, so `translate` names the code by status. Reading all 71 sections of bc-api on 2026-10-20 found no other endpoint that answers 409 or 410
+  - **A poll states where it enters.** With no cursor Basecamp enters at the present without saying so, so the connector refuses a poll that names none and asks for `{ since: 'now' }`. A time as `since`, a negative id, two cursors, an empty `types`, a type with a comma and a 101st bucket are each a `TypeError` before the send (C9)
+  - **No `ETag` on a poll.** An idle poll's `304` saves a body of about 180 bytes. Whether a `304` still costs a request against the 50 per 10 s is unmeasured, so it was left out; the reopen path is `walk()`'s `etag` spelling
+  - **Unmeasured:** the 409 and 410 bodies beyond the fields the docs name, whether Basecamp's `next` repeats the filters (0.3 walked without any), and any filtered poll against the account. The sink's tokens are its own, bound to the docs' `srv2` digest
+  - Was: `pollEvents(send, { position | since, types?, buckets? })` → `{ events, position, next }`, WITHOUT `exclude_performers=self`: under Jordan's token `self` is Jordan, and excluding it would drop Jordan's own activity (`FJS-D1182`, amended). An echo of the app's own write is a no-op because 3.3 applies the recording's current state; a flow that acts on events skips the recordings the app created, kept as a ledger of its own write ids
+- [x] 3.2 **Done 2026-10-20, a reading step (`FJS-D1354`, amends `FJS-D1183`): a page does not enter through `receive()`. The poll job dispatches each event as `dispatch({ id: '37signals:event:<id>' })`, then stores `position`.** What it changed:
+  - **`receive()` takes only what is pushed.** Its two ingresses are a route (`accept()` over a `Delivery`) and a held socket (`acceptFrame()` over a broker frame). A page is a batch, and `FJS-D899` keeps batches out until a second app asks. Neither existing puller asks: ELA's Service Autopilot syncs are caravan jobs over `send()`, and conduit-gmail's history pull is the app's own sync code, with only the push going through `receive()`
+  - **`position` advances once the page is queued, not once it is applied.** Caravan's primary key on the job id is the dedupe by event id the Done-when names, the same shape as the outbox relay (`FJS-D35`) and a broker handler (`FJS-D235`). A permanently failing event goes dead in caravan, where it can be re-run, and does not stall the account's cursor
+  - **Dedupe lasts for caravan's `cleanupAfter`** (7 days by default), not for all time. That is enough: a replay only follows a crash between the dispatches and the store, and 3.3 lands current state, so an older replay is harmless. Caravan's `CLAUDE.md` and the root Packages row say *for all time*, and `src/index.ts`'s cleanup sweep deletes terminal jobs, so those two lines overstate it
+  - Was: check whether `app.conduit.receive()` takes one (ELA polls Service Autopilot); otherwise the feed is a read and the app's caravan job runs apply and then persists `position`
+- [ ] 3.3 The re-read, in the apply job 3.2 dispatches to: an event is a pointer, so apply fetches the recording first. A `404` there is `gone` and the event is dropped, not retried
 - [ ] 3.4 After 3.3 (`FJS-D1183`): `stream_ticket` → a `broker` target, ActionCable framing (`welcome`, `confirm_subscription`, `ping`) as a `FrameDialect`, and each frame wakes 3.1. A fresh ticket per dial
 
 ### Phase 4 — A person's credential

@@ -105,7 +105,7 @@ packages/junction/
 │   ├── schema.ts         ← createSchema(), v.* — zero-dep validation
 │   ├── loader.ts         ← auto-discovery of *.service.ts files, and where they are
 │   ├── logger.ts         ← ILogger — pretty dev / JSON prod
-│   ├── env.ts            ← defineEnv() — typed, validated at startup
+│   ├── env.ts            ← defineEnv() — typed, validated at startup; childEnv() for a spawn
 │   └── errors.ts         ← named HTTP error classes
 │
 ├── src/transport/

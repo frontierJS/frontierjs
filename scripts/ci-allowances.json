@@ -30,7 +30,7 @@
     ".gitignore:.cache/": "Tool output only: `bun run ci` writes ci-last.txt and ci-runs/, and mesa's scripts/corpus.mjs writes its compiled saves under mesa-corpus/. Nothing is authored there.",
     ".gitignore:packages/haven/editor/.copy-*/": "verify-scenes.mjs's copy of Haven's web/src, one per drive run and named for its pid, so the editor can be driven against files it may write. A copy a killed run left behind holds the same files; nothing is authored there.",
     ".gitignore:packages/sierra/bench/dist/": "sierra's bench/run.mjs copies each bench/fixtures/ app here and builds it in place. The fixtures are the source.",
-    "packages/litestone/.gitignore:test/browser/dist-audit/":"Bundled by test/browser/audit-browser-seams.mjs on every run, as test/browser/dist/ is by the browser drive.",
+    "packages/litestone/.gitignore:test/browser/dist-audit/": "Bundled by test/browser/audit-browser-seams.mjs on every run, as test/browser/dist/ is by the browser drive.",
     ".gitignore:__mesa_render_*.mjs": "Mesa renderComponent's compiled temp modules, written beside the mesa package so `@frontierjs/mesa/runtime` resolves. They live for the whole process, because a module cannot be unlinked once imported, so any long-running renderer (example's API rendering email) holds a set while it runs. They are swept on exit, and after an hour once the process is gone. Only renderComponent writes the prefix."
   },
   "//nonMembers": "Directories holding a package.json that the `packages/*` glob cannot see, kept out of the workspace on purpose. Uninstalled means untested and unrunnable (FJS-026), so each one has to say why that is acceptable. A NEW nested package is a note, because the default answer is that it should be a member.",
@@ -67,8 +67,5 @@
     }
   },
   "//knownAdvisories": "advisories phase — a package `bun audit` advises against that IS reachable from a published package's runtime dependencies, and is known. Each entry says which VERSION is installed at runtime and why the entry exists, because the advisory names a package and a package can be installed twice. An entry is a record that somebody looked, never a reason not to look again.",
-  "knownAdvisories": {
-    "nanoid": "REAL and open — FJS-475's second half. 3.3.17 installed, advisory is <3.3.18: one patch, reached transitively rather than declared, so it moves when whatever pulls it in is updated. happy-dom, the first half, is fixed — every copy is 20.11.6 and no advisory names it.",
-    "vite": "NOT vulnerable at runtime: the copy the closure resolves is 8.3.2 and every advisory here is <=6.4.2. `bun audit` reports a package by NAME, so the old copy installed for a dev tool is reported against the current one. Re-check this entry if the runtime version ever drops."
-  }
+  "knownAdvisories": {}
 }

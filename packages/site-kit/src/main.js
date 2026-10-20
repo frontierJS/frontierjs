@@ -2,16 +2,10 @@
 // Nothing in the built output imports it.
 // A built page ships HTML plus one chunk per island; this file exists so the
 // routes can be served as a client-routed app while a page is being written.
-import 'virtual:sierra'
-
+// A site's root has no src/, so the kit's entry is this file rather than
+// virtual:sierra, and it imports virtual:sierra last: that boots the router and
+// mounts the routes, after the stylesheets are in.
 import '@frontierjs/css'
 import 'virtual:site-kit/styles'
 
-import { mount } from '@frontierjs/mesa/runtime'
-import { RouterView } from '@frontierjs/sierra/router'
-
-const root   = document.getElementById('app')
-const anchor = document.createTextNode('')
-root.appendChild(anchor)
-
-mount(anchor, RouterView, { root })
+import 'virtual:sierra'

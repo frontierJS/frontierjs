@@ -526,7 +526,7 @@ ${useDb ? '├── db/\n│   └── schema.lite             # Single sourc
     │   ├── vite.config.js      # Thin wrapper — createSierraViteConfig
     │   └── sierra.config.js    # Routes dir, target${useApi ? ', junction url' : ''}
     └── src/
-        ├── main.js             # Entry: boots the router + client, mounts App
+        ├── main.js             # Side-effect imports; virtual:sierra mounts App
         ├── datetime.js         # The app's clock and zone — at(), ago()
         ├── App.mesa            # Root: <RouterView />
         ├── lib/nav.js          # The nav table — the Shell draws it, make:scaffold adds to it
@@ -1265,7 +1265,7 @@ function makeIndexHtml(appName) {
        falls back to the browser's serif. -->
   <body class="app">
     <div id="app"></div>
-    <script type="module" src="/src/main.js">${sc}
+    <script type="module" src="virtual:sierra">${sc}
   </body>
 </html>
 `
@@ -1419,35 +1419,13 @@ ${sc}
 `
 }
 
-function makeMainJs(useApi = true) {
-  return `// web/src/main.js — the entry point index.html loads.
-//
-// A .mesa module EXPORTS a component; importing one mounts nothing. Without
-// this file the page loads, throws no error, logs nothing, and renders an
-// empty <div id="app"> — the hardest possible failure to read.
-
-${useApi ? `// Boots the router, the Junction client and — because db/schema.lite exists —
-// registerSchemas(), all generated from sierra.config.js. Import it first: a
-// route module that evaluates before the schemas are registered gets a bare
-// make() with no field rules.
-` : `// Boots the router, generated from sierra.config.js. There is no API and no
-// schema, so no client is wired. Import it first: a route module that evaluates
-// before the router exists has nothing to register with.
-`}import 'virtual:sierra'
+function makeMainJs() {
+  return `// web/src/main.js — the app's side-effect imports. index.html loads
+// virtual:sierra, which boots the router and the client, imports this file and
+// then mounts App.mesa into #app (FJS-D1085).
 
 // The design system. One import, no build step, no config.
 import '@frontierjs/css'
-
-import { mount } from '@frontierjs/mesa/runtime'
-import App from './App.mesa'
-
-// mount()'s first argument is an anchor NODE, not an element id — Mesa inserts
-// the component immediately after it, so the anchor must already be in the tree.
-const root   = document.getElementById('app')
-const anchor = document.createTextNode('')
-root.appendChild(anchor)
-
-mount(anchor, App, { root })
 `
 }
 
@@ -2734,7 +2712,7 @@ if (useWeb) {
     ['web/config/vite.config.js',           makeViteConfig(useApi)],
     ['web/config/sierra.config.js',         makeSierraConfig(appName, useApi)],
     ['web/src/App.mesa',                    makeAppMesa()],
-    ['web/src/main.js',                     makeMainJs(useApi)],
+    ['web/src/main.js',                     makeMainJs()],
     ['web/src/datetime.js',                 makeDatetimeJs()],
     ['web/src/lib/nav.js',                  makeNavJs(useAuth)],
     ['web/src/routes/_module.mesa',         makeRouteModule(appName, useAuth, useApi)],

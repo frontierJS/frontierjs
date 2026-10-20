@@ -75,7 +75,7 @@ describe('virtualSierraPlugin', () => {
     writeFileSync(join(root, 'src/analytics.js'), 'export function track() {}')
     const plugin = virtualSierraPlugin({ target: 'spa', analytics: { provider: '/src/analytics.js' } }, {})
     plugin.configResolved({ root, command: 'serve' })
-    const code = await plugin.load('\0virtual:sierra')
+    const code = await plugin.load('\0virtual:sierra/boot')
     expect(code).toContain(`import * as analyticsProvider from ${JSON.stringify(join(root, 'src/analytics.js'))}`)
   })
 

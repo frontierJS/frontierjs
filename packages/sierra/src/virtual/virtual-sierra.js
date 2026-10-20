@@ -1,16 +1,16 @@
 /**
- * virtual-sierra.js — Vite virtual module: `virtual:sierra`
+ * virtual-sierra.js — the two Vite virtual modules an app's page runs.
  *
- * Generates the runtime bootstrap module that:
- * - Imports the route table
- * - Boots the router with the tree + sierra config
- * - Wires Junction if configured
- * - Wires analytics if configured
- * - Re-exports the route table's arrays for app code
+ * `virtual:sierra` is the entry `index.html` names (`FJS-D1085`): the boot,
+ * then the app's `src/main.js` when there is one, then `src/App.mesa` — or the
+ * bare `RouterView` without one — mounted into `#app`.
  *
- * The virtual module is regenerated whenever:
- * - The route table changes (scanner-plugin invalidates it)
- * - sierra.config.js changes
+ * `virtual:sierra/boot` is everything that must run before any app module:
+ * the router over the route table, Junction, the model schemas, analytics, the
+ * theme and the dev overlay. Its own module because an import is hoisted, so a
+ * boot written in the entry's body would run AFTER `main.js` had created its
+ * resources, and what app code imports the route table from. The scanner and
+ * the schema plugin invalidate it.
  */
 
 import { generateOverlayScript } from '../build/dev-overlay.js'
@@ -19,6 +19,7 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { existsSync, readFileSync } from 'fs'
 import { routeTablePath } from '../scanner/generate-route-table.js'
+import { parseAst } from 'vite'
 
 // Absolute path to this sierra package's root — used to resolve sierra/* imports
 // from the virtual:sierra module (which has no file path context for Node resolution).
@@ -26,8 +27,10 @@ const _monoRoot   = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.ur
 const _sierraRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const _sierraExports = JSON.parse(readFileSync(resolve(_sierraRoot, 'package.json'), 'utf8')).exports
 
-const VIRTUAL_ID = 'virtual:sierra'
+const VIRTUAL_ID  = 'virtual:sierra'
 const RESOLVED_ID = '\0virtual:sierra'
+const BOOT_ID     = 'virtual:sierra/boot'
+export const RESOLVED_BOOT_ID = '\0virtual:sierra/boot'
 
 /**
  * Resolve an `@frontierjs/<pkg>[/<subpath>]` specifier imported from inside the
@@ -203,6 +206,7 @@ export function virtualSierraPlugin(config, sierraContext) {
   }
   let root = process.cwd()
   let command = 'serve'
+  let base = '/'
 
   return {
     name: 'sierra:virtual',
@@ -210,6 +214,7 @@ export function virtualSierraPlugin(config, sierraContext) {
     configResolved(viteConfig) {
       root = viteConfig.root ?? process.cwd()
       command = viteConfig.command ?? 'serve'
+      base = viteConfig.base ?? '/'
       const provider = customProvider(config.analytics)
       if (provider && !existsSync(providerFile(root, provider))) {
         throw refusal(`[Sierra] analytics.provider '${provider}' names no file under ${root}`)
@@ -218,6 +223,7 @@ export function virtualSierraPlugin(config, sierraContext) {
 
     resolveId(id, importer) {
       if (id === VIRTUAL_ID) return RESOLVED_ID
+      if (id === BOOT_ID) return RESOLVED_BOOT_ID
       // Resolve @frontierjs/* cross-package imports from within sierra source files.
       // When Vite follows the file: symlink it processes sierra's real path, which
       // has no node_modules of its own — @frontierjs/junction/client etc. can't be
@@ -240,7 +246,7 @@ export function virtualSierraPlugin(config, sierraContext) {
       // Virtual modules have no file-system path, so Node can't walk up to find
       // node_modules. They resolve through sierra's own `exports`: a list of
       // subpaths kept here as well is a second copy, and it drifts.
-      if (importer === RESOLVED_ID) {
+      if (importer === RESOLVED_ID || importer === RESOLVED_BOOT_ID) {
         const sub = id.startsWith('sierra/') ? id.slice('sierra/'.length)
                   : id.startsWith('@frontierjs/sierra/') ? id.slice('@frontierjs/sierra/'.length)
                   : null
@@ -250,10 +256,75 @@ export function virtualSierraPlugin(config, sierraContext) {
     },
 
     load(id) {
-      if (id === RESOLVED_ID) return generateVirtualSierra(config, routeTablePath(config, command), root, sierraContext)
+      if (id === RESOLVED_ID) return generateEntry(root)
+      if (id === RESOLVED_BOOT_ID) return generateVirtualSierra(config, routeTablePath(config, command), root, sierraContext)
       return null
     },
+
+    // A top-level await in main.js makes the bundler split what main.js
+    // imports into chunks that run BEFORE the entry chunk's boot, so in a build
+    // every resource it imports finds no Junction client. Dev runs in order.
+    transform(code, id) {
+      if (id !== resolve(root, 'src/main.js')) return null
+      const at = topLevelAwait(parseAst(code))
+      if (at) {
+        throw refusal(
+          `[Sierra] src/main.js:${code.slice(0, at.start).split('\n').length} awaits at its top level. ` +
+          `A build then runs main.js's imports before the boot, and every resource among them finds no ` +
+          `Junction client. Hold the first render in App.mesa instead -- an {#if} over what it waits for.`)
+      }
+      return null
+    },
+
+    // An index.html naming main.js loads it twice — as the page's script and
+    // from the entry — and mounts the app before main.js has run. In dev the
+    // entry's src is rewritten to the URL Vite serves a virtual id at: left as
+    // written, the browser reads `virtual:` as a URL scheme, fetches nothing
+    // and reports nothing, and the page stays empty.
+    transformIndexHtml(html) {
+      if (/<script[^>]*\ssrc=["']\/?src\/main\.js["']/.test(html)) {
+        throw refusal(
+          `[Sierra] index.html loads /src/main.js, and the page's entry is virtual:sierra, ` +
+          `which imports src/main.js itself and mounts src/App.mesa (FJS-D1085). ` +
+          `Write <script type="module" src="virtual:sierra"></script> in its place.`)
+      }
+      if (command !== 'serve') return html
+      return html.replace(/(<script[^>]*\ssrc=)(["'])virtual:sierra\2/g, `$1$2${base}@id/${VIRTUAL_ID}$2`)
+    },
   }
+}
+
+/** The first await outside any function, or null. */
+function topLevelAwait(node) {
+  if (!node || typeof node.type !== 'string' || node.type.includes('Function')) return null
+  if (node.type === 'AwaitExpression' || (node.type === 'ForOfStatement' && node.await)) return node
+  for (const value of Object.values(node)) {
+    for (const child of Array.isArray(value) ? value : [value]) {
+      const hit = child && typeof child === 'object' ? topLevelAwait(child) : null
+      if (hit) return hit
+    }
+  }
+  return null
+}
+
+/** The page's entry. `src/main.js` is optional and holds side-effect imports. */
+function generateEntry(root) {
+  const has = (file) => existsSync(resolve(root, file))
+  return [
+    `import 'virtual:sierra/boot'`,
+    ...(has('src/main.js') ? [`import '/src/main.js'`] : []),
+    `import { mount } from '@frontierjs/mesa/runtime'`,
+    has('src/App.mesa')
+      ? `import App from '/src/App.mesa'`
+      : `import { RouterView as App } from '@frontierjs/sierra/router'`,
+    ``,
+    `const root = document.getElementById('app')`,
+    `if (import.meta.env.DEV && !root) throw new Error('[Sierra] index.html has no element with id="app", which is where the app mounts')`,
+    // mount() inserts after its anchor, so the anchor is a node inside #app.
+    `const anchor = document.createTextNode('')`,
+    `root.appendChild(anchor)`,
+    `mount(anchor, App, { root })`,
+  ].join('\n')
 }
 
 /**
@@ -274,7 +345,7 @@ export function storagePrefix(config, root) {
 }
 
 /**
- * Generate the virtual:sierra module source code.
+ * Generate the `virtual:sierra/boot` module source code.
  *
  * @param {import('./index.js').SierraConfig} config
  * @param {string} tableOutput
@@ -442,14 +513,16 @@ function generateVirtualSierra(config, tableOutput, root, sierraContext) {
   lines.push(`}`)
   lines.push(``)
 
-  // Re-export the route table for app code
-  lines.push(`// Re-export the route table — importable from 'virtual:sierra'`)
   lines.push(`export { tree, components, loaders, layouts, published, indexed, redirects }`)
 
   return lines.join('\n')
 }
 
-// Named export for unit testing
+// Named exports for unit testing
+export function _generateEntry(root) {
+  return generateEntry(root)
+}
+
 export function _generateVirtualSierra(config, tableOutput, sierraContext) {
   return generateVirtualSierra(config, tableOutput, '/', sierraContext)
 }

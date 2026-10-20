@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { existsSync, mkdtempSync, writeFileSync, rmSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -704,6 +704,26 @@ describe('GET /api/health/:id', () => {
 // there is no `--json` to parse and no second answer to either question.
 
 describe('GET /api/check', () => {
+  // A workspace holding one app — the two passes the panel makes. `packages/cli`
+  // is neither, so the file's own root would grade nothing.
+  let ws
+  let was
+
+  beforeAll(() => {
+    ws = mkdtempSync(join(tmpdir(), 'fli-check-'))
+    writeFileSync(join(ws, 'package.json'), JSON.stringify({ name: 'ws', private: true, workspaces: ['packages/*'] }))
+    mkdirSync(join(ws, 'packages'))
+    mkdirSync(join(ws, 'shop', 'db'), { recursive: true })
+    writeFileSync(join(ws, 'shop', 'package.json'), JSON.stringify({ name: 'shop', private: true }))
+    writeFileSync(join(ws, 'shop', 'db', 'schema.lite'), 'model Note {\n  id   Int    @id\n  body String\n\n  @@gate(4.4.4.5)\n}\n')
+    was = global.projectRoot
+    global.projectRoot = ws
+  })
+
+  afterAll(() => {
+    global.projectRoot = was
+    try { rmSync(ws, { recursive: true, force: true }) } catch {}
+  })
 
   test('answers per scope, with the counts a header line needs', async () => {
     const body = await (await fetch(`${base}/api/check`)).json()
@@ -742,7 +762,18 @@ describe('GET /api/check', () => {
     // The same two passes `scripts/ci.mjs`'s `structure` phase makes, so a rule
     // loosened for one is loosened for both.
     const { scopes } = await (await fetch(`${base}/api/check`)).json()
-    expect(scopes.some(s => s.label === 'packages')).toBe(true)
+    expect(scopes.map(s => s.label).sort()).toEqual(['packages', 'shop'])
+  })
+
+  test('and a lone app is asked as an app alone', async () => {
+    // `fli check` in an app runs the app rules, so a workspace pass there reds
+    // the panel over rules the command it mirrors never runs — a deploy path
+    // under this machine's home failed `tutor:tools` that way.
+    global.projectRoot = join(ws, 'shop')
+    try {
+      const { scopes } = await (await fetch(`${base}/api/check`)).json()
+      expect(scopes.map(s => s.label)).toEqual(['.'])
+    } finally { global.projectRoot = ws }
   })
 
   test('a finding carries a path relative to the project, never an absolute one', async () => {

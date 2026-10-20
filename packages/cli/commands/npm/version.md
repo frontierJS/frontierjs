@@ -1,15 +1,14 @@
 ---
 title: npm:version
 description: Bump the package version (patch, minor, major, or explicit)
-alias: version
 examples:
-  - fli version patch
-  - fli version minor
-  - fli version major
-  - fli version 2.1.0
-  - fli version prerelease --preid beta
-  - fli version patch --no-git
-  - fli version patch --dry
+  - fli npm:version patch
+  - fli npm:version minor
+  - fli npm:version major
+  - fli npm:version 2.1.0
+  - fli npm:version prerelease --preid beta
+  - fli npm:version patch --no-git
+  - fli npm:version patch --dry
 args:
   -
     name: bump

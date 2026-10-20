@@ -591,7 +591,7 @@ in another. No record owns that question yet.
 
 ### 14. remnant — the half of a real app that maid.tech does not have
 
-*Added 2026-09-23, from a read of `~/code/Z/remnant/remnant` (schema at
+*Added 2026-09-23, from a read of `remnant/remnant` (schema at
 `db/prisma/schema.prisma`) and its production backups. Nothing is built yet, and
 the rank is only where it was appended.*
 
@@ -720,7 +720,7 @@ nothing here; leave them out.
 
 ### 16. ksite — the static half, from a real client template
 
-*Added 2026-09-28, from a read of `~/code/KOBAMI/SITES/ksite` (v0.5.0). A live
+*Added 2026-09-28, from a read of `ksite` (v0.5.0). A live
 port: ksite is the template every Kobami client marketing site is cut from, and
 it is moving onto FJS. Nothing is built yet.*
 
@@ -984,7 +984,7 @@ known plaintext password and it is not there.
 
 ### 20. Dragonfly — the first stressor whose first break is the UI realm
 
-*Added 2026-10-01, from a read of `~/code/Z/json.maverickmade.tech` (codename
+*Added 2026-10-01, from a read of `json.maverickmade.tech` (codename
 jsonfire): a Svelte 4 app, about 3,700 lines across seven components and six
 stores, plus a 3,061-line `App-single.svelte` it was split out of. Three commits,
 February 2026. `fjs-prototypes/dragonfly/dragonfly-json-editor.jsx` is a React

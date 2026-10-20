@@ -31,7 +31,7 @@ async function writeAll(dir, files) {
 const shell = {
   'index.html':
     '<!DOCTYPE html>\n<html><head><meta charset="utf-8"><title>t</title></head>\n' +
-    '<body><div id="app"></div><script type="module" src="/src/main.js"></script></body></html>\n',
+    '<body><div id="app"></div><script type="module" src="virtual:sierra"></script></body></html>\n',
   'src/main.js': "import './style.css'\nexport const answer = 42\nexport function longName(aLongParameter) { return aLongParameter + answer }\n",
   'src/style.css': 'body {\n  margin: 0;\n}\n\nmain {\n  padding: 1rem;\n}\n',
   'src/routes/_module.mesa': '---\nrender: static\n---\n<main><slot /></main>\n',

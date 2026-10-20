@@ -26,7 +26,7 @@ const SHELL = `<!DOCTYPE html>
   </head>
   <body>
     <!-- a comment that names the closing tag: </body> -->
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="virtual:sierra"></script>
   </body>
 </html>
 `
@@ -63,7 +63,7 @@ describe('applyDocument', () => {
   test('bodyEnd lands before the real closing tag, not the one in a comment', () => {
     const out = applyDocument(SHELL, DOC)
     const loader = out.indexOf('loader.js')
-    expect(loader).toBeGreaterThan(out.indexOf('/src/main.js'))
+    expect(loader).toBeGreaterThan(out.indexOf('virtual:sierra'))
     expect(loader).toBeLessThan(out.lastIndexOf('</body>'))
     expect(out).toContain('names the closing tag: </body> -->')
   })

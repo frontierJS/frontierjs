@@ -58,7 +58,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V2.3.2 | 2 | partial | `packages/junction/src/core/rate-limit.ts:56` | Limiter off by default, counts per process (known); auth throttles on |
 | V2.3.3 | 2 | partial | `packages/junction/src/core/service.ts:1441`, `packages/junction/test/transactional.test.ts` | Single and nested writes atomic; a multi-write method needs `transactional:` opt-in |
 | V2.3.4 | 2 | covered | `packages/litestone/test/transition-race.test.ts`, `packages/litestone/test/stamp-after-lock.test.ts` | `@version` optimistic lock, transition CAS, `@@unique`; writes serialized per database |
-| V2.4.1 | 2 | partial | `packages/junction/src/core/rate-limit.ts:56`, `packages/auth/plugin.ts:50` | Already in pen-testing § 1. Only auth routes throttled by default; rest opt-in, per process |
+| V2.4.1 | 2 | partial | `packages/junction/src/core/rate-limit.ts:56`, `packages/auth/plugin.ts:50` | THREATS B14. Only auth routes throttled by default; rest opt-in, per process |
 
 ## V3 Web Frontend Security
 
@@ -104,7 +104,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | ID | L | Grade | Where | Note |
 | --- | --- | --- | --- | --- |
 | V5.1.1 | 2 | partial | `packages/litestone/docs/file-storage.md:87` | `@accept` and the body bound documented; no per-feature size doc, nothing on malicious-file behavior |
-| V5.2.1 | 1 | covered | `packages/junction/src/transport/body.ts:253`, `packages/junction/test/body-limit.test.ts` | Already in pen-testing § 1. 256 KB body cap, bounded streaming read; Blob not read whole |
+| V5.2.1 | 1 | covered | `packages/junction/src/transport/body.ts:253`, `packages/junction/test/body-limit.test.ts` | THREATS B14. 256 KB body cap, bounded streaming read; Blob not read whole |
 | V5.2.2 | 1 | partial | `packages/litestone/src/storage/file-storage.js:64`, `packages/litestone/test/file-type.test.ts` | `@accept` grades sniffed magic bytes; opt-in per field, any type without it; no image rewriting |
 | V5.2.3 | 2 | n.a. | — | Nothing decompresses or unpacks archives (no gunzip/unzip in request or storage path) |
 | V5.3.1 | 1 | covered | `packages/junction/src/transport/static.ts`, `packages/junction/test/static-root.test.ts` | Static servers only read bytes; key extension follows sniffed type, not the upload name |
@@ -298,7 +298,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V13.3.1 | 2 | partial | `packages/junction/src/core/env.ts`, `packages/cli/core/checks.js` (`battery-raw-secret`) | `.env` plus `defineEnv`, kept out of git and image; no vault or HSM seam |
 | V13.3.2 | 2 | none | `packages/junction/src/core/env.ts` | one `.env` read whole by every process; no per-secret access control |
 | V13.4.1 | 1 | covered | `packages/cli/commands/make/deploy.md:261` | generated `.dockerignore` drops `.git`; Dockerfile copies `api/` and `db/` only |
-| V13.4.2 | 2 | covered | `packages/junction/src/core/errors.ts:275`, `packages/cli/commands/deploy/_module.md:545`, `packages/junction/test/wire-safety.test.ts` | deploy sets NODE_ENV=production; debug fails open whenever NODE_ENV is anything else · [FJS-3207](../ISSUES.md#fjs-3207) |
+| V13.4.2 | 2 | covered | `packages/junction/src/core/errors.ts:275`, `packages/cli/commands/deploy/_module.md:545`, `packages/junction/test/wire-safety.test.ts` | THREATS B15. deploy sets NODE_ENV=production; debug fails open whenever NODE_ENV is anything else · [FJS-3207](../ISSUES.md#fjs-3207) |
 | V13.4.3 | 2 | covered | `packages/junction/src/transport/static.ts:135`, `packages/junction/test/static-root.test.ts` | a directory answers its index file or 404; no listing exists |
 | V13.4.4 | 2 | covered | `packages/junction/src/transport/http.ts:757` | no route answers TRACE; it gets 405 or 404 |
 | V13.4.5 | 2 | covered | `packages/junction/src/transport/health.ts:468`, `packages/junction/test/health-probes.test.ts`, `packages/junction/src/plugins/manifest/index.ts:93` | manifest dev-only; `/metrics` is not mounted in production without a `token` or `authFn`, while `/health` stays public for the deploy's health check · [FJS-3191](../ISSUES.md#fjs-3191) |
@@ -321,11 +321,11 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 
 | ID | L | Grade | Where | Note |
 | --- | --- | --- | --- | --- |
-| V15.1.1 | 1 | none | `docs/CI.md`, `scripts/ci.mjs:505` | no remediation time frames written anywhere |
+| V15.1.1 | 1 | none | `docs/CI.md`, `scripts/ci.mjs` | THREATS B16. no remediation time frames written anywhere |
 | V15.1.2 | 2 | partial | `bun.lock`, `deps.snapshot.md` | lockfile with integrity hashes; no SBOM, and the deps snapshot is the repo's not an app's |
 | V15.1.3 | 2 | partial | `packages/junction/README.md`, `packages/junction/src/config/index.ts:239` | limits documented per feature; no list of expensive functions with their defenses |
-| V15.2.1 | 1 | partial | `scripts/ci.mjs:505`, `packages/cli/core/app-config.js` | repo CI fails a shipping advisory; scaffolded app's workflow runs no audit |
-| V15.2.2 | 2 | partial | `packages/junction/src/config/index.ts:239`, `packages/junction/src/core/litestone.ts:228`, `packages/conduit/src/resilience.ts:17` | body cap, list max 100, bulkMax, WS bounds on; rate limiter and DDoS gate off by default |
+| V15.2.1 | 1 | partial | `packages/cli/core/advisories.js`, `packages/cli/test/advisories.test.js`, `packages/cli/core/app-config.js` | THREATS B16. repo CI fails a shipping advisory; scaffolded app's workflow runs no audit · [FJS-3364](../ISSUES.md#fjs-3364) |
+| V15.2.2 | 2 | partial | `packages/junction/src/config/index.ts:239`, `packages/junction/src/core/litestone.ts:228`, `packages/conduit/src/resilience.ts:17` | THREATS B14. Body cap, list max 100, bulkMax, WS bounds on; rate limiter and DDoS gate off by default |
 | V15.2.3 | 2 | partial | `packages/cli/commands/make/deploy.md:278`, `packages/junction/src/plugins/manifest/index.ts:80` | dev tools dev-only; `.dockerignore` `*.test.ts` is root-only, so `api/test/` ships in the image · [FJS-3212](../ISSUES.md#fjs-3212) |
 | V15.3.1 | 1 | covered | `packages/litestone/src/core/client.js` (`read()`), `packages/litestone/test/guarded-disclosure.test.ts`, `packages/mcp/test/projection.test.ts` | one row shaper strips protected and field-policied columns; `$select` narrows further |
 | V15.3.2 | 2 | covered | `packages/junction/src/plugins/webhooks/index.ts:603`, `packages/conduit/src/transports/http.ts:533`, `packages/junction/test/webhook-targets.test.ts` | THREATS B13. webhooks refuse redirects; conduit follows only when a target opts in, bounded |
@@ -352,7 +352,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V16.4.1 | 2 | covered | `packages/junction/src/core/logger.ts:118`, `packages/junction/test/logger-pretty.test.ts` | JSON encoding in production; pretty mode quotes values carrying CR/LF |
 | V16.4.2 | 2 | partial | `packages/litestone/src/core/audit-log.js` (`@@gate(8)`) | trail is system-only to callers; operator can rewrite it, no hash chain (B11 by ruling) |
 | V16.4.3 | 2 | partial | `packages/junction/src/core/logger.ts` (`addWriter`) | writer seam exists; only a console writer ships, trail stays on the app's disk · [FJS-3213](../ISSUES.md#fjs-3213) |
-| V16.5.1 | 2 | covered | `packages/junction/src/core/errors.ts:283`, `packages/junction/test/wire-safety.test.ts` | 5xx becomes generic message with correlation id in production |
+| V16.5.1 | 2 | covered | `packages/junction/src/core/errors.ts:283`, `packages/junction/test/wire-safety.test.ts` | THREATS B15. 5xx becomes generic message with correlation id in production |
 | V16.5.2 | 2 | covered | `packages/conduit/src/resilience.ts`, `packages/conduit/conduit.test.ts` | per-target circuit breaker and concurrency gate on by default; `circuitBreaker` hook for services |
 | V16.5.3 | 2 | covered | `packages/junction/test/around-forgot-next.test.ts`, `packages/litestone/test/policy-interpreters.test.ts` | `@@deny` fires on UNKNOWN, missing result is 500, validation halts the write |
 

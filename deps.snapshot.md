@@ -26,7 +26,7 @@ that declaration listed beside the others.
 | Package | Installed | Declared by |
 | --- | --- | --- |
 | `@biomejs/biome` | `2.5.8` | @frontierjs/config (peer) `>=2.2.0`<br>frontierjs (dev) `2.5.8` |
-| `@modelcontextprotocol/client` | `2.0.0` | @frontierjs/basecamp (dev) `^2.0.0`<br>@frontierjs/example (dev) `^2.0.0`<br>@frontierjs/mcp `^2.0.0` |
+| `@modelcontextprotocol/client` | `2.3.1` | @frontierjs/basecamp (dev) `^2.3.1`<br>@frontierjs/example (dev) `^2.3.1`<br>@frontierjs/mcp `^2.3.1` |
 | `@modelcontextprotocol/ext-apps` | `2.0.3` | @frontierjs/example (dev) `^2.0.3`<br>@frontierjs/mcp `^2.0.3` |
 | `@modelcontextprotocol/server` | `2.0.0` | @frontierjs/mcp `^2.0.0` |
 | `@opentui/core` | `0.5.17` | @frontierjs/haven `0.5.17`<br>@frontierjs/mesa (dev) `0.5.17`<br>@frontierjs/mesa (peer) `0.5.17` |

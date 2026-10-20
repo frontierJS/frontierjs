@@ -1,7 +1,6 @@
-// Importing virtual:sierra boots the router, the Junction client and — because
-// ../db/schema.lite exists — registerSchemas(). All three are generated from
-// config/sierra.config.js.
-import 'virtual:sierra'
+// The app's side-effect imports. index.html loads virtual:sierra, which boots
+// the router, the Junction client and — because ../db/schema.lite exists —
+// registerSchemas(), then imports this file, then mounts App.mesa (FJS-D1085).
 
 // The design system. One import, no build step, no config. Every class used
 // below this line comes from it, and nothing in this app defines a color, a
@@ -10,16 +9,3 @@ import '@frontierjs/css'
 
 // How this console renders a column, where it differs from the kit's default.
 import './displays.js'
-
-import { mount } from '@frontierjs/mesa/runtime'
-import App from './App.mesa'
-
-// mount()'s first argument is an anchor NODE, not an element id: Mesa inserts
-// the component immediately after it, so the anchor must already be a child of
-// whatever you want to mount into. Passing the string 'app' fails with
-// "anchor node has no parentNode", which is what it says but not why.
-const root   = document.getElementById('app')
-const anchor = document.createTextNode('')
-root.appendChild(anchor)
-
-mount(anchor, App, { root })

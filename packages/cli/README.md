@@ -515,6 +515,7 @@ Directory names are environment variables, one per surface — `WEB_DIR`,
 | `--test` | `-t` | `NODE_ENV=test` |
 | `--step` | | Re-run one `_steps/` step by number |
 | `--project <dir>` | | Run against that root instead of resolving one |
+| `--version` | `-v` | With no command: print fli's own version and exit |
 
 `--project` is consumed before the command runs — it sets `$.paths.*` and
 is stripped from the command's own flags, so it drives an application from

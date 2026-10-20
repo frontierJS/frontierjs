@@ -18,7 +18,7 @@ none of that file.
 
 Three trees, each read on the date above:
 
-- **legacy** — `~/code/KOBAMI/SITES/ksite/site`, read-only. The port forked it
+- **legacy** — `ksite/site`, read-only. The port forked it
   on 2026-09-28 at about 0.5.52 (its `check/` has 0.5.52's rules and not
   0.5.54's blog-author or `toTel` work); legacy was 0.5.57 on 2026-10-08
   (`CHANGELOG.md` is the record).

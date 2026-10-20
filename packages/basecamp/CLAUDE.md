@@ -181,6 +181,9 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           own log — never `children.js`, whose in-memory table a `bun --watch`
           restart would lose with the server still up. The checkout's OWN fli,
           and no FRONTIER_PORT_* or PORT of this API's; Unpin and Archive stop it.
+          Every spawn the API makes takes junction's `childEnv(env)`, never `...process.env`:
+          a git hook, an ssh ProxyCommand and a vite config are not handed
+          ENCRYPTION_KEY or the `_FILE` that holds it (`FJS-3359`).
           plugins/workbench-terminal.ts is the Terminal tab: `/ws/terminal/{pin}`
           (under /ws/ because both proxies forward that prefix as a socket),
           Bun's own PTY in the pin's folder, xterm.js in web/src/components/

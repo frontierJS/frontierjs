@@ -206,8 +206,7 @@ describe('the built bundle', () => {
     writeFileSync(join(TMP, 'src/routes/index.mesa'), '<h1>hi</h1>')
     writeFileSync(join(TMP, 'index.html'),
       '<!doctype html><html><body><div id="app"></div>' +
-      '<script type="module" src="/src/main.js"></script></body></html>')
-    writeFileSync(join(TMP, 'src/main.js'), "import 'virtual:sierra'\n")
+      '<script type="module" src="virtual:sierra"></script></body></html>')
     // virtual:sierra imports the app's own config by absolute path.
     mkdirSync(join(TMP, 'config'), { recursive: true })
     writeFileSync(join(TMP, 'config/sierra.config.js'), 'export default {}\n')

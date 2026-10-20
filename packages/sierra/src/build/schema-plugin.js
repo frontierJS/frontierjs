@@ -22,6 +22,7 @@ import { pathToFileURL } from 'url'
 import { diffSchemaModes } from '../resource/schema-registry.js'
 import { wantsLocalDb }    from './local-db-plugin.js'
 import { refusal }         from './refusal.js'
+import { RESOLVED_BOOT_ID } from '../virtual/virtual-sierra.js'
 
 /** Default locations, tried in order when `config.schema` isn't set. */
 const DEFAULT_PATHS = [
@@ -499,11 +500,11 @@ export function schemaPlugin(config, sierraContext) {
         const refused = deviceRefusal(generated)
         if (refused) console.error(refused)
 
-        // virtual:sierra embeds the schemas, so it has to be rebuilt. A full
+        // virtual:sierra/boot embeds the schemas, so it has to be rebuilt. A full
         // reload rather than an HMR update: make() defaults are read when a
         // resource module is first evaluated, and those modules are already
         // instantiated by now.
-        const mod = server.moduleGraph.getModuleById('\0virtual:sierra')
+        const mod = server.moduleGraph.getModuleById(RESOLVED_BOOT_ID)
         if (mod) server.moduleGraph.invalidateModule(mod)
         server.ws.send({ type: 'full-reload' })
       }

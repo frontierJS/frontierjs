@@ -12,6 +12,7 @@ import { resolve, relative, basename } from 'path'
 import { scan } from '../scanner/index.js'
 import { generateRouteTable, routeTablePath } from '../scanner/generate-route-table.js'
 import { classify } from '../scanner/classify.js'
+import { RESOLVED_BOOT_ID } from '../virtual/virtual-sierra.js'
 import { warnDuplicateSnippets, warnReservedFrontmatter } from './warnings.js'
 // From page-fields.js, not router/index.js: this runs in Node during the
 // build, and router/index.js pulls in the Mesa runtime.
@@ -237,7 +238,7 @@ export function scannerPlugin(config, sierraContext) {
 }
 
 function invalidateVirtualSierra(server) {
-  const virtualModule = server.moduleGraph.getModuleById('\0virtual:sierra')
+  const virtualModule = server.moduleGraph.getModuleById(RESOLVED_BOOT_ID)
   if (virtualModule) {
     server.moduleGraph.invalidateModule(virtualModule)
     server.ws.send({ type: 'full-reload' })

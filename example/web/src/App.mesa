@@ -1,5 +1,17 @@
 <script>
   import { RouterView } from '@frontierjs/sierra/router'
+  import { loadShopCalendar } from './datetime.js'
+
+  // Which calendar the shop keeps, before anything renders a date in it — a
+  // date that re-rendered once the answer arrived would show the wrong day
+  // first. A failure still renders: the app is more use than a blank page, and
+  // `day()` then reads UTC, which is what a shop that set nothing is billed in.
+  let calendar = false
+  loadShopCalendar()
+    .catch((err) => console.warn(`[example] the shop's calendar did not load, so dates read in UTC: ${err?.message ?? err}`))
+    .finally(() => { calendar = true })
 </script>
 
-<RouterView />
+{#if calendar}
+  <RouterView />
+{/if}

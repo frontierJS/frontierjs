@@ -190,30 +190,17 @@ export function desktopIndexHtml({ productName = 'app' } = {}) {
   </head>
   <body class="app theme-default">
     <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="virtual:sierra"></script>
   </body>
 </html>
 `
 }
 
 export function desktopMainEntry() {
-  return `// desktop/src/main.js — the entry index.html loads.
-//
-// \`virtual:sierra\` boots the router and registers the schema, and it is
-// imported FIRST: a route module that evaluates before the schemas are
-// registered gets a bare make() with no field rules.
-import 'virtual:sierra'
+  return `// desktop/src/main.js — the screens' side-effect imports. index.html loads
+// virtual:sierra, which boots the router and the schema, imports this file and
+// mounts the routes (FJS-D1085).
 import '@frontierjs/css'
-
-import { mount } from '@frontierjs/mesa/runtime'
-import { RouterView } from '@frontierjs/sierra/router'
-
-// mount()'s first argument is an anchor NODE, not an element id.
-const root   = document.getElementById('app')
-const anchor = document.createTextNode('')
-root.appendChild(anchor)
-
-mount(anchor, RouterView, { root })
 `
 }
 

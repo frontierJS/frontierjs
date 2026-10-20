@@ -7,7 +7,7 @@ dated: 2026-10-08
 # Assessment — Converting SSTime, ELA's time clock, onto FrontierJS
 
 **Status: ASSESSMENT.** Dated 2026-10-08. It reads
-`~/code/CLIENTS/elitelawncare/sstime` (read-only) and the only database
+`sstime` (read-only) and the only database
 copy on disk, `tmp/elitelawncare.sstimeclockapp.com_20221121.sql`, a MariaDB 10.5
 production dump **four years old**. Every count below came from that dump on this
 date. Nothing here may be cited as behavior of either system — see

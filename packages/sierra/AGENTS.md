@@ -289,7 +289,7 @@ export const sheets = createResource('stocktakeSheets', {
 
 **An `offlineQuery` exists only once its module has been imported**, and routes
 are code-split — the screen nobody opened declares nothing. Import every
-resource that must work offline from `main.js`, after `virtual:sierra`.
+resource that must work offline from `main.js`, which `virtual:sierra` imports after its boot.
 
 **`offlineStatus()` from `@frontierjs/sierra/resource` is what the last warm found**
 (`FJS-D484`), beside `pendingQueue()`:
@@ -408,9 +408,8 @@ and `@` resolves to `widgets/src`.
 
 Everything above is loud. These are not.
 
-- **`import 'virtual:sierra'` must be the first import in `main.js`.** A resource
-  module evaluated before the client exists — or in an app with no `junction.url`,
-  or on a prerendered page — logs *Junction client not ready — returning empty
+- **A resource module evaluated before the client exists** — in an app with no
+  `junction.url`, or on a prerendered page — logs *Junction client not ready — returning empty
   resource* once and stays empty for the tab: every call rejects and `can()`
   answers `false`.
 
@@ -467,8 +466,8 @@ Everything above is loud. These are not.
 7. A `site/` route declaring `render: static` has `db:` in its surface config, a
    `getStaticPaths` if it is dynamic, a `select:` on every read of a gated model,
    and no column in `publishes:` it does not mean.
-8. `import 'virtual:sierra'` is the first line of `main.js`; every Vite config sets
-   `strictPort: true`.
+8. `index.html` loads `virtual:sierra`, and `main.js` mounts nothing; every Vite
+   config sets `strictPort: true`.
 9. A write to a `@@sync` model handles `err.queued` — it is a held write, not a
    failure — and a resource with an `offlineQuery` is imported from `main.js`.
 

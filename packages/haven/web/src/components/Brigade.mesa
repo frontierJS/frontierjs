@@ -245,6 +245,17 @@
     $.onDestroy(verbs.add({ word: 'heard', help: HEARD, reach: { x, y: LINE.y + 2, within: REACH }, run: heard }))
   }
 
+  // What waits on you is a Tab stop each (`IDEAS/haven.md` 21.1): a station
+  // with a CHEF! not yet heard, then each plate, left to right as drawn. Each
+  // is the cell where the bubble reads it and a bare `/heard` or `/bump` takes it.
+  $.onDestroy(verbs.addStops(() => [
+    ...stations(cooks(workers)).flatMap((s) => {
+      const ids = s.cooks.filter((w) => w.asking && !w.asking.heard).map(id)
+      return ids.length ? [{ name: `CHEF! ${ids.join(' ')} ${s.name}`, reaches: [{ x: s.x + Math.floor(s.w / 2), y: LINE.y + 2, within: 0 }] }] : []
+    }),
+    ...platesOf(workers).map((p) => ({ name: `plate ${id(p.w)} ${p.w.bench}`, reaches: [{ x: p.x + 3, y: PASS.y + 1, within: 0 }] })),
+  ]))
+
   $.onDestroy(scene.task('brigade', (ms) => {
     workers = readWorkers({ now: ms })
     now = ms

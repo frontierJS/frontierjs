@@ -14,7 +14,7 @@ gap is [`FJS-2737`](../ISSUES.md#fjs-2737). `site-kit-parity.md` § 4 listed it,
 
 ## The gap, measured
 
-The Luminous Heart port (`~/code/CLIENTS/luminousheart/luminousheartportal.com-fjs/fjs`)
+The Luminous Heart port (`luminousheartportal.com-fjs/fjs`)
 builds to a 24 MB `dist/` that ships all 59 raster photos at source size. Its
 largest, `gallery/lhw-22.jpg`, is 1.45 MB at 2560 px, so a phone downloads all
 of it for a 390 px slot. Legacy ksite runs the same photos through sharp at

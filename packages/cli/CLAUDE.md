@@ -117,6 +117,12 @@ core/
                 not — never 0, which must mean *ran nothing*. Starting a run is
                 `node scripts/ci.mjs` with flags built from names, its own
                 process group so `stop` takes the suite too; one at a time
+  advisories.js what the `advisories` CI phase fails on — the runtime closure
+                of every published package, and the advised packages in it
+                (THREATS B16). Walked by node's lookup chain, never through a
+                package's `exports`, and tested under NODE: bun resolves a
+                `package.json` an exports map hides, so a bun-only test passes
+                the walk that let a high advisory through (`FJS-3363`)
   release-view.js the Release realm read rather than typed — the pivot verdict
                 per app (local, free, on page load) and what is SERVING (remote,
                 a press). The split is the design: every other panel on that page
@@ -1453,7 +1459,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
   navigates to). `exact-numbers.md` linked from nothing was half of `FJS-560`.
 - **Some of the rules read source rather than the tree, and `readCode` is why
   they are usable.** `raw-route-param`, `ctx-params`, `set-auth-discarded`,
-  `call-header-declared`, `service-model`, `service-definition`, `resource-model-miss`,
+  `call-header-declared`, `service-model`, `service-definition`, `app-entry`, `resource-model-miss`,
   `service-module-db`, `scheduler-dispatch`, `battery-raw-secret`, `gate-unreachable`,
   `transition-methods`, `commitment-swept` and `static-publish-db` match text — so they match the
   paragraphs that DESCRIBE those hazards too, and this repo's own `api/` files

@@ -31,7 +31,7 @@ const TMP = join(__dirname, 'tmp-static-autoimport')
 const files = {
   'index.html':
     '<!DOCTYPE html>\n<html><head><meta charset="utf-8"><title>t</title></head>\n' +
-    '<body><div id="app"></div><script type="module" src="/src/main.js"></script></body></html>\n',
+    '<body><div id="app"></div><script type="module" src="virtual:sierra"></script></body></html>\n',
   'src/main.js': '// SPA entry — the static target still runs a normal Vite build first.\n',
   'src/settings.js': "export const company_name = 'Acme Cleaning'\n",
   'src/routes/index.md': '---\ntitle: Home\nrender: static\n---\n\n<Hero />\n',

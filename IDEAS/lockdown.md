@@ -64,14 +64,14 @@ packages/ui/components packages/cli/commands` returns only `aliasesOf` (held for
 `FJS-2960`'s ruling) and `fli ws:exports` writes a snapshot with one spelling per
 subpath.
 
-- [ ] 1.1 Kit prop aliases out: `color`, `type`, `variant`, `icon` and the legacy map in `utils.js tone()` (`FJS-1140`); Button gets `treatment` and loses `variant` (`FJS-2943`)
+- [x] 1.1 Kit prop aliases out: `color`, `type`, `variant`, `icon` and the legacy map in `utils.js tone()` (`FJS-1140`); Button gets `treatment` and loses `variant` (`FJS-2943`) — built: `FJS-1140`, `FJS-2943` closed
 - [x] 1.2 Duplicate generators out: `api:service`, `api:model`, `web:resource`, `web:route`, `web:component`, `make:schema`, `db:schema` (`FJS-2944`, `FJS-1130`)
 - [x] 1.3 Junction back-compat residue out: `skip`, `PaginatedResult`, the compat re-exports, the `junction.call` alias, the `errors.ts` TODO (`FJS-2957`); the `channels:` shim in notifications (`FJS-2960`)
-- [ ] 1.4 One spelling per subpath in mesa, ui, config, css; `fli ws:exports` fails a pair (`FJS-2964`); junction drops its 15 internal mirrors and the `/email` footer, orion gains `.` (`FJS-2958`)
-- [ ] 1.5 Scaffold truth: `ENCRYPTION_KEY` always written (`FJS-2945`); `make:model` writes the reference's `updatedAt` (`FJS-2952`); `make:component` / `make:resource` lose the false `@/` line, raw hex and `on:click` (`FJS-2970`, `FJS-1379`); `@required`'s catalog entry matches its parser (`FJS-2690`)
-- [ ] 1.6 Shipped set: `fli validate` folded into `fli check` (`FJS-2986`); CapRover, SSH and personal-browser commands to the user tier (`FJS-2985`); jetty's five bins (`FJS-2989`); `routes.js` under `.sierra/` and ignored (`FJS-2981`); package descriptions say the realm (`FJS-2988`)
-- [ ] 1.7 `$search` / `$scope` into the toolbelt directives table or refused, and one VOCABULARY.md paragraph for `$`'s house senses (`FJS-2934`)
-- [ ] 1.8 `fli file --dry` writes nothing and stamps the local day (`FJS-2976`)
+- [x] 1.4 One spelling per subpath in mesa, ui, config, css; `fli ws:exports` fails a pair (`FJS-2964`); junction drops its 15 internal mirrors and the `/email` footer, orion gains `.` (`FJS-2958`) — built: every JS subpath bare (`FJS-2964`); junction's internal subpaths out of `package.json` (`FJS-2958`)
+- [x] 1.5 Scaffold truth: `ENCRYPTION_KEY` always written (`FJS-2945`); `make:model` writes the reference's `updatedAt` (`FJS-2952`); `make:component` / `make:resource` lose the false `@/` line, raw hex and `on:click` (`FJS-2970`, `FJS-1379`); `@required`'s catalog entry matches its parser (`FJS-2690`) — built: `FJS-2945`, `FJS-2952`, `FJS-2970`, `FJS-1379`, `FJS-2690` closed
+- [x] 1.6 Shipped set: `fli validate` folded into `fli check` (`FJS-2986`); CapRover, SSH and personal-browser commands to the user tier (`FJS-2985`); jetty's five bins (`FJS-2989`); `routes.js` under `.sierra/` and ignored (`FJS-2981`); package descriptions say the realm (`FJS-2988`) — built: `fli validate` deleted rather than folded (`FJS-2986`); jetty one `jetty <verb>` dispatcher (`FJS-2989`)
+- [x] 1.7 `$search` / `$scope` into the toolbelt directives table or refused, and one VOCABULARY.md paragraph for `$`'s house senses (`FJS-2934`) — built: both rows of the toolbelt directives table (`FJS-2934`)
+- [x] 1.8 `fli file --dry` writes nothing and stamps the local day (`FJS-2976`) — built: `fileIssue` takes `dry` (`FJS-2976`)
 
 ### Phase 2 — The rulings
 
@@ -84,10 +84,10 @@ Done when: `FJS-D1077`–`FJS-D1086`, `FJS-D668` and `FJS-D866` are closed by
 - [x] 2.3 `FJS-D1080` one root on `createApp` (holds `FJS-2939`, `FJS-2975`)
 - [x] 2.4 `FJS-D1078` one event spelling (holds `FJS-2941`) — ruled C: `onclick={fn}` everywhere, the pipe modifiers kept on the DOM name
 - [x] 2.5 `FJS-D668` slot vs snippet (holds `FJS-2942`, `FJS-1230`) — ruled D: `slot=` is compile-time sugar for a snippet with no arguments, snippets the one runtime system
-- [ ] 2.6 `FJS-D1081` one gate literal (holds `FJS-2936`); `FJS-D1082` bare policy ops (holds `FJS-2947`)
-- [ ] 2.7 `FJS-D1083` one script table and `FJS-D1084` one front door (hold `FJS-2946`, `FJS-2944`'s sibling `FJS-1870`)
-- [ ] 2.8 `FJS-D1085` how an app mounts; `FJS-D1086` the implicit default form
-- [ ] 2.9 `FJS-D866` the `Store` word (holds `FJS-2967`)
+- [x] 2.6 `FJS-D1081` one gate literal (holds `FJS-2936`); `FJS-D1082` bare policy ops (holds `FJS-2947`) — ruled: `FJS-D1081` B (bare on both), `FJS-D1082` A (bare ops)
+- [x] 2.7 `FJS-D1083` one script table and `FJS-D1084` one front door (hold `FJS-2946`, `FJS-2944`'s sibling `FJS-1870`) — ruled: `FJS-D1083` A, `FJS-D1084` A
+- [x] 2.8 `FJS-D1085` how an app mounts; `FJS-D1086` the implicit default form — ruled: `FJS-D1085` B (`virtual:sierra` mounts `App.mesa`), `FJS-D1086` B (the markup half stays; Invariant 18 stands)
+- [x] 2.9 `FJS-D866` the `Store` word (holds `FJS-2967`) — ruled: `Tether` — `useStore` → `useTether`, *live store* in prose becomes *tether*
 
 ### Phase 3 — The renames the rulings force
 
@@ -97,19 +97,19 @@ Done when: `bun run ci` green, `fli check` carries a rule for each row below, an
 the three `verify:*` drives `fli proves --from main` names have run.
 
 - [x] 3.1 Service verb across example (×36), basecamp (×42), haven, scaffold; loader drops the `create*Service` factory-name rule (`FJS-2937`) — definition only, a function default refused (`FJS-D1079` amended); `fli check` rule `service-definition`; left over: `FJS-2995`
-- [ ] 3.2 Plugin names to the ruled grammar; `define*` to one spec-object shape, `defineJob` stops restating the filename (`FJS-2938`, `FJS-2953`); `auth({ auth })` schedules its own cleanup jobs, so no app writes the inline plugin (`FJS-1893`)
-- [ ] 3.3 `createApp({ root })`; `autoload`, `jobsDir`, `notifications`, `configPath` gone; the port read once by junction from the broker var (`FJS-2939`, `FJS-2975`, `FJS-2974`); `createApp`'s bag reduced to `db|tenants, auth, principal, system, config, root` (`FJS-2954`)
+- [x] 3.2 Plugin names to the ruled grammar; `define*` to one spec-object shape, `defineJob` stops restating the filename (`FJS-2938`, `FJS-2953`); `auth({ auth })` schedules its own cleanup jobs, so no app writes the inline plugin (`FJS-1893`) — built: `FJS-D1077` A, every Plugin factory a bare noun (`FJS-2938`); `defineJob` stamps the filename (`FJS-2953`); `auth.cleanup` held by the auth plugin (`FJS-1893`)
+- [x] 3.3 `createApp({ root })`; `autoload`, `jobsDir`, `notifications`, `configPath` gone; the port read once by junction from the broker var (`FJS-2939`, `FJS-2975`, `FJS-2974`); `createApp`'s bag reduced to `db|tenants, auth, principal, system, config, root` (`FJS-2954`) — built: `createApp({ root: import.meta.url })`, `app.root` (`FJS-2939`); the bag's prose-only seams throw (`FJS-2954`); the port from the broker slot (`FJS-2975`)
 - [x] 3.4 `app.<slot>` typed present, an unconfigured read throwing the plugin's name; the scaffold ships no `!` (`FJS-2940`) — built: `APP_SLOTS` + the slot guard in junction's `core/app.ts`, `'slot' in app` the presence test
 - [x] 3.5 Event spelling: compiler refuses the other two by name; `make:component`, VISION rule 23, ui README agree (`FJS-2941`) — built: `eventAttribute` in `compiler.js` is every reader's answer; a guard or timer modifier on a component wraps the value, a listener option is refused there; 1,680 `on:` in `.mesa` rewritten (596 workspace, 1,084 prototypes) plus 477 in tests and docs
 - [x] 3.6 One runtime system: the compiler lowers `slot=` / `<slot>` to snippets with no arguments; `attachNamedSlotLegacy`, `makeSlots` and Form's hand fallback deleted; `slot=` with arguments refused naming the snippet form (`FJS-2942`, `FJS-1230`, `FJS-D668`) — built: `lowerSlots` in `compiler.js`; a written prop beside same-name content is the override; residue (`__block`, sierra's own `<slot />` rewrite) is `FJS-3149`
-- [ ] 3.7 `createResource('products', opts?)` and nothing else; `client.resource` internal (`FJS-2933`, `FJS-2967`); `resource.list()` the one URL-driven list, `store`/`load`/`stale`/`more` its internals (`FJS-2968`)
-- [ ] 3.8 Gate literal (`FJS-2936`) — digits-only moves landed with `FJS-2935`; bare policy ops and the comma-combo's deletion landed with `FJS-2947`
-- [ ] 3.9 Script table written by `app-config.js`, the three apps moved to it, `fli dev` the printed door, `utils/dev.md` → `dev/index.md` (`FJS-2946`, `FJS-2944`)
-- [ ] 3.10 `mount` per `FJS-D1085` in every `main.js` and the scaffold; implicit default form per `FJS-D1086`, the 76 markup halves deleted
+- [x] 3.7 `createResource('products', opts?)` and nothing else; `client.resource` internal (`FJS-2933`, `FJS-2967`); `resource.list()` the one URL-driven list, `store`/`load`/`stale`/`more` its internals (`FJS-2968`) — built: `FJS-D866` + `FJS-D1316` (`FJS-2933`, `FJS-2967`); `FJS-D1318`, `tethered()` the one list door (`FJS-2968`)
+- [x] 3.8 Gate literal (`FJS-2936`) — digits-only moves landed with `FJS-2935`; bare policy ops and the comma-combo's deletion landed with `FJS-2947` — built: `FJS-2936`, `FJS-2947` closed
+- [x] 3.9 Script table written by `app-config.js`, the three apps moved to it, `fli dev` the printed door, `utils/dev.md` → `dev/index.md` (`FJS-2946`, `FJS-2944`) — built: `FJS-2946`, `FJS-2944`, `FJS-1870` closed
+- [x] 3.10 `virtual:sierra` mounts `App.mesa` per `FJS-D1085`; every `main.js` and the scaffold drop the anchor dance, `main.js` optional and side-effect imports only (`FJS-D1086` B leaves the markup halves) — built: `index.html` names `virtual:sierra`, the boot is `virtual:sierra/boot`, a top-level `await` in `main.js` refused (`FJS-D1085` amended); `fli check` rule `app-entry`; 37 prototypes moved, ksite on the boot
 - [ ] 3.11 One principal: `ctx.principal` on both contexts, one id key, `app.runAs(null)` documented as the system path (`FJS-2955`); `ctx.raw`, internals behind a symbol, one of `$.db` / `locals.db` (`FJS-2956`)
-- [ ] 3.12 Auth callbacks: one event object each, `on*` observer / `can*` guard, one of `onRegister` / `onRegistered` (`FJS-2961`); one verb set at both layers and one token option name (`FJS-2969`)
+- [x] 3.12 Auth callbacks: one event object each, `on*` observer / `can*` guard, one of `onRegister` / `onRegistered` (`FJS-2961`); one verb set at both layers and one token option name (`FJS-2969`) — built: `FJS-D1332` one event object per callback, `onRegister` deleted (`FJS-2961`); `FJS-D1315` `signIn` / `completeSignIn` / `signUp` / `signOut` at every layer (`FJS-2969`)
 - [ ] 3.13 `init*` / `configure*` split by side effect, analytics picks one (`FJS-2962`); `register*` one shape beside `claim` (`FJS-2963`); litestone's `Plugin` class renamed for its host (`FJS-2965`); duplicate export names qualified and graded by `fli ws:exports` (`FJS-2966`)
-- [ ] 3.14 `apiPrefix` read from `junction.config.js` by sierra and the proxy (`FJS-2971`); configs carry live keys only, `frontier.config.js` written only with `--server` / `--domain` (`FJS-2972`); deps pinned to the CLI's own version (`FJS-2973`)
+- [x] 3.14 `apiPrefix` read from `junction.config.js` by sierra and the proxy (`FJS-2971`); configs carry live keys only, `frontier.config.js` written only with `--server` / `--domain` (`FJS-2972`); deps pinned to the CLI's own version (`FJS-2973`) — built: `FJS-2971`, `FJS-2972`, `FJS-2973` closed
 - [ ] 3.15 Conduit's descriptor camelCase (`timeoutMs`, `registeredAt`), and the registry-stamped fields off a target declared as a literal (`FJS-2430`)
 
 ### Phase 4 — Schema seams
@@ -120,8 +120,8 @@ Done when: the reference's *shapes that parse and fail later* list is exact, and
 the 22 bad-schema probes from Phase 0 each get the message the row asks for.
 
 - [x] 4.1 Gate order and model case refuse in `parse()` (`FJS-2948`)
-- [ ] 4.2 The schema-function branch only for a declared `function`; a typo'd attribute gets *did you mean* (`FJS-2949`, `FJS-2977`)
-- [ ] 4.3 `scope` (exclusion key) renamed away from `@@scope` (`FJS-2950`); a move word of its own or the overload documented once (`FJS-2951`)
+- [x] 4.2 The schema-function branch only for a declared `function`; a typo'd attribute gets *did you mean* (`FJS-2949`, `FJS-2977`) — built: `FJS-2949`, `FJS-2977` closed
+- [x] 4.3 `scope` (exclusion key) renamed away from `@@scope` (`FJS-2950`); a move word of its own or the overload documented once (`FJS-2951`) — ruled `FJS-D1095` C, both words stay and are told apart by position (`FJS-2950`); the overload said once per `FJS-D1094` A (`FJS-2951`)
 - [ ] 4.4 Named keys for every optional operand, positional only for the required one (`FJS-2978`); migration verbs off the main barrel (`FJS-2979`)
 - [ ] 4.5 The eight open `@@transitions` and access gaps ruled additive-or-not before the word is called locked: `FJS-2801`, `FJS-1971`, `FJS-2435`, `FJS-2920`, `FJS-1815`, `FJS-2035`, `FJS-1745`, `FJS-2289`
 
@@ -180,17 +180,17 @@ list of what a later change to it must do.
   - **B** — `bun run dev` with the preflights moved into a `predev` script.
   - **Recommend A** — the preflights need the port broker, which is fli's.
 
-- **FJS-D1085 — How does an app mount?** Every `main.js` and the scaffold write `createTextNode('') → appendChild → mount(anchor, App, { root })`; the mesa README shows a different call with a different result.
+- ~~**FJS-D1085 — How does an app mount?**~~ **Answered 2026-10-20 (`FJS-D1085`): B — `virtual:sierra` mounts `App.mesa` itself; `main.js` is optional and holds only side-effect imports.** Every `main.js` and the scaffold write `createTextNode('') → appendChild → mount(anchor, App, { root })`; the mesa README shows a different call with a different result.
   - **A** — `mount(App, { target: '#app' })` appends inside the target; the anchor is the runtime's business.
   - **B** — `virtual:sierra` mounts `App.mesa` itself; `main.js` is optional and holds only side-effect imports.
   - **Recommend B** — the module already boots the router and the client; mounting the root is the same kind of thing, and a `main.js` that is five side-effect imports is what most apps would be left with. A is the fallback for an app that mounts somewhere else.
 
-- **FJS-D1086 — Does a resource file with only a `<script module>` half render the kit's default form implicitly?** 76 resource files repeat the same 15-line markup half; `mcp-build.js` already generates a form for a markup-less file.
+- ~~**FJS-D1086 — Does a resource file with only a `<script module>` half render the kit's default form implicitly?**~~ **Answered 2026-10-20 (`FJS-D1086`): B — no: Invariant 18 stands, the scaffold keeps writing the half.** 76 resource files repeat the same 15-line markup half; `mcp-build.js` already generates a form for a markup-less file.
   - **A** — yes: no markup half means the kit's `<Form resource>`; a markup half is an override. Invariant 18's second sentence becomes *the markup half, when present, overrides the model's default form*.
   - **B** — no: Invariant 18 stands, the scaffold keeps writing the half.
   - **Recommend A** — the half states nothing model-specific (§ V *derived*), and the one place that reads a resource file already knows what to draw without it.
 
-- **FJS-D1109 — What is the one grammar for an attribute's optional operands?** `@values(Set, open, dependsOn: col on srcCol)` mixes a positional strength, a named key and the language's only bare infix `on` (`parser.js:922`); `@@relator([a, b], many: col)` spells `many` as a keyword and as a key (`parser.js:2165`); `@@extensible(fields, declaredBy: X, max: { text: 8 })` takes the only `{}` literal (`parser.js:2245`). `@@transitions(declaredBy:, scope:)` and `@@fts(…, tokenize:)` are already all-named.
+- ~~**FJS-D1109 — What is the one grammar for an attribute's optional operands?**~~ **Answered 2026-10-20 (`FJS-D1109`): B — A for `@values` and `@@extensible` only; `@@relator`'s `once|many` stays a bare word because it is required, with `by: col` replacing `many: col`; `max: { … }` stays as the one structured literal and is documented as the exception.** `@values(Set, open, dependsOn: col on srcCol)` mixes a positional strength, a named key and the language's only bare infix `on` (`parser.js:922`); `@@relator([a, b], many: col)` spells `many` as a keyword and as a key (`parser.js:2165`); `@@extensible(fields, declaredBy: X, max: { text: 8 })` takes the only `{}` literal (`parser.js:2245`). `@@transitions(declaredBy:, scope:)` and `@@fts(…, tokenize:)` are already all-named.
   - **A** — every optional operand is a named key and only the required one is positional: `@values(Set, strength: open, dependsOn: col, matching: srcCol)`, `@@relator([a, b], once)` / `@@relator([a, b], many, by: col)`, `@@extensible(fields, declaredBy: X, max.text: 8, max.number: 4)`. The old spellings are refused by name with the new one; no alias.
   - **B** — A for `@values` and `@@extensible` only; `@@relator`'s `once|many` stays a bare word because it is required, with `by: col` replacing `many: col`; `max: { … }` stays as the one structured literal and is documented as the exception.
   - **C** — fix only the infix: `on <col>` becomes `matching: col`; leave `open|suggested` positional and the `{}` literal, and rule positional strength the language's one enumerated-word form.

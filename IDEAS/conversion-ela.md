@@ -7,7 +7,7 @@ dated: 2026-10-07
 # Assessment — Converting ELA, maid.tech's sibling, onto FrontierJS
 
 **Status: ASSESSMENT, and a DELTA.** Dated 2026-10-07. It reads
-`~/code/CLIENTS/elitelawncare/ela` only for what `conversion-maid-tech.md`
+`ela` only for what `conversion-maid-tech.md`
 does not already answer — read that file first; its blocker table, its free
 upgrades and its § *Running the port* hold here unless a line below says
 otherwise. Every count was produced by a command on this date, against
@@ -149,7 +149,7 @@ As maid.tech's § *Running the port*, with these differences:
 
 - **The repository is `~/code/FRONTIER/fjs-prototypes/ela`**, scaffolded with this
   tree's `fli` and `--source local`, plus `--widgets` for `embeds/`.
-- **The session:** `claude --add-dir ~/code/FRONTIER/frontierjs --add-dir ~/code/CLIENTS/elitelawncare/ela`.
+- **The session:** `claude --add-dir ~/code/FRONTIER/frontierjs --add-dir <ela checkout>`.
   The ELA tree is read-only; its `development.db` is production data, opened
   `sqlite3 -readonly` or copied.
 - **The thin slice is one Service Autopilot sync, not `Client`.** The sync is the
