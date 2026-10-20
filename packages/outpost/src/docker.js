@@ -1200,7 +1200,7 @@ export function createInspector({ run = spawnRun, hostFiles = null } = {}) {
         const stat = async (path) => path
           ? guard(async () => readFiles(await read([...STAT, path]))?.[0])
           : null
-        readings.host_files = { db: await stat(hostFiles.db), env: await stat(hostFiles.env) }
+        readings.host_files = { db: await stat(hostFiles.db), env: await stat(hostFiles.env), key: await stat(hostFiles.key) }
       }
 
       return { at: new Date().toISOString(), readings }

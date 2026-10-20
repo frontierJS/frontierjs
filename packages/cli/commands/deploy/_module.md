@@ -29,13 +29,38 @@ const derivedOrigins = ($, deployConf) => crossOrigins(edgeNamesOf(deployConf), 
 // Nine hand-written copies is how the name came to ignore the port tier.
 const apiContainer = (appId, deployConf) => apiContainerName(appId, deployConf?.api?.port)
 
-// The API's database directory and env file on the target. The swap mounts
-// them, setup creates them, and the box's Outpost grades their modes, so a
-// default restated in one step would grade a different path from the one mounted.
+// The API's database directory, env file and secrets directory on the target.
+// The swap mounts them, setup creates them, and the box's Outpost grades their
+// modes, so a default restated in one step would grade a different path from the
+// one mounted.
 const apiFiles = (deployConf, serverPath) => ({
-  dbDir:   deployConf?.db?.path ?? `${serverPath}/db`,
-  envFile: deployConf?.api?.env ?? `${serverPath}/.env.production`,
+  dbDir:      deployConf?.db?.path ?? `${serverPath}/db`,
+  envFile:    deployConf?.api?.env ?? `${serverPath}/.env.production`,
+  secretsDir: `${serverPath}/secrets`,
 })
+
+// Where the API container sees the secrets directory: Docker's own path for a
+// secret, which `<KEY>_FILE` then names.
+const CONTAINER_SECRETS_DIR = '/run/secrets'
+
+// ─── secretNames ──────────────────────────────────────────────────────────────
+// The keys the target's secrets directory holds, one file per key named for it.
+// A name that is not an env key is left out and said, because it goes into a
+// `docker run` line. A directory that exists and cannot be listed is a throw: an
+// empty answer there would start the API without its keys.
+const SECRET_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+const secretNames = (machine, secretsDir, log) => {
+  const out = machine.capture(`if [ -d ${secretsDir} ]; then
+  ls -1A ${secretsDir} 2>/dev/null || sudo -n ls -1A ${secretsDir} 2>/dev/null || echo '?unreadable'
+fi`)
+  const names = String(out ?? '').split('\n').map(l => l.trim()).filter(Boolean)
+  if (names.includes('?unreadable'))
+    throw new Error(`${secretsDir} exists and this login cannot list it — run the deploy as root or as a login with sudo`)
+  for (const n of names.filter(n => !SECRET_NAME.test(n)))
+    log.warn(`  ${secretsDir}/${n} is not named like an env key — not passed to the container`)
+  return names.filter(n => SECRET_NAME.test(n))
+}
 
 // Where the API container sees the target's database directory. The only path
 // inside a container that outlives a swap: a database anywhere else is in the
@@ -526,9 +551,27 @@ const lockRefusal = async (lock, { verb = 'deploy' } = {}) => {
 // every real deploy threw `ReferenceError: deployConf is not defined` while
 // building the `docker run` line. By then the running container had been renamed
 // to `_replaced` and stopped, and the new one was never started (`FJS-726`).
-const swapContainer = ($, { host, container, image, apiPort, dbPath, envFile, build, deployConf, configuration = {}, corsOrigins = [], log }) => {
+//
+// A key in `secretsDir` is mounted read-only and passed as `<KEY>_FILE`, so
+// `docker inspect` shows a path where it showed the value. The same key also in
+// the env file or the configuration set is refused by the app at boot, which
+// here would stop the running container and then restore it, so it is refused
+// before anything is touched.
+const swapContainer = ($, { host, container, image, apiPort, dbPath, envFile, secretsDir = null, build, deployConf, configuration = {}, corsOrigins = [], log }) => {
   const machine  = machineFor($, host)
   const replaced = `${container}_replaced`
+
+  const secrets = secretsDir ? secretNames(machine, secretsDir, log) : []
+  if (secrets.length) {
+    const inEnv = machine.capture(`for k in ${secrets.join(' ')}; do grep -qs "^$k=" ${envFile} && echo "$k"; done; true`)
+    const both  = [...new Set([
+      ...String(inEnv ?? '').split('\n').map(l => l.trim()).filter(k => secrets.includes(k)),
+      ...secrets.filter(k => k in configuration),
+    ])]
+    if (both.length) throw new Error(
+      `${both.join(', ')} ${both.length === 1 ? 'is' : 'are'} in ${secretsDir} and also in ${envFile} or deploy.configuration — ` +
+      `the app refuses both at boot. Delete ${both.length === 1 ? 'the line' : 'the lines'} from ${envFile} (sed -i '/^KEY=/d'), then deploy again`)
+  }
 
   log.info('Renaming current container to _replaced...')
   machine.run(`if docker inspect ${container} > /dev/null 2>&1; then
@@ -551,6 +594,8 @@ fi`)
     `-p 127.0.0.1:${apiPort}:3000`,
     `--volume ${dbPath}:${CONTAINER_DB_DIR}`,
     `--env-file ${envFile}`,
+    ...(secrets.length ? [`--volume ${secretsDir}:${CONTAINER_SECRETS_DIR}:ro`] : []),
+    ...secrets.map(k => `--env ${k}_FILE=${CONTAINER_SECRETS_DIR}/${k}`),
     // The Release's plain configuration values, AFTER --env-file so a declared
     // value beats a stale line in the operator's file. Nothing is written on the
     // target (FJS-D1186); secrets stay in that file and never travel this way,

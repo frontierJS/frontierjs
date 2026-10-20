@@ -121,9 +121,17 @@ export function resolveRun(runText, { root, rows = [] } = {}) {
  * `unknown` — nothing there answers to this. That is the finding the check rule
  *   exists for: a row naming a drive that has been renamed reads exactly like a
  *   row that is right.
+ * `outside` — a `where` spelled `../`, a sibling checkout. Graded off the
+ *   spelling and never the disk: the sibling is on one laptop and no clone, so
+ *   a probe makes the committed report and `proof-target` red on every runner.
  */
 function target(name, dir, where, root, rows) {
   const base = { name, where, dir }
+
+  if (where.startsWith('../')) {
+    const file = /\.(ts|js|mjs|mesa)$/.test(name) || name.includes('/')
+    return { ...base, dir: where, kind: 'outside', id: null, command: file ? null : `bun run ${name}` }
+  }
 
   if (/\.(ts|js|mjs|mesa)$/.test(name) || name.includes('/')) {
     const exists = dir !== null && existsSync(join(root, dir, name))

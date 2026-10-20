@@ -42,9 +42,17 @@ render: static
     <div class="frame" data-map>
       <svg viewBox={`0 0 ${d.image.width} ${d.image.height}`} data-viewport
            role="group" aria-label="FrontierJS territory map">
+        <defs>
+          {#each d.territories as t}
+            <clipPath id={'lit-' + t.id}><ellipse cx={t.cx} cy={t.cy} rx={t.rx} ry={t.ry} /></clipPath>
+          {/each}
+        </defs>
         <image href={d.image.src} width={d.image.width} height={d.image.height} />
+        <rect class="dim" width={d.image.width} height={d.image.height} />
         {#each d.territories as t}
           <a href={'#' + t.id} class="territory" data-id={t.id} aria-label={t.name}>
+            <image class="lit" href={d.image.src} width={d.image.width} height={d.image.height}
+                   clip-path={'url(#lit-' + t.id + ')'} />
             <ellipse cx={t.cx} cy={t.cy} rx={t.rx} ry={t.ry} />
           </a>
         {/each}
@@ -114,21 +122,26 @@ h2 { font-size: clamp(1.4rem, 3vw, 1.9rem); letter-spacing: -.02em; margin: 0 0 
 .frame.is-zoomed svg { touch-action: none; }
 .frame.is-dragging svg { cursor: grabbing; }
 
+/* The map sits dimmed and a territory shows its own patch undimmed, so a hover
+   brightens. A light fill instead washes the picture out. */
+.dim { fill: rgb(0 0 0 / .22); pointer-events: none; }
+.territory .lit {
+  opacity: 0; pointer-events: none;
+  filter: brightness(1.08); transition: opacity .15s;
+}
+.territory:hover .lit,
+.territory:focus-visible .lit,
+.territory.is-selected .lit { opacity: 1; }
+
 .territory ellipse {
   fill: transparent; stroke: transparent; stroke-width: 3;
   vector-effect: non-scaling-stroke; cursor: pointer;
-  transition: fill .15s, stroke .15s;
+  transition: stroke .15s;
 }
 .territory:focus { outline: none; }
 .territory:hover ellipse,
-.territory:focus-visible ellipse {
-  fill: color-mix(in srgb, var(--color-primary) 14%, transparent);
-  stroke: var(--color-primary);
-}
-.territory.is-selected ellipse {
-  fill: color-mix(in srgb, var(--color-primary) 22%, transparent);
-  stroke: var(--color-primary); stroke-width: 4;
-}
+.territory:focus-visible ellipse { stroke: rgb(235 235 240 / .2); }
+.territory.is-selected ellipse { stroke: rgb(235 235 240 / .3); stroke-width: 4; }
 
 .zoom { position: absolute; left: .75rem; top: .75rem; display: flex; flex-direction: column; gap: .35rem; }
 .zoom .btn { background: var(--surface); }

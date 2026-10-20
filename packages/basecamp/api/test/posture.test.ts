@@ -293,6 +293,16 @@ describe('the hub grader', () => {
     expect(hub({ ...CLEAN, host_files: { db: null, env: FILES.env } }, null)['hub.db-mode'].ok).toBe('unknown')
   })
 
+  test('a key file in the secrets directory is graded beside the env file, the worse one answering', () => {
+    const key  = { path: '/srv/basecamp/secrets/ENCRYPTION_KEY', mode: '400', owner: '1000', group: '1000' }
+    const mode = (env: string, k: string) =>
+      hub({ ...CLEAN, host_files: { ...FILES, env: { ...FILES.env, mode: env }, key: { ...key, mode: k } } }, null)['hub.env-mode']
+    expect(mode('600', '400').ok).toBe(true)
+    expect(mode('600', '444')).toMatchObject({ ok: false, message: expect.stringContaining('secrets/ENCRYPTION_KEY') })
+    expect(mode('644', '400')).toMatchObject({ ok: false, message: expect.stringContaining('/srv/basecamp/.env') })
+    expect(hub({ ...CLEAN, host_files: { ...FILES, key: null } }, null)['hub.env-mode'].ok).toBe(true)
+  })
+
   test('the backup is graded with no report or a stale one; the files are unknown', () => {
     const none  = hub(null, null)
     expect(none['hub.backup-recent'].ok).toBe(false)

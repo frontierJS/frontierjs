@@ -39,7 +39,7 @@ render: static
 
   <div class="map">
     {#each packages as p}
-      <a class={p.tone} href={`/${p.slug}/`}><b>{p.name}</b><span>{p.realm}</span></a>
+      <a class={p.tone} href={p.href}><b>{p.name}</b><span>{p.realm}</span></a>
     {/each}
   </div>
 </div>
@@ -48,7 +48,7 @@ render: static
   <div class="pkg" id={p.id}>
     <div class="container">
       <div class="pkg-id">
-        <h2><a class="pkg-link" href={`/${p.slug}/`}>{p.name} <span class="arrow">&rarr;</span></a></h2>
+        <h2><a class="pkg-link" href={p.href}>{p.name} <span class="arrow">&rarr;</span></a></h2>
         <span class="badge {p.tone}">{p.realm}</span>
         <span class="who">{p.who}</span>
       </div>

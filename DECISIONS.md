@@ -8107,7 +8107,7 @@ The nine, answered before the build. Origin: one — `ReceivedMail` beside `Mail
 
 Adjudications: *paved road vs. the workaround* — the stressor hand-rolled the whole layer (`inbound.ts`, `mailbox.ts`, `token.ts`, two provider files), which is a measurement of the road, and the road now carries what every app would copy; *batteries vs. smallness* — it rides inside the mail battery as one file, no package. Tier: Register here; Map in junction's `README.md` § Mail, `CLAUDE.md`, `PROJECT_STATE.md` and `conduit-postmark`'s `README.md`. Closes `FJS-2574`.
 
-*Lives in:* `packages/junction/src/mail/received.ts` · `packages/junction/src/mail/index.ts` · `packages/junction/test/mail-received.test.ts` · `conduit-connectors/packages/conduit-postmark/src/index.ts` (`postmarkMailDialect`, `toReceivedMail`) and its drive § `dialect.conduitOrder` · `conduit-connectors/packages/conduit-mailgun/src/mime.ts` (`fromMime`, the raw-MIME parser `FJS-D784` named) and `src/index.ts` (`mailgunMailDialect`), its drive § `dialect.conduitOrder` · `packages/conduit/src/receive.ts` (`Dialect.parse` may be a promise, for that parser).
+*Lives in:* `packages/junction/src/mail/received.ts` · `packages/junction/src/mail/index.ts` · `packages/junction/test/mail-received.test.ts` · `../conduit-connectors/packages/conduit-postmark/src/index.ts` (`postmarkMailDialect`, `toReceivedMail`) and its drive § `dialect.conduitOrder` · `../conduit-connectors/packages/conduit-mailgun/src/mime.ts` (`fromMime`, the raw-MIME parser `FJS-D784` named) and `src/index.ts` (`mailgunMailDialect`), its drive § `dialect.conduitOrder` · `packages/conduit/src/receive.ts` (`Dialect.parse` may be a promise, for that parser).
 
 **Amended 2026-10-16, through the question tool:** the mailbox quoting a dialect renders `from` with is not copied per connector. The two copies had already drifted (one quoted `( )`), and both stripped `"` and `< >` where the grammar escapes them. It is `@frontierjs/toolbelt/mailbox`'s `formatMailbox(address, name)`, imported by both connectors and by junction's SMTP header writer, which keeps only the encoded-words branch for a non-ASCII name. `ReceivedMail` itself stays a structural copy.
 
@@ -17956,7 +17956,7 @@ included. A throw is a no. It lives on the signer because only the scheme can
 read its body, and a function cannot ride a JSON descriptor. A `bearer` or
 `api_key` target keeps the 401 rule alone.
 
-*Lives in:* `packages/conduit/src/types.ts` (`Signer`, `RefusedAnswer`) · `packages/conduit/src/transports/http.ts` (`refusedCredential`) · `conduit-connectors/packages/conduit-push/src/apns.ts` (`apnsJwtSigner`).
+*Lives in:* `packages/conduit/src/types.ts` (`Signer`, `RefusedAnswer`) · `packages/conduit/src/transports/http.ts` (`refusedCredential`) · `../conduit-connectors/packages/conduit-push/src/apns.ts` (`apnsJwtSigner`).
 
 ### <a id="fjs-d940"></a>2026-10-13 · `FJS-D940` — An `api_key` target names where its key travels, a header or a URL parameter, and conduit keeps a URL-carried key out of everything it hands back.
 
@@ -17978,7 +17978,7 @@ builds from the URL, and an echoed `Location` are scrubbed of the key. `put()`
 refuses both names or neither, and refuses `query` on a protocol whose URL the
 http transport does not build.
 
-*Lives in:* `packages/conduit/src/types.ts` (`api_key`) · `packages/conduit/src/transports/http.ts` (`dispatch`'s `wire`, `scrubber`) · `packages/conduit/src/conduit.ts` (`assertApiKey`) · `conduit-connectors/packages/conduit-google-maps/src/index.ts` (`googleMapsGeocodingTarget`).
+*Lives in:* `packages/conduit/src/types.ts` (`api_key`) · `packages/conduit/src/transports/http.ts` (`dispatch`'s `wire`, `scrubber`) · `packages/conduit/src/conduit.ts` (`assertApiKey`) · `../conduit-connectors/packages/conduit-google-maps/src/index.ts` (`googleMapsGeocodingTarget`).
 
 ### <a id="fjs-d913"></a>2026-10-13 · `FJS-D913` — How does Studio get `@frontierjs/css` and its fonts without a CDN, given litestone depends on toolbelt alone — Vendor a generated copy of `frontier.min.css` (~88 KB) at `src/tools/studio.css`, text-imported and served by Studio at its own path; a `packages/css` build step writes it and a litestone test fails when the copy differs from `packages/css/dist`. Fonts drop to the system stack (Inter and JetBrains Mono stay first in the list for machines that have them). No dependency edge, works in a compiled binary, costs one generated file.
 
@@ -18006,7 +18006,7 @@ on a protocol other than http, and on an entry that is not an origin. One
 declaration covers every origin, so this keeps `FJS-D933`'s *one place declares
 auth*.
 
-*Lives in:* `packages/conduit/src/types.ts` (`origins`) · `packages/conduit/src/conduit.ts` (`assertOrigins`) · `packages/conduit/src/transports/http.ts` (`declaresOrigin`) · `conduit-connectors/packages/conduit-oidc/src/index.ts`.
+*Lives in:* `packages/conduit/src/types.ts` (`origins`) · `packages/conduit/src/conduit.ts` (`assertOrigins`) · `packages/conduit/src/transports/http.ts` (`declaresOrigin`) · `../conduit-connectors/packages/conduit-oidc/src/index.ts`.
 
 ### <a id="fjs-d936"></a>2026-10-13 · `FJS-D936` — What happens to `driver jsonl` — Retire the format as a logging driver. The audit trail moves to its SQLite form; `drivers/jsonl.js`, `jsonl-index.js`, the jsonl half of `retention.js` and `driver logger`/`driver trail` stay in the tree, each flagged NOT IN USE UNTIL FURTHER NOTICE, and no schema declares them. Basecamp, `example` and the prototypes redeclare their audit database (pre-alpha: the old trail files are deleted, not migrated). One engine; the trail gains gates, indexes and migrations, and runs in the browser. Retention becomes a `DELETE` plus incremental vacuum rather than a file rewrite.
 
@@ -18065,7 +18065,7 @@ credential** over **per-route `auth`**, which would have been a second place tha
 declares auth. `oidcClientTarget` signs everything it carries and `oidcPublicTarget` carries
 no auth. The same shape answers `FJS-2722`'s mint-through-a-second-target.
 
-*Lives in:* `packages/conduit/src/signers.ts` · `packages/conduit/signers.test.ts` · `conduit-connectors/packages/conduit-oidc/src/index.ts` (`oidcClientTarget`, `oidcPublicTarget`, `assertSpends`).
+*Lives in:* `packages/conduit/src/signers.ts` · `packages/conduit/signers.test.ts` · `../conduit-connectors/packages/conduit-oidc/src/index.ts` (`oidcClientTarget`, `oidcPublicTarget`, `assertSpends`).
 
 ### <a id="fjs-d932"></a>2026-10-12 · `FJS-D932` — Where a site-kit build finds the images to make responsive — In the built HTML: a postbuild step rewrites every local raster `<img>` in the prerendered pages.
 

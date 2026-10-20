@@ -87,7 +87,7 @@ render: static
             <dd>Continuous SQLite replication to a remote replica, so a database on one server is never the only copy.</dd>
           </dl>
           <p class="takeaway">A server is set up by a command, not a wiki page.</p>
-          <p class="see">See: <a href="/outpost/">Outpost</a></p>
+          <p class="see">See: <a href="/packages/outpost/">Outpost</a></p>
         </div>
       </li>
     </ol>

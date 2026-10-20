@@ -399,20 +399,25 @@ describe('the host files on a fleet Outpost', () => {
     OUTPOST_PUBLIC_URL: 'https://host.test:8180',
   }
 
-  test('the two paths are read only where fli deploy wrote them', () => {
+  const HOST_ENV = { ...FLEET_ENV, OUTPOST_HOST_DB_PATH: '/srv/basecamp/db', OUTPOST_HOST_ENV_PATH: '/srv/basecamp/.env',
+                     OUTPOST_HOST_KEY_PATH: '/srv/basecamp/secrets/ENCRYPTION_KEY' }
+
+  test('the paths are read only where fli deploy wrote them', () => {
     expect(readConfig(FLEET_ENV).hostFiles).toBeNull()
-    expect(readConfig({ ...FLEET_ENV, OUTPOST_HOST_DB_PATH: '/srv/basecamp/db', OUTPOST_HOST_ENV_PATH: '/srv/basecamp/.env' }).hostFiles)
-      .toEqual({ db: '/srv/basecamp/db', env: '/srv/basecamp/.env' })
+    expect(readConfig(HOST_ENV).hostFiles)
+      .toEqual({ db: '/srv/basecamp/db', env: '/srv/basecamp/.env', key: '/srv/basecamp/secrets/ENCRYPTION_KEY' })
   })
 
-  test('posture names its machine and carries the two files, one stat each', async () => {
+  test('posture names its machine and carries the files, one stat each', async () => {
     const run = async (argv) => {
       if (argv[0] === 'stat' && argv.at(-1) === '/srv/basecamp/db')   return { exitCode: 0, stdout: '700 root root /srv/basecamp/db\n', stderr: '' }
       if (argv[0] === 'stat' && argv.at(-1) === '/srv/basecamp/.env') return { exitCode: 1, stdout: '', stderr: 'No such file' }
+      if (argv[0] === 'stat' && argv.at(-1) === '/srv/basecamp/secrets/ENCRYPTION_KEY')
+        return { exitCode: 0, stdout: '400 1000 1000 /srv/basecamp/secrets/ENCRYPTION_KEY\n', stderr: '' }
       throw enoent(argv)
     }
     const sent = []
-    const config   = readConfig({ ...FLEET_ENV, OUTPOST_HOST_DB_PATH: '/srv/basecamp/db', OUTPOST_HOST_ENV_PATH: '/srv/basecamp/.env' })
+    const config   = readConfig(HOST_ENV)
     const reporter = createReporter(config, {
       inspector: createInspector({ run, hostFiles: config.hostFiles }),
       fetch: async (url, init) => { sent.push({ url, body: JSON.parse(init.body) }); return new Response('{}', { status: 200 }) },
@@ -425,6 +430,7 @@ describe('the host files on a fleet Outpost', () => {
     expect(sent[0].body.readings.host_files).toEqual({
       db:  { path: '/srv/basecamp/db', mode: '700', owner: 'root', group: 'root' },
       env: null,
+      key: { path: '/srv/basecamp/secrets/ENCRYPTION_KEY', mode: '400', owner: '1000', group: '1000' },
     })
   })
 })

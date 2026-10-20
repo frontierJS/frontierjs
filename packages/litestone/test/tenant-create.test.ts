@@ -113,3 +113,29 @@ describe('tenants.create() with a migrationsDir reads what apply() answers', () 
     })
   }
 })
+
+// Two processes booting one app on a fresh tree both find no tenant and both
+// create it. The loser's DDL is IF NOT EXISTS and passes; its registry INSERT
+// is what collides, and getOrCreate must answer the tenant the winner made.
+// Processes, not promises: in one process create() has no await before its
+// INSERT, so two calls never interleave and the case passes on the bug.
+describe('getOrCreate from several processes at once', () => {
+  it('every process gets the tenant, and it is registered once', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ls-tenant-race-'))
+    dirs.push(dir)
+    mkdirSync(join(dir, 'tenants'))
+    const script = `
+      const { createTenantRegistry } = await import(${JSON.stringify(join(import.meta.dir, '../src/tenant.js'))})
+      const reg = await createTenantRegistry({ schema: ${JSON.stringify(SCHEMA)}, dir: ${JSON.stringify(join(dir, 'tenants'))}, registry: ${JSON.stringify(join(dir, 'registry.db'))} })
+      try { await reg.getOrCreate('acme'); console.log('ok') } catch (e) { console.log(e.message) }
+    `
+    const runs = Array.from({ length: 6 }, () =>
+      Bun.spawn([process.execPath, '-e', script], { stdout: 'pipe', stderr: 'pipe' }))
+    const said = await Promise.all(runs.map(r => new Response(r.stdout).text()))
+
+    expect(said.map(s => s.trim())).toEqual(Array(6).fill('ok'))
+    const db = new Database(join(dir, 'registry.db'), { readonly: true })
+    expect(db.prepare(`SELECT count(*) AS n FROM tenants WHERE id = 'acme'`).get()).toEqual({ n: 1 })
+    db.close()
+  })
+})

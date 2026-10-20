@@ -84,10 +84,13 @@ export function readConfig(env = process.env) {
      *  nothing else on the machine speaks to it. */
     caddyAdmin:  env.OUTPOST_CADDY_ADMIN ?? 'http://127.0.0.1:2019',
     /** The box a Basecamp runs on only, written by `fli deploy` (`FJS-D1241`):
-     *  the database directory and the file holding `ENCRYPTION_KEY`, which
-     *  `hub.db-mode` and `hub.env-mode` grade. Null on every other machine. */
-    hostFiles:   env.OUTPOST_HOST_DB_PATH || env.OUTPOST_HOST_ENV_PATH
-                   ? { db: env.OUTPOST_HOST_DB_PATH || null, env: env.OUTPOST_HOST_ENV_PATH || null }
+     *  the database directory, the env file, and the secrets directory's
+     *  `ENCRYPTION_KEY`, which `hub.db-mode` and `hub.env-mode` grade. Null on
+     *  every other machine. */
+    hostFiles:   env.OUTPOST_HOST_DB_PATH || env.OUTPOST_HOST_ENV_PATH || env.OUTPOST_HOST_KEY_PATH
+                   ? { db:  env.OUTPOST_HOST_DB_PATH  || null,
+                       env: env.OUTPOST_HOST_ENV_PATH || null,
+                       key: env.OUTPOST_HOST_KEY_PATH || null }
                    : null,
   }
 

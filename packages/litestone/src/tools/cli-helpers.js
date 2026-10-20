@@ -7,6 +7,7 @@ import { existsSync, readFileSync, statSync }   from 'fs'
 import { resolve, relative, dirname }          from 'path'
 import { spawnSync }                           from 'child_process'
 import { parse, parseFile, inlineImports, resolveImportSpecifier } from '../core/parser.js'
+import { envSource, fileValue }               from '@frontierjs/toolbelt/env'
 
 // ─── Colors ──────────────────────────────────────────────────────────────────
 
@@ -136,8 +137,14 @@ export function loadSchema(schemaPath) {
 // Resolve encryption key from env for CLI commands that open createClient.
 // Schemas with @encrypted/@secret fields require a key; CLI ops (db push,
 // migrate apply, studio, seed, optimize, backup) all load via env.
+// ENCRYPTION_KEY_FILE is read as junction's defineEnv reads it, since a
+// container's entrypoint migrates through this CLI before the app boots.
 export function getEncKey() {
-  return process.env.ENCRYPTION_KEY ?? process.env.LITESTONE_KEY ?? undefined
+  const src = envSource('ENCRYPTION_KEY', process.env)
+  if ('error' in src) fatal(src.error)
+  if ('value' in src) return src.value ?? process.env.LITESTONE_KEY ?? undefined
+  try { return fileValue(readFileSync(src.file, 'utf8')) }
+  catch (e) { fatal(`${src.fileKey}: cannot read ${src.file} (${e.code ?? e.message})`) }
 }
 
 // The CLI's own copy of the client's resolver, anchored the same way and for

@@ -46,6 +46,10 @@
       "default": "./src/geo/geo.js"
     },
     "./docfences": "./src/docfences/docfences.js",
+    "./env": {
+      "types": "./src/env/env.d.ts",
+      "default": "./src/env/env.js"
+    },
     "./frontmatter": "./src/frontmatter/frontmatter.js",
     "./glow": "./src/glow/glow.js",
     "./history": "./src/history/history.js",

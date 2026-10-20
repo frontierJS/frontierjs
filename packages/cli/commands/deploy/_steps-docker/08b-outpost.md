@@ -17,7 +17,8 @@ public URL. Every failure warns: the release is live by now.
 
 Then, installed now or enrolled before, the box's `outpost.env` is made to name
 the database directory and the env file this deploy mounts, which is what the
-Outpost reads `hub.db-mode` and `hub.env-mode` from (`FJS-D1241`). An enrolled
+Outpost reads `hub.db-mode` and `hub.env-mode` from (`FJS-D1241`), and the
+secrets directory's ENCRYPTION_KEY, which `hub.env-mode` grades too. An enrolled
 box never reruns `install.sh`, so this step is the one place they are written,
 and the Outpost restarts only when a line changed.
 
@@ -70,17 +71,18 @@ if (answer?.enrolled || installed) {
   const lines = [
     `OUTPOST_HOST_DB_PATH=${apiFiles(deployConf, path).dbDir}`,
     `OUTPOST_HOST_ENV_PATH=${apiFiles(deployConf, path).envFile}`,
+    `OUTPOST_HOST_KEY_PATH=${apiFiles(deployConf, path).secretsDir}/ENCRYPTION_KEY`,
   ]
-  // Prints `unchanged`, `written` or `no-env`; the two lines are always written
+  // Prints `unchanged`, `written` or `no-env`; the lines are always written
   // in this order, so the grep is compared as one string.
   const script = [
     SUDO,
     'F=/etc/basecamp/outpost.env',
     'sudo test -f "$F" || { echo no-env; exit 0; }',
     `WANT=$(printf '%s\\n' ${lines.map(sq).join(' ')})`,
-    `HAVE=$(sudo grep -E '^OUTPOST_HOST_(DB|ENV)_PATH=' "$F" || true)`,
+    `HAVE=$(sudo grep -E '^OUTPOST_HOST_(DB|ENV|KEY)_PATH=' "$F" || true)`,
     '[ "$WANT" = "$HAVE" ] && { echo unchanged; exit 0; }',
-    `sudo sed -i -E '/^OUTPOST_HOST_(DB|ENV)_PATH=/d' "$F"`,
+    `sudo sed -i -E '/^OUTPOST_HOST_(DB|ENV|KEY)_PATH=/d' "$F"`,
     `printf '%s\\n' ${lines.map(sq).join(' ')} | sudo tee -a "$F" >/dev/null`,
     'sudo systemctl restart outpost.service',
     'echo written',

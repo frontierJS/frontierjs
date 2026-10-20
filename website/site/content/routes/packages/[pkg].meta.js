@@ -1,4 +1,4 @@
-// site/content/routes/[pkg].meta.js — one page per package, from packages.js.
+// site/content/routes/packages/[pkg].meta.js — one page per package, from packages.js.
 //
 // This replaces eight hand-written HTML files that were identical except for a
 // `data-pkg` attribute, each shipping an empty <div id="page"> that a classic
@@ -10,26 +10,23 @@
 // static text, so without it eight pages share one title, which is the single
 // field a search result is built from.
 //
-// The URL slug is the old page's filename: `cli` publishes at `/fli/` and
-// `editor` at `/vscode/`, because those are the names the subnav shows and the
-// names anyone has ever linked.
+// The URL is the package's `slug`, not its id: `cli` publishes at
+// `/packages/fli/` and `editor` at `/packages/vscode/`, because those are the
+// names the subnav shows.
 
-import { loadFJS } from '../data/packages.js'
-import { block, sniff } from '../data/code.js'
-
-/** `litestone.html` → `litestone`. The old URL, minus the extension. */
-const slugFor = (pkg) => pkg.page.replace(/\.html$/, '')
+import { loadFJS, hrefFor } from '../../data/packages.js'
+import { block, sniff } from '../../data/code.js'
 
 export async function getStaticPaths() {
   const { PKGS } = await loadFJS()
-  return PKGS.map((p) => ({ pkg: slugFor(p) }))
+  return PKGS.map((p) => ({ pkg: p.slug }))
 }
 
 export async function load({ params }) {
   const { PKGS } = await loadFJS()
 
-  const pkg = PKGS.find((p) => slugFor(p) === params.pkg)
-  if (!pkg) throw new Error(`no package publishes at /${params.pkg}/`)
+  const pkg = PKGS.find((p) => p.slug === params.pkg)
+  if (!pkg) throw new Error(`no package publishes at /packages/${params.pkg}/`)
 
   // Anchor ids from the feature label: "Go to def" → "go-to-def".
   const slug = (k) => k.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -67,10 +64,10 @@ export async function load({ params }) {
     })),
     // Every package in the site's nav, and the rest of the stack at the foot.
     nav: PKGS.map((p) => ({
-      slug: slugFor(p), label: slugFor(p), current: p.id === pkg.id,
+      href: hrefFor(p), label: p.slug, current: p.id === pkg.id,
     })),
     others: PKGS.filter((p) => p.id !== pkg.id)
-      .map((p) => ({ slug: slugFor(p), name: p.name, realm: p.realm })),
+      .map((p) => ({ href: hrefFor(p), name: p.name, realm: p.realm })),
   }
 }
 

@@ -92,14 +92,17 @@ try {
 }
 
 // ─── Compare ──────────────────────────────────────────────────────────────────
-const serverKeys = new Set(
-  serverEnv
+// A key in the secrets directory is present too: the swap passes it as a file.
+const { secretsDir } = apiFiles(deployConf, serverPath)
+const serverKeys = new Set([
+  ...serverEnv
     .split('\n')
     .map(l => l.trim())
     .filter(l => l && !l.startsWith('#'))
     .map(l => l.split('=')[0].trim())
-    .filter(Boolean)
-)
+    .filter(Boolean),
+  ...secretNames(machineFor($, host, serverPath), secretsDir, log),
+])
 
 const shadowed = appliedKeys.filter(k => serverKeys.has(k))
 for (const key of shadowed)
@@ -118,7 +121,7 @@ for (const key of missing) {
   log.warn(`  ${key.padEnd(28)} declared in ${source.get(key)}`)
 }
 log.info('')
-log.info(`Add the missing keys to ${envFile} on the server, then redeploy:`)
+log.info(`Add the missing keys to ${envFile} on the server, or a secret as its own file in ${secretsDir}/, then redeploy:`)
 log.info(`  ssh ${host} nano ${envFile}`)
 log.info(`Or pull them from local: fli env:pull --from ssh --server ${target} --path ${envFile}`)
 

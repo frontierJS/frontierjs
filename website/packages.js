@@ -24,7 +24,7 @@
 ;(function () {
 const PKGS = [
 {
-  id:'litestone', install:'npm i @frontierjs/litestone', page:'litestone.html', name:'Litestone', realm:'Data · Model', tone:'primary', who:'@frontierjs/litestone',
+  id:'litestone', install:'npm i @frontierjs/litestone', slug:'litestone', name:'Litestone', realm:'Data · Model', tone:'primary', who:'@frontierjs/litestone',
   pitch:'Authorization is part of the data definition, not a layer above it.',
   rows:[
     { k:'Shape', v:'Models · enums · relations · reusable functions',
@@ -72,7 +72,7 @@ const PKGS = [
   ],
 },
 {
-  id:'junction', install:'npm i @frontierjs/junction', page:'junction.html', name:'Junction', realm:'API · Service', tone:'info', who:'@frontierjs/junction',
+  id:'junction', install:'npm i @frontierjs/junction', slug:'junction', name:'Junction', realm:'API · Service', tone:'info', who:'@frontierjs/junction',
   pitch:'Name a model and its CRUD, validation and authorization come with it.',
   rows:[
     { k:'Services', v:'Five methods plus named actions',
@@ -117,7 +117,7 @@ const PKGS = [
   ],
 },
 {
-  id:'auth', install:'npm i @frontierjs/auth', page:'auth.html', name:'Auth', realm:'API · Identity', tone:'info', who:'@frontierjs/auth',
+  id:'auth', install:'npm i @frontierjs/auth', slug:'auth', name:'Auth', realm:'API · Identity', tone:'info', who:'@frontierjs/auth',
   pitch:'A route establishes a session. Everything after it is an ordinary service.',
   rows:[
     { k:'Sessions', v:'Register · login · logout · password reset · email verify',
@@ -145,7 +145,7 @@ const PKGS = [
   ],
 },
 {
-  id:'caravan', install:'npm i @frontierjs/caravan', page:'caravan.html', name:'Caravan', realm:'API · Jobs', tone:'info', who:'@frontierjs/caravan',
+  id:'caravan', install:'npm i @frontierjs/caravan', slug:'caravan', name:'Caravan', realm:'API · Jobs', tone:'info', who:'@frontierjs/caravan',
   pitch:'Background work in the database you already have. No second service to run.',
   rows:[
     { k:'Queue', v:'SQLite job queue and cron on <code>app.jobs</code>',
@@ -173,7 +173,7 @@ const PKGS = [
   ],
 },
 {
-  id:'conduit', install:'npm i @frontierjs/conduit', page:'conduit.html', name:'Conduit', realm:'API · Integrations', tone:'info', who:'@frontierjs/conduit',
+  id:'conduit', install:'npm i @frontierjs/conduit', slug:'conduit', name:'Conduit', realm:'API · Integrations', tone:'info', who:'@frontierjs/conduit',
   pitch:'Every third party an app talks to, declared in one place.',
   rows:[
     { k:'Targets', v:'A counterparty is named once — credential, policy and all',
@@ -203,7 +203,7 @@ const PKGS = [
   ],
 },
 {
-  id:'notifications', install:'npm i @frontierjs/notifications', page:'notifications.html', name:'Notifications', realm:'API · Slice', tone:'info', who:'@frontierjs/notifications',
+  id:'notifications', install:'npm i @frontierjs/notifications', slug:'notifications', name:'Notifications', realm:'API · Slice', tone:'info', who:'@frontierjs/notifications',
   pitch:'One call fans out to a record, a live event and an email.',
   rows:[
     { k:'Definition', v:'A notification is a file, and the file names it',
@@ -229,7 +229,7 @@ const PKGS = [
   ],
 },
 {
-  id:'mcp', install:'npm i @frontierjs/mcp', page:'mcp.html', name:'MCP', realm:'API · Agent', tone:'info', who:'@frontierjs/mcp',
+  id:'mcp', install:'npm i @frontierjs/mcp', slug:'mcp', name:'MCP', realm:'API · Agent', tone:'info', who:'@frontierjs/mcp',
   pitch:'An MCP endpoint over the app you are already running, with the gate as the permission model.',
   rows:[
     { k:'Mounting', v:'One plugin, inside the running API',
@@ -251,7 +251,7 @@ const PKGS = [
   ],
 },
 {
-  id:'orion', install:'npm i @frontierjs/orion', page:'orion.html', name:'Orion', realm:'API · Automations', tone:'info', who:'@frontierjs/orion',
+  id:'orion', install:'npm i @frontierjs/orion', slug:'orion', name:'Orion', realm:'API · Automations', tone:'info', who:'@frontierjs/orion',
   pitch:'Automations that run inside your app, against your schema, refused by your gates.',
   rows:[
     { k:'Installing', v:'A schema import and one plugin',
@@ -273,7 +273,7 @@ const PKGS = [
   ],
 },
 {
-  id:'sierra', install:'npm i @frontierjs/sierra', page:'sierra.html', name:'Sierra', realm:'UI · Resource', tone:'success', who:'@frontierjs/sierra',
+  id:'sierra', install:'npm i @frontierjs/sierra', slug:'sierra', name:'Sierra', realm:'UI · Resource', tone:'success', who:'@frontierjs/sierra',
   pitch:'Your file tree is the route table. A Resource is a service, made reactive.',
   rows:[
     { k:'Routing', v:'File tree · dynamic · catch-all · layouts · groups',
@@ -312,7 +312,7 @@ const PKGS = [
   ],
 },
 {
-  id:'mesa', install:'npm i @frontierjs/mesa', page:'mesa.html', name:'Mesa', realm:'UI · Component', tone:'success', who:'@frontierjs/mesa',
+  id:'mesa', install:'npm i @frontierjs/mesa', slug:'mesa', name:'Mesa', realm:'UI · Component', tone:'success', who:'@frontierjs/mesa',
   pitch:'One file renders to a page, an email, a fragment or a module. Zero dependencies.',
   rows:[
     { k:'Reactivity', v:'Signals · <code>watchProxy()</code> makes plain objects reactive',
@@ -341,7 +341,7 @@ const PKGS = [
   ],
 },
 {
-  id:'ui', install:'npm i @frontierjs/ui', page:'ui.html', name:'The component kit', realm:'UI · Kit', tone:'success', who:'@frontierjs/ui',
+  id:'ui', install:'npm i @frontierjs/ui', slug:'ui', name:'The component kit', realm:'UI · Kit', tone:'success', who:'@frontierjs/ui',
   pitch:'Sixty-odd components over the design system. A form that already knows what it is editing.',
   rows:[
     { k:'Forms', v:'<code>&lt;Form&gt;</code> takes a resource; every control resolves itself',
@@ -373,7 +373,7 @@ const PKGS = [
   ],
 },
 {
-  id:'css', install:'npm i @frontierjs/css', page:'css.html', name:'The design system', realm:'UI · Style', tone:'success', who:'@frontierjs/css',
+  id:'css', install:'npm i @frontierjs/css', slug:'css', name:'The design system', realm:'UI · Style', tone:'success', who:'@frontierjs/css',
   pitch:'Thirty-five semantic terms. Plain CSS, no build step. This site is styled by it.',
   rows:[
     { k:'Layers', v:'tokens → themes → tones → base → components → patterns',
@@ -405,7 +405,7 @@ const PKGS = [
   ],
 },
 {
-  id:'email-kit', install:'npm i @frontierjs/email-kit', page:'email-kit.html', name:'Email kit', realm:'UI · Email', tone:'success', who:'@frontierjs/email-kit',
+  id:'email-kit', install:'npm i @frontierjs/email-kit', slug:'email-kit', name:'Email kit', realm:'UI · Email', tone:'success', who:'@frontierjs/email-kit',
   pitch:'An email is a component. The same language, compiled for a worse renderer.',
   rows:[
     { k:'Components', v:'Table-based blocks, compiled by the same compiler',
@@ -423,7 +423,7 @@ const PKGS = [
   ],
 },
 {
-  id:'print-kit', install:'npm i @frontierjs/print-kit', page:'print-kit.html', name:'Print kit', realm:'UI · Print', tone:'success', who:'@frontierjs/print-kit',
+  id:'print-kit', install:'npm i @frontierjs/print-kit', slug:'print-kit', name:'Print kit', realm:'UI · Print', tone:'success', who:'@frontierjs/print-kit',
   pitch:'A document to a PDF, an element to a PNG, in one headless Chrome.',
   rows:[
     { k:'Rendering', v:'<code>printer.pdf(html)</code> · <code>printer.png(html, selector)</code>',
@@ -442,7 +442,7 @@ const PKGS = [
   ],
 },
 {
-  id:'jetty', install:'npm i @frontierjs/jetty', page:'jetty.html', name:'Jetty', realm:'UI · Extension', tone:'success', who:'@frontierjs/jetty',
+  id:'jetty', install:'npm i @frontierjs/jetty', slug:'jetty', name:'Jetty', realm:'UI · Extension', tone:'success', who:'@frontierjs/jetty',
   pitch:'A browser extension as a surface of the app, not a second app.',
   rows:[
     { k:'A surface', v:'<code>extension/</code> sits beside <code>api/</code> and <code>web/</code>',
@@ -464,7 +464,7 @@ const PKGS = [
   ],
 },
 {
-  id:'toolbelt', install:'npm i @frontierjs/toolbelt', page:'toolbelt.html', name:'Toolbelt', realm:'Substrate', tone:'muted', who:'@frontierjs/toolbelt',
+  id:'toolbelt', install:'npm i @frontierjs/toolbelt', slug:'toolbelt', name:'Toolbelt', realm:'Substrate', tone:'muted', who:'@frontierjs/toolbelt',
   pitch:'The facts that have many possible answers and must have exactly one.',
   rows:[
     { k:'Zero dependencies', v:'Substrate below the graph, not a member of it',
@@ -492,7 +492,7 @@ const PKGS = [
   ],
 },
 {
-  id:'testing', install:'npm i -D @frontierjs/testing', page:'testing.html', name:'Testing', realm:'Testing · Suite', tone:'secondary', who:'@frontierjs/testing',
+  id:'testing', install:'npm i -D @frontierjs/testing', slug:'testing', name:'Testing', realm:'Testing · Suite', tone:'secondary', who:'@frontierjs/testing',
   pitch:'A real app, a real database, a real port when you want one. Stub nothing but the clock.',
   rows:[
     { k:'The environment', v:'A template-cloned database, factories and a standing',
@@ -517,7 +517,7 @@ const PKGS = [
   ],
 },
 {
-  id:'cli', install:'npm i -g @frontierjs/cli', page:'fli.html', name:'fli', realm:'Tooling', tone:'warning', who:'@frontierjs/cli',
+  id:'cli', install:'npm i -g @frontierjs/cli', slug:'fli', name:'fli', realm:'Tooling', tone:'warning', who:'@frontierjs/cli',
   pitch:'Every command is a markdown file. Help text and implementation cannot disagree.',
   rows:[
     { k:'Scaffold', v:'<code>project:new</code> · <code>make:model</code> <code>:service</code> <code>:resource</code> <code>:route</code>',
@@ -550,7 +550,7 @@ const PKGS = [
   ],
 },
 {
-  id:'create', install:'npm create frontier@' + range('create-frontier') + ' my-app', page:'create-frontier.html', name:'create-frontier', realm:'Tooling', tone:'warning', who:'create-frontier',
+  id:'create', install:'npm create frontier@' + range('create-frontier') + ' my-app', slug:'create-frontier', name:'create-frontier', realm:'Tooling', tone:'warning', who:'create-frontier',
   pitch:'The front door, and nothing else — it resolves the CLI and runs it.',
   rows:[
     { k:'One implementation', v:'It resolves <code>@frontierjs/cli</code> and runs <code>fli new</code>',
@@ -565,7 +565,7 @@ const PKGS = [
   ],
 },
 {
-  id:'config', install:'npm i -D @frontierjs/config', page:'config.html', name:'The tooling opinion', realm:'Tooling', tone:'warning', who:'@frontierjs/config',
+  id:'config', install:'npm i -D @frontierjs/config', slug:'config', name:'The tooling opinion', realm:'Tooling', tone:'warning', who:'@frontierjs/config',
   pitch:'tsconfig, biome and editorconfig as a dependency — never as a copy.',
   rows:[
     { k:'Extend, don’t copy', v:'One line in your <code>tsconfig.json</code>',
@@ -581,7 +581,7 @@ const PKGS = [
   ],
 },
 {
-  id:'basecamp', install:'git clone frontierjs/basecamp && bun run dev', page:'basecamp.html', name:'Basecamp', realm:'Control plane', tone:'warning', who:'@frontierjs/basecamp',
+  id:'basecamp', install:'git clone frontierjs/basecamp && bun run dev', slug:'basecamp', name:'Basecamp', realm:'Control plane', tone:'warning', who:'@frontierjs/basecamp',
   pitch:'The app for managing your apps — and itself a FrontierJS app.',
   rows:[
     { k:'Releases', v:'What is deployed where, and one button to undo it',
@@ -611,7 +611,7 @@ const PKGS = [
   ],
 },
 {
-  id:'editor', install:'bun run package  # build the .vsix — not on the marketplace yet', page:'vscode.html', name:'Editor support', realm:'Tooling', tone:'warning', who:'frontierjs-vscode',
+  id:'editor', install:'bun run package  # build the .vsix — not on the marketplace yet', slug:'vscode', name:'Editor support', realm:'Tooling', tone:'warning', who:'frontierjs-vscode',
   pitch:'The seed is as pleasant to write as the code it produces.',
   rows:[
     { k:'Diagnostics', v:'Errors as you type, from the parser the runtime uses',
@@ -635,7 +635,7 @@ const PKGS = [
   ],
 },
 {
-  id:'outpost', install:'npm i @frontierjs/outpost', page:'outpost.html', name:'Outpost', realm:'Ops · Fleet', tone:'warning', who:'@frontierjs/outpost',
+  id:'outpost', install:'npm i @frontierjs/outpost', slug:'outpost', name:'Outpost', realm:'Ops · Fleet', tone:'warning', who:'@frontierjs/outpost',
   pitch:'The process on the machine. A control plane’s hands, with a signature on every one of them.',
   rows:[
     { k:'Signed by default', v:'Every route but unsigned liveness requires a signature',

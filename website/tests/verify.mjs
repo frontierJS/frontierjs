@@ -52,7 +52,7 @@ const splash = readFileSync(join(DIST, 'index.html'), 'utf8')
 // One package page, read as a crawler reads it. The eight hand-written files
 // this replaces each shipped an empty <div id="page"> that a classic script
 // filled in on load, so this is the assertion the port exists for.
-const pkgHtml = readFileSync(join(DIST, 'litestone', 'index.html'), 'utf8')
+const pkgHtml = readFileSync(join(DIST, 'packages', 'litestone', 'index.html'), 'utf8')
 const server = await serveSite({ dir: DIST, port: PORT })
 const ORIGIN = `http://localhost:${PORT}`
 
@@ -139,7 +139,7 @@ t('samples.entitiesPreserved', {
 // rule.
 t('samples.noLocalPalette', (() => {
   const bad = []
-  for (const f of readdirSync(SRC_ROUTES)) {
+  for (const f of readdirSync(SRC_ROUTES, { recursive: true })) {
     if (!f.endsWith('.mesa')) continue
     const src = readFileSync(join(SRC_ROUTES, f), 'utf8')
     const style = (src.match(/<style>[\s\S]*?<\/style>/) ?? [''])[0]
@@ -318,10 +318,9 @@ t('journey.everyPost', {
 // than written here: a build that emitted three would otherwise pass every
 // content check below by never running it.
 const { PKGS } = await (await import('../site/content/data/packages.js')).loadFJS()
-const slugFor  = (p) => p.page.replace(/\.html$/, '')
 
 t('pkg.onePerPackage', {
-  emitted: PKGS.filter((p) => existsSync(join(DIST, slugFor(p), 'index.html'))).length,
+  emitted: PKGS.filter((p) => existsSync(join(DIST, 'packages', p.slug, 'index.html'))).length,
   declared: PKGS.length,
 }, balanced)
 
@@ -341,7 +340,7 @@ t('pkg.noEmptyShell',    !pkgHtml.includes('id="page"'))
 // without it eight pages share one title — the single field a search result is
 // built from.
 const titleOf = (h) => (h.match(/<title>([^<]*)<\/title>/) ?? [])[1] ?? null
-const mesaHtml = readFileSync(join(DIST, 'mesa', 'index.html'), 'utf8')
+const mesaHtml = readFileSync(join(DIST, 'packages', 'mesa', 'index.html'), 'utf8')
 t('pkg.titlesDiffer',  titleOf(pkgHtml) !== titleOf(mesaHtml))
 t('pkg.titleNamesPkg', titleOf(pkgHtml))
 t('pkg.hasDescription', /<meta name="description" content="[^"]{10}/.test(pkgHtml))
@@ -349,21 +348,25 @@ t('pkg.hasDescription', /<meta name="description" content="[^"]{10}/.test(pkgHtm
 // Every prerendered page is in the sitemap — `indexed` drops dynamic routes,
 // which on this target is every package page (`FJS-502`).
 const sitemap = readFileSync(join(DIST, 'sitemap.xml'), 'utf8')
-t('pkg.inSitemap', PKGS.every((p) => sitemap.includes(`<loc>${settings.siteUrl}/${slugFor(p)}/</loc>`)))
+t('pkg.inSitemap', PKGS.every((p) => sitemap.includes(`<loc>${settings.siteUrl}/packages/${p.slug}/</loc>`)))
 
 // ─── every page ───────────────────────────────────────────────────────────
 // The set is asked of the route tree rather than written here: a build that
 // emitted half of them would otherwise pass every check below by never running
-// it. Twelve hand-written pages were ported; this is what they became.
-const PAGES = readdirSync(SRC_ROUTES)
-  .filter((f) => f.endsWith('.mesa') && !f.startsWith('_') && !f.startsWith('['))
-  .map((f) => f.replace(/\.mesa$/, ''))
+// it. A folder with an `index.mesa` is a page by its folder's name; the other
+// files in it are not in the nav and are checked where they are listed.
+const srcOf = (n) => existsSync(join(SRC_ROUTES, `${n}.mesa`))
+  ? join(SRC_ROUTES, `${n}.mesa`) : join(SRC_ROUTES, n, 'index.mesa')
+const PAGES = readdirSync(SRC_ROUTES, { withFileTypes: true })
+  .flatMap((e) => e.isDirectory()
+    ? (existsSync(join(SRC_ROUTES, e.name, 'index.mesa')) ? [e.name] : [])
+    : (e.name.endsWith('.mesa') && !e.name.startsWith('_') && !e.name.startsWith('[') ? [e.name.replace(/\.mesa$/, '')] : []))
   .filter((n) => n !== '404')
 
 t('pages.allEmitted', {
   declared: PAGES.length + PKGS.length,                     // PAGES already holds index
   emitted:  [...PAGES.map((n) => (n === 'index' ? 'index.html' : join(n, 'index.html'))),
-             ...PKGS.map((p) => join(slugFor(p), 'index.html'))]
+             ...PKGS.map((p) => join('packages', p.slug, 'index.html'))]
               .filter((f) => existsSync(join(DIST, f))).length,
 }, balanced)
 
@@ -372,7 +375,7 @@ t('pages.allEmitted', {
 // A page declaring `robots: noindex` asked not to be found, and is exempt.
 const navHtml  = (html.match(/<nav aria-label="Site"[\s\S]*?<\/nav>/) ?? [''])[0]
 const unlisted = (n) => /^robots:\s*noindex\s*$/m.test(
-  readFileSync(join(SRC_ROUTES, `${n}.mesa`), 'utf8').split(/^---$/m)[1] ?? '')
+  readFileSync(srcOf(n), 'utf8').split(/^---$/m)[1] ?? '')
 t('pages.inNav', PAGES.filter((n) => n !== 'index' && !unlisted(n) && !navHtml.includes(`href="/${n}/"`)), none)
 
 // Every page carries the layout and the pre-paint theme script — the two things
@@ -632,12 +635,19 @@ try {
   `))
 
   // ── a package page, in a browser ────────────────────────────────────────
-  await goto(`${ORIGIN}/litestone/`)
+  await goto(`${ORIGIN}/packages/litestone/`)
 
   t('pkg.rendered', await evaluate(`
     return { features: document.querySelectorAll('.feat').length,
              tocLinks: document.querySelectorAll('.ptoc a').length,
              subnav:   document.querySelectorAll('.subnav a').length };
+  `))
+
+  // A `.container` spaces every child after the first, so a row inside one
+  // drops all but its first item below the line.
+  t('pkg.subnavOneLine', await evaluate(`
+    const tops = [...document.querySelectorAll('.subnav a')].map((a) => a.getBoundingClientRect().top);
+    return new Set(tops).size === 1;
   `))
 
   // The scoped styles bound through the layout AND the page, and the {@html}
@@ -866,7 +876,7 @@ try {
   // pages each have a grid that floors at its widest code sample.
   await cmd('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true })
   const wide = []
-  for (const path of ['/', '/start/', '/docs/', '/packages/', '/why/', '/journey/', '/pitch/', '/tutor/', '/seams/', '/showroom/', '/specs/', '/litestone/', '/vscode/']) {
+  for (const path of ['/', '/start/', '/docs/', '/packages/', '/why/', '/journey/', '/pitch/', '/tutor/', '/seams/', '/showroom/', '/specs/', '/packages/litestone/', '/packages/vscode/']) {
     await goto(`${ORIGIN}${path}`)
     const sw = await evaluate(`return document.documentElement.scrollWidth`)
     if (sw > 390) wide.push(`${path} ${sw}px`)

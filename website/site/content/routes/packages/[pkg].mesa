@@ -13,20 +13,25 @@ render: static
   highlighter and no data.
 -->
 <script>
-  import TocSpy from '../islands/TocSpy.mesa'
+  import TocSpy from '../../islands/TocSpy.mesa'
 
   export let data = null
 
   const d = data ?? { groups: [], nav: [], others: [], chips: [] }
 </script>
 
+<!--
+  `group`, not a bare container: a `.container` spaces every child after the
+  first with a 2xl top margin, which dropped all but the first link below the
+  line. A Group is the one-line row and is exempt from that spacing.
+-->
 <nav class="subnav" aria-label="Packages">
-  <div class="container">
+  <div class="container group">
     {#each d.nav as p}
       {#if p.current}
-        <a href={`/${p.slug}/`} aria-current="page">{p.label}</a>
+        <a href={p.href} aria-current="page">{p.label}</a>
       {:else}
-        <a href={`/${p.slug}/`}>{p.label}</a>
+        <a href={p.href}>{p.label}</a>
       {/if}
     {/each}
   </div>
@@ -42,7 +47,9 @@ render: static
   <div class="install"><pre>$ {d.install}</pre></div>
 </div>
 
-<div class="container pbody">
+<!-- The same container spacing would sit the feature column 2xl below the
+     table of contents beside it, so the grid is an inner box. -->
+<div class="container"><div class="pbody">
   <nav class="ptoc" aria-label="Features">
     <p class="lbl">{d.count} features</p>
     {#each d.groups as g}
@@ -94,7 +101,7 @@ render: static
       <p class="lbl">The rest of the stack</p>
       <div class="pnext">
         {#each d.others as p}
-          <a href={`/${p.slug}/`}><b>{p.name}</b><span>{p.realm}</span></a>
+          <a href={p.href}><b>{p.name}</b><span>{p.realm}</span></a>
         {/each}
       </div>
     </div>
@@ -106,7 +113,7 @@ render: static
     -->
     <TocSpy client:load />
   </div>
-</div>
+</div></div>
 
 <style>
   .subnav {
@@ -114,7 +121,7 @@ render: static
     background: color-mix(in srgb, var(--surface) 92%, transparent);
     backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule);
   }
-  .subnav .container { display: flex; gap: .15rem; overflow-x: auto; padding: .45rem 1.25rem; }
+  .subnav .container { gap: .15rem; overflow-x: auto; scrollbar-width: thin; padding: .45rem 1.25rem; }
   .subnav a {
     white-space: nowrap; font-size: .78rem; text-decoration: none; color: var(--ink-mute);
     padding: .28rem .55rem; border-radius: 6px; font-family: ui-monospace, Menlo, monospace;

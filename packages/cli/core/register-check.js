@@ -149,7 +149,7 @@ function livesInFindings(ruling, { root, names, dirs, inTree }) {
     // unknowable and a symbol missing from all of them proves nothing.
     const exact = inTree(candidates[0]) || inTree(candidates[1])
     if (!found.length) {
-      if (leavesTree(root, rel)) continue
+      if (leavesTree(rel)) continue
       out.push({ message: `Lives in names ${token}, which is not in the tree` })
       continue
     }
@@ -167,9 +167,11 @@ function livesInFindings(ruling, { root, names, dirs, inTree }) {
   return out
 }
 
-// A sibling checkout (`conduit-connectors/…`) beside the root is somebody else's tree.
-function leavesTree(root, rel) {
-  return existsSync(resolve(root, '..', rel))
+// A sibling checkout (`../conduit-connectors/…`) is somebody else's tree. Read
+// off the spelling, never the disk: the sibling is there on one laptop and on
+// no clone, so a probe is green here and red on the runner.
+function leavesTree(rel) {
+  return rel.startsWith('../')
 }
 
 // ─── the check around a write ────────────────────────────────────────────────

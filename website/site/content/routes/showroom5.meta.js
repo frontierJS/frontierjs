@@ -6,10 +6,8 @@
 // this page had the same problem the eight package stubs had, and the fix is
 // the same one.
 
-import { loadFJS } from '../data/packages.js'
+import { loadFJS, hrefFor } from '../data/packages.js'
 import { block, sniff } from '../data/code.js'
-
-const slugFor = (p) => p.page.replace(/\.html$/, '')
 
 export async function load() {
   const { PKGS } = await loadFJS()
@@ -29,7 +27,8 @@ export async function load() {
   return {
     packages: PKGS.map((p) => ({
       id:    p.id,
-      slug:  slugFor(p),
+      slug:  p.slug,
+      href:  hrefFor(p),
       name:  p.name,
       realm: p.realm,
       tone:  p.tone,

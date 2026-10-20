@@ -4,7 +4,7 @@ description: "Every FrontierJS package, what realm it belongs to, and how far al
 render: static
 ---
 <script>
-  import StubPage from '../components/StubPage.mesa'
+  import StubPage from '../../components/StubPage.mesa'
 
   export let data = null
 
@@ -21,7 +21,7 @@ render: static
     <ul class="pkg-list">
       {#each pkgs as p}
         <li>
-          <a href={`/${p.slug}/`}><strong>{p.name}</strong></a>
+          <a href={p.href}><strong>{p.name}</strong></a>
           <span class="badge {p.tone}">{p.realm}</span>
           <p>{p.pitch}</p>
         </li>

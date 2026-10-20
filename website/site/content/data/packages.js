@@ -36,6 +36,9 @@ export const HELD_BACK = {}
 
 let cached = null
 
+/** Where a package's page publishes. */
+export const hrefFor = (pkg) => `/packages/${pkg.slug}/`
+
 /** `window.FJS` — `{ PKGS, esc, hl, theme, SWATCHES, SWATCH_HEX }`. */
 export async function loadFJS() {
   if (cached) return cached

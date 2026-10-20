@@ -43,8 +43,9 @@ export interface PostureReadings {
   files?:        { path: string; mode: string; owner: string; group: string }[] | null
   cert?:         { expires_at: string } | null
   // The box a Basecamp runs on only: the files `fli deploy` told its Outpost
-  // hold the database and ENCRYPTION_KEY, each null when unreadable.
-  host_files?:   { db: FileStat | null; env: FileStat | null } | null
+  // hold the database, the env file and the secrets directory's ENCRYPTION_KEY,
+  // each null when unreadable or absent.
+  host_files?:   { db: FileStat | null; env: FileStat | null; key?: FileStat | null } | null
 }
 
 export interface FileStat { path: string; mode: string; owner: string; group: string }
@@ -384,8 +385,22 @@ const HUB_CONTROLS: { id: string; group: string; severity: Severity; grade: (r: 
       : { ok: false, message: `Last backup finished ${age} days ago` }
   } },
   { id: 'hub.db-mode',  group: 'hub', severity: 'high', grade: (r) => fileControl('database volume', r?.host_files?.db) },
-  { id: 'hub.env-mode', group: 'hub', severity: 'high', grade: (r) => fileControl('file holding ENCRYPTION_KEY', r?.host_files?.env) },
+  { id: 'hub.env-mode', group: 'hub', severity: 'high', grade: (r) => envControl(r?.host_files) },
 ]
+
+// ENCRYPTION_KEY is in the env file until it moves to its own file in the
+// secrets directory (FJS-3359), and the env file still holds every other secret
+// after it does, so both are graded and the worse one is the answer. No key file
+// is the key still in the env file, not an unknown.
+function envControl(files: PostureReadings['host_files']): Grade {
+  if (!files?.key) return fileControl('file holding ENCRYPTION_KEY', files?.env)
+  const env = fileControl('env file', files.env)
+  const key = fileControl('file holding ENCRYPTION_KEY', files.key)
+  if (env.ok === false) return env
+  if (key.ok !== true)  return key
+  if (env.ok !== true)  return env
+  return { ok: true, message: `${env.message}; ${key.message}` }
+}
 
 export const HUB_CONTROL_IDS = HUB_CONTROLS.map(c => c.id)
 

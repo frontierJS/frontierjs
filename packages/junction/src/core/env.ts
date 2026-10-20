@@ -36,6 +36,7 @@ import { readFileSync } from 'node:fs'
 import { colorEnabled } from './logger.ts'
 import { isDevelopmentEnv } from './errors.ts'
 import { isSecretEnvName, redactUrl, REDACTED } from '@frontierjs/toolbelt/redact'
+import { envSource, fileValue } from '@frontierjs/toolbelt/env'
 
 // Env validation runs before an app — and therefore before its logger —
 // exists, so these are written straight to stderr. The color gate is
@@ -254,35 +255,26 @@ export function checkEnvField(key: string, field: EnvFieldSpec, raw: string | un
 // ─── checkEnvKey ──────────────────────────────────────────────────────────
 //
 // `checkEnvField` over a key as an environment holds it: the variable itself,
-// or the file `<KEY>_FILE` names. A variable passed with `--env` or
-// `--env-file` sits in the container's Config.Env, which `docker inspect` shows
-// to anyone in the docker group; a file mounted into the container does not.
-// The spelling is the Docker official images' (`POSTGRES_PASSWORD_FILE`), and
-// as there, both set is refused: one of the two is stale, and letting either
-// win in silence is how a deploy boots on the old ENCRYPTION_KEY and cannot
-// read its own encrypted columns.
+// or the file `<KEY>_FILE` names. Which of the two, and what the file's bytes
+// mean, is `@frontierjs/toolbelt/env`'s, because litestone's CLI reads
+// ENCRYPTION_KEY too and cannot import this.
 
 export function checkEnvKey(
   key: string,
   field: EnvFieldSpec,
   env: Record<string, string | undefined> = process.env,
 ): EnvFieldResult {
-  const fileKey = `${key}_FILE`
-  const path    = env[fileKey]
-  if (path === undefined || path === '') return checkEnvField(key, field, env[key])
-
+  const src  = envSource(key, env)
   const fail = (error: string): EnvFieldResult => ({ value: undefined, error, warnings: [], present: true })
-  if (env[key] !== undefined && env[key] !== '')
-    return fail(`${key} and ${fileKey} are both set — unset one (the file is the one docker inspect does not show)`)
+  if ('error' in src) return fail(src.error)
+  if ('value' in src) return checkEnvField(key, field, src.value)
 
   let raw: string
-  try { raw = readFileSync(path, 'utf8') }
-  catch (e) { return fail(`${fileKey}: cannot read ${path} (${(e as NodeJS.ErrnoException).code ?? (e as Error).message})`) }
+  try { raw = readFileSync(src.file, 'utf8') }
+  catch (e) { return fail(`${src.fileKey}: cannot read ${src.file} (${(e as NodeJS.ErrnoException).code ?? (e as Error).message})`) }
 
-  // A file written by `echo` or an editor ends in a newline the value does not
-  // have, and a 64-character key read as 65 fails at the first encrypted write.
-  const r = checkEnvField(key, field, raw.replace(/(\r?\n)+$/, ''))
-  return r.error ? { ...r, error: `${r.error}  (read from ${fileKey}=${path})` } : r
+  const r = checkEnvField(key, field, fileValue(raw))
+  return r.error ? { ...r, error: `${r.error}  (read from ${src.fileKey}=${src.file})` } : r
 }
 
 // ─── defineEnv ────────────────────────────────────────────────────────────

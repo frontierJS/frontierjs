@@ -7,7 +7,7 @@ framework import, no mutation of its arguments. The rule is the package's
 license, not its style: `FJS-D26` admits toolbelt as substrate *below* the
 dependency graph on the strength of it, so breaking purity costs the standing.
 
-**One kit per subpath.** `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/docfences`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
+**One kit per subpath.** `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/docfences`, `/env`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
 `/fill`, `/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/mailbox`, `/markdown`, `/match`, `/mime`,
 `/predicate`, `/query`, `/rank`, `/redact`, `/search`, `/signature`, `/sigv4`, `/sse`, `/textedit`, `/trace`, `/transforms` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
@@ -153,6 +153,11 @@ src/mailbox/         `formatMailbox(address, name)`, a mailbox as a header
                      may not import junction (`FJS-D1091`). Renders, never
                      grades; encoded-words for a non-ASCII name stay junction's,
                      because they are a wire encoding. Ships a `.d.ts`
+src/env/             `envSource(key, env)` and `fileValue(text)`: a key held
+                     in the variable or in the file `<KEY>_FILE` names, both set
+                     refused. Junction's `defineEnv` and litestone's CLI both
+                     read ENCRYPTION_KEY, and litestone may not import junction.
+                     The caller reads the file. Ships a `.d.ts`
 src/bearer/          what a bearer secret looks like at rest — `fingerprint`
                      (a keyed digest, `purpose` REQUIRED so one token does not
                      digest identically in two tables), `matchesFingerprint`

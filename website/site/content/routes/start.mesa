@@ -15,7 +15,7 @@ render: static
   <section>
     <h2>Create an app</h2>
     <p>The front door command, run verbatim, and the tree it writes: <code>db/</code>, <code>api/</code>, <code>web/</code>. Every command here is a transcript of a real run, the rule the tutorial page already keeps.</p>
-    <p class="from">From: <a href="/create-frontier/">create-frontier</a></p>
+    <p class="from">From: <a href="/packages/create-frontier/">create-frontier</a></p>
   </section>
   <section>
     <h2>Run it</h2>

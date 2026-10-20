@@ -11,7 +11,7 @@
 // viewBox, so they hold at every zoom. A sharper image at the same aspect ratio
 // drops in with no change here; a re-drawn one needs every ellipse re-traced.
 
-import { loadFJS } from '../data/packages.js'
+import { loadFJS, hrefFor } from '../data/packages.js'
 
 const IMAGE = { src: '/map/territory.webp', width: 2560, height: 1707 }
 
@@ -58,7 +58,7 @@ export async function load() {
       realm:    pkg?.realm ?? t.realm,
       pitch:    pkg?.pitch ?? t.pitch,
       features: (pkg?.rows ?? []).map((r) => r.k),
-      href:     pkg ? '/' + pkg.page.replace(/\.html$/, '') + '/' : null,
+      href:     pkg ? hrefFor(pkg) : null,
       status:   pkg ? null : t.status,
     }
   })

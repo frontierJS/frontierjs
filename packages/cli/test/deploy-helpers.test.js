@@ -499,6 +499,68 @@ describe('swapContainer', () => {
 
     expect(runCmd.indexOf('--env FRONTIER_PORT_BE=3000')).toBeGreaterThan(runCmd.indexOf('--env-file'))
   })
+
+  // ─── the secrets directory (FJS-3359) ──────────────────────────────────────
+  // The target answers the listing and the env-file grep; everything else ''.
+  const onTarget = ({ ls = '', inEnv = '' } = {}) => {
+    const commands = []
+    const context  = {
+      exec: ({ command, input }) => {
+        const s = input ?? command
+        commands.push(s)
+        if (s.includes('ls -1A')) return ls
+        if (s.includes('grep -qs')) return inEnv
+        return ''
+      },
+      config: {},
+    }
+    const go = (opts = {}) => swapContainer(context, {
+      host: 'localhost', container: 'my-app-api', image: 'sha256:abc', apiPort: 7102,
+      dbPath: '/srv/db', envFile: '/srv/.env.production', secretsDir: '/srv/secrets', deployConf: {},
+      log: { info() {}, success() {}, warn() {}, error() {} },
+      ...opts,
+    })
+    return { commands, go, runCmd: () => commands.find(c => c.includes('docker run')) }
+  }
+
+  test('each key in the secrets directory is mounted read-only and passed as KEY_FILE, never as a value', () => {
+    const t = onTarget({ ls: 'ENCRYPTION_KEY\nSTRIPE_KEY\n' })
+    t.go()
+    expect(t.runCmd()).toContain('--volume /srv/secrets:/run/secrets:ro')
+    expect(t.runCmd()).toContain('--env ENCRYPTION_KEY_FILE=/run/secrets/ENCRYPTION_KEY')
+    expect(t.runCmd()).toContain('--env STRIPE_KEY_FILE=/run/secrets/STRIPE_KEY')
+  })
+
+  test('no secrets directory, or an empty one, mounts nothing', () => {
+    const t = onTarget()
+    t.go()
+    expect(t.runCmd()).not.toContain('/run/secrets')
+    expect(t.runCmd()).not.toContain('_FILE=')
+  })
+
+  test('a file not named like an env key never reaches the docker run line', () => {
+    const t = onTarget({ ls: 'ENCRYPTION_KEY\nnotes.txt\n$(reboot)\n' })
+    t.go()
+    expect(t.runCmd()).toContain('ENCRYPTION_KEY_FILE=')
+    expect(t.runCmd()).not.toContain('notes.txt')
+    expect(t.runCmd()).not.toContain('reboot')
+  })
+
+  test('a key also in the env file or the configuration set is refused before the running container is touched', () => {
+    const inFile = onTarget({ ls: 'ENCRYPTION_KEY\n', inEnv: 'ENCRYPTION_KEY\n' })
+    expect(() => inFile.go()).toThrow(/ENCRYPTION_KEY is in \/srv\/secrets and also in \/srv\/\.env\.production/)
+    expect(inFile.commands.some(c => c.includes('docker rename'))).toBe(false)
+
+    const inConfig = onTarget({ ls: 'API_TOKEN\n' })
+    expect(() => inConfig.go({ configuration: { API_TOKEN: 'x' } })).toThrow(/API_TOKEN/)
+    expect(inConfig.commands.some(c => c.includes('docker rename'))).toBe(false)
+  })
+
+  test('a secrets directory this login cannot list stops the swap rather than starting the API without its keys', () => {
+    const t = onTarget({ ls: '?unreadable\n' })
+    expect(() => t.go()).toThrow(/cannot list it/)
+    expect(t.commands.some(c => c.includes('docker rename'))).toBe(false)
+  })
 })
 
 // ─── healthOrRestore ──────────────────────────────────────────────────────────

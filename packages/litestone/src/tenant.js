@@ -474,7 +474,13 @@ class TenantRegistry {
    */
   async getOrCreate(id, meta = {}) {
     assertSafeId(id)
-    if (!this.exists(id)) await this.create(id, meta)
+    // Two processes booting one app on a fresh tree (an API and its snapshot
+    // generators, an API and a worker) both see no tenant and both create it;
+    // the second registry INSERT is the one that loses, and the tenant is there.
+    if (!this.exists(id)) {
+      try { await this.create(id, meta) }
+      catch (err) { if (!this.exists(id)) throw err }
+    }
     return this.#open(id)
   }
 
@@ -539,9 +545,15 @@ class TenantRegistry {
     raw.close()
 
     // Register in registry
-    this.#registryDb.prepare(
-      `INSERT INTO tenants (id, meta) VALUES (?, ?)`
-    ).run(id, JSON.stringify(meta))
+    try {
+      this.#registryDb.prepare(
+        `INSERT INTO tenants (id, meta) VALUES (?, ?)`
+      ).run(id, JSON.stringify(meta))
+    } catch (err) {
+      if (/UNIQUE constraint failed: tenants\.id/.test(err.message))
+        throw new Error(`Tenant "${id}" already exists`, { cause: err })
+      throw err
+    }
 
     return this.#open(id)
   }
