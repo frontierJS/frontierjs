@@ -14,6 +14,7 @@ if (!released?.length) { log.info('Nothing to publish'); return }
 const published = []
 const failures  = []
 const skipped   = []
+let lapsed      = false
 
 for (const { name, dir, newVersion } of released) {
   // npm's browser 2FA is per-publish, so a loop that does not stop opens an OTP
@@ -31,7 +32,7 @@ for (const { name, dir, newVersion } of released) {
     log.info(`  Ready: ${name}@${newVersion}  →  npm (tag ${tag})`)
     if (!await prompts.confirm('  Publish it?', { default: true })) {
       // A skip is NOT a failure: the version and tag are already written, so
-      // the recovery is `bun publish` in that directory whenever you mean to.
+      // the next `ws:pub` finds it in flight and publishes it.
       skipped.push(`${name}@${newVersion}`)
       log.warn(`  · skipped ${name}@${newVersion}`)
       continue
@@ -63,6 +64,12 @@ for (const { name, dir, newVersion } of released) {
   } catch (err) {
     failures.push(name)
     log.error(`  ✗ ${name}: ${err.message}`)
+    // A lapsed session fails every package after this one too, so collecting
+    // them buries the one cause under twenty copies. npm is asked rather than
+    // bun's output read: the 2FA prompt needs bun's streams on the terminal.
+    let who = ''
+    try { who = String(execSync('npm whoami', { stdio: ['ignore', 'pipe', 'ignore'] })).trim() } catch {}
+    if (!who) { lapsed = true; break }
   }
 }
 
@@ -70,19 +77,21 @@ $.config.published = published
 
 if (skipped.length) {
   log.warn(`  ${skipped.length} skipped: ${skipped.join(', ')}`)
-  log.warn('  Each is versioned and tagged locally. Publish one with:')
-  log.warn('    bun publish   (from that package directory)')
+  log.warn('  Each is versioned and tagged locally; `fli ws:pub` again publishes them')
 }
 
 if (failures.length) {
-  // The commit and tags from step 01 are still local — nothing is pushed, so
-  // the recovery is to fix the failure and re-run, or reset the release commit.
-  if (published.length) {
-    log.warn(`  ${published.length} package(s) DID publish: ${published.join(', ')}`)
-    log.warn('  Those versions are on the registry for good. Re-running the same command bumps')
-    log.warn('  again and skips a version; resetting and re-running needs --tolerate-republish,')
-    log.warn('  or bun exits 1 on the ones that already went out.')
+  // The commit and tags from step 01 are still local and nothing is pushed.
+  // Re-running finishes the release: `ws:pub` asks the registry which tagged
+  // versions it lacks and publishes those, without a second bump.
+  if (published.length) log.warn(`  ${published.length} package(s) DID publish: ${published.join(', ')}`)
+  if (lapsed) {
+    const left = released.length - published.length - skipped.length
+    log.error(`  npm auth lapsed — stopped with ${left} package(s) unpublished`)
+    log.error('  Run `fli ws:pub` again: it logs in and finishes this release')
+  } else {
+    log.warn('  Fix the failure and run `fli ws:pub` again: it finishes this release rather than bumping')
   }
-  throw new Error(`${failures.length} package(s) failed to publish: ${failures.join(', ')} — nothing pushed`)
+  throw new Error(`${lapsed ? 'npm auth lapsed' : `${failures.length} package(s) failed to publish: ${failures.join(', ')}`} — nothing pushed`)
 }
 ```

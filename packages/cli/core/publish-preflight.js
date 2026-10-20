@@ -263,6 +263,40 @@ export function formatRefusals(refusals = []) {
   return lines
 }
 
+// ─── a release in flight ─────────────────────────────────────────────────────
+
+/**
+ * The packages a release VERSIONED and never published: the `<name>@<version>`
+ * tag is written and the registry does not hold that version.
+ *
+ * The state a lapsed npm session leaves. Every package then has no commits
+ * since its own tag, so the affected filter reads the release as finished and
+ * the run says *nothing to publish* — and a bump over it skips that version for
+ * good. A package with no tag at its version is never pending: that is an
+ * ordinary release, a first one included, and it goes through the bump.
+ *
+ * `published` is the registry's answer, NULL where it could not be asked. An
+ * unknown is returned rather than guessed, because a guess of *published* bumps
+ * over a version nobody installed and a guess of *not* republishes one.
+ *
+ * A pending package with commits since its tag is `moved`: npm packs the
+ * working directory, so publishing it now ships those commits under a tag
+ * whose tree does not hold them — the dirty-tree refusal, one commit later.
+ *
+ * @param members  [{ name, version, tagged, published, moved }]
+ */
+export function unpublished(members = []) {
+  const pending = []
+  const unknown = []
+  const moved   = []
+  for (const m of members) {
+    if (!m.tagged) continue
+    if (m.published === null || m.published === undefined) unknown.push(m.name)
+    else if (!m.published) (m.moved ? moved : pending).push(m.name)
+  }
+  return { pending, unknown, moved }
+}
+
 // ─── selecting packages ──────────────────────────────────────────────────────
 
 /**

@@ -13,6 +13,14 @@ import { execSync } from 'child_process'
 const { planned, repo, wsRoot, releaseTag, releaseSubject } = $.config
 if (!planned?.length) { log.info('No packages to version'); return }
 
+// A release in flight is already written, committed and tagged — the versions
+// in the manifests ARE the release, and a second commit would tag nothing new.
+if ($.config.resume) {
+  $.config.released = planned.map(({ dir, path, pkg, newVersion }) => ({ dir, path, name: pkg.name, newVersion }))
+  log.info('  already versioned and tagged — publishing what is there')
+  return
+}
+
 for (const { dir, pkg, newVersion } of planned) {
   log.info(`  ${pkg.name}: ${pkg.version} → ${newVersion}`)
   if (flag.dry) continue

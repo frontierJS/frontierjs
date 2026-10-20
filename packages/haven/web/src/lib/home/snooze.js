@@ -37,7 +37,7 @@ export function untilOf(said, today = new Date()) {
   const w = String(said ?? '').trim().toLowerCase()
   let d = null
   if (!w || w === 'tomorrow' || w === 'tmrw') d = plus(t, 1)
-  else if (/^\d+[dw]$/.test(w)) d = plus(t, parseInt(w) * (w.endsWith('w') ? 7 : 1))
+  else if (/^\d+[dw]$/.test(w)) d = plus(t, parseInt(w, 10) * (w.endsWith('w') ? 7 : 1))
   else if (/^\d{4}-\d{2}-\d{2}$/.test(w)) d = dayOf(w)
   else if (/^\d{1,2}[/-]\d{1,2}$/.test(w)) {
     const [m, day] = w.split(/[/-]/).map(Number)

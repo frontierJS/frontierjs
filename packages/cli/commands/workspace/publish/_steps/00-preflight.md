@@ -48,17 +48,28 @@ if (refusals.some(r => !r.note)) {
 
 // Whether npm knows who you are, asked BEFORE a version is spent. bun reads
 // npm's own credentials, and without them the refusal arrives from the registry
-// after the commit and the tags are written — at which point the recovery is a
-// reset rather than a login. `npm whoami` is the cheapest form of the question
-// and it asks the registry, so an expired token reads as logged out.
+// after the commit and the tags are written.
+//
+// On a terminal the answer is a fresh `npm login`, every run. An npm login
+// session lasts two hours, so `npm whoami` passes a session with minutes left
+// and it lapses between the first publish and the twentieth; logging in here
+// starts the full window before the first 2FA prompt. A piped run cannot open
+// a browser, so it keeps the refusal.
 if (!flag.dry) {
-  let who = ''
-  try { who = String(execSync('npm whoami', { stdio: ['ignore', 'pipe', 'ignore'] })).trim() }
-  catch { who = '' }
+  const whoami = () => {
+    try { return String(execSync('npm whoami', { stdio: ['ignore', 'pipe', 'ignore'] })).trim() }
+    catch { return '' }
+  }
+  if (tty.interactive) {
+    log.info('  npm sessions last two hours — logging in fresh')
+    try { execSync('npm login --auth-type=web', { stdio: 'inherit' }) }
+    catch { /* the whoami below is the verdict */ }
+  }
+  const who = whoami()
   if (!who) {
     log.error('  ✗  npm-auth')
     log.error('      npm does not know who you are — `bun publish` reads npm\'s credentials')
-    log.error('      Run `npm login` (or `npm login --auth-type=web`) and start again')
+    log.error('      Run `npm login --auth-type=web` and start again')
     $.config.abort = true
     $.config.prompts?.close()
     return
@@ -75,7 +86,7 @@ $.config.planned = sorted.order
 // the note-only ones — a peer range that could not be decided — are exactly the
 // kind a person reads and then chooses to accept.
 const { interactive, prompts } = $.config
-if (interactive && !flag.dry) {
+if (interactive && !flag.dry && !$.config.resume) {
   const names = sorted.order.map(p => p.pkg.name.replace('@frontierjs/', '')).join(' → ')
   echo('')
   log.info(`  Next: write ${sorted.order.length} version(s), refresh the lockfile, commit and tag.`)

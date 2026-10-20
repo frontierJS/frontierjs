@@ -57,8 +57,8 @@ function tally(rows, keysOf, n) {
 // same shape the daily-check-audit skill reads its links from.
 const KOBAMI_CHAT = '/buckets/29933190/chats/5472184725/lines.json'
 
-const unescape = (s) => s.replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", nbsp: ' ' })[e])
-const plain = (html) => oneLine(unescape(html.replace(/<[^>]+>/g, '')))
+const unescapeHtml = (s) => s.replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", nbsp: ' ' })[e])
+const plain = (html) => oneLine(unescapeHtml(html.replace(/<[^>]+>/g, '')))
 
 // A summary line's number is its first <strong>; the label is shortened by its
 // emoji, and a line this does not know keeps its own words.
@@ -92,7 +92,7 @@ function itemOf(html, customer) {
     text: [plain(a[2]), who, customer].filter(Boolean).join(' · '),
     note: shortTiming(timing),
     tone: late ? 'danger' : TAG.find(([e]) => head.includes(e))?.[1],
-    url: unescape(a[1]),
+    url: unescapeHtml(a[1]),
     keys: keysOf(head, who, timing),
   }
 }
@@ -106,7 +106,7 @@ function dailyBlocks(html) {
     if (m[4] != null) {
       flush()
       blocks.push({ kind: 'heading', text: '⏸ On hold' })
-      blocks.push({ kind: 'list', items: [...m[4].matchAll(/<a href="([^"]+)">([\s\S]*?)<\/a>/g)].map((a) => ({ text: plain(a[2]), tone: 'muted', url: unescape(a[1]) })) })
+      blocks.push({ kind: 'list', items: [...m[4].matchAll(/<a href="([^"]+)">([\s\S]*?)<\/a>/g)].map((a) => ({ text: plain(a[2]), tone: 'muted', url: unescapeHtml(a[1]) })) })
     } else if (m[1] != null && (m[2] == null || plain(m[1]) === 'Notes')) {
       flush()
       section = plain(m[1]); customer = null

@@ -14508,6 +14508,18 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1337"></a>2026-10-19 · `FJS-D1337` — `ws:pub` finishes a release in flight rather than bumping it: a package whose `<name>@<version>` tag exists and whose version the registry lacks is published as it stands, and the run says the bump is ignored.
+
+Asked in chat after a lapsed npm session left 21 packages versioned, tagged and unpublished, and `ws:pub` answered *nothing to publish*. **A** (`ws:pub` detects it) was picked over **B** (a separate `ws:pub:resume` command — a second command to know, and plain `ws:pub` keeps the trap) and **C** (a `--resume` flag — the caller must already know the state). As recommended.
+
+The registry is the origin, not a state file — `lerna publish from-package` and `changeset publish` answer the same way. A registry that cannot answer refuses the run, since a guess either bumps over a version nobody installed or republishes one; a pending package committed to since its tag refuses as `in-flight-moved`, because npm packs the working directory. `unpublished()` in `packages/cli/core/publish-preflight.js`, graded by `test/publish-preflight.test.js` § a release in flight.
+
+### <a id="fjs-d1338"></a>2026-10-19 · `FJS-D1338` — `ws:pub` preflight runs `npm login --auth-type=web` on a terminal every run, and the publish loop stops at the first failure that leaves `npm whoami` unanswered.
+
+Asked in chat beside `FJS-D1337`. **A** (log in first and stop on a lapse) was picked over **B** (log in first only — a lapse mid-run still fails every remaining package) and **C** (log in only when `whoami` fails — a session with minutes left passes and lapses mid-run). As recommended.
+
+Since 2025-12-09 an `npm login` session lasts two hours and each publish in it asks for 2FA, so `whoami` before the run says nothing about the twentieth publish. A piped run cannot open a browser and keeps the `whoami` refusal. The lapse is detected by asking npm, not by reading bun's output, because the 2FA prompt needs bun's streams on the terminal. Unenforced: a browser login has no headless test.
+
 ### <a id="fjs-d1254"></a>2026-10-18 · `FJS-D1254` — Who writes Basecamp's own DNS record at ring 0 — `fli` takes a Cloudflare token once and hands it in as the first workspace's edge `Secret`; Basecamp's own connector writes and marks the record, and owns DNS from then on.
 
 Asked in [`IDEAS/deploy-plane.md`](IDEAS/deploy-plane.md) § Open questions. **A** was picked over **B** (By hand once; Basecamp manages every app record after. No token in `fli`). As recommended.

@@ -90,16 +90,24 @@ when a republish is the point, after a failed run or a packaging fix that
 changed no source. A package that has never been released has no tag and is
 always affected.
 
+**A release in flight is finished, never bumped.** A run that versioned and
+tagged and then published nothing — an npm session that lapsed mid-run — leaves
+no commits since any tag, which the rule above reads as done. So the registry is
+asked first: a package whose `<name>@<version>` tag exists and whose version npm
+does not hold is published as it stands, the bump argument ignored, and the run
+says so. A registry that cannot answer refuses the run, because a guess either
+bumps over a version nobody installed or republishes one. This is what `lerna
+publish from-package` and `changeset publish` do — the registry, not a state
+file, says what is left.
+
 A package marked `private` in its `package.json` is skipped — npm refuses it,
 and a failed publish aborts the run before anything is pushed.
 
-`--tolerate-republish` is the recovery flag. A run that publishes some of its
-packages and not others leaves versions the registry already holds, and
-`bun publish` exits 1 on those — so the obvious *fix the failure and re-run*
-fails on exactly the packages that succeeded. It is a flag rather than the
-default because the error it silences is worth hearing on an ordinary run: a
-version already on the registry means the bump did not happen, and a release
-that quietly published nothing looks identical to one that worked.
+`--tolerate-republish` passes bun's flag of the same name through: a version the
+registry already holds is not a failure. Finishing a release in flight does not
+need it — that run selects only the versions npm lacks. It is off by default
+because the error it silences is worth hearing on an ordinary run: a version
+already on the registry means the bump did not happen.
 
 `--no-push` stops after publishing: the release commit and its tags stay local.
 Worth reaching for when this repo's `pre-push` hook is a CI tier — a release
@@ -116,8 +124,12 @@ which is what `--filter` and `--except` are for.
 
 **Every run stops once before the first publish**, on a terminal. npm's browser
 2FA is per-publish and human-paced, so the pause is where you get logged in and
-ready before eighteen OTP prompts arrive; whether you are logged in AT ALL is
-asked earlier still, in preflight, where no version has been spent yet.
+ready before eighteen OTP prompts arrive. Preflight runs `npm login
+--auth-type=web` first, on a terminal, every run: an npm login session lasts two
+hours, so a session that merely answers `npm whoami` can lapse between the first
+publish and the last. A lapse mid-run stops the loop at the first package it
+fails rather than failing every one after it, and the next `ws:pub` finishes the
+release.
 `--interactive` extends that pause to every package, and adds one before
 versioning and one before the push — the pacing to reach for when the 2FA
 prompt is a browser round trip rather than a code you can type.
@@ -173,12 +185,54 @@ if (flag['changed-only']) {
   }
 }
 
+// A release that versioned and tagged and then published nothing — an npm
+// session that lapsed mid-run — has no commits since any of its tags, so the
+// filter below would call it done. The registry is asked first, and a release
+// in flight is FINISHED rather than bumped: a bump over an unpublished version
+// skips it for good.
+const { unpublished } = await import(new URL('file://' + global.fliRoot + '/core/publish-preflight.js'))
+const { execFile } = await import('child_process')
+const onRegistry = (name, version) => new Promise(done =>
+  execFile('npm', ['view', `${name}@${version}`, 'version'], (err, stdout, stderr) =>
+    done(err ? (/\bE404\b/.test(String(stderr)) ? false : null) : Boolean(String(stdout).trim()))))
+
+const onNpm = await Promise.all(packages.map(async ({ dir, pkg }) => {
+  const state  = $.git.pkgState(pkg.name, dir)
+  const tagged = state.lastTag === releaseTag(pkg.name, pkg.version)
+  return { name: pkg.name, version: pkg.version, tagged, moved: state.affected,
+           published: tagged ? await onRegistry(pkg.name, pkg.version) : false }
+}))
+const { pending, unknown, moved } = unpublished(onNpm)
+
+if (moved.length) {
+  log.error(`  ✗  in-flight-moved: tagged, not on npm, and committed to since: ${moved.join(', ')}`)
+  log.error('      npm packs the working directory, so publishing now ships commits the tag does not hold')
+  log.error('      fix: publish each from its tag — git worktree add <dir> <name>@<version>, then bun publish in that package')
+  $.config.abort = true
+  return
+}
+
+if (unknown.length) {
+  log.error(`  ✗  npm could not say whether these versions are published: ${unknown.join(', ')}`)
+  log.error('      A guess either bumps over a version nobody installed or republishes one')
+  log.error('      Check the network and `npm view <name>@<version>`, then run again')
+  $.config.abort = true
+  return
+}
+
+const resume = pending.length > 0
+if (resume) {
+  packages = packages.filter(({ pkg }) => pending.includes(pkg.name))
+  log.info(`${pending.length} package(s) are versioned and tagged but not on npm — finishing that release, not bumping`)
+  log.info(`  '${arg.bump}' is ignored: a bump over an unpublished version skips it for good`)
+}
+
 // A package with no commits since its own tag is held back by DEFAULT, because
 // the version it would spend buys nothing and the republish is not reversible.
 // The sibling `ws:*` commands ask for that filter with `--affected`; here the
 // cost of the wrong answer is a burned version rather than a wasted test run,
 // so the filter is the default and `--all` is what turns it off.
-if (!flag.all) {
+else if (!flag.all) {
   const before = packages.length
   packages = packages.filter(({ dir, pkg }) => $.git.pkgState(pkg.name, dir).affected)
   if (packages.length < before)
@@ -192,7 +246,7 @@ if (!packages.length) {
 
 // Target versions are resolved here rather than in the version step, so the
 // preview below states the numbers a user is approving.
-let planned = packages.map(p => ({ ...p, newVersion: bumpVersion(p.pkg.version, arg.bump) }))
+let planned = packages.map(p => ({ ...p, newVersion: resume ? p.pkg.version : bumpVersion(p.pkg.version, arg.bump) }))
 const repo  = $.wsRepo(all)
 
 // ─── prompts ──────────────────────────────────────────────────────────────────
@@ -209,11 +263,11 @@ if (!flag.dry) {
 }
 
 log.info(`Publishing ${planned.length} package(s)`)
-log.info(`Bump:   ${arg.bump}`)
+log.info(`Bump:   ${resume ? 'none — finishing a release in flight' : arg.bump}`)
 log.info(`Tag:    ${flag.tag}`)
 log.info(`Repo:   ${repo ? `one repo at ${repo}` : 'one per package'}`)
 echo('')
-for (const { pkg, newVersion } of planned) log.info(`  ${pkg.name}  ${pkg.version} → ${newVersion}`)
+for (const { pkg, newVersion } of planned) log.info(resume ? `  ${pkg.name}  ${newVersion}` : `  ${pkg.name}  ${pkg.version} → ${newVersion}`)
 echo('')
 
 $.config.wsRoot     = wsRoot
@@ -223,6 +277,7 @@ $.config.repo       = repo
 $.config.members    = all
 $.config.planned    = planned
 $.config.bump       = arg.bump
+$.config.resume     = resume
 $.config.tag        = flag.tag
 $.config.otp        = flag.otp
 $.config.tolerate   = flag['tolerate-republish']

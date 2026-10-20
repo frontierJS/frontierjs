@@ -61,9 +61,6 @@
   },
   "//knownPublishedSchemas": "registry phase — a PUBLISHED package whose exported `.lite` the current parser refuses, keyed by name@version so the entry goes stale the moment a corrected copy is published. An app installing that package cannot boot while the tree stays green, because an app in this workspace resolves the package to its own directory and never reads the published bytes. Each entry says why it is still there; the fix is always to publish, never to widen this.",
   "knownPublishedSchemas": {
-    "@frontierjs/auth@1.0.7": "FJS-2084 — FJS-D661 renamed @@log to @@trail and driver logger to driver trail; the tree copy is correct, the fix is to republish auth with litestone",
-    "@frontierjs/junction@0.1.8": "FJS-3176 — FJS-D1081 made a gate level a bare literal; outbox, metrics and backfill ship @@gate(\"8\"), the tree copies are bare, the fix is to republish junction with litestone",
-    "@frontierjs/notifications@0.1.5": "FJS-3176 — FJS-D1081 made a gate level a bare literal; notification.lite ships @@gate(\"0.8.4.8\"), the tree copy is bare, the fix is to republish notifications with litestone"
   },
   "//substrateAmbient": "Per-file, per-capability exceptions to the substrate purity rule in scripts/ci.mjs. The DEPENDENCY half of that rule is absolute and has no allowance: zero dependencies is what FJS-D26 grants the import license for. An ambient capability is a narrower question, and the rule was over-broad — an id generator's whole job is a different answer each call (FJS-D306). Key is the file path; each entry maps the exact capability string the rule prints to the reason it is allowed there. A capability not listed still fails, in a file that has an entry for another one.",
   "substrateAmbient": {

@@ -9,7 +9,7 @@
 import { describe, test, expect } from 'bun:test'
 
 import { satisfiesRange, dirtyPackages, peerDrift, publishOrder,
-         publishRefusals, formatRefusals, matchesSelector } from '../core/publish-preflight.js'
+         publishRefusals, formatRefusals, matchesSelector, unpublished } from '../core/publish-preflight.js'
 
 describe('a version against a range', () => {
   // The trap this whole check exists for. Below 1.0 a caret pins the MINOR, so
@@ -227,5 +227,32 @@ describe('a package against a selector', () => {
 
   test('a single string is accepted, not only a list', () => {
     expect(matchesSelector(pkg, 'outpost', 'outpost')).toBe(true)
+  })
+})
+
+describe('a release in flight', () => {
+  // The state a 2FA that lapsed after the version step leaves: tagged, and on
+  // no registry. A bump over it would skip the version for good.
+  test('a tag the registry does not hold is pending', () => {
+    expect(unpublished([
+      { name: 'a', version: '0.1.1', tagged: true, published: false },
+      { name: 'b', version: '0.2.0', tagged: true, published: true },
+    ])).toEqual({ pending: ['a'], unknown: [], moved: [] })
+  })
+
+  test('a package with no tag at its version is an ordinary release, never pending', () => {
+    expect(unpublished([{ name: 'a', version: '0.0.1', tagged: false, published: false }]))
+      .toEqual({ pending: [], unknown: [], moved: [] })
+  })
+
+  test('a registry that could not be asked is unknown, not published', () => {
+    expect(unpublished([{ name: 'a', version: '0.1.1', tagged: true, published: null }]))
+      .toEqual({ pending: [], unknown: ['a'], moved: [] })
+  })
+
+  // Published from disk, it would carry commits its tag does not hold.
+  test('a pending package with commits since its tag is moved, not pending', () => {
+    expect(unpublished([{ name: 'a', version: '0.1.1', tagged: true, published: false, moved: true }]))
+      .toEqual({ pending: [], unknown: [], moved: ['a'] })
   })
 })
