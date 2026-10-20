@@ -26,6 +26,8 @@
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, isAbsolute, join, relative } from 'node:path'
+import { childEnv } from '@frontierjs/junction'
+import { env } from './env.ts'
 
 export type LocalRepo = {
   path:          string
@@ -137,7 +139,7 @@ export function pickRemote(output: string): string | null {
 async function git(dir: string, args: string[]): Promise<string | null> {
   const proc = Bun.spawn(['git', '-c', 'core.fsmonitor=false', '--no-optional-locks', '-C', dir, ...args], {
     stdout: 'pipe', stderr: 'ignore',
-    env:    { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' },
+    env:    { ...childEnv(env), GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' },
   })
   const out  = await new Response(proc.stdout).text()
   const code = await proc.exited

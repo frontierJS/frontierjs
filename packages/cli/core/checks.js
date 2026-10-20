@@ -33,6 +33,7 @@
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from 'fs'
 import { spawnSync }                                                  from 'child_process'
+import { homedir }                                                    from 'os'
 import { join, relative, basename, extname, resolve, dirname } from 'path'
 
 import { singularize, pluralize, modelName, camel } from '@frontierjs/toolbelt/inflect'
@@ -238,6 +239,8 @@ export const RULES = [
     title: 'every skill CLAUDE.md names is a SKILL.md whose frontmatter agrees' },
   { id: 'american-spelling',    scope: 'repo', severity: 'warn',  invariant: null,
     title: 'one spelling, and it is the American one' },
+  { id: 'home-path-literal',    scope: 'repo', severity: 'error', invariant: null,
+    title: 'no file names the home directory of the machine it was written on' },
 
   // The notes, graded against the tree — `core/doc-audit.js`. Prose is the one
   // artefact here with no compiler, no test and no snapshot behind it, and it is
@@ -4433,6 +4436,7 @@ const CHECKS = {
     return { findings }
   },
   'american-spelling':  ({ root }) => americanSpelling({ root }),
+  'home-path-literal':  ({ root }) => homePathLiteral({ root }),
 }
 
 // ─── reading source ───────────────────────────────────────────────────────────
@@ -5700,6 +5704,51 @@ function american(word) {
             : lower === 'labelling' ? 'labeling'
             : lower.replace(/is(e|a|i)/, 'iz$1')
   return word[0] === word[0].toUpperCase() ? out[0].toUpperCase() + out.slice(1) : out
+}
+
+// ─── home-path-literal ────────────────────────────────────────────────────────
+//
+// A script with the repo root hardcoded under one developer's home runs on that
+// machine and nowhere else, and nothing on that machine notices.
+//
+// **The pattern is THIS machine's home, never `/home/<anything>`.** A leak is
+// the author's own home and the rule runs where the author works. The tree holds
+// legitimate placeholders — `/home/user` in a path classifier's fixtures,
+// `/home/node` in a Dockerfile — and a generic pattern fires on every one. A
+// runner with a different home finds nothing; the leak is caught before commit.
+//
+// The file list is git's, so a gitignored scratch file is not a finding.
+
+const HOME_EXT = /\.(js|ts|mjs|cjs|jsx|tsx|md|lite|mesa|json|html|css|sql|yml|yaml|sh|toml|txt)$/
+
+function homePathLiteral({ root, home = homedir() }) {
+  const findings = []
+  // A home of `/` or a bare `/root` would match too much to mean anything.
+  if (!home || home.split('/').filter(Boolean).length < 2) return { findings }
+  const pattern = new RegExp(`${home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.-])`)
+
+  const tree  = treePaths(root)
+  const files = []
+  if (tree) for (const rel of tree.files) files.push(rel)
+  else walk(root, 6, dir => { for (const name of safeRead(dir)) files.push(relative(root, join(dir, name))) })
+
+  for (const rel of files) {
+    if (!HOME_EXT.test(rel)) continue
+    const file = join(root, rel)
+    let text
+    try { if (!statSync(file).isFile()) continue; text = readFileSync(file, 'utf8') }
+    catch { continue }
+    if (!pattern.test(text)) continue
+    text.split('\n').forEach((line, i) => {
+      if (!pattern.test(line)) return
+      if (findings.filter(f => f.file === file).length >= 3) return
+      findings.push({ file, line: i + 1,
+        message: `names \`${home}\`, this machine's home directory. Derive a path from ` +
+                 '`import.meta.url`, write it relative to the repo, or use `~/` for a checkout outside it; ' +
+                 'a fixture that needs a home uses a placeholder such as `/home/user`.' })
+    })
+  }
+  return { findings }
 }
 
 // ─── walking ──────────────────────────────────────────────────────────────────

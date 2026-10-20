@@ -18,10 +18,12 @@
 // element, never a shell string.
 
 import { execFileSync }                       from 'node:child_process'
+import { childEnv }                           from '@frontierjs/junction'
 import { copyFileSync, existsSync, mkdtempSync, rmSync, statSync, utimesSync } from 'node:fs'
 import { cp, mkdir }                          from 'node:fs/promises'
 import { tmpdir }                             from 'node:os'
 import { dirname, join }                      from 'node:path'
+import { env }                                from './env.ts'
 
 /** A snapshot names at most this many of the files it carried beyond HEAD. */
 export const MAX_CARRIED = 50
@@ -39,10 +41,10 @@ class GitError extends Error {
   }
 }
 
-function git(root: string, argv: string[], { env = {}, input }: { env?: Record<string, string>, input?: string } = {}): string {
+function git(root: string, argv: string[], { env: extra = {}, input }: { env?: Record<string, string>, input?: string } = {}): string {
   try {
     return execFileSync('git', ['-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', '--no-optional-locks', '-C', root, ...argv], {
-      encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env: { ...process.env, ...env }, input,
+      encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env: { ...childEnv(env), ...extra }, input,
       stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
     })
   } catch (e) {

@@ -16,6 +16,8 @@
 import { execFileSync }                   from 'node:child_process'
 import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs'
 import { join }                           from 'node:path'
+import { childEnv }                       from '@frontierjs/junction'
+import { env }                            from './env.ts'
 import { treeOf }                         from './workbench-branch.ts'
 
 export type DiffLine = { kind: 'add' | 'del' | 'ctx', text: string, old: number | null, new: number | null }
@@ -99,7 +101,7 @@ function git(root: string, argv: string[], input?: string): string | null {
 function gitOrThrow(root: string, argv: string[], input?: string): string {
   try {
     return execFileSync('git', ['-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', '--no-optional-locks', '-C', root, ...argv], {
-      encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, input, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+      encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: childEnv(env), input, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
     })
   } catch (e) {
     throw new Error(String((e as { stderr?: unknown }).stderr ?? '').trim() || (e as Error).message)

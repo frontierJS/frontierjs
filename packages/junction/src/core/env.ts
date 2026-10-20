@@ -317,6 +317,27 @@ export function defineEnv<S extends EnvSpec>(spec: S): EnvOutput<S> {
   return result as EnvOutput<S>
 }
 
+// ─── childEnv ─────────────────────────────────────────────────────────────
+//
+// The environment a process this app spawns is handed: this one's, less every
+// key the app declared and the `<KEY>_FILE` that may hold it instead. A git
+// hook, an ssh ProxyCommand or a vite config is somebody else's code, and
+// `{ ...process.env }` hands it ENCRYPTION_KEY — or, with the key moved to a
+// file, the path to read it from. Takes `defineEnv`'s result or its spec;
+// both name the declared keys.
+
+export function childEnv(
+  declared: object,
+  env: Record<string, string | undefined> = process.env,
+): Record<string, string | undefined> {
+  const out = { ...env }
+  for (const key of Object.keys(declared)) {
+    delete out[key]
+    delete out[`${key}_FILE`]
+  }
+  return out
+}
+
 // ─── generateEnvExample ───────────────────────────────────────────────────
 // Produces the contents of a .env.example file from a spec.
 // Generates once during init or by running `node -e "require('./env').printEnvExample()"`

@@ -30,6 +30,7 @@ import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { childEnv } from '@frontierjs/junction'
 import { env } from './env.ts'
 
 export interface GitSite {
@@ -75,7 +76,7 @@ function gitRun(dir: string, argv: string[], { input, env: extra = {} }: { input
       '-C', dir, ...argv,
     ], {
       encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 120_000,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...extra },
+      env: { ...childEnv(env), GIT_TERMINAL_PROMPT: '0', ...extra },
     }, (err, stdout, stderr) => {
       const code = err ? (typeof (err as { code?: unknown }).code === 'number' ? (err as { code: number }).code : -1) : 0
       if (code === -1) reject(new CheckoutError(String(stderr || err!.message).trim()))

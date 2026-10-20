@@ -21,6 +21,8 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, isAbsolute, dirname } from 'node:path'
+import { childEnv } from '@frontierjs/junction'
+import { env } from './env.ts'
 
 export type SshHost = {
   alias:    string
@@ -92,7 +94,7 @@ export async function listSshHosts({ configPath = null, limit = 200 }: { configP
   const file    = configFile(configPath)
   const aliases = hostAliases(file).slice(0, limit)
   return Promise.all(aliases.map(async (alias) => {
-    const proc = Bun.spawn(['ssh', '-F', file, '-G', alias], { stdout: 'pipe', stderr: 'ignore' })
+    const proc = Bun.spawn(['ssh', '-F', file, '-G', alias], { env: childEnv(env), stdout: 'pipe', stderr: 'ignore' })
     const out  = await new Response(proc.stdout).text()
     await proc.exited
     return parseSshG(alias, out)
@@ -108,7 +110,7 @@ export async function probeSshHost(alias: string, { configPath = null }: { confi
   const file = configFile(configPath)
   if (!hostAliases(file).includes(alias)) return { alias, reachable: false, said: `'${alias}' is not a Host in the ssh config` }
   const proc = Bun.spawn(['ssh', '-F', file, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', alias, 'true'],
-    { stdout: 'ignore', stderr: 'pipe' })
+    { env: childEnv(env), stdout: 'ignore', stderr: 'pipe' })
   const said = (await new Response(proc.stderr).text()).trim().split('\n').pop() ?? ''
   const code = await proc.exited
   return { alias, reachable: code === 0, said: code === 0 ? '' : said }

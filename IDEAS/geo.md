@@ -33,7 +33,7 @@ is a live client application that has been running the workaround for two years.
 
 ## What the workaround looks like, measured
 
-`/home/j/code/CLIENTS/elitelawncare/ela` — lawn care and landscaping, Prisma +
+`~/code/CLIENTS/elitelawncare/ela` — lawn care and landscaping, Prisma +
 SQLite + Svelte, a crew planner that assigns jobs to crews by where they are. It is
 the most geo-shaped real application in reach, and every one of the three questions
 below is answered in it by hand.

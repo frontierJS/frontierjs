@@ -33,7 +33,9 @@ import { executorOn, isExecutor, resolveExecutor } from '../providers/executor.t
 import { snapshotVariables }        from './variables.ts'
 import { db }                       from './resource.ts'
 import { routedHosts }              from './runtime.ts'
+import { childEnv }                 from '@frontierjs/junction'
 import type { App }                 from '@frontierjs/junction'
+import { env }                      from './env.ts'
 import type { MachineAnswer }       from '../services/apps/apps.service.ts'
 
 export type PreviewSettings = {
@@ -202,13 +204,13 @@ const VITE_CONFIGS = ['config/vite.config.js', 'config/vite.config.ts', 'vite.co
 
 /** `vite build` from web/ into `out`, never into web/dist — `vite build`
  *  empties its outDir, and the worktree's own is the dev server's to keep. */
-function build(web: string, out: string, env: Record<string, string>): Promise<void> {
+function build(web: string, out: string, vars: Record<string, string>): Promise<void> {
   const config = VITE_CONFIGS.map(c => join(web, c)).find(existsSync)
   if (!config) return Promise.reject(new Error(`${web} has no vite config (looked for ${VITE_CONFIGS.join(', ')})`))
   return new Promise((done, fail) => {
     let tail = ''
     const child = spawn(process.execPath, ['--bun', 'vite', 'build', '-c', config, '--outDir', out, '--emptyOutDir'], {
-      cwd: web, env: { ...process.env, ...env, NODE_ENV: 'production' }, stdio: ['ignore', 'pipe', 'pipe'],
+      cwd: web, env: { ...childEnv(env), ...vars, NODE_ENV: 'production' }, stdio: ['ignore', 'pipe', 'pipe'],
     })
     const keep  = (b: Buffer) => { tail = (tail + b.toString('utf8')).slice(-4000) }
     child.stdout.on('data', keep)
@@ -243,7 +245,7 @@ function filesUnder(out: string): Wire[] {
 }
 
 function cleanHead(path: string): string | null {
-  const git = (...argv: string[]) => execFileSync('git', ['-c', 'core.fsmonitor=false', '-C', path, ...argv], { encoding: 'utf8' }).trim()
+  const git = (...argv: string[]) => execFileSync('git', ['-c', 'core.fsmonitor=false', '-C', path, ...argv], { encoding: 'utf8', env: childEnv(env) }).trim()
   try { return git('status', '--porcelain') ? null : git('rev-parse', 'HEAD') }
   catch { return null }
 }
