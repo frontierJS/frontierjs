@@ -133,7 +133,9 @@ the plan, module by module, and the rulings it rests on are
   actor, and a handler writing through `asSystem()` with data it did not check is
   reachable by any activated flow. What orion refuses is its own jobs, by the
   `orion.` prefix, because a flow dispatching `orion.run` would run a run beside
-  its own job.
+  its own job — and its own services, which `orion()` drops from the compile
+  catalog and refuses at the call port, because they are renameable and
+  `flows.pause` from a flow ends the run making the call.
 - **`job.dispatch` is idempotent and `notify` is not.** The job id is
   `orion:<runId>:<nodeId>`, so a stage run again queues nothing; a notification
   has no delivery key, so the same stage sends it twice. A new node with an

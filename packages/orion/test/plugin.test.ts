@@ -361,6 +361,12 @@ describe("the nodes that hand work to the app", () => {
     await expect(runner.start(own, {})).rejects.toThrow(/orion's own job/)
   })
 
+  // FJS-2338: flows.pause from a flow would end the run making the call.
+  test("orion's own services are not a flow's to call", async () => {
+    const own = await activeFlow(env.system, chain([{ id: "p", type: "service.call", config: { service: lit("flows"), method: lit("pause") } }]), "u-user")
+    await expect(runner.start(own, {})).rejects.toThrow(/names service "flows", which this app does not have \(it has: (?!.*\bflows\b)/)
+  })
+
   test("notify sends the app's own notification to an account and to a bare address", async () => {
     const flowId = await activeFlow(env.system, chain([
       { id: "rep",      type: "notify", config: { notification: lit("LeadAssigned"), to: obj({ id: "u-admin" }),                  payload: obj({ lead: "Ada" }) } },

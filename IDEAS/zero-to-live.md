@@ -155,5 +155,5 @@ a restore drill with no hand SSH.
 ## See also
 
 `deploy-plane.md` (the rings) · `packages/basecamp/docs/PROVISIONING.md` (ring 1) ·
-`cloudflare-edge.md` · `fleet-ingress.md` · `paas-parity.md` § Deploying an FJS app
+`cloudflare-edge.md` · `fleet-ingress.md` · `go-live.md` (what is checked before an app is live, by category) · `paas-parity.md` § Deploying an FJS app
 through the fleet · `frontier-cloud.md` (steps 4–7) · `server-posture.md`

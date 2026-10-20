@@ -303,8 +303,6 @@ tools/
   call.ts — one service method, once, as a person, the answer as JSON on stdout
   app-module.ts — reading a built app off a module
   repl.ts — a REPL against a running app
-  check-app-db.mjs · check-auto-validation.mjs · check-explicit-schema.mjs · check-gate-auth.mjs ·
-  check-service-options.mjs · check-type-imports.mjs · check-ws-protocol.mjs — standalone checks over an app
 db/ — outbox.lite · backfill.lite · metrics.lite, shipped for an app to import
 test/ — one file per concern
 -->

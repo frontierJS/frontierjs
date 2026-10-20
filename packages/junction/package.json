@@ -41,7 +41,6 @@
     "src/",
     "db",
     "tools/",
-    "!tools/check-*.mjs",
     "README.md",
     "LICENSE"
   ],

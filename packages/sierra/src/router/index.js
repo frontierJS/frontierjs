@@ -118,9 +118,6 @@ const _afterHooks = []
 // ─── Signals ─────────────────────────────────────────────────────────────────
 
 /** Current URL params — path segments + query string, type-coerced */
-// ── Dev error reporter ───────────────────────────────────────────────────────
-// In dev, forwards errors to the Sierra overlay + terminal.
-// In prod, just console.errors.
 /*
  * A path that resolved to the catch-all, or to nothing, when a route exists
  * that differs from it only in case. Matching is case-sensitive (`FJS-D210`)
@@ -134,14 +131,15 @@ function _nearMiss(normalized) {
   return near ? ` — did you mean ${near}? Route matching is case-sensitive.` : ''
 }
 
+// ── Error reporter ───────────────────────────────────────────────────────────
+// The console line is written in dev too. The overlay is a panel and a message
+// to the vite terminal, so a drive reading the console saw a route that failed
+// to load as nothing at all (`FJS-3351`).
 function _reportError(type, context, err) {
   const message = err?.message ?? String(err)
   const data = { type, file: context, message, stack: err?.stack }
-  if (typeof window !== 'undefined' && window.__sierraReportError) {
-    window.__sierraReportError(data)
-  } else {
-    console.error(`[Sierra] ${context}: ${message}`, err)
-  }
+  console.error(`[Sierra] ${context}: ${message}`, err)
+  if (typeof window !== 'undefined' && window.__sierraReportError) window.__sierraReportError(data)
 }
 
 /**

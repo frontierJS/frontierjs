@@ -49,7 +49,7 @@ import { litestoneModelActions, modelCatalog } from "./models"
 import { litestoneKeyValue } from "./kv"
 import { conduitOutbound, flowCredentialResolver } from "./outbound"
 import { litestoneHost } from "./tenancy"
-import { createOrionServices, type OrionServiceNames } from "./services"
+import { DEFAULT_SERVICE_NAMES, createOrionServices, type OrionServiceNames } from "./services"
 
 // What a HOST needs to type a contribution, re-exported from the one entry
 // point it imports. Without them an app writes its manifest as an object
@@ -148,8 +148,15 @@ export function orion(options: OrionOptions = {}): Plugin {
         app.runAs(actorOf(actor).userId, { tenant: actorOf(actor).tenant }, fn)
       const systemOf = (actor: unknown) => (actorOf(actor).db as { asSystem(): any }).asSystem()
 
+      // A flow calling flows.pause ends the run making the call, so orion's own
+      // services are refused as its own jobs are — here, since they are renameable.
+      const ownServices = new Set(options.services === false ? [] :
+        Object.values({ ...DEFAULT_SERVICE_NAMES, ...options.services }).filter((n): n is string => typeof n === "string"))
       const services: IServiceCaller = {
-        call: (actor, service, method, input) => asOwner(actor, () => callService(app, service, method, input)),
+        call: (actor, service, method, input) => {
+          if (ownServices.has(service)) return Promise.reject(new Error(`"${service}" is orion's own service, and a flow cannot call it`))
+          return asOwner(actor, () => callService(app, service, method, input))
+        },
       }
 
       const ai: IAIModels = {
@@ -211,7 +218,7 @@ export function orion(options: OrionOptions = {}): Plugin {
           jobs:          { names: () => (app.jobs as unknown as { registrations(): Array<{ name: string }> }).registrations().map(r => r.name) },
           notifications: { names: () => [...((app as unknown as NotifyingApp).notifications?.keys() ?? [])] },
           services:      {
-            names:   () => app.services.list(),
+            names:   () => app.services.list().filter(n => !ownServices.has(n)),
             methods: (name) => app.services.get(name)?.describe().methods,
           },
         },

@@ -204,8 +204,8 @@ export class ExpressionResolver {
   private readonly fns: Record<string, BuiltinFn>
 
   constructor(extraFns?: Record<string, BuiltinFn>) {
-    // Merge builtins with any plugin-registered functions
-    this.fns = { ...BUILTINS, ...extraFns }
+    // No prototype: a plan the compiler never saw may name "constructor".
+    this.fns = Object.assign(Object.create(null), BUILTINS, extraFns)
   }
 
   // ─── PRIMARY ENTRYPOINT ───────────────────

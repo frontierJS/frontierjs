@@ -13,7 +13,7 @@ import { callDb, currentCall, requestMeta } from './context.ts'
 import { resultData, isServiceResult } from './envelope.ts'
 import { generateCuid } from '@frontierjs/toolbelt/ids'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
-import type { PrincipalResolver, PrincipalClaims, PrincipalDescription, SelfDescribedResolver, LitestoneClient, ResolvedTenancy } from './litestone.ts'
+import type { PrincipalClaims, SelfDescribedResolver, LitestoneClient, ResolvedTenancy } from './litestone.ts'
 
 // ─── bearerClaim ─────────────────────────────────────────────────────────────
 //
