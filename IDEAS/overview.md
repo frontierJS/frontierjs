@@ -705,7 +705,7 @@ minimum bar and spending everything else on `only`.**
 02:20:52.191 INFO  [basecamp:fleet-engine] fleet engine registered
 02:20:52.231 INFO  🚀 app v1.0.0 {"url":"http://0.0.0.0:8120","routes":27,"services":22,"health":"http://0.0.0.0:8120/health","mode":"production"}
 02:20:52.232 INFO  🗄  litestone {"models":38,"enums":21,"gated":"37/38","databases":"main → ./db/basecamp.db (sqlite), audit → ./db/audit (logger)"}
-  [Sierra] schema: 37 model(s) from /home/j/code/FRONTIER/frontierjs/packages/basecamp/db/schema.lite — User, Credential, Session, Verification, Account, Workspace, WorkspaceMember, Secret, ApiKey, Server, ServerEvent, Volume, Network, ServerNetwork, Project, Environment, App, Domain, AppServer, AppNetwork, Deployment, DeploymentStep, Job, JobRun, Recipe, RecipeRun, DiskUsage, CleanupRun, FeatureFlag, FlagOverride, NotificationChannel, AlertRule, AlertRuleChannel, AlertEvent, Dashboard, DashboardWidget, AuditEvent
+  [Sierra] schema: 37 model(s) from packages/basecamp/db/schema.lite — User, Credential, Session, Verification, Account, Workspace, WorkspaceMember, Secret, ApiKey, Server, ServerEvent, Volume, Network, ServerNetwork, Project, Environment, App, Domain, AppServer, AppNetwork, Deployment, DeploymentStep, Job, JobRun, Recipe, RecipeRun, DiskUsage, CleanupRun, FeatureFlag, FlagOverride, NotificationChannel, AlertRule, AlertRuleChannel, AlertEvent, Dashboard, DashboardWidget, AuditEvent
 ````
 ---
 

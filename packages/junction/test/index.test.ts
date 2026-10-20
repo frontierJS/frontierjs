@@ -860,7 +860,7 @@ describe('IEventBus.onAny()', () => {
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { defineEnv, generateEnvExample } from '../src/core/env.ts'
+import { defineEnv, childEnv, generateEnvExample } from '../src/core/env.ts'
 
 describe('defineEnv', () => {
 
@@ -1101,6 +1101,13 @@ describe('defineEnv', () => {
         defineEnv({ API_TOKEN: { required: true } })
       )
     ).toThrow(/API_TOKEN is required but not set/)
+  })
+
+  it('hands a child neither a declared key nor the file that holds it', () => {
+    const parent = { ENCRYPTION_KEY_FILE: '/run/secrets/ENCRYPTION_KEY', PORT: '8120', PATH: '/usr/bin', HOME: '/home/app' }
+    const spec   = { ENCRYPTION_KEY: { required: true }, PORT: { type: 'port' as const } }
+    expect(childEnv(spec, parent)).toEqual({ PATH: '/usr/bin', HOME: '/home/app' })
+    expect(parent.PORT).toBe('8120')
   })
 
   // ── generateEnvExample ───────────────────────────────────────────────

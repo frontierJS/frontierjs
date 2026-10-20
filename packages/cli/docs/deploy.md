@@ -115,6 +115,10 @@ id, which builds nothing on the machine (`FJS-D942`). No journal — Basecamp's
      write nginx config (/ws proxy already in template), optional SSL
 
 6. ssh <host> + populate /apps/<appId>/.env.production
+   → ENCRYPTION_KEY goes in /apps/<appId>/secrets/ENCRYPTION_KEY (mode 400, uid 1000),
+     not the env file: setup's seed puts it there, and the swap mounts secrets/ read-only
+     and passes ENCRYPTION_KEY_FILE, so docker inspect shows a path (FJS-D1352). Every
+     file in secrets/ is passed the same way; a key in both places is refused
 
 7. fli deploy:doctor --remote
    → server-side probes: SSH, tools, deploy dir, env keys, container, lock

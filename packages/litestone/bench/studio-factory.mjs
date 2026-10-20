@@ -10,8 +10,9 @@
 import { spawn } from 'node:child_process'
 import { mkdtempSync, cpSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-const R = '/home/j/code/FRONTIER/frontierjs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+const R = join(dirname(fileURLToPath(import.meta.url)), '../../..')
 const PORT = 7503
 let fails = 0
 const ok = (n, c, x = '') => { console.log((c ? 'ok   ' : 'FAIL ') + n + (c ? '' : '  → ' + x)); if (!c) fails++ }

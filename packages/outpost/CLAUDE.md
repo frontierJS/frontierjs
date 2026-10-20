@@ -31,7 +31,8 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 - **The unit is sandboxed and `/exec` is not** (`FJS-1761`, `FJS-D602`).
   `installScript()`'s unit writes only `/var/lib/outpost`, `/etc/basecamp` and
   bun's install dir, and `exec` runs its command as `systemd-run --pipe --wait`,
-  a transient unit outside that namespace. A new write path in this package
+  a transient unit outside that namespace — `--user` when the Outpost is not
+  root, since the system manager refuses that caller through polkit (`FJS-3353`). A new write path in this package
   needs a `ReadWritePaths` entry there, or it fails on a machine and in no test.
   Killing the systemd-run client does not stop its unit, so the timeout is
   `RuntimeMaxSec` on the unit. Never run on a machine (`IDEAS/zero-to-live.md` 0.3).

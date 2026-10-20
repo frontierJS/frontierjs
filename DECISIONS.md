@@ -14508,6 +14508,16 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1352"></a>2026-10-20 · `FJS-D1352` — Where a deployed API's ENCRYPTION_KEY lives, so `docker inspect` stops showing it — Its own file, `<path>/secrets/ENCRYPTION_KEY`, 0400 and owned by the image's uid. `deploy:setup`'s one-time seed puts it there instead of the env file. A deploy writes nothing: it mounts `secrets/` read-only at `/run/secrets` and passes `<KEY>_FILE` for each file there.
+
+Asked through the question tool at `FJS-3359` step 2.2, whose text said *fli deploy writes ENCRYPTION_KEY to its own 0400 file* and never said where the deploy gets the value. **A** was picked over **B** (deploy mounts only: setup keeps seeding the env file whole, so a fresh zero-to-live box still shows the key until somebody moves it) and **C** (each deploy moves the line out of the target's env file, which edits the operator's file and departs from `FJS-D1186`), as recommended. The shape is Docker's own secret path and systemd's credentials directory: one file per key, named for it. `FJS-D1186` holds as ruled. The server's copy stays the operator's, setup seeds once and never over an existing file, and an existing box moves its key by hand.
+
+The nine, before any edit: 1 origin — the value in one file, never also the env file. `swapContainer` refuses a key in both places (or in the configuration set) before it touches the running container · 2 concept — Docker's `/run/secrets`, no new word · 3 complexity — the problem's, and three ecosystems name it · 4 predictability — every key in `secrets/` gets the same treatment · 5 derived — the `_FILE` lines come from listing the directory · 6 owner — `apiFiles` owns the path and `swapContainer` the mount, for the deploy and the revert alike · 7 boundary — a name that is not an env key never reaches the `docker run` line, and a directory the login cannot list stops the swap · 8 failure — refused before the swap, never at boot after the old container has stopped · 9 silence — a world-readable key file fails `hub.env-mode`, and `test/deploy-helpers.test.js` § the secrets directory pins the mount and the refusals. **none** for a key in `secrets/` that the app reads straight from `process.env` and does not declare in `defineEnv`; that is `FJS-3359` 2.3.
+
+Adjudication: none in tension. Tier: Register here; Map in `packages/cli/docs/deploy.md`.
+
+*Lives in:* `packages/cli/commands/deploy/_module.md` (`apiFiles`, `secretNames`, `swapContainer`) · `packages/cli/commands/deploy/_steps-setup/03-directories.md` · `packages/cli/commands/deploy/_steps-docker/01b-env-check.md` · `packages/cli/commands/deploy/_steps-docker/08b-outpost.md` · `packages/outpost/src/config.js` (`hostFiles.key`) · `packages/basecamp/api/src/core/posture.ts` (`envControl`).
+
 ### <a id="fjs-d1340"></a>2026-10-20 · `FJS-D1340` — `ws:pub` writes the scaffold's exact pins in `packages/cli/core/app-config.js` to the versions it is publishing, in the release commit, and names the pins left behind when cli is not in the run.
 
 Asked after `FJS-3356`: published cli 0.1.8 pinned litestone 1.1.9, because the pins were raised by hand after a release, and its templates wrote a `@@gate(8)` that version refused. **A** (`ws:pub` writes the pins) was picked over **B** (`ws:pub` prints a reminder after publishing — still by hand, and a pin raised after the release ships in no cli) and **C** (leave it). As recommended.
@@ -17683,6 +17693,16 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d1353"></a>2026-10-20 · `FJS-D1353` — Who owns the `<KEY>_FILE` rule, since litestone's CLI reads ENCRYPTION_KEY too and cannot import junction — `@frontierjs/toolbelt/env`: `envSource(key, env)` says whether to use the variable or a file, or refuses both set, and `fileValue(text)` says what the file's bytes mean. The caller reads the file, so the kit stays pure.
+
+Asked through the question tool at `FJS-3359` step 2.2. A scaffolded app's entrypoint runs `bun run db:migrate`, which is litestone's CLI, and `createClient` throws on a schema with `@encrypted` fields and no key. So once the key moved to a file, that container would exit and the deploy would restore the old one. **A** was picked over **B** (litestone restates the rule, so two owners can drift on both-set) and **C** (defer: Basecamp only, since it migrates inside `app.ts` through junction), as recommended. The precedent is `/mailbox` (`FJS-D1091`'s amendment): a rule two packages need, where neither may import the other, lives below both.
+
+The nine: 1 origin — one rule, two readers · 2 concept — a kit beside thirty-five others · 3 complexity — Invariant 1's, not added · 4 predictability — junction and litestone refuse the same inputs in the same words · 5 derived — nothing restated · 6 owner — toolbelt; `checkEnvKey` and `getEncKey` call it · 7 boundary — typed in `env.d.ts`; the read is injected rather than done in the kit · 8 failure — both-set and an unreadable file are refusals in both readers · 9 silence — `test/specs/env.spec.js`.
+
+Adjudication: *batteries vs. smallness* is not in play, because the kit is pure and has no dependency. Tier: Register.
+
+*Lives in:* `packages/toolbelt/src/env/env.js` · `packages/junction/src/core/env.ts` (`checkEnvKey`) · `packages/litestone/src/tools/cli-helpers.js` (`getEncKey`).
 
 ### <a id="fjs-d1339"></a>2026-10-20 · `FJS-D1339` — Q16 — What a site's first publish does, with no release recorded to compare against (1.4) — Refuse by name ("no release of this site is recorded"), and give a static `git` App a real Deploy: `deployments.create` sends the same Outpost build-and-deploy a publish does, recording the commit.
 

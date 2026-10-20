@@ -9,7 +9,7 @@ dated: 2026-09-08
 **Status: ASSESSMENT. It reads two trees and proposes nothing for the
 framework.** Dated 2026-09-08; § *Running the port* was added 2026-09-12 and is a
 working plan for the APPLICATION, not a framework proposal. Every count below was produced by running a command against
-`/home/j/code/KOBAMI/my.maid.tech` or against this tree on that date; where a
+`~/code/KOBAMI/my.maid.tech` or against this tree on that date; where a
 number came from the application's database it is the **development database,
 which carries production data** (148 real accounts, 113,632 clients, 109,632 form
 responses), so adoption figures are real rather than illustrative. Nothing here

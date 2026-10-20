@@ -21,8 +21,8 @@ import {
   pickWorkBase, daemonCanRead,
 } from '../core/docker-context.js'
 
-const HOME = '/home/j'
-const OPTS = { host: 'srv', dockerfile: 'deploy/Dockerfile', contextPath: '/home/j/.fli/app' }
+const HOME = '/home/user'
+const OPTS = { host: 'srv', dockerfile: 'deploy/Dockerfile', contextPath: '/home/user/.fli/app' }
 
 // The two sentences one cause produces, taken verbatim from docker 29.6.1.
 const READ_FAILED = `#1 [internal] load build definition from Dockerfile
@@ -38,20 +38,20 @@ const CLEAN = `#3 [internal] load .dockerignore
 Check complete, no warnings found.`
 
 const probe = (over = {}) => ({
-  home: HOME, pwd: '/home/j/.fli/app', docker: '/usr/bin/snap',
+  home: HOME, pwd: '/home/user/.fli/app', docker: '/usr/bin/snap',
   dockerbin: '/snap/bin/docker', shellread: 'yes', check: READ_FAILED, ...over,
 })
 
 describe('which fact about the path put it out of reach', () => {
   test('a hidden directory directly under home', () => {
-    expect(pathReason('/home/j/.fli/tutor/server', HOME)).toBe('hidden-under-home')
-    expect(pathReason('/home/j/.fli', HOME)).toBe('hidden-under-home')
+    expect(pathReason('/home/user/.fli/tutor/server', HOME)).toBe('hidden-under-home')
+    expect(pathReason('/home/user/.fli', HOME)).toBe('hidden-under-home')
   })
 
   // The control that separates this from *a dot anywhere in the path*, which is
   // the reading that was filed and which the machine does not have.
   test('a hidden directory FURTHER down is not the reason', () => {
-    expect(pathReason('/home/j/apps/.deep/server', HOME)).toBe('unknown')
+    expect(pathReason('/home/user/apps/.deep/server', HOME)).toBe('unknown')
   })
 
   test('outside home at all', () => {
@@ -60,22 +60,22 @@ describe('which fact about the path put it out of reach', () => {
   })
 
   test('inside home and not hidden is a third answer, not a reason', () => {
-    expect(pathReason('/home/j/apps/server', HOME)).toBe('unknown')
+    expect(pathReason('/home/user/apps/server', HOME)).toBe('unknown')
     expect(pathReason('', HOME)).toBe('unknown')
-    expect(pathReason('/home/j/app', '')).toBe('unknown')
+    expect(pathReason('/home/user/app', '')).toBe('unknown')
   })
 
-  // `/home/jane` starts with `/home/j` as a string and is a different home.
+  // `/home/username` starts with `/home/user` as a string and is a different home.
   test('a home that is a string prefix of the path is not a parent', () => {
-    expect(pathReason('/home/jane/apps', HOME)).toBe('outside-home')
+    expect(pathReason('/home/username/apps', HOME)).toBe('outside-home')
   })
 })
 
 describe('the probe output is read back whole', () => {
   test('every field, and the check block keeps its newlines', () => {
     const out = [
-      'fli:home=/home/j',
-      'fli:pwd=/home/j/.fli/app',
+      'fli:home=/home/user',
+      'fli:pwd=/home/user/.fli/app',
       'fli:dockerbin=/snap/bin/docker',
       'fli:docker=/usr/bin/snap',
       'fli:shellread=yes',
@@ -83,8 +83,8 @@ describe('the probe output is read back whole', () => {
       READ_FAILED,
     ].join('\n')
     const p = parseProbe(out)
-    expect(p.home).toBe('/home/j')
-    expect(p.pwd).toBe('/home/j/.fli/app')
+    expect(p.home).toBe('/home/user')
+    expect(p.pwd).toBe('/home/user/.fli/app')
     expect(p.dockerbin).toBe('/snap/bin/docker')
     expect(p.shellread).toBe('yes')
     expect(p.check).toContain('no such file or directory')
@@ -94,7 +94,7 @@ describe('the probe output is read back whole', () => {
   // Docker's own output contains lines that look nothing like the markers; a
   // parser that scanned for `=` anywhere would eat them.
   test('a check line that resembles a marker stays in the check block', () => {
-    const p = parseProbe('fli:home=/home/j\nfli:check=<<\nfli:pwd=lies\n')
+    const p = parseProbe('fli:home=/home/user\nfli:check=<<\nfli:pwd=lies\n')
     expect(p.pwd).toBe('')
     expect(p.check).toBe('fli:pwd=lies')
   })
@@ -139,14 +139,14 @@ describe('the refusal', () => {
     expect(hidden.at(-1)[1]).toContain('".fli"')
 
     const outside = contextRefusal(probe({ pwd: '/tmp/build/app' }), { ...OPTS, contextPath: '/tmp/build/app' })
-    expect(outside.at(-1)[1]).toContain('under /home/j')
+    expect(outside.at(-1)[1]).toContain('under /home/user')
   })
 
   // A path this cannot explain gets advice that is true rather than advice that
   // is specific: telling somebody to rename a directory that has no dot in it
   // is advice that fails when taken.
   test('an unexplained path is refused without inventing a cause', () => {
-    const r = contextRefusal(probe({ pwd: '/home/j/apps/server' }), OPTS)
+    const r = contextRefusal(probe({ pwd: '/home/user/apps/server' }), OPTS)
     expect(r).not.toBeNull()
     expect(r.at(-1)[1]).toMatch(/AppArmor|SELinux|confines/)
   })

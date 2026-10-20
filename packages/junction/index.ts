@@ -143,8 +143,8 @@ export type { HealthPluginOptions, HealthResponse, MetricsResponse, CheckResult 
 export { createLogger, consoleWriter, multiWriter, noopLogger } from './src/core/logger.ts'
 export type { ILogger, LogLevel, LogEntry, LogWriter, LoggerOptions }       from './src/core/logger.ts'
 
-export { defineEnv, generateEnvExample, printEnvExample }   from './src/core/env.ts'
-export type { EnvSpec, EnvFieldSpec, EnvOutput }            from './src/core/env.ts'
+export { defineEnv, childEnv, generateEnvExample, printEnvExample } from './src/core/env.ts'
+export type { EnvSpec, EnvFieldSpec, EnvOutput }                    from './src/core/env.ts'
 
 // ─── Auth credentials ─────────────────────────────────────────────────────
 export { signedRequest, REFUSE }                                  from './src/auth/credentials.ts'

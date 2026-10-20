@@ -8,7 +8,7 @@ dated: 2026-09-09
 
 **Status: ASSESSMENT. It reads two trees and proposes nothing.** Dated
 2026-09-09. Every count below was produced by running a command against
-`/home/j/code/KOBAMI/SITES/ksite` or against this tree on that date, and each
+`~/code/KOBAMI/SITES/ksite` or against this tree on that date, and each
 command is given beside its number so a re-derive is a rerun rather than a second
 audit. Nothing here may be cited as behavior of either system — see
 `VERIFYING.md`.

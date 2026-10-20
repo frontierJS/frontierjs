@@ -8,7 +8,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from 'fs'
 import { join, relative } from 'path'
-import { tmpdir } from 'os'
+import { tmpdir, homedir } from 'os'
 
 import { keyLiteral, weakLiteral, buildIndex, identifierOf, readKeyList } from '../core/seams.js'
 import { spawnSync } from 'child_process'
@@ -2024,6 +2024,29 @@ describe('the extension surface', () => {
     const { findings } = only(root, 'app-layout')
     expect(findings).toHaveLength(1)
     expect(findings[0].message).toMatch(/MANIFEST/)
+  })
+})
+
+describe('home-path-literal', () => {
+  test('this machine\'s home is a finding, a placeholder home is not', () => {
+    // The finding is paired with placeholders that must stay silent, or a rule
+    // returning nothing would pass.
+    const home = homedir()
+    const root = tree('home-path', {
+      'bench/run.mjs':     `const R = '${home}/code/repo'\n`,
+      'test/fixture.js':   "const HOME = '/home/user'\nconst NODE = '/home/node/app'\n",
+      'docs/notes.md':     'clone it to `~/code/repo`\n',
+    })
+    const { findings } = only(root, 'home-path-literal', { scope: 'repo' })
+    expect(findings).toHaveLength(1)
+    expect(findings[0].severity).toBe('error')
+    expect(relative(root, findings[0].file)).toBe('bench/run.mjs')
+    expect(findings[0].line).toBe(1)
+  })
+
+  test('a path that only starts with the home string is not the home', () => {
+    const root = tree('home-prefix', { 'a.js': `const P = '${homedir()}name/x'\n` })
+    expect(only(root, 'home-path-literal', { scope: 'repo' }).findings).toEqual([])
   })
 })
 

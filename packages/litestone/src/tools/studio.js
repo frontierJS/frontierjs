@@ -2440,10 +2440,10 @@ export async function cmdStudio(cfg) {
   } else if (cfg.db) console.log(`  ${dim('db:')}     ${rel(resolve(cfg.db))}`)
   console.log(`  ${dim('Press Ctrl+C to stop')}\n`)
 
-  // Open browser. `--no-open` is what a script wants: a studio started by a
-  // test or a tutorial spawns a browser window on the machine running it, which
-  // on a CI runner is a process nobody closes.
-  if (!flag('no-open')) {
+  // Only a person at a terminal gets a browser. A studio spawned by a test, a
+  // bench or an agent's shell has no TTY, and each run opened a tab on whoever's
+  // desktop it ran on — a suite left out `--no-open` and nothing noticed.
+  if (process.stdout.isTTY && !flag('no-open')) {
     const opener = process.platform === 'darwin' ? 'open'
       : process.platform === 'win32' ? 'start' : 'xdg-open'
     try { Bun.spawn([opener, url]) } catch {}

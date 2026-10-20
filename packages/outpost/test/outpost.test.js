@@ -668,6 +668,8 @@ describe('what the machine is asked to do', () => {
     expect(argv).toEqual(expect.arrayContaining(['--pipe', '--wait', '--collect']))
     // Without it a non-root drive raises a polkit password dialog on the desktop.
     expect(argv).toContain('--no-ask-password')
+    // The system manager refuses a non-root caller; its own user manager does not.
+    expect(argv.includes('--user')).toBe(process.getuid() !== 0)
     // A killed systemd-run client leaves its unit running, so the unit carries the bound.
     expect(argv).toContain('--property=RuntimeMaxSec=60')
     expect(argv.slice(argv.indexOf('--'))).toEqual(['--', 'sh', '-c', 'apt-get -y upgrade'])

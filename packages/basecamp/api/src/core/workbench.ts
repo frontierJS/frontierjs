@@ -86,6 +86,7 @@
 // INCREMENTALLY: the bytes since the last read, folded into a cached state.
 
 import { spawn }                       from 'node:child_process'
+import { childEnv }                    from '@frontierjs/junction'
 import { createHash, randomBytes }     from 'node:crypto'
 import {
   appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync,
@@ -593,7 +594,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
   function installIn(cwd: string): Promise<{ ok: true } | { ok: false, why: string, tail: string }> {
     return new Promise(done => {
       let out = ''
-      const child = spawn(process.execPath, ['install', '--no-save'], { cwd, env: childEnv(), stdio: ['ignore', 'pipe', 'pipe'] })
+      const child = spawn(process.execPath, ['install', '--no-save'], { cwd, env: childEnv(env), stdio: ['ignore', 'pipe', 'pipe'] })
       const keep  = (b: Buffer) => { out = (out + b.toString('utf8')).slice(-4000) }
       child.stdout.on('data', keep)
       child.stderr.on('data', keep)
@@ -927,12 +928,6 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
 
   // ─── runs ─────────────────────────────────────────────────────────────
 
-  function childEnv() {
-    const out: Record<string, string | undefined> = { ...process.env }
-    for (const key of Object.keys(env)) delete out[key]
-    return out
-  }
-
   /**
    * One detached `claude -p` writing to `file`. The child gets its own
    * descriptor on the log and keeps writing after this process is gone;
@@ -944,7 +939,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     const fd = openSync(file, 'a')
     let child
     try {
-      child = spawn(bin, argv, { cwd, detached: true, env: childEnv(), stdio: ['pipe', fd, fd] })
+      child = spawn(bin, argv, { cwd, detached: true, env: childEnv(env), stdio: ['pipe', fd, fd] })
     } finally { closeSync(fd) }
     child.stdin?.on('error', () => {})
     child.stdin?.end(prompt)
@@ -1002,7 +997,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
    *  server that read `FRONTIER_PORT_BE` would bind this API's port. The terminal
    *  tab's shell gets the same, so a `fli dev` typed there is not handed them. */
   function shellEnv() {
-    const out = childEnv()
+    const out = childEnv(env)
     for (const key of Object.keys(out)) if (key.startsWith('FRONTIER_PORT_')) delete out[key]
     return out
   }
@@ -1366,7 +1361,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     mkdirSync(join(root, 'logs'), { recursive: true })
     const at = new Date().toISOString()
     const child = spawn(process.execPath, [CHECK_SCRIPT, done, p.path, checksFile(id), at], {
-      cwd: p.path, detached: true, env: childEnv(), stdio: 'ignore',
+      cwd: p.path, detached: true, env: childEnv(env), stdio: 'ignore',
     })
     child.on('error', () => {})
     child.unref()

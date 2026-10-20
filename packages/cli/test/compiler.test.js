@@ -298,7 +298,7 @@ describe('rewriteStackString', () => {
   test('leaves every other frame exactly as it was', () => {
     _clearShims()
     registerShim('/tmp/s/c_abc.mjs', '/app/cmd.md', 7)
-    const other = '    at run (/home/j/fli/core/runtime.js:721:23)'
+    const other = '    at run (/home/user/fli/core/runtime.js:721:23)'
     expect(rewriteStackString(other)).toBe(other)
     _clearShims()
   })

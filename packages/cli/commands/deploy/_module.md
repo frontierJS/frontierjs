@@ -570,7 +570,7 @@ const swapContainer = ($, { host, container, image, apiPort, dbPath, envFile, se
     ])]
     if (both.length) throw new Error(
       `${both.join(', ')} ${both.length === 1 ? 'is' : 'are'} in ${secretsDir} and also in ${envFile} or deploy.configuration — ` +
-      `the app refuses both at boot. Delete ${both.length === 1 ? 'the line' : 'the lines'} from ${envFile} (sed -i '/^KEY=/d'), then deploy again`)
+      `the app refuses both at boot. Delete it from one of them -- ${both.map(k => `sed -i '/^${k}=/d' ${envFile}`).join('; ')} -- then deploy again`)
   }
 
   log.info('Renaming current container to _replaced...')
