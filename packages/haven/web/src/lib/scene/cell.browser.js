@@ -48,3 +48,6 @@ export const linked = (url, seen = () => {}) => (el) => {
   a.textContent = el.textContent
   el.replaceChildren(a)
 }
+
+// A page's clipboard, for the twin of the terminal's copy.
+export const copyLink = (el, url) => navigator.clipboard?.writeText(url).then(() => true, () => false) ?? Promise.resolve(false)

@@ -562,14 +562,18 @@ export function scaffoldDesktopSurface({
  * app's name — an app that renamed its crate would otherwise launch nothing.
  */
 export function desktopBinary(surface, { release = false, platform = process.platform } = {}) {
-  const toml = resolve(surface, 'shell', 'Cargo.toml')
-  if (!existsSync(toml)) return null
-  const crate = readFileSync(toml, 'utf8')
-    .split('\n')
-    .find(l => /^name\s*=/.test(l))
-    ?.split('"')[1]
+  const crate = crateName(resolve(surface, 'shell', 'Cargo.toml'))
   if (!crate) return null
   return resolve(surface, 'shell', 'target', release ? 'release' : 'debug', platform === 'win32' ? `${crate}.exe` : crate)
+}
+
+/** The `name` a Cargo.toml declares, or `null` with no file or no name. */
+export function crateName(toml) {
+  if (!existsSync(toml)) return null
+  return readFileSync(toml, 'utf8')
+    .split('\n')
+    .find(l => /^name\s*=/.test(l))
+    ?.split('"')[1] ?? null
 }
 
 /**

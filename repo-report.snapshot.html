@@ -377,7 +377,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/cli</td>
-        <td class="m sub">0.1.27</td>
+        <td class="m sub">0.1.7</td>
         <td class="m sub">css · mesa · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
@@ -1057,7 +1057,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Circuit breaker</td>
-      <td class="m sub">import { circuitBreaker } from '@frontierjs/junction'</td>
+      <td class="m sub">import { circuitBreaker } from '@frontierjs/junction/hooks'</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -2922,9 +2922,9 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td>example: verify — the invoice screen, whose lines arrive with the header and must survive a push; verify:account asks the same read from the shopper's side</td>
       <td><span class="tally"><b>example</b>verify</span></td>
     </tr><tr data-row>
-      <td>list({ composed: true }) · a service find() that answers more than the rows</td>
-      <td>basecamp: verify — the deployments list, patched from the page through the real API: the row moves and the app cell keeps the included name. packages/sierra: test/resource-list.test.js for the burst and the store staying clean</td>
-      <td><span class="tally"><b>basecamp</b>verify</span><span class="tally"><b>packages/sierra</b>test/resource-list.test.js</span></td>
+      <td>tethered({ composed: true }) · a service find() that answers more than the rows</td>
+      <td>basecamp: verify — the deployments list, patched from the page through the real API: the row moves and the app cell keeps the included name. packages/sierra: test/resource-tethered.test.js for the burst and the store staying clean</td>
+      <td><span class="tally"><b>basecamp</b>verify</span><span class="tally"><b>packages/sierra</b>test/resource-tethered.test.js</span></td>
     </tr><tr data-row>
       <td>@frontierjs/toolbelt/units' allocate · a prorated charge</td>
       <td>example: verify:proration — allocate's only caller in the repo, and the only assertion set built out of SUMS rather than lines</td>
@@ -3007,7 +3007,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td><span class="tally"><b>packages/basecamp</b>bun run test</span><span class="tally"><b>packages/basecamp</b>verify:registers</span></td>
     </tr><tr data-row>
       <td>a preview — basecamp's api/src/core/preview.ts, the workbench's fork with preview, freeze, thaw and a preview's archive; a release that names a digest (deployments.create with builtImage); outpost's /route with a port, /static/activate with hosts, /static/retire</td>
-      <td>packages/basecamp: api/test/workbench.test.ts + api/test/inline-app.test.ts + verify:provision — the unit files hold the settings, the marker, the port claimed at the cut, and a digest release's three steps and empty snapshot; the drive is the only place the rows are written by the real services, the machine is outpost's own server and static store on a TLS port, and the hostname is answered by the static origin with the Host the route sets: Open dials the dev server, Freeze serves the built page with VITEAPIURL in its bundle, Thaw dials back, Archive leaves the hostname unrouted and the files gone. Dropping the job's hosts reds the two serving checks. packages/outpost: bun run test for /route's port and the static routes, incl. a second app taking the same slug</td>
+      <td>packages/basecamp: api/test/workbench.test.ts + api/test/inline-app.test.ts + verify:provision — the unit files hold the settings, the marker, the port claimed at the cut, and a digest release's three steps and empty snapshot; the drive is the only place the rows are written by the real services, the machine is outpost's own server and static store on a TLS port, and the hostname is answered by the static origin with the Host the route sets: Open dials the dev server, Freeze serves the built page with FRONTIERPUBLICAPIURL in its bundle, Thaw dials back, Archive leaves the hostname unrouted and the files gone. Dropping the job's hosts reds the two serving checks. packages/outpost: bun run test for /route's port and the static routes, incl. a second app taking the same slug</td>
       <td><span class="tally"><b>packages/basecamp</b>api/test/workbench.test.ts</span><span class="tally"><b>packages/basecamp</b>api/test/inline-app.test.ts</span><span class="tally"><b>packages/basecamp</b>verify:provision</span><span class="tally"><b>packages/outpost</b>bun run test</span></td>
     </tr><tr data-row>
       <td>a cloud account, a provisioned machine, the spend guard, cloud-init or the enrollment route — api/src/providers/compute/, Secret.providerKind, Server's three enrollment columns</td>
@@ -3102,7 +3102,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td>example: verify:support — the only place an episode runs against a real app, and the only one that can ask the two questions a unit test cannot: what the TRAIL actually recorded, and whether a live socket outlived the episode. packages/auth: bun run test for the provider's own refusals (each PAIRED with the same call outside an episode) · packages/junction: test/disconnect-session.test.ts for the close · packages/litestone: test/support-attribution.test.ts for the actor swap, whose fifth row asserts the declared-trail silence as still-broken</td>
       <td><span class="tally"><b>example</b>verify:support</span><span class="tally"><b>packages/auth</b>bun run test</span><span class="tally"><b>packages/junction</b>test/disconnect-session.test.ts</span><span class="tally"><b>packages/litestone</b>test/support-attribution.test.ts</span></td>
     </tr><tr data-row>
-      <td>an auth CALLBACK — onPasswordResetRequested, onRegister, onLogin, onCredentialChanged</td>
+      <td>an auth CALLBACK — onPasswordResetRequested, onRegistered, onLogin, onCredentialChanged</td>
       <td>packages/auth: test/credential-events.test.ts for every event from its real verb and the scan that no credential change reaches the trail around the helper · example: verify:users — the reset route answers 200 whether or not anything was sent, deliberately, and a factor change answers 200 whether or not anybody was told, so the outbox is the only thing that can tell a wired callback from an unwired one</td>
       <td><span class="tally"><b>packages/auth</b>test/credential-events.test.ts</span><span class="tally"><b>example</b>verify:users</span></td>
     </tr><tr data-row>
@@ -3134,7 +3134,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td>packages/junction: test/attachments.test.ts for the grading (half-bound and the defaulted key are the two the design turns on) · bun run ci's deployJournalCycle, whose tenth assertion is the only thing that grades all three halves at once — the app refuses, the operator READS the refusal, and the release that was serving is still serving. A unit test on either side passes with the crossing broken</td>
       <td><span class="tally"><b>packages/junction</b>test/attachments.test.ts</span></td>
     </tr><tr data-row>
-      <td>the edge — core/edge.js, deploy.api.domain, steps-setup/05-caddy, the VITEAPIURL a deploy's web build is given</td>
+      <td>the edge — core/edge.js, deploy.api.domain, steps-setup/05-caddy, the FRONTIERPUBLICAPIURL a deploy's web build is given</td>
       <td>packages/cli: test/edge.test.js for which shape was written and the merge into Caddy's config, then bun run ci's deploy phase, whose pauseEdgeCycle is the only thing that writes the generated routes into a real Caddy — through the admin API, by the step's own scripts, beside a route of Outpost's — and asks what path reaches the app. Every proxy row is PAIRED: the web name must not proxy the path the API name must; a write over a stale read must be a 412, and a hostname Outpost holds must be refused</td>
       <td><span class="tally"><b>packages/cli</b>test/edge.test.js</span></td>
     </tr><tr data-row>

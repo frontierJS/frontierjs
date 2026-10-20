@@ -9,7 +9,10 @@
 //              process started from the wrong directory, or a path bug
 //   tmp        temp entries this repo's own `mkdtemp` calls named, grouped by
 //              prefix with the file that makes them
-//   bulky      ignored directories past `BULKY` bytes
+//   bulky      ignored directories past `BULKY` bytes. A `target/` beside a
+//              Cargo.toml is a build cache cargo never prunes, so it carries
+//              its `cargo clean` and any binary the crate no longer names — a
+//              renamed crate leaves the old build's whole dependency tree
 //
 // Nothing here deletes. `--apply` runs the two moves `archive.js` owns and
 // `git worktree prune`, which removes only entries whose directory is already
@@ -19,11 +22,12 @@
 // Zero dependencies, plain ESM, node or bun.
 
 import { readdirSync, statSync, existsSync } from 'node:fs'
-import { join, dirname, sep }                 from 'node:path'
+import { join, dirname, sep, extname }        from 'node:path'
 import { execFileSync }                       from 'node:child_process'
 import { tmpdir }                             from 'node:os'
 
 import { archiveClosed, rotateHandoff } from './archive.js'
+import { crateName }                    from './desktop-surface.js'
 
 export const BULKY = 500 * 1024 * 1024
 
@@ -142,7 +146,29 @@ function bulky(root) {
   return out.split('\n').filter(Boolean)
     .map(l => { const [kb, path] = l.split('\t'); return { path, bytes: Number(kb) * 1024 } })
     .filter(r => r.bytes >= BULKY)
+    .map(r => ({ ...r, cargo: cargoCache(root, r.path) }))
     .sort((a, b) => b.bytes - a.bytes)
+}
+
+function cargoCache(root, path) {
+  const target = join(root, path)
+  const toml   = join(dirname(target), 'Cargo.toml')
+  if (!path.endsWith('target/') || !existsSync(toml)) return null
+  const crate  = crateName(toml)
+  const stale  = []
+  for (const profile of ['debug', 'release']) {
+    let names
+    try { names = readdirSync(join(target, profile), { withFileTypes: true }) } catch { continue }
+    for (const e of names) {
+      if (!e.isFile() || extname(e.name) || e.name === crate) continue
+      if (statSync(join(target, profile, e.name)).mode & 0o111) stale.push(`${profile}/${e.name}`)
+    }
+  }
+  return { crate, stale, clean: `cargo clean --manifest-path ${relativeTo(root, toml)}` }
+}
+
+function relativeTo(root, abs) {
+  return abs.startsWith(root + sep) ? abs.slice(root.length + 1) : abs
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────

@@ -60,8 +60,8 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `needsBackfill` | `packages/cli/core/backfills.js` | mentioned | — |
 | `sessionGateLevel(user)` | `packages/junction/src/core/litestone.ts` | yes | — |
 | `toDataPrincipal(user)` | `packages/junction/src/core/litestone.ts` | yes | — |
-| `bearerClaim({ from, model, column, claims, key, subject, session })` / `BEARER` / `bearerOf(ctx, model)` | `packages/junction/src/core/litestone.ts` | yes | — |
-| `bearerClaim(...).mint(db, data)` / `.mintOnCreate()` / `.redeem(db)` | `packages/junction/src/core/litestone.ts` | yes | — |
+| `bearerClaim({ from, model, column, claims, key, subject, session })` / `BEARER` / `bearerOf(ctx, model)` | `packages/junction/src/core/bearer.ts` | yes | — |
+| `bearerClaim(...).mint(db, data)` / `.mintOnCreate()` / `.redeem(db)` | `packages/junction/src/core/bearer.ts` | yes | — |
 | `resolveTenancy(schema)` / `registry.tenantFor({host, headers, principal})` | `packages/litestone/src/core/tenancy.js` | yes | — |
 | `accessorCandidates()` | `packages/junction/src/core/litestone.ts` | yes | — |
 | `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | yes | 3 |

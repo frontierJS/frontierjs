@@ -260,8 +260,11 @@ core/
                 only under `--apply`, through `archive.js`), worktrees whose
                 directory is gone, SQLite files outside every `<app>/db/`, temp
                 entries grouped by the `mkdtemp` prefix in this repo's source
-                that writes them, and ignored directories past 500M. Deletes
-                nothing: a gitignored `.db` here is as often dev data as debris
+                that writes them, and ignored directories past 500M — a Cargo
+                `target/` named as one, with its `cargo clean` and any binary
+                the crate (`crateName` in desktop-surface.js) no longer builds.
+                Deletes nothing: a gitignored `.db` here is as often dev data
+                as debris
   file.js       the writer behind `register:file` — the next id (the max the
                 registers hold anywhere, archive included, at the project's
                 width) atop its severity's table, put back on a new

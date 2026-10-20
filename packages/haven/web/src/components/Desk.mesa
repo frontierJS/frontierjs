@@ -12,19 +12,24 @@
   // report keys (`filtersOf`), cutting its lists to the items each counts,
   // and past the last back to all; a follow-up `/ask` is handed the cut.
   // Each linked item is numbered, and `/snooze <n> [when]` puts it away until
-  // a day (`lib/home/snooze.js`), on this machine and from every answer that
-  // links it; a bare `/snooze` lists what is away, where `/unsnooze <n>`
-  // brings one back.
+  // 8am of a day (`lib/home/snooze.js`), on this machine and from every answer
+  // that links it; a bare `/snooze` lists what is away, where `/unsnooze <n>`
+  // brings one back. Where there are linked items Up and Down (j and k in
+  // NORMAL) move a cursor through them instead of scrolling, and `s` snoozes
+  // the one it is on until tomorrow, `S` and a key until another day, `u` on
+  // the snoozed list waking it and `z` undoing the last of either. `o` opens
+  // the item in the browser, `y` copies its URL, and `?` asks the model about
+  // it alone, Esc going back to where the cursor was.
   //
   // It answers only in the home this machine's board names (`HomeBoard.mesa`'s
   // rule), so a visitor's `/ask` runs nothing, and the answer is drawn on this
   // screen only and never sent. A route places it, never the scene file.
-  import { at, linked, tint } from '#cell'
-  import { askDesk, deskReport, homeBoard, readSnoozes, setSnooze } from '#errand'
+  import { at, copyLink, linked, tint } from '#cell'
+  import { askDesk, deskReport, homeBoard, openLink, readSnoozes, setSnooze } from '#errand'
   import { spotsOf } from '@/pieces/index.js'
   import { clip } from '@/lib/scene/cells.js'
   import { TONES, answerRows, filterAnswer, filtersOf, linksOf, readAnswer, wrap } from '@/lib/home/answer.js'
-  import { dayLabel, hideSnoozed, untilOf } from '@/lib/home/snooze.js'
+  import { dayLabel, hideSnoozed, untilOf, wakeLabel } from '@/lib/home/snooze.js'
 
   const scene = $context.scene
   var verbs = $context.commands
@@ -32,6 +37,7 @@
   const PANE  = { x: 2, y: 1, w: 93, h: 24 }
   const INNER = PANE.w - 4
   const ROOM  = PANE.h - 3
+  const HOT   = '#334155'
 
   const desk  = scene.marks.find((m) => m.kind === 'piece' && m.piece.name === 'desk') ?? null
   const chair = desk ? spotsOf(desk.piece, 'seat').map((s) => desk.spot(s.name))[0] : null
@@ -45,21 +51,27 @@
   let hyper  = true   // false once a terminal says it cannot open a hyperlink, and each item's URL is printed under it
   let thread = null   // the session the next `/ask` resumes
   let filter = null   // the key of the count Tab picked, or null for every item
-  let copied = ''     // what the foot says for a moment after a right click copied a link
+  let cursor = 0      // the linked item Up and Down are on, an index into `links`
+  let told   = ''     // what the foot says for a moment: a link copied, an item snoozed
+  let picking = false // `S` waits for the key naming its day
   let snoozes = readSnoozes()   // read again at each answer, so another terminal's and a day passing count
+  var undone = null   // the last snooze or wake, `{ item, was }`, what `z` puts back
   var close  = null
   var stop   = null
+  var pane   = null   // the pane's box, whose renderer `y` copies through
   $.onDestroy(scene.subscribe(() => { view = scene.view }))
 
   let gone = false
   var unsay = null
   $.onDestroy(() => { gone = true; stop?.abort(); clearTimeout(unsay) })
 
-  function copiedLink(ok) {
-    copied = ok ? 'link copied' : 'this terminal takes no copy'
+  function tell(text) {
+    if (gone) return
+    told = text
     clearTimeout(unsay)
-    unsay = setTimeout(() => { copied = '' }, 2500)
+    unsay = setTimeout(() => { told = '' }, 2500)
   }
+  const copiedLink = (ok) => tell(ok ? 'link copied' : 'this terminal takes no copy')
   homeBoard()
     .then((b) => { if (!gone) board = b })
     .catch((e) => { if (!gone) dark = e.message })
@@ -74,8 +86,66 @@
   $: links   = answer ? linksOf(answer) : []
   $: body  = answer ? answerRows(answer, INNER, { urls: !hyper, picked: filter, numbered: links.length > 0 }) : []
   $: last  = Math.max(0, body.length - ROOM)
+  $: spots = body.flatMap((row, r) => row.some((s) => s.link != null) ? [r] : [])   // the row of each linked item
+  $: hot   = links.length ? spots[Math.min(cursor, links.length - 1)] : -1
 
   const scroll = (by) => (e) => { e.preventDefault?.(); offset = Math.min(last, Math.max(0, offset + by)) }
+
+  const reveal = (r) => { if (r < offset) offset = r; else if (r >= offset + ROOM) offset = Math.min(last, r - ROOM + 1) }
+
+  // Past the first or last item the pane scrolls to its end, so the counts
+  // above the first list are not left out of reach.
+  const move = (by) => (e) => {
+    if (!links.length) return scroll(by)(e)
+    e.preventDefault?.()
+    const n = cursor + by
+    if (n < 0 || n >= links.length) { offset = by < 0 ? 0 : last; return }
+    cursor = n
+    reveal(spots[n])
+  }
+
+  /** A page scrolled, and the cursor brought along when it went off the screen. */
+  const page = (by) => (e) => {
+    scroll(by)(e)
+    const shown = spots.map((r, n) => [r, n]).filter(([r]) => r >= offset && r < offset + ROOM)
+    if (shown.length && !shown.some(([, n]) => n === cursor)) cursor = (by > 0 ? shown[0] : shown.at(-1))[1]
+  }
+
+  // `S` and the key after it: each a word `untilOf` reads.
+  const PICKS  = { t: 'tomorrow', f: 'friday', m: 'monday', w: '1w' }
+  const pickOf = (key) => PICKS[key] ?? (/^[2-9]$/.test(key) ? `${key}d` : null)
+  const KEYS   = new Set(['s', 'S', 'u', 'z', 'o', 'y', '?'])
+
+  // The letters are read only where the shell prevented them (NORMAL), so an
+  // `/ask` typed while the pane is open keeps its s's and u's; Enter is the
+  // line's for the same reason. A mode with a `take` is handed Esc as well.
+  function take(e) {
+    if (e.key === 'Escape') {
+      if (picking) picking = false
+      else if (reply?.back) goBack()
+      else close?.()
+      return true
+    }
+    if (!e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return false
+    const item = links[cursor]
+    if (picking) {
+      picking = false
+      const word  = pickOf(e.key)
+      const until = word && untilOf(word)
+      if (item) tell(until ? putAway(item, until) : `no day on "${e.key}" -- S then t, f, m, w or 2-9`)
+      return true
+    }
+    if (!KEYS.has(e.key)) return false
+    if (e.key === 'z') { tell(undo()); return true }
+    if (!item) return true
+    if (e.key === 's' && !reply.asleep) tell(putAway(item, untilOf('tomorrow')))
+    if (e.key === 'S' && !reply.asleep) picking = true
+    if (e.key === 'u' && reply.asleep) tell(wake(item))
+    if (e.key === 'o') openLink(item.url).then((ok) => tell(ok ? `opened: ${clip(item.text, 48)}` : 'nothing on this machine opens a browser'))
+    if (e.key === 'y') copyLink(pane, item.url).then(copiedLink)
+    if (e.key === '?') brief(item)
+    return true
+  }
 
   function step(e) {
     e.preventDefault?.()
@@ -83,44 +153,73 @@
     const ring = [null, ...filters.map((f) => f.key)]
     filter = ring[(ring.indexOf(filter) + (e.shiftKey ? -1 : 1) + ring.length) % ring.length]
     offset = 0
+    cursor = 0
   }
 
   function open() {
     close ??= verbs.open({
       name: 'desk',
       keys: {
-        ArrowUp:   scroll(-1),
-        ArrowDown: scroll(1),
-        PageUp:    scroll(-ROOM),
-        PageDown:  scroll(ROOM),
+        ArrowUp:   move(-1),
+        ArrowDown: move(1),
+        PageUp:    page(-ROOM),
+        PageDown:  page(ROOM),
         Tab:       step,
       },
-      closed: () => { stop?.abort(); stop = null; reply = null; thread = null; filter = null; close = null },
+      take,
+      closed: () => { stop?.abort(); stop = null; reply = null; thread = null; filter = null; picking = false; close = null },
     })
   }
 
   const refused = () => dark ? `the desk is dark: ${dark}` : board ? 'this desk answers only the member whose home it is' : 'the desk has no Basecamp on this machine (HAVEN_HOME)'
 
-  /** Open the pane on `label` and draw what `job(signal)` answers; a newer job, or Esc, wins. */
-  async function show(label, job) {
+  /**
+   * Open the pane on `label` and draw what `job(signal)` answers; a newer job,
+   * or Esc, wins. `back` is the pane as it was, which Esc goes back to.
+   */
+  async function show(label, job, back = null) {
     stop?.abort()
     const mineStop = stop = new AbortController()
     open()
-    reply = { asking: label, at: Date.now() }
+    reply = { asking: label, at: Date.now(), back }
     now = reply.at
     offset = 0
+    cursor = 0
     filter = null
+    picking = false
     snoozes = readSnoozes()
     try {
       const said = await job(mineStop.signal)
       if (stop !== mineStop) return ''
-      reply = said ? { question: label, ...said } : { question: label, failed: 'a desk in a browser asks nobody -- walk in with fli haven' }
+      reply = said ? { question: label, back, ...said } : { question: label, back, failed: 'a desk in a browser asks nobody -- walk in with fli haven' }
       thread = said?.session ?? null
     } catch (e) {
-      if (stop === mineStop && e.name !== 'AbortError') reply = { question: label, failed: e.message }
+      if (stop === mineStop && e.name !== 'AbortError') reply = { question: label, back, failed: e.message }
     }
     if (stop === mineStop) stop = null
     return ''
+  }
+
+  function goBack() {
+    stop?.abort()
+    stop = null
+    const b = reply.back
+    reply  = b.reply
+    thread = b.thread
+    filter = b.filter
+    snoozes = readSnoozes()
+    offset = b.offset
+    cursor = b.cursor
+    settle()
+  }
+
+  const BRIEF = 'Brief me on this one item: what it is, who is waiting on whom and since when, and the one next step. Read it in Basecamp first.'
+
+  /** `?`: the model asked about one item, handed that item alone as the screen. */
+  function brief(item) {
+    const back  = { reply, offset, cursor, filter, thread }
+    const shown = { title: 'one item', blocks: [{ kind: 'list', items: [item] }] }
+    show(`about: ${item.text}`, (signal) => askDesk(BRIEF, { signal, shown }), back)
   }
 
   function ask({ args }) {
@@ -128,7 +227,7 @@
     if (!mine) return refused()
     const resume = thread
     const shown  = resume ? null : answer
-    return show(args, (signal) => askDesk(args, { signal, resume, shown }))
+    return show(args, (signal) => askDesk(args, { signal, resume, shown }), resume ? reply?.back ?? null : null)
   }
 
   // A report is the same pane with no model: `#errand`'s `deskReport` runs this
@@ -144,16 +243,44 @@
   /** The snoozed list as an answer, soonest back first, in lists of the twelve `readAnswer` keeps. */
   function asleep() {
     const items = Object.entries(snoozes).sort(([, a], [, b]) => a.until.localeCompare(b.until))
-      .map(([url, s]) => ({ text: s.text || url, note: `back ${dayLabel(s.until)}`, tone: 'muted', url }))
+      .map(([url, s]) => ({ text: s.text || url, note: `back ${wakeLabel(s.until)}`, tone: 'muted', url }))
     const blocks = []
     for (let i = 0; i < items.length; i += 12) blocks.push({ kind: 'list', items: items.slice(i, i + 12) })
     return readAnswer({ title: `${items.length} snoozed`, blocks: blocks.length ? blocks : [{ kind: 'callout', tone: 'muted', text: 'Nothing is snoozed. On a report, /snooze <n> [when] puts item n away until then.' }] })
   }
 
-  /** What the pane shows changed under the reader: keep the scroll inside it and the filter one it still has. */
+  /** What the pane shows changed under the reader: keep the scroll and the cursor inside it and the filter one it still has. */
   function settle() {
     offset = Math.min(offset, last)
+    cursor = Math.min(cursor, Math.max(0, links.length - 1))
     if (filter && !filters.some((f) => f.key === filter)) filter = null
+  }
+
+  // A browser's `setSnooze` keeps nothing and answers null.
+  function putAway(item, until) {
+    undone = { item, was: snoozes[item.url] ?? null }
+    snoozes = setSnooze(item.url, until, item.text) ?? snoozes
+    settle()
+    return `snoozed until ${wakeLabel(until)}: ${clip(item.text, 48)} · z undoes`
+  }
+
+  function wake(item) {
+    undone = { item, was: snoozes[item.url] ?? null }
+    snoozes = setSnooze(item.url, null) ?? snoozes
+    reply = { ...reply, answer: asleep() }
+    settle()
+    return `back on the desk: ${clip(item.text, 48)} · z undoes`
+  }
+
+  /** `z`: the last snooze or wake put back as it was. */
+  function undo() {
+    if (!undone) return 'nothing to undo'
+    const { item, was } = undone
+    undone = null
+    snoozes = setSnooze(item.url, was?.until ?? null, was?.text ?? item.text) ?? snoozes
+    if (reply?.asleep) reply = { ...reply, answer: asleep() }
+    settle()
+    return was ? `snoozed again until ${wakeLabel(was.until)}: ${clip(item.text, 48)}` : `back on the desk: ${clip(item.text, 48)}`
   }
 
   function snooze({ args }) {
@@ -165,9 +292,7 @@
     if (!item) return links.length ? `/snooze 1-${links.length} [when] -- ${WHEN}` : 'nothing linked on the desk to snooze -- /report daily first'
     const until = untilOf(when.join(' '))
     if (!until) return `snooze until when? not "${when.join(' ')}" -- ${WHEN}, after today`
-    snoozes = setSnooze(item.url, until, item.text)
-    settle()
-    return `snoozed until ${dayLabel(until)}: ${clip(item.text, 48)}`
+    return putAway(item, until)
   }
 
   function unsnooze({ args }) {
@@ -176,10 +301,7 @@
     const n = (args ?? '').trim()
     const item = /^\d+$/.test(n) ? links[Number(n) - 1] : null
     if (!item) return links.length ? `/unsnooze 1-${links.length}` : 'nothing is snoozed'
-    snoozes = setSnooze(item.url, null)
-    reply = { ...reply, answer: asleep() }
-    settle()
-    return `back on the desk: ${clip(item.text, 48)}`
+    return wake(item)
   }
 
   if (chair) {
@@ -200,19 +322,23 @@
   $: picked = filters.find((f) => f.key === filter)
   $: listed = answer?.blocks.reduce((n, b) => n + (b.kind === 'list' ? b.items.length : 0), 0) ?? 0
   $: sieve  = picked ? `${picked.label}: ${listed}${String(listed) === picked.value ? '' : ` of ${picked.value} listed`} · Tab next` : filters.length ? 'Tab filters' : null
-  $: foot  = copied ? copied
-    : !reply || reply.asking || reply.failed ? 'Esc puts it away'
-    : [`${Math.round(reply.ms / 1000)}s`, reply.cost == null ? 'no model' : `$${reply.cost.toFixed(2)}`,...(sieve ? [sieve] : []), ...(last ? [`rows ${offset + 1}–${Math.min(body.length, offset + ROOM)} of ${body.length}, ↑↓ PgUp PgDn`] : []), '/ask about this', 'Esc'].join(' · ')
-  $: frame = `${filter}:${offset}:${reply?.at ?? reply?.ms ?? 0}:${rows.length}:${links.length}:${seen?.hidden ?? 0}:${view.x}:${view.y}`
+  $: picks = !links.length ? null : `↑↓ ${reply?.asleep ? 'u wakes' : 's/S snooze'} · o open · y copy · ? brief`
+  $: when  = picking ? `snooze until? ${Object.entries(PICKS).map(([k, w]) => `${k} ${dayLabel(untilOf(w))}`).join(' · ')} · 2-9 days · Esc` : ''
+  $: span  = `${offset + 1}–${Math.min(body.length, offset + ROOM)}`
+  $: foot  = picking ? when : told ? told
+    : !reply || reply.asking || reply.failed ? (reply?.back ? 'Esc back' : 'Esc puts it away')
+    : [`${Math.round(reply.ms / 1000)}s`, reply.cost == null ? 'no model' : `$${reply.cost.toFixed(2)}`, ...(sieve ? [sieve] : []), ...(picks ? [picks] : []),
+       ...(last ? [links.length ? `${span}/${body.length}` : `rows ${span} of ${body.length}, ↑↓ PgUp PgDn`] : []), ...(links.length ? [] : ['/ask about this']), reply.back ? 'Esc back' : 'Esc'].join(' · ')
+  $: frame = `${filter}:${offset}:${cursor}:${reply?.at ?? reply?.ms ?? 0}:${rows.length}:${links.length}:${seen?.hidden ?? 0}:${view.x}:${view.y}`
 </script>
 
 {#if reply}
-  <div class="surface desk" {@attach at(PANE.x - view.x, PANE.y - view.y, 14, [PANE.w, PANE.h])}>
+  <div class="surface desk" {@attach at(PANE.x - view.x, PANE.y - view.y, 14, [PANE.w, PANE.h])} {@attach (el) => { pane = el }}>
     <pre class="line" {@attach at(1, 0, 1)} {@attach tint('#fde68a')}>{title}</pre>
     {#key frame}
       {#each rows as row, r (r)}
         {#each row as s, i (i)}
-          <pre class="line" {@attach at(2 + s.x, 2 + r, 1)} {@attach tint(s.color)} {@attach s.url && hyper && linked(s.url, (ok) => { hyper = ok }, copiedLink)}>{s.text}</pre>
+          <pre class="line" {@attach at(2 + s.x, 2 + r, 1)} {@attach tint(s.color, offset + r === hot ? HOT : null)} {@attach s.url && hyper && linked(s.url, (ok) => { hyper = ok }, copiedLink)}>{s.text}</pre>
         {/each}
       {/each}
     {/key}

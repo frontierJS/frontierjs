@@ -17,3 +17,5 @@ export async function deskReport() { return null }
 export function readSnoozes() { return {} }
 
 export function setSnooze() { return null }
+
+export async function openLink() { return false }

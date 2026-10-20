@@ -295,3 +295,16 @@ export function setSnooze(url, until, text = '', { file = SNOOZE_FILE, now = new
   writeFileSync(file, JSON.stringify(all, null, 2) + '\n')
   return all
 }
+
+/**
+ * `url` opened in this desktop's browser, detached; false when no opener ran.
+ * Over SSH the opener is the far machine's, so the page opens there.
+ */
+export function openLink(url, { bin = process.platform === 'darwin' ? 'open' : 'xdg-open' } = {}) {
+  if (!/^https?:\/\//.test(url)) return Promise.resolve(false)
+  return new Promise((resolve) => {
+    const child = spawn(bin, [url], { detached: true, stdio: 'ignore' })
+    child.on('error', () => resolve(false))
+    child.on('spawn', () => { child.unref(); resolve(true) })
+  })
+}

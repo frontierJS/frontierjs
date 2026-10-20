@@ -69,6 +69,9 @@ export const linked = (url, seen = () => {}, copied = () => {}) => (el) => {
   }
 }
 
+/** `url` copied as a right click on a link copies it, from any box drawn by `el`'s renderer. */
+export const copyLink = (el, url) => copy(el?.ctx, url).catch(() => false)
+
 // One per renderer, released with it. The X clipboard is served by the
 // process that wrote it, so a URL copied here pastes only while Haven runs.
 const clipboards = new WeakMap()

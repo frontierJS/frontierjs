@@ -1981,6 +1981,27 @@ the top stay as posted and the title says how many are hidden.
   (`todos/<id>#__recording_<comment>`, a chat line `chats/<id>@<line>`), so
   the client writing again is a new URL, and the item is back before its day.
   That is wanted, and only the post's link shape keeps it so.
+- [x] 20.6 The keys (owner, 2026-10-19: "cycle through them and press s").
+  With linked items on the pane, Up and Down (j and k in NORMAL) move a
+  cursor through them, the row highlighted and scrolled into view, and `s`
+  snoozes the cursor's item until tomorrow; `u` on the snoozed list wakes
+  it. A snooze now ends at 8am of its day (`WAKE_HOUR`), not at midnight, so
+  `/snooze 3 fri` is back Friday morning too. No test kept.
+- [x] 20.7 Open and copy (owner, 2026-10-19: ideas 1–4 of the desk's list).
+  `o` opens the cursor's item in the desktop's browser (`#errand`'s
+  `openLink`, `xdg-open` or `open`) and `y` copies its URL (`#cell`'s
+  `copyLink`, the right click's copy). Not Enter: Enter is the line's, and
+  the desk cannot see whether the line holds words.
+- [x] 20.8 When. `S` then one key: `t` tomorrow, `f` Friday, `m` Monday,
+  `w` a week, `2`–`9` that many days, the foot naming each day; Esc lets it
+  go. `s` stays tomorrow.
+- [x] 20.9 Undo. `z` puts back the last snooze or wake, whichever it was; the
+  foot says `z undoes` while it can.
+- [x] 20.10 About this one. `?` asks the desk's model about the cursor's item
+  alone — what it is, who waits on whom since when, the next step — handed
+  that item as what is on the screen. Esc goes back to the report where the
+  cursor was, and a follow-up `/ask` resumes the brief's thread. No test
+  kept; not yet pressed in a live terminal.
 - [ ] 20.4 Across machines. When it should follow Jordan to another machine,
   the store moves to Basecamp bookmarks, with the date kept beside them, or to
   his own Room. Moving it is a ruling first, because a Room would put a
@@ -2032,6 +2053,25 @@ the fourth animals, each tagged with the mechanism it would add, cheapest first.
 - **Signposts on the road.** One per client site, its lantern lit while the site
   answers, flickering when the analytics check flags a drop.
 - **The clock tower** rings before the next meeting on the member's calendar.
+
+**The desk** (after Phase 20; the first three read only, the rest write)
+
+- **`space` peeks.** The cursor's item opens a row under it with the newest
+  comment, a `basecamp` read, so triage needs no browser.
+- **Mark, then act.** `x` marks rows and `s` snoozes every marked one, as
+  mutt's `t` and `;` do.
+- **Age as ink.** An item waiting past three days draws in a warmer tone.
+- **The calendar holds what is away.** Standing at the home's calendar lists
+  what comes back each day; on its day the item is a letter on the mat and
+  the bell rings, so a return is felt.
+- **A cleared desk.** A report with nothing left listed and the room answers:
+  the lamp warms, the pet sleeps on the desk.
+- **`r` drafts a reply** for the cursor's item, and Enter posts it after
+  reading it. The desk's first write to Basecamp, so a ruling first.
+- **`a` hands it off** to Vlad's or Colin's desk. Needs 13.3.
+- **`A` gives it to Ace** (14.12), who brings back a draft.
+- **`d` done** completes the to-do through the `basecamp` CLI, which closes
+  what 20.5 leaves open. A write, so a ruling first.
 
 **Shared**
 

@@ -110,7 +110,7 @@ Graded: **13 of 183**.
 | --- | --- |
 | An audit row says WHERE the write came from, and junction is what tells it. | **none** |
 | A `driver trail` trail is written by every process, and the index database's write transaction is what serializes them | **none** |
-| An audit row names the TABLE, not the model | **none** |
+| An audit row names the MODEL, not the table | **none** |
 | An effective-dated write BACKWARDS overwrites the prior belief, and only the log holds it. | **none** |
 | `@@trail(audit)` records a WRITE; `db.$audit()` records an EVENT — and the second one throws. | **none** |
 | "Does this app have a trail" is `$databases[name].trailModel`, never `driver === 'trail'`. | **none** |
@@ -277,9 +277,9 @@ Graded: **13 of 183**.
 | `@system` is the column an application writes and its caller does not | `required-system-unfilled` |
 | `<Form {resource} />` with no children IS the form | **none** |
 | `find()` answers the list envelope; `invoke()` answers exactly what the method returned | `envelope-hedge` |
-| `list()` is a page's live list; a route that calls `service.find` itself owns keeping it current. | **none** |
+| `tethered()` is the one door a screen lists rows through; a route that calls `service.find` itself owns keeping it current. | **none** |
 | A resource's `<script module>` holds what the UI says about its model, so an enum's tone map lives there once. | **none** |
-| `list.more()` catches its error into `list.error`, so a loop on `hasMore` alone spins on a failing call. | **none** |
+| `tethered().more()` catches its error into `.error`, so a loop on `hasMore` alone spins on a failing call. | **none** |
 | A raw route is reached with `client.fetch(path)`, which carries the client's credentials. | **none** |
 
 ### Mesa

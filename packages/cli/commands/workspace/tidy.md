@@ -73,7 +73,12 @@ if (piles.length > 12) echo(`    … ${piles.length - 12} more prefixes — --js
 echo('')
 echo('  bulky — ignored directories past 500M')
 if (!report.bulky.length) echo('    ✓ none')
-for (const b of report.bulky) echo(`    ! ${b.path}  ${size(b.bytes)}`)
+for (const b of report.bulky) {
+  echo(`    ! ${b.path}  ${size(b.bytes)}${b.cargo ? '  — cargo build cache, rebuilt on the next build' : ''}`)
+  if (!b.cargo) continue
+  if (b.cargo.stale.length) echo(`        no longer built (crate is ${b.cargo.crate}): ${b.cargo.stale.join(', ')}`)
+  echo(`        ${b.cargo.clean}`)
+}
 echo('')
 ```
 
@@ -96,7 +101,11 @@ Five piles that grow in silence, because nothing that adds to one reads it back:
   prefixes are read from the source, so a new leaking suite is named the day it
   lands. A pile here is a writer that never removes what it made, or a run that
   skipped `scripts/tmp-run.mjs`.
-- **bulky** — ignored directories of 500M or more.
+- **bulky** — ignored directories of 500M or more. A `target/` beside a
+  `Cargo.toml` is a Tauri shell's build cache: cargo never prunes it, and a
+  renamed crate leaves the old binary and every dependency it was built with.
+  The line names any binary the crate no longer builds, and the `cargo clean`
+  that empties the cache.
 
 Nothing is deleted. A gitignored database in this tree is as often somebody's
 dev data as it is debris, and the remedy for a tmp pile is the writer it names.
