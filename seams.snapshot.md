@@ -37,8 +37,8 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `svc.describe()` | `packages/junction/src/core/service.ts` | 9 |
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 9 |
 | `announce()` | `packages/junction/src/transport/channels.ts` | 8 |
-| `$setAuth(user)` | `packages/litestone/src/core/client.js` | 6 |
 | `app.principal()` | `packages/junction/src/core/app.ts` | 6 |
+| `$setAuth(user)` | `packages/litestone/src/core/client.js` | 5 |
 | `app.conduit.mirror(claim)` | `packages/conduit/src/mirror.ts` | 5 |
 | `app.conduit.receive(receiver)` | `packages/conduit/src/conduit.ts` | 4 |
 | `ctx.enqueue(job, payload)` | `packages/junction/src/plugins/outbox/engine.ts` | 4 |
@@ -51,7 +51,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 
 | Seam | Owner | Declared in | Other sites |
 | --- | --- | --- | --- |
-| `$setAuth(user)` / `asSystem()` | `packages/litestone/src/core/client.js` | yes | 6 |
+| `$setAuth(user)` / `asSystem()` | `packages/litestone/src/core/client.js` | yes | 5 |
 | `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | yes | 3 |
 | `withLitestoneDb(db)` | `packages/junction/src/core/litestone.ts` | yes | 1 |
 | `gateAuth()` | `packages/junction/src/core/litestone.ts` | yes | — |
