@@ -447,7 +447,7 @@ ${kids.imp}
 ${idFieldLine(o.res)}${watch}
 
   // Read once at setup: navigating to a different id remounts the component.
-  const id = page.params.id
+  var id = page.params.id
 
   // null until it arrives, and <Form> is not rendered before then — it seeds
   // its baseline from the record it is given, so handing it a blank now and the
