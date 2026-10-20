@@ -89,8 +89,8 @@ test('the members are packages/* with a manifest, private ones flagged', () => {
 
 test('an untouched selection sends no --filter, so ws:pub picks', () => {
   expect(pubArgv({}, members()).argv).toEqual(['ws:pub', 'patch'])
-  expect(pubArgv({ bump: 'minor', tag: 'beta', all: true, tolerate: true, push: false }, members()).argv)
-    .toEqual(['ws:pub', 'minor', '--tag', 'beta', '--all', '--tolerate-republish', '--no-push'])
+  expect(pubArgv({ bump: 'minor', tag: 'beta', all: true, push: false }, members()).argv)
+    .toEqual(['ws:pub', 'minor', '--tag', 'beta', '--all', '--no-push'])
 })
 
 test('a value ws:pub would paste into a shell is refused, not escaped', () => {

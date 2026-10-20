@@ -187,7 +187,6 @@ export function pubArgv(opts = {}, members = [], { dry = false } = {}) {
   }
   if (tag !== 'latest')      argv.push('--tag', tag)
   if (opts.all)              argv.push('--all')
-  if (opts.tolerate)         argv.push('--tolerate-republish')
   if (opts.push === false)   argv.push('--no-push')
   if (dry)                   argv.push('--dry')
   else if (otp)              argv.push('--otp', otp)

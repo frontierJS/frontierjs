@@ -575,7 +575,6 @@ button[data-health] {
                    title="a code from your authenticator — without one, each package's 2FA link prints in the console">
             <label class="field-check text-xs"><input type="checkbox" id="publish-push" checked onchange="onPublishOptions()"> push when done</label>
             <label class="field-check text-xs" title="--all: publish packages with no commits since their tag"><input type="checkbox" id="publish-all" onchange="onPublishOptions()"> include unchanged</label>
-            <label class="field-check text-xs" title="--tolerate-republish: a version npm already holds is not a failure"><input type="checkbox" id="publish-tolerate" onchange="onPublishOptions()"> finish a partial run</label>
           </div>
 
           <details class="disclosure">
@@ -3420,7 +3419,6 @@ function publishOpts() {
     otp:      document.getElementById('publish-otp').value.trim(),
     push:     document.getElementById('publish-push').checked,
     all:      document.getElementById('publish-all').checked,
-    tolerate: document.getElementById('publish-tolerate').checked,
     packages: narrowedByHand() ? [...publishPicked] : [],
   }
 }

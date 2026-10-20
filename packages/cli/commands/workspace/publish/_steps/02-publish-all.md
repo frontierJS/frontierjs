@@ -8,7 +8,7 @@ import { execSync } from 'child_process'
 </script>
 
 ```js
-const { released, tag, otp, tolerate, interactive, prompts } = $.config
+const { released, tag, otp, interactive, prompts } = $.config
 if (!released?.length) { log.info('Nothing to publish'); return }
 
 const published = []
@@ -46,12 +46,6 @@ for (const { name, dir, newVersion } of released) {
   const parts = ['bun publish']
   if (tag !== 'latest') parts.push(`--tag ${tag}`)
   if (otp) parts.push(`--otp ${otp}`)
-  // Off by default: a version the registry already holds means the bump did not
-  // happen, and a release that published nothing reads the same as one that
-  // worked. On, it is the only way to finish a run that published some of its
-  // packages and not others — the state this loop can leave, since it collects
-  // failures rather than stopping at the first.
-  if (tolerate) parts.push('--tolerate-republish')
 
   log.info(`  Publishing ${name}@${newVersion}...`)
 

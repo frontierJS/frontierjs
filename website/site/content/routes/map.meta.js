@@ -11,7 +11,7 @@
 // viewBox, so they hold at every zoom. A sharper image at the same aspect ratio
 // drops in with no change here; a re-drawn one needs every ellipse re-traced.
 
-import { loadFJS, HELD_BACK } from '../data/packages.js'
+import { loadFJS } from '../data/packages.js'
 
 const IMAGE = { src: '/map/territory.webp', width: 2560, height: 1707 }
 
@@ -30,10 +30,7 @@ const TERRITORIES = [
   { id: 'conduit',        cx: 251,  cy: 346,  rx: 205, ry: 110 },
   { id: 'notifications',  cx: 655,  cy: 356,  rx: 197, ry: 113 },
   { id: 'mcp',            cx: 1597, cy: 387,  rx: 143, ry: 113 },
-  { id: 'orion',          cx: 1874, cy: 374,  rx: 133, ry: 108,
-    name: 'Orion', realm: 'Automations',
-    pitch: 'Flows of triggers, conditions and actions, run by an engine installed into the app.',
-    status: HELD_BACK['@frontierjs/orion'] },
+  { id: 'orion',          cx: 1874, cy: 374,  rx: 133, ry: 108 },
   { id: 'cli',            cx: 986,  cy: 978,  rx: 230, ry: 133 },
   { id: 'toolbelt',       cx: 1324, cy: 1439, rx: 486, ry: 90 },
   { id: 'basecamp',       cx: 2138, cy: 430,  rx: 154, ry: 146 },
