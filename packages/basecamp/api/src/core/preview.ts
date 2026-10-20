@@ -6,11 +6,12 @@
 // production's API by path; the hostname reaches it through a `/route` to the
 // dev server's port on the machine holding the worktree.
 //
-// Freeze builds `web/` with the App's VITE_ variables and publishes the build
-// to the machine itself, then releases that digest as an ordinary Deployment:
-// the files never enter a row, because a built SPA runs to 180 files and
-// several megabytes, every row here is in the audit trail, and a Deployment is
-// pushed whole to every browser in the workspace. The commit names the bytes.
+// Freeze builds `web/` with the App's browser variables (`VITE_`,
+// `FRONTIER_PUBLIC_`) and publishes the build to the machine itself, then
+// releases that digest as an ordinary Deployment: the files never enter a row,
+// because a built SPA runs to 180 files and several megabytes, every row here
+// is in the audit trail, and a Deployment is pushed whole to every browser in
+// the workspace. The commit names the bytes.
 // Activating routes the hostname to the static origin. Thaw routes it back to
 // the dev server's port. Retire removes the Environment, which takes its App
 // off the machine before the App, Variables and Domain go with it.
@@ -41,7 +42,7 @@ export type PreviewSettings = {
   app:       string
   /** `*.<domain>` is the one wildcard record and certificate every preview shares. */
   domain:    string
-  /** Production's API origin — the frozen build's `VITE_API_URL`. */
+  /** Production's API origin — the frozen build's `FRONTIER_PUBLIC_API_URL`. */
   apiUrl:    string
   /** The machine whose Outpost routes the hostname to the worktree's dev server. */
   serverId:  string | null
@@ -118,7 +119,7 @@ export async function openPreview(app: App, settings: PreviewSettings,
       source: { kind: 'inline', files: [{ path: 'index.html', content: PLACEHOLDER(branch.branch) }] },
     }) as { id: string }
     appId = made.id
-    await svc('variables').create({ environmentId: env.id, appId, key: 'VITE_API_URL', value: settings.apiUrl })
+    await svc('variables').create({ environmentId: env.id, appId, key: 'FRONTIER_PUBLIC_API_URL', value: settings.apiUrl })
     await svc('domains').create({ appId, hostname })
     if (settings.serverId) await svc('apps').call('place', appId, { serverId: settings.serverId })
   } catch (e) {
@@ -160,21 +161,23 @@ type Wire = { path: string, content: string } | { path: string, content_base64: 
 /**
  * The branch's `web/` built, published to the machine holding its App, and
  * released by digest. Refused before anything reaches the machine when the
- * build fails or its bundle does not carry `VITE_API_URL`.
+ * build fails or its bundle does not carry `FRONTIER_PUBLIC_API_URL`.
  */
 export async function freezePreview(app: App, settings: PreviewSettings,
   branch: { path: string, branch: string, appId: string }): Promise<Frozen> {
   const svc   = (name: string) => app.service(name) as any
   const row   = await svc('apps').get(branch.appId) as { id: string, environmentId: string }
   const vars  = (await snapshotVariables(db(), row)).env
-  const env   = Object.fromEntries(Object.entries(vars).filter(([k]) => k.startsWith('VITE_')))
+  // Only what a bundle may carry — sierra's `ENV_PREFIX` — reaches the build
+  // process; the App's secrets never enter it.
+  const env   = Object.fromEntries(Object.entries(vars).filter(([k]) => k.startsWith('VITE_') || k.startsWith('FRONTIER_PUBLIC_')))
 
   const out = mkdtempSync(join(tmpdir(), 'preview-freeze-'))
   try {
     await build(join(branch.path, settings.app, 'web'), out, env)
     const files = filesUnder(out)
-    if (env.VITE_API_URL && !files.some(f => 'content' in f && f.content.includes(env.VITE_API_URL)))
-      throw new Error(`the build finished and no file carries VITE_API_URL (${env.VITE_API_URL}) — web/'s sierra.config.js has to read it for junction.url, or the frozen page calls its own origin`)
+    if (env.FRONTIER_PUBLIC_API_URL && !files.some(f => 'content' in f && f.content.includes(env.FRONTIER_PUBLIC_API_URL)))
+      throw new Error(`the build finished and no file carries FRONTIER_PUBLIC_API_URL (${env.FRONTIER_PUBLIC_API_URL}) — web/'s sierra.config.js has to read it for junction.url, or the frozen page calls its own origin`)
 
     const executor = await resolveExecutor(app, branch.appId)
     if (!isExecutor(executor)) throw new Error(executor.reason)

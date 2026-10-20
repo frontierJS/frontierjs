@@ -25,7 +25,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { requireServers, PORTS } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
 
-const API = process.env.API_URL ?? `http://localhost:${PORTS.api}`
+const API = process.env.FRONTIER_API_URL ?? `http://localhost:${PORTS.api}`
 const REF = 'ORD-JOBS-1'
 // The audit database is `driver trail` with `retention 90d`, so its rows are
 // lines in a file rather than a table. Relative to the app root, which is where

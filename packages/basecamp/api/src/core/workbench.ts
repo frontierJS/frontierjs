@@ -999,11 +999,11 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
   // touch it. Unpin and Archive stop it, since the folder it serves goes.
 
   /** Without this API's own variables and the ports `fli dev` handed it: a
-   *  server that read `FLI_PORT_BE` would bind this API's port. The terminal
+   *  server that read `FRONTIER_PORT_BE` would bind this API's port. The terminal
    *  tab's shell gets the same, so a `fli dev` typed there is not handed them. */
   function shellEnv() {
     const out = childEnv()
-    for (const key of Object.keys(out)) if (key.startsWith('FLI_PORT_')) delete out[key]
+    for (const key of Object.keys(out)) if (key.startsWith('FRONTIER_PORT_')) delete out[key]
     return out
   }
 

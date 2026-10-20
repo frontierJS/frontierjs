@@ -30,7 +30,7 @@ import { PORTS } from './lib/preflight.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '..', 'dist', 'client')
-const API  = process.env.API_URL ?? `http://localhost:${PORTS.api}`
+const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${PORTS.api}`
 const PORT = Number(process.env.PREVIEW_PORT ?? await portFor(import.meta.url, 'fe', { env: 'dev', service: 1 }))
 
 // `.wasm` is here because a browser REFUSES to stream-compile a response that

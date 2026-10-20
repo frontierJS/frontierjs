@@ -10,6 +10,12 @@
 // default every boot and nothing said so (`FJS-415`).
 
 export default {
+  // dev/be for project 2 (packages/cli/core/ports.js), which the Dockerfile and
+  // compose also state. FRONTIER_PORT_BE — what `fli dev` hands a second
+  // checkout and `fli deploy` the container — beats it, and a bare PORT beats it
+  // only when no slot was handed.
+  app: { port: 8120 },
+
   // ── Middleware ────────────────────────────────────────────────────────
   // The SPA's dev origin (project 2, frontend — packages/cli/core/ports.js),
   // and the desktop shell's: its page is served from tauri://localhost

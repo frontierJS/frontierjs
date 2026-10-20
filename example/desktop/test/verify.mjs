@@ -86,7 +86,7 @@ await app.start()
 try {
   // ── build ───────────────────────────────────────────────────────────────
   const built = spawnSync('bun', [join(DESKTOP, 'deploy', 'build.mjs')], {
-    cwd: APP, stdio: 'inherit', env: { ...process.env, VITE_API_URL: API },
+    cwd: APP, stdio: 'inherit', env: { ...process.env, FRONTIER_PUBLIC_API_URL: API },
   })
   if (built.status !== 0) throw new Error(`build:desktop exited ${built.status}`)
 

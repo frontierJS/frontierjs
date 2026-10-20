@@ -264,6 +264,7 @@ that names a fixture names one wired to `FIXTURE_URL` and never run.
 | plausible | C | new; the replayable read | 8 | Plausible CE **unproved** | a docker run |
 | tax | C | new over conduit-stripe by relative import | 10 | — | promote after stripe |
 | shipping | C | new (EasyPost) | 15 | — | nothing |
+| quo | C | receiving extracted from `fjs-prototypes/quo`, sending and webhook management new; two targets for two API generations on one origin (send is v1-only); both webhook signatures as Dialects | 17 | — | a real Quo key; MMS and retry not built |
 
 **What the prototypes found in conduit** — ten rows, `FJS-2721`–`FJS-2730`.
 Eight are closed by rulings of 2026-10-12/13: `FJS-D933` (Basic is the one

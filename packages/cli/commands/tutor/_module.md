@@ -445,7 +445,7 @@ const ensureApi = async ($) => {
     name:   'api',
     script: 'start',
     cwd:    $.config.appDir,
-    env:    { PORT: String(port) },
+    env:    { FRONTIER_PORT_BE: String(port) },
     port,
     path:   '/api/health',
   })
@@ -464,7 +464,7 @@ const ensureWeb = async ($) => {
     name:   'web',
     script: 'web',
     cwd:    $.config.appDir,
-    env:    { WEB_PORT: String(port), FLI_PORT_BE: String($.config.apiPort) },
+    env:    { WEB_PORT: String(port), FRONTIER_PORT_BE: String($.config.apiPort) },
     port,
     path:   '/',
   })
@@ -482,7 +482,7 @@ const restartApi = async ($) => {
     name:   'api',
     script: 'start',
     cwd:    $.config.appDir,
-    env:    { PORT: String($.config.apiPort) },
+    env:    { FRONTIER_PORT_BE: String($.config.apiPort) },
     port:   $.config.apiPort,
     path:   '/api/health',
   })
@@ -509,15 +509,15 @@ const startHub = ($) => startServer($, {
   cwd:    $.config.basecamp,
   logs:   join($.config.ws.dir, '.tutor'),
   env:    {
-    NODE_ENV:       'development',
-    PORT:           String($.config.apiPort),
-    DATABASE_URL:   join($.config.ws.dir, 'basecamp.db'),
+    NODE_ENV:         'development',
+    FRONTIER_PORT_BE: String($.config.apiPort),
+    DATABASE_URL:     join($.config.ws.dir, 'basecamp.db'),
     // Both databases have to be redirected, not one. The audit trail is a
     // second `database` block with a RELATIVE path, so it follows the process
     // CWD — which is the checkout — and a lesson that set only `DATABASE_URL`
     // writes its rows into the developer's own trail (`FJS-633`).
-    AUDIT_PATH:     join($.config.ws.dir, 'audit'),
-    OUTPOST_SECRET: $.config.secret,
+    AUDIT_PATH:       join($.config.ws.dir, 'audit'),
+    OUTPOST_SECRET:   $.config.secret,
   },
   port:   $.config.apiPort,
   path:   '/setup/probe',

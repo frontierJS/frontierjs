@@ -33,7 +33,7 @@ export default {
 
   junction: {
     // Where there is no page. A page calls its own origin, which Vite (or the
-    // image's Caddy) proxies to :8120, unless the build sets VITE_API_URL.
+    // image's Caddy) proxies to :8120, unless the build sets FRONTIER_PUBLIC_API_URL.
     url: 'http://localhost:8020',
 
     // Both of these are the client's own defaults, spelled out because they are

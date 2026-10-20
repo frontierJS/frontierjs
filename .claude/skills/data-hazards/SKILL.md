@@ -96,7 +96,7 @@ Detail: `references/the-audit-trail-and-the-log.md`
 
 - **An audit row says WHERE the write came from, and junction is what tells it.**
 - **A `driver trail` trail is written by every process, and the index database's write transaction is what serializes them** (`FJS-D180`)
-- **An audit row names the TABLE, not the model**
+- **An audit row names the MODEL, not the table** (`FJS-2380`)
 - **An effective-dated write BACKWARDS overwrites the prior belief, and only the log holds it.**
 - **`@@trail(audit)` records a WRITE; `db.$audit()` records an EVENT — and the second one throws.**
 - **"Does this app have a trail" is `$databases[name].trailModel`, never `driver === 'trail'`.**

@@ -114,7 +114,7 @@ Everything is environment variables, declared and validated in
 
 | var | default | |
 |---|---|---|
-| `PORT` | `8120` | |
+| `FRONTIER_PORT_BE` | `8120` | Read by junction, not `env.ts`; a bare `PORT` (a PaaS's) fills in only when it is absent, and `api/config/junction.config.js` states 8120 when neither is |
 | `DATABASE_URL` | `./db/basecamp.db` | Resolved against the schema file's own location (`resolveFrom: 'schema'` in `core/db.ts`), not the process CWD — the same database whichever directory you start from. The path is declared in `db/schema.lite` as `database main { path env("DATABASE_URL", …) }`, so the schema is what decides it and this variable steers that declaration |
 | `ENCRYPTION_KEY` | dev placeholder | 64 hex chars — `Secret.data` is encrypted at rest |
 
@@ -218,7 +218,7 @@ is the generated, checkable list of which model is which.
   is a redirect, so the desktop shell on `tauri://localhost` can no longer
   password-sign-in. The web build reads the same variables (`vite.config.js`),
   so they are set for `bun run web` and the image build too, and the callback
-  URL to register with the provider is `APP_URL` + `/auth/oauth/<name>/callback`.
+  URL to register with the provider is `FRONTIER_APP_URL` + `/auth/oauth/<name>/callback`.
 - **Every provider is a stub.** Eight appliances until their env vars are set —
   Infisical, Unleash, Typesense, Zot, Forgejo, Grafana/Loki, NetBird, Nango — plus
   two hosted services reached with a token, `edge` and `cloudSpend`. Four screens

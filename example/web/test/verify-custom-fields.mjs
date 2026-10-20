@@ -103,7 +103,7 @@ const made = { customers: [], fields: [], products: [] }
 async function withApi(body) {
   const ROOT = fileURLToPath(new URL('../..', import.meta.url))
   const API_PORT = process.env.API_PORT ?? String(PORTS.api)
-  const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
+  const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 
   let busy = false
   try { await fetch(`${API}/api/health`, { signal: AbortSignal.timeout(500) }); busy = true } catch {}

@@ -28,17 +28,17 @@ describe('login limiter keying', () => {
     expect((await attempt(app, '10.0.0.99')).status).toBe(429)
   })
 
-  test('deployed shape — FJS_TRUST_PROXY from the deploy, Caddy in front: one caller\'s failures do not lock out another (FJS-1841)', async () => {
+  test('deployed shape — FRONTIER_TRUST_PROXY from the deploy, Caddy in front: one caller\'s failures do not lock out another (FJS-1841)', async () => {
     // `fli new` writes no trustProxy, and the deploy that puts Caddy in front
-    // passes FJS_TRUST_PROXY=1 instead (FJS-D617). Caddy's X-Forwarded-For is
+    // passes FRONTIER_TRUST_PROXY=1 instead (FJS-D617). Caddy's X-Forwarded-For is
     // the address it observed and nothing a caller sent.
-    const before = process.env.FJS_TRUST_PROXY
-    process.env.FJS_TRUST_PROXY = '1'
+    const before = process.env.FRONTIER_TRUST_PROXY
+    process.env.FRONTIER_TRUST_PROXY = '1'
     let app: any
     try { app = await appWith(h.auth, { loginRateLimit: { max: 3, window: '15 minutes' } }) }
     finally {
-      if (before === undefined) delete process.env.FJS_TRUST_PROXY
-      else process.env.FJS_TRUST_PROXY = before
+      if (before === undefined) delete process.env.FRONTIER_TRUST_PROXY
+      else process.env.FRONTIER_TRUST_PROXY = before
     }
     for (let i = 0; i < 3; i++) expect((await attempt(app, '203.0.113.7')).status).toBe(401)
     expect((await attempt(app, '203.0.113.7')).status).toBe(429)
@@ -66,13 +66,13 @@ describe('login limiter — a room behind one address (FJS-3128, FJS-D1200)', ()
   }, 30_000)
 
   test('the key is the (account, address) pair: a stranger\'s failures do not lock the account out', async () => {
-    const before = process.env.FJS_TRUST_PROXY
-    process.env.FJS_TRUST_PROXY = '1'
+    const before = process.env.FRONTIER_TRUST_PROXY
+    process.env.FRONTIER_TRUST_PROXY = '1'
     let app: any
     try { app = await appWith(h.auth, { loginRateLimit: undefined }) }
     finally {
-      if (before === undefined) delete process.env.FJS_TRUST_PROXY
-      else process.env.FJS_TRUST_PROXY = before
+      if (before === undefined) delete process.env.FRONTIER_TRUST_PROXY
+      else process.env.FRONTIER_TRUST_PROXY = before
     }
     for (let i = 0; i < 10; i++) expect((await login(app, 'target@example.com', '198.51.100.9')).status).toBe(401)
     expect((await login(app, 'target@example.com', '198.51.100.9')).status).toBe(429)

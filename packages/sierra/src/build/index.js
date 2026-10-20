@@ -38,6 +38,9 @@ import { askPlugin } from './ask-plugin.js'
 import { devlinePlugin } from './devline-plugin.js'
 import { functionsPlugin } from './functions-plugin.js'
 import { explainModuleInitFailure, shippedHints } from './warnings.js'
+import { ENV_PREFIX } from './env-prefix.js'
+
+export { ENV_PREFIX }
 import { beginBuildImports, importAppModule } from './app-import.js'
 
 /**
@@ -229,6 +232,7 @@ function buildBaseConfig(config, sierraPlugins, userPlugins) {
   /** @type {import('vite').UserConfig} */
   const shared = {
     base,
+    envPrefix: ENV_PREFIX,
     resolve: {
       alias: {
         // `@` is NOT here — appAliasPlugin contributes it, because it is the
@@ -263,16 +267,16 @@ function buildBaseConfig(config, sierraPlugins, userPlugins) {
       ...userPlugins.map(withoutPostBuildHook),
     ],
     server: {
-      // `FLI_PORT_FE` first — that is the name the port broker sets
+      // `FRONTIER_PORT_FE` first — that is the name the port broker sets
       // (`packages/cli/core/ports.js`); `PORT` is what this file always read and
       // is nobody's answer. And `strictPort`, because vite otherwise hops to the
       // next free port in SILENCE, so the second app's drive tests the first
       // app's app. An app overrides both in its own config (`FJS-821`).
-      port: parseInt(process.env.FLI_PORT_FE ?? process.env.PORT ?? '3000', 10),
+      port: parseInt(process.env.FRONTIER_PORT_FE ?? process.env.PORT ?? '3000', 10),
       strictPort: true,
       // `fli dev --host` sets it. An app config that replaces `server` rather
       // than spreading this one drops it, and the flag does nothing.
-      host: !!process.env.FLI_HOST,
+      host: !!process.env.FRONTIER_HOST,
       open: false,
       hmr: {
         overlay: true,

@@ -8,7 +8,7 @@ import { ensureRooms }  from './src/rooms.ts'
 
 // PORT, else the global tooling slot that web/config/sierra.config.js names
 // (cli core/ports.js GLOBAL.haven), which is where `fli haven` in a checkout
-// knocks. Never `fli dev`'s FLI_PORT_BE: that slot moves between roots, and
+// knocks. Never `fli dev`'s FRONTIER_PORT_BE: that slot moves between roots, and
 // the door's default cannot.
 const port = Number(process.env.PORT ?? 5505)
 

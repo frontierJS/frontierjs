@@ -1920,26 +1920,36 @@ describe('a column the system writes and its caller does not', () => {
 
     const ok = await db.apiKey.create({
       data:   { ...row, tokenHint: 'fjs_a…b' },
-      system: ['tokenHint', 'userId'],
+      system: ['tokenHint'],
     })
     expect(ok.tokenHint).toBe('fjs_a…b')
   })
 
-  test('a key for a bot is the caller\'s write — the trail files it under them', async () => {
-    // A bot is a User the caller cannot read, so the create names `userId`
-    // under `system:` (FJS-1953) once assertBotOwner has read it. asSystem()
-    // would have filed the row under the system with no actor at all.
+  // A bot is readable to whoever may issue it a key — level 5 in a workspace
+  // it is in — and only a bot: the key's `userId` is graded as a read of its
+  // parent (FJS-D576), so without `User`'s bot policy the create below answers
+  // 422 "names no User".
+  const tag = () => Math.random().toString(36).slice(2, 8)
+  async function botIn(workspaceId: string) {
     const sys   = env.system as any
-    const wsRow = await sys.workspace.findUnique({ where: { id: ws.id } })
-    const tag   = Math.random().toString(36).slice(2, 8)
-    const bot   = await sys.user.create({ data: { email: `bot-${tag}@x.co`, accountId: wsRow.accountId, kind: 'bot' } })
+    const wsRow = await sys.workspace.findUnique({ where: { id: workspaceId } })
+    const bot   = await sys.user.create({ data: { email: `bot-${tag()}@x.co`, accountId: wsRow.accountId, kind: 'bot' } })
     await sys.workspaceMember.create({ data: {
-      workspaceId: ws.id, userId: bot.id, role: 'developer',
+      workspaceId, userId: bot.id, role: 'developer',
       capabilities: grantsFor('developer'), acceptedAt: new Date().toISOString(),
     } })
+    return bot
+  }
+  const readsUser = async (principal: Record<string, unknown>, id: string) =>
+    !!await ((env.actingAs as any)(principal)).user.findUnique({ where: { id } })
+  const issuer = () => ({ id: owner.userId, workspaceId: ws.id, memberRole: 'owner' })
+
+  test('an issuer reads the bot, and its key is the caller\'s write — the trail files it under them', async () => {
+    const bot = await botIn(ws.id)
+    expect(await readsUser(issuer(), bot.id)).toBe(true)
 
     const made: any = await env.as(owner).service('api-keys').create({
-      name: `bot-${tag}`, scopes: ['servers:read'], expiresIn: '30d', userId: bot.id,
+      name: `bot-${tag()}`, scopes: ['servers:read'], expiresIn: '30d', userId: bot.id,
     })
     expect(made.userId).toBe(bot.id)
     expect(made.createdBy).toBe(owner.userId)
@@ -1947,6 +1957,43 @@ describe('a column the system writes and its caller does not', () => {
     const entry = await trailEntry('ApiKey', 'create', made.id)
     expect(entry?.actorId).toBe(owner.userId)
     expect(entry?.actorType).toBe('user')
+
+    // The model's gate is the caller's too: a developer is below it.
+    const name = `bot-${tag()}`
+    await expect(env.as(developer).service('api-keys').create({
+      name, scopes: ['servers:read'], expiresIn: '30d', userId: bot.id,
+    })).rejects.toThrow()
+    expect(await (env.system as any).apiKey.exists({ where: { workspaceId: ws.id, name } })).toBe(false)
+  })
+
+  test('a member who cannot issue a key reads no bot, and neither does a non-member', async () => {
+    const bot = await botIn(ws.id)
+    expect(await readsUser(issuer(), bot.id)).toBe(true)
+    expect(await readsUser({ id: viewer.userId,    workspaceId: ws.id, memberRole: 'viewer' },    bot.id)).toBe(false)
+    expect(await readsUser({ id: developer.userId, workspaceId: ws.id, memberRole: 'developer' }, bot.id)).toBe(false)
+    // membershipClaim emits no `workspaceId` for a non-member.
+    expect(await readsUser({ id: outsider.userId }, bot.id)).toBe(false)
+  })
+
+  test('an issuer reads a bot of their own workspace and not one of another', async () => {
+    const sys   = env.system as any
+    const wsRow = await sys.workspace.findUnique({ where: { id: ws.id } })
+    const wsB   = await sys.workspace.create({
+      data: { accountId: wsRow.accountId, name: 'B', slug: `b-${tag()}`, ownerId: wsRow.ownerId },
+    })
+    const mine   = await botIn(ws.id)
+    const theirs = await botIn(wsB.id)
+
+    expect(await readsUser(issuer(), mine.id)).toBe(true)
+    expect(await readsUser(issuer(), theirs.id)).toBe(false)
+  })
+
+  test('a person stays self-only — an issuer reads no other human', async () => {
+    const bot = await botIn(ws.id)
+
+    expect(await readsUser(issuer(), bot.id)).toBe(true)
+    expect(await readsUser(issuer(), owner.userId)).toBe(true)
+    expect(await readsUser(issuer(), developer.userId)).toBe(false)
   })
 
   test('…and a key for somebody who is not a bot is refused before the mint', async () => {

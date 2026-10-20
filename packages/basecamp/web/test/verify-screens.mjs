@@ -113,7 +113,7 @@ for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT], ['Cloudflare s
 let apiLog = ''
 const api = spawn('bun', ['api/index.ts'], {
   cwd: PKG, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
-  env: { ...process.env, DATABASE_URL: DB, APP_URL: BASE, AUDIT_PATH: AUDIT, PORT: String(API_PORT),
+  env: { ...process.env, DATABASE_URL: DB, FRONTIER_APP_URL: BASE, AUDIT_PATH: AUDIT, FRONTIER_PORT_BE: String(API_PORT),
     CLOUDFLARE_URL: CF_SINK },
 })
 api.stdout.on('data', d => { apiLog += d })

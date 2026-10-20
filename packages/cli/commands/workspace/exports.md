@@ -191,9 +191,18 @@ const render = ({ sections, problems, wsNames }) => {
     // stale `^0.1.0` excludes the only published copies — and nothing inside
     // the workspace consults the range at all, because `workspace:*` answers
     // first.
+    //
+    // A `workspace:` peer is recorded as the range bun's packer writes from the
+    // sibling's version (FJS-D766), since that is what an install will read.
     const peers = Object.entries(pkg.peerDependencies ?? {}).filter(([name]) => wsNames.has(name))
     if (peers.length) {
-      out.push(`- peers — ${peers.map(([name, range]) => `\`${name}\`: \`${range}\``).join(' · ')}`)
+      const packed = (name, range) => {
+        if (!range.startsWith('workspace:')) return range
+        const spec = range.slice('workspace:'.length)
+        const v    = wsNames.get(name)
+        return spec === '*' ? v : spec === '^' || spec === '~' ? spec + v : spec
+      }
+      out.push(`- peers — ${peers.map(([name, range]) => `\`${name}\`: \`${packed(name, range)}\``).join(' · ')}`)
       out.push('')
     }
   }
@@ -215,7 +224,7 @@ if (!publishable.length) { log.error('No publishable package in this workspace')
 
 const { exportPairs, redundantOf } = await import(resolve(global.fliRoot, 'core/export-pairs.js'))
 
-const wsNames  = new Set(packages.map(p => p.pkg.name))
+const wsNames  = new Map(packages.map(p => [p.pkg.name, p.pkg.version]))
 const sections = []
 const problems = []
 let pairCount  = 0

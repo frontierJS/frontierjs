@@ -49,7 +49,7 @@ const DIST = join(EXT, 'dist/chrome')
 const SITE = join(ROOT, 'site/dist')
 
 const API_PORT = process.env.API_PORT ?? String(PORTS.api)
-const API    = process.env.API_URL ?? `http://localhost:${API_PORT}`
+const API    = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 // 7 test · 7 siteServe · 1 example · 0 — the same slot `verify:site` uses. The
 // two drives do not run at once, and the extension's manifest declares this
 // origin: a host permission is in a file the build emits, so a drive cannot
@@ -117,7 +117,7 @@ for (const [port, what] of [[API_PORT, 'the API'], [SITE_PORT, 'the storefront o
 // The API origin is a host permission the build writes into the manifest.
 execFileSync('bunx', ['jetty', 'build', '--root=extension', '--browser=chrome'],
              { cwd: ROOT, stdio: process.env.DEBUG ? 'inherit' : 'ignore',
-               env: { ...process.env, VITE_API_URL: API } })
+               env: { ...process.env, FRONTIER_PUBLIC_API_URL: API } })
 
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 start('bun', ['run', 'api/index.ts'], 'api')

@@ -915,10 +915,10 @@ describe('defineEnv', () => {
   })
 
   it('validates URLs', () => {
-    const env = withEnv({ API_URL: 'https://api.example.com' }, () =>
-      defineEnv({ API_URL: { type: 'url', required: true } })
+    const env = withEnv({ CALLBACK_URL: 'https://api.example.com' }, () =>
+      defineEnv({ CALLBACK_URL: { type: 'url', required: true } })
     )
-    expect(env.API_URL).toBe('https://api.example.com')
+    expect(env.CALLBACK_URL).toBe('https://api.example.com')
   })
 
   it('parses JSON values', () => {
@@ -986,8 +986,8 @@ describe('defineEnv', () => {
 
   it('throws for invalid URL', () => {
     expect(() =>
-      withEnv({ API_URL: 'not-a-url' }, () =>
-        defineEnv({ API_URL: { type: 'url', required: true } })
+      withEnv({ CALLBACK_URL: 'not-a-url' }, () =>
+        defineEnv({ CALLBACK_URL: { type: 'url', required: true } })
       )
     ).toThrow(/expected a valid URL/)
   })

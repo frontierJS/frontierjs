@@ -81,12 +81,12 @@ if (!api) {
   log.info(`API: ${api.origin}`)
 } else {
   try {
-    // A scaffolded API reads FLI_PORT_BE and an older one PORT; the port is
-    // the one the bundle was built to call, so both are set.
+    // Junction binds FRONTIER_PORT_BE above anything else, and the port is the
+    // one the bundle was built to call.
     started = await ensureServer({
       root, runner, script: surfaceRow(root, 'api')?.script, port: api.port,
       label: 'API', log, dry: flag.dry,
-      env: { FLI_PORT_BE: String(api.port), PORT: String(api.port) },
+      env: { FRONTIER_PORT_BE: String(api.port) },
     })
   } catch (err) {
     log.error(err.message)

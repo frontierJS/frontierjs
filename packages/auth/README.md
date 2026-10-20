@@ -24,7 +24,7 @@ import { defineEnv }                        from '@frontierjs/junction'
 
 export const env = defineEnv({
   ENCRYPTION_KEY: { required: true, minLength: 64 },
-  APP_URL:        { required: true },
+  FRONTIER_APP_URL:        { required: true },
 })
 
 // `path` is a .lite FILE; `schema` is inline text. One options object, never
@@ -60,14 +60,14 @@ export const auth = createLitestoneAuth(db, {
     await mailer.send({
       to:      email,
       subject: 'Reset your password',
-      html:    `<a href="${env.APP_URL}/auth/password-reset/confirm#token=${token}">Reset</a>`,
+      html:    `<a href="${env.FRONTIER_APP_URL}/auth/password-reset/confirm#token=${token}">Reset</a>`,
     })
   },
   onEmailVerificationRequested: async ({ email, token }) => {
     await mailer.send({
       to:      email,
       subject: 'Verify your email',
-      html:    `<a href="${env.APP_URL}/verify-email/#token=${token}">Verify</a>`,
+      html:    `<a href="${env.FRONTIER_APP_URL}/verify-email/#token=${token}">Verify</a>`,
     })
   },
 })
@@ -228,7 +228,7 @@ const auth = createLitestoneAuth(db, {
     await mailer.send({
       to:      email,
       subject: `Your sign-in code is ${code}`,
-      html:    `<a href="${env.APP_URL}/sign-in/link#token=${token}">Sign in</a>`,
+      html:    `<a href="${env.FRONTIER_APP_URL}/sign-in/link#token=${token}">Sign in</a>`,
     })
   },
   magicLinkTtl: '10 minutes',   // the default

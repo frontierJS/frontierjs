@@ -100,7 +100,7 @@ export interface AppConfig {
      * on the transport and reached it from nowhere — no config key, and
      * `app.ts` never passed one (`FJS-744`).
      *
-     * Undeclared, `FJS_TRUST_PROXY` in the environment supplies a hop count:
+     * Undeclared, `FRONTIER_TRUST_PROXY` in the environment supplies a hop count:
      * `fli deploy` and outpost pass it to a container they put Caddy in front
      * of (`FJS-D617`). A declared value wins over it.
      */
@@ -556,13 +556,14 @@ export async function loadConfig(configDir: string | null): Promise<AppConfig & 
 /**
  * The env vars that beat every file, applied on both exits — the early return
  * for a missing directory takes them too, or pointing at a directory that is
- * not there would also silently drop `PORT`.
+ * not there would also silently drop the port.
  */
 function envOverrides(): Partial<AppConfig> {
   const out: Partial<AppConfig> = {}
-  // PORT is a deploy's word and FLI_PORT_BE the broker's (`fli dev`), so an
-  // app that reads neither itself still lands on the slot it was handed.
-  const port = process.env.PORT || process.env.FLI_PORT_BE
+  // FRONTIER_PORT_BE is the slot `fli dev` and `fli deploy` hand the API; PORT
+  // is every PaaS's word and fills in only where no slot was handed. A PORT
+  // that beat the slot moved the API off the port web/'s proxy forwards to.
+  const port = process.env.FRONTIER_PORT_BE || process.env.PORT
   if (port)                      out.port  = parseInt(port, 10)
   if (process.env.DEBUG === '1') out.debug = true
   return out

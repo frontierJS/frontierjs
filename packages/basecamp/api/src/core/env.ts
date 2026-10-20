@@ -14,9 +14,9 @@ export const DEV_ENCRYPTION_KEY = '0'.repeat(64)
 export const env = defineEnv({
   // ── Core ──────────────────────────────────────────────────
   NODE_ENV:     { default: 'development' },
-  // `fli dev` hands a second checkout of this app its port as FLI_PORT_BE
-  // (18120 in branch 1, packages/cli/core/ports.js § Branches).
-  PORT:         { type: 'port',   default: Number(process.env.FLI_PORT_BE) || 8120 },
+  // No PORT: junction reads FRONTIER_PORT_BE (what `fli dev` hands a second
+  // checkout, 18120 in branch 1 — packages/cli/core/ports.js § Branches), else
+  // a bare PORT, itself; api/config/junction.config.js states 8120 for neither.
   HOST:         { default: '0.0.0.0' },
 
   // ── CORS ──────────────────────────────────────────────────
@@ -116,14 +116,14 @@ export const env = defineEnv({
   // works; a deployment that leaves it at the default mails localhost to
   // somebody else's inbox, which is why it is named here rather than derived
   // from a request's Host header — that is a value the caller chooses.
-  APP_URL:        { default: 'http://localhost:8020' },
+  FRONTIER_APP_URL: { default: 'http://localhost:8020' },
 
-  // Where a MACHINE reaches this API. Not `APP_URL`, which is the SPA — a
-  // provisioned box enrolls against the API and has no browser. Stated rather
-  // than derived from a request Host for `APP_URL`'s reason: it is baked into
-  // cloud-init before any request exists, and a value the caller chose would
-  // point a fleet at whatever host the last provisioner used.
-  API_URL:        { default: 'http://localhost:8120' },
+  // Where a MACHINE reaches this API. Not `FRONTIER_APP_URL`, which is the
+  // SPA — a provisioned box enrolls against the API and has no browser. Stated
+  // rather than derived from a request Host for `FRONTIER_APP_URL`'s reason: it
+  // is baked into cloud-init before any request exists, and a value the caller
+  // chose would point a fleet at whatever host the last provisioner used.
+  FRONTIER_API_URL: { default: 'http://localhost:8120' },
 
   // ── Providers ─────────────────────────────────────────────
   // Each one activates the real adapter when set; stubs otherwise.

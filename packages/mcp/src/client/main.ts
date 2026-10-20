@@ -11,7 +11,7 @@
  * directories these are), the header its tenant travels in (`FJS-D399`), and
  * the endpoint a first `login` defaults to. The environment still overrides a
  * profile for one run, which is how a script or a CI job passes a key:
- *   FJS_MCP_URL · FJS_TOKEN · FJS_TENANT · FJS_PROFILE · FJS_CLI_TRACE
+ *   FRONTIER_MCP_URL · FRONTIER_MCP_TOKEN · FRONTIER_MCP_TENANT · FRONTIER_MCP_PROFILE · FRONTIER_MCP_TRACE
  */
 
 import { readFileSync }          from 'node:fs'
@@ -33,7 +33,7 @@ export interface CliConfig {
 
 export async function main(config: CliConfig = {}, argv = process.argv.slice(2)): Promise<never> {
   const env  = process.env
-  const name = config.name || env.FJS_APP || 'frontierjs'
+  const name = config.name || env.FRONTIER_MCP_APP || 'frontierjs'
   let routes: Route[]
   try {
     routes = Array.isArray(config.routes) ? config.routes
@@ -44,17 +44,17 @@ export async function main(config: CliConfig = {}, argv = process.argv.slice(2))
   }
 
   const code = await run(argv, {
-    url:          env.FJS_MCP_URL || undefined,
-    token:        env.FJS_TOKEN || undefined,
+    url:          env.FRONTIER_MCP_URL || undefined,
+    token:        env.FRONTIER_MCP_TOKEN || undefined,
     name,
-    tenantHeader: config.tenantHeader || env.FJS_TENANT_HEADER || undefined,
-    tenant:       env.FJS_TENANT || undefined,
-    profile:      env.FJS_PROFILE || undefined,
+    tenantHeader: config.tenantHeader || env.FRONTIER_MCP_TENANT_HEADER || undefined,
+    tenant:       env.FRONTIER_MCP_TENANT || undefined,
+    profile:      env.FRONTIER_MCP_PROFILE || undefined,
     defaultUrl:   config.url,
     store:        fileStore(configPath(name)),
     cache:        fileCache(cacheDir(name)),
     routes,
-    trace:        env.FJS_CLI_TRACE ? line => process.stderr.write(`· ${line}\n`) : undefined,
+    trace:        env.FRONTIER_MCP_TRACE ? line => process.stderr.write(`· ${line}\n`) : undefined,
     out:          text => process.stdout.write(text + '\n'),
     err:          text => process.stderr.write(text + '\n'),
     readFile:     path => readFileSync(path, 'utf8'),

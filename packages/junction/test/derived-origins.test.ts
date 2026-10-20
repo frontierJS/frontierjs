@@ -1,5 +1,5 @@
 // FJS-2655 / FJS-D912 — `fli deploy` hands the API the origins its page will
-// call from as FJS_CORS_ORIGINS; junction merges them into cors and csrf so an
+// call from as FRONTIER_CORS_ORIGINS; junction merges them into cors and csrf so an
 // app writes no second copy of the web domain in junction.config.js.
 
 import { describe, it, expect, afterEach } from 'bun:test'
@@ -9,10 +9,10 @@ const base = { ...defaultConfig, port: 0 }
 const WEB   = 'https://app.example.com'
 const TAURI = 'tauri://localhost'
 
-afterEach(() => { delete process.env.FJS_CORS_ORIGINS })
+afterEach(() => { delete process.env.FRONTIER_CORS_ORIGINS })
 
 async function allowed(env: string | undefined, http: Record<string, unknown>, origin: string) {
-  if (env !== undefined) process.env.FJS_CORS_ORIGINS = env
+  if (env !== undefined) process.env.FRONTIER_CORS_ORIGINS = env
   const app = createApp({ config: { ...base, http } as never })
   await app.start()
   try {
@@ -24,7 +24,7 @@ async function allowed(env: string | undefined, http: Record<string, unknown>, o
   } finally { await app.stop() }
 }
 
-describe('FJS_CORS_ORIGINS — the derived cross-origin list', () => {
+describe('FRONTIER_CORS_ORIGINS — the derived cross-origin list', () => {
   it('an app declaring no cors admits the derived origins', async () => {
     const env = `${WEB},${TAURI}`
     expect(await allowed(env, {}, WEB)).toBe(WEB)
@@ -48,7 +48,7 @@ describe('FJS_CORS_ORIGINS — the derived cross-origin list', () => {
 
   it('csrf with its own list gains the derived origins', async () => {
     const app = createApp({ config: { ...base, http: { csrf: { origins: ['https://admin.example.com'] } } } as never })
-    process.env.FJS_CORS_ORIGINS = WEB
+    process.env.FRONTIER_CORS_ORIGINS = WEB
     app.get('/ping', (ctx) => ctx.json({ ok: true }))
     app.post('/ping', (ctx) => ctx.json({ ok: true }))
     await app.start()

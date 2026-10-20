@@ -29,7 +29,7 @@ const api = await startServer($, {
   name:   'api',
   script: 'start',
   cwd:    $.config.appDir,
-  env:    { PORT: String($.config.apiPort) },
+  env:    { FRONTIER_PORT_BE: String($.config.apiPort) },
   port:   $.config.apiPort,
   path:   '/api/health',
 })
@@ -41,13 +41,13 @@ if (!await must($, api.up, {
 })) return
 
 // The web server proxies to the API, so it is told where that is. Without
-// FLI_PORT_BE it proxies to 8100 whatever --api-port said, and the browser gets
+// FRONTIER_PORT_BE it proxies to 8100 whatever --api-port said, and the browser gets
 // a 502 from a page that loaded perfectly.
 const web = await startServer($, {
   name:   'web',
   script: 'web',
   cwd:    $.config.appDir,
-  env:    { WEB_PORT: String($.config.webPort), FLI_PORT_BE: String($.config.apiPort) },
+  env:    { WEB_PORT: String($.config.webPort), FRONTIER_PORT_BE: String($.config.apiPort) },
   port:   $.config.webPort,
   path:   '/',
 })

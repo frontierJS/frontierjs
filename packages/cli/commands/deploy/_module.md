@@ -557,19 +557,19 @@ fi`)
     // because these show in docker inspect (FJS-D1029).
     ...Object.entries(configuration).map(([k, v]) => `--env ${k}=${shQuote(v)}`),
     // AFTER --env-file and the values above so it wins: the mapping above targets 3000 inside the
-    // container, and the app binds whatever PORT says. A PORT in .env.production
-    // otherwise leaves the container listening where nothing forwards, which the
-    // health step then reports as a sick application.
-    `--env PORT=3000`,
+    // container, and junction binds FRONTIER_PORT_BE before anything else. A port
+    // in .env.production otherwise leaves the container listening where nothing
+    // forwards, which the health step then reports as a sick application.
+    `--env FRONTIER_PORT_BE=3000`,
     `--env NODE_ENV=production`,
     // The proxy this deploy wrote into Caddy. Absent, every caller arrives from
     // the proxy's address and shares one rate-limit bucket, so one caller's
     // failed logins lock out the site (`FJS-1841`). A trustProxy the app
     // declares still wins.
-    `--env FJS_TRUST_PROXY=${EDGE_HOPS}`,
+    `--env FRONTIER_TRUST_PROXY=${EDGE_HOPS}`,
     // The web domain and a wrapped shell's schemes, which the API's cors and
     // csrf lists would otherwise each have to spell by hand (`FJS-D912`).
-    ...(corsOrigins.length ? [`--env FJS_CORS_ORIGINS=${shQuote(corsOrigins.join(','))}`] : []),
+    ...(corsOrigins.length ? [`--env FRONTIER_CORS_ORIGINS=${shQuote(corsOrigins.join(','))}`] : []),
     // Docker's default json-file driver caps nothing, so a chatty container
     // fills the disk and the database stops writing before anybody reads a log.
     // `deploy.logs` is the escape for a daemon already pointed somewhere.
@@ -1306,11 +1306,11 @@ served the page and anything else the API. Every deploy rewrites the routes when
 ```
 
 `fli deploy:setup` writes two Caddy routes, each with the pause guard, and `fli deploy`
-builds the web surface with `VITE_API_URL=https://api.myapp.com` — refusing when the bundle
+builds the web surface with `FRONTIER_PUBLIC_API_URL=https://api.myapp.com` — refusing when the bundle
 does not contain it, which is what a `sierra.config.js` that never reads the variable
 produces. Sign-in with a Bearer token works across the two names with the scaffold's CORS
 default. A cookie session across them needs the web origin in the API's cors and csrf lists, which the
-deploy hands the container as `FJS_CORS_ORIGINS`: `https://<web.domain>` under two origins, plus
+deploy hands the container as `FRONTIER_CORS_ORIGINS`: `https://<web.domain>` under two origins, plus
 `tauri://localhost` and `http://tauri.localhost` when the app has a `desktop/` surface. The API
 merges it into whatever `junction.config.js` declares; `cors.credentials` stays the app's to set.
 

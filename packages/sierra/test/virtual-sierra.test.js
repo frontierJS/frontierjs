@@ -36,7 +36,7 @@ describe('virtual:sierra emits the browser keys by value', () => {
     }, 'config/routes.js')
     expect(src).not.toContain('sierra.config')
     expect(src).not.toContain('sierraConfig')
-    expect(src).toContain('initJunction({ ...{"tokenKey":"tok"}, url: import.meta.env.VITE_API_URL || location.origin })')
+    expect(src).toContain('initJunction({ ...{"tokenKey":"tok"}, url: import.meta.env.FRONTIER_PUBLIC_API_URL || location.origin })')
     expect(src).toContain('initAnalytics({"provider":"plausible","domain":"example.com"})')
     expect(src).toContain('initTheme({"default":"system"})')
   })

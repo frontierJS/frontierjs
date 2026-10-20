@@ -3,7 +3,7 @@
  * people who are not on this machine. Started by `bun run share`.
  *
  * The API and the tunnel start together because the setting that makes the
- * visitor's address survive (`FJS_TRUST_PROXY=1`, one hop) is right only behind
+ * visitor's address survive (`FRONTIER_TRUST_PROXY=1`, one hop) is right only behind
  * cloudflared. Apart, a tunnel with the setting off keys every visitor as
  * 127.0.0.1, so one stranger's failed logins lock out everyone
  * (`IDEAS/tunnel.md`, `FJS-1841`).
@@ -74,7 +74,7 @@ const api = spawn(process.execPath, ['api/index.ts'], {
   env: {
     ...process.env,
     PORT: String(PORT),
-    FJS_TRUST_PROXY: '1',
+    FRONTIER_TRUST_PROXY: '1',
     HAVEN_SESSION_KEY: process.env.HAVEN_SESSION_KEY || randomBytes(32).toString('hex')
   }
 })
@@ -113,7 +113,7 @@ if (!reachable) {
 
 console.log(`
 Haven is public at ${PUBLIC_URL}
-  trust setting  FJS_TRUST_PROXY=1 (one hop: cloudflared appends the visitor's address)
+  trust setting  FRONTIER_TRUST_PROXY=1 (one hop: cloudflared appends the visitor's address)
   a friend runs  fli haven --nick <name>   (from a checkout: add --api ${PUBLIC_URL})
   you run        fli haven --api ${PUBLIC_URL}
 Ctrl-C stops the API and the tunnel.

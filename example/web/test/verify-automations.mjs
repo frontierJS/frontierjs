@@ -62,7 +62,7 @@ const ROOT   = join(HERE, '../..')
 const API_PORT = process.env.API_PORT ?? String(PORTS.api)
 const UI_PORT  = process.env.UI_PORT  ?? String(PORTS.uiTest)
 const UI     = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
-const API    = process.env.API_URL ?? `http://localhost:${API_PORT}`
+const API    = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 
 // Every flow this drive writes carries it, which is how the next run finds the
 // ones a crashed run left active.

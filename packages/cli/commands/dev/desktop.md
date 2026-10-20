@@ -23,7 +23,7 @@ import { spawn } from 'child_process'
 </script>
 
 **The window loads the screens' dev server, not the bundle.** A debug shell
-reads `FJS_DESKTOP_URL` and opens that URL instead of the page compiled into
+reads `FRONTIER_DESKTOP_URL` and opens that URL instead of the page compiled into
 it, so an edit under `src/` reaches the window the way it reaches a browser. A
 release build ignores the variable — `desktop:run` is what shows the page that
 ships.
@@ -111,7 +111,7 @@ if (!api) {
 } else {
   await ensure({
     script: surfaceRow(root, 'api')?.script, port: api.port, label: 'API',
-    env: { FLI_PORT_BE: String(api.port), PORT: String(api.port) },
+    env: { FRONTIER_PORT_BE: String(api.port) },
   }, 'Start the API yourself, or run with --no-api to open the window without one.')
 }
 
@@ -122,13 +122,13 @@ await ensure({
 
 const url = `http://localhost:${dev.port}/`
 if (flag.dry) {
-  log.dry(`FJS_DESKTOP_URL=${url} ${binary ?? join(surface, 'shell', 'target', 'debug', '<crate>')}`)
+  log.dry(`FRONTIER_DESKTOP_URL=${url} ${binary ?? join(surface, 'shell', 'target', 'debug', '<crate>')}`)
   return
 }
 
 log.info(`window: ${relative(root, binary)} on ${url}${started.length ? ' — closing it stops what this started' : ''}`)
 const code = await new Promise((done) => {
-  const shell = spawn(binary, [], { cwd: surface, stdio: 'inherit', env: { ...process.env, FJS_DESKTOP_URL: url } })
+  const shell = spawn(binary, [], { cwd: surface, stdio: 'inherit', env: { ...process.env, FRONTIER_DESKTOP_URL: url } })
   shell.on('error', (err) => { log.error(`The shell could not be started: ${err.message}`); done(1) })
   shell.on('exit',  (status, signal) => done(status ?? (signal ? 1 : 0)))
 })

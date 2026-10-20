@@ -328,7 +328,7 @@ function generateVirtualSierra(config, tableOutput, root, sierraContext) {
     // port cross-origin and every call failed CORS (`FJS-D1042`). The config's
     // `url` is the answer where there is no page — the terminal, a prerender.
     const { url, ...junction } = config.junction
-    lines.push(`initJunction({ ...${JSON.stringify(junction)}, url: import.meta.env.VITE_API_URL || location.origin })`)
+    lines.push(`initJunction({ ...${JSON.stringify(junction)}, url: import.meta.env.FRONTIER_PUBLIC_API_URL || location.origin })`)
     lines.push(``)
   }
 

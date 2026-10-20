@@ -77,9 +77,9 @@ const API = `http://localhost:${env.port}`
 // ─── the browser build ────────────────────────────────────────────────
 
 const webPort = await freePort()
-const WEB_URL = `http://localhost:${webPort}`
-if (await answers(WEB_URL)) {
-  console.log(`✗ ${WEB_URL} already answers — refusing to drive a server this run did not start`)
+const WEB_ORIGIN = `http://localhost:${webPort}`
+if (await answers(WEB_ORIGIN)) {
+  console.log(`✗ ${WEB_ORIGIN} already answers — refusing to drive a server this run did not start`)
   process.exit(1)
 }
 const vite = spawn(VITE, ['-c', 'config/vite.config.js'], {
@@ -92,7 +92,7 @@ vite.stderr.on('data', (d) => { viteLog += d })
 const stopVite = () => { try { process.kill(-vite.pid, 'SIGTERM') } catch {} }
 process.on('exit', stopVite)
 
-const served = await until(async () => (await fetch(WEB_URL).then((r) => r.text(), () => '')).includes('id="app"'), 30000)
+const served = await until(async () => (await fetch(WEB_ORIGIN).then((r) => r.text(), () => '')).includes('id="app"'), 30000)
 check(served, `the browser haven's dev server answers on ${webPort}`, viteLog)
 if (!served) { stopVite(); await env.close(); process.exit(1) }
 
@@ -145,7 +145,7 @@ const tabCells = (x, y, width = 1) => browser.evaluate(`
 `)
 const tabText = () => browser.evaluate('return document.body.innerText')
 
-await browser.navigate(`${WEB_URL}/?nick=bea`)
+await browser.navigate(`${WEB_ORIGIN}/?nick=bea`)
 check(await until(async () => (await tabText()).includes('2 here') && (await tabText()).includes('· sam')),
   "Bea's tab walks in through a signed login, two here, and names Sam", await tabText())
 check(await tabCells(sx, sy) === '@', "Bea's tab draws her own figure where a figure walks in", await tabCells(sx, sy))
@@ -259,7 +259,7 @@ const kept = await browser.evaluate(`
 `)
 check(typeof kept === 'string', "the tab keeps its key in IndexedDB, not in the page's storage", String(kept))
 
-await browser.navigate(`${WEB_URL}/`)
+await browser.navigate(`${WEB_ORIGIN}/`)
 check(await until(async () => (await tabText()).includes('2 here') && await tabCells(sx, sy) === '@'),
   'a reload walks in again, with no nick asked for', await tabText())
 const beas = await env.system.member.findMany({ where: { nick: 'bea' } })

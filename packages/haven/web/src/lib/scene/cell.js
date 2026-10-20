@@ -11,7 +11,10 @@
 // keeps its art and its figures in one wrapper. A `size` of `[cols, rows]`
 // makes the box a pane over that many cells; without one the box is as big
 // as what it holds.
-import { MouseButton, StyledText, TextAttributes, TextRenderable } from '@opentui/core'
+import {
+  MouseButton, StyledText, TextAttributes, TextRenderable,
+  createClipboard, createHostClipboard, createRendererClipboardAdapter,
+} from '@opentui/core'
 
 export const at = (col, row, layer = 10, size = null) => (el) => {
   el.position = 'absolute'
@@ -31,10 +34,12 @@ export const at = (col, row, layer = 10, size = null) => (el) => {
 // A terminal that does not say it has hyperlinks would show an underlined
 // title and lose the URL, so `seen(supported)` is told, and the caller prints
 // the URL itself when it is false.
-// A right click copies `url` over OSC 52 and tells `copied(ok)`: a terminal
-// that answers a link only to a left click leaves no other way to the URL.
-// `ok` is whether the sequence was written; whether the terminal took it, no
-// terminal says.
+// A right click copies `url` and tells `copied(ok)`: a terminal that answers a
+// link only to a left click leaves no other way to the URL. GNOME Terminal and
+// every VTE terminal drop OSC 52 without a word, so a local walk writes the
+// desktop's clipboard itself, OSC 52 the fallback and the only way from over
+// SSH, where the desktop is not this machine's. `ok` is false only when
+// neither went; whether a terminal took OSC 52, no terminal says.
 // A text drawn in a color: the node's own `fg`. The terminal paints no CSS, so a
 // `style:color` on a `<p>` colors nothing here. Taking the box's first text when
 // the attach sits on a wrapper is `linked`'s reading, for the same reason. No
@@ -60,6 +65,22 @@ export const linked = (url, seen = () => {}, copied = () => {}) => (el) => {
   text.onMouseDown = (e) => {
     if (e.button !== MouseButton.RIGHT) return
     e.stopPropagation()
-    copied(text.ctx?.copyToClipboardOSC52?.(url) === true)
+    copy(text.ctx, url).then(copied, () => copied(false))
   }
+}
+
+// One per renderer, released with it. The X clipboard is served by the
+// process that wrote it, so a URL copied here pastes only while Haven runs.
+const clipboards = new WeakMap()
+
+async function copy(renderer, url) {
+  if (!renderer) return false
+  let clip = clipboards.get(renderer)
+  if (!clip) {
+    clip = createClipboard({ host: createHostClipboard(), terminal: createRendererClipboardAdapter(renderer) })
+    clipboards.set(renderer, clip)
+    renderer.once?.('destroy', () => clip.dispose())
+  }
+  const { host, terminal } = await clip.writeText(url, { destination: 'best-available' })
+  return host.status === 'written' || terminal.status === 'attempted'
 }

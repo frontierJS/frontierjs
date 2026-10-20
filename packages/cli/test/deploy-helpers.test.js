@@ -468,10 +468,10 @@ describe('swapContainer', () => {
     expect(runCmd.indexOf('--env A=')).toBeGreaterThan(runCmd.indexOf('--env-file'))
   })
 
-  test('PORT and NODE_ENV still beat a configuration value of the same name', () => {
-    const { runCmd } = drive({ deployConf: {}, configuration: { PORT: '9999' } })
+  test('FRONTIER_PORT_BE and NODE_ENV still beat a configuration value of the same name', () => {
+    const { runCmd } = drive({ deployConf: {}, configuration: { FRONTIER_PORT_BE: '9999' } })
 
-    expect(runCmd.lastIndexOf('--env PORT=')).toBeGreaterThan(runCmd.indexOf(`--env PORT='9999'`))
+    expect(runCmd.lastIndexOf('--env FRONTIER_PORT_BE=')).toBeGreaterThan(runCmd.indexOf(`--env FRONTIER_PORT_BE='9999'`))
   })
 
   test('no configuration adds no --env beyond the framework\'s own', () => {
@@ -484,20 +484,20 @@ describe('swapContainer', () => {
     // Untold, every caller arrives from Caddy's address and shares one
     // rate-limit bucket, so one caller's failed logins lock out the site.
     const { EDGE_HOPS } = await import('../core/edge.js')
-    expect(drive({ deployConf: {} }).runCmd).toContain(`--env FJS_TRUST_PROXY=${EDGE_HOPS}`)
+    expect(drive({ deployConf: {} }).runCmd).toContain(`--env FRONTIER_TRUST_PROXY=${EDGE_HOPS}`)
   })
 
   test('the derived cross-origin list reaches the container, and a same-origin app gets none (FJS-2655)', () => {
     const origins = ['https://app.example.com', 'tauri://localhost']
     expect(drive({ deployConf: {}, corsOrigins: origins }).runCmd)
-      .toContain(`--env FJS_CORS_ORIGINS='${origins.join(',')}'`)
-    expect(drive({ deployConf: {} }).runCmd).not.toContain('FJS_CORS_ORIGINS')
+      .toContain(`--env FRONTIER_CORS_ORIGINS='${origins.join(',')}'`)
+    expect(drive({ deployConf: {} }).runCmd).not.toContain('FRONTIER_CORS_ORIGINS')
   })
 
-  test('PORT is forced after the env file, so .env.production cannot move it', () => {
+  test('FRONTIER_PORT_BE is forced after the env file, so .env.production cannot move it', () => {
     const { runCmd } = drive({ deployConf: {} })
 
-    expect(runCmd.indexOf('--env PORT=3000')).toBeGreaterThan(runCmd.indexOf('--env-file'))
+    expect(runCmd.indexOf('--env FRONTIER_PORT_BE=3000')).toBeGreaterThan(runCmd.indexOf('--env-file'))
   })
 })
 

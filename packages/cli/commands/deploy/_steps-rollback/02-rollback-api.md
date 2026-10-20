@@ -94,7 +94,7 @@ docker start  ${container}`, { dry: flag.dry })
     `--env-file ${envFile}`,
     // Same contract as 06-swap: the mapping targets 3000, so the app is told to
     // bind 3000 whatever the env file says.
-    `--env PORT=3000`,
+    `--env FRONTIER_PORT_BE=3000`,
     `--env NODE_ENV=production`,
     // The same cap 06-swap applies. A rollback runs on the machine a failed
     // deploy just left, which is the least good moment to start an uncapped one.

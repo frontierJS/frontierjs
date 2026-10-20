@@ -46,12 +46,13 @@ mkdirSync(join(srv, 'db'), { recursive: true })
 // The container's environment, not the app's — `02-app` writes it beside the
 // workspace so a course does not lose its own `.env` to a deploy.
 copyFileSync($.config.deployEnv, join(srv, '.env.production'))
-// PORT is the container's own, inside it; APP_URL is what the app tells the
-// world it is. The deploy's env check compares the keys here against
-// .env.example, so a missing one stops the deploy before it builds anything.
-appendFileSync(join(srv, '.env.production'), `PORT=3000\nAPP_URL=http://127.0.0.1:${$.config.port}\n`)
+// The port inside the container is the deploy's to hand (FRONTIER_PORT_BE);
+// FRONTIER_APP_URL is where a person reaches the app, which a reset link names.
+// The deploy's env check compares the keys here against .env.example, so a
+// missing one stops the deploy before it builds anything.
+appendFileSync(join(srv, '.env.production'), `FRONTIER_APP_URL=http://127.0.0.1:${$.config.port}\n`)
 
-for (const key of ['ENCRYPTION_KEY', 'DATABASE_URL', 'PORT', 'APP_URL']) {
+for (const key of ['ENCRYPTION_KEY', 'DATABASE_URL', 'FRONTIER_APP_URL']) {
   if (!await must($, probe.fileContains({
     path:   join(srv, '.env.production'),
     needle: new RegExp(`^${key}=.+`, 'm'),

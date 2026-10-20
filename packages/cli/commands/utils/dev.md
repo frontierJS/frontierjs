@@ -45,10 +45,10 @@ them in the other mode, `q` quits.
 **An app the ports table does not name gets a slot of its own.** Every app
 `fli new` writes is project 0, so two of them derive the same 8000/8100. `fli
 dev` gives each app directory a slot in `~/.fli/sessions.lock` and hands its
-ports to the servers it starts as `FLI_PORT_FE`, `FLI_PORT_BE` and the rest,
+ports to the servers it starts as `FRONTIER_PORT_FE`, `FRONTIER_PORT_BE` and the rest,
 which the scaffolded configs read: the second app runs on 8001/8101. The slot is
 remembered, so an app comes back on the port a browser tab, an OAuth redirect
-and a `WEB_URL` already name. An app whose configs ignore the variables stays
+and a `FRONTIER_APP_URL` already name. An app whose configs ignore the variables stays
 at 0, since moving the probe would not move the server (`core/ports.js` § Dev
 slots). `fli ps` lists the slots.
 
@@ -106,7 +106,7 @@ Junction already reads — its boot diagnostics, and `config.debug`, which puts
 `debug=true` on the banner and a 5xx's detail in the response — so it asks the
 servers the same thing it asks fli: the whole error, not the clean line.
 
-**`--host` is the same shape**: it sets `FLI_HOST=1` on the servers, and
+**`--host` is the same shape**: it sets `FRONTIER_HOST=1` on the servers, and
 Sierra's base vite config reads it into `server.host`, so vite binds every
 interface and prints a Network URL. Only the web port has to be reachable — vite
 proxies `/api` and `/ws` to the API on localhost. An app config that replaces
@@ -239,7 +239,7 @@ const env = {
   ...process.env,
   ...session.vars,
   ...(flag.debug && { DEBUG: '1' }),
-  ...(flag.host && { FLI_HOST: '1' }),
+  ...(flag.host && { FRONTIER_HOST: '1' }),
   ...(generatedKey && { [KEY]: generatedKey }),
 }
 

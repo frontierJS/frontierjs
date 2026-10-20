@@ -533,8 +533,8 @@ A scaffolded app is project 0 — web on `8000`, API on `8100`. **`fli dev` give
 each such app a slot of its own**, the service digit: the second app you start
 runs on `8001`/`8101`, and the slot is remembered per app directory in
 `~/.fli/sessions.lock`, so it comes back on the same ports next time. The ports
-reach the servers as `FLI_PORT_FE`, `FLI_PORT_BE`, `FLI_PORT_SITE`,
-`FLI_PORT_WIDGET` and `FLI_PORT_DESKTOP`, which the scaffolded configs read; an
+reach the servers as `FRONTIER_PORT_FE`, `FRONTIER_PORT_BE`, `FRONTIER_PORT_SITE`,
+`FRONTIER_PORT_WIDGET` and `FRONTIER_PORT_DESKTOP`, which the scaffolded configs read; an
 app whose configs ignore them stays on slot 0. `fli ps` lists the slots. Global
 fli tooling has no project and so no env, and takes a 5 where the env digit
 goes — **5500–5509**, of which **5500 is the GUI, 5501 `project:map --as=serve`, 5502 db studio and 5503 junction's devtools console**. No project port in

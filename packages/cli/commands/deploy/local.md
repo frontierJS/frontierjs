@@ -153,10 +153,10 @@ const runCmd = [
   `--volume ${resolve($.paths.root, dbDir)}:${CONTAINER_DB_DIR}`,
   envArg,
   // AFTER --env-file, so it wins. The image EXPOSEs 3000 and the port mapping
-  // targets 3000, but the app binds whatever PORT says — and the scaffold's .env
-  // says 8100, so without this the container listens on a port nothing forwards
-  // and the health check reports "unreachable" as though the app were broken.
-  `--env PORT=3000`,
+  // targets 3000, but junction binds FRONTIER_PORT_BE, else PORT, else the
+  // scaffold's 8100 — so without this the container listens on a port nothing
+  // forwards and the health check reports "unreachable" as though the app were broken.
+  `--env FRONTIER_PORT_BE=3000`,
   `--env NODE_ENV=production`,
   // Same cap as a real deploy. A test container that runs for a week is the
   // one nobody is watching the disk for.

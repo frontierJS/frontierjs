@@ -32,7 +32,7 @@ export type TrustProxy = boolean | number | string[]
 
 /**
  * The trust this process runs with: what the app declared, else the hop count
- * a deploy states in `FJS_TRUST_PROXY`.
+ * a deploy states in `FRONTIER_TRUST_PROXY`.
  *
  * The deploy that puts a proxy in front of the app is the one that knows it is
  * there (`FJS-D617`), and an app scaffolded with no `trustProxy` keyed every
@@ -46,7 +46,7 @@ export function resolveTrustProxy(declared: TrustProxy | undefined, env: string 
   // Refused rather than ignored: a value nobody can read leaves the limiter
   // keyed on the proxy, which is the failure this variable exists to end.
   if (!/^\d+$/.test(env.trim())) {
-    throw new Error(`[Junction] FJS_TRUST_PROXY must be a hop count (a whole number), got '${env}'`)
+    throw new Error(`[Junction] FRONTIER_TRUST_PROXY must be a hop count (a whole number), got '${env}'`)
   }
   return Number(env.trim())
 }

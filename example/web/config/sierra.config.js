@@ -46,7 +46,7 @@ export default {
 
   junction: {
     // Where there is no page. A page calls its own origin while Vite proxies
-    // /api and /ws, unless the build sets VITE_API_URL.
+    // /api and /ws, unless the build sets FRONTIER_PUBLIC_API_URL.
     url:       'http://localhost:8010',
     apiPrefix: '/api',
     tokenKey:  'shop_token',

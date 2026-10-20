@@ -485,7 +485,7 @@ the rare caller that specifically needs the socket; service calls made before it
 simply take the HTTP path.
 
 **A page calls its own origin, and a build that is not proxied names the API with
-`VITE_API_URL`.** `virtual:sierra` hands the client `import.meta.env.VITE_API_URL ||
+`FRONTIER_PUBLIC_API_URL`.** `virtual:sierra` hands the client `import.meta.env.FRONTIER_PUBLIC_API_URL ||
 location.origin`, decided in the page. `junction.url` in the config is the answer where there
 is no page — the terminal shell, a prerender — and is what turns the client on. The config is
 evaluated in Node and reaches the browser as JSON (`FJS-D552`), so a `typeof location` guard
@@ -496,7 +496,7 @@ The page's origin is right while Vite in dev, or nginx in `fli deploy`, proxies 
 `/ws` to the API. An API on an origin of its own — `api.example.com` beside
 `app.example.com` — and a build a native shell bundles, where the page is
 `tauri://localhost`, have no proxy, so every call would go to a host with no API on it:
-`VITE_API_URL=https://api.example.com bun run build`. Vite inlines the value. The API must
+`FRONTIER_PUBLIC_API_URL=https://api.example.com bun run build`. Vite inlines the value: Sierra sets `envPrefix` to `['VITE_', 'FRONTIER_PUBLIC_']` (`ENV_PREFIX` from `@frontierjs/sierra/build`), so `FRONTIER_PUBLIC_` is the framework's one door into a bundle and every other `FRONTIER_*` name stays on the server. The API must
 then allow that page's origin in its CORS configuration. A family
 of origins is a predicate rather than a list — `middleware: { cors: { origins: o =>
 o.endsWith('.preview.example.com') } }` in `junction.config.js` admits every frozen Basecamp

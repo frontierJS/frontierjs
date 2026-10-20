@@ -122,12 +122,12 @@ writeFileSync(join(ALPHA, 'frontier.config.js'), 'export default {}')
 // makes it an app root (`findProjectRoot`), so its branch claims a port block.
 mkdirSync(join(ALPHA, 'web', 'config'), { recursive: true })
 writeFileSync(join(ALPHA, 'web', 'index.html'), '<h1>alpha</h1>\n<script type="module" src="./main.js"></script>\n')
-// …which Freeze builds with Vite, and whose bundle must carry VITE_API_URL.
-writeFileSync(join(ALPHA, 'web', 'main.js'), 'document.body.dataset.api = import.meta.env.VITE_API_URL\n')
-// …and reads FLI_PORT_FE the way a scaffolded config does: `fli dev` leaves an
+// …which Freeze builds with Vite, and whose bundle must carry FRONTIER_PUBLIC_API_URL.
+writeFileSync(join(ALPHA, 'web', 'main.js'), 'document.body.dataset.api = import.meta.env.FRONTIER_PUBLIC_API_URL\n')
+// …and reads FRONTIER_PORT_FE the way a scaffolded config does: `fli dev` leaves an
 // app that ignores it at slot 0 and refuses when 8000 is held, so Start app put
 // no port on the card on any machine with a dev server up.
-writeFileSync(join(ALPHA, 'web', 'config', 'vite.config.js'), 'export default { server: { port: Number(process.env.FLI_PORT_FE ?? 8000) } }\n')
+writeFileSync(join(ALPHA, 'web', 'config', 'vite.config.js'), 'export default { server: { port: Number(process.env.FRONTIER_PORT_FE ?? 8000) } }\n')
 mkdirSync(join(ALPHA, 'db'), { recursive: true })
 writeFileSync(join(ALPHA, 'db', 'schema.lite'), 'model Lead { id Int @id }\n')
 // A stand-in for the checkout's own `fli done`, which the workbench runs after
@@ -261,13 +261,13 @@ const api = spawn('bun', ['api/index.ts'], {
   cwd: PKG, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
   env: {
     ...process.env,
-    DATABASE_URL: DB, APP_URL: BASE, AUDIT_PATH: join(SCRATCH, 'audit.db'),
+    DATABASE_URL: DB, FRONTIER_APP_URL: BASE, AUDIT_PATH: join(SCRATCH, 'audit.db'),
     // What points the connector at the stand-in. Loopback, so `sendVia`'s
     // spend guard allows the POST without `ALLOW_CLOUD_SPEND` — which is the
     // guard's own claim and is asserted below rather than assumed.
     DIGITALOCEAN_URL: SINK,
     HETZNER_URL:      HZ_SINK,
-    PORT:             String(API_PORT),
+    FRONTIER_PORT_BE: String(API_PORT),
     LOCAL_MACHINE:    '1',
     HOME:             SSH_HOME,
     WORKBENCH_DIR:    WORKBENCH,
@@ -1725,7 +1725,7 @@ try {
     appRow?.type === 'static' && appRow?.source?.kind === 'inline' && appRow?.port === o.port
       && JSON.stringify(appRow).includes(serverId), JSON.stringify(appRow).slice(0, 300))
   const vars = (await call('GET', `/variables?environmentId=${o.environmentId}`)).body?.data ?? []
-  check('…the frozen build\'s VITE_API_URL on that App', vars.some(v => v.key === 'VITE_API_URL' && v.value === 'https://api.example.test' && v.appId === o.appId), JSON.stringify(vars))
+  check('…the frozen build\'s FRONTIER_PUBLIC_API_URL on that App', vars.some(v => v.key === 'FRONTIER_PUBLIC_API_URL' && v.value === 'https://api.example.test' && v.appId === o.appId), JSON.stringify(vars))
   const doms = (await call('GET', `/domains?appId=${o.appId}`)).body?.data ?? []
   check('…and its hostname as a Domain', doms.length === 1 && doms[0].hostname === 'client.preview.example.test', JSON.stringify(doms))
   const routed = machineSaw.find(c => c.path === '/route')
@@ -1762,7 +1762,7 @@ try {
     JSON.stringify(servedFrozen).slice(0, 300))
   const bundle = (servedFrozen.text ?? '').match(/\/assets\/[^"]+\.js/)?.[0]
   const js = bundle ? await origin.handle(new Request(`http://127.0.0.1:${STATIC_PORT}${bundle}`, { headers: { host: routes.get(o.appId)?.host } })).then(r => r.text()) : ''
-  check('…whose bundle has VITE_API_URL inlined', js.includes('https://api.example.test'), bundle ?? 'no bundle')
+  check('…whose bundle has FRONTIER_PUBLIC_API_URL inlined', js.includes('https://api.example.test'), bundle ?? 'no bundle')
 
   // The App row is where the dev server's port lives, not Open's record of
   // it: an edit to the row is what Thaw must send.

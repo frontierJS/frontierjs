@@ -270,11 +270,11 @@ describe('claimSession — each app its own dev slot', () => {
     expect(a.rows.map(r => r.port).sort()).toEqual([8000, 8100])
     expect(b.slot).toBe(1)
     expect(b.rows.map(r => r.port).sort()).toEqual([8001, 8101])
-    expect(b.vars).toEqual({ FLI_PORT_FE: '8001', FLI_PORT_BE: '8101' })
+    expect(b.vars).toEqual({ FRONTIER_PORT_FE: '8001', FRONTIER_PORT_BE: '8101' })
   })
 
   test('the slot is remembered while the app is not running', async () => {
-    // A tab, an OAuth redirect and WEB_URL all name the port.
+    // A tab, an OAuth redirect and FRONTIER_APP_URL all name the port.
     await claim('/x/a', { name: 'a' })
     await claim('/x/b', { name: 'b' })
     age('/x/b', DEAD)
@@ -386,7 +386,7 @@ describe('claimSession — a linked worktree takes a branch block', () => {
     const b = await claim('/t/one/packages/basecamp', { name: '@frontierjs/basecamp', worktree: wt('/t/one') })
     expect(b.branch).toBe(1)
     expect(b.rows.map(r => r.port).sort()).toEqual([18020, 18120])
-    expect(b.vars).toEqual({ FLI_PORT_FE: '18020', FLI_PORT_BE: '18120' })
+    expect(b.vars).toEqual({ FRONTIER_PORT_FE: '18020', FRONTIER_PORT_BE: '18120' })
     expect(readLock(lockFile)['/t/one/packages/basecamp']).toMatchObject({ branch: 1, repo: '/m/.git', worktree: '/t/one' })
   })
 
@@ -480,8 +480,8 @@ describe('portFor — the port a test asks for', () => {
     mkdirSync(join(root, 'web'), { recursive: true })
     writeFileSync(join(root, 'db', 'schema.lite'), '')
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: '@frontierjs/basecamp' }))
-    writeFileSync(join(root, 'api', 'server.js'), 'Bun.serve({ port: process.env.FLI_PORT_BE })')
-    writeFileSync(join(root, 'web', 'vite.config.js'), 'export default { server: { port: process.env.FLI_PORT_FE } }')
+    writeFileSync(join(root, 'api', 'server.js'), 'Bun.serve({ port: process.env.FRONTIER_PORT_BE })')
+    writeFileSync(join(root, 'web', 'vite.config.js'), 'export default { server: { port: process.env.FRONTIER_PORT_FE } }')
     return root
   }
 
@@ -510,7 +510,7 @@ describe('portFor — the port a test asks for', () => {
     expect(await portFor(from, 'be', { service: 3, lockFile })).toBe(17123)
     expect(readLock(lockFile)[root]).toMatchObject({ branch: 1, worktree: linked })
     const dev = await claimSession(root, { name: '@frontierjs/basecamp', lockFile })
-    expect(dev.vars.FLI_PORT_BE).toBe('18120')
+    expect(dev.vars.FRONTIER_PORT_BE).toBe('18120')
   })
 
   test("a number the lock already holds is used as is, and a project the app does not own moves with it", async () => {
@@ -541,23 +541,23 @@ describe('readsPortVar — would this surface follow a slot', () => {
 
   test('the scaffold reads it; a config with a literal does not; node_modules is not the app', () => {
     mkdirSync(join(root, 'web/config'), { recursive: true })
-    const row = { surface: 'web', env: 'FLI_PORT_FE' }
+    const row = { surface: 'web', env: 'FRONTIER_PORT_FE' }
     writeFileSync(join(root, 'web/config/vite.config.js'), 'export default { server: { port: 8000 } }')
     mkdirSync(join(root, 'web/node_modules/x'), { recursive: true })
-    writeFileSync(join(root, 'web/node_modules/x/index.js'), 'process.env.FLI_PORT_FE')
+    writeFileSync(join(root, 'web/node_modules/x/index.js'), 'process.env.FRONTIER_PORT_FE')
     expect(readsPortVar(root, row)).toBe(false)
 
-    writeFileSync(join(root, 'web/config/vite.config.js'), "port: parseInt(process.env.FLI_PORT_FE ?? '8000')")
+    writeFileSync(join(root, 'web/config/vite.config.js'), "port: parseInt(process.env.FRONTIER_PORT_FE ?? '8000')")
     expect(readsPortVar(root, row)).toBe(true)
   })
 
   test('a variable named only in a comment is not read', () => {
     mkdirSync(join(root, 'web/config'), { recursive: true })
-    const row = { surface: 'web', env: 'FLI_PORT_FE' }
-    writeFileSync(join(root, 'web/config/vite.config.js'), "// the shape a scaffold has for FLI_PORT_FE\n/* FLI_PORT_FE */\nconst UI_PORT = Number(process.env.UI_PORT ?? 8010)")
+    const row = { surface: 'web', env: 'FRONTIER_PORT_FE' }
+    writeFileSync(join(root, 'web/config/vite.config.js'), "// the shape a scaffold has for FRONTIER_PORT_FE\n/* FRONTIER_PORT_FE */\nconst UI_PORT = Number(process.env.UI_PORT ?? 8010)")
     expect(readsPortVar(root, row)).toBe(false)
 
-    writeFileSync(join(root, 'web/config/vite.config.js'), "const API = `http://localhost:${process.env.FLI_PORT_FE}`")
+    writeFileSync(join(root, 'web/config/vite.config.js'), "const API = `http://localhost:${process.env.FRONTIER_PORT_FE}`")
     expect(readsPortVar(root, row)).toBe(true)
   })
 

@@ -11,8 +11,8 @@
 // `api` is where the bundled page finds the API, and deploy/build.mjs refuses
 // a build that does not say. The page is served from tauri://localhost, so a
 // same-origin default would send every call to the shell. `null` is the answer
-// for an app with no API. VITE_API_URL is the name every surface's build reads.
+// for an app with no API. FRONTIER_PUBLIC_API_URL is the name every surface's build reads.
 export default {
   wraps: 'web',
-  api:   process.env.VITE_API_URL ?? 'http://localhost:8110',
+  api:   process.env.FRONTIER_PUBLIC_API_URL ?? 'http://localhost:8110',
 }

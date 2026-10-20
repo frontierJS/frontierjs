@@ -48,7 +48,7 @@ const SITE = join(HERE, '..')
 const DIST = join(SITE, 'dist')
 const ROOT = join(SITE, '..')
 const API_PORT = process.env.API_PORT ?? String(PORTS.api)
-const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
+const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 // test / siteServe / project 1 / service 2 — its own slot, so it collides with
 // neither `verify:site` (7710) nor a dev server on 8710.
 const PORT   = await portFor(import.meta.url, 'siteServe', { env: 'test', service: 2 })

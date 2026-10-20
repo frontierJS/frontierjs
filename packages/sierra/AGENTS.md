@@ -391,7 +391,7 @@ and `@` resolves to `widgets/src`.
   against `body` or `:root` matches nothing inside it (use `:host`) and a stylesheet
   linked in the host styles nothing in it.
 - **Reaching the API is a cross-origin `fetch`.** The origin is a prop with a default
-  (`import.meta.env.VITE_API_URL`), never a constant, since one build is embedded by
+  (`import.meta.env.FRONTIER_PUBLIC_API_URL`), never a constant, since one build is embedded by
   pages pointing at staging and production. Plain `fetch` rather than
   `@frontierjs/junction/client`: the client opens a WebSocket on a stranger's page. A
   custom method is `POST /api/{service}[/{id}]` with `X-Service-Method: <name>`, and a

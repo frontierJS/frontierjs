@@ -2122,6 +2122,7 @@ export interface ApiKey {
 export interface ApiKeyCreate {
   id?: string
   workspaceId: string
+  userId: string
   name: string
   scopes?: string[]
   expiresAt?: string | Date | null
@@ -2136,6 +2137,7 @@ export interface ApiKeyCreate {
 export interface ApiKeyUpdate {
   id?: string
   workspaceId?: string
+  userId?: string
   name?: string
   scopes?: string[]
   expiresAt?: string | Date | null
@@ -2148,7 +2150,6 @@ export interface ApiKeyUpdate {
 }
 
 export interface ApiKeySystem {
-  userId?: string
   credentialId?: string | null
   tokenHint?: string
 }
@@ -5902,7 +5903,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly workspaceMember: TableClient<WorkspaceMember, WorkspaceMemberCreate, WorkspaceMemberUpdate, WorkspaceMemberWhere, WorkspaceMemberRelations, never, 'userId' | '@@gate', WorkspaceMemberSystem>
   readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere, InvitationRelations, never, 'token' | '@@gate'>
   readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere, SecretRelations, never, '@@gate'>
-  readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere, ApiKeyRelations, never, 'userId' | 'credentialId' | 'tokenHint' | '@@gate', ApiKeySystem>
+  readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere, ApiKeyRelations, never, 'credentialId' | 'tokenHint' | '@@gate', ApiKeySystem>
   readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere, ServerRelations, 'reboot' | 'drain' | 'undrain' | 'provision' | 'destroy' | 'checkIn' | 'loseContact' | 'reportProvisioned' | 'reportRunning' | 'reportStopped' | 'reportRebuilding' | 'reportDestroyed', 'enrollTokenHash' | 'status' | '@@gate'>
   readonly serverEvent: TableClient<ServerEvent, ServerEventCreate, ServerEventUpdate, ServerEventWhere, ServerEventRelations, never, '@@gate'>
   readonly outpostNonce: TableClient<OutpostNonce, OutpostNonceCreate, OutpostNonceUpdate, OutpostNonceWhere, OutpostNonceRelations, never, '@@gate'>

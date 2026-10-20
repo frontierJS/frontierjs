@@ -103,7 +103,7 @@ const api = await startServer($, {
   name:   'api',
   script: 'start',
   cwd:    app,
-  env:    { PORT: String($.config.apiPort), DATABASE_URL: $.config.legacyDb },
+  env:    { FRONTIER_PORT_BE: String($.config.apiPort), DATABASE_URL: $.config.legacyDb },
   port:   $.config.apiPort,
   path:   '/api/health',
 })

@@ -13,8 +13,8 @@ const ROOT = resolve(HERE, '..')
 // the `fli dev` variables are what it hands a second checkout (18010 in branch 1).
 // A drive that cannot move off 8010/8110 cannot run beside a dev server somebody
 // else is already holding the port with.
-const API_PORT = process.env.API_PORT ?? process.env.FLI_PORT_BE ?? '8110'
-const UI_PORT  = Number(process.env.UI_PORT ?? process.env.FLI_PORT_FE ?? 8010)
+const API_PORT = process.env.API_PORT ?? process.env.FRONTIER_PORT_BE ?? '8110'
+const UI_PORT  = Number(process.env.UI_PORT ?? process.env.FRONTIER_PORT_FE ?? 8010)
 const API  = `http://localhost:${API_PORT}`
 const UI   = resolve(HERE, '../../../packages/ui')
 
@@ -24,7 +24,7 @@ export default defineConfig({
   ...sierra,
 
   // The app has one .env, at its root; vite reads the Vite root by default, so
-  // a VITE_ variable written there would reach nothing.
+  // a FRONTIER_PUBLIC_ variable written there would reach nothing.
   envDir: resolve(ROOT, '..'),
 
   // @frontierjs/ui is aliased to the WORKSPACE SOURCE, not to the copy under

@@ -227,17 +227,17 @@ describe('an app can actually declare it', () => {
 // What `fli deploy` and outpost pass a container they put Caddy in front of
 // (`FJS-D617`). Read when the transport is built, which is inside createApp.
 async function appSeeingWithEnv(env: string, trustProxy: unknown) {
-  const before = process.env.FJS_TRUST_PROXY
-  process.env.FJS_TRUST_PROXY = env
+  const before = process.env.FRONTIER_TRUST_PROXY
+  process.env.FRONTIER_TRUST_PROXY = env
   try { return await appSeeing(trustProxy) }
   finally {
-    if (before === undefined) delete process.env.FJS_TRUST_PROXY
-    else process.env.FJS_TRUST_PROXY = before
+    if (before === undefined) delete process.env.FRONTIER_TRUST_PROXY
+    else process.env.FRONTIER_TRUST_PROXY = before
   }
 }
 
 describe('a deploy can state the hop for an app that declared nothing', () => {
-  it('reads the chain from the right when FJS_TRUST_PROXY says one hop', async () => {
+  it('reads the chain from the right when FRONTIER_TRUST_PROXY says one hop', async () => {
     const app = await appSeeingWithEnv('1', undefined)
     try {
       expect(await app.ask('198.51.100.7')).toBe('198.51.100.7')
@@ -253,8 +253,8 @@ describe('a deploy can state the hop for an app that declared nothing', () => {
   })
 
   it('refuses a value that is not a hop count, rather than keying on the proxy', () => {
-    expect(() => resolveTrustProxy(undefined, 'yes')).toThrow('FJS_TRUST_PROXY')
-    expect(() => resolveTrustProxy(undefined, '-1')).toThrow('FJS_TRUST_PROXY')
+    expect(() => resolveTrustProxy(undefined, 'yes')).toThrow('FRONTIER_TRUST_PROXY')
+    expect(() => resolveTrustProxy(undefined, '-1')).toThrow('FRONTIER_TRUST_PROXY')
     expect(resolveTrustProxy(undefined, ' 2 ')).toBe(2)
     expect(resolveTrustProxy(undefined, '')).toBeUndefined()
   })

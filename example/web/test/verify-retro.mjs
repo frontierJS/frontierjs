@@ -195,19 +195,20 @@ t('backdate.andItAnswersTheNewRate',                     nowAtMarch.rate === 4_2
 // KNOWLEDGE the way `asOf` stands at a past moment of validity.
 await new Promise(r => setTimeout(r, 50))   // the logger defers one tick
 const trail = await sys.auditTrail.findMany({
-  where: { model: 'pay_window', operation: 'update' },
+  where: { model: 'PayWindow', operation: 'update' },
   orderBy: { createdAt: 'desc' }, limit: 50,
 })
-const closing = trail.find(r => String(r.records).includes(`[${A.window.id}]`))
-const was     = closing && JSON.parse(closing.before)
-const became  = closing && JSON.parse(closing.after)
+const decoded = v => typeof v === 'string' ? JSON.parse(v) : v
+const closing = trail.find(r => [].concat(decoded(r.records)).includes(A.window.id))
+const was     = closing && decoded(closing.before)
+const became  = closing && decoded(closing.after)
 
 t('gap.theRowKeepsNoTraceOfWhatItUsedToSay',
   oldA.effectiveTo === RAISE_AT && !('effectiveToWas' in oldA))
 t('gap.butTheAuditLogDoes',        was?.effectiveTo === null)
 t('gap.andItRecordsWhatItBecame',  became?.effectiveTo === RAISE_AT)
-t('gap.thoughOnlyAsAJsonStringInALog',
-  typeof closing.before === 'string' && typeof closing.records === 'string')
+t('gap.andTheLogKeepsItAsData',
+  Array.isArray(closing.records) && typeof closing.before === 'object' && closing.before !== null)
 
 // The refusals, asserted against the rule the service calls.
 const NOW = TODAY
@@ -465,7 +466,7 @@ const expected = {
   'gap.theRowKeepsNoTraceOfWhatItUsedToSay': true,
   'gap.butTheAuditLogDoes': true,
   'gap.andItRecordsWhatItBecame': true,
-  'gap.thoughOnlyAsAJsonStringInALog': true,
+  'gap.andTheLogKeepsItAsData': true,
   'backdate.aFutureDateIsRefused': true,
   'backdate.andSoIsBackdatingAcrossAnEarlierChange': true,
   'backdate.andSoIsOpeningInsideAClosedHistory': true,

@@ -23,7 +23,7 @@
  * the other drives.
  */
 
-const API  = process.env.API_URL       ?? `http://localhost:${PORTS.api}`
+const API  = process.env.FRONTIER_API_URL       ?? `http://localhost:${PORTS.api}`
 const SINK = process.env.MAIL_SINK_URL ?? `http://localhost:${PORTS.mail}`
 // A reference of this run's own, not a fixed one, and the reason is a live
 // hazard rather than tidiness: `Order` is `@@softDelete` and a soft-deleted row

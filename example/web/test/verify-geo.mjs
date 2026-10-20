@@ -51,7 +51,7 @@ import { encodeQueryString } from '@frontierjs/toolbelt/query'
 import { results, report } from './lib/report.mjs'
 import { requireServers, PORTS } from './lib/preflight.mjs'
 
-const API = process.env.API_URL ?? `http://localhost:${PORTS.api}`
+const API = process.env.FRONTIER_API_URL ?? `http://localhost:${PORTS.api}`
 
 await requireServers([['api (bun run api)', `${API}/api/health`]])
 

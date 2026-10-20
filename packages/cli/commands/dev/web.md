@@ -22,7 +22,7 @@ Starts the one surface. A `web/` with its own `package.json` runs its own
 `dev`; otherwise the app's `web` script runs at the root. Running `dev` from inside `web/` there
 would reach the app's `dev`, which starts every surface.
 
-`--host` is `fli dev --host` for this one surface: `FLI_HOST=1`, which Sierra's
+`--host` is `fli dev --host` for this one surface: `FRONTIER_HOST=1`, which Sierra's
 base vite config reads into `server.host`.
 
 <script>
@@ -40,7 +40,7 @@ const runner = detectRunner(root)
 const env    = {
   ...process.env,
   ...(flag.test && { NODE_ENV: 'test' }),
-  ...(flag.host && { FLI_HOST: '1' }),
+  ...(flag.host && { FRONTIER_HOST: '1' }),
 }
 
 if (existsSync(resolve(dir, 'package.json'))) {

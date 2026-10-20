@@ -567,6 +567,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 ### `User`
 
 - allow **read** — `id == auth().id`
+- allow **read** — `kind == 'bot' && auth().level >= 5 && memberships.some(workspaceId == auth().workspaceId)`
 - allow **update** — `id == auth().id`
 
 ### `Variable`
@@ -613,7 +614,6 @@ rather than refusing the row.
 | Model | Field | Rule |
 | --- | --- | --- |
 | `AlertRule` | `snoozedUntil` | `@system` |
-| `ApiKey` | `userId` | `@system` |
 | `ApiKey` | `credentialId` | `@system` |
 | `ApiKey` | `tokenHint` | `@system` |
 | `App` | `status` | `@system` |

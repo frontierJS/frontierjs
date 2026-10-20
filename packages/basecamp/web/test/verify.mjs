@@ -186,11 +186,11 @@ for (const [port, who] of [[API_PORT, 'API'], [WEB_PORT, 'web'], [OUTPOST_PORT, 
 children.push(spawn('bun', ['api/index.ts'], { cwd: PKG, stdio: 'ignore', env: {
   ...process.env,
   ...SCRATCH_ENV,
-  MAIL_URL:     `http://localhost:${MAIL_PORT}`,
-  MAIL_API_KEY: 'dev-mail-key',
-  MAIL_FROM:    'basecamp@example.test',
-  APP_URL:      BASE,
-  PORT:         String(API_PORT),
+  MAIL_URL:         `http://localhost:${MAIL_PORT}`,
+  MAIL_API_KEY:     'dev-mail-key',
+  MAIL_FROM:        'basecamp@example.test',
+  FRONTIER_APP_URL: BASE,
+  FRONTIER_PORT_BE: String(API_PORT),
 } }))
 children.push(spawn('bun', ['run', 'web'], {
   cwd: PKG, stdio: 'ignore',

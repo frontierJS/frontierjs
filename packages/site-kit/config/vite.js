@@ -100,7 +100,7 @@ export async function resolveSite({ root }) {
 /**
  * @param {object} opts
  * @param {string} opts.root — the site directory, the one holding `content/`
- * @param {number} [opts.port] — dev port; `SITE_PORT` / `FLI_PORT_SITE` otherwise
+ * @param {number} [opts.port] — dev port; `SITE_PORT` / `FRONTIER_PORT_SITE` otherwise
  * @param {boolean} [opts.host] — listen on every interface, not just localhost
  * @param {boolean} [opts.preview] — a review build: Sierra's `preview`, which no
  *   site states, because the same content ships both ways
@@ -161,7 +161,7 @@ export async function siteKit({ root, port, host = false, preview = false, site 
     ],
     server: {
       ...base.server,
-      port: port ?? parseInt(process.env.SITE_PORT ?? process.env.FLI_PORT_SITE ?? '8600', 10),
+      port: port ?? parseInt(process.env.SITE_PORT ?? process.env.FRONTIER_PORT_SITE ?? '8600', 10),
       host,
       // Vite hops to the next free port without a word, and a drive pointed at
       // the port it hopped from then tests whatever else is listening.

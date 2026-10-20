@@ -38,7 +38,7 @@ import { watchReloads } from './lib/reload.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const UI     = process.env.UI_URL  ?? `http://localhost:${PORTS.ui}`
-const API    = process.env.API_URL ?? `http://localhost:${PORTS.api}`
+const API    = process.env.FRONTIER_API_URL ?? `http://localhost:${PORTS.api}`
 // The dev payment provider, started by `bun run api` beside the mail sink.
 const PSP    = process.env.PSP_URL ?? `http://localhost:${PORTS.psp}`
 // A fixed reference makes this drive pass exactly ONCE per database. `Order`

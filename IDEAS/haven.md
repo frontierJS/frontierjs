@@ -1943,6 +1943,53 @@ this is the gap a surface painted in cells has, not mesa's.
   it takes keys before the figure. The screen reader's rotor is the
   precedent: the same stops, read as a list instead of in turn.
 
+### Phase 20 — Snooze
+
+Goal: a ticket Jordan has acknowledged leaves the desk's daily report until a
+day he names, and comes back on that day by itself.
+Done when: at the desk, `/report daily`, `/snooze 2 fri` and the item is gone
+from that report and every later one until Friday; a bare `/snooze` lists
+what is away and `/unsnooze <n>` brings one back.
+
+**The reading** (owner, 2026-10-19): local to this machine for now, and a
+snooze ends on a date. Basecamp could hold it as a bookmark, which is private
+and follows the account to every machine, but a bookmark has no date; boosts
+are seen by the client. So it is a file under `~/.fli/haven/`, where 18.4's
+close-outs already are. It is keyed by the item's URL, which a report and an
+`/ask` answer both give a linked item, so a ticket stays away from every pane
+that links it. A snooze hides the item only on THIS desk. The daily check
+itself is judged on another machine and keeps listing it, so the counts at
+the top stay as posted and the title says how many are hidden.
+
+- [x] 20.1 The day. `lib/home/snooze.js`, pure: `untilOf(word, today)` reads
+  nothing or `tomorrow`, a weekday (the next one, never today), `3d`, `2w`,
+  `10/24` (this year, else next) and `2026-10-24`, and refuses a day that is
+  not after today or that rolls over (`2/30`, `13/40`). `hideSnoozed(answer,
+  snoozes, today)` drops the items and any list left empty, then any heading
+  with nothing under it (as `filterAnswer` cuts them), and says how many it hid.
+- [x] 20.2 The store. `#errand`'s `readSnoozes()` and `setSnooze(url, until,
+  text)` over `~/.fli/haven/snoozed.json`, `{ [url]: { until, text } }`; a
+  snooze whose day has come is dropped at the next write. The browser twin
+  keeps none.
+- [x] 20.3 The verbs. `answerRows(..., { numbered })` puts each linked item's
+  number where its bullet was, in `linksOf` order. At the desk `/snooze <n>
+  [when]` puts item n away, `/snooze` alone opens the snoozed list (soonest
+  back first, `back Fri Oct 23`), and `/unsnooze <n>` works on that list. The
+  desk reads the file again at every answer, so another terminal's snooze and
+  a day passing both count. No test kept (no new tests while experimenting).
+  The daily post links a waiting item by its newest comment
+  (`todos/<id>#__recording_<comment>`, a chat line `chats/<id>@<line>`), so
+  the client writing again is a new URL, and the item is back before its day.
+  That is wanted, and only the post's link shape keeps it so.
+- [ ] 20.4 Across machines. When it should follow Jordan to another machine,
+  the store moves to Basecamp bookmarks, with the date kept beside them, or to
+  his own Room. Moving it is a ruling first, because a Room would put a
+  member's data on a server for the first time (13.5's question).
+- [ ] 20.5 The team's ack. A snooze that drops the item from the POSTED daily
+  check means the daily-check skill reads it, and only a run on Jordan's
+  account can read his bookmarks. That is the daily check's question, not
+  Haven's.
+
 ### Phase 10 — Hosted
 
 Goal: Haven answers at a public address, so a stranger needs no `--api`.

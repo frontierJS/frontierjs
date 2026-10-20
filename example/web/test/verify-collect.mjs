@@ -53,7 +53,7 @@ const PSP_SINK_PORT = process.env.PSP_SINK_PORT ?? String(PORTS.psp)
 // their ports from THIS process's environment.
 process.env.API_PORT      = API_PORT
 process.env.PSP_SINK_PORT = PSP_SINK_PORT
-const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
+const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 const HOOK = '/api/webhooks/payments'
 const HOOK_SECRET = process.env.SHOP_PSP_WEBHOOK_SECRET ?? 'dev-psp-webhook-secret'
 

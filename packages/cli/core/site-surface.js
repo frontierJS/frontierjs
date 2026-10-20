@@ -134,17 +134,17 @@ export function siteApiModule({ apiPort = 8100 } = {}) {
 // then renders whatever the empty answer means -- no times, no products -- over
 // a request that never reached anything.
 //
-// Set VITE_API_URL in the app's .env for a deployment. Empty ('') means the
+// Set FRONTIER_PUBLIC_API_URL in the app's .env for a deployment. Empty ('') means the
 // API is behind the same origin as the site, one proxy in front of both. Unset
 // is this app's own API port in dev.
-export const API_URL = import.meta.env?.VITE_API_URL ?? 'http://localhost:${apiPort}'
+export const API_ORIGIN = import.meta.env?.FRONTIER_PUBLIC_API_URL ?? 'http://localhost:${apiPort}'
 
 /**
  * What createJunctionClient needs, and it is TWO keys: \`url\` is the ORIGIN
  * and \`apiPrefix\` is the PATH the app mounts its services under, which must
  * match the server's own. Leave \`url\` out and it is the site's origin.
  */
-export const clientOptions = { url: API_URL, apiPrefix: '/api' }
+export const clientOptions = { url: API_ORIGIN, apiPrefix: '/api' }
 `
 }
 
@@ -174,7 +174,7 @@ export default defineConfig({
   ...base,
   root: ROOT,
   // An app has ONE .env, at its root, and vite looks in the Vite root unless
-  // told otherwise -- so a VITE_ variable written beside every other setting
+  // told otherwise -- so a FRONTIER_PUBLIC_ variable written beside every other setting
   // reaches nothing and the client falls back to its default without a word.
   envDir: resolve(ROOT, '..'),
   server: {
@@ -182,7 +182,7 @@ export default defineConfig({
     // dev / siteDev / this app's project id — derived, never chosen. A public
     // site is a third server while it is being written and its own origin once
     // it is served, and neither is the SPA's. See packages/cli/core/ports.js.
-    port:       parseInt(process.env.SITE_PORT ?? process.env.FLI_PORT_SITE ?? '${port}', 10),
+    port:       parseInt(process.env.SITE_PORT ?? process.env.FRONTIER_PORT_SITE ?? '${port}', 10),
     // Vite hops to the next free port without a word, and a drive pointed at
     // the port it hopped from then tests whatever else is listening.
     strictPort: true,

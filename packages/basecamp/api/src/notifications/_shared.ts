@@ -25,6 +25,6 @@ export const declaredTransports = (_: unknown, r: Recipient): string[] =>
  *  path because the reader is already in the app; an email is read somewhere
  *  else and a bare path is a dead link. */
 export function appUrl(path: string): string {
-  const base = process.env.APP_URL ?? 'http://localhost:8020'
+  const base = process.env.FRONTIER_APP_URL ?? 'http://localhost:8020'
   return `${base.replace(/\/+$/, '')}${path}`
 }

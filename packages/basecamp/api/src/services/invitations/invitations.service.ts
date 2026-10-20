@@ -55,10 +55,10 @@ function mintToken(): string {
 }
 
 /** The link a person clicks. The WEB origin, not the API's — accepting is a
- *  screen. `env.APP_URL` is named rather than derived from the request's Host,
+ *  screen. `env.FRONTIER_APP_URL` is named rather than derived from the request's Host,
  *  which is a value the caller chooses. */
 export function acceptUrl(token: string): string {
-  return `${env.APP_URL.replace(/\/+$/, '')}/invite/${token}/`
+  return `${env.FRONTIER_APP_URL.replace(/\/+$/, '')}/invite/${token}/`
 }
 
 function expiryFrom(now = Date.now()): string {

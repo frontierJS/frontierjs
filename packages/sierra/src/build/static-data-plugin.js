@@ -75,7 +75,7 @@ export function staticDataPlugin(config, sierraContext) {
         // What is being protected is not the RESPONSE — that is unreadable
         // cross-origin already — but the SIDE EFFECT, because `load()` is by
         // design where an app reads its own database and may `fetch()` a URL it
-        // was handed (`FJS-821`). Dev only, and `FLI_HOST` binds this to
+        // was handed (`FJS-821`). Dev only, and `FRONTIER_HOST` binds this to
         // 0.0.0.0, so the page driving it need not be on this machine.
         //
         // GET only: a cross-origin `<form>` POST is a SIMPLE request, so no

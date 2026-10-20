@@ -38,6 +38,21 @@ function resourcePlugins() {
   return _resourcePlugins
 }
 
+// What a bundle may read from the environment is sierra's answer (`ENV_PREFIX`:
+// `VITE_` and `FRONTIER_PUBLIC_`), so `FRONTIER_PUBLIC_API_URL` reaches the
+// harbor exactly as it reaches a page. An extension without sierra keeps Vite's
+// own `VITE_`.
+let _envPrefix = null
+function envPrefix() {
+  _envPrefix ??= import('@frontierjs/sierra/build')
+    .then((m) => m.ENV_PREFIX)
+    .catch((err) => {
+      if (String(err?.message).includes(`'@frontierjs/sierra`)) return 'VITE_'
+      throw err
+    })
+  return _envPrefix
+}
+
 function harborPlugins({ dev, islandMatches, extRoot } = {}) {
   const list = [mesaPlugin({ extRoot, dev: !!dev?.port })]
   if (dev?.port) {
@@ -50,9 +65,10 @@ function harborPlugins({ dev, islandMatches, extRoot } = {}) {
   return list
 }
 
-export function harborViteConfig({ extRoot, harborEntry, outDir, dev = null, islandMatches = null }) {
+export async function harborViteConfig({ extRoot, harborEntry, outDir, dev = null, islandMatches = null }) {
   return {
     root: extRoot,
+    envPrefix: await envPrefix(),
     configFile: false,
     build: {
       outDir,
@@ -81,6 +97,7 @@ export function harborViteConfig({ extRoot, harborEntry, outDir, dev = null, isl
 export async function islandsViteConfig({ extRoot, islandId, islandEntry, outDir, dev = null }) {
   return {
     root: extRoot,
+    envPrefix: await envPrefix(),
     configFile: false,
     build: {
       outDir,
@@ -172,6 +189,7 @@ export async function pagesViteConfig({ cacheRoot, htmlEntries, outDir, dev = nu
 
   return {
     root: cacheRoot,
+    envPrefix: await envPrefix(),
     configFile: false,
     build: {
       outDir,

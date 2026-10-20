@@ -114,7 +114,7 @@ if (await new Promise(r => seed.on('exit', r)) !== 0) fail(`db/seed.js failed\n$
 
 children.push(spawn('bun', ['api/index.ts'], {
   cwd: PKG, stdio: 'ignore', detached: true,
-  env: { ...process.env, ...dbEnv, APP_URL: BASE, PORT: String(API_PORT), LOCAL_MACHINE: '1',
+  env: { ...process.env, ...dbEnv, FRONTIER_APP_URL: BASE, FRONTIER_PORT_BE: String(API_PORT), LOCAL_MACHINE: '1',
          WORKBENCH_DIR: WORKBENCH, CLAUDE_BIN: FAKE_CLAUDE },
 }))
 children.push(spawn('bun', ['run', 'web'], {

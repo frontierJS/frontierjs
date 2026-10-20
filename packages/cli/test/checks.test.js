@@ -1439,7 +1439,7 @@ describe('the silent config hazards', () => {
       'api/test/serve.test.ts':
         "const memory = 8192\n" +
         "const sink = Bun.serve({ port: 7123, fetch })\n" +
-        "const BASE = process.env.API_URL ?? 'http://localhost:8110'\n" +
+        "const BASE = process.env.FRONTIER_API_URL ?? 'http://localhost:8110'\n" +
         "// listen on 8110 -- a comment is prose\n" +
         "const API = `http://localhost:${await portFor(import.meta.url, 'be')}`\n" +
         "const tooling = 'http://localhost:5503'\n" +
@@ -1511,7 +1511,7 @@ describe('the silent config hazards', () => {
     const root = tree('drive-holds-repo', {
       'packages/store/package.json':      JSON.stringify({ name: 'store', scripts: { 'verify:studio': 'bun test/verify.mjs' } }),
       'packages/store/test/verify.mjs':   drive,
-      'packages/store/test/p.mjs':        "export const P = process.env.FLI_PORT_API\n",
+      'packages/store/test/p.mjs':        "export const P = process.env.FRONTIER_PORT_API\n",
       'packages/fleet/db/schema.lite':    'model Server { id Integer @id }\n',
       'packages/fleet/package.json':      JSON.stringify({ name: 'fleet', scripts: { 'verify': 'bun web/test/verify.mjs' } }),
       'packages/fleet/web/test/verify.mjs': drive,
@@ -1542,7 +1542,7 @@ describe('the silent config hazards', () => {
         "// openChrome() and findChrome() are the drive's\n" +
         "await expect(openChrome({ args })).rejects.toThrow(/own flag/)\n" +
         "expect(findChrome({ ...world })).toBe(null)\n" +
-        "process.env.FLI_PORT_BE = '8120'\n",
+        "process.env.FRONTIER_PORT_BE = '8120'\n",
       'api/test/fixtures/served.test.js': "Bun.serve({ port: 8000 })\n",
       'api/test/verify.spec.mjs':   "const b = await openChrome()\n",
     })

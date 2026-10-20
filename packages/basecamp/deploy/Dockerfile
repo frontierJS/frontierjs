@@ -85,7 +85,7 @@ RUN mkdir -p /db
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
-    PORT=8120 \
+    FRONTIER_PORT_BE=8120 \
     DATABASE_URL=/db/basecamp.db
 
 EXPOSE 8120

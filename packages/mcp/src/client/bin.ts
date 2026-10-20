@@ -6,7 +6,7 @@
  *   bun src/client/bin.ts servers find --status online
  *
  * Everything an app's `cli/config/` would state comes from the environment:
- * FJS_APP (whose config and cache directories), FJS_TENANT_HEADER, and the
+ * FRONTIER_MCP_APP (whose config and cache directories), FRONTIER_MCP_TENANT_HEADER, and the
  * per-run overrides `main.ts` lists.
  */
 

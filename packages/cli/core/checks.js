@@ -983,7 +983,7 @@ const CHECKS = {
     return { findings }
   },
 
-  // `FJS-D841`'s branch offset moves a port read from `FLI_PORT_*` or an env
+  // `FJS-D841`'s branch offset moves a port read from `FRONTIER_PORT_*` or an env
   // var and nothing else. A test that names 8110 reaches the PARENT checkout's
   // server from a branch, or fails to bind the port the parent's run holds —
   // and the first of those passes against the wrong app, so nothing goes red
@@ -1027,7 +1027,7 @@ const CHECKS = {
   // `env: port` and `env: shared db` rows. Read as text, one hop deep: the
   // drive and each module it imports by relative path, because the example
   // drives reach their ports through `lib/preflight.mjs`. `ports` is read off
-  // `portFor(` or `FLI_PORT_`, `db` off a path literal under `db/` naming a
+  // `portFor(` or `FRONTIER_PORT_`, `db` off a path literal under `db/` naming a
   // `.db` file. A drive reaching the dev database only through the API it
   // drives is held by `ports` already.
   //
@@ -1101,7 +1101,7 @@ const CHECKS = {
   //
   // Read as code with strings blanked, so a fixture naming `portFor(` is not a
   // call. `portFor(import.meta…)` is this checkout's block; a `portFor` given a
-  // scratch root is the port table under test. `FLI_PORT_` is not read: in a
+  // scratch root is the port table under test. `FRONTIER_PORT_` is not read: in a
   // collected test it is an env var set and restored around the code under
   // test, never a port reached.
   'test-not-hermetic': ({ root }) => {
@@ -5800,7 +5800,7 @@ const readsState = (code, index, length) => {
 // What `drive-holds` reads as binding a resource: the port block is asked for,
 // the database is a path literal with no space in it, so a sentence naming
 // `db/app.db` in an assertion message is not one.
-const DRIVE_BINDS_PORTS = /\bportFor\s*\(|\bFLI_PORT_/
+const DRIVE_BINDS_PORTS = /\bportFor\s*\(|\bFRONTIER_PORT_/
 const DRIVE_BINDS_DB    = /(['"`])[^'"`\s]*\bdb\/[^'"`\s]*\.db\b[^'"`\s]*\1/
 
 // What `test-not-hermetic` reads, over code with its strings blanked. A

@@ -196,7 +196,7 @@ table `api_key` · db `main` · gate `5`
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `usageDate` | `String` | yes | — | — |
 | `user` | `User` | — | — | relation |
-| `userId` | `String` | no | — | @system · **required on write** |
+| `userId` | `String` | no | — | **required on write** |
 | `usesOnDate` | `Int` | no | `0` | — |
 | `workspace` | `Workspace` | — | — | relation |
 | `workspaceId` | `String` | no | — | **required on write** |
@@ -2016,6 +2016,7 @@ table `user` · db `main` · gate `1.8.1.5` · @@softDelete
 @@index(accountId)
 @@index(email)
 @@allow(read, id == auth().id)
+@@allow(read, kind == 'bot' && auth().level >= 5 && memberships.some(workspaceId == auth().workspaceId))
 @@allow(update, id == auth().id)
 ```
 

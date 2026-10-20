@@ -668,7 +668,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
-| `userId` | `string` | — | — | `x-litestone-kind` | — |
+| `userId` | `string` | yes | — | — | — |
 | `credentialId` | `string`? | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `tokenHint` | `string` | — | — | `x-litestone-kind` | — |
@@ -681,7 +681,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `usesOnDate` | `integer` = `0` | — | — | — | — |
 | `createdBy` | `string`? | — | — | — | — |
 
-**On create**: required — `name` · not accepted — `id`
+**On create**: required — `userId`, `name` · not accepted — `id`
 
 ### `Server`
 

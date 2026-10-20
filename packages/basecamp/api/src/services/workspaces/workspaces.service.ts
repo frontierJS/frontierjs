@@ -92,6 +92,11 @@ function members(): any {
   return $.db.asSystem().workspaceMember
 }
 
+/** The person a roster write names, read as the app: `User` reads self-only. */
+function people(): any {
+  return $.db.asSystem().user
+}
+
 /** The three roster writes go through the caller's own client, re-claimed to
  *  the workspace being addressed by `stampSelfAsWorkspace`, so the schema's
  *  gate, `@@allow` and `@@deny(update, userId == auth().id)` hold them and not
@@ -249,7 +254,7 @@ export default createService({
     // app first, and names the key under `system:` as its own statement
     // (FJS-1953) — the write stays the caller's, so the gate, the
     // `Capability[]` guard and the audit actor are theirs.
-    if (!await ($.db.asSystem() as any).user.exists({ where: { id: target } }))
+    if (!await people().exists({ where: { id: target } }))
       throw new NotFound(`User '${target}' not found`)
 
     const next = role ?? 'developer'

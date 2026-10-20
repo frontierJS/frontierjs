@@ -38,10 +38,10 @@
     "@frontierjs/toolbelt": "workspace:*"
   },
   "peerDependencies": {
-    "@frontierjs/junction": "*",
-    "@frontierjs/litestone": "*",
-    "@frontierjs/conduit": "*",
-    "@frontierjs/sierra": "*",
-    "@frontierjs/ui": "*"
+    "@frontierjs/junction": "workspace:^",
+    "@frontierjs/litestone": "workspace:^",
+    "@frontierjs/conduit": "workspace:^",
+    "@frontierjs/sierra": "workspace:^",
+    "@frontierjs/ui": "workspace:^"
   }
 }

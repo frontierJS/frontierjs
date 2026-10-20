@@ -1572,6 +1572,12 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1336"></a>2026-10-20 · `FJS-D1336` — How does a basecamp write name a User the caller cannot read (User is self-only) — `workspaces.addMember`'s invitee and a bot's API key — `addMember` stays on the caller's client and names `userId` under `system:` after the service has found the user, with `WorkspaceMember.userId` made `@system`; a bot key stays on the caller's client and a `User` row policy lets a caller who may issue one (level 5, `ApiKey`'s own `@@gate`) read the bots that are members of their workspace — no human row widens, and a viewer still reads one row.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (both writes stay `asSystem()` after the service's checks), **C** (every workspace member reads the workspace's bots).
+
+The paper's recommendation, taken as written: the guard and the actor stay the caller's, and the one widening is declared in the schema (Invariant 6). Confidence 2.
+
 ### <a id="fjs-d1334"></a>2026-10-19 · `FJS-D1334` — How does the client schema tell a form that a string column is a secret — `format: 'password'`, OpenAPI's own hint ("a hint to UIs to obscure input"), on an `@encrypted`, `@secret` or `@hashed` string; `controlFor` answers a password input for it. `@hashed` keeps `writeOnly`.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a new `x-secret: true`, read the same way; leaves `format` free for `@email` and kin), **C** (reuse `writeOnly`; wrong for `@encrypted`, which an authorized caller reads back).
@@ -2017,7 +2023,7 @@ Decided while building `FJS-1450` and `FJS-1749` together, the two gaps most app
 
 The nine (§ V): one origin — key, purpose, model and column stated once and read by the resolver, the mint and the redeem; no new noun — *mint* and *redeem* are the verbs nine apps and `FJS-D340` already use, `signature` the kind `FJS-D522` asked for; the complexity is the problem's (a clicked link must die); predictable — `system:` admits a third column kind by the rule the first two follow; derived — the cookie name from `from: cookie()`, the link purpose from the purpose; the owners already exist (litestone's write refusals, junction's resolver); typed and tested at both boundaries; a dead link is one sentence (`FJS-D696`) and a misnamed column is refused by name; silence — a token in a broadcast is asserted absent, and a stale `exports.snapshot.md` fails CI. Adjudication: *paved road vs. the workaround* — the same workaround in nine places is a measurement of the road. Tier: Register.
 
-*Lives in:* `packages/litestone/src/core/client.js` (`refuseGuardedWrite`, `refuseSystemEntries`) · `packages/litestone/references/Grant.lite` · `packages/junction/src/core/litestone.ts` (`bearerClaim`, `bearerOf`, `checkPrincipalSetting`, `describedOf`) · `packages/junction/test/bearer-claim.test.ts` · `packages/junction/test/principal-list.test.ts` · `packages/litestone/test/references.test.ts`.
+*Lives in:* `packages/litestone/src/core/client.js` (`refuseGuardedWrite`, `refuseSystemEntries`) · `packages/litestone/references/Grant.lite` · `packages/junction/src/core/bearer.ts` (`bearerClaim`, `bearerOf`) · `packages/junction/src/core/litestone.ts` (`checkPrincipalSetting`, `describedOf`) · `packages/junction/test/bearer-claim.test.ts` · `packages/junction/test/principal-list.test.ts` · `packages/litestone/test/references.test.ts`.
 
 ### <a id="fjs-d801"></a>2026-10-09 · `FJS-D801` — Does the redirect URI get scaffolded — Derived as in A, and also printed: boot states each provider's exact redirect URI, so the string pasted into the provider console is the one the app sends.
 

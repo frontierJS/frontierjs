@@ -8,7 +8,7 @@
 // ── Strictly additive ───────────────────────────────────────────────────────
 //
 // Every number keeps working and nothing may come to depend on this being up.
-// `FLI_PORT_FE`/`FLI_PORT_BE`, `strictPort`, every drive and the ports table are
+// `FRONTIER_PORT_FE`/`FRONTIER_PORT_BE`, `strictPort`, every drive and the ports table are
 // the mechanism; a name is a second way to reach the same port. A DX nicety that
 // becomes load-bearing is a worse trade than the tax it removes, so a row's
 // `open` stays the number and a name is offered BESIDE it.

@@ -33,7 +33,7 @@
  *
  * **Two origins** — `deploy.api.domain` as well (`api.example.com` beside
  * `app.example.com`). The web route serves the SPA and proxies nothing; the API
- * route proxies every path. The web build is run with `VITE_API_URL` set to the
+ * route proxies every path. The web build is run with `FRONTIER_PUBLIC_API_URL` set to the
  * API's origin, which is the name every surface's sierra config reads.
  *
  * ── The path reaches the app unchanged ────────────────────────────────────
@@ -68,7 +68,7 @@ export const CADDY_ADMIN = 'http://127.0.0.1:2019'
 
 /**
  * How many proxies these routes put in front of the API: Caddy, and nothing
- * else. The deploy hands the count to the container as `FJS_TRUST_PROXY`
+ * else. The deploy hands the count to the container as `FRONTIER_TRUST_PROXY`
  * (`FJS-D617`), so a route that added a second hop without raising this would
  * key every caller on Caddy's address again.
  */

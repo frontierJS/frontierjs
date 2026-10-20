@@ -1179,7 +1179,7 @@ describe('the Run tab', () => {
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, scripts: {
       hello: 'echo hello from $npm_lifecycle_event',
       serve: 'echo serving && sleep 30',
-      env:   'echo "fe=${FLI_PORT_FE:-} port=${PORT:-}"',
+      env:   'echo "fe=${FRONTIER_PORT_FE:-} port=${PORT:-}"',
     } }))
     if (fli) {
       mkdirSync(join(dir, 'node_modules', '@frontierjs', 'cli', 'bin'), { recursive: true })
@@ -1240,7 +1240,7 @@ describe('the Run tab', () => {
   })
 
   test("a run gets neither this API's PORT nor the ports fli dev handed it", async () => {
-    process.env.FLI_PORT_FE = '8020'
+    process.env.FRONTIER_PORT_FE = '8020'
     process.env.PORT = '8120'
     try {
       const wb = createWorkbench({ dir: join(tmp, 'wb-run-env'), env: { PORT: '8120' } })
@@ -1248,7 +1248,7 @@ describe('the Run tab', () => {
       await wb.run(id, 'task:env')
       await until(async () => (await runOf(wb, id, 'task:env'))?.running === false)
       expect(wb.output(id, 'task:env')!.lines).toContain('fe= port=')
-    } finally { delete process.env.FLI_PORT_FE; delete process.env.PORT }
+    } finally { delete process.env.FRONTIER_PORT_FE; delete process.env.PORT }
   })
 
   test("fli dev is the checkout's own fli, and a checkout without one is told to install", async () => {

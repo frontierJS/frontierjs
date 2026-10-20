@@ -12,7 +12,7 @@ flags:
   url:
     char: u
     type: string
-    description: API base URL (default $API_URL, else localhost on the project's backend port)
+    description: API base URL (default $FRONTIER_API_URL, else localhost on the project's backend port)
     defaultValue: ''
   method:
     char: m
@@ -43,8 +43,8 @@ The manifest plugin must be declared — `plugins: { manifest: true }` in
 in production by default. Start the API first — `fli dev:api`.
 
 ```js
-const base = (flag.url || process.env.API_URL ||
-  `http://localhost:${process.env.FLI_PORT_BE ?? 8100}`).replace(/\/$/, '')
+const base = (flag.url || process.env.FRONTIER_API_URL ||
+  `http://localhost:${process.env.FRONTIER_PORT_BE ?? 8100}`).replace(/\/$/, '')
 
 // The prefix is unknown until the manifest answers, and the manifest itself
 // moves with it — so try the bare path, then ask the app where it lives via

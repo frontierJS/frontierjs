@@ -185,11 +185,11 @@ export async function buildBasecampApp(
     ...(corsOrigins?.length
       ? { http: { ...loadedConfig.http, cors: { ...loadedConfig.http?.cors, origins: corsOrigins } } }
       : {}),
-    // env wins over the config file for host/port. env.ts declared PORT and
-    // HOST and nothing read them, so the app silently took junction's default
-    // (3000) and collided with anything already there.
+    // env wins over the config file for the host. env.ts declared HOST and
+    // nothing read it, so the app silently took junction's default. The port is
+    // junction's own read (FRONTIER_PORT_BE, else PORT, else the file's 8120),
+    // already in `loadedConfig`.
     host:     env.HOST,
-    port:     env.PORT,
   }
 
   // ── Framework app ─────────────────────────────────────────────────────
@@ -669,7 +669,7 @@ export async function buildBasecampApp(
     cookieAuth: sso.length > 0,
     // The callback lands on the origin the browser sees, which is the web
     // origin: the proxy forwards /auth, and the state cookie is scoped to it.
-    ...(sso.length ? { oauth: { publicUrl: env.APP_URL, errorRedirect: '/login/' } } : {}),
+    ...(sso.length ? { oauth: { publicUrl: env.FRONTIER_APP_URL, errorRedirect: '/login/' } } : {}),
   }))
 
   app.configure(function setupRoutes(a) {

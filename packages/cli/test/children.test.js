@@ -86,8 +86,8 @@ describe('what may be spawned', () => {
     // A lane's port is the branch block; an API started without the variable
     // binds its own default and the drive polls a port nothing holds.
     const spawnFn = fakeSpawn()
-    startRow(row({ id: 'surface:example/api', portEnv: 'FLI_PORT_BE', port: 48110 }), { root: ROOT, fliRoot: FLI, spawnFn })
-    expect(spawnFn.calls[0].opts.env.FLI_PORT_BE).toBe('48110')
+    startRow(row({ id: 'surface:example/api', portEnv: 'FRONTIER_PORT_BE', port: 48110 }), { root: ROOT, fliRoot: FLI, spawnFn })
+    expect(spawnFn.calls[0].opts.env.FRONTIER_PORT_BE).toBe('48110')
   })
 
 })

@@ -143,7 +143,7 @@ describe('names, scripts and ports', () => {
 
 describe('deploy/build.mjs refuses before it builds', () => {
   const build = (root) => spawnSync('bun', [join(root, 'desktop', 'deploy', 'build.mjs')], {
-    cwd: root, encoding: 'utf8', env: { ...process.env, VITE_API_URL: '' },
+    cwd: root, encoding: 'utf8', env: { ...process.env, FRONTIER_PUBLIC_API_URL: '' },
   })
 
   test('wrapping a surface that has no vite config', () => {
@@ -215,11 +215,11 @@ describe('what desktop:run reads', () => {
 })
 
 describe('what dev:desktop reads', () => {
-  test('the shell reads FJS_DESKTOP_URL only behind the debug guard', () => {
+  test('the shell reads FRONTIER_DESKTOP_URL only behind the debug guard', () => {
     const fn = desktopMainRs().match(/fn dev_url\(\)[\s\S]*?\n}\n/)?.[0] ?? ''
     const guard = fn.indexOf('if !cfg!(debug_assertions)')
     expect(guard).toBeGreaterThan(-1)
-    expect(fn.indexOf('FJS_DESKTOP_URL')).toBeGreaterThan(guard)
+    expect(fn.indexOf('FRONTIER_DESKTOP_URL')).toBeGreaterThan(guard)
   })
 
   // A webview with no new-window handler drops a target=_blank click silently,
@@ -236,7 +236,7 @@ describe('what dev:desktop reads', () => {
       'web/config/vite.config.js': 'export default {}\n',
       'package.json': JSON.stringify({ name: 'dev-row', scripts: { web: 'vite' } }),
     })
-    expect(surfaceRow(root, 'web')).toMatchObject({ script: 'web', env: 'FLI_PORT_FE' })
+    expect(surfaceRow(root, 'web')).toMatchObject({ script: 'web', env: 'FRONTIER_PORT_FE' })
     expect(surfaceRow(root, 'site')).toBeNull()
   })
 

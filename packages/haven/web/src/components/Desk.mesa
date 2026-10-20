@@ -11,15 +11,20 @@
   // `/report` ends the thread. Tab and Shift+Tab step through the counts a
   // report keys (`filtersOf`), cutting its lists to the items each counts,
   // and past the last back to all; a follow-up `/ask` is handed the cut.
+  // Each linked item is numbered, and `/snooze <n> [when]` puts it away until
+  // a day (`lib/home/snooze.js`), on this machine and from every answer that
+  // links it; a bare `/snooze` lists what is away, where `/unsnooze <n>`
+  // brings one back.
   //
   // It answers only in the home this machine's board names (`HomeBoard.mesa`'s
   // rule), so a visitor's `/ask` runs nothing, and the answer is drawn on this
   // screen only and never sent. A route places it, never the scene file.
   import { at, linked, tint } from '#cell'
-  import { askDesk, deskReport, homeBoard } from '#errand'
+  import { askDesk, deskReport, homeBoard, readSnoozes, setSnooze } from '#errand'
   import { spotsOf } from '@/pieces/index.js'
   import { clip } from '@/lib/scene/cells.js'
-  import { TONES, answerRows, filterAnswer, filtersOf, wrap } from '@/lib/home/answer.js'
+  import { TONES, answerRows, filterAnswer, filtersOf, linksOf, readAnswer, wrap } from '@/lib/home/answer.js'
+  import { dayLabel, hideSnoozed, untilOf } from '@/lib/home/snooze.js'
 
   const scene = $context.scene
   var verbs = $context.commands
@@ -41,6 +46,7 @@
   let thread = null   // the session the next `/ask` resumes
   let filter = null   // the key of the count Tab picked, or null for every item
   let copied = ''     // what the foot says for a moment after a right click copied a link
+  let snoozes = readSnoozes()   // read again at each answer, so another terminal's and a day passing count
   var close  = null
   var stop   = null
   $.onDestroy(scene.subscribe(() => { view = scene.view }))
@@ -61,9 +67,12 @@
   $.onDestroy(scene.task('desk-clock', () => { if (reply?.asking) now = Date.now() }, { every: 1000 }))
 
   $: mine  = !!board && board.home === scene.slug
-  $: filters = reply?.answer ? filtersOf(reply.answer) : []
-  $: answer  = reply?.answer ? filterAnswer(reply.answer, filter) : null
-  $: body  = answer ? answerRows(answer, INNER, { urls: !hyper, picked: filter }) : []
+  // The snoozed list is drawn whole: every item on it is snoozed.
+  $: seen    = !reply?.answer ? null : reply.asleep ? { answer: reply.answer, hidden: 0 } : hideSnoozed(reply.answer, snoozes)
+  $: filters = seen ? filtersOf(seen.answer) : []
+  $: answer  = seen ? filterAnswer(seen.answer, filter) : null
+  $: links   = answer ? linksOf(answer) : []
+  $: body  = answer ? answerRows(answer, INNER, { urls: !hyper, picked: filter, numbered: links.length > 0 }) : []
   $: last  = Math.max(0, body.length - ROOM)
 
   const scroll = (by) => (e) => { e.preventDefault?.(); offset = Math.min(last, Math.max(0, offset + by)) }
@@ -101,6 +110,7 @@
     now = reply.at
     offset = 0
     filter = null
+    snoozes = readSnoozes()
     try {
       const said = await job(mineStop.signal)
       if (stop !== mineStop) return ''
@@ -129,15 +139,60 @@
     return show(name ? `report ${name}` : 'reports', (signal) => deskReport(name, { signal }))
   }
 
+  const WHEN = 'tomorrow, fri, 3d, 2w, 10/24 or 2026-10-24'
+
+  /** The snoozed list as an answer, soonest back first, in lists of the twelve `readAnswer` keeps. */
+  function asleep() {
+    const items = Object.entries(snoozes).sort(([, a], [, b]) => a.until.localeCompare(b.until))
+      .map(([url, s]) => ({ text: s.text || url, note: `back ${dayLabel(s.until)}`, tone: 'muted', url }))
+    const blocks = []
+    for (let i = 0; i < items.length; i += 12) blocks.push({ kind: 'list', items: items.slice(i, i + 12) })
+    return readAnswer({ title: `${items.length} snoozed`, blocks: blocks.length ? blocks : [{ kind: 'callout', tone: 'muted', text: 'Nothing is snoozed. On a report, /snooze <n> [when] puts item n away until then.' }] })
+  }
+
+  /** What the pane shows changed under the reader: keep the scroll inside it and the filter one it still has. */
+  function settle() {
+    offset = Math.min(offset, last)
+    if (filter && !filters.some((f) => f.key === filter)) filter = null
+  }
+
+  function snooze({ args }) {
+    if (!mine) return refused()
+    const [n, ...when] = (args ?? '').trim().split(/\s+/).filter(Boolean)
+    if (!n) return show('snoozed', async () => ({ answer: asleep(), ms: 0, asleep: true }))
+    if (reply?.asleep) return 'these are snoozed already -- /unsnooze <n> brings one back'
+    const item = /^\d+$/.test(n) ? links[Number(n) - 1] : null
+    if (!item) return links.length ? `/snooze 1-${links.length} [when] -- ${WHEN}` : 'nothing linked on the desk to snooze -- /report daily first'
+    const until = untilOf(when.join(' '))
+    if (!until) return `snooze until when? not "${when.join(' ')}" -- ${WHEN}, after today`
+    snoozes = setSnooze(item.url, until, item.text)
+    settle()
+    return `snoozed until ${dayLabel(until)}: ${clip(item.text, 48)}`
+  }
+
+  function unsnooze({ args }) {
+    if (!mine) return refused()
+    if (!reply?.asleep) return 'a bare /snooze lists what is snoozed, and /unsnooze <n> works there'
+    const n = (args ?? '').trim()
+    const item = /^\d+$/.test(n) ? links[Number(n) - 1] : null
+    if (!item) return links.length ? `/unsnooze 1-${links.length}` : 'nothing is snoozed'
+    snoozes = setSnooze(item.url, null)
+    reply = { ...reply, answer: asleep() }
+    settle()
+    return `back on the desk: ${clip(item.text, 48)}`
+  }
+
   if (chair) {
     const reach = { x: chair.x, y: chair.y, within: REACH }
     $.onDestroy(verbs.add({ word: 'ask', help: '/ask <question>', reach, run: ask }))
     $.onDestroy(verbs.add({ word: 'report', help: '/report [name]', reach, run: report }))
+    $.onDestroy(verbs.add({ word: 'snooze', help: '/snooze [n] [when]', reach, run: snooze }))
+    $.onDestroy(verbs.add({ word: 'unsnooze', help: '/unsnooze <n>', reach, run: unsnooze }))
   }
 
   const muted = (text) => [{ x: 0, text, color: TONES.muted }]
 
-  $: title = reply ? clip(`— the desk — ${reply.answer?.title || reply.question || reply.asking} `, PANE.w - 2) : ''
+  $: title = reply ? clip(`— the desk — ${reply.answer?.title || reply.question || reply.asking}${seen?.hidden ? ` · ${seen.hidden} snoozed` : ''} `, PANE.w - 2) : ''
   $: rows  = !reply ? []
     : reply.asking ? [muted(`"${clip(reply.asking, INNER - 40)}" -- reading Basecamp… ${Math.round((now - reply.at) / 1000)}s`)]
     : reply.failed ? wrap(`the desk could not answer: ${reply.failed}`, INNER).map((t) => [{ x: 0, text: t, color: TONES.danger }])
@@ -148,7 +203,7 @@
   $: foot  = copied ? copied
     : !reply || reply.asking || reply.failed ? 'Esc puts it away'
     : [`${Math.round(reply.ms / 1000)}s`, reply.cost == null ? 'no model' : `$${reply.cost.toFixed(2)}`,...(sieve ? [sieve] : []), ...(last ? [`rows ${offset + 1}–${Math.min(body.length, offset + ROOM)} of ${body.length}, ↑↓ PgUp PgDn`] : []), '/ask about this', 'Esc'].join(' · ')
-  $: frame = `${filter}:${offset}:${reply?.at ?? reply?.ms ?? 0}:${rows.length}:${view.x}:${view.y}`
+  $: frame = `${filter}:${offset}:${reply?.at ?? reply?.ms ?? 0}:${rows.length}:${links.length}:${seen?.hidden ?? 0}:${view.x}:${view.y}`
 </script>
 
 {#if reply}

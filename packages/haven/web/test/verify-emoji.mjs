@@ -81,9 +81,9 @@ for (const room of ROOMS) await env.system.room.create({ data: { ...room } })
 const API = `http://localhost:${env.port}`
 
 const webPort = await freePort()
-const WEB_URL = `http://localhost:${webPort}`
-if (await answers(WEB_URL)) {
-  console.log(`✗ ${WEB_URL} already answers — refusing to drive a server this run did not start`)
+const WEB_ORIGIN = `http://localhost:${webPort}`
+if (await answers(WEB_ORIGIN)) {
+  console.log(`✗ ${WEB_ORIGIN} already answers — refusing to drive a server this run did not start`)
   process.exit(1)
 }
 const vite = spawn(VITE, ['-c', 'config/vite.config.js'], {
@@ -95,7 +95,7 @@ vite.stdout.on('data', (d) => { viteLog += d })
 vite.stderr.on('data', (d) => { viteLog += d })
 const stopVite = () => { try { process.kill(-vite.pid, 'SIGTERM') } catch {} }
 process.on('exit', stopVite)
-const served = await until(async () => (await fetch(WEB_URL).then((r) => r.text(), () => '')).includes('id="app"'), 30000)
+const served = await until(async () => (await fetch(WEB_ORIGIN).then((r) => r.text(), () => '')).includes('id="app"'), 30000)
 check(served, `the browser haven's dev server answers on ${webPort}`, viteLog)
 if (!served) { stopVite(); await env.close(); process.exit(1) }
 
@@ -201,7 +201,7 @@ check(await until(() => term.screen().includes('j/k moves, Enter opens')), 'the 
 term.write('\r')
 check(await until(() => at(sx, sy) === '@' && term.screen().includes('1 here')), 'Sam walks into the square', term.screen())
 
-await browser.navigate(`${WEB_URL}/?nick=bea`)
+await browser.navigate(`${WEB_ORIGIN}/?nick=bea`)
 check(await until(async () => (await tabText()).includes('2 here')), "Bea's tab walks in", await tabText())
 
 // Bea six cells left of the spawn and Sam three rows up from it, so the two

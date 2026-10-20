@@ -3,7 +3,7 @@
  * served from it (`FJS-D912`).
  *
  * `fli deploy` derives the list and hands it to the container as
- * `FJS_CORS_ORIGINS`; junction merges it into cors and csrf. The web domain is
+ * `FRONTIER_CORS_ORIGINS`; junction merges it into cors and csrf. The web domain is
  * declared once, in the deploy config, so no second hand-written copy in
  * `junction.config.js` can drift from it.
  */

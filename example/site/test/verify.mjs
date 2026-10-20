@@ -73,7 +73,7 @@ import { PORTS } from '../../web/test/lib/preflight.mjs'
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const SITE   = join(HERE, '..')
 const DIST   = join(SITE, 'dist')
-const API    = process.env.API_URL ?? `http://localhost:${PORTS.api}`
+const API    = process.env.FRONTIER_API_URL ?? `http://localhost:${PORTS.api}`
 // test / siteServe / project 1 — the drive's own slot, so it cannot collide
 // with a dev server somebody has open on 8710.
 const PORT   = Number(process.env.SITE_SERVE_PORT ?? await portFor(import.meta.url, 'siteServe', { env: 'test' }))

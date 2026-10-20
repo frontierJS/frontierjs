@@ -12,7 +12,7 @@
 // the way a browser drive does; the probe runs inside it and reports through
 // the two commands below.
 //
-// A debug build loads FJS_DESKTOP_URL instead of the bundle when it is set —
+// A debug build loads FRONTIER_DESKTOP_URL instead of the bundle when it is set —
 // fli dev:desktop points it at the screens' dev server. That page's origin is
 // the server's, not tauri://localhost, so an origin or CORS fault shows only
 // in the bundled build.
@@ -53,10 +53,10 @@ fn dev_url() -> Option<tauri::Url> {
     if !cfg!(debug_assertions) {
         return None;
     }
-    let raw = std::env::var("FJS_DESKTOP_URL").ok()?;
+    let raw = std::env::var("FRONTIER_DESKTOP_URL").ok()?;
     match raw.parse() {
         Ok(url) => Some(url),
-        Err(e) => panic!("FJS_DESKTOP_URL={raw} is not a URL: {e}"),
+        Err(e) => panic!("FRONTIER_DESKTOP_URL={raw} is not a URL: {e}"),
     }
 }
 

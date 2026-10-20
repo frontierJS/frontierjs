@@ -42,7 +42,7 @@ import { signRequest } from '@frontierjs/toolbelt/signature'
 import { requireServers, PORTS } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
 
-const API  = process.env.API_URL ?? `http://localhost:${PORTS.api}`
+const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${PORTS.api}`
 const PSP  = process.env.PSP_URL ?? `http://localhost:${PORTS.psp}`
 const HOOK = '/api/webhooks/payments'
 

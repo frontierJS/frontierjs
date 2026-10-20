@@ -665,7 +665,7 @@ export default createService({
         mark:     markFor(server.id as string),
         userData: cloudInit({
           serverId:    server.id as string,
-          basecampUrl: env.API_URL,
+          basecampUrl: env.FRONTIER_API_URL,
           token,
           outpostPort: OUTPOST_PORT,
         }),

@@ -32,7 +32,7 @@
  * so that probe is the only way a drive reaches into the page, and every
  * generated app has it for the day it writes one.
  *
- * `FJS_DESKTOP_URL` is the other debug-only input: the window loads that URL
+ * `FRONTIER_DESKTOP_URL` is the other debug-only input: the window loads that URL
  * instead of the bundle, which is how `dev:desktop` puts the screens' dev
  * server, HMR included, in the native window. It is an environment variable and
  * not tauri.conf.json's `devUrl`, because a `devUrl` makes every debug build —
@@ -87,7 +87,7 @@ export function desktopSurfaceDirs({ wraps = null } = {}) {
 
 export function desktopConfig({ wraps = null, hasApi = true, apiPort = 8100 } = {}) {
   const api = hasApi
-    ? `process.env.VITE_API_URL ?? 'http://localhost:${apiPort}'`
+    ? `process.env.FRONTIER_PUBLIC_API_URL ?? 'http://localhost:${apiPort}'`
     : 'null'
   return `// desktop/config/desktop.config.js
 //
@@ -102,7 +102,7 @@ export function desktopConfig({ wraps = null, hasApi = true, apiPort = 8100 } = 
 // \`api\` is where the bundled page finds the API, and deploy/build.mjs refuses
 // a build that does not say. The page is served from tauri://localhost, so a
 // same-origin default would send every call to the shell. \`null\` is the answer
-// for an app with no API. VITE_API_URL is the name every surface's build reads.
+// for an app with no API. FRONTIER_PUBLIC_API_URL is the name every surface's build reads.
 export default {
 ${wraps ? `  wraps: '${wraps}',\n` : ''}  api:${wraps ? '  ' : ''} ${api},
 }
@@ -115,7 +115,7 @@ export function desktopSierraConfig({ slug = 'app', hasApi = true, devPort = 880
   const junction = hasApi
     ? `
   junction: {
-    // deploy/build.mjs sets VITE_API_URL from desktop.config.js, which Sierra
+    // deploy/build.mjs sets FRONTIER_PUBLIC_API_URL from desktop.config.js, which Sierra
     // inlines into the page, so a built shell always names the API: its own
     // origin is tauri://localhost. Unset is \`bun run dev:desktop\` in a
     // browser, where the page calls its own origin and Vite proxies /api.
@@ -140,7 +140,7 @@ ${junction}}
 export function desktopViteConfig({ hasApi = true, devPort = 8800, apiPort = 8100 } = {}) {
   const proxy = hasApi
     ? `
-    // The browser half of the writing loop has no VITE_API_URL, so the page
+    // The browser half of the writing loop has no FRONTIER_PUBLIC_API_URL, so the page
     // calls its own origin and this sends it on. A built shell never uses it.
     proxy: {
       '/api': { target: API, changeOrigin: true },
@@ -148,7 +148,7 @@ export function desktopViteConfig({ hasApi = true, devPort = 8800, apiPort = 810
     },`
     : ''
   const apiConst = hasApi
-    ? `const API  = process.env.API_URL || 'http://localhost:' + (process.env.FLI_PORT_BE ?? ${apiPort})\n`
+    ? `const API  = process.env.FRONTIER_API_URL || 'http://localhost:' + (process.env.FRONTIER_PORT_BE ?? ${apiPort})\n`
     : ''
   return `// desktop/config/vite.config.js
 //
@@ -172,7 +172,7 @@ export default defineConfig({
   server: {
     ...base.server,
     // dev / desktopDev / this app's project id. See packages/cli/core/ports.js.
-    port:       parseInt(process.env.DESKTOP_PORT ?? process.env.FLI_PORT_DESKTOP ?? '${devPort}', 10),
+    port:       parseInt(process.env.DESKTOP_PORT ?? process.env.FRONTIER_PORT_DESKTOP ?? '${devPort}', 10),
     // Vite hops to the next free port without a word.
     strictPort: true,${proxy}
   },
@@ -238,7 +238,7 @@ export function desktopBuildScript() {
 //
 //   bun run build:desktop              debug shell
 //   bun run build:desktop -- --release
-//   VITE_API_URL=https://api.example.com bun run build:desktop -- --release
+//   FRONTIER_PUBLIC_API_URL=https://api.example.com bun run build:desktop -- --release
 //
 // The one reader of desktop/config/desktop.config.js (FJS-D263). Two refusals,
 // both for failures that otherwise build clean and ship broken:
@@ -247,7 +247,7 @@ export function desktopBuildScript() {
 //     default sends every API call to the shell. \`null\` says there is no API.
 //   • a bundle that does not carry \`api\` after the build: the screens'
 //     sierra.config.js is what inlines it, and one that stopped reading
-//     VITE_API_URL builds a desktop app pointed at nothing.
+//     FRONTIER_PUBLIC_API_URL builds a desktop app pointed at nothing.
 //
 // The screens are built into desktop/dist and never into a wrapped surface's
 // own dist/, because \`vite build\` empties its outDir. The shell compiles dist
@@ -278,12 +278,12 @@ if (config.api === undefined) refuse(
 const dist = join(DESKTOP, 'dist')
 run('bun', ['--bun', 'vite', 'build', '-c', viteConfig, '--outDir', dist, '--emptyOutDir'], {
   cwd: screens,
-  env: { ...process.env, ...(config.api ? { VITE_API_URL: config.api } : {}) },
+  env: { ...process.env, ...(config.api ? { FRONTIER_PUBLIC_API_URL: config.api } : {}) },
 })
 
 if (config.api && !bundleNames(dist, config.api)) refuse(
   \`the build finished and no file under \${dist} contains \${config.api}. The screens' \` +
-  'sierra.config.js sets no junction.url, so Sierra inlined no VITE_API_URL.')
+  'sierra.config.js sets no junction.url, so Sierra inlined no FRONTIER_PUBLIC_API_URL.')
 
 run('cargo', ['build', ...(release ? ['--release'] : []), '--manifest-path', join(SHELL, 'Cargo.toml')], {
   cwd: DESKTOP,
@@ -351,7 +351,7 @@ export function desktopBuildRs() {
 
 export function desktopTauriConf({ productName = 'app', identifier = 'dev.app.desktop' } = {}) {
   // No devUrl: with one set, every debug build loads the dev server instead of
-  // the bundle. dev:desktop names the server through FJS_DESKTOP_URL instead.
+  // the bundle. dev:desktop names the server through FRONTIER_DESKTOP_URL instead.
   return `${JSON.stringify({
     productName,
     version:    '0.0.0',
@@ -378,7 +378,7 @@ export function desktopMainRs({ productName = 'app' } = {}) {
 // the way a browser drive does; the probe runs inside it and reports through
 // the two commands below.
 //
-// A debug build loads FJS_DESKTOP_URL instead of the bundle when it is set —
+// A debug build loads FRONTIER_DESKTOP_URL instead of the bundle when it is set —
 // fli dev:desktop points it at the screens' dev server. That page's origin is
 // the server's, not tauri://localhost, so an origin or CORS fault shows only
 // in the bundled build.
@@ -419,10 +419,10 @@ fn dev_url() -> Option<tauri::Url> {
     if !cfg!(debug_assertions) {
         return None;
     }
-    let raw = std::env::var("FJS_DESKTOP_URL").ok()?;
+    let raw = std::env::var("FRONTIER_DESKTOP_URL").ok()?;
     match raw.parse() {
         Ok(url) => Some(url),
-        Err(e) => panic!("FJS_DESKTOP_URL={raw} is not a URL: {e}"),
+        Err(e) => panic!("FRONTIER_DESKTOP_URL={raw} is not a URL: {e}"),
     }
 }
 

@@ -34,7 +34,7 @@ import { PORTS } from './lib/preflight.mjs'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
 const API_PORT = process.env.API_PORT ?? String(PORTS.api)
-const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
+const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 const BASE = `${API}/api`
 
 const PASSWORD = 'correct-horse-battery'

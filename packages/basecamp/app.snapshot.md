@@ -32,7 +32,6 @@ text, so a body that elevates through a helper is not listed.
 | `servers.metrics` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `servers.provision` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `servers.heartbeat` | anyone, a stranger included — declared `gate: 0` |
-| `workspaces.addMember` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `workspaces.leave` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `workspaces.transferOwnership` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
@@ -1385,7 +1384,7 @@ name when it declares none.
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`
   - `members` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`
-  - `addMember` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn`; body writes as the app
+  - `addMember` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn`
   - `setMemberRole` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn`
   - `removeMember` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole`
   - `leave` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`; body writes as the app

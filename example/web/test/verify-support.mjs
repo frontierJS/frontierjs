@@ -57,7 +57,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
 const API_PORT       = process.env.API_PORT       ?? String(PORTS.api)
 const MAIL_SINK_PORT = process.env.MAIL_SINK_PORT ?? String(PORTS.mail)
-const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
+const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 const MAIL = process.env.MAIL_SINK_URL ?? `http://localhost:${MAIL_SINK_PORT}`
 const BASE = `${API}/api`
 const TRAIL = join(ROOT, 'db/audit/AuditTrail.jsonl')
@@ -238,7 +238,8 @@ check('an admin reads the whole roster', asAdmin, n => n > 1)
   })
   check('the operator may make the write the subject may make', res.status, 200)
 
-  const rows = await trailUntil(r => r.model === 'user' && r.actorType === 'support')
+  // A trail row names the MODEL, not the table (FJS-2380).
+  const rows = await trailUntil(r => r.model === 'User' && r.actorType === 'support')
   const entry = rows[rows.length - 1]
 
   check('the entry names the OPERATOR as the actor', entry?.actorId, admin.userId)

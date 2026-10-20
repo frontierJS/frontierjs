@@ -9,7 +9,7 @@
 // browser profile rather than served, its permissions live in a manifest, and
 // it ships to two web stores on a review cadence that is nobody else's.
 
-// Where the API is: VITE_API_URL, the name every surface's build reads, or this
+// Where the API is: FRONTIER_PUBLIC_API_URL, the name every surface's build reads, or this
 // app's dev API. Read once, because it lands in TWO places — the connection and
 // the host permission the manifest declares for it — and a permission naming a
 // different host from the connection is a refusal the browser words as CORS.
@@ -19,8 +19,8 @@
 // no `process` — so Vite's inlined value is asked first and `process` only
 // where it exists.
 const API = new URL(
-  import.meta.env?.VITE_API_URL ??
-  (typeof process !== 'undefined' ? process.env.VITE_API_URL : undefined) ??
+  import.meta.env?.FRONTIER_PUBLIC_API_URL ??
+  (typeof process !== 'undefined' ? process.env.FRONTIER_PUBLIC_API_URL : undefined) ??
   'http://localhost:8110'
 ).origin
 

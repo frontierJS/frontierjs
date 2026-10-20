@@ -60,7 +60,7 @@ Don't violate without an explicit decision; record it in `DECISIONS.md` if you d
 
 **Search a tree with `rg`** — it skips `node_modules` and gitignored build output. A `PreToolUse` hook in `.claude/settings.json` refuses a recursive `grep`; `grep` on a named file or a pipe is fine.
 
-**Ports: `port = env*1000 + category*100 + project*10 + service`** (env 7 test · 8 dev · 9 prod). `packages/cli/core/ports.js` is the schema; `fli dev` hands each app root a slot as `FLI_PORT_*`; global fli tooling has no project and so no env: 5500–5509, a 5 where the env digit goes. **Every vite config sets `strictPort`** — vite otherwise hops ports in silence and one app's drive tests another app. The table and its exceptions: `docs/PORTS.md`.
+**Ports: `port = env*1000 + category*100 + project*10 + service`** (env 7 test · 8 dev · 9 prod). `packages/cli/core/ports.js` is the schema; `fli dev` hands each app root a slot as `FRONTIER_PORT_*`; global fli tooling has no project and so no env: 5500–5509, a 5 where the env digit goes. **Every vite config sets `strictPort`** — vite otherwise hops ports in silence and one app's drive tests another app. The table and its exceptions: `docs/PORTS.md`.
 
 ---
 

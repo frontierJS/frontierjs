@@ -39,7 +39,7 @@ export async function issueEnrollmentFor(client: any, serverId: string, actor: s
   // The token rides BESIDE the command: an installer that scraped it back out
   // of a shell string would be re-deriving the input from the output.
   return {
-    command:   installCommand({ serverId, basecampUrl: env.API_URL, token: enroll.token, outpostPort: OUTPOST_PORT }),
+    command:   installCommand({ serverId, basecampUrl: env.FRONTIER_API_URL, token: enroll.token, outpostPort: OUTPOST_PORT }),
     token:     enroll.token,
     expiresAt: enroll.expiresAt.toISOString(),
     windowMs:  ENROLL_WINDOW_MS,

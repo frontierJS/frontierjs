@@ -268,7 +268,7 @@ describe('the steps read the domains here, and nowhere else', () => {
   test('the web build inlines the origin this module names, and checks the bundle carries it', () => {
     const build = src('_steps-docker/03-build-web.md')
     expect(build).toContain('apiOrigin(edgeNames(deployConf))')
-    expect(build).toContain('VITE_API_URL=${origin}')
+    expect(build).toContain('FRONTIER_PUBLIC_API_URL=${origin}')
     expect(build).toMatch(/grep -rl .* '\$\{origin\}'/)
   })
 })

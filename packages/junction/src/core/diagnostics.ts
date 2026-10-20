@@ -25,7 +25,7 @@
 
 /** Is the caller asking to see Junction's own boot-time diagnostics? */
 export function isDiagnosticMode(): boolean {
-  return process.env.DEBUG === '1' || process.env.JUNCTION_DEBUG === '1'
+  return process.env.DEBUG === '1' || process.env.FRONTIER_DEBUG === '1'
 }
 
 /**

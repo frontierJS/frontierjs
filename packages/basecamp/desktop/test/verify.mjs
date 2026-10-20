@@ -104,7 +104,7 @@ if (seeded.status !== 0) {
 // server holding the port for the next run to be answered by.
 const api = spawn('bun', ['api/index.ts'], {
   cwd: PKG, stdio: 'ignore', detached: true,
-  env: { ...process.env, ...dbEnv, PORT: String(API_PORT), LOCAL_MACHINE: '1', HOME },
+  env: { ...process.env, ...dbEnv, FRONTIER_PORT_BE: String(API_PORT), LOCAL_MACHINE: '1', HOME },
 })
 
 let stoppedEarly = null
@@ -121,7 +121,7 @@ try {
 
   // ── build ───────────────────────────────────────────────────────────────
   const built = spawnSync('bun', [join(DESKTOP, 'deploy', 'build.mjs')], {
-    cwd: PKG, stdio: 'inherit', env: { ...process.env, VITE_API_URL: API },
+    cwd: PKG, stdio: 'inherit', env: { ...process.env, FRONTIER_PUBLIC_API_URL: API },
   })
   if (built.status !== 0) throw new Error(`build:desktop exited ${built.status}`)
 

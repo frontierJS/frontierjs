@@ -50,6 +50,7 @@ import { readdirSync, statSync } from 'node:fs'
 import { mkdir, writeFile, rm, readdir, readFile, stat } from 'node:fs/promises'
 import { resolve, join, basename, extname } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { ENV_PREFIX } from './env-prefix.js'
 
 // The parser that decides whether a resource file has a markup half. Mesa's
 // own, found the way the build plugin finds the compiler: a regex over the
@@ -408,6 +409,7 @@ export async function buildViews(opts) {
       try {
         await viteBuild({
           root,
+          envPrefix:  ENV_PREFIX,
           configFile: false,          // do not re-read the app's config and recurse
           // Vite copies `public/` into every outDir, library build or not, and
           // a favicon beside the views is a file `mcp()` would read as one.

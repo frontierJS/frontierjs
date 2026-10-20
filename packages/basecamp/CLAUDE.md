@@ -166,7 +166,7 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           started by ROW ID, detached, its pid on the pin and its output in its
           own log — never `children.js`, whose in-memory table a `bun --watch`
           restart would lose with the server still up. The checkout's OWN fli,
-          and no FLI_PORT_* or PORT of this API's; Unpin and Archive stop it.
+          and no FRONTIER_PORT_* or PORT of this API's; Unpin and Archive stop it.
           plugins/workbench-terminal.ts is the Terminal tab: `/ws/terminal/{pin}`
           (under /ws/ because both proxies forward that prefix as a socket),
           Bun's own PTY in the pin's folder, xterm.js in web/src/components/
@@ -216,15 +216,15 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           list (gitignored globs, default **/.env) copied across and
           `bun install --no-save`; Land is `git apply --check` then apply, into the
           parent's working tree only. A branch's ports are `fli dev`'s
-          (FJS-D841, +N×10000), which is why the API and SPA read FLI_PORT_BE/FE;
+          (FJS-D841, +N×10000), which is why the API and SPA read FRONTIER_PORT_BE/FE;
           Archive releases them. A checkout pinned with `preview` settings forks
           a PREVIEW: the worktree marked (fli's `markPreview`), its web port
           claimed at the cut, and core/preview.ts's Open — an Environment
           (tier preview, slug wb-<slug>), a static inline App on that port, its
-          VITE_API_URL, the Domain <slug>.<domain>, the placement, and `/route`
+          FRONTIER_PUBLIC_API_URL, the Domain <slug>.<domain>, the placement, and `/route`
           with the port — written through each row's own service as the
           caller; a failed Open removes the rows and archives the branch.
-          `freeze` builds web/ with the App's VITE_ variables, publishes the
+          `freeze` builds web/ with the App's VITE_ and FRONTIER_PUBLIC_ variables, publishes the
           build to the machine ITSELF and releases that digest (the files never
           enter a row — a built SPA is up to 180 files and every row is
           trailed); `thaw` routes back to the port; `archive` on a preview

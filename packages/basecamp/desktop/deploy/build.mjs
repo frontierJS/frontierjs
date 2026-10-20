@@ -2,7 +2,7 @@
 //
 //   bun run build:desktop              debug shell
 //   bun run build:desktop -- --release
-//   VITE_API_URL=https://api.example.com bun run build:desktop -- --release
+//   FRONTIER_PUBLIC_API_URL=https://api.example.com bun run build:desktop -- --release
 //
 // The one reader of desktop/config/desktop.config.js (FJS-D263). Two refusals,
 // both for failures that otherwise build clean and ship broken:
@@ -11,7 +11,7 @@
 //     default sends every API call to the shell. `null` says there is no API.
 //   • a bundle that does not carry `api` after the build: the screens'
 //     sierra.config.js is what inlines it, and one that stopped reading
-//     VITE_API_URL builds a desktop app pointed at nothing.
+//     FRONTIER_PUBLIC_API_URL builds a desktop app pointed at nothing.
 //
 // The screens are built into desktop/dist and never into a wrapped surface's
 // own dist/, because `vite build` empties its outDir. The shell compiles dist
@@ -42,12 +42,12 @@ if (config.api === undefined) refuse(
 const dist = join(DESKTOP, 'dist')
 run('bun', ['--bun', 'vite', 'build', '-c', viteConfig, '--outDir', dist, '--emptyOutDir'], {
   cwd: screens,
-  env: { ...process.env, ...(config.api ? { VITE_API_URL: config.api } : {}) },
+  env: { ...process.env, ...(config.api ? { FRONTIER_PUBLIC_API_URL: config.api } : {}) },
 })
 
 if (config.api && !bundleNames(dist, config.api)) refuse(
   `the build finished and no file under ${dist} contains ${config.api}. The screens' ` +
-  'sierra.config.js sets no junction.url, so Sierra inlined no VITE_API_URL.')
+  'sierra.config.js sets no junction.url, so Sierra inlined no FRONTIER_PUBLIC_API_URL.')
 
 run('cargo', ['build', ...(release ? ['--release'] : []), '--manifest-path', join(SHELL, 'Cargo.toml')], {
   cwd: DESKTOP,

@@ -19,8 +19,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 // The API's own slot unless a drive or `fli dev` says otherwise. The web
 // literal is the global block's `havenWeb` (cli core/ports.js), beside the API.
-const API  = process.env.API_URL ?? `http://localhost:${process.env.API_PORT ?? 5505}`
-const PORT = Number(process.env.WEB_PORT ?? process.env.FLI_PORT_FE ?? 5506)
+const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${process.env.API_PORT ?? 5505}`
+const PORT = Number(process.env.WEB_PORT ?? process.env.FRONTIER_PORT_FE ?? 5506)
 
 // Every service autoloaded from api/src/services/, read from that directory so a
 // new one is proxied without a line here, and the two raw routes under /haven/.

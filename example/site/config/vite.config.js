@@ -26,7 +26,7 @@ export default defineConfig({
   root: ROOT,
 
   // The app has one .env, at its root; vite reads the Vite root by default, so
-  // a VITE_ variable written there would reach nothing.
+  // a FRONTIER_PUBLIC_ variable written there would reach nothing.
   envDir: resolve(ROOT, '..'),
 
   // Same reason as the SPA config: @frontierjs/ui is aliased to the workspace
@@ -48,7 +48,7 @@ export default defineConfig({
     // this surface deploys to its own origin, so its islands must talk to the
     // API cross-origin. A dev proxy would make every CORS answer untested until
     // the day it shipped, which is exactly how the SPA's drives never preflight.
-    port:       parseInt(process.env.SITE_PORT ?? process.env.FLI_PORT_SITE ?? '8610', 10),
+    port:       parseInt(process.env.SITE_PORT ?? process.env.FRONTIER_PORT_SITE ?? '8610', 10),
     strictPort: true,
   },
 })

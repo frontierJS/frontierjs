@@ -50,10 +50,10 @@ const OWNER = 'sam@example.com', ADMIN = 'kim@example.com', DEVELOPER = 'remy@ex
 
 const ENV = {
   ...process.env,
-  DATABASE_URL: DB_PATH,
-  AUDIT_PATH:   join(SCRATCH, 'audit.db'),
-  PORT:         String(API_PORT),
-  FJS_BUILD:    'verify-cli-build-1',
+  DATABASE_URL:     DB_PATH,
+  AUDIT_PATH:       join(SCRATCH, 'audit.db'),
+  FRONTIER_PORT_BE: String(API_PORT),
+  FJS_BUILD:        'verify-cli-build-1',
 }
 
 // ─── Harness ─────────────────────────────────────────────────────────────
@@ -118,9 +118,9 @@ function cli(args, { token, tenant, stdin, signedIn = false, bin } = {}) {
       cwd: ROOT, stdio: ['pipe', 'pipe', 'pipe'],
       env: {
         ...process.env,
-        XDG_CONFIG_HOME: CONFIG_HOME, XDG_CACHE_HOME: join(SCRATCH, 'cache'), FJS_CLI_TRACE: '1',
-        FJS_MCP_URL: signedIn ? '' : `${API}/mcp`, FJS_TOKEN: signedIn ? '' : token ?? '',
-        FJS_TENANT: tenant ?? '',
+        XDG_CONFIG_HOME: CONFIG_HOME, XDG_CACHE_HOME: join(SCRATCH, 'cache'), FRONTIER_MCP_TRACE: '1',
+        FRONTIER_MCP_URL: signedIn ? '' : `${API}/mcp`, FRONTIER_MCP_TOKEN: signedIn ? '' : token ?? '',
+        FRONTIER_MCP_TENANT: tenant ?? '',
       },
     })
     child.stdin.end(stdin ?? '')
@@ -355,7 +355,7 @@ try {
 
   // Human output: the row on stdout, each breadcrumb on stderr as a command.
   const human = await cli(['servers', 'get', SERVER], asOwner)
-  // `FJS_CLI_TRACE` writes `· ` lines too; a breadcrumb is the one with its reason after two spaces.
+  // `FRONTIER_MCP_TRACE` writes `· ` lines too; a breadcrumb is the one with its reason after two spaces.
   const lines = human.err.split('\n').filter(l => l.startsWith('· ') && l.includes('  — ')).map(l => l.slice(2).split('  — ')[0])
   const run   = line => cli(line.split(' '), asOwner)
   check('without --json the row is stdout and each breadcrumb is a command line on stderr',

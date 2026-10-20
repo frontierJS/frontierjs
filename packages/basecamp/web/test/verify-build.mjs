@@ -102,10 +102,10 @@ check('the theme script is in the page, ahead of the stylesheet',
   live.indexOf('sierra-theme'), i => i > 0 && i < live.search(/<link[^>]+rel=["']?stylesheet/i))
 
 // ─── 2. The page ──────────────────────────────────────────────────────────
-children.push(spawn('bun', ['api/index.ts'], { cwd: PKG, stdio: 'ignore', env: { ...process.env, PORT: String(API_PORT) } }))
+children.push(spawn('bun', ['api/index.ts'], { cwd: PKG, stdio: 'ignore', env: { ...process.env, FRONTIER_PORT_BE: String(API_PORT) } }))
 children.push(spawn(process.execPath, [join(HERE, 'preview.mjs')], {
   stdio: 'ignore',
-  env: { ...process.env, PREVIEW_PORT: String(PORT), API_URL: `http://localhost:${API_PORT}` },
+  env: { ...process.env, PREVIEW_PORT: String(PORT), FRONTIER_API_URL: `http://localhost:${API_PORT}` },
 }))
 
 let up = false

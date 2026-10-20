@@ -205,12 +205,12 @@ export function guiPort(appRoot, { env = 'dev', lockFile = LOCK_FILE } = {}) {
 // port is compiled into the unpacked extension the browser has loaded, so it
 // stays where jetty.config.js says and is only checked.
 const SURFACE_PORTS = [
-  { dir: 'web',       category: 'fe',         env: 'FLI_PORT_FE',      scripts: ['web'],                        label: 'web' },
-  { dir: 'api',       category: 'be',         env: 'FLI_PORT_BE',      scripts: ['api'],                        label: 'API' },
-  { dir: 'widgets',   category: 'widgetDev',  env: 'FLI_PORT_WIDGET',  scripts: ['dev:widgets', 'widgets'],     label: 'widgets' },
-  { dir: 'site',      category: 'siteDev',    env: 'FLI_PORT_SITE',    scripts: ['dev:site', 'site'],           label: 'site' },
+  { dir: 'web',       category: 'fe',         env: 'FRONTIER_PORT_FE',      scripts: ['web'],                        label: 'web' },
+  { dir: 'api',       category: 'be',         env: 'FRONTIER_PORT_BE',      scripts: ['api'],                        label: 'API' },
+  { dir: 'widgets',   category: 'widgetDev',  env: 'FRONTIER_PORT_WIDGET',  scripts: ['dev:widgets', 'widgets'],     label: 'widgets' },
+  { dir: 'site',      category: 'siteDev',    env: 'FRONTIER_PORT_SITE',    scripts: ['dev:site', 'site'],           label: 'site' },
   { dir: 'extension', category: 'ext',        env: null,               scripts: ['dev:extension', 'extension'], label: 'extension' },
-  { dir: 'desktop',   category: 'desktopDev', env: 'FLI_PORT_DESKTOP', scripts: ['dev:desktop', 'desktop'],    label: 'desktop' },
+  { dir: 'desktop',   category: 'desktopDev', env: 'FRONTIER_PORT_DESKTOP', scripts: ['dev:desktop', 'desktop'],    label: 'desktop' },
 ]
 
 /** The categories a dev slot moves — those whose surface reads a variable. */
@@ -615,11 +615,11 @@ export async function portStatus(p, { lockFile = LOCK_FILE } = {}) {
 //
 // Project 0 is every app `PROJECTS` does not name, so two of them derive one
 // number. `fli dev` gives each app ROOT a service digit of its own and passes
-// the ports to the servers it starts as `FLI_PORT_*`, which `fli new`'s configs
+// the ports to the servers it starts as `FRONTIER_PORT_*`, which `fli new`'s configs
 // already read: the first app is 8000/8100, the next 8001/8101.
 //
 // A slot is REMEMBERED per root, not handed out per run. A URL somebody has
-// open, an OAuth redirect and a `WEB_URL` in an email all name the port, so an
+// open, an OAuth redirect and a `FRONTIER_APP_URL` in an email all name the port, so an
 // app has to come back where it was. It is also what keeps the stale-server
 // refusal honest: an app whose own slot is busy is refused, and never quietly
 // moved beside the ghost that still holds its database open.
@@ -695,7 +695,7 @@ export function readsPortVar(appRoot, row, { limit = 2000 } = {}) {
 /**
  * Take this app's dev slot and record it.
  *
- * `vars` is the `FLI_PORT_*` set for the servers `fli dev` starts, returned
+ * `vars` is the `FRONTIER_PORT_*` set for the servers `fli dev` starts, returned
  * rather than assigned to `process.env`: under bun a child gets the environment
  * the parent STARTED with, so the assignment reaches nothing. Pass it as `env:`.
  *
@@ -951,7 +951,7 @@ export function getSessionStatus({ lockFile = LOCK_FILE } = {}) {
 // ── Strictly additive ───────────────────────────────────────────────────────
 //
 // The numbers keep working and nothing here may come to depend on a name.
-// `FLI_PORT_FE`/`FLI_PORT_BE`, `strictPort`, every drive and the whole table
+// `FRONTIER_PORT_FE`/`FRONTIER_PORT_BE`, `strictPort`, every drive and the whole table
 // below are the mechanism; a name is a second way to reach the same port, and a
 // DX nicety that becomes load-bearing is a worse trade than the tax it removes.
 

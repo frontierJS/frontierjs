@@ -270,17 +270,20 @@ const DRAW = {
     ]
   },
 
-  list: (b, w, { urls }) => {
+  list: (b, w, { urls, numbered, count }) => {
     const note = Math.min(16, Math.max(0, ...b.items.map((i) => cells(i.note))))
-    const text = w - 2 - (note ? note + 2 : 0)
+    const at = numbered ? 4 : 2
+    const text = w - at - (note ? note + 2 : 0)
     return b.items.flatMap((i) => [
       [
-        run(0, '•', inkOf(i.tone ?? 'muted')),
-        run(2, clip(i.text, text), inkOf(i.tone), i.url),
+        numbered && i.url
+          ? { ...run(0, String(++count.n).padStart(3), inkOf(i.tone ?? 'muted')), link: count.n - 1 }
+          : run(numbered ? 2 : 0, '•', inkOf(i.tone ?? 'muted')),
+        run(at, clip(i.text, text), inkOf(i.tone), i.url),
         ...(i.note ? [run(w - note, clip(i.note, note), TONES.muted)] : []),
       ],
       // Broken across rows rather than clipped: a URL cut short opens nothing.
-      ...(urls && i.url ? i.url.match(new RegExp(`.{1,${w - 2}}`, 'g')).map((part) => [run(2, part, TONES.muted)]) : []),
+      ...(urls && i.url ? i.url.match(new RegExp(`.{1,${w - at}}`, 'g')).map((part) => [run(at, part, TONES.muted)]) : []),
     ])
   },
 
@@ -291,13 +294,19 @@ const DRAW = {
  * Every row of an answer for a pane `w` cells wide: its blocks, a blank row
  * between each. A run carrying `url` is a link; `urls` prints each under its
  * item, for a terminal that cannot open a hyperlink and would lose it;
- * `picked` marks the count whose key the lists are filtered by.
+ * `picked` marks the count whose key the lists are filtered by; `numbered`
+ * puts each linked item's number in `linksOf` where its bullet was, the run
+ * carrying `link`, its index there.
  */
-export function answerRows(answer, w, { urls = false, picked = null } = {}) {
+export function answerRows(answer, w, { urls = false, picked = null, numbered = false } = {}) {
   const rows = []
+  const count = { n: 0 }
   for (const b of answer.blocks) {
     if (rows.length) rows.push([])
-    rows.push(...DRAW[b.kind](b, w, { urls, picked }))
+    rows.push(...DRAW[b.kind](b, w, { urls, picked, numbered, count }))
   }
   return rows
 }
+
+/** The linked list items in the order drawn, the first numbered 1: what `/snooze <n>` names. */
+export const linksOf = (answer) => answer.blocks.flatMap((b) => b.kind === 'list' ? b.items.filter((i) => i.url) : [])

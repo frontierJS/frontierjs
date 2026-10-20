@@ -45,7 +45,7 @@ const ROOT = join(HERE, '../..')
 // `File` ref stores the `publicBase` it was uploaded against (`FJS-1271`).
 // Both are env-overridable.
 const API_PORT = process.env.API_PORT ?? String(PORTS.api)
-const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
+const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 const PORT = process.env.PREVIEW_PORT ?? String(await portFor(import.meta.url, 'fe', { env: 'test', service: 1 }))
 const UI   = `http://localhost:${PORT}`
 
@@ -106,7 +106,7 @@ execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 
 start('bun', ['run', 'api/index.ts'], 'api', { API_PORT })
 start(process.execPath, [join(HERE, 'preview.mjs')], 'preview',
-      { PREVIEW_PORT: PORT, API_URL: API })
+      { PREVIEW_PORT: PORT, FRONTIER_API_URL: API })
 
 if (!await waitFor(`${API}/api/products`, 'api')) { stopAll(); process.exit(1) }
 if (!await waitFor(UI, 'preview'))                { stopAll(); process.exit(1) }

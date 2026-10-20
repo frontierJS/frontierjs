@@ -321,7 +321,18 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
   let finished
   const done = new Promise((res) => { finished = res })
   const renderer = await tui.createRenderer({ exitOnCtrlC: true, onDestroy: () => finished(0) })
-  if (reload) restart = (url) => { reload(url); renderer.destroy() }
+  // `reload()` is called from inside a handler, and the flush that follows it
+  // still writes to the screen it was called from; a renderer destroyed under
+  // that flush frees the buffers it writes into. The roots go first, after it.
+  const roots = []
+  if (reload) restart = (url) => {
+    reload(url)
+    setTimeout(() => {
+      screen?.dispose()
+      for (const r of roots) r.dispose()
+      renderer.destroy()
+    })
+  }
 
   // In NORMAL, h j k l are the arrows, so a route that walks or scrolls on
   // them takes vim's keys without knowing the mode. The key is renamed before
@@ -414,15 +425,15 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
     else goto(path)
   }
 
-  tui.mount(Mode,{ renderer, parent: tui.footerOf(renderer), props: { mode, zoom } })
-  tui.mount(Shell, { renderer, props: {
+  roots.push(tui.mount(Mode, { renderer, parent: tui.footerOf(renderer), props: { mode, zoom } }))
+  roots.push(tui.mount(Shell, { renderer, props: {
     state,
     paths:  jumps ? listed.routes.map((r) => r.path) : [],
     onopen: openPath,
     onjump: jump,
     onmove: (step) => step > 0 ? tui.focusNext() : tui.focusPrev(),
     onmode: setMode,
-  } })
+  } }))
   tui.followLinks(renderer, (href) => {
     if (!followLink(href) && shown) set({ note: `${href} is not a route here` })
   })

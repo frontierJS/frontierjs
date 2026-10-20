@@ -89,7 +89,7 @@ function bootFloor(app) {
     import { createServer } from 'node:net'
     const port = await new Promise(r => { const s = createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)) }) })
     try {
-      const b = await measureBoot({ cmd: 'bun run api/index.ts', cwd: ${JSON.stringify(app)}, url: 'http://127.0.0.1:' + port + '/api/health', env: { PORT: String(port) },
+      const b = await measureBoot({ cmd: 'bun run api/index.ts', cwd: ${JSON.stringify(app)}, url: 'http://127.0.0.1:' + port + '/api/health', env: { FRONTIER_PORT_BE: String(port) },
         whileUp: async (url, { output }) => runCases(await scaffoldCases({ base: url.replace(/\\/health$/, ''), output })) })
       console.log('BENCH_BOOT ' + JSON.stringify(b))
     } catch (err) { console.log('BENCH_BOOT ' + JSON.stringify({ error: err.message })) }
@@ -761,9 +761,9 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
         .split('\n').filter((l) => l.includes('=') && !l.trimStart().startsWith('#'))
         .map((l) => [l.slice(0, l.indexOf('=')).trim(), l.trim()])
       : []
-    const fill = declared.filter(([k]) => !already.has(k) && k !== 'PORT' && k !== 'APP_URL')
+    const fill = declared.filter(([k]) => !already.has(k) && k !== 'FRONTIER_APP_URL')
     appendFileSync(join(srv, '.env.production'),
-      `PORT=3000\nAPP_URL=http://127.0.0.1:${PORT}\n` +
+      `FRONTIER_APP_URL=http://127.0.0.1:${PORT}\n` +
       (fill.length ? fill.map(([, line]) => line).join('\n') + '\n' : ''))
     log('  ✓ scaffolded, and cloned into a server directory on this machine')
 

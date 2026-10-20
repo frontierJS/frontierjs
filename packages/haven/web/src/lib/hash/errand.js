@@ -21,6 +21,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { DESK_PROMPT, SCHEMA, readAnswer } from '../home/answer.js'
+import { isSnoozed } from '../home/snooze.js'
 
 export const ERRANDS_FILE = join(homedir(), '.fli', 'haven', 'errands.json')
 export const COMMAND_FILE = join(homedir(), '.fli', 'haven', 'errand')
@@ -263,4 +264,34 @@ export async function deskReport(name, { signal, cmd = reportsCommand() } = {}) 
     answer: readAnswer({ title: `${rows.length} reports`, blocks: [{ kind: 'table', columns: ['ask', 'what it draws'], rows }] }),
     ms: Date.now() - at,
   }
+}
+
+// ─── the desk's snoozes ─────────────────────────────────────────────────────
+//
+// What `/snooze` put away, `~/.fli/haven/snoozed.json`: `{ [url]: { until,
+// text } }`, `until` the day it comes back, at `WAKE_HOUR` (`lib/home/snooze.js`),
+// and `text` what the item said, so the list of them can name it. One
+// machine's, as the errands are; a snooze that is over is dropped when the
+// file is next written.
+
+export const SNOOZE_FILE = join(homedir(), '.fli', 'haven', 'snoozed.json')
+
+/** Every snooze not yet over at `now`; an unreadable file is none. */
+export function readSnoozes({ file = SNOOZE_FILE, now = new Date() } = {}) {
+  try {
+    const all = JSON.parse(readFileSync(file, 'utf8'))
+    return Object.fromEntries(Object.entries(all).filter(([url, s]) => typeof s?.until === 'string' && isSnoozed(all, url, now)))
+  } catch {
+    return {}
+  }
+}
+
+/** Snooze `url` until `until`, or wake it with `until` null; answers what is snoozed after. */
+export function setSnooze(url, until, text = '', { file = SNOOZE_FILE, now = new Date() } = {}) {
+  const all = readSnoozes({ file, now })
+  if (until) all[url] = { until, text: String(text) }
+  else delete all[url]
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, JSON.stringify(all, null, 2) + '\n')
+  return all
 }

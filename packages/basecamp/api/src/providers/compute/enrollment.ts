@@ -143,7 +143,7 @@ export function assertEnrollsOverTls(basecampUrl: string): void {
   if (url.protocol === 'https:') return
   if (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return
   throw new Error(
-    `A machine cannot enroll with ${basecampUrl}: the answer carries its key, so API_URL must be https (FJS-1603)`)
+    `A machine cannot enroll with ${basecampUrl}: the answer carries its key, so FRONTIER_API_URL must be https (FJS-1603)`)
 }
 
 /**

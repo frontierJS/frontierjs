@@ -112,7 +112,7 @@ export interface LitestoneAuthOptions {
    *     await mailer.send({
    *       to:      email,
    *       subject: 'Reset your password',
-   *       html:    `<a href="${APP_URL}/auth/password-reset/confirm#token=${token}">Reset</a>`,
+   *       html:    `<a href="${FRONTIER_APP_URL}/auth/password-reset/confirm#token=${token}">Reset</a>`,
    *     })
    *   }
    */
@@ -134,7 +134,7 @@ export interface LitestoneAuthOptions {
    *     await mailer.send({
    *       to:      email,
    *       subject: 'Verify your email',
-   *       html:    `<a href="${APP_URL}/verify-email/#token=${token}">Verify</a>`,
+   *       html:    `<a href="${FRONTIER_APP_URL}/verify-email/#token=${token}">Verify</a>`,
    *     })
    *   }
    */
@@ -338,7 +338,7 @@ export interface LitestoneAuthOptions {
    *     await mailer.send({
    *       to:      email,
    *       subject: `Connect ${provider} to your account`,
-   *       html:    `<a href="${APP_URL}/auth/oauth/${provider}?link=${token}">Connect</a>`,
+   *       html:    `<a href="${FRONTIER_APP_URL}/auth/oauth/${provider}?link=${token}">Connect</a>`,
    *     })
    *   }
    */
@@ -373,7 +373,7 @@ export interface LitestoneAuthOptions {
    *     await mailer.send({
    *       to:      email,
    *       subject: `Your sign-in code is ${code}`,
-   *       html:    `<a href="${APP_URL}/sign-in/link#token=${token}">Sign in</a>`,
+   *       html:    `<a href="${FRONTIER_APP_URL}/sign-in/link#token=${token}">Sign in</a>`,
    *     })
    *   }
    */

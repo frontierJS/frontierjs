@@ -32,7 +32,7 @@ import { watchReloads } from './lib/reload.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const UI     = process.env.UI_URL  ?? `http://localhost:${PORTS.ui}`
-const API    = process.env.API_URL ?? `http://localhost:${PORTS.api}`
+const API    = process.env.FRONTIER_API_URL ?? `http://localhost:${PORTS.api}`
 
 // A product minted per run, and the reason is a live hazard rather than
 // tidiness: `Product.name` and `Product.slug` are both `@unique` and the model

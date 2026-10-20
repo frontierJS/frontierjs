@@ -119,7 +119,7 @@ export async function buildExtension({ root, browser = 'chrome', verbose = false
   if (found.harbor) {
     log('building harbor')
     const { build } = await loadPeer('vite', 'build')
-    await build(harborViteConfig({
+    await build(await harborViteConfig({
       extRoot: root,
       harborEntry: found.harbor.path,
       outDir: distDir,

@@ -8,9 +8,9 @@
 // discovering the first time the site is served from a domain of its own.
 //
 // It is a build-time constant because a static page has no server to ask. Set
-// `VITE_API_URL` for a deployment; the default is this app's own API port —
+// `FRONTIER_PUBLIC_API_URL` for a deployment; the default is this app's own API port —
 // dev / be / project 1 (see packages/cli/core/ports.js).
-export const API_URL = import.meta.env?.VITE_API_URL ?? 'http://localhost:8110'
+export const API_ORIGIN = import.meta.env?.FRONTIER_PUBLIC_API_URL ?? 'http://localhost:8110'
 
 /**
  * What `createJunctionClient` needs, and it is TWO keys.
@@ -23,4 +23,4 @@ export const API_URL = import.meta.env?.VITE_API_URL ?? 'http://localhost:8110'
  * Getting this wrong fails as *the shop could not be reached*, which is also
  * what a genuinely unreachable shop looks like.
  */
-export const clientOptions = { url: API_URL, apiPrefix: '/api' }
+export const clientOptions = { url: API_ORIGIN, apiPrefix: '/api' }

@@ -49,7 +49,7 @@ const ROOT = join(HERE, '../..')
 // against (`FJS-1271`). Both are env-overridable.
 const API_PORT = process.env.API_PORT ?? String(PORTS.api)
 const UI_PORT  = process.env.UI_PORT  ?? String(PORTS.uiTest)
-const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
+const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 const UI   = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
 
 // Test-env ports: 7 = test, 3 = widgetServe, 1 = example. Service 0 is the

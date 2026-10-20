@@ -39,7 +39,7 @@ import { openChrome } from '../../../packages/mesa/src/drive.js'
 import { SESSION_MODULE } from './lib/session.mjs'
 
 const UI     = process.env.UI_URL  ?? `http://localhost:${PORTS.ui}`
-const API    = process.env.API_URL ?? `http://localhost:${PORTS.api}`
+const API    = process.env.FRONTIER_API_URL ?? `http://localhost:${PORTS.api}`
 
 await requireServers([['api (bun run api)', `${API}/api/health`], ['web (bun run web)', UI]])
 

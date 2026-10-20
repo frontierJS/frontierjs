@@ -1132,7 +1132,7 @@ export function createApp(opts: AppOptions = {}): App {
     // behind a proxy means every caller shares the proxy's bucket, and this
     // was passed from nowhere at all until `FJS-744` — so the transport's
     // option was unreachable and that was the state every deployed app was in.
-    trustProxy:  resolveTrustProxy(config.http.trustProxy, process.env.FJS_TRUST_PROXY),
+    trustProxy:  resolveTrustProxy(config.http.trustProxy, process.env.FRONTIER_TRUST_PROXY),
     // How much junction holds for a socket that is not draining before it
     // closes it. See outbox.ts — past Bun's own buffer a frame is DROPPED,
     // which is silent at every layer above it.
@@ -2407,7 +2407,7 @@ function applyConfiguredCors(app: App, config: AppConfig): void {
 
 // ─── Derived origins ──────────────────────────────────────────────────────
 /**
- * Join the origins `fli deploy` derived (`FJS_CORS_ORIGINS`, comma-separated:
+ * Join the origins `fli deploy` derived (`FRONTIER_CORS_ORIGINS`, comma-separated:
  * the web domain plus a wrapped shell's schemes) onto what the app declared
  * (`FJS-D912`). Union, never replacement: a declared list keeps its own
  * entries, and a declared '*' or predicate stays as written, because a wildcard
@@ -2457,7 +2457,7 @@ function withDerivedOrigins(config: AppConfig, env: string | undefined): AppConf
  * per request, and a CSRF guard nobody asked for refuses live traffic.
  */
 function applyConfiguredMiddleware(app: App, written: AppConfig): void {
-  const config = withDerivedOrigins(written, process.env.FJS_CORS_ORIGINS)
+  const config = withDerivedOrigins(written, process.env.FRONTIER_CORS_ORIGINS)
   const http = (config.http ?? {}) as Record<string, unknown>
 
   if (http.helmet !== false) helmet()(app)

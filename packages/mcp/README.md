@@ -203,8 +203,8 @@ shop logout
 
 The profile is stored in `~/.config/<name>/` (mode 0600) and the command cache in
 `~/.cache/<name>/`. A script passes everything through the environment
-instead: `FJS_MCP_URL`, `FJS_TOKEN`, `FJS_TENANT`, `FJS_PROFILE`, and
-`FJS_CLI_TRACE=1` to see what it does. The exit codes are 0 ok, 1 refused by
+instead: `FRONTIER_MCP_URL`, `FRONTIER_MCP_TOKEN`, `FRONTIER_MCP_TENANT`, `FRONTIER_MCP_PROFILE`, and
+`FRONTIER_MCP_TRACE=1` to see what it does. The exit codes are 0 ok, 1 refused by
 the app, 2 a usage error or not offered, and 3 unreachable.
 
 ### Teaching an agent

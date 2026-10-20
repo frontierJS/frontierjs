@@ -44,7 +44,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
 const API_PORT      = process.env.API_PORT      ?? String(PORTS.api)
 const IDP_SINK_PORT = process.env.IDP_SINK_PORT ?? String(PORTS.idp)
-const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
+const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 const IDP  = process.env.IDP_URL ?? `http://localhost:${IDP_SINK_PORT}`
 
 // ─── Servers ───────────────────────────────────────────────────────────────

@@ -847,12 +847,12 @@ describe('the ingress — Caddy, through its admin API', () => {
     // picks their own key with X-Forwarded-For.
     const fronted = serverWith(fakeCaddy())
     await deploy(fronted.server, { hosts: ['shop.example.com'] })
-    expect(runArgv(fronted.fake)).toContain('-e FJS_TRUST_PROXY=1')
+    expect(runArgv(fronted.fake)).toContain('-e FRONTIER_TRUST_PROXY=1')
 
     const bare = serverWith(fakeCaddy())
     await deploy(bare.server)
     expect(runArgv(bare.fake)).toContain('-p 7300:80')
-    expect(runArgv(bare.fake)).not.toContain('FJS_TRUST_PROXY')
+    expect(runArgv(bare.fake)).not.toContain('FRONTIER_TRUST_PROXY')
   })
 
   // FJS-2772: a published port is forwarded, so only the forward chain's

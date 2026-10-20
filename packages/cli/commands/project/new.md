@@ -114,7 +114,7 @@ flags:
   source:
     type: string
     choices: [local, npm]
-    description: "Where @frontierjs packages install from: npm (published) or local (symlink to <root>/packages, live edits; a build packs them into the image). Default: $FJS_SOURCE, else local from a framework checkout and npm from an install"
+    description: "Where @frontierjs packages install from: npm (published) or local (symlink to <root>/packages, live edits; a build packs them into the image). Default: $FRONTIER_SOURCE, else local from a framework checkout and npm from an install"
     defaultValue: ''
 ---
 
@@ -331,17 +331,19 @@ function makeEnvExample(useAuth) {
     '# takes it.',
     'AUDIT_PATH=./db/audit.db',
     '',
-    '# App. PORT and APP_URL default to FLI_PORT_BE (the port the broker hands a',
-    '# session, and the one web/ proxies /api to) and then to 8100. Set here, they',
-    '# win over the broker, and the proxy forwards to a port the API is not on.',
-    '# PORT=8100',
-    '# APP_URL=http://localhost:8100',
-    '# WEB_URL=http://localhost:8000   # the page a password-reset link opens',
+    '# App. The API binds FRONTIER_PORT_BE, the port fli dev hands it and web/',
+    '# proxies /api to; a bare PORT (a PaaS sets one) is read only when that is',
+    '# absent, and api/config/junction.config.js says 8100 when neither is.',
+    '# FRONTIER_API_URL is where a client reaches the API; FRONTIER_APP_URL is',
+    '# where a person reaches web/ -- the page a password-reset link opens.',
+    '# FRONTIER_API_URL=http://localhost:8100',
+    '# FRONTIER_APP_URL=http://localhost:8000',
     '',
-    '# Read by web/ and site/ at BUILD time (their envDir is this folder). The API',
-    '# origin when it is not the page\'s own; empty means same origin behind one proxy.',
+    '# Read by web/ and site/ at BUILD time (their envDir is this folder), and the',
+    '# one FRONTIER_ name a bundle can see: FRONTIER_PUBLIC_ is the browser door. The',
+    '# API origin when it is not the page\'s own; empty means same origin behind one proxy.',
     '# A site/ island never reaches /api by a relative path -- it is its own origin.',
-    '# VITE_API_URL=https://api.example.com',
+    '# FRONTIER_PUBLIC_API_URL=https://api.example.com',
     '',
     '# No NODE_ENV here: build scripts load this file, and a vite build that sees',
     '# development ships every import.meta.env.DEV branch. The API defaults to it.',
@@ -426,8 +428,8 @@ auth().isAdmin)\` so nobody promotes themselves on the way in.
 
 There is no mailer yet, so nothing is sent. A password reset requested at
 \`/reset/\` prints its link in the terminal running the API, and the link opens
-\`/reset/#token=…\` on \`WEB_URL\` (the fragment keeps the token out of requests and logs). Wire \`app.mail.send()\` into the three
-callbacks in \`api/src/core/auth.ts\` to send them for real; set \`WEB_URL\` in
+\`/reset/#token=…\` on \`FRONTIER_APP_URL\` (the fragment keeps the token out of requests and logs). Wire \`app.mail.send()\` into the three
+callbacks in \`api/src/core/auth.ts\` to send them for real; set \`FRONTIER_APP_URL\` in
 production so the link names the deployed site. The third,
 \`onCredentialChanged\`, is the notice that a password, email address or
 two-step sign-in changed: it only logs until there is a mailer, and a person who
@@ -627,8 +629,7 @@ app.configure(notifications({ db }))
 import { createApp, channels } from '@frontierjs/junction'${queueImport}
 import { auth, authPlugin } from './core/auth.ts'
 import { joinChannels }     from './core/channels.ts'
-import { db }               from './core/db.ts'
-import { env }              from './core/env.ts'${systemImport}
+import { db }               from './core/db.ts'${systemImport}
 
 // ─── The app ──────────────────────────────────────────────────────────────
 // The db client is passed rather than wired, and it is not a convenience:
@@ -642,9 +643,6 @@ const app = createApp({
   root: import.meta.url,
   auth,
   db,${systemLine}
-  config: {
-    port: env.PORT,
-  },
 })
 
 // ─── Real-time ────────────────────────────────────────────────────────────
@@ -678,8 +676,7 @@ export default app
 
 import { createApp, channels } from '@frontierjs/junction'${queueImport}
 import { joinChannels }                                  from './core/channels.ts'
-import { db }                                            from './core/db.ts'
-import { env }                                           from './core/env.ts'${systemImport}
+import { db }                                            from './core/db.ts'${systemImport}
 
 // ─── The app ──────────────────────────────────────────────────────────────
 // The db client is passed rather than wired: handing it here installs the
@@ -690,9 +687,6 @@ const app = createApp({
   // services/, jobs/, notifications/ beside this file, ../config above it.
   root: import.meta.url,
   db,${systemLine}
-  config: {
-    port: env.PORT,
-  },
 })
 
 // ─── Real-time ────────────────────────────────────────────────────────────
@@ -736,15 +730,13 @@ export const env = defineEnv({
   // auth signs with encryptionKey. A required refusal over a value nothing uses
   // is a container that will not boot for no reason (FJS-360).
 
-  // App. FLI_PORT_BE is the port the broker hands a session, and
-  // web/config/vite.config.js proxies /api to it — a PORT that ignored it left
-  // the proxy forwarding to a port nothing was listening on.
-  PORT:     { type: 'port',   default: Number(process.env.FLI_PORT_BE ?? 8100) },
-  APP_URL:  { type: 'url',    default: 'http://localhost:' + (process.env.FLI_PORT_BE ?? 8100) },
+  // No PORT: junction reads FRONTIER_PORT_BE, else PORT, itself, and
+  // api/config/junction.config.js states 8100 for a run with neither.
+  //
   // Where the web app is, for a link somebody is sent — a password reset lands
-  // on a page, and the API's origin serves none. FLI_PORT_FE for the reason PORT
-  // reads FLI_PORT_BE.
-  WEB_URL:  { type: 'url',    default: 'http://localhost:' + (process.env.FLI_PORT_FE ?? 8000) },
+  // on a page, and the API's origin serves none. FRONTIER_PORT_FE is the port
+  // fli dev hands web/, so the link follows the app to its slot.
+  FRONTIER_APP_URL: { type: 'url', default: 'http://localhost:' + (process.env.FRONTIER_PORT_FE ?? 8000) },
   NODE_ENV: { type: 'string', default: 'development' },
 })
 `
@@ -1110,15 +1102,15 @@ export const auth = createLitestoneAuth(db, {
   // registered — so this log is the only place a reset is visible at all.
   // Wire app.mail.send() in here once the app has a mailer.
   onPasswordResetRequested: async ({ email, token }) => {
-    // WEB_URL, not APP_URL: the link lands on web/src/routes/reset/, and the
-    // API's own origin has no page to answer it. The token rides the fragment:
+    // FRONTIER_APP_URL, not the API's origin: the link lands on
+    // web/src/routes/reset/, and the API has no page to answer it. The token rides the fragment:
     // a fragment is never sent in a request, a Referer or an access log, and
     // an analytics tag that reads location.href does not forward it.
-    const link = \`\${env.WEB_URL}/reset/#token=\${encodeURIComponent(token)}\`
+    const link = \`\${env.FRONTIER_APP_URL}/reset/#token=\${encodeURIComponent(token)}\`
     console.log(\`[auth] password reset for \${email} — no mailer, so here is the link:\\n  \${link}\`)
   },
   onEmailVerificationRequested: async ({ email, token }) => {
-    const link = \`\${env.WEB_URL}/verify-email/#token=\${encodeURIComponent(token)}\`
+    const link = \`\${env.FRONTIER_APP_URL}/verify-email/#token=\${encodeURIComponent(token)}\`
     console.log(\`[auth] verify \${email} — no mailer, so here is the link:\\n  \${link}\`)
   },
 
@@ -1186,6 +1178,10 @@ ${hereImport}
 export default {
   app: {
     name:      '${appName}',${prefixLine}
+    // dev/be for project 0 (packages/cli/core/ports.js). FRONTIER_PORT_BE --
+    // the slot fli dev and fli deploy hand the API -- beats it, and a bare PORT
+    // beats it only when no slot was handed.
+    port:      8100,
   },
 
   middleware: {
@@ -1319,7 +1315,7 @@ export default defineConfig({
     // FJS scheme, so the web port is stated here rather than inherited.
     // 8000 = dev / frontend / project 0. See ports.js.
     ...base.server,
-    port:       parseInt(process.env.WEB_PORT ?? process.env.FLI_PORT_FE ?? '8000', 10),
+    port:       parseInt(process.env.WEB_PORT ?? process.env.FRONTIER_PORT_FE ?? '8000', 10),
     strictPort: true,
   },
 })
@@ -1338,16 +1334,16 @@ import sierraConfig from './sierra.config.js'
 // these paths has to reach the API from here. Without the proxy they hit Vite's
 // SPA fallback instead: 200, an HTML body, and a client that reports the API
 // answered nonsense.
-// FLI_PORT_BE is set by the port broker when the app is started through fli,
+// FRONTIER_PORT_BE is set by the port broker when the app is started through fli,
 // which probes before it assigns; the literal is the static slot for project 0.
-const API = process.env.API_URL || 'http://localhost:' + (process.env.FLI_PORT_BE ?? 8100)
+const API = process.env.FRONTIER_API_URL || 'http://localhost:' + (process.env.FRONTIER_PORT_BE ?? 8100)
 
 const base = createSierraViteConfig(sierraConfig)
 
 export default defineConfig({
   ...base,
   // The app's one .env sits at its root, one level above this surface. Vite
-  // reads the Vite root by default, so a VITE_ variable written there reaches
+  // reads the Vite root by default, so a FRONTIER_PUBLIC_ variable written there reaches
   // nothing and the client falls back to its default without a word.
   envDir: '..',
   server: {
@@ -1356,7 +1352,7 @@ export default defineConfig({
     // FJS scheme, so the web port is stated here rather than inherited.
     // 8000 = dev / frontend / project 0; the API is 8100. See ports.js.
     ...base.server,
-    port:       parseInt(process.env.WEB_PORT ?? process.env.FLI_PORT_FE ?? '8000', 10),
+    port:       parseInt(process.env.WEB_PORT ?? process.env.FRONTIER_PORT_FE ?? '8000', 10),
     strictPort: true,
     proxy: {
       // One entry: apiPrefix moves every route the app registers, raw ones
@@ -1401,7 +1397,7 @@ ${useApi ? `
     // it. An API on its own origin (api.example.com beside app.example.com) or
     // a build a native shell bundles has no proxy in front of it, so the build
     // names it, and Sierra inlines it into the page:
-    //   VITE_API_URL=https://api.example.com bun run build
+    //   FRONTIER_PUBLIC_API_URL=https://api.example.com bun run build
     // The client upgrades to ws itself, so this stays http.
     url:      'http://localhost:8000',
     tokenKey: '${appName}_token',
@@ -2555,7 +2551,7 @@ if (useWorkspace) {
 }
 
 // ─── 6.5 FJS package source — npm (published) or local (symlink) ──────────────
-// Default resolves from the flag, then $FJS_SOURCE, then the cli's own layout:
+// Default resolves from the flag, then $FRONTIER_SOURCE, then the cli's own layout:
 // local from a framework checkout, npm from an install. GitHub is not
 // supported yet.
 //
@@ -2577,7 +2573,7 @@ if (useWorkspace) {
 // machine's working tree, which is the right thing while testing a change to a
 // package and the wrong thing to hand somebody as a starting point.
 const { isFrameworkCheckout } = await import(resolve(global.fliRoot, 'core/utils.js'))
-const fjsSource = (flag.source || process.env.FJS_SOURCE || (isFrameworkCheckout(global.fliRoot) ? 'local' : 'npm')).toLowerCase()
+const fjsSource = (flag.source || process.env.FRONTIER_SOURCE || (isFrameworkCheckout(global.fliRoot) ? 'local' : 'npm')).toLowerCase()
 
 if (fjsSource !== 'local' && fjsSource !== 'npm') {
   const hint = fjsSource === 'github'

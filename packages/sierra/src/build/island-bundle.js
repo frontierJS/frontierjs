@@ -33,6 +33,7 @@
 
 import { resolve } from 'path'
 import { mkdir, writeFile, readFile, rm } from 'fs/promises'
+import { ENV_PREFIX } from './env-prefix.js'
 
 /**
  * Source for the generated entry: a name → lazy-import table, then hydrate.
@@ -148,7 +149,7 @@ function relativeApiPlugin(root) {
           `${file.slice(root.length + 1)}:${line} names the API by a relative path (${text}). ` +
           `This site is its own origin, so the path resolves against the site and not the API, ` +
           `and the island sees an empty answer. Build the URL from the API's origin -- ` +
-          `VITE_API_URL, as site/src/api.js does.`
+          `FRONTIER_PUBLIC_API_URL, as site/src/api.js does.`
         )
       }
       return null
@@ -200,6 +201,7 @@ export async function buildIslandBundle(opts) {
     const result = await viteBuild({
       root,
       base,
+      envPrefix:  ENV_PREFIX,
       configFile: false,           // do not re-read the app's config and recurse
       logLevel: 'warn',
       plugins: [relativeApiPlugin(root), ...plugins],

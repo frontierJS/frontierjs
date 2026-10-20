@@ -93,29 +93,29 @@ describe('the dev server port', () => {
   // `vite-strict-port` rule greps an APP's config text, which is the one place
   // this fix could not live (`FJS-821`).
   test('the base config is strict about its port and reads the brokers name', () => {
-    const before = process.env.FLI_PORT_FE
-    process.env.FLI_PORT_FE = '8010'
+    const before = process.env.FRONTIER_PORT_FE
+    process.env.FRONTIER_PORT_FE = '8010'
     try {
       const config = createSierraViteConfig({ target: 'spa' })
       expect(config.server.strictPort).toBe(true)
       expect(config.server.port).toBe(8010)
     } finally {
-      if (before === undefined) delete process.env.FLI_PORT_FE
-      else process.env.FLI_PORT_FE = before
+      if (before === undefined) delete process.env.FRONTIER_PORT_FE
+      else process.env.FRONTIER_PORT_FE = before
     }
   })
 
   // `fli dev --host` reaches vite through this env and nothing else.
-  test('FLI_HOST puts the server on every interface, and its absence keeps it local', () => {
-    const before = process.env.FLI_HOST
+  test('FRONTIER_HOST puts the server on every interface, and its absence keeps it local', () => {
+    const before = process.env.FRONTIER_HOST
     try {
-      delete process.env.FLI_HOST
+      delete process.env.FRONTIER_HOST
       expect(createSierraViteConfig({ target: 'spa' }).server.host).toBe(false)
-      process.env.FLI_HOST = '1'
+      process.env.FRONTIER_HOST = '1'
       expect(createSierraViteConfig({ target: 'spa' }).server.host).toBe(true)
     } finally {
-      if (before === undefined) delete process.env.FLI_HOST
-      else process.env.FLI_HOST = before
+      if (before === undefined) delete process.env.FRONTIER_HOST
+      else process.env.FRONTIER_HOST = before
     }
   })
 })

@@ -23,7 +23,7 @@ export default defineConfig({
     // dev / widgetDev / this app's project id — derived, never chosen. A widget
     // surface is a THIRD server while one is being written and a fourth origin
     // once it is served, and neither is the SPA's. See packages/cli/core/ports.js.
-    port:       parseInt(process.env.WIDGET_PORT ?? process.env.FLI_PORT_WIDGET ?? '8210', 10),
+    port:       parseInt(process.env.WIDGET_PORT ?? process.env.FRONTIER_PORT_WIDGET ?? '8210', 10),
     // Vite hops to the next free port without a word, and the drive pointed at
     // the port it hopped from then tests whatever else is listening.
     strictPort: true,

@@ -54,7 +54,7 @@ Detail: `references/routes-query-and-headers.md`
 - **A header the caller varies per call must be DECLARED, or it works until the socket connects.**
 - **A raw route's own `new Response(readable)` is held to its end for a gzip caller; build a stream with `ctx.stream()` or name `content-encoding`** (`FJS-D509`)
 - **The client's address is declared, never discovered.**
-- **An API on a sibling subdomain needs no cookie `Domain`; the cross-origin list is `cors.origins` + `credentials` + `csrf.origins`** (`FJS-2655`) — measured in Chrome: a host-only cookie rides only a fetch that says `credentials: 'include'`, and `app.localhost` / `api.localhost` are NOT the same site (`localhost` has no registrable domain). `fli deploy` derives the list as `FJS_CORS_ORIGINS` (`FJS-D912`).
+- **An API on a sibling subdomain needs no cookie `Domain`; the cross-origin list is `cors.origins` + `credentials` + `csrf.origins`** (`FJS-2655`) — measured in Chrome: a host-only cookie rides only a fetch that says `credentials: 'include'`, and `app.localhost` / `api.localhost` are NOT the same site (`localhost` has no registrable domain). `fli deploy` derives the list as `FRONTIER_CORS_ORIGINS` (`FJS-D912`).
 - **Above 128 MB, a declared length over `http.maxBodySize` is refused by Bun, not by junction** (`FJS-3090`)
 - **A `{ body: 'stream' }` route bounds nothing a chunked sender writes, and its credential verifier sees an empty body** (`FJS-D1159`)
 

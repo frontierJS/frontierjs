@@ -27,7 +27,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 // The broker sets these for a scaffolded app and they beat the formula, so a
 // suite inheriting them from the shell would assert against whatever port the
 // last `fli` run happened to claim.
-const SAVED = { fe: process.env.FLI_PORT_FE, be: process.env.FLI_PORT_BE }
+const SAVED = { fe: process.env.FRONTIER_PORT_FE, be: process.env.FRONTIER_PORT_BE }
 
 let root
 
@@ -38,8 +38,8 @@ function write(rel, body) {
 }
 
 beforeAll(() => {
-  delete process.env.FLI_PORT_FE
-  delete process.env.FLI_PORT_BE
+  delete process.env.FRONTIER_PORT_FE
+  delete process.env.FRONTIER_PORT_BE
 
   root = mkdtempSync(join(tmpdir(), 'fli-runnables-'))
 
@@ -62,8 +62,8 @@ beforeAll(() => {
 
 afterAll(() => {
   rmSync(root, { recursive: true, force: true })
-  if (SAVED.fe !== undefined) process.env.FLI_PORT_FE = SAVED.fe
-  if (SAVED.be !== undefined) process.env.FLI_PORT_BE = SAVED.be
+  if (SAVED.fe !== undefined) process.env.FRONTIER_PORT_FE = SAVED.fe
+  if (SAVED.be !== undefined) process.env.FRONTIER_PORT_BE = SAVED.be
 })
 
 const rows  = () => runnables(root)
@@ -109,8 +109,8 @@ describe('surfaces', () => {
     expect(api.start).toBe('bun run api')
     expect(api.open).toBe('http://localhost:8100')
     expect(api.dir).toBe('shop')
-    expect(api.portEnv).toBe('FLI_PORT_BE')
-    expect(web.portEnv).toBe('FLI_PORT_FE')
+    expect(api.portEnv).toBe('FRONTIER_PORT_BE')
+    expect(web.portEnv).toBe('FRONTIER_PORT_FE')
   })
 
   test('a surface with no script keeps its row and says so', () => {

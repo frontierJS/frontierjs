@@ -52,6 +52,7 @@
 import { readdirSync, statSync, readFileSync } from 'node:fs'
 import { mkdir, writeFile, rm }  from 'node:fs/promises'
 import { resolve, join, basename, extname } from 'node:path'
+import { ENV_PREFIX } from './env-prefix.js'
 
 // The mark is the RUNTIME's: that is the side which has to recognize a
 // placeholder nothing replaced (a dev server, where Vite serves the stylesheet
@@ -402,6 +403,7 @@ export async function buildWidgets(opts) {
     try {
       await viteBuild({
         root,
+        envPrefix:  ENV_PREFIX,
         configFile: false,          // do not re-read the app's config and recurse
         logLevel: 'warn',
         plugins: [...plugins, widgetCssPlugin()],

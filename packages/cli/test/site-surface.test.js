@@ -200,12 +200,12 @@ describe('how an island reaches the API (FJS-1233)', () => {
     expect(vite).not.toMatch(/proxy:/)
   })
 
-  test('the API origin is a scaffolded constant that follows VITE_API_URL', () => {
+  test('the API origin is a scaffolded constant that follows FRONTIER_PUBLIC_API_URL', () => {
     const root = appRoot('apiurl')
     scaffoldSiteSurface({ root, apiPort: 8110 })
 
     const api = readFileSync(join(root, 'site', 'src', 'api.js'), 'utf8')
-    expect(api).toContain('import.meta.env?.VITE_API_URL')
+    expect(api).toContain('import.meta.env?.FRONTIER_PUBLIC_API_URL')
     expect(api).toContain('http://localhost:8110')
     expect(api).toMatch(/apiPrefix:\s*'\/api'/)
   })
