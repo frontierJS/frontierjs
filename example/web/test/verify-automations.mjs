@@ -560,11 +560,11 @@ try {
   const theirs = `[...document.querySelectorAll('[data-run]')].find(r => !${JSON.stringify(seen)}.includes(r.getAttribute('data-run')))`
   t('others.aRunOnStaffsFlowArrivesWithoutAReload', await until(theirs, 15000), true)
   t('others.andReachesCompleted', await until(`${theirs}?.querySelector('[data-status="completed"]')`, 15000), true)
-
-  t('consoleErrors', noise, [])
 } catch (e) {
   t('drive.ranToTheEnd', e.message, 'no exception')
 }
+// Outside the try: a throw part-way is when the console holds the cause.
+t('consoleErrors', noise, [])
 
 // ─── cleanup ──────────────────────────────────────────────────────────────
 

@@ -1570,10 +1570,13 @@ const CHECKS = {
     let looked = 0
     for (const surface of safeRead(root)) {
       const dir = join(root, surface)
-      const files = mesaUnder(join(dir, 'src'))
-      if (!files.length) continue
+      const files  = filesUnder(join(dir, 'src'), '.mesa')
+      // A package's routes are compiled in this surface's build and sit in no
+      // src/ here, so a mount is followed to the directory it names (`FJS-3352`).
+      const mounts = filesUnder(join(dir, 'src'), '.mount.js')
+      if (!files.length && !mounts.length) continue
       const run = spawnSync(process.versions.bun ? process.execPath : 'bun', ['-e', MESA_CHECK_SCRIPT], {
-        cwd: dir, input: JSON.stringify(files), encoding: 'utf8', timeout: 120_000,
+        cwd: dir, input: JSON.stringify({ files, mounts }), encoding: 'utf8', timeout: 120_000,
         env: { ...process.env, BUN_BE_BUN: '1' },
       })
       const out = run.stdout?.trim().split('\n').pop()
@@ -5739,15 +5742,15 @@ function runnableFences(dir) {
   return out
 }
 
-function mesaUnder(dir) {
+function filesUnder(dir, suffix) {
   const out = []
   for (const name of safeRead(dir)) {
     if (name === 'node_modules' || name.startsWith('.')) continue
     const full = join(dir, name)
     let st
     try { st = statSync(full) } catch { continue }
-    if (st.isDirectory()) out.push(...mesaUnder(full))
-    else if (extname(name) === '.mesa') out.push(full)
+    if (st.isDirectory()) out.push(...filesUnder(full, suffix))
+    else if (name.endsWith(suffix)) out.push(full)
   }
   return out
 }
@@ -5757,7 +5760,17 @@ const MESA_CHECK_SCRIPT = `
 let checkMesaFiles
 try { ({ checkMesaFiles } = await import(Bun.resolveSync('@frontierjs/sierra/check', process.cwd() + '/'))) }
 catch { console.log(JSON.stringify({ unresolved: true })); process.exit(0) }
-const files = JSON.parse(await Bun.stdin.text())
+const { files, mounts } = JSON.parse(await Bun.stdin.text())
+// Resolved as sierra's scanner resolves one. A mount that will not import is
+// left to the scanner, which refuses it by name at the first build or dev boot.
+const { fileURLToPath } = await import('node:url')
+for (const mount of mounts) {
+  let dir
+  try { dir = (await import(mount)).default } catch { continue }
+  if (dir instanceof URL || String(dir).startsWith('file:')) dir = fileURLToPath(dir)
+  if (typeof dir !== 'string') continue
+  files.push(...new Bun.Glob('**/*.mesa').scanSync({ cwd: dir, absolute: true }))
+}
 console.log(JSON.stringify({ failed: await checkMesaFiles(files, { root: process.cwd() }) }))
 `
 

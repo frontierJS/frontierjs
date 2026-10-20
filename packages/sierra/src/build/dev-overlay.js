@@ -187,8 +187,12 @@ if (import.meta.env.DEV && import.meta.hot) {
   // Also expose globally so router can call it directly
   window.__sierraError = sierraShowError
 
-  // Forward errors back to the terminal via WS
+  // Forward errors back to the terminal via WS. The console line is the
+  // router's own, which it writes only when this hook is absent: a drive reads
+  // the console, and without it a route that failed to load was nothing at all
+  // (FJS-3351).
   window.__sierraReportError = function(data) {
+    console.error('[Sierra] ' + data.file + ': ' + data.message)
     import.meta.hot.send('sierra:error:client', data)
     sierraShowError(data)
   }
