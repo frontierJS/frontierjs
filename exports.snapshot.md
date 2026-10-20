@@ -373,6 +373,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./geo (types)` | `src/geo/geo.d.ts` | yes |
 | exports | `./geo (default)` | `src/geo/geo.js` | yes |
 | exports | `./docfences` | `src/docfences/docfences.js` | yes |
+| exports | `./env (types)` | `src/env/env.d.ts` | yes |
+| exports | `./env (default)` | `src/env/env.js` | yes |
 | exports | `./frontmatter` | `src/frontmatter/frontmatter.js` | yes |
 | exports | `./glow` | `src/glow/glow.js` | yes |
 | exports | `./history` | `src/history/history.js` | yes |
