@@ -2,7 +2,7 @@
 //
 // The state is jetty's own: Junction lives in Harbor, so `connected` follows
 // the port's lifecycle and the session broadcasts rather than a socket in the
-// page. A Resource's tether goes through sierra's `useTether`, like any other.
+// page. A Resource's rows go through sierra's `tethered()`, like any other.
 //
 // Mesa loads lazily, as in runtime/mount.js; without it the accessors fall back
 // to plain getters so non-component code still works.

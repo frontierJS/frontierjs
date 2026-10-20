@@ -20,7 +20,7 @@
   // told to the pair by a `checkers` event that each screen answers by reading
   // the game again.
   import { presence }    from '@frontierjs/sierra/presence'
-  import { getClient, useTether } from '@frontierjs/sierra/resource'
+  import { getClient } from '@frontierjs/sierra/resource'
   import { goto, page }  from '@frontierjs/sierra/router'
   import { members }     from '@/resources/Member.mesa'
   import { messages }    from '@/resources/Message.mesa'
@@ -115,12 +115,11 @@
   // a derived const is made again on every read.
   var here = presence(`room:${room.id}`, { meta: { x: 0, y: 0 } })
 
-  const { get: lines, unsubscribe } = useTether(messages.tether)
-  $.onDestroy(unsubscribe)
+  var roomLines = messages.tethered({ state: 'local', where: { roomId: room.id }, directives: { orderBy: '-createdAt', limit: 50 } })
+  const lines = () => roomLines.rows
   let note  = ''
   let draft = ''
-  messages.load({ roomId: room.id }, { orderBy: '-createdAt', limit: 50 })
-    .catch((e) => { note = e.message })
+  $: { if (roomLines.error) note = roomLines.error.message }
 
   // The game, as the server last said it: null until one is begun.
   let game = null

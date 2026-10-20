@@ -15,6 +15,7 @@ import type {
   BrokerHandler,
   BrokerHealth,
   BrokerFraming,
+  BrokerGap,
   BrokerLink,
 } from '../types.ts'
 import { ConduitStreamError } from '../types.ts'
@@ -51,6 +52,7 @@ export class BrokerTransport extends BaseTransport {
   private dropped    = 0
   private framing:   BrokerFraming<any> = CONDUIT_FRAMING
   private opened:    ((state: unknown) => void | Promise<void>) | null = null
+  private gap:       ((g: BrokerGap) => void | Promise<void>) | null = null
   // Ends the current connection's timers, which a close may never come to end.
   private hangUp:    (() => void) | null = null
 
@@ -114,12 +116,14 @@ export class BrokerTransport extends BaseTransport {
     traceHeaders: (() => Record<string, string> | undefined) | null = null,
     framing: BrokerFraming<any> = CONDUIT_FRAMING,
     opened: ((state: unknown) => void | Promise<void>) | null = null,
+    gap: ((g: BrokerGap) => void | Promise<void>) | null = null,
   ): Promise<void> {
     if (this.handler) throw new Error(`[conduit] ${this.descriptor.id} already has a subscriber`)
     this.handler      = handler
     this.traceHeaders = traceHeaders
     this.framing      = framing
     this.opened       = opened
+    this.gap          = gap
     try {
       await this.connect()
     } catch (err) {
@@ -174,6 +178,8 @@ export class BrokerTransport extends BaseTransport {
       let believed = false
       let state: unknown
       let order = Promise.resolve()
+      // The highest number the framing's `sequence` read on this connection.
+      const seq = { last: null as number | null }
 
       const keepalive = framing.keepalive
       let heard = Date.now()
@@ -255,7 +261,7 @@ export class BrokerTransport extends BaseTransport {
         if (frame === null) return
         if (!believed) { link.push(frame); return }
         try { if (keepalive?.pong?.(frame, state)) return } catch {}
-        order = order.then(() => this.onFrame(ws, framing, frame, state))
+        order = order.then(() => this.onFrame(ws, framing, frame, state, seq))
       })
     })
   }
@@ -289,10 +295,24 @@ export class BrokerTransport extends BaseTransport {
   // handoff is a lost message, and an ack after an idempotent handoff that then
   // fails to go out is a redelivery that costs nothing (FJS-D235). A handler
   // that throws leaves the message unacknowledged for the broker to redeliver.
-  private async onFrame(ws: WebSocket, framing: BrokerFraming<any>, frame: string, state: unknown) {
+  private async onFrame(ws: WebSocket, framing: BrokerFraming<any>, frame: string, state: unknown, seq: { last: number | null }) {
     let message: BrokerMessage | null
     try { message = framing.decode(frame, state) } catch { message = null }
     if (!message) { this.dropped++; return }
+
+    // Ahead of the frame that showed it, as `opened` is ahead of a
+    // connection's first: a backfill it starts is not overtaken by the frame.
+    let n: number | null = null
+    try { n = framing.sequence?.(message, state) ?? null } catch {}
+    if (typeof n === 'number' && Number.isFinite(n)) {
+      const after = seq.last
+      if (after === null || n > after) seq.last = n
+      if (after !== null && n > after + 1 && this.gap) {
+        try { await this.gap({ connection: state, after, at: n }) } catch (err) {
+          console.error(`[conduit] broker ${this.descriptor.id} gap() threw:`, (err as Error)?.message ?? err)
+        }
+      }
+    }
 
     this.lastReceivedAt = Date.now()
     this.received++

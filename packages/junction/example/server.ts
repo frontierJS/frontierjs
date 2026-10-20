@@ -23,13 +23,13 @@ import {
   createService,
   createLogger,
   channels,
-  authenticate,
   announce,
   correlationId,
   requestLogger,
   defaultConfig,
   cors,
 } from '../index.ts'
+import { authenticate } from '../src/core/hooks-builtin.ts'
 
 import { withLitestoneDb } from '../src/core/litestone.ts'
 

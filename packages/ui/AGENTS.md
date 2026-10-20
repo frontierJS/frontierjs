@@ -229,7 +229,7 @@ do the same for `<Cell>` and `<FilterBar>` — see `@frontierjs/ui/controls`.
   import { orders } from '@/resources/Order.mesa'
 
   const { columns } = orders.columns()
-  const list = orders.list()
+  const list = orders.tethered()
 </script>
 
 <Table {columns} rows={list.rows} orderBy={list.directives.orderBy} onsort={list.sort}
@@ -265,7 +265,7 @@ in your `row` snippet.
   import { createSelection } from '@frontierjs/ui/selection'
   import { surveys } from '@/resources/Survey.mesa'
 
-  const list = surveys.list()
+  const list = surveys.tethered()
   const picked = createSelection()              // keyed by row.id
   $: list.rows, (rows) => picked.retain(rows)   // a deleted row stops counting
   const columns = [{ name: 'pick', label: 'Select', hideLabel: true }, ...surveys.columns().columns]

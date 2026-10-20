@@ -10,7 +10,7 @@
   // the app it talks to: a client whose calls Harbor makes and whose pushes
   // Harbor hands back.
   import { createResource } from '@frontierjs/sierra/resource'
-  import { harborApp, login, submitCode, logout, getConnectionState } from '@frontierjs/jetty/resources'
+  import { harborApp, signIn, completeSignIn, signOut, getConnectionState } from '@frontierjs/jetty/resources'
   import { formatMoney, fromMinor } from '@frontierjs/toolbelt/units'
 
   export let harbor = null
@@ -27,19 +27,19 @@
   let code     = ''
 
   // One resource, one channel. The first call joins `orders`, and the EVENT
-  // that arrives decides what happens to the store — `orders pay` from another
+  // that arrives decides what happens to the rows — `orders pay` from another
   // tab is an upsert here, with nothing in this file polling.
   const queue = createResource('orders', { app: harborApp() })
 
-  // The store is the filter now. An order this dock has just SHIPPED arrives
-  // back as `orders ship`, and the record no longer matches the query `load()`
-  // asked for — so the store REMOVES it rather than upserting it into a list it
-  // has left (`FJS-493`). This used to re-filter on the way out, which was the
-  // screen making a decision the store could not.
-  queue.tether.subscribe(rows => { orders = rows ?? [] })
-
-  // Paid and not yet shipped: what a person standing at the bench is for.
-  const load = () => guard(() => queue.load({ status: 'paid' }, { orderBy: 'createdAt' }))
+  // Paid and not yet shipped: what a person standing at the bench is for. The
+  // tether is the filter: an order this dock has just SHIPPED arrives back as
+  // `orders ship`, no longer matches, and is REMOVED rather than upserted into
+  // a list it has left (`FJS-493`).
+  const paid = queue.tethered({ state: 'local', where: { status: 'paid' }, directives: { orderBy: 'createdAt' } })
+  $: { orders = paid.rows }
+  // Signed out, the read is refused and that is not news to the person.
+  $: { if (paid.error && session?.authenticated) error = paid.error.message }
+  const load = () => paid.reload()
 
   async function guard(fn) {
     try { error = ''; return await fn() }
@@ -59,9 +59,9 @@
     harbor.onDisconnect(() => status = 'harbor gone')
   }
 
-  const signIn  = () => guard(async () => { await login({ email, password }); password = '' })
-  const verify  = () => guard(async () => { await submitCode(code.trim()); code = '' })
-  const signOut = () => guard(async () => { await logout(); orders = [] })
+  const submit  = () => guard(async () => { await signIn(email, password); password = '' })
+  const verify  = () => guard(async () => { await completeSignIn(code.trim()); code = '' })
+  const leave   = () => guard(async () => { await signOut(); orders = [] })
 
   // `ship` is a TRANSITION, declared in db/schema.lite and named by the orders
   // service. Not a PATCH of `status`: the machine narrows the UPDATE with the
@@ -86,7 +86,7 @@
   {#if session?.authenticated}
     <div class="who">
       <span data-who>{session.user?.email ?? 'signed in'}</span>
-      <button onclick={signOut}>Sign out</button>
+      <button onclick={leave}>Sign out</button>
     </div>
 
     <div class="bar">
@@ -114,13 +114,13 @@
       <span>Code from your authenticator, or a recovery code</span>
       <input bind:value={code} autocomplete="one-time-code" placeholder="123456" data-code />
       <button onclick={verify} data-code-submit>Verify</button>
-      <button onclick={signOut} data-code-cancel>Start over</button>
+      <button onclick={leave} data-code-cancel>Start over</button>
     </div>
   {:else}
     <div class="signin">
       <input bind:value={email} placeholder="email" data-email />
       <input bind:value={password} type="password" placeholder="password" data-password />
-      <button onclick={signIn} data-signin>Sign in</button>
+      <button onclick={submit} data-signin>Sign in</button>
     </div>
   {/if}
 

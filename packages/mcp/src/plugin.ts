@@ -38,7 +38,7 @@ import { CLIENT_CAPABILITIES_META_KEY, McpServer, WebStandardStreamableHTTPServe
 import { RESOURCE_MIME_TYPE, getUiCapability, registerAppResource, registerAppTool } from '@modelcontextprotocol/ext-apps/server'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, isAbsolute, join } from 'node:path'
-import { BadRequest, CALL_OPTIONS_AT, LEVELS, errorBody, principalGateLevel, scopeRefusal, toDataPrincipal, withholdProtected } from '@frontierjs/junction'
+import { BadRequest, CALL_OPTIONS_AT, LEVELS, errorBody, principalGateLevel, scopeRefusal, toDataPrincipal, withholdProtected, setCallDb } from '@frontierjs/junction'
 import type { App, Plugin } from '@frontierjs/junction'
 import { AWAIT_META, JOBS_META, awaitJobs, describeOutcome, type JobsReader } from './await.ts'
 import { BREADCRUMBS_META, answersOneRow, breadcrumbsFor, describeBreadcrumbs } from './breadcrumbs.ts'
@@ -166,7 +166,7 @@ async function buildViews(app: App): Promise<SchemaViews | null> {
  * The parsed schema, from whichever of the two shapes this app has.
  *
  * **`app.db` is absent under `tenancy { strategy database }`** — one
- * `ctx.locals.db` cannot be many databases, so an app with a tenant registry has
+ * `$.db` cannot be many databases, so an app with a tenant registry has
  * no app-wide client at all, and `example` is exactly that shape. Reading only
  * `app.db` answered null there, which this plugin serves as a permanent 503:
  * the flagship app in this repo, and the surface would have been dead on it.
@@ -563,9 +563,9 @@ async function run(app: App, tool: Tool, args: unknown, user: unknown, call: Cal
     // client the call itself just opened, so no database file is created.
     const raw    = await invoke(caller, tool, a, opts)
     const appDb  = (app as { db?: unknown }).db
-    const withhold = (db: unknown) => withholdProtected(raw, {
-      locals: { db } as never, model: tool.model ?? undefined, service: tool.service,
-    })
+    const withhold = (db: unknown) => withholdProtected(raw, setCallDb({
+      model: tool.model ?? undefined, service: tool.service,
+    }, db))
     const result = appDb ? withhold(appDb) : await app.withDb(withhold)
     await recordCall(app, call.trail, tool, a, user, { outcome: 'done', result })
     const answer: CallResult = { content: [{ type: 'text', text: JSON.stringify(result ?? null) }] }
@@ -612,7 +612,7 @@ async function run(app: App, tool: Tool, args: unknown, user: unknown, call: Cal
  * null, since a unique violation's `data` can carry the value it collided on.
  */
 async function refusalBody(app: App, tool: Tool, err: unknown): Promise<ReturnType<typeof errorBody>> {
-  const ctx   = (db: unknown) => ({ app, locals: { db }, model: tool.model ?? undefined, service: tool.service }) as never
+  const ctx   = (db: unknown) => setCallDb({ app, model: tool.model ?? undefined, service: tool.service }, db) as never
   const appDb = (app as { db?: unknown }).db
   if (appDb) return errorBody(err, ctx(appDb))
   try {

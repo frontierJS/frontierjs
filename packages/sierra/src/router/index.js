@@ -792,7 +792,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   // (`@frontierjs/toolbelt/directives`): the FILTERS a page asks with, and the
   // DIRECTIVES saying how much of the answer and in what order. So a filtered,
   // sorted, paginated list is URL-driven with nothing to translate —
-  // `resource.load(page.query, page.directives)` — and it survives a reload, a
+  // `resource.tethered()` reads the pair — and it survives a reload, a
   // back button and a pasted link because the URL is where it lives.
   //
   // `params` is PATH captures alone now. It used to carry the search params

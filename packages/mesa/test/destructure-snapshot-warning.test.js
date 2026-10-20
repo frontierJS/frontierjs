@@ -1,5 +1,5 @@
 /**
- * FJS-2106 — `const { rows, loading } = r.list()` reads each getter once, at
+ * FJS-2106 — `const { rows, loading } = r.tethered()` reads each getter once, at
  * setup, and a resource handle's getters read signals. D667: a dev build
  * checks the one temporary the expansion binds, at runtime, and says so when a
  * destructured key is an accessor. A plain object stays quiet.

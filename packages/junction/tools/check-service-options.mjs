@@ -1,4 +1,5 @@
 import { buildBase } from '/home/claude/review/junction/src/core/service.ts'
+import { setCallDb, callDb } from '/home/claude/review/junction/src/core/context.ts'
 import { parse } from '/home/claude/review/litestone/src/core/parser.js'
 import { readFileSync } from 'fs'
 
@@ -28,7 +29,8 @@ chk('no cache key when omitted', !('cache' in bare))
 // the three still-derived behaviors survive the fold
 const db = { $schema: parsed, lead: {} }
 const run = async (method, user, data) => {
-  const ctx = { method, data, locals: { db }, auth: user ? { user } : {}, app: {} }
+  const ctx = { method, data, locals: {}, auth: user ? { user } : {}, app: {} }
+  setCallDb(ctx, db)
   try { for (const h of (bare.hooks.before[method] ?? [])) await h(ctx); return null }
   catch (e) { return e }
 }

@@ -12,15 +12,16 @@ import { buildService, callService } from '../src/core/service.ts'
 import { mail } from '../src/mail/index.ts'
 import { inAfterCommitDrain, warnEffectInDrain } from '../src/core/context.ts'
 import type { ServiceContext } from '../src/core/context.ts'
+import { $, setCallDb } from '../src/core/context.ts'
 
 const SCHEMA = `model Post { id Int @id @default(autoincrement())  title String }`
 
 function ctx(db: unknown, app: unknown): ServiceContext {
-  return {
+  return setCallDb({
     service: 'posts', method: 'create', id: undefined, data: { title: 't' },
     query: {}, auth: { user: null }, caller: {}, route: {},
-    locals: { db }, app, result: null, type: 'before',
-  } as unknown as ServiceContext
+    locals: {}, app, result: null, type: 'before',
+  } as unknown as ServiceContext, db)
 }
 
 function appWithMail() {
@@ -48,7 +49,7 @@ describe('FJS-2070 — mail inside an afterCommit drain', () => {
     const { app, sent } = appWithMail()
     const svc = buildService({
       name: 'posts',
-      async create(c: ServiceContext) { return (c.locals.db as any).post.create({ data: c.data }) },
+      async create(c: ServiceContext) { return ($.db as any).post.create({ data: c.data }) },
       hooks: { after: { create: [(c: ServiceContext) => {
         c.afterCommit(async () => { await c.app.mail.send({ to: 'a@b.co', subject: 's', html: 'h' }) })
       }] } },
@@ -79,7 +80,7 @@ describe('FJS-2070 — mail inside an afterCommit drain', () => {
       const db = await createClient({ db: ':memory:', schema: SCHEMA }) as any
       const svc = buildService({
         name: 'posts',
-        async create(c: ServiceContext) { return (c.locals.db as any).post.create({ data: c.data }) },
+        async create(c: ServiceContext) { return ($.db as any).post.create({ data: c.data }) },
         hooks: { after: { create: [(c: ServiceContext) => { c.afterCommit(() => warnEffectInDrain('x')) }] } },
       } as never)
       expect(await warnings(() => callService(svc, ctx(db, {})))).toEqual([])

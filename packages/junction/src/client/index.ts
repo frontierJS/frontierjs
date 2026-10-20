@@ -961,9 +961,9 @@ export class AuthClient {
    * Throws outside a browser rather than doing nothing, because the failure it
    * replaces is a button that silently does not work.
    */
-  signInWith(provider: string, opts: { returnTo?: string } = {}): void {
+  signInWithProvider(provider: string, opts: { returnTo?: string } = {}): void {
     if (typeof location === 'undefined') {
-      throw new Error('signInWith needs a browser — it navigates the page. Use oauthUrl() to build the link.')
+      throw new Error('signInWithProvider needs a browser — it navigates the page. Use oauthUrl() to build the link.')
     }
     location.assign(this.oauthUrl(provider, opts))
   }
@@ -1023,9 +1023,22 @@ export class AuthClient {
     await this._c._request('POST', `${this._prefix}/email/verify/request`, {})
   }
 
-  /** Confirm an address from the link. No session: the link is the proof. */
-  async verifyEmail(token: string): Promise<void> {
-    await this._c._request('POST', `${this._prefix}/email/verify`, { token }, { skipAuth: true })
+  /**
+   * Spend a mailed address link. No session is needed: the link is the proof.
+   *
+   * A registration's link makes the account and signs in (`FJS-D1310`), so it
+   * answers what `signIn` does and the session is adopted here -- a challenge
+   * when the account owes a second factor, finished by `completeSignIn`.
+   * Confirming or changing an existing account's address signs nobody in and
+   * answers `{ ok: true }`. Discriminate on `'user' in result`.
+   */
+  async verifyEmail(token: string): Promise<SignInResult | EmailVerified> {
+    this._pendingChallenge = null
+    const raw = await this._c._request(
+      'POST', `${this._prefix}/email/verify`, { token }, { skipAuth: true }
+    ) as Record<string, unknown> | null
+    if (raw?.ok === true) return { ok: true }
+    return this._signedIn(raw)
   }
 
   // ── The caller's own account — services ────────────────────────────
@@ -1143,6 +1156,11 @@ export class AuthClient {
 
 /** What `signUp` answers where a mailed link makes the account: the same for a held address and a free one. */
 export interface RegistrationPending {
+  ok: true
+}
+
+/** What `verifyEmail` answers for a link that confirmed an address and signed nobody in. */
+export interface EmailVerified {
   ok: true
 }
 
@@ -1405,6 +1423,18 @@ export class JunctionClient extends EventEmitter {
   private _authNames: Required<AuthServiceNames>
   private _cookieAuth: boolean
 
+  /**
+   * The cookie never leaves for another origin on fetch's default
+   * (`same-origin`), so a cookie-mode client on a different origin signed in and
+   * then called as a stranger (FJS-3291). Only that pairing opts in; a Bearer
+   * client sends no cookie and a same-origin one needs no flag.
+   */
+  private _credentialsInit(): { credentials?: 'include' } {
+    if (!this._cookieAuth) return {}
+    const here = typeof location !== 'undefined' ? location.origin : null
+    return here && here !== this._url ? { credentials: 'include' } : {}
+  }
+
   private _services: Map<string, ServiceProxy<Record<string, unknown>>> = new Map()
 
   /**
@@ -1631,27 +1661,29 @@ export class JunctionClient extends EventEmitter {
   // has just left it is removed. Without a match every event applies, which is
   // the old behavior and still what a caller passing nothing gets.
   //
-  // Usage:
-  //   const { service, tether, load } = client.resource('leads')
+  // Usage — `createResource`'s shape, every option named (`FJS-D1316`):
+  //   const { service, tether, load } = client.resource('leads', { idField: 'id' })
   //   await load()                          // populate from server
   //   tether.subscribe(leads => render(leads))
   //   await service.create({ name: 'Acme' }) // tether updates via WS
 
   resource<K extends KnownService>(
     name: K,
-    idField?: string | null,
     opts?: ResourceOptions<ServiceRow<K>>
   ): ResourceResult<ServiceRow<K>>
   resource<T extends Record<string, unknown> = Record<string, unknown>>(
     name: string,
-    idField?: string | null,
     opts?: ResourceOptions<T>
   ): ResourceResult<T>
   resource<T extends Record<string, unknown> = Record<string, unknown>>(
     name: string,
-    idField: string | null = 'id',
     opts: ResourceOptions<T> = {}
   ): ResourceResult<T> {
+    if (opts === null || typeof opts !== 'object') {
+      throw new TypeError(`[junction] client.resource('${name}', opts) takes an options object — ` +
+        `the row key is { idField: ${JSON.stringify(opts)} }`)
+    }
+    const idField = opts.idField === undefined ? 'id' : opts.idField
     const svc = this.service<T>(name)
     const tether = new Tether<T>()
 
@@ -2353,7 +2385,8 @@ export class JunctionClient extends EventEmitter {
         method,
         headers,
         body: fetchBody,
-        signal: controller.signal
+        signal: controller.signal,
+        ...this._credentialsInit()
       })
 
       clearTimeout(timer)
@@ -2425,7 +2458,7 @@ export class JunctionClient extends EventEmitter {
     if (this.token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${this.token}`)
     for (const [k, v] of Object.entries(this.callHeaders())) if (!headers.has(k)) headers.set(k, v)
 
-    const res = await fetch(this._url + this._apiPrefix + path, { ...init, headers })
+    const res = await fetch(this._url + this._apiPrefix + path, { ...this._credentialsInit(), ...init, headers })
     this._noteServerBuild(res.headers.get(BUILD_HEADER))
     this._noteCredential(res.headers.get(CREDENTIAL_HEADER))
     if (res.ok) return res
@@ -2880,7 +2913,7 @@ function buildQueryString(
 // notifies subscribers on every change.
 //
 // Compatible with any reactive system:
-//   Svelte:  leadsTether.subscribe(v => leads = v)  /  useTether(leadsTether)
+//   Svelte:  leadsTether.subscribe(v => leads = v)
 //   Plain:   leadsTether.subscribe(list => render(list))
 
 export interface TetherBinding {
@@ -2896,8 +2929,7 @@ export interface TetherBinding {
  * Bound, the list holds ids and the values come from the registry, so a row
  * this list has never heard about being patched somewhere else still reaches
  * it, and two views of one row cannot disagree. `get()` still answers
- * materialized rows, which is why no screen changed when this landed:
- * `useTether` is the one bridge from here to a Mesa signal.
+ * materialized rows, which is what sierra's `tethered()` subscribes to.
  *
  * UNBOUND it is what it always was — rows, held here, no registry — and that
  * is not a compatibility shim: a `Tether` is constructible on its own and the
@@ -3152,6 +3184,12 @@ export class Stale {
 }
 
 export interface ResourceOptions<T extends Record<string, unknown> = Record<string, unknown>> {
+  /**
+   * The column a row is keyed by, default `'id'`. `null` says the rows have no
+   * identity — a projection, held as the list arrives, with no per-row push.
+   */
+  idField?: string | null
+
   /**
    * Does this pushed record belong in what the last `load()` asked for?
    *

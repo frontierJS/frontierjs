@@ -1,7 +1,7 @@
 // test/app-db-type.test.ts
 //
-// FJS-2482 / FJS-D877 -- does the app's generated client reach `$.db` and
-// `ctx.locals.db`?
+// FJS-2482 / FJS-D877 -- does the app's generated client reach `$.db`, its one
+// spelling (FJS-D1331)?
 //
 // Nothing at runtime can answer that, so this compiles: the REAL generator's
 // system-audience output with `--augment junction`, junction's real entry
@@ -97,10 +97,9 @@ const TYPED = `
     return { text, name }
   }
 
-  export async function viaCtx(ctx: ServiceContext) {
-    const verse = await ctx.locals.db!.verse.findFirst({ where: { text: 'a' } })
-    const text: string | undefined = verse?.text
-    return text
+  export async function notOnLocals(ctx: ServiceContext) {
+    // @ts-expect-error -- locals is scratch; the client is $.db alone
+    return ctx.locals.db.verse
   }
 `
 
@@ -114,8 +113,8 @@ const UNTYPED = `
   }
 `
 
-describe('the registered client reaches $.db and ctx.locals.db', () => {
-  test('an app that augments AppDb reads typed rows through both', () => {
+describe('the registered client reaches $.db', () => {
+  test('an app that augments AppDb reads typed rows through it, and not through ctx.locals', () => {
     const { ok, out } = compile(TYPED, { generated: true })
     expect(out).toBe('')
     expect(ok).toBe(true)

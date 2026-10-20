@@ -86,7 +86,7 @@ model Note {
     return registry
   }
 
-  test('db beside tenants is refused at construction — two hooks would assign ctx.locals.db', async () => {
+  test('db beside tenants is refused at construction — two hooks would assign $.db', async () => {
     const registry = await fleet()
     const db: any = await createClient({ db: ':memory:', schema: 'model Note { id Int @id @default(autoincrement()) }' })
     expect(() => createApp({ tenants: registry, db, auth: USERS })).toThrow(/db.*tenants.*alternatives/s)

@@ -27,7 +27,7 @@ title: Customers
   // one table.
   import Customer, {customers}   from '@/resources/Customer.mesa'
   import { prefs } from '@/stores/prefs.js'
-  import { session, useTether } from '@frontierjs/sierra/resource'
+  import { session } from '@frontierjs/sierra/resource'
 
   import Alert                from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Avatar               from '@frontierjs/ui/components/display/Avatar.mesa'
@@ -42,13 +42,12 @@ title: Customers
   import Switch               from '@frontierjs/ui/components/forms/Switch.mesa'
   import Table                from '@frontierjs/ui/components/display/Table.mesa'
 
-  const { get: rows, unsubscribe } = useTether(customers.tether)
-  $.onDestroy(unsubscribe)
+  const list = customers.tethered({ state: 'local' })
+  const rows = () => list.rows
 
   $: (session.level, session.user, prefs.dense)
 
   let error   = null
-  let loading = false
   let removed = false
 
   // Who may act. Both are affordances — the API grades every call again — and
@@ -60,13 +59,7 @@ title: Customers
   // Table's own `loading` covers the first fetch and nothing else — by the
   // second one there are rows on screen and blanking them to draw a skeleton
   // would be a worse answer than a spinner in the button.
-  const reload = () => {
-    loading = true
-    return customers.load({}, removed ? { onlyDeleted: true } : {})
-      .catch(e => { error = e.message })
-      .finally(() => { loading = false })
-  }
-  reload()
+  const reload = () => list.reload()
 
   // The toggle re-asks the SERVER rather than filtering what is on the page: a
   // removed row was never in the response, which is the whole of what
@@ -74,7 +67,8 @@ title: Customers
   // an event, so there is no `.target` here.
   function showRemoved(on) {
     removed = on
-    reload()
+    const { onlyDeleted, ...rest } = list.directives
+    list.apply(undefined, on ? { ...rest, onlyDeleted: true } : rest)
   }
 
   // Whether `notes` came back is a fact about the RESPONSE, not a rule copied
@@ -198,16 +192,16 @@ title: Customers
   {#snippet action()}
     <div class="cluster" style="align-items: center; gap: 1rem">
       <Switch id="c-removed" label="Removed" checked={removed} onchange={showRemoved} />
-      <Button treatment="outlined" onclick={reload} disabled={loading}>
-        {#if loading}<Spinner size="sm" label="Reloading" />{/if}
+      <Button treatment="outlined" onclick={reload} disabled={list.loading}>
+        {#if list.loading}<Spinner size="sm" label="Reloading" />{/if}
         Reload
       </Button>
     </div>
   {/snippet}
 </SectionHeader>
 
-{#if error}
-  <Alert tone="danger" id="c-error">{error}</Alert>
+{#if error || list.error}
+  <Alert tone="danger" id="c-error">{error ?? list.error.message}</Alert>
 {/if}
 
 {#if removed}

@@ -144,6 +144,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
 | exports | `.` | `index.ts` | yes |
+| exports | `./hooks` | `src/core/hooks-builtin.ts` | yes |
+| exports | `./bearer` | `src/core/bearer.ts` | yes |
 | exports | `./litestone` | `src/core/litestone.ts` | yes |
 | exports | `./cache` | `src/cache/index.ts` | yes |
 | exports | `./scheduler` | `src/scheduler/index.ts` | yes |

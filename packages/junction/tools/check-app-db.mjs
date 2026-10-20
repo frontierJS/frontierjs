@@ -1,4 +1,5 @@
 import { createApp } from '/home/claude/review/junction/src/core/app.ts'
+import { setCallDb, callDb } from '/home/claude/review/junction/src/core/context.ts'
 const chk = (l, ok, d='') => console.log(`  ${ok ? '✓' : '✗'} ${l}${d ? '  — ' + d : ''}`)
 
 let scopedFor = null
@@ -15,13 +16,13 @@ chk('around hook installed', around.length === 1)
 // authenticated request
 const ctx = { auth: { user: { userId: 'u1' } }, locals: {} }
 await around[0](ctx, async () => {})
-chk('scopes ctx.locals.db to the caller', ctx.locals.db?.__scoped === true)
+chk('scopes $.db to the caller',         callDb(ctx)?.__scoped === true)
 chk('passes the caller to $setAuth',      scopedFor?.userId === 'u1')
 
 // anonymous request — no user, so no scoping, root client
 const anon = { auth: {}, locals: {} }
 await around[0](anon, async () => {})
-chk('anonymous gets the root client',     anon.locals.db === litestone)
+chk('anonymous gets the root client',     callDb(anon) === litestone)
 
 // plain (non-litestone) client
 const plain = { lead: { findMany: async () => [] } }

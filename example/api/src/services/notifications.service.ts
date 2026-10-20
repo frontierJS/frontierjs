@@ -3,7 +3,7 @@ import type { ServiceContext } from '@frontierjs/junction'
 
 // The in-app half of a notification. Nothing here says "only your own" — that
 // is `@@allow(read, userId == auth().id)` on the model, enforced at the Data
-// boundary for every caller including this one, because `ctx.locals.db` is the
+// boundary for every caller including this one, because `$.db` is the
 // per-request client scoped to the session.
 //
 // `methods` is the whole access story that a gate cannot tell:

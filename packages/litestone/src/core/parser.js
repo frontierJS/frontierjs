@@ -7626,6 +7626,30 @@ function validate(schema) {
     }
   }
 
+  // ── check(rel, 'op') names an operation ────────────────────────────────────
+  //
+  // The operation picks the parent's policy bucket, and a bucket that does not
+  // exist is a parent with no policy, which admits: check(org, 'bogus') let
+  // every caller through (FJS-3305).
+  for (const model of [...schema.models, ...(schema.views ?? [])]) {
+    const owners = [
+      ...model.attributes.map(a => ({ a, where: `@@${a.kind}` })),
+      ...model.fields.flatMap(f => f.attributes.map(a => ({ a, where: `field '${f.name}' @${a.kind === 'fieldAllow' ? 'allow' : a.kind}` }))),
+    ]
+    for (const { a, where } of owners) {
+      if (!a?.expr) continue
+      ;(function walk(n) {
+        if (!n || typeof n !== 'object') return
+        if (Array.isArray(n)) { n.forEach(walk); return }
+        if (n.type === 'check' && n.operation != null && !VALID_POLICY_OPS.has(n.operation))
+          errors.push(
+            `Model '${model.name}', ${where}: check(${n.field}, '${n.operation}'): invalid operation ` +
+            `'${n.operation}'. Valid: ${[...VALID_POLICY_OPS].join(', ')}`)
+        for (const v of Object.values(n)) walk(v)
+      })(a.expr)
+    }
+  }
+
   // ── @allow (field-level) validation ─────────────────────────────────────────
   for (const model of schema.models) {
     for (const field of model.fields) {
@@ -9239,12 +9263,16 @@ export function resolveImportSpecifier(spec, fromPath) {
 
 // An import on a line of its own, with its optional `into <db>`. `//` is .lite's
 // only comment, so a mention inside one cannot reach the line start and match.
-const IMPORT_LINE = /^[ \t]*import\s+["']([^"']+)["'](?:\s+into\s+([A-Za-z_]\w*))?;?[ \t]*$/gm
+// Global for `matchAll`, which copies `lastIndex` into its clone; a `test()` on
+// this same object left it past the first import, and the next file's walk
+// began there and inlined nothing above it (FJS-3341). So `test` asks a
+// non-global copy, which keeps no state.
+const IMPORT_LINE     = /^[ \t]*import\s+["']([^"']+)["'](?:\s+into\s+([A-Za-z_]\w*))?;?[ \t]*$/gm
+const HAS_IMPORT_LINE = new RegExp(IMPORT_LINE.source, 'm')
 
 /** Does this source import anything? Cheap enough to ask before doing work. */
 export function hasImports(text) {
-  IMPORT_LINE.lastIndex = 0
-  return IMPORT_LINE.test(text)
+  return HAS_IMPORT_LINE.test(text)
 }
 
 /**

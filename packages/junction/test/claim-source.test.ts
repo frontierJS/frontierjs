@@ -15,6 +15,7 @@ import { createApp, createService } from '../index.ts'
 import type { PrincipalResolver } from '../index.ts'
 import type { SessionContext } from '../src/auth/types.ts'
 import type { ServiceContext } from '../src/core/context.ts'
+import { $ } from '../index.ts'
 
 const rowsOf = (r: unknown): any[] => (r as { data: any[] }).data
 
@@ -57,7 +58,7 @@ async function appWith(db: unknown, principal?: PrincipalResolver) {
     name: 'shifts',
     async find(ctx: ServiceContext) {
       seen.user = ctx.auth.user
-      return (ctx.locals.db as any).shift.findMany({})
+      return ($.db as any).shift.findMany({})
     },
   }))
   return { app, seen }

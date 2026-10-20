@@ -29,7 +29,8 @@
 import { describe, test, expect } from 'bun:test'
 import { createApp }     from '../src/core/app.ts'
 import { buildService } from '../src/core/service.ts'
-import { enterRequest }  from '../src/core/context.ts'
+import { enterRequest, setCallDb } from '../src/core/context.ts'
+import { bridge }        from '../src/transport/bridge.ts'
 import { readFileSync }  from 'node:fs'
 import { join }          from 'node:path'
 
@@ -383,15 +384,12 @@ const FIELD_AXIS: Record<string, Axis> = {
   enqueue:      'call',   // the verb is the call's; the table is the outbox battery's (FJS-D643)
   telemetryId:  'call',
   parentTelemetryId: 'call',
-  _cleanups:    'call',
-  _afterCommit: 'call',
-  _outbox:      'call',
   transport:    'carriage',
   caller:       'carriage',
   route:        'carriage',
   statusCode:   'carriage',
   signal:       'carriage',
-  $raw:        'carriage',
+  raw:          'carriage',
   dispatch:     'announcement',
 }
 
@@ -411,5 +409,16 @@ describe('every ServiceContext field names its axis (FJS-D639)', () => {
   test('a row here names a field that still exists', () => {
     const fields = new Set(contextFields())
     expect(Object.keys(FIELD_AXIS).filter(f => !fields.has(f))).toEqual([])
+  })
+
+  // FJS-D1331: the client and the queues callService drains are the framework's,
+  // so a spread, a log line or Object.keys() carries none of them.
+  test('the framework keeps nothing on a context an app can enumerate', () => {
+    const ctx = setCallDb(bridge.internal('posts', 'find', null), { post: {} })
+    ctx.afterCommit(() => {})
+    const keys = Object.keys(ctx)
+    expect(keys.filter(k => k.startsWith('_') || k.startsWith('$'))).toEqual([])
+    expect(Object.keys(ctx.locals)).toEqual([])
+    expect(keys.filter(k => !(k in FIELD_AXIS))).toEqual([])
   })
 })

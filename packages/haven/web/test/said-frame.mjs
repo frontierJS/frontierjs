@@ -13,11 +13,12 @@
  * cell of a wide one, before the line was said and after.
  *
  * Traps:
- * - A child, never an import: the messages store answers only once a Junction
- *   client exists, and `bun test` shares one module cache across files, so a
- *   resource another test made first would stay the empty one for good.
+ * - A child, never an import: the scene's resources answer only once a
+ *   Junction client exists, and `bun test` shares one module cache across
+ *   files, so a resource another test made first would stay the empty one.
  * - The client points at a port nobody answers on and holds no token, so it
- *   opens no socket; the store is filled by hand.
+ *   opens no socket; the line is handed to `Bubbles` as the prop the scene
+ *   hands it.
  */
 import { join } from 'node:path'
 import { initJunction } from '@frontierjs/sierra/resource'
@@ -35,7 +36,6 @@ initJunction({ url: 'http://127.0.0.1:9', debug: false })
 await installTerminalLoader({ root: WEB })
 const Square  = (await import(join(WEB, 'src/scenes/Square.mesa'))).default
 const Bubbles = (await import(join(WEB, 'src/components/Bubbles.mesa'))).default
-const { messages } = await import(join(WEB, 'src/resources/Message.mesa'))
 
 const settle = async (t) => { await new Promise((r) => setTimeout(r, 20)); await t.renderOnce() }
 
@@ -66,8 +66,8 @@ for (const [i, { body, dx, dy, me = spawn }] of JSON.parse(process.argv[2]).entr
   const here = { get: () => ({ self: { userId: 1 }, others: [them] }) }
   const by = them.meta.y - view.y - 2
   const before = rowCells(t, by)
-  messages.tether.set([{ id: i + 1, memberId: 2, roomId: 1, body }])
-  const m = tui.mount(Bubbles, { renderer: t.renderer, props: { here, x: me.x, y: me.y, view, spawn } })
+  const lines = [{ id: i + 1, memberId: 2, roomId: 1, body }]
+  const m = tui.mount(Bubbles, { renderer: t.renderer, props: { here, x: me.x, y: me.y, view, spawn, lines } })
   await settle(t)
   const after = rowCells(t, by)
   console.log(JSON.stringify({ body, by, w: view.w, before, after }))

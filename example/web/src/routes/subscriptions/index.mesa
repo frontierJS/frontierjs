@@ -18,8 +18,7 @@ title: Subscriptions
   import Subscription, { subscriptions } from '@/resources/Subscription.mesa'
   import { prefs } from '@/stores/prefs.js'
   import { day } from '@/datetime.js'
-  import { session, useTether } from '@frontierjs/sierra/resource'
-  import { page } from '@frontierjs/sierra/router'
+  import { session } from '@frontierjs/sierra/resource'
   import { money } from '../../lib/money.js'
 
   import Alert               from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -46,8 +45,8 @@ title: Subscriptions
   // vanishing.
   const TONE = { trialing: 'info', active: 'success', pastDue: 'warning', cancelled: 'muted' }
 
-  const { get: rows, unsubscribe } = useTether(subscriptions.tether)
-  $.onDestroy(unsubscribe)
+  const list = subscriptions.tethered({ directives: { orderBy: '-createdAt' } })
+  const rows = () => list.rows
 
   $: (session.level, prefs.dense, prefs.currency)
 
@@ -55,12 +54,7 @@ title: Subscriptions
   let busy    = null
   let editing = null
 
-  function load() {
-    subscriptions.load(page.query, { orderBy: '-createdAt', ...page.directives })
-      .catch(e => { error = e.message })
-  }
-  load()
-  $: page.query, page.directives, () => load()
+  const load = () => list.reload()
 
   $: canWrite = subscriptions.can('create', session.level)
 
@@ -97,7 +91,7 @@ title: Subscriptions
   {/snippet}
 </SectionHeader>
 
-{#if error}<Alert tone="danger" id="s-error">{error}</Alert>{/if}
+{#if error || list.error}<Alert tone="danger" id="s-error">{error ?? list.error.message}</Alert>{/if}
 
 <Table {columns} rows={rows()} striped hover compact={prefs.dense}>
   {#snippet row(s)}

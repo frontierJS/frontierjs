@@ -35,6 +35,58 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1333"></a>2026-10-19 · `FJS-D1333` — Where do junction's bare-verb exports live — Subpaths: `@frontierjs/junction/envelope` (`single`, `list`), a new `/hooks` (every built-in hook), a new `/bearer` (`header`, `cookie`, `authorization`, `bearerClaim`, `BEARER`, `bearerOf`). Call sites are unchanged; imports move.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (rename in place: `singleResult`/`listResult`, `fromHeader`/`fromCookie`/`fromAuthorization`, `protectFields`/`allowFields`/`paginateHook`), **C** (only `single`/`list` leave `.`).
+
+The paper's recommendation, taken as written: `FJS-2979` is the in-domain sibling, and the import path says what `header` means while `from: header('x')` keeps reading. Confidence 2.
+
+### <a id="fjs-d1332"></a>2026-10-19 · `FJS-D1332` — What shape does an auth callback take, and does `onRegister` survive beside `onRegistered` — Every callback takes one event object (`onPasswordResetRequested({ email, token })`), and `onRegister` is deleted: `onRegistered` already refuses by throwing. `canStartSupport` keeps its name, a Guard by `FJS-D06`, and takes one object too.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (one object each, and `onRegister` becomes `canRegister`, a Guard), **C** (one object each, and the hook tier is spelled `before*`/`after*` (Better Auth's `databaseHooks`), superseding `FJS-D520`'s `onRegistered`).
+
+The paper's recommendation, taken as written: one concept fewer with no prototype caller, and `FJS-D520` stands; one object per callback is Auth.js's `signIn({ user, account })` and Better Auth's `sendResetPassword({ user, url, token })`. Confidence 2.
+
+### <a id="fjs-d1331"></a>2026-10-19 · `FJS-D1331` — Which spelling does `ctx` keep for the raw request and the scoped client, and where do `_cleanups`/`_afterCommit`/`_outbox` go — `ctx.$raw` → `ctx.raw` (Hono `c.req.raw`, Fastify `request.raw`); `$.db` is the one spelling of the scoped client and `ctx.locals.db` is deleted; the three `_*` fields move behind a module-private `Symbol`. `VOCABULARY.md` § The sign `$` loses `ctx.$raw` in the same change.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (A, but `ctx.locals.db` wins and `$.db` goes. Moves the 147 prototype files that already write `$.db`), **C** (hide the `_*` fields only; `$raw` and both client spellings stay).
+
+The paper's recommendation, taken as written: `$.db` is what outside authors already write, and `raw` takes the one stray `$` out of the field names Invariant 10 keeps for transport syntax. Confidence 2.
+
+**The older rulings that spell the old names are read through this one**: `ctx.locals.db` in `FJS-D05`, `FJS-D48`, `FJS-D113`, `FJS-D581` and `FJS-D877` is `$.db`, and `ctx.$raw` in `FJS-D884` and `FJS-D890` is `ctx.raw`. A raw route's `TransportContext.$raw`/`$req` is a different object and keeps its name. Likewise `FJS-D460`'s `registerDevService({ name, url, note })` is `registerDevService(name, { url, note })` under `FJS-D1306`.
+
+### <a id="fjs-d1318"></a>2026-10-19 · `FJS-D1318` — Which door lists rows on a screen: `resource.list()` alone, or `tether` + `load()` with `list()` as sugar over them — `list()` is the one door for a screen's rows: `load`, `more`, `stale`, `tether` leave the resource's public keys (they remain what `list()` is built from, and `useTether` stays for non-list reads), the 23 `.load()` pages and the 40 `service.find()` pages that render a list move to `list()` (`{ composed: true }` where `find()` answers an include or count), and a `fli check` rule grades a route calling `.load(` or `.service.find(` to fill a table.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (two named doors: `list()` for a URL-driven list, `tether` + `load()` for rows a screen holds without the URL (pickers, embedded panels, a dashboard tile); `service.find()` stays for one-off reads that need the envelope. Basecamp's servers page and example's products page both move to `list()`, the README says which door answers which question, and no key leaves the resource), **C** (leave the surface and fix the two pages only: servers moves to `tether` + `load()` (as example does), and the README drops `list()` as the headline. Cheapest, and the one door left is the one that cannot carry `page.query`/`page.directives` without the page restating the five wirings `list.js` says every page restated).
+
+As recommended: A's one door, named for what it is: resource.list() becomes resource.tethered(), because the rows it answers stay live and list is a shape word junction's envelope already spends (FJS-3008). tether, load, more and stale leave the resource's public keys so one tether word remains on the object; a dock or widget subscribes through tethered({ state: 'local' }).
+
+**Amended 2026-10-19, by the owner: the door is `tethered()`, not `list()`** — the heading above was written from option A's text before the rename was ruled. `createResource`'s `listQuery` follows it as `tetheredQuery`, beside `optionsQuery`, `detailQuery` and `offlineQuery`, each named for the read it feeds. `hasMore` and `total` left the resource with the tether they described; `tethered()` carries both.
+
+### <a id="fjs-d1304"></a>2026-10-19 · `FJS-D1304` — With `FRONTIER_` ruled (`FJS-D1102` C), what do `WEB_URL`, `VITE_API_URL` and a bare `PORT` become, and does the sweep wait for lockdown 3.3 — Every framework var is `FRONTIER_*`: `FRONTIER_PORT_BE/FE/…`, `FRONTIER_SOURCE`, `FRONTIER_API_URL`, `FRONTIER_APP_URL`; `WEB_URL` is deleted into `APP_URL`; junction reads no bare `PORT`; Sierra sets Vite's `envPrefix` to `['VITE_', 'FRONTIER_']`, so the bundle reads `import.meta.env.FRONTIER_API_URL` and `VITE_API_URL` is deleted. Every `FRONTIER_` var then reaches the browser bundle, so a future `FRONTIER_*` secret would leak into it.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (As A, but `VITE_API_URL` stays as the one name Vite exposes to a bundle, set from `FRONTIER_API_URL` by Sierra, and `envPrefix` stays `VITE_`. One extra name, and nothing under `FRONTIER_` can reach a browser), **C** (As B, but junction keeps reading bare `PORT` as the deploy's word beside `FRONTIER_PORT_BE`. Fewer deploy files change; `PORT` keeps shadowing the broker's slot, the shadowing the row names).
+
+Against the recommendation (**B**): A with the browser prefix narrowed: Vite's envPrefix is ['VITE_', 'FRONTIER_PUBLIC_'], so FRONTIER_PUBLIC_API_URL is the one name from .env to bundle and nothing else under FRONTIER_ can reach a browser (Next NEXT_PUBLIC_, Nuxt NUXT_PUBLIC_, SvelteKit/Astro PUBLIC_). WEB_URL folds into FRONTIER_APP_URL. A bare PORT is kept as a fallback BELOW FRONTIER_PORT_BE, never above it, because every PaaS (Render, Fly, Railway, Cloud Run) injects PORT and Nitro/adapter-node read it.
+
+### <a id="fjs-d1315"></a>2026-10-19 · `FJS-D1315` — Which one verb set do the client, sierra's session and jetty's resources share for auth, and which one name is the token option — The client's names win at every layer: sierra `submitCode` → `completeSignIn`, jetty `login`/`submitCode`/`logout` → `signIn`/`completeSignIn`/`signOut`; the token option stays `tokenKey` in the two config files (a string a config can hold) and `tokenStorage` in the client (an object), because they are two different things, one built from the other, and the bridge index names both.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (A, and the config option is renamed `tokenStorage` too, taking either a key string or a `TokenStore`, so one name reaches from `sierra.config.js` to `createJunctionClient`. Costs a dual-typed option), **C** (the sierra/jetty names win (`submitCode`, `login`, `logout`) and the client renames `completeSignIn` → `submitCode`; `signInWith`/`signInWithMagicLink` stay. Shortest for the apps, but a code is not always submitted (a ticket is completed) and the bridge index, `FJS-D915` and the client tests all say `completeSignIn`).
+
+As recommended: A, and the redirect door signInWith(provider) becomes signInWithProvider(provider): it is the one sign-in that leaves the page for a Provider (FJS-D06) instead of answering a session, and the name says so. tokenKey and tokenStorage stay.
+
+### <a id="fjs-d1316"></a>2026-10-19 · `FJS-D1316` — Is junction's `client.resource(name, idField, opts)` a public door that takes `(name, opts)` like `createResource`, or internal to sierra — Keep it public and give it `createResource`'s shape: `client.resource(name, { idField, match, … })`, no positional argument. A junction app with no sierra keeps its one-call door; the README, the fullstack example and `client-types`/`realtime-events` tests move in the same change.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (internal: not documented, not in the README, renamed with an underscore or moved behind sierra's import. A standalone junction app builds its own `service()` + `Tether` + `bind`, and the browser has one public Resource noun, sierra's), **C** (leave the positional `idField` and only record that `createResource` is the app-facing noun).
+
+The paper's recommendation, taken as written: the positional argument is the real drift (`FJS-2933` already refused it on the other factory), and junction used on its own is a stated case (`FJS-D138`); B removes it to save one name.
+
+### <a id="fjs-d1306"></a>2026-10-19 · `FJS-D1306` — Do `app.own` and the three `register*` methods share one shape, and if not, which of them is the outlier — `own` stays; the `register*` family stays and is one shape, `(name, value)`: `registerDevService(name, { url, note })`, the name taken from the key. Callers moved in the same change: `example/api/index.ts` (4), `packages/junction/test/dev-services.test.ts`, `README.md` § dev services, `FJS-D460`'s text. Two of three siblings already decided this shape.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (one verb for the registries, `app.register('metrics' | 'readiness' | 'devService', name, value)`. One method on `App`, but a string-keyed kind that must be typed by augmentation, and about 30 files change across junction, caravan, conduit, basecamp and the example — every plugin that contributes a metric or a check), **C** (nothing changes; the row is wrong. `own` and `register*` are different ideas (a slot versus a registry entry) and `DevService` is an object because `/manifest` emits it whole with its name. Moves no callers and adds no convention; the cost is the argument-shape mismatch staying).
+
+The paper's recommendation, taken as written: the family already decided `(name, value)` twice, and one outlier of three is moved by editing four call sites; C is the reopen path if the owner reads the object shape as a deliberate record. Confidence 2.
+
 ### <a id="fjs-d1330"></a>2026-10-19 · `FJS-D1330` — What does `model Person` pluralize to — `persons`. `person: 'people'` leaves toolbelt's irregular table in both directions, so `model Person` derives the service `persons` and `people` is no longer a spelling of any model.
 
 Ruled by the owner on [`FJS-2815`](ISSUES.md#fjs-2815), against the options offered (rename auth's operator service to `account-admin`, `admin` or `user-admin`, or keep it and warn before boot). The collision was auth's `people` against the name `model Person` derived; with the derived name `persons`, auth's default keeps its word and no domain model produces it. The reverse goes with the forward, because the table is one table read both ways: introspecting a legacy `people` table now yields `model People`, which the author renames (or keeps the table with `@@map("people")`). `fli make:service Person` and the derived name now agree (`FJS-1260`). An app whose `people.service.ts` declares no `model:` resolves to no model after this and moves its file to `persons.service.ts`.
@@ -1519,6 +1571,14 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d1334"></a>2026-10-19 · `FJS-D1334` — How does the client schema tell a form that a string column is a secret — `format: 'password'`, OpenAPI's own hint ("a hint to UIs to obscure input"), on an `@encrypted`, `@secret` or `@hashed` string; `controlFor` answers a password input for it. `@hashed` keeps `writeOnly`.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a new `x-secret: true`, read the same way; leaves `format` free for `@email` and kin), **C** (reuse `writeOnly`; wrong for `@encrypted`, which an authorized caller reads back).
+
+The paper's recommendation, taken as written: an existing standard every OpenAPI consumer already reads. Confidence 2.
+
+**Amended 2026-10-19, by the owner, on what a form does with it.** C's reason above is wrong: an `@encrypted` value reaches no reader below the system principal (`$protectedFields` — "hides a value from a non-system reader and stays writable"), and junction withholds it from every wire answer, so from a browser it is write-only. A generated form therefore treats a secret as a REPLACE: a plain secret string is a password box that starts empty, and an empty box sends nothing, so an edit that leaves it alone keeps the stored value (Invariant 9 would otherwise read the blank as a clear). An encrypted JSON or `@syntax` column is left off the default form, because a value nobody can see cannot be edited blind; an app that wants one places it on purpose.
 
 ### <a id="fjs-d1311"></a>2026-10-19 · `FJS-D1311` — Who keeps a reset or magic-link token in the URL away from the analytics vendor: the tag, the token page, or the link — The link: the token rides the fragment, `/reset/#token=`. A fragment is never sent in a request, a `Referer` or a server's access log, and Plausible ignores it unless `hashBasedRouting` is on. The scaffold's two links and `auth`'s documented examples (`types.ts:111`, `:123`, `:360`) move, and the token pages read `location.hash`; whether GTM's built-in page variables carry the fragment is unprobed.
 
@@ -7392,6 +7452,12 @@ this flag existed to escalate, so there is nothing left for it to do.
 ("write payload — unknown fields are silently stripped").
 
 ## Migrations (Litestone)
+
+### <a id="fjs-d1335"></a>2026-10-19 · `FJS-D1335` — How does `migrate create` see a `@scale` change, which leaves the DDL unchanged — The scale is in the DDL: the column's CHECK constraint is named with it (`units_scale_6`), the replayed history carries it, and the differ sees the change. A table with rows is refused with the `UPDATE` to write by hand; an empty one rebuilds.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (A, and a widening (lossless) emits the multiply itself; only a narrowing is refused), **C** (a `_litestone_columns` table the migrator writes and compares).
+
+The paper's recommendation, taken as written: the DDL stays the one record the differ reads, and a refusal that names the statement is the smallest correct answer. Confidence 2.
 
 ### <a id="fjs-d1103"></a>2026-10-17 · `FJS-D1103` — How does `litestone restore` learn where a layout file goes: the copy names it, or the live tree does — The copy carries a manifest. `backup` writes `db-layout.json` (`{ sqlite: [{ name, rel }], files: [rel] }`), `replicate` writes the same file to `<url>/db-layout.json`; restore reads it, so the hyphen ambiguity (`db-a-b.db`) and the unlistable bucket both go away. `db-files/` is put back only where nothing is at the path, and `schema.lite`/`migrations/` are skipped by name. One new file in the copy format and a replicate step that must rewrite it when the layout changes.
 

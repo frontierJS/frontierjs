@@ -45,7 +45,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
 
 const { generateSchemas } = await import('../src/build/schema-plugin.js')
 const { registerSchemas } = await import('../src/resource/schema-registry.js')
-const { createResource } = await import('../src/resource/resource.js')
+const { createResource, tetherOf } = await import('../src/resource/resource.js')
 
 const SOURCE = `
 model Sku  { code String @id   name String  @@gate(0.0.0.0) }
@@ -96,7 +96,7 @@ describe('a caller-supplied @id', () => {
     // would turn every edit into a duplicate row (`FJS-351`).
     ROWS = [{ code: 'ALREADY-THERE', name: 'Widget' }]
     const skus = createResource('skus', { model: 'Sku', idField: 'code' })
-    await skus.load({})
+    await tetherOf(skus).load({})
     await skus.save({ code: 'ALREADY-THERE', name: 'renamed' })
     expect(verb()).toBe('patch')
     expect(_calls.at(-1)[1]).toBe('ALREADY-THERE')

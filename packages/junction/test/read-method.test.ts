@@ -13,6 +13,7 @@ import { enterRequest } from '../src/core/context.ts'
 import { bridge } from '../src/transport/bridge.ts'
 import { withLitestoneDb } from '../src/core/litestone.ts'
 import { createClient } from '../../litestone/src/index.js'
+import { $ } from '../src/core/context.ts'
 
 function searchService() {
   const calls = { search: 0, reboot: 0, aggregate: 0 }
@@ -128,8 +129,8 @@ describe('a declared read is handed a client that refuses writes', () => {
     const svc = buildService({
       name: 'passes',
       methods,
-      search: async (ctx: any) => body(ctx.locals.db),
-      reboot: async (ctx: any) => body(ctx.locals.db),
+      search: async (ctx: any) => body($.db),
+      reboot: async (ctx: any) => body($.db),
     } as never)
     const app = await createTestApp()
     const ctx = bridge.internal('passes', method as 'create', {}, {

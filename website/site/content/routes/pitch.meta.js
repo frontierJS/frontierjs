@@ -33,7 +33,7 @@ model Lead {
   @@gate(0.4.4.5)
   @@allow(read, ownerId == auth().id)
 }`],
-  API: ['js', `import { createApp, createService, announce } from '@frontierjs/junction'
+  API: ['js', `import { createApp, createService, announce, $ } from '@frontierjs/junction'
 
 const app = createApp({ db, auth, config: { port: 3200 } })
 const live = announce(() => app.channel('leads'))
@@ -44,8 +44,8 @@ app.services.register(createService({
   hooks: { after: { create: [live], patch: [live] } },
 
   // custom action, dispatched by X-Service-Method
-  async getStats(ctx) {
-    const leads = await ctx.locals.db.lead.findMany()
+  async getStats() {
+    const leads = await $.db.lead.findMany()
     return { count: leads.length }
   },
 }))

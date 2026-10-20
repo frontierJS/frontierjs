@@ -45,7 +45,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
   }),
 }))
 
-const { createResource, createStore } = await import('../src/resource/resource.js')
+const { createResource, tetherOf } = await import('../src/resource/resource.js')
 
 beforeEach(() => {
   _proxy = {
@@ -113,33 +113,13 @@ describe('service methods pass Junction shapes through unchanged', () => {
   })
 })
 
-describe('stores hold rows, never envelopes', () => {
+describe('a tether holds rows, never envelopes', () => {
 
   test('load() resolves to the rows', async () => {
-    const { load } = createResource('leads')
+    const { load } = tetherOf(createResource('leads'))
     const rows = await load({})
 
     expect(Array.isArray(rows)).toBe(true)
     expect(rows).toEqual(ROWS)
-  })
-
-  test('createStore().find() leaves rows in the store', async () => {
-    const { service } = createResource('leads')
-    const store = createStore(service)
-    await store.find({})
-
-    expect(Array.isArray(store.get())).toBe(true)
-    expect(store.get()).toEqual(ROWS)
-  })
-
-  test('createStore() still accepts a service that returns a bare array', async () => {
-    // Not every service is a Junction model service — a custom action or a
-    // hand-rolled proxy may return rows directly. The store must not turn that
-    // into an empty list.
-    const { service } = createResource('leads')
-    const store = createStore({ ...service, find: async () => ROWS })
-    await store.find({})
-
-    expect(store.get()).toEqual(ROWS)
   })
 })

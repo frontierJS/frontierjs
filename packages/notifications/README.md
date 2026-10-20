@@ -436,7 +436,7 @@ export default defineNotification<Order>({
 
 The UI half is a resource file whose data half is `<script module>`, per Invariant 18 — `web/src/resources/Notification.mesa`. `examples/Notification.mesa` is the one this package ships to copy:
 
-- `notifications` — `createResource('notifications', { model: 'Notification' })`; `.tether` is the live list, `.service` the client
+- `notifications` — `createResource('notifications', { model: 'Notification' })`; `.tethered({ state: 'local' })` is the live list, `.service` the client
 - `isUnread(n)` — what the bell counts and the list styles
 - `markRead(id)` — `service.patch(id, { readAt })`
 

@@ -129,7 +129,7 @@ describe('rewriteLayoutSlots', () => {
 </script>
 <div><slot name="sidebar" /><slot /></div>`
     const out = rewriteLayoutSlots(src)
-    expect(out).toContain('let __slot_sidebar = null')
+    expect(out).toContain('let __slot_sidebar = page.slots.sidebar ?? null')
     expect(out).toContain("$: page.slots, () => { __slot_sidebar = page.slots.sidebar ?? null }")
   })
 
@@ -169,6 +169,16 @@ describe('rewriteLayoutSlots — the default slot is left to Mesa', () => {
     const ctx = await compileSource(out, { filename: 'Layout.mesa', dev: false, css: false })
     expect(ctx.analysis.errors).toEqual([])
     expect(ctx.result).toContain('children')
+  })
+
+  it('a named slot compiles to valid JS: one declaration, one watch (FJS-3293)', async () => {
+    const out = rewriteLayoutSlots(`<script>\n  ${ROUTER}\n</script>\n<div><slot name="sidebar" /><slot /></div>`)
+    expect(out.match(/__slot_sidebar = /g).length).toBe(2) // initial let + watch handler
+    expect(out).not.toMatch(/^\s*\$: __slot_sidebar =/m)
+    const ctx = await compileSource(out, { filename: 'Layout.mesa', dev: false, css: false })
+    expect(ctx.analysis.errors).toEqual([])
+    const code = ctx.result.replace(/^\s*import\s.*$/gm, '').replace(/export\s+default\s+/g, 'const __d = ')
+    expect(() => new Function(code)).not.toThrow()
   })
 })
 

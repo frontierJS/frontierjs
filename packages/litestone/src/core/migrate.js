@@ -15,7 +15,7 @@
 //                  add/drop/reorder a UNIQUE the table declares itself
 
 import { SEARCH_TABLE, createSearchIndex, searchBackfillSql,
-         generateDDL, generateDDLForDatabase, schemaForDatabase, generateTableDDL, generateIndexDDL, generateModelDDL, generateViewDDL, modelToTableName , detectM2MPairs, generateJoinTableDDL, isStoredField } from './ddl.js'
+         generateDDL, generateDDLForDatabase, schemaForDatabase, generateTableDDL, generateIndexDDL, generateModelDDL, generateViewDDL, modelToTableName , detectM2MPairs, generateJoinTableDDL, isStoredField, readScaleConstraint } from './ddl.js'
 // `#host`, for the reason `drivers/jsonl.js` says: a bare node builtin in this
 // graph throws when the module is merely imported in a browser (`FJS-1179`).
 import { createHash } from '#host'
@@ -140,6 +140,21 @@ export function parseChecks(sql) {
   return out.sort()
 }
 
+/**
+ * `{ column: places }` for every `@scale(n)` CHECK in a CREATE TABLE, read off
+ * the constraint's NAME (`ddl.js` § Scale constraints). The expression is the
+ * same at every scale, so the name is the only place a change shows.
+ */
+export function parseScales(sql) {
+  const out = {}
+  for (const part of createTableParts(sql)) {
+    const at = /\bCONSTRAINT\s+"((?:[^"]|"")*)"\s+CHECK\s*\(/i.exec(part)
+    const scale = at && readScaleConstraint(at[1].replace(/""/g, '"'))
+    if (scale) out[scale.column] = scale.places
+  }
+  return out
+}
+
 // The uniqueness a CREATE TABLE declares itself — `UNIQUE ("a", "b")` as a table
 // constraint, `UNIQUE` inside a column definition, and a composite PRIMARY KEY.
 //
@@ -252,8 +267,9 @@ export function introspect(db) {
     // that ruling differs from its schema here and nowhere else.
     const autoincrement = /\bPRIMARY\s+KEY\s+AUTOINCREMENT\b/i.test(tblSql)
     const checks = parseChecks(tblSql)
+    const scales = parseScales(tblSql)
 
-    schema[t] = { columns, indexes, foreignKeys, strict, autoincrement, checks, uniques: tableUniques(db, t) }
+    schema[t] = { columns, indexes, foreignKeys, strict, autoincrement, checks, scales, uniques: tableUniques(db, t) }
   }
 
   // Views — stored separately under __views (filtered out of table comparisons)
@@ -987,6 +1003,16 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
     // is the right outcome anyway — it is the rebuild that brings it up to date.
     const checksChanged = !arraysEqual(p.checks ?? [], l.checks ?? [])
 
+    // A scale change rebuilds, and the copy keeps every stored integer as it
+    // is — worth 1000x more after @scale(9) → @scale(6) (`FJS-2140`). A live
+    // CHECK with no scale in its name predates the naming and rebuilds as a
+    // plain constraint change; only two KNOWN scales are a rescale.
+    const pScales = p.scales ?? {}, lScales = l.scales ?? {}
+    const scalesChanged = !arraysEqual(Object.entries(pScales).map(String).sort(), Object.entries(lScales).map(String).sort())
+    const rescales = Object.keys(pScales)
+      .filter(c => c in lScales && lScales[c] !== pScales[c])
+      .map(c => ({ column: c, from: lScales[c], to: pScales[c] }))
+
     // The same argument one constraint kind along, and the sharper half of it:
     // a CHECK that never migrated refused a write the schema allows, and a
     // UNIQUE that never migrated ALLOWS a write the schema refuses. See
@@ -1026,6 +1052,7 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
       strictChanged        ||
       autoincrementChanged ||
       checksChanged        ||
+      scalesChanged        ||
       uniquesChanged
 
     // Cols we can safely ADD COLUMN — nullable, or has a default, not PK.
@@ -1043,7 +1070,7 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
       indexes.dropped.length > 0
 
     if (hasChanges) {
-      tableDiffs.push({ name, needsRebuild, simpleAdds, blockedAdds, cols, indexes, fkChanged, strictChanged, autoincrementChanged, checksChanged, uniques, uniquesChanged })
+      tableDiffs.push({ name, needsRebuild, simpleAdds, blockedAdds, cols, indexes, fkChanged, strictChanged, autoincrementChanged, checksChanged, scalesChanged, rescales, uniques, uniquesChanged })
     }
   }
 
@@ -1248,6 +1275,37 @@ function rowCountGuard(tableName, tmp) {
     `INSERT INTO "_litestone_rowcount" (ok)`,
     `  SELECT CASE WHEN (SELECT count(*) FROM "${tmp}") = (SELECT count(*) FROM "${tableName}") THEN 1 ELSE 0 END;`,
     `DROP TABLE "_litestone_rowcount";`,
+    ``,
+  ]
+}
+
+// The statement that keeps a rescaled table's rows meaning what they meant.
+// SQLite's `/` on two integers drops the remainder.
+export function rescaleUpdate(tableName, { column, from, to }) {
+  const factor = 10 ** Math.abs(to - from)
+  return `UPDATE ${quoteIdent(tableName)} SET ${quoteIdent(column)} = ${quoteIdent(column)} ${to > from ? '*' : '/'} ${factor};`
+}
+
+// A rescale is refused on a table with rows and rebuilt on an empty one, and
+// which it is is known only where the file is APPLIED, so the guard is SQL:
+// the rowCountGuard shape, with the constraint name as the message.
+function rescaleGuard(tableName, rescales) {
+  const said = rescales.map(r => `${r.column} @scale(${r.from}) to @scale(${r.to})`).join(', ')
+  const bare = rescales.map(r => rescaleUpdate(tableName, r).replace(/"/g, '').replace(/;$/, '')).join('; ')
+  const name = `${tableName} has rows and ${said} changes what each one means: ` +
+               `write ${bare} above this guard, then delete the guard`
+  return [
+    `-- ${quoteIdent(tableName)}: ${said}. A stored value is minor units at the`,
+    `-- OLD scale and the rebuild copies it unchanged, so a table with rows is`,
+    `-- refused here. To keep the rows, write`,
+    ...rescales.map(r => `--   ${rescaleUpdate(tableName, r)}`),
+    `-- above this guard and delete the guard. An empty table rebuilds as is.`,
+    `CREATE TEMP TABLE "_litestone_rescale" (`,
+    `  ok INTEGER CONSTRAINT ${quoteIdent(name)} CHECK (ok = 1)`,
+    `);`,
+    `INSERT INTO "_litestone_rescale" (ok)`,
+    `  SELECT CASE WHEN EXISTS (SELECT 1 FROM ${quoteIdent(tableName)}) THEN 0 ELSE 1 END;`,
+    `DROP TABLE "_litestone_rescale";`,
     ``,
   ]
 }
@@ -1547,6 +1605,7 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
           lines.push(``)
           continue
         }
+        if (d.rescales?.length) lines.push(...rescaleGuard(d.name, d.rescales))
         lines.push(...rebuildStatements(model, parseResult, pluralize, d))
         continue
       }
@@ -1715,6 +1774,9 @@ export function summarizeDiff(diffResult) {
     // rebuild that follows is the whole table — worth seeing in a plan rather
     // than discovering in the row count.
     if (d.checksChanged) lines.push(`      ~ CHECK constraints changed (an enum's members, or an @check)`)
+    if (d.scalesChanged && !d.rescales?.length) lines.push(`      ~ @scale constraint renamed (an unnamed one predates FJS-D1335)`)
+    for (const r of d.rescales ?? [])
+      lines.push(`      ~ col  ${r.column}  @scale(${r.from}) → @scale(${r.to})  (refused on a table with rows: ${rescaleUpdate(d.name, r)})`)
     // Named per constraint rather than as one flag, because a rebuild that ADDS
     // uniqueness is the one that can fail on the copy — the rows that violate it
     // are already there — and which columns those are is the whole of what the

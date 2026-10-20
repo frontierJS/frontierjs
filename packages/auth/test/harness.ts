@@ -95,8 +95,8 @@ ${auditDatabase(dir)}
     // Fixtures here sign in with `pw-1`; the policy is graded in
     // password-policy.test.ts, which passes `password: undefined` for the default.
     password:      { min: 1 },
-    onPasswordResetRequested:    async (_e, t) => { resetToken  = t; resetMinted() },
-    onEmailVerificationRequested: async (_e, t) => { verifyToken = t },
+    onPasswordResetRequested:     async ({ token }) => { resetToken  = token; resetMinted() },
+    onEmailVerificationRequested: async ({ token }) => { verifyToken = token },
     ...opts,
   })
 
@@ -144,6 +144,12 @@ export function signedIn(result: any): { token: string; user: any } {
     throw new Error('expected a session — this login owed a second factor')
   }
   return result
+}
+
+/** The account a spent address link left behind, where it signed nobody in. */
+export function verified(result: any): any {
+  if (!result || !('verified' in result)) throw new Error('expected an address confirmed — this link signed somebody in')
+  return result.verified
 }
 
 /**

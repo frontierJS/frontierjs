@@ -3,7 +3,7 @@
 // Sierra has `getClient()` returning a Junction client; jetty has a port
 // instead. The registry is set by jetty's auto-generated main.js right after
 // connectHarbor resolves and before mount(). Components that import resource
-// helpers (createResource, login, etc.) read the port from here.
+// helpers (createResource, signIn, etc.) read the port from here.
 //
 // Module-level state is the right answer for Pages: each Page is its own JS
 // realm (one popup/options page/pier per realm) so there's exactly one active
@@ -107,54 +107,56 @@ export function getConnectionState() {
 
 // --- auth helpers ---
 //
-// Mirror of Sierra's login()/logout() but routed through the harbor port.
+// Sierra's signIn / completeSignIn / signOut, the client's verbs (`FJS-D1315`),
+// routed through the harbor port.
 // Jetty's harbor handles the Junction setToken + token storage in Phase 2 —
 // these helpers just kick off that flow via service:call.
 
 /**
- * Trigger login via harbor. Returns the session payload the harbor broadcasts
- * after success. Throws on failure.
+ * Sign in via harbor. Returns the session payload the harbor broadcasts after
+ * success, or `{ awaitingCode }` when a second factor is owed. Throws on failure.
  *
- * @param {object} credentials — passed as `args` to harbor's auth.login service
+ * @param {string} email
+ * @param {string} password
  */
-export async function login(credentials) {
+export async function signIn(email, password) {
   const port = _activePort
-  if (!port) throw new Error('jetty.login: no active port (call after page mount)')
+  if (!port) throw new Error('jetty.signIn: no active port (call after page mount)')
   return port.request('service:call', {
     service: 'auth',
-    method:  'login',
-    args:    credentials,
+    method:  'signIn',
+    args:    { email, password },
   })
 }
 
 /**
- * Finish a login that owed a second factor. `login()` resolved with
+ * Finish a sign-in that owed a second factor. `signIn()` resolved with
  * `awaitingCode` set, and the harbor holds the attempt — a page never sees the
  * ticket. A TOTP code or a recovery code; the person typing it cannot be asked
  * which kind of string they hold.
  *
  * @param {string} code
  */
-export async function submitCode(code) {
+export async function completeSignIn(code) {
   const port = _activePort
-  if (!port) throw new Error('jetty.submitCode: no active port (call after page mount)')
+  if (!port) throw new Error('jetty.completeSignIn: no active port (call after page mount)')
   return port.request('service:call', {
     service: 'auth',
-    method:  'submitCode',
+    method:  'completeSignIn',
     args:    { code },
   })
 }
 
 /**
- * Trigger logout via harbor. Harbor clears its stored token and broadcasts
- * a logged-out session.
+ * Sign out via harbor. Harbor clears its stored token and broadcasts a
+ * signed-out session.
  */
-export async function logout() {
+export async function signOut() {
   const port = _activePort
-  if (!port) throw new Error('jetty.logout: no active port')
+  if (!port) throw new Error('jetty.signOut: no active port')
   return port.request('service:call', {
     service: 'auth',
-    method:  'logout',
+    method:  'signOut',
     args:    {},
   })
 }

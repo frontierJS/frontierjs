@@ -32,8 +32,8 @@
 // no field list, no URL, no event wiring. `client.resource(name)` returns
 //
 //   service — CRUD calls over WS (falling back to HTTP)
-//   store   — a reactive list, kept in sync by server push events
-//   load    — populate the store from the server
+//   tether  — the rows, kept in sync by server push events
+//   load    — populate the tether from the server
 //
 // Sierra's createResource() sits directly on top of this same call and adds
 // schema-driven make() defaults from db/schema.lite.
@@ -42,18 +42,19 @@ import { createJunctionClient } from '/client.js'
 
 const log = (...a) => (document.getElementById('log').textContent += a.join(' ') + '\n')
 
-const client = createJunctionClient({ url: location.origin })
+// `apiPrefix` matches app.ts's config: the services live under /api.
+const client = createJunctionClient({ url: location.origin, apiPrefix: '/api' })
 
 // @@gate(0.4.4.5) — reads are public, writes need a user. The demo login
 // hands out a token; nothing about that is declared in the service.
 const { token } = await (await fetch('/login', { method: 'POST' })).json()
 client.token = token
 
-const { service, store, load } = client.resource('posts')
+const { service, tether, load } = client.resource('posts')
 
-// The store is the only thing the view reads. Every change — ours or another
+// The tether is the only thing the view reads. Every change — ours or another
 // tab's — arrives the same way.
-store.subscribe(posts => {
+tether.subscribe(posts => {
   document.getElementById('list').innerHTML = posts.map(p => `
     <li>
       <b>${p.title}</b>
@@ -63,7 +64,7 @@ store.subscribe(posts => {
 })
 
 await load()
-log(`loaded ${store.get().length} posts`)
+log(`loaded ${tether.get().length} posts`)
 
 client.on('event', (name, data) => log(`← ${name}`, JSON.stringify(data)))
 
@@ -71,7 +72,7 @@ document.getElementById('new').addEventListener('submit', async e => {
   e.preventDefault()
   const title = new FormData(e.target).get('title')
   e.target.reset()
-  await service.create({ title })      // no local store update — the push event does it
+  await service.create({ title })      // no local tether update — the push event does it
 })
 
 document.getElementById('list').addEventListener('click', async e => {
@@ -79,6 +80,6 @@ document.getElementById('list').addEventListener('click', async e => {
   await service.remove(e.target.dataset.id)
 })
 
-// Open this page in two tabs to see it: both stores follow the same events.
+// Open this page in two tabs to see it: both tethers follow the same events.
 log('ready — open a second tab to watch them stay in sync')
 </script>

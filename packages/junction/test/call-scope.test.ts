@@ -12,7 +12,7 @@
 // The rest is leakage: a nested call must not overwrite its parent, two
 // concurrent calls must not see each other, a throw must not leave a scope
 // standing, and `transactional:` must move `$.db` because it reassigns
-// ctx.locals.db under the method mid-call.
+// the client under the method mid-call.
 
 import { describe, test, expect } from 'bun:test'
 import { createApp }                        from '../index.ts'
@@ -20,6 +20,8 @@ import { buildService }                     from '../src/core/service.ts'
 import { createLogger }                                   from '../src/core/logger.ts'
 import { $, currentCall, enterCall, announcingService }   from '../src/core/context.ts'
 import { createClient }                                   from '../../litestone/src/index.js'
+import { setCallDb } from '../index.ts'
+import { callDb } from '../src/core/context.ts'
 
 const alice = { userId: 'alice', role: 'user' } as never
 
@@ -183,7 +185,7 @@ describe('db', () => {
 
   test('`$.db` with no client refuses by name rather than answering undefined', () => {
     enterCall({ service: 'x', locals: {} } as never, () => {
-      expect(() => $.db).toThrow(/no Litestone client on ctx\.locals\.db/)
+      expect(() => $.db).toThrow(/this call has no Litestone client/)
     })
   })
 
@@ -201,15 +203,15 @@ describe('db', () => {
     a.services.register(buildService({
       name: 'posts', model: 'Post', transactional: true, methods: ['run'],
       async run(ctx: any) {
-        outer = ctx.locals.db
+        outer = callDb(ctx)
         inner = $.db          // the client the around hook installed
         // Resolved per read, not snapshotted: move it and `$` must follow. A
         // snapshot would keep answering the pre-transaction client, and every
         // write in the method would commit outside the transaction.
         const before = $.db
-        ctx.locals.db = MARKER
+        setCallDb(ctx, MARKER)
         moved = $.db !== before && $.db === MARKER
-        ctx.locals.db = outer
+        setCallDb(ctx, outer)
         ctx.dispatch = false   // not a Post row; nothing to announce
         return { ok: true }
       },
@@ -553,7 +555,7 @@ describe('a call that has ended (FJS-687)', () => {
     expect((await a.service('probe').find() as { data: string[] }).data).toEqual(['probe'])
   })
 
-  test('`ctx.locals.db` is the request client again once the transaction settles', async () => {
+  test('`$.db` is the request client again once the transaction settles', async () => {
     // It was left assigned, so an effect or a timer running after the commit
     // held what a reader believes is "the transaction".
     const db: any = await createClient({
@@ -568,8 +570,8 @@ describe('a call that has ended (FJS-687)', () => {
     a.services.register(buildService({
       name: 'posts', model: 'Post', transactional: true, methods: ['run'],
       async run(ctx: any) {
-        during = ctx.locals.db
-        ctx.afterCommit(() => { before = ctx.locals.db })
+        during = callDb(ctx)
+        ctx.afterCommit(() => { before = callDb(ctx) })
         ctx.dispatch = false
         return { ok: true }
       },

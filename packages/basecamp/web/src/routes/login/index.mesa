@@ -6,7 +6,7 @@ title: Sign in
   import Form   from '@frontierjs/ui/components/forms/Form.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
-  import { session, signIn, submitCode, signOut } from '../../session.js'
+  import { session, signIn, completeSignIn, signOut } from '../../session.js'
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import { getClient } from '@frontierjs/sierra/resource'
 
@@ -68,7 +68,7 @@ title: Sign in
 
   async function verify() {
     attempted = true
-    await submitCode(code.trim())
+    await completeSignIn(code.trim())
     code = ''
     goto(landing())
   }
@@ -158,10 +158,10 @@ title: Sign in
   {#if providers.length}
     <div class="cluster">
       {#each providers as name}
-        <!-- signInWith LEAVES THE PAGE: the flow is a browser navigation, so
+        <!-- signInWithProvider LEAVES THE PAGE: the flow is a browser navigation, so
              nothing after it runs and there is no promise to await. -->
         <Button type="button" treatment="outlined" data-oauth={name}
-                onclick={() => getClient().auth.signInWith(name, { returnTo: landing() })}>
+                onclick={() => getClient().auth.signInWithProvider(name, { returnTo: landing() })}>
           Continue with {name}
         </Button>
       {/each}

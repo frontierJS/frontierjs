@@ -1,14 +1,22 @@
 // core/hooks-builtin.ts
-// The built-in hook standard library — authenticate, requireRole, paginate,
-// protect, allow, timestamps, logTiming. Split out of hooks.ts, which now
-// owns only the pipeline engine. hooks.ts re-exports everything here, so
-// existing imports are unaffected.
+// The built-in hooks — `@frontierjs/junction/hooks` (FJS-D1333). Bare verbs
+// (`protect`, `allow`, `paginate`) that read as hooks only under a path that
+// says so, which is why the main entry does not carry them. hooks.ts is the
+// pipeline engine; circuitBreaker and rateLimitHook are hooks-resilience.ts,
+// forwarded here so the subpath is every built-in hook.
 
 import type { ServiceContext } from './context.ts'
 import { resultData } from './envelope.ts'
 import { Unauthorized, Forbidden } from './errors.ts'
 import type { Hook, AroundHook } from './hooks.ts'
 import { clampPagination } from './directives.ts'
+
+// Named rateLimitHook beside the transport's `rateLimit` middleware: it answers
+// for either context (BridgeHook), and an app importing both needs two names.
+export {
+  circuitBreaker, rateLimit as rateLimitHook,
+  type CircuitBreakerOptions, type RateLimitHookOptions,
+} from './hooks-resilience.ts'
 
 // ─── Common built-in hooks ────────────────────────────────────────────────
 

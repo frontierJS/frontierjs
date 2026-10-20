@@ -120,6 +120,26 @@ describe('junction edge (FJS-D639)', () => {
     expect(reached).toEqual([])
   })
 
+  // FJS-D1333: a bare verb reads as what it is only under the path that names
+  // it -- `header('x')` is a token source at /bearer and nothing at '.'.
+  it('the main entry exports no bare verb, and each lives at its subpath', async () => {
+    const SUBPATH: Record<string, string[]> = {
+      envelope: ['single', 'list'],
+      hooks:    ['authenticate', 'requireRole', 'paginate', 'protect', 'allow', 'timestamps', 'logTiming', 'circuitBreaker', 'rateLimitHook'],
+      bearer:   ['header', 'cookie', 'authorization', 'bearerClaim', 'BEARER', 'bearerOf'],
+    }
+    const pkg  = JSON.parse(readFileSync(resolve(import.meta.dir, '../package.json'), 'utf8')) as { exports: Record<string, string> }
+    const main = await import('../index.ts')
+    expect(Object.values(SUBPATH).flat().filter(v => v in main)).toEqual([])
+    for (const [sub, verbs] of Object.entries(SUBPATH)) {
+      const mod = await import(resolve(import.meta.dir, '..', pkg.exports[`./${sub}`]!))
+      expect(verbs.filter(v => !(v in mod))).toEqual([])
+    }
+    // One home: /litestone re-exports no bearer name.
+    const lite = await import(resolve(import.meta.dir, '..', pkg.exports['./litestone']!))
+    expect(SUBPATH.bearer!.filter(v => v in lite)).toEqual([])
+  })
+
   it('every battery directory has a subpath', () => {
     const pkg = JSON.parse(readFileSync(resolve(import.meta.dir, '../package.json'), 'utf8')) as { exports: Record<string, string> }
     const targets = Object.values(pkg.exports).map(t => relative(SRC, resolve(import.meta.dir, '..', t)))

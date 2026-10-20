@@ -1093,7 +1093,65 @@ describe('a workspace role is not a thing you may hand yourself', () => {
     await env.as(owner).service('workspaces').call('setMemberRole', ws.id, { userId: pat.id, role: 'owner' })
     expect(await roleOfMember(pat.id)).toBe('owner')
   })
+
+  // `addMember` names a person the caller cannot read (`User` is self-only),
+  // and lifts that key under `system:` (FJS-1953) rather than writing as the
+  // app. An asSystem() write would pass both cases below: the Capability[]
+  // guard and the trail actor are what only the caller's own client keeps.
+  async function stranger() {
+    const sys   = env.system as any
+    const wsRow = await sys.workspace.findUnique({ where: { id: ws.id } })
+    return sys.user.create({ data: { email: `new-${uniq()}@x.co`, accountId: wsRow.accountId } })
+  }
+
+  test('addMember grants only what the CALLER holds, at the Data boundary', async () => {
+    // The hook grades the ROLE's set; the column is what the guard grades, so an
+    // admin with one grant taken off passes the hook and is refused below it.
+    const { admin, adminS } = await team()
+    const sys = env.system as any
+    const mine = await sys.workspaceMember.findFirst({ where: { workspaceId: ws.id, userId: admin.id } })
+    await sys.workspaceMember.update({ where: { id: mine.id },
+      data: { capabilities: grantsFor('admin').filter(c => c !== 'Server.reboot') } })
+    const newcomer = await stranger()
+
+    await expect(env.as(adminS).service('workspaces')
+      .call('addMember', ws.id, { userId: newcomer.id, role: 'developer' }))
+      .rejects.toThrow(/Server\.reboot/)
+    expect(await sys.workspaceMember.findFirst({ where: { workspaceId: ws.id, userId: newcomer.id } })).toBeNull()
+  })
+
+  test('addMember is filed under the caller in the audit trail, not the system', async () => {
+    const { admin, adminS } = await team()
+    const newcomer = await stranger()
+
+    const made: any = await env.as(adminS).service('workspaces')
+      .call('addMember', ws.id, { userId: newcomer.id, role: 'developer' })
+    expect(made.userId).toBe(newcomer.id)
+
+    const entry = await trailEntry('WorkspaceMember', 'create', made.id)
+    expect(entry?.actorId).toBe(admin.id)
+    expect(entry?.actorType).toBe('user')
+  })
+
+  test('addMember refuses a person who does not exist before it writes', async () => {
+    const { adminS } = await team()
+    await expect(env.as(adminS).service('workspaces')
+      .call('addMember', ws.id, { userId: 'no-such-user', role: 'developer' }))
+      .rejects.toThrow(/not found/)
+  })
 })
+
+/** The litestone trail row for one write — it lands after the write returns. */
+async function trailEntry(model: string, operation: string, id: string): Promise<any> {
+  const sys = env.system as any
+  for (let i = 0; i < 100; i++) {
+    const rows = await sys.auditTrail.findMany({ where: { model, operation } })
+    const hit  = rows.find((r: any) => (typeof r.records === 'string' ? JSON.parse(r.records) : r.records).includes(id))
+    if (hit) return hit
+    await Bun.sleep(20)
+  }
+  return null
+}
 
 // ─── What a job runs as, and what it may touch ───────────────────────────────
 // `FJS-384`. Five handlers opened `app.data.asSystem()` behind a comment saying
@@ -1862,9 +1920,42 @@ describe('a column the system writes and its caller does not', () => {
 
     const ok = await db.apiKey.create({
       data:   { ...row, tokenHint: 'fjs_a…b' },
-      system: ['tokenHint'],
+      system: ['tokenHint', 'userId'],
     })
     expect(ok.tokenHint).toBe('fjs_a…b')
+  })
+
+  test('a key for a bot is the caller\'s write — the trail files it under them', async () => {
+    // A bot is a User the caller cannot read, so the create names `userId`
+    // under `system:` (FJS-1953) once assertBotOwner has read it. asSystem()
+    // would have filed the row under the system with no actor at all.
+    const sys   = env.system as any
+    const wsRow = await sys.workspace.findUnique({ where: { id: ws.id } })
+    const tag   = Math.random().toString(36).slice(2, 8)
+    const bot   = await sys.user.create({ data: { email: `bot-${tag}@x.co`, accountId: wsRow.accountId, kind: 'bot' } })
+    await sys.workspaceMember.create({ data: {
+      workspaceId: ws.id, userId: bot.id, role: 'developer',
+      capabilities: grantsFor('developer'), acceptedAt: new Date().toISOString(),
+    } })
+
+    const made: any = await env.as(owner).service('api-keys').create({
+      name: `bot-${tag}`, scopes: ['servers:read'], expiresIn: '30d', userId: bot.id,
+    })
+    expect(made.userId).toBe(bot.id)
+    expect(made.createdBy).toBe(owner.userId)
+
+    const entry = await trailEntry('ApiKey', 'create', made.id)
+    expect(entry?.actorId).toBe(owner.userId)
+    expect(entry?.actorType).toBe('user')
+  })
+
+  test('…and a key for somebody who is not a bot is refused before the mint', async () => {
+    const wsRow = await (env.system as any).workspace.findUnique({ where: { id: ws.id } })
+    const human = await (env.system as any).user.create({
+      data: { email: `human-${Math.random().toString(36).slice(2, 8)}@x.co`, accountId: wsRow.accountId } })
+    await expect(env.as(owner).service('api-keys').create({
+      name: `nope-${human.id.slice(0, 6)}`, scopes: ['servers:read'], expiresIn: '30d', userId: human.id,
+    })).rejects.toThrow(/only name a bot/)
   })
 })
 

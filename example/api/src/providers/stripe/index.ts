@@ -247,7 +247,7 @@ export async function createRefund(app: App, req: {
  *   - It is over the RAW BYTES. Re-serializing the parsed object gives
  *     different bytes for the same document — key order, whitespace, number
  *     formatting — so the signature would fail for every legitimate event.
- *     `ctx.$raw.rawBody` is junction's half of this seam.
+ *     `ctx.raw.rawBody` is junction's half of this seam.
  *   - A header may carry MORE THAN ONE `v1=`, which is how Stripe rotates an
  *     endpoint secret without an outage. Reading only the first refuses half
  *     the events during a rotation, which presents as flapping.

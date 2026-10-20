@@ -12087,7 +12087,7 @@ function makeLockPrimitive(rawWriteDb) {
   // and `$scopedBy` clients did not have it — and because a Litestone proxy
   // THROWS on an unknown property rather than returning undefined, even asking
   // `typeof db.$checkWhere` blew up. Junction puts a `$setAuth` client on
-  // `ctx.locals.db`, so its autoFilter hook threw on every list read by a
+  // `$.db`, so its autoFilter hook threw on every list read by a
   // signed-in caller, in every app, with a message about a table nobody named.
   // Which filter keys are valid is a question about the SCHEMA — auth and scope
   // have no bearing on it, so every flavor of client answers it identically.
@@ -12677,7 +12677,7 @@ function makeLockPrimitive(rawWriteDb) {
   // filters against, so handing it out let a caller turn soft delete off for
   // the whole client by assigning to a property they had asked to read. And it
   // answered on the root client alone, so the one flavor an application
-  // actually holds — junction scopes `ctx.locals.db` with $setAuth — threw the
+  // actually holds — junction scopes `$.db` with $setAuth — threw the
   // unknown-property error instead of answering a question about the schema.
   function softDeleteInfo() {
     return { ...softDeleteMap }

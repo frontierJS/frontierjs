@@ -5,7 +5,7 @@
 // Never touches HTTP — that is the plugin's job.
 // Never sends email — that is the caller's job via the onX callbacks in opts.
 
-import type { IAuth, LoginResult, SessionContext, CreateUserInput, ApiKeyOptions, AuthSessionInfo, ApiKeyInfo } from '@frontierjs/junction'
+import type { IAuth, LoginResult, EmailVerificationResult, SessionContext, CreateUserInput, ApiKeyOptions, AuthSessionInfo, ApiKeyInfo } from '@frontierjs/junction'
 import { parseTtl } from '@frontierjs/junction'
 import { authModelOf } from '@frontierjs/litestone'
 import { modelToAccessor } from '@frontierjs/litestone/ddl'
@@ -94,7 +94,6 @@ export function createLitestoneAuth(
     onLogin,
     onLoginFailed,
     onLogout,
-    onRegister,
     onRegistered,
     onCredentialChanged,
     oauthProviders       = {},
@@ -560,15 +559,15 @@ export function createLitestoneAuth(
         })
 
         // Still in memory -- after this the token is @guarded.
-        await onEmailVerificationRequested!(address, token)
+        await onEmailVerificationRequested!({ email: address, token })
       } catch (err) {
         console.warn('[auth] registration request failed after answering:', (err as Error)?.message)
       }
     }, 0)
   }
 
-  /** The click on a `registration` link -- `verifyEmail` finds the row and this spends it, making the account. */
-  async function confirmRegistration(row: any): Promise<SessionContext> {
+  /** The click on a `registration` link -- `spendVerification` finds the row and this spends it, making the account. */
+  async function confirmRegistration(row: any): Promise<any> {
     // Spent first, by a delete that must find the row, so two clicks make one account.
     const spent = await sys.verification.deleteMany({ where: { id: row.id } })
     if (!spent.count) throw new InvalidTokenError('Invalid or expired verification token')
@@ -577,8 +576,6 @@ export function createLitestoneAuth(
     // Somebody may have made the account since the request -- a magic link, a
     // provider. Telling this mailbox so discloses nothing: it holds the address.
     if (await sys[person].findFirst({ where: { email } })) throw new EmailTakenError()
-
-    if (onRegister) await onRegister({ email, name: row.registrant ?? null })
 
     const made = await registerUser(async tx => {
       const user = await tx[person].create({
@@ -590,7 +587,39 @@ export function createLitestoneAuth(
     await audit('registration.confirmed', {
       model: personModel, records: [String(made.id)], actorId: String(made.id), actorType: 'user',
     })
-    return toContext(made, 'verified')
+    return made
+  }
+
+  // The one spender of a mailed address link. A change of address is the same
+  // proof of the same mailbox, so it is spent here rather than at a second
+  // route behind a second link. A registration answers the new ROW and
+  // `verifyEmail` turns it into the sign-in, so the session is minted by the
+  // one caller that hands it back.
+  async function spendVerification(token: string): Promise<{ registered: any } | { verified: SessionContext }> {
+    // See the note in confirmPasswordReset -- this matched a RESET token
+    // without the purpose filter (FJS-476).
+    const verification = await sys.verification.findFirst({
+      where: {
+        purpose: { in: ['emailVerify', 'emailChange', 'registration'] },
+        value:   token,
+      }
+    })
+    if (!verification) throw new InvalidTokenError('Invalid or expired verification token')
+    if (verification.purpose === 'emailChange')  return { verified: await confirmEmailChange(verification) }
+    if (verification.purpose === 'registration') return { registered: await confirmRegistration(verification) }
+
+    const email = verification.identifier
+    const user  = await sys[person].findFirst({ where: { email } })
+    if (!user) throw new UserNotFoundError()
+
+    await sys[person].update({
+      where: { id: user.id },
+      data:  { emailVerified: true },
+    })
+
+    await sys.verification.delete({ where: { id: verification.id } })
+
+    return { verified: toContext({ ...user, emailVerified: true }, 'verified') }
   }
 
   /** The click on an `emailChange` link — `verifyEmail` finds the row and this spends it. */
@@ -697,7 +726,7 @@ export function createLitestoneAuth(
   // The mailbox as a first factor (`FJS-D888`). It proves the address and
   // nothing more, so three accounts are answered three ways:
   //   · nobody holds the address — the click creates the account, through
-  //     `onRegister`. Never at the request: a row made before the mailbox
+  //     `onRegistered`. Never at the request: a row made before the mailbox
   //     answers squats the address (see `oauthResolve` § 3).
   //   · a second factor is on — the click earns a ticket, as a password does.
   //   · the only way in is an OAuth provider — refused, at the request and
@@ -804,8 +833,6 @@ export function createLitestoneAuth(
     const user  = await sys[person].findFirst({ where: { email } })
 
     if (!user) {
-      // The app's gate, before the row, per the ordering rule.
-      if (onRegister) await onRegister({ email, name: null })
       const made = await registerUser(tx => tx[person].create({ data: { email, emailVerified: true } }))
       await audit('magiclink.registered', {
         model: personModel, records: [String(made.id)], actorId: String(made.id), actorType: 'user',
@@ -1626,10 +1653,6 @@ export function createLitestoneAuth(
       if (!existing) {
         if (!proven) return invite()
 
-        // The app's own gate, already awaited and already able to refuse — a
-        // closed beta, a blocked domain. Before the row, per the ordering rule.
-        if (onRegister) await onRegister({ email, name: identity.name })
-
         let made: any
         try {
           made = await registerUser(async tx => {
@@ -1752,8 +1775,6 @@ export function createLitestoneAuth(
       // Branch 3 on an unproven address: the account is made here, now that the
       // mailbox and the identity have both answered.
       if (!user) {
-        if (onRegister) await onRegister({ email: pending.identifier, name: identity.name })
-
         const made = await registerUser(async tx => {
           const row = await tx[person].create({
             data: { email: pending.identifier, name: identity.name ?? null, emailVerified: true },
@@ -1893,11 +1914,6 @@ export function createLitestoneAuth(
       const existing = await sys[person].findFirst({ where: { email: data.email } })
       if (existing) throw new EmailTakenError()
 
-      // Before anything is written, so a refusal — a blocked domain, a closed
-      // list — leaves no half-made account behind. It has no user row to be
-      // given for the same reason.
-      if (onRegister) await onRegister({ email: data.email, name: data.name ?? null })
-
       const hashed = data.password ? await hashPassword(data.password) : null
 
       const user = await registerUser(async tx => {
@@ -1930,7 +1946,6 @@ export function createLitestoneAuth(
       const placed = tenantColumnFor(opts.tenant)
       const existing = await sys[person].findFirst({ where: { email } })
       if (existing) throw new EmailTakenError()
-      if (onRegister) await onRegister({ email, name: opts.name ?? null })
 
       // An invitation is into the tenant of whoever sent it (`FJS-2643`).
       const user = await registerUser(tx => tx[person].create({
@@ -2010,7 +2025,7 @@ export function createLitestoneAuth(
           })
 
           // Token is still in memory — pass to callback before it becomes @guarded
-          await onPasswordResetRequested?.(email, token)
+          await onPasswordResetRequested?.({ email, token })
         } catch (err) {
           console.warn('[auth] password reset request failed after answering:', (err as Error)?.message)
         }
@@ -2108,7 +2123,7 @@ export function createLitestoneAuth(
       })
 
       // Token is still in memory — pass to callback before it becomes @guarded
-      await onEmailVerificationRequested?.(user.email, token)
+      await onEmailVerificationRequested?.({ email: user.email, token })
     },
 
     // ── requestEmailChange ───────────────────────────────────────────────
@@ -2144,38 +2159,20 @@ export function createLitestoneAuth(
         }
       })
 
-      await onEmailVerificationRequested(address, token)
+      await onEmailVerificationRequested({ email: address, token })
     },
 
     // ── verifyEmail ──────────────────────────────────────────────────────
+    // The one spender of a mailed address link. A registration's click is the
+    // account's first proof of its mailbox, so it signs in (`FJS-D1310`), and
+    // through `firstFactorProven` like every first factor (`FJS-D888`): a
+    // person who registered and was answered 202 otherwise lands on a sign-in
+    // form asking for the password they typed a minute ago.
 
-    async verifyEmail(token: string): Promise<SessionContext> {
-      // See the note in confirmPasswordReset — this matched a RESET token
-      // without the purpose filter (FJS-476). A change of address is the same
-      // proof of the same mailbox, so it is spent here rather than at a second
-      // route behind a second link.
-      const verification = await sys.verification.findFirst({
-        where: {
-          purpose: { in: ['emailVerify', 'emailChange', 'registration'] },
-          value:   token,
-        }
-      })
-      if (!verification) throw new InvalidTokenError('Invalid or expired verification token')
-      if (verification.purpose === 'emailChange') return confirmEmailChange(verification)
-      if (verification.purpose === 'registration') return confirmRegistration(verification)
-
-      const email = verification.identifier
-      const user  = await sys[person].findFirst({ where: { email } })
-      if (!user) throw new UserNotFoundError()
-
-      await sys[person].update({
-        where: { id: user.id },
-        data:  { emailVerified: true },
-      })
-
-      await sys.verification.delete({ where: { id: verification.id } })
-
-      return toContext({ ...user, emailVerified: true }, 'verified')
+    async verifyEmail(token: string): Promise<EmailVerificationResult> {
+      const spent = await spendVerification(token)
+      if ('registered' in spent) return { signedIn: await firstFactorProven(spent.registered, { via: 'registration' }) }
+      return spent
     },
 
     // ── createApiKey ─────────────────────────────────────────────────────

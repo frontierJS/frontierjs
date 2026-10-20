@@ -1,4 +1,5 @@
 import { buildBase } from '/home/claude/review/junction/src/core/service.ts'
+import { setCallDb, callDb } from '/home/claude/review/junction/src/core/context.ts'
 import { parse } from '/home/claude/review/litestone/src/core/parser.js'
 
 const chk = (l, ok, d='') => console.log(`  ${ok ? '✓' : '✗'} ${l}${d ? '  — ' + d : ''}`)
@@ -13,7 +14,8 @@ model Lead {
 `).schema
 
 const run = async (svc, method, user, db) => {
-  const ctx = { method, data: { name: 'x' }, locals: { db }, auth: user ? { user } : {}, app: {} }
+  const ctx = { method, data: { name: 'x' }, locals: {}, auth: user ? { user } : {}, app: {} }
+  setCallDb(ctx, db)
   for (const h of (svc.hooks.before[method] ?? [])) await h(ctx)
   return ctx
 }

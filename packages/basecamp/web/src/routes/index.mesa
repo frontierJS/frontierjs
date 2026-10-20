@@ -12,7 +12,6 @@ title: Home
   import { deployments } from '../resources/Deployment.mesa'
   import { jobs } from '../resources/Job.mesa'
   import { dashboards } from '../resources/Dashboard.mesa'
-  import { useTether } from '@frontierjs/sierra/resource'
   import ActionQueue from '../components/ActionQueue.mesa'
   import LaunchSteps from '../components/LaunchSteps.mesa'
   import { computeNotices } from '../notices.js'
@@ -21,17 +20,21 @@ title: Home
   import StatCard from '@frontierjs/ui/components/display/StatCard.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
 
-  const { get: rows, unsubscribe } = useTether(projects.tether)
-  $.onDestroy(unsubscribe)
+  // No workspace id is passed. The Junction client carries it as a header on
+  // every request, set once by session.js — a page that had to remember to
+  // filter by workspace would eventually forget, and that is a tenancy leak
+  // rather than a missing filter.
+  const list = projects.tethered({ state: 'local' })
+  const rows = () => list.rows
 
-  // The queue subscribes; it does NOT load. The shell already loaded these
-  // three for the notice bar and a resource store is a module singleton, so
-  // asking again here would be a second request for rows this page already
-  // has — and the WebSocket keeps them current either way.
-  const { get: srv, unsubscribe: unsubSrv } = useTether(servers.tether)
-  const { get: dep, unsubscribe: unsubDep } = useTether(deployments.tether)
-  const { get: jbs, unsubscribe: unsubJbs } = useTether(jobs.tether)
-  $.onDestroy(() => { unsubSrv(); unsubDep(); unsubJbs() })
+  // The queue reads the same three tethers the shell holds for the notice bar,
+  // and the WebSocket keeps them current.
+  const srvList = servers.tethered({ state: 'local' })
+  const depList = deployments.tethered({ state: 'local', composed: true })
+  const jbsList = jobs.tethered({ state: 'local' })
+  const srv = () => srvList.rows
+  const dep = () => depList.rows
+  const jbs = () => jbsList.rows
 
   $: notices = computeNotices({ servers: srv(), deployments: dep(), jobs: jbs() })
 
@@ -46,28 +49,13 @@ title: Home
   $: current = session.workspaces.find(w => w.id === session.workspaceId) ?? null
 
   let error   = null
-  let loading = true
-  let pinned  = []
 
-  async function load() {
-    error   = null
-    loading = true
-    try {
-      // No workspace id is passed. The Junction client carries it as a header
-      // on every request, set once by session.js — a page that had to remember
-      // to filter by workspace would eventually forget, and that is a tenancy
-      // leak rather than a missing filter.
-      await projects.load()
-      // What Pin is for: a board the workspace reaches for from here.
-      pinned = (await dashboards.service.find({}, { limit: 20 })).data.filter(d => d.isPinned)
-    } catch (e) {
-      error = e.message
-    } finally {
-      loading = false
-    }
-  }
-
-  load()
+  // What Pin is for: a board the workspace reaches for from here. The service
+  // orders pinned boards first and reads no filter, so the first page holds
+  // them and the pin is read here.
+  const boardList = dashboards.tethered({ state: 'local', directives: { limit: 20 } })
+  $: pinned = boardList.rows.filter(d => d.isPinned)
+  $: { if (boardList.error) error = boardList.error.message }
 
   // ─── The fleet in four numbers ─────────────────────────────────────────
   // Counted by the server (`infra.summary`), not tallied from the stores
@@ -95,8 +83,8 @@ title: Home
   const n = (m, k) => m?.[k] ?? 0
 
   // Explicit-dependency effect (Mesa §4.2): the handler runs untracked, so the
-  // reads inside load() add no subscriptions of their own.
-  $: session.workspaceId, () => load()
+  // reads inside it add no subscriptions of their own.
+  $: session.workspaceId, () => { list.reload(); boardList.reload() }
   const PROJECT_COLUMNS = [
     { name: 'name',   label: 'Name' },
     { name: 'slug',   label: 'Slug' },
@@ -109,9 +97,9 @@ title: Home
   <Button tone="primary" href="/projects/create/">New project</Button>
 </div>
 
-{#if error}
+{#if error || list.error}
   <article class="alert danger">
-    <div class="alert-content">{error}</div>
+    <div class="alert-content">{error ?? list.error.message}</div>
   </article>
 {/if}
 
@@ -152,11 +140,11 @@ title: Home
 <div class="section-header">
   <h2 class="h4">Projects</h2>
   <span class="badge {rows().length ? 'success' : 'muted'}" id="project-count">
-    {loading ? '…' : `${rows().length} projects`}
+    {list.loading ? '…' : `${rows().length} projects`}
   </span>
 </div>
 
-{#if !loading && rows().length}
+{#if !list.loading && rows().length}
   <Table id="project-rows" columns={PROJECT_COLUMNS} rows={rows()} striped>
     {#snippet row(project)}
       <tr>
@@ -166,7 +154,7 @@ title: Home
       </tr>
     {/snippet}
   </Table>
-{:else if !loading}
+{:else if !list.loading}
   <article class="alert info">
     <div class="alert-content">
       No projects in this workspace yet. <a href="/projects/create/">Create the first one</a>.

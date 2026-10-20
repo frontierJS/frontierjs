@@ -110,7 +110,7 @@ is not must never be added to make a list look complete.
 - **This is an affordance** (Invariant 6). Nothing here is a boundary, and no
   caller of it may treat it as one.
 - **There is no `app.db` under `tenancy { strategy database }`.** One
-  `ctx.locals.db` cannot be many databases, so a tenant app has no app-wide
+  `$.db` cannot be many databases, so a tenant app has no app-wide
   client — `example` is that shape. `registry.schema` is the declared way to read
   declarations without rows; opening a tenant would make listing tools CREATE a
   database file.

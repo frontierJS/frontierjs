@@ -46,26 +46,13 @@ title: Dashboards
   // let and a member expression is not one.
   function write(name, value) { draft = { ...draft, [name]: value } }
 
-  async function load() {
-    error = null; loading = true
-    try {
-      rows = (await dashboards.service.find({}, { limit: 100 })).data
-    } catch (e) {
-      error = e.message
-    } finally {
-      loading = false
-    }
-  }
-
-  load()
-  $: session.workspaceId, () => load()
-
-  const READS = new Set(['get', 'find', 'kinds'])
-  const off = dashboards.service.on('*', (method) => {
-    if (READS.has(method)) return
-    load()
-  })
-  $.onDestroy(off)
+  // Composed: the service adds each board's `widget_count`, which a pushed row
+  // does not carry, so an announcement re-reads the window.
+  const list = dashboards.tethered({ state: 'local', composed: true, directives: { limit: 100 } })
+  $: { rows = list.rows; loading = list.loading }
+  $: { if (list.error) error = list.error.message }
+  $: session.workspaceId, () => list.reload()
+  const load = () => list.reload()
 
   async function create(data) {
     error = null

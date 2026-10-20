@@ -3,11 +3,9 @@
   // they stand (`crowd.js` holds the rule: only a line this figure hears, a
   // speaker outside the view marked on the edge toward them, the tail, the
   // nick and the age). Placed by `Scene.mesa` with the presence it made; the
-  // lines are the messages store the scene loaded. A row is a `<pre>`:
+  // lines are the room's, which the scene holds. A row is a `<pre>`:
   // outside one the terminal drops a wrapped row's leading space, and the row
   // lands a cell left of the one above it with a hole in its ground.
-  import { useTether } from '@frontierjs/sierra/resource'
-  import { messages } from '@/resources/Message.mesa'
   import { bubbles, BUBBLE, TAIL } from '@/lib/scene/crowd.js'
   import { at, tint } from '#cell'
 
@@ -18,9 +16,7 @@
   export let spawn
   export let hushed = null
   export let nicks = {}
-
-  const { get: lines, unsubscribe } = useTether(messages.tether)
-  $.onDestroy(unsubscribe)
+  export let lines = []
 
   // Bumped when the freshest line on screen turns old, so it is drawn again.
   // `timer` is a `var`: as a `let` it is a signal the block below reads and
@@ -38,7 +34,7 @@
     return out
   }
 
-  $: list = (tick, shown(here.get(), lines(), nicks, x, y, view, hushed))
+  $: list = (tick, shown(here.get(), lines, nicks, x, y, view, hushed))
 </script>
 
 {#each list as b (`${b.key}:${b.ink}`)}

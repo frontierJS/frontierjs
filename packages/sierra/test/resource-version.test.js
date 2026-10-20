@@ -89,7 +89,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
   }),
 }))
 
-const { createResource, buildVersion, isStaleWrite, toConflict, toFieldErrors, STALE_WRITE_MESSAGE } =
+const { createResource, buildVersion, isStaleWrite, toConflict, toFieldErrors, STALE_WRITE_MESSAGE, tetherOf } =
   await import('../src/resource/resource.js')
 const { registerSchemas } = await import('../src/resource/schema-registry.js')
 
@@ -156,7 +156,7 @@ describe('the version rides the patch', () => {
 
   test('a patch after load() carries it too — load bypasses the call path', async () => {
     const r = createResource('orders', { model: 'Order' })
-    await r.load()
+    await tetherOf(r).load()
     expect(r.version(1)).toBe(3)
     await r.service.patch(1, { note: 'edited' })
     expect(lastPatch().version).toBe(3)
@@ -176,10 +176,10 @@ describe('the version rides the patch', () => {
   // concurrent write (`FJS-341`).
   test('a push into the tether does not move the version this tab holds', async () => {
     const r = createResource('orders', { model: 'Order' })
-    await r.load()
+    await tetherOf(r).load()
     expect(r.version(1)).toBe(3)
-    r.tether.upsert({ id: 1, note: 'edited elsewhere', version: 4 })
-    expect(r.tether.get().find(row => row.id === 1).note).toBe('edited elsewhere')
+    tetherOf(r).tether.upsert({ id: 1, note: 'edited elsewhere', version: 4 })
+    expect(tetherOf(r).tether.get().find(row => row.id === 1).note).toBe('edited elsewhere')
     expect(r.version(1)).toBe(3)
     await r.service.patch(1, { note: 'mine' })
     expect(lastPatch().version).toBe(3)
@@ -194,15 +194,15 @@ describe('the version rides the patch', () => {
   test('a draft saved after a push loses the race instead of erasing it', async () => {
     enforceVersions = true
     const r = createResource('orders', { model: 'Order' })
-    await r.load()
+    await tetherOf(r).load()
 
     // What the form is holding: the row as this tab read it, at version 3.
-    const draft = { ...r.tether.get().find(row => row.id === 1) }
+    const draft = { ...tetherOf(r).tether.get().find(row => row.id === 1) }
 
     // The other tab writes. The change reaches this one as a push, and the
     // draft on screen does not move with it.
     rows.set(1, { id: 1, note: 'theirs', version: 4 })
-    r.tether.upsert({ id: 1, note: 'theirs', version: 4 })
+    tetherOf(r).tether.upsert({ id: 1, note: 'theirs', version: 4 })
     expect(draft.note).toBe('first')
 
     await expect(r.service.patch(1, { note: `${draft.note} + mine` }))
@@ -215,9 +215,9 @@ describe('the version rides the patch', () => {
   test('an explicit newer version goes through', async () => {
     enforceVersions = true
     const r = createResource('orders', { model: 'Order' })
-    await r.load()
+    await tetherOf(r).load()
     rows.set(1, { id: 1, note: 'theirs', version: 4 })
-    r.tether.upsert({ id: 1, note: 'theirs', version: 4 })
+    tetherOf(r).tether.upsert({ id: 1, note: 'theirs', version: 4 })
     await r.service.patch(1, { note: 'mine', version: 4 })
     expect(rows.get(1).note).toBe('mine')
   })
@@ -229,12 +229,12 @@ describe('the version rides the patch', () => {
     const r = createResource('orders', { model: 'Order' })
 
     loadDelay = 30
-    const slow = r.load()                       // issued first, answers last, at v3
+    const slow = tetherOf(r).load()                       // issued first, answers last, at v3
     await new Promise(res => setTimeout(res, 5))
 
     loadDelay = 0
     rows.set(1, { id: 1, note: 'newer', version: 7 })
-    await r.load()                              // issued second, answers first, at v7
+    await tetherOf(r).load()                              // issued second, answers first, at v7
     await slow
 
     expect(r.version(1)).toBe(7)

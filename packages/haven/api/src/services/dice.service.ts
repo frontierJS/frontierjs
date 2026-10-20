@@ -1,7 +1,8 @@
 // The dice at the tavern's tables (`IDEAS/haven.md` 9.1): `roll` throws and
 // says the throw in the room, as the dice (`dice.ts`), never as the caller.
 // The caller must be standing in the room, as a bolt's shooter must.
-import { createService, $, BadRequest, rateLimitHook } from '@frontierjs/junction'
+import { createService, $, BadRequest } from '@frontierjs/junction'
+import { rateLimitHook } from '@frontierjs/junction/hooks'
 
 import type { HavenApp } from '../app.ts'
 import { MAX_DICE, MAX_SIDES, parseRoll } from '../dice.ts'

@@ -19,6 +19,7 @@ import { createClient } from '../../litestone/src/index.js'
 import { createApp, createService } from '../index.ts'
 import type { SessionContext } from '../src/auth/types.ts'
 import type { ServiceContext } from '../src/core/context.ts'
+import { $ } from '../index.ts'
 
 const rowsOf = (r: unknown): any[] => (r as { data: any[] }).data
 
@@ -68,7 +69,7 @@ describe('the tenant is on ctx.locals under strategy row', () => {
       name: 'docs',
       async find(ctx: ServiceContext) {
         seen = ctx.locals.tenantId
-        return (ctx.locals.db as any).doc.findMany({})
+        return ($.db as any).doc.findMany({})
       },
     }))
 
@@ -85,7 +86,7 @@ describe('the tenant is on ctx.locals under strategy row', () => {
       name: 'docs',
       async find(ctx: ServiceContext) {
         seen = ctx.locals.tenantId
-        return (ctx.locals.db as any).doc.findMany({})
+        return ($.db as any).doc.findMany({})
       },
     }))
 
@@ -144,7 +145,7 @@ describe('a cached service is partitioned by tenant', () => {
       name: 'docs',
       cache,
       async find(ctx: ServiceContext) {
-        return (ctx.locals.db as any).doc.findMany({})
+        return ($.db as any).doc.findMany({})
       },
     }))
     return app
@@ -235,7 +236,7 @@ describe('a job runs IN a tenant', () => {
     // adds it when the schema declares row tenancy.
     app.services.register(createService({
       name: 'docs',
-      async find(ctx: ServiceContext) { return (ctx.locals.db as any).doc.findMany({}) },
+      async find(ctx: ServiceContext) { return ($.db as any).doc.findMany({}) },
     }))
     return app
   }

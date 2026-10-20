@@ -255,7 +255,7 @@ ctx.auth.user       // WHO is calling. Frozen. Propagates to internal calls.
 ctx.caller.headers  // caller environment — ip, userAgent, headers. Read-only,
 ctx.caller.ip       //   propagates. `{}` on internal calls.
 ctx.route.roomId    // path captures ({id}, {room}). Router-only; {} internal.
-ctx.locals.db       // per-call scratch. FRESH {} every call, does NOT propagate
+ctx.locals          // per-call scratch. FRESH {} every call, does NOT propagate
                     //   — a sub-service cannot reach its caller's locals.
 ```
 
@@ -348,7 +348,7 @@ createService({ name: 'orders', model: 'Order', transactional: ['create', 'pay']
 One transaction spans the whole pipeline — before hooks, the method, and the
 after hooks — so a later `after` hook throwing rolls the write back instead of
 leaving a committed row behind a rejected response. `find`/`get` are never
-wrapped. Declaring it without a Litestone client on `ctx.locals.db` throws,
+wrapped. Declaring it without a Litestone client on `$.db` throws,
 naming the service.
 
 It also makes a bulk write all or nothing. A bulk create or filtered
@@ -368,7 +368,7 @@ Two things it does not do, and both matter:
   app behind it. That is why it is off by default, and why irreversible work
   belongs in a job rather than in an `after` hook.
 
-**Built-in hooks**: `authenticate`, `requireRole`, `paginate`, `protect`, `allow`, `timestamps`, `logTiming`, `circuitBreaker`, `rateLimitHook`.
+**Built-in hooks**, from `@frontierjs/junction/hooks`: `authenticate`, `requireRole`, `paginate`, `protect`, `allow`, `timestamps`, `logTiming`, `circuitBreaker`, `rateLimitHook`.
 
 `protect()` supports dot-path notation for nested fields:
 
@@ -383,7 +383,7 @@ service.hooks({ after: { all: [protect('meta.internal', 'auth.refreshToken')] } 
 **`rateLimitHook`** — per-service, per-method rate limiting. Keys on `userId` for authenticated requests, falls back to IP for anonymous. Different from the `rateLimit` middleware, `app.configure(rateLimit(...))`, which applies globally to all HTTP routes.
 
 ```typescript
-import { rateLimitHook } from '@frontierjs/junction'
+import { rateLimitHook } from '@frontierjs/junction/hooks'
 
 // Per-service: limit create to 10/minute per user
 app.services.register(createService({
@@ -482,7 +482,7 @@ createService({
   schema: jsonSchema,
 
   async reboot(ctx) {
-    const db = ctx.locals.db
+    const db = $.db
     return db.servers.update({ where: { id: ctx.id }, data: { status: 'rebooting' } })
   },
 
@@ -708,8 +708,7 @@ mounted routes and a sidecar has none.
 
 ```typescript
 const sink = startMailSink()          // your process, your handle
-app.registerDevService({
-  name: 'mail',
+app.registerDevService('mail', {
   url:  'http://localhost:8111',
   note: 'inbox: http://localhost:8111/',
 })
@@ -809,7 +808,7 @@ If you use **bearer tokens only** (no cookies), omit `csrf()` entirely — beare
 
 
 ```typescript
-import { circuitBreaker } from '@frontierjs/junction'
+import { circuitBreaker } from '@frontierjs/junction/hooks'
 
 service.hooks({
   around: {
@@ -1085,7 +1084,7 @@ auth.confirmPasswordReset?(token, newPassword)           // consumes token, sets
 
 // Email verification flow
 auth.requestEmailVerification?(userId)                   // sends verification email
-auth.verifyEmail?(token)                                 // consumes token, returns session
+auth.verifyEmail?(token)                                 // consumes token: { signedIn: LoginResult } for a registration, else { verified }
 
 // Magic link — the mailbox as a first factor
 auth.requestMagicLink?(email)                            // mails a link and a six-digit code
@@ -1352,7 +1351,7 @@ so the runtime honors the declaration and the type does not know about it.
 Because the policy is structural rather than authorization, it is checked ahead
 of the hook pipeline — an anonymous caller gets 405, not 401.
 
-**`withLitestoneDb(db)`** attaches the base Litestone client to `ctx.locals.db` as an around hook. Auth scoping (`$setAuth`) happens inside `getTable()` at call time — after the `authenticate` hook has run — so the right user is always applied to every query.
+**`withLitestoneDb(db)`** attaches the base Litestone client to the call, read as `$.db`, as an around hook. Auth scoping (`$setAuth`) happens inside `getTable()` at call time — after the `authenticate` hook has run — so the right user is always applied to every query.
 
 **`deriveModelName`** converts a service name to a Litestone model name: `'users'` → `'user'`, `'blogPosts'` → `'blogPost'`. Pass `model` explicitly if your naming doesn't follow this pattern.
 
@@ -1402,7 +1401,7 @@ createService({
   name: 'accounts',
 
   async provision(ctx) {
-    const db = ctx.locals.db
+    const db = $.db
 
     return db.$transaction(async (tx) => {
       const user      = await tx.user.create({ data: ctx.data })
@@ -1507,7 +1506,7 @@ createService({
   transactional: ['pay'],
 
   async pay(ctx) {
-    const order = await ctx.locals.db.order.transition(ctx.id, 'pay')
+    const order = await $.db.order.transition(ctx.id, 'pay')
     await ctx.enqueue('payment-announce', { orderId: order.id })
     return order
   },
@@ -2097,6 +2096,10 @@ tether.subscribe(posts => render(posts))
 await service.create({ title: 'New post' })  // tether auto-updates on 'created' event
 ```
 
+Every option is named — `createResource`'s shape, with no positional argument
+(`FJS-D1316`): `client.resource('posts', { idField, model, match, until })`.
+`idField` defaults to `'id'`; `null` holds a projection that has no key.
+
 **`Tether<T>`** is framework-agnostic. Works with Svelte, Mesa, or plain JS:
 
 ```typescript
@@ -2104,8 +2107,8 @@ await service.create({ title: 'New post' })  // tether auto-updates on 'created'
 const posts = writable([])
 tether.subscribe(v => posts.set(v))
 
-// Mesa
-const posts = useTether(tether)   // reactive binding
+// Mesa, in a Sierra app — the resource's tethered() is the one door
+const posts = postsResource.tethered({ state: 'local' })
 
 // Plain JS
 tether.subscribe(list => document.querySelector('#count').textContent = list.length)
@@ -2353,7 +2356,7 @@ Dead jobs (exhausted retries) stay in the database — use `app.jobs.retry(id)` 
 One interface for talking to third-party systems — REST APIs, server Outposts, local processes. Abstracts HTTP, WebSocket, and Unix socket protocols behind a single `send()` call.
 
 ```ts
-import { authenticate }      from '@frontierjs/junction'
+import { authenticate } from '@frontierjs/junction/hooks'
 import { conduit }           from '@frontierjs/conduit'
 import { createSQLiteStore } from '@frontierjs/conduit/stores/sqlite'
 

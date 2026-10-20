@@ -286,7 +286,7 @@ table, so the pair goes straight into a call with nothing to translate:
   import { page } from '@frontierjs/sierra/router'
   import { orders } from '@/resources/Order.mesa'
 
-  $: (page.query, page.directives, () => orders.load(page.query, page.directives))
+  const list = orders.tethered()      // page.query and page.directives ARE its state
 </script>
 ```
 
@@ -475,7 +475,7 @@ export async function getStaticPaths() {        // static builds only
 ```js
 import {
   status, session, signIn, signOut, getClient, whenReady,
-  createResource, createStore, useTether, paletteSource,
+  createResource, paletteSource,
 } from '@frontierjs/sierra/resource'
 ```
 
@@ -549,15 +549,16 @@ around:enter → before → [network call] → after → around:exit
                            error
 ```
 
-Returns `{ service, tether, stale, make, load, save, fields, relations, gate, can, validate, normalize, coerce, context, hooks }`.
+Returns `{ service, tethered, record, make, save, move, fields, relations, gate, can, validate, normalize, coerce, context, hooks, … }`.
 
 **A Resource is the model's whole client-side surface** (`FJS-D114`) — the tether, the
-verbs, the reads it is asked for, and its default form. Three of those are worth naming:
+verbs, the reads it is asked for, and its default form. Four of those are worth naming:
 
 ```js
 export const leads = createResource('leads', {
   detailQuery:  { directives: { populate: ['company'] } },   // what get(id) asks for
   optionsQuery: { directives: { orderBy: 'name', limit: 500 } },  // what a picker asks for
+  tetheredQuery: { directives: { orderBy: '-createdAt' } },      // what tethered() starts on
 })
 
 await leads.save(record)                     // create — this row does not exist yet
@@ -593,7 +594,7 @@ creates, and a create over a key already taken is refused by the key's own uniqu
 `mode: 'patch'` with a blank id is refused rather than sent, because a patch with no id is
 a write over every row the caller can reach.
 
-Both declared reads are `{ query, directives }`. It is `detailQuery` rather than plain
+All three declared reads are `{ query, directives }`. It is `detailQuery` rather than plain
 `query` because `query` means FILTERS at every other boundary here (Invariant 10).
 
 **Return shapes — read this before `.map()`.** The service methods are a pass-through of
@@ -605,24 +606,23 @@ const res = await leads.service.find({}, { limit: 20 })
 res.data     // the rows
 res.total    // total matching — for a pager
 
-await leads.load()        // → the rows, and populates leads.tether
-leads.tether.get()        // → the rows
+const list = leads.tethered({ state: 'local' })
+list.rows    // the rows, live
+list.total   // total matching, null until the first answer
 ```
 
-**The tether is live, and it means the query that filled it.** A pushed row outside
-that query is not added, one a patch moved out of it is removed, and where `orderBy`
-says so the row is placed rather than appended. Two things a browser cannot answer:
-whether a new row belongs on an earlier page, and which row slides up when one leaves
-a full one. Neither is guessed at — they are counted on `stale`, which has a tether's
-shape and is cleared by `load()`:
+**A screen lists rows through one door, `tethered()`** (`FJS-D1318`). The tether,
+`load`, `more` and `stale` it is built from are not keys of the resource. The rows are
+live and mean the query that filled them: a pushed row outside that query is not
+added, one a patch moved out of it is removed, and where `orderBy` says so the row is
+placed rather than appended. Whether a new row belongs on an earlier page, and which
+row slides up when one leaves a full one, a browser cannot answer — `list.reload()`
+asks the server again.
 
-```js
-const { get } = useTether(orders.stale)   // 0 = as current as a push can make it
-// render `${get()} new — refresh`, and call load() again on the click
-```
-
-Reach for `load()`/`tether` when rendering a list, and `service.find()` when you need the
-count alongside it. `ctx.query` is filters (goes over the wire), `ctx.directives` is
+`{ state: 'local' }` keeps the filters off the address bar — a dock, a widget, an
+embedded panel. `{ all: true }` grows the window to the query's end, which is how a
+screen holds every row: a `service.find` naming a limit above the server's page max is
+refused. Reach for `service.find()` for a one-off read that needs the envelope. `ctx.query` is filters (goes over the wire), `ctx.directives` is
 `{ limit, offset, orderBy, select }` (also the wire, and the same word `page.directives`
 uses), and `ctx.locals` is per-call scratch that never leaves the browser — how `before`
 hands something to `after`.
@@ -1414,7 +1414,7 @@ import { tree, components, loaders, layouts, published, indexed, redirects } fro
 | `.../router` | navigation, `page`, guards, `RouterView`, `ChainRenderer` |
 | `.../router/internals` | chain resolution — used by `RouterView`, not public |
 | `.../scanner` | `scan`, `scanAndWrite`, `buildTree`, `classify`, frontmatter parsing |
-| `.../resource` | client wiring, `status`, auth, `createResource`, `createStore`, `useTether`, `buildFieldRules`, `buildRelations`, `buildGate`, `canAtLevel`, `validateAgainstFields`, `normalizeBlanks`, `coerceToSchema`, `resolveRef` |
+| `.../resource` | client wiring, `status`, auth, `createResource`, `buildFieldRules`, `buildRelations`, `buildGate`, `canAtLevel`, `validateAgainstFields`, `normalizeBlanks`, `coerceToSchema`, `resolveRef` |
 | `.../field-rules` | the Schema → UI projection alone — `controlFor`, `formFieldList`, `buildFieldRules`, `toFieldErrors`; imports no client |
 | `.../fetch` | `sierraFetch`, `configureFetch` |
 | `.../theme` | `theme`, `setTheme`, `toggleTheme`, `setScheme`, `initTheme` |

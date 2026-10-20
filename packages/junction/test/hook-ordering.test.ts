@@ -20,6 +20,7 @@ import { createClient }           from '../../litestone/src/index.js'
 import { buildService, callService } from '../src/core/service.ts'
 import { bridge }                 from '../src/transport/bridge.ts'
 import type { ServiceContext }    from '../src/core/context.ts'
+import { $, setCallDb } from '../src/core/context.ts'
 
 const SCHEMA = `
   model Customer {
@@ -52,18 +53,16 @@ const SIGNED_IN = { userId: 1, id: 1, isAdmin: true }
 
 /** A context with no principal — the stranger the gate is there to refuse. */
 function anonCtx(db: unknown, method: string, data: unknown): ServiceContext {
-  return bridge.internal('orders', method as never, data as never, {
+  return setCallDb(bridge.internal('orders', method as never, data as never, {
     auth:   { user: null },
-    locals: { db },
-  } as never)
+  } as never), db)
 }
 
 /** The same call, made by a caller the gate admits. */
 function userCtx(db: unknown, method: string, data: unknown, id?: string): ServiceContext {
-  const ctx = bridge.internal('orders', method as never, data as never, {
+  const ctx = setCallDb(bridge.internal('orders', method as never, data as never, {
     auth:   { user: SIGNED_IN },
-    locals: { db },
-  } as never)
+  } as never), db)
   if (id !== undefined) ctx.id = id
   return ctx
 }
@@ -80,7 +79,7 @@ describe('FJS-403 — the gate leads the chain', () => {
         before: {
           create: [async function customerMustExist(ctx: ServiceContext) {
             ran.push('customerMustExist')
-            const found = await (ctx.locals.db as never as Record<string, {
+            const found = await ($.db as never as Record<string, {
               findUnique(a: unknown): Promise<unknown>
             }>).customer!.findUnique({ where: { id: (ctx.data as { customerId: number }).customerId } })
             if (!found) throw Object.assign(new Error('no such customer'), { code: 400 })
@@ -138,7 +137,7 @@ describe('FJS-403 — the gate leads the chain', () => {
       hooks: {
         before: {
           create: [async function customerMustExist(ctx: ServiceContext) {
-            const found = await (ctx.locals.db as never as Record<string, {
+            const found = await ($.db as never as Record<string, {
               findUnique(a: unknown): Promise<unknown>
             }>).customer!.findUnique({ where: { id: (ctx.data as { customerId: number }).customerId } })
             if (!found) throw Object.assign(new Error('no such customer'), { code: 400 })

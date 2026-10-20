@@ -24,6 +24,7 @@ import { occurrenceKey } from '@frontierjs/toolbelt/history'
 import { readFileSync } from 'node:fs'
 
 import type { ServiceContext, EnqueueRef, EnqueueOptions, OutboxRelay } from '../../core/context.ts'
+import { callDb, callSlots } from '../../core/context.ts'
 import type { App } from '../../core/app.ts'
 
 /** The model `packages/junction/db/outbox.lite` declares, and its accessor. */
@@ -99,12 +100,12 @@ export async function enqueueOutbox(
   opts: EnqueueOptions = {}
 ): Promise<string> {
   const name = typeof job === 'string' ? job : job.name
-  const db   = ctx.locals.db as OutboxClient | undefined
+  const db   = callDb(ctx) as OutboxClient | undefined
   const at   = `${ctx.service}.${String(ctx.method)}`
 
   if (!db || typeof db.asSystem !== 'function')
     throw new Error(
-      `ctx.enqueue('${name}') in '${at}': ctx.locals.db is not a Litestone client. ` +
+      `ctx.enqueue('${name}') in '${at}': the call's client ($.db) is not a Litestone client. ` +
       `The outbox row has to be written on the connection the call is already writing through — ` +
       `build the app with createApp({ db }).`
     )
@@ -149,7 +150,7 @@ export async function enqueueOutbox(
 
   // What callService kicks the relay for. A row already committed is the
   // relay's to find on its next sweep regardless; this only buys the latency.
-  ;(ctx._outbox ??= []).push(row.id)
+  callSlots(ctx).outbox.push(row.id)
   return row.id
 }
 
@@ -157,7 +158,7 @@ export async function enqueueOutbox(
 
 // ─── Which databases hold rows ────────────────────────────────────────────────
 //
-// `ctx.enqueue` writes through `ctx.locals.db`, which under
+// `ctx.enqueue` writes through `$.db`, which under
 // `tenancy { strategy database }` is THIS TENANT's client. The relay used to
 // read `app.db` and nothing else, so the row was written to one file and looked
 // for in another — and every guard on the path passed: the tenant file carries

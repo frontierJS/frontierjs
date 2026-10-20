@@ -81,13 +81,13 @@ import {
   createLogger,
   channels,
   health,
-  circuitBreaker,
   announce,
   correlationId,
   rateLimit,
   requestLogger,
   createService,
 } from '../index.ts'
+import { circuitBreaker } from '../src/core/hooks-builtin.ts'
 import { openapi } from '../src/plugins/openapi/index.ts'
 import { webhooks, createSqliteWebhookStore } from '../src/plugins/webhooks/index.ts'
 import { Database } from 'bun:sqlite'

@@ -596,7 +596,7 @@ and the dropped relation is refused by name.
 Warmed at boot and on every reconnect, armed exactly as the pending queue arms
 its drain. **Not called `prefetch`** — sierra already has one and it means a
 speculative preload on a link hover, so the word was rejected rather than given
-a second meaning. It joins `detailQuery` / `optionsQuery` / `listQuery`, the
+a second meaning. It joins `detailQuery` / `optionsQuery` / `tetheredQuery`, the
 same `{ query, directives }` shape declared beside the model.
 
 Two things about it are worth carrying into phase 5. **A warm may not touch a

@@ -15,8 +15,8 @@ title: Plans
   // a different table.
   import Plan, { plans } from '@/resources/Plan.mesa'
   import { prefs } from '@/stores/prefs.js'
-  import { session, useTether } from '@frontierjs/sierra/resource'
-  import { page, goto } from '@frontierjs/sierra/router'
+  import { session } from '@frontierjs/sierra/resource'
+  import { goto } from '@frontierjs/sierra/router'
   import { money } from '../../lib/money.js'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -37,20 +37,15 @@ title: Plans
     { name: 'actions',      label: '' },
   ]
 
-  const { get: rows, unsubscribe } = useTether(plans.tether)
-  $.onDestroy(unsubscribe)
+  const list = plans.tethered({ directives: { orderBy: 'code' } })
+  const rows = () => list.rows
 
   $: (session.level, prefs.dense, prefs.currency)
 
   let error   = null
   let editing = null      // the plan being created, or null
 
-  function load() {
-    plans.load(page.query, { orderBy: 'code', ...page.directives })
-      .catch(e => { error = e.message })
-  }
-  load()
-  $: page.query, page.directives, () => load()
+  const load = () => list.reload()
 
   // An affordance. The API grades the call again, and the number comes off the
   // schema's own gate rather than being typed here.
@@ -70,7 +65,7 @@ title: Plans
   {/snippet}
 </SectionHeader>
 
-{#if error}<Alert tone="danger" id="p-error">{error}</Alert>{/if}
+{#if error || list.error}<Alert tone="danger" id="p-error">{error ?? list.error.message}</Alert>{/if}
 
 <Table {columns} rows={rows()} striped hover compact={prefs.dense}>
   {#snippet row(p)}

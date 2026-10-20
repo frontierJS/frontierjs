@@ -12,7 +12,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createTestApp, request } from '@frontierjs/junction'
 import { auth } from '../plugin.ts'
-import { makeAuth, rejectsWith, signedIn, type Harness, TEST_KEY } from './harness.ts'
+import { makeAuth, rejectsWith, signedIn, verified, type Harness, TEST_KEY } from './harness.ts'
 import { ReauthenticationFailedError, EmailTakenError, InvalidTokenError, AuthConfigError } from '../index.ts'
 import type { CredentialChange } from '../types.ts'
 
@@ -59,7 +59,7 @@ describe('requestEmailChange, then the link', () => {
     await h.auth.requestEmailChange!(u.userId, PW, to)
     expect((await row(u.userId)).email).toBe(u.email)
 
-    const ctx = await h.auth.verifyEmail!(h.verifyToken())
+    const ctx = verified(await h.auth.verifyEmail!(h.verifyToken()))
     expect(ctx.email).toBe(to)
     const after = await row(u.userId)
     expect(after.email).toBe(to)

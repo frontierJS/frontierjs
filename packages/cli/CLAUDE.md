@@ -58,7 +58,7 @@ core/
                 one close code. `chalk.fileLink(text, path, line)` is a
                 clickable `file:line` (OSC 8), off wherever color is
   text.js       `echo.lines` — a block of output rows; false and null rows
-                dropped. `plural(n, word)`
+                dropped. `untag`, which lets `echo` be a template tag. `plural(n, word)`
   install-preflight.js  `fli dev`'s third preflight — every declared package
                 installed, looked for by name walking up, and the `link:` targets
                 this machine's bun never registered, which fail `bun install` itself

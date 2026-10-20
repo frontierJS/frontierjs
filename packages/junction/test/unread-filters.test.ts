@@ -17,6 +17,7 @@ import { parseWhere }    from '../src/core/litestone.ts'
 import { $ }             from '../src/core/context.ts'
 import type { ServiceContext } from '../src/core/context.ts'
 import { request }       from '../src/testing/index.ts'
+import { callDb } from '../src/core/context.ts'
 
 type Row = { id: number, title: string, status: string }
 type AnyClient = Record<string, any>
@@ -48,7 +49,7 @@ async function appWith(def: Record<string, unknown> = {}) {
 }
 
 const ids = (body: unknown) => ((body as { data: Row[] }).data).map(r => r.id).sort()
-const db  = (c: ServiceContext) => c.locals.db as AnyClient
+const db  = (c: ServiceContext) => callDb(c) as AnyClient
 
 /** A find that names `status` and nothing else — the shape basecamp had 27 of. */
 const namesStatus = {

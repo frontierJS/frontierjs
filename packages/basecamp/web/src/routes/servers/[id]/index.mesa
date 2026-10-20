@@ -21,7 +21,6 @@ title: Server
 
   let server    = null
   let events    = []
-  let placed    = null   // the apps on this machine; null until read
   let error     = null
   let loadError = null
   let loading   = true
@@ -59,7 +58,6 @@ title: Server
     try {
       await watchRow()
       await loadEvents()
-      loadPlaced()
     } catch (e) {
       error = e.message; loadError = e
     } finally {
@@ -78,13 +76,12 @@ title: Server
   // destroying a machine. A placement is an AppServer row, so the filter is
   // `serverId`, which the apps service reserves and joins through. Not fatal:
   // the machine is the screen.
-  async function loadPlaced() {
-    try {
-      placed = (await apps.service.find({ serverId: page.params.id }, { limit: 100 })).data
-    } catch {
-      placed = null
-    }
-  }
+  // Composed, because the apps service includes each app's environment and a
+  // pushed row does not carry it.
+  const placedList = apps.tethered({
+    state: 'local', composed: true, where: { serverId: page.params.id }, directives: { limit: 100 },
+  })
+  $: placed = placedList.error ? null : placedList.rows
 
   // The machine's own report of its security controls. Not fatal, like the
   // placements: the machine is the screen.

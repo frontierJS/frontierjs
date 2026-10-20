@@ -18,7 +18,8 @@
 import { watchProxy } from '@frontierjs/mesa/runtime'
 import {
   session, ready as sessionReady, refresh, getClient,
-  signIn as authSignIn, signOut as authSignOut, submitCode as authSubmitCode,
+  signIn as authSignIn, signOut as authSignOut, completeSignIn as authCompleteSignIn,
+  verifyEmail as authVerifyEmail,
 } from '@frontierjs/sierra/resource'
 
 export { session }
@@ -207,7 +208,7 @@ export async function acceptInvitation({ token, name, password }) {
 
 // An account with a second factor answers a challenge, and then there is no
 // token yet — `/workspaces` asked now is a 401 that reads as a wrong password.
-// The workspace is loaded by `submitCode` once the code has been accepted.
+// The workspace is loaded by `completeSignIn` once the code has been accepted.
 export async function signIn(email, password) {
   const result = await authSignIn(email, password)
   if (session.awaitingCode) return result
@@ -215,9 +216,17 @@ export async function signIn(email, password) {
   return result
 }
 
-export async function submitCode(code) {
-  const result = await authSubmitCode(code)
+export async function completeSignIn(code) {
+  const result = await authCompleteSignIn(code)
   await loadWorkspace()
+  return result
+}
+
+// A registration's link signs in (`FJS-D1310`), and a session with no
+// workspace answers 400 on every scoped request.
+export async function verifyEmail(token) {
+  const result = await authVerifyEmail(token)
+  if (result?.user) await loadWorkspace()
   return result
 }
 

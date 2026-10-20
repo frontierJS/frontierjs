@@ -1,19 +1,22 @@
 /**
- * sierra/resource/list — `resource.list()`, the layer above a table.
+ * sierra/resource/tethered — `resource.tethered()`, the one door a screen lists
+ * rows through (`FJS-D1318`), and the layer above a table.
  *
- * A list is five wirings that every page restated: subscribe to the tether,
+ * It is five wirings that every page restated: subscribe to the tether,
  * decide where the filters live, send them to `load()`, re-run on a change, and
  * grow the window. This is those five, once. It owns no markup — `<Table>` and
- * `<FilterBar>` stay presentational and take what this hands them.
+ * `<FilterBar>` stay presentational and take what this hands them. The tether,
+ * `load`, `more` and `stale` are the machinery underneath and none of them is a
+ * key of the resource, so a screen has no second way to fill a table.
  *
  *   const invoices = createResource('invoices', {
- *     listQuery: { directives: { orderBy: '-issuedAt' } },
+ *     tetheredQuery: { directives: { orderBy: '-issuedAt' } },
  *   })
  *
- *   const list = invoices.list()                               // the URL is the state
- *   const list = notes.list({ state: 'local' })                // embedded
- *   const list = notes.list({ state: 'local', where: { clientId } })
- *   const list = cards.list({ state: 'local', where: { listId }, all: true })  // every row, not a page
+ *   const list = invoices.tethered()                               // the URL is the state
+ *   const list = notes.tethered({ state: 'local' })                // embedded, or a dock that only subscribes
+ *   const list = notes.tethered({ state: 'local', where: { clientId } })
+ *   const list = cards.tethered({ state: 'local', where: { listId }, all: true })  // every row, not a page
  *
  *   <FilterBar {filters} {search} value={list.query} directives={list.directives} onchange={list.apply} />
  *   <Table {columns} rows={list.rows} orderBy={list.directives.orderBy} onsort={list.sort} />
@@ -35,7 +38,7 @@
  *
  * ─── The resource file's defaults ──────────────────────────────────────────
  *
- * `listQuery` is what a list STARTS on, beneath what the caller states. Its
+ * `tetheredQuery` is what a list STARTS on, beneath what the caller states. Its
  * directives sit under the URL's key for key, so `?$orderBy=name` beats a
  * declared `-issuedAt`. Its filters apply only while the state carries none of
  * its own, so clearing every filter returns to them: merged under the URL key
@@ -102,20 +105,20 @@ function overlay(base, top) {
 }
 
 /**
- * @param {object} resource  the resource this list reads — `load`, `more`, `hasMore`, `tether`,
+ * @param {object} resource  the machinery these rows are read through — `load`, `more`, `hasMore`, `tether`,
  *                           `dispose` for rows of its own, and for a composed list `find`, `on`
  *                           and `onReconnected`
- * @param {{ query?: object, directives?: object } | undefined} listQuery  the resource file's defaults
+ * @param {{ query?: object, directives?: object } | undefined} tetheredQuery  the resource file's defaults
  * @param {object} [opts]
  * @param {'url'|'local'} [opts.state='url']
  * @param {object} [opts.where]       filters applied over the state, never shown to a bar
- * @param {object} [opts.query]       starting filters, over `listQuery.query`
- * @param {object} [opts.directives]  starting directives, over `listQuery.directives`
+ * @param {object} [opts.query]       starting filters, over `tetheredQuery.query`
+ * @param {object} [opts.directives]  starting directives, over `tetheredQuery.directives`
  * @param {number} [opts.debounce=300] milliseconds a `search` change waits
  * @param {boolean} [opts.composed=false] the service's `find()` answers more than the rows
  * @param {boolean} [opts.all=false] every load grows the window to the query's end
  */
-export function createList(resource, listQuery, opts = {}) {
+export function createTethered(resource, tetheredQuery, opts = {}) {
   const {
     state    = 'url',
     where    = {},
@@ -124,17 +127,17 @@ export function createList(resource, listQuery, opts = {}) {
   const composed = opts.composed === true
   const whole    = opts.all === true
   if (state !== 'url' && state !== 'local') {
-    throw new Error(`[list] state must be 'url' or 'local', got ${JSON.stringify(state)}`)
+    throw new Error(`[tethered] state must be 'url' or 'local', got ${JSON.stringify(state)}`)
   }
   // A composed list re-reads its whole window on every announcement, so a
   // composed list of every row re-reads the table on every write to it.
   if (composed && whole) {
-    throw new Error(`[list] { all: true } cannot be composed — every push would re-read every row.\n` +
+    throw new Error(`[tethered] { all: true } cannot be composed — every push would re-read every row.\n` +
       `  Drop the include from find(), or page a composed list with more().`)
   }
 
-  const startQuery      = overlay(listQuery?.query,      opts.query)
-  const startDirectives = overlay(listQuery?.directives, opts.directives)
+  const startQuery      = overlay(tetheredQuery?.query,      opts.query)
+  const startDirectives = overlay(tetheredQuery?.directives, opts.directives)
 
   // ─── State ──────────────────────────────────────────────────────────────
 

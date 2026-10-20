@@ -20,6 +20,7 @@ import { createService } from '../../core/service.ts'
 import { BadRequest }    from '../../core/errors.ts'
 import type { ServiceDefinition } from '../../core/service.ts'
 import type { ServiceContext } from '../../core/context.ts'
+import { callDb } from '../../core/context.ts'
 
 /** Options for `searchService()`. */
 export interface SearchServiceOptions {
@@ -83,7 +84,7 @@ export function searchService({ models, name = 'search' }: SearchServiceOptions)
         if (!chosen.length) return []
       }
 
-      const db = ctx.locals.db
+      const db = callDb(ctx)
       if (!db || !('$search' in db) || !db.$search) {
         throw new Error(`${name}: the call's client has no $search, so searchService needs a litestone client`)
       }

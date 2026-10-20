@@ -25,6 +25,7 @@ import { createJunctionClient } from '../src/client/index.ts'
 import type { ServiceContext } from '../src/core/context.ts'
 import { createTestApp, request } from '../src/testing/index.ts'
 import { RESERVED_PARAMS } from '@frontierjs/toolbelt/directives'
+import { setCallDb } from '../index.ts'
 
 // ─── the server half, against a real Litestone client ─────────────────────────
 
@@ -49,12 +50,12 @@ async function shop() {
   return db
 }
 
-const svcCtx = (db: unknown, over: Record<string, unknown> = {}): ServiceContext => ({
+const svcCtx = (db: unknown, over: Record<string, unknown> = {}): ServiceContext => setCallDb({
   service: 'items', method: 'find', id: undefined, data: null,
   params: {}, query: {}, auth: {}, caller: {},
-  locals: { db }, app: {},
+  locals: {}, app: {},
   ...over,
-} as unknown as ServiceContext)
+} as unknown as ServiceContext, db)
 
 describe('the server answers a window', () => {
   test('an ordinary page carries the edge, minted off the last row it already has', async () => {
@@ -305,7 +306,7 @@ describe('resource().more()', () => {
       { data: [{ id: 1 }, { id: 2 }], endCursor: 'c1', hasMore: true },
       { data: [{ id: 3 }, { id: 4 }], endCursor: 'c2', hasMore: false },
     ])
-    const r = client().resource('items', 'id', { model: 'Item' })
+    const r = client().resource('items', { model: 'Item' })
     await r.load({}, { limit: 2, orderBy: 'id' })
     expect(r.hasMore()).toBe(true)
 
@@ -321,7 +322,7 @@ describe('resource().more()', () => {
       { data: [{ id: 1 }], endCursor: 'edge-1', hasMore: true },
       { data: [{ id: 2 }], endCursor: null,     hasMore: false },
     ])
-    const r = client().resource('items', 'id', { model: 'Item' })
+    const r = client().resource('items', { model: 'Item' })
     await r.load({ status: 'live' }, { limit: 1, orderBy: '-id' })
     await r.more()
 
@@ -334,7 +335,7 @@ describe('resource().more()', () => {
 
   test('nothing past the window is an empty answer, not a request', async () => {
     const m = mockPages([{ data: [{ id: 1 }], endCursor: null, hasMore: false }])
-    const r = client().resource('items', 'id', { model: 'Item' })
+    const r = client().resource('items', { model: 'Item' })
     await r.load()
     expect(await r.more()).toEqual([])
     expect(m.asked.length).toBe(1)
@@ -342,7 +343,7 @@ describe('resource().more()', () => {
   })
 
   test('before load() it refuses by name — a window has to be opened first', async () => {
-    const r = client().resource('items', 'id', { model: 'Item' })
+    const r = client().resource('items', { model: 'Item' })
     await expect(r.more()).rejects.toThrow(/before load\(\)/)
   })
 
@@ -352,7 +353,7 @@ describe('resource().more()', () => {
       { data: [{ id: 99 }], endCursor: 'c2', hasMore: true },   // the more()
       { data: [{ id: 7 }],  endCursor: 'c3', hasMore: true },   // the load()
     ])
-    const r = client().resource('items', 'id', { model: 'Item' })
+    const r = client().resource('items', { model: 'Item' })
     await r.load({}, { limit: 1 })
 
     const growing = r.more()
@@ -371,7 +372,7 @@ describe('resource().more()', () => {
       { data: [{ id: 1 }, { id: 2 }], endCursor: 'c1', hasMore: true },
       { data: [{ id: 2 }, { id: 3 }], endCursor: 'c2', hasMore: false },
     ])
-    const r = client().resource('items', 'id', { model: 'Item' })
+    const r = client().resource('items', { model: 'Item' })
     await r.load({}, { limit: 2 })
     await r.more()
     expect(r.tether.get().map((x: any) => x.id)).toEqual([1, 2, 3])
@@ -467,7 +468,7 @@ const settle = () => new Promise(r => setTimeout(r, 20))
 describe('a refetch keeps the grown window (FJS-2612)', () => {
   test('a `changed` push re-asks the whole window, not its first page', async () => {
     const m = keysetServer(9, 2)
-    const r: any = client().resource('items', 'id', { model: 'Item' })
+    const r: any = client().resource('items', { model: 'Item' })
     await r.load({}, { orderBy: 'id' })
     await r.more()
     await r.more()
@@ -490,7 +491,7 @@ describe('a refetch keeps the grown window (FJS-2612)', () => {
   test('a reconnect does the same', async () => {
     const m = keysetServer(9, 2)
     const c: any = client()
-    const r: any = c.resource('items', 'id', { model: 'Item' })
+    const r: any = c.resource('items', { model: 'Item' })
     await r.load({}, { orderBy: 'id' })
     await r.more()
     const random = Math.random
@@ -505,7 +506,7 @@ describe('a refetch keeps the grown window (FJS-2612)', () => {
 
   test('a window that never grew re-asks one page and nothing more', async () => {
     const m = keysetServer(9, 2)
-    const r: any = client().resource('items', 'id', { model: 'Item' })
+    const r: any = client().resource('items', { model: 'Item' })
     await r.load({}, { orderBy: 'id' })
     const before = m.asked.length
     r.service._receive('changed', { count: 1 })
@@ -531,7 +532,7 @@ describe('a refetch keeps the grown window, against a real app (FJS-2612)', () =
     await app.start()
     try {
       const c: any = createJunctionClient({ url: `http://localhost:${app.http.port}` })
-      const r: any = c.resource('items', 'id', { model: 'Item' })
+      const r: any = c.resource('items', { model: 'Item' })
       await r.load({}, { orderBy: 'id' })
       await r.more()
       expect(r.tether.get()).toHaveLength(20)
@@ -562,7 +563,7 @@ describe('a drained window takes a created row (FJS-2617)', () => {
       { data: [{ id: 1 }, { id: 3 }], endCursor: 'c1', hasMore: true,  total: 4 },
       { data: [{ id: 5 }, { id: 7 }], endCursor: 'c2', hasMore: false, total: 4 },
     ])
-    const r: any = client().resource('items', 'id', { model: 'Item' })
+    const r: any = client().resource('items', { model: 'Item' })
     await r.load({}, { limit: 2, orderBy: 'id' })
     await r.more()
     expect(r.hasMore()).toBe(false)
@@ -583,7 +584,7 @@ describe('a drained window takes a created row (FJS-2617)', () => {
       { data: [{ id: 1 }, { id: 3 }], endCursor: 'c1', hasMore: true },
       { data: [{ id: 5 }],            endCursor: null, hasMore: false },
     ])
-    const r: any = client().resource('items', 'id', { model: 'Item' })
+    const r: any = client().resource('items', { model: 'Item' })
     await r.load({}, { limit: 2, orderBy: 'id' })
     await r.more()
 
@@ -597,7 +598,7 @@ describe('a drained window takes a created row (FJS-2617)', () => {
     const m = mockPages([
       { data: [{ id: 1 }, { id: 3 }], endCursor: 'c1', hasMore: true, total: 4 },
     ])
-    const r: any = client().resource('items', 'id', { model: 'Item' })
+    const r: any = client().resource('items', { model: 'Item' })
     await r.load({}, { limit: 2, orderBy: 'id' })
 
     r.service._receive('created', { id: 2 })
@@ -611,7 +612,7 @@ describe('a drained window takes a created row (FJS-2617)', () => {
     globalThis.fetch = (async () => new Response(JSON.stringify({
       kind: 'list', object: 'items', errors: [], data: [{ id: 1 }, { id: 3 }],
     }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch
-    const r: any = client().resource('items', 'id', { model: 'Item' })
+    const r: any = client().resource('items', { model: 'Item' })
     await r.load({}, { limit: 2, orderBy: 'id' })
 
     r.service._receive('created', { id: 2 })

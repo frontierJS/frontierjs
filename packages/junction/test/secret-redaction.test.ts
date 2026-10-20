@@ -23,6 +23,7 @@ import { describe, test, expect } from 'bun:test'
 import { createLogger } from '../src/core/logger.ts'
 import { defineEnv } from '../src/core/env.ts'
 import { redactProtected } from '../src/core/errors.ts'
+import { setCallDb } from '../src/core/context.ts'
 
 const capture = (fn: () => void): string => {
   const out: string[] = []
@@ -151,7 +152,7 @@ describe('a key named for an inherited member is not a protected column', () => 
   test('withholdProtected keeps them, at any depth', async () => {
     const { withholdProtected } = await import('../src/transport/bridge.ts')
     const db = { $protectedFields: () => ({ ssn: 'encrypted' }) }
-    const ctx: any = { model: 'Lead', service: 'leads', locals: { db } }
+    const ctx: any = setCallDb({ model: 'Lead', service: 'leads', locals: {} }, db)
     const out: any = withholdProtected({ data: { ...stored, ssn: 'x', nested: { ...stored } } }, ctx)
     expect(out.data).toMatchObject({ constructor: 'a', toString: 'b', valueOf: 'c', ok: 1 })
     expect(out.data.ssn).toBeUndefined()

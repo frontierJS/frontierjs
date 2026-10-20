@@ -91,21 +91,25 @@ title: Pay run
     return row.ready
   }
 
-  async function loadSlips() {
-    const list = await payslips.service.find(
-      { payRunId: Number(page.params.id) }, { orderBy: 'reference', limit: 500 })
-    slips = list?.data ?? []
+  // Every payslip of the run, not a page — the server refuses a page above its
+  // max — and every employee they name, in one read rather than one per
+  // payslip: a payslip names an employee id and nobody recognizes an id.
+  const slipList = payslips.tethered({
+    state: 'local', where: { payRunId: Number(page.params.id) }, all: true, directives: { orderBy: 'reference' },
+  })
+  $: { slips = slipList.rows }
+  const staffList = employees.tethered({
+    state: 'local', where: { id: { in: [...new Set(slips.map(s => s.employeeId))] } }, all: true,
+  })
+  $: {
+    const named = new Map()
+    for (const e of staffList.rows) named.set(e.id, e)
+    people = named
+  }
 
-    if (!slips.length) { people = new Map(); return }
-    // One request for the names, not one per payslip. A payslip names an
-    // employee id and nobody recognizes an id.
-    try {
-      const staff = await employees.service.find(
-        { id: { in: [...new Set(slips.map(s => s.employeeId))] } }, { limit: 500 })
-      const named = new Map()
-      for (const e of staff?.data ?? []) named.set(e.id, e)
-      people = named
-    } catch { people = new Map() }
+  async function loadSlips() {
+    await slipList.reload()
+    if (slipList.error) throw slipList.error
   }
 
   /** The journal, watched composed — the header carries no amount at all. */

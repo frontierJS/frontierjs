@@ -255,9 +255,12 @@ nothing handed out by the schema. `example/api/src/domain/shop/pricing.ts` is th
 caller: one rounding for the whole shop, applied at the two multiplications a
 basket cannot avoid — a percentage discount and a tax rate.
 
-**Changing `n` is a migration that rescales every stored row**, and nothing here
-does it for you. `@@transitions` and `@encrypted` both changed a column's
-meaning without rewriting bytes; this one would.
+**Changing `n` is a migration that rescales every stored row**, and litestone
+writes the rebuild but not the rescale. The scale is named into the column's
+CHECK (`"units_scale_6"`), so `migrate create` sees the change; the file it
+writes refuses a table with rows and names the statement to put above the
+rebuild — `UPDATE "fee" SET "units" = "units" / 1000;` — and an empty table
+rebuilds as is (`FJS-D1335`). `autoMigrate` refuses rows the same way.
 
 **More than nine places is not expressible, and that is a shape rather than a
 limit to raise.** A per-unit rate wants many places and a small magnitude; a

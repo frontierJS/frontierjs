@@ -27,6 +27,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createChannelManager } from '../src/transport/channels.ts'
 import type { ServiceContext } from '../src/core/context.ts'
+import { setCallDb } from '../src/core/context.ts'
 
 type Manager = ReturnType<typeof createChannelManager>
 
@@ -71,7 +72,7 @@ function tenantBoundary(strategy: 'row' | 'database' = 'row') {
 }
 
 const ctxFor = (db: unknown, service = 'servers'): ServiceContext =>
-  ({ service, locals: { db }, app: {} } as unknown as ServiceContext)
+  setCallDb({ service, locals: {}, app: {} } as unknown as ServiceContext, db)
 
 const WS_A = 'ws-acme'
 const WS_B = 'ws-skunkworks'

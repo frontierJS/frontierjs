@@ -148,10 +148,11 @@ function _injectSlotVars(source, slotNames) {
   // These are local lets so {@render __slot_sidebar()} works without compiler confusion
   // `page.slots` is a plain-object path, so the watch is what makes this
   // reactive — the handler is deferred and fires on every slot registration.
+  // A second `$: __slot_X = ...` is refused as a redeclaration, so the initial
+  // read lives in the `let` and the watch alone carries later updates.
   const slotDecls = slotNames.map(n =>
-    `  let __slot_${n} = null\n` +
-    `  $: page.slots, () => { __slot_${n} = page.slots.${n} ?? null }\n` +
-    `  $: __slot_${n} = page.slots.${n} ?? null`
+    `  let __slot_${n} = page.slots.${n} ?? null\n` +
+    `  $: page.slots, () => { __slot_${n} = page.slots.${n} ?? null }`
   ).join('\n')
 
   // Inject before closing </script> of instance script

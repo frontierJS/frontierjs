@@ -25,7 +25,7 @@ const _given = {}
 vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => ({ find: async () => ({ data: [] }), on: () => {} }),
-    resource: (name, idField, opts) => {
+    resource: (name, opts) => {
       _given.opts = opts
       return {
         tether: { get: () => [], subscribe: (fn) => { fn([]); return () => {} }, set: () => {} },
@@ -90,15 +90,17 @@ describe('createResource hands the matcher to Junction', () => {
     expect(match(row, { status: 'active' }, { limit: 20, orderBy: 'id', onlyDeleted: false, search: '', scope: [] })).toBe(true)
   })
 
-  test('`stale` comes through, in the shape useTether takes', async () => {
-    const { createResource } = await import('../src/resource/resource.js')
+  test('`stale` comes through to the machinery, and is not a key of the resource', async () => {
+    const { createResource, tetherOf } = await import('../src/resource/resource.js')
     const leads = createResource('leads')
     // A live list can place a row and cannot fill a gap paging left; the count
-    // is how a view offers the reload. Same `{ get, subscribe }` as a tether, so
-    // it bridges to a signal unchanged.
-    expect(leads.stale.get()).toBe(3)
-    const seen = []
-    leads.stale.subscribe(n => seen.push(n))
-    expect(seen).toEqual([3])
+    // is what tethered() is built over. A screen lists rows through tethered()
+    // alone (FJS-D1318), so the resource carries none of the machinery.
+    expect(leads.stale).toBeUndefined()
+    expect(leads.tether).toBeUndefined()
+    expect(leads.load).toBeUndefined()
+    expect(leads.more).toBeUndefined()
+    expect(typeof leads.tethered).toBe('function')
+    expect(tetherOf(leads).stale.get()).toBe(3)
   })
 })

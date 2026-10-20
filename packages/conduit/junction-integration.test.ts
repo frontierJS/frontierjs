@@ -715,12 +715,14 @@ model Post {
   channelExternalId String
   message           String
   starred           Boolean @default(false) @local
+  @@gate(2)
   @@mirror(key: externalId)
 }
 model Note {
   id         Int    @id
   externalId String @unique
   body       String
+  @@gate(2)
 }`
 
 const TRANSITIONS_SCHEMA = 'enum Stage { draft live }\n' + MIRROR_SCHEMA

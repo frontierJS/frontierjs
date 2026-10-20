@@ -22,7 +22,7 @@
 // (`FJS-D340`) because there the link arrives in an email and must not stay in
 // a URL; a basket's token is never in one.
 
-import { bearerClaim, header } from '@frontierjs/junction'
+import { bearerClaim, header } from '@frontierjs/junction/bearer'
 
 /** The header the browser client sends. Also what `carts.open` answers with,
  *  so there is one spelling of it. */

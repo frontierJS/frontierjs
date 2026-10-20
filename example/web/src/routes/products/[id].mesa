@@ -22,7 +22,7 @@ title: Product
   import { money }     from '@/lib/money.js'
   import { prefs }     from '@/stores/prefs.js'
   import { page }    from '@frontierjs/sierra/router'
-  import { session, useTether } from '@frontierjs/sierra/resource'
+  import { session } from '@frontierjs/sierra/resource'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Breadcrumbs   from '@frontierjs/ui/components/display/Breadcrumbs.mesa'
@@ -38,13 +38,16 @@ title: Product
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
   import { toasts }    from '@frontierjs/ui/stores/toastStore'
 
-  // The two lists go through the resource's STORE rather than a one-shot
-  // fetch. `resource.service` has no `findData` — that is the junction client
-  // one layer down — and the store is the better answer anyway: both services
+  // The two lists are tethered rather than a one-shot fetch: both services
   // declare a channel, so a variant repriced in another tab arrives here.
-  const { get: variants, unsubscribe: offV } = useTether(productVariants.tether)
-  const { get: images,   unsubscribe: offI } = useTether(productImages.tether)
-  $.onDestroy(() => { offV(); offI() })
+  // Filtered server-side — `productId` is a real column, so this is a WHERE and
+  // not a page of everything narrowed in the browser — and every row of it, not
+  // a page. Read once, as `load()` below reads the product once.
+  var productId = Number(page.params.id)
+  const variantList = productVariants.tethered({ state: 'local', where: { productId }, all: true, directives: { orderBy: 'sku' } })
+  const imageList   = productImages.tethered({ state: 'local', where: { productId }, all: true, directives: { orderBy: 'position' } })
+  const variants = () => variantList.rows
+  const images   = () => imageList.rows
 
   $: (page.params, session.level)
   $: (cart.busy, cart.count, cart.error)
@@ -58,7 +61,7 @@ title: Product
   // is the derived CRUD read, so the row IS the row and a plain record view is
   // correct here — a reprice or a rename made anywhere moves this page with
   // nothing refreshing. The two lists beneath it are already live, through
-  // their own stores.
+  // their own tethers.
   let row     = null
   let unwatch = null
 
@@ -102,15 +105,8 @@ title: Product
   async function load() {
     error = null; loading = true
     try {
-      const id = Number(page.params.id)
-      await watchProduct(id)
-      // Filtered server-side — `productId` is a real column, so this is a
-      // WHERE and not a page of everything narrowed in the browser.
-      await Promise.all([
-        productVariants.load({ productId: id }, { limit: 200, orderBy: 'sku' }),
-        productImages.load({ productId: id },   { limit: 50,  orderBy: 'position' }),
-        loadLevels(),
-      ])
+      await watchProduct(productId)
+      await loadLevels()
     } catch (e) {
       error = e.message
     } finally {
@@ -164,7 +160,7 @@ title: Product
   $: hero = (pickColor && imageFor(pickColor)) || images()[0] || null
 
   // The first thing that can actually be bought, chosen once the rows arrive.
-  // Reactive rather than set in `load()`: the variants come from a STORE, so a
+  // Reactive rather than set in `load()`: the variants come from a tether, so a
   // repricing or a restock in another tab arrives after the load resolved.
   $: {
     const rows = variants()
@@ -229,8 +225,8 @@ title: Product
   { label: product?.name ?? '…' },
 ]} />
 
-{#if error}
-  <Alert tone="danger">{error}</Alert>
+{#if error || variantList.error || imageList.error}
+  <Alert tone="danger">{error ?? (variantList.error ?? imageList.error).message}</Alert>
 {/if}
 
 {#if loading}
@@ -273,7 +269,7 @@ title: Product
           <ProductImageForm
             productId={Number(page.params.id)}
             variantId={chosen?.id ?? null}   <!-- the colorway on screen, so a photograph lands on the one being looked at -->
-            ondone={() => productImages.load({ productId: Number(page.params.id) }, { limit: 50, orderBy: 'position' })}
+            ondone={() => imageList.reload()}
           />
         </div>
       {/if}

@@ -78,7 +78,7 @@ title: Invoices
   // directives, so `?$orderBy=number` wins, and the header reads the same
   // directives the load sends, default included, or a sorted list arrives with
   // no column marked.
-  const list = invoices.list()
+  const list = invoices.tethered()
 
   // Overdue is not a status. It is `dueOn` against the shop's calendar, so it
   // is true from the day after with nothing writing a row.

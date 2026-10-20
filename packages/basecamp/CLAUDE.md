@@ -71,12 +71,13 @@ path and `/apps/` in a browser would answer JSON.
 **losing the encryption key loses every `@encrypted` column in that volume.**
 
 **An interrupted `verify` cleans up after itself** — SIGINT/SIGTERM/SIGHUP and
-an uncaught throw all kill the API, the Vite and the Chrome it started. Before
-that they were orphaned, and the next run either tripped its own port check or
-talked to an API holding a database `--reset` had already deleted.
+an uncaught throw all kill the API, the Vite and the Chrome it started, and
+remove its scratch directory.
 
-`verify` needs an **empty** database (`bun run verify --reset` does it for you)
-and both ports free: API **8120**, web **8020**. That web port is the same one
+`verify` runs the API on a database of its own in a temp directory —
+`DATABASE_URL`, the jobs queue beside it, `AUDIT_PATH`, `SITES_DIR` and
+`WORKBENCH_DIR` all point there — so `db/` is never opened. It needs both ports
+free: API **8120**, web **8020**. That web port is the same one
 `example/` uses — they cannot serve at once, and only this side is strict about
 it (`strictPort`, plus `fli dev`'s port preflight, which reads the surfaces
 that exist and derives their ports from `packages/cli/core/ports.js`).

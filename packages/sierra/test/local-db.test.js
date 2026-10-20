@@ -37,7 +37,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({ getClient: () => _client }))
 
 const { generateSchemas } = await import('../src/build/schema-plugin.js')
 const { registerSchemas } = await import('../src/resource/schema-registry.js')
-const { createResource }  = await import('../src/resource/resource.js')
+const { createResource, tetherOf }  = await import('../src/resource/resource.js')
 const { _resetListCache, listCache, listKey } = await import('../src/resource/list-cache.js')
 const { warmOffline, _resetOffline } = await import('../src/resource/offline.js')
 const { writeThrough, readLocal, localDbConfigured, _resetLocalDb, _useLocalDbClient } =
@@ -191,9 +191,9 @@ describe('an app that did not ask for one', () => {
 
   test('and a load that cannot reach the server still falls back to the list cache', async () => {
     const r = sheets()
-    await r.load({})
+    await tetherOf(r).load({})
     _proxy.find = offline
-    const rows = await r.load({})
+    const rows = await tetherOf(r).load({})
     expect(rows[0].id).toBe('S1')
     expect(r.cachedAt()).toBeTypeOf('number')
   })
@@ -362,19 +362,19 @@ describe('a load that cannot reach the server', () => {
     useDevice(makeDevice({ rows: [{ id: 'FROM-SQL', name: 'local' }] }))
     _proxy.find = offline
 
-    const rows = await r.load({ closedAt: null }, { limit: 5 })
+    const rows = await tetherOf(r).load({ closedAt: null }, { limit: 5 })
     expect(rows.map(x => x.id)).toEqual(['FROM-SQL'])
-    expect(r.tether.get().map(x => x.id)).toEqual(['FROM-SQL'])
+    expect(tetherOf(r).tether.get().map(x => x.id)).toEqual(['FROM-SQL'])
     expect(r.cachedAt()).toBeTypeOf('number')
   })
 
   test('and falls through to the list cache when the device declines', async () => {
     const r = sheets()
-    await r.load({})                       // the list cache now holds this one
+    await tetherOf(r).load({})                       // the list cache now holds this one
     useDevice(makeDevice({ fail: new Error('no such table') }))
     _proxy.find = offline
 
-    const rows = await r.load({})
+    const rows = await tetherOf(r).load({})
     expect(rows[0].id).toBe('S1')
   })
 
@@ -385,11 +385,11 @@ describe('a load that cannot reach the server', () => {
   // device that cannot answer at all also defers.
   test('an EMPTY device defers to the cache rather than emptying the screen', async () => {
     const r = sheets()
-    await r.load({})
+    await tetherOf(r).load({})
     useDevice(makeDevice({ rows: [] }))
     _proxy.find = offline
 
-    const rows = await r.load({})
+    const rows = await tetherOf(r).load({})
     expect(rows.map(x => x.id)).toEqual(['S1'])
   })
 
@@ -398,7 +398,7 @@ describe('a load that cannot reach the server', () => {
     useDevice(makeDevice({ rows: [] }))
     _proxy.find = offline
 
-    expect(await r.load({ closedAt: null })).toEqual([])
+    expect(await tetherOf(r).load({ closedAt: null })).toEqual([])
   })
 
   test('a search the device cannot answer does not render the whole table', async () => {
@@ -406,8 +406,8 @@ describe('a load that cannot reach the server', () => {
     useDevice(makeDevice({ rows: [{ id: 'L1', name: 'tachyon drive' }, { id: 'L2', name: 'unrelated' }] }))
     _proxy.find = offline
 
-    await expect(r.load({}, { search: 'tachyon' })).rejects.toThrow(/Failed to fetch/)
-    expect(r.tether.get()).toEqual([])
+    await expect(tetherOf(r).load({}, { search: 'tachyon' })).rejects.toThrow(/Failed to fetch/)
+    expect(tetherOf(r).tether.get()).toEqual([])
     expect(r.cachedAt()).toBeNull()
   })
 
@@ -418,7 +418,7 @@ describe('a load that cannot reach the server', () => {
     useDevice(makeDevice({ rows: [{ id: 'FROM-SQL' }] }))
     _proxy.find = () => Promise.reject(Object.assign(new Error('Forbidden'), { code: 403 }))
 
-    await expect(r.load({})).rejects.toThrow(/Forbidden/)
+    await expect(tetherOf(r).load({})).rejects.toThrow(/Forbidden/)
   })
 })
 
@@ -429,7 +429,7 @@ describe('a load that DID reach the server', () => {
     const d = makeDevice()
     useDevice(d)
     const r = sheets()
-    await r.load({})
+    await tetherOf(r).load({})
     // Not awaited by `load()`, so the assertion is on the next turn rather than
     // on the call — which is the behaviour, not a test convenience.
     await new Promise(res => setTimeout(res, 0))
@@ -440,7 +440,7 @@ describe('a load that DID reach the server', () => {
     const d = makeDevice({ models: ['plain'] })
     useDevice(d)
     const r = createResource('plains', { model: 'Plain' })
-    await r.load({})
+    await tetherOf(r).load({})
     await new Promise(res => setTimeout(res, 0))
     expect(d.calls.length).toBe(0)
   })
@@ -472,12 +472,12 @@ describe('a row the server no longer answers leaves the device', () => {
     useDevice(d)
     const r = sheets()
     _proxy.find = () => Promise.resolve({ data: [], total: 0 })
-    await r.load({})
+    await tetherOf(r).load({})
     await tick()
     expect(d.held()).toEqual([])
 
     _proxy.find = offline
-    expect(await r.load({})).toEqual([])
+    expect(await tetherOf(r).load({})).toEqual([])
   })
 
   test('a whole answer takes off only what its own where reaches', async () => {
@@ -488,7 +488,7 @@ describe('a row the server no longer answers leaves the device', () => {
     ] })
     useDevice(d)
     _proxy.find = () => Promise.resolve({ data: [{ id: 'S1', name: 'kept', closedAt: null }], total: 1 })
-    await sheets().load({ closedAt: null })
+    await tetherOf(sheets()).load({ closedAt: null })
     await tick()
     expect(d.held().sort()).toEqual(['S1', 'S3'])
   })
@@ -499,7 +499,7 @@ describe('a row the server no longer answers leaves the device', () => {
     const d = makeDevice({ rows: [{ id: 'S1' }, { id: 'S2' }] })
     useDevice(d)
     _hasMore = true
-    await sheets().load({}, { limit: 1 })
+    await tetherOf(sheets()).load({}, { limit: 1 })
     await tick()
     expect(d.held().sort()).toEqual(['S1', 'S2'])
   })
@@ -507,8 +507,8 @@ describe('a row the server no longer answers leaves the device', () => {
   test('nor does a page past the first, or a search', async () => {
     const d = makeDevice({ rows: [{ id: 'S1' }, { id: 'S2' }] })
     useDevice(d)
-    await sheets().load({}, { offset: 20 })
-    await sheets().load({}, { search: 'from' })
+    await tetherOf(sheets()).load({}, { offset: 20 })
+    await tetherOf(sheets()).load({}, { search: 'from' })
     await tick()
     expect(d.calls.some(c => c[0] === 'deleteMany')).toBe(false)
   })
@@ -659,7 +659,7 @@ describe('the warm fills the device rather than the cache', () => {
     await warmOffline()
 
     _proxy.find = offline
-    const rows = await r.load({}, { limit: 5, orderBy: '-id' })
+    const rows = await tetherOf(r).load({}, { limit: 5, orderBy: '-id' })
     expect(rows.map(x => x.id)).toEqual(['S1'])
   })
 
@@ -671,7 +671,7 @@ describe('the warm fills the device rather than the cache', () => {
     await warmOffline()
 
     _proxy.find = offline
-    await expect(r.load({}, { limit: 5, orderBy: '-id' })).rejects.toThrow()
+    await expect(tetherOf(r).load({}, { limit: 5, orderBy: '-id' })).rejects.toThrow()
   })
 
   // ── `FJS-D337`: the declared window is the DEVICE's ─────────────────────
@@ -702,7 +702,7 @@ describe('the warm fills the device rather than the cache', () => {
     expect(await listCache().recall(listKey('sheets', OPEN.query, null))).toBeTruthy()
 
     _proxy.find = offline
-    const rows = await r.load(OPEN.query)
+    const rows = await tetherOf(r).load(OPEN.query)
     expect(rows.map(x => x.id)).toEqual(['S1'])
   })
 

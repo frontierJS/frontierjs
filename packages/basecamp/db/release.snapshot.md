@@ -196,7 +196,7 @@ table `api_key` · db `main` · gate `5`
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `usageDate` | `String` | yes | — | — |
 | `user` | `User` | — | — | relation |
-| `userId` | `String` | no | — | **required on write** |
+| `userId` | `String` | no | — | @system · **required on write** |
 | `usesOnDate` | `Int` | no | `0` | — |
 | `workspace` | `Workspace` | — | — | relation |
 | `workspaceId` | `String` | no | — | **required on write** |
@@ -2186,7 +2186,7 @@ table `workspace_member` · db `main` · gate `1.5`
 | `role` | `WorkspaceRole` | no | `'viewer'` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `user` | `User` | — | — | relation |
-| `userId` | `String` | no | — | **required on write** |
+| `userId` | `String` | no | — | @system · **required on write** |
 | `workspace` | `Workspace` | — | — | relation |
 | `workspaceId` | `String` | no | — | **required on write** |
 

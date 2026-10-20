@@ -217,21 +217,21 @@ describe('what the generators write', () => {
     }
   })
 
-  // A list page is a consumer of resource.list() and wires none of it itself.
+  // A list page is a consumer of resource.tethered() and wires none of it itself.
   // The hand-wired shape failed in silence twice: without the bare $: watch the
   // load ran once and every filter and sort was a control that did nothing, and
   // with it a generated page restated the store, the load and the URL round-trip
   // per model. And the window: more() was built, keyset and correct, and no page
   // called it, so every list stopped at the server's page size with nothing
   // saying there were more rows.
-  test('a generated list page reads its state through list() and offers the window', () => {
+  test('a generated list page reads its state through tethered() and offers the window', () => {
     let lists = 0
     for (const [what, source] of Object.entries(GENERATED)) {
       // The home page's table is five rows of one model, not a list page: it
       // has no URL state and no window to offer.
       if (!source.includes('<Table') || what.startsWith('make:home')) continue
       lists++
-      expect(source, `${what} does not use list()`).toMatch(/const list = \w+\.list\(/)
+      expect(source, `${what} does not use tethered()`).toMatch(/const list = \w+\.tethered\(/)
       expect(source, `${what} still wires a load by hand`).not.toMatch(/\$:\s*page\.query/)
       expect(source, `${what} still subscribes to the tether by hand`).not.toContain('useTether(')
       expect(source, `${what} never offers more rows`).toContain('{#if list.hasMore}')

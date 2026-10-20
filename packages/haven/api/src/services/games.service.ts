@@ -9,7 +9,8 @@
 // payload says about who they are. The pair is told by name on the booth's
 // channel, `checkers`, and each screen asks `get` again, so what a screen
 // reads is the Game read policy and not what a frame carried.
-import { createService, $, BadRequest, NotFound, rateLimitHook } from '@frontierjs/junction'
+import { createService, $, BadRequest, NotFound } from '@frontierjs/junction'
+import { rateLimitHook } from '@frontierjs/junction/hooks'
 import type { Channel } from '@frontierjs/junction'
 
 import type { HavenApp } from '../app.ts'

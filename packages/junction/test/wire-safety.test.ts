@@ -27,6 +27,7 @@ import { createClient } from '../../litestone/src/index.js'
 import { createApp } from '../src/core/app.ts'
 import { createService } from '../src/core/service.ts'
 import { channels } from '../src/transport/channels.ts'
+import { $ } from '../src/core/context.ts'
 
 const SCHEMA = `
   model Note {
@@ -76,18 +77,18 @@ async function mkApp(listen = false) {
     // A raw SQLite failure — the shape that put a table name and the absolute
     // path of the database file on the wire.
     async boom(ctx) {
-      return (ctx.locals.db as never as { asSystem(): { sql: (s: TemplateStringsArray) => unknown } })
+      return ($.db as never as { asSystem(): { sql: (s: TemplateStringsArray) => unknown } })
         .asSystem().sql`INSERT INTO no_such_table VALUES (1)`
     },
     // A domain refusal that helpfully attaches the row it refused.
     async withRow(ctx) {
-      const row = await (ctx.locals.db as never as { asSystem(): { note: { findFirst(a: unknown): Promise<unknown> } } })
+      const row = await ($.db as never as { asSystem(): { note: { findFirst(a: unknown): Promise<unknown> } } })
         .asSystem().note.findFirst({ where: { id: 1 }, select: { id: true, title: true, secret: true } })
       throw new Refused('cannot be done', { row, note: 'why' })
     },
     // FJS-1221's shape: a system write, returned as it came back.
     async mint(ctx) {
-      return (ctx.locals.db as never as { asSystem(): { note: { create(a: unknown): Promise<unknown> } } })
+      return ($.db as never as { asSystem(): { note: { create(a: unknown): Promise<unknown> } } })
         .asSystem().note.create({ data: { title: 'minted', secret: 'hunter2-new' } })
     },
     // VersionConflictError's shape: a plain object of numbers, and none of its

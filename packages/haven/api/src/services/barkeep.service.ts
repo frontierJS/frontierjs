@@ -4,7 +4,8 @@
 //
 // The answer is the caller's alone and no line of the room: a question is a
 // verb, never a Message. The books are read on the first question, once.
-import { createService, $, BadRequest, rateLimitHook } from '@frontierjs/junction'
+import { createService, $, BadRequest } from '@frontierjs/junction'
+import { rateLimitHook } from '@frontierjs/junction/hooks'
 
 import { answer, booksRoot, readBooks } from '../barkeep.ts'
 import type { Answer, Books } from '../barkeep.ts'

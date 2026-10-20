@@ -12,7 +12,7 @@
  * different until somebody is in a basement. The cases that matter are
  * therefore always *warmed, then offline, then read*, and never *the warm ran*.
  *
- * The other half is what a warm may touch. `resource.load()` writes the tether
+ * The other half is what a warm may touch. The tether's `load()` writes the rows
  * the screen is rendering; a warm runs in the background under a question
  * nobody is looking at, so going through `load()` would swap a visible list.
  *
@@ -37,7 +37,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
 
 const { generateSchemas }  = await import('../src/build/schema-plugin.js')
 const { registerSchemas }  = await import('../src/resource/schema-registry.js')
-const { createResource }   = await import('../src/resource/resource.js')
+const { createResource, tetherOf }   = await import('../src/resource/resource.js')
 const { warmOffline, offlineServices, offlineStatus, declareOffline, _resetOffline } = await import('../src/resource/offline.js')
 const { listCache, listKey, _resetListCache } = await import('../src/resource/list-cache.js')
 
@@ -149,7 +149,7 @@ describe('a model held with @@sync(read) may be warmed', () => {
 
     await warmOffline()
     _proxy.find = offline
-    const rows = await r.load({})
+    const rows = await tetherOf(r).load({})
     expect(rows[0].id).toBe('S1')
   })
 })
@@ -166,7 +166,7 @@ describe('a screen nobody opened still has its rows', () => {
     expect(report).toEqual([{ service: 'sheets', rows: 1, kept: false }])
 
     _proxy.find = offline
-    const rows = await r.load(OPEN.query)
+    const rows = await tetherOf(r).load(OPEN.query)
     expect(rows.length).toBe(1)
     expect(rows[0].id).toBe('S1')
     expect(r.cachedAt()).toBeTypeOf('number')
@@ -181,7 +181,7 @@ describe('a screen nobody opened still has its rows', () => {
     await warmOffline()
 
     _proxy.find = offline
-    await expect(r.load({ closedAt: { not: null } })).rejects.toThrow(/Failed to fetch/)
+    await expect(tetherOf(r).load({ closedAt: { not: null } })).rejects.toThrow(/Failed to fetch/)
   })
 
   // The key is one function and it has to stay one function. A second
@@ -213,14 +213,14 @@ describe('a warm runs behind a screen, so it may not move one', () => {
   // it exists to protect.
   test('the tether the screen is showing is not touched', async () => {
     const r = sheets({ offlineQuery: OPEN })
-    await r.load({ closedAt: { not: null } })
-    const showing = r.tether.get().map(x => x.id)
+    await tetherOf(r).load({ closedAt: { not: null } })
+    const showing = tetherOf(r).tether.get().map(x => x.id)
 
     _proxy.find = () => Promise.resolve({ data: [{ id: 'OTHER', name: 'warmed' }], total: 1 })
     await warmOffline()
 
-    expect(r.tether.get().map(x => x.id)).toEqual(showing)
-    expect(r.tether.get().some(x => x.id === 'OTHER')).toBe(false)
+    expect(tetherOf(r).tether.get().map(x => x.id)).toEqual(showing)
+    expect(tetherOf(r).tether.get().some(x => x.id === 'OTHER')).toBe(false)
   })
 })
 

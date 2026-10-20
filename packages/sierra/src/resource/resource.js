@@ -4,7 +4,6 @@
  * Provides:
  *   createResource(serviceName, opts?)          — full 4-phase hook pipeline
  *   createMakeFromSchema(properties)            — make() factory from JSON schema
- *   createStore(service, opts)                  — independent store for sub-sets
  *
  * Hook phases — match the API realm exactly:
  *
@@ -91,23 +90,15 @@
  *     res.data                     // the rows
  *     res.total                    // total matching, for a pager
  *
- *   The tethers hand you rows directly, because a view wants something it can
- *   map over and pagination metadata has no place in a record list:
+ *   A screen's rows come through ONE door, `tethered()` (`FJS-D1318`), which
+ *   hands them over directly, because a view wants something it can map over:
  *
- *     load(query, directives)      → the rows (and sets tether to the rows)
- *     tether.get()                 → the rows
- *     createStore(svc).find(...)   → returns the raw result; store.get() is rows
+ *     tethered(opts).rows          → the rows, kept live by pushes
+ *     tethered(opts).total         → how many the query matches, for a pager
  *
- *   `stale` is the third thing beside them — how many changes the tether
- *   could not place on its own, `0` when the list is as current as a push can
- *   make it. A push can say whether a row is in the query and where it sorts;
- *   it cannot say which row from page 2 slides up when one leaves page 1. Show
- *   it and offer a reload; `load()` clears it:
- *
- *     const { get } = useTether(orders.stale)   // same shape as a tether
- *
- *   Reach for `load()`/`tether` when you are rendering a list, and for
- *   `service.find()` when you need the count alongside it.
+ *   The tether, `load`, `more` and `stale` it is built from are not keys of
+ *   the resource. Reach for `tethered()` when you are rendering rows, and for
+ *   `service.find()` for a one-off read that needs the envelope.
  *
  * Hook registration:
  *   At createResource time:   createResource('leads', { hooks: { ... } })
@@ -149,7 +140,7 @@ import { runPhase, runAroundHooks, mergeHooks, hookContext, answered } from '@fr
 import { createMakeFromSchema as makeFromSchema } from '@frontierjs/toolbelt/jsonschema'
 import { mintId } from '@frontierjs/toolbelt/ids'
 import { jittered } from '@frontierjs/toolbelt/rank'
-import { createList, ownsRows } from './list.js'
+import { createTethered, ownsRows } from './tethered.js'
 import { liveRecord } from './record.js'
 import { pendingQueue, unreachable } from './pending.js'
 import { listCache, listKey } from './list-cache.js'
@@ -304,13 +295,27 @@ export {
   registerControl, unregisterControl, registeredControls, INTERACTION_TASKS,
 }
 
+// ─── The machinery under tethered() ──────────────────────────────────────────
+
+// What `tethered()` is built from — the shared tether, its `load`/`more`
+// stamped against version tracking, `stale`, `hasMore` and `total` — kept off
+// the resource so a screen has one door for its rows (`FJS-D1318`). This
+// module's own suites reach it here to prove the machinery; the package's
+// exports never name it.
+const _machinery = new WeakMap()
+
+/** @internal */
+export function tetherOf(resource) {
+  return _machinery.get(resource)
+}
+
 // ── Hook runners and createMakeFromSchema ─────────────────────────────────────
 //
 // Both are `@frontierjs/toolbelt`'s. They were pure, zero-dependency and copied
 // into jetty by hand, which is the definition the substrate package wrote for
 // itself (`FJS-D26`) and the reason `FJS-059` did not need a fifth published
-// package. What did NOT move is `createStore` below and the orchestrator around
-// it: a store is state, and a transport is not one fact with two owners.
+// package. What did NOT move is the orchestrator around them: a tether is state,
+// and a transport is not one fact with two owners.
 
 /**
  * Build a `make()` factory from Litestone JSON schema properties.
@@ -336,78 +341,6 @@ export {
  */
 export function createMakeFromSchema(properties, skip, resolve = resolveRef, foreignKeys, required) {
   return makeFromSchema(properties, { skip, resolve, foreignKeys, required })
-}
-
-// ── createStore ───────────────────────────────────────────────────────────────
-
-/**
- * Create an independent store backed by a service — for filtered sub-sets.
- *
- * Unlike client.resource() which wires WS push events automatically,
- * createStore gives you a manually-populated store you populate
- * on demand with a specific query:
- *
- *   const clientTags = createStore(service, { initial: [] })
- *   clientTags.get = async () => {
- *     const result = await service.find({ type: 'client' })
- *     clientTags.set(Array.isArray(result) ? result : result.data ?? [])
- *   }
- *
- * @param {object} service     — resource service (from createResource)
- * @param {object} [opts]
- * @param {Array}  [opts.initial]  — initial value, default []
- */
-export function createStore(service, opts = {}) {
-  const { initial = [] } = opts
-
-  let _data = Array.isArray(initial) ? [...initial] : initial
-  let _issued = 0
-  const _subs = new Set()
-
-  function _notify() {
-    for (const fn of _subs) fn(_data)
-  }
-
-  const store = {
-    get() { return _data },
-
-    subscribe(fn) {
-      _subs.add(fn)
-      fn(_data)
-      return () => _subs.delete(fn)
-    },
-
-    set(data) {
-      _data = data
-      _notify()
-    },
-
-    upsert(record, idField = 'id') {
-      const idx = _data.findIndex(r => r[idField] === record[idField])
-      _data = idx === -1
-        ? [..._data, record]
-        : [..._data.slice(0, idx), record, ..._data.slice(idx + 1)]
-      _notify()
-    },
-
-    remove(id, idField = 'id') {
-      _data = _data.filter(r => r[idField] !== id)
-      _notify()
-    },
-
-    // Stamped when issued, so a slower earlier request landing second cannot
-    // overwrite newer rows — the same rule junction's resource().load() applies,
-    // and for the same reason: this store is shared by everything subscribed to
-    // it, while the returned result belongs to the one caller who awaited it.
-    async find(query, directives) {
-      const stamp = ++_issued
-      const result = await service.find(query, directives)
-      if (stamp === _issued) store.set(Array.isArray(result) ? result : result?.data ?? [])
-      return result
-    },
-  }
-
-  return store
 }
 
 // The two `labelFieldInfo` tiers that are guesses rather than conventions. A
@@ -554,14 +487,13 @@ function refuseOtherShapes(serviceName, opts, extra) {
  * as it arrives rather than keying rows by a column that does not exist
  * (`FJS-998`).
  *
- * Returns { service, tether, make, load, save, fields, relations, gate, can,
+ * Returns { service, tethered, record, make, save, fields, relations, gate, can,
  *           transitions, commitments, validate, normalize, coerce, fieldErrors, context,
- *           hooks }
+ *           hooks, … }
  *   service  — pass-through of the Junction client: find() gives the list
  *              envelope, single-record methods give the record. See "Return
  *              shapes" in the module header.
- *   tether    — holds ROWS, never an envelope. Subscribe for renders.
- *   load     — populates tether and resolves to the rows.
+ *   tethered — tethered(opts): the rows a screen lists, live — see tethered.js.
  *   make     — schema-seeded factory for a blank record.
  *   save     — write a record: create when the model's id field is absent,
  *              patch when it is present. The one owner of that decision — see
@@ -576,25 +508,26 @@ function refuseOtherShapes(serviceName, opts, extra) {
  *              declared types. See opts.coerce.
  *   hooks()  — add hooks after creation.
  *
- * ── opts.detailQuery / opts.optionsQuery / opts.listQuery ──────────────────
+ * ── opts.detailQuery / opts.optionsQuery / opts.tetheredQuery ─────────────
  * The three reads a resource answers for its own callers, declared once beside
  * the model rather than restated per call site. All are `{ query, directives }`
  * — filters, and how much of the answer in what order (Invariant 10).
  *
- *   detailQuery  — what `get(id)` asks for when the caller states no
- *                  directives: the include/select shape a detail view needs.
- *   optionsQuery — what THIS resource's own `getOptions()` asks for: the thin
- *                  list a picker over it wants, usually
- *                  `{ directives: { orderBy: 'name', limit: 500 } }`.
- *   listQuery    — what `list()` starts on, under the URL or the caller. It
- *                  reaches `list()` alone and never a bare `find()`/`load()`.
- *   offlineQuery — the one question this resource must already HOLD when there
- *                  is no server (`FJS-D307`). Warmed at boot and on every
- *                  reconnect, into the same cache an arriving `load()` fills,
- *                  under the same key — so the declared question is answerable
- *                  offline and a different one is not. Only for a model that
- *                  declared `@@sync`: writing rows to a device is a disclosure
- *                  and the app's word is what permits it (`FJS-D298`).
+ *   detailQuery   — what `get(id)` asks for when the caller states no
+ *                   directives: the include/select shape a detail view needs.
+ *   optionsQuery  — what THIS resource's own `getOptions()` asks for: the thin
+ *                   list a picker over it wants, usually
+ *                   `{ directives: { orderBy: 'name', limit: 500 } }`.
+ *   tetheredQuery — what `tethered()` starts on, under the URL or the caller.
+ *                   It reaches `tethered()` alone and never a bare `find()`.
+ *   offlineQuery  — the one question this resource must already HOLD when
+ *                   there is no server (`FJS-D307`). Warmed at boot and on
+ *                   every reconnect, into the same cache an arriving `load()`
+ *                   fills, under the same key — so the declared question is
+ *                   answerable offline and a different one is not. Only for a
+ *                   model that declared `@@sync`: writing rows to a device is a
+ *                   disclosure and the app's word is what permits it
+ *                   (`FJS-D298`).
  *
  * ── opts.columns ───────────────────────────────────────────────────────────
  * The `columns()` options this model's tables take when a caller states none —
@@ -696,7 +629,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
 
   const optionsQuery   = opts.optionsQuery
   const detailQuery    = opts.detailQuery
-  const listQuery      = opts.listQuery
+  const tetheredQuery  = opts.tetheredQuery
   const offlineQuery   = opts.offlineQuery
   const columnDefaults = opts.columns
   const initialHooks   = opts.hooks ?? {}
@@ -937,7 +870,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
     // two rows — the thing entries exist to stop (`FJS-D138`).
     model,
   }
-  const junctionResource = client.resource(serviceName, idField, liveOptions)
+  const junctionResource = client.resource(serviceName, { idField, ...liveOptions })
   const { tether, stale } = junctionResource
 
   // ── @version — the revision this screen actually read ───────────────────────
@@ -1702,11 +1635,8 @@ export function createResource(serviceName, opts = {}, ...extra) {
     }
 
     /**
-     * Grow the window — the live list's answer to paging (`FJS-D145`).
-     *
-     *   await orders.load(page.query, page.directives)
-     *   // ... a "load more" button
-     *   await orders.more()
+     * Grow the window — the live list's answer to paging (`FJS-D145`), what
+     * `tethered().more` calls.
      *
      * A keyset scan resuming from the edge of what this list already holds, so
      * it cannot skip a row or serve one twice the way an offset does under a
@@ -1844,7 +1774,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
     const keys = composedKeysOf(rows)
     if (!keys.length) return
     _composedWarned.add(view)
-    const call = view === 'list' ? 'list({ composed: true })' : 'record(id, { composed: true })'
+    const call = view === 'list' ? 'tethered({ composed: true })' : 'record(id, { composed: true })'
     console.warn(
       `[resource:${serviceName}] a ${view} read answered ${keys.map(k => `'${k}'`).join(', ')}, ` +
       `which ${model} does not hold as columns. A push carries the row without them, so this ${view} ` +
@@ -3031,7 +2961,9 @@ export function createResource(serviceName, opts = {}, ...extra) {
         `move(id, { field: ${_ranks.map(r => `'${r.field}'`).join(' | ')}, … })`
       : `[${serviceName}] move() needs a @rank column, and ${model ?? serviceName} declares none.`)
 
-    const held  = tether.get() ?? []
+    // Every tether this resource holds, since a list over a filter keeps its
+    // rows in one of its own and those rows are the siblings a key sits between.
+    const held  = _heldRows()
     const rowOf = (k) => held.find(r => r?.[idField] === k) ?? _read.get(k) ?? null
     const row   = rowOf(id)
     if (!row) throw new Error(`[${serviceName}] move(${JSON.stringify(id)}) — this resource holds no such row, ` +
@@ -3124,28 +3056,37 @@ export function createResource(serviceName, opts = {}, ...extra) {
   // The tethers of lists that state a filter, each a list's own.
   const _ownLives = new Set()
 
+  function _heldRows() {
+    const out = new Map()
+    for (const live of [junctionResource, ..._ownLives]) {
+      for (const r of live.tether.get() ?? []) if (!out.has(r?.[idField])) out.set(r?.[idField], r)
+    }
+    return [...out.values()]
+  }
+
   /**
-   * This model as a list — the tether, where its filters live, the load and its
-   * re-run, and the window. `listQuery` is what it starts on; see `list.js`.
+   * The rows a screen lists, live — the tether, where its filters live, the load
+   * and its re-run, and the window. `tetheredQuery` is what it starts on; see
+   * `tethered.js`.
    *
-   * `listQuery` reaches this and nothing else. A bare `find()` or `load()` never
-   * reads it, because a default FILTER reaching every read would narrow pickers,
-   * jobs and tethers with nothing saying so — where `detailQuery` may reach
-   * `get(id)`, since a directive over one row cannot hide a record.
+   * `tetheredQuery` reaches this and nothing else. A bare `find()` never reads it,
+   * because a default FILTER reaching every read would narrow pickers, jobs and
+   * tethers with nothing saying so — where `detailQuery` may reach `get(id)`,
+   * since a directive over one row cannot hide a record.
    */
-  function list(opts) {
+  function tethered(opts) {
     const own = ownsRows(opts)
-    const live = own ? client.resource(serviceName, idField, liveOptions) : junctionResource
+    const live = own ? client.resource(serviceName, { idField, ...liveOptions }) : junctionResource
     const { load: loadRows, more: moreRows } = own ? readerOn(live) : { load, more }
     if (own) _ownLives.add(live)
-    return createList({
+    return createTethered({
       tether: live.tether, load: loadRows, more: moreRows, hasMore: live.hasMore, total: live.total,
       dispose:  own ? () => { _ownLives.delete(live); live.dispose() } : undefined,
       find:     service.find,
       loaded:   (rows) => warnComposed('list', rows),
       on:       service.on,
       onReconnected: (fn) => client.on('reconnected', fn),
-    }, listQuery, opts)
+    }, tetheredQuery, opts)
   }
 
   // ── the read this resource must already hold ────────────────────────────
@@ -3187,9 +3128,8 @@ export function createResource(serviceName, opts = {}, ...extra) {
     }
   }
 
-  return {
-    service, tether, stale, make, load, save, move, record, mutate, aggregate, list,
-    more, hasMore: junctionResource.hasMore, total: junctionResource.total,
+  const resource = {
+    service, make, save, move, record, mutate, aggregate, tethered,
     /**
      * When the server last answered the rows on screen, or null when the last
      * load reached it. A number here means the list came off this device
@@ -3203,25 +3143,27 @@ export function createResource(serviceName, opts = {}, ...extra) {
     labelField: labelInfo.field, labelSource: labelInfo.source, labelAlt: labelInfo.alt, labelParts: labelInfo.parts,
     fieldErrors, context, hooks: addHooks,
   }
+  _machinery.set(resource, {
+    tether, stale, load, more, hasMore: junctionResource.hasMore, total: junctionResource.total,
+  })
+  return resource
 }
 
 // ── Empty resource fallback ───────────────────────────────────────────────────
 
 function _emptyResource(name) {
   const noop = () => Promise.reject(new Error(`[${name}] Junction client not available`))
-  return {
+  const resource = {
     service: {
       find: noop, get: noop, create: noop, patch: noop,
       remove: noop, restore: noop, upsert: noop,
       on: () => {}, call: noop, getOptions: noop,
     },
-    tether:   { get: () => [], subscribe: fn => { fn([]); return () => {} }, set: () => {}, upsert: () => {}, place: () => {}, remove: () => {} },
-    stale:   { get: () => 0, subscribe: fn => { fn(0); return () => {} }, bump: () => {}, reset: () => {} },
+    tethered: () => ({
+      rows: [], query: {}, directives: {}, loading: false, error: null, hasMore: false, total: null,
+      apply: () => {}, sort: () => {}, more: async () => {}, reload: () => {}, destroy: () => {},
+    }),
     make:    (spec) => Object.assign({}, spec),
-    load:    async () => [],
-    more:    async () => [],
-    hasMore: () => false,
-    total:   () => null,
     cachedAt: () => null,
     mutate:  (_id, _intent, run) => (run ? run() : noop()),
     record:  () => ({
@@ -3282,4 +3224,13 @@ function _emptyResource(name) {
     context: { model: name, service: name, idField: 'id' },
     hooks:   () => {},
   }
+  _machinery.set(resource, {
+    tether:  { get: () => [], subscribe: fn => { fn([]); return () => {} }, set: () => {}, upsert: () => {}, place: () => {}, remove: () => {} },
+    stale:   { get: () => 0, subscribe: fn => { fn(0); return () => {} }, bump: () => {}, reset: () => {} },
+    load:    async () => [],
+    more:    async () => [],
+    hasMore: () => false,
+    total:   () => null,
+  })
+  return resource
 }

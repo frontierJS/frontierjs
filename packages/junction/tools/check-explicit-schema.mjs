@@ -1,13 +1,15 @@
 // createLitestoneService is gone. `schema` is an option on buildBase,
 // and supplying it REPLACES the derived validator rather than stacking.
 import { buildBase } from '/home/claude/review/junction/src/core/service.ts'
+import { setCallDb, callDb } from '/home/claude/review/junction/src/core/context.ts'
 import { parse } from '/home/claude/review/litestone/src/core/parser.js'
 import { readFileSync } from 'fs'
 const chk = (l, ok, d='') => console.log(`  ${ok ? '✓' : '✗'} ${l}${d ? '  — ' + d : ''}`)
 const parsed = parse(readFileSync('/home/claude/review/smoke-test-fullstack/db/schema.lite','utf8')).schema
 const db = { $schema: parsed, lead: {} }
 const run = async (svc, method, user, data) => {
-  const ctx = { method, data, locals: { db }, auth: user ? { user } : {}, app: {} }
+  const ctx = { method, data, locals: {}, auth: user ? { user } : {}, app: {} }
+  setCallDb(ctx, db)
   try { for (const h of (svc.hooks.before[method] ?? [])) await h(ctx); return null }
   catch (e) { return e }
 }

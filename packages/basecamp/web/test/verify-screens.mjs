@@ -1195,14 +1195,14 @@ try {
   if (link) {
     const url = new URL(link)
     check('the link points at this app\'s reset screen', url.pathname === '/reset-password/', link)
-    await goto(url.pathname + url.search)
+    await goto(url.pathname + url.search + url.hash)
     await until(`!!document.getElementById('reset-password')`, v => v, 'the new-password form never rendered')
     await fill({ 'reset-password': PASSWORD, 'reset-confirm': PASSWORD })
     await click('#reset-submit')
     await until(`location.pathname`, p => p === '/login/', 'a reset never landed on sign-in')
     ok('a new password from the link lands on sign-in')
     check('where the form offers the way back here', await present('#forgot-password'))
-    await goto(url.pathname + url.search)
+    await goto(url.pathname + url.search + url.hash)
     await until(`!!document.getElementById('reset-password')`, v => v, 'the form never rendered twice')
     await fill({ 'reset-password': PASSWORD, 'reset-confirm': PASSWORD })
     await click('#reset-submit')
@@ -1247,7 +1247,7 @@ try {
     check('the link is logged with no mailer, addressed to the NEW address', !!link, apiLog.slice(-300))
     if (!link) return false
     const url = new URL(link)
-    await goto(url.pathname + url.search)
+    await goto(url.pathname + url.search + url.hash)
     await until(`document.getElementById('verify-email')?.dataset.state`, s => s && s !== 'working',
       'the verify page never settled')
     check('opening it lands on the verify page, done',
@@ -2014,7 +2014,7 @@ try {
   const tiles = await until(`[...document.querySelectorAll('#fleet-summary .tile')]
       .map(t => ({ label: t.querySelector('.tile-label')?.textContent.trim(), value: t.querySelector('.tile-value')?.textContent.trim() }))`,
     ts => ts.length === 4 && ts.every(t => t.value), 'the summary tiles never filled in')
-  const sum = (await apiCall('GET', '/infra', null, 'summary')).body
+  const sum = (await apiCall('POST', '/infra', null, 'summary')).body
   const tile = label => tiles.find(t => t.label === label)?.value
   check('Machines is the server\'s count', tile('Machines') === String(sum?.servers?.total), `${tile('Machines')} vs ${sum?.servers?.total}`)
   check('Apps counts the one just deployed', tile('Apps') === String(sum?.apps?.total) && sum.apps.total > 0,

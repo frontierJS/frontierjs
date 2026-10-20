@@ -17,7 +17,8 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { describe, it, expect } from 'bun:test'
-import { createTestApp, request, testCtx, callService, protect } from '../index.ts'
+import { createTestApp, request, testCtx, callService } from '../index.ts'
+import { protect } from '../src/core/hooks-builtin.ts'
 import { buildService } from '../src/core/service.ts'
 import { webhooks, createSqliteWebhookStore } from '../src/plugins/webhooks/index.ts'
 import { Database } from 'bun:sqlite'

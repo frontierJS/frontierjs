@@ -7,7 +7,8 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { describe, it, expect } from 'bun:test'
-import { createTestApp, request, testCtx, circuitBreaker, callService, Unavailable, health, correlationId, type TestApp } from '../index.ts'
+import { createTestApp, request, testCtx, callService, Unavailable, health, correlationId, type TestApp } from '../index.ts'
+import { circuitBreaker } from '../src/core/hooks-builtin.ts'
 import { buildService } from '../src/core/service.ts'
 
 import users from './services/users.service.ts'

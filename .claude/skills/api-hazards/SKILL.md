@@ -30,7 +30,7 @@ Detail: `references/the-hook-pipeline.md`
   - **Declaring one gate means naming the whole surface**
 - **The gate runs before anything an app wrote, and `validated:` is the phase after the derived layer.**
 - **An `Idempotency-Key` on a mutating request executes once and replays the first answer**
-  - **A custom method is a write until it declares `read: true`** (`FJS-D505`) — undeclared, a keyed search keeps its answer, query and all, for 24 hours, and the bus announces it; declared, a write inside it would run again on a keyed retry and go unannounced, so `ctx.locals.db` throws a 500 at the first `create`/`update`/`remove`/`*Many`/`upsert`/`transition` (`FJS-D581`, `FJS-1477`) — `asSystem()`, an imported client and raw SQL walk past it
+  - **A custom method is a write until it declares `read: true`** (`FJS-D505`) — undeclared, a keyed search keeps its answer, query and all, for 24 hours, and the bus announces it; declared, a write inside it would run again on a keyed retry and go unannounced, so `$.db` throws a 500 at the first `create`/`update`/`remove`/`*Many`/`upsert`/`transition` (`FJS-D581`, `FJS-1477`) — `asSystem()`, an imported client and raw SQL walk past it
 - **An irreversible effect belongs in `ctx.afterCommit(fn)`, not in an `after` hook.**
 - **Under `transactional:`, a result carrying a non-empty `errors` is a 422 and a rollback** (`FJS-2149`)
 - **A `mailer.send()` that answers `sent` sends everything the message declared — including `cc`, `bcc`, `attachments` and `headers`** (`FJS-895`)

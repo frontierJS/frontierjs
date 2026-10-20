@@ -8,7 +8,8 @@
 //
 // `memberId` is a `@createdBy` stamp: a payload naming somebody else is
 // overwritten with the caller.
-import { createService, rateLimitHook } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
+import { rateLimitHook } from '@frontierjs/junction/hooks'
 import type { App, Channel } from '@frontierjs/junction'
 
 import { hears } from '../hearing.ts'

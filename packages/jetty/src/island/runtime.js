@@ -57,7 +57,7 @@ export async function runIsland(islandModule, meta) {
   if (!inMainWorld) {
     try {
       harbor = await connectHarbor({ type: 'island', id })
-      // Register as active port so getConnectionState() / login() / logout()
+      // Register as active port so getConnectionState() / signIn() / signOut()
       // imports in the user's island code see the right port. Without this,
       // these helpers are inert and getConnectionState() always returns
       // `authenticated: false` even after the user signs in via the popup.

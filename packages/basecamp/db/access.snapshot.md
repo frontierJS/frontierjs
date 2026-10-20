@@ -11,7 +11,7 @@ without a schema change you meant to make is a shipped security bug.
 
 ```
 71 models · 1 view · 72 gated · 0 unrestricted
-56 with row policies · 19 with protected fields · 35 declared moves · 15 @system · 0 @seals
+56 with row policies · 20 with protected fields · 35 declared moves · 15 @system · 0 @seals
 ```
 
 ## Gates
@@ -613,6 +613,7 @@ rather than refusing the row.
 | Model | Field | Rule |
 | --- | --- | --- |
 | `AlertRule` | `snoozedUntil` | `@system` |
+| `ApiKey` | `userId` | `@system` |
 | `ApiKey` | `credentialId` | `@system` |
 | `ApiKey` | `tokenHint` | `@system` |
 | `App` | `status` | `@system` |
@@ -655,6 +656,7 @@ rather than refusing the row.
 | `Verification` | `value` | `@guarded` |
 | `Verification` | `secret` | `@guarded` |
 | `Verification` | `code` | `@guarded` |
+| `WorkspaceMember` | `userId` | `@system` |
 
 ## State transitions
 

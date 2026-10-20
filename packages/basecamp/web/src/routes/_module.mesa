@@ -3,7 +3,7 @@ siteName: Basecamp
 ---
 <script>
   import { page, goto, isActive } from '@frontierjs/sierra/router'
-  import { status, useTether } from '@frontierjs/sierra/resource'
+  import { status } from '@frontierjs/sierra/resource'
   import { session, signOut, switchWorkspace } from '../session.js'
 
   import Badge          from '@frontierjs/ui/components/display/Badge.mesa'
@@ -25,7 +25,7 @@ siteName: Basecamp
   import { servers }     from '../resources/Server.mesa'
   import { deployments } from '../resources/Deployment.mesa'
   import { jobs }        from '../resources/Job.mesa'
-  import { notifications, loadInbox, isUnread, titleOf, bodyOf, actionOf, markRead, markAllRead }
+  import { notifications, INBOX, isUnread, titleOf, bodyOf, actionOf, markRead, markAllRead }
     from '../resources/Notification.mesa'
   import { computeNotices } from '../notices.js'
   import { primary, groups, elsewhere } from '../lib/nav.js'
@@ -36,26 +36,27 @@ siteName: Basecamp
   $: commandPalette.open
 
   // ── The attention system's data ──────────────────────────────────────────
-  // The shell subscribes to three stores rather than polling: a resource store
-  // is a module singleton fed by the same WebSocket events the screens use, so
-  // a server going unreachable reaches the notice bar without this file asking
-  // again. load() runs once per workspace, not once per navigation.
-  const { get: srv,  unsubscribe: unsubSrv }  = useTether(servers.tether)
-  const { get: dep,  unsubscribe: unsubDep }  = useTether(deployments.tether)
-  const { get: jbs,  unsubscribe: unsubJbs }  = useTether(jobs.tether)
-  $.onDestroy(() => { unsubSrv(); unsubDep(); unsubJbs() })
+  // The shell holds three tethers rather than polling: each is the resource's
+  // own, fed by the same WebSocket events the screens use, so a server going
+  // unreachable reaches the notice bar without this file asking again. They
+  // re-read once per workspace, not once per navigation.
+  const srvList = servers.tethered({ state: 'local' })
+  // Composed: a deployment row arrives with its app and environment included.
+  const depList = deployments.tethered({ state: 'local', composed: true })
+  const jbsList = jobs.tethered({ state: 'local' })
+  const srv = () => srvList.rows
+  const dep = () => depList.rows
+  const jbs = () => jbsList.rows
 
-  // Failures are swallowed on purpose: the shell is not the screen that owns
-  // any of these lists, and a workspace the caller cannot read is the guard's
-  // problem, not a banner on every page. The screens report their own errors.
+  // Failures stay on each list and are not drawn: the shell is not the screen
+  // that owns any of these lists, and a workspace the caller cannot read is
+  // the guard's problem, not a banner on every page.
   function loadAttention() {
     if (!session.user || !session.workspaceId) return
-    servers.load().catch(() => {})
-    deployments.load().catch(() => {})
-    jobs.load().catch(() => {})
+    srvList.reload()
+    depList.reload()
+    jbsList.reload()
   }
-
-  loadAttention()
 
   // Explicit-dependency effect (Mesa §4.2) — the handler runs untracked, so the
   // reads inside loadAttention() add no subscriptions of their own.
@@ -69,14 +70,10 @@ siteName: Basecamp
   // Per PERSON, not per workspace: the rows are scoped by their recipient, so
   // this reloads on sign-in and never on a workspace switch. New rows arrive as
   // pushed frames on the person's own channel; nothing here polls.
-  const { get: inbox, unsubscribe: unsubInbox } = useTether(notifications.tether)
-  $.onDestroy(unsubInbox)
+  const bell  = notifications.tethered({ state: 'local', directives: INBOX })
+  const inbox = () => bell.rows
 
-  function loadBell() {
-    if (session.user) loadInbox().catch(() => {})
-  }
-  loadBell()
-  $: session.user, () => loadBell()
+  $: session.user, () => { if (session.user) bell.reload() }
 
   // The menu shows the newest few unread; /notifications/ is the whole list.
   const BELL_MAX = 6
@@ -400,7 +397,7 @@ siteName: Basecamp
               {/each}
             </DropdownGroup>
             <DropdownSeparator />
-            <DropdownItem onclick={() => markAllRead().catch(() => {})}>Mark all read</DropdownItem>
+            <DropdownItem onclick={() => markAllRead(bell).catch(() => {})}>Mark all read</DropdownItem>
           {:else}
             <DropdownItem disabled>Nothing unread</DropdownItem>
             <DropdownSeparator />

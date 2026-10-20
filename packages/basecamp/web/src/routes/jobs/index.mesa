@@ -21,30 +21,12 @@ title: Jobs
   // ⌘K's New … entries land here with ?new, on this route or from another.
   $: page.query, () => { if (page.query?.new !== undefined) creating = true }
 
-  async function load() {
-    error = null; loading = true
-    try {
-      rows = (await jobs.service.find({}, { limit: 100 })).data
-    } catch (e) {
-      error = e.message
-    } finally {
-      loading = false
-    }
-  }
-
-  load()
-  $: session.workspaceId, () => load()
-
-  // Same rule as servers: the event is named after the method, and reads are
-  // excluded or the handler answers its own refetch.
-  const READS = new Set(['get', 'find'])
-  const off = jobs.service.on('*', (method, row) => {
-    if (READS.has(method) || !row?.id) return
-    const i = rows.findIndex(r => r.id === row.id)
-    if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...row }, ...rows.slice(i + 1)]
-    else load()
-  })
-  $.onDestroy(off)
+  // Live: a run started anywhere, or a schedule firing, moves its row here.
+  const list = jobs.tethered({ state: 'local', all: true, directives: { limit: 100 } })
+  $: { rows = list.rows; loading = list.loading }
+  $: { if (list.error) error = list.error.message }
+  $: session.workspaceId, () => list.reload()
+  const load = () => list.reload()
 
   async function trigger(job) {
     error = null; busy = job.id

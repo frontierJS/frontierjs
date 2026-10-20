@@ -371,15 +371,5 @@ async function runHooks(
 }
 
 
-// ─── Hook standard library — re-exported for API stability ───────────────
-// The built-in hooks and resilience hooks live in their own modules now;
-// this module remains the single public import surface for all of them.
-
-export {
-  authenticate, requireRole, paginate, protect, allow, timestamps, logTiming,
-} from './hooks-builtin.ts'
-
-export {
-  circuitBreaker, rateLimit,
-  type CircuitBreakerOptions, type RateLimitHookOptions, type BridgeHook,
-} from './hooks-resilience.ts'
+// BridgeHook is the rate limiter's shape, read by the main entry's types.
+export type { BridgeHook } from './hooks-resilience.ts'

@@ -4,13 +4,13 @@
  * Initialized by virtual:sierra at boot.
  * Exposes a plain `status` object for use in components — see below.
  *
- * import { status, session, signIn, signOut, useTether } from 'sierra/resource'
+ * import { status, session, signIn, signOut } from 'sierra/resource'
  */
 
 import { beforeNavigate, goto } from '../router/index.js'
 import { invalidatePrefetch } from '../router/prefetch.js'
 import { configureFetch } from '../fetch/index.js'
-import { createSignal, watchProxy } from '@frontierjs/mesa/runtime'
+import { watchProxy } from '@frontierjs/mesa/runtime'
 
 // Model schemas generated from the .lite file — see build/schema-plugin.js.
 export {
@@ -27,12 +27,12 @@ import { createJunctionClient, localTokenStore } from '@frontierjs/junction/clie
 // on its own subpath, because `status` and `session` are the two things a
 // component asks this module for and splitting them would be two imports for
 // one subject.
-export { session, ready, refresh, signIn, submitCode, signUp, signOut, oauthErrorMessage, OAUTH_ERRORS } from './session.js'
+export { session, ready, refresh, signIn, completeSignIn, signUp, verifyEmail, signOut, oauthErrorMessage, OAUTH_ERRORS } from './session.js'
 import { initSession, _onUnauthorized, session, ready as sessionReady } from './session.js'
 
 // Resource factory — re-exported from the resource module
 export {
-  createResource, createStore, createMakeFromSchema,
+  createResource, createMakeFromSchema,
   buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildCommitments, commitmentsAt, buildVersion,
   validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError, ResourceHookError,
@@ -195,32 +195,6 @@ function _identityChanged() {
   // stranger: an anonymous connection serves no purpose and would fire
   // 'connect' after the person has left.
   if (!token) _client?.disconnect()
-}
-
-// ─── Tether bridge ────────────────────────────────────────────────────────────
-
-/**
- * Wrap a Junction Tether<T> as a Mesa-reactive signal.
- * Call this once per component instance (in the <script> block, not in
- * a reactive computation) so the subscription is created only once.
- *
- * Returns an unsubscribe function — pass it to onDestroy() to avoid leaks:
- *
- *   const { get, unsubscribe } = useTether(leadsTether)
- *   onDestroy(unsubscribe)
- *
- * @template T
- * @param {{ get(): T, subscribe(fn: (v: T) => void): () => void }} tether
- * @returns {{ get: () => T, value: T, unsubscribe: () => void }}
- */
-export function useTether(tether) {
-  const [read, write] = createSignal(tether.get())
-  const unsubscribe = tether.subscribe(v => write(v))
-  return {
-    get: read,
-    get value() { return read() },
-    unsubscribe,
-  }
 }
 
 // ─── Debug wrapper ────────────────────────────────────────────────────────────

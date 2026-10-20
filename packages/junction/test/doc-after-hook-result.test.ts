@@ -8,6 +8,7 @@ import { readFileSync }           from 'node:fs'
 import { createClient }           from '../../litestone/src/index.js'
 import { buildService, callService } from '../src/core/service.ts'
 import { bridge }                 from '../src/transport/bridge.ts'
+import { setCallDb } from '../src/core/context.ts'
 
 const SCHEMA = `
   model Order {
@@ -27,10 +28,9 @@ describe('an after hook reads the envelope', () => {
       hooks: { after: { create: [(ctx) => { seen.push(ctx.result as Record<string, unknown>) }] } },
     })
 
-    const ctx = bridge.internal('orders', 'create' as never, { id: 7, total: 12.5 } as never, {
+    const ctx = setCallDb(bridge.internal('orders', 'create' as never, { id: 7, total: 12.5 } as never, {
       auth:   { user: { userId: 1, id: 1, isAdmin: true } },
-      locals: { db },
-    } as never)
+    } as never), db)
     await callService(svc, ctx)
 
     expect(seen[0]!.id).toBeUndefined()

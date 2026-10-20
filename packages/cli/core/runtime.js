@@ -11,7 +11,7 @@ import { declarationProblem, valueProblem, withModuleFlags, DEFAULT_FLAGS } from
 import { effectsProblem, approvalRefusal, APPROVED } from './effects.js'
 import { createTty, settleTtys, ttyAside } from './tty.js'
 import { chalk as colorChalk } from './color.js'
-import { lines } from './text.js'
+import { lines, untag } from './text.js'
 import { commandContext } from './shell.js'
 import { binCommand, SNAPSHOT_BINS } from './snapshots.js'
 import { shQuote } from './machine.js'
@@ -313,12 +313,15 @@ export async function Command({ file, arg, flag, emit }) {
   // fix both patch, so going through it is what keeps a line above a footer.
   // On the context rather than a global, which is what makes two concurrent
   // web runs safe.
+  //
+  // Also a template tag, echo`  ● ${name}`, which prints what the template
+  // would have built — see untag.
   config.echo = emit
     ? (...args) => {
-        const text = args.map(a => typeof a === 'string' ? a : String(a)).join(' ') + '\n'
+        const text = untag(args).map(a => typeof a === 'string' ? a : String(a)).join(' ') + '\n'
         emit({ type: 'output', text })
       }
-    : (...args) => console.log(...args)
+    : (...args) => console.log(...untag(args))
   // A method rather than a name on `$`: thirteen bodies declare their own
   // `const lines`, which a destructured `lines` would make a redeclaration.
   config.echo.lines = (rows, opts) => config.echo(lines(rows, opts))

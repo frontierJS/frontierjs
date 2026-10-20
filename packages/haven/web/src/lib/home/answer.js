@@ -31,7 +31,7 @@ export const BLOCKS = {
   table:   '{ kind, columns: [string], rows: [[string]] } -- records; at most 5 columns, 12 rows',
   bars:    '{ kind, items: [{ label, value: number, tone? }] } -- an amount per category, largest first',
   spark:   '{ kind, label, values: [number], note? } -- a value over time, oldest first',
-  list:    '{ kind, items: [{ text, note?, tone? }] } -- items with a status; note is a when or a who',
+  list:    '{ kind, items: [{ text, note?, tone?, url? }] } -- items with a status; note is a when or a who, url the Basecamp link of what the item names',
   callout: '{ kind, text, tone } -- the one thing to notice',
 }
 
@@ -43,6 +43,7 @@ const item = {
     text:  { type: 'string' },
     note:  { type: 'string' },
     tone:  { enum: Object.keys(TONES) },
+    url:   { type: 'string' },
   },
 }
 
@@ -90,6 +91,9 @@ export const DESK_PROMPT = [
   'The pane is 90 cells wide and about 20 rows: three to six blocks. Tones are ok, warn,',
   'danger, info, muted -- never a color. Say times relative ("2d ago", "due Fri"). If',
   'Basecamp does not hold the answer, say so in a callout.',
+  '',
+  'A question may come after what the desk is showing, as JSON: answer about that first and',
+  'read Basecamp only for what it lacks. A later question follows on from your last answer.',
 ].join('\n')
 
 // ─── reading ──────────────────────────────────────────────────────────────────
@@ -98,6 +102,13 @@ const str  = (v) => (v == null ? '' : String(v))
 const num  = (v) => (Number.isFinite(Number(v)) ? Number(v) : null)
 const arr  = (v) => (Array.isArray(v) ? v : [])
 const tone = (v) => (v in TONES ? v : undefined)
+// Only a web link: the terminal opens what it is handed, so a `file:` or a
+// scheme of the model's choosing is dropped and the item kept as text.
+const url  = (v) => (/^https?:\/\//.test(str(v)) ? str(v) : undefined)
+// A filter key is a word a report gives a count and the items it counts; the
+// model is never told of it, so an `/ask` answer has none and Tab finds none.
+const word = (v) => (/^[a-z][a-z-]{0,23}$/.test(str(v)) ? str(v) : undefined)
+const words = (v) => arr(v).map(word).filter(Boolean)
 
 const READERS = {
   heading: (b) => b.text && { text: str(b.text) },
@@ -105,7 +116,7 @@ const READERS = {
   callout: (b) => b.text && { text: str(b.text), tone: tone(b.tone) ?? 'info' },
   stats:   (b) => {
     const items = arr(b.items).filter((i) => i?.label != null && i?.value != null)
-      .map((i) => ({ label: str(i.label), value: str(i.value), note: str(i.note), tone: tone(i.tone) }))
+      .map((i) => ({ label: str(i.label), value: str(i.value), note: str(i.note), tone: tone(i.tone), key: word(i.key) }))
     return items.length && { items: items.slice(0, 4) }
   },
   table:   (b) => {
@@ -124,7 +135,7 @@ const READERS = {
   },
   list:    (b) => {
     const items = arr(b.items).filter((i) => i?.text)
-      .map((i) => ({ text: str(i.text), note: str(i.note), tone: tone(i.tone) }))
+      .map((i) => ({ text: str(i.text), note: str(i.note), tone: tone(i.tone), url: url(i.url), ...(words(i.keys).length ? { keys: words(i.keys) } : {}) }))
     return items.length && { items: items.slice(0, 12) }
   },
 }
@@ -142,6 +153,27 @@ export function readAnswer(raw) {
     return read ? { kind: b.kind, ...read } : { kind: 'unknown', named: str(b?.kind) || '(none)' }
   })
   return { title: str(a.title), blocks }
+}
+
+// ─── filtering ────────────────────────────────────────────────────────────────
+
+/** The counts Tab steps through, in the order drawn: `[{ key, label, value }]`, each with an item carrying its key. */
+export function filtersOf(answer) {
+  const carried = new Set(answer.blocks.flatMap((b) => b.kind === 'list' ? b.items.flatMap((i) => i.keys ?? []) : []))
+  return answer.blocks.flatMap((b) => b.kind === 'stats' ? b.items.filter((i) => i.key && carried.has(i.key)) : [])
+}
+
+/**
+ * `answer` with its lists cut to the items carrying `key`; a list left empty
+ * goes, and so does a heading with no list of its own left under it. The
+ * counts stay, so the tile that chose the filter is still there to read.
+ */
+export function filterAnswer(answer, key) {
+  if (!key) return answer
+  const cut = answer.blocks.map((b) => b.kind === 'list' ? { ...b, items: b.items.filter((i) => i.keys?.includes(key)) } : b)
+    .filter((b) => b.kind !== 'list' || b.items.length)
+  const blocks = cut.filter((b, n) => b.kind !== 'heading' || (cut[n + 1] && cut[n + 1].kind !== 'heading'))
+  return { ...answer, blocks }
 }
 
 // ─── drawing ──────────────────────────────────────────────────────────────────
@@ -173,14 +205,14 @@ export function sparkline(values) {
   return values.map((v) => SPARK[hi === lo ? 3 : Math.round(((v - lo) / (hi - lo)) * (SPARK.length - 1))]).join('')
 }
 
-const run = (x, text, color = INK) => ({ x, text, color })
+const run = (x, text, color = INK, url) => (url ? { x, text, color, url } : { x, text, color })
 
 const DRAW = {
   heading: (b, w) => [[run(0, clip(b.text, w), HEAD)], [run(0, '─'.repeat(Math.min(w, cells(b.text))), HEAD)]],
   text:    (b, w) => wrap(b.text, w).map((t) => [run(0, t, inkOf(b.tone))]),
   callout: (b, w) => wrap(b.text, w - 2).map((t) => [run(0, '▌', inkOf(b.tone)), run(2, t, inkOf(b.tone))]),
 
-  stats: (b, w) => {
+  stats: (b, w, { picked }) => {
     const tile = Math.floor(w / b.items.length)
     const inner = tile - 2
     const row = (pick) => b.items.flatMap((i, n) => {
@@ -188,7 +220,7 @@ const DRAW = {
       return text ? [run(n * tile, clip(text, inner), color)] : []
     })
     return [
-      row((i) => [i.label, TONES.muted]),
+      row((i) => i.key && i.key === picked ? [`▸ ${i.label}`, HEAD] : [i.label, TONES.muted]),
       row((i) => [i.value, inkOf(i.tone)]),
       row((i) => [i.note, TONES.muted]),
     ].filter((r) => r.length)
@@ -238,25 +270,34 @@ const DRAW = {
     ]
   },
 
-  list: (b, w) => {
+  list: (b, w, { urls }) => {
     const note = Math.min(16, Math.max(0, ...b.items.map((i) => cells(i.note))))
     const text = w - 2 - (note ? note + 2 : 0)
-    return b.items.map((i) => [
-      run(0, '•', inkOf(i.tone ?? 'muted')),
-      run(2, clip(i.text, text), inkOf(i.tone)),
-      ...(i.note ? [run(w - note, clip(i.note, note), TONES.muted)] : []),
+    return b.items.flatMap((i) => [
+      [
+        run(0, '•', inkOf(i.tone ?? 'muted')),
+        run(2, clip(i.text, text), inkOf(i.tone), i.url),
+        ...(i.note ? [run(w - note, clip(i.note, note), TONES.muted)] : []),
+      ],
+      // Broken across rows rather than clipped: a URL cut short opens nothing.
+      ...(urls && i.url ? i.url.match(new RegExp(`.{1,${w - 2}}`, 'g')).map((part) => [run(2, part, TONES.muted)]) : []),
     ])
   },
 
   unknown: (b) => [[run(0, `(the desk has no drawing for a "${b.named}" block)`, TONES.muted)]],
 }
 
-/** Every row of an answer for a pane `w` cells wide: its blocks, a blank row between each. */
-export function answerRows(answer, w) {
+/**
+ * Every row of an answer for a pane `w` cells wide: its blocks, a blank row
+ * between each. A run carrying `url` is a link; `urls` prints each under its
+ * item, for a terminal that cannot open a hyperlink and would lose it;
+ * `picked` marks the count whose key the lists are filtered by.
+ */
+export function answerRows(answer, w, { urls = false, picked = null } = {}) {
   const rows = []
   for (const b of answer.blocks) {
     if (rows.length) rows.push([])
-    rows.push(...DRAW[b.kind](b, w))
+    rows.push(...DRAW[b.kind](b, w, { urls, picked }))
   }
   return rows
 }

@@ -8,9 +8,7 @@
   //
   // Placed by the square's route, inside the scene's slot, since the crier
   // speaks in the square alone.
-  import { useTether } from '@frontierjs/sierra/resource'
   import { members }  from '@/resources/Member.mesa'
-  import { messages } from '@/resources/Message.mesa'
   import { cells, clip } from '@/lib/scene/cells.js'
   import { at } from '#cell'
   import { CRIER, CRY_MS } from '../../../api/src/crier.ts'
@@ -19,8 +17,9 @@
   let view = scene.view
   $.onDestroy(scene.subscribe(() => { view = scene.view }))
 
-  const { get: lines, unsubscribe } = useTether(messages.tether)
-  $.onDestroy(unsubscribe)
+  // The room's lines, which the scene holds; slot content gets no prop from it.
+  var roomLines = $context.roomLines
+  const lines = () => roomLines?.rows ?? []
 
   let names = {}
   const asked = new Set()

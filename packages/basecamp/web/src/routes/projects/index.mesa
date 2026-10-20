@@ -4,38 +4,27 @@ title: Projects
 <script>
   import { session } from '../../session.js'
   import { projects } from '../../resources/Project.mesa'
-  import { useTether } from '@frontierjs/sierra/resource'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Table  from '@frontierjs/ui/components/display/Table.mesa'
   import { offerUndo } from '../../resources/Trash.mesa'
 
-  const { get: rows, unsubscribe } = useTether(projects.tether)
-  $.onDestroy(unsubscribe)
+  // No workspace filter is passed: the client stamps X-Workspace-Id on every
+  // request. A page that had to remember to filter by workspace would
+  // eventually forget, and that is a tenancy leak rather than a missing where.
+  const list = projects.tethered({ state: 'local' })
+  const rows = () => list.rows
 
-  $: session.workspaceId
+  let error = null
 
-  let error   = null
-  let loading = true
-
-  async function load() {
-    error = null; loading = true
-    // No workspace filter is passed: the client stamps X-Workspace-Id on every
-    // request. A page that had to remember to filter by workspace would
-    // eventually forget, and that is a tenancy leak rather than a missing where.
-    try { await projects.load() } catch (e) { error = e.message } finally { loading = false }
-  }
-
-  load()
-  $: session.workspaceId, () => load()
+  $: session.workspaceId, () => list.reload()
 
   async function remove(project) {
     error = null
     try {
       await projects.service.remove(project.id)
       offerUndo(project.name, projects, project.id)
-      // The store drops the row on its own — the service publishes `removed`
-      // and useTether is subscribed. load() again would also work and costs a
-      // round trip to learn what we already know.
+      // The tether drops the row on its own — the service publishes `removed`.
+      // A reload would cost a round trip to learn what we already know.
     } catch (e) {
       error = e.message
     }
@@ -53,13 +42,13 @@ title: Projects
   <Button tone="primary" href="/projects/create/">New project</Button>
 </div>
 
-{#if error}
+{#if error || list.error}
   <article class="alert danger">
-    <div class="alert-content">{error}</div>
+    <div class="alert-content">{error ?? list.error.message}</div>
   </article>
 {/if}
 
-{#if loading}
+{#if list.loading && !rows().length}
   <p class="text-sm text-muted">Loading…</p>
 {:else if !rows().length}
   <article class="alert info">

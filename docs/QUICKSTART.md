@@ -62,7 +62,8 @@ assume it rather than teaching it:
 A service context has `auth`, `client`, `route`, `locals`, `query` and
 `directives`. It has **no `ctx.params`** — that belongs to raw routes only, and
 reaching for it is the commonest way to write a role check that silently passes
-for everyone. The request-scoped database client is `ctx.locals.db`.
+for everyone. The request-scoped database client is `$.db`, imported from
+`@frontierjs/junction`; it is not on `ctx`.
 
 ---
 

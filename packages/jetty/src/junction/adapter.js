@@ -26,13 +26,14 @@
 //     setToken(token): Promise<void>
 //
 //     // OPTIONAL — Establishing a session. An adapter declaring this block owns
-//     // sign-in; one that does not falls back to call('auth', 'login'|'logout'
+//     // sign-in; one that does not falls back to call('auth', 'signIn'|'signOut'
 //     // |'verify'), which is the placeholder's pseudo-service and cannot be the
 //     // real spelling — Junction has no service called `auth`, and an app that
 //     // has one would find it shadowed.
 //     auth: {
-//       login(credentials): Promise<{ token, user, expiresAt }>
-//       logout():           Promise<unknown>
+//       signIn(credentials):  Promise<{ token, user, expiresAt } | { awaitingCode, expiresAt }>
+//       completeSignIn(code): Promise<{ token, user, expiresAt }>
+//       signOut():            Promise<unknown>
 //       verify(token):      Promise<{ user, expiresAt } | null>
 //     }
 //

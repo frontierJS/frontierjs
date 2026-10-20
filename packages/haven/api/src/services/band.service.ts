@@ -2,7 +2,8 @@
 // read by a screen as it walks in, and `request` puts a song on at the next bar
 // line and tells the room `song` with the new cue. The caller must stand in
 // the room, as a roller of the dice must.
-import { createService, $, BadRequest, rateLimitHook } from '@frontierjs/junction'
+import { createService, $, BadRequest } from '@frontierjs/junction'
+import { rateLimitHook } from '@frontierjs/junction/hooks'
 import type { Channel } from '@frontierjs/junction'
 
 import type { HavenApp } from '../app.ts'

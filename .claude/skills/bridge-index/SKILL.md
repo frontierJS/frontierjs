@@ -15,14 +15,14 @@ The current seams: reach for one before grepping, and add to its owner rather th
 Detail: `references/data-api.md`
 - `$setAuth(user)` / `asSystem()` — the Data-boundary checkpoint, and its bypass — `litestone/src/core/client.js`
 - `$tapEvents(fn)` — every write announced; `scope: 'row' | 'collection'` is stated by the write, never read off `result` — `litestone/src/core/client.js`
-- `withLitestoneDb(db)` — the per-request scoped client on `ctx.locals.db` — `junction/src/core/litestone.ts`
+- `withLitestoneDb(db)` — the per-request scoped client, read as `$.db` — `junction/src/core/litestone.ts`
 - `gateAuth()` + `autoValidate()` — schema-derived 401s and 400s for model services — `junction/src/core/litestone.ts`
 - `validateInput(type)` — the same 400 for a method no model describes, through `methods: [{ method, input }]` — `junction/src/core/litestone.ts`
 - `customMethodGrade(method, declared, levels)` — what grades a custom method: `declared` · `floor` · `unchecked` — `junction/src/core/litestone.ts`
 - `needsBackfill` — the middle step of an expand/contract split, found in the app's source by `fli release:check` — `cli/core/backfills.js`
 - `sessionGateLevel(user)` — a session → the 0–7 scale with the shipped `gradeStanding`; the default `getLevel`, so a caller's level is asked of `db.$levelOf` — `junction/src/core/litestone.ts`
 - `toDataPrincipal(user)` — a session → the principal `auth()` reads (`userId` → `id`) — `junction/src/core/litestone.ts`
-- `bearerClaim({ from, model, column, claims, key, subject, session })` / `BEARER` / `bearerOf(ctx, model)` — the resolver for a caller with no session who still owns rows; `ctx.locals[BEARER]` is the first grant resolved in the app's stated order and `bearerOf` reads any; a session beside the grant is a 400 before the grant is read unless `session: 'merge'` (`FJS-D832`) — `junction/src/core/litestone.ts`
+- `bearerClaim({ from, model, column, claims, key, subject, session })` / `BEARER` / `bearerOf(ctx, model)` — from `@frontierjs/junction/bearer`, the resolver for a caller with no session who still owns rows; `ctx.locals[BEARER]` is the first grant resolved in the app's stated order and `bearerOf` reads any; a session beside the grant is a 400 before the grant is read unless `session: 'merge'` (`FJS-D832`) — `junction/src/core/litestone.ts`
 - `bearerClaim(...).mint(db, data)` / `.mintOnCreate()` / `.redeem(db)` — a grant minted by the caller's own create (the digest named in `system:`, `FJS-D819`) and a link redeemed for the httpOnly cookie `from: cookie()` reads (`FJS-D340`); the one place the key, purpose, model and column are stated — `junction/src/core/litestone.ts`
 - `resolveTenancy(schema)` / `registry.tenantFor({host, headers, principal})` — the one reading of `tenancy { }` — `litestone/src/core/tenancy.js`, `litestone/src/tenant.js` (the registry)
 - `accessorCandidates()` — `model Post` ⇄ service `posts` ⇄ `db.post` — `junction/src/core/litestone.ts`
@@ -67,7 +67,7 @@ Detail: `references/api-internals.md`
 - `app.conduit.mirror(claim)` / `mirrored(accessor)` — a connector's claim on the models a Provider feeds; junction's generated writes forward through it (`FJS-D1125`) — `conduit/src/mirror.ts`, `junction/src/core/litestone.ts` (`mirrorClaimFor`)
 - `signRequest()` / `verifyRequest()` — what a signed machine-to-machine request is — `toolbelt/src/signature/signature.js`
 - `requestMeta().traceparent` / `.tracestate` — the inbound W3C trace, carried verbatim into conduit's `trace` — `junction/src/core/context.ts`
-- `ctx.$raw.rawBody` — the body as bytes, for a signature — `junction/src/transport/http.ts`
+- `ctx.raw.rawBody` — the body as bytes, for a signature — `junction/src/transport/http.ts`
 
 **API internals**
 Detail: `references/api-internals.md`
@@ -90,12 +90,12 @@ Detail: `references/api-internals.md`
 - Plugin protocol `{ name, register, boot, work, ready, shutdown, requires }` — `register` is sync, async setup goes in `boot()`, and anything on a clock (a worker, a poller, a timer) goes in `work()`, which `_startOnce()` skips so `junction call` and the snapshot tools start nothing (`FJS-D551`) — `junction/src/core/app.ts`
 - `runStartPhases(bindHost)` — the one startup list — `junction/src/core/app.ts`
 - `IAuth.verifySession(token)` — inbound auth; junction accepts `SessionVerifier` — `junction/src/auth/types.ts`
-- `app.withDb(fn)` / `app.onTenantClient(observer)` — `ctx.locals.db` for work that holds no ctx — `junction/src/core/app.ts`
+- `app.withDb(fn)` / `app.onTenantClient(observer)` — `$.db` for work that holds no ctx — `junction/src/core/app.ts`
 - `app.principal()` / `app.runAs(userId, fn)` — the seam deferred work runs through — `junction/src/core/app.ts`
 - `createLitestoneAuth(db, { sessionFields })` — the one place an app's `User` columns reach the session — `auth/auth.ts`
 - `manifest()` + litestone `status()` — migration state into `/manifest` — `junction/src/plugins/manifest/index.ts`
 - `app.registerMetricsSource(name, fn)` / `app.registerReadiness(name, fn)` — what a plugin says about itself in `/metrics` and `/health` — `junction/src/core/app.ts`
-- `app.registerDevService({ name, url, note })` — a sidecar listener, announced — `junction/src/core/app.ts`
+- `app.registerDevService(name, { url, note })` — a sidecar listener, announced — `junction/src/core/app.ts`
 - `devtools({ port, auth })` — the dev console on 8503; fails closed in production — `junction/src/plugins/devtools/index.ts`
 
 **API → UI**
@@ -116,7 +116,7 @@ Detail: `references/api-ui.md`
 - `tokenStorage` on the client + `session` in sierra — one owner for the token, one shape for the session — `junction/src/client/index.ts`
 - `client.entries` / `resource.record(id)` — one entry per row keyed by model; a list is a view — `junction/src/client/entries.ts`
 - `matchesQuery(fields, record, query)` — is a pushed record still in this list — `toolbelt/src/match/match.js`
-- `$after` / `endCursor` / `resource.more()` — a live list grows a keyset window — `toolbelt/src/directives/directives.js`
+- `$after` / `endCursor` / `tethered().more()` — a live list grows a keyset window — `toolbelt/src/directives/directives.js`
 - `comparatorFor(orderBy)` — the one reading of `orderBy` and `select` — `toolbelt/src/query/query.js`
 
 **UI**

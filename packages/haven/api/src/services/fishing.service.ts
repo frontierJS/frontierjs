@@ -6,7 +6,8 @@
 // is the room's, told as an `animal` event, since every screen draws it.
 import { randomInt } from 'node:crypto'
 
-import { createService, $, BadRequest, TooManyRequests, rateLimitHook } from '@frontierjs/junction'
+import { createService, $, BadRequest, TooManyRequests } from '@frontierjs/junction'
+import { rateLimitHook } from '@frontierjs/junction/hooks'
 import type { Channel } from '@frontierjs/junction'
 
 import type { HavenApp } from '../app.ts'

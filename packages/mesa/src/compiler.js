@@ -3453,8 +3453,8 @@ export function analyzeScript(raw, ast) {
    * What a pattern's names read from. An init that is not a plain path is bound
    * once to a synthetic var of its own, because pasting it into each member
    * read ran `f()` once per name and the names came from different results —
-   * two list handles from one `r.list()`, two subscriptions from `useTether()`
-   * with `unsubscribe` freeing only the second (`FJS-2138`).
+   * two list handles from one `r.tethered()`, two record views from one
+   * `r.record(id)` with `release` freeing only the second (`FJS-2138`).
    */
   const patternSource = (init, extra, node) => {
     const src = raw.slice(init.start, init.end)
@@ -4101,9 +4101,9 @@ export function analyzeScript(raw, ast) {
     if (!vars[root]) reactiveSet.add(root)  // only add imports, not local lets
   })
   // A call to a binding THIS SCRIPT holds is a second door reactivity comes
-  // through, and it is invisible to the closure below. `useTether` hands back a
-  // getter, so `const rows = useTether(s).get` is a plain function and
-  // `Math.max(...rows().map(f))` reads a signal inside the call — which the
+  // through, and it is invisible to the closure below. A record view hands back
+  // a getter, so `const row = r.record(id).get` is a plain function and
+  // `Math.max(...row().map(f))` reads a signal inside the call — which the
   // blanket promotion covered by accident, through runtime auto-tracking, and
   // which the narrowing dropped: `example`'s catalog computed its price
   // ceiling once against an empty store and every filter above it collapsed to
@@ -4146,7 +4146,7 @@ export function analyzeScript(raw, ast) {
 
   // Whether a name is PROMOTED and whether a binding over it is STATIC are two
   // decisions, and entangling them is what FJS-1070 was. `const list =
-  // users.list()` is correctly not promoted — FJS-D212 keeps the initializer
+  // users.tethered()` is correctly not promoted — FJS-D212 keeps the initializer
   // eager, and EXTERNAL_REACTIVITY.md is why an imported call is not a door
   // reactivity comes through on its own — but what the call HANDED BACK may
   // hold getters over signals, so `{list.sortKey}` is not provably static.
@@ -4159,7 +4159,7 @@ export function analyzeScript(raw, ast) {
   // reader to the service.
   //
   // Every name a call's result was bound to, then, including through a pattern:
-  // `const { get: rows } = useTether(s)` is the same fact one destructure along.
+  // `const { get: row } = r.record(id)` is the same fact one destructure along.
   const opaqueValues = new Set()
   // Whether the initializer's VALUE is a call's result — not whether a call
   // appears somewhere inside it. A blanket walk marks `const shown = (v) =>
@@ -4174,7 +4174,7 @@ export function analyzeScript(raw, ast) {
       case 'ConditionalExpression': return yieldsCall(n.consequent) || yieldsCall(n.alternate)
       case 'LogicalExpression':     return yieldsCall(n.left) || yieldsCall(n.right)
       case 'SequenceExpression':    return yieldsCall(n.expressions[n.expressions.length - 1])
-      // `useTether(s).get` — the destructured half of the same fact.
+      // `r.record(id).get` — the destructured half of the same fact.
       case 'MemberExpression':      return yieldsCall(n.object)
       default: return false
     }
@@ -4216,7 +4216,7 @@ export function analyzeScript(raw, ast) {
 
   // A static `const` over a MEMBER of a call's handle is computed once, and the
   // handle's getters read signals: `const rows = [...list.rows]` under `const
-  // list = r.list()` left a board on "Loading" with its rows present, and
+  // list = r.tethered()` left a board on "Loading" with its rows present, and
   // `const current = list.rows[0]` said a row was missing that was there
   // (FJS-1969). Often the one read is meant, so this warns, and destructuring at
   // the call is the spelling that says so — it names no handle to read through.
@@ -9353,7 +9353,7 @@ export function emitScript(ctx) {
 
     // The hook works by REPLACING the binding — `fn = (...args) => { … }` — so
     // the name has to be assignable. A `const` (very often a destructured one,
-    // `const { get: rows } = useTether(tether)`) compiled fine and threw
+    // `const { get: row } = r.record(id)`) compiled fine and threw
     // `Assignment to constant variable` on mount, before anything rendered.
     // Say so at compile time instead.
     const target = ctx.analysis?.vars?.[fnName]

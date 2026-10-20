@@ -10,8 +10,8 @@ import { $ } from '@frontierjs/junction'
 // sessionScope()'s requireWorkspace — the id IS the workspace, and
 // stampSelfAsWorkspace below makes the role hooks work on that basis.
 
-import { createService, NotFound, Conflict, Forbidden, BadRequest, Unauthorized, authenticate }
-  from '@frontierjs/junction'
+import { createService, NotFound, Conflict, Forbidden, BadRequest, Unauthorized } from '@frontierjs/junction'
+import { authenticate } from '@frontierjs/junction/hooks'
 import { requireWorkspaceRole, refuseGrantAboveOwn, roleOf, restandingFor, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { grantsFor } from '../../core/capabilities.ts'
 import { db, actor, slugify, narrowPatch, changesNothing, callerOrder } from '../../core/resource.ts'
@@ -94,8 +94,8 @@ function members(): any {
 
 /** The three roster writes go through the caller's own client, re-claimed to
  *  the workspace being addressed by `stampSelfAsWorkspace`, so the schema's
- *  gate, `@@allow` and `@@deny(update, userId == auth().id)` hold them and
- *  not a restatement here. `leave` and `transferOwnership` stay system: both
+ *  gate, `@@allow` and `@@deny(update, userId == auth().id)` hold them and not
+ *  a restatement here. `leave` and `transferOwnership` stay system: both
  *  write the caller's own row, which that deny exists to refuse. */
 function memberWrites(): any {
   return $.db.workspaceMember
@@ -243,10 +243,20 @@ export default createService({
     if (await members().exists({ where: { workspaceId: wsId, userId: target } }))
       throw new Conflict('User is already a member of this workspace')
 
+    // `User` reads self-only, so the person being added is a parent the
+    // caller cannot read, and graded as the caller's own guess the create
+    // answered 422 "names no User" (FJS-D576). The service reads them as the
+    // app first, and names the key under `system:` as its own statement
+    // (FJS-1953) — the write stays the caller's, so the gate, the
+    // `Capability[]` guard and the audit actor are theirs.
+    if (!await ($.db.asSystem() as any).user.exists({ where: { id: target } }))
+      throw new NotFound(`User '${target}' not found`)
+
     const next = role ?? 'developer'
     return memberWrites().create({
       data: { workspaceId: wsId, userId: target, role: next, capabilities: grantsFor(next),
               invitedBy: actor(), invitedAt: new Date().toISOString() },
+      system: ['userId'],
     })
   },
 

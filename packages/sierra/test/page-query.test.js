@@ -10,8 +10,8 @@
  * The split is the API realm's own, over the same table: `query` is the filters,
  * `directives` is `{ limit, offset, orderBy, select, … }`, and the `$` that
  * tells them apart is transport syntax that reaches neither (repo Invariant 10).
- * That is what makes `resource.load(page.query, page.directives)` a whole
- * URL-driven list with nothing to translate.
+ * That is what makes `resource.tethered()`, which reads the pair as its state,
+ * a whole URL-driven list with nothing to translate.
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'vitest'
@@ -107,7 +107,7 @@ describe('the search string is filters and directives', () => {
     initRouter(TREE, components(), {}, { trailingSlash: 'always' })
     await settle()
 
-    // resource.load(query, params) takes exactly this pair.
+    // the tether's load(query, directives) takes exactly this pair.
     expect([page.query, page.directives]).toEqual([
       { status: 'active' },
       { limit: 20, orderBy: '-createdAt' },

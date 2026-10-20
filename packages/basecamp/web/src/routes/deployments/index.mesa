@@ -66,7 +66,7 @@ title: Deployments
   //
   // Held in memory rather than in the URL: a deployments list is read while a
   // release is running, and nothing here is worth a history entry per filter.
-  const list = deployments.list({ state: 'local', composed: true, directives: { limit: 50 } })
+  const list = deployments.tethered({ state: 'local', composed: true, directives: { limit: 50 } })
 
   $: session.workspaceId, () => list.reload()
 </script>

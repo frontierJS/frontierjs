@@ -160,7 +160,13 @@ describe('the generated types reach the browser client', () => {
         const made: boolean = (await service.create({ title: 'x' })).published
         const listed: string | undefined = (await load())[0]?.title
 
-        return [made, listed]
+        // Every option is named, the row key included (FJS-D1316).
+        const keyed = client.resource('posts', { idField: 'id', model: 'Post' })
+        const title: string | undefined = keyed.tether.get()[0]?.title
+        // @ts-expect-error — no positional argument after the name
+        client.resource('posts', 'id')
+
+        return [made, listed, title]
       }
     `, { augment: 'junction' })
 

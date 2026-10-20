@@ -26,6 +26,18 @@ test('a navigation that Page.navigate started is the drive\'s own', async () => 
   expect(reload.reloaded).toBe(null)
 })
 
+test('the drive\'s own navigation still counts as its own when the event trails the answer', async () => {
+  const b = fakeBrowser()
+  b.cmd = async () => ({ frameId: 'main', loaderId: 'L1' })
+  const reload = watchReloads(b)
+  await b.cmd('Page.navigate', { url: 'http://x/' })
+  b.emit('Page.frameNavigated', { frame: { url: 'http://x/', loaderId: 'L1' } })
+  expect(reload.reloaded).toBe(null)
+  // A reload after it is a new loader, and is still caught.
+  b.emit('Page.frameNavigated', { frame: { url: 'http://x/', loaderId: 'L2' } })
+  expect(reload.reloaded).toBe('http://x/')
+})
+
 test('a navigation with none in flight is a reload, and names the page', () => {
   const b = fakeBrowser()
   const reload = watchReloads(b)

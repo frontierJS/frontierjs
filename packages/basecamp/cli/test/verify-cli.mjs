@@ -291,8 +291,9 @@ try {
   // ── --await (FJS-D406) ──────────────────────────────────────────────────
   // `jobs trigger` dispatches a Caravan `job:run` and answers at once. With
   // --await the app finds that job by the call's correlation id and holds the
-  // call until it is terminal. With no outpost here it ends quickly either way —
-  // `done` or `failed: no server assigned` — and either is a thing to wait for.
+  // call until it is terminal. With no outpost here it ends either way — `done`,
+  // or `dead` once its attempts are spent — and either is a thing to wait for.
+  // Caravan's terminal states are done, dead and cancelled; there is no `failed`.
   console.log('\n  --await')
   const JOB = new Database(DB_PATH, { readonly: true })
     .query(`select id from job where workspaceId = ? and status != 'running' and deletedAt is null limit 1`).get(WS)?.id
@@ -308,7 +309,7 @@ try {
     .query(`select id, status, correlation_id from jobs where name = 'job:run' order by created_at desc limit 1`).get()
   check('with --await the call waits: it answers with the job it dispatched, found by its correlation id, already terminal',
     found.length === 1 && found[0].name === 'job:run' && found[0].id === latest?.id && !!latest?.correlation_id
-      && ['done', 'failed', 'cancelled'].includes(found[0].status) && found[0].status === latest?.status,
+      && ['done', 'dead', 'cancelled'].includes(found[0].status) && found[0].status === latest?.status,
     `exit ${held.code} jobs ${JSON.stringify(found)} latest ${JSON.stringify(latest)} ${held.err}`.slice(0, 400))
   check('and the exit code is the job\'s: 0 when it finished done, 1 when it did not',
     held.code === (found[0]?.status === 'done' ? 0 : 1) && held.json?.ok === (found[0]?.status === 'done'),

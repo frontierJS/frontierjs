@@ -26,6 +26,7 @@ import { splitParams } from '@frontierjs/toolbelt/directives'
 import type { ServiceContext } from '../src/core/context.ts'
 import { createApp, createStubAuth } from '../index.ts'
 import { createTestApp, request } from '../src/testing/index.ts'
+import { $, setCallDb } from '../index.ts'
 
 type AnyClient = Record<string, never> & {
   asSystem(): Record<string, { create(a: unknown): Promise<unknown> }>
@@ -48,12 +49,12 @@ async function mkDb(): Promise<AnyClient> {
 }
 
 function ctx(db: unknown, over: Record<string, unknown> = {}): ServiceContext {
-  return {
+  return setCallDb({
     service: 'posts', method: 'find', id: undefined, data: null,
     params: {}, query: {}, auth: {}, caller: {},
-    locals: { db }, app: {},
+    locals: {}, app: {},
     ...over,
-  } as unknown as ServiceContext
+  } as unknown as ServiceContext, db)
 }
 
 describe('accessor resolution against a real Litestone client', () => {
@@ -965,7 +966,7 @@ describe('a $merge payload reaches the Data boundary and is graded there', () =>
 describe('a hook that hands a derived verb the system client', () => {
   // A service that grades a caller itself and reads for them as system — orion's
   // administrator reading somebody else's runs — puts `asSystem()` on
-  // `ctx.locals.db`. The derived `find` probed it with `typeof $setAuth`, which a
+  // `$.db`. The derived `find` probed it with `typeof $setAuth`, which a
   // system client answers by throwing.
   test('the derived find reads through it, and the same find without the hook is the policy', async () => {
     const db: any = await createClient({ db: ':memory:', claims: [], schema: `
@@ -979,7 +980,7 @@ describe('a hook that hands a derived verb the system client', () => {
     let lift = false
     app.services.register(buildService({
       name: 'notes', model: 'Note',
-      hooks: { before: { find: [(ctx: ServiceContext) => { if (lift) ctx.locals.db = (ctx.locals.db as any).asSystem() }] } },
+      hooks: { before: { find: [(ctx: ServiceContext) => { if (lift) setCallDb(ctx, ($.db as any).asSystem()) }] } },
     }))
     await app._startForTest()
 

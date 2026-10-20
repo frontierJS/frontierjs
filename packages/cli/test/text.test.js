@@ -1,5 +1,20 @@
 import { test, expect } from 'bun:test'
-import { lines, wrap, visibleLength } from '../core/text.js'
+import { lines, wrap, visibleLength, untag } from '../core/text.js'
+
+const tag = (...args) => untag(args)
+
+test('untag builds the string a template would, values in place', () => {
+  const name = 'mt'
+  expect(tag`  ● ${name.padEnd(4)} ${0} ${null}`).toEqual(['  ● mt   0 null'])
+  expect(tag`plain`).toEqual(['plain'])
+  expect(tag`line\tone`).toEqual(['line\tone'])
+})
+
+test('untag passes an ordinary call through, arrays included', () => {
+  expect(untag(['a', 1])).toEqual(['a', 1])
+  expect(untag([['a', 'b'], 'c'])).toEqual([['a', 'b'], 'c'])
+  expect(untag([])).toEqual([])
+})
 
 test('lines drops false, null and undefined, keeps 0 and a blank line', () => {
   expect(lines(['a', false, null, undefined, 0, '', 'b'], { indent: 2 })).toBe('  a\n  0\n\n  b')

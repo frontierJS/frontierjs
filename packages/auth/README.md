@@ -56,14 +56,14 @@ export const auth = createLitestoneAuth(db, {
   // filters rather than refuses.
   sessionFields: (user) => ({ isAdmin: user.role === 'admin' }),
 
-  onPasswordResetRequested: async (email, token) => {
+  onPasswordResetRequested: async ({ email, token }) => {
     await mailer.send({
       to:      email,
       subject: 'Reset your password',
       html:    `<a href="${env.APP_URL}/auth/password-reset/confirm#token=${token}">Reset</a>`,
     })
   },
-  onEmailVerificationRequested: async (email, token) => {
+  onEmailVerificationRequested: async ({ email, token }) => {
     await mailer.send({
       to:      email,
       subject: 'Verify your email',
@@ -81,7 +81,7 @@ import { createApp }        from '@frontierjs/junction'
 
 // `db` on createApp installs withLitestoneDb for you — it is an around hook,
 // not a plugin, and it is what puts a per-request scoped client on
-// ctx.locals.db. Passing it here is the one wiring; app.configure() of it is
+// $.db. Passing it here is the one wiring; app.configure() of it is
 // not a thing.
 const app = createApp({ auth, db })
 
@@ -95,6 +95,25 @@ await app.start()
 
 A working version of exactly this is [`example/api/src/app.ts`](../../example/api/src/app.ts),
 driven end to end by `example`'s `bun run verify`.
+
+### Callbacks
+
+Each takes one event object and states its tier (`FJS-D06`): a **Hook** may
+halt the operation by throwing, a **Guard** answers allow/deny, an
+**Observer** is told and a throw is logged.
+
+| Option | Tier | Event | When |
+| --- | --- | --- | --- |
+| `onLogin` | Hook | `{ user }` | the password verified, before a session is issued |
+| `onLoginFailed` | Hook | `{ email, userId, reason, stage }` | before the refusal is raised; throw your own to replace it |
+| `onLogout` | Hook | `{ userId, sessionId }` | before the session row is deleted |
+| `onRegistered` | Hook | `{ user, db }` | inside the registration's transaction, at every door that makes an account; a throw rolls it back, which is how a closed signup refuses |
+| `onPasswordResetRequested` | Observer | `{ email, token }` | after the reset row is written and the route has answered |
+| `onEmailVerificationRequested` | Observer | `{ email, token }` | after a verification, address-change or registration row is written |
+| `onMagicLinkRequested` | Observer | `{ email, token, code }` | after the request has answered |
+| `onOAuthLinkRequested` | Observer | `{ email, token, provider }` | an identity asks to join an account that has not proved the address |
+| `onCredentialChanged` | Observer | `{ event, userId, email, actorId, at, meta }` | after a way into the account changed |
+| `canStartSupport` (plugin) | Guard | `{ operator, subjectId, reason }` | before a support episode starts; absent refuses |
 
 ## Routes
 
@@ -113,7 +132,7 @@ relative to `apiPrefix` for the same reason.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/auth/register` | Create account + issue session. Where `onEmailVerificationRequested` is set it answers `202 { ok: true }` for every address instead: a free one is mailed a link whose click (`POST /auth/email/verify`) makes the account, a held one is mailed its owner through `onCredentialChanged` as `registration.attempted` |
+| `POST` | `/auth/register` | Create account + issue session. Where `onEmailVerificationRequested` is set it answers `202 { ok: true }` for every address instead: a free one is mailed a link whose click (`POST /auth/email/verify`) makes the account and signs in, a held one is mailed its owner through `onCredentialChanged` as `registration.attempted` |
 | `POST` | `/auth/login` | Login, returns a token — or a challenge ticket when the account has a second factor |
 | `POST` | `/auth/login/challenge` | The second step: the ticket plus a TOTP or recovery code, returns a token |
 | `POST` | `/auth/logout` | Revoke current session |
@@ -122,7 +141,7 @@ relative to `apiPrefix` for the same reason.
 | `POST` | `/auth/magic-link/request` | Mail a sign-in link and a six-digit code. Answers `{ ok: true }` for any address. Mounted only when `onMagicLinkRequested` is set — see [Magic link](#magic-link) |
 | `POST` | `/auth/magic-link/verify` | `{ token }`, or `{ email, code }` from another device. Returns what `/auth/login` does: a token, or a challenge ticket when the account has a second factor |
 | `POST` | `/auth/email/verify/request` | Re-send verification email |
-| `POST` | `/auth/email/verify` | Verify email with a token. The mailed link lands on a page of the app's web surface and that page posts the token — a GET that spent it would be burned by a mail scanner's prefetch |
+| `POST` | `/auth/email/verify` | Spend a mailed link's token. A registration's link makes the account and signs in, answering what `/auth/login` does (a token, or a challenge ticket); confirming or changing an existing account's address answers `{ ok: true }` and signs nobody in. The mailed link lands on a page of the app's web surface and that page posts the token — a GET that spent it would be burned by a mail scanner's prefetch |
 | `POST` | `/auth/support/start` · `/auth/support/end` | Begin and end acting as another account — bounded by that account's standing, refused for one standing above yours, and recorded under the operator. Needs `canStartSupport` and a level resolver (`services: { standingLevel }` or `{ level }`); the account is told through `onCredentialChanged` |
 | `GET`  | `/auth/oauth` | Which OAuth providers this app offers |
 | `GET`  | `/auth/oauth/{provider}` · `/auth/oauth/{provider}/callback` | The redirect flow — browser navigations, not `fetch` calls |
@@ -231,7 +250,7 @@ What the click does depends on the account:
 
 | Account | The click |
 | --- | --- |
-| None holds the address | Creates a verified account through `onRegister`, so a closed signup refuses here, then signs it in. The request makes no row |
+| None holds the address | Creates a verified account through `onRegistered`, so a closed signup refuses here, then signs it in. The request makes no row |
 | Has a password, or no credential at all | Signs in and marks the address verified |
 | Has a second factor | Returns a challenge ticket — the mailbox is one factor |
 | Its only way in is an OAuth provider | Refused, and the request mails nothing (`FJS-987`) |
@@ -280,7 +299,7 @@ An OAuth sign-in owes the code too: the provider is a first factor, like a
 password or a magic link. The callback cannot answer a body, so it sets the same
 cookie and redirects to `errorRedirect` with `?oauth_error=code_required` and
 `oauth_expires`. Sierra's `session` reads that as `awaitingCode`, the state a
-password challenge sets, so the page's code box and `submitCode()` finish it.
+password challenge sets, so the page's code box and `completeSignIn()` finish it.
 
 Everything a signed-in caller does to their own factor is a SERVICE on `account`,
 beside `changePassword` — a call that can be refused for want of a session is not
@@ -365,7 +384,7 @@ same change. `actorId` differs from `userId` only for `totp.reset` and
 that was replaced — that mailbox is the one that just lost the account.
 Nothing secret is in it.
 
-It is an **observer**, unlike `onLogin` and the other three: a throw is logged
+It is an **observer**, unlike `onLogin` and the other hooks: a throw is logged
 and refuses nothing, so a mail outage cannot keep a factor on that somebody
 switched off. Optional to the type system, required in practice.
 

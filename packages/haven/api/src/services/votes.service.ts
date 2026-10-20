@@ -6,7 +6,8 @@
 //
 // No CRUD verb is a method: `cast` is the one write, an upsert keyed on the
 // member and the idea that also refuses an idea the hall does not hold.
-import { createService, $, BadRequest, rateLimitHook } from '@frontierjs/junction'
+import { createService, $, BadRequest } from '@frontierjs/junction'
+import { rateLimitHook } from '@frontierjs/junction/hooks'
 import type { App, Channel } from '@frontierjs/junction'
 
 import { roomChannelName } from '../rooms.ts'

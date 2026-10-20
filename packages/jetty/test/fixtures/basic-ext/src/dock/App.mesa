@@ -11,7 +11,7 @@
   // It has no connection of its own. `harbor` is the port to the service
   // worker, supplied by auto-gen, and every call goes through it.
   import { createResource } from '@frontierjs/sierra/resource'
-  import { harborApp, login, logout, getConnectionState } from '@frontierjs/jetty/resources'
+  import { harborApp, signIn, signOut, getConnectionState } from '@frontierjs/jetty/resources'
 
   export let harbor = null
 
@@ -38,7 +38,8 @@
     },
   })
 
-  leadsResource.tether.subscribe((rows) => { leads = [...(rows ?? [])] })
+  const list = leadsResource.tethered({ state: 'local' })
+  $: { leads = [...list.rows] }
 
   if (harbor) {
     harbor.on('session', (p) => {
@@ -54,10 +55,10 @@
     try { await fn() } catch (e) { status = `err: ${e.message}` }
   }
 
-  const doLogin  = () => attempt(async () => { error = ''; await login({ email, password }) })
+  const doSignIn  = () => attempt(async () => { error = ''; await signIn(email, password) })
                           .catch(e => error = e.message)
-  const doLogout = () => attempt(() => logout())
-  const load     = () => attempt(() => leadsResource.load())
+  const doSignOut = () => attempt(() => signOut())
+  const load     = () => list.reload()
   const add      = () => attempt(() => leadsResource.service.create({
     name: `New Lead ${leads.length + 1}`, status: 'new', ownerId: 1,
   }))
@@ -76,12 +77,12 @@
   </div>
 
   {#if session?.authenticated}
-    <button onclick={doLogout}>Logout</button>
+    <button onclick={doSignOut}>Sign out</button>
   {:else}
     <div class="login">
       <input bind:value={email} placeholder="email" />
       <input bind:value={password} type="password" placeholder="password (try: demo)" />
-      <button onclick={doLogin}>Login</button>
+      <button onclick={doSignIn}>Sign in</button>
       <span class="error">{error}</span>
     </div>
   {/if}

@@ -19,22 +19,23 @@ import { describe, test, expect } from 'bun:test'
 import { createClient }  from '../../litestone/src/index.js'
 import { buildService, callService } from '../src/core/service.ts'
 import type { ServiceContext } from '../src/core/context.ts'
+import { $, setCallDb } from '../src/core/context.ts'
 
 const SCHEMA = `model Post { id Int @id @default(autoincrement())  title String }`
 
 const mkDb = () => createClient({ db: ':memory:', schema: SCHEMA }) as unknown as Promise<any>
 
 function ctx(db: unknown, over: Record<string, unknown> = {}): ServiceContext {
-  return {
+  return setCallDb({
     service: 'posts', method: 'create', id: undefined, data: { title: 't' },
     query: {}, auth: { user: null }, caller: {}, route: {},
-    locals: { db }, app: {}, result: null, type: 'before', ...over,
-  } as unknown as ServiceContext
+    locals: {}, app: {}, result: null, type: 'before', ...over,
+  } as unknown as ServiceContext, db)
 }
 
 const writes = (extra: Record<string, unknown> = {}) => ({
   name: 'posts',
-  async create(c: ServiceContext) { return (c.locals.db as any).post.create({ data: c.data }) },
+  async create(c: ServiceContext) { return ($.db as any).post.create({ data: c.data }) },
   async find()  { return [] },
   ...extra,
 })
@@ -191,7 +192,7 @@ describe('ctx.afterCommit — under a transaction', () => {
   })
 
   test('the queue survives the client swap the transaction does', async () => {
-    // `transactionScopeHook` reassigns ctx.locals.db to the tx client for the
+    // `transactionScopeHook` swaps the tx client onto $.db for the
     // rest of the pipeline. The queue lives on the context, not on locals, so a
     // callback queued before the swap and one queued after it both run.
     const db  = await mkDb()

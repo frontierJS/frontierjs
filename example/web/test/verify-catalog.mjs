@@ -157,7 +157,7 @@ function check(name, actual, expected) {
 console.log('\n  catalog — the API')
 
 const products = await (await fetch(`${API}/api/products?$limit=100`)).json()
-const variants = await (await fetch(`${API}/api/product-variants?$limit=200`)).json()
+const variants = await (await fetch(`${API}/api/product-variants?$limit=100`)).json()
 const images   = await (await fetch(`${API}/api/product-images?$limit=100`)).json()
 
 check('13 products seeded',        products.total, 13)

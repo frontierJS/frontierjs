@@ -8,7 +8,7 @@ title: Runs
   // moves through its statuses with nothing refreshing. The counts are the
   // `runs.metrics` method over the same rows, asked again when the filter moves.
   import { runs } from '../../resources/Run.mesa'
-  import { session, useTether } from '@frontierjs/sierra/resource'
+  import { session } from '@frontierjs/sierra/resource'
   import { page, goto } from '@frontierjs/sierra/router'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -29,22 +29,21 @@ title: Runs
     { name: 'error',     label: '' },
   ]
 
-  const { get: rows, unsubscribe } = useTether(runs.tether)
-  $.onDestroy(unsubscribe)
+  const list = runs.tethered({ directives: { orderBy: '-createdAt', limit: 50 } })
+  const rows = () => list.rows
   $: (session.level, page.query.status)
 
   let error   = null
   let metrics = null
 
-  async function load() {
+  async function loadMetrics() {
     error = null
     try {
-      await runs.load(page.query, { orderBy: '-createdAt', limit: 50, ...page.directives })
       metrics = await runs.service.invoke('metrics', null, { windowMs: 3_600_000 })
     } catch (e) { error = e.message }
   }
-  load()
-  $: page.query, page.directives, () => load()
+  loadMetrics()
+  $: page.query, page.directives, () => loadMetrics()
 
   function filter(status) {
     const q = new URLSearchParams(page.search)
@@ -63,7 +62,7 @@ title: Runs
   {/snippet}
 </SectionHeader>
 
-{#if error}<Alert tone="danger" id="runs-error">{error}</Alert>{/if}
+{#if error || list.error}<Alert tone="danger" id="runs-error">{error ?? list.error.message}</Alert>{/if}
 
 {#if metrics}
   <div class="tiles" style="--tile-min: 10rem" id="runs-metrics">

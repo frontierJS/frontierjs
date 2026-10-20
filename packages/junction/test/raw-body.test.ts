@@ -2,7 +2,7 @@
 // A signature is computed over BYTES, so a receiver that only has the parsed
 // object has to re-serialize to check one — which means sender and receiver
 // must agree on key order, spacing and number formatting forever. `parsed.raw`
-// and `ctx.$raw.rawBody` exist so nobody has to (`FJS-349`).
+// and a hook's `ctx.raw.rawBody` exist so nobody has to (`FJS-349`).
 
 import { describe, it, expect } from 'bun:test'
 import { parseBody } from '../src/transport/body.ts'
@@ -51,7 +51,7 @@ describe('the body a signature is computed over', () => {
     expect(parsed.data).toBeNull()
   })
 
-  it('reaches a hook as ctx.$raw.rawBody', async () => {
+  it('reaches a hook as ctx.raw.rawBody', async () => {
     let seen: string | undefined = 'never ran'
 
     // port 0 and no services directory: this is about one hook reading one
@@ -63,7 +63,7 @@ describe('the body a signature is computed over', () => {
       name:    'things',
       methods: ['create'],
       async create() { return { id: 1 } },
-      hooks:   { before: { create: [(ctx: any) => { seen = ctx.$raw?.rawBody }] } },
+      hooks:   { before: { create: [(ctx: any) => { seen = ctx.raw?.rawBody }] } },
     } as never))
     await app.start()
 

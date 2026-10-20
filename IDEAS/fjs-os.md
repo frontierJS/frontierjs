@@ -26,9 +26,11 @@ up, and asked what the right foundation is to build on rather than build.
 ## 1. What an OS like this is made of
 
 **Omarchy is the evidence that the bottom is borrowed.** It is an install script
-and a directory of config files over plain Arch. As far as the author knew, its
-shell is Waybar, Walker, mako, SwayOSD, hyprlock and hypridle, not Quickshell. Its
-own code is glue. An FJS OS starts the same way.
+and a directory of config files over plain Arch. ~~As far as the author knew, its
+shell is Waybar, Walker, mako, SwayOSD, hyprlock and hypridle, not Quickshell.~~
+**Since Omarchy 4 (2026-08-14) its shell is one Quickshell process** replacing all
+of those (`linux-setup.md` § Prior art, read 2026-10-19) — the layer-4 pick below
+is now Omarchy's own. Its own code is glue. An FJS OS starts the same way.
 
 | # | Layer | Borrowed | What FJS adds |
 | --- | --- | --- | --- |

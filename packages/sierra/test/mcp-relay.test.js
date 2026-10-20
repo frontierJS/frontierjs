@@ -19,6 +19,7 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mcpApp, _resetMcpApp, toolCall, toolAnswer, startView, submitInPlace } from '../src/mcp/index.js'
 import { hostChannel } from '../src/mcp/host.js'
 import { getClient, createResource, status } from '../src/resource/index.js'
+import { tetherOf } from '../src/resource/resource.js'
 import { ready, session } from '../src/resource/session.js'
 import { toFieldErrors, isStaleWrite, STALE_WRITE_MESSAGE } from '../src/resource/field-rules.js'
 import { initTheme, theme } from '../src/theme/index.js'
@@ -277,7 +278,7 @@ describe('mcpApp — the page client, relayed', () => {
     mcpApp({ host })
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const orders = createResource('orders', { validate: false })
-    await orders.load()
+    await tetherOf(orders).load()
     await orders.save({ id: 1, total: 6 })
     expect(calls.at(-1)).toEqual({ method: 'tools/call', params: { name: 'orders_patch', arguments: { id: 1, data: { total: 6 } } } })
   })
@@ -288,12 +289,12 @@ describe('mcpApp — the page client, relayed', () => {
     const { client } = mcpApp({ host })
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const orders = createResource('orders', { validate: false })
-    await orders.load()
+    await tetherOf(orders).load()
     client.connect()
     expect(opened).not.toHaveBeenCalled()
     expect(client.connected).toBe(false)
     expect(status.connected).toBe(false)
-    expect(orders.stale.get()).toBe(0)
+    expect(tetherOf(orders).stale.get()).toBe(0)
     vi.unstubAllGlobals()
   })
 

@@ -7,7 +7,7 @@ import { HttpTransport }            from '../transport/http.ts'
 import type { WsRouteOptions }       from '../transport/http.ts'
 import { resolveTrustProxy }        from '../transport/forwarded.ts'
 import { bridge, errorResponse, readTransportFlags, refuseBadDirectives } from '../transport/bridge.ts'
-import { freezeUser, enterRequest, requestMeta, currentCall, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type Attester } from './context.ts'
+import { freezeUser, enterRequest, requestMeta, currentCall, enterCall, callDb, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type Attester } from './context.ts'
 import { hookContext } from '@frontierjs/toolbelt/hooks'
 import { DEV_ENV, formatDevLine } from '@frontierjs/toolbelt/devline'
 import { ServiceRegistry, callService } from './service.ts'
@@ -501,8 +501,8 @@ export interface App {
   /**
    * Run `fn` with the client a service call made right now would read and
    * write through: the principal in scope, in the tenant in scope, with the
-   * principal resolver's claims applied — `ctx.locals.db`, for work that holds
-   * no ctx.
+   * principal resolver's claims applied — `$.db`, for work that holds no ctx.
+   * `$` inside `fn` is that context, so a resolver and `fn` read one client.
    *
    * The seam for an engine that writes the Data realm directly rather than
    * through a service, inside `runAs`. Scoping a client by hand from
@@ -594,9 +594,10 @@ export interface App {
    * own the process — a register that implied otherwise would be a supervisor,
    * and the caller already holds the handle it needs to stop it.
    *
-   * Keyed by name, so a re-register replaces rather than duplicates.
+   * Keyed by name, so a re-register replaces rather than duplicates — the
+   * `(name, value)` shape its two siblings take (`FJS-D1306`).
    */
-  registerDevService: (svc: DevService) => void
+  registerDevService: (name: string, svc: Omit<DevService, 'name'>) => void
 
   // Route shortcuts (delegate to http.router)
   get:     (path: string, handler: RouteHandler, opts?: RouteOptions) => App
@@ -753,7 +754,7 @@ export interface AppOptions {
    * Accepts a Litestone client or any plain table-shaped object —
    * the service base adapts the latter. When the client exposes `$setAuth`,
    * per-request scoping is installed automatically as an app-level around hook,
-   * so `ctx.locals.db` is always the caller-scoped client and row policies see
+   * so `$.db` is always the caller-scoped client and row policies see
    * who is asking.
    *
    * That used to be a manual step:
@@ -813,11 +814,11 @@ export interface AppOptions {
    *
    * Passing it installs `withTenantDb` in place of `withLitestoneDb`: each call
    * resolves its tenant the way the schema's `resolve` declares (a subdomain, a
-   * header, a claim), and `ctx.locals.db` is that tenant's caller-scoped
+   * header, a claim), and `$.db` is that tenant's caller-scoped
    * client. A call with no request behind it names its tenant with
    * `{ locals: { tenantId } }`.
    *
-   * `db` and `tenants` are alternatives, not a pair: one `ctx.locals.db` cannot
+   * `db` and `tenants` are alternatives, not a pair: one `$.db` cannot
    * be assigned by two hooks. `strategy row` needs neither — the schema's own
    * policies scope every query — so pass `db` there as usual.
    */
@@ -985,7 +986,7 @@ export function createApp(opts: AppOptions = {}): App {
   if (opts.db && opts.tenants)
     throw new Error(
       '[Junction] createApp({ db, tenants }) — db and tenants are alternatives, not a pair: ' +
-      'each installs the hook that assigns ctx.locals.db, and two hooks leave the winner to ' +
+      'each installs the hook that assigns $.db, and two hooks leave the winner to ' +
       "hook order. A tenanted app passes `tenants`; `strategy row` passes `db`."
     )
 
@@ -1166,7 +1167,7 @@ export function createApp(opts: AppOptions = {}): App {
   // ── App-level hooks ──────────────────────────────────────────────────
   let appHooks: HookMap = {}
 
-  // The around hook that puts `ctx.locals.db` on a call, once installed below —
+  // The around hook that puts `$.db` on a call, once installed below —
   // what `withDb` runs outside one.
   let dataHook: import('./hooks.ts').AroundHook | null = null
   const tenantClientObservers = new Set<(client: unknown, tenantId: string) => void>()
@@ -1250,7 +1251,7 @@ export function createApp(opts: AppOptions = {}): App {
           statusCode: undefined,
           dispatch:   undefined,
           signal:     opts.signal ?? new AbortController().signal,
-          $raw:       null,
+          raw:        null,
         }))
       }
 
@@ -1415,7 +1416,9 @@ export function createApp(opts: AppOptions = {}): App {
         route: {}, query: {}, directives: {}, reserved: {}, data: null, id: null,
       } as unknown as ServiceContext
       let out!: T
-      await dataHook(ctx, async () => { out = await fn(ctx.locals.db, (ctx.auth.user ?? null) as import('../auth/types.ts').SessionContext | null) })
+      // Entered as a call, so a principal resolver reading `$.db` reads this
+      // context's client rather than the call that asked, or nothing.
+      await enterCall(ctx, () => dataHook!(ctx, async () => { out = await fn(callDb(ctx), (ctx.auth.user ?? null) as import('../auth/types.ts').SessionContext | null) }))
       return out
     },
 
@@ -1575,11 +1578,11 @@ export function createApp(opts: AppOptions = {}): App {
       app._readiness.set(name, fn)
     },
 
-    registerDevService(svc: DevService): void {
-      if (!svc?.name || !svc?.url) {
+    registerDevService(name: string, svc: Omit<DevService, 'name'>): void {
+      if (!name || !svc?.url) {
         throw new Error('registerDevService: a dev service needs a name and a url')
       }
-      app._devServices.set(svc.name, svc)
+      app._devServices.set(name, { name, ...svc })
     },
 
     async applyConfigFile(): Promise<void> {
@@ -1848,7 +1851,7 @@ export function createApp(opts: AppOptions = {}): App {
   //
   // A tenant registry takes the same slot: the client is per REQUEST rather
   // than per app, so `withTenantDb` resolves it and assigns the same
-  // `ctx.locals.db`. Installing both would leave the assignment to hook order.
+  // `$.db`. Installing both would leave the assignment to hook order.
   checkPrincipalSetting(opts.principal)
   if (opts.tenants) {
     dataHook = withTenantDb(opts.tenants, opts.principal)
@@ -1894,7 +1897,7 @@ export function createApp(opts: AppOptions = {}): App {
     // request rather than per app, so there is no single client to tap.
     announceDataWrites(app, db)
     // Every query on the telemetry bus, tapped once on the root client. It used
-    // to be installed per request off `ctx.locals.db`, which is a `$setAuth`
+    // to be installed per request off the call's client, which is a `$setAuth`
     // proxy for a signed-in caller and throws on the probe (`FJS-673`).
     installQueryTelemetry(app, db)
   }

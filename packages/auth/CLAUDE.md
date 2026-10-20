@@ -211,9 +211,12 @@ index.ts     public API
   membership in another tenant (read off the resolver's `describe()`, through
   the app's ROOT client, since a scoped client's `asSystem()` keeps the tenant)
   is refused below SYSADMIN. No tenant in scope is no scoping.
-- **Four awaited callbacks, and A THROW REFUSES** — `onLogin`, `onLoginFailed`,
-  `onLogout`, `onRegister` (`FJS-042`). **`onPasswordResetRequested` is NOT one
-  of them**: it runs after `requestPasswordReset` has answered and a throw is
+- **Every callback takes ONE event object and states its tier** (`FJS-D1332`,
+  `FJS-D06`); the table is `README.md` § Callbacks. **Four Hooks, awaited, and A
+  THROW REFUSES** — `onLogin`, `onLoginFailed`, `onLogout`, `onRegistered`
+  (`FJS-042`); `canStartSupport` is the one Guard. There is no `onRegister`:
+  `onRegistered` refuses by throwing inside the write, so a pre-write gate was a
+  second door to the same refusal. **`onPasswordResetRequested` is an Observer**: it runs after `requestPasswordReset` has answered and a throw is
   logged, because awaiting the mail put a known address on the clock
   (`FJS-1832`) — tests wait on `h.requestReset()` / `h.nextReset()` for the
   token. Single handlers, not a bus, because each is
@@ -233,20 +236,23 @@ index.ts     public API
   after the request answers. The six-digit code is compared against the row
   the ADDRESS names and is never used to find one, and `Verification.attempts`
   counts misses up to `loginChallengeAttempts`. An unknown address gets its
-  account at the click, through `onRegister`, never at the request.
+  account at the click, through `onRegistered`, never at the request. **So is a
+  registration's verification click** (`FJS-D1310`): IAuth's `verifyEmail` is
+  what `POST /auth/email/verify` calls, and for a `registration` token it ends at
+  `firstFactorProven` and answers `{ signedIn }`; for the other two purposes it
+  answers `{ verified }` and issues no session.
 - **Only a `kind: user` signs in, and `issueSession` is where that is refused** (`FJS-D1198`). A `bot` or a `peer` holds API keys only. `toContext` states the kind as `userType`, never the role, and it is the trail's `actorType`. A way to mint a session that does not end in `issueSession` lets a bot sign in.
 - **`Credential.linked` is how "a provider made this account" is told from "the mailbox made it and a provider joined later"** (`FJS-D1011`). `oauthResolve` § 4 and `confirmOAuthLink` write the `oauth:*` row onto an EXISTING account with `linked: true`; § 3 and the proof path's new-user branch write it unmarked. `securedByProvider(creds)` counts only an unmarked `oauth:*` row, and `providerOnly` (magic link) and `confirmPasswordReset` both call it. A new place that attaches a provider to an existing account sets the flag, or that account loses magic-link sign-in and reset (`FJS-2545`).
-- **`onRegistered({ user, db })` is the fifth and the one that runs INSIDE the
-  registration** (`FJS-D520`, `FJS-1458`): after the row and its credential,
-  before the commit, for a password and an identity provider alike, through
-  `registerUser()`. It is where a row-tenanted app creates the Account and
+- **`onRegistered({ user, db })` runs INSIDE the registration** (`FJS-D520`,
+  `FJS-1458`): after the row and its credential, before the commit, at every
+  door that makes an account, through `registerUser()`. It is where a row-tenanted app creates the Account and
   writes the tenant column; `createUser` passes no column but `email`, `name`,
   `role` and a stated `tenant`. `db` is the transaction's client — an app write through its own
   client falls outside it and survives a rollback.
 - **One ordering rule: a hook runs BEFORE the thing it can refuse.** So none is
-  handed what its refusal would have prevented — `onLogin` has no session id,
-  `onRegister` has no user row — because a hook that both refuses a thing and
-  reports its result cannot exist. **The hook is the gate, `db.$audit` is the
+  handed what its refusal would have prevented — `onLogin` has no session id —
+  because a hook that both refuses a thing and reports its result cannot exist;
+  `onRegistered` holds the row only because its throw rolls the row back. **The hook is the gate, `db.$audit` is the
   record.** Get this backwards and a refusal leaves behind exactly what it
   refused: a session for a login that never happened, a user for a registration
   that was blocked. The suite asserts the absence, not just the throw.
@@ -304,7 +310,7 @@ index.ts     public API
   the write already holds the new one.
 - **A route that spends a single-use token is a POST, and the mailed link lands
   on a web page that posts it** (`FJS-1839`, `FJS-D616`). `POST /auth/email/verify`
-  takes the token in the body and answers `{ ok: true }`; a GET there is a 405.
+  takes the token in the body; a GET there is a 405.
   A mail scanner's prefetch burned the link before the person clicked it, and the
   old answer was the whole SessionContext. The body reader refuses a non-string
   token, which is what closed `?token[gt]=` verifying a stranger (`FJS-1002`). The

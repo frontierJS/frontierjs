@@ -9,7 +9,7 @@ import { accessorCandidates } from '../core/litestone.ts'
 import { omitBy } from '@frontierjs/toolbelt/redact'
 import { hookContext } from '@frontierjs/toolbelt/hooks'
 import {
-  CRUD_METHODS, RESERVED_PARAMS, requestMeta, freezeUser, withCallEffects,
+  CRUD_METHODS, RESERVED_PARAMS, requestMeta, freezeUser, withCallEffects, callDb,
   type ServiceContext, type ServiceMethod, type AnyMethod,
   type CallOptions, type QueryDirectives,
 } from '../core/context.ts'
@@ -216,7 +216,7 @@ export const bridge = {
       statusCode: undefined,
       dispatch:   undefined,
       signal:    raw.signal ?? new AbortController().signal,
-      $raw:      raw
+      raw:       raw
     }))
   },
 
@@ -317,7 +317,7 @@ export const bridge = {
       statusCode: undefined,
       dispatch:   undefined,
       signal:    opts.signal ?? new AbortController().signal,
-      $raw:      null
+      raw:       null
     }))
   }
 
@@ -361,19 +361,42 @@ function boundaryOptions(ctx?: ServiceContext) {
  * the app. By key name, so a method meaning to hand back a protected value once
  * (a freshly minted token) returns it under a key that is not a column's name.
  */
-export function withholdProtected(value: unknown, ctx?: Pick<ServiceContext, 'locals' | 'model' | 'service'>): unknown {
+export function withholdProtected(value: unknown, ctx?: Pick<ServiceContext, 'model' | 'service'> & { method?: string }): unknown {
   const fields = protectedFieldsFor(ctx as ServiceContext)
   if (!Object.keys(fields).length) return value
-  const omit = (v: unknown) => omitBy(v, (k) => Object.hasOwn(fields, k))
+  const dropped = new Set<string>()
+  const omit = (v: unknown) => omitBy(v, (k) => {
+    const hit = Object.hasOwn(fields, k)
+    if (hit) dropped.add(k)
+    return hit
+  })
+  // A custom method's answer losing a key in silence read as a lost value with
+  // no cause (FJS-2089); CRUD answers are rows, where the drop is the contract.
+  const warnDropped = (out: unknown) => {
+    const method = ctx?.method
+    if (dropped.size && method && !(CRUD_METHODS as readonly string[]).includes(method)) {
+      const named = `${ctx?.service}.${method}`
+      if (!_withheldWarned.has(named)) {
+        _withheldWarned.add(named)
+        console.warn(`[Junction] ${named}() answered key(s) ${[...dropped].join(', ')}, named like a protected column of its model, ` +
+          `so the wire dropped them (FJS-D473). To hand the value back, return it under another key.`)
+      }
+    }
+    return out
+  }
   // An envelope's `data` is the answer, not a column. Walked by key name, a
   // model with a protected column called `data` answered every list with the
   // rows removed and `total` still counting them.
   if (isServiceResult(value)) {
     const { data, ...envelope } = value
-    return { ...(omit(envelope) as object), data: omit(data) }
+    return warnDropped({ ...(omit(envelope) as object), data: omit(data) })
   }
-  return omit(value)
+  return warnDropped(omit(value))
 }
+
+const _withheldWarned = new Set<string>()
+/** Test seam -- the warning is once per service.method for the life of the process. */
+export function resetWithheldWarnings(): void { _withheldWarned.clear() }
 
 /** The body `errorResponse` writes -- for a wire that is not a `Response`. */
 export function errorBody(err: unknown, ctx?: ServiceContext): ReturnType<FrameworkError['toJSON']> {
@@ -381,7 +404,7 @@ export function errorBody(err: unknown, ctx?: ServiceContext): ReturnType<Framew
 }
 
 function protectedFieldsFor(ctx?: ServiceContext): Record<string, string> {
-  const db = ctx?.locals?.db as { $protectedFields?: (a: string) => Record<string, string> } | undefined
+  const db = callDb(ctx) as { $protectedFields?: (a: string) => Record<string, string> } | undefined
   // A client that throws on a name it does not know answers the probe itself,
   // and this runs on every success body, so a throw here is a 500 on every read.
   let lookup: unknown

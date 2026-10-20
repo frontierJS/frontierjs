@@ -14,6 +14,7 @@
 // week     what falls due in the next seven days, by day, and what nobody is on
 // mine     this account's own last fourteen days of activity
 // team     each teammate's open to-dos: how many, how many late, what falls due this week
+// daily    the newest daily check posted in the Kobami chat, each item a link
 import { execFile } from 'node:child_process'
 
 const basecamp = (...args) => new Promise((resolve, reject) => {
@@ -48,6 +49,86 @@ function tally(rows, keysOf, n) {
   const counts = new Map()
   for (const r of rows) for (const k of keysOf(r)) counts.set(k, (counts.get(k) ?? 0) + 1)
   return [...counts].sort((a, b) => b[1] - a[1]).slice(0, n).map(([label, value]) => ({ label, value }))
+}
+
+// The daily check is judged by a Claude run on another machine and posted to
+// the Kobami chat, so the post IS the judged run: this reads it back rather
+// than judging again. Its HTML is the daily-check skill's `render.py`, the
+// same shape the daily-check-audit skill reads its links from.
+const KOBAMI_CHAT = '/buckets/29933190/chats/5472184725/lines.json'
+
+const unescape = (s) => s.replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", nbsp: ' ' })[e])
+const plain = (html) => oneLine(unescape(html.replace(/<[^>]+>/g, '')))
+
+// A summary line's number is its first <strong>; the label is shortened by its
+// emoji, and a line this does not know keeps its own words.
+const SHORT = { '📣': 'ads / SEO', '💬': 'waiting on us', '🆕': 'new, no reply', '⏰': 'overdue',
+  '📅': 'due today/tmrw', '🙋': 'unassigned', '💤': 'gone quiet', '❓': 'unknown plan' }
+const TONE_OF = { '💬': 'danger', '⏰': 'warn', '🆕': 'warn', '❓': 'muted' }
+// A count's `key` is what Tab filters the desk's list items by; an item says
+// which counts it falls under in `keys`, read from its own words, since the
+// post tags none but ads. A count no item carries (most of overdue, all of
+// gone quiet) is not itemized in the post, so Tab passes it by.
+const KEY_OF = { '📣': 'ads', '💬': 'waiting', '🆕': 'new', '⏰': 'overdue', '📅': 'due', '🙋': 'unassigned', '💤': 'quiet', '❓': 'unknown' }
+const keysOf = (head, who, timing) => [
+  head.includes('📣') && 'ads',
+  /^waiting\b/.test(timing) && 'waiting',
+  /\blate$/.test(timing) && 'overdue',
+  /^due (today|tomorrow)/.test(timing) && 'due',
+  who === 'unassigned' && 'unassigned',
+].filter(Boolean)
+
+const TAG = [['🤖', 'info'], ['🧑‍💼', 'muted'], ['👤', undefined]]
+const shortTiming = (t) => t.replace(/ days?\b/, 'd').replace('due tomorrow', 'due tmrw')
+
+/** One bullet: `📣 👤 Team · ⚠︎ overdue reply · <a href>title</a> — who · timing · reason`. */
+function itemOf(html, customer) {
+  const a = html.match(/<a href="([^"]+)">([\s\S]*?)<\/a>/)
+  if (!a) return { text: plain(html), tone: 'muted' }
+  const [who = '', timing = ''] = plain(html.slice(a.index + a[0].length)).replace(/^—\s*/, '').split(' · ')
+  const head = plain(html.slice(0, a.index))
+  const late = /overdue reply/.test(head)
+  return {
+    text: [plain(a[2]), who, customer].filter(Boolean).join(' · '),
+    note: shortTiming(timing),
+    tone: late ? 'danger' : TAG.find(([e]) => head.includes(e))?.[1],
+    url: unescape(a[1]),
+    keys: keysOf(head, who, timing),
+  }
+}
+
+/** The post's HTML as blocks: the counts, then each section's items under its heading. */
+function dailyBlocks(html) {
+  const blocks = [], stats = []
+  let section = null, customer = null, lines = null
+  const flush = () => { if (lines?.length) blocks.push({ kind: 'list', items: lines }); lines = null }
+  for (const m of html.matchAll(/<div dir="auto"><strong>([\s\S]*?)<\/strong><\/div>(\s*<ul)?|<li>([\s\S]*?)<\/li>|⏸ On hold:([\s\S]*?)<\/div>/g)) {
+    if (m[4] != null) {
+      flush()
+      blocks.push({ kind: 'heading', text: '⏸ On hold' })
+      blocks.push({ kind: 'list', items: [...m[4].matchAll(/<a href="([^"]+)">([\s\S]*?)<\/a>/g)].map((a) => ({ text: plain(a[2]), tone: 'muted', url: unescape(a[1]) })) })
+    } else if (m[1] != null && (m[2] == null || plain(m[1]) === 'Notes')) {
+      flush()
+      section = plain(m[1]); customer = null
+      blocks.push({ kind: 'heading', text: section })
+    } else if (m[1] != null) {
+      customer = plain(m[1])
+    } else if (!section) {
+      const text = plain(m[3])
+      const emoji = [...text][0]
+      const value = m[3].match(/<strong>([\s\S]*?)<\/strong>/)?.[1]
+      if (text.startsWith("Who's up")) blocks.push({ kind: 'text', text, tone: 'muted' })
+      else if (value != null) stats.push({ label: SHORT[emoji] ?? text.split(':')[0], key: KEY_OF[emoji], value: plain(value), tone: Number(plain(value)) ? TONE_OF[emoji] : 'ok',
+        note: emoji === '⏰' ? `${plain(m[3].match(/<strong>[\s\S]*?<strong>([\s\S]*?)<\/strong>/)?.[1] ?? '')} ≤7d late` : '' })
+    } else {
+      ;(lines ??= []).push(itemOf(m[3], section === 'Notes' ? null : customer))
+      if (lines.length === 12) flush()
+    }
+  }
+  flush()
+  const rows = []
+  for (let i = 0; i < stats.length; i += 4) rows.push({ kind: 'stats', items: stats.slice(i, i + 4) })
+  return [...rows, ...blocks]
 }
 
 const REPORTS = {
@@ -190,6 +271,25 @@ const REPORTS = {
             ? [{ kind: 'heading', text: 'Slipped in the last week' },
                { kind: 'list', items: recent.slice(0, 8).map((t) => ({ text: `${oneLine(t.content)} -- ${t.bucket?.name ?? ''}`, note: `${who(t.assignees)}, ${-daysFrom(t.due_on)}d`, tone: 'warn' })) }]
             : []),
+        ],
+      }
+    },
+  },
+
+  daily: {
+    help: 'the newest daily check posted in the Kobami chat, each item a link',
+    async run() {
+      const lines = await basecamp('api', 'get', KOBAMI_CHAT)
+      const post = lines.find((l) => /Daily check —/.test(l.content) && !/Daily check audit/.test(l.content))
+      if (!post) return { title: 'No daily check', blocks: [{ kind: 'callout', tone: 'warn', text: 'No "Daily check" line on the first page of the Kobami chat.' }] }
+      const when = plain(post.content.match(/<strong>(Daily check —[^<]*)<\/strong>/)?.[1] ?? 'Daily check')
+      const old = Date.now() - Date.parse(post.created_at) > 36 * 60 * 60 * 1000
+      return {
+        title: `${when} · posted ${ago(post.created_at)}`,
+        blocks: [
+          ...(old ? [{ kind: 'callout', tone: 'warn', text: `This check was posted ${ago(post.created_at)}; no newer one is in the chat.` }] : []),
+          ...dailyBlocks(post.content),
+          { kind: 'list', items: [{ text: 'the post in the Kobami chat', tone: 'muted', url: post.app_url }] },
         ],
       }
     },

@@ -82,10 +82,10 @@ describe('an address nobody holds', () => {
     expect(await h.sys.credential.count({ where: { userId: row.id } })).toBe(0)
   })
 
-  test('onRegister refuses at the click, and no user is left behind', async () => {
+  test('onRegistered refuses at the click, and no user is left behind', async () => {
     const closed = await makeAuth({
       onMagicLinkRequested: async (m) => { inbox.push(m); arrived() },
-      onRegister: () => { throw new Error('closed beta') },
+      onRegistered: () => { throw new Error('closed beta') },
     })
     const email = nextEmail()
     const mail  = await mailed(email, closed)

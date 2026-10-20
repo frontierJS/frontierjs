@@ -426,4 +426,31 @@ describe('an operation named in a check()', () => {
     await expect(me.item.update({ where: { id: 1 }, data: { title: 't' } })).resolves.toBeDefined()
     db.$close?.()
   })
+
+  // An operation with no bucket on the parent reads as a parent with no
+  // policy, which admits every caller (FJS-3305).
+  test('an operation that is not one is refused at parse, by name, wherever the check() sits', async () => {
+    const { parse } = await import('../src/core/parser.js') as any
+    const item = (op: string) => `${orgs}
+      model Item {
+        id     Int     @id
+        orgId  Int
+        org    Org     @relation(fields: [orgId], references: [id])
+        title  String?
+        secret String? @allow(read, check(org, '${op}'))
+        @@allow(read,   check(org, '${op}'))
+        @@deny(update,  !check(org, '${op}'))
+      }
+    `
+    for (const op of ['bogus', 'post-update', 'write', 'all']) {
+      const { valid, errors } = parse(item(op))
+      expect(valid).toBe(false)
+      expect(errors).toHaveLength(3)
+      for (const e of errors)
+        expect(e).toContain(`check(org, '${op}'): invalid operation '${op}'. Valid: read, create, update, postUpdate, delete`)
+    }
+    for (const op of ['read', 'create', 'update', 'postUpdate', 'delete'])
+      expect(parse(item(op)).errors).toEqual([])
+    await expect(open(item('bogus'))).rejects.toThrow(/invalid operation 'bogus'/)
+  })
 })

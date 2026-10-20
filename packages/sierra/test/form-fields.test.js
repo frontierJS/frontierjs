@@ -42,7 +42,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
 
 const {
   createResource, controlFor, displayFor, defaultControlFor, formFieldList, labelFieldFor, buildFieldRules,
-  registerControl, unregisterControl, registeredControls, validateAgainstFields,
+  registerControl, unregisterControl, registeredControls, validateAgainstFields, normalizeBlanks,
 } = await import('../src/resource/resource.js')
 const { registerSchemas, serviceNameFor } = await import('../src/resource/schema-registry.js')
 
@@ -127,6 +127,54 @@ describe('controlFor — the one place a type becomes a control', () => {
       .toEqual({ control: 'input', task: 'quantify', type: 'text', inputMode: 'numeric', pattern: '^-?\\d+$' })
     // The control: the same string rule without it.
     expect(controlFor({ type: 'string' })).toEqual({ control: 'input', task: 'text' })
+  })
+
+  // A secret string in a text box is offered to whoever stands behind the
+  // person typing it (FJS-2259). Built by litestone, since the mark is its
+  // `format: 'password'` (FJS-D1334) and a hand-typed rule grades nothing.
+  test('an @encrypted or @hashed string is a password box, and an @email one keeps its box', async () => {
+    const { parse }              = await import('../../litestone/src/core/parser.js')
+    const { generateJsonSchema } = await import('../../litestone/src/jsonschema.js')
+    const { schema } = parse(
+      'model Vault {\n' +
+      '  id      Int     @id\n' +
+      '  apiKey  String  @encrypted\n' +
+      '  pin     String? @hashed\n' +
+      '  contact String  @email @encrypted\n' +
+      '  note    String  @encrypted @syntax(md)\n' +
+      '  label   String\n' +
+      '}\n',
+    )
+    const rules = buildFieldRules(generateJsonSchema(schema).$defs.Vault)
+    expect(controlFor(rules.apiKey)).toEqual({ control: 'input', task: 'text', type: 'password' })
+    expect(controlFor(rules.pin)).toEqual({ control: 'input', task: 'text', type: 'password' })
+    expect(controlFor(rules.contact)).toEqual({ control: 'input', task: 'text' })
+    expect(controlFor(rules.note).control).toBe('textarea')
+    expect(controlFor(rules.label)).toEqual({ control: 'input', task: 'text' })
+  })
+
+  // An @encrypted value reaches no browser, so its box starts empty on an
+  // edit: an untouched box must keep the secret, and a document or paragraph
+  // nobody can see is not offered at all (FJS-D1334, amended).
+  test('a secret box left empty keeps the stored value, and an unseeable document is off the form', async () => {
+    const { parse }              = await import('../../litestone/src/core/parser.js')
+    const { generateJsonSchema } = await import('../../litestone/src/jsonschema.js')
+    const { schema } = parse(
+      'model Vault {\n' +
+      '  id      Int     @id\n' +
+      '  apiKey  String? @encrypted\n' +
+      '  contact String  @email @encrypted\n' +
+      '  note    String  @encrypted @syntax(md)\n' +
+      '  doc     Json?   @encrypted\n' +
+      '  label   String?\n' +
+      '}\n',
+    )
+    const rules = buildFieldRules(generateJsonSchema(schema).$defs.Vault)
+    expect(normalizeBlanks(rules, { apiKey: '', contact: '', label: '' })).toEqual({ label: null })
+    expect(normalizeBlanks(rules, { apiKey: 'k2' })).toEqual({ apiKey: 'k2' })
+    const names = formFieldList(rules).map(f => f.name)
+    expect(names).toEqual(['apiKey', 'contact', 'label'])
+    expect(formFieldList(rules, { only: ['doc'] })[0].name).toBe('doc')
   })
 
   test('x-big survives buildFieldRules, or the row above never sees it', () => {

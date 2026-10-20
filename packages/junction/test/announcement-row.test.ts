@@ -29,6 +29,7 @@ import { createClient } from '../../litestone/src/index.js'
 import { callService, buildService } from '../src/core/service.ts'
 import { resetAnnouncementWarnings } from '../src/core/litestone.ts'
 import type { ServiceContext } from '../src/core/context.ts'
+import { $, setCallDb } from '../src/core/context.ts'
 
 async function mkDb() {
   const db = await createClient({
@@ -50,12 +51,12 @@ async function mkDb() {
 
 /** Collects what the bus was told, which is the same payload the socket gets. */
 function ctxFor(db: unknown, over: Record<string, unknown> = {}): ServiceContext {
-  return {
+  return setCallDb({
     service: 'servers', method: 'heartbeat', id: null, data: null,
     query: {}, auth: { user: null }, caller: {}, route: {},
-    locals: { db }, app: {}, result: null, directives: {},
+    locals: {}, app: {}, result: null, directives: {},
     ...over,
-  } as unknown as ServiceContext
+  } as unknown as ServiceContext, db)
 }
 
 async function announce(svc: unknown, ctx: ServiceContext) {
@@ -80,7 +81,7 @@ describe('a method that answers the row announces the row', () => {
     const svc = buildService({
       name: 'servers', model: 'server',
       async heartbeat(ctx: ServiceContext) {
-        return (ctx.locals.db as any).server.findFirst({ where: { id: 1 } })
+        return ($.db as any).server.findFirst({ where: { id: 1 } })
       },
     } as never)
 
@@ -97,7 +98,7 @@ describe('a method that answers the row announces the row', () => {
     const svc = buildService({
       name: 'servers', model: 'server',
       async heartbeat(ctx: ServiceContext) {
-        const row = await (ctx.locals.db as any).server.findFirst({ where: { id: 1 } })
+        const row = await ($.db as any).server.findFirst({ where: { id: 1 } })
         return { ...row, queued: true }
       },
     } as never)
@@ -243,7 +244,7 @@ describe('what the app states, the app owns', () => {
     const svc = buildService({
       name: 'servers', model: 'server',
       async audit(ctx: ServiceContext) {
-        const server = await (ctx.locals.db as any).server.findFirst({ where: { id: 1 } })
+        const server = await ($.db as any).server.findFirst({ where: { id: 1 } })
         ctx.dispatch = server
         return { server, checked: 3, unreachable: ['db-02'] }
       },
@@ -297,7 +298,7 @@ describe('a bulk create announces each row, not the list it answers (FJS-2157)',
     const svc = buildService({
       name: 'servers', model: 'server',
       async create(ctx: ServiceContext) {
-        const t = (ctx.locals.db as any).server
+        const t = ($.db as any).server
         await t.create({ data: { id: 2, name: 'gateway-02' } })
         return [await t.findFirst({ where: { id: 1 } }), await t.findFirst({ where: { id: 2 } })]
       },

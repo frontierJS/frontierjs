@@ -30,7 +30,7 @@
 
 // biome-ignore lint/suspicious/noShadowRestrictedNames: credentials.ts's export, not Object.prototype.valueOf
 import { valueOf } from './credentials.ts'
-import type { BrokerFraming, BrokerMessage, ConduitStore, CredentialResolver, Receipt } from './types.ts'
+import type { BrokerFraming, BrokerGap, BrokerMessage, ConduitStore, CredentialResolver, Receipt } from './types.ts'
 
 // ─── What arrives ─────────────────────────────────────────────
 
@@ -156,6 +156,13 @@ export interface BrokerReceiver<Ev extends ReceivedEvent = ReceivedEvent, Owner 
    * framing's handshake answered. A throw is logged and the frames still flow.
    */
   opened?:  (ctx: { connection: unknown }) => void | Promise<void>
+  /**
+   * A connection skipped frames without closing — the framing's `sequence`
+   * jumped. Called in the frames' order, ahead of the frame that showed the
+   * jump; the frames it skipped are not coming, so this is a gap's backfill
+   * as `opened` is a redial's. A throw is logged and the frames still flow.
+   */
+  gap?:     (ctx: BrokerGap) => void | Promise<void>
   apply(ev: Ev, ctx: { owner: Owner | null; message: BrokerMessage }): Outcome | Promise<Outcome>
 }
 
@@ -207,7 +214,7 @@ export function assertReceiver(r: Receiver<unknown, ReceivedEvent, unknown>): vo
 }
 
 const BROKER_RECEIVER_FIELDS: Record<keyof BrokerReceiver, true> = {
-  provider: true, target: true, dialect: true, owner: true, opened: true, apply: true,
+  provider: true, target: true, dialect: true, owner: true, opened: true, gap: true, apply: true,
 }
 const FRAME_DIALECT_FIELDS: Record<keyof FrameDialect, true> = { framing: true, parse: true, dedupeKey: true }
 
@@ -243,11 +250,13 @@ export function assertBrokerReceiver(r: BrokerReceiver<ReceivedEvent, unknown>):
       throw new TypeError(`${where}: dialect.${key} must be a function`)
   const framing = r.dialect.framing
   if (framing !== undefined && (typeof framing !== 'object' || typeof framing.decode !== 'function'))
-    throw new TypeError(`${where}: dialect.framing is { handshake?, decode, ack? }`)
+    throw new TypeError(`${where}: dialect.framing is { handshake?, decode, ack?, keepalive?, sequence? }`)
   if (r.owner !== undefined && typeof r.owner !== 'function')
     throw new TypeError(`${where}: owner must be a function`)
   if (r.opened !== undefined && typeof r.opened !== 'function')
     throw new TypeError(`${where}: opened must be a function`)
+  if (r.gap !== undefined && typeof r.gap !== 'function')
+    throw new TypeError(`${where}: gap must be a function`)
   if (typeof r.apply !== 'function')
     throw new TypeError(`${where}: apply must be a function`)
 }

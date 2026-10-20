@@ -31,8 +31,7 @@ title: People
   import { payWindows } from '@/resources/PayWindow.mesa'
   import { prefs } from '@/stores/prefs.js'
   import { day, today } from '@/datetime.js'
-  import { session, useTether } from '@frontierjs/sierra/resource'
-  import { page } from '@frontierjs/sierra/router'
+  import { session } from '@frontierjs/sierra/resource'
   import { money } from '../../lib/money.js'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -51,8 +50,8 @@ title: People
     { name: 'actions',   label: '' },
   ]
 
-  const { get: rows, unsubscribe } = useTether(employees.tether)
-  $.onDestroy(unsubscribe)
+  const list = employees.tethered({ directives: { orderBy: 'reference' } })
+  const rows = () => list.rows
 
   $: (session.level, prefs.dense, prefs.currency)
 
@@ -60,24 +59,18 @@ title: People
   let open  = new Map()     // employeeId → the window with no end on it
   let adding = null
 
-  async function loadPay() {
-    try {
-      const list = await payWindows.service.find({ effectiveTo: null }, { limit: 500 })
-      // Counted into a local and ASSIGNED once — `Map.set` on the rendered map
-      // is a mutation, and a mutation is not an assignment.
-      const held = new Map()
-      for (const w of list?.data ?? []) held.set(w.employeeId, w)
-      open = held
-    } catch { open = new Map() }
+  // Every open window, not a page: the server refuses a page above its max,
+  // and an employee past it would read as having no pay.
+  const windows = payWindows.tethered({ state: 'local', where: { effectiveTo: null }, all: true })
+  $: {
+    // Counted into a local and ASSIGNED once — `Map.set` on the rendered map
+    // is a mutation, and a mutation is not an assignment.
+    const held = new Map()
+    for (const w of windows.rows) held.set(w.employeeId, w)
+    open = held
   }
 
-  function load() {
-    employees.load(page.query, { orderBy: 'reference', ...page.directives })
-      .then(loadPay)
-      .catch(e => { error = e.message })
-  }
-  load()
-  $: page.query, page.directives, () => load()
+  const load = () => list.reload()
 
   /** Employed is a question about DATES, never about having a pay window —
    *  phase 2's finding, on screen. Somebody who left keeps their history. */
@@ -103,7 +96,7 @@ title: People
   {/snippet}
 </SectionHeader>
 
-{#if error}<Alert tone="danger" id="p-error">{error}</Alert>{/if}
+{#if error || list.error}<Alert tone="danger" id="p-error">{error ?? list.error.message}</Alert>{/if}
 
 <Table {columns} rows={rows()} striped hover compact={prefs.dense}>
   {#snippet row(e)}

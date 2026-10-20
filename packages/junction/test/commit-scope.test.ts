@@ -29,21 +29,22 @@ import { createClient }              from '../../litestone/src/index.js'
 import { buildService, callService } from '../src/core/service.ts'
 import { announceDataWrites }        from '../src/core/litestone.ts'
 import type { ServiceContext }       from '../src/core/context.ts'
+import { $, setCallDb } from '../src/core/context.ts'
 
 const SCHEMA = `model Post { id Int @id @default(autoincrement())  title String }`
 const mkDb = () => createClient({ db: ':memory:', schema: SCHEMA }) as unknown as Promise<any>
 
 function mkCtx(db: unknown, over: Record<string, unknown> = {}): ServiceContext {
-  return {
+  return setCallDb({
     service: 'posts', method: 'create', id: undefined, data: { title: 't' },
     query: {}, auth: { user: null }, caller: {}, route: {},
-    locals: { db }, app: {}, result: null, type: 'before', ...over,
-  } as unknown as ServiceContext
+    locals: {}, app: {}, result: null, type: 'before', ...over,
+  } as unknown as ServiceContext, db)
 }
 
 const writes = (extra: Record<string, unknown> = {}) => ({
   name: 'posts',
-  async create(c: ServiceContext) { return (c.locals.db as any).post.create({ data: c.data }) },
+  async create(c: ServiceContext) { return ($.db as any).post.create({ data: c.data }) },
   async find() { return [] },
   ...extra,
 })
@@ -77,7 +78,7 @@ describe('a nested call hands its effects and its announcement to the commit', (
       name: 'outer',
       transactional: opts.transactional !== false,
       async create(c: ServiceContext) {
-        await callService(inner, mkCtx(c.locals.db, { app, data: { title: 'inner' } }), undefined, app.events as never)
+        await callService(inner, mkCtx($.db, { app, data: { title: 'inner' } }), undefined, app.events as never)
         if (opts.boom) throw new Error('outer rolls back')
         return { ok: true }
       },
@@ -120,7 +121,7 @@ describe('a nested call hands its effects and its announcement to the commit', (
     const outer = buildService({
       name: 'outer', transactional: true,
       async create(c: ServiceContext) {
-        await callService(inner, mkCtx(c.locals.db, { app, data: { title: 'i' } }), undefined, app.events as never)
+        await callService(inner, mkCtx($.db, { app, data: { title: 'i' } }), undefined, app.events as never)
         return { ok: true }
       },
       async find() { return [] },
@@ -147,7 +148,7 @@ describe('a nested call hands its effects and its announcement to the commit', (
       name: 'middle', transactional: true,
       async create(c: ServiceContext) {
         c.afterCommit(() => { seen.push('middle effect') })
-        await (c.locals.db as any).post.create({ data: { title: 'm' } })
+        await ($.db as any).post.create({ data: { title: 'm' } })
         return { ok: true }
       },
       async find() { return [] },
@@ -156,7 +157,7 @@ describe('a nested call hands its effects and its announcement to the commit', (
     const outer = buildService({
       name: 'outer', transactional: true,
       async create(c: ServiceContext) {
-        await callService(middle, mkCtx(c.locals.db, { app, service: 'middle' }), undefined, app.events as never)
+        await callService(middle, mkCtx($.db, { app, service: 'middle' }), undefined, app.events as never)
         seen.push('outer body done')
         throw new Error('outer rolls back')
       },
@@ -184,7 +185,7 @@ describe('the write tap does not double-announce under a transaction', () => {
     const outer = buildService({
       name: 'outer', transactional,
       async create(c: ServiceContext) {
-        await callService(inner, mkCtx(c.locals.db, { app, data: { title: 'i' } }), undefined, app.events as never)
+        await callService(inner, mkCtx($.db, { app, data: { title: 'i' } }), undefined, app.events as never)
         return { ok: true }
       },
       async find() { return [] },

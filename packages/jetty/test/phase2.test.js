@@ -3,7 +3,7 @@
 // Coverage:
 //   - Adapter contract: validateAdapter accepts/rejects
 //   - Schema cache: load, persist, reconcile w/ mock adapter
-//   - Auth flow: login/logout/hydrate, token storage + broadcast
+//   - Auth flow: signIn/signOut/hydrate, token storage + broadcast
 //   - Message routing: init, service:call (generic + auth special case), errors
 //   - PagePort.request(): RPC pattern, timeout, error response
 
@@ -201,27 +201,27 @@ group('auth flow')
   // Successful login
   {
     const { adapter, storage, broadcasts, auth } = setup({
-      'auth.login': async (creds) => ({ token: 'T1', user: { id: 7, email: creds.email }, expiresAt: null }),
+      'auth.signIn': async (creds) => ({ token: 'T1', user: { id: 7, email: creds.email }, expiresAt: null }),
     })
-    const result = await auth.login({ email: 'a@b' })
-    if (result.user?.id === 7) ok('login returns session')
+    const result = await auth.signIn({ email: 'a@b' })
+    if (result.user?.id === 7) ok('signIn returns session')
     if (storage._map.get('tok') === 'T1') ok('token persisted')
     if (adapter._token() === 'T1') ok('adapter.setToken called w/ new token')
     if (broadcasts.length === 1 && broadcasts[0].type === 'session' && broadcasts[0].payload.authenticated) {
-      ok('session broadcast sent after login')
+      ok('session broadcast sent after signIn')
     } else {
       bad('broadcast wrong', JSON.stringify(broadcasts))
     }
-    if (auth.session.user?.id === 7) ok('session getter reflects login')
+    if (auth.session.user?.id === 7) ok('session getter reflects signIn')
   }
 
   // Login failure (no token in response)
   {
     const { auth } = setup({
-      'auth.login': async () => ({ user: { id: 1 } }), // missing token
+      'auth.signIn': async () => ({ user: { id: 1 } }), // missing token
     })
-    try { await auth.login({}); bad('login should throw on missing token') }
-    catch (_e) { ok('login throws on missing token in response') }
+    try { await auth.signIn({}); bad('signIn should throw on missing token') }
+    catch (_e) { ok('signIn throws on missing token in response') }
   }
 
   // A login that owes a second factor. Nothing is stored, nothing is upgraded,
@@ -229,14 +229,14 @@ group('auth flow')
   // this as a session would show a signed-in toolbar over no session at all.
   {
     const { adapter, storage, broadcasts, auth } = setup({
-      'auth.login':         async () => ({ awaitingCode: true, expiresAt: '2030-01-01T00:00:00.000Z' }),
-      'auth.completeLogin': async ({ code }) => code === '123456'
+      'auth.signIn':         async () => ({ awaitingCode: true, expiresAt: '2030-01-01T00:00:00.000Z' }),
+      'auth.completeSignIn': async ({ code }) => code === '123456'
         ? ({ token: 'T3', user: { id: 3 } })
         : (() => { throw new Error('Invalid code') })(),
     })
 
-    const pending = await auth.login({ email: 'a@b' })
-    if (pending.awaitingCode === '2030-01-01T00:00:00.000Z') ok('login answers the pending attempt, not a session')
+    const pending = await auth.signIn({ email: 'a@b' })
+    if (pending.awaitingCode === '2030-01-01T00:00:00.000Z') ok('signIn answers the pending attempt, not a session')
     if (pending.authenticated === false && pending.user === null) ok('a challenge is not authenticated')
     if (!storage._map.has('tok')) ok('a challenge persists no token')
     if (adapter._token() === null) ok('a challenge does not upgrade the connection')
@@ -247,17 +247,17 @@ group('auth flow')
     }
 
     // A wrong code leaves the attempt exactly where it was: still nothing stored.
-    try { await auth.submitCode('000000'); bad('a wrong code should throw') }
+    try { await auth.completeSignIn('000000'); bad('a wrong code should throw') }
     catch { ok('a wrong code throws') }
     if (!storage._map.has('tok')) ok('a wrong code stores nothing')
 
     // PAIRED: the right one finishes every half login does.
     broadcasts.length = 0
-    const session = await auth.submitCode('123456')
-    if (session.user?.id === 3 && session.authenticated) ok('submitCode returns the session')
-    if (storage._map.get('tok') === 'T3') ok('submitCode persists the token')
-    if (adapter._token() === 'T3') ok('submitCode upgrades the connection')
-    if (broadcasts.length === 1 && broadcasts[0].payload.authenticated) ok('submitCode broadcasts the session')
+    const session = await auth.completeSignIn('123456')
+    if (session.user?.id === 3 && session.authenticated) ok('completeSignIn returns the session')
+    if (storage._map.get('tok') === 'T3') ok('completeSignIn persists the token')
+    if (adapter._token() === 'T3') ok('completeSignIn upgrades the connection')
+    if (broadcasts.length === 1 && broadcasts[0].payload.authenticated) ok('completeSignIn broadcasts the session')
   }
 
   // A SPENT attempt clears the waiting state and says so; a merely wrong code
@@ -266,20 +266,20 @@ group('auth flow')
   {
     let spent = false
     const { broadcasts, auth } = setup({
-      'auth.login':         async () => ({ awaitingCode: true, expiresAt: '2030-01-01T00:00:00.000Z' }),
-      'auth.completeLogin': async () => {
+      'auth.signIn':         async () => ({ awaitingCode: true, expiresAt: '2030-01-01T00:00:00.000Z' }),
+      'auth.completeSignIn': async () => {
         throw Object.assign(new Error('Invalid code'), { data: { retryable: !spent } })
       },
     })
-    await auth.login({})
+    await auth.signIn({})
     broadcasts.length = 0
 
-    try { await auth.submitCode('000000') } catch {}
+    try { await auth.completeSignIn('000000') } catch {}
     if (auth.session.awaitingCode && broadcasts.length === 0) ok('a retryable refusal keeps the attempt waiting, and broadcasts nothing')
     else bad('a retryable refusal moved the waiting state', JSON.stringify({ session: auth.session, broadcasts }))
 
     spent = true
-    try { await auth.submitCode('000000') } catch {}
+    try { await auth.completeSignIn('000000') } catch {}
     if (!auth.session.awaitingCode && broadcasts.length === 1 && !broadcasts[0].payload.awaitingCode) {
       ok('a spent attempt clears the waiting state and broadcasts it')
     } else {
@@ -287,16 +287,16 @@ group('auth flow')
     }
   }
 
-  // The ticket never reaches a page or a port: `submitCode` takes a code and
+  // The ticket never reaches a page or a port: `completeSignIn` takes a code and
   // nothing else, which is what makes cookie mode work unchanged.
   {
     let seen = null
     const { auth } = setup({
-      'auth.login':         async () => ({ awaitingCode: true, expiresAt: null }),
-      'auth.completeLogin': async (args) => { seen = args; return { token: 'T4', user: { id: 4 } } },
+      'auth.signIn':         async () => ({ awaitingCode: true, expiresAt: null }),
+      'auth.completeSignIn': async (args) => { seen = args; return { token: 'T4', user: { id: 4 } } },
     })
-    await auth.login({})
-    await auth.submitCode('654321')
+    await auth.signIn({})
+    await auth.completeSignIn('654321')
     if (seen && Object.keys(seen).join() === 'code') ok('the second step sends the code alone')
     else bad('the second step sent more than a code', JSON.stringify(seen))
   }
@@ -304,16 +304,16 @@ group('auth flow')
   // Logout clears
   {
     const { adapter, storage, broadcasts, auth } = setup({
-      'auth.login':  async () => ({ token: 'T2', user: { id: 1 } }),
-      'auth.logout': async () => ({ ok: true }),
+      'auth.signIn':  async () => ({ token: 'T2', user: { id: 1 } }),
+      'auth.signOut': async () => ({ ok: true }),
     })
-    await auth.login({})
+    await auth.signIn({})
     broadcasts.length = 0
-    await auth.logout()
-    if (!storage._map.has('tok')) ok('logout clears stored token')
-    if (adapter._token() === null) ok('logout clears adapter token')
-    if (auth.session.user === null && auth.session.authenticated === false) ok('logout clears session')
-    if (broadcasts.length === 1 && !broadcasts[0].payload.authenticated) ok('logout broadcasts session w/ authenticated:false')
+    await auth.signOut()
+    if (!storage._map.has('tok')) ok('signOut clears stored token')
+    if (adapter._token() === null) ok('signOut clears adapter token')
+    if (auth.session.user === null && auth.session.authenticated === false) ok('signOut clears session')
+    if (broadcasts.length === 1 && !broadcasts[0].payload.authenticated) ok('signOut broadcasts session w/ authenticated:false')
   }
 
   // Hydrate w/ valid stored token
@@ -438,7 +438,7 @@ group('message routing')
   // Auth login special-cased
   {
     const adapter = mockAdapter({ services: {
-      'auth.login': async (creds) => ({ token: 'AT', user: { email: creds.email }, expiresAt: null }),
+      'auth.signIn': async (creds) => ({ token: 'AT', user: { email: creds.email }, expiresAt: null }),
     }})
     const registry = makeHarborRegistry()
     const { makePagesApi } = await im('runtime/harbor-registry.js')
@@ -454,19 +454,19 @@ group('message routing')
 
     port._emitMessage({
       type: 'service:call',
-      payload: { service: 'auth', method: 'login', args: { email: 'x@y' }, _requestId: 'r4' },
+      payload: { service: 'auth', method: 'signIn', args: { email: 'x@y' }, _requestId: 'r4' },
     })
     await new Promise((r) => setTimeout(r, 10))
 
     const response = port._messages().find((m) => m.type === 'response:r4')
-    if (response?.payload?.value?.user?.email === 'x@y') ok('auth.login routes via authFlow')
-    else bad('auth.login response wrong', JSON.stringify(response))
+    if (response?.payload?.value?.user?.email === 'x@y') ok('auth.signIn routes via authFlow')
+    else bad('auth.signIn response wrong', JSON.stringify(response))
 
-    if (storage._map.get('tk') === 'AT') ok('auth.login persists token via authFlow')
+    if (storage._map.get('tk') === 'AT') ok('auth.signIn persists token via authFlow')
 
     // Should also see a session broadcast on the same port (since registry has it)
     const sessionMsg = port._messages().filter((m) => m.type === 'session' && m.payload?.authenticated)
-    if (sessionMsg.length >= 1) ok('auth.login broadcasts session')
+    if (sessionMsg.length >= 1) ok('auth.signIn broadcasts session')
     else bad('expected session broadcast')
   }
 }
@@ -641,17 +641,17 @@ group('auth flow — which sign-in spelling')
     call: async (service, method) => { calls.push(`call:${service}.${method}`); return { token: 'X', user: {} } },
     setToken: async () => {},
     auth: {
-      login:  async () => { calls.push('auth.login');  return { token: 'T', user: { id: 1 } } },
-      logout: async () => { calls.push('auth.logout'); return { ok: true } },
+      signIn:  async () => { calls.push('auth.signIn');  return { token: 'T', user: { id: 1 } } },
+      signOut: async () => { calls.push('auth.signOut'); return { ok: true } },
       verify: async () => { calls.push('auth.verify'); return { user: { id: 1 } } },
     },
   }
   const storage = mockStorage()
   const flow = makeAuthFlow({ adapter, storage, pages: { broadcast: () => true }, tokenKey: 'tk' })
 
-  await flow.login({ email: 'a@b', password: 'p' })
-  await flow.logout()
-  if (calls.join(',') === 'auth.login,auth.logout') ok('an adapter declaring auth owns sign-in')
+  await flow.signIn({ email: 'a@b', password: 'p' })
+  await flow.signOut()
+  if (calls.join(',') === 'auth.signIn,auth.signOut') ok('an adapter declaring auth owns sign-in')
   else bad('auth block not preferred', calls.join(','))
 
   // …and the placeholder, which has no block, keeps the pseudo-service.
@@ -659,9 +659,9 @@ group('auth flow — which sign-in spelling')
   const legacyCalls = []
   legacy.call = async (service, method) => { legacyCalls.push(`${service}.${method}`); return { token: 'X', user: {} } }
   const flow2 = makeAuthFlow({ adapter: legacy, storage: mockStorage(), pages: { broadcast: () => true }, tokenKey: 'tk' })
-  await flow2.login({ email: 'a@b' })
-  await flow2.logout()
-  if (legacyCalls.join(',') === 'auth.login,auth.logout') ok('an adapter without one falls back to call(\'auth\', …)')
+  await flow2.signIn({ email: 'a@b' })
+  await flow2.signOut()
+  if (legacyCalls.join(',') === 'auth.signIn,auth.signOut') ok('an adapter without one falls back to call(\'auth\', …)')
   else bad('fallback broken', legacyCalls.join(','))
 }
 

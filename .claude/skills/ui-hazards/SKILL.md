@@ -39,9 +39,9 @@ Detail: `references/resources-and-forms.md`
 - **`@system` is the column an application writes and its caller does not**
 - **`<Form {resource} />` with no children IS the form**
 - **`find()` answers the list envelope; `invoke()` answers exactly what the method returned** (`FJS-D937`)
-- **`list()` is a page's live list; a route that calls `service.find` itself owns keeping it current.**
+- **`tethered()` is the one door a screen lists rows through; a route that calls `service.find` itself owns keeping it current.**
 - **A resource's `<script module>` holds what the UI says about its model, so an enum's tone map lives there once.**
-- **`list.more()` catches its error into `list.error`, so a loop on `hasMore` alone spins on a failing call.**
+- **`tethered().more()` catches its error into `.error`, so a loop on `hasMore` alone spins on a failing call.**
 - **A raw route is reached with `client.fetch(path)`, which carries the client's credentials.**
 
 ## Mesa

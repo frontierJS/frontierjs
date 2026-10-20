@@ -14,12 +14,15 @@ import { describe, test, expect } from 'bun:test'
 
 import { createClient } from '../../litestone/src/index.js'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
-import { createApp, createService, bearerClaim, BEARER, bearerOf, header } from '../index.ts'
-import type { PrincipalResolver, ResolvedBearer } from '../index.ts'
+import { createApp, createService } from '../index.ts'
+import { bearerClaim, BEARER, bearerOf, header } from '../src/core/bearer.ts'
+import type { PrincipalResolver } from '../index.ts'
+import type { ResolvedBearer } from '../src/core/bearer.ts'
 import { enterRequest } from '../src/core/context.ts'
 import { declaredCallHeaders, describePrincipalRealm, PRINCIPAL_RESOLVER } from '../src/core/litestone.ts'
 import { renderPrincipalSnapshot } from '../tools/principal-snapshot.ts'
 import type { ServiceContext } from '../src/core/context.ts'
+import { $ } from '../index.ts'
 
 const KEY = 'test-app-secret'
 
@@ -83,7 +86,7 @@ function appWith(db: unknown, principal: PrincipalResolver | PrincipalResolver[]
       seen.first  = ctx.locals[BEARER] as ResolvedBearer
       seen.widget = bearerOf(ctx, 'widgetGrant')
       seen.survey = bearerOf(ctx, 'surveyGrant')
-      const db = ctx.locals.db as any
+      const db = $.db as any
       return [{ messages: (await db.message.findMany({})).length, answers: (await db.answer.findMany({})).length }]
     },
   }))

@@ -60,7 +60,12 @@ title: Subscription
   // the prices agree, about a subscription whose price has moved (`FJS-632`).
   let versionAnswered = false
   let planAnswered    = false
-  let bills    = []
+  // Every invoice this subscription has been sent, not a page. Nothing joins
+  // the invoices channel (`core/channels.ts`), so a change made here reloads it.
+  const billList = invoices.tethered({
+    state: 'local', where: { subscriptionId: Number(page.params.id) }, all: true, directives: { orderBy: '-issuedAt' },
+  })
+  $: bills = billList.rows
   let options  = []       // every open price, as a Select
   let error    = null
   let busy     = false
@@ -150,9 +155,6 @@ title: Subscription
     // pending state above never clears.
     watchPlan(version?.planId ?? null)
 
-    const list = await invoices.service.find({ subscriptionId: sub.id }, { orderBy: '-issuedAt', limit: 50 })
-    bills = list?.data ?? []
-
     // What may be moved TO: the open window of every plan still on sale. A
     // closed window is a price nobody may be sold at any more, which is what
     // effective dating means — so it is not in the list, and the version the
@@ -237,10 +239,10 @@ title: Subscription
       toasts.success(`Changed — ${doc}`)
       toVersion = null
       // The row itself moved (plan version, quantity) and so did what hangs off
-      // it, so both halves are re-read: the record view for the row, and
-      // `loadRest` for the version, the plan and the invoices this change has
+      // it, so every half is re-read: the record view for the row, `loadRest`
+      // for the version and the plan, and the invoices, which this change has
       // probably just added one to.
-      await Promise.all([row.refresh(), loadRest()])
+      await Promise.all([row.refresh(), loadRest(), billList.reload()])
     } catch (err) {
       const mapped = subscriptions.fieldErrors(err)
       fields = mapped.fields ?? {}

@@ -28,6 +28,6 @@
   // so on a device that order is the order the tables fill.
   export const productVariants = createResource('product-variants', {
     model:        'ProductVariant',
-    offlineQuery: { directives: { limit: 200, orderBy: '-id' } },
+    offlineQuery: { directives: { limit: 100, orderBy: '-id' } },
   })
 </script>

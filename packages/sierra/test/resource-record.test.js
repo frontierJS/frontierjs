@@ -61,7 +61,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => client,
 }))
 
-const { createResource } = await import('../src/resource/resource.js')
+const { createResource, tetherOf } = await import('../src/resource/resource.js')
 const { registerSchemas } = await import('../src/resource/schema-registry.js')
 const { parse } = await import('../../litestone/src/core/parser.js')
 const { generateJsonSchema } = await import('../../litestone/src/jsonschema.js')
@@ -128,7 +128,7 @@ describe('resource.record(id)', () => {
 
   test('a list and a record view of one row are one row', async () => {
     const orders = createResource('orders', { model: 'Order' })
-    await orders.load()
+    await tetherOf(orders).load()
     const before = calls.length
     const row = orders.record(1)
 
@@ -137,7 +137,7 @@ describe('resource.record(id)', () => {
     expect(calls.length).toBe(before)
 
     client.service('orders')._receive('patched', { id: 1, status: 'paid', version: 4 })
-    expect(orders.tether.get()[0].status).toBe('paid')
+    expect(tetherOf(orders).tether.get()[0].status).toBe('paid')
     expect(row.get().status).toBe('paid')
   })
 
@@ -151,16 +151,16 @@ describe('resource.record(id)', () => {
 
   test('an optimistic patch shows before it lands and rolls back when refused', async () => {
     const orders = createResource('orders', { model: 'Order' })
-    await orders.load()
+    await tetherOf(orders).load()
 
     let refuse
     const gate = new Promise((_, rej) => { refuse = rej })
     const done = orders.mutate(1, { status: 'paid' }, () => gate)
 
-    expect(orders.tether.get()[0].status).toBe('paid')
+    expect(tetherOf(orders).tether.get()[0].status).toBe('paid')
     refuse(new Error('403'))
     await expect(done).rejects.toThrow('403')
-    expect(orders.tether.get()[0].status).toBe('pending')
+    expect(tetherOf(orders).tether.get()[0].status).toBe('pending')
   })
 
   test('the optimistic value is not committed as the version this screen read', async () => {
@@ -173,7 +173,7 @@ describe('resource.record(id)', () => {
     let release
     const gate = new Promise(res => { release = res })
     const done = orders.mutate(1, { status: 'paid', version: 99 }, () => gate)
-    expect(orders.tether.get()[0]?.status ?? orders.record(1).get().status).toBe('paid')
+    expect(tetherOf(orders).tether.get()[0]?.status ?? orders.record(1).get().status).toBe('paid')
     expect(orders.version(1)).toBe(3)
 
     release({ id: 1, status: 'paid', version: 4 })
@@ -192,13 +192,13 @@ describe('resource.record(id)', () => {
   // while the socket is down all answer 200 and announce nothing back (`FJS-1317`).
   test('a save moves the writer\'s own row with no broadcast coming back', async () => {
     const orders = createResource('orders', { model: 'Order' })
-    await orders.load()
+    await tetherOf(orders).load()
     const row = orders.record(1)
     await row.ready
 
     await orders.save({ id: 1, status: 'paid' }, { mode: 'patch' })
 
-    expect(orders.tether.get()[0]).toEqual({ id: 1, status: 'paid', version: 4 })
+    expect(tetherOf(orders).tether.get()[0]).toEqual({ id: 1, status: 'paid', version: 4 })
     expect(row.get()).toEqual({ id: 1, status: 'paid', version: 4 })
     expect(orders.version(1)).toBe(4)
   })
@@ -206,18 +206,18 @@ describe('resource.record(id)', () => {
   test('an answer older than a push already held does not roll the row back', async () => {
     // Another writer's broadcast can overtake this call's answer on the wire.
     const orders = createResource('orders', { model: 'Order' })
-    await orders.load()
+    await tetherOf(orders).load()
     const done = orders.save({ id: 1, status: 'paid' }, { mode: 'patch' })
     client.service('orders')._receive('patched', { id: 1, status: 'shipped', version: 5 })
     await done
-    expect(orders.tether.get()[0]).toEqual({ id: 1, status: 'shipped', version: 5 })
+    expect(tetherOf(orders).tether.get()[0]).toEqual({ id: 1, status: 'shipped', version: 5 })
   })
 
   test('an answer with no id writes no row', async () => {
     const orders = createResource('orders', { model: 'Order' })
-    await orders.load()
+    await tetherOf(orders).load()
     await orders.save({ status: 'new' })   // the mock answers {}
-    expect(orders.tether.get()).toEqual([{ id: 1, status: 'pending', version: 3 }])
+    expect(tetherOf(orders).tether.get()).toEqual([{ id: 1, status: 'pending', version: 3 }])
   })
 
   test('a resource with no client answers a view that is simply empty', async () => {

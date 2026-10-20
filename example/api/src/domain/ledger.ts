@@ -37,7 +37,7 @@
 // ─── Why it takes a client ────────────────────────────────────────────────
 //
 // `inventory.ts`'s reason, unchanged: under `transactional:` Junction reassigns
-// `ctx.locals.db` for the length of the method, so a write through anything
+// `$.db` for the length of the method, so a write through anything
 // else is a write outside the transaction that was supposed to contain it. A
 // sale posts its journal inside the checkout transaction or the books and the
 // order disagree.

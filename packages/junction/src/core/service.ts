@@ -5,7 +5,7 @@
 // methods, over buildBase()'s CRUD. Called by the transport.
 
 import type { ServiceContext, ServiceMethod } from './context.ts'
-import { CRUD_METHODS, requestMeta, reenterAs, enterCall, currentCall, runInServiceCall, settleCoverage, withCallEffects, commitScope, runInCommitScope, runAfterCommitEffect } from './context.ts'
+import { CRUD_METHODS, requestMeta, reenterAs, enterCall, currentCall, runInServiceCall, settleCoverage, withCallEffects, commitScope, runInCommitScope, runAfterCommitEffect, callSlots, callDb, setCallDb } from './context.ts'
 import type { CommitScope, CallCoverage, OutboxRelay } from './context.ts'
 import { claimIdempotency } from './idempotency.ts'
 import { pageBounds, type PageBounds } from './directives.ts'
@@ -804,9 +804,11 @@ async function _callService(
     pipelineError = err
   } finally {
     // Run per-request cleanup callbacks (e.g. litestone $tapQuery stop)
-    if (ctx._cleanups?.length) {
-      for (const fn of ctx._cleanups) { try { fn() } catch {} }
-      ctx._cleanups = []
+    const held = callSlots(ctx)
+    if (held.cleanups.length) {
+      const cleanups = held.cleanups
+      held.cleanups = []
+      for (const fn of cleanups) { try { fn() } catch {} }
     }
   }
 
@@ -1006,9 +1008,10 @@ async function _callService(
   // told the call failed must not also get the email — where a SUBSCRIBER must
   // still be told the row moved, because it did. Two different questions about
   // one throw, and they take different answers.
-  if (!ctx.error && !pipelineError && ctx._afterCommit?.length) {
-    const queued = ctx._afterCommit
-    ctx._afterCommit = []
+  const slots = callSlots(ctx)
+  if (!ctx.error && !pipelineError && slots.afterCommit.length) {
+    const queued = slots.afterCommit
+    slots.afterCommit = []
     // Under a transaction these belong to the commit, not to this call. Handed
     // over rather than run: a nested call's effect used to fire while the outer
     // transaction was still open, and on the rollback path it fired for a row
@@ -1045,14 +1048,14 @@ async function _callService(
   // only buys the latency between committing an effect and queueing it.
   // Deliberately NOT awaited — the caller is waiting on a response, the work
   // is already durable, and the sweep is the backstop that makes that safe.
-  if (!ctx.error && !pipelineError && ctx._outbox?.length) {
-    ctx._outbox = []
+  if (!ctx.error && !pipelineError && slots.outbox.length) {
+    slots.outbox = []
     // Named DATABASE, not a walk. The row was written through this call's own
     // client, so under `strategy database` the kick is one query against one
     // tenant — where an unnamed pass resolves the whole registry to find the
     // file it already had in hand (`FJS-778`).
     void ((ctx.app && 'outbox' in ctx.app ? ctx.app.outbox : undefined) as OutboxRelay | undefined)?.deliver({
-      db:     ctx.locals?.db,
+      db:     callDb(ctx),
       tenant: ctx.locals?.tenantId ?? null,
     }).catch((err: unknown) => {
       // A failed pass is not a failed call: the row is committed and owed, and
@@ -1139,7 +1142,7 @@ export interface BaseServiceOptions {
   /**
    * Getter returning the db client. OPTIONAL — when omitted, the base
    * resolves the client at call time, in order:
-   *   1. ctx.locals.db  — request-scoped client (withLitestoneDb)
+   *   1. $.db           — request-scoped client (withLitestoneDb)
    *   2. ctx.app.db     — the app's database
    * so the minimal service file is just createService({ model: 'posts' }).
    */
@@ -1384,7 +1387,7 @@ export function customMethodNames(svc: object): string[] {
 // Two orderings carry it, and both already hold:
 //
 //   · `withLitestoneDb` is an APP-level around hook and app hooks merge first,
-//     so it runs outside this one — `ctx.locals.db` is already the caller-scoped
+//     so it runs outside this one — `$.db` is already the caller-scoped
 //     client, and `$setAuth(u).$transaction(…)` passes its own proxy through, so
 //     row policies and auth() survive into the transaction.
 //   · the announcement happens in callService AFTER runPipeline, so the write
@@ -1449,16 +1452,15 @@ function transactionScopeHook(serviceName: string, decl: TransactionalDeclaratio
     if (CRUD_READ_METHODS.has(method)) return next()
     if (Array.isArray(decl) && !decl.includes(method)) return next()
 
-    type TxClient = NonNullable<typeof ctx.locals.db>
-    const db = ctx.locals.db as { $transaction?: (fn: (tx: TxClient) => Promise<void>) => Promise<void> }
+    const db = callDb(ctx) as { $transaction?: (fn: (tx: unknown) => Promise<void>) => Promise<void> } | undefined
     if (typeof db?.$transaction !== 'function')
       throw new Error(
-        `Service '${serviceName}' declares transactional: but ctx.locals.db has no $transaction. ` +
+        `Service '${serviceName}' declares transactional: but its client ($.db) has no $transaction. ` +
         `The scope comes from the Litestone client — build the app with createApp({ db }), or drop the declaration. ` +
         `Silently running without one would report a transaction nobody opened.`
       )
     const runTransaction = db.$transaction.bind(db)
-    const outer = ctx.locals.db
+    const outer = callDb(ctx)
     try {
       // The scope is opened OUTSIDE `$transaction` so a throw inside it still
       // finds one to discard — and reused where one is already open, which is
@@ -1472,7 +1474,7 @@ function transactionScopeHook(serviceName: string, decl: TransactionalDeclaratio
           // recipe: the method and every later hook must WRITE through the tx
           // client. Omit this by hand and the transaction is empty, the writes
           // commit outside it, and every test still passes.
-          ctx.locals.db = tx
+          setCallDb(ctx, tx)
           await next()
           // A bulk write catches each row's failure to report it, so the method
           // returns normally and the rows that succeeded would commit beside the
@@ -1509,14 +1511,14 @@ function transactionScopeHook(serviceName: string, decl: TransactionalDeclaratio
       })
     } finally {
       // Put the request's own client back. It was left assigned, so anything
-      // reading `ctx.locals.db` after the transaction settled — an
+      // reading `$.db` after the transaction settled — an
       // `afterCommit` effect, a timer a hook scheduled — held a client whose
       // transaction was closed, and it still accepted writes (`FJS-687`).
       //
       // RESTORED rather than nulled: an effect running after the commit
       // legitimately wants a working client, and that is exactly the one it
       // should get — the request's, outside the transaction that has finished.
-      ctx.locals.db = outer
+      setCallDb(ctx, outer)
     }
   })
 }
@@ -2140,7 +2142,7 @@ export function buildBase(
   //
   //   • allowBulk defaults to FALSE here (explicit opt-in for bulk writes),
   //     while createLitestoneBase's own default is true.
-  //   • The db() thunk is honored per call: ctx.locals.db is seeded from
+  //   • The db() thunk is honored per call: `$.db` is seeded from
   //     it unless a request-scoped client is already there (withLitestoneDb
   //     always wins).
 
@@ -2157,9 +2159,9 @@ export function buildBase(
 
   type Method = (ctx: ServiceContext) => Promise<unknown>
   const withDb = (fn: Method): Method => (ctx) => {
-    if (!ctx.locals.db) {
+    if (!callDb(ctx)) {
       // Resolution order: explicit db() thunk → the app's database.
-      // (ctx.locals.db already set — e.g. by withLitestoneDb — always wins.)
+      // (A client already set — e.g. by withLitestoneDb — always wins.)
       const source = db ? db() : (ctx.app as { db?: unknown } | undefined)?.db
       if (!source) {
         throw new Error(
@@ -2185,7 +2187,7 @@ export function buildBase(
         )
       }
 
-      ctx.locals.db = adaptPlainClient(source) as typeof ctx.locals.db
+      setCallDb(ctx, adaptPlainClient(source))
     }
     return fn(ctx)
   }
@@ -2529,7 +2531,7 @@ export interface ServiceDefinition {
    *
    * So an `after` hook that throws rolls the write back, instead of leaving a
    * committed row behind a rejected response. Requires a Litestone client on
-   * `ctx.locals.db`; a service declaring it without one throws by name rather
+   * `$.db`; a service declaring it without one throws by name rather
    * than quietly doing nothing.
    *
    * **It does not make side effects atomic.** An email an earlier `after` hook
@@ -3205,7 +3207,7 @@ export function serviceAccessor(service: { name: string; model?: string | null }
  * re-read by).
  */
 function answeredKey(ctx: ServiceContext, accessor: string): string {
-  const db = ctx.locals?.db as { $primaryKey?: (a: string) => string[] } | undefined
+  const db = callDb(ctx) as { $primaryKey?: (a: string) => string[] } | undefined
   if (typeof db?.$primaryKey !== 'function') return 'id'
   for (const candidate of accessorCandidates(accessor)) {
     try {

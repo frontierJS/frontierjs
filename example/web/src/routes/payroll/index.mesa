@@ -26,8 +26,7 @@ title: Payroll
   import { payRates } from '@/resources/PayRate.mesa'
   import { prefs } from '@/stores/prefs.js'
   import { day, span } from '@/datetime.js'
-  import { session, useTether } from '@frontierjs/sierra/resource'
-  import { page } from '@frontierjs/sierra/router'
+  import { session } from '@frontierjs/sierra/resource'
   import { money } from '../../lib/money.js'
 
   import Alert               from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -59,31 +58,23 @@ title: Payroll
   // rather than vanishing.
   const TONE = { draft: 'muted', calculated: 'info', approved: 'warning', paid: 'success' }
 
-  const { get: rows, unsubscribe } = useTether(payRuns.tether)
-  $.onDestroy(unsubscribe)
+  const list = payRuns.tethered({ directives: { orderBy: '-periodEnd' } })
+  const rows = () => list.rows
 
   $: (session.level, prefs.dense, prefs.currency)
 
   let error  = null
   let busy   = null
   let adding = null
-  let bands  = []
 
-  function load() {
-    payRuns.load(page.query, { orderBy: '-periodEnd', ...page.directives })
-      .catch(e => { error = e.message })
-  }
-  load()
-  $: page.query, page.directives, () => load()
+  const load = () => list.reload()
 
-  async function loadBands() {
-    try {
-      const list = await payRates.service.find(
-        { effectiveTo: null }, { orderBy: 'kind', limit: 50 })
-      bands = list?.data ?? []
-    } catch { bands = [] }
-  }
-  loadBands()
+  // The bands in force, every one of them. A refused read leaves the table
+  // empty rather than a banner over the runs above it.
+  const bandList = payRates.tethered({
+    state: 'local', where: { effectiveTo: null }, all: true, directives: { orderBy: 'kind' },
+  })
+  $: bands = bandList.rows
 
   /** What this caller may ask for on this row, off the schema. `calculate` and
    *  `pay` are `@system` and are never in this list. */
@@ -140,7 +131,7 @@ title: Payroll
   {/snippet}
 </SectionHeader>
 
-{#if error}<Alert tone="danger" id="r-error">{error}</Alert>{/if}
+{#if error || list.error}<Alert tone="danger" id="r-error">{error ?? list.error.message}</Alert>{/if}
 
 <Table {columns} rows={rows()} striped hover compact={prefs.dense}>
   {#snippet row(r)}

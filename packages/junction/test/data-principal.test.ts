@@ -22,6 +22,7 @@ import { createClient } from '../../litestone/src/index.js'
 import { toDataPrincipal, withLitestoneDb } from '../src/core/litestone.ts'
 import type { ServiceContext } from '../src/core/context.ts'
 import { auditDatabase } from './audit-trail-model.ts'
+import { callDb } from '../src/core/context.ts'
 
 describe('toDataPrincipal', () => {
 
@@ -89,7 +90,7 @@ describe('withLitestoneDb scopes with the translated principal', () => {
 
     expect(seen).toHaveLength(1)
     expect((seen[0] as { id?: string }).id).toBe('u-7')
-    expect(ctx.locals.db).toBeDefined()
+    expect(callDb(ctx)).toBeDefined()
   })
 
   it('an anonymous caller still gets the unscoped client', async () => {
@@ -99,9 +100,7 @@ describe('withLitestoneDb scopes with the translated principal', () => {
     await withLitestoneDb(client)(ctx, async () => {})
 
     expect(seen).toHaveLength(0)
-    // Cast: ctx.locals.db is typed as a LitestoneClient and this spy is the
-    // minimal shape withLitestoneDb actually touches.
-    expect(ctx.locals.db as unknown).toBe(client as unknown)
+    expect(callDb(ctx) as unknown).toBe(client as unknown)
   })
 })
 

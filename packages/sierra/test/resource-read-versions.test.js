@@ -37,7 +37,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
     }),
     // Junction's real Tether, bound to the real registry, so a list HOLDS the
     // entries of the rows it shows — which is what eviction asks about.
-    resource: (_name, idField, { model }) => {
+    resource: (_name, { idField, model }) => {
       const tether = new Tether()
       tether.bind({ registry, model, idField })
       return {
@@ -63,7 +63,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
   }),
 }))
 
-const { createResource } = await import('../src/resource/resource.js')
+const { createResource, tetherOf } = await import('../src/resource/resource.js')
 const { registerSchemas } = await import('../src/resource/schema-registry.js')
 const { parse } = await import('../../litestone/src/core/parser.js')
 const { generateJsonSchema } = await import('../../litestone/src/jsonschema.js')
@@ -92,7 +92,7 @@ const lastPatch = () => calls.filter(c => c[0] === 'patch').at(-1)?.[2]
 describe('a row a view holds is never forgotten', () => {
   test('a list of 300 rows keeps the version of its FIRST row', async () => {
     const r = createResource('issues', { model: 'Issue' })
-    await r.load()
+    await tetherOf(r).load()
     expect(r.version(1)).toBe(3)
     await r.service.patch(1, { title: 'dragged' })
     expect(lastPatch()).toEqual({ title: 'dragged', version: 3 })
@@ -109,9 +109,9 @@ describe('a row a view holds is never forgotten', () => {
 describe('the first sight of a row in a held view is its read', () => {
   test('a row that arrived by push is patched with the version the screen showed', async () => {
     const r = createResource('issues', { model: 'Issue' })
-    await r.load()
+    await tetherOf(r).load()
     rows.set(301, { id: 301, title: 'filed by Léa', version: 1 })
-    r.tether.upsert(rows.get(301))
+    tetherOf(r).tether.upsert(rows.get(301))
     expect(r.version(301)).toBe(1)
     await r.service.patch(301, { title: 'dragged by Ana' })
     expect(lastPatch()).toEqual({ title: 'dragged by Ana', version: 1 })
@@ -119,8 +119,8 @@ describe('the first sight of a row in a held view is its read', () => {
 
   test('a push after the read still does not move it', async () => {
     const r = createResource('issues', { model: 'Issue' })
-    await r.load()
-    r.tether.upsert({ id: 1, title: 'edited elsewhere', version: 4 })
+    await tetherOf(r).load()
+    tetherOf(r).tether.upsert({ id: 1, title: 'edited elsewhere', version: 4 })
     expect(r.version(1)).toBe(3)
   })
 

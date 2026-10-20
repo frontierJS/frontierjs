@@ -11,32 +11,18 @@
   // inches wide should not — this is the catch-up glance, and the screen is the
   // narrative.
   import { audit } from '../../resources/AuditEvent.mesa'
-  import { onWrite } from './live.js'
   import { clock } from '../../datetime.js'
   import Pill from '@frontierjs/ui/components/display/Pill.mesa'
 
-  let rows    = []
-  let error   = null
-  let denied  = false
-  let loading = true
 
   const TONE = { create: 'success', remove: 'danger', drain: 'warning', cancel: 'muted' }
   const verbOf = (action) => String(action).split('.')[1] ?? action
 
-  async function load() {
-    error = null; denied = false
-    try {
-      rows = (await audit.service.find({}, { limit: 5 })).data
-    } catch (e) {
-      if (e.status === 403 || e.status === 404) denied = true
-      else error = e.message
-    } finally {
-      loading = false
-    }
-  }
-
-  load()
-  $.onDestroy(onWrite(audit.service, load))
+  const list = audit.tethered({ state: 'local', directives: { limit: 5 } })
+  $: rows    = list.rows
+  $: loading = list.loading && !list.rows.length
+  $: denied  = list.error?.status === 403 || list.error?.status === 404
+  $: error   = denied ? null : (list.error?.message ?? null)
 
 </script>
 

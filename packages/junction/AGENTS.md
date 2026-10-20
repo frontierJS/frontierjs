@@ -287,7 +287,8 @@ policy reads as `auth().x`, and every name must be declared in `db/schema.lite`
 | something else | `async (ctx, user) => ({ … })` — returns `{}` for no standing |
 
 ```ts
-import { createApp, bearerClaim, cookie } from '@frontierjs/junction'
+import { createApp } from '@frontierjs/junction'
+import { bearerClaim, cookie } from '@frontierjs/junction/bearer'
 
 createApp({ auth, db, principal: bearerClaim({
   from:    cookie('portal'),                 // or header('x-cart-token'), or authorization()
@@ -321,7 +322,7 @@ under the resolver's purpose, that token is set as the httpOnly
 the page knows what the link opens. The emailed link is dead from that moment.
 **A grant that spends a budget is spent by the open** (`FJS-D1132`): the model
 declares `accessCount Int @default(0)` and `maxAccessCount Int?`, and the
-service method that IS the open calls `await send.spend(ctx.locals.db, ctx)`
+service method that IS the open calls `await send.spend($.db, ctx)`
 once. The resolver stays a read, so a later fetch riding the same token does not
 spend. The increment is one conditional UPDATE, so the (max+1)th open under
 concurrency is the 401 a dead link gets; a null maximum counts and refuses

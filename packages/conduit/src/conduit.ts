@@ -25,6 +25,7 @@ import type {
   TargetDescriptor,
   BrokerHandler,
   BrokerFraming,
+  BrokerGap,
 } from './types.ts'
 import { ConduitStreamError, CREDENTIAL_REFUSALS } from './types.ts'
 import type { BaseTransport } from './transports/base.ts'
@@ -785,7 +786,7 @@ export function createConduit(
     return store.list()
   }
 
-  async function subscribe(target: string, handler: BrokerHandler, framing?: BrokerFraming<any>, opened?: (state: unknown) => void | Promise<void>): Promise<void> {
+  async function subscribe(target: string, handler: BrokerHandler, framing?: BrokerFraming<any>, opened?: (state: unknown) => void | Promise<void>, gap?: (g: BrokerGap) => void | Promise<void>): Promise<void> {
     if (destroyed) throw new Error('[conduit] subscribe() on a destroyed conduit')
     const transport = await router.resolve(target)
     if (!(transport instanceof BrokerTransport))
@@ -800,7 +801,7 @@ export function createConduit(
     if (transport.gatesReadiness)
       opts.registerReadiness?.(`conduit:${target}`, () => subscriptions.get(target)?.health().connected ?? true)
     try {
-      await transport.subscribe(handler, () => withTrace({ target, method: 'CONNECT' }, transport).headers, framing, opened)
+      await transport.subscribe(handler, () => withTrace({ target, method: 'CONNECT' }, transport).headers, framing, opened, gap)
     } catch (err) {
       subscriptions.delete(target)
       throw err
@@ -844,7 +845,7 @@ export function createConduit(
         // Thrown so the transport withholds the ack: the one signal a broker
         // that redelivers can act on.
         if (received.result === 'failed') throw new Error(received.reason)
-      }, receiver.dialect.framing, receiver.opened && (connection => receiver.opened!({ connection })))
+      }, receiver.dialect.framing, receiver.opened && (connection => receiver.opened!({ connection })), receiver.gap && (g => receiver.gap!(g)))
     } catch (err) {
       frameReceivers.delete(target)
       throw err

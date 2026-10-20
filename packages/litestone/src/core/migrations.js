@@ -20,7 +20,9 @@ import { openDatabase } from './engine.js'
 import {
   introspect, buildPristineForDatabase, diffSchemas,
   generateMigrationSQL, summarizeDiff, checksum, splitStatements, normalizeTableDdl, normalizeDdl,
+  rescaleUpdate,
 } from './migrate.js'
+import { quoteIdent } from './query.js'
 import { resolveOperations, checkAgainstHistory, renameStatement, describeOperation, guessRenames } from './operations.js'
 import { generateDDLForDatabase, schemaForDatabase, detectM2MPairs, generateJoinTableDDL, planEdgeStorage, generateEdgeSideTableDDL } from './ddl.js'
 
@@ -1139,6 +1141,25 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
                   `these and cannot restate them. Move each into the schema, drop it by hand, or ` +
                   `write the migration as a file and recreate it there`,
         }
+        continue
+      }
+
+      // A rescale over rows: the rebuild would copy every stored integer as it
+      // is, so each would mean 10^k times more or less (`FJS-2140`). Here the
+      // table can be read, so an empty one goes on to rebuild and a full one
+      // is refused naming the statement. The statement is written in a file
+      // migration above the rebuild; run alone, the rows are still there and
+      // this refuses again.
+      const rescaled = diffResult.tableDiffs.filter(d => d.rescales?.length &&
+        rawDb.query(`SELECT 1 FROM ${quoteIdent(d.name)} LIMIT 1`).get())
+      if (rescaled.length) {
+        const updates = rescaled.flatMap(d => d.rescales.map(r => rescaleUpdate(d.name, r)))
+        const reason  = `changes @scale on a table with rows: ` +
+          rescaled.flatMap(d => d.rescales.map(r => `${d.name}.${r.column} @scale(${r.from}) → @scale(${r.to})`)).join(', ') +
+          ` — every stored value is minor units at the old scale. Write a file migration ` +
+          `(litestone migrate create) and put ${updates.join(' ')} above its rebuild`
+        console.warn(`[litestone] Migration BLOCKED for database ${quoteIdent(dbName)} — ${reason}. Nothing was applied.`)
+        results[dbName] = { state: 'blocked', reason }
         continue
       }
 

@@ -27,7 +27,7 @@
 // ─── Why every function takes a client ────────────────────────────────────
 //
 // Nothing here reaches for a module-level `db`, and that is not ceremony. Under
-// `transactional:` Junction reassigns `ctx.locals.db` to the transaction's
+// `transactional:` Junction swaps `$.db` to the transaction's
 // client for the length of the method, so a write through anything else is a
 // write OUTSIDE the transaction that was supposed to contain it — committed
 // while its neighbors roll back, and invisible until the day a checkout fails

@@ -1,5 +1,5 @@
 // test/context-db-types.ts
-// FJS-370 — compiled, not run. `ctx.locals.db` is declared by the litestone
+// FJS-370 — compiled, not run. `$.db` is typed by the litestone
 // adapter's own module augmentation, and for its whole life the declared type
 // answered `unknown` for every MODEL ACCESSOR — which is every actual data
 // call. So an app got `asSystem()` typed, wrote `dbOf(ctx): any` to get any
@@ -9,17 +9,17 @@
 // compile error in `bun run typecheck`, which is the only place a type can
 // fail.
 
-import type { ServiceContext } from '../src/core/context.ts'
+import { $, type ServiceContext } from '../src/core/context.ts'
 import '../src/core/litestone.ts'   // the augmentation lives there
 
 export async function usesTheClient(ctx: ServiceContext) {
   // The client's own API.
-  const sys = ctx.locals.db?.asSystem()
+  const sys = $.db.asSystem()
 
   // A model accessor and its table — the half that was `unknown`.
-  const rows  = await ctx.locals.db?.post.findMany({ where: { published: true } })
-  const one   = await ctx.locals.db?.post.findUnique({ where: { id: 1 } })
-  const count = await ctx.locals.db?.post.count()
+  const rows  = await $.db.post.findMany({ where: { published: true } })
+  const one   = await $.db.post.findUnique({ where: { id: 1 } })
+  const count = await $.db.post.count()
 
   // The principal. Declared, and reached without a cast.
   const actor = ctx.auth.user?.userId ?? null
@@ -33,6 +33,6 @@ export async function usesTheClient(ctx: ServiceContext) {
 
 // FJS-2619 — `$transaction` always exists on a Litestone client, so a service
 // calls it without a guard.
-export async function scopesWritesInATransaction(ctx: ServiceContext) {
-  return ctx.locals.db!.$transaction(async tx => tx.post.count())
+export async function scopesWritesInATransaction() {
+  return $.db.$transaction(async tx => tx.post.count())
 }

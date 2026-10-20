@@ -278,7 +278,7 @@ describe('the range — the ceiling is 2^53, not int64 (`FJS-583`)', () => {
   test('the DDL carries it, so a migration and a seed are held to it too', () => {
     const ddl = generateDDL(parse(`model P { id Int @id  t Int @money(USD)  q Int @scale(6)  n Int }`).schema)
     expect(ddl).toMatch(/"t" INTEGER NOT NULL CHECK \("t" BETWEEN -9007199254740991 AND 9007199254740991\)/)
-    expect(ddl).toMatch(/"q" INTEGER NOT NULL CHECK \("q" BETWEEN/)
+    expect(ddl).toMatch(/"q" INTEGER NOT NULL CONSTRAINT "q_scale_6" CHECK \("q" BETWEEN/)
     // A plain Int is NOT bounded. It makes no exactness promise, and bounding
     // every integer column in every app to buy back one is the wrong trade —
     // stated here so the scope is a decision rather than an oversight.
@@ -376,5 +376,96 @@ describe('@money places — digits past the currency\'s minor unit', () => {
     // 0.00025 USD at 8 places is 25000; at the bare two it would read as 0.
     expect(errsOf(`model P { id Int @id  t Int @money(USD, places: 6) @default(0.00025) }`))
       .toMatch(/Write it in minor units: @default\(25000\)/)
+  })
+})
+
+// ─── a scale change is a migration ───────────────────────────────────────────
+//
+// @scale(9) and @scale(6) emitted the same CHECK, so the differ saw nothing, and
+// a rebuild for any other reason copied every stored integer verbatim — worth
+// 1000x after the move (FJS-2140). The scale is in the constraint's NAME now
+// (FJS-D1335); a table with rows is refused naming the UPDATE, an empty one
+// rebuilds.
+describe('a @scale change', () => {
+  const fee = (n: number) => `model Fee { id Int @id @default(autoincrement())  units Int @scale(${n}) }`
+  const fs  = require('node:fs') as typeof import('node:fs')
+  const { join } = require('node:path') as typeof import('node:path')
+  const { tmpdir } = require('node:os') as typeof import('node:os')
+  const { Database } = require('bun:sqlite')
+  const migrations = require('../src/core/migrations.js')
+
+  const project = () => {
+    const dir = fs.mkdtempSync(join(tmpdir(), 'ls-rescale-'))
+    const dirM = join(dir, 'migrations')
+    fs.mkdirSync(dirM)
+    const db = new Database(join(dir, 'app.db'))
+    return { dirM, db, done: () => { db.close(); fs.rmSync(dir, { recursive: true, force: true }) } }
+  }
+  const at9 = async () => {
+    const p = project()
+    migrations.create(null, parse(fee(9)), 'init', p.dirM)
+    expect((await migrations.apply(p.db, p.dirM)).error).toBeUndefined()
+    return p
+  }
+  const ddl = (db: any) => db.query(`SELECT sql FROM sqlite_master WHERE name = 'fee'`).get().sql as string
+
+  test('the scale is named into the CHECK', () => {
+    expect(generateDDL(parse(fee(6)).schema)).toContain(`CONSTRAINT "units_scale_6" CHECK ("units" BETWEEN`)
+  })
+
+  test('migrate create sees it, and writes nothing when the scale holds', async () => {
+    const p = await at9()
+    expect(migrations.create(null, parse(fee(9)), 'same', p.dirM).created).toBe(false)
+    const r = migrations.create(null, parse(fee(6)), 'rescale', p.dirM)
+    expect(r.created).toBe(true)
+    expect(r.summary).toContain('@scale(9) → @scale(6)')
+    expect(r.sql).toContain('UPDATE "fee" SET "units" = "units" / 1000;')
+    p.done()
+  })
+
+  test('a table with rows is refused, naming the UPDATE, and keeps its rows as they were', async () => {
+    const p = await at9()
+    p.db.run(`INSERT INTO "fee" (units) VALUES (5000000000)`)
+    migrations.create(null, parse(fee(6)), 'rescale', p.dirM)
+    const r = await migrations.apply(p.db, p.dirM)
+    expect(r.error).toContain('write UPDATE fee SET units = units / 1000 above this guard')
+    expect(p.db.query(`SELECT units FROM "fee"`).get().units).toBe(5000000000)
+    expect(ddl(p.db)).toContain('units_scale_9')
+    p.done()
+  })
+
+  test('an empty table rebuilds, and the next create sees nothing', async () => {
+    const p = await at9()
+    migrations.create(null, parse(fee(6)), 'rescale', p.dirM)
+    expect((await migrations.apply(p.db, p.dirM)).error).toBeUndefined()
+    expect(ddl(p.db)).toContain('units_scale_6')
+    expect(migrations.create(null, parse(fee(6)), 'again', p.dirM).created).toBe(false)
+    p.done()
+  })
+
+  test('a widening multiplies, and autoMigrate refuses rows by the same statement', async () => {
+    const p = await at9()
+    p.db.run(`INSERT INTO "fee" (units) VALUES (5)`)
+    const r = migrations.autoMigrate({ $db: p.db }, parse(fee(12)))
+    expect(r.main.state).toBe('blocked')
+    expect(r.main.reason).toContain('UPDATE "fee" SET "units" = "units" * 1000;')
+    p.db.run(`DELETE FROM "fee"`)
+    expect(migrations.autoMigrate({ $db: p.db }, parse(fee(12))).main.state).toBe('migrated')
+    expect(migrations.autoMigrate({ $db: p.db }, parse(fee(12)), { force: true }).main.state).toBe('in-sync')
+    p.done()
+  })
+
+  test('a CHECK written before the scale was named rebuilds once, with no rescale', async () => {
+    const p = project()
+    p.db.run(`CREATE TABLE "fee" ("id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, ` +
+             `"units" INTEGER NOT NULL CHECK ("units" BETWEEN -9007199254740991 AND 9007199254740991)) STRICT`)
+    p.db.run(`INSERT INTO "fee" (units) VALUES (7)`)
+    const r = migrations.autoMigrate({ $db: p.db }, parse(fee(6)))
+    expect(r.main.state).toBe('migrated')
+    expect(r.main.sql).not.toContain('_litestone_rescale')
+    expect(ddl(p.db)).toContain('units_scale_6')
+    expect(p.db.query(`SELECT units FROM "fee"`).get().units).toBe(7)
+    expect(migrations.autoMigrate({ $db: p.db }, parse(fee(6)), { force: true }).main.state).toBe('in-sync')
+    p.done()
   })
 })

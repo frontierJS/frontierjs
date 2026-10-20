@@ -19,7 +19,7 @@ beforeAll(async () => {
   h = await makeAuth({
     encryptionKey: TEST_KEY,
     totpDrift: 10,
-    onEmailVerificationRequested: async (email: string, token: string) => { mails.push({ email, token }) },
+    onEmailVerificationRequested: async ({ email, token }) => { mails.push({ email, token }) },
   })
   app = await createTestApp({ auth: h.auth as any })
   app.setAuth(h.auth as any)

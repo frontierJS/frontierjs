@@ -11,6 +11,9 @@ import { defineCommand } from '@frontierjs/mcp/client'
 // somewhere, and `unreachable` is the one a person has to go and look at.
 const ATTENTION = new Set(['unreachable'])
 
+// The servers service's maximum page — the default `paginate.max`.
+const PAGE = 100
+
 export default defineCommand({
   description: 'How many servers are in each state, and which need attention.',
   uses:        ['servers_find'],
@@ -23,8 +26,18 @@ export default defineCommand({
   },
 
   async run({ args, call, out, json }) {
-    const found = await call('servers_find', { query: args.role ? { role: args.role } : {}, directives: { limit: 500 } })
-    const rows  = found?.data ?? []
+    // Every machine, a page at a time: a `$limit` above the service's max page
+    // is refused rather than clamped, and a tally over one page is wrong from
+    // the first machine past it.
+    const query = args.role ? { role: args.role } : {}
+    const rows  = []
+    for (;;) {
+      const found = await call('servers_find', { query, directives: { limit: PAGE, offset: rows.length } })
+      const data  = found?.data ?? []
+      rows.push(...data)
+      const more = found?.hasMore === true || (typeof found?.total === 'number' && found.total > rows.length)
+      if (!more || !data.length) break
+    }
 
     const counts = {}
     for (const r of rows) counts[r.status] = (counts[r.status] ?? 0) + 1

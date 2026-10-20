@@ -341,6 +341,45 @@ describe('client.auth — the routes', () => {
     expect(calls[2].method).toBe('POST')
     expect(calls[2].body).toEqual({ token: 'verify tok/+1' })
   })
+
+  it('verifyEmail adopts the session a registration link answers, and nothing for a plain one', async () => {
+    // A registration's click signs in (`FJS-D1310`). A client that discarded
+    // the answer left the person on a page that asks for the password they
+    // typed a minute ago.
+    const { restore } = mockFetch([{ ok: true }, { token: 'tok-reg', user: { email: 'a@b.c' } }])
+    cleanup = restore
+    const store = memoryStore()
+    const c = createJunctionClient({ url: 'http://x', tokenStorage: store })
+    let authenticated = 0
+    c.on('authenticated', () => { authenticated++ })
+
+    expect(await c.auth.verifyEmail('plain')).toEqual({ ok: true })
+    expect(c.token).toBeNull()
+    expect(authenticated).toBe(0)
+
+    const signedIn = await c.auth.verifyEmail('registration')
+    expect('user' in signedIn && signedIn.user.email).toBe('a@b.c')
+    expect(c.token).toBe('tok-reg')
+    expect(store.value).toBe('tok-reg')
+    expect(authenticated).toBe(1)
+  })
+
+  it('verifyEmail on a registration link that owes a code holds the ticket for completeSignIn', async () => {
+    const { calls, restore } = mockFetch([
+      { challenge: 'tik-reg', expiresAt: '2030-01-01T00:00:00.000Z' },
+      { token: 'tok-2fa', user: { email: 'a@b.c' } },
+    ])
+    cleanup = restore
+    const c = createJunctionClient({ url: 'http://x', tokenStorage: memoryStore() })
+
+    expect('challenge' in await c.auth.verifyEmail('registration')).toBe(true)
+    expect(c.token).toBeNull()
+    expect(c.auth.awaitingSecondFactor).toBe(true)
+
+    await c.auth.completeSignIn('123456')
+    expect(calls[1].body).toEqual({ challenge: 'tik-reg', code: '123456' })
+    expect(c.token).toBe('tok-2fa')
+  })
 })
 
 // ─── The caller's own credentials ─────────────────────────────────────────
@@ -583,13 +622,13 @@ describe('client.auth — OAuth', () => {
       .toBe('http://api.test/auth/oauth/google?returnTo=%2Forders%3Fa%3D1')
   })
 
-  it('signInWith refuses outside a browser rather than doing nothing', () => {
+  it('signInWithProvider refuses outside a browser rather than doing nothing', () => {
     // The failure it replaces is a button that silently does not work.
     const client = createJunctionClient({ url: 'http://api.test' })
     const location = (globalThis as { location?: unknown }).location
     delete (globalThis as { location?: unknown }).location
     try {
-      expect(() => client.auth.signInWith('google')).toThrow(/browser/)
+      expect(() => client.auth.signInWithProvider('google')).toThrow(/browser/)
     } finally {
       if (location !== undefined) (globalThis as { location?: unknown }).location = location
     }

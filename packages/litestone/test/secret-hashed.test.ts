@@ -159,3 +159,33 @@ describe('@hashed beside @allow(write)', () => {
     db.$close()
   })
 })
+
+// ─── the client schema says which strings are secret ─────────────────────────
+//
+// An @encrypted string reached a form as a plain text box, offering the value
+// to whoever stands behind the person typing it (FJS-2259). OpenAPI's
+// `format: 'password'` is the mark (FJS-D1334); a format already set wins,
+// because `email` is graded at the boundary and `password` would drop it.
+describe("format: 'password'", () => {
+  test('marks @encrypted, @secret and @hashed strings, and @hashed keeps writeOnly', async () => {
+    const { generateJsonSchema } = await import('../src/jsonschema.js') as any
+    const { schema } = parse(`
+model Vault {
+  id      Int     @id
+  apiKey  String  @encrypted
+  pin     String? @hashed
+  token   String  @secret
+  contact String  @email @encrypted
+  label   String
+}`)
+    const client = generateJsonSchema(schema).$defs.Vault.properties
+    expect(client.apiKey.format).toBe('password')
+    expect(client.pin.anyOf[0]).toMatchObject({ type: 'string', format: 'password' })
+    expect(client.pin.writeOnly).toBe(true)
+    expect(client.contact.format).toBe('email')
+    expect(client.label.format).toBeUndefined()
+    expect(client.token).toBeUndefined()
+    const system = generateJsonSchema(schema, { audience: 'system' }).$defs.Vault.properties
+    expect(system.token.format).toBe('password')
+  })
+})

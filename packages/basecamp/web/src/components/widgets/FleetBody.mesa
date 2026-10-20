@@ -9,28 +9,23 @@
   import { onWrite } from './live.js'
   import Dot from '@frontierjs/ui/components/display/Dot.mesa'
 
+  // Every machine, not a page — the server refuses a page above its max.
+  const list = servers.tethered({ state: 'local', all: true })
   let rows    = []
   let error   = null
   let loading = true
+  $: {
+    rows    = list.rows
+    loading = list.loading
+    error   = list.error?.message ?? null
+  }
 
   const TONE = {
     online: 'success', draining: 'warning',
     unreachable: 'danger', destroyed: 'danger', stopped: 'muted',
   }
 
-  async function load() {
-    error = null
-    try {
-      rows = (await servers.service.find({}, { limit: 200 })).data
-    } catch (e) {
-      error = e.message
-    } finally {
-      loading = false
-    }
-  }
-
-  load()
-  $.onDestroy(onWrite(servers.service, load))
+  $.onDestroy(onWrite(servers.service, () => list.reload()))
 
   $: online = rows.filter(s => s.status === 'online').length
 </script>

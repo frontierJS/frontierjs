@@ -200,10 +200,14 @@
     for (const t of timers) clearTimeout(t)
   })
 
-  if (room) {
-    messages.load({ roomId: room.id }, { orderBy: '-createdAt', limit: 50 })
-      .catch((e) => { note = e.message })
-  }
+  // The room's lines, read once for every piece of the scene that shows them:
+  // the bubbles, the history pane and `/hush` by prop, and the square's crier,
+  // which is slot content, off `$context.roomLines`.
+  var roomLines = room
+    ? messages.tethered({ state: 'local', where: { roomId: room.id }, directives: { orderBy: '-createdAt', limit: 50 } })
+    : null
+  $context.roomLines = roomLines
+  $: { if (roomLines?.error) note = roomLines.error.message }
 
   // Footprints (`IDEAS/haven.md` 7.4): the room's memory of steps once, at the
   // walk-in, then every step taken here laid as it is seen -- this figure's
@@ -497,9 +501,9 @@
     {#each flying(beam, view) as b (b.key)}
       <p {@attach at(b.x, b.y, 10)} {@attach tint(BEAM_INK)}>{b.ch}</p>
     {/each}
-    <Bubbles {here} {x} {y} {view} {spawn} {hushed} {nicks} />
+    <Bubbles {here} {x} {y} {view} {spawn} {hushed} {nicks} lines={roomLines?.rows ?? []} />
     <WorldMap {stage} route={page.pathname} {x} {y} box={PANE} />
-    <History {room} {nicks} box={PANE} {askNicks} />
+    <History {room} {nicks} box={PANE} {askNicks} {roomLines} />
     <Sitting {stage} {here} {x} {y} {spawn} tell={(text) => { note = text }} />
     <HomeRow {stage} {here} {spawn} {nicks} {draft} {where} {moveTo} {shapeTo} tell={(text) => { note = text }} />
     <Stops {stage} {view} {draft} {where} {stepTo} tell={(text) => { note = text }} />
@@ -509,7 +513,7 @@
     <Mod />
     <Season {stage} />
     <Weather {stage} />
-    <Hush {here} hush={(id) => { hushed = id; sync() }} />
+    <Hush {here} lines={roomLines?.rows ?? []} hush={(id) => { hushed = id; sync() }} />
     <Emotes {stage} {here} {x} {y} {view} {spawn} {emote} {moveTo} emoteTo={(e) => { emote = e; sync() }} />
     <Pets {stage} {here} {x} {y} {view} {spawn} {facing} {ink} {pet} petTo={(p) => { pet = worn.pet = p; sync() }} />
     <Work />

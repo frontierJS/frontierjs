@@ -34,6 +34,10 @@ title: Alerts
   let events   = {}      // ruleId → recent events
   let delivery = {}      // ruleId → attached channel rows
   let allChannels = []
+  // Every channel a rule may deliver to, not a page.
+  const channelList = channels.tethered({ state: 'local', all: true })
+  $: { allChannels = channelList.rows }
+  $: session.workspaceId, () => channelList.reload()
   let picked   = {}      // ruleId → the channel id the picker is showing
   let error    = null
   let loading  = true
@@ -44,15 +48,21 @@ title: Alerts
   let editing  = null    // the rule id whose card is showing its form
   let metric   = {}      // ruleId → the series it watches, or null
 
-  async function load() {
-    error = null; loading = true
+  // The rules, live. A rule's card is composed from three reads, so the two
+  // that are not the rule row follow the list rather than an event handler.
+  const list = alerts.tethered({ state: 'local', all: true, directives: { limit: 100 } })
+  $: { rows = list.rows; loading = list.loading }
+  $: { if (list.error) error = list.error.message }
+  $: session.workspaceId, () => list.reload()
+  $: rows, () => loadDelivery()
+
+  async function loadDelivery() {
     try {
-      rows = (await alerts.service.find({}, { limit: 100 })).data
       // Where each rule delivers. `find` answers the rule rows; only `get`
-      // pays for the join, so the list is one request plus one per rule —
-      // acceptable at this size, and it is what makes "reaches nobody"
-      // sayable at a glance rather than after a click.
-      const full = await Promise.all(rows.map(r => alerts.service.get(r.id)))
+      // pays for the join, so the card is one request per rule — acceptable
+      // at this size, and it is what makes "reaches nobody" sayable at a
+      // glance rather than after a click.
+      const full = await Promise.all(list.rows.map(r => alerts.service.get(r.id)))
       delivery = Object.fromEntries(full.map(r => [r.id, r.channels ?? []]))
       // Whether the metric this rule watches EXISTS. `metricName` is not a
       // foreign key — a series is minted by the first scrape that sees it, so
@@ -61,23 +71,13 @@ title: Alerts
       // crossed. The server answers it because only the server can see the
       // series; the card says it because otherwise nobody ever finds out.
       metric = Object.fromEntries(full.map(r => [r.id, r.series ?? null]))
-      allChannels = (await channels.service.find({}, { limit: 200 })).data
     } catch (e) {
       error = e.message
-    } finally {
-      loading = false
     }
   }
 
-  load()
-  $: session.workspaceId, () => load()
-
-  const READS = new Set(['get', 'find', 'events'])
-  const off = alerts.service.on('*', (method, row) => {
-    if (READS.has(method) || !row?.id) return
-    load()
-  })
-  $.onDestroy(off)
+  // An attach writes the join table, which this service does not announce.
+  const load = () => loadDelivery()
 
   // Loaded on demand rather than for every rule at once: a rule that has never
   // fired is the common case, and eight requests to prove that is a waste.

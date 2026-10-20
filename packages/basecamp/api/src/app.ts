@@ -194,7 +194,7 @@ export async function buildBasecampApp(
 
   // ── Framework app ─────────────────────────────────────────────────────
   // Passing `db` here is what installs withLitestoneDb() as an around-hook, so
-  // every service gets a client on ctx.locals.db already scoped to the caller.
+  // every service gets a client on $.db already scoped to the caller.
   // Omitting it leaves services running against an unscoped client — an option
   // with exactly one correct answer.
   // `principal:` is what makes this app's tenancy work, and it is the whole of
@@ -655,7 +655,7 @@ export async function buildBasecampApp(
   // one shape where the feature is indistinguishable from god mode, since
   // standing in for an administrator grants administrator. Refusing the pair
   // costs one comparison and leaves the ceiling meaningful for everybody else.
-  const supportGuard = async (operator: { isSystemAdmin?: boolean }, subjectId: string) => {
+  const supportGuard = async ({ operator, subjectId }: { operator: { isSystemAdmin?: boolean }, subjectId: string }) => {
     if (operator?.isSystemAdmin !== true) return false
     const subject = await db.asSystem().user.findUnique({ where: { id: subjectId } })
     return subject != null && subject.isSystemAdmin !== true

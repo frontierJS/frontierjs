@@ -68,24 +68,27 @@ title: Flags
     draft = { ...draft, [name]: value }
   }
 
-  async function load() {
-    error = null; loading = true
-    try {
-      rows = (await flags.service.find({}, { limit: 200 })).data
-      // Every environment in the workspace, for the override picker. The
-      // service scopes an override to the workspace regardless — this is the
-      // affordance, not the boundary.
-      envs = (await environments.service.find({}, { limit: 200 })).data
-      projectNames = Object.fromEntries(
-        (await projects.service.find({}, { limit: 200 })).data.map(p => [p.id, p.name]))
-    } catch (e) {
-      error = e.message
-    } finally {
-      loading = false
-    }
+  // Every row of each, not a page — the server refuses a page above its max.
+  // The environments are for the override picker: the service scopes an
+  // override to the workspace regardless, so this is the affordance, not the
+  // boundary.
+  const list     = flags.tethered({ state: 'local', all: true })
+  const envList  = environments.tethered({ state: 'local', all: true })
+  const projList = projects.tethered({ state: 'local', all: true })
+  $: {
+    rows    = list.rows
+    loading = list.loading
+    const failed = list.error ?? envList.error ?? projList.error
+    if (failed) error = failed.message
   }
+  $: { envs = envList.rows }
+  $: { projectNames = Object.fromEntries(projList.rows.map(p => [p.id, p.name])) }
 
-  load()
+  function load() {
+    list.reload()
+    envList.reload()
+    projList.reload()
+  }
   $: session.workspaceId, () => load()
 
   const READS = new Set(['get', 'find', 'resolve'])

@@ -1,4 +1,4 @@
-// Auth flow — login/logout token management.
+// Auth flow — sign-in / sign-out token management, in the client's verbs (`FJS-D1315`).
 //
 // Spec invariant (from earlier patch):
 //   1. Junction call → result
@@ -22,12 +22,12 @@ export function makeAuthFlow({ adapter, storage, pages, tokenKey = 'jetty_token'
   // (`FJS-D20`) — so an app that DOES have a service called `auth` would find
   // its own methods shadowed by three the framework invented.
   const authApi = {
-    login:  (credentials) => adapter.auth?.login  ? adapter.auth.login(credentials)
-                                                  : adapter.call('auth', 'login',  credentials),
-    completeLogin: (code)  => adapter.auth?.completeLogin ? adapter.auth.completeLogin(code)
-                                                  : adapter.call('auth', 'completeLogin', { code }),
-    logout: ()            => adapter.auth?.logout ? adapter.auth.logout()
-                                                  : adapter.call('auth', 'logout', {}),
+    signIn:         (credentials) => adapter.auth?.signIn         ? adapter.auth.signIn(credentials)
+                                                                  : adapter.call('auth', 'signIn', credentials),
+    completeSignIn: (code)        => adapter.auth?.completeSignIn ? adapter.auth.completeSignIn(code)
+                                                                  : adapter.call('auth', 'completeSignIn', { code }),
+    signOut:        ()            => adapter.auth?.signOut        ? adapter.auth.signOut()
+                                                                  : adapter.call('auth', 'signOut', {}),
     verify: (token)       => adapter.auth?.verify ? adapter.auth.verify(token)
                                                   : adapter.call('auth', 'verify', { token }),
   }
@@ -53,7 +53,7 @@ export function makeAuthFlow({ adapter, storage, pages, tokenKey = 'jetty_token'
   /**
    * A session answered, stored, upgraded and broadcast.
    *
-   * One function because both steps of a login end here, and a second copy is
+   * One function because both steps of a sign-in end here, and a second copy is
    * how the two would come to disagree about whether the token is persisted
    * before the connection is upgraded — which decides what a reload sees after a
    * crash between them.
@@ -97,15 +97,15 @@ export function makeAuthFlow({ adapter, storage, pages, tokenKey = 'jetty_token'
     },
 
     /**
-     * Phase 2 login: credentials → Junction call → store → upgrade → broadcast.
+     * Sign in: credentials → Junction call → store → upgrade → broadcast.
      *
      * An account with a second factor answers `{ awaitingCode: true }` and none
      * of that happens: nothing is stored, the connection is not upgraded, and the
-     * broadcast says the popup is waiting rather than signed in. `submitCode` is
-     * the other half.
+     * broadcast says the popup is waiting rather than signed in.
+     * `completeSignIn` is the other half.
      */
-    async login(credentials) {
-      const result = await authApi.login(credentials)
+    async signIn(credentials) {
+      const result = await authApi.signIn(credentials)
       if (result?.awaitingCode) {
         session = { user: null, authenticated: false, expiresAt: null, awaitingCode: result.expiresAt ?? true }
         // Broadcast, because the popup that asked may already be gone — a
@@ -114,20 +114,20 @@ export function makeAuthFlow({ adapter, storage, pages, tokenKey = 'jetty_token'
         pages.broadcast('session', session)
         return session
       }
-      return adopt(result, 'auth.login')
+      return adopt(result, 'auth.signIn')
     },
 
     /**
-     * Finish a login that owed a code. A TOTP code or a recovery code — the
+     * Finish a sign-in that owed a code. A TOTP code or a recovery code — the
      * person typing it is answering one question.
      *
      * The ticket is the wire client's and is never carried through a page or a
      * port: in cookie mode there is no ticket a page could hold, and a popup that
      * held one would be storing a password substitute for five minutes.
      */
-    async submitCode(code) {
+    async completeSignIn(code) {
       try {
-        return adopt(await authApi.completeLogin(code), 'auth.completeLogin')
+        return adopt(await authApi.completeSignIn(code), 'auth.completeSignIn')
       } catch (err) {
         // `retryable: false` is the server saying the attempt is spent. The port
         // hands a page the message and nothing else, so a waiting state left
@@ -142,8 +142,8 @@ export function makeAuthFlow({ adapter, storage, pages, tokenKey = 'jetty_token'
       }
     },
 
-    async logout() {
-      try { await authApi.logout() } catch {/* still log out locally */}
+    async signOut() {
+      try { await authApi.signOut() } catch {/* still sign out locally */}
       await persistToken(null)
       await safeSetToken(adapter, null)
       session = { user: null, authenticated: false, expiresAt: null }

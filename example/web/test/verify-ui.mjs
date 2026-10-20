@@ -356,6 +356,15 @@ try {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ outcome: 'succeeded' }),
   })
+  // The webhook settles the payment on a round trip of its own, and the panel
+  // reads once: nothing joins the payments channel (payments.service.ts), so a
+  // page opened first draws it `pending` for good. Wait for what is drawn next.
+  for (let waited = 0; waited < 5000; waited += 100) {
+    const paid = (await (await fetch(`${API}/api/payments?orderId=${orderB}`, { headers: auth })).json())?.data?.[0]
+    const told = (await (await fetch(`${API}/api/payment-events?paymentRef=${intent.providerRef}`, { headers: auth })).json())?.data ?? []
+    if (paid?.status === 'succeeded' && told.length) break
+    await new Promise(r => setTimeout(r, 100))
+  }
 
   await goto(`/orders/${orderB}/`)
 

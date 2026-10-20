@@ -721,7 +721,7 @@ export function createMemo(fn, opts) {
   // the same signal saw the new one.
   //
   // The memo is also the OWNER while fn() runs. A handle built in the body —
-  // `const list = blocks.list({ where: { pageId } })` over a prop — opens an
+  // `const list = blocks.tethered({ where: { pageId } })` over a prop — opens an
   // effect or registers a teardown, and left on the ambient owner those went to
   // whichever effect happened to read first, usually a render, whose next run
   // pruned them as its own: the list heard one announcement and presence left
@@ -4497,7 +4497,7 @@ function _warnDerivedWrite(key, pathPrefix) {
 /** Test seam: the derivation-write warning is once per path per process. */
 export function resetDerivedWriteWarnings() { _warnedDerivedWrites.clear() }
 
-// `const { rows, loading } = r.list()` reads each key once, at setup, and a
+// `const { rows, loading } = r.tethered()` reads each key once, at setup, and a
 // resource handle's keys are getters over signals: the screen stays on the
 // first answer. The compiler cannot see the handle's shape, so a dev build
 // reads the descriptors of the one value the destructure was bound to (FJS-D667).

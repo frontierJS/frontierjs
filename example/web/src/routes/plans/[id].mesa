@@ -78,34 +78,38 @@ title: Plan
    *  point they make is that repricing moves NOBODY, and a screen that made
    *  five requests to say so would be making the wrong point about the cost of
    *  saying it. */
-  async function loadVersions() {
-    const list = await planVersions.service.find(
-      { planId: Number(page.params.id) }, { orderBy: '-effectiveFrom', limit: 50 })
-    versions = list?.data ?? []
+  const versionList = planVersions.tethered({
+    state: 'local', where: { planId: Number(page.params.id) }, all: true, directives: { orderBy: '-effectiveFrom' },
+  })
+  $: { versions = versionList.rows }
+  $: { if (versionList.error) error = versionList.error.message }
 
-    if (!versions.length) { held = new Map(); return }
-    try {
-      const subs = await subscriptions.service.find(
-        { planVersionId: { in: versions.map(v => v.id) } }, { limit: 200 })
-      // Counted into a local and ASSIGNED once. `held.set(…)` on the rendered
-      // Map is a mutation, and a mutation is not an assignment — the template
-      // keeps the empty Map it was handed and every count reads 0, which looks
-      // exactly like a plan nobody is subscribed to.
-      const counted = new Map()
-      for (const s of subs?.data ?? []) counted.set(s.planVersionId, (counted.get(s.planVersionId) ?? 0) + 1)
-      held = counted
-    } catch {
-      // A caller who may read a plan may not be able to read subscriptions —
-      // `Subscription` reads at 1 and `Plan` at 0. An empty count column is the
-      // honest answer there; a refusal banner over a page that otherwise works
-      // is not.
-      held = new Map()
-    }
+  async function loadVersions() {
+    await versionList.reload()
+    if (versionList.error) throw versionList.error
+  }
+
+  // Every subscription on these windows, not a page — the server refuses a
+  // page above its max. A caller who may read a plan may not be able to read
+  // subscriptions — `Subscription` reads at 1 and `Plan` at 0 — and a refused
+  // read leaves the rows empty: an empty count column is the honest answer
+  // there, and a refusal banner over a page that otherwise works is not.
+  const subList = subscriptions.tethered({
+    state: 'local', where: { planVersionId: { in: versions.map(v => v.id) } }, all: true,
+  })
+  $: {
+    // Counted into a local and ASSIGNED once. `held.set(…)` on the rendered
+    // Map is a mutation, and a mutation is not an assignment — the template
+    // keeps the empty Map it was handed and every count reads 0, which looks
+    // exactly like a plan nobody is subscribed to.
+    const counted = new Map()
+    for (const s of subList.rows) counted.set(s.planVersionId, (counted.get(s.planVersionId) ?? 0) + 1)
+    held = counted
   }
 
   async function boot() {
     error = null
-    try { await watch(); await loadVersions() }
+    try { await watch() }
     catch (e) { error = e.message }
   }
   boot()

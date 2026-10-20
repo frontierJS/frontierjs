@@ -23,7 +23,7 @@ title: Reports
   // moves when an order does without anything here subscribing to orders.
   import { revenue } from '@/resources/Revenue.mesa'
   import { prefs } from '@/stores/prefs.js'
-  import { session, useTether } from '@frontierjs/sierra/resource'
+  import { session } from '@frontierjs/sierra/resource'
   import { money } from '../../lib/money.js'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -39,38 +39,28 @@ title: Reports
     { name: 'total',  label: 'Taken',  align: 'right' },
   ]
 
-  const { get: rows, unsubscribe } = useTether(revenue.tether)
-  $.onDestroy(unsubscribe)
+  const list = revenue.tethered({ state: 'local', directives: { orderBy: 'status' } })
+  const rows = () => list.rows
 
   $: (session.level, prefs.dense, prefs.currency)
 
-  let error  = null
+  // A gate refusal is not an error this screen reports, it is the state most
+  // of the people here are in.
   let refused = false
-
-  function load() {
-    error = null; refused = false
-    // What the affordance buys, and the whole of it: not making a request that
-    // is going to come back 403. The refusal below is still what the page is
-    // drawn from, so a wrong answer here costs a round trip in one direction
-    // and shows the same panel in the other.
-    if (!revenue.can('read', session.level)) return
-    revenue.load({}, { orderBy: 'status' })
-      .catch(e => {
-        // A gate refusal is not an error this screen reports, it is the state
-        // most of the people here are in.
-        if (e?.code === 403 || e?.status === 403) refused = true
-        else error = e.message
-      })
+  let error   = null
+  $: {
+    const e = list.error
+    refused = e?.code === 403 || e?.status === 403
+    error   = e && !refused ? e.message : null
   }
-  load()
 
   // Two ways to know, and the SERVER's is the one that decides.
   //
   // `can()` is an AFFORDANCE and Invariant 6 makes it deliberately permissive:
   // an answer the browser's schema does not carry is *yes*. It carries one now
   // — a view's `@@gate` reaches the generated schema the way a model's does —
-  // so this answers no for staff and the panel is drawn without asking. That is
-  // a saving and not a boundary: `session.level` is the browser's own copy, and
+  // so this answers no for staff and the panel is drawn before the answer
+  // arrives. That is a saving and not a boundary: `session.level` is the browser's own copy, and
   // a page that hid itself on the strength of it would be resting on the one
   // answer the client is not the authority for.
   //

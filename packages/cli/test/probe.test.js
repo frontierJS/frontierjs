@@ -23,7 +23,7 @@ import { Database }                         from 'bun:sqlite'
 import {
   httpStatus, httpJson, httpText, header, portAnswering, portFree,
   fileExists, fileContains, sqliteRow, sqliteExec, eventually, dockerRunning, dockerImageOf,
-  commandExists, formatFailure,
+  commandExists, formatFailure, scaffoldVerificationToken,
 } from '../core/probe.js'
 
 // ─── a real server on an ephemeral port ──────────────────────────────────────
@@ -389,5 +389,23 @@ describe('formatFailure', () => {
     const text = formatFailure({ ok: false, name: 'x', asked: 'a', got: 'b', detail: Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n') })
     expect(text).toContain('line 0')
     expect(text).not.toContain('line 30')
+  })
+})
+
+// The scaffold prints its verification link rather than mailing it, and the
+// lessons, the deploy smoke and the bench all read it through this one parser.
+describe('scaffoldVerificationToken', () => {
+  const printed = (email, token) =>
+    `[auth] verify ${email} — no mailer, so here is the link:\n  http://localhost:8000/verify-email/#token=${encodeURIComponent(token)}\n`
+
+  test('the token for the address asked about, and the LAST one mailed to it', () => {
+    const log = printed('a@x.test', 'first') + printed('b@x.test', 'other') + printed('a@x.test', 'sec/ond+')
+    expect(scaffoldVerificationToken(log, 'a@x.test')).toBe('sec/ond+')
+    expect(scaffoldVerificationToken(log, 'b@x.test')).toBe('other')
+  })
+
+  test('an address that is a prefix of another is not that other one', () => {
+    expect(scaffoldVerificationToken(printed('ann@x.test', 't'), 'an@x.test')).toBeNull()
+    expect(scaffoldVerificationToken('', 'a@x.test')).toBeNull()
   })
 })

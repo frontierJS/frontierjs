@@ -19,6 +19,21 @@ import { BYTES_PER_DIM } from './vector.js'
 // pointColumns from here, and both edges are call-time, so the cycle is inert.
 import { quoteIdent } from './query.js'
 
+// ─── Scale constraints ────────────────────────────────────────────────────────
+
+const SCALE_NAME = /^(.+)_scale_(\d+)$/
+
+/** The name of a `@scale(n)` column's CHECK — the one place the DDL records n. */
+export function scaleConstraintName(column, places) {
+  return `${column}_scale_${places}`
+}
+
+/** `{ column, places }` for a name `scaleConstraintName` wrote, or null. */
+export function readScaleConstraint(name) {
+  const m = SCALE_NAME.exec(name ?? '')
+  return m ? { column: m[1], places: Number(m[2]) } : null
+}
+
 // ─── Point columns ────────────────────────────────────────────────────────────
 
 /**
@@ -368,8 +383,13 @@ function columnDef(field, schema = null, compositePk = false, strict = true, cma
   // validator alone because four writers never reach the boundary — a migration,
   // a seed, a raw statement and `asSystem()`, which drops every rule this package
   // owns and cannot drop this one.
-  if (field.attributes.some(a => a.kind === 'scale' || a.kind === 'money'))
-    parts.push(`CHECK ("${col}" BETWEEN -${EXACT_INT_MAX} AND ${EXACT_INT_MAX})`)
+  // A scale is named into the constraint because nothing else in the DDL
+  // differs between @scale(9) and @scale(6), and the differ reads only the DDL
+  // (`FJS-D1335`).
+  const scale = field.attributes.find(a => a.kind === 'scale')
+  if (scale || field.attributes.some(a => a.kind === 'money'))
+    parts.push(`${scale ? `CONSTRAINT ${quoteIdent(scaleConstraintName(col, scale.places))} ` : ''}` +
+               `CHECK ("${col}" BETWEEN -${EXACT_INT_MAX} AND ${EXACT_INT_MAX})`)
 
   // @big — and the CHECK is emitted only where STRICT is off, which is the
   // opposite of the pair above and is a measurement rather than a judgement.

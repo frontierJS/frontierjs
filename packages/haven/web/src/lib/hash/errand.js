@@ -147,6 +147,11 @@ export function homeBoard({ cmd = homeCommand(), now = Date.now() } = {}) {
 // `DESK_READS` and nothing else: a pattern with a `*` before the action would
 // also match `todos create "show me"`, so each read is spelled out. The answer
 // is `SCHEMA`'s shape, read from the print's `structured_output`.
+//
+// A follow-up resumes the session the last answer came from, so the session is
+// kept on this machine under `DESK_DIR`'s project. The answer on the screen is
+// sent with a thread's first question: a report was drawn by no model, and the
+// model has seen nothing of it otherwise.
 
 const READS = {
   projects: ['list', 'show'], todos: ['list', 'show'], subtasks: ['list', 'show'],
@@ -170,9 +175,10 @@ const DESK_DIR = join(homedir(), '.fli', 'haven', 'desk')
 const DESK_MS = 240_000
 const DESK_BUDGET_USD = 1
 
-/** The print session's flags: no hooks, settings, MCP or session kept, since an answer resumes nothing. */
-export const deskArgv = ({ model = 'sonnet' } = {}) => [
+/** The print session's flags: no hooks, settings or MCP; `resume` the session a follow-up continues. */
+export const deskArgv = ({ model = 'sonnet', resume } = {}) => [
   '-p',
+  ...(resume ? ['--resume', resume] : []),
   '--model',                  model,
   '--output-format',          'json',
   '--json-schema',            JSON.stringify(SCHEMA),
@@ -182,25 +188,30 @@ export const deskArgv = ({ model = 'sonnet' } = {}) => [
   '--strict-mcp-config',
   '--settings',               JSON.stringify({ disableAllHooks: true }),
   '--setting-sources',        '',
-  '--no-session-persistence',
   '--max-budget-usd',         String(DESK_BUDGET_USD),
 ]
 
+/** What the model is handed: the question, after the answer on screen when a thread starts on one. */
+export const deskQuestion = (question, shown) => shown
+  ? `On the desk's screen now, as JSON:\n${JSON.stringify(shown)}\n\nQuestion: ${question}`
+  : question
+
 /**
- * The desk's answer to `question`: `{ answer, cost, ms }`, `answer` as
- * `readAnswer` reads it. Throws with the reason the print gave, since a
- * missing login and a spent budget both end in an exit and nothing to draw.
+ * The desk's answer to `question`: `{ answer, cost, ms, session }`, `answer` as
+ * `readAnswer` reads it and `session` what the next follow-up resumes. Throws
+ * with the reason the print gave, since a missing login and a spent budget
+ * both end in an exit and nothing to draw.
  * Run in a directory of its own, so no repo's CLAUDE.md is read into it.
  */
-export function askDesk(question, { signal, bin = 'claude', model } = {}) {
+export function askDesk(question, { signal, bin = 'claude', model, resume, shown } = {}) {
   mkdirSync(DESK_DIR, { recursive: true, mode: 0o700 })
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, deskArgv({ model }), { cwd: DESK_DIR, signal, stdio: ['pipe', 'pipe', 'pipe'] })
+    const child = spawn(bin, deskArgv({ model, resume }), { cwd: DESK_DIR, signal, stdio: ['pipe', 'pipe', 'pipe'] })
     let out = '', err = ''
     child.stdout.setEncoding('utf8').on('data', (c) => { out += c })
     child.stderr.setEncoding('utf8').on('data', (c) => { err += c })
     child.stdin.on('error', () => {})
-    child.stdin.end(question)
+    child.stdin.end(deskQuestion(question, resume ? null : shown))
     const timer = setTimeout(() => child.kill('SIGTERM'), DESK_MS)
     child.on('error', (e) => {
       clearTimeout(timer)
@@ -212,7 +223,7 @@ export function askDesk(question, { signal, bin = 'claude', model } = {}) {
       try { r = JSON.parse(out) } catch {}
       if (!r) return reject(new Error(code == null ? `no answer in ${DESK_MS / 1000}s` : (err.trim().split('\n').at(-1) || `${bin} exited ${code}`)))
       if (r.is_error || !r.structured_output) return reject(new Error(r.subtype && r.subtype !== 'success' ? r.subtype.replaceAll('_', ' ') : String(r.result ?? 'no answer').slice(0, 120)))
-      resolve({ answer: readAnswer(r.structured_output), cost: Number(r.total_cost_usd) || 0, ms: Number(r.duration_ms) || 0 })
+      resolve({ answer: readAnswer(r.structured_output), cost: Number(r.total_cost_usd) || 0, ms: Number(r.duration_ms) || 0, session: r.session_id ? String(r.session_id) : null })
     })
   })
 }

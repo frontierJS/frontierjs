@@ -39,7 +39,7 @@ beforeAll(async () => {
         http: { ...defaultConfig.http, drainTimeout: 200 },
       },
     })
-    app.registerDevService({ name: 'mail', url: 'http://localhost:8111' })
+    app.registerDevService('mail', { url: 'http://localhost:8111' })
     await app.start()
   } finally {
     console.log = log

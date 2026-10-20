@@ -1,5 +1,5 @@
 /**
- * test/resource-list.test.js — `resource.list()`, driven by a real navigation
+ * test/resource-tethered.test.js — `resource.tethered()`, driven by a real navigation
  *
  * A list is five wirings a page used to restate: the tether, where the filters
  * live, the load, its re-run, and the window. Every claim here is about one of
@@ -10,7 +10,7 @@
  *
  * So the router is the REAL one over a window mock, and the client is
  * Junction's real one over a fetch that records the query string it was sent —
- * a hand-built fake would agree with whatever `list.js` sends. Every refusal is
+ * a hand-built fake would agree with whatever `tethered.js` sends. Every refusal is
  * paired with the same call one step away still working, because a list that
  * never reloaded satisfies every row asserting it did not reload.
  */
@@ -89,7 +89,7 @@ function json(body) {
 
 let client
 vi.mock('@frontierjs/sierra/resource', () => ({ getClient: () => client }))
-const { createResource } = await import('../src/resource/resource.js')
+const { createResource, tetherOf } = await import('../src/resource/resource.js')
 const { registerSchemas } = await import('../src/resource/schema-registry.js')
 const { generateSchemas }  = await import('../src/build/schema-plugin.js')
 
@@ -150,7 +150,7 @@ async function boot(url) {
 
 const invoicesResource = (opts = {}) => createResource('invoices', {
   model: null,
-  listQuery: { directives: { orderBy: '-issuedAt' } },
+  tetheredQuery: { directives: { orderBy: '-issuedAt' } },
   ...opts,
 })
 
@@ -184,7 +184,7 @@ afterEach(() => {
 describe("state: 'url' — the address bar is the list", () => {
   test('loads what the URL says, over the resource file\'s default order', async () => {
     await boot('/invoices/?status=open')
-    const list = track(invoicesResource().list())
+    const list = track(invoicesResource().tethered())
     await settle()
 
     expect(last().get('status')).toBe('open')
@@ -196,7 +196,7 @@ describe("state: 'url' — the address bar is the list", () => {
 
   test('a URL ordering beats the declared one, key for key', async () => {
     await boot('/invoices/?$orderBy=number&$limit=5')
-    track(invoicesResource().list())
+    track(invoicesResource().tethered())
     await settle()
 
     expect(last().get('$orderBy')).toBe('number')
@@ -205,7 +205,7 @@ describe("state: 'url' — the address bar is the list", () => {
 
   test('a navigation on its own route re-runs the load with the new filters', async () => {
     await boot('/invoices/')
-    track(invoicesResource().list())
+    track(invoicesResource().tethered())
     await settle()
     const before = sent.length
 
@@ -218,7 +218,7 @@ describe("state: 'url' — the address bar is the list", () => {
 
   test('apply NAVIGATES — the change arrives back through the router', async () => {
     await boot('/invoices/')
-    const list = track(invoicesResource().list())
+    const list = track(invoicesResource().tethered())
     await settle()
 
     await list.apply({ status: 'open' }, { orderBy: 'number' })
@@ -236,7 +236,7 @@ describe("state: 'url' — the address bar is the list", () => {
   // address carried it past the screen that set it (FJS-1957).
   test('a starting directive stays off the address unless it was changed', async () => {
     await boot('/invoices/')
-    const list = track(invoicesResource().list({ directives: { populate: ['customer'] } }))
+    const list = track(invoicesResource().tethered({ directives: { populate: ['customer'] } }))
     await settle()
     expect(last().get('$populate')).toBe('customer')
 
@@ -256,7 +256,7 @@ describe("state: 'url' — the address bar is the list", () => {
 
   test('a navigation AWAY does not re-ask with the next route\'s filters', async () => {
     await boot('/invoices/')
-    track(invoicesResource().list())
+    track(invoicesResource().tethered())
     await settle()
     const before = sent.length
 
@@ -272,7 +272,7 @@ describe("state: 'url' — the address bar is the list", () => {
 describe("state: 'local' — embedded, and must not navigate", () => {
   test('apply changes the list and leaves the address bar alone', async () => {
     await boot('/invoices/?status=paid')
-    const list = track(invoicesResource().list({ state: 'local' }))
+    const list = track(invoicesResource().tethered({ state: 'local' }))
     await settle()
     // The URL's filter belongs to the page, not to an embedded list.
     expect(last().get('status')).toBe(null)
@@ -287,7 +287,7 @@ describe("state: 'local' — embedded, and must not navigate", () => {
 
   test('`where` is applied over the filters and is never part of `query`', async () => {
     await boot('/invoices/')
-    const list = track(invoicesResource().list({ state: 'local', where: { customerId: 7 } }))
+    const list = track(invoicesResource().tethered({ state: 'local', where: { customerId: 7 } }))
     await settle()
     expect(last().get('customerId')).toBe('7')
     expect(list.query).toEqual({})
@@ -304,14 +304,14 @@ describe("state: 'local' — embedded, and must not navigate", () => {
   // tab stated as `where` is laid over every load and the apply cannot move it.
   test('a tab moves through `apply()` over `query:`, and cannot through `where`', async () => {
     await boot('/invoices/')
-    const tabs = track(invoicesResource().list({ state: 'local', query: { status: 'open' } }))
+    const tabs = track(invoicesResource().tethered({ state: 'local', query: { status: 'open' } }))
     await settle()
     expect(last().get('status')).toBe('open')
     tabs.apply({ ...tabs.query, status: 'paid' }, tabs.directives)
     await settle()
     expect(last().get('status')).toBe('paid')
 
-    const pinned = track(invoicesResource().list({ state: 'local', where: { status: 'open' } }))
+    const pinned = track(invoicesResource().tethered({ state: 'local', where: { status: 'open' } }))
     await settle()
     pinned.apply({ status: 'paid' }, pinned.directives)
     await settle()
@@ -320,7 +320,7 @@ describe("state: 'local' — embedded, and must not navigate", () => {
 
   test('an unknown state is refused by name rather than read as local', async () => {
     await boot('/invoices/')
-    expect(() => invoicesResource().list({ state: 'session' })).toThrow(/state must be 'url' or 'local'/)
+    expect(() => invoicesResource().tethered({ state: 'session' })).toThrow(/state must be 'url' or 'local'/)
   })
 })
 
@@ -329,7 +329,7 @@ describe("state: 'local' — embedded, and must not navigate", () => {
 describe('apply and sort', () => {
   test('clearing the search removes it — each half REPLACES', async () => {
     await boot('/invoices/')
-    const list = track(invoicesResource().list({ state: 'local', debounce: 0 }))
+    const list = track(invoicesResource().tethered({ state: 'local', debounce: 0 }))
     await settle()
 
     list.apply({}, { ...list.directives, search: 'acme' })
@@ -346,7 +346,7 @@ describe('apply and sort', () => {
 
   test('sort lays one ordering over the directives and keeps the rest', async () => {
     await boot('/invoices/')
-    const list = track(invoicesResource().list({ state: 'local', directives: { limit: 5 } }))
+    const list = track(invoicesResource().tethered({ state: 'local', directives: { limit: 5 } }))
     await settle()
 
     list.sort('-total')
@@ -358,7 +358,7 @@ describe('apply and sort', () => {
 
   test('a search alone waits for the typing to stop; a filter goes at once', async () => {
     await boot('/invoices/')
-    const list = track(invoicesResource().list({ state: 'local', debounce: 40 }))
+    const list = track(invoicesResource().tethered({ state: 'local', debounce: 40 }))
     await settle()
     const before = sent.length
 
@@ -379,7 +379,7 @@ describe('apply and sort', () => {
 
   test('in the URL, a debounced search REPLACES the entry; a filter pushes one', async () => {
     await boot('/invoices/')
-    const list = track(invoicesResource().list({ debounce: 10 }))
+    const list = track(invoicesResource().tethered({ debounce: 10 }))
     await settle()
     const pushed = window.history.entries
 
@@ -397,16 +397,16 @@ describe('apply and sort', () => {
 
 // ─── The resource file's defaults ───────────────────────────────────────────
 
-describe('listQuery reaches list() and nothing else', () => {
-  test('a bare load() does not read it — list() does', async () => {
+describe('tetheredQuery reaches tethered() and nothing else', () => {
+  test('a bare load() does not read it — tethered() does', async () => {
     await boot('/invoices/')
-    const invoices = invoicesResource({ listQuery: { query: { status: 'open' }, directives: { orderBy: '-issuedAt' } } })
+    const invoices = invoicesResource({ tetheredQuery: { query: { status: 'open' }, directives: { orderBy: '-issuedAt' } } })
 
-    await invoices.load({})
+    await tetherOf(invoices).load({})
     expect(last().get('status')).toBe(null)
     expect(last().get('$orderBy')).toBe(null)
 
-    track(invoices.list({ state: 'local' }))
+    track(invoices.tethered({ state: 'local' }))
     await settle()
     expect(last().get('status')).toBe('open')
     expect(last().get('$orderBy')).toBe('-issuedAt')
@@ -416,8 +416,8 @@ describe('listQuery reaches list() and nothing else', () => {
     // Merged under the URL key for key, a default filter could never be cleared
     // from a bar — clearing removes a key and the default puts it back.
     await boot('/invoices/?customerId=3')
-    const invoices = invoicesResource({ listQuery: { query: { status: 'open' } } })
-    track(invoices.list())
+    const invoices = invoicesResource({ tetheredQuery: { query: { status: 'open' } } })
+    track(invoices.tethered())
     await settle()
     expect(last().get('customerId')).toBe('3')
     expect(last().get('status')).toBe(null)
@@ -425,8 +425,8 @@ describe('listQuery reaches list() and nothing else', () => {
 
   test('its filters apply while the URL carries none, and yield to the URL\'s', async () => {
     await boot('/invoices/?status=paid')
-    const invoices = invoicesResource({ listQuery: { query: { status: 'open' } } })
-    track(invoices.list())
+    const invoices = invoicesResource({ tetheredQuery: { query: { status: 'open' } } })
+    track(invoices.tethered())
     await settle()
     expect(last().get('status')).toBe('paid')
 
@@ -479,7 +479,7 @@ describe('loading, error, the window, teardown', () => {
   test('hasMore answers the server\'s count, and a full page says no', async () => {
     await boot('/invoices/')
     total = 10
-    const list = track(invoicesResource().list({ state: 'local' }))
+    const list = track(invoicesResource().tethered({ state: 'local' }))
     await settle()
     expect(list.hasMore).toBe(true)
 
@@ -492,7 +492,7 @@ describe('loading, error, the window, teardown', () => {
   test('a failed load is reported on `error` and clears on the next good one', async () => {
     await boot('/invoices/')
     failNext = true
-    const list = track(invoicesResource().list({ state: 'local' }))
+    const list = track(invoicesResource().tethered({ state: 'local' }))
     await settle()
     expect(list.error).toBeTruthy()
     expect(list.loading).toBe(false)
@@ -504,7 +504,7 @@ describe('loading, error, the window, teardown', () => {
 
   test('destroy stops the list answering a navigation', async () => {
     await boot('/invoices/')
-    const list = invoicesResource().list()
+    const list = invoicesResource().tethered()
     await settle()
     list.destroy()
     const before = sent.length
@@ -522,14 +522,14 @@ describe('{ all: true } — the window grown to the end', () => {
     await boot('/invoices/')
     pageSize = 3
     many = rowsOf(7)
-    const paged = track(invoicesResource().list({ state: 'local' }))
+    const paged = track(invoicesResource().tethered({ state: 'local' }))
     await settle()
     expect(paged.rows.length).toBe(3)
     expect(paged.hasMore).toBe(true)
     paged.destroy()
 
     sent = []
-    const whole = track(invoicesResource().list({ state: 'local', all: true }))
+    const whole = track(invoicesResource().tethered({ state: 'local', all: true }))
     await settle()
     expect(whole.rows.length).toBe(7)
     expect(whole.hasMore).toBe(false)
@@ -541,7 +541,7 @@ describe('{ all: true } — the window grown to the end', () => {
     await boot('/invoices/')
     pageSize = 3
     many = rowsOf(7)
-    const list = track(invoicesResource().list({ state: 'local', all: true }))
+    const list = track(invoicesResource().tethered({ state: 'local', all: true }))
     await settle()
     sent = []
     list.apply({ status: 'open' })
@@ -555,7 +555,7 @@ describe('{ all: true } — the window grown to the end', () => {
     pageSize = 3
     many = rowsOf(7)
     stuckAt = 3
-    const list = track(invoicesResource().list({ state: 'local', all: true }))
+    const list = track(invoicesResource().tethered({ state: 'local', all: true }))
     await settle()
     expect(list.rows.length).toBe(3)
     expect(list.loading).toBe(false)
@@ -567,7 +567,7 @@ describe('{ all: true } — the window grown to the end', () => {
     pageSize = 3
     many = rowsOf(7)
     failAt = 3
-    const list = track(invoicesResource().list({ state: 'local', all: true }))
+    const list = track(invoicesResource().tethered({ state: 'local', all: true }))
     await settle()
     expect(list.error).toBeTruthy()
     expect(list.rows.length).toBe(3)
@@ -577,7 +577,7 @@ describe('{ all: true } — the window grown to the end', () => {
 
   test('a composed list cannot be whole, and says why', async () => {
     await boot('/invoices/')
-    expect(() => invoicesResource().list({ state: 'local', composed: true, all: true }))
+    expect(() => invoicesResource().tethered({ state: 'local', composed: true, all: true }))
       .toThrow(/cannot be composed/)
   })
 })
@@ -594,7 +594,7 @@ describe('composed: the rows carry what a push does not', () => {
     await boot('/invoices/')
     includes = true
 
-    const plain = track(invoicesResource().list({ state: 'local' }))
+    const plain = track(invoicesResource().tethered({ state: 'local' }))
     await settle()
     expect(plain.rows[1].customer).toEqual({ id: 9, name: 'Acme' })
     push()
@@ -604,7 +604,7 @@ describe('composed: the rows carry what a push does not', () => {
     expect(inv2.status).toBe('paid')
     expect(inv2.customer).toBeUndefined()
 
-    const list = track(invoicesResource().list({ state: 'local', composed: true }))
+    const list = track(invoicesResource().tethered({ state: 'local', composed: true }))
     await settle()
     const before = sent.length
     push()
@@ -617,23 +617,23 @@ describe('composed: the rows carry what a push does not', () => {
     await boot('/invoices/')
     includes = true
     const invoices = invoicesResource()
-    const list = track(invoices.list({ state: 'local', composed: true }))
+    const list = track(invoices.tethered({ state: 'local', composed: true }))
     await settle()
     expect(list.rows).toHaveLength(3)
-    expect(invoices.tether.get()).toEqual([])
+    expect(tetherOf(invoices).tether.get()).toEqual([])
 
-    track(invoices.list({ state: 'local' }))
+    track(invoices.tethered({ state: 'local' }))
     await settle()
-    expect(invoices.tether.get()).toHaveLength(3)
+    expect(tetherOf(invoices).tether.get()).toHaveLength(3)
 
     // Nor does it START on the tether's rows: those carry no relation, and would
     // show until the first read answered.
-    expect(track(invoices.list({ state: 'local', composed: true })).rows).toEqual([])
+    expect(track(invoices.tethered({ state: 'local', composed: true })).rows).toEqual([])
   })
 
   test('a burst of pushes during a read is ONE more read, not one each', async () => {
     await boot('/invoices/')
-    const list = track(invoicesResource().list({ state: 'local', composed: true }))
+    const list = track(invoicesResource().tethered({ state: 'local', composed: true }))
     await settle()
     delayMs = 20
     const before = sent.length
@@ -650,8 +650,8 @@ describe('composed: the rows carry what a push does not', () => {
   test('total answers the query\'s whole count, on both paths, and null before any answer', async () => {
     await boot('/invoices/')
     total = 134
-    const store = track(invoicesResource().list({ state: 'local' }))
-    const composed = track(invoicesResource().list({ state: 'local', composed: true }))
+    const store = track(invoicesResource().tethered({ state: 'local' }))
+    const composed = track(invoicesResource().tethered({ state: 'local', composed: true }))
     await settle()
     expect(store.total).toBe(134)
     expect(composed.total).toBe(134)
@@ -667,7 +667,7 @@ describe('composed: the rows carry what a push does not', () => {
   test('growing the window widens the limit and re-reads from the top', async () => {
     await boot('/invoices/')
     total = 10
-    const list = track(invoicesResource().list({ state: 'local', composed: true }))
+    const list = track(invoicesResource().tethered({ state: 'local', composed: true }))
     await settle()
     expect(list.hasMore).toBe(true)
 
@@ -685,7 +685,7 @@ describe('composed: the rows carry what a push does not', () => {
   test('a reconnect re-reads; a list that is not composed leaves that to the tether', async () => {
     await boot('/invoices/')
     vi.spyOn(Math, 'random').mockReturnValue(0)
-    const list = track(invoicesResource().list({ state: 'local', composed: true }))
+    const list = track(invoicesResource().tethered({ state: 'local', composed: true }))
     await settle()
     const before = sent.length
 
@@ -739,27 +739,27 @@ describe('a read that answered more than the row, on a view that is not composed
     await boot('/invoices/')
     includes = true
     const invoices = createResource('invoices', { model: 'Invoice' })
-    const list = track(invoices.list({ state: 'local' }))
+    const list = track(invoices.tethered({ state: 'local' }))
     await settle()
     list.reload()
     await settle()
 
     expect(warnings()).toHaveLength(1)
     expect(warnings()[0]).toContain("'customer'")
-    expect(warnings()[0]).toContain('list({ composed: true })')
+    expect(warnings()[0]).toContain('tethered({ composed: true })')
   })
 
   test('the same read declared composed, and a plain read with no include, say nothing', async () => {
     await build()
     await boot('/invoices/')
     includes = true
-    track(createResource('invoices', { model: 'Invoice' }).list({ state: 'local', composed: true }))
+    track(createResource('invoices', { model: 'Invoice' }).tethered({ state: 'local', composed: true }))
     await settle()
     includes = false
     // `createdAt` is undeclared in every emitted mode and must not read as composed.
     ROWS.forEach(r => { r.createdAt = '2026-09-12T00:00:00.000Z' })
     try {
-      track(createResource('invoices', { model: 'Invoice' }).list({ state: 'local' }))
+      track(createResource('invoices', { model: 'Invoice' }).tethered({ state: 'local' }))
       await settle()
     } finally {
       ROWS.forEach(r => { delete r.createdAt })
@@ -772,12 +772,12 @@ describe('a read that answered more than the row, on a view that is not composed
     await boot('/invoices/')
     // An optional include that found nothing is still an include.
     extra = { customer: null }
-    track(createResource('invoices', { model: 'Invoice' }).list({ state: 'local' }))
+    track(createResource('invoices', { model: 'Invoice' }).tethered({ state: 'local' }))
     await settle()
     expect(warnings().at(-1)).toContain("'customer'")
 
     extra = { lines: [{ sku: 'A' }] }
-    track(createResource('invoices', { model: 'Invoice' }).list({ state: 'local' }))
+    track(createResource('invoices', { model: 'Invoice' }).tethered({ state: 'local' }))
     await settle()
     expect(warnings()).toHaveLength(2)
     expect(warnings().at(-1)).toContain("'lines'")
@@ -811,8 +811,8 @@ describe('a list over a filter owns its rows', () => {
     await boot('/invoices/')
     byStatus = true
     const invoices = invoicesResource()
-    const open = track(invoices.list({ state: 'local', where: { status: 'open' } }))
-    const paid = track(invoices.list({ state: 'local', where: { status: 'paid' } }))
+    const open = track(invoices.tethered({ state: 'local', where: { status: 'open' } }))
+    const paid = track(invoices.tethered({ state: 'local', where: { status: 'paid' } }))
     await settle()
 
     expect(ids(open)).toEqual([2, 3])
@@ -823,22 +823,22 @@ describe('a list over a filter owns its rows', () => {
     await boot('/invoices/')
     byStatus = true
     const invoices = invoicesResource()
-    const everything = track(invoices.list({ state: 'local' }))
-    const paid       = track(invoices.list({ state: 'local', query: { status: 'paid' } }))
+    const everything = track(invoices.tethered({ state: 'local' }))
+    const paid       = track(invoices.tethered({ state: 'local', query: { status: 'paid' } }))
     await settle()
 
     expect(ids(everything)).toEqual([1, 2, 3])
     expect(ids(paid)).toEqual([1])
     // The list stating none IS the tether, which the filtered one never wrote.
-    expect(invoices.tether.get().map(r => r.id)).toEqual([1, 2, 3])
+    expect(tetherOf(invoices).tether.get().map(r => r.id)).toEqual([1, 2, 3])
   })
 
   test('a reload of one leaves the other alone', async () => {
     await boot('/invoices/')
     byStatus = true
     const invoices = invoicesResource()
-    const open = track(invoices.list({ state: 'local', where: { status: 'open' } }))
-    const paid = track(invoices.list({ state: 'local', where: { status: 'paid' } }))
+    const open = track(invoices.tethered({ state: 'local', where: { status: 'open' } }))
+    const paid = track(invoices.tethered({ state: 'local', where: { status: 'paid' } }))
     await settle()
 
     open.reload()
@@ -851,8 +851,8 @@ describe('a list over a filter owns its rows', () => {
     await boot('/invoices/')
     byStatus = true
     const invoices = invoicesResource()
-    const open = track(invoices.list({ state: 'local', where: { status: 'open' } }))
-    const paid = track(invoices.list({ state: 'local', where: { status: 'paid' } }))
+    const open = track(invoices.tethered({ state: 'local', where: { status: 'open' } }))
+    const paid = track(invoices.tethered({ state: 'local', where: { status: 'paid' } }))
     await settle()
 
     push({ id: 2, number: 'INV-2', status: 'paid', total: 200 })
@@ -868,7 +868,7 @@ describe('a list over a filter owns its rows', () => {
     const handlers = () => client.service('invoices')._handlers.get('patched').size
     const before = handlers()
 
-    const paid = invoices.list({ state: 'local', where: { status: 'paid' } })
+    const paid = invoices.tethered({ state: 'local', where: { status: 'paid' } })
     await settle()
     expect(handlers()).toBe(before + 1)
 
@@ -876,7 +876,7 @@ describe('a list over a filter owns its rows', () => {
     expect(handlers()).toBe(before)
 
     // A list over no filter of its own is the tether the resource already had.
-    const plain = invoices.list({ state: 'local' })
+    const plain = invoices.tethered({ state: 'local' })
     await settle()
     expect(handlers()).toBe(before)
     plain.destroy()

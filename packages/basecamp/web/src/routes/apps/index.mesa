@@ -30,7 +30,7 @@ title: Apps
   // Composed for the reason the deployments list gives: a push carries the
   // row without its includes, so a held row would blank its environment cell
   // on the first deploy.
-  const list = apps.list({ state: 'local', composed: true, directives: { limit: 50 } })
+  const list = apps.tethered({ state: 'local', composed: true, directives: { limit: 50 } })
 
   $: session.workspaceId, () => list.reload()
 </script>

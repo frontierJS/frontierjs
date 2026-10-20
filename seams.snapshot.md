@@ -107,7 +107,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `app.conduit.mirror(claim)` / `mirrored(accessor)` | `packages/conduit/src/mirror.ts` | yes | 5 |
 | `signRequest()` / `verifyRequest()` | `packages/toolbelt/src/signature/signature.js` | yes | 3 |
 | `requestMeta().traceparent` / `.tracestate` | `packages/junction/src/core/context.ts` | yes | 1 |
-| `ctx.$raw.rawBody` | `packages/junction/src/transport/http.ts` | mentioned | — |
+| `ctx.raw.rawBody` | `packages/junction/src/transport/http.ts` | mentioned | — |
 ## API internals
 
 | Seam | Owner | Declared in | Other sites |
@@ -135,7 +135,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `createLitestoneAuth(db, { sessionFields })` | `packages/auth/auth.ts` | yes | — |
 | `manifest()` | `packages/junction/src/plugins/manifest/index.ts` | yes | 22 |
 | `app.registerMetricsSource(name, fn)` / `app.registerReadiness(name, fn)` | `packages/junction/src/core/app.ts` | yes | — |
-| `app.registerDevService({ name, url, note })` | `packages/junction/src/core/app.ts` | yes | — |
+| `app.registerDevService(name, { url, note })` | `packages/junction/src/core/app.ts` | yes | — |
 | `devtools({ port, auth })` | `packages/junction/src/plugins/devtools/index.ts` | yes | 1 |
 ## API → UI
 
@@ -155,7 +155,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `tokenStorage` | `packages/junction/src/client/index.ts` | mentioned | — |
 | `client.entries` / `resource.record(id)` | `packages/junction/src/client/entries.ts` | mentioned | — |
 | `matchesQuery(fields, record, query)` | `packages/toolbelt/src/match/match.js` | yes | 1 |
-| `$after` / `endCursor` / `resource.more()` | `packages/toolbelt/src/directives/directives.js` | mentioned | — |
+| `$after` / `endCursor` / `tethered().more()` | `packages/toolbelt/src/directives/directives.js` | mentioned | — |
 | `comparatorFor(orderBy)` | `packages/toolbelt/src/query/query.js` | yes | 2 |
 ## UI
 

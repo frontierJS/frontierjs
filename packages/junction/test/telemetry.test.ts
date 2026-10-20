@@ -5,13 +5,14 @@
 //   3. One name per event — no bare junction.call beside .end
 //   4. junction.hook — per-hook events (before / after / around / error)
 //   5. Bypass methods — lightweight junction.call.end, no telemetryId
-//   6. ctx._cleanups — drained after pipeline (success and error)
+//   6. the call's cleanups — drained after pipeline (success and error)
 //   7. No telemetry when emitter not passed
 //   8. Dev-mode anonymous hook warning
 
 import { DERIVED_HOOKS, buildService } from '../src/core/service.ts'
 import { describe, it, expect, spyOn } from 'bun:test'
 import { callService }               from '../src/core/service.ts'
+import { callSlots }                 from '../src/core/context.ts'
 import { bridge }                                   from '../src/transport/bridge.ts'
 import type { CallStartEvent, TelemetryEvent, HookTelemetryEvent } from '../src/core/service.ts'
 import { asRecord }                                 from './helpers.ts'
@@ -502,9 +503,9 @@ describe('bypass method telemetry (_find, _create etc.)', () => {
 
 })
 
-// ─── 6. ctx._cleanups ────────────────────────────────────────────────────────
+// ─── 6. the call's cleanups ──────────────────────────────────────────────────
 
-describe('ctx._cleanups lifecycle', () => {
+describe('the call\'s cleanups lifecycle', () => {
 
   it('cleanup functions are called after successful pipeline', async () => {
     let cleaned = false
@@ -515,8 +516,7 @@ describe('ctx._cleanups lifecycle', () => {
       hooks: {
         before: {
           find: [async function registerCleanup(ctx) {
-            if (!ctx._cleanups) ctx._cleanups = []
-            ctx._cleanups.push(() => { cleaned = true })
+            callSlots(ctx).cleanups.push(() => { cleaned = true })
           }]
         }
       }
@@ -537,8 +537,7 @@ describe('ctx._cleanups lifecycle', () => {
       hooks: {
         before: {
           find: [async function registerCleanup(ctx) {
-            if (!ctx._cleanups) ctx._cleanups = []
-            ctx._cleanups.push(() => { cleaned = true })
+            callSlots(ctx).cleanups.push(() => { cleaned = true })
           }]
         }
       }
@@ -559,10 +558,9 @@ describe('ctx._cleanups lifecycle', () => {
       hooks: {
         before: {
           find: [async function registerCleanups(ctx) {
-            if (!ctx._cleanups) ctx._cleanups = []
-            ctx._cleanups.push(() => ran.push(1))
-            ctx._cleanups.push(() => ran.push(2))
-            ctx._cleanups.push(() => ran.push(3))
+            callSlots(ctx).cleanups.push(() => ran.push(1))
+            callSlots(ctx).cleanups.push(() => ran.push(2))
+            callSlots(ctx).cleanups.push(() => ran.push(3))
           }]
         }
       }
@@ -583,9 +581,8 @@ describe('ctx._cleanups lifecycle', () => {
       hooks: {
         before: {
           find: [async function registerCleanups(ctx) {
-            if (!ctx._cleanups) ctx._cleanups = []
-            ctx._cleanups.push(() => { throw new Error('cleanup error') })
-            ctx._cleanups.push(() => { secondRan = true })
+            callSlots(ctx).cleanups.push(() => { throw new Error('cleanup error') })
+            callSlots(ctx).cleanups.push(() => { secondRan = true })
           }]
         }
       }
@@ -597,15 +594,14 @@ describe('ctx._cleanups lifecycle', () => {
     expect(secondRan).toBe(true)
   })
 
-  it('_cleanups array is emptied after draining', async () => {
+  it('the cleanups list is emptied after draining', async () => {
     const svc = buildService({
       name: 'items',
       find: async () => [],
       hooks: {
         before: {
           find: [async function registerCleanup(ctx) {
-            if (!ctx._cleanups) ctx._cleanups = []
-            ctx._cleanups.push(() => {})
+            callSlots(ctx).cleanups.push(() => {})
           }]
         }
       }
@@ -614,7 +610,7 @@ describe('ctx._cleanups lifecycle', () => {
     const ctx = bridge.internal('items', 'find', null)
     await callService(svc, ctx)
 
-    expect(ctx._cleanups).toEqual([])
+    expect(callSlots(ctx).cleanups).toEqual([])
   })
 
 })

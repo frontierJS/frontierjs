@@ -239,7 +239,7 @@ export async function refresh() {
  *
  * An account with a second factor answers a CHALLENGE instead, and then none of
  * that has happened: `session.user` stays null and `session.awaitingCode` holds
- * the instant the attempt lapses at. Call `submitCode()` next. Without this
+ * the instant the attempt lapses at. Call `completeSignIn()` next. Without this
  * branch the refresh below would ask `account.me` with no credential, take the
  * 401 as a dead session and clear — a correct sign-in reported as a failure.
  */
@@ -262,10 +262,30 @@ export async function signIn(email, password) {
  * The ticket is the client's; nothing here threads it through a page, because in
  * cookie mode there is no ticket a page could hold.
  */
-export async function submitCode(code) {
+export async function completeSignIn(code) {
   return _attempt(async () => {
     const result = await _client.auth.completeSignIn(code)
     _w.awaitingCode = null
+    return result
+  })
+}
+
+/**
+ * Spend a mailed address link. A registration's link makes the account and
+ * signs in (`FJS-D1310`), so it lands where `signIn` does -- the session
+ * loaded, or `session.awaitingCode` set when a second factor is owed.
+ * Confirming an address an account already has answers `{ ok: true }` and
+ * signs nobody in; a caller already signed in has its session read again, so
+ * a screen gated on `verifiedAt` stops asking.
+ */
+export async function verifyEmail(token) {
+  return _attempt(async () => {
+    const result = await _client.auth.verifyEmail(token)
+    if (result?.ok) {
+      if (_w.user) await refresh()
+      return result
+    }
+    _w.awaitingCode = _isChallenge(result) ? (result.expiresAt ?? null) : null
     return result
   })
 }
@@ -434,7 +454,7 @@ function takeOAuthError() {
   // Not an error: the provider was the first factor and the account owes its
   // code (FJS-D915). It lands on the state a password's challenge sets, so a
   // page that renders a code box for one renders it for the other, and
-  // `submitCode()` finishes it. Read as an error it would put *enter your code*
+  // `completeSignIn()` finishes it. Read as an error it would put *enter your code*
   // on a page with no box to type it in.
   if (code === 'code_required') {
     _w.awaitingCode = url.searchParams.get('oauth_expires')

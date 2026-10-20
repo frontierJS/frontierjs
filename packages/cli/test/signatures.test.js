@@ -106,7 +106,7 @@ describe('the real workspace', () => {
     const r = rows.find(x => x.name === 'bearerClaim')
     expect(r.text).toBe('export function bearerClaim(opts: BearerClaimOptions): BearerResolver')
     expect(r.file).toBe('packages/junction/src/core/litestone.ts')
-    expect(importFrom(r)).toBe("import { bearerClaim } from '@frontierjs/junction'")
+    expect(importFrom(r)).toBe("import { bearerClaim } from '@frontierjs/junction/bearer'")
   })
 
   test('an interface too long to read is its members, each cut to a signature', () => {

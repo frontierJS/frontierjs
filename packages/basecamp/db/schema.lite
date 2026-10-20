@@ -884,7 +884,9 @@ model WorkspaceMember {
   id          String        @id @default(uuid())
   workspaceId String
   workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  userId      String
+  // @system: the person added is a User the caller cannot read, so addMember
+  // names the key under `system:` once it has read them (FJS-1953).
+  userId      String        @system
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// This caller's authority in this workspace. Nobody may change their own.
   role        WorkspaceRole @default(viewer)
@@ -1109,7 +1111,9 @@ model ApiKey {
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   // Whose permissions the key carries. A key is never more than its owner.
-  userId       String
+  // @system: a bot is a User the caller cannot read, so the service names the
+  // key under `system:` once assertBotOwner has read it (FJS-1953).
+  userId       String    @system
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // The auth Credential holding the HMAC. A bare id, no @relation — the same

@@ -143,8 +143,9 @@ export const auth = createLitestoneAuth(db, {
   passwordResetTtl:     '1 hour',
   emailVerificationTtl: '24 hours',
 
-  // Acting on an auth event. Awaited, and A THROW REFUSES — which is what makes
-  // lockout possible here rather than only in a hook in front of the route.
+  // Acting on an auth event. Each callback takes one event object. These four
+  // are Hooks: awaited, and A THROW REFUSES — which is what makes lockout
+  // possible here rather than only in a hook in front of the route.
   // One ordering rule: a hook runs BEFORE the thing it can refuse, so none of
   // them is handed what its refusal would have prevented. What happened after
   // is the audit trail's job — the hook is the gate, db.$audit is the record.
@@ -153,22 +154,24 @@ export const auth = createLitestoneAuth(db, {
   // onLoginFailed({ email, userId, reason }) before the refusal is raised;
   //                                          throwing replaces the 401
   // onLogout({ userId, sessionId })          before the session is deleted
-  // onRegister({ email, name })              before the user is created
+  // onRegistered({ user, db })               inside the registration's write;
+  //                                          a throw rolls the account back
   //
   // onLoginFailed: async ({ email }) => {
   //   if (await attempts.bump(email) > 5)
   //     throw new TooManyRequests('Locked. Try again in 15 minutes.')
   // },
 
-  // Wire these to your mailer once you have one configured:
-  // onPasswordResetRequested: async (email, token) => {
+  // Observers, so a throw is logged and refuses nothing. Wire these to your
+  // mailer once you have one configured:
+  // onPasswordResetRequested: async ({ email, token }) => {
   //   await mailer.send({
   //     to:      email,
   //     subject: 'Reset your password',
   //     html:    \`<a href="\${env.APP_URL}/auth/password-reset/confirm#token=\${token}">Reset password</a>\`,
   //   })
   // },
-  // onEmailVerificationRequested: async (email, token) => {
+  // onEmailVerificationRequested: async ({ email, token }) => {
   //   await mailer.send({
   //     to:      email,
   //     subject: 'Verify your email',

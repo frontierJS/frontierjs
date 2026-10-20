@@ -3,7 +3,7 @@
 // Phase 2 changes vs Phase 1:
 //   - Junction adapter wired into ctx (config-supplied or default placeholder)
 //   - Schema cache: load from storage, reconcile on connect, broadcast `schema`
-//   - Auth flow: hydrate stored token, expose login/logout via service:call routing
+//   - Auth flow: hydrate stored token, expose signIn/signOut via service:call routing
 //   - Message router for framework-level types: init, service:call, channel:subscribe,
 //     channel:unsubscribe (channels are stub in Phase 2 — Phase 2.5 wires real pubsub)
 //   - Real session payload (user, authenticated, expiresAt, protocolVersion)
@@ -306,31 +306,31 @@ async function handleServiceCall(port, msg, ctx) {
   }
 
   // Special-case auth: jetty owns the side effects (token storage, broadcast).
-  if (service === 'auth' && method === 'login') {
+  if (service === 'auth' && method === 'signIn') {
     try {
-      const result = await ctx.authFlow.login(args)
+      const result = await ctx.authFlow.signIn(args)
       respond(port, msg, { value: result })
     } catch (e) {
       respond(port, msg, errorPayload(e))
     }
     return
   }
-  // The second step of a login, and it is a special case for the same reason the
+  // The second step of a sign-in, and it is a special case for the same reason the
   // first is: jetty owns the token storage and the broadcast, so a generic
   // forward would put a session on the wire client and leave Harbor — the thing
   // that survives the page — knowing nothing about it.
-  if (service === 'auth' && method === 'submitCode') {
+  if (service === 'auth' && method === 'completeSignIn') {
     try {
-      const result = await ctx.authFlow.submitCode(args?.code)
+      const result = await ctx.authFlow.completeSignIn(args?.code)
       respond(port, msg, { value: result })
     } catch (e) {
       respond(port, msg, errorPayload(e))
     }
     return
   }
-  if (service === 'auth' && method === 'logout') {
+  if (service === 'auth' && method === 'signOut') {
     try {
-      const result = await ctx.authFlow.logout()
+      const result = await ctx.authFlow.signOut()
       respond(port, msg, { value: result })
     } catch (e) {
       respond(port, msg, errorPayload(e))

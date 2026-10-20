@@ -16,6 +16,7 @@ import { createJunctionClient } from '../src/client/index.ts'
 import { createClient } from '../../litestone/src/index.js'
 import { buildService } from '../src/core/service.ts'
 import type { ServiceContext } from '../src/core/context.ts'
+import { setCallDb } from '../src/core/context.ts'
 
 function mockFetch(body: unknown) {
   const original = globalThis.fetch
@@ -137,12 +138,12 @@ describe('and the server answers it with real rows', () => {
   }
 
   function ctx(db: unknown, over: Record<string, unknown> = {}): ServiceContext {
-    return {
+    return setCallDb({
       service: 'orders', method: 'find', id: undefined, data: null,
       params: {}, query: {}, auth: {}, caller: {},
-      locals: { db }, app: {},
+      locals: {}, app: {},
       ...over,
-    } as unknown as ServiceContext
+    } as unknown as ServiceContext, db)
   }
 
   test('the populate directive reaches the include and the relation comes back', async () => {
@@ -209,11 +210,11 @@ describe('a nested relation has a spelling (FJS-2429)', () => {
   }
 
   function ctx(db: unknown, populate: string): ServiceContext {
-    return {
+    return setCallDb({
       service: 'verses', method: 'find', id: undefined, data: null,
       params: {}, query: {}, auth: {}, caller: {},
-      locals: { db }, app: {}, directives: { populate },
-    } as unknown as ServiceContext
+      locals: {}, app: {}, directives: { populate },
+    } as unknown as ServiceContext, db)
   }
 
   type Out = { data: { words?: { text: string; lemma?: { root: string } }[] }[] }

@@ -94,7 +94,7 @@ describe('POST /auth/register where the app mails a verification', () => {
 
   beforeAll(async () => {
     mh = await makeAuth({
-      onEmailVerificationRequested: async (to, token) => { mails.push({ to, token }) },
+      onEmailVerificationRequested: async ({ email: to, token }) => { mails.push({ to, token }) },
       onCredentialChanged:          async c => { changes.push({ event: c.event, email: c.email }) },
     })
     mailApp = await createTestApp({ auth: mh.auth as any })
@@ -127,8 +127,13 @@ describe('POST /auth/register where the app mails a verification', () => {
     expect(await mh.sys.user.findFirst({ where: { email: address } })).toBeNull()
     await rejectsLogin(address, 'pw-9')
 
+    // FJS-3319: the click signs in, with what /auth/login answers.
     const res = await request(mailApp).post('/auth/email/verify').send({ token: mail.token })
     expect(res.status).toBe(200)
+    const session = res.body as { token: string; user: { email: string } }
+    expect(typeof session.token).toBe('string')
+    expect(session.user.email).toBe(address)
+    expect((await mh.auth.verifySession(session.token))?.email).toBe(address)
 
     const made = await mh.sys.user.findFirst({ where: { email: address } })
     expect(made.emailVerified).toBe(true)
@@ -137,6 +142,36 @@ describe('POST /auth/register where the app mails a verification', () => {
 
     // Single-use.
     expect((await request(mailApp).post('/auth/email/verify').send({ token: mail.token })).status).toBe(400)
+  })
+
+  test('in cookie mode the click sets the session cookie and keeps the token out of the body', async () => {
+    const cookieApp = await createTestApp({ auth: mh.auth as any })
+    cookieApp.setAuth(mh.auth as any)
+    cookieApp.configure(authPlugin({ auth: mh.auth, cookieAuth: true, registerRateLimit: { max: 10_000, window: '15 minutes' } }))
+
+    const address = email('rv-cookie')
+    await request(cookieApp).post('/auth/register').send({ email: address, password: 'pw-9' })
+    await settled(() => mails.some(m => m.to === address))
+    const res = await request(cookieApp).post('/auth/email/verify').send({ token: mails.find(m => m.to === address)!.token })
+
+    expect(res.status).toBe(200)
+    expect((res.body as any).token).toBeUndefined()
+    expect((res.body as any).user.email).toBe(address)
+    const cookie = String(res.headers['set-cookie'] ?? '')
+    const token  = /session=([^;]+)/.exec(cookie)?.[1]
+    expect(token).toBeTruthy()
+    expect((await mh.auth.verifySession(token!))?.email).toBe(address)
+  })
+
+  test('confirming an existing account\'s address signs nobody in', async () => {
+    const address = email('rv-existing')
+    const user = await mh.auth.createUser({ email: address, password: 'pw-1' })
+    await mh.auth.requestEmailVerification!(user.userId)
+    await settled(() => mails.some(m => m.to === address))
+    const res = await request(mailApp).post('/auth/email/verify').send({ token: mails.find(m => m.to === address)!.token })
+
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ ok: true })
   })
 
   test('a held address is mailed no link, and its owner is told', async () => {

@@ -416,7 +416,8 @@ Two doors:
 fli auth:create-user you@example.com --role admin
 \`\`\`
 
-or \`/register/\` in the browser, which signs the new account straight in.
+or \`/register/\` in the browser. That makes no account yet: the verification
+link prints in the API's terminal, and the account is made when it is followed.
 Registration gives everybody role \`user\`; \`--role admin\` is the only way to
 mint an ADMINISTRATOR, and \`db/schema.lite\` marks \`role\` \`@allow(write,
 auth().isAdmin)\` so nobody promotes themselves on the way in.
@@ -1108,7 +1109,7 @@ export const auth = createLitestoneAuth(db, {
   // whether or not the address has an account — they must never reveal who is
   // registered — so this log is the only place a reset is visible at all.
   // Wire app.mail.send() in here once the app has a mailer.
-  onPasswordResetRequested: async (email, token) => {
+  onPasswordResetRequested: async ({ email, token }) => {
     // WEB_URL, not APP_URL: the link lands on web/src/routes/reset/, and the
     // API's own origin has no page to answer it. The token rides the fragment:
     // a fragment is never sent in a request, a Referer or an access log, and
@@ -1116,7 +1117,7 @@ export const auth = createLitestoneAuth(db, {
     const link = \`\${env.WEB_URL}/reset/#token=\${encodeURIComponent(token)}\`
     console.log(\`[auth] password reset for \${email} — no mailer, so here is the link:\\n  \${link}\`)
   },
-  onEmailVerificationRequested: async (email, token) => {
+  onEmailVerificationRequested: async ({ email, token }) => {
     const link = \`\${env.WEB_URL}/verify-email/#token=\${encodeURIComponent(token)}\`
     console.log(\`[auth] verify \${email} — no mailer, so here is the link:\\n  \${link}\`)
   },
@@ -1845,7 +1846,7 @@ title: Sign in
 ---
 <script>
   import { goto }                                    from '@frontierjs/sierra/router'
-  import { session, signIn, submitCode, signOut }    from '@frontierjs/sierra/resource'
+  import { session, signIn, completeSignIn, signOut } from '@frontierjs/sierra/resource'
   import Code                                        from '@frontierjs/ui/components/display/Code.mesa'
 
   let email    = ''
@@ -1886,7 +1887,7 @@ title: Sign in
       // The ticket is the client's; this sends the code. A refusal that ends
       // the attempt clears \`session.awaitingCode\`, which puts the password
       // form back.
-      await submitCode(code.trim())
+      await completeSignIn(code.trim())
       code = ''
       goto('/')
     } catch (e) {
@@ -2064,12 +2065,15 @@ title: Verify your email
 <script>
   // The token is read from the fragment, for the reason the reset page gives.
   //
-  // Nothing here signs anybody in; verifying an address is proof of the mailbox
-  // and not of a password.
-  import { page }      from '@frontierjs/sierra/router'
-  import { getClient } from '@frontierjs/sierra/resource'
+  // A registration's link makes the account and signs in, so verifyEmail
+  // loads the session and the page moves on. An account with two-step sign-in
+  // owes its code first, which the sign-in page asks for. A link that confirms
+  // an address an account already has signs nobody in.
+  import { page, goto }          from '@frontierjs/sierra/router'
+  import { session, verifyEmail } from '@frontierjs/sierra/resource'
 
   $: page.hash
+  $: session.user
 
   let busy  = false
   let error = ''
@@ -2081,7 +2085,9 @@ title: Verify your email
     busy  = true
     error = ''
     try {
-      await getClient().auth.verifyEmail(token())
+      await verifyEmail(token())
+      if (session.user)         return goto('/')
+      if (session.awaitingCode) return goto('/login/')
       done = true
     } catch (e) {
       error = e.message
@@ -3039,7 +3045,7 @@ if (useAuth) {
   echo('')
   echo('  Nobody exists yet:')
   echo('    fli auth:create-user you@example.com --role admin   mints an ADMIN')
-  echo('    /register/ in the browser                           role "user", and signs you in')
+  echo('    /register/ in the browser                           role "user" — the link to finish it prints in the API terminal')
 }
 
 echo('')

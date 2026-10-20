@@ -1580,7 +1580,7 @@ export interface TypegenOptions {
    * this schema declares. Named rather than implied — an augmentation names a
    * package, and an app that installed litestone alone must not be given a
    * declaration for one it does not have. With `audience: 'system'` it also
-   * types junction's `app.db`, `$.db` and `ctx.locals.db` as this client.
+   * types junction's `app.db` and `$.db` as this client.
    */
   augment?: 'junction'
 }

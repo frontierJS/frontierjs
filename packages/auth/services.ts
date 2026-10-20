@@ -35,7 +35,8 @@
 // each method answers 400 by name, the way the /auth routes already do for
 // password reset.
 
-import { createService, rateLimitHook, BadRequest, Unauthorized, Forbidden, NotFound, LEVELS, toDataPrincipal } from '@frontierjs/junction'
+import { createService, BadRequest, Unauthorized, Forbidden, NotFound, LEVELS, toDataPrincipal } from '@frontierjs/junction'
+import { rateLimitHook } from '@frontierjs/junction/hooks'
 import type { IAuth, SessionContext, ServiceContext, ServiceDefinition } from '@frontierjs/junction'
 import type { AuthServicesOptions } from './types.ts'
 import type { AuthOAuth }           from './oauth.ts'

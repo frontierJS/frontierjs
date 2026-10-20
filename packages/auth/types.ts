@@ -2,7 +2,8 @@
 // LitestoneAuthOptions  — passed to createLitestoneAuth(db, opts)
 // AuthPluginOptions — passed to auth({ auth, ...opts })
 
-import type { IAuth, RateLimitHookOptions, SessionContext } from '@frontierjs/junction'
+import type { IAuth, SessionContext } from '@frontierjs/junction'
+import type { RateLimitHookOptions } from '@frontierjs/junction/hooks'
 
 // ─── A way into an account changed ──────────────────────────────────────────────
 
@@ -98,32 +99,49 @@ export interface LitestoneAuthOptions {
   // and nothing else to tell them apart.
   totpIssuer?: string
 
-  // Called after a password reset token is created, which is AFTER
-  // `requestPasswordReset` has answered: an awaited send would put a known
-  // address on the clock (FJS-1832). The token is the raw value — use it to
-  // build a reset link. A throw is logged, never returned to the caller.
-  //
-  // Example:
-  //   onPasswordResetRequested: async (email, token) => {
-  //     await mailer.send({
-  //       to:      email,
-  //       subject: 'Reset your password',
-  //       html:    `<a href="${APP_URL}/auth/password-reset/confirm#token=${token}">Reset</a>`,
-  //     })
-  //   }
-  onPasswordResetRequested?: (email: string, token: string) => Promise<void>
+  /**
+   * Send the reset link. **Observer tier** (`FJS-D06`): called after the token
+   * row is written, which is AFTER `requestPasswordReset` has answered -- an
+   * awaited send would put a known address on the clock (FJS-1832) -- and a
+   * throw is logged, never returned to the caller. Optional to the type
+   * system and required in practice: absent, a reset mails nobody.
+   *
+   * `token` is the raw value -- build the link from it.
+   *
+   *   onPasswordResetRequested: async ({ email, token }) => {
+   *     await mailer.send({
+   *       to:      email,
+   *       subject: 'Reset your password',
+   *       html:    `<a href="${APP_URL}/auth/password-reset/confirm#token=${token}">Reset</a>`,
+   *     })
+   *   }
+   */
+  onPasswordResetRequested?: (event: {
+    email: string
+    token: string
+  }) => Promise<void> | void
 
-  // Called immediately after an email verification token is created.
-  //
-  // Example:
-  //   onEmailVerificationRequested: async (email, token) => {
-  //     await mailer.send({
-  //       to:      email,
-  //       subject: 'Verify your email',
-  //       html:    `<a href="${APP_URL}/verify-email/#token=${token}">Verify</a>`,
-  //     })
-  //   }
-  onEmailVerificationRequested?: (email: string, token: string) => Promise<void>
+  /**
+   * Send a verification link. **Observer tier** (`FJS-D06`): called after the
+   * token row is written, for three purposes -- confirming the account's
+   * address, proving a NEW address (`email` is the new one), and registering,
+   * where it runs after the route has answered and a throw is logged. At the
+   * other two it is awaited and a throw reaches the caller as a failed send,
+   * with the row already written: it is told, and decides nothing. Setting it
+   * is also what makes register verify-first (`FJS-D1310`).
+   *
+   *   onEmailVerificationRequested: async ({ email, token }) => {
+   *     await mailer.send({
+   *       to:      email,
+   *       subject: 'Verify your email',
+   *       html:    `<a href="${APP_URL}/verify-email/#token=${token}">Verify</a>`,
+   *     })
+   *   }
+   */
+  onEmailVerificationRequested?: (event: {
+    email: string
+    token: string
+  }) => Promise<void> | void
 
   // Extra fields to put on every SessionContext this instance issues, read off
   // the User row that produced it.
@@ -157,9 +175,10 @@ export interface LitestoneAuthOptions {
   //
   // ONE ORDERING RULE, and it is the whole contract: **a hook runs before the
   // thing it can refuse.** So none of them receives what its refusal would have
-  // prevented — `onLogin` has no session id, `onRegister` has no user row —
+  // prevented — `onLogin` has no session id, `onLogout` still has the row —
   // because a hook that both refuses and reports the result of the thing it
-  // refused cannot exist. What happened afterwards is the audit trail's job:
+  // refused cannot exist. `onRegistered` is the one exception, and it keeps the
+  // rule by running inside the write: its throw rolls the row back. What happened afterwards is the audit trail's job:
   // **the hook is the gate, `db.$audit` is the record.**
   //
   // These are single handlers, not a bus: one owner per decision. A second
@@ -167,11 +186,11 @@ export interface LitestoneAuthOptions {
   // `onCredentialChanged` below is not a second listener — it observes changes
   // no hook here decides, and it is the only observer this provider holds.
 
-  /** After the password verifies, BEFORE a session is issued. Throw to refuse. */
+  /** **Hook tier.** After the password verifies, BEFORE a session is issued. Throw to refuse. */
   onLogin?: (event: { user: SessionContext }) => Promise<void> | void
 
   /**
-   * Before the refusal is raised. Throw to replace `InvalidCredentialsError`
+   * **Hook tier.** Before the refusal is raised. Throw to replace `InvalidCredentialsError`
    * with your own — a lockout answers 429, not 401.
    *
    * `reason` is 'no-such-user' | 'no-password-credential' | 'bad-password' at
@@ -194,16 +213,10 @@ export interface LitestoneAuthOptions {
     stage:  'password' | 'second-factor' | 'magic-link'
   }) => Promise<void> | void
 
-  /** Before the session row is deleted. `sessionId` is null for an unknown token. */
+  /** **Hook tier.** Before the session row is deleted. `sessionId` is null for an unknown token. */
   onLogout?: (event: {
     userId:    string | null
     sessionId: string | null
-  }) => Promise<void> | void
-
-  /** Before the user is created. Throw to refuse — a blocked domain, a closed list. */
-  onRegister?: (event: {
-    email: string
-    name:  string | null
   }) => Promise<void> | void
 
   /**
@@ -212,13 +225,16 @@ export interface LitestoneAuthOptions {
    * BEFORE the transaction commits, so a throw rolls back the whole of it
    * (`FJS-D520`). This is the step at which a row-tenanted app gives the person
    * their tenant: create the Account and the membership and write the tenant
-   * column, in the same write as the user. `db` is the registration's own
+   * column, in the same write as the user. It is also where a closed signup
+   * refuses -- a blocked domain, a closed list: throw, and no account is left. `db` is the registration's own
    * system client — use it, not the app's, or the writes fall outside the
    * transaction and a throw leaves them behind.
    *
-   * It is the one hook here that receives the row, because it does not refuse
-   * the registration so much as finish it (`onRegister` is the gate). The
-   * session that follows is built from the row as this hook left it.
+   * It is the one hook here that receives the row, and it may, because its
+   * refusal rolls that row back. Every door that makes an account runs it --
+   * register, the verification click, a magic link, a provider, `createUser`
+   * and an invitation. The session that follows is built from the row as this
+   * hook left it.
    */
   onRegistered?: (event: {
     user: Record<string, any>
@@ -229,7 +245,7 @@ export interface LitestoneAuthOptions {
 
   /**
    * A way into this account changed. **Observer tier** (`FJS-D06`), which is the
-   * opposite of the four above: called AFTER the write and the audit entry,
+   * opposite of the hooks above: called AFTER the write and the audit entry,
    * awaited, and a throw is logged and never refuses — a mail outage must not
    * keep a factor switched on that the person asked to switch off, and by then
    * the write has happened anyway.
@@ -316,7 +332,7 @@ export interface LitestoneAuthOptions {
    * holds — the identity is refused and nothing unsafe happens — but there is
    * no way through, and a person whose address collides can never sign in. This
    * is the same shape as `onPasswordResetRequested`: optional to the type
-   * system, a required performer in practice.
+   * system, a required performer in practice. **Observer tier** (`FJS-D06`).
    *
    *   onOAuthLinkRequested: async ({ email, token, provider }) => {
    *     await mailer.send({
@@ -350,7 +366,7 @@ export interface LitestoneAuthOptions {
    * person reading the mail on another device. Either one signs in, once.
    *
    * Called for an address nobody holds as well — the click is what creates the
-   * account, through `onRegister`, so a closed signup refuses there. Never
+   * account, through `onRegistered`, so a closed signup refuses there. Never
    * called for an account whose only way in is an OAuth provider (FJS-987).
    *
    *   onMagicLinkRequested: async ({ email, token, code }) => {
@@ -462,7 +478,7 @@ export interface AuthPluginOptions {
    * The operator is the caller's own principal. An app whose principal carries
    * a capability set writes one line:
    *
-   *   canStartSupport: (op) => op.capabilities?.includes('support') ?? false
+   *   canStartSupport: ({ operator }) => operator.capabilities?.includes('support') ?? false
    *
    * It is not a `@capability` on the column, and the reason is `FJS-519`'s
    * shape: every write to `Session` goes through `asSystem()`, which drops the
@@ -475,7 +491,11 @@ export interface AuthPluginOptions {
    * above you is escalation with a reason attached, and the trail naming you
    * does not take the rung back.
    */
-  canStartSupport?: (operator: SessionContext, subjectId: string) => boolean | Promise<boolean>
+  canStartSupport?: (event: {
+    operator:  SessionContext
+    subjectId: string
+    reason:    string
+  }) => boolean | Promise<boolean>
 
   // Route prefix. Default: '/auth'
   prefix?: string

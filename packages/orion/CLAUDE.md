@@ -139,7 +139,7 @@ the plan, module by module, and the rulings it rests on are
   has no delivery key, so the same stage sends it twice. A new node with an
   effect outside the run picks one of the two and says which.
 - **Who may act on a flow is `writerFor` in `src/services.ts` and nowhere else.**
-  The owner writes through `ctx.locals.db`, so `orion.lite`'s policies and the
+  The owner writes through `$.db`, so `orion.lite`'s policies and the
   `activate` move's `@gate(5)` grade them; an administrator acting on another
   person's flow gets the system client, which consults neither, so the grading
   of that caller is the function's own check. A new method that writes through

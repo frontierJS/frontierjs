@@ -18,7 +18,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { createLitestoneAuth } from '../auth.ts'
 import { BCRYPT_COST, DUMMY_HASH, API_KEY_PREFIX, generateSessionToken, generateApiKey } from '../crypto.ts'
-import { TEST_KEY, makeAuth, rejectsWith, type Harness, signedIn } from './harness.ts'
+import { TEST_KEY, makeAuth, rejectsWith, type Harness, signedIn, verified } from './harness.ts'
 import {
   InvalidCredentialsError, EmailTakenError,
   InvalidTokenError, UserNotFoundError, AuthConfigError,
@@ -379,7 +379,7 @@ describe('email verification', () => {
     expect(before!.verifiedAt).toBeNull()
 
     await h.auth.requestEmailVerification!(user.id)
-    const ctx = await h.auth.verifyEmail!(h.verifyToken())
+    const ctx = verified(await h.auth.verifyEmail!(h.verifyToken()))
 
     // After: no verifiedAt key at all — "nothing holding this user back"
     expect('verifiedAt' in ctx).toBe(false)
@@ -394,6 +394,19 @@ describe('email verification', () => {
 
     await h.auth.verifyEmail!(token)
     await rejectsWith(() => h.auth.verifyEmail!(token), InvalidTokenError)
+  })
+
+  test('verifyEmail answers the sign-in for a registration link', async () => {
+    const email = `ev-register-${Date.now()}@test.local`
+    const before = h.verifyToken()
+    await h.auth.requestRegistration!({ email, password: 'pw-register-1', name: 'Reg' })
+    for (let i = 0; i < 200 && h.verifyToken() === before; i++) await new Promise(r => setTimeout(r, 10))
+
+    const answer = await h.auth.verifyEmail!(h.verifyToken())
+    expect('signedIn' in answer).toBe(true)
+    const session = signedIn((answer as { signedIn: unknown }).signedIn)
+    expect(session.user.email).toBe(email)
+    expect((await h.auth.verifySession(session.token))?.email).toBe(email)
   })
 
   test('requestEmailVerification on an unknown user is UserNotFoundError', async () => {
@@ -1021,9 +1034,9 @@ describe('the auth hooks', () => {
     h.cleanup()
   })
 
-  test('onRegister runs before anything is written, so refusing makes no user', async () => {
+  test('onRegistered refusing rolls the registration back, so no user and no credential is left', async () => {
     const h = await makeAuth({
-      onRegister: ({ email }) => { if (email.endsWith('@blocked.co')) throw new Error('domain not allowed') },
+      onRegistered: ({ user }) => { if (user.email.endsWith('@blocked.co')) throw new Error('domain not allowed') },
     })
 
     await expect(h.auth.createUser({ email: 'x@blocked.co', password: 'correct-horse-1' }))

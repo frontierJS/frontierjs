@@ -16,6 +16,7 @@ import { createApp, createService, defaultConfig, signedRequest, membershipClaim
 import type { PrincipalSetting } from '../index.ts'
 import type { SessionContext } from '../src/auth/types.ts'
 import type { ServiceContext } from '../src/core/context.ts'
+import { $ } from '../index.ts'
 
 const SECRET = 'partner-secret'
 const NOW    = 1_800_000_000
@@ -60,7 +61,7 @@ async function callAs(principal?: PrincipalSetting) {
     name: 'docs',
     async find(ctx: ServiceContext) {
       seen.user = ctx.auth.user
-      return (ctx.locals.db as any).doc.findMany({})
+      return ($.db as any).doc.findMany({})
     },
   }))
   await app.start()

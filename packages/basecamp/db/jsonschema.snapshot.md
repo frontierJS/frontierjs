@@ -479,7 +479,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `auth` | `FlowCredentialAuth` = `"none"` | — | — | — | — |
 | `header` | `string`? | — | — | — | — |
 | `encoding` | `string`? = `"json"` | — | — | — | — |
-| `secret` | `string`? | — | — | `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
+| `secret` | `string`? | — | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `name`, `provider`, `address` · not accepted — `id`
@@ -614,14 +614,14 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | yes | — | — | — |
-| `userId` | `string` | yes | — | — | — |
+| `userId` | `string` | — | — | `x-litestone-kind` | — |
 | `role` | `WorkspaceRole` = `"viewer"` | — | — | — | — |
 | `capabilities` | `Capability[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
 | `invitedBy` | `string`? | — | — | — | — |
 | `invitedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `acceptedAt` | `string`? | — | — | `format: "date-time"` | — |
 
-**On create**: required — `workspaceId`, `userId` · not accepted — `id`
+**On create**: required — `workspaceId` · not accepted — `id`
 
 ### `Invitation`
 
@@ -650,7 +650,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `kind` | `SecretKind` = `"generic"` | — | — | — | — |
-| `data` | `string` = `"{}"` | — | — | `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
+| `data` | `string` = `"{}"` | — | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
 | `isVerified` | `boolean` = `false` | — | — | — | — |
 | `createdBy` | `string`? | — | — | — | — |
 | `providerKind` | `ProviderKind`? | — | — | — | — |
@@ -668,7 +668,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
-| `userId` | `string` | yes | — | — | — |
+| `userId` | `string` | — | — | `x-litestone-kind` | — |
 | `credentialId` | `string`? | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `tokenHint` | `string` | — | — | `x-litestone-kind` | — |
@@ -681,7 +681,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `usesOnDate` | `integer` = `0` | — | — | — | — |
 | `createdBy` | `string`? | — | — | — | — |
 
-**On create**: required — `userId`, `name` · not accepted — `id`
+**On create**: required — `name` · not accepted — `id`
 
 ### `Server`
 
@@ -904,7 +904,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `key` | `string` | yes | — | `pattern: "^[A-Za-z_][A-Za-z0-9_]{0,99}$"` `x-transforms` | `pattern` `regex` |
 | `secret` | `boolean` = `false` | — | — | — | — |
 | `value` | `string`? | — | — | `minLength: 0` `maxLength: 10000` | — |
-| `secretValue` | `string`? | — | — | `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
+| `secretValue` | `string`? | — | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `environmentId`, `key` · not accepted — `id`, `version`

@@ -15,7 +15,8 @@
 
 import { describe, test, expect } from 'bun:test'
 
-import { membershipClaim, header, declaredCallHeaders, describePrincipalRealm, PRINCIPAL_RESOLVER, TENANT_REGISTRY } from '../src/core/litestone.ts'
+import { membershipClaim, declaredCallHeaders, describePrincipalRealm, PRINCIPAL_RESOLVER, TENANT_REGISTRY } from '../src/core/litestone.ts'
+import { header } from '../src/core/bearer.ts'
 import { renderPrincipalSnapshot } from '../tools/principal-snapshot.ts'
 
 const claim = membershipClaim({

@@ -764,15 +764,49 @@ const signIn = ($, email, password) => probe.httpJson({
   name:     `sign in as ${email}`,
 })
 
-const registerAccount = ($, { email, password, name }) => probe.httpJson({
-  url:      apiUrl($, '/auth/register'),
-  method:   'POST',
-  headers:  { 'content-type': 'application/json' },
-  body:     JSON.stringify({ email, password, name }),
-  expect:   (j) => typeof j.token === 'string',
-  describe: 'a session token',
-  name:     `register ${email}`,
-})
+// Register answers 202 and the account is made at the mailed link, which signs
+// in (`FJS-D1310`). The link is in the API's output, which is the log this
+// lesson's `startServer` wrote; an API somebody else started has no log here.
+// Answers what the verify route does -- `json.token` and `json.user` -- so a
+// caller reads it the way it read a session from register.
+const registerAccount = async ($, { email, password, name }) => {
+  const asked = await probe.httpStatus({
+    url:     apiUrl($, '/auth/register'),
+    method:  'POST',
+    headers: { 'content-type': 'application/json' },
+    body:    JSON.stringify({ email, password, name }),
+    expect:  202,
+    name:    `register ${email}`,
+  })
+  if (!asked.ok) return asked
+
+  const api = $.config.__servers?.api
+  if (!api?.logPath) {
+    return { ok: false, name: `the verification link for ${email}`, asked: 'the API output this lesson started', got: 'an API this lesson did not start' }
+  }
+  const link = await probe.eventually(() => mailedLink(api.logPath, email), { retries: 20, everyMs: 250 })
+  if (!link.ok) return link
+
+  return probe.httpJson({
+    url:      apiUrl($, '/auth/email/verify'),
+    method:   'POST',
+    headers:  { 'content-type': 'application/json' },
+    body:     JSON.stringify({ token: link.token }),
+    expect:   (j) => typeof j.token === 'string',
+    describe: 'a session token',
+    name:     `follow the verification link for ${email}`,
+  })
+}
+
+const mailedLink = (logPath, email) => {
+  const name = `the verification link for ${email}`
+  let text = ''
+  try { text = readFileSync(logPath, 'utf8') } catch {}
+  const token = probe.scaffoldVerificationToken(text, email)
+  return token
+    ? { ok: true, name, asked: 'a link in the API output', got: 'one', token }
+    : { ok: false, name, asked: 'a link in the API output', got: `none in ${logPath}` }
+}
 
 // `--step N` on its own reuses the tokens the journal recorded, and a session
 // minted on another day is expired — which arrives as a 401 the step then blames

@@ -2,7 +2,8 @@
 // Basecamp-specific hooks — used across Basecamp services.
 // Framework hooks (authenticate, requireRole, etc.) imported from '@frontierjs/junction'.
 
-import { BadRequest, Forbidden, NotFound, Unauthorized, authenticate, applyClaims, MEMBERSHIP, signedRequest, serviceAccessor, accessorCandidates, resultData, $} from '@frontierjs/junction'
+import { BadRequest, Forbidden, NotFound, Unauthorized, applyClaims, MEMBERSHIP, signedRequest, serviceAccessor, accessorCandidates, resultData, $ } from '@frontierjs/junction'
+import { authenticate } from '@frontierjs/junction/hooks'
 import type { App, Hook, ILogger, ServiceContext, CredentialVerifier, InboundRequest }  from '@frontierjs/junction'
 import { REDACTED }                       from '@frontierjs/toolbelt/redact'
 import { workspaceChannelName }       from '../channels.ts'
@@ -74,7 +75,7 @@ export async function workspaceOrKeys(ctx: ServiceContext): Promise<string | und
   const named = resolveWorkspaceId(ctx)
   const user  = userOf(ctx)
   if (named || user?.authMethod !== 'apiKey' || !user.credentialId) return named
-  const db  = ctx.locals.db as { asSystem(): any } | undefined
+  const db  = $.db as { asSystem(): any } | undefined
   const key = await db?.asSystem().apiKey.findFirst({ where: { credentialId: user.credentialId }, select: { workspaceId: true } })
   return key?.workspaceId ?? undefined
 }
@@ -484,7 +485,7 @@ export const workspaceChannel: import('@frontierjs/junction').ChannelFn = (data,
 // The scheme is `@frontierjs/toolbelt/signature` — the same module conduit signs
 // with, so this cannot be a second reading of it. What it needs from the
 // request is the body as BYTES, which junction now carries as
-// `ctx.$raw.rawBody`: re-serializing `ctx.data` to hash it would mean both sides
+// `ctx.raw.rawBody`: re-serializing `ctx.data` to hash it would mean both sides
 // agreeing on key order and spacing forever.
 //
 // ─── Which secret ────────────────────────────────────────────────────────
@@ -982,7 +983,7 @@ export function basecampAuditLog({ except = [] }: { except?: string[] } = {}): H
 // `$limit` / `$offset` are TRANSPORT syntax. The bridge parses them off the
 // query string and puts them on ctx.directives; nothing past the bridge ever
 // sees a `$` (Invariant 10). ctx.query is filters only, so the old
-// `q.$limit ?? ctx.$raw.query.$limit` chain read fields that are never there.
+// `q.$limit ?? ctx.raw.query.$limit` chain read fields that are never there.
 // ctx.query.limit is still honored for internal callers that pass it plainly.
 
 export function getPagination(

@@ -15,6 +15,16 @@ export const lines = (rows, { indent = 0, style } = {}) => {
   return style ? style(text) : text
 }
 
+// The arguments of a function that can also be a template tag, as the plain
+// call's. Called as echo`a ${b}`, a function gets the literal parts as an array
+// carrying `raw` and the values after it; that becomes the one string the
+// template would have built. Any other call passes through as it came.
+export const untag = (args) => {
+  const [strings, ...values] = args
+  if (!Array.isArray(strings) || !Array.isArray(strings.raw)) return args
+  return [strings.reduce((out, s, i) => out + s + (i < values.length ? values[i] : ''), '')]
+}
+
 // `3 ports`, `1 port`. A word whose plural is not an s is spelled out by the
 // caller rather than taught here.
 export const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`

@@ -8,9 +8,8 @@ title: Verify email
   //
   // Open signed in or out (App.mesa): the link is opened wherever the mail is
   // read, which is often not the browser that holds the session.
-  import { page }      from '@frontierjs/sierra/router'
-  import { getClient, refresh } from '@frontierjs/sierra/resource'
-  import { session }   from '../../session.js'
+  import { page, goto }          from '@frontierjs/sierra/router'
+  import { session, verifyEmail } from '../../session.js'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Alert  from '@frontierjs/ui/components/feedback/Alert.mesa'
 
@@ -22,10 +21,11 @@ title: Verify email
   async function spend(token) {
     if (!token) { state = 'failed'; error = 'This link has no token in it.'; return }
     try {
-      await getClient().auth.verifyEmail(token)
-      // A signed-in session was graded unverified; reading it again lifts that
-      // without a sign-out.
-      if (session.user) await refresh()
+      // A registration's link signs in; one that owes a second factor leaves
+      // the code box open on the sign-in page. A signed-in session is read
+      // again, which lifts the unverified grading without a sign-out.
+      await verifyEmail(token)
+      if (session.awaitingCode) return goto('/login/')
       state = 'done'
     } catch (e) {
       const status = e.code ?? e.status

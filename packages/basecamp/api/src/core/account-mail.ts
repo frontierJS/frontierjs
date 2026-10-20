@@ -23,7 +23,10 @@ const link = (path: string, token: string) =>
  */
 export function accountMail(app: () => App | null, logger: ILogger) {
   async function deliver(to: string, subject: string, lead: string, action: string, url: string) {
-    const mail = app()?.mail
+    // `in`, because reading a slot nothing installed throws rather than
+    // answering undefined.
+    const host = app()
+    const mail = host && 'mail' in host ? host.mail : null
     if (!mail) {
       // A development console with no provider still has to be able to finish
       // the flow, and the log is the only place the link can go. Never in
@@ -45,11 +48,11 @@ export function accountMail(app: () => App | null, logger: ILogger) {
   }
 
   return {
-    onPasswordResetRequested: (email: string, token: string) =>
+    onPasswordResetRequested: ({ email, token }: { email: string, token: string }) =>
       deliver(email, 'Reset your password', 'Somebody asked to reset the password for your Basecamp account.',
               'Choose a new password', link('/reset-password/', token)),
 
-    onEmailVerificationRequested: (email: string, token: string) =>
+    onEmailVerificationRequested: ({ email, token }: { email: string, token: string }) =>
       deliver(email, 'Verify your email', 'Confirm this address for your Basecamp account.',
               'Verify this address', link('/verify-email/', token)),
   }

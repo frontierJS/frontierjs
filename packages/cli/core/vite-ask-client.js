@@ -137,6 +137,9 @@
   // A control is an icon, so the header and a pick's row stay one line. Its
   // word is the aria-label and its title says what it does.
   const ICON = BTN + ';padding:6px;display:inline-flex;align-items:center;justify-content:center'
+  // A pick's own controls are smaller and borderless, so they read as acting
+  // on that row and not as more of the panel's toolbar above it.
+  const ICON_QUIET = 'padding:4px;border:0;border-radius:4px;background:transparent;color:#94a3b8;cursor:pointer;display:inline-flex;align-items:center;justify-content:center'
   const ICONS = {
     pick:  ['M14 4.1 12 6', 'm5.1 8-2.9-.8', 'm6 12-1.9 2', 'M7.2 2.2 8 5.1', 'M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z'],
     term:  ['m4 17 6-6-6-6', 'M12 19h8'],
@@ -150,13 +153,18 @@
     plan:  ['m3 17 2 2 4-4', 'm3 7 2 2 4-4', 'M13 6h8', 'M13 12h8', 'M13 18h8'],
   }
   const SVG = 'http://www.w3.org/2000/svg'
-  const iconButton = (name, label, title) => {
-    const b = make('button', ICON)
+  const iconButton = (name, label, title, quiet) => {
+    const b = make('button', quiet ? ICON_QUIET : ICON)
     b.type = 'button'
     b.title = title
     b.setAttribute('aria-label', label)
+    if (quiet) {
+      b.onmouseenter = () => { b.style.color = '#e2e8f0'; b.style.background = '#1e293b' }
+      b.onmouseleave = () => { b.style.color = '#94a3b8'; b.style.background = 'transparent' }
+    }
+    const size = quiet ? 14 : 16
     const svg = document.createElementNS(SVG, 'svg')
-    for (const [k, v] of [['width', 16], ['height', 16], ['viewBox', '0 0 24 24'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', 2], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']]) svg.setAttribute(k, v)
+    for (const [k, v] of [['width', size], ['height', size], ['viewBox', '0 0 24 24'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', 2], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']]) svg.setAttribute(k, v)
     for (const d of ICONS[name]) { const path = document.createElementNS(SVG, 'path'); path.setAttribute('d', d); svg.appendChild(path) }
     b.appendChild(svg)
     return b
@@ -727,18 +735,18 @@
       what.appendChild(make('div', 'color:#94a3b8;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis',
         `<${p.el.localName}>${text ? ' ' + text.slice(0, 60) : ''}`))
       row.appendChild(what)
-      const acts = make('div', 'display:flex;flex:none;gap:6px;margin-left:auto')
+      const acts = make('div', 'display:flex;flex:none;gap:2px;margin-left:auto')
       if (text && text.length <= MAX_TEXT) {
-        const edit = iconButton('edit', 'Edit text', 'Edit text: change the words in place, without asking Claude when it can')
+        const edit = iconButton('edit', 'Edit text', 'Edit text: change the words in place, without asking Claude when it can', true)
         edit.onclick = () => editText(p)
         acts.appendChild(edit)
       }
       if (p.open) {
-        const source = iconButton('open', 'Open source', 'Open source: open this line in your editor')
+        const source = iconButton('open', 'Open source', 'Open source: open this line in your editor', true)
         source.onclick = p.open
         acts.appendChild(source)
       }
-      const drop = iconButton('close', 'Leave out', 'Leave this element out')
+      const drop = iconButton('close', 'Leave out', 'Leave this element out', true)
       drop.onclick = () => { picks = picks.filter(x => x !== p); render() }
       acts.appendChild(drop)
       row.appendChild(acts)

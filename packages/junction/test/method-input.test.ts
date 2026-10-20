@@ -63,7 +63,7 @@ async function mkApp(methods: unknown) {
 }
 
 // Through `app.service(name)` rather than a hand-built ctx: the app-level
-// around hook is what puts the scoped client on `ctx.locals.db`, and the
+// around hook is what puts the scoped client on `$.db`, and the
 // declaration is resolved off that client's own $schema.
 const call = (app: any, method: string, data: unknown) =>
   app.service('orders').call(method, null, data as never)

@@ -253,12 +253,18 @@ export default createService({
     const data = await mintKey($.data as Record<string, unknown>)
 
     try {
-      // `system:` names the two columns the caller may not send — `mintKey`
-      // derived them from a token that did not exist when the request was
-      // made, and `@system` refuses a write naming one BY NAME. Stating them
-      // here keeps the gate, the row policies and the audit actor, where
-      // `asSystem()` would drop all three to set two values.
-      const row = await db().apiKey.create({ data, system: ['credentialId', 'tokenHint'] })
+      // `system:` names the columns the caller may not send — `mintKey`
+      // derived the credential and the hint from a token that did not exist
+      // when the request was made, and `@system` refuses a write naming one BY
+      // NAME. Stating them here keeps the gate, the row policies and the audit
+      // actor, where `asSystem()` would drop all three to set three values.
+      //
+      // `userId` is the application's statement too: `User` reads self-only,
+      // so a bot is a parent the caller cannot read and, graded as their own
+      // guess, answered 422 "names no User" (FJS-D576). assertBotOwner has
+      // already read the bot and held it to this workspace and the caller's
+      // standing, and naming the key under `system:` is what says so (FJS-1953).
+      const row = await db().apiKey.create({ data, system: ['credentialId', 'tokenHint', 'userId'] })
       // `token` is not a column and is on no later read. The screen has one
       // chance to show it, and says so.
       return { ...present(row), token: $.locals.mintedToken }

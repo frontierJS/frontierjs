@@ -985,12 +985,27 @@ export interface BrokerLink {
  * without a close looks open forever, and only a frame that must come back
  * tells the two apart. Without it a quiet broker is never closed for being
  * quiet.
+ *
+ * `sequence` is for a Provider that numbers what it pushes on a connection
+ * and drops frames without closing: it answers a message's number, or `null`
+ * for one that carries none. A number more than one past the highest seen on
+ * that connection is a gap, handed to the receiver's `gap` ahead of the frame
+ * that showed it. The first frame on a connection only sets the start, and a
+ * lower or repeated number is no gap.
  */
 export interface BrokerFraming<State = unknown> {
   handshake?(link: BrokerLink, secret: string | null): Promise<State>
   decode(frame: string, state: State): BrokerMessage | null
   ack?(message: BrokerMessage): string
   keepalive?: BrokerKeepalive<State>
+  sequence?(message: BrokerMessage, state: State): number | null
+}
+
+/** A connection's numbering skipped: `after` was the highest seen, `at` arrived next. */
+export interface BrokerGap {
+  connection: unknown
+  after:      number
+  at:         number
 }
 
 /**

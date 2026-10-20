@@ -3841,7 +3841,7 @@ describe('client — metadata properties', () => {
   test('$softDelete answers on every flavor of client', () => {
     // A capability that depends only on the schema belongs on all four. This
     // one answered on the root alone, so the flavor an application actually
-    // holds — junction scopes ctx.locals.db with $setAuth — threw the
+    // holds — junction scopes $.db with $setAuth — threw the
     // unknown-property error at a question about the schema.
     for (const c of [db, db.$setAuth({ id: 1 }), db.asSystem(), db.$scopedBy({})]) {
       expect(c.$softDelete.User).toBe(true)

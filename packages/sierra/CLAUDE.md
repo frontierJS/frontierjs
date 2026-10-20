@@ -151,7 +151,7 @@ src/
                          a `@@sync(field)` save still carries the row it read
                          (plan 3.6). A view opens NO socket — a host
                          relays results, never a push — so its tether is its
-                         own calls' answers and `resource.stale` stays 0.
+                         own calls' answers and its `stale` count stays 0.
                          `toolAnswer()` throws a refusal as HTTP does —
                          `code` the status, `data` the plugin's
                          `structuredContent` — so `toFieldErrors` reads it
@@ -241,12 +241,18 @@ src/
     index.js             WebSocket client integration; `connectApp()`, the
                          handle a Resource over ANOTHER app is built from
     session.js           who the browser thinks you are — the reactive object,
-                         the boot restore, signIn/submitCode/signOut, and `ready`.
+                         the boot restore, the client's own verbs (signIn /
+                         completeSignIn / signUp / verifyEmail / signOut,
+                         `FJS-D1315`), and `ready`.
                          A RELAYED page (an MCP view) has a principal and no
                          credential, so its level is null, never STRANGER
     resource.js          createResource — coerce → blankToNull → validate
-    list.js              resource.list() — where a list's state lives, its load
-                         and re-run, and the window. Imports the router
+    tethered.js          resource.tethered() — the one door a screen lists rows
+                         through (`FJS-D1318`): where a list's state lives, its
+                         load and re-run, and the window. Imports the router.
+                         The tether, `load`, `more` and `stale` it is built
+                         from are not resource keys; this package's suites
+                         reach them through `tetherOf(resource)` in resource.js
     SupportBanner.mesa   `@frontierjs/sierra/components/SupportBanner` — the
                          "acting as another user" banner, drawn from
                          `session.user.support` alone, Stop = `endSupport` then
@@ -376,7 +382,7 @@ bench/                   — `bun run bench`: brotli bytes per target, the last 
   **A challenge is told apart by the absence of a USER**, never by a ticket:
   cookie mode strips `challenge` on the wire, so a real challenge arrives carrying
   only the expiry. `session.awaitingCode` is what a page renders the box from and
-  `submitCode(code)` finishes it; `retryable: false` closes the box, because the
+  `completeSignIn(code)` finishes it; `retryable: false` closes the box, because the
   attempt is spent and every further code will be refused (`FJS-D261`). **An
   OAuth sign-in arrives at the same box by URL** (`FJS-D915`):
   `?oauth_error=code_required` sets `awaitingCode` from `oauth_expires` rather
@@ -578,8 +584,8 @@ bench/                   — `bun run bench`: brotli bytes per target, the last 
   threaded-through `undefined` does not disarm it.
 - **The URL's search string is `page.query` + `page.directives`, and `page.params`
   is path captures alone.** The same split the API boundary makes, over the same
-  table (`@frontierjs/toolbelt/directives`), so `resource.load(page.query,
-  page.directives)` is a whole URL-driven list with nothing to translate. **The
+  table (`@frontierjs/toolbelt/directives`), so `resource.tethered()` is a whole
+  URL-driven list with nothing to translate. **The
   VALUES come from the sibling module** — `@frontierjs/toolbelt/query`, which
   Junction's transport and its client also read (`FJS-D125`): a string is a number
   only if `String(Number(v)) === v`, so `?sku=007` is the string it looks like and
@@ -595,7 +601,7 @@ bench/                   — `bun run bench`: brotli bytes per target, the last 
   `page.params.id` (`FJS-083`).
 - **A tether now means the query that filled it.** `matchesQuery(fields,
   record, query)` decides whether a pushed record is still in the list `load()`
-  asked for; junction takes it as `resource(name, idField, { match })`. So a
+  asked for; junction takes it as `resource(name, { idField, match })`. So a
   patch that moves a row out of the filter REMOVES it — there is no other event
   for leaving a filter, and the row used to stay, updated in place and wrong. It
   answers `true | false | null`, and `null` (a `select` that dropped the filtered
@@ -938,7 +944,7 @@ Two crossings with the API realm, both worth stating outright:
   meant to.
 
 `page.query` and `page.directives` are split by the same `@frontierjs/toolbelt/directives`
-table the API bridge uses, so `resource.load(page.query, page.directives)` is a
+table the API bridge uses, so `resource.tethered()` reading them is a
 filtered, sorted, paged list that lives in its URL (Invariant 10).
 
 **The resource hook context** — `createResource`'s pipeline, in
@@ -958,8 +964,8 @@ for a whole-call concern like a loading flag.
 **One word each.** `params` is path captures, `locals` is scratch, and the second
 argument to `find`/`load`/`getOptions` — like the field on the hook context and
 junction's own `QueryDirectives` (`FJS-290`) — is **`directives`** (Invariant 10).
-`optionsQuery`, `detailQuery`, `listQuery` and `offlineQuery` all take `{ query, directives }`, declared beside
-the model rather than at every call site (`FJS-D114`) — and `listQuery` reaches `list()` alone, never a
+`optionsQuery`, `detailQuery`, `tetheredQuery` and `offlineQuery` all take `{ query, directives }`, declared beside
+the model rather than at every call site (`FJS-D114`) — and `tetheredQuery` reaches `tethered()` alone, never a
 bare `find()`, because a default filter there would narrow every picker and job in silence. The write is
 `save(data, { mode })`, the one owner of create-or-patch, which `<Form>` calls
 rather than picking a service method.

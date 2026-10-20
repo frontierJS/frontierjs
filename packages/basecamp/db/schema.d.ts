@@ -1888,7 +1888,6 @@ export interface WorkspaceMember {
 export interface WorkspaceMemberCreate {
   id?: string
   workspaceId: string
-  userId: string
   /** This caller's authority in this workspace. Nobody may change their own. */
   role?: WorkspaceRole
   /**
@@ -1911,12 +1910,15 @@ export interface WorkspaceMemberCreate {
 export interface WorkspaceMemberUpdate {
   id?: string
   workspaceId?: string
-  userId?: string
   role?: WorkspaceRole
   capabilities?: Capability[]
   invitedBy?: string | null
   invitedAt?: string | Date | null
   acceptedAt?: string | Date | null
+}
+
+export interface WorkspaceMemberSystem {
+  userId?: string
 }
 
 export interface WorkspaceMemberWhere extends WhereBase {
@@ -2120,7 +2122,6 @@ export interface ApiKey {
 export interface ApiKeyCreate {
   id?: string
   workspaceId: string
-  userId: string
   name: string
   scopes?: string[]
   expiresAt?: string | Date | null
@@ -2135,7 +2136,6 @@ export interface ApiKeyCreate {
 export interface ApiKeyUpdate {
   id?: string
   workspaceId?: string
-  userId?: string
   name?: string
   scopes?: string[]
   expiresAt?: string | Date | null
@@ -2148,6 +2148,7 @@ export interface ApiKeyUpdate {
 }
 
 export interface ApiKeySystem {
+  userId?: string
   credentialId?: string | null
   tokenHint?: string
 }
@@ -5898,10 +5899,10 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere, UserRelations, never, '@@gate'>
   readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere, AccountRelations, never, '@@gate'>
   readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere, WorkspaceRelations, never, '@@gate'>
-  readonly workspaceMember: TableClient<WorkspaceMember, WorkspaceMemberCreate, WorkspaceMemberUpdate, WorkspaceMemberWhere, WorkspaceMemberRelations, never, '@@gate'>
+  readonly workspaceMember: TableClient<WorkspaceMember, WorkspaceMemberCreate, WorkspaceMemberUpdate, WorkspaceMemberWhere, WorkspaceMemberRelations, never, 'userId' | '@@gate', WorkspaceMemberSystem>
   readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere, InvitationRelations, never, 'token' | '@@gate'>
   readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere, SecretRelations, never, '@@gate'>
-  readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere, ApiKeyRelations, never, 'credentialId' | 'tokenHint' | '@@gate', ApiKeySystem>
+  readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere, ApiKeyRelations, never, 'userId' | 'credentialId' | 'tokenHint' | '@@gate', ApiKeySystem>
   readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere, ServerRelations, 'reboot' | 'drain' | 'undrain' | 'provision' | 'destroy' | 'checkIn' | 'loseContact' | 'reportProvisioned' | 'reportRunning' | 'reportStopped' | 'reportRebuilding' | 'reportDestroyed', 'enrollTokenHash' | 'status' | '@@gate'>
   readonly serverEvent: TableClient<ServerEvent, ServerEventCreate, ServerEventUpdate, ServerEventWhere, ServerEventRelations, never, '@@gate'>
   readonly outpostNonce: TableClient<OutpostNonce, OutpostNonceCreate, OutpostNonceUpdate, OutpostNonceWhere, OutpostNonceRelations, never, '@@gate'>

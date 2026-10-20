@@ -427,14 +427,14 @@ const app = createApp({ tenants })     // instead of createApp({ db })
 ```
 
 Junction then resolves a tenant per call and puts that tenant's caller-scoped
-client on `ctx.locals.db`. Work with no request behind it (a job, a scheduled
+client on `$.db`. Work with no request behind it (a job, a scheduled
 sweep) names its tenant explicitly:
 
 ```js fragment
 await app.service('orders').find({}, { locals: { tenantId: 'acme' } })
 ```
 
-`db` and `tenants` are alternatives, not a pair — one `ctx.locals.db` cannot be
+`db` and `tenants` are alternatives, not a pair — one `$.db` cannot be
 assigned by two hooks.
 
 Under `strategy row` there is nothing to swap, so `createApp({ db })` is

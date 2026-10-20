@@ -40,13 +40,13 @@ function createMockAdapter() {
       console.log('[mock-junction] call', `${service}.${method}`, args)
 
       // Auth
-      if (service === 'auth' && method === 'login') {
+      if (service === 'auth' && method === 'signIn') {
         const u = users[args?.email]
         if (!u) throw new Error('unknown user')
         if (args?.password !== 'demo') throw new Error('bad password (hint: "demo")')
         return { token: `tok-${u.id}-${Date.now()}`, user: u, expiresAt: null }
       }
-      if (service === 'auth' && method === 'logout') return { ok: true }
+      if (service === 'auth' && method === 'signOut') return { ok: true }
       if (service === 'auth' && method === 'verify') {
         if (typeof args?.token === 'string' && args.token.startsWith('tok-')) {
           const id = parseInt(args.token.split('-')[1], 10)

@@ -137,8 +137,8 @@ describe('two resources over one model are one row', () => {
   it('a push through one list reaches the other list', async () => {
     const c = client()
     const { restore } = mockList([{ id: 1, n: 1 }], { limit: 20, offset: 0, total: 1 })
-    const a = c.resource('items', 'id', { model: 'Item' })
-    const b = c.resource('items', 'id', { model: 'Item' })
+    const a = c.resource('items', { model: 'Item' })
+    const b = c.resource('items', { model: 'Item' })
     await a.load()
     await b.load()
     restore()
@@ -151,8 +151,8 @@ describe('two resources over one model are one row', () => {
   it('two DIFFERENT services naming one model share the row', async () => {
     const c = client()
     const { restore } = mockList([{ id: 1, n: 1 }], { limit: 20, offset: 0, total: 1 })
-    const own   = c.resource('orders',     'id', { model: 'Order' })
-    const admin = c.resource('all-orders', 'id', { model: 'Order' })
+    const own   = c.resource('orders', { model: 'Order' })
+    const admin = c.resource('all-orders', { model: 'Order' })
     await own.load()
     await admin.load()
     restore()
@@ -178,7 +178,7 @@ describe('two resources over one model are one row', () => {
   it('a push about a row no list holds still updates the entry', async () => {
     const c = client()
     const { restore } = mockList([{ id: 1 }], { limit: 20, offset: 0, total: 1 })
-    const r = c.resource('items', 'id', { model: 'Item' })
+    const r = c.resource('items', { model: 'Item' })
     await r.load()
     restore()
 
@@ -193,7 +193,7 @@ describe('resource().record(id)', () => {
   it('fetches the row when nothing has read it, and answers it', async () => {
     const c = client()
     const m = mockRow({ id: 1, status: 'pending' })
-    const r = c.resource('orders', 'id', { model: 'Order' })
+    const r = c.resource('orders', { model: 'Order' })
     const row = r.record(1)
     expect(await row.ready).toEqual({ id: 1, status: 'pending' })
     expect(row.get()).toEqual({ id: 1, status: 'pending' })
@@ -203,7 +203,7 @@ describe('resource().record(id)', () => {
   it('does NOT fetch when a list has already read the row', async () => {
     const c = client()
     const list = mockList([{ id: 1, status: 'pending' }], { limit: 20, offset: 0, total: 1 })
-    const r = c.resource('orders', 'id', { model: 'Order' })
+    const r = c.resource('orders', { model: 'Order' })
     await r.load()
     list.restore()
 
@@ -217,7 +217,7 @@ describe('resource().record(id)', () => {
   it('moves when the row is announced — which is the whole of FJS-518', async () => {
     const c = client()
     const m = mockRow({ id: 1, status: 'pending' })
-    const r = c.resource('orders', 'id', { model: 'Order' })
+    const r = c.resource('orders', { model: 'Order' })
     const row = r.record(1)
     await row.ready
     m.restore()
@@ -233,7 +233,7 @@ describe('resource().record(id)', () => {
   it('ignores an announcement about another row', async () => {
     const c = client()
     const m = mockRow({ id: 1, status: 'pending' })
-    const r = c.resource('orders', 'id', { model: 'Order' })
+    const r = c.resource('orders', { model: 'Order' })
     const row = r.record(1)
     await row.ready
     m.restore()
@@ -245,7 +245,7 @@ describe('resource().record(id)', () => {
   it('a record view reached by a URL string tracks the row a list holds as a number', async () => {
     const c = client()
     const { restore } = mockList([{ id: 1, status: 'pending' }], { limit: 20, offset: 0, total: 1 })
-    const r = c.resource('orders', 'id', { model: 'Order' })
+    const r = c.resource('orders', { model: 'Order' })
     await r.load()
     restore()
 
@@ -261,7 +261,7 @@ describe('resource().record(id)', () => {
   it('answers null once the row is removed, and says so to a subscriber', async () => {
     const c = client()
     const m = mockRow({ id: 1, status: 'pending' })
-    const r = c.resource('orders', 'id', { model: 'Order' })
+    const r = c.resource('orders', { model: 'Order' })
     const row = r.record(1)
     await row.ready
     m.restore()
@@ -279,8 +279,8 @@ describe('resource().record(id)', () => {
     // take the row out from under whichever list ran second.
     const c = client()
     const { restore } = mockList([{ id: 1 }, { id: 2 }], { limit: 2, offset: 0, total: 7 })
-    const a = c.resource('items', 'id', { model: 'Item' })
-    const b = c.resource('items', 'id', { model: 'Item' })
+    const a = c.resource('items', { model: 'Item' })
+    const b = c.resource('items', { model: 'Item' })
     await a.load()
     await b.load()
     const watching = a.record(1)
@@ -297,7 +297,7 @@ describe('resource().record(id)', () => {
   it('release lets the entry expire; holding one keeps it', async () => {
     const c = client({ entryTtlMs: 1 })
     const m = mockRow({ id: 1 })
-    const r = c.resource('orders', 'id', { model: 'Order' })
+    const r = c.resource('orders', { model: 'Order' })
     const row = r.record(1)
     await row.ready
     m.restore()
@@ -324,7 +324,7 @@ describe('resource().record(id).error()', () => {
 
   it('tells a refusal from a row that is not there', async () => {
     const c = client()
-    const r = c.resource('orders', 'id', { model: 'Order' })
+    const r = c.resource('orders', { model: 'Order' })
 
     let m = refuse(403, 'Forbidden')
     const denied = r.record(1)
@@ -343,7 +343,7 @@ describe('resource().record(id).error()', () => {
     const c = client()
     const original = globalThis.fetch
     globalThis.fetch = (async () => { throw new TypeError('fetch failed') }) as unknown as typeof fetch
-    const r = c.resource('orders', 'id', { model: 'Order' })
+    const r = c.resource('orders', { model: 'Order' })
     const row = r.record(1)
     expect(await row.ready).toBeNull()
     expect(row.error()?.status).toBe(0)
@@ -352,7 +352,7 @@ describe('resource().record(id).error()', () => {
 
   it('is null when the row was read, and clears when a later read succeeds', async () => {
     const c = client()
-    const r = c.resource('orders', 'id', { model: 'Order' })
+    const r = c.resource('orders', { model: 'Order' })
     let m = refuse(500, 'InternalServerError')
     const row = r.record(1)
     await row.ready
@@ -368,7 +368,7 @@ describe('resource().record(id).error()', () => {
 
   it('reaches a subscriber when a later read is refused, and keeps the row it knew', async () => {
     const c = client()
-    const r = c.resource('orders', 'id', { model: 'Order' })
+    const r = c.resource('orders', { model: 'Order' })
     const ok = mockRow({ id: 1, status: 'pending' })
     const row = r.record(1)
     await row.ready
@@ -385,7 +385,7 @@ describe('resource().record(id).error()', () => {
 
   it('a removed row is not found', async () => {
     const c = client()
-    const r = c.resource('orders', 'id', { model: 'Order' })
+    const r = c.resource('orders', { model: 'Order' })
     const ok = mockRow({ id: 1 })
     const row = r.record(1)
     await row.ready
@@ -396,7 +396,7 @@ describe('resource().record(id).error()', () => {
 
   it('reports the reason on a composed view too', async () => {
     const c = client()
-    const r = c.resource('apps', 'id', { model: 'App' })
+    const r = c.resource('apps', { model: 'App' })
     const m = refuse(403, 'Forbidden')
     const row = r.record(1, { composed: true })
     expect(await row.ready).toBeNull()
@@ -424,7 +424,7 @@ describe('resource().record(id) after the row stops being readable', () => {
   for (const composed of [false, true]) {
     it(`a re-read the server answers 404 empties the view (composed: ${composed})`, async () => {
       const c = client()
-      const r = c.resource('pages', 'id', { model: 'Page' })
+      const r = c.resource('pages', { model: 'Page' })
       const ok = answer(200, { id: 1, title: 'D' })
       const row = r.record(1, { composed })
       await row.ready
@@ -445,7 +445,7 @@ describe('resource().record(id) after the row stops being readable', () => {
 
   it('a reconnect re-reads the view, and a 404 then empties it', async () => {
     const c: any = client()
-    const r = c.resource('pages', 'id', { model: 'Page' })
+    const r = c.resource('pages', { model: 'Page' })
     const ok = answer(200, { id: 1, title: 'D' })
     const row = r.record(1)
     await row.ready
@@ -470,7 +470,7 @@ describe('resource().record(id) after the row stops being readable', () => {
 
   it('a released view does not re-read on a reconnect', async () => {
     const c: any = client()
-    const r = c.resource('pages', 'id', { model: 'Page' })
+    const r = c.resource('pages', { model: 'Page' })
     const ok = mockRow({ id: 1, title: 'D' })
     const row = r.record(1)
     await row.ready
@@ -514,7 +514,7 @@ describe('resource().mutate()', () => {
   it('shows the intent at once and keeps the server row when it lands', async () => {
     const c = client()
     const { restore } = mockList([{ id: 1, status: 'pending' }], { limit: 20, offset: 0, total: 1 })
-    const r = c.resource('orders', 'id', { model: 'Order' })
+    const r = c.resource('orders', { model: 'Order' })
     await r.load()
     restore()
 
@@ -535,7 +535,7 @@ describe('resource().mutate()', () => {
   it('puts it back when the call throws, and rethrows', async () => {
     const c = client()
     const { restore } = mockList([{ id: 1, status: 'pending' }], { limit: 20, offset: 0, total: 1 })
-    const r = c.resource('orders', 'id', { model: 'Order' })
+    const r = c.resource('orders', { model: 'Order' })
     await r.load()
     restore()
 
@@ -553,8 +553,8 @@ describe('resource().mutate()', () => {
   it('reaches every view of the row, not just the list it was called on', async () => {
     const c = client()
     const { restore } = mockList([{ id: 1, status: 'pending' }], { limit: 20, offset: 0, total: 1 })
-    const a = c.resource('orders', 'id', { model: 'Order' })
-    const b = c.resource('orders', 'id', { model: 'Order' })
+    const a = c.resource('orders', { model: 'Order' })
+    const b = c.resource('orders', { model: 'Order' })
     await a.load()
     await b.load()
     const detail = a.record(1)
@@ -574,7 +574,7 @@ describe('resource().mutate()', () => {
   it('a second writer moves the truth underneath and does NOT clear the intent', async () => {
     const c = client()
     const { restore } = mockList([{ id: 1, status: 'pending', note: '' }], { limit: 20, offset: 0, total: 1 })
-    const r = c.resource('orders', 'id', { model: 'Order' })
+    const r = c.resource('orders', { model: 'Order' })
     await r.load()
     restore()
 
@@ -596,7 +596,7 @@ describe('resource().mutate()', () => {
   it('rolling back reveals what the second writer did — not what was there before', async () => {
     const c = client()
     const { restore } = mockList([{ id: 1, status: 'pending', note: '' }], { limit: 20, offset: 0, total: 1 })
-    const r = c.resource('orders', 'id', { model: 'Order' })
+    const r = c.resource('orders', { model: 'Order' })
     await r.load()
     restore()
 
@@ -613,7 +613,7 @@ describe('resource().mutate()', () => {
   it('two mutations of one row fold in the order they were submitted', async () => {
     const c = client()
     const { restore } = mockList([{ id: 1, a: 0, b: 0 }], { limit: 20, offset: 0, total: 1 })
-    const r = c.resource('orders', 'id', { model: 'Order' })
+    const r = c.resource('orders', { model: 'Order' })
     await r.load()
     restore()
 
@@ -636,7 +636,7 @@ describe('resource().mutate()', () => {
   it('an intent that moves a sort key re-places the row in an ordered list', async () => {
     const c = client()
     const { restore } = mockList([{ id: 1, n: 1 }, { id: 2, n: 2 }], { limit: 20, offset: 0, total: 2 })
-    const r = c.resource('items', 'id', { model: 'Item' })
+    const r = c.resource('items', { model: 'Item' })
     await r.load({}, { orderBy: 'n' })
     restore()
 
@@ -654,7 +654,7 @@ describe('resource().mutate()', () => {
   it('a null intent is a removal, and it comes back if the call fails', async () => {
     const c = client()
     const { restore } = mockList([{ id: 1 }, { id: 2 }], { limit: 20, offset: 0, total: 2 })
-    const r = c.resource('items', 'id', { model: 'Item' })
+    const r = c.resource('items', { model: 'Item' })
     await r.load()
     restore()
 
@@ -698,7 +698,7 @@ describe('resource().record(id, { composed: true })', () => {
     const c = client()
     let status = 'pending'
     const m = mockComposed(() => ({ id: 1, status, domains: [{ id: 9, host: 'a.test' }] }))
-    const r = c.resource('apps', 'id', { model: 'App' })
+    const r = c.resource('apps', { model: 'App' })
     const row = r.record(1, { composed: true })
     await row.ready
     expect(row.get()).toEqual({ id: 1, status: 'pending', domains: [{ id: 9, host: 'a.test' }] })
@@ -717,7 +717,7 @@ describe('resource().record(id, { composed: true })', () => {
   it('does not write its composed row into the entry, so a list keeps the list shape', async () => {
     const c = client()
     const list = mockList([{ id: 1, status: 'pending' }], { limit: 20, offset: 0, total: 1 })
-    const r = c.resource('apps', 'id', { model: 'App' })
+    const r = c.resource('apps', { model: 'App' })
     await r.load()
     list.restore()
 
@@ -733,7 +733,7 @@ describe('resource().record(id, { composed: true })', () => {
   it('reads even when a list has already filled the entry — the entry is not this value', async () => {
     const c = client()
     const list = mockList([{ id: 1, status: 'pending' }], { limit: 20, offset: 0, total: 1 })
-    const r = c.resource('apps', 'id', { model: 'App' })
+    const r = c.resource('apps', { model: 'App' })
     await r.load()
     list.restore()
 
@@ -747,7 +747,7 @@ describe('resource().record(id, { composed: true })', () => {
   it('coalesces a burst — three announcements are not three reads', async () => {
     const c = client()
     const m = mockComposed(() => ({ id: 1, domains: [] }))
-    const r = c.resource('apps', 'id', { model: 'App' })
+    const r = c.resource('apps', { model: 'App' })
     const row = r.record(1, { composed: true })
     await row.ready
     expect(m.calls()).toBe(1)
@@ -769,7 +769,7 @@ describe('resource().record(id, { composed: true })', () => {
     const c = client()
     let n = 1
     const m = mockComposed(() => ({ id: 1, n, domains: [] }))
-    const r = c.resource('apps', 'id', { model: 'App' })
+    const r = c.resource('apps', { model: 'App' })
     const row = r.record(1, { composed: true })
     await row.ready
     expect(row.get()).toMatchObject({ n: 1 })
@@ -784,7 +784,7 @@ describe('resource().record(id, { composed: true })', () => {
   it('still answers null once the row is removed', async () => {
     const c = client()
     const m = mockComposed(() => ({ id: 1, domains: [{ id: 9 }] }))
-    const r = c.resource('apps', 'id', { model: 'App' })
+    const r = c.resource('apps', { model: 'App' })
     const row = r.record(1, { composed: true })
     await row.ready
 

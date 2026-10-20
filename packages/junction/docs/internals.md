@@ -370,7 +370,7 @@ nothing for it to be inside of.
   a commit scope rather than a longer before hook. `true`, `false`, or a list of
   method names; `find`/`get` are never wrapped whatever is declared, the same way
   the announcement excludes them by name. Declaring it without a Litestone client
-  on `ctx.locals.db` **throws naming the service** rather than quietly doing
+  on `$.db` **throws naming the service** rather than quietly doing
   nothing. It reports through `describe()`.
   - **It does not make side effects atomic.** A transaction rolls back rows, not
     SMTP — an email an earlier `after` hook already sent stays sent. Queue the
@@ -508,7 +508,7 @@ nothing for it to be inside of.
   probe is `'x' in db`, and answering it is only half the job: `$tapQuery`,
   `$tapEvents` and `$logContext` are ROOT-client members, so `in` answers FALSE
   on a scoped one and a feature that "works" now installs for nobody. The query
-  tap used to be installed per request off `ctx.locals.db` — which is a scoped
+  tap used to be installed per request off the call's client — which is a scoped
   proxy for a signed-in caller — so ONE `app.telemetry.on(…)` listener turned
   every AUTHENTICATED call into a 500 while anonymous ones, holding the root
   client, kept working. The devtools console registers four. It is
@@ -526,7 +526,7 @@ nothing for it to be inside of.
   ordering is the feature.** It runs INSIDE `withLitestoneDb`/`withTenantDb` —
   after the client is scoped to the caller, before `next()` — because
   `getTable()` re-derives its own scoped client from `ctx.auth.user`, so a
-  standing that lives only on `ctx.locals.db` is dropped the moment a service
+  standing that lives only on `$.db` is dropped the moment a service
   touches a model (`FJS-D113`). A tenant claim and a per-request standing are
   the same thing and resolve together; `applyClaims` is exported because a
   service whose SUBJECT is the tenant must re-resolve mid-call.
@@ -550,7 +550,7 @@ nothing for it to be inside of.
 - **`createApp({ tenants })` replaces `createApp({ db })`, it does not join it.**
   A schema declaring `tenancy { strategy database }` has one SQLite file per
   tenant, so the CLIENT is per request: `withTenantDb` resolves the tenant and
-  assigns `ctx.locals.db`. That is the same slot `withLitestoneDb` assigns, and
+  assigns `$.db`. That is the same slot `withLitestoneDb` assigns, and
   installing both would leave which one wins to hook order. **Which tenant a
   request is for is asked, never re-derived** — `registry.tenantFor({ host,
   headers, principal })` applies the `resolve` the schema declares, and this
@@ -656,8 +656,8 @@ children rather than the request's.
 
 `QueryDirectives` is declared in `core/directives.ts` and read by the bridge
 (off a request), the browser client (writing `$` names out) and — through
-`page.directives` — Sierra's router and resource. So `resource.load(page.query,
-page.directives)` is the same object all the way down with nothing to translate,
+`page.directives` — Sierra's router and resource. So what `resource.tethered()`
+reads off the URL is the same object all the way down with nothing to translate,
 which is Invariant 10's point.
 
 **Filters are always the first argument.** The client's second argument used to
@@ -696,7 +696,7 @@ db`, measured — because every scoped proxy passes itself, which is what makes
 `asSystem().$transaction(…)` keep its scope. So there is no settled proxy to
 refuse writes on, and refusing them would refuse every write an app makes after
 any transaction. What was actually wrong is that `transactionScopeHook` left
-`ctx.locals.db = tx` assigned; it restores the request's own client in a
+the tx client on `$.db`; it restores the request's own client in a
 `finally` now, so anything reading it after the commit gets a working
 non-transaction client rather than what a reader believes is the transaction.
 

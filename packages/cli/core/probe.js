@@ -210,6 +210,26 @@ export function fileContains({ path, needle, name }) {
   return fail(label, String(needle), `not in ${lines.length} lines of ${path}`)
 }
 
+// ─── the scaffold's verification mail ─────────────────────────────────────────
+//
+// A scaffolded app has no mailer, so `api/src/core/auth.ts` prints each
+// verification link to the API's output: a line naming the address, then the
+// link, its token in the fragment. Registration makes no account until that
+// link is followed (`FJS-D1310`), so every caller that registers over HTTP --
+// a lesson, the deploy smoke, the bench -- reads it from here. The LAST one for
+// the address, because a second register mails a fresh token and spends the
+// first. A token, or null.
+export function scaffoldVerificationToken(output, email) {
+  const lines = String(output ?? '').split('\n')
+  let token = null
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (!lines[i].includes(`[auth] verify ${email} `)) continue
+    const hash = /#token=([^\s&]+)/.exec(lines[i + 1])
+    if (hash) token = decodeURIComponent(hash[1])
+  }
+  return token
+}
+
 // ─── the database ─────────────────────────────────────────────────────────────
 //
 // The sharpest probe there is, and the reason a lesson can say a row was

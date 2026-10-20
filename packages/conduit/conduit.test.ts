@@ -35,6 +35,7 @@ import type {
   CredentialRefusal,
   BrokerFraming,
   BrokerHandler,
+  BrokerMessage,
 } from './src/types.ts'
 
 // ─── Fixtures ────────────────────────────────────────────────
@@ -5887,6 +5888,74 @@ describe('broker keepalive', () => {
     expect(c.stats().subscriptions['broker:orders']!.connected).toBe(true)
     await c.destroy()
     broker.stop()
+  })
+})
+
+// A broker that sends each connection its own list of `{ id, body }` frames,
+// the body being the frame's number or `null`, and closes after all but the last list.
+function numberedBroker(lists: (number | null)[][]) {
+  let dials = 0
+  const server = Bun.serve({
+    port: 0,
+    fetch(req, srv) { return srv.upgrade(req) ? undefined : new Response('no', { status: 400 }) },
+    websocket: {
+      open(ws) {
+        const n = dials++
+        const list = lists[Math.min(n, lists.length - 1)]!
+        list.forEach((body, i) => ws.send(JSON.stringify({ id: `c${n}-${i}`, type: 'message', body })))
+        if (n < lists.length - 1) setTimeout(() => ws.close(), 20)
+      },
+      message() {},
+    },
+  })
+  return { url: `ws://localhost:${server.port}/`, get dials() { return dials }, stop: () => server.stop(true) }
+}
+
+const numbered = { ...CONDUIT_FRAMING, sequence: (m: BrokerMessage) => typeof m.body === 'number' ? m.body : null }
+const numberedDialect = { framing: numbered, parse: (m: BrokerMessage) => ({ id: m.id, type: 't', payload: m.body }), dedupeKey: (m: BrokerMessage) => m.id }
+
+describe('broker sequence gaps', () => {
+  it('hands a skip in the numbering to gap, ahead of the frame that showed it, and nothing for a lower number or none', async () => {
+    const broker = numberedBroker([[1, 2, 5, 4, 6, null, 9]])
+    const c = createConduit()
+    await c.register(brokerTarget(broker.url))
+    const order: string[] = []
+    await c.receive({
+      provider: 'x', target: 'broker:orders', dialect: numberedDialect,
+      gap({ after, at }) { order.push(`gap ${after}>${at}`) },
+      apply(ev) { order.push(String(ev.payload)); return 'applied' },
+    })
+    expect(await until(() => order.length === 9)).toBe(true)
+    expect(order).toEqual(['1', '2', 'gap 2>5', '5', '4', '6', 'null', 'gap 6>9', '9'])
+    await c.destroy()
+    broker.stop()
+  })
+
+  it('starts each connection afresh, and a gap() that throws stops no frame', async () => {
+    const broker = numberedBroker([[1, 2, 3], [7, 8, 10]])
+    const c = createConduit()
+    await c.register(brokerTarget(broker.url))
+    const seen: unknown[] = [], gaps: number[] = []
+    const errors = console.error; console.error = () => {}
+    try {
+      await c.receive({
+        provider: 'x', target: 'broker:orders', dialect: numberedDialect,
+        gap({ at }) { gaps.push(at); throw new Error('no backfill today') },
+        apply(ev) { seen.push(ev.payload); return 'applied' },
+      })
+      expect(await until(() => seen.length === 6, 3000)).toBe(true)
+    } finally { console.error = errors }
+    expect(seen).toEqual([1, 2, 3, 7, 8, 10])
+    expect(gaps).toEqual([10])   // 3 then 7 is a new connection, not a gap
+    await c.destroy()
+    broker.stop()
+  })
+
+  it('refuses a gap that is not a function', async () => {
+    const c = createConduit()
+    await expect(c.receive({ provider: 'x', target: 'broker:orders', dialect: numberedDialect, gap: 1 as never, apply: () => 'applied' as const }))
+      .rejects.toThrow(/gap must be a function/)
+    await c.destroy()
   })
 })
 

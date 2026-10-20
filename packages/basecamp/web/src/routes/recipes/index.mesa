@@ -58,19 +58,21 @@ title: Recipes
   // mutating it is what makes the change reactive.
   function write(name, value) { draft = { ...draft, [name]: value } }
 
-  async function load() {
-    error = null; loading = true
-    try {
-      rows  = (await recipes.service.find({}, { limit: 200 })).data
-      fleet = (await servers.service.find({}, { limit: 200 })).data
-    } catch (e) {
-      error = e.message
-    } finally {
-      loading = false
-    }
+  // Every recipe and every machine, not a page — the server refuses a page
+  // above its max.
+  const list      = recipes.tethered({ state: 'local', all: true })
+  const fleetList = servers.tethered({ state: 'local', all: true })
+  $: {
+    rows    = list.rows
+    fleet   = fleetList.rows
+    loading = list.loading
+    const failed = list.error ?? fleetList.error
+    if (failed) error = failed.message
   }
-
-  load()
+  function load() {
+    list.reload()
+    fleetList.reload()
+  }
   $: session.workspaceId, () => load()
 
   // The job pushes 'recipes patched' as each run starts and finishes, so a

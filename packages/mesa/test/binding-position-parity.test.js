@@ -1,7 +1,7 @@
 /**
  * FJS-1070 — one expression, every binding position, one verdict.
  *
- * `const list = users.list()` is not promoted, and must not be: `FJS-D212`
+ * `const list = users.tethered()` is not promoted, and must not be: `FJS-D212`
  * keeps the initializer eager, and `EXTERNAL_REACTIVITY.md` is why a call to an
  * IMPORT is not a door reactivity comes through on its own. What the call hands
  * BACK is a different fact — it may hold getters over signals — and the four
@@ -85,8 +85,8 @@ describe('a value that came out of a call reads the same in every position (FJS-
     it(`${what} moves when the controller does`, async () => {
       const api = controller()
       const el = await mount(
-        `<script>\n  import { users } from './r.js'\n  const list = users.list()\n</script>\n${markup}`,
-        { users: { list: () => api } }
+        `<script>\n  import { users } from './r.js'\n  const list = users.tethered()\n</script>\n${markup}`,
+        { users: { tethered: () => api } }
       )
       const before = el.textContent + '|' + (el.querySelector('[data-s]')?.getAttribute('data-s') ?? '')
       api.move('total')
@@ -99,8 +99,8 @@ describe('a value that came out of a call reads the same in every position (FJS-
   it('the destructured half is the same fact', async () => {
     const api = controller()
     const el = await mount(
-      `<script>\n  import { users } from './r.js'\n  const { rows } = users.list()\n</script>\n<p>{rows()[0].n}</p>`,
-      { users: { list: () => api } }
+      `<script>\n  import { users } from './r.js'\n  const { rows } = users.tethered()\n</script>\n<p>{rows()[0].n}</p>`,
+      { users: { tethered: () => api } }
     )
     expect(el.textContent).toContain('-')
     api.move('total')
@@ -132,7 +132,7 @@ describe('what the narrowing leaves alone', () => {
 
   it('but the value a call handed back is one', async () => {
     const ctx = await compile(
-      `<script>\n  import { useTether } from './j.js'\n  const { get: rows } = useTether('s')\n  const list = useTether('t').view\n  const plain = { a: 1 }\n</script>\n<p>{rows()}{list.x}{plain.a}</p>`,
+      `<script>\n  import { users } from './r.js'\n  const { get: rows } = users.record(1)\n  const list = users.record(2).view\n  const plain = { a: 1 }\n</script>\n<p>{rows()}{list.x}{plain.a}</p>`,
       { debug: false, css: false }
     )
     expect(ctx.analysis.opaqueValues).toContain('rows')

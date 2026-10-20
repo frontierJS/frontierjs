@@ -171,7 +171,14 @@ export function treeRss(pid) {
 export async function measureBoot({ cmd, cwd, url, settleMs = 3000, timeoutMs = 60_000, env = {}, whileUp = null }) {
   if (await answers(url)) throw new Error(`${url} already answers — stop what holds it, a bench of someone else's process measures nothing`)
   const started = performance.now()
-  const child = spawn(cmd, { cwd, shell: true, detached: true, stdio: 'ignore', env: { ...process.env, ...env } })
+  const child = spawn(cmd, { cwd, shell: true, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env } })
+  // Kept for `whileUp`, which may need what the server printed -- a scaffold
+  // prints its verification links rather than mailing them. Drained either way,
+  // since a pipe nobody reads stalls the child once it fills.
+  let output = ''
+  const keep = (chunk) => { output = (output + chunk).slice(-1_000_000) }
+  child.stdout.on('data', keep)
+  child.stderr.on('data', keep)
   const stop = () => { try { process.kill(-child.pid, 'SIGTERM') } catch {} }
   try {
     let up = false
@@ -188,7 +195,7 @@ export async function measureBoot({ cmd, cwd, url, settleMs = 3000, timeoutMs = 
     // Load runs against THIS process, after the idle read so the idle figure is
     // not the load's, and RSS is read again after it: memory that only grows
     // under traffic is the earliest sign of a leak.
-    const during = whileUp ? await whileUp(url) : null
+    const during = whileUp ? await whileUp(url, { output: () => output }) : null
     return { coldStartMs, rssAtReady, rssIdle, rssAfterLoad: whileUp ? treeRss(child.pid) : null, settleMs, during }
   } finally {
     stop()

@@ -57,6 +57,7 @@
 
 import type { App, Plugin } from '../../core/app.ts'
 import type { ServiceContext } from '../../core/context.ts'
+import { callSlots, setCallDb } from '../../core/context.ts'
 import type { LitestoneWriteEvent } from '../../core/litestone.ts'
 import { forEachAppDatabase, enqueueOutbox } from '../outbox/engine.ts'
 import type { EnqueueRef, EnqueueOptions, OutboxApi } from '../outbox/engine.ts'
@@ -593,10 +594,15 @@ export async function fireCommitment(
         // The fire's tenant rides on `locals` as a call's does, so the row
         // records it (`FJS-2508`): under `strategy row` the relay's sweep has
         // nothing else to dispatch a missed kick into.
-        enqueue: (name, payload, o) => enqueueOutbox({
-          locals: { db: tx, tenantId: tenant }, service: 'commitments', method: `${model}.${job.transition}`,
-          app: { outbox }, auth: undefined, _outbox: rows,
-        } as unknown as ServiceContext, name, payload, { actor: null, ...o }),
+        enqueue: (name, payload, o) => {
+          const call = {
+            locals: { tenantId: tenant }, service: 'commitments', method: `${model}.${job.transition}`,
+            app: { outbox }, auth: undefined,
+          } as unknown as ServiceContext
+          setCallDb(call, tx)
+          callSlots(call).outbox = rows
+          return enqueueOutbox(call, name, payload, { actor: null, ...o })
+        },
       }
       let moved = false
       const next = async (): Promise<void> => {

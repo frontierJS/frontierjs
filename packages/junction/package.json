@@ -6,6 +6,8 @@
   "main": "./index.ts",
   "exports": {
     ".": "./index.ts",
+    "./hooks": "./src/core/hooks-builtin.ts",
+    "./bearer": "./src/core/bearer.ts",
     "./litestone": "./src/core/litestone.ts",
     "./cache": "./src/cache/index.ts",
     "./scheduler": "./src/scheduler/index.ts",

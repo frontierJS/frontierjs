@@ -26,7 +26,7 @@ title: Inventory
   // and that is all it is. The server refuses regardless (Invariant 6).
   import { movements }       from '../../resources/InventoryMovement.mesa'
   import { productVariants } from '../../resources/ProductVariant.mesa'
-  import { session, toFieldErrors, useTether } from '@frontierjs/sierra/resource'
+  import { session, toFieldErrors } from '@frontierjs/sierra/resource'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
@@ -55,12 +55,12 @@ title: Inventory
   // taking it costs the queue along with the hooks.
   const inventory = () => movements.service
 
-  // The ledger goes through the resource's STORE — `find` over the model, live
+  // The ledger goes through the resource's tether — `find` over the model, live
   // like every other list in this app. The LEVELS do not and cannot: they are
-  // not rows of any table, so there is nothing for a store to hold or for a
+  // not rows of any table, so there is nothing for a tether to hold or for a
   // channel to push. They are re-asked after every write on this screen.
-  const { get: ledger, unsubscribe: offLedger } = useTether(movements.tether)
-  $.onDestroy(offLedger)
+  const ledgerList = movements.tethered({ state: 'local', directives: { limit: 40, orderBy: '-id' } })
+  const ledger     = () => ledgerList.rows
 
   let levels      = []
   let holdMinutes = 0
@@ -76,7 +76,7 @@ title: Inventory
   // of it was on the device the whole time (`IDEAS/homestead.md` phase 3).
   //
   // The ledger is `InventoryMovement`, which declares `@@sync`, so its last
-  // list is kept and `load()` answers with it when the call cannot arrive.
+  // list is kept and the tether answers with it when the call cannot arrive.
   async function load() {
     if (session.level < 5) { loading = false; return }
     error = null
@@ -91,11 +91,8 @@ title: Inventory
       failures.push(e.message)
     }
 
-    try {
-      await movements.load({}, { limit: 40, orderBy: '-id' })
-    } catch (e) {
-      failures.push(e.message)
-    }
+    await ledgerList.reload()
+    if (ledgerList.error) failures.push(ledgerList.error.message)
 
     // Only when BOTH went. One of the two answering is a screen that works,
     // and an alert over a working table is how an app teaches people to ignore
@@ -155,9 +152,10 @@ title: Inventory
   // field and worded by the seed, so every sentence under a box below is
   // written once, in the schema, and this file does not know the rule exists.
 
-  const { get: variantRows, unsubscribe: offVariants } = useTether(productVariants.tether)
-  $.onDestroy(offVariants)
-  productVariants.load({}, { limit: 500, orderBy: 'sku' }).catch(() => {})
+  // Every variant, not a page: a picker that stopped at the server's page max
+  // would leave a SKU unreceivable with nothing said.
+  const variantList = productVariants.tethered({ state: 'local', all: true, directives: { orderBy: 'sku' } })
+  const variantRows = () => variantList.rows
 
   $: variantOptions = variantRows().map(v => ({ value: v.id, label: v.sku }))
 

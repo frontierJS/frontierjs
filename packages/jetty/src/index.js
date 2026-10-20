@@ -9,6 +9,6 @@ export { openPier, openOptions, closePier }          from './runtime/surfaces.js
 // The session and connection a page sees through Harbor. Not the Resource
 // handle: `harborApp` is `./resources`'s, so the main entry never pulls
 // sierra and junction into a surface that makes no call.
-export { login, submitCode, logout,
+export { signIn, completeSignIn, signOut,
          getConnectionState, onConnectionChange }    from './resources/active-port.js'
 export { getConnectionSignals }                      from './resources/mesa-bridge.js'

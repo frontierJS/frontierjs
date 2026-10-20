@@ -117,7 +117,7 @@ const authOptions = {
   // since configured. A mailer that is absent is a warning and not a throw,
   // because `verify:oauth` and `verify:tenants` start their own apps without
   // one and a reset attempt there must not fail the run.
-  onPasswordResetRequested: async (email: string, token: string) => {
+  onPasswordResetRequested: async ({ email, token }) => {
     // The CONSOLE's page, not the API's origin: this pointed at `/reset` on
     // the API port, where nothing answers, so every reset and invitation led to
     // a 404. `web/src/routes/reset/` is the page.
@@ -214,9 +214,9 @@ const app = createApp({
   root: import.meta.url,
 
   // The FLEET, not one database. `withTenantDb` resolves the shop this request
-  // is for and puts that shop's caller-scoped client on `ctx.locals.db`, which
-  // is what every service reads through `$.db`. `db` and `tenants` are
-  // alternatives — one `ctx.locals.db` cannot be assigned by two hooks.
+  // is for and puts that shop's caller-scoped client on `$.db`, which every
+  // service reads through. `db` and `tenants` are
+  // alternatives — one `$.db` cannot be assigned by two hooks.
   tenants: shops,
   auth,
   // Who the shop is when it acts on its own behalf. Deferred work started by
@@ -435,7 +435,7 @@ app.configure(authPlugin({
   // A sysadmin is refused by the COLUMN and not by their role: an admin can set
   // anybody's role to 'user', so a check on role alone would let an admin demote
   // a sysadmin and then stand in for them at 7.
-  canStartSupport: async (operator: { isAdmin?: boolean }, subjectId: string) => {
+  canStartSupport: async ({ operator, subjectId }) => {
     if (operator?.isAdmin !== true) return false
     const subject = await db.asSystem().user.findUnique({ where: { id: subjectId } })
     return subject != null && subject.role !== 'admin' && subject.isSystemAdmin !== true

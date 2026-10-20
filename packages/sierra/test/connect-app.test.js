@@ -88,9 +88,11 @@ const PAGE_DEFS = {
   },
 }
 
+let tetherOf
 async function boot({ token = null } = {}) {
   vi.resetModules()
   const J = await import('../src/resource/index.js')
+  ;({ tetherOf } = await import('../src/resource/resource.js'))
   J.registerSchemas(PAGE_DEFS, ['Customer'])
   J.initJunction({ url: PAGE })
   if (token) J.getClient().setToken(token)
@@ -167,7 +169,7 @@ describe('a resource over the hosted app calls that app, through the forward', (
     const J = await boot({ token: 'studio-token' })
     const hosted = J.connectApp({ url: '/hosted/h1', apiPrefix: '/api', schema: await schema() })
 
-    const rows = await J.createResource('customers', { app: hosted }).load()
+    const rows = await tetherOf(J.createResource('customers', { app: hosted })).load()
     expect(rows).toEqual([{ id: 1, email: 'ada@hosted.test' }])
     expect(await seen()).toEqual([
       { path: '/hosted/h1/api/customers', from: 'Bearer studio-token', forwarded: 'Bearer owner-token' },
@@ -181,11 +183,11 @@ describe('a resource over the hosted app calls that app, through the forward', (
     const customers = J.createResource('customers', { app: hosted })
 
     // Signed out: the forward refuses, and nothing is clearable on the page.
-    await expect(customers.load()).rejects.toBeTruthy()
+    await expect(tetherOf(customers).load()).rejects.toBeTruthy()
 
     J.getClient().setToken('studio-token')
     expect(hosted.client.token).toBe('studio-token')
-    expect(await customers.load()).toEqual([{ id: 1, email: 'ada@hosted.test' }])
+    expect(await tetherOf(customers).load()).toEqual([{ id: 1, email: 'ada@hosted.test' }])
     expect(J.getClient().token).toBe('studio-token')
     expect(globalThis.localStorage.getItem('junction_token')).toBe('studio-token')
 

@@ -17,7 +17,7 @@ import { vi } from 'vitest'
 
 vi.mock('@frontierjs/sierra/resource', () => ({ getClient: () => null }))
 
-const { createResource } = await import('../src/resource/resource.js')
+const { createResource, tetherOf } = await import('../src/resource/resource.js')
 
 describe('the no-client fallback answers the real shapes', () => {
   const r = createResource('orders')
@@ -35,7 +35,7 @@ describe('the no-client fallback answers the real shapes', () => {
   test('the reads answer empty rather than throwing', async () => {
     expect(r.fields).toEqual({})
     expect(r.formFields()).toEqual([])
-    expect(await r.load()).toEqual([])
+    expect(await tetherOf(r).load()).toEqual([])
   })
 
   test('a write rejects, which is the one thing that must not be silent', async () => {

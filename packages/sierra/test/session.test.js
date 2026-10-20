@@ -30,7 +30,7 @@ async function freshSession() {
 }
 
 /** The smallest thing initSession() can drive: a client with an auth surface. */
-function fakeClient({ token = null, cookieAuth = false, me = null, fail = null, challenge = null, codeFail = null } = {}) {
+function fakeClient({ token = null, cookieAuth = false, me = null, fail = null, challenge = null, codeFail = null, verified = 'signedIn' } = {}) {
   const calls = []
   return {
     token,
@@ -62,6 +62,13 @@ function fakeClient({ token = null, cookieAuth = false, me = null, fail = null, 
       },
       async signUp(data) {
         calls.push(`signUp:${data.email}`)
+        return { token: 'tok', user: me }
+      },
+      async verifyEmail(token) {
+        calls.push(`verifyEmail:${token}`)
+        if (verified === 'plain')     return { ok: true }
+        if (verified === 'challenge') return { challenge: 'tik', expiresAt: '2030-01-01T00:00:00.000Z' }
+        this._c.token = 'tok'
         return { token: 'tok', user: me }
       },
       async signOut() {
@@ -233,7 +240,7 @@ describe('an OAuth refusal on the URL', () => {
     expect(s.session.awaitingCode).toBe('2030-01-01T00:00:00.000Z')
   })
 
-  test('submitCode finishes an OAuth sign-in exactly as it finishes a password one', async () => {
+  test('completeSignIn finishes an OAuth sign-in exactly as it finishes a password one', async () => {
     atUrl('https://shop.test/sign-in?oauth_error=code_required&oauth_expires=2030-01-01T00%3A00%3A00.000Z')
     const s = await freshSession()
     const client = fakeClient({ cookieAuth: true, me: { userId: 'u1', email: 'a@b.c' } })
@@ -241,7 +248,7 @@ describe('an OAuth refusal on the URL', () => {
 
     s.initSession(client)
     await s.ready
-    await s.submitCode('123456')
+    await s.completeSignIn('123456')
 
     expect(client.calls).toEqual(['completeSignIn:123456', 'me'])
     expect(s.session.user.email).toBe('a@b.c')
@@ -381,7 +388,7 @@ describe('signing in with a second factor', () => {
     expect(client.calls.slice(beforeSignIn)).toEqual(['signIn:a@b.c:pw'])
   })
 
-  test('submitCode finishes it, loads the session and closes the box', async () => {
+  test('completeSignIn finishes it, loads the session and closes the box', async () => {
     const s = await freshSession()
     const client = fakeClient({ challenge: 'token', me: { userId: 'u1', email: 'a@b.c' } })
     client.auth._c = client
@@ -389,7 +396,7 @@ describe('signing in with a second factor', () => {
     await s.ready
 
     await s.signIn('a@b.c', 'pw')
-    await s.submitCode('123456')
+    await s.completeSignIn('123456')
 
     // The ticket is the wire client's — nothing here threaded it through a page.
     expect(client.calls).toEqual(['signIn:a@b.c:pw', 'completeSignIn:123456', 'me'])
@@ -411,7 +418,7 @@ describe('signing in with a second factor', () => {
     await s.ready
 
     await s.signIn('a@b.c', 'pw')
-    await expect(s.submitCode('000000')).rejects.toThrow('Invalid code')
+    await expect(s.completeSignIn('000000')).rejects.toThrow('Invalid code')
     expect(s.session.awaitingCode).toBe('2030-01-01T00:00:00.000Z')
     expect(s.session.error).toBe('Invalid code')
 
@@ -426,8 +433,40 @@ describe('signing in with a second factor', () => {
     await spent.ready
 
     await spent.signIn('a@b.c', 'pw')
-    await expect(spent.submitCode('000000')).rejects.toThrow('Invalid code')
+    await expect(spent.completeSignIn('000000')).rejects.toThrow('Invalid code')
     expect(spent.session.awaitingCode).toBeNull()
+  })
+
+  test('verifyEmail on a registration link loads the session it signed in', async () => {
+    const s = await freshSession()
+    const client = fakeClient({ me: { userId: 'u1', email: 'a@b.c' } })
+    client.auth._c = client
+    s.initSession(client)
+    await s.ready
+
+    await s.verifyEmail('reg-tok')
+    expect(client.calls).toEqual(['verifyEmail:reg-tok', 'me'])
+    expect(s.session.user.email).toBe('a@b.c')
+  })
+
+  test('verifyEmail on a link that owes a code opens the box, and a plain one signs nobody in', async () => {
+    const s = await freshSession()
+    const owes = fakeClient({ verified: 'challenge' })
+    owes.auth._c = owes
+    s.initSession(owes)
+    await s.ready
+    await s.verifyEmail('reg-tok')
+    expect(s.session.awaitingCode).toBe('2030-01-01T00:00:00.000Z')
+    expect(owes.calls).toEqual(['verifyEmail:reg-tok'])
+
+    const t = await freshSession()
+    const plain = fakeClient({ verified: 'plain' })
+    plain.auth._c = plain
+    t.initSession(plain)
+    await t.ready
+    expect(await t.verifyEmail('verify-tok')).toEqual({ ok: true })
+    expect(t.session.user).toBeNull()
+    expect(plain.calls).toEqual(['verifyEmail:verify-tok'])
   })
 
   test('signing out drops a half-finished attempt', async () => {

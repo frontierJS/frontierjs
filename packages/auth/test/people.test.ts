@@ -357,7 +357,8 @@ describe('an operator in a workspace acts inside it, where a person may be in se
   const workspaceGate = (u: any) => !u ? 0 : u.role === 'sysadmin' ? 7 : ROLE[u.memberRole] ?? 1
   let t: Awaited<ReturnType<typeof tenantedApp>>
   beforeAll(async () => {
-    const { membershipClaim, header } = await import('@frontierjs/junction')
+    const { membershipClaim } = await import('@frontierjs/junction')
+    const { header }          = await import('@frontierjs/junction/bearer')
     t = await tenantedApp(`
 tenancy { strategy row  column workspaceId  claim workspaceId }
 model Member {

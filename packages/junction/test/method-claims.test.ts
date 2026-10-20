@@ -12,7 +12,8 @@
 import { describe, test, expect } from 'bun:test'
 
 import { createClient } from '../../litestone/src/index.js'
-import { createApp, createService, header, defaultConfig } from '../index.ts'
+import { createApp, createService, defaultConfig } from '../index.ts'
+import { header } from '../src/core/bearer.ts'
 import { collectMethodClaims } from '../src/core/service.ts'
 
 const SCHEMA = `

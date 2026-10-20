@@ -277,11 +277,14 @@ describe('the scaffold verification link lands on a page fli new writes', () => 
     }
   })
 
-  test('the page posts the token with client.auth.verifyEmail and signs nobody in', async () => {
+  test('the page spends the token from a button and moves on signed in', async () => {
     const text = await newMd()
     const src = text.match(/\nfunction makeRouteVerifyEmail\(\) \{[\s\S]*?\n\}\n/)[0]
     const page = new Function('sc', `${src}\nreturn makeRouteVerifyEmail`)('</' + 'script>')()
-    expect(page).toContain('auth.verifyEmail(')
+    // sierra's verifyEmail, which loads the session a registration's link signs in (FJS-D1310).
+    expect(page).toContain("import { session, verifyEmail } from '@frontierjs/sierra/resource'")
+    expect(page).toContain('await verifyEmail(token())')
+    expect(page).toContain("if (session.user)         return goto('/')")
     expect(page).not.toMatch(/onload|onMount[^\n]*verifyEmail/)
   })
 })

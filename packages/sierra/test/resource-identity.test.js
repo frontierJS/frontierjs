@@ -65,7 +65,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
 
 const { generateSchemas } = await import('../src/build/schema-plugin.js')
 const { registerSchemas } = await import('../src/resource/schema-registry.js')
-const { createResource, resetResourcesForIdentityChange } = await import('../src/resource/resource.js')
+const { createResource, resetResourcesForIdentityChange, tetherOf } = await import('../src/resource/resource.js')
 
 const SOURCE = `
 model Customer {
@@ -141,17 +141,17 @@ describe('the identity epoch', () => {
   test('the tether does not render the previous person’s rows', async () => {
     ROWS = [{ id: 1, body: 'u1 private', version: 1 }]
     const notes = createResource('notes', { model: 'Note' })
-    await notes.load({})
-    expect(notes.tether.get()).toHaveLength(1)
+    await tetherOf(notes).load({})
+    expect(tetherOf(notes).tether.get()).toHaveLength(1)
 
     resetResourcesForIdentityChange()
-    expect(notes.tether.get()).toEqual([])
+    expect(tetherOf(notes).tether.get()).toEqual([])
   })
 
   test('version() does not answer a revision the current caller never read', async () => {
     ROWS = [{ id: 1, body: 'u1 private', version: 4 }]
     const notes = createResource('notes', { model: 'Note' })
-    await notes.load({})
+    await tetherOf(notes).load({})
     expect(notes.version(1)).toBe(4)
 
     resetResourcesForIdentityChange()
@@ -166,16 +166,16 @@ describe('the identity epoch', () => {
     ROWS = [{ id: 1, name: 'Alice-of-u1' }]
     const notes     = createResource('notes',     { model: 'Note' })
     const customers = createResource('customers', { model: 'Customer' })
-    await notes.load({})
+    await tetherOf(notes).load({})
     await notes.options('customerId')
-    await customers.load({})
+    await tetherOf(customers).load({})
     const asked = _finds
-    expect(customers.tether.get()).toHaveLength(1)
+    expect(tetherOf(customers).tether.get()).toHaveLength(1)
 
     resetResourcesForIdentityChange()
 
-    expect(customers.tether.get()).toEqual([])
-    expect(notes.tether.get()).toEqual([])
+    expect(tetherOf(customers).tether.get()).toEqual([])
+    expect(tetherOf(notes).tether.get()).toEqual([])
     ROWS = [{ id: 2, name: 'Bob-of-u2' }]
     expect((await notes.options('customerId')).options).toEqual([{ value: 2, label: 'Bob-of-u2' }])
     expect(_finds).toBe(asked + 1)

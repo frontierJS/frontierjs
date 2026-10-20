@@ -11,7 +11,7 @@
 // keeps its art and its figures in one wrapper. A `size` of `[cols, rows]`
 // makes the box a pane over that many cells; without one the box is as big
 // as what it holds.
-import { StyledText, TextAttributes, TextRenderable } from '@opentui/core'
+import { MouseButton, StyledText, TextAttributes, TextRenderable } from '@opentui/core'
 
 export const at = (col, row, layer = 10, size = null) => (el) => {
   el.position = 'absolute'
@@ -31,6 +31,10 @@ export const at = (col, row, layer = 10, size = null) => (el) => {
 // A terminal that does not say it has hyperlinks would show an underlined
 // title and lose the URL, so `seen(supported)` is told, and the caller prints
 // the URL itself when it is false.
+// A right click copies `url` over OSC 52 and tells `copied(ok)`: a terminal
+// that answers a link only to a left click leaves no other way to the URL.
+// `ok` is whether the sequence was written; whether the terminal took it, no
+// terminal says.
 // A text drawn in a color: the node's own `fg`. The terminal paints no CSS, so a
 // `style:color` on a `<p>` colors nothing here. Taking the box's first text when
 // the attach sits on a wrapper is `linked`'s reading, for the same reason. No
@@ -44,7 +48,7 @@ export const tint = (color, ground) => (el) => {
   if (ground) text.bg = ground
 }
 
-export const linked = (url, seen = () => {}) => (el) => {
+export const linked = (url, seen = () => {}, copied = () => {}) => (el) => {
   const supported = el.ctx?.capabilities?.hyperlinks === true
   seen(supported)
   if (!supported) return
@@ -53,4 +57,9 @@ export const linked = (url, seen = () => {}) => (el) => {
   text.content = new StyledText([
     { __isChunk: true, text: text.plainText, attributes: TextAttributes.UNDERLINE, link: { url } },
   ])
+  text.onMouseDown = (e) => {
+    if (e.button !== MouseButton.RIGHT) return
+    e.stopPropagation()
+    copied(text.ctx?.copyToClipboardOSC52?.(url) === true)
+  }
 }

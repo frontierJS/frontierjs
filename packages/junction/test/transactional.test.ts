@@ -15,22 +15,23 @@ import { createClient }   from '../../litestone/src/index.js'
 import { callService, resolveTransactional, buildService } from '../src/core/service.ts'
 import { withLitestoneDb } from '../src/core/litestone.ts'
 import type { ServiceContext } from '../src/core/context.ts'
+import { $, setCallDb } from '../src/core/context.ts'
 
 const SCHEMA = `model Post { id Int @id @default(autoincrement())  title String }`
 
 const mkDb = () => createClient({ db: ':memory:', schema: SCHEMA }) as unknown as Promise<any>
 
 function ctx(db: unknown, over: Record<string, unknown> = {}): ServiceContext {
-  return {
+  return setCallDb({
     service: 'posts', method: 'create', id: undefined, data: { title: 't' },
     query: {}, auth: { user: null }, caller: {}, route: {},
-    locals: { db }, app: {}, result: null, type: 'before', ...over,
-  } as unknown as ServiceContext
+    locals: {}, app: {}, result: null, type: 'before', ...over,
+  } as unknown as ServiceContext, db)
 }
 
 const writes = (extra: Record<string, unknown> = {}) => ({
   name: 'posts',
-  async create(c: ServiceContext) { return (c.locals.db as any).post.create({ data: c.data }) },
+  async create(c: ServiceContext) { return ($.db as any).post.create({ data: c.data }) },
   async find()  { return [] },
   ...extra,
 })
@@ -76,8 +77,8 @@ describe('transactional: the write is atomic with the whole pipeline', () => {
       name: 'outer',
       transactional: true,
       async create(c: ServiceContext) {
-        await callService(inner, ctx(c.locals.db, { data: { title: 'inner' } }))
-        return (c.locals.db as any).post.create({ data: { title: 'outer' } })
+        await callService(inner, ctx($.db, { data: { title: 'inner' } }))
+        return ($.db as any).post.create({ data: { title: 'outer' } })
       },
       hooks: { after: { create: [function boom() { throw new Error('boom') }] } },
     } as never)
@@ -105,7 +106,7 @@ describe('what it is and is not applied to', () => {
     const db  = await mkDb()
     const svc = buildService(writes({
       transactional: ['patch'],
-      async patch(c: ServiceContext) { return (c.locals.db as any).post.create({ data: c.data }) },
+      async patch(c: ServiceContext) { return ($.db as any).post.create({ data: c.data }) },
       hooks: { after: { all: [function boom() { throw new Error('boom') }] } },
     }) as never)
 
@@ -129,7 +130,7 @@ describe('it refuses rather than quietly doing nothing', () => {
   test('a service declaring it without a Litestone client throws, naming the service', async () => {
     const svc = buildService(writes({ transactional: true }) as never)
     await expect(callService(svc, ctx({ /* not a litestone client */ })))
-      .rejects.toThrow(/Service 'posts' declares transactional: but ctx.locals.db has no \$transaction/)
+      .rejects.toThrow(/Service 'posts' declares transactional: but its client \(\$\.db\) has no \$transaction/)
   })
 })
 
@@ -137,7 +138,7 @@ describe('the scope survives into the transaction', () => {
 
   test('withLitestoneDb runs outside it, so the tx client is still caller-scoped', async () => {
     // withLitestoneDb is an APP-level around hook and app hooks merge first, so
-    // ctx.locals.db is already $setAuth'd when the transaction opens. If the
+    // $.db is already $setAuth'd when the transaction opens. If the
     // order were reversed the transaction would run unscoped and every row
     // policy would match nothing — silently.
     const db  = await createClient({
@@ -238,7 +239,7 @@ describe('a method that calls out before it writes scopes the write itself (FJS-
     const svc = buildService({
       name: 'posts',
       async create(c: ServiceContext) {
-        const d = c.locals.db as any
+        const d = $.db as any
         seen.push(d.$inTransaction)                       // the vendor call happens here
         const row = await d.$transaction(async (tx: any) => {
           seen.push(tx.$inTransaction)
@@ -261,8 +262,8 @@ describe('a method that calls out before it writes scopes the write itself (FJS-
     const svc = buildService(writes({
       transactional: true,
       async create(c: ServiceContext) {
-        before = (c.locals.db as any).$inTransaction
-        return (c.locals.db as any).post.create({ data: c.data })
+        before = ($.db as any).$inTransaction
+        return ($.db as any).post.create({ data: c.data })
       },
     }) as never)
 

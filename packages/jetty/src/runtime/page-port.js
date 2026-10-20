@@ -58,7 +58,7 @@ export class PagePort {
     // sending `init` triggers harbor to reply with the real session payload
     // (and current schema). Without this, an island/page opened AFTER the
     // user has signed in elsewhere would report `authenticated: false` until
-    // the next login/logout broadcast — which may never happen if the user
+    // the next sign-in/sign-out broadcast — which may never happen if the user
     // doesn't re-auth.
     try { port.postMessage({ type: 'init', payload: {} }) }
     catch { /* port closed already; will reconnect lazily */ }

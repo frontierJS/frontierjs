@@ -2333,7 +2333,7 @@ describe('ctx-params', () => {
 
   test('the four that do exist are not reported', () => {
     const root = tree('cp-real', api(
-      'export const guard = ctx => ctx.auth.user && ctx.route.id && ctx.caller.ip && ctx.locals.db\n'))
+      'export const guard = ctx => ctx.auth.user && ctx.route.id && ctx.caller.ip && ctx.locals\n'))
     expect(only(root, 'ctx-params').findings).toEqual([])
   })
 
@@ -2942,13 +2942,13 @@ describe('service-as-system', () => {
   test('the request client, either spelling, is the correct shape', () => {
     const root = tree('sas-scoped', svc('export default createService({\n' +
       '  find: () => $.db.asSystem().lead.findMany({ where: {} }),\n' +
-      '  get:  (ctx) => ctx.locals.db.asSystem().lead.findFirst({ where: {} }),\n})\n'))
+      '  get:  (ctx) => $.db.asSystem().lead.findFirst({ where: {} }),\n})\n'))
     expect(only(root, 'service-as-system').findings).toEqual([])
   })
 
   test('a local bound to the request client is the same shape', () => {
     const root = tree('sas-local', svc('export default createService({\n' +
-      '  find: (ctx) => {\n    const db = ctx.locals.db\n' +
+      '  find: (ctx) => {\n    const db = $.db\n' +
       '    return db.asSystem().lead.findMany({ where: {} })\n  },\n})\n'))
     expect(only(root, 'service-as-system').findings).toEqual([])
   })
@@ -2961,7 +2961,7 @@ describe('service-as-system', () => {
     const root = tree('sas-none', svc('export default createService({\n' +
       '  find:  () => $.app.data.asSystem().lead.findMany({ where: {} }),\n' +
       '  place: () => $.db.asSystem().lead.create({ data: {} }),\n' +
-      '  get:   (ctx) => ctx.locals.db.asSystem().lead.findFirst({ where: {} }),\n})\n', ''))
+      '  get:   (ctx) => $.db.asSystem().lead.findFirst({ where: {} }),\n})\n', ''))
     const { findings } = only(root, 'service-as-system')
     expect(findings.map(f => f.line)).toEqual([3, 4, 5])
     expect(findings[1].message).toMatch(/\$\.db\.asSystem\(\)/)
@@ -3035,7 +3035,7 @@ describe('service-module-db', () => {
   test('the request-scoped client, either spelling, is the correct shape', () => {
     const root = tree('md-scoped', svc('export default createService({\n' +
       '  find:   () => $.db.lead.findMany({ where: {} }),\n' +
-      '  get:    (ctx) => ctx.locals.db.lead.findFirst({ where: {} }),\n})\n'))
+      '  get:    (ctx) => $.db.lead.findFirst({ where: {} }),\n})\n'))
     expect(only(root, 'service-module-db').findings).toEqual([])
   })
 
@@ -3053,7 +3053,7 @@ describe('service-module-db', () => {
       'api/src/services/leads.service.ts':
         "import { createService } from '@frontierjs/junction'\n" +
         'export default createService({\n' +
-        '  find: (ctx) => { const db = ctx.locals.db; return db.lead.findMany({ where: {} }) },\n})\n',
+        '  find: (ctx) => { const db = $.db; return db.lead.findMany({ where: {} }) },\n})\n',
     })
     expect(only(root, 'service-module-db').findings).toEqual([])
   })

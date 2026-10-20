@@ -32,6 +32,7 @@ import { createSchema } from '../src/core/schema.ts'
 import { BULK_FAILURES, partitionBulk, wrapResult, type BulkFailure } from '../src/core/envelope.ts'
 import { createClient }        from '../../litestone/src/index.js'
 import type { ServiceContext } from '../src/core/context.ts'
+import { setCallDb } from '../src/core/context.ts'
 
 describe('an array body survives the bridge', () => {
 
@@ -196,12 +197,12 @@ async function paidOrder(db: unknown, id: number): Promise<void> {
 }
 
 function ctx(db: unknown, over: Record<string, unknown> = {}): ServiceContext {
-  return {
+  return setCallDb({
     service: 'orders', method: 'patch', id: undefined, data: null,
     query: {}, directives: {}, auth: {}, caller: {},
-    locals: { db }, app: {},
+    locals: {}, app: {},
     ...over,
-  } as unknown as ServiceContext
+  } as unknown as ServiceContext, db)
 }
 
 type Bulk = { data: Record<string, unknown>[]; total: number; errors: { data: unknown; error: { name: string } }[] }

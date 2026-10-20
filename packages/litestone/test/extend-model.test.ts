@@ -242,3 +242,26 @@ extend model Session { ipAddress String? }
     expect(out.errors.join(' · ')).toContain("no model 'Session'")
   })
 })
+
+// `hasImports` asked the same global regex `matchAll` walks, and `matchAll`
+// starts from the `lastIndex` it finds — past the first import a `test()` had
+// just matched — so the next walk inlined nothing above it, and basecamp read
+// "@@trait: unknown trait 'AuditTrail'" in the editor (FJS-3341).
+describe('asking whether a schema imports anything', () => {
+  test('leaves the next splice whole, every time it is asked', async () => {
+    const { hasImports, inlineImportsFromDisk } = await import('../src/core/parser.js') as any
+    const dir = mkdtempSync(join(tmpdir(), 'ls-has-imports-'))
+    try {
+      writeFileSync(join(dir, 'trail.lite'), `model AuditEntry {\n  id Int @id\n}\n`)
+      const src = `import "./trail.lite"\n\nmodel Post {\n  id Int @id\n}\n`
+      writeFileSync(join(dir, 'schema.lite'), src)
+      for (let i = 0; i < 2; i++) {
+        expect(hasImports(src)).toBe(true)
+        const { text, missing } = inlineImportsFromDisk(join(dir, 'schema.lite'))
+        expect(missing).toEqual([])
+        expect(text).toContain('model AuditEntry')
+        expect(text).not.toContain('import "./trail.lite"')
+      }
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+})

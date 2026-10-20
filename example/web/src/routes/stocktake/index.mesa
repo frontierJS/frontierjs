@@ -29,7 +29,7 @@ title: Stocktake
   import { sheets }          from '../../resources/StocktakeSheet.mesa'
   import { counts }          from '../../resources/StocktakeCount.mesa'
   import { productVariants } from '../../resources/ProductVariant.mesa'
-  import { session, useTether } from '@frontierjs/sierra/resource'
+  import { session } from '@frontierjs/sierra/resource'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
@@ -46,8 +46,10 @@ title: Stocktake
 
   $: (session.user, session.level)
 
-  const { get: variantRows, unsubscribe: offVariants } = useTether(productVariants.tether)
-  $.onDestroy(offVariants)
+  // Every variant, not a page — a count against a SKU past the server's page
+  // max would have no stock to compare with.
+  const variantList = productVariants.tethered({ state: 'local', all: true, directives: { orderBy: 'sku' } })
+  const variantRows = () => variantList.rows
 
   let sheet   = null      // the open sheet, or null
   let lines   = []        // the counts on it, newest last
@@ -57,8 +59,6 @@ title: Stocktake
 
   $: variantOptions = variantRows().map(v => ({ value: v.id, label: v.sku }))
   $: stockOf = (id) => variantRows().find(v => v.id === Number(id))?.stock ?? 0
-
-  productVariants.load({}, { limit: 500, orderBy: 'sku' }).catch(() => {})
 
   // A write the network could not carry throws with `queued` on it. That is a
   // deliberate refusal to resolve — resolving would claim the server has a row

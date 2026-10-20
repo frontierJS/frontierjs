@@ -1,7 +1,7 @@
 /**
  * web/test/verify.mjs — drive Basecamp in a real browser and assert what happens.
  *
- * Starts from an EMPTY database and works the way a person does: navigate, fill,
+ * Starts from an EMPTY database of its own and works the way a person does: navigate, fill,
  * click. Nothing here calls the API to make the UI look right — the few direct
  * calls that exist are seeding a precondition or checking a refusal the UI never
  * offers, and each says so.
@@ -21,18 +21,19 @@
  *
  * Usage, from the package root:
  *
- *   bun run verify            # needs an empty database
- *   bun run verify --reset    # deletes the database first, then runs
+ *   bun run verify
  *
- * It starts the API and the web server itself and stops them at the end, so it
- * needs both ports free. Needs Chrome on PATH (or $FJS_CHROME), the same
+ * The API runs against a scratch directory -- the database, the jobs queue
+ * beside it, the audit trail, the site clones and the workbench -- removed at
+ * the end, so the dev database in db/ is never opened. It starts the API and
+ * the web server itself and stops them at the end, so it needs both ports free. Needs Chrome on PATH (or $FJS_CHROME), the same
  * requirement the css package's harness has.
  *
  * Exits non-zero and prints what differed if any assertion fails.
  */
 
-// What `fli prove` queues on: this checkout's ports and its dev database.
-export const holds = ['ports', 'db']
+// What `fli prove` queues on: this checkout's ports. The database is the run's own.
+export const holds = ['ports']
 
 import { signRequest } from '@frontierjs/toolbelt/signature'
 import { createOutpostServer } from '@frontierjs/outpost/server'
@@ -89,6 +90,17 @@ const BASE     = `http://localhost:${WEB_PORT}`
 // Declared up here because cleanup() removes it and runs on a throw from
 // anywhere below.
 const STATIC_DIR = mkdtempSync(join(tmpdir(), 'basecamp-static-'))
+// Every path the API writes, so a run neither needs the dev database empty nor
+// touches it. The jobs queue is `jobsDatabasePath(DATABASE_URL)`, beside the
+// main file; the audit trail is a second declared path and would follow the
+// CWD into db/ unless stated (`FJS-633`).
+const SCRATCH = mkdtempSync(join(tmpdir(), 'basecamp-verify-'))
+const SCRATCH_ENV = {
+  DATABASE_URL:  join(SCRATCH, 'basecamp.db'),
+  AUDIT_PATH:    join(SCRATCH, 'audit.db'),
+  SITES_DIR:     join(SCRATCH, 'sites'),
+  WORKBENCH_DIR: join(SCRATCH, 'workbench'),
+}
 // The command port's certificate. The sink below serves it, enrollment hands
 // it over, and Basecamp's conduit target pins it — the TLS a fleet machine
 // speaks, which is the only way the app will send it a command (FJS-1603).
@@ -116,15 +128,13 @@ async function cleanup() {
   // The inline releases this run wrote. Per-run, so nothing here can be served
   // to the next one — see STATIC_DIR.
   await rm(STATIC_DIR, { recursive: true, force: true }).catch(() => {})
+  await rm(SCRATCH,    { recursive: true, force: true }).catch(() => {})
 }
 
-// An interrupted run used to leave its API, its Vite and its Chrome alive.
-// Nothing here is a child of the shell — they are children of THIS process — so
-// a SIGTERM to the wrapper (a `timeout`, a Ctrl-C, an editor stopping the task)
-// killed the runner and orphaned all three. The next run then met its own port
-// check, or worse, talked to a server holding a database this script had
-// already deleted. That is the exact failure the port check exists to name, and
-// it was this file creating it.
+// Nothing here is a child of the shell — the API, the Vite and the Chrome are
+// children of THIS process — so a SIGTERM to the wrapper (a `timeout`, a
+// Ctrl-C, an editor stopping the task) would kill the runner and orphan all
+// three, and the next run would meet its own port check.
 //
 // `once`: cleanup is not re-entrant, and a second signal while it awaits would
 // exit before the kills land.
@@ -140,17 +150,15 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => s
 
 // A THROW is the common case, not the interesting one: any check calling
 // evaluate() on a control that moved throws, and an unhandled throw exits
-// without running a single kill. Every orphan found so far was made this way —
-// the run reports its error and leaves an API holding a database the next
-// --reset has already deleted.
+// without running a single kill, and an orphaned API holds the port the next
+// run refuses.
 process.on('uncaughtException',  e => { console.error(e); stop('uncaught error') })
 process.on('unhandledRejection', e => { console.error(e); stop('unhandled rejection') })
 
 // ─── Ports ────────────────────────────────────────────────────────────────
 // A port still held by an earlier run is the worst failure mode here: the stale
-// API keeps the OLD database open — including one this script just deleted,
-// since an unlinked SQLite file lives on while a handle does — so every request
-// is answered from data that no longer exists on disk.
+// API answers from ITS scratch database, which cleanup() has already unlinked
+// and a SQLite handle keeps alive, so every request reads somebody else's run.
 async function portFree(port) {
   const net = await import('node:net')
   return new Promise(resolve => {
@@ -171,21 +179,13 @@ for (const [port, who] of [[API_PORT, 'API'], [WEB_PORT, 'web'], [OUTPOST_PORT, 
   }
 }
 
-// ─── Fresh database ───────────────────────────────────────────────────────
-if (process.argv.includes('--reset')) {
-  for (const f of [
-    'db/basecamp.db', 'db/basecamp.db-shm', 'db/basecamp.db-wal',
-    'db/basecamp-jobs.db', 'db/basecamp-jobs.db-shm', 'db/basecamp-jobs.db-wal',
-    'db/audit',
-  ]) await rm(join(PKG, f), { recursive: true, force: true })
-}
-
 // ─── Servers ──────────────────────────────────────────────────────────────
 // The API is given a mail provider by env, which is the whole of what
 // core/mailer.ts reads. Without MAIL_URL the app has no `app.mail` at all —
 // a supported state, and the one every other run of this drive used to be in.
 children.push(spawn('bun', ['api/index.ts'], { cwd: PKG, stdio: 'ignore', env: {
   ...process.env,
+  ...SCRATCH_ENV,
   MAIL_URL:     `http://localhost:${MAIL_PORT}`,
   MAIL_API_KEY: 'dev-mail-key',
   MAIL_FROM:    'basecamp@example.test',
@@ -387,13 +387,6 @@ for (let i = 0; i < 60; i++) {
 }
 if (!probe) fail(`No answer from ${BASE}/setup/probe after 30s — did the servers start?`)
 
-if (!probe.needs_setup) {
-  fail(
-    'This harness needs an EMPTY database: it asserts that the first-run wizard\n' +
-    `  owns the app, and there are already ${probe.users} user(s).\n\n` +
-    '    bun run verify --reset'
-  )
-}
 
 // ─── Browser ──────────────────────────────────────────────────────────────
 browser = await openChrome({ windowSize: '1280,800' }).catch(async (e) => {
@@ -745,12 +738,12 @@ check('protected environments say so',
   t => t.includes('protected'))
 
 // Variables are rows of their own (`Variable`), edited from the environment.
-await fill({ 'var-key': 'DATABASE_URL', 'var-value': 'sqlite://./db/app.db' })
+await fill({ 'var-key': 'DATABASE_URL', 'var-value': 'sqlite://./data/app.sqlite' })
 await click('Set variable')
 await waitFor(`document.getElementById('var-rows')?.textContent ?? ''`, t => t.includes('DATABASE_URL'))
 check('the variable is saved',
   await evaluate(`[...document.querySelectorAll('#var-rows td')].map(t => t.textContent.trim()).join('|')`),
-  t => t.includes('DATABASE_URL') && t.includes('sqlite://./db/app.db'))
+  t => t.includes('DATABASE_URL') && t.includes('sqlite://./data/app.sqlite'))
 check('…and the page still knows what it is showing', await heading(), 'Production')
 
 // A secret is encrypted at rest and absent from the response, so the table
@@ -2457,7 +2450,7 @@ await sleep(800)
 // selector against a form anywhere in this app.
 check('a recipe with no script is refused before the request is made',
   await evaluate(`[...document.querySelectorAll('[role=alert]')].map(e => e.textContent.trim()).join(' | ')`),
-  t => t.includes('script'))
+  t => t.includes('Script'))
 
 await fill({ script: '#!/bin/bash\ndf -h /\n' })
 await submit()
@@ -2765,11 +2758,30 @@ check('a bot cannot be made a system administrator', botAdmin, t => t.includes('
 // human, and the browser is signed in as the first — swapping sessions costs
 // two logins against auth's 10-per-15-minutes limit, which every later check
 // then pays for.
-const pat = await fetch(`http://localhost:${API_PORT}/auth/register`, {
+//
+// account-mail.ts mails a verification, so register answers 202 and makes no
+// account; the link in the mail makes it and signs in (`FJS-D1310`). The link
+// is read from the sink, which is where the mail actually went.
+const patMailFrom = mailbox.length
+const patAsked = await fetch(`http://localhost:${API_PORT}/auth/register`, {
   method: 'POST',
   headers: { 'content-type': 'application/json', accept: 'application/json' },
   body: JSON.stringify({ email: 'pat@example.com', name: 'Pat', password: 'hunter2hunter2' }),
+})
+check('registering answers 202 and no session', patAsked.status, 202)
+let patMail = null
+for (let waited = 0; waited < 5000 && !patMail; waited += 100) {
+  patMail = mailbox.slice(patMailFrom).find(m => [].concat(m.to).includes('pat@example.com'))
+  if (!patMail) await sleep(100)
+}
+const patLink = /#token=([^\s"&<]+)/.exec(`${patMail?.text ?? ''} ${patMail?.html ?? ''}`)?.[1]
+check('…and mails the address a verification link', patLink, t => typeof t === 'string' && t.length > 0)
+const pat = await fetch(`http://localhost:${API_PORT}/auth/email/verify`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', accept: 'application/json' },
+  body: JSON.stringify({ token: decodeURIComponent(patLink ?? '') }),
 }).then(r => r.json())
+check('following the link makes the account and signs it in', pat?.user?.email, 'pat@example.com')
 
 const patLogin = () => fetch(`http://localhost:${API_PORT}/auth/login`, {
   method: 'POST',
@@ -2852,15 +2864,17 @@ await apiCall(`/workspaces/${firstWs.id}`, {
 })
 
 check('a viewer reads the fleet',          (await asPat('/servers')).status, 200)
-check('…and creates nothing',              (await asPat('/servers', { method: 'POST', body: { name: 'nope', hostname: 'nope.example' } })).status, 403)
+check('…and creates nothing',              (await asPat('/servers', { method: 'POST', body: { name: 'nope', slug: 'nope' } })).status, 403)
 
 const viewerSecrets = await asPat('/secrets')
 check('…and cannot list secrets', viewerSecrets.status, 403)
-// Naming the level is what makes this check about the GATE. A 403 alone would
-// also be what a role hook answers, and the point of this one is that there is
-// no role hook on secrets.find — the schema is the only thing refusing.
+// Naming the operation is what makes this check about the GATE. A 403 alone
+// would also be what a role hook answers ("…role in this workspace (you have:
+// viewer)"), and the point of this one is that there is no role hook on
+// secrets.find — the schema is the only thing refusing, and app.ts's error
+// mapper says its level as a role, ending in the operation it refused.
 check('…refused by a level, which is the schema talking',
-  await viewerSecrets.text(), t => t.includes('requires level 5'))
+  await viewerSecrets.text(), t => t.includes('role in this workspace to read'))
 
 await apiCall(`/workspaces/${firstWs.id}`, {
   method: 'POST', header: { 'x-service-method': 'setMemberRole' },

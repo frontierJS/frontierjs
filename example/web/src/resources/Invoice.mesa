@@ -31,10 +31,10 @@
   // *show me a ledger* — `Invoice` declares three money columns and five
   // timestamps, so the tiers fill with `subtotal` and `tax` ahead of the day
   // the thing was due. `columns:` names the set AND its order, and `filters()`
-  // reads the same set, so the bar offers what the table shows. `listQuery`
+  // reads the same set, so the bar offers what the table shows. `tetheredQuery`
   // reaches `list()` alone; a picker over invoices is not a ledger.
   export const invoices = createResource('invoices', {
-    listQuery: { directives: { orderBy: '-issuedAt' } },
+    tetheredQuery: { directives: { orderBy: '-issuedAt' } },
     columns:   { only: ['number', 'status', 'customerId', 'total', 'issuedAt', 'dueOn'] },
   })
 </script>

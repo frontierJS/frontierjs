@@ -753,7 +753,7 @@ export interface CursorResult<T> {`,
       `}`,
       ``,
     )
-    // Junction's \`app.db\`, \`$.db\` and \`ctx.locals.db\` read this one interface.
+    // Junction's \`app.db\` and \`$.db\` read this one interface.
     // Named only on request, for the reason the ServiceTypes block gives.
     if (augment === 'junction') {
       lines.push(

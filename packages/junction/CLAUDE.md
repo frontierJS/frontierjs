@@ -199,7 +199,8 @@ Which one you hold is decided by where the code is mounted.
 | Wire-only keys | — | `ctx.transients` (payload), `ctx.reserved` (query) |
 | Columns the app supplies | — | `ctx.system`, a Set a hook adds to |
 | Responding | `ctx.json` / `text` / `html` / `file` / `sse` / `paginate` | return a value; the envelope is built for you |
-| Reaching the other | — | `ctx.$raw` — the transport ctx, or `null` |
+| The scoped client | — | `$.db` — its one spelling; never on `ctx` |
+| Reaching the other | — | `ctx.raw` — the transport ctx, or `null` |
 
 The bridge copies `route` and the principal across unchanged. The HTTP and WS
 paths build a context separately — `bridge.toContext()` and `bridge.internal()` —
@@ -246,9 +247,10 @@ src/
   core/
     app.ts — createApp; the plugin protocol; configure, start, ready, running, shutdown
     service.ts — createService (the definition, five CRUD verbs), callService
-    context.ts — ServiceContext; the request store (enterRequest, reenterAs) and the call store ($, enterCall)
+    context.ts — ServiceContext; the request store (enterRequest, reenterAs) and the call store ($, enterCall); the call's private slots (callDb, callSlots)
     directives.ts — QueryDirectives, the $-prefixed key fields; imports nothing
-    hooks.ts · hooks-builtin.ts · hooks-resilience.ts — the pipeline and around; the built-in hooks; circuitBreaker, rateLimit
+    hooks.ts · hooks-builtin.ts · hooks-resilience.ts — the pipeline and around; the built-in hooks, @frontierjs/junction/hooks; circuitBreaker, rateLimit
+    bearer.ts — @frontierjs/junction/bearer: bearerClaim and the token sources, over litestone.ts (FJS-D1333)
     litestone.ts — the Data adapter: withLitestoneDb, withTenantDb, gateAuth, autoValidate, validateInput, toDataPrincipal
     envelope.ts — the result envelope, one owner
     events.ts — AUTO_EVENT_MAP and the publish-hook mark; imports nothing (FJS-1181)

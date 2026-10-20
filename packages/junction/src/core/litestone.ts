@@ -10,7 +10,7 @@
 //     createClient) and a per-client `$tapQuery(fn)` that returns an unsub
 //     function. We register a tap once per request (cached on ctx.locals),
 //     enrich the event with telemetryId + isSystem, and emit on
-//     app.telemetry. The unsub is queued on ctx._cleanups for the
+//     app.telemetry. The unsub is queued on the call's cleanups for the
 //     callService finally block.
 //
 //   • Soft delete: When a Litestone model declares `@@softDelete`, the
@@ -33,10 +33,10 @@ import { NotFound, BadRequest, BadGateway, Unauthorized, Forbidden, FrameworkErr
 import type { AppDb, MirrorForward } from './app.ts'
 import { fieldError } from './field-errors.ts'
 import { CRUD_METHODS } from './methods.ts'
-import type { ServiceContext, ServiceContextLocals, QueryDirectives } from './context.ts'
+import type { ServiceContext, QueryDirectives } from './context.ts'
 import { clampPagination, pageBounds, type PageBounds } from './directives.ts'
 import { columnsUnmoved } from './write-narrowing.ts'
-import { coveredWrite, freezeUser, requestMeta, currentCall } from './context.ts'
+import { coveredWrite, freezeUser, requestMeta, currentCall, callDb, setCallDb } from './context.ts'
 import { toBulkFailure, partitionBulk, BULK_FAILURES, list, resultData, isServiceResult, type BulkFailure } from './envelope.ts'
 import type { TransportContext } from '../transport/types.ts'
 import { generateCuid } from '@frontierjs/toolbelt/ids'
@@ -45,16 +45,17 @@ import { fingerprint } from '@frontierjs/toolbelt/bearer'
 import { COMBINATORS } from '@frontierjs/toolbelt/directives'
 import { gradeStanding, levelPasses } from '@frontierjs/toolbelt/gate'
 import type { GradableUser } from '@frontierjs/toolbelt/gate'
+import { BEARER, type ResolvedBearer } from './bearer.ts'
 import { normalizeOrderBy, normalizeSelect, type SortParam, type SelectParam, type OrderBy } from '@frontierjs/toolbelt/query'
 
-// Module augmentation: typing ctx.locals.db without forcing a hard
+// Module augmentation: typing `$.db` without forcing a hard
 // Litestone dependency on junction core. An app that augments `AppDb` (`litestone
 // types --audience system --augment junction` writes it) reads its generated
 // client here, the one `app.db` already reads; an app that augments nothing keeps
 // the hand-written client below (`FJS-D877`).
 declare module './context.ts' {
-  interface ServiceContextLocals {
-    db?: keyof AppDb extends never ? LitestoneClient : AppDb
+  interface CallDbType {
+    db: keyof AppDb extends never ? LitestoneClient : AppDb
   }
 }
 
@@ -101,7 +102,7 @@ interface LitestoneTable {
 // intersected — because an interface's declared members must satisfy its index
 // signature, and `asSystem(): LitestoneClient` is not a table. With one
 // interface the signature had to be `[model: string]: unknown`, so an app got
-// `asSystem()` typed and `ctx.locals.db.post.findMany()` as `unknown` — which
+// `asSystem()` typed and `$.db.post.findMany()` as `unknown` — which
 // is every actual data call, and is why an app writes `dbOf(ctx): any` and
 // takes the whole client's safety with it (FJS-370).
 //
@@ -116,7 +117,7 @@ interface LitestoneTable {
 // and augments. Answering `unknown` here bought nothing for the typo and cost
 // every correct call.
 
-interface LitestoneClientApi {
+export interface LitestoneClientApi {
   asSystem(): LitestoneClient
   $setAuth(user: unknown): LitestoneClient
   $tapQuery(fn: (event: LitestoneQueryEvent) => void): () => void
@@ -130,18 +131,18 @@ interface LitestoneClientApi {
   $close?: () => void
 }
 
-type LitestoneClient = LitestoneClientApi & { [model: string]: LitestoneTable }
+export type LitestoneClient = LitestoneClientApi & { [model: string]: LitestoneTable }
 
-// `ctx.locals.db` is the app's generated client where `AppDb` is augmented, and
+// `$.db` is the app's generated client where `AppDb` is augmented, and
 // that type is not comparable to the one this adapter builds and reads. A cast
 // at each site would hide which ones are the crossing, so both directions go
 // through here.
-function localsDb(ctx: ServiceContext): LitestoneClient | undefined {
-  return ctx.locals.db as unknown as LitestoneClient | undefined
+function callClient(ctx: ServiceContext): LitestoneClient | undefined {
+  return callDb(ctx) as unknown as LitestoneClient | undefined
 }
 
-function setLocalsDb(ctx: ServiceContext, client: LitestoneClient): void {
-  ctx.locals.db = client as unknown as ServiceContextLocals['db']
+function setCallClient(ctx: ServiceContext, client: LitestoneClient): void {
+  setCallDb(ctx, client)
 }
 
 export interface LitestoneQueryEvent {
@@ -648,7 +649,7 @@ type ParsedModel = { name: string; attributes?: Array<{ kind: string; transition
  * name answered every button with a 405 — which is every generated service,
  * because a generated service is one line.
  *
- * Each one is `transition(id, move)` on `ctx.locals.db`, the CALLER's client:
+ * Each one is `transition(id, move)` on `$.db`, the CALLER's client:
  * the gate, the row policy and the move's own `@gate(n)` are graded
  * at the Data boundary exactly as for the hand-written
  * `return $.db.order.transition($.id, 'ship')`. Nothing here decides access.
@@ -688,7 +689,7 @@ function transitionMethod(accessor: string, modelName: string, move: string, ser
   return markDeclaredTransition(async function declaredTransition(ctx: ServiceContext): Promise<unknown> {
     if (ctx.id == null || ctx.id === '')
       throw new BadRequest(`${serviceName}.${move} moves one ${modelName} — call it with that row's id`)
-    const db = ctx.locals?.db as Record<string, {
+    const db = callDb(ctx) as Record<string, {
       transition: (id: unknown, name: string) => Promise<unknown>
       findFirst:  (args: unknown) => Promise<unknown>
     }> | undefined
@@ -853,7 +854,7 @@ interface ClaimedMirror {
 export function mirrorClaimFor(ctx: ServiceContext, accessorOpt?: string): ClaimedMirror | null {
   const conduit = (ctx.app && 'conduit' in ctx.app ? ctx.app.conduit : undefined) as Partial<{ mirrored: unknown }> | undefined
   if (!conduit || typeof conduit.mirrored !== 'function') return null
-  const db = ctx.locals?.db as Record<string, unknown> | undefined
+  const db = callDb(ctx) as Record<string, unknown> | undefined
   if (!db) return null
   const accessor = accessorIfModel(db, accessorOpt ?? ctx.service)
   if (!accessor) return null
@@ -928,7 +929,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
    * rather than a throw.
    */
   function primaryKeyOf(ctx: ServiceContext): string[] {
-    const db = ctx.locals?.db as { $primaryKey?: (a: string) => string[] } | undefined
+    const db = callDb(ctx) as { $primaryKey?: (a: string) => string[] } | undefined
     if (typeof db?.$primaryKey !== 'function') return []
     for (const candidate of accessorCandidates(model ?? ctx.service)) {
       try {
@@ -968,11 +969,11 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
   }
 
   function getTable(ctx: ServiceContext): LitestoneTable {
-    const baseDb = ctx.locals.db as LitestoneClient | undefined
+    const baseDb = callDb(ctx) as LitestoneClient | undefined
 
     if (!baseDb) {
       throw new Error(
-        `No Litestone db client on ctx.locals.db — ` +
+        `No Litestone db client on this call ($.db) — ` +
         `ensure withLitestoneDb is in your app around hooks`
       )
     }
@@ -982,13 +983,13 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       // Redundant when withLitestoneDb installed the scoping (which
       // createApp({ db }) now does automatically) — $setAuth on an already
       // scoped client returns an equivalent one. Kept so a hand-wired app that
-      // seeds ctx.locals.db itself still gets scoping.
+      // seeds its own client still gets scoping.
       //
       // $setAuth is guarded so plain (non-litestone) clients — adapted by
       // the service base — pass through without per-user scoping.
       // `in` before `typeof`: a system client has no `$setAuth`, and a Litestone
       // client THROWS on a property it lacks, so a hook that put `asSystem()`
-      // on `ctx.locals.db` — having graded the caller itself — made every
+      // on `$.db` — having graded the caller itself — made every
       // derived CRUD verb a 500. Such a client is used as the hook left it.
       const scopedDb: LitestoneClient = ctx.auth.user && '$setAuth' in baseDb && typeof baseDb.$setAuth === 'function'
         ? baseDb.$setAuth(toDataPrincipal(ctx.auth.user))
@@ -1246,7 +1247,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     const value = row[m.key]
     if (value === undefined || value === null)
       throw new BadGateway(`${providerOf(m)}: the Provider's answer parsed to a row with no ${m.key}`)
-    const db = localsDb(ctx) as Record<string, unknown>
+    const db = callClient(ctx) as Record<string, unknown>
     const sys = ('asSystem' in db ? (db.asSystem as () => Record<string, LitestoneTable>)() : db)[m.accessor] as LitestoneTable
 const columns = writableColumns(db, m.accessor)
     const data = columns ? Object.fromEntries(Object.entries(row).filter(([k]) => columns.has(k))) : row
@@ -1271,7 +1272,7 @@ const columns = writableColumns(db, m.accessor)
     row: Record<string, unknown>, changes?: Record<string, unknown>,
   ): Promise<void> {
     // No guard: a client that answered `$mirrorKey` answers this.
-    const v = await (localsDb(ctx) as LitestoneClientApi).$checkWrite!(m.accessor, op, row, changes)
+    const v = await (callClient(ctx) as LitestoneClientApi).$checkWrite!(m.accessor, op, row, changes)
     if (v.ok) return
     throw new Forbidden(v.message ?? (op === 'create'
       ? `${modelLabel(ctx)}: this is not one you may create`
@@ -1311,7 +1312,7 @@ const columns = writableColumns(db, m.accessor)
     // one answering a bare OK is gone there, so it goes here.
     if (row) await landMirrored(ctx, m, row)
     else {
-      const db = localsDb(ctx) as Record<string, unknown>
+      const db = callClient(ctx) as Record<string, unknown>
       const sys =('asSystem' in db ? (db.asSystem as () => Record<string, LitestoneTable>)() : db)[m.accessor] as LitestoneTable
       await sys.remove({ where: { [m.key]: current[m.key] } })
     }
@@ -1337,7 +1338,7 @@ const columns = writableColumns(db, m.accessor)
    */
   function refuseHardDelete(ctx: ServiceContext, q: { withDeleted?: boolean }): void {
     if (!q.withDeleted) return
-    if (!softDelete && !modelSoftDeletes(ctx.locals.db, model ?? ctx.service)) return
+    if (!softDelete && !modelSoftDeletes(callDb(ctx), model ?? ctx.service)) return
     throw new BadRequest(
       `$withDeleted is not honored on remove. Removing a row on a soft-deleting model ` +
       `stamps it; destroying one is not something a directive turns on. To free a @unique ` +
@@ -1427,7 +1428,7 @@ const columns = writableColumns(db, m.accessor)
       )
     }
 
-    const versionField = await modelVersionField(ctx.locals.db, model ?? ctx.service)
+    const versionField = await modelVersionField(callDb(ctx), model ?? ctx.service)
 
     const select: Record<string, unknown> = { [idField]: true }
     if (versionField) select[versionField] = true
@@ -1795,7 +1796,7 @@ const columns = writableColumns(db, m.accessor)
         'A bulk patch cannot carry a base row — a base is the row ONE writer read, and it would ' +
         'describe every matched row but that one. Patch by id to merge, or drop it.')
 
-      const versionField = await modelVersionField(ctx.locals.db, model ?? ctx.service)
+      const versionField = await modelVersionField(callDb(ctx), model ?? ctx.service)
       if (versionField && versionField in (ctx.data as Record<string, unknown>)) {
         // One supplied version cannot be right for N rows: it would conflict on
         // every row but the one it was read from. bulkByRow reads each row's own.
@@ -2105,7 +2106,7 @@ const _toldAuthor = new WeakMap<object, Set<string>>()
  * caller varying the key cannot write the log at request rate.
  */
 function tellAuthor(ctx: ServiceContext, what: string, remedy: string): void {
-  const client = ctx.locals.db as object | undefined
+  const client = callDb(ctx) as object | undefined
   const id     = `${ctx.service}.${String(ctx.method)}|${what}`
   if (client) {
     let told = _toldAuthor.get(client)
@@ -2186,6 +2187,17 @@ function guardedFieldNames(client: unknown, accessor: string): Set<string> {
     const out = lookup.call(client, accessor) ?? {}
     return new Set(Object.keys(out).filter(k => out[k] === 'guarded'))
   } catch { return new Set() }
+}
+
+/** Every column `$protectedFields` names for the accessor, whatever the reason. */
+function protectedColumnNames(client: unknown, accessor: string): Set<string> {
+  const out = new Set<string>()
+  const lookup = (() => { try { return (client as { $protectedFields?: unknown }).$protectedFields } catch { return null } })()
+  if (typeof lookup !== 'function') return out
+  for (const candidate of accessorCandidates(accessor)) {
+    try { for (const k of Object.keys(lookup.call(client, candidate) ?? {})) out.add(k) } catch { /* unknown accessor */ }
+  }
+  return out
 }
 
 const _compiledFor = new WeakMap<object, Map<string, {
@@ -2306,7 +2318,7 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
   return async function autoValidate(ctx: ServiceContext): Promise<void> {
     // accessor omitted → resolve from the service name, as getTable does.
     const accessor = accessorOpt ?? ctx.service
-    const client = ctx.locals.db as { $schema?: unknown } | undefined
+    const client = callDb(ctx) as { $schema?: unknown } | undefined
     if (!client) return
 
     // A claimed mirror's payload is the claim's input, not a row: the row is
@@ -2530,7 +2542,7 @@ function undeclaredNestedKeys(
 export function validateInput(defsKey: string, serviceName: string, method: string) {
   // Named for the same reason as gateAuth — see the note there.
   return async function validateInput(ctx: ServiceContext): Promise<void> {
-    const client = ctx.locals.db as { $schema?: unknown } | undefined
+    const client = callDb(ctx) as { $schema?: unknown } | undefined
     if (!client) return
 
     const jsonSchema = await _deriveJsonSchema(client, 'create')
@@ -2769,7 +2781,7 @@ async function modelVersionField(client: unknown, accessor: string): Promise<str
  * The map is keyed by MODEL name and a service names an accessor, so the
  * candidates are walked the way every other name crossing this boundary is.
  *
- * Not memoized, deliberately: `ctx.locals.db` is a fresh scoped client per
+ * Not memoized, deliberately: `$.db` is a fresh scoped client per
  * request, so a cache keyed on it would never hit — and the only caller runs
  * when a request actually carried the directive.
  */
@@ -2810,13 +2822,22 @@ export async function announcementPayload(
   idField:  string = 'id'
 ): Promise<unknown> {
   if (!accessor) return payload
-  const client = ctx.locals?.db
+  const client = callDb(ctx)
   if (!client) return payload
 
-  const columns = await modelColumns(client, accessor)
-  if (!columns || columns.size === 0) return payload
+  const all = await modelColumns(client, accessor)
+  if (!all || all.size === 0) return payload
 
-  const keys    = payload && typeof payload === 'object' ? new Set(Object.keys(payload)) : new Set<string>()
+  // A column the caller can never read (@encrypted/@secret/@guarded) is withheld
+  // from every answer, so counting it as missing warned 'answered 15 of 13
+  // columns -- missing pw' about a row that was whole (FJS-2258, FJS-1158).
+  const hidden  = protectedColumnNames(client, accessor)
+  const columns = new Set([...all].filter(c => !hidden.has(c)))
+  if (columns.size === 0) return payload
+
+  const keys    = payload && typeof payload === 'object'
+    ? new Set(Object.keys(payload).filter(k => !hidden.has(k)))
+    : new Set<string>()
   const missing = [...columns].filter(c => !keys.has(c))
   // Extra keys are fine — `{ ...job, queued: true }` is the whole row and a
   // flag, which is a row. Only an omission makes it a partial row.
@@ -2913,7 +2934,7 @@ interface WhereKeyProblem {
 export function autoFilter(accessorOpt: string | undefined) {
   // Named for the same reason as gateAuth — see the note there.
   return function autoFilter(ctx: ServiceContext): void {
-    const client = ctx.locals.db as {
+    const client = callDb(ctx) as {
       $checkWhere?: (a: string, w: unknown) => WhereKeyProblem[]
     } | undefined
     // Reading an unknown property off a Litestone client THROWS — the proxy
@@ -3084,7 +3105,7 @@ export function liftReservedQuery(
 
   // Reading an unknown property off a Litestone client THROWS, so the probe is
   // itself a throwing expression — see autoFilter.
-  const client = ctx.locals.db as { $checkWhere?: (a: string, w: unknown) => WhereKeyProblem[] } | undefined
+  const client = callDb(ctx) as { $checkWhere?: (a: string, w: unknown) => WhereKeyProblem[] } | undefined
   let check: ((a: string, w: unknown) => WhereKeyProblem[]) | undefined
   try { check = client?.$checkWhere } catch { return }
   if (typeof check !== 'function') return
@@ -3139,7 +3160,7 @@ const UNSORTABLE: Record<string, string> = {
 
 export function autoSort(accessorOpt: string | undefined) {
   return function autoSort(ctx: ServiceContext): void {
-    const client = ctx.locals.db as {
+    const client = callDb(ctx) as {
       $checkOrderBy?: (a: string, o: unknown, opts?: { recursive?: boolean }) => OrderByKeyProblem[]
     } | undefined
     // Probing a Litestone client for a property it does not have THROWS — see
@@ -3272,7 +3293,7 @@ export function gateAuth(accessor: string | undefined, op: GateOp) {
   return function gateAuth(ctx: ServiceContext): void {
     // accessor omitted → same fallback as getTable, so a model-less
     // createService({}) is still gated by the model's @@gate.
-    const levels = _gateLevels(ctx.locals.db, accessor ?? ctx.service)
+    const levels = _gateLevels(callDb(ctx), accessor ?? ctx.service)
     if (!levels) return
     if (levels[op] > 0 && !ctx.auth?.user) {
       throw new Unauthorized('Authentication required')
@@ -3500,7 +3521,7 @@ export function gateAuthAround(
     // beside it would be a declaration that decides nothing — refused rather
     // than ignored, since ignoring it is the silent open this rule closes.
     const crudDeclared = op !== undefined && declared[method] !== undefined
-    if (crudDeclared && accessor !== null && accessorIfModel(ctx.locals.db, accessor ?? ctx.service))
+    if (crudDeclared && accessor !== null && accessorIfModel(callDb(ctx), accessor ?? ctx.service))
       throw new Error(
         `[Junction] '${ctx.service}.${method}' declares gate ${declared[method]}, but ${method} on a ` +
         `service over a model is graded by the model's @@gate. Move the level into @@gate, or drop it from methods:.`)
@@ -3515,7 +3536,7 @@ export function gateAuthAround(
       }
     } else {
       const grade = customMethodGrade(method, declared,
-        methodGateBasis(ctx.locals.db, accessor === null ? null : accessor ?? ctx.service))
+        methodGateBasis(callDb(ctx), accessor === null ? null : accessor ?? ctx.service))
       const appItself = grade.source === 'system' && ctx.transport === 'internal' && !ctx.auth?.user
       if (grade.source !== 'unchecked' && !appItself) {
         const need = grade.level as number
@@ -3545,7 +3566,7 @@ export function gateAuthAround(
           // number this refusal names is the number every read and write in the
           // call would have been graded with.
           if (grade.graded) {
-            const has = callerGateLevel(ctx.locals.db, accessor === null ? undefined : accessor ?? ctx.service, ctx.auth.user)
+            const has = callerGateLevel(callDb(ctx), accessor === null ? undefined : accessor ?? ctx.service, ctx.auth.user)
             if (!levelPasses(need, has))
               throw methodRefusal(ctx.service, method, need, has)
           }
@@ -3708,7 +3729,7 @@ export function toDataPrincipal(user: unknown): unknown {
 //   1. resolve the claims, which needs the request
 //   2. build a FRESH principal and assign `ctx.auth.user` — not just the
 //      client, because `getTable()` re-derives its own scoped copy from
-//      `ctx.auth.user`, so a standing living only on `ctx.locals.db` is dropped
+//      `ctx.auth.user`, so a standing living only on `$.db` is dropped
 //      the moment a service touches a model
 //   3. scope the client from that principal
 //
@@ -3853,7 +3874,7 @@ function mergeClaims(ctx: ServiceContext, db: unknown, claims: PrincipalClaims):
   if (!user) {
     if (!Object.keys(claims).length) return
     if (typeof client?.$setAuth === 'function')
-      setLocalsDb(ctx, client.$setAuth({ ...claims }))
+      setCallClient(ctx, client.$setAuth({ ...claims }))
     return
   }
 
@@ -3861,7 +3882,7 @@ function mergeClaims(ctx: ServiceContext, db: unknown, claims: PrincipalClaims):
   ctx.auth.user   = principal as typeof user
 
   if (typeof client?.$setAuth === 'function')
-    setLocalsDb(ctx, client.$setAuth(toDataPrincipal(principal)))
+    setCallClient(ctx, client.$setAuth(toDataPrincipal(principal)))
 }
 
 /**
@@ -4000,12 +4021,12 @@ export function withLitestoneDb(
     // ctx.auth.user is already populated by the transport bridge before
     // callService() runs.
     const client = db as LitestoneClient
-    setLocalsDb(ctx,
+    setCallClient(ctx,
       ctx.auth?.user && typeof client?.$setAuth === 'function'
         ? client.$setAuth(toDataPrincipal(ctx.auth.user))
         : client)
 
-    if (ctx.locals.readCall) setLocalsDb(ctx, refuseWrites(localsDb(ctx), ctx.service, ctx.method) as LitestoneClient)
+    if (ctx.locals.readCall) setCallClient(ctx, refuseWrites(callClient(ctx), ctx.service, ctx.method) as LitestoneClient)
 
     // Before the resolver, because most apps have no resolver: the claim came
     // from `sessionFields` at sign-in and is already on the principal.
@@ -4018,7 +4039,7 @@ export function withLitestoneDb(
     if (stated) mergeClaims(ctx, db, stated)
 
     // After the scope above and before `next()`: the resolver may read through
-    // `ctx.locals.db`, and everything downstream must see the claims.
+    // `$.db`, and everything downstream must see the claims.
     //
     // Run for a GUEST as well as for a session. The resolver is the only thing
     // that can turn something the request carries — a cart token, an invitation
@@ -4169,7 +4190,7 @@ export function membershipClaim(opts: MembershipClaimOptions): SelfDescribedReso
     // be read through a client already scoped by that access — and under a
     // declared `@@gate` the membership model is typically unreadable at the
     // level a caller with no standing yet holds.
-    const db  = ctx.locals.db as LitestoneClient | undefined
+    const db  = callDb(ctx) as LitestoneClient | undefined
     const sys = typeof db?.asSystem === 'function' ? db.asSystem() : db
 
     // Reading an unknown property off a Litestone client THROWS rather than
@@ -4261,555 +4282,6 @@ export function membershipClaim(opts: MembershipClaimOptions): SelfDescribedReso
   return described
 }
 
-// ─── bearerClaim ─────────────────────────────────────────────────────────────
-//
-// The resolver for a caller who has no session and still owns rows: a shopper
-// holding a basket, a client following a portal link, a machine holding a key.
-// `membershipClaim`'s sibling, and the two divide by what the caller HAS — a
-// session that proves who they are, against a string whose holder is the whole
-// of the proof.
-//
-// **One form: the row is read** (`FJS-D343`). The alternative — comparing the
-// token to the column it lives on, which is what `example`'s basket did — needs
-// no read and cannot answer the three questions a link asks: has it expired,
-// was it revoked, and WHICH of several links is this. It also forces the
-// token's value onto every child row a policy has to reach, because a policy
-// cannot traverse a relation; resolving to an id instead means the children are
-// already scoped by the id they carry.
-//
-// What travels is the SUBJECT, never the token. `@@allow(read, clientId ==
-// auth().portalClientId)` compares an id to an id, so the secret stops at this
-// function and never reaches a policy, a query or a log line.
-
-/** Where the token is on the request. `header()`, `authorization()` and
- *  `cookie()` are the shipped readers; a path segment is not one (`FJS-D340`). */
-export type BearerSource = ((ctx: ServiceContext) => string | null) & {
-  /** The request header this source reads, where it reads one. The CORS
-   *  preflight and the socket frame allow-list both need it, and without it the
-   *  app restates the name in `http.callHeaders` or the preflight drops it. */
-  readonly headerName?: string
-  /** The cookie this source reads, where it reads one — what `redeem()` sets. */
-  readonly cookieName?: string
-}
-
-/**
- * Every place a request's headers can be, in the order they are authoritative.
- *
- * `ctx.headers` on a TransportContext and `ctx.caller.headers` on a
- * ServiceContext are the same fact in two shapes, and a resolver runs against
- * whichever one made the call. The request STORE is the third and it is not a
- * fallback for the other two failing: an in-process call carries no client at
- * all — `CallOptions` is auth, transport, locals and directives — so a service
- * calling a service is reached only this way. `membershipClaim` reads its
- * tenant down the same two steps and for the same reason.
- */
-function requestHeaders(ctx: ServiceContext): Record<string, string> {
-  const meta = requestMeta() as { headers?: Record<string, string>; caller?: { headers?: Record<string, string> } } | null
-  return (ctx as { headers?: Record<string, string> }).headers
-      ?? ctx.caller?.headers
-      ?? meta?.headers
-      ?? meta?.caller?.headers
-      ?? {}
-}
-
-/** Read the token from a request header. */
-export function header(name: string): BearerSource {
-  const lower = name.toLowerCase()
-  // Read whole, `Authorization` is the scheme and the token together, and it is
-  // also where a signed-in person's session rides, so every session the auth
-  // plugin accepted was fingerprinted, found no grant and refused (`FJS-2150`).
-  if (lower === 'authorization') throw new Error(
-    `bearerClaim: header('${name}') reads the scheme along with the token, and the same header carries ` +
-    `every signed-in person's session. Use authorization(), which takes the token after 'Bearer ' ` +
-    `and passes on one the request already signed in with.`)
-  const source = (ctx: ServiceContext) => {
-    const headers = requestHeaders(ctx)
-    // A header name is case-insensitive on the wire and two transports
-    // normalize differently, so all three spellings are asked rather than
-    // assuming the one this app happens to see today.
-    const raw = headers[lower] ?? headers[name] ?? headers[name.toUpperCase()]
-    return typeof raw === 'string' && raw ? raw : null
-  }
-  return Object.assign(source, { headerName: name })
-}
-
-/** Read the token from `Authorization: Bearer <token>` — where an API key
- *  travels for every SDK that calls a metered API. */
-export function authorization(): BearerSource {
-  const raw = (ctx: ServiceContext) => {
-    const headers = requestHeaders(ctx)
-    return headers.authorization ?? headers.Authorization ?? headers.AUTHORIZATION
-  }
-  const source = (ctx: ServiceContext) => {
-    // The transport reads a Bearer as a session before any resolver runs, and
-    // ahead of the cookie and `x-api-key`, so a caller who is signed in on this
-    // request was signed in BY this token: it is a session, not a grant, and
-    // fingerprinting it would refuse the person as a dead link.
-    if (ctx.auth?.user) return null
-    const value = raw(ctx)
-    if (typeof value !== 'string' || !value.startsWith('Bearer ')) return null
-    const token = value.slice(7).trim()
-    return token || null
-  }
-  return Object.assign(source, { headerName: 'authorization' })
-}
-
-/** Read the token from a cookie — what a redeemed link leaves behind. */
-export function cookie(name: string): BearerSource {
-  const source = (ctx: ServiceContext) => {
-    // A cookie is ambient — the browser sends it on every request to the origin
-    // — so a seller who once opened a customer's link carries it on every call
-    // of their own session, and once that link is replaced, reading it refuses
-    // the seller as a dead link for the cookie's life (`FJS-2175`). A session
-    // and a grant are not held together (`FJS-D344`); the session wins.
-    if (ctx.auth?.user) return null
-    const direct = (ctx as { cookies?: Record<string, string> }).cookies?.[name]
-                ?? (ctx.caller as { cookies?: Record<string, string> } | undefined)?.cookies?.[name]
-    if (typeof direct === 'string' && direct) return direct
-
-    // Parsed here rather than reached for on the context, because a raw route
-    // and a socket frame both arrive with the header and neither has a parsed
-    // bag. One cookie, split off the header the same way `parseCookies` does,
-    // without importing the transport into the Data seam.
-    const raw = requestHeaders(ctx).cookie
-    if (typeof raw !== 'string' || !raw) return null
-    for (const pair of raw.split(';')) {
-      const eq = pair.indexOf('=')
-      if (eq < 0) continue
-      if (pair.slice(0, eq).trim() !== name) continue
-      const value = pair.slice(eq + 1).trim()
-      return value ? decodeURIComponent(value) : null
-    }
-    return null
-  }
-  return Object.assign(source, { cookieName: name })
-}
-
-export interface BearerClaimOptions {
-  /** Where the token is on the request — `header('x-cart-token')`, `cookie('portal')`. */
-  from:    BearerSource
-  /** The ACCESSOR of the model holding the grants — its name with a lower first
-   *  letter, so `model PortalLink` is `'portalLink'`. A PascalCase name is refused. */
-  model:   string
-  /** The column holding the token's DIGEST. Never the token: what is stored is
-   *  `fingerprint(token, { key, purpose })` and the token itself is in the email
-   *  or the header that carried it, nowhere else. */
-  column:  string
-  /** Claim name → the column on the grant row it is read from. These are what a
-   *  policy compares, so they are ids and states, never the token. A dotted
-   *  column reads through a relation — `'page.workspaceId'` — which is how a
-   *  grant scoped `@@tenant(via: page)` emits the tenant claim without a copy
-   *  of the parent's workspace on every grant. */
-  claims:  Record<string, string>
-  /** The app secret the digest is keyed on. A function where it is per tenant. */
-  key:     string | ((ctx: ServiceContext) => string)
-  /** Domain separation for the digest. Defaults to `<model>.<column>`, which is
-   *  already unique per app; state it only to match an existing column. */
-  purpose?: string
-  /** The column naming what the grant is FOR — a client, a cart, a user. Written
-   *  to the audit trail's `subjectId`, where `actorId` is the grant row
-   *  (`FJS-D342`): revoking one link has to be answerable by *which link did
-   *  this*, which the subject alone cannot say. */
-  subject?: string
-  /** How a caller presents the token, quoted into nothing yet — carried for the
-   *  same reason `membershipClaim` carries it: once installed this is the only
-   *  static answer to *how does a request name its grant*. */
-  namedBy?: string
-  /** What a request carrying a SESSION as well as this grant is (`FJS-D832`).
-   *  `refuse`, the default: a 400 before the grant is read — one caller per
-   *  request, because a merged principal is two standings under one name and
-   *  a `@default(auth().x)` then stamps the grant's value on a row the
-   *  person's own rule admitted (`FJS-1987`). `merge`: the grant's claims join
-   *  the session's and the person is the trail's actor — a basket a signed-in
-   *  shopper still holds. */
-  session?: 'refuse' | 'merge'
-}
-
-/** Where this call's resolved grant row is parked, so a service can read the
- *  rest of it — its scope, its purpose, when it expires — without a second
- *  query, and so `installLogContext` can name it as the actor. */
-export const BEARER = 'bearer'
-
-/** What `ctx.locals[BEARER]` holds once a grant resolved. */
-export interface ResolvedBearer {
-  /** The grant row's own primary key — the audit trail's actor. */
-  id:      unknown
-  /** What the grant is for, where `subject` named a column. */
-  subject: unknown
-  /** The row itself, so nothing has to read it twice. */
-  row:     Record<string, unknown>
-  /** The grant model's accessor — which of several grants this is. */
-  model:   string
-}
-
-/**
- * The grant a NAMED resolver resolved on this call, or null.
- *
- * `ctx.locals[BEARER]` is one slot and a principal list may carry two bearers
- * (a widget's grant beside a survey link, both live on one request), so the
- * slot keeps the FIRST in the app's stated order — the one the trail names as
- * the actor — and each grant is also parked under its model, which is what a
- * service for that model reads.
- */
-export function bearerOf(ctx: ServiceContext, model: string): ResolvedBearer | null {
-  return (ctx.locals?.[`${BEARER}:${model}`] as ResolvedBearer | undefined) ?? null
-}
-
-/** What `mint()` answers: the token, which exists in this answer and wherever
- *  the app sends it, and the row as the caller may read it. */
-export interface MintedGrant { token: string; row: Record<string, unknown> }
-
-export interface RedeemOptions {
-  /** The cookie's life in seconds. Default: until the grant's `expiresAt`, or
-   *  the browser session where the grant declares none. */
-  maxAge?:   number
-  path?:     string
-  sameSite?: 'strict' | 'lax' | 'none'
-  secure?:   boolean
-}
-
-/** The slice of a raw route's context the redeem reads and answers through. */
-export type RedeemContext = Pick<TransportContext, 'body' | 'json' | 'setCookie'>
-
-/**
- * `bearerClaim()`'s answer: the resolver, and the two acts that go with a grant
- * — issuing one and, for a link, trading it for the cookie the resolver reads.
- */
-export interface BearerResolver extends SelfDescribedResolver {
-  /**
-   * Create a grant row on `db`, as whoever `db` is scoped to. The digest is
-   * written by naming the column in `system:`, so the model's own `@@gate` and
-   * create policy decide who may issue a link, and the trail names the caller.
-   * For a `cookie()` bearer the token is a LINK token: `redeem()` trades it for
-   * the cookie's own and it is dead from then on (`FJS-D340`).
-   */
-  mint(db: unknown, data: Record<string, unknown>, extra?: { system?: string[] }): Promise<MintedGrant>
-  /**
-   * Hooks for the grant model's own `create`, installed with `svc.hooks(...)`:
-   * the caller's create is the mint, the answer carries `token` once, and the
-   * broadcast carries the row without it.
-   */
-  mintOnCreate(): HookMap
-  /**
-   * A raw-route handler for the redeem (`FJS-D340`): `{ token }` in the body,
-   * the grant's digest rotated to a fresh token's, that token set as the
-   * httpOnly cookie `from` reads, and `{ subject }` answered so the page can
-   * open what the link was for. Only a `cookie()` bearer has one.
-   */
-  redeem(db: unknown, opts?: RedeemOptions): (ctx: RedeemContext) => Promise<Response>
-  /**
-   * Spend one open of the grant this call resolved (`FJS-D1132`): the third act
-   * beside `mint` and `redeem`. Call it once, from the service method that IS
-   * the open — the resolver stays a pure read, so a Send's open and its later
-   * file fetch are not two spends. The grant's `accessCount` rises by one only
-   * while it is under `maxAccessCount` (null is no maximum), in one conditional
-   * UPDATE, so the (max+1)th open under concurrency is refused with the same
-   * 401 sentence a dead link gets.
-   */
-  spend(db: unknown, ctx: ServiceContext): Promise<void>
-}
-
-const LAST_USED_WINDOW_MS = 4 * 60_000
-
-export function bearerClaim(opts: BearerClaimOptions): BearerResolver {
-  // Every request carrying the header would otherwise answer 500 *not a table
-  // in this schema*; a model's name reads as the right value for this option.
-  if (/^[A-Z]/.test(opts.model)) {
-    const accessor = opts.model[0].toLowerCase() + opts.model.slice(1)
-    throw new Error(
-      `bearerClaim: \`model\` is the client's accessor, not the model's name — ` +
-      `\`model ${opts.model}\` is \`'${accessor}'\`.`)
-  }
-  const purpose = opts.purpose ?? `${opts.model}.${opts.column}`
-  // A link and the cookie it is redeemed for digest under different purposes,
-  // so an unredeemed link presented as the cookie matches nothing and a
-  // redeemed link is dead the moment it was used — a forwarded email that
-  // was already clicked answers as one that never existed.
-  const linkPurpose = `${purpose}.link`
-  const isLink      = !!opts.from.cookieName
-
-  const keyFor = (ctx: ServiceContext | undefined): string => {
-    if (typeof opts.key !== 'function') return opts.key
-    if (!ctx) throw new Error(
-      `bearerClaim: \`key\` is a function and there is no call in progress to hand it. ` +
-      `Mint inside a service method, or pass the key as a string.`)
-    return opts.key(ctx)
-  }
-  const systemTable = (db: unknown) => {
-    const client = db as LitestoneClient | undefined
-    const bare = typeof client?.$setAuth === 'function' ? client.$setAuth(null) : client
-    const sys  = typeof bare?.asSystem === 'function' ? bare.asSystem() : bare
-    return sys?.[opts.model] as Record<string, (a: Record<string, unknown>) => Promise<unknown>> | undefined
-  }
-
-  const resolver = async function bearerClaim(ctx: ServiceContext, user: ServiceContext['auth']['user'] | null): Promise<PrincipalClaims> {
-    // A token this request does not carry is not a refusal to report: most
-    // callers are ordinary signed-in people, and a resolver that recorded
-    // *refused* for every one of them would make `NO_CLAIM` meaningless for
-    // the requests that really were turned away.
-    const token = opts.from(ctx)
-    if (!token) return {}
-
-    // Before the lookup, so the refusal says nothing about whether the token
-    // works. A request is one caller: a person who also presents a grant is
-    // two standings, and merged they put the grant's ids on rows the person's
-    // own rule admitted (`FJS-1987`). An app whose signed-in callers still
-    // hold a grant states `session: 'merge'` (`FJS-D832`).
-    if (user && (opts.session ?? 'refuse') !== 'merge') throw new BadRequest(
-      opts.from.headerName === 'authorization'
-        ? `This request is signed in and also carries a key. Send one or the other.`
-        : `This request is signed in and also carries a link. Sign out to use the link, or drop it.`,
-    )
-
-    const db  = ctx.locals.db as LitestoneClient | undefined
-    // `$setAuth(null)` first: `$setAuth(u).asSystem()` keeps `u` (`FJS-519`),
-    // and under row tenancy `u`'s tenant claim still filters the lookup — so a
-    // signed-in member of account B holding account A's link read no grant at
-    // all, where the same token signed out did. Who ELSE the holder is must not
-    // decide whether the grant is found (`FJS-2091`).
-    const bare = typeof db?.$setAuth === 'function' ? db.$setAuth(null) : db
-    const sys  = typeof bare?.asSystem === 'function' ? bare.asSystem() : bare
-
-    // asSystem(), for `membershipClaim`'s reason one step further: a grant is
-    // what DECIDES this caller's access, and the caller holding it has no
-    // session at all, so a client scoped by that access can read nothing.
-    const table = sys?.[opts.model] as { findFirst?: (a: Record<string, unknown>) => Promise<unknown> } | undefined
-
-    if (typeof table?.findFirst !== 'function') throw new BadRequest(
-      `bearerClaim: no accessor '${opts.model}' on the client. ` +
-      `A model's accessor is its name with a lower first letter — ` +
-      `\`model PortalLink\` is \`portalLink\`.`,
-    )
-
-    const key = typeof opts.key === 'function' ? opts.key(ctx) : opts.key
-    if (typeof key !== 'string' || !key) throw new Error(
-      `bearerClaim: \`key\` is the secret the stored digest is keyed on, and there is no default. ` +
-      `An unkeyed digest can be attacked offline the moment the column leaks.`)
-
-    // The digest is what the column holds, so the token is never in a query,
-    // a log line or an error — and a caller cannot present a digest they read
-    // somewhere, because the purpose and the key are not theirs to reproduce.
-    const digest = await fingerprint(token, { key, purpose })
-
-    // A dotted claim column ('page.workspaceId') is read through the relation,
-    // so a grant on a child of a scoped model needs no copy of its parent's scope.
-    const relations = [...new Set(Object.values(opts.claims).filter(c => c.includes('.')).map(c => c.split('.')[0]))]
-
-    const row = await table.findFirst({
-      where: { [opts.column]: digest },
-      ...(relations.length ? { include: Object.fromEntries(relations.map(r => [r, true])) } : {}),
-    }) as Record<string, unknown> | null
-
-    // A token that was PRESENTED and does not work is refused, not answered as
-    // anonymity: a stranger's list is 200 of nothing and their write a 403 from
-    // the rule, so the holder of a dead link could not be told it is dead
-    // (`FJS-1999`; the same refusal a dead session gets, `FJS-1830`). No row, a
-    // revoked one and an expired one are one answer on purpose — *this link does
-    // not work* is all a bearer may learn, or the refusal becomes an oracle for
-    // which tokens once existed.
-    // The words are the sender's: an API key rides Authorization, a link rides a
-    // cookie or a header of the app's own, and a machine holding a key reads
-    // nothing about a link it never had (`FJS-2161`). `header()` refuses the name
-    // `authorization`, so that name is `authorization()` and nothing else.
-    if (!row || !isLive(row, (db as { $now?: () => Date } | undefined)?.$now)) throw new Unauthorized(
-      opts.from.headerName === 'authorization'
-        ? `This key does not work. It may have expired or been revoked.`
-        : `This link does not work. It may have expired or been withdrawn.`,
-    )
-
-    const held = {
-      id:      row.id ?? null,
-      subject: opts.subject ? row[opts.subject] ?? null : null,
-      row,
-      model:   opts.model,
-    } satisfies ResolvedBearer
-    ctx.locals[`${BEARER}:${opts.model}`] = held
-    ctx.locals[BEARER] ??= held
-
-    // `redeem()` stamps a cookie bearer once; a header bearer never redeems, so
-    // the column that says whether a stolen key is in use would stay null. One
-    // write per window keeps a hot key off the write path (`FJS-D1140`).
-    if ('lastUsedAt' in row && typeof (sys?.[opts.model] as { update?: unknown } | undefined)?.update === 'function') {
-      const now  = ((db as { $now?: () => Date } | undefined)?.$now ?? (() => new Date()))()
-      const last = row.lastUsedAt == null ? NaN : new Date(row.lastUsedAt as string | number | Date).getTime()
-      if (!(now.getTime() - last < LAST_USED_WINDOW_MS)) {
-        // A refused stamp (a read-only replica, a read inside a transaction)
-        // must not turn a valid key into a failed request.
-        await (sys![opts.model] as { update: (a: Record<string, unknown>) => Promise<unknown> })
-          .update({ where: { id: row.id }, data: { lastUsedAt: now.toISOString() } })
-          .then(() => { row.lastUsedAt = now.toISOString() }, () => {})
-      }
-    }
-
-    // A grant admits its holder to a tenant and makes them no member of it, so
-    // the tenant claim travels as the admission twin (`FJS-D1100`): the schema's
-    // tenant deny passes it and `workspaceId == auth().workspaceId` does not.
-    const tenancy = tenancyOf(db)
-    const asAdmitted = tenancy?.strategy === 'row' && tenancy.claim && tenancy.admission ? tenancy : null
-
-    return Object.fromEntries(
-      Object.entries(opts.claims).map(([claim, column]) => [
-        claim === asAdmitted?.claim ? asAdmitted.admission : claim,
-        column.split('.').reduce<unknown>((at, key) => (at as Record<string, unknown> | null | undefined)?.[key], row) ?? null,
-      ]),
-    )
-  }
-
-  async function mint(db: unknown, data: Record<string, unknown>, extra: { system?: string[] } = {}): Promise<MintedGrant> {
-    const table = (db as Record<string, { create?: (a: Record<string, unknown>) => Promise<unknown> }> | undefined)?.[opts.model]
-    if (typeof table?.create !== 'function') throw new BadRequest(
-      `bearerClaim: no accessor '${opts.model}' on the client handed to mint(). ` +
-      `A model's accessor is its name with a lower first letter.`)
-    const token  = generateCuid()
-    const digest = await fingerprint(token, { key: keyFor(currentCall()), purpose: isLink ? linkPurpose : purpose })
-    const row = await table.create({
-      data:   { ...data, [opts.column]: digest },
-      system: [...new Set([...(extra.system ?? []), opts.column])],
-    }) as Record<string, unknown>
-    return { token, row }
-  }
-
-  function mintOnCreate(): HookMap {
-    const MINTED = `${BEARER}.minted:${opts.model}`
-    return {
-      // After validation, because a @guarded column is not in the client's
-      // schema and a digest added before it is refused as an unknown key.
-      validated: { create: [async (ctx) => {
-        const token = generateCuid()
-        const data  = ctx.data as Record<string, unknown> | null
-        ctx.data = { ...data, [opts.column]: await fingerprint(token, { key: keyFor(ctx), purpose: isLink ? linkPurpose : purpose }) }
-        ctx.system.add(opts.column)
-        ctx.locals[MINTED] = token
-      }] },
-      after: { create: [(ctx) => {
-        const token = ctx.locals[MINTED]
-        if (typeof token !== 'string') return
-        const row = resultData(ctx.result) as Record<string, unknown> | null
-        // The row goes out to every subscriber; the token goes to the caller.
-        ctx.dispatch = row
-        ctx.result   = isServiceResult(ctx.result)
-          ? { ...ctx.result, data: { ...row, token } }
-          : { ...row, token }
-      }] },
-    }
-  }
-
-  function redeem(db: unknown, ro: RedeemOptions = {}) {
-    if (!isLink) throw new Error(
-      `bearerClaim: redeem() sets the cookie \`from\` reads, and this bearer reads ` +
-      `${opts.from.headerName ? `the ${opts.from.headerName} header` : 'no cookie'}. ` +
-      `A header bearer is handed its token directly; the redeem is for a link that arrives by email (FJS-D340).`)
-    const name = opts.from.cookieName as string
-    return async (ctx: RedeemContext): Promise<Response> => {
-      const token = (ctx.body as { token?: unknown } | null)?.token
-      if (typeof token !== 'string' || !token) return ctx.json({ message: 'A link token is required' }, 400)
-
-      const table = systemTable(db)
-      if (typeof table?.findFirst !== 'function') throw new Error(
-        `bearerClaim: no accessor '${opts.model}' on the client handed to redeem().`)
-      // The key function reads the tenant off the request, and a raw route's
-      // context carries the same headers a call's does.
-      const key   = keyFor(ctx as unknown as ServiceContext)
-      const clock = (db as { $now?: () => Date } | undefined)?.$now ?? (() => new Date())
-      const row   = await table.findFirst({ where: { [opts.column]: await fingerprint(token, { key, purpose: linkPurpose }) } }) as Record<string, unknown> | null
-      // One sentence for forged, expired, revoked and already redeemed, the
-      // resolver's own (`FJS-D696`).
-      if (!row || !isLive(row, clock)) return ctx.json({ message: 'This link does not work. It may have expired or been withdrawn.' }, 401)
-
-      const fresh = generateCuid()
-      await table.update({
-        where: { id: row.id },
-        data:  { [opts.column]: await fingerprint(fresh, { key, purpose }),
-                 ...('lastUsedAt' in row ? { lastUsedAt: clock().toISOString() } : {}) },
-      })
-
-      const maxAge = ro.maxAge ?? (row.expiresAt != null
-        ? Math.max(0, Math.floor((new Date(row.expiresAt as string).getTime() - clock().getTime()) / 1000))
-        : undefined)
-      ctx.setCookie(name, fresh, {
-        httpOnly: true, sameSite: ro.sameSite ?? 'strict', path: ro.path ?? '/',
-        ...(ro.secure !== undefined ? { secure: ro.secure } : {}),
-        ...(maxAge !== undefined ? { maxAge } : {}),
-      })
-      return ctx.json({ subject: opts.subject ? row[opts.subject] ?? null : null }, 200)
-    }
-  }
-
-  async function spend(db: unknown, ctx: ServiceContext): Promise<void> {
-    const held = bearerOf(ctx, opts.model)
-    if (!held) throw new Error(
-      `bearerClaim: spend() found no '${opts.model}' grant on this call. ` +
-      `It spends the grant the resolver read, so the request must carry the token.`)
-    if (!('accessCount' in held.row)) throw new Error(
-      `bearerClaim: spend() counts in \`accessCount\` and model ${opts.model} declares no such column. ` +
-      `Add \`accessCount Int @default(0)\` (and \`maxAccessCount Int?\` for a budget).`)
-    const table = systemTable(db)
-    if (typeof table?.updateMany !== 'function') throw new Error(
-      `bearerClaim: no accessor '${opts.model}' on the client handed to spend().`)
-
-    // The maximum rides the WHERE as a value, not as a column compared to a
-    // column: the resolver read it a moment ago, and a `$raw` clause would name
-    // the SQL column, which an `@map` renames.
-    const max = 'maxAccessCount' in held.row ? held.row.maxAccessCount : null
-    const { count } = await table.updateMany({
-      where: { id: held.id, ...(max == null ? {} : { accessCount: { lt: max } }) },
-      data:  { accessCount: { increment: 1 } },
-    }) as { count: number }
-    if (count < 1) throw new Unauthorized(
-      opts.from.headerName === 'authorization'
-        ? `This key does not work. It may have expired or been revoked.`
-        : `This link does not work. It may have expired or been withdrawn.`,
-    )
-  }
-
-  const described = resolver as BearerResolver
-  described.describe = () => ({
-    kind:     'bearer',
-    model:    opts.model,
-    subject:  opts.subject ?? null,
-    tenant:   null,
-    standing: null,
-    claims:   Object.keys(opts.claims),
-    include:  [],
-    namedBy:  opts.namedBy ?? null,
-    headers:  opts.from.headerName ? [opts.from.headerName] : [],
-    session:  opts.session ?? 'refuse',
-  })
-  described.mint         = mint
-  described.mintOnCreate = mintOnCreate
-  described.redeem       = redeem
-  described.spend        = spend
-
-  return described
-}
-
-/**
- * Is this grant still good?
- *
- * Read off COLUMNS the app's own model declares rather than off options, so the
- * answer is in the seed where `fli check`, a migration and a person reviewing
- * access can all see it. A model that declares neither column has said its
- * grants do not expire, which is a legitimate thing for a basket to say and a
- * dangerous thing for a portal link to say — and the schema is where that
- * argument belongs.
- *
- * A column that is present and unreadable — a string that is not a date — is
- * treated as EXPIRED. The alternative reading is *live*, which turns a column
- * nobody can parse into a grant that never dies.
- */
-function isLive(row: Record<string, unknown>, clock?: () => Date): boolean {
-  if ('revokedAt' in row && row.revokedAt != null) return false
-
-  if ('expiresAt' in row && row.expiresAt != null) {
-    const at = new Date(row.expiresAt as string | number | Date).getTime()
-    // The client's clock, which `createClient({ now })` moves: a deadline that
-    // reads the wall clock beside it is the one a drive cannot reach.
-    const now = clock ? clock().getTime() : Date.now()
-    if (!Number.isFinite(at) || at <= now) return false
-  }
-
-  return true
-}
 
 /** A resolver that can say what it is — `junction principal` reads this, and an
  *  app writing its own may carry one. A plain function that applies a
@@ -5673,7 +5145,7 @@ export function announceDataWrites(
 // Two strategies, two shapes of work:
 //
 //   database  one file per tenant. The client itself changes per request, so
-//             this hook resolves the id and swaps `ctx.locals.db`.
+//             this hook resolves the id and swaps `$.db`.
 //   row       one database, a tenant column. Nothing to swap — the policies
 //             compiled from the schema already scope every query by the
 //             principal's own claim. What CAN go wrong is a principal that
@@ -5859,10 +5331,10 @@ function tapTenantWrites(app: unknown, client: unknown, tenantId: string): void 
 }
 
 /**
- * around hook: put THIS tenant's client on `ctx.locals.db`.
+ * around hook: put THIS tenant's client on `$.db`.
  *
  * Installed by `createApp({ tenants })`. It replaces `withLitestoneDb` rather
- * than composing with it — an app has one `ctx.locals.db` and two hooks
+ * than composing with it — an app has one `$.db` and two hooks
  * assigning it is a race decided by hook order.
  */
 export function withTenantDb(registry: TenantRegistryLike, principal?: PrincipalSetting): import('./hooks.ts').AroundHook {
@@ -5923,7 +5395,7 @@ export function withTenantDb(registry: TenantRegistryLike, principal?: Principal
       tapTenantWrites((ctx as { app?: unknown }).app, client, id)
 
       ctx.locals.tenantId = id
-      setLocalsDb(ctx, dataPrincipal && typeof client?.$setAuth === 'function'
+      setCallClient(ctx, dataPrincipal && typeof client?.$setAuth === 'function'
         ? client.$setAuth(dataPrincipal)
         : client)
 

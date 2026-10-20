@@ -1,6 +1,6 @@
 // memo-owned-effects.test.js
 //
-// A handle built inside a derivation — `const list = blocks.list({ where: {
+// A handle built inside a derivation — `const list = blocks.tethered({ where: {
 // pageId } })` over a prop, which FJS-D212 makes a memo — opens an effect or
 // registers a teardown while the memo computes. The memo set the listener and
 // left the OWNER alone, so those landed on whatever was reading: on first read
@@ -107,7 +107,7 @@ describe('a const handle over a prop keeps listening (FJS-1747)', () => {
     const [tick, setTick] = runtime.createSignal(0)
     let finds = 0
     const blocks = {
-      list({ where }) {
+      tethered({ where }) {
         const [rows, setRows] = runtime.createSignal(0)
         runtime.createEffect(() => { announced(); finds++; setRows(finds) })
         return { where, rows }
@@ -116,7 +116,7 @@ describe('a const handle over a prop keeps listening (FJS-1747)', () => {
     const src = `<script>
 import { blocks, tick } from './res.js'
 export let pageId
-const list = blocks.list({ where: { pageId } })
+const list = blocks.tethered({ where: { pageId } })
 </script>
 <p>{list.rows()}:{tick()}</p>`
     const ctx = await compile(src, { debug: false, css: false })

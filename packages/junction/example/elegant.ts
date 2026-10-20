@@ -35,7 +35,7 @@
 //   curl -X POST http://localhost:3200/api/leads \
 //     -H 'x-service-method: getStats'                            # custom method
 
-import { createApp, createService, announce, channels, health } from '../index.ts'
+import { createApp, createService, announce, channels, health, $ } from '../index.ts'
 import type { App, IAuth, ServiceContext } from '../index.ts'
 import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
 import type { LitestoneClient, TableClient } from '@frontierjs/litestone'
@@ -134,12 +134,12 @@ app.services.register(createService({
 
   // POST /api/leads + X-Service-Method: getStats
   async getStats(ctx: ServiceContext) {
-    // Through `unknown` on purpose: junction types `ctx.locals.db` with its own
+    // Through `unknown` on purpose: junction types `$.db` with its own
     // minimal client interface so the adapter compiles with no litestone
     // installed, and that shape is declared independently of litestone's. The
-    // client is always there on a model service — withLitestoneDb seeds locals
-    // before any hook runs.
-    const scoped = ctx.locals.db as unknown as Db
+    // client is always there on a model service — withLitestoneDb puts it on
+    // the call before any hook runs.
+    const scoped = $.db as unknown as Db
     const leads  = await scoped.lead.findMany()
     const total  = leads.reduce((sum, l) => sum + Number(l.value ?? 0), 0)
     return { count: leads.length, totalValue: total, avgValue: leads.length ? Math.round(total / leads.length) : 0 }

@@ -130,6 +130,21 @@ export type LoginResult =
       expiresAt: string
     }
 
+/**
+ * What spending a mailed address link is worth (`FJS-D1310`).
+ *
+ * A registration's link is the account's first proof of its mailbox, so it
+ * answers what `login` does: a session, or a ticket when a second factor is
+ * owed. Confirming an address an account already has, or moving it to a new
+ * one, signs nobody in -- `verified` is the account as it now stands. One
+ * method answers both because one link is spent either way, and a caller that
+ * had to pick the method before spending it would have to know which kind of
+ * token it holds. Discriminate on the key: `'signedIn' in result`.
+ */
+export type EmailVerificationResult =
+  | { signedIn: LoginResult }
+  | { verified: SessionContext }
+
 export interface IAuth {
   // Session
   verifySession(token: string, from?: CredentialOrigin): Promise<SessionContext | null>
@@ -176,7 +191,7 @@ export interface IAuth {
   requestPasswordReset?(email: string):                Promise<void>
   confirmPasswordReset?(token: string, newPassword: string): Promise<void>
   requestEmailVerification?(userId: string):           Promise<void>
-  verifyEmail?(token: string):                         Promise<SessionContext>
+  verifyEmail?(token: string):                         Promise<EmailVerificationResult>
 
   /**
    * Register through the mailbox: answers before it knows whether the address is

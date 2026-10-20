@@ -13,7 +13,7 @@ const guardSaw: string[] = []
 beforeAll(async () => {
   h = await makeAuth()
   app = await appWith(h.auth, {
-    canStartSupport: (operator) => { guardSaw.push(operator.userId); return true },
+    canStartSupport: ({ operator }) => { guardSaw.push(operator.userId); return true },
     services:        { standingLevel: () => 5 },
   })
 })

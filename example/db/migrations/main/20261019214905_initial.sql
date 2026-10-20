@@ -1,14 +1,23 @@
 -- Litestone migration
--- Created:   2026-09-07T18:34:26.194Z
+-- Created:   2026-10-19T21:49:05.824Z
 -- Changes:
 --     + Credential  (new table)
 --     + Session  (new table)
 --     + Verification  (new table)
+--     + LoginChallenge  (new table)
 --     + OauthFlow  (new table)
 --     + OutboxMessage  (new table)
 --     + MetricSeries  (new table)
 --     + MetricPoint  (new table)
 --     + MetricHour  (new table)
+--     + Flow  (new table)
+--     + FlowVersion  (new table)
+--     + FlowLayout  (new table)
+--     + Run  (new table)
+--     + RunStep  (new table)
+--     + Wait  (new table)
+--     + FlowCredential  (new table)
+--     + KvEntry  (new table)
 --     + Product  (new table)
 --     + Color  (new table)
 --     + ProductVariant  (new table)
@@ -16,6 +25,7 @@
 --     + Customer  (new table)
 --     + CustomField  (new table)
 --     + Discount  (new table)
+--     + PickupPoint  (new table)
 --     + ShippingMethod  (new table)
 --     + TaxRate  (new table)
 --     + Order  (new table)
@@ -26,13 +36,17 @@
 --     + Plan  (new table)
 --     + PlanVersion  (new table)
 --     + Subscription  (new table)
+--     + SubscriptionPeriod  (new table)
 --     + Invoice  (new table)
 --     + InvoiceLine  (new table)
 --     + CreditNote  (new table)
 --     + Cart  (new table)
+--     + CartGrant  (new table)
 --     + CartLine  (new table)
 --     + StockReservation  (new table)
 --     + InventoryMovement  (new table)
+--     + StocktakeSheet  (new table)
+--     + StocktakeCount  (new table)
 --     + JournalEntry  (new table)
 --     + JournalLine  (new table)
 --     + Employee  (new table)
@@ -43,10 +57,19 @@
 --     + PayslipLine  (new table)
 --     + Notification  (new table)
 --     + User  (new table)
+--     ~ _search  shared search index  (recreate)
 
 
 PRAGMA foreign_keys = OFF;
 BEGIN;
+
+-- ─── shared search index ───────────────────────────────────────────
+
+DROP TABLE IF EXISTS "_search";
+CREATE VIRTUAL TABLE IF NOT EXISTS "_search" USING fts5(
+  model, rid UNINDEXED, title, body,
+  tokenize='trigram'
+);
 
 -- ─── new tables ────────────────────────────────────────────────────
 
@@ -60,10 +83,13 @@ CREATE TABLE IF NOT EXISTS "credential" (
   "refreshToken" TEXT,
   "tokenExpiresAt" TEXT,
   "scope" TEXT,
+  "totpLastStep" INTEGER,
+  "linked" INTEGER,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_credential_userId_type" ON "credential" ("userId", "type");
 CREATE INDEX IF NOT EXISTS "idx_credential_type_value" ON "credential" ("type", "value");
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_credential_type_value" ON "credential" ("type", "value") WHERE ((("type" != 'password' AND "type" != 'totp') AND "type" != 'totpPending') AND "type" != 'recoveryCode');
 
 CREATE TABLE IF NOT EXISTS "session" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -87,12 +113,42 @@ CREATE TABLE IF NOT EXISTS "verification" (
   "value" TEXT NOT NULL UNIQUE,
   "provider" TEXT,
   "subject" TEXT,
+  "userId" TEXT,
+  "secret" TEXT,
+  "registrant" TEXT,
+  "code" TEXT,
+  "attempts" INTEGER NOT NULL DEFAULT 0,
   "expiresAt" TEXT NOT NULL,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("purpose" IN ('passwordReset', 'emailVerify', 'oauthLink'))
+  CHECK ("purpose" IN ('passwordReset', 'emailVerify', 'oauthLink', 'magicLink', 'emailChange', 'registration'))
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_verification_purpose_identifier" ON "verification" ("purpose", "identifier");
 CREATE INDEX IF NOT EXISTS "idx_verification_expiresAt" ON "verification" ("expiresAt");
+
+-- A login that is half done.
+-- 
+-- The password was right and there is a second factor, so the caller holds a
+-- ticket and no session. It is its own model rather than a fifth
+-- `VerificationPurpose` for the reason `OauthFlow` below is not one either:
+-- nobody is proving control of an ADDRESS here — there is no `identifier` and
+-- the address was settled a step ago. Three answers to what a column means is
+-- three tables wearing one name (`FJS-D261`).
+-- 
+-- `attempts` is the whole of what stands between a six-digit code and a
+-- million guesses, so it is counted on the row rather than in a limiter: a
+-- process-local count is reset by a redeploy and is not shared by two
+-- instances, and this is the one table where both of those are an authorization
+-- bypass rather than a slow path.
+CREATE TABLE IF NOT EXISTS "login_challenge" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "userId" TEXT NOT NULL,
+  "value" TEXT NOT NULL UNIQUE,
+  "attempts" INTEGER NOT NULL DEFAULT 0,
+  "expiresAt" TEXT NOT NULL,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_login_challenge_userId" ON "login_challenge" ("userId");
+CREATE INDEX IF NOT EXISTS "idx_login_challenge_expiresAt" ON "login_challenge" ("expiresAt");
 
 -- An authorization in flight.
 -- 
@@ -113,6 +169,7 @@ CREATE TABLE IF NOT EXISTS "oauth_flow" (
   "provider" TEXT NOT NULL,
   "verifier" TEXT NOT NULL,
   "returnTo" TEXT,
+  "invitation" TEXT,
   "expiresAt" TEXT NOT NULL,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
@@ -123,6 +180,7 @@ CREATE TABLE IF NOT EXISTS "outbox_message" (
   "job" TEXT NOT NULL,
   "payload" TEXT NOT NULL,
   "actorId" TEXT,
+  "tenantId" TEXT,
   "claimedAt" TEXT,
   "deliveredAt" TEXT,
   "attempts" INTEGER NOT NULL DEFAULT 0,
@@ -167,23 +225,133 @@ CREATE TABLE IF NOT EXISTS "metric_hour" (
   FOREIGN KEY ("seriesId") REFERENCES "metric_series" ("id") ON DELETE CASCADE
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS "flow" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "name" TEXT NOT NULL,
+  "description" TEXT,
+  "status" TEXT NOT NULL DEFAULT 'draft',
+  "currentVersion" INTEGER,
+  "ownerId" TEXT NOT NULL,
+  "runsPerMinute" INTEGER,
+  "maxWrites" INTEGER NOT NULL DEFAULT 1000,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  CHECK ("status" IN ('draft', 'active', 'paused', 'archived'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_flow_status" ON "flow" ("status");
+CREATE INDEX IF NOT EXISTS "idx_flow_ownerId" ON "flow" ("ownerId");
+
+CREATE TABLE IF NOT EXISTS "flow_version" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "flowId" TEXT NOT NULL,
+  "version" INTEGER NOT NULL,
+  "definition" TEXT NOT NULL,
+  "authorId" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  UNIQUE ("flowId", "version"),
+  FOREIGN KEY ("flowId") REFERENCES "flow" ("id") ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "flow_layout" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "flowId" TEXT NOT NULL UNIQUE,
+  "layout" TEXT NOT NULL DEFAULT '{}',
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY ("flowId") REFERENCES "flow" ("id") ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "run" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "flowVersionId" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'pending',
+  "trigger" TEXT,
+  "context" TEXT,
+  "currentStage" INTEGER NOT NULL DEFAULT 0,
+  "actorId" TEXT,
+  "startedAt" TEXT,
+  "endedAt" TEXT,
+  "error" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "heartbeatAt" TEXT,
+  CHECK ("status" IN ('pending', 'running', 'waiting', 'completed', 'failed', 'cancelled')),
+  FOREIGN KEY ("flowVersionId") REFERENCES "flow_version" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_run_flowVersionId_startedAt" ON "run" ("flowVersionId", "startedAt");
+CREATE INDEX IF NOT EXISTS "idx_run_status_createdAt" ON "run" ("status", "createdAt");
+CREATE INDEX IF NOT EXISTS "idx_run_status_heartbeatAt" ON "run" ("status", "heartbeatAt");
+
+CREATE TABLE IF NOT EXISTS "run_step" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "runId" TEXT NOT NULL,
+  "nodeId" TEXT NOT NULL,
+  "status" TEXT NOT NULL,
+  "attempts" INTEGER NOT NULL DEFAULT 0,
+  "fromCache" INTEGER NOT NULL DEFAULT 0,
+  "startedAt" TEXT,
+  "durationMs" INTEGER,
+  "output" TEXT,
+  "error" TEXT,
+  "logs" TEXT,
+  CHECK ("status" IN ('pending', 'running', 'completed', 'failed', 'skipped')),
+  UNIQUE ("runId", "nodeId"),
+  FOREIGN KEY ("runId") REFERENCES "run" ("id") ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "wait" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "resumeKey" TEXT NOT NULL UNIQUE,
+  "runId" TEXT NOT NULL,
+  "nodeId" TEXT NOT NULL,
+  "timeoutAt" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  FOREIGN KEY ("runId") REFERENCES "run" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_wait_timeoutAt" ON "wait" ("timeoutAt");
+
+CREATE TABLE IF NOT EXISTS "flow_credential" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "name" TEXT NOT NULL UNIQUE,
+  "provider" TEXT NOT NULL,
+  "address" TEXT NOT NULL,
+  "auth" TEXT NOT NULL DEFAULT 'none',
+  "header" TEXT,
+  "encoding" TEXT DEFAULT 'json',
+  "secret" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  CHECK ("auth" IN ('none', 'bearer', 'api_key', 'hmac'))
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "kv_entry" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "scope" TEXT NOT NULL,
+  "key" TEXT NOT NULL,
+  "value" TEXT NOT NULL,
+  "expiresAt" TEXT,
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE ("scope", "key")
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_kv_entry_expiresAt" ON "kv_entry" ("expiresAt");
+
 CREATE TABLE IF NOT EXISTS "product" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "name" TEXT NOT NULL UNIQUE,
   "slug" TEXT NOT NULL UNIQUE,
   "description" TEXT,
   "brand" TEXT NOT NULL,
+  "fields" TEXT NOT NULL DEFAULT '{}',
   "active" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
   "version" INTEGER NOT NULL DEFAULT 1,
-  CHECK ("brand" IN ('frontierjs', 'junction', 'litestone'))
+  CHECK ("brand" IN ('frontierjs', 'junction', 'litestone')),
+  CHECK (NOT ("active") OR "description" IS NOT NULL)
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_product_deletedAt" ON "product" ("deletedAt") WHERE "deletedAt" IS NULL;
 CREATE VIRTUAL TABLE IF NOT EXISTS "product_fts" USING fts5(
-  name, description,
+  "name", "description",
   content="product",
-  content_rowid="id"
+  content_rowid=rowid
 );
 
 -- Triggers to keep FTS index in sync.
@@ -195,14 +363,27 @@ DROP TRIGGER IF EXISTS "product_fts_update";
 DROP TRIGGER IF EXISTS "product_fts_soft_delete";
 DROP TRIGGER IF EXISTS "product_fts_restore";
 CREATE TRIGGER "product_fts_insert" AFTER INSERT ON "product" BEGIN
-  INSERT INTO "product_fts"(rowid, name, description) VALUES (new.id, new.name, new.description);
+  INSERT INTO "product_fts"(rowid, "name", "description") VALUES (new.rowid, new."name", new."description");
 END;
 CREATE TRIGGER "product_fts_delete" AFTER DELETE ON "product" BEGIN
-  INSERT INTO "product_fts"("product_fts", rowid, name, description) VALUES ('delete', old.id, old.name, old.description);
+  INSERT INTO "product_fts"("product_fts", rowid, "name", "description") VALUES ('delete', old.rowid, old."name", old."description");
 END;
 CREATE TRIGGER "product_fts_update" AFTER UPDATE ON "product" BEGIN
-  INSERT INTO "product_fts"("product_fts", rowid, name, description) VALUES ('delete', old.id, old.name, old.description);
-  INSERT INTO "product_fts"(rowid, name, description) VALUES (new.id, new.name, new.description);
+  INSERT INTO "product_fts"("product_fts", rowid, "name", "description") VALUES ('delete', old.rowid, old."name", old."description");
+  INSERT INTO "product_fts"(rowid, "name", "description") VALUES (new.rowid, new."name", new."description");
+END;
+DROP TRIGGER IF EXISTS "product_search_insert";
+DROP TRIGGER IF EXISTS "product_search_delete";
+DROP TRIGGER IF EXISTS "product_search_update";
+CREATE TRIGGER "product_search_insert" AFTER INSERT ON "product" BEGIN
+  INSERT INTO "_search"(model, rid, title, body) VALUES ('product', new.rowid, new."name", COALESCE(new."name", '') || ' ' || COALESCE(new."description", ''));
+END;
+CREATE TRIGGER "product_search_delete" AFTER DELETE ON "product" BEGIN
+  DELETE FROM "_search" WHERE model = 'product' AND rid = old.rowid;
+END;
+CREATE TRIGGER "product_search_update" AFTER UPDATE ON "product" BEGIN
+  DELETE FROM "_search" WHERE model = 'product' AND rid = old.rowid;
+  INSERT INTO "_search"(model, rid, title, body) VALUES ('product', new.rowid, new."name", COALESCE(new."name", '') || ' ' || COALESCE(new."description", ''));
 END;
 
 -- The colorways this shop has run. `ProductVariant.color` stores the NAME
@@ -210,7 +391,7 @@ END;
 -- colorway that is retired is still what the navy tees in the warehouse are,
 -- and a deleted row must not take that answer with it.
 CREATE TABLE IF NOT EXISTS "color" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "name" TEXT NOT NULL UNIQUE,
   "hex" TEXT,
   "retired" INTEGER NOT NULL DEFAULT 0,
@@ -221,7 +402,7 @@ CREATE TABLE IF NOT EXISTS "color" (
 -- The buyable thing. One row per option combination, and the row a basket
 -- line, a price and a stock count all point at.
 CREATE TABLE IF NOT EXISTS "product_variant" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "productId" INTEGER NOT NULL,
   "sku" TEXT NOT NULL UNIQUE,
   "color" TEXT NOT NULL DEFAULT 'Default',
@@ -229,6 +410,7 @@ CREATE TABLE IF NOT EXISTS "product_variant" (
   "price" INTEGER NOT NULL CHECK ("price" BETWEEN -9007199254740991 AND 9007199254740991),
   "barcode" TEXT UNIQUE,
   "stock" INTEGER NOT NULL DEFAULT 0,
+  "version" INTEGER NOT NULL DEFAULT 1,
   "active" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
@@ -243,7 +425,7 @@ CREATE INDEX IF NOT EXISTS "idx_product_variant_deletedAt" ON "product_variant" 
 -- reference — `File` is the type that means that, and `FileStorage` in
 -- api/db.ts is what turns a path or an upload into one.
 CREATE TABLE IF NOT EXISTS "product_image" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "productId" INTEGER NOT NULL,
   "variantId" INTEGER,
   "file" TEXT NOT NULL,
@@ -259,7 +441,7 @@ CREATE INDEX IF NOT EXISTS "idx_product_image_variantId" ON "product_image" ("va
 CREATE INDEX IF NOT EXISTS "idx_product_image_deletedAt" ON "product_image" ("deletedAt") WHERE "deletedAt" IS NULL;
 
 CREATE TABLE IF NOT EXISTS "customer" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "name" TEXT NOT NULL,
   "firstName" TEXT NOT NULL,
   "lastName" TEXT NOT NULL,
@@ -269,33 +451,38 @@ CREATE TABLE IF NOT EXISTS "customer" (
   "userId" TEXT UNIQUE,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "fields" TEXT NOT NULL DEFAULT '{}',
-  "slots" TEXT NOT NULL DEFAULT '{}',
-  "t1" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t1')) VIRTUAL,
-  "t2" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t2')) VIRTUAL,
-  "t3" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t3')) VIRTUAL,
-  "t4" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t4')) VIRTUAL,
-  "t5" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t5')) VIRTUAL,
-  "t6" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t6')) VIRTUAL,
-  "t7" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t7')) VIRTUAL,
-  "t8" TEXT GENERATED ALWAYS AS (json_extract("slots", '$.t8')) VIRTUAL,
-  "n1" REAL GENERATED ALWAYS AS (json_extract("slots", '$.n1')) VIRTUAL,
-  "n2" REAL GENERATED ALWAYS AS (json_extract("slots", '$.n2')) VIRTUAL,
-  "n3" REAL GENERATED ALWAYS AS (json_extract("slots", '$.n3')) VIRTUAL,
-  "n4" REAL GENERATED ALWAYS AS (json_extract("slots", '$.n4')) VIRTUAL,
   "deletedAt" TEXT,
-  "version" INTEGER NOT NULL DEFAULT 1
+  "version" INTEGER NOT NULL DEFAULT 1,
+  "fieldsSlots" TEXT NOT NULL DEFAULT '{}',
+  "t1" TEXT GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.t1')) VIRTUAL,
+  "t2" TEXT GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.t2')) VIRTUAL,
+  "n1" REAL GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.n1')) VIRTUAL,
+  "t3" TEXT GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.t3')) VIRTUAL,
+  "t4" TEXT GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.t4')) VIRTUAL,
+  "n2" REAL GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.n2')) VIRTUAL,
+  "t5" TEXT GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.t5')) VIRTUAL,
+  "t6" TEXT GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.t6')) VIRTUAL,
+  "n3" REAL GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.n3')) VIRTUAL,
+  "t7" TEXT GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.t7')) VIRTUAL,
+  "t8" TEXT GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.t8')) VIRTUAL,
+  "n4" REAL GENERATED ALWAYS AS (json_extract("fieldsSlots", '$.n4')) VIRTUAL
 ) STRICT;
-CREATE INDEX IF NOT EXISTS "idx_customer_t1_t2_t3_t4_n1_n2_t5_t6_t7_t8_n3_n4" ON "customer" ("t1", "t2", "t3", "t4", "n1", "n2", "t5", "t6", "t7", "t8", "n3", "n4") WHERE "deletedAt" IS NULL;
+CREATE INDEX IF NOT EXISTS "idx_customer_t1_t2_n1_t3_t4_n2_t5_t6_n3_t7_t8_n4" ON "customer" ("t1", "t2", "n1", "t3", "t4", "n2", "t5", "t6", "n3", "t7", "t8", "n4") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_customer_deletedAt" ON "customer" ("deletedAt") WHERE "deletedAt" IS NULL;
 
 CREATE TABLE IF NOT EXISTS "custom_field" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
-  "key" TEXT NOT NULL UNIQUE,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "model" TEXT NOT NULL,
+  "key" TEXT NOT NULL,
   "label" TEXT NOT NULL,
   "type" TEXT NOT NULL,
-  "slot" TEXT UNIQUE,
+  "defaultValue" TEXT,
+  "show" INTEGER NOT NULL DEFAULT 1,
+  "slot" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("type" IN ('text', 'number'))
+  CHECK ("type" IN ('text', 'number')),
+  UNIQUE ("model", "key"),
+  UNIQUE ("model", "slot")
 ) STRICT;
 
 -- A code somebody types at the till.
@@ -315,11 +502,11 @@ CREATE TABLE IF NOT EXISTS "custom_field" (
 -- is what this code is worth to THIS basket, which is the only fact about it
 -- they are entitled to.
 CREATE TABLE IF NOT EXISTS "discount" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "code" TEXT NOT NULL UNIQUE,
   "label" TEXT NOT NULL,
   "kind" TEXT NOT NULL DEFAULT 'percent',
-  "value" INTEGER NOT NULL CHECK ("value" BETWEEN -9007199254740991 AND 9007199254740991),
+  "value" INTEGER NOT NULL CONSTRAINT "value_scale_2" CHECK ("value" BETWEEN -9007199254740991 AND 9007199254740991),
   "minSubtotal" INTEGER NOT NULL DEFAULT 0 CHECK ("minSubtotal" BETWEEN -9007199254740991 AND 9007199254740991),
   "audience" TEXT,
   "startsAt" TEXT,
@@ -334,6 +521,41 @@ CREATE TABLE IF NOT EXISTS "discount" (
   CHECK (kind != 'percent' OR value <= 10000)
 ) STRICT;
 
+-- A place a customer collects an order from, and the one model in this shop
+-- whose rows are found by WHERE THEY ARE.
+-- 
+-- The `Collect` shipping method existed with nowhere to collect from, which is
+-- what this is: a shop with branches, a storefront that asks *which one is
+-- near me*, and a staff screen that puts one on the map by typing two numbers.
+-- 
+-- `site Json @point(lat, lng)` is the whole declaration. It emits two REAL
+-- generated columns over `json_extract`, a composite index on the pair, and a
+-- `CHECK` that refuses a half-set coordinate and an out-of-range one — so a
+-- migration, a seed and `asSystem()` are all held to it, none of which reaches
+-- a validator. `near` is the only filter it answers and distance the only
+-- ordering; every other operator is refused by name, because the column holds
+-- JSON and JSON compares as text.
+-- 
+-- Readable at 0 for `ShippingMethod`'s reason and one degree sharper: a
+-- storefront asks this question with no session at all, and a shop's own
+-- address is public by the time it is printed on the door. `@point` warns
+-- about an ungated coordinate only where the model reads above STRANGER —
+-- a residential address would be that model, and this is not one
+-- (`FJS-D322`).
+CREATE TABLE IF NOT EXISTS "pickup_point" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "name" TEXT NOT NULL UNIQUE,
+  "address" TEXT NOT NULL,
+  "site" TEXT,
+  "hours" TEXT,
+  "active" INTEGER NOT NULL DEFAULT 1,
+  "version" INTEGER NOT NULL DEFAULT 1,
+  "siteLat" REAL GENERATED ALWAYS AS (json_extract("site", '$.lat')) VIRTUAL,
+  "siteLng" REAL GENERATED ALWAYS AS (json_extract("site", '$.lng')) VIRTUAL,
+  CHECK ("site" IS NULL OR (json_type("site") = 'object' AND coalesce(json_type("site", '$.lat'), '-') IN ('integer', 'real') AND coalesce(json_type("site", '$.lng'), '-') IN ('integer', 'real') AND json_extract("site", '$.lat') BETWEEN -90 AND 90 AND json_extract("site", '$.lng') BETWEEN -180 AND 180))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_pickup_point_site" ON "pickup_point" ("siteLat", "siteLng");
+
 -- What the shop charges to send it.
 -- 
 -- Readable at 0, unlike a discount: a storefront has to OFFER these, and the
@@ -342,7 +564,7 @@ CREATE TABLE IF NOT EXISTS "discount" (
 -- statement in this schema that a gate answers *what kind of caller* and not
 -- *what kind of table*.
 CREATE TABLE IF NOT EXISTS "shipping_method" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "name" TEXT NOT NULL UNIQUE,
   "description" TEXT,
   "price" INTEGER NOT NULL CHECK ("price" BETWEEN -9007199254740991 AND 9007199254740991),
@@ -362,7 +584,7 @@ CREATE TABLE IF NOT EXISTS "shipping_method" (
 -- `label` is not decoration. A line on a receipt reading `Tax` where the law
 -- says `VAT` is a receipt a business customer cannot file.
 CREATE TABLE IF NOT EXISTS "tax_rate" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "label" TEXT NOT NULL,
   "rate" REAL NOT NULL,
   "isDefault" INTEGER NOT NULL DEFAULT 0,
@@ -371,7 +593,7 @@ CREATE TABLE IF NOT EXISTS "tax_rate" (
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS "order" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "reference" TEXT NOT NULL UNIQUE,
   "status" TEXT NOT NULL DEFAULT 'pending',
   "subtotal" INTEGER NOT NULL DEFAULT 0 CHECK ("subtotal" BETWEEN -9007199254740991 AND 9007199254740991),
@@ -423,7 +645,7 @@ CREATE INDEX IF NOT EXISTS "idx_order_deletedAt" ON "order" ("deletedAt") WHERE 
 -- signed tape is the only thing that answers it. The question here is what
 -- the shop billed for, which the tape cannot answer: it carries no prices.
 CREATE TABLE IF NOT EXISTS "order_line" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "orderId" INTEGER NOT NULL,
   "variantId" INTEGER NOT NULL,
   "sku" TEXT NOT NULL,
@@ -473,7 +695,7 @@ CREATE INDEX IF NOT EXISTS "idx_order_line_deletedAt" ON "order_line" ("deletedA
 -- split is per COLUMN, which is what `@guarded` is and what a model-level gate
 -- can never express.
 CREATE TABLE IF NOT EXISTS "payment_method" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "customerId" INTEGER NOT NULL,
   "providerRef" TEXT NOT NULL UNIQUE,
   "brand" TEXT NOT NULL,
@@ -489,7 +711,7 @@ CREATE INDEX IF NOT EXISTS "idx_payment_method_customerId" ON "payment_method" (
 CREATE UNIQUE INDEX IF NOT EXISTS "uniq_payment_method_customerId" ON "payment_method" ("customerId") WHERE "isDefault" = 1;
 
 CREATE TABLE IF NOT EXISTS "payment" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "providerRef" TEXT NOT NULL UNIQUE,
   "status" TEXT NOT NULL DEFAULT 'pending',
   "amount" INTEGER NOT NULL CHECK ("amount" BETWEEN -9007199254740991 AND 9007199254740991),
@@ -533,7 +755,7 @@ CREATE INDEX IF NOT EXISTS "idx_payment_paymentMethodId" ON "payment" ("paymentM
 -- claimed and the order unpaid — and the provider's retry is deduped away by
 -- the very row that recorded nothing happening.
 CREATE TABLE IF NOT EXISTS "payment_event" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "eventId" TEXT NOT NULL UNIQUE,
   "kind" TEXT NOT NULL,
   "paymentRef" TEXT,
@@ -544,7 +766,7 @@ CREATE TABLE IF NOT EXISTS "payment_event" (
 -- about what it costs — the price is `PlanVersion`, because a price has a
 -- lifetime and a plan does not.
 CREATE TABLE IF NOT EXISTS "plan" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "code" TEXT NOT NULL UNIQUE,
   "name" TEXT NOT NULL,
   "description" TEXT,
@@ -568,7 +790,7 @@ CREATE TABLE IF NOT EXISTS "plan" (
 -- `effectiveFrom` where it ended. Nothing edits a version that has been sold
 -- against, which is what `@immutable` says here.
 CREATE TABLE IF NOT EXISTS "plan_version" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "planId" INTEGER NOT NULL,
   "price" INTEGER NOT NULL CHECK ("price" BETWEEN -9007199254740991 AND 9007199254740991),
   "effectiveFrom" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -586,14 +808,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS "uniq_plan_version_planId" ON "plan_version" (
 -- until something moves them, and *something moved them* is a row change with
 -- a date on it rather than a silent reprice.
 CREATE TABLE IF NOT EXISTS "subscription" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "reference" TEXT NOT NULL UNIQUE,
   "customerId" INTEGER NOT NULL,
   "planVersionId" INTEGER NOT NULL,
   "status" TEXT NOT NULL DEFAULT 'trialing',
   "quantity" INTEGER NOT NULL DEFAULT 1,
-  "currentPeriodStart" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "currentPeriodEnd" TEXT NOT NULL,
   "trialEndsAt" TEXT,
   "cancelledAt" TEXT,
   "cancelAtPeriodEnd" INTEGER NOT NULL DEFAULT 0,
@@ -606,6 +826,35 @@ CREATE TABLE IF NOT EXISTS "subscription" (
 CREATE INDEX IF NOT EXISTS "idx_subscription_customerId" ON "subscription" ("customerId");
 CREATE INDEX IF NOT EXISTS "idx_subscription_planVersionId" ON "subscription" ("planVersionId");
 
+-- One cycle of a subscription — the days it has been charged for.
+-- 
+-- **Renewal is this row closing** (`FJS-D367`). A subscription stays `active`
+-- across a renewal, so there is no move on `Subscription` to make one, and
+-- `@@transitions` refuses a self-loop; a period is a thing with a start, an
+-- end and a state, so the move is here. `close` is owed at `endsOn`, and
+-- junction's `commitments()` makes it; `renewPeriod` in `api/src/domain/billing`
+-- is the hook that runs in the same transaction — it issues the next invoice
+-- and opens the next period, or ends the arrangement when the subscription
+-- was asked to stop or already has.
+-- 
+-- The state machine is the once-ness: a second fire for one period meets a
+-- row already `closed`, and the constraint below refuses a second open period
+-- whatever path tries to write one.
+CREATE TABLE IF NOT EXISTS "subscription_period" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "subscriptionId" INTEGER NOT NULL,
+  "startsOn" TEXT NOT NULL,
+  "endsOn" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'open',
+  "userId" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("status" IN ('open', 'closed')),
+  CHECK (startsOn < endsOn),
+  FOREIGN KEY ("subscriptionId") REFERENCES "subscription" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_subscription_period_subscriptionId_startsOn" ON "subscription_period" ("subscriptionId", "startsOn");
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_subscription_period_subscriptionId" ON "subscription_period" ("subscriptionId") WHERE "status" = 'open';
+
 -- A DOCUMENT.
 -- 
 -- Every money column here is `@immutable` and so is the number and the instant
@@ -613,7 +862,7 @@ CREATE INDEX IF NOT EXISTS "idx_subscription_planVersionId" ON "subscription" ("
 -- moment, and the only honest correction is a `CreditNote` beside it. The
 -- freeze holds against `asSystem()`, which matters here more than anywhere
 -- else in this schema, because the caller that writes invoices IS the system:
--- the renewal job has no session.
+-- a renewal has no session.
 -- 
 -- **`draft` exists again, and `@seals` is why** (`FJS-D167`). It was removed
 -- because `@immutable` froze a column at CREATE, so a row assembled over
@@ -635,7 +884,7 @@ CREATE INDEX IF NOT EXISTS "idx_subscription_planVersionId" ON "subscription" ("
 -- the MOMENT that check belongs at, which is the half `FJS-D162` left open and
 -- `FJS-D167` supplies without yet spending.
 CREATE TABLE IF NOT EXISTS "invoice" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "number" TEXT NOT NULL UNIQUE,
   "status" TEXT NOT NULL DEFAULT 'draft',
   "customerId" INTEGER NOT NULL,
@@ -646,8 +895,11 @@ CREATE TABLE IF NOT EXISTS "invoice" (
   "periodStart" TEXT NOT NULL,
   "periodEnd" TEXT NOT NULL,
   "issuedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "dueAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "dueOn" TEXT NOT NULL,
+  "graceDays" INTEGER NOT NULL,
+  "dunningDays" INTEGER NOT NULL,
   "paidAt" TEXT,
+  "reminded" INTEGER NOT NULL DEFAULT 0,
   "userId" TEXT,
   CHECK ("status" IN ('draft', 'issued', 'paid', 'void')),
   CHECK (total = subtotal + tax),
@@ -664,7 +916,7 @@ CREATE INDEX IF NOT EXISTS "idx_invoice_subscriptionId" ON "invoice" ("subscript
 -- two genuinely differ and the line has to say what was charged rather than
 -- what multiplies out.
 CREATE TABLE IF NOT EXISTS "invoice_line" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "invoiceId" INTEGER NOT NULL,
   "description" TEXT NOT NULL,
   "quantity" INTEGER NOT NULL DEFAULT 1,
@@ -683,7 +935,7 @@ CREATE INDEX IF NOT EXISTS "idx_invoice_line_invoiceId" ON "invoice_line" ("invo
 -- It is the reason every column on `Invoice` can be frozen: with a credit note
 -- there is no case left where editing one would be the answer.
 CREATE TABLE IF NOT EXISTS "credit_note" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "number" TEXT NOT NULL UNIQUE,
   "invoiceId" INTEGER NOT NULL,
   "amount" INTEGER NOT NULL CHECK ("amount" BETWEEN -9007199254740991 AND 9007199254740991),
@@ -702,17 +954,17 @@ CREATE INDEX IF NOT EXISTS "idx_credit_note_invoiceId" ON "credit_note" ("invoic
 -- must not be a service reading through `asSystem()`, because access is
 -- declared in the schema and not in hooks (Invariant 6).
 -- 
--- So the owner is a BEARER TOKEN, and `api/cart-claim.ts` turns the header
--- carrying it into a claim on the principal before the Data boundary scopes
--- the client. `auth().cartToken` is then a claim a stranger holds, and the
--- policies below are ordinary row policies over it.
+-- So the owner is a BEARER TOKEN — and the token is not here. `CartGrant`
+-- below holds its DIGEST, junction's `bearerClaim` reads that row off the
+-- header and puts the basket's own id on the principal, and `auth().cartId`
+-- is then a claim a stranger holds. The policies below are ordinary row
+-- policies over an id.
 -- 
--- The token is `@guarded`: the app writes it, `asSystem()` reads it, and no
--- caller ever gets it back in a response — the browser knows it because it
--- was handed it once, at creation, by the service that minted it.
+-- The shopper's secret therefore appears in no column of this model, no
+-- query and no log line: what crosses the Data boundary is a number the
+-- resolver already proved they hold a grant for (`FJS-D343`).
 CREATE TABLE IF NOT EXISTS "cart" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
-  "token" TEXT NOT NULL UNIQUE,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "userId" TEXT,
   "status" TEXT NOT NULL DEFAULT 'open',
   "discountId" INTEGER,
@@ -728,18 +980,42 @@ CREATE TABLE IF NOT EXISTS "cart" (
 CREATE INDEX IF NOT EXISTS "idx_cart_discountId" ON "cart" ("discountId");
 CREATE INDEX IF NOT EXISTS "idx_cart_shippingMethodId" ON "cart" ("shippingMethodId");
 
+-- A way into one basket.
+-- 
+-- The shopper holds a token; this row holds its DIGEST, keyed on the app's own
+-- secret (`@frontierjs/toolbelt/bearer`). So a copy of this table is not a set
+-- of live baskets, and the only place the token exists is the header the
+-- browser sends.
+-- 
+-- Why a row rather than a column on `Cart` (`FJS-D343`): a basket handed to
+-- another origin needs a SECOND way in, and minting one here is a row rather
+-- than a shared secret — revoke it and that origin is out while the tab that
+-- started the basket is not. It is also what lets the line policy below be an
+-- ordinary foreign key instead of a copied secret.
+-- 
+-- No `expiresAt` and no `revokedAt`, which is a statement rather than an
+-- omission: `bearerClaim` reads those columns where a model declares them, and
+-- a basket's grant lives as long as the basket, which the sweep abandons.
+CREATE TABLE IF NOT EXISTS "cart_grant" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "cartId" INTEGER NOT NULL,
+  "tokenHash" TEXT NOT NULL UNIQUE,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  FOREIGN KEY ("cartId") REFERENCES "cart" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_cart_grant_cartId" ON "cart_grant" ("cartId");
+
 -- One line. The quantity and the PRICE THE SHOPPER WAS SHOWN, which is not
 -- the same fact as the variant's price today — a basket left overnight must
 -- either honor what it quoted or say out loud that it changed, and it can do
 -- neither if the number was never written down.
 CREATE TABLE IF NOT EXISTS "cart_line" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "cartId" INTEGER NOT NULL,
   "variantId" INTEGER NOT NULL,
   "quantity" INTEGER NOT NULL DEFAULT 1,
   "unitPrice" INTEGER NOT NULL CHECK ("unitPrice" BETWEEN -9007199254740991 AND 9007199254740991),
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "token" TEXT NOT NULL,
   UNIQUE ("cartId", "variantId"),
   FOREIGN KEY ("cartId") REFERENCES "cart" ("id") ON DELETE CASCADE,
   FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE CASCADE
@@ -753,7 +1029,7 @@ CREATE INDEX IF NOT EXISTS "idx_cart_line_variantId" ON "cart_line" ("variantId"
 -- It would fit there — a line already names a variant and a quantity, and an
 -- `heldUntil` column would have been three characters of schema. It is wrong
 -- for one reason and the reason is a POLICY: CartLine is scoped by the
--- shopper's token (`@@allow(read, token == auth().cartToken)`), and
+-- shopper's own basket (`@@allow(read, cartId == auth().cartId)`), and
 -- availability is a sum over *everybody's* holds. Summing CartLine from a
 -- shopper's own client answers a sum over their own basket — a number that is
 -- always plausible, usually zero, and never the one asked for. It is the exact
@@ -766,7 +1042,7 @@ CREATE INDEX IF NOT EXISTS "idx_cart_line_variantId" ON "cart_line" ("variantId"
 -- because there is no caller-facing read — the shopper learns about their own
 -- hold from the basket the `carts` service builds for them.
 CREATE TABLE IF NOT EXISTS "stock_reservation" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "variantId" INTEGER NOT NULL,
   "cartId" INTEGER NOT NULL,
   "quantity" INTEGER NOT NULL,
@@ -807,7 +1083,7 @@ CREATE INDEX IF NOT EXISTS "idx_stock_reservation_variantId_expiresAt" ON "stock
 -- client a `move()` is handed is therefore a real decision at every call site,
 -- and it is why `api/inventory.ts` takes one rather than reaching for a global.
 CREATE TABLE IF NOT EXISTS "inventory_movement" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "variantId" INTEGER NOT NULL,
   "kind" TEXT NOT NULL,
   "quantity" INTEGER NOT NULL,
@@ -821,6 +1097,50 @@ CREATE TABLE IF NOT EXISTS "inventory_movement" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_inventory_movement_variantId" ON "inventory_movement" ("variantId");
 CREATE INDEX IF NOT EXISTS "idx_inventory_movement_reference_kind" ON "inventory_movement" ("reference", "kind");
+
+-- A stocktake: somebody walks the stockroom and writes down what is on the
+-- shelf, and the difference posts to the ledger when the sheet is closed.
+-- 
+-- ─── Why the key is a uuid and the ledger's is an Int ─────────────────────
+-- 
+-- A count names the sheet it belongs to. In a stockroom the sheet is made on
+-- the same phone, in the same minute, with no signal — so at the moment the
+-- first count is written there IS no server id, because nothing has been
+-- inserted anywhere. `@default(uuid())` puts the key in the browser's hands:
+-- `x-mint` crosses with the schema, sierra states the key on the create, and
+-- the count that follows references a sheet the server has never heard of and
+-- is still correct when both writes drain.
+-- 
+-- `InventoryMovement` keeps `Int @id` and is right to: nothing references a
+-- movement, so nobody ever needs its key before the server has one. The
+-- difference is the relation, which is exactly what the advisor's
+-- `sync-reference-to-a-server-assigned-id` grades.
+CREATE TABLE IF NOT EXISTS "stocktake_sheet" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "closedAt" TEXT,
+  "note" TEXT,
+  "startedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+) STRICT;
+
+-- One shelf, counted once.
+-- 
+-- Append-only in spirit and by gate: a second look at the same shelf is a
+-- second count, not an edit of the first. That is what makes `server` an
+-- honest collision policy here — two people counting one shelf produce two
+-- rows, which is the truth about what happened.
+CREATE TABLE IF NOT EXISTS "stocktake_count" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "sheetId" TEXT NOT NULL,
+  "variantId" INTEGER NOT NULL,
+  "counted" INTEGER NOT NULL,
+  "expected" INTEGER NOT NULL,
+  "damage" TEXT,
+  "note" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  FOREIGN KEY ("sheetId") REFERENCES "stocktake_sheet" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_stocktake_count_sheetId" ON "stocktake_count" ("sheetId");
 
 -- A double-entry journal — the second ledger in this app, and the one whose
 -- invariant the language cannot say.
@@ -849,7 +1169,7 @@ CREATE INDEX IF NOT EXISTS "idx_inventory_movement_reference_kind" ON "inventory
 -- `@immutable`, and a journal has no states at all, so *checked once when it
 -- is posted* is the whole of its life. There is no drift to catch.
 CREATE TABLE IF NOT EXISTS "journal_entry" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "reference" TEXT NOT NULL UNIQUE,
   "narrative" TEXT NOT NULL,
   "postedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -871,7 +1191,7 @@ CREATE INDEX IF NOT EXISTS "idx_journal_entry_payRunId" ON "journal_entry" ("pay
 -- of the other*, and with one signed column it is *the sum is zero*. The
 -- second is the rule a database could one day be asked to hold.
 CREATE TABLE IF NOT EXISTS "journal_line" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "entryId" INTEGER NOT NULL,
   "account" TEXT NOT NULL,
   "amount" INTEGER NOT NULL CHECK ("amount" BETWEEN -9007199254740991 AND 9007199254740991),
@@ -891,7 +1211,7 @@ CREATE INDEX IF NOT EXISTS "idx_journal_line_entryId" ON "journal_line" ("entryI
 -- its own SQLite file, so each one is a separate legal employer with no column
 -- and no policy doing the separating.
 CREATE TABLE IF NOT EXISTS "employee" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "reference" TEXT NOT NULL UNIQUE,
   "name" TEXT NOT NULL,
   "email" TEXT NOT NULL UNIQUE,
@@ -937,12 +1257,12 @@ CREATE TABLE IF NOT EXISTS "employee" (
 -- column. What changed is that the rule now holds against a seed, a migration,
 -- a job and `asSystem()`, none of which go through the service.
 CREATE TABLE IF NOT EXISTS "pay_window" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "employeeId" INTEGER NOT NULL,
   "basis" TEXT NOT NULL,
   "rate" INTEGER NOT NULL CHECK ("rate" BETWEEN -9007199254740991 AND 9007199254740991),
   "hoursPerWeek" INTEGER NOT NULL DEFAULT 40,
-  "effectiveFrom" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "effectiveFrom" TEXT NOT NULL,
   "effectiveTo" TEXT,
   CHECK ("basis" IN ('salary', 'hourly')),
   CHECK (effectiveTo IS NULL OR effectiveFrom < effectiveTo),
@@ -978,12 +1298,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS "uniq_pay_window_employeeId" ON "pay_window" (
 -- written. `toAmount` null is *and everything above*, which every real band
 -- table has exactly one of per kind.
 CREATE TABLE IF NOT EXISTS "pay_rate" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "kind" TEXT NOT NULL,
   "fromAmount" INTEGER NOT NULL DEFAULT 0 CHECK ("fromAmount" BETWEEN -9007199254740991 AND 9007199254740991),
   "toAmount" INTEGER CHECK ("toAmount" BETWEEN -9007199254740991 AND 9007199254740991),
-  "percent" INTEGER NOT NULL CHECK ("percent" BETWEEN -9007199254740991 AND 9007199254740991),
-  "effectiveFrom" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "percent" INTEGER NOT NULL CONSTRAINT "percent_scale_2" CHECK ("percent" BETWEEN -9007199254740991 AND 9007199254740991),
+  "effectiveFrom" TEXT NOT NULL,
   "effectiveTo" TEXT,
   CHECK ("kind" IN ('incomeTax', 'employeePension', 'employerPension', 'employerNI')),
   CHECK (toAmount IS NULL OR fromAmount < toAmount),
@@ -1005,7 +1325,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS "uniq_pay_rate_kind_fromAmount" ON "pay_rate" 
 -- against the wrong period is the ordinary mistake, and the alternative to
 -- reverting is deleting payslips, which are documents.
 CREATE TABLE IF NOT EXISTS "pay_run" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "reference" TEXT NOT NULL UNIQUE,
   "periodStart" TEXT NOT NULL,
   "periodEnd" TEXT NOT NULL,
@@ -1048,7 +1368,7 @@ CREATE TABLE IF NOT EXISTS "pay_run" (
 -- whatever they are paid now, which is the exact failure effective dating
 -- exists to prevent.
 CREATE TABLE IF NOT EXISTS "payslip" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "reference" TEXT NOT NULL UNIQUE,
   "payRunId" INTEGER NOT NULL,
   "employeeId" INTEGER NOT NULL,
@@ -1082,7 +1402,7 @@ CREATE INDEX IF NOT EXISTS "idx_payslip_payWindowId" ON "payslip" ("payWindowId"
 -- invariant is *the lines that count sum to net* rather than *the lines sum to
 -- net*. Frappe spells the same thing `do_not_include_in_total`.
 CREATE TABLE IF NOT EXISTS "payslip_line" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "payslipId" INTEGER NOT NULL,
   "kind" TEXT NOT NULL,
   "description" TEXT NOT NULL,
@@ -1101,15 +1421,17 @@ CREATE INDEX IF NOT EXISTS "idx_payslip_line_rateId" ON "payslip_line" ("rateId"
 CREATE INDEX IF NOT EXISTS "idx_payslip_line_correctsPayRunId" ON "payslip_line" ("correctsPayRunId");
 
 CREATE TABLE IF NOT EXISTS "notification" (
-  "id" INTEGER NOT NULL PRIMARY KEY,
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "userId" TEXT NOT NULL,
   "type" TEXT NOT NULL,
   "data" TEXT NOT NULL,
   "contextType" TEXT,
   "contextId" TEXT,
+  "deliveryKey" TEXT,
   "readAt" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("contextType" IN ('Order'))
+  CHECK ("contextType" IN ('Order')),
+  UNIQUE ("userId", "type", "deliveryKey")
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS "user" (
@@ -1118,10 +1440,12 @@ CREATE TABLE IF NOT EXISTS "user" (
   "name" TEXT,
   "emailVerified" INTEGER NOT NULL DEFAULT 0,
   "role" TEXT NOT NULL DEFAULT 'user',
-  "accountId" TEXT,
+  "kind" TEXT NOT NULL DEFAULT 'user',
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "isStaff" INTEGER NOT NULL DEFAULT 0
+  "isStaff" INTEGER NOT NULL DEFAULT 0,
+  "isSystemAdmin" INTEGER NOT NULL DEFAULT 0,
+  CHECK ("kind" IN ('user', 'bot', 'peer'))
 ) STRICT;
 
 -- ─── new views ──────────────────────────────────────────────────────

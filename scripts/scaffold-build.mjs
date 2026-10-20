@@ -65,6 +65,7 @@ import { DEFAULT_PAGE, guardProbeScript, queueScript, queueVerdict, queueStateLi
 import { edgeRoutes, applyEdge, readConfigScript, parseConfigRead, writeConfigScript, parseConfigWrite, INGRESS_SERVER } from '../packages/cli/core/edge.js'
 import { reapTempDirs }                                from '../packages/litestone/src/tmp-dirs.js'
 import { fenceThisProcess }                            from '../packages/cli/core/bun-fence.js'
+import { scaffoldVerificationToken }                   from '../packages/cli/core/probe.js'
 import { measureSurface, measureDisk, measureDbGrowth, gatedMetrics, readBaseline, writeBaseline, ratchet, formatBench } from '../packages/cli/core/bench.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -89,7 +90,7 @@ function bootFloor(app) {
     const port = await new Promise(r => { const s = createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)) }) })
     try {
       const b = await measureBoot({ cmd: 'bun run api/index.ts', cwd: ${JSON.stringify(app)}, url: 'http://127.0.0.1:' + port + '/api/health', env: { PORT: String(port) },
-        whileUp: async (url) => runCases(await scaffoldCases({ base: url.replace(/\\/health$/, '') })) })
+        whileUp: async (url, { output }) => runCases(await scaffoldCases({ base: url.replace(/\\/health$/, ''), output })) })
       console.log('BENCH_BOOT ' + JSON.stringify(b))
     } catch (err) { console.log('BENCH_BOOT ' + JSON.stringify({ error: err.message })) }
   `
@@ -617,9 +618,9 @@ export function scaffoldAndDeploy({ source = 'npm', keep = false, verbose = fals
 
     log(`  ✓ container built from ${source}, started and answered health on :${PORT}`)
 
-    const smoke = smokeAuth(app, PORT)
+    const smoke = smokeAuth(app, PORT, container)
     if (smoke) return fail(smoke.message, smoke.output + dockerLogs(container))
-    log(`  ✓ register + login answered at the prefix the app's own web config names`)
+    log(`  ✓ register, the mailed link and login answered at the prefix the app's own web config names`)
 
 
     return { findings, skipped: null }
@@ -1002,8 +1003,9 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
 
     // ── 7 · a declared configuration key the target does not carry ──
     //
-    // `deploy.configuration` and `deploy.secrets` feed the Release hash, and their
-    // VALUES are applied by nothing — a deploy writes no `.env` on a target. So the
+    // `deploy.configuration` and `deploy.secrets` feed the Release hash. A configuration
+    // VALUE is applied by `06-swap` and so is never required; a secret KEY is graded for
+    // presence, which is the half asserted here. Secret VALUES are applied by nothing — a deploy writes no `.env` on a target. So the
     // keys are graded for presence instead (`FJS-585`), and this is the
     // assertion that they are graded at all: a declaration nothing checks is the
     // vacuous state being fixed.
@@ -1011,7 +1013,7 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
     // Cheap, because `01b-env-check` runs before the build — this costs a
     // handful of ssh round trips rather than an image.
     writeFileSync(confPath, readFileSync(confPath, 'utf8').replace(
-      /app_id: '([^']*)',/, `app_id: '$1',\n    configuration: { FJS_DECLARED_ONLY: 'x' },`))
+      /app_id: '([^']*)',/, `app_id: '$1',\n    secrets: { FJS_DECLARED_ONLY: 'declared-only@1' },`))
     git(app, ['add', '-A'])
     git(app, ['commit', '-qm', 'declare a configuration key the server does not carry'])
 
@@ -1028,8 +1030,8 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
       return fail('the env check refused and `fli deploy` exited 0', d7.output)
     if (!/FJS_DECLARED_ONLY/.test(d7.output))
       return fail('the env check did not name the missing declared key', d7.output)
-    if (!/deploy block/.test(d7.output))
-      return fail('the env check named the key without saying the deploy block declared it', d7.output)
+    if (!/deploy\.secrets/.test(d7.output))
+      return fail('the env check named the key without saying deploy.secrets declared it', d7.output)
     if (/build-api|02-pull/.test(d7.output.split('Env check')[1] ?? ''))
       return fail('the env check refused and the pipeline kept going', d7.output)
     if (running() !== wasServing)
@@ -1148,16 +1150,39 @@ function dockerLogs(container) {
 //
 // Returns a finding, or null.
 
-function smokeAuth(app, port) {
+// The scaffold wires `onEmailVerificationRequested`, so register answers 202
+// for every address and the account is made at the mailed link (`FJS-D1310`).
+// It has no mailer and prints the link, so the link is read from the
+// container's output; following it signs in, and the login after proves the
+// password landed on the account the click made.
+function smokeAuth(app, port, container) {
   const prefix = clientApiPrefix(app)
+  if (prefix instanceof Error) return {
+    message: `could not read apiPrefix from ${join(app, 'web', 'config', 'sierra.config.js')}`,
+    output:  prefix.message,
+  }
   const base   = `http://127.0.0.1:${port}${prefix}`
   const email  = `smoke-${process.pid}@ci.invalid`
   const pass   = 'Sm0ke!Test-Passw0rd'
 
   const reg = httpJson('POST', `${base}/auth/register`, { email, password: pass, name: 'CI Smoke' })
-  if (reg.status !== 201) return {
-    message: `POST ${prefix}/auth/register answered ${reg.status ?? 'nothing'}, expected 201` + prefixHint(reg.status, prefix),
+  if (reg.status !== 202) return {
+    message: `POST ${prefix}/auth/register answered ${reg.status ?? 'nothing'}, expected 202` + prefixHint(reg.status, prefix),
     output:  reg.body,
+  }
+
+  const token = mailedToken(container, email)
+  if (!token) return {
+    message: `POST ${prefix}/auth/register answered 202 and the container printed no verification link for ${email}`,
+    output:  reg.body,
+  }
+
+  const verified = httpJson('POST', `${base}/auth/email/verify`, { token })
+  let session
+  try { session = JSON.parse(verified.body)?.token } catch { /* the finding below carries the body */ }
+  if (verified.status !== 200 || !session) return {
+    message: `POST ${prefix}/auth/email/verify answered ${verified.status ?? 'nothing'}, expected 200 with a session token`,
+    output:  verified.body,
   }
 
   const login = httpJson('POST', `${base}/auth/login`, { email, password: pass })
@@ -1168,9 +1193,9 @@ function smokeAuth(app, port) {
 
   // The scaffold sets `cookieAuth: false`, so the token is in the body. A 200
   // carrying none is a session the app has no way to use.
-  let token
-  try { token = JSON.parse(login.body)?.token } catch { /* the finding below carries the body */ }
-  if (!token) return {
+  let signedIn
+  try { signedIn = JSON.parse(login.body)?.token } catch { /* the finding below carries the body */ }
+  if (!signedIn) return {
     message: `POST ${prefix}/auth/login answered 200 with no token in the body`,
     output:  login.body,
   }
@@ -1179,9 +1204,10 @@ function smokeAuth(app, port) {
 }
 
 // A 404 from an app that installed and built is almost never a sick app, and
-// reading it as one costs an afternoon.
+// neither is a 405 naming only OPTIONS -- the CORS preflight route matched a
+// path nothing else is mounted at. Reading either as one costs an afternoon.
 function prefixHint(status, prefix) {
-  if (status !== 404) return ''
+  if (status !== 404 && status !== 405) return ''
   return `\n      The app and the framework disagree about where auth is mounted. The scaffold's` +
          `\n      web config points the browser client at '${prefix}' and app.post() is the one owner` +
          `\n      of apiPrefix, so an @frontierjs/auth that mounts at a bare /auth/* leaves every` +
@@ -1190,11 +1216,26 @@ function prefixHint(status, prefix) {
 
 // The prefix the app's own browser client is configured with. A web-less
 // scaffold has no config and no prefix, which is what its API serves at.
+// Imported rather than matched as text: the scaffold's config reads the value
+// from the API's own config, and a pattern that found no literal answered ''
+// and sent the smoke to a bare /auth/register.
 function clientApiPrefix(app) {
   const config = join(app, 'web', 'config', 'sierra.config.js')
   if (!existsSync(config)) return ''
-  const found = readFileSync(config, 'utf8').match(/apiPrefix:\s*['"`]([^'"`]*)['"`]/)
-  return found ? found[1] : ''
+  const r = spawnSync('bun', ['-e',
+    `const m = await import(${JSON.stringify(config)}); console.log(JSON.stringify(m.default?.junction?.apiPrefix ?? ''))`,
+  ], { cwd: app, encoding: 'utf8' })
+  try { return JSON.parse(r.stdout.trim()) } catch { return new Error(`${r.stdout ?? ''}${r.stderr ?? ''}`) }
+}
+
+// The container's output is where the scaffold prints the link.
+function mailedToken(container, email) {
+  for (let i = 0; i < 20; i++) {
+    const token = scaffoldVerificationToken(exec('docker', ['logs', container]).output, email)
+    if (token) return token
+    spawnSync('sleep', ['0.25'])
+  }
+  return null
 }
 
 // curl rather than fetch: this file is synchronous end to end so ci.mjs can run

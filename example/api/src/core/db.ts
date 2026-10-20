@@ -239,7 +239,7 @@ export const shops = {
  *
  * It is not "the database" any more and the name is kept deliberately — a
  * module that imports this is naming ONE shop, and the day it should have named
- * the caller's is the day it must reach for `ctx.locals.db` instead.
+ * the caller's is the day it must reach for `$.db` instead.
  */
 export const db = await openShop(DEFAULT_SHOP)
 

@@ -58,7 +58,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
 
 const { generateSchemas } = await import('../src/build/schema-plugin.js')
 const { registerSchemas } = await import('../src/resource/schema-registry.js')
-const { createResource }  = await import('../src/resource/resource.js')
+const { createResource, tetherOf }  = await import('../src/resource/resource.js')
 const { pendingQueue, _resetPendingQueue } = await import('../src/resource/pending.js')
 const { attachmentQueue, _resetAttachmentQueue } = await import('../src/resource/attachments.js')
 
@@ -110,7 +110,7 @@ beforeEach(async () => {
 async function withRow(service, model) {
   const r = createResource(service, { model })
   await r.service.get('ROW-1')
-  await r.load()
+  await tetherOf(r).load()
   return r
 }
 
@@ -222,7 +222,7 @@ describe('append — rows are only ever added', () => {
   // DERIVED at the call site rather than declared by a screen.
   test('a held patch carries the row this resource read', async () => {
     const merge = createResource('merges', { model: 'Merge' })
-    await merge.load()                       // stamps _read with the server's rows
+    await tetherOf(merge).load()                       // stamps _read with the server's rows
     _proxy.patch = offline
     await merge.service.patch('M-1', { name: 'mine' }).catch(() => {})
     expect(held().length).toBe(1)
@@ -239,7 +239,7 @@ describe('append — rows are only ever added', () => {
 
   test('a model on another policy carries none, so the boundary is never handed one', async () => {
     const guard = createResource('guards', { model: 'Guard' })
-    await guard.load()
+    await tetherOf(guard).load()
     _proxy.patch = offline
     await guard.service.patch('M-1', { name: 'mine' }).catch(() => {})
     expect(held().length).toBe(1)

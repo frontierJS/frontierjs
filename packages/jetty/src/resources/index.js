@@ -5,7 +5,7 @@
 // relaying to Harbor — and the session, which Harbor owns because it is what
 // outlives the page:
 //   - harborApp (the handle `createResource` takes as `app`)
-//   - login / submitCode / logout (routed through Harbor)
+//   - signIn / completeSignIn / signOut (routed through Harbor)
 //   - getConnectionState / onConnectionChange / getActivePort
 //   - getConnectionSignals (the same state as Mesa signals)
 //
@@ -14,7 +14,7 @@
 
 export { harborApp }                 from './harbor-app.js'
 
-export { login, submitCode, logout,
+export { signIn, completeSignIn, signOut,
          getConnectionState,
          onConnectionChange,
          getActivePort,

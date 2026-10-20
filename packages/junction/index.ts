@@ -2,8 +2,13 @@
 // The four axes — admission, call, carriage, announcement — and the host that
 // holds them (`FJS-D639`). A battery is its own subpath and is not here.
 //
-//   import { createApp, createService, authenticate } from '@frontierjs/junction'
-//   import { mail }                           from '@frontierjs/junction/mail'
+//   import { createApp, createService } from '@frontierjs/junction'
+//   import { authenticate }              from '@frontierjs/junction/hooks'
+//   import { mail }                      from '@frontierjs/junction/mail'
+//
+// A bare verb lives at the subpath that says what it means (FJS-D1333):
+// `/hooks` the built-in hooks, `/bearer` the grant sources, `/envelope`
+// `single` and `list`.
 
 // ─── App ──────────────────────────────────────────────────────────────────
 export { createApp }                              from './src/core/app.ts'
@@ -44,20 +49,9 @@ export { createService, ServiceRegistry, callService,
 export type { Service, ServiceDefinition, ServiceDefinitionValue, CacheDeclaration, MethodSelection, MethodEntry, MethodDeclaration, SeedTypes, SeedTypeName, MethodContext, ServiceScope, TelemetryEvent, CallStartEvent, HookTelemetryEvent } from './src/core/service.ts'
 
 // ─── Hooks ────────────────────────────────────────────────────────────────
-export {
-  resolvePipelines, mergeHookMaps, runPipeline,
-  // Built-in hooks
-  authenticate, requireRole, paginate, protect, allow, timestamps, logTiming,
-  circuitBreaker,
-  // The rate limiter both a service pipeline and a raw route can use — it answers
-  // for either context (BridgeHook). Named rateLimitHook to distinguish it from
-  // the transport-level rateLimit middleware plugin.
-  rateLimit as rateLimitHook
-} from './src/core/hooks.ts'
-// RateLimitHookOptions is NOT re-exported here even though `hooks.ts` forwards
-// it: it is declared in `src/auth/types.ts` and exported from there below, and
-// naming it on both lines is a duplicate identifier rather than two types.
-export type { Hook, AroundHook, BridgeHook, HookMap, ResolvedPipeline, CircuitBreakerOptions } from './src/core/hooks.ts'
+// The built-in hooks are `@frontierjs/junction/hooks`.
+export { resolvePipelines, mergeHookMaps, runPipeline } from './src/core/hooks.ts'
+export type { Hook, AroundHook, BridgeHook, HookMap, ResolvedPipeline } from './src/core/hooks.ts'
 
 // ─── Bridge ───────────────────────────────────────────────────────────────
 export { bridge, jsonResponse, errorResponse, errorBody, redirectResponse, withholdProtected } from './src/transport/bridge.ts'
@@ -68,7 +62,9 @@ export { requestMeta } from './src/core/context.ts'
 // a unit test holding a hand-built context, or an app invoking a method
 // outside the pipeline. `callService` opens the scope for every ordinary
 // path; without this, a method that reads `$` cannot be called any other way.
-export { $, currentCall, enterCall, inAfterCommitDrain, warnEffectInDrain } from './src/core/context.ts'
+// `setCallDb` is the same hatch's client: what `$.db` answers on a context no
+// data hook ran for.
+export { $, currentCall, enterCall, setCallDb, inAfterCommitDrain, warnEffectInDrain } from './src/core/context.ts'
 export type { CallContext } from './src/core/context.ts'
 
 // ─── Transport ────────────────────────────────────────────────────────────
@@ -86,7 +82,7 @@ export type {
 } from './src/transport/types.ts'
 
 // ─── Auth ─────────────────────────────────────────────────────────────────
-export type { IAuth, LoginResult, SessionVerifier, SessionContext, CreateUserInput, ApiKeyOptions, AuthSessionInfo, ApiKeyInfo, RateLimitHookOptions } from './src/auth/types.ts'
+export type { IAuth, LoginResult, EmailVerificationResult, SessionVerifier, SessionContext, CreateUserInput, ApiKeyOptions, AuthSessionInfo, ApiKeyInfo } from './src/auth/types.ts'
 
 // ─── Events ───────────────────────────────────────────────────────────────
 export { createEventBus }                                         from './src/events/index.ts'
@@ -95,9 +91,9 @@ export type { IEventBus, EventHandler }                           from './src/ev
 // ─── Result envelope ──────────────────────────────────────────────────────
 // One module owns wrap/unwrap/inspect. Import these instead of reaching into
 // `.data` — that habit is what let the same find() answer three different ways.
+// `single` and `list` are `@frontierjs/junction/envelope`.
 export { wrapResult, unwrapResult, resultData,
-         isServiceResult, isListResult,
-         single, list, toBulkFailure }                            from './src/core/envelope.ts'
+         isServiceResult, isListResult, toBulkFailure }           from './src/core/envelope.ts'
 export type { ResultKind, ListResult, SingleResult,
               UnwrapOptions, BulkFailure }                        from './src/core/envelope.ts'
 
@@ -111,13 +107,11 @@ export { createLitestoneBase, parseQuery as parseLitestoneQuery, parseWhere,
          deriveModelName, accessorCandidates, withLitestoneDb,
          sessionGateLevel, callerGateLevel, principalGateLevel, toDataPrincipal, LEVELS,
          applyClaims, membershipClaim, MEMBERSHIP, tenantOf,
-         bearerClaim, BEARER, bearerOf, header, authorization, cookie,
          jsonSchemaToJunctionSchema }                              from './src/core/litestone.ts'
 export type { GradableUser } from './src/core/litestone.ts'
 export type { PrincipalResolver, PrincipalSetting, PrincipalClaims, PrincipalDescription, DescribedResolver,
               MembershipClaimOptions, NoClaim } from './src/core/litestone.ts'
-export type { BearerClaimOptions, BearerSource, BearerResolver, ResolvedBearer, MintedGrant,
-              RedeemOptions, RedeemContext } from './src/core/litestone.ts'
+// A bearer grant and its sources are `@frontierjs/junction/bearer`.
 export type { WindowResult } from './src/core/litestone.ts'
 export type { LitestoneServiceOptions, ParsedQuery,
               LitestoneJsonSchema,

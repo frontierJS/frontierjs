@@ -122,7 +122,7 @@ export const HOPS = [
     say:'Derived from the field rules. @email, @length and @gte become a 400 with per-field messages — still before the database is touched.' },
   { r:'a', name:'before hooks', where:'core/service.ts',
     say:'Your code, finally. Defaults, enrichment, anything that should happen to the data on the way in.' },
-  { r:'d', name:'ctx.locals.db', where:'core/litestone.ts',
+  { r:'d', name:'$.db', where:'core/litestone.ts',
     say:'withLitestoneDb() put a per-request Litestone client here at createApp({ db }) time, already scoped to the caller.' },
   { r:'d', name:'$setAuth(user)', where:'litestone/core/client.js',
     say:'The Data-boundary checkpoint. Everything past this point knows who is asking — and asSystem() is the single documented way around it.' },

@@ -197,7 +197,7 @@ describe('the journal is its own client, not a second database block', () => {
 database main   { path "${join(root, 'db', 'main.db')}" }
 database deploy { path "${join(root, 'db', 'deploy.db')}" }
 
-model Thing   { id String @id @default(uuid())  name String  @@db(main) }
+model Thing   { id String @id @default(uuid())  name String  @@db(main)  @@gate(0) }
 model Release { id String @id  pivot String  @@db(deploy)  @@gate(8) }
 `
     const app = await createClient({ schema })

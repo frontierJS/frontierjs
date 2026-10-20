@@ -52,6 +52,12 @@ title: Volumes
   // reports ago.
   const inflight = { seq: 0 }
 
+  // The list is every volume under the filter, not a page — the server refuses
+  // a page above its max — and it answers its own loads in order.
+  const list = volumes.tethered({ state: 'local', all: true })
+  $: { rows = list.rows }
+  $: { if (list.error) error = list.error.message }
+
   async function load() {
     const mine = ++inflight.seq
     error = null; loading = true
@@ -60,13 +66,12 @@ title: Volumes
       // deriving one from the other would state "12 GB across the fleet" from
       // whatever fifty rows came back.
       const totals = await volumes.service.invoke('usage', null)
-      const page   = await volumes.service.find({
+      list.apply({
         ...(filter === 'all' ? {} : { inUse: filter === 'used' }),
         ...(server ? { serverId: server } : {}),
-      }, { limit: 200 })
+      })
       if (mine !== inflight.seq) return
       usage = totals
-      rows  = page.data
     } catch (e) {
       if (mine === inflight.seq) error = e.message
     } finally {
@@ -177,7 +182,7 @@ title: Volumes
           onchange={(e) => setServer(e.target.value)} />
 </div>
 
-{#if loading}
+{#if loading || (list.loading && !rows.length)}
   <p class="text-sm text-muted">Loading…</p>
 {:else if !rows.length}
   <EmptyState title="No volumes">

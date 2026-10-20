@@ -17,7 +17,7 @@
 //
 // Run: bun run example/file-upload.ts
 //
-//   TOKEN=$(curl -s -X POST localhost:3000/auth/login \
+//   TOKEN=$(curl -s -X POST localhost:3000/api/auth/login \
 //     -H 'content-type: application/json' -d '{"username":"demo"}' | jq -r .token)
 //
 //   curl -X POST localhost:3000/api/users -H "authorization: Bearer $TOKEN" \
@@ -29,13 +29,13 @@ import {
   createApp,
   createService,
   createLogger,
-  authenticate,
   correlationId,
   requestLogger,
   defaultConfig,
   cors,
   isServiceResult,
 } from '../index.ts'
+import { authenticate } from '../src/core/hooks-builtin.ts'
 
 import { withLitestoneDb } from '../src/core/litestone.ts'
 
@@ -80,7 +80,7 @@ const storageConfig: FileStorageOptions = hasS3Credentials
       accessKeyId:     process.env.S3_KEY,
       secretAccessKey: process.env.S3_SECRET,
       publicBase:      process.env.CDN_BASE,
-      keyPattern:      ':model/:id/:field/:uuid.:ext',
+      keyPattern:      ':model/:field/:uuid.:ext',
     }
   : {
       provider:   'local',
@@ -91,7 +91,7 @@ const storageConfig: FileStorageOptions = hasS3Credentials
       // reads it back out. Without it fileUrl() returns null and Pattern B
       // below silently falls back to showing the raw JSON ref.
       publicBase: 'http://localhost:3000/storage',
-      keyPattern: ':model/:id/:field/:uuid.:ext',
+      keyPattern: ':model/:field/:uuid.:ext',
     }
 
 // ─── DB ───────────────────────────────────────────────────────────────────────
@@ -288,7 +288,7 @@ app.post('/auth/login', async ctx => {
 await app.start()
 
 log.info('file upload server running')
-log.info('  POST /auth/login')
+log.info('  POST /api/auth/login')
 log.info('  GET  /api/users              list users (avatar expanded to URL)')
 log.info('  POST /api/users              create user (multipart or JSON)')
 log.info('  PATCH /api/users/{id}/avatar  direct multipart upload')

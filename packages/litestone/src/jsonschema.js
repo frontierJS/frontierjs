@@ -1208,17 +1208,29 @@ function fieldToJsonSchema(field, schema, enumDefs, inlineEnums = false, audienc
     applyValidators(typeSchema, attributes)
   }
 
+  // A secret string is typed into a box someone may be standing behind, and
+  // OpenAPI's `format: 'password'` is the hint every consumer reads for it
+  // (`FJS-D1334`). A format already set wins: `email` is graded at the
+  // boundary, and `password` would drop that check to change a control.
+  if (type.name === 'String' && !type.array && !typeSchema.format &&
+      attributes.some(a => a.kind === 'encrypted' || a.kind === 'secret' || a.kind === 'hashed'))
+    typeSchema.format = 'password'
+
   // Apply @default as JSON Schema default (skip auth() — runtime-only)
   const defaultAttr = attributes.find(a => a.kind === 'default')
   if (defaultAttr) {
     const dv = defaultValueToJson(defaultAttr.value, type)
     if (dv !== undefined) typeSchema.default = dv
-  } else if (type?.array && type.kind !== 'relation' && type.kind !== 'implicitM2M') {
+  } else if (type?.array && type.kind !== 'relation' && type.kind !== 'implicitM2M' &&
+             !(nullable && typeSchema.minItems > 0)) {
     // Every array column is NOT NULL DEFAULT '[]' whether or not it says so —
     // an empty array is the null state of a list. The boundary already answers
     // that way; saying it here is what lets a form, a factory and a generated
     // type answer the same, instead of seeding `undefined` for a column that
     // can never hold one.
+    // Not on an OPTIONAL list with a minimum: a boundary that fills the
+    // default for an absent key then refuses `[]` for too few items, so the
+    // list could never be left out (`FJS-3328`).
     typeSchema.default = []
   }
 

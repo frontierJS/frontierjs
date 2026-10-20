@@ -1,6 +1,6 @@
 // test/call-signal.test.ts
 // A call used to say nothing about whether its caller was still there. A hook
-// learned the client hung up only through `ctx.$raw.$req.signal`, so a
+// learned the client hung up only through the raw Request's signal, so a
 // WebSocket or in-process call could never be stopped (`FJS-3117`).
 // `ctx.signal` is one AbortSignal on every transport.
 
@@ -10,7 +10,6 @@ import { bridge } from '../src/transport/bridge.ts'
 import type { TransportContext } from '../src/transport/types.ts'
 
 const seen: Record<string, AbortSignal> = {}
-let gate: () => void = () => {}
 
 const probe = createService({
   name: 'probe',
@@ -18,7 +17,7 @@ const probe = createService({
   async find(ctx: any)   { seen[ctx.transport] = ctx.signal; return [] },
   async create(ctx: any) {
     seen[ctx.transport] = ctx.signal
-    await new Promise<void>(ok => { gate = ok; ctx.signal.addEventListener('abort', () => ok(), { once: true }) })
+    await new Promise<void>(ok => { ctx.signal.addEventListener('abort', () => ok(), { once: true }) })
     return { id: 1, aborted: ctx.signal.aborted }
   },
 })

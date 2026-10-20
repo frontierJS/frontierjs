@@ -46,21 +46,26 @@ title: DNS & edge
   let zoneError = null
   let zoneBusy  = false
 
+  // Both lists, every row of each rather than a page, because a hostname with
+  // no app name beside it is an id in a column nobody can act on. `domains`
+  // answers the app's id and not its name — the include is on the app's own
+  // detail read.
+  const list    = domains.tethered({ state: 'local', all: true })
+  // Composed: the apps service includes each app's environment and domains.
+  const appList = apps.tethered({ state: 'local', composed: true, directives: { limit: 100 } })
+  $: { rows = list.rows }
+  $: { appById = new Map(appList.rows.map(a => [a.id, a])) }
+  $: {
+    const failed = list.error ?? appList.error
+    if (failed) error = failed.message
+  }
+
   async function load() {
     error = null; loading = true
     try {
-      // Both lists, because a hostname with no app name beside it is an id in
-      // a column nobody can act on. `domains.find` answers the app's id and
-      // not its name — the include is on the app's own detail read.
-      const [dom, app, entry] = await Promise.all([
-        domains.service.find({}, { limit: 200 }),
-        apps.service.find({}, { limit: 200 }),
-        // `get` pings. A failure here must not take the hostname table with
-        // it — the app's own rows are readable whether or not a vendor is.
-        portal.service.get('edge').catch(() => null),
-      ])
-      rows    = dom.data
-      appById = new Map(app.data.map(a => [a.id, a]))
+      // `get` pings. A failure here must not take the hostname table with it —
+      // the app's own rows are readable whether or not a vendor is.
+      const entry = await portal.service.get('edge').catch(() => null)
       adapter = entry
       // Asked only once the portal says an account exists — an empty answer
       // from a workspace with none would read as a zone with nothing in it.
@@ -88,7 +93,7 @@ title: DNS & edge
   }
 
   load()
-  $: session.workspaceId, () => { picked = null; zone = null; load() }
+  $: session.workspaceId, () => { picked = null; zone = null; list.reload(); appList.reload(); load() }
 
   // The service decorates every row with cert_status — one definition, in
   // api/src/services/domains/domains.service.ts, so this screen and the notice
@@ -130,6 +135,7 @@ title: DNS & edge
   function saved() {
     editing = null
     toasts.success('Domain saved')
+    list.reload()
     load()
   }
 

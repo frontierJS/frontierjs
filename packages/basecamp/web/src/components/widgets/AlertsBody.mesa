@@ -11,21 +11,23 @@
   // `find` answers the rows and only `get` pays for the event history, which is
   // the same shape the alerts screen uses at a hundred.
   import { alerts } from '../../resources/AlertRule.mesa'
-  import { onWrite } from './live.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
   let rows    = []
   let firing  = {}     // ruleId → how many of its events are still open
   let error   = null
-  let loading = true
 
   const TONE = { critical: 'danger', warning: 'warning', info: 'info' }
 
-  async function load() {
-    error = null
+  const list = alerts.tethered({ state: 'local', directives: { limit: 6 } })
+  $: { rows = list.rows }
+  $: loading = list.loading && !list.rows.length
+  $: { if (list.error) error = list.error.message }
+  $: rows, () => loadFiring()
+
+  async function loadFiring() {
     try {
-      rows = (await alerts.service.find({}, { limit: 6 })).data
-      const full = await Promise.all(rows.map(r => alerts.service.get(r.id)))
+      const full = await Promise.all(list.rows.map(r => alerts.service.get(r.id)))
       // `status === 'firing'` and not *has any events*: a rule that fired last
       // week and recovered is not a rule that is firing, and counting history
       // as current is the same wrong answer from the other direction.
@@ -34,13 +36,8 @@
       ]))
     } catch (e) {
       error = e.message
-    } finally {
-      loading = false
     }
   }
-
-  load()
-  $.onDestroy(onWrite(alerts.service, load))
 
   $: active    = rows.filter(r => r.isActive).length
   $: firingNow = rows.filter(r => firing[r.id] > 0).length

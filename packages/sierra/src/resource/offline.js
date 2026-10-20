@@ -43,7 +43,7 @@
  *
  * ── Warming may not touch a tether ──────────────────────────────────────────
  *
- * `resource.load()` writes the rows into the tether the screen is rendering. A
+ * The tether's `load()` writes the rows into the list the screen is rendering. A
  * warm runs in the background, under a question nobody is looking at, so going
  * through `load()` would swap the list under somebody's eyes — the feature
  * breaking the screen it exists to protect. It calls `find` and remembers the

@@ -41,6 +41,7 @@
 // survives, which is the audit trail `runExport` writes.
 
 import type { App } from '../../core/app.ts'
+import { callDb, enterCall } from '../../core/context.ts'
 
 /** Options for `exporter()`. */
 export interface ExportPluginOptions {
@@ -183,7 +184,8 @@ export function exporter(opts: ExportPluginOptions = {}) {
           : withLitestoneDb(db as never, principal)
 
         let resolved: unknown = null
-        await around(sctx, async () => { resolved = sctx.locals.db })
+        // Entered as a call, so a resolver reading `$.db` reads this client.
+        await enterCall(sctx, () => around(sctx, async () => { resolved = callDb(sctx) }))
 
         // BOTH halves, and the second is the one that is easy to miss.
         // `runExport` scopes the client itself from `as`, so handing it an

@@ -16,23 +16,22 @@
 
   export const UNDO_MS = 8000
 
-  export const loadTrash = () => trash.load()
-
   /**
-   * Bring an item back through its own service, then re-read the list rather
-   * than dropping one row: a restored parent can surface a child that was
-   * deleted on its own before it, which was folded under the parent until now.
+   * Bring an item back through its own service, then re-read the screen's list
+   * rather than dropping one row: a restored parent can surface a child that
+   * was deleted on its own before it, which was folded under the parent until
+   * now.
    */
-  export async function restoreItem(item) {
+  export async function restoreItem(item, bin) {
     const row = await getClient().service(item.service).restore(item.ref)
-    await loadTrash()
+    await bin.reload()
     return row
   }
 
   /**
    * The toast a delete ends with. `onBack` is for a screen holding the row
-   * somewhere a tether does not reach; a list over the resource's own
-   * store gets the row back from the `restored` push.
+   * somewhere a tether does not reach; a tethered list gets the row back from
+   * the `restored` push.
    */
   export function offerUndo(name, resource, id, onBack) {
     toasts.success(`${name} deleted`, UNDO_MS, {

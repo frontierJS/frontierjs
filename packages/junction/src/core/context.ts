@@ -5,7 +5,7 @@
 // transport and on internal calls. It lives in core, not transport/bridge.ts,
 // so the service layer's vocabulary is never imported from a transport module.
 //
-// The one remaining upward reference is $raw's TransportContext type — a
+// The one remaining upward reference is `raw`'s TransportContext type — a
 // type-only escape hatch (erased at compile time, no runtime coupling).
 
 import { AsyncLocalStorage } from 'node:async_hooks'
@@ -244,7 +244,7 @@ export interface ServiceContext {
   signal: AbortSignal
 
   // escape hatch — never use in services or hooks (type-only upward ref)
-  $raw: import('../transport/types.ts').TransportContext | null
+  raw: import('../transport/types.ts').TransportContext | null
 
   /**
    * Run this AFTER the call has succeeded — and, where the service declares
@@ -299,20 +299,55 @@ export interface ServiceContext {
   // the telemetryId of the call this one was made from. Read before the call's
   // own scope is entered: inside it, currentCall() is this call.
   parentTelemetryId?: string
+}
 
-  // cleanup callbacks — called in callService finally block after pipeline
-  // completes. Used by litestone $tapQuery teardown and any other
-  // per-request teardown. NOT scratch — framework-internal.
-  _cleanups?: Array<() => void>
+// ─── The call's private slots ─────────────────────────────────────────────
+// What the framework keeps on a context and an app must not reach: the scoped
+// client, which an app reads as `$.db`, and the three queues `callService`
+// drains. Behind a symbol no other module holds, so a spread, a log line or
+// `Object.keys(ctx)` carries none of them and no hook can write one by name.
 
-  // what ctx.afterCommit() queued. Drained by callService, once, on success.
-  // NOT scratch — framework-internal.
-  _afterCommit?: Array<() => void | Promise<void>>
+/** Augmented by `core/litestone.ts` with `db` — the type `$.db` answers. */
+export interface CallDbType {}
+export type CallDb = CallDbType extends { db: infer D } ? D : unknown
 
-  // outbox rows this call wrote. Only to tell callService whether kicking the
-  // relay is worth it — the rows are committed and the sweep would find them
-  // anyway. NOT scratch — framework-internal.
-  _outbox?: string[]
+interface CallSlots {
+  db?:         unknown
+  // run in callService's finally, success or error: litestone's $tapQuery teardown
+  cleanups:    Array<() => void>
+  // what ctx.afterCommit() queued; drained once, on success
+  afterCommit: Array<() => void | Promise<void>>
+  // outbox rows this call wrote, only to say whether kicking the relay is worth
+  // it — the rows are committed and the sweep would find them anyway
+  outbox:      string[]
+}
+
+const SLOTS = Symbol('junction.call.slots')
+
+/** The context's private slots, made on first use. Junction's own modules only. */
+export function callSlots(ctx: object): CallSlots {
+  const held = ctx as Record<symbol, CallSlots | undefined>
+  let slots = held[SLOTS]
+  if (!slots) {
+    slots = { cleanups: [], afterCommit: [], outbox: [] }
+    Object.defineProperty(ctx, SLOTS, { value: slots, enumerable: false, configurable: true })
+  }
+  return slots
+}
+
+/** The call's scoped client — what `$.db` reads — for code holding the context. */
+export function callDb(ctx: object | null | undefined): CallDb | undefined {
+  if (!ctx) return undefined
+  return (ctx as Record<symbol, CallSlots | undefined>)[SLOTS]?.db as CallDb | undefined
+}
+
+/**
+ * Put a client on a context: the data hook does, `transactional:` swaps in its
+ * transaction, and a hand-built context in a test or a plugin seeds one here.
+ */
+export function setCallDb<T extends object>(ctx: T, db: unknown): T {
+  callSlots(ctx).db = db
+  return ctx
 }
 
 /**
@@ -327,12 +362,10 @@ export interface ServiceContext {
  * literal is still checked against every other field it owes.
  */
 export function withCallEffects(
-  base: Omit<ServiceContext, 'afterCommit' | '_afterCommit' | 'enqueue' | '_outbox' | 'system'>
+  base: Omit<ServiceContext, 'afterCommit' | 'enqueue' | 'system'>
 ): ServiceContext {
-  const queued: Array<() => void | Promise<void>> = []
   const ctx = base as ServiceContext
-  ctx._afterCommit = queued
-  ctx.afterCommit  = (fn) => { queued.push(fn) }
+  ctx.afterCommit  = (fn) => { callSlots(ctx).afterCommit.push(fn) }
   ctx.enqueue = (job, payload, opts) => {
     // The table is the outbox battery's, so the write goes through its slot.
     // Refused here rather than there, because with no relay there is no there.
@@ -412,8 +445,8 @@ export interface CallOptions {
   // 'internal' call is background work that shouldn't.
   transport?: Transport
 
-  // Explicitly seed the callee's scratch. RARE. The one real use: pass
-  // a db transaction handle so the sub-call runs in the same tx.
+  // Explicitly seed the callee's scratch. RARE: a tenant id, say. The client
+  // is not scratch -- the callee's data hook puts its own on `$.db`.
   locals?: Partial<ServiceContextLocals>
 
   /**
@@ -750,7 +783,7 @@ export function requestMeta(): RequestMeta | undefined {
 //
 // A request is one thing; a CALL inside it is another. `ctx.auth` and
 // `ctx.caller` belong to the request and ride RequestMeta above. `ctx.data`,
-// `ctx.id`, `ctx.locals` and `ctx.locals.db` belong to one invocation: fresh
+// `ctx.id`, `ctx.locals` and `$.db` belong to one invocation: fresh
 // per call, and `transactional:` swaps the db under the method mid-call. So
 // this is a second store with a second span, and NOT the announcing-service
 // store below — that one is deliberately narrower, because widening it would
@@ -824,13 +857,13 @@ export function currentCall(): ServiceContext | undefined {
  *   itself. Answering undefined would trade a loud bug for a silent one,
  *   which is the trade this exists to reverse.
  *
- * Resolved on every property read, never snapshotted: `transactional:` sets
- * `ctx.locals.db = tx` before running the method, so a value captured earlier
+ * Resolved on every property read, never snapshotted: `transactional:` swaps
+ * the transaction in before running the method, so a value captured earlier
  * is the wrong client.
  */
 export type CallContext = ServiceContext & {
-  /** `ctx.locals.db` — the caller-scoped Litestone client. */
-  readonly db: NonNullable<ServiceContextLocals['db']>
+  /** The caller-scoped Litestone client — its one spelling. */
+  readonly db: NonNullable<CallDb>
   /** `ctx.auth.user` — the principal this call is running as. */
   readonly me: ServiceContext['auth']['user']
   /**
@@ -960,9 +993,9 @@ export const $: CallContext = new Proxy({} as CallContext, {
     // library that probes for a thenable would resolve it to something else.
     if (key === 'then') return undefined
     if (key === 'db') {
-      const db = held(key).locals.db
+      const db = callDb(held(key))
       if (!db) throw new Error(
-        `[Junction] '$.db' — this call has no Litestone client on ctx.locals.db. ` +
+        `[Junction] '$.db' — this call has no Litestone client. ` +
         `Build the app with createApp({ db }) or createApp({ tenants }).`
       )
       return db
@@ -1012,7 +1045,7 @@ export const $: CallContext = new Proxy({} as CallContext, {
   //
   // The DERIVED set is deliberately absent: they are accessors rather than data,
   // not data, and enumerating them makes a spread EVALUATE them — so `{ ...$ }`
-  // on an app with no Litestone client threw the "no client on ctx.locals.db"
+  // on an app with no Litestone client threw the "no Litestone client"
   // error from inside a spread that never asked for a db. They stay reachable
   // by name through get() and `in`, which is what an accessor should be.
   //

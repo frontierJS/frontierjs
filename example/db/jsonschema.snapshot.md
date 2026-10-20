@@ -426,7 +426,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `auth` | `FlowCredentialAuth` = `"none"` | — | — | — | — |
 | `header` | `string`? | — | — | — | — |
 | `encoding` | `string`? = `"json"` | — | — | — | — |
-| `secret` | `string`? | — | — | `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
+| `secret` | `string`? | — | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
 
 **On create**: required — `name`, `provider`, `address` · not accepted — `id`
 

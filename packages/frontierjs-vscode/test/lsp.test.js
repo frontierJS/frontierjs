@@ -75,8 +75,8 @@ function col2(text, lineNo, needle) {
 
 const VALID = [
   'database audit {',                                                 // 0
-  '  driver trail',
-  '  path   "./audit.jsonl"',
+  '  driver sqlite',
+  '  path   "./app.db" model AuditTrail',
   '}',
   '',
   'function slug(text: String): String {',                            // 5
@@ -101,6 +101,14 @@ const VALID = [
   '  owner   Owner  @relation(fields: [ownerId], references: [id])',  // 24
   '  @@gate(4.4.4.4)',                                              // 25
   '  @@trail(audit)',                                                   // 26
+  '}',
+  '',
+  'model AuditTrail {',
+  '  id        Int      @id @default(autoincrement())',
+  '  operation String',
+  '  model     String',
+  '  createdAt DateTime @default(now())',
+  '  @@db(audit)',
   '}',
   '',
 ].join('\n')

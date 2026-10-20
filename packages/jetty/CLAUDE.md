@@ -84,7 +84,8 @@ It is the only place that scheme is written down.
   frame**, and every one after the first emits `reconnected`, because Harbor's
   worker may have been stopped in between. **A call only HTTP can carry** (a
   file, a filtered bulk write, a findFirst) is refused by the client by name.
-  Sign-in stays `login()`/`logout()` here, because Harbor owns the token.
+  Sign-in is `signIn()` / `completeSignIn()` / `signOut()` through Harbor, the
+  client's verbs (`FJS-D1315`), because Harbor owns the token.
 - **A refusal crosses the port as `_error`, `_code` and `_data`**, and
   `PagePort.request` rebuilds `err.code` and `err.data`. A chrome port carries
   JSON, so an Error arrives as `{}`, and the message alone left a page unable to

@@ -196,7 +196,7 @@ describe('a computed member names a variable (FJS-D212)', () => {
 /*
  * The half the closure cannot see (FJS-D212, amended).
  *
- * `useTether` hands back a getter, so a const holding one is an ordinary
+ * A record view hands back a getter, so a const holding one is an ordinary
  * function and a const CALLING it reads a signal inside the call — a
  * dependency with no name for the closure to walk. Blanket promotion covered
  * this by accident through runtime auto-tracking; the narrowing dropped it and
@@ -393,7 +393,7 @@ describe('a const reached from its own initializer (FJS-1064)', () => {
 
 // ─── a const over a member of a call's handle ────────────────────────────────
 
-// `const list = r.list()` stays eager (FJS-D212), so `const rows = [...list.rows]`
+// `const list = r.tethered()` stays eager (FJS-D212), so `const rows = [...list.rows]`
 // over it is computed once — and the handle's getters read signals, so the
 // page sat on "Loading" with its rows present (FJS-1969). The read is often a
 // snapshot on purpose, so it warns rather than refuses, and destructuring at
@@ -405,7 +405,7 @@ describe('a const reading a member of a call-result handle (FJS-1969)', () => {
 
   it('warns for each const that reads through the handle, naming $:', async () => {
     const w = await warned(`import { r } from './r.js'
-const list = r.list()
+const list = r.tethered()
 const out = [...list.rows]
 const busy = list.loading && 'loading'
 const current = list.rows[0]`)
@@ -417,7 +417,7 @@ const current = list.rows[0]`)
 
   it('is quiet where the read follows the handle', async () => {
     expect(await warned(`import { r } from './r.js'
-const list = r.list()
+const list = r.tethered()
 $: out = list.rows
 const sorted = () => [...list.rows]`)).toEqual([])
   })
@@ -425,7 +425,7 @@ const sorted = () => [...list.rows]`)).toEqual([])
   it('is quiet over a handle that is itself derived, since the const promotes with it', async () => {
     expect(await warned(`import { r } from './r.js'
 export let id
-const list = r.list(id)
+const list = r.tethered({ where: { id } })
 const out = list.rows`)).toEqual([])
   })
 
@@ -436,10 +436,10 @@ const { port: out } = load()`)).toEqual([])
 
   it('is quiet for a call through the handle, which is already derived', async () => {
     expect(await warned(`import { r } from './r.js'
-const list = r.list()
+const list = r.tethered()
 const out = list.more()`)).toEqual([])
     expect(await warned(`import { r } from './r.js'
-const list = r.list()
+const list = r.tethered()
 const out = String(list)`)).toEqual([])
   })
 })

@@ -22,7 +22,7 @@ let _proxy
 vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => _proxy,
-    resource: (name, idField) => ({
+    resource: () => ({
       service: _proxy,
       tether: { get: () => [], subscribe: (fn) => { fn([]); return () => {} }, set: () => {} },
       load: (query, params) => {
@@ -33,7 +33,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
   }),
 }))
 
-const { createResource, createStore } = await import('../src/resource/resource.js')
+const { createResource } = await import('../src/resource/resource.js')
 
 beforeEach(() => {
   _calls.length = 0
@@ -96,14 +96,6 @@ describe('directives threading', () => {
     await service.getOptions({ active: false }, { limit: 10 })
 
     expect(_calls[0]).toEqual(['find', { active: false }, { limit: 10 }])
-  })
-
-  test('createStore().find() threads params through to the proxy', async () => {
-    const { service } = createResource('leads')
-    const store = createStore(service)
-    await store.find({ type: 'client' }, { limit: 25 })
-
-    expect(_calls[0]).toEqual(['find', { type: 'client' }, { limit: 25 }])
   })
 })
 

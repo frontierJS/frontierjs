@@ -23,7 +23,7 @@
  * because `/metrics` is junction's own route.
  */
 
-import { BadRequest, Conflict, Forbidden, NotFound, Unauthorized, callerGateLevel, createService } from "@frontierjs/junction"
+import { BadRequest, Conflict, Forbidden, NotFound, Unauthorized, callerGateLevel, createService, $ } from "@frontierjs/junction"
 import type { ServiceDefinition, ServiceContext, SessionContext } from "@frontierjs/junction"
 import { LEVELS, levelName, levelPasses } from "@frontierjs/toolbelt/gate"
 
@@ -65,7 +65,9 @@ export function createOrionServices(deps: {
     return user
   }
 
-  const clientOf = (ctx: ServiceContext): Client => ctx.locals.db
+  // `$.db` is the call's own client; ctx stays in the signature so every
+  // reader below names which call it means.
+  const clientOf = (_ctx: ServiceContext): Client => $.db as Client
   // The system client of THIS call's tenant: the caller's own client, lifted.
   // Under row tenancy it keeps the tenant claim, so it still reads and writes
   // one tenant's rows (`FJS-D294`).

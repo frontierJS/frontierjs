@@ -59,8 +59,6 @@ title: Order
   let customer    = null
   let custRow     = null
   let unwatchCust = null
-  let items    = []        // OrderLine rows — what was bought
-  let itemsError = null    // why the itemization is empty, when it is empty for a reason
   let error    = null
   let busy     = null
   let confirm  = null      // the move awaiting confirmation, or null
@@ -134,11 +132,10 @@ title: Order
   })
 
   /** What hangs off the order and does NOT move with it — the itemization and
-   *  the money. Each is its own read for its own reason (see loadItems and
+   *  the money. Each is its own read for its own reason (see itemList and
    *  loadMoney), and neither changes when the status does. */
   async function loadDetails() {
     await watchCustomer(order?.customerId ?? null)
-    await loadItems()
     await loadMoney()
   }
 
@@ -158,20 +155,12 @@ title: Order
    *  payments read is separate: the two answer different questions and one of
    *  them is gated differently. It is also what makes the empty case legible —
    *  an order with no itemization and an order whose itemization could not be
-   *  read are two states, and joining would collapse them into a shorter list.
-   *
-   *  The second argument is the DIRECTIVES themselves, not a bag holding them.
-   *  See `loadMoney` below for what passing `{ directives: … }` does here. */
-  async function loadItems() {
-    itemsError = null
-    if (!order) { items = []; return }
-    try {
-      items = (await orderLines.service.find({ orderId: order.id }, { orderBy: 'id' }))?.data ?? []
-    } catch (e) {
-      items = []
-      itemsError = e.message
-    }
-  }
+   *  read are two states, and joining would collapse them into a shorter list. */
+  const itemList = orderLines.tethered({
+    state: 'local', where: { orderId: Number(page.params.id) }, all: true, directives: { orderBy: 'id' },
+  })
+  $: items      = itemList.rows
+  $: itemsError = itemList.error?.message ?? null
 
   /** The payments for this order, and the provider's own account of each.
    *

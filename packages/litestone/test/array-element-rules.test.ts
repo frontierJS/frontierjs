@@ -86,3 +86,29 @@ model Report {
     expect(js.properties.names.items).toEqual({ type: 'string' })
   })
 })
+
+// A boundary fills `default` for an absent key and then grades the item count,
+// so `[]` on an optional list with a minimum refused every call leaving it out
+// (`FJS-3328`). A required list keeps it: `[]` is its empty state.
+describe('the empty-list default', () => {
+  test('is left off an optional list with a minimum, and kept everywhere else', async () => {
+    const { generateJsonSchema } = await import('../src/jsonschema.js') as any
+    const { parse } = await import('../src/core/parser.js') as any
+    const js = generateJsonSchema(parse(`
+model Survey {
+  id       Int       @id @default(autoincrement())
+  labels   String[]? @minItems(2)
+  tags     String[]  @minItems(1)
+  notes    String[]?
+  floor0   String[]? @minItems(0)
+}
+type Preview { labels String[]? @minItems(5) @maxItems(5) }`).schema, { mode: 'create' }).$defs
+    const branch = (p: any) => p.anyOf?.[0] ?? p
+    expect(branch(js.Survey.properties.labels)).toMatchObject({ type: 'array', minItems: 2 })
+    expect(branch(js.Survey.properties.labels).default).toBeUndefined()
+    expect(branch(js.Preview.properties.labels).default).toBeUndefined()
+    expect(js.Survey.properties.tags.default).toEqual([])
+    expect(branch(js.Survey.properties.notes).default).toEqual([])
+    expect(branch(js.Survey.properties.floor0).default).toEqual([])
+  })
+})

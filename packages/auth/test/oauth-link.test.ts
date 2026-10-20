@@ -286,12 +286,12 @@ describe('an unproven claim on an address nobody holds', () => {
     expect(await h.sys.user.findFirst({ where: { email: 'mismatch-nh@shop.test' } })).toBeNull()
   })
 
-  test('onRegister refuses on the click, and nothing is written', async () => {
+  test('onRegistered refuses on the click, and nothing is written', async () => {
     const mails: Array<{ token: string }> = []
     const closed = await makeAuth({
       oauthProviders:       { okta: untrusted },
       onOAuthLinkRequested: async (e) => { mails.push(e) },
-      onRegister:           async () => { throw new Error('closed beta') },
+      onRegistered:         async () => { throw new Error('closed beta') },
     })
     try {
       const out = await closed.auth.oauthResolve('okta', id({ providerId: 'cb-1', email: 'beta@shop.test' }))

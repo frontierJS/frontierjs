@@ -1,6 +1,7 @@
 // Field validation must be derived from the Litestone client's own $schema —
 // no `schema:` option, no per-app wrapper. Checks the real smoke-test schema.
 import { buildBase } from '/home/claude/review/junction/src/core/service.ts'
+import { setCallDb, callDb } from '/home/claude/review/junction/src/core/context.ts'
 import { parse } from '/home/claude/review/litestone/src/core/parser.js'
 import { readFileSync } from 'fs'
 
@@ -21,7 +22,8 @@ chk('hooks installed on the service', !!svc.hooks?.before?.create?.length)
 // Authenticated: gateAuth runs before validation and the Lead model is
 // @@gate(4), so an anonymous context would 401 before reaching the validator.
 const run = async (data) => {
-  const ctx = { method: 'create', data, locals: { db: client }, auth: { user: { userId: 'u1' } }, app: {} }
+  const ctx = { method: 'create', data, locals: {}, auth: { user: { userId: 'u1' } }, app: {} }
+  setCallDb(ctx, client)
   for (const h of svc.hooks.before.create) await h(ctx)
   return ctx
 }
@@ -47,6 +49,7 @@ chk('rejects an over-long name', !!err, err?.message?.slice(0, 60))
 
 // non-litestone client → no-op, no crash
 const plain = { lead: { create: async () => ({}) } }
-const ctx2 = { method: 'create', data: { anything: true }, locals: { db: plain }, auth: {}, app: {} }
+const ctx2 = { method: 'create', data: { anything: true }, locals: {}, auth: {}, app: {} }
+setCallDb(ctx2, plain)
 for (const h of svc.hooks.before.create) await h(ctx2)
 chk('plain client: validation no-ops', ctx2.data.anything === true)

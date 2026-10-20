@@ -19,7 +19,7 @@ title: Products
   import { productImages } from '@/resources/ProductImage.mesa'
   import { prefs }   from '@/stores/prefs.js'
   import { money }   from '@/lib/money.js'
-  import { session, useTether } from '@frontierjs/sierra/resource'
+  import { session } from '@frontierjs/sierra/resource'
   import { goto }     from '@frontierjs/sierra/router'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -33,27 +33,22 @@ title: Products
   import Slider        from '@frontierjs/ui/components/forms/Slider.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
 
-  const { get: rows,   unsubscribe: offP } = useTether(products.tether)
-  const { get: images, unsubscribe: offI } = useTether(productImages.tether)
-  $.onDestroy(() => { offP(); offI() })
+  const catalog   = products.tethered({ state: 'local' })
+  // Every image, not a page: a default page of 20 would leave later products
+  // with no thumbnail, which looks like a catalog problem rather than a paging
+  // one. The price and stock columns arrive on the product row.
+  const imageList = productImages.tethered({ state: 'local', all: true })
+  const rows   = () => catalog.rows
+  const images = () => imageList.rows
 
   $: (session.level, prefs.perPage, prefs.dense, prefs.currency)
 
   let error   = null
   let loading = true
-
-  // The image store is loaded with a limit above the seeded row count on
-  // purpose: a default page of 20 would leave later products with no
-  // thumbnail, which looks like a catalog problem rather than a paging one.
-  // The price and stock columns no longer have that hazard at all — they
-  // arrive on the product row.
-  Promise.all([
-    products.load(),
-    productImages.load({}, { limit: 500 }),
-  ])
-    .then(() => { high = ceiling; widened = true })
-    .catch(e => { error = e.message })
-    .finally(() => { loading = false })
+  $: {
+    loading = catalog.loading || imageList.loading
+    error   = (catalog.error ?? imageList.error)?.message ?? null
+  }
 
   const columns = [
     { name: 'name',    label: 'Product' },
@@ -95,6 +90,8 @@ title: Products
   // it would be 10 — the floor — and the slider would filter everything out.
   const ceiling = Math.max(10, ...rows().map(p => Math.ceil(p.priceTo ?? 0)))
   let widened = false
+  // The slider opens on the whole range once the first answer is in.
+  $: { if (!widened && !loading && !error && rows().length) { high = ceiling; widened = true } }
 
   const filtered = rows().filter(p => {
     const r = priceRange(p)

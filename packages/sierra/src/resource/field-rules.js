@@ -738,6 +738,11 @@ function _builtinControl(rule) {
       // which is the defect this attribute exists to close, arriving one layer
       // further out.
       if (rule['x-big']) return { control: 'input', task: 'quantify', type: 'text', inputMode: 'numeric', pattern: rule.pattern }
+      // `@encrypted`, `@secret` and `@hashed` say `format: 'password'`
+      // (`FJS-D1334`): a text box offers the value to whoever stands behind
+      // the person typing it. A declared `@syntax` is asked first, since a
+      // password box cannot hold a paragraph.
+      if (rule.format === 'password') return { control: 'input', task: 'text', type: 'password' }
       // A date has no zone, so `<input type="date">` round-trips it and the
       // plain input is right. A date-time DOES have one and `datetime-local`
       // has none — it accepts and emits a wall clock — so the two have to be
@@ -879,6 +884,10 @@ export function formFieldList(fields, { only, except, model } = {}) {
     // it with the other columns a form does not offer (`summary()`), read-only.
     const rule = rules[name]
     if ((rule?.determined || rule?.transitions || rule?.rank) && names === known) continue
+    // A secret no reader below the system sees cannot be edited blind when it
+    // is a document or a paragraph; a one-line secret is a replace box
+    // (`FJS-D1334`, amended).
+    if (isSecret(rule) && !isOneLineSecret(rule) && names === known) continue
     if (!(name in rules)) {
       out.push({ name, rule: null, control: null, reason: 'no such field on this model' })
       continue
@@ -2035,8 +2044,9 @@ export function coerceToSchema(fields, data) {
  * So the form keeps binding to a string and the wire carries the distinction
  * the schema actually made.
  *
- * Only NULLABLE fields are touched: `''` on a non-optional `String` is a real
+ * Only NULLABLE fields are nulled: `''` on a non-optional `String` is a real
  * empty string and nulling it would turn a valid record into an invalid one.
+ * A secret's `''` is dropped instead, whatever its nullability (`isSecret`).
  * Only fields PRESENT in the record are touched — a patch is not widened. And
  * only the exact value `''`; whitespace is content, not blankness (trimming is
  * a separate decision, and not this function's).
@@ -2054,17 +2064,43 @@ export function normalizeBlanks(fields, data) {
   let out = null
 
   for (const [name, rule] of Object.entries(fields ?? {})) {
+    if (!Object.hasOwn(data, name)) continue
+    if (data[name] !== '') continue
+    // A secret's box starts empty because the stored value is never read
+    // back, so an empty box is "unchanged" and the key leaves the payload;
+    // nulled, an edit that never touched it would clear the secret (Invariant 9).
+    if (isSecret(rule)) {
+      if (out === null) out = { ...data }
+      delete out[name]
+      continue
+    }
     // nullable ⇒ not required in everything Litestone generates, but a field
     // that were both would be made invalid by this, so say it explicitly.
     if (!rule.nullable || rule.required) continue
-    if (!Object.hasOwn(data, name)) continue
-    if (data[name] !== '') continue
 
     if (out === null) out = { ...data }
     out[name] = null
   }
 
   return out ?? data
+}
+
+// ── Secrets ───────────────────────────────────────────────────────────────────
+
+/**
+ * A column whose stored value no reader below the system sees: `@encrypted`
+ * and `@hashed`. Litestone marks the first with `format: 'password'` on a
+ * plain string (`FJS-D1334`) and with `'encrypted'` on its sort and filter
+ * affordances whatever its shape, so an `@email @encrypted` column, which
+ * keeps `format: 'email'`, is still one.
+ */
+export function isSecret(rule) {
+  return !!rule && (rule.format === 'password' || rule.writeOnly === true
+    || rule['x-filterable'] === 'encrypted')
+}
+
+function isOneLineSecret(rule) {
+  return rule.type === 'string' && !rule['x-syntax']
 }
 
 // ── The columns the SERVER owns ───────────────────────────────────────────────

@@ -5,16 +5,21 @@
   // Basecamp, and draws what comes back: blocks the model chose from
   // `lib/home/answer.js`'s list, laid out as rows there. The pane is the
   // registry's `desk` mode, so the arrows and PageUp/PageDown scroll it and
-  // Esc puts it away, stopping a question still being answered.
+  // Esc puts it away, stopping a question still being answered. While it is
+  // open an `/ask` is a follow-up: the first is handed what the pane shows, a
+  // report's included, and each after resumes that session. Esc or a
+  // `/report` ends the thread. Tab and Shift+Tab step through the counts a
+  // report keys (`filtersOf`), cutting its lists to the items each counts,
+  // and past the last back to all; a follow-up `/ask` is handed the cut.
   //
   // It answers only in the home this machine's board names (`HomeBoard.mesa`'s
   // rule), so a visitor's `/ask` runs nothing, and the answer is drawn on this
   // screen only and never sent. A route places it, never the scene file.
-  import { at, tint } from '#cell'
+  import { at, linked, tint } from '#cell'
   import { askDesk, deskReport, homeBoard } from '#errand'
   import { spotsOf } from '@/pieces/index.js'
   import { clip } from '@/lib/scene/cells.js'
-  import { TONES, answerRows, wrap } from '@/lib/home/answer.js'
+  import { TONES, answerRows, filterAnswer, filtersOf, wrap } from '@/lib/home/answer.js'
 
   const scene = $context.scene
   var verbs = $context.commands
@@ -32,12 +37,23 @@
   let reply  = null   // null, { asking, at } while the model works, { question, answer, cost, ms }, or { question, failed }
   let offset = 0
   let now    = Date.now()
+  let hyper  = true   // false once a terminal says it cannot open a hyperlink, and each item's URL is printed under it
+  let thread = null   // the session the next `/ask` resumes
+  let filter = null   // the key of the count Tab picked, or null for every item
+  let copied = ''     // what the foot says for a moment after a right click copied a link
   var close  = null
   var stop   = null
   $.onDestroy(scene.subscribe(() => { view = scene.view }))
 
   let gone = false
-  $.onDestroy(() => { gone = true; stop?.abort() })
+  var unsay = null
+  $.onDestroy(() => { gone = true; stop?.abort(); clearTimeout(unsay) })
+
+  function copiedLink(ok) {
+    copied = ok ? 'link copied' : 'this terminal takes no copy'
+    clearTimeout(unsay)
+    unsay = setTimeout(() => { copied = '' }, 2500)
+  }
   homeBoard()
     .then((b) => { if (!gone) board = b })
     .catch((e) => { if (!gone) dark = e.message })
@@ -45,10 +61,20 @@
   $.onDestroy(scene.task('desk-clock', () => { if (reply?.asking) now = Date.now() }, { every: 1000 }))
 
   $: mine  = !!board && board.home === scene.slug
-  $: body  = reply?.answer ? answerRows(reply.answer, INNER) : []
+  $: filters = reply?.answer ? filtersOf(reply.answer) : []
+  $: answer  = reply?.answer ? filterAnswer(reply.answer, filter) : null
+  $: body  = answer ? answerRows(answer, INNER, { urls: !hyper, picked: filter }) : []
   $: last  = Math.max(0, body.length - ROOM)
 
   const scroll = (by) => (e) => { e.preventDefault?.(); offset = Math.min(last, Math.max(0, offset + by)) }
+
+  function step(e) {
+    e.preventDefault?.()
+    if (!filters.length) return
+    const ring = [null, ...filters.map((f) => f.key)]
+    filter = ring[(ring.indexOf(filter) + (e.shiftKey ? -1 : 1) + ring.length) % ring.length]
+    offset = 0
+  }
 
   function open() {
     close ??= verbs.open({
@@ -58,8 +84,9 @@
         ArrowDown: scroll(1),
         PageUp:    scroll(-ROOM),
         PageDown:  scroll(ROOM),
+        Tab:       step,
       },
-      closed: () => { stop?.abort(); stop = null; reply = null; close = null },
+      closed: () => { stop?.abort(); stop = null; reply = null; thread = null; filter = null; close = null },
     })
   }
 
@@ -73,10 +100,12 @@
     reply = { asking: label, at: Date.now() }
     now = reply.at
     offset = 0
+    filter = null
     try {
       const said = await job(mineStop.signal)
       if (stop !== mineStop) return ''
       reply = said ? { question: label, ...said } : { question: label, failed: 'a desk in a browser asks nobody -- walk in with fli haven' }
+      thread = said?.session ?? null
     } catch (e) {
       if (stop === mineStop && e.name !== 'AbortError') reply = { question: label, failed: e.message }
     }
@@ -87,7 +116,9 @@
   function ask({ args }) {
     if (!args) return 'ask the desk something -- /ask what is overdue this week?'
     if (!mine) return refused()
-    return show(args, (signal) => askDesk(args, { signal }))
+    const resume = thread
+    const shown  = resume ? null : answer
+    return show(args, (signal) => askDesk(args, { signal, resume, shown }))
   }
 
   // A report is the same pane with no model: `#errand`'s `deskReport` runs this
@@ -111,9 +142,13 @@
     : reply.asking ? [muted(`"${clip(reply.asking, INNER - 40)}" -- reading Basecamp… ${Math.round((now - reply.at) / 1000)}s`)]
     : reply.failed ? wrap(`the desk could not answer: ${reply.failed}`, INNER).map((t) => [{ x: 0, text: t, color: TONES.danger }])
     : body.slice(offset, offset + ROOM)
-  $: foot  = !reply || reply.asking || reply.failed ? 'Esc puts it away'
-    : [`${Math.round(reply.ms / 1000)}s`, reply.cost == null ? 'no model' : `$${reply.cost.toFixed(2)}`,...(last ? [`rows ${offset + 1}–${Math.min(body.length, offset + ROOM)} of ${body.length}, ↑↓ PgUp PgDn`] : []), 'Esc'].join(' · ')
-  $: frame = `${offset}:${reply?.at ?? reply?.ms ?? 0}:${rows.length}:${view.x}:${view.y}`
+  $: picked = filters.find((f) => f.key === filter)
+  $: listed = answer?.blocks.reduce((n, b) => n + (b.kind === 'list' ? b.items.length : 0), 0) ?? 0
+  $: sieve  = picked ? `${picked.label}: ${listed}${String(listed) === picked.value ? '' : ` of ${picked.value} listed`} · Tab next` : filters.length ? 'Tab filters' : null
+  $: foot  = copied ? copied
+    : !reply || reply.asking || reply.failed ? 'Esc puts it away'
+    : [`${Math.round(reply.ms / 1000)}s`, reply.cost == null ? 'no model' : `$${reply.cost.toFixed(2)}`,...(sieve ? [sieve] : []), ...(last ? [`rows ${offset + 1}–${Math.min(body.length, offset + ROOM)} of ${body.length}, ↑↓ PgUp PgDn`] : []), '/ask about this', 'Esc'].join(' · ')
+  $: frame = `${filter}:${offset}:${reply?.at ?? reply?.ms ?? 0}:${rows.length}:${view.x}:${view.y}`
 </script>
 
 {#if reply}
@@ -122,7 +157,7 @@
     {#key frame}
       {#each rows as row, r (r)}
         {#each row as s, i (i)}
-          <pre class="line" {@attach at(2 + s.x, 2 + r, 1)} {@attach tint(s.color)}>{s.text}</pre>
+          <pre class="line" {@attach at(2 + s.x, 2 + r, 1)} {@attach tint(s.color)} {@attach s.url && hyper && linked(s.url, (ok) => { hyper = ok }, copiedLink)}>{s.text}</pre>
         {/each}
       {/each}
     {/key}

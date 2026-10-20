@@ -43,7 +43,7 @@ export const STEPS = [
     what:'Your code, finally. Defaults, enrichment, anything that should happen to the data on the way in.',
     why:'Everything above this line was derived. This is the first point where the framework asks you to write something.' },
 
-  { lane:3, row:3,  tone:'data',      t:'ctx.locals.db', f:'core/litestone.ts',
+  { lane:3, row:3,  tone:'data',      t:'$.db', f:'core/litestone.ts',
     what:'withLitestoneDb() put a per-request Litestone client here when the app was created, already scoped to the caller.',
     why:'Per-request scoping is what lets gates and policies see the user without a single line of wiring in your service.' },
 

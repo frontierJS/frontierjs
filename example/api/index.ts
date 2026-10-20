@@ -34,10 +34,10 @@ const idp  = COOKIE_AUTH && !process.env.IDP_URL ? startIdpSink() : null
 // — could not name them, and the three console.logs that used to sit below
 // `app.start()` were the only record they existed. Registering says it once, in
 // the place `/manifest` and the banner both read.
-if (sink) app.registerDevService({ name: 'mail', url: MAIL_SINK, note: `inbox: ${MAIL_SINK}/  ·  json: ${MAIL_SINK}/outbox` })
-if (psp)  app.registerDevService({ name: 'psp',  url: PSP_URL,   note: `GET ${PSP_URL}/v1/intents` })
-if (stripe) app.registerDevService({ name: 'stripe', url: STRIPE_URL, note: `GET ${STRIPE_URL}/intents · GET ${STRIPE_URL}/events` })
-if (idp)  app.registerDevService({ name: 'idp',  url: IDP_URL,   note: 'dev identity provider' })
+if (sink)   app.registerDevService('mail',   { url: MAIL_SINK,  note: `inbox: ${MAIL_SINK}/  ·  json: ${MAIL_SINK}/outbox` })
+if (psp)    app.registerDevService('psp',    { url: PSP_URL,    note: `GET ${PSP_URL}/v1/intents` })
+if (stripe) app.registerDevService('stripe', { url: STRIPE_URL, note: `GET ${STRIPE_URL}/intents · GET ${STRIPE_URL}/events` })
+if (idp)    app.registerDevService('idp',    { url: IDP_URL,    note: 'dev identity provider' })
 
 await app.start()
 

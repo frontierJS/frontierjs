@@ -63,17 +63,15 @@ title: API keys
     draft = { ...draft, [name]: value }
   }
 
-  async function load() {
-    error = null; loading = true
-    try {
-      const query = filter === 'all' ? {} : { status: filter }
-      rows = (await apiKeys.service.find(query, { limit: 200 })).data
-    } catch (e) {
-      error = e.message
-    } finally {
-      loading = false
-    }
+  // Every key under the filter, not a page — the server refuses a page above
+  // its max. The status filter is the list's state, so a change re-asks.
+  const list = apiKeys.tethered({ state: 'local', all: true })
+  $: {
+    rows    = list.rows
+    loading = list.loading
+    if (list.error) error = list.error.message
   }
+  const load = () => list.apply(filter === 'all' ? {} : { status: filter })
 
   // Collection-level, like `scopes`: the service answers which bots this
   // caller may issue a key to, by the rule create enforces.
@@ -98,7 +96,6 @@ title: API keys
     }
   }
 
-  load()
   loadScopes()
   loadBots()
   $: session.workspaceId, () => { load(); loadScopes(); loadBots() }

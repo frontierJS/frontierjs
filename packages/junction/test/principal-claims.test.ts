@@ -16,6 +16,7 @@ import { createApp, createService, membershipClaim, applyClaims, MEMBERSHIP, ses
 import type { PrincipalResolver } from '../index.ts'
 import type { SessionContext } from '../src/auth/types.ts'
 import type { ServiceContext } from '../src/core/context.ts'
+import { $ } from '../index.ts'
 
 /** find() answers the list envelope; the rows are `.data`. */
 const rowsOf = (r: unknown): any[] => (r as { data: any[] }).data
@@ -90,7 +91,7 @@ async function appWith(db: unknown, principal: PrincipalResolver) {
     name: 'docs',
     async find(ctx: ServiceContext) {
       seen.user = ctx.auth.user
-      return (ctx.locals.db as any).doc.findMany({})
+      return ($.db as any).doc.findMany({})
     },
   }))
   return { app, seen }
@@ -139,7 +140,7 @@ describe('createApp({ principal })', () => {
     const app = createApp({ db })
     app.services.register(createService({
       name: 'docs',
-      async find(ctx: ServiceContext) { return (ctx.locals.db as any).doc.findMany({}) },
+      async find(ctx: ServiceContext) { return ($.db as any).doc.findMany({}) },
     }))
 
     await expect(app.service('docs').find({}, AS_U1)).rejects.toThrow(/carries no 'workspaceId'/)
@@ -147,7 +148,7 @@ describe('createApp({ principal })', () => {
 
   test('the claims are on the PRINCIPAL, not only on the client', async () => {
     // `getTable()` re-derives its own scoped copy from ctx.auth.user, so a
-    // standing that lived only on ctx.locals.db is dropped the moment a service
+    // standing that lived only on $.db is dropped the moment a service
     // touches a model.
     const db = await seeded()
     const { app, seen } = await appWith(db, async () => ({ workspaceId: 1, memberRole: 'admin' }))
@@ -360,7 +361,7 @@ describe('membershipClaim()', () => {
         name: 'docs',
         methods: ['patch'],
         async patch(ctx: ServiceContext) {
-          return (ctx.locals.db as any).doc.update({ where: { id }, data: { title: 'edited' } })
+          return ($.db as any).doc.update({ where: { id }, data: { title: 'edited' } })
         },
       }))
       return app.service('docs').patch(String(id), {}, AS_U1)
@@ -421,7 +422,7 @@ describe('applyClaims()', () => {
       name: 'docs',
       async find(ctx: ServiceContext) {
         applyClaims(ctx, db, { workspaceId: 2 })
-        return (ctx.locals.db as any).doc.findMany({})
+        return ($.db as any).doc.findMany({})
       },
     }))
 
@@ -473,8 +474,8 @@ describe('membershipClaim({ guests })', () => {
     await sys.note.create({ data: { workspaceId: 1, title: 'note one' } })
     await sys.note.create({ data: { workspaceId: 2, title: 'note two' } })
     const app = createApp({ db, principal: resolver(guests) })
-    app.services.register(createService({ name: 'docs',  async find(ctx: ServiceContext) { return (ctx.locals.db as any).doc.findMany({}) } }))
-    app.services.register(createService({ name: 'notes', async find(ctx: ServiceContext) { return (ctx.locals.db as any).note.findMany({}) } }))
+    app.services.register(createService({ name: 'docs',  async find(ctx: ServiceContext) { return ($.db as any).doc.findMany({}) } }))
+    app.services.register(createService({ name: 'notes', async find(ctx: ServiceContext) { return ($.db as any).note.findMany({}) } }))
     return app
   }
 

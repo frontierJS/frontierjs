@@ -2118,8 +2118,8 @@ const CHECKS = {
   },
 
   // A service holding the MODULE client has no principal. Per-request scoping
-  // assigns `ctx.locals.db` — `$.db` is the same client, resolved off the call
-  // in progress — and the module one is the root: `auth()` is null, so every row
+  // puts the caller's client on `$.db`, resolved off the call in progress —
+  // and the module one is the root: `auth()` is null, so every row
   // policy compares against nothing and matches nothing, and a write belongs to
   // nobody in the audit trail. A read answers an empty list with a 200.
   //
@@ -2570,7 +2570,7 @@ const CHECKS = {
     const files = scripts(root, 'api').filter(p => /\.service\.[cm]?[jt]s$/.test(basename(p)))
     if (!files.length) return { skipped: 'no *.service.* under api/' }
 
-    // Only where `db` is an IMPORT. `const db = ctx.locals.db` is the correct
+    // Only where `db` is an IMPORT. `const db = $.db` is the correct
     // shape and cannot coexist with an imported binding of that name — that is
     // a duplicate declaration — so the import is the whole test.
     const IMPORTS_DB = /import\s+(?:db\s+,?\s*(?:{[^}]*})?\s+from|{[^}]*?(?<![\w])db\s*(?:,[^}]*)?}\s*from)/
@@ -2590,7 +2590,7 @@ const CHECKS = {
         findings.push({
           file: path, line,
           message: `${m[0]}… reads the module client, which carries no principal. The request-scoped one ` +
-                   `is ${'`$.db`'} (or ctx.locals.db): through this one auth() is null, so every row policy ` +
+                   `is ${'`$.db`'}: through this one auth() is null, so every row policy ` +
                    `matches nothing — an empty list with a 200 — and a write belongs to nobody in the ` +
                    `audit trail. asSystem() is the deliberate bypass and is not this.`,
         })
@@ -2604,7 +2604,7 @@ const CHECKS = {
   // scope, and the claim comes from the principal. So which client you elevate
   // decides whether the result is scoped at all:
   //
-  //   ctx.locals.db.asSystem()   the caller's tenant, gate and policies crossed
+  //   $.db.asSystem()            the caller's tenant, gate and policies crossed
   //   app.data.asSystem()        no principal, no claim, every tenant
   //
   // The app-level client cannot be named positively — it is `app.own(<any
@@ -2644,8 +2644,8 @@ const CHECKS = {
     const files = scripts(root, 'api').filter(p => /[/\\]services[/\\]/.test(p))
     if (!files.length) return { skipped: 'no api/**/services/** source' }
 
-    const REQUEST = /^(?:ctx\.locals\.db|\$\.db)$/
-    const BOUND   = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:ctx\.locals\.db|\$\.db)\b/g
+    const REQUEST = /^\$\.db$/
+    const BOUND   = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*\$\.db\b/g
 
     // The receiver of a `.asSystem()`, read backwards so a cast survives:
     // `(app.data as any).asSystem()` is the spelling three of basecamp's use.
@@ -2672,7 +2672,7 @@ const CHECKS = {
       const code = readCode(path)
       if (!code.includes('.asSystem')) continue
 
-      // Names this file binds to the request's client — `const db = ctx.locals.db`.
+      // Names this file binds to the request's client — `const db = $.db`.
       const local = new Set()
       for (const m of code.matchAll(BOUND)) local.add(m[1])
 
@@ -2701,7 +2701,7 @@ const CHECKS = {
           file: path, line,
           message: `${recv}.asSystem() elevates a client that carries no principal, so it carries no ` +
                    `tenant claim either — under row tenancy it reads and writes EVERY tenant, with a 200. ` +
-                   `The request's own client is the one to elevate: ctx.locals.db.asSystem() (or $.db), ` +
+                   `The request's own client is the one to elevate: $.db.asSystem(), ` +
                    `which crosses the gate and every policy and stays in the caller's tenant. If crossing ` +
                    `tenants is what you mean — a hub or admin tier — this is correct and this warning is ` +
                    `the place to say so.`,

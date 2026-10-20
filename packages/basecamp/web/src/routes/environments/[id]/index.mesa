@@ -24,8 +24,6 @@ title: Environment
 
   let environment = null
   let project     = null
-  let appRows     = []
-  let releases    = null   // null until read; [] is "never released"
   let editing     = false
   let error       = null
   let loadError   = null
@@ -67,28 +65,29 @@ title: Environment
     try {
       await watch()
       await watchProject(environment.projectId)
-      // The app list is its own read: it is a different service's rows, and
-      // nothing about the environment moving changes which apps sit in it.
-      appRows = (await apps.service.find({ environmentId: page.params.id })).data
     } catch (e) {
       error = e.message; loadError = e
     } finally {
       loading = false
     }
-    loadReleases()
   }
+
+  // The app list is its own read: it is a different service's rows, and
+  // nothing about the environment moving changes which apps sit in it.
+  // Composed, because the apps service includes each app's environment.
+  const appList = apps.tethered({ state: 'local', composed: true, where: { environmentId: page.params.id } })
+  $: appRows = appList.rows
 
   // What shipped HERE, whichever app it was. A release records the environment
   // it went to, so an app moved since still shows where its old releases landed.
   // Not fatal: the environment is the screen, this is a section of it.
+  // Composed, because a release row includes its app. `releases` is null when
+  // the read failed; [] is "never released".
   const RELEASE_LIMIT = 10
-  async function loadReleases() {
-    try {
-      releases = (await deployments.service.find({ environmentId: page.params.id }, { limit: RELEASE_LIMIT })).data
-    } catch {
-      releases = null
-    }
-  }
+  const releaseList = deployments.tethered({
+    state: 'local', composed: true, where: { environmentId: page.params.id }, directives: { limit: RELEASE_LIMIT },
+  })
+  $: releases = releaseList.error ? null : releaseList.rows
 
   load()
   $: page.params.id, () => load()
@@ -134,7 +133,6 @@ title: Environment
         type:          newApp.type,
       })
       newApp  = { name: '', slug: '', type: 'container' }
-      appRows = (await apps.service.find({ environmentId: environment.id })).data
     } catch (e) {
       error = e.message
     } finally {
@@ -176,8 +174,7 @@ title: Environment
     error = null; deploying = app.id
     try {
       await apps.service.remove(app.id)
-      offerUndo(app.name, apps, app.id, (row) => { appRows = [...appRows, row] })
-      appRows = appRows.filter(a => a.id !== app.id)
+      offerUndo(app.name, apps, app.id, () => appList.reload())
     } catch (e) {
       error = e.message
     } finally {

@@ -62,6 +62,12 @@ title: App
   let draft     = domains.make()
   let certDraft = { certPem: '', keyPem: '', expiresAt: '' }
   let fleet     = []                 // the workspace's machines, for the placement select
+  // Every machine, not a page — the server refuses a page above its max. Held
+  // in a `let` rather than read in the markup because a select with no options
+  // and a select still loading look identical, and the difference decides
+  // whether 'Place' is a dead button.
+  const fleetList = servers.tethered({ state: 'local', all: true })
+  $: { fleet = fleetList.rows }
   let placeOn   = ''
   // Declared up here with the rest of the screen's state and not beside the
   // functions that use them: `watchApp` subscribes on the first load and the
@@ -96,10 +102,12 @@ title: App
     error = null; loadError = null
     try {
       await watchApp(page.params.id)
-      // The machines this app could be placed on. Read here rather than in the
-      // markup because a select with no options and a select still loading look
-      // identical, and the difference decides whether 'Place' is a dead button.
-      fleet = (await servers.service.find({}, { limit: 200 })).data
+      // A record view settles on a failed read rather than rejecting, so a
+      // read nothing answered would otherwise draw as a record that is gone.
+      // A 4xx is an answer and stays NoRecord's plain absence.
+      const failed = appRow.error?.()
+      if (failed && (failed.status === 0 || failed.status >= 500))
+        throw Object.assign(new Error(`The app could not be read (${failed.code})`), { code: failed.status })
     } catch (e) {
       // Two readers, and they are not the same question. `error` is the banner
       // over a page that still has its record; `loadError` is why this page has

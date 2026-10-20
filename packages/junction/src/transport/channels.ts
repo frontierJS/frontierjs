@@ -37,7 +37,7 @@ import { createPresenceTracker } from './presence.ts'
 import { AUTO_EVENT_MAP, REMOVAL_EVENTS, markAnnounceHook } from '../core/events.ts'
 import { unwrapResult }         from '../core/envelope.ts'
 import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel, declaredCallHeaders } from '../core/litestone.ts'
-import { PROTOCOL_CALL_HEADERS, acceptedRequestId } from '../core/context.ts'
+import { PROTOCOL_CALL_HEADERS, acceptedRequestId, callDb } from '../core/context.ts'
 import { serviceAccessor }      from '../core/service.ts'
 import { columnsUnmoved }       from '../core/write-narrowing.ts'
 import { wsSend }               from './send-queue.ts'
@@ -1313,7 +1313,7 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
       // `Order`, a modelless service, any Invariant-19 irregular (`FJS-700`).
       const svc = ctx.app?.services?.get?.(ctx.service ?? '') as { model?: string | null } | undefined
       const graded = await gradeRecipients(targets, event, payload, {
-        db:       (ctx as { locals?: { db?: unknown } }).locals?.db,
+        db:       callDb(ctx),
         // A method that declared `answers:` states the accessor itself: the
         // row it answers belongs to another model (`FJS-D914`).
         accessor: accessor ?? serviceAccessor({ name: (ctx as { service?: string }).service ?? '', model: svc?.model }) ?? '',

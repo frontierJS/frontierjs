@@ -38,7 +38,6 @@ title: Disk cleanup
   let targets = []          // the vocabulary, as the service declares it
   let picked  = []          // the target names currently ticked
   let usage   = null
-  let history = []
   let error   = null
   let loading = true
 
@@ -71,13 +70,9 @@ title: Disk cleanup
         targets = (await cleanup.service.invoke('targets', null)).targets
         picked  = targets.filter(t => t.defaultOn).map(t => t.target)
       }
-      const [u, h] = await Promise.all([
-        cleanup.service.invoke('usage', null),
-        cleanup.service.find({}, { limit: 10 }),
-      ])
+      const u = await cleanup.service.invoke('usage', null)
       if (mine !== inflight.seq) return
-      usage   = u
-      history = h.data
+      usage = u
     } catch (e) {
       if (mine === inflight.seq) error = e.message
     } finally {
@@ -86,7 +81,12 @@ title: Disk cleanup
   }
 
   load()
-  $: session.workspaceId, () => load()
+  $: session.workspaceId, () => { load(); historyList.reload() }
+
+  // The last ten sweeps, live: a run the outpost finishes moves its row here.
+  // `usage` is not rows of any table, so the handler below re-asks it.
+  const historyList = cleanup.tethered({ state: 'local', directives: { limit: 10, orderBy: '-createdAt' } })
+  $: history = historyList.rows
 
   // A report from any outpost, and every step of a sweep, land here as a push.
   const READS = new Set(['get', 'find', 'usage', 'targets'])

@@ -10,7 +10,7 @@
  *
  * A `.mesa` file reads an imported object through `watchProxy` and a
  * `$: tab.online` watch, the shape `session` and the router's `page` already
- * have, so a component writes `$: tab.online, () => sheets.load()` and gets
+ * have, so a component writes `$: tab.online, () => sheets.reload()` and gets
  * the handler on the change. Each fact is a getter with a guarded setter: the
  * listener writes through the proxy, which is what fires the watches, and a
  * caller writing one is refused — the browser says these, not the app.

@@ -51,12 +51,11 @@ beforeAll(async () => {
   })
   app.configure(manifestPlugin())
 
-  app.registerDevService({
-    name: 'mail',
+  app.registerDevService('mail', {
     url:  'http://localhost:8111',
     note: 'inbox: http://localhost:8111/',
   })
-  app.registerDevService({ name: 'psp', url: 'http://localhost:8112' })
+  app.registerDevService('psp', { url: 'http://localhost:8112' })
 
   await app.start()
 })
@@ -98,14 +97,14 @@ describe('registerDevService', () => {
   })
 
   it('is keyed by name, so a re-register replaces', () => {
-    app.registerDevService({ name: 'psp', url: 'http://localhost:9112' })
+    app.registerDevService('psp', { url: 'http://localhost:9112' })
     expect(app._devServices.size).toBe(2)
     expect(app._devServices.get('psp').url).toBe('http://localhost:9112')
   })
 
   it('refuses a service that cannot be reached or named', () => {
-    expect(() => app.registerDevService({ name: 'x' } as any)).toThrow(/name and a url/)
-    expect(() => app.registerDevService({ url: 'http://x' } as any)).toThrow(/name and a url/)
+    expect(() => app.registerDevService('x', {} as any)).toThrow(/name and a url/)
+    expect(() => app.registerDevService('', { url: 'http://x' })).toThrow(/name and a url/)
   })
 })
 
@@ -143,7 +142,7 @@ describe('registerDevService supervises nothing', () => {
       config: { port: 0, http: { ...defaultConfig.http, drainTimeout: 200 } },
     }) as any
     try {
-      quiet.registerDevService({ name: 'probe', url: `http://127.0.0.1:${probe.port}` })
+      quiet.registerDevService('probe', { url: `http://127.0.0.1:${probe.port}` })
       await quiet.start()
       await new Promise(r => setTimeout(r, 50))
 

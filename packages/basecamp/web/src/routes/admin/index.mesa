@@ -32,6 +32,9 @@ title: Members
   // hand and there is no second copy of the rule to fall out of step.
   let canInvite = false
 
+  const invites = invitations.tethered({ state: 'local' })
+  $: { pending = canInvite ? invites.rows : [] }
+
   // What an invite just minted. Held until dismissed, because the link is shown
   // ONCE — `Invitation.token` is `@guarded`, so no later read can answer
   // it, exactly like an issued API key.
@@ -66,7 +69,8 @@ title: Members
       // gets a refusal here and a members list all the same. Swallowed rather
       // than raised for that reason: an empty pending list is the truthful
       // answer for somebody who may not see them.
-      pending = await invitations.load().then(rows => (canInvite = true, rows)).catch(() => (canInvite = false, []))
+      await invites.reload()
+      canInvite = !invites.error
     } catch (e) {
       error = e.message
     } finally {

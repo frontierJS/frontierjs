@@ -20,7 +20,7 @@ import { describe, test, expect } from 'bun:test'
 
 import { createClient }                from '../../litestone/src/index.js'
 import { callService, buildService }  from '../src/core/service.ts'
-import { withCallEffects }             from '../src/core/context.ts'
+import { withCallEffects, setCallDb }  from '../src/core/context.ts'
 import type { ServiceContext }         from '../src/core/context.ts'
 
 // The SHIPPED fragment, not a copy of it: an outbox model this file wrote and
@@ -46,12 +46,12 @@ const mkDb = () => createClient({ databases: ':memory:', schema: SCHEMA }) as un
 const appWithRelay = () => ({ outbox: { enqueue: enqueueOutbox, deliver: async () => ({ delivered: 0, failed: 0 }) } })
 
 function ctx(db: unknown, over: Record<string, unknown> = {}): ServiceContext {
-  return withCallEffects({
+  return setCallDb(withCallEffects({
     service: 'posts', method: 'create', id: null, data: { title: 't' },
     query: {}, directives: {}, auth: { user: null }, caller: { headers: {} }, route: {},
-    locals: { db }, app: appWithRelay(), result: null, error: null, type: 'before',
-    transport: 'internal', model: 'posts', $raw: null, ...over,
-  } as unknown as Parameters<typeof withCallEffects>[0])
+    locals: {}, app: appWithRelay(), result: null, error: null, type: 'before',
+    transport: 'internal', model: 'posts', raw: null, ...over,
+  } as unknown as Parameters<typeof withCallEffects>[0]), db)
 }
 
 const rows = (db: any) => db.asSystem().outboxMessage.findMany({ orderBy: { createdAt: 'asc' } })
@@ -61,7 +61,7 @@ const shippingService = (extra: Record<string, unknown> = {}) => buildService({
   name:          'posts',
   transactional: ['create'],
   async create(c: ServiceContext) {
-    const post = await (c.locals.db as any).post.create({ data: c.data })
+    const post = await ($.db as any).post.create({ data: c.data })
     await c.enqueue('order.shipped', { postId: post.id })
     return post
   },
@@ -93,7 +93,7 @@ describe('ctx.enqueue — the row commits with the write', () => {
       name:          'posts',
       transactional: ['create'],
       async create(c: ServiceContext) {
-        await (c.locals.db as any).post.create({ data: c.data })
+        await ($.db as any).post.create({ data: c.data })
         await c.enqueue('order.shipped', { postId: 1 })
         throw new Error('the courier refused')
       },
@@ -124,7 +124,7 @@ describe('ctx.enqueue — the row commits with the write', () => {
       name:          'posts',
       transactional: ['create'],
       async create(c: ServiceContext) {
-        const post = await (c.locals.db as any).post.create({ data: c.data })
+        const post = await ($.db as any).post.create({ data: c.data })
         await c.enqueue('sweep', {}, { actor: null })
         return post
       },
@@ -238,7 +238,7 @@ describe('ctx.enqueue — the relay kick', () => {
 
 // ─── the relay under database-per-tenant ─────────────────────────────────────
 //
-// `FJS-365`: the row is written through `ctx.locals.db`, which is THIS TENANT's
+// `FJS-365`: the row is written through `$.db`, which is THIS TENANT's
 // client, and the relay read `app.db`. Every guard passed — the tenant file
 // carries the same schema so the enqueue was accepted, and `createApp({
 // tenants })` sets no `db`, so the relay reported a clean pass over an empty
@@ -246,6 +246,7 @@ describe('ctx.enqueue — the relay kick', () => {
 
 import { deliverOutbox, pendingOutbox, enqueueOutbox } from '../src/plugins/outbox/engine.ts'
 import type { App } from '../src/core/app.ts'
+import { $ } from '../src/core/context.ts'
 
 /** Two tenants, each its own in-memory client with the outbox model. */
 async function tenantRegistry() {
@@ -335,7 +336,7 @@ describe('the relay under tenancy { strategy row }', () => {
     const jobs = fakeQueue()
     const svc  = shippingService()
 
-    await callService(svc, ctx(db, { app: appWithRelay(), locals: { db, tenantId: 'acme' } }))
+    await callService(svc, ctx(db, { app: appWithRelay(), locals: { tenantId: 'acme' } }))
     const [row] = await rows(db)
     expect(row.actorId).toBeNull()
     expect(row.tenantId).toBe('acme')

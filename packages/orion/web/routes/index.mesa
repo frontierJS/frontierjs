@@ -4,8 +4,8 @@ title: Automations
 <script>
   // Every flow this caller can read, and a way to start one.
   import Flow, { flows } from '../resources/Flow.mesa'
-  import { session, useTether } from '@frontierjs/sierra/resource'
-  import { page, goto } from '@frontierjs/sierra/router'
+  import { session } from '@frontierjs/sierra/resource'
+  import { goto } from '@frontierjs/sierra/router'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
@@ -24,18 +24,13 @@ title: Automations
   // A tone per status, never a color (Invariant 13).
   const TONE = { draft: 'muted', active: 'success', paused: 'warning', archived: 'muted' }
 
-  const { get: rows, unsubscribe } = useTether(flows.tether)
-  $.onDestroy(unsubscribe)
+  const list = flows.tethered({ directives: { orderBy: '-updatedAt' } })
+  const rows = () => list.rows
   $: (session.level)
 
   let error   = null
   let editing = null
 
-  function load() {
-    flows.load(page.query, { orderBy: '-updatedAt', ...page.directives }).catch(e => { error = e.message })
-  }
-  load()
-  $: page.query, page.directives, () => load()
 
   $: canCreate = flows.can('create', session.level)
 
@@ -66,7 +61,7 @@ title: Automations
   {/snippet}
 </SectionHeader>
 
-{#if error}<Alert tone="danger" id="orion-error">{error}</Alert>{/if}
+{#if error || list.error}<Alert tone="danger" id="orion-error">{error ?? list.error.message}</Alert>{/if}
 
 <Table {columns} rows={rows()} striped hover>
   {#snippet row(f)}

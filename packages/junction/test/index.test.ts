@@ -343,9 +343,9 @@ import type { HookMap }        from '../src/core/hooks.ts'
 // Built through withCallEffects rather than as a bare literal: a context that
 // cannot run `ctx.afterCommit(…)` is not the context a hook is handed, and a
 // hook test over one would pass against a pipeline nobody can use.
-// The overrides are the builder's half of the context, not the queue's: the
-// two fields withCallEffects adds are what it refuses to be handed.
-type CtxSeed = Omit<ServiceContext, 'afterCommit' | '_afterCommit'>
+// The overrides are the builder's half of the context: the fields
+// withCallEffects adds are what it refuses to be handed.
+type CtxSeed = Omit<ServiceContext, 'afterCommit' | 'enqueue' | 'system'>
 
 function makeCtx(overrides: Partial<CtxSeed> = {}): ServiceContext {
   return withCallEffects({
@@ -368,7 +368,7 @@ function makeCtx(overrides: Partial<CtxSeed> = {}): ServiceContext {
     result:    null,
     error:     null,
     signal:    new AbortController().signal,
-    $raw:      null,
+    raw:       null,
     ...overrides
   })
 }
@@ -655,7 +655,7 @@ describe('v.required completeness', () => {
   })
 })
 
-import { protect }       from '../src/core/hooks.ts'
+import { protect }       from '../src/core/hooks-builtin.ts'
 import { createTestApp as makeApp2, request as req2 } from '../src/testing/index.ts'
 // Alias to avoid collisions with later imports in the same file
 const _createTestApp = (o: Parameters<typeof makeApp2>[0]) => makeApp2(o)
@@ -1360,7 +1360,7 @@ describe('Bridge', () => {
   it('internal() creates context without HTTP', () => {
     const ctx = bridge.internal('users', 'create', { name: 'Alice' })
     expect(ctx.transport).toBe('internal')
-    expect(ctx.$raw).toBeNull()
+    expect(ctx.raw).toBeNull()
     expect(ctx.data).toEqual({ name: 'Alice' })
   })
 })
@@ -2509,7 +2509,7 @@ describe('Bidirectional WS service calls', () => {
 // Tests for everything added/fixed in the review session
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { authenticate, requireRole, circuitBreaker } from '../src/core/hooks.ts'
+import { authenticate, requireRole, circuitBreaker } from '../src/core/hooks-builtin.ts'
 import { correlationId }                from '../src/transport/middleware.ts'
 import { health }                 from '../src/transport/health.ts'
 import { Forbidden, Unavailable } from '../src/core/errors.ts'
@@ -2866,7 +2866,7 @@ describe('circuitBreaker', () => {
 
 // ─── rateLimit hook ───────────────────────────────────────────────────────
 
-import { rateLimit } from '../src/core/hooks.ts'
+import { rateLimit } from '../src/core/hooks-resilience.ts'
 import { TooManyRequests } from '../src/core/errors.ts'
 import type { SessionContext } from '../src/auth/types.ts'
 

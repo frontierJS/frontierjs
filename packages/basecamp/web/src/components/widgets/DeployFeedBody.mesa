@@ -6,30 +6,19 @@
   // actually has, and inventing a project filter in the browser would mean
   // fetching every app first to decide which deployments to keep.
   import { deployments, DEPLOY_TONE } from '../../resources/Deployment.mesa'
-  import { onWrite } from './live.js'
   import { at } from '../../datetime.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
   export let widget = null
 
-  let rows    = []
-  let error   = null
-  let loading = true
-
-  async function load() {
-    error = null
-    try {
-      rows = (await deployments.service.find(
-        widget?.appId ? { appId: widget.appId } : {}, { limit: 6 })).data
-    } catch (e) {
-      error = e.message
-    } finally {
-      loading = false
-    }
-  }
-
-  load()
-  $.onDestroy(onWrite(deployments.service, load))
+  // Composed, because a deployment row includes its app. `const`: a widget
+  // whose subject changes is re-rendered by the page, not mutated here.
+  const list = deployments.tethered({
+    state: 'local', composed: true, where: widget?.appId ? { appId: widget.appId } : {}, directives: { limit: 6 },
+  })
+  $: rows    = list.rows
+  $: error   = list.error?.message ?? null
+  $: loading = list.loading && !list.rows.length
 
 </script>
 

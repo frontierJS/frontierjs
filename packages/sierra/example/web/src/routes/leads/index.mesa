@@ -4,16 +4,13 @@ title: Leads
 <script>
   import { leads } from '../../resources/Lead.mesa'
   import { session } from '../../session.js'
-  import { useTether } from '@frontierjs/sierra/resource'
 
-  const { get: rows, unsubscribe } = useTether(leads.tether)
-  $.onDestroy(unsubscribe)
+  const list = leads.tethered()
+  const rows = () => list.rows
 
   $: session.level
 
   let error = null
-
-  leads.load().catch(e => { error = e.message })
 
   // The schema says delete needs level 5. Asking before rendering is the only
   // reason this button can be disabled rather than 403-ing on click — and it is
@@ -36,9 +33,9 @@ title: Leads
   <a class="btn primary" href="/leads/create/">New lead</a>
 </div>
 
-{#if error}
+{#if error || list.error}
   <article class="alert danger">
-    <div class="alert-content">{error}</div>
+    <div class="alert-content">{error ?? list.error.message}</div>
   </article>
 {/if}
 

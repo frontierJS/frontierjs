@@ -68,6 +68,13 @@ title: Blueprints
   let search     = ''
   let showGone   = false
 
+  // Composed, because the service's find answers each blueprint's `params`,
+  // which a pushed row does not carry. A composed list cannot be `all`, so it
+  // asks for the server's largest page.
+  const list = blueprints.tethered({ state: 'local', composed: true, directives: { limit: 100 } })
+  $: { rows = list.rows }
+  $: { if (list.error) error = list.error.message }
+
   async function load() {
     error = null; loading = true
     try {
@@ -75,9 +82,7 @@ title: Blueprints
       // not a client-side one: a withdrawn blueprint is out of the list by
       // default and still readable by id, because the apps built from it point
       // at it.
-      const query = showGone ? { includeDeprecated: 'true' } : {}
-      const list  = await blueprints.service.find(query, { limit: 200 })
-      rows        = list.data
+      list.apply(showGone ? { includeDeprecated: 'true' } : {})
       categories  = (await blueprints.service.invoke('categories', null)).categories
     } catch (e) {
       error = e.message
@@ -225,6 +230,19 @@ title: Blueprints
   let envOptions  = []
   let srvOptions  = []
   let deployError = null
+
+  // The workspace's own environments and machines — the catalog is shared,
+  // where it lands is not. Every row of each, not a page.
+  const envList  = environments.tethered({ state: 'local', all: true })
+  const projList = projects.tethered({ state: 'local', all: true })
+  const srvList  = servers.tethered({ state: 'local', all: true })
+  $: session.workspaceId, () => { envList.reload(); projList.reload(); srvList.reload() }
+  $: {
+    const projectName = Object.fromEntries(projList.rows.map(p => [p.id, p.name]))
+    envOptions = envList.rows.map(e => ({ value: e.id, label: `${projectName[e.projectId] ?? '—'} / ${e.name}` }))
+    srvOptions = srvList.rows.filter(x => x.status === 'online')
+                             .map(x => ({ value: x.id, label: x.name }))
+  }
   let sending     = false
 
   async function openDeploy(bp) {
@@ -232,22 +250,9 @@ title: Blueprints
     deploying   = bp
     deployForm  = { environmentId: '', name: bp.name, serverId: '',
                     values: Object.fromEntries(bp.params.map(p => [p.key, ''])) }
-    try {
-      // The workspace's own environments and machines — the catalog is shared,
-      // where it lands is not.
-      const [envs, prjs, srvs] = await Promise.all([
-        environments.service.find({}, { limit: 200 }),
-        projects.service.find({}, { limit: 200 }),
-        servers.service.find({}, { limit: 200 }),
-      ])
-      const projectName = Object.fromEntries(prjs.data.map(p => [p.id, p.name]))
-      envOptions = envs.data.map(e => ({ value: e.id, label: `${projectName[e.projectId] ?? '—'} / ${e.name}` }))
-      srvOptions = srvs.data.filter(x => x.status === 'online')
-                            .map(x => ({ value: x.id, label: x.name }))
-      if (envOptions.length === 1) deployForm = { ...deployForm, environmentId: envOptions[0].value }
-    } catch (e) {
-      deployError = e.message
-    }
+    const failed = envList.error ?? projList.error ?? srvList.error
+    if (failed) deployError = failed.message
+    if (envOptions.length === 1) deployForm = { ...deployForm, environmentId: envOptions[0].value }
   }
 
   const setValue = (key, v) => deployForm = { ...deployForm, values: { ...deployForm.values, [key]: v } }

@@ -2,7 +2,7 @@
 // Projects — the unit a workspace organizes environments under.
 //
 // Mounted at /projects. Zero raw SQL: every read and write goes through the
-// caller-scoped Litestone client on $.locals.db.
+// caller-scoped Litestone client on $.db.
 //
 // The hand-written CreateProjectSchema/PatchProjectSchema are gone.
 // `model: 'Project'` derives validation from db/schema.lite, so the field

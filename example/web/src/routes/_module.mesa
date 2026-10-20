@@ -3,7 +3,7 @@ siteName: Kitchen sink
 ---
 <script>
   import { page, isActive, goto } from '@frontierjs/sierra/router'
-  import { session, signIn, submitCode, signOut, status, getClient } from '@frontierjs/sierra/resource'
+  import { session, signIn, completeSignIn, signOut, status, getClient } from '@frontierjs/sierra/resource'
   import { cart, refresh as refreshCart } from '@/stores/cart.js'
 
   import AccountStatus  from '@frontierjs/ui/components/display/AccountStatus.mesa'
@@ -31,30 +31,27 @@ siteName: Kitchen sink
   import { groups } from '@/lib/nav.js'
 
   import { notifications, isUnread } from '../resources/Notification.mesa'
-  import { useTether } from '@frontierjs/sierra/resource'
 
   $: (session.oauthError, session.oauthMessage)
 
-  // The bell. `notifications` is a resource like any other, and the store is
+  // The bell. `notifications` is a resource like any other, and its rows are
   // fed by the same WS events every other table uses — the inApp driver
   // publishes to `notifications:user:<id>`, api/src/app.ts joins a signed-in
   // connection to it, and nothing here polls.
-  const { get: notes, unsubscribe: unsubNotes } = useTether(notifications.tether)
-  $.onDestroy(unsubNotes)
+  const bell  = notifications.tethered({ state: 'local' })
+  const notes = () => bell.rows
 
   // Reload on sign-in and sign-out, not once at mount: the list is scoped to
   // the caller by the model's own row policy, so a session change is a
   // different list. Signed out it is empty and the bell does not render.
-  // A block, not a bare `if` — Mesa's `$:` takes an expression or a block, and
-  // the compiler says so by name rather than emitting something that half works.
-  $: { if (session.user) notifications.load().catch(() => {}) }
+  $: session.user, () => { if (session.user) bell.reload() }
 
   $: unread = notes().filter(isUnread).length
 
   // The bell groups rather than sorts: an unread row and a read one are two
   // different things to a reader, so the menu says so with a label over each
   // and a rule between them, instead of relying on a tone the eye has to
-  // decode. Both lists come off the same store.
+  // decode. Both lists come off the same tether.
   $: fresh  = notes().filter(isUnread)
   $: seen   = notes().filter(n => !isUnread(n))
 
@@ -163,7 +160,7 @@ siteName: Kitchen sink
 
   async function verify() {
     codeBusy = true
-    try { await submitCode(code.trim()); code = '' } catch {} finally { codeBusy = false }
+    try { await completeSignIn(code.trim()); code = '' } catch {} finally { codeBusy = false }
   }
 
   const lapses = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -261,12 +258,12 @@ siteName: Kitchen sink
       <Button tone="primary"  onclick={() => as('admin')} disabled={busy}>Sign in (admin)</Button>
       <a class="navlink" id="nav-sign-in" href="/sign-in/">Sign in…</a>
       {#each providers as name}
-        <!-- signInWith LEAVES THE PAGE — the flow is a browser navigation, so
+        <!-- signInWithProvider LEAVES THE PAGE — the flow is a browser navigation, so
              nothing after it runs and there is no promise to await. -->
         <Button
           treatment="ghost"
           data-oauth={name}
-          onclick={() => getClient().auth.signInWith(name, { returnTo: page.pathname + page.search })}
+          onclick={() => getClient().auth.signInWithProvider(name, { returnTo: page.pathname + page.search })}
         >Continue with {name}</Button>
       {/each}
     {/if}

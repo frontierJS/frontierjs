@@ -54,7 +54,7 @@ title: Project
   // than a filter. The workspace is already on the header. A different project
   // is a different route key, and the router remounts this page for it, so a
   // scope read once here cannot go stale.
-  const envList = environments.list({ state: 'local', where: { projectId: page.params.id } })
+  const envList = environments.tethered({ state: 'local', where: { projectId: page.params.id } })
 
   async function load() {
     error = null; loadError = null; loading = true

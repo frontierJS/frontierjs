@@ -3,19 +3,16 @@
   // line of this member's is named in presence as `hushed`, so every screen
   // stops drawing it (`crowd.js`); a line said afterward is a bubble again.
   // Draws nothing.
-  import { useTether } from '@frontierjs/sierra/resource'
-  import { messages } from '@/resources/Message.mesa'
 
   export let here
   export let hush
+  export let lines = []
 
   var verbs = $context.commands
-  const { get: lines, unsubscribe } = useTether(messages.tether)
-  $.onDestroy(unsubscribe)
 
   function clear() {
     const me = String(here.get().self?.userId)
-    const mine = lines().find((l) => String(l.memberId) === me)
+    const mine = lines.find((l) => String(l.memberId) === me)
     if (!mine) return 'nothing over your head'
     hush(mine.id)
     return 'cleared'

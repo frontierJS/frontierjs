@@ -105,9 +105,12 @@ function clearEnv() {
  * `initJunction` writes module state and `ready` resolves once, so a test that
  * boots the app needs its own instance of the module graph.
  */
+let tetherOf
 async function freshJunction() {
   vi.resetModules()
-  return import('../src/resource/index.js')
+  const J = await import('../src/resource/index.js')
+  ;({ tetherOf } = await import('../src/resource/resource.js'))
+  return J
 }
 
 beforeEach(installEnv)
@@ -339,20 +342,20 @@ describe('a tether when the person at the machine changes', () => {
     J.initJunction({ url: API })
     J.getClient().setToken('tok-A')
     const orders = J.createResource('order')
-    orders.tether.set([{ id: 1, secret: 'ALICE-PRIVATE-1' }])
+    tetherOf(orders).tether.set([{ id: 1, secret: 'ALICE-PRIVATE-1' }])
     return { J, orders }
   }
 
   test('is emptied when the token changes', async () => {
     const { J, orders } = await bootedWithAResource()
-    expect(orders.tether.get()).toHaveLength(1)
+    expect(tetherOf(orders).tether.get()).toHaveLength(1)
     J.getClient().setToken(null)
-    expect(orders.tether.get()).toEqual([])
+    expect(tetherOf(orders).tether.get()).toEqual([])
   })
 
   test('and is left alone while nobody signs out — a reset that fired on everything would pass the row above', async () => {
     const { orders } = await bootedWithAResource()
-    expect(orders.tether.get()).toHaveLength(1)
+    expect(tetherOf(orders).tether.get()).toHaveLength(1)
   })
 })
 
@@ -406,25 +409,25 @@ describe('a tether when a support episode starts or ends', () => {
     J.initJunction({ url: API })
     J.getClient().setToken('tok-OPERATOR')
     const orders = J.createResource('order')
-    orders.tether.set([{ id: 1, secret: 'OPERATOR-ONLY' }])
+    tetherOf(orders).tether.set([{ id: 1, secret: 'OPERATOR-ONLY' }])
     return { J, orders }
   }
 
   test('is emptied when the episode starts', async () => {
     const { J, orders } = await bootedWithAResource()
     J.getClient().emit('support:started', { subjectId: 'u2', endsAt: 'x' })
-    expect(orders.tether.get()).toEqual([])
+    expect(tetherOf(orders).tether.get()).toEqual([])
   })
 
   test('is emptied when the episode ends', async () => {
     const { J, orders } = await bootedWithAResource()
     J.getClient().emit('support:ended', { ended: true })
-    expect(orders.tether.get()).toEqual([])
+    expect(tetherOf(orders).tether.get()).toEqual([])
   })
 
   test('and is left alone when endSupport found no episode to end', async () => {
     const { J, orders } = await bootedWithAResource()
     J.getClient().emit('support:ended', { ended: false })
-    expect(orders.tether.get()).toHaveLength(1)
+    expect(tetherOf(orders).tether.get()).toHaveLength(1)
   })
 })

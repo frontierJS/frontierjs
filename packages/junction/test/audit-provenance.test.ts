@@ -22,7 +22,7 @@ import { createApp }    from '../src/core/app.ts'
 import { collectMetrics } from '../src/transport/health.ts'
 import { createService } from '../src/core/service.ts'
 import { enterRequest } from '../src/core/context.ts'
-import { bearerClaim, header } from '../index.ts'
+import { bearerClaim, header } from '../src/core/bearer.ts'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
 import { auditDatabase } from './audit-trail-model.ts'
 

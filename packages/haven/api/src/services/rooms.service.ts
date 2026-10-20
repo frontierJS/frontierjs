@@ -5,7 +5,8 @@
 // `traces` is the room's memory (`IDEAS/haven.md` 7.4, 9.5): footprints, the
 // pieces a bolt broke and the walls it scorched, which a joiner reads once and
 // then lays the rest of from the moves presence shows it and the `bolt` events.
-import { createService, $, BadRequest, NotFound, TooManyRequests, rateLimitHook } from '@frontierjs/junction'
+import { createService, $, BadRequest, NotFound, TooManyRequests } from '@frontierjs/junction'
+import { rateLimitHook } from '@frontierjs/junction/hooks'
 import type { Channel } from '@frontierjs/junction'
 
 import type { HavenApp } from '../app.ts'

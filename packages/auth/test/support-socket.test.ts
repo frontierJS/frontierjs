@@ -35,7 +35,7 @@ beforeAll(async () => {
   app.configure(auth({
     auth: h.auth,
     services: { level: levelOf },
-    canStartSupport: (op) => op.role === 'sysadmin',
+    canStartSupport: ({ operator }) => operator.role === 'sysadmin',
     loginRateLimit: { max: 10_000, window: '15 minutes' },
   }))
   // The socket: an app with channels upgrades one, as every Sierra app does.

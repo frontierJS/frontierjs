@@ -74,8 +74,8 @@ What a habit from another framework produces, and what this package wants.
 | `router.push(url)` | `goto(path, query?, { replace, scroll })` |
 | `page.path`, `to.path` | `page.pathname` and `page.search` — `path` reads `undefined` |
 | `page.params.status` for `?status=paid` | `page.query.status`; `?$limit=20` is `page.directives.limit` |
-| `useQuery(['orders'], fetch)`, `fetch('/api/orders')` in a component | `orders.list()`, or `orders.load(page.query, page.directives)` |
-| `orders.service.find({ limit: 20 })` | `find(query, directives)` — the first argument is FILTERS: `find({}, { limit: 20 })`, answering `{ data, total }` where `load()` answers the rows |
+| `useQuery(['orders'], fetch)`, `fetch('/api/orders')` in a component | `orders.tethered()` — the one door a screen lists rows through |
+| `orders.service.find({ limit: 20 })` | `find(query, directives)` — the first argument is FILTERS: `find({}, { limit: 20 })`, answering `{ data, total }` where `tethered().rows` is the rows |
 | `await orders.service.get(id)` kept in a variable | `orders.record(id)` — a live view |
 | `resources/orders.js`, two resources in one file | `resources/Order.mesa` exporting `orders`, one per file |
 | hand-written inputs plus a submit handler | `<Order />`, or `<Form resource={orders}>` |
@@ -104,7 +104,7 @@ title: Orders
 
   const { columns } = orders.columns()          // ranked from the schema
   const { filters, search } = orders.filters()
-  const list = orders.list()                    // the URL is the state
+  const list = orders.tethered()                // the URL is the state
 </script>
 
 <FilterBar {filters} {search} value={list.query} directives={list.directives} onchange={list.apply} />
@@ -119,8 +119,10 @@ title: Orders
 The kit's components, their callbacks and what a `<Table>` needs are
 `node_modules/@frontierjs/ui/AGENTS.md`.
 
-`list()` owns the tether, the load, the re-run when the URL changes and the keyset
-window. `list({ state: 'local', where: { projectId } })` is an embedded list that
+`tethered()` owns the tether, the load, the re-run when the URL changes and the keyset
+window, and is the only way a screen lists rows: the resource has no `tether`, `load`,
+`more` or `stale` of its own (`FJS-D1318`). What it starts on beneath the URL is the
+resource file's `tetheredQuery: { query, directives }`. `tethered({ state: 'local', where: { projectId } })` is an embedded list that
 writes nothing to the address bar. A list over a filter is its own: one stating
 `where` or `query` keeps its own rows, so a page holds a list per filter, and one
 stating neither is the resource's tether. **`where` is fixed for the list's life and
@@ -128,8 +130,9 @@ is laid over the filters on every load**, so a bar or an `apply()` can never wid
 it — and a tab that re-states `where` per tab is ANDed with the last, filtering to
 nothing. A filter the user moves (tabs, a status switch) is state, not scope: start
 it with `query: { status: 'open' }` and move it with `list.apply({ ...list.query, status })`.
-Keep `where` for what the list is scoped to (`projectId`). A list you wire by hand reads the tether with
-`useTether(orders.tether)` and re-runs on `$: page.query, page.directives, () => load()`.
+Keep `where` for what the list is scoped to (`projectId`). A dock or widget that only
+shows the rows is `tethered({ state: 'local' })`; every row rather than a page is
+`{ all: true }` — never a `service.find` above the server's page max, which is refused.
 
 ```js
 // src/routes/blog/[slug].meta.js
@@ -272,7 +275,7 @@ q.durable                         // false = memory only, a reload loses the que
 Nothing but a console warning says so — a screen that promises *will sync* shows
 `rejected()`.
 
-**Reads: `load()` and `list()` answer from the device when the server is SILENT,
+**Reads: `tethered()` answers from the device when the server is SILENT,
 never when it refuses.** `orders.cachedAt()` is non-null while the rows on screen
 came off the device — render it (*as of 14:02*) rather than presenting old rows as
 live. What the device holds is what screens loaded, plus each resource's declared
@@ -437,8 +440,7 @@ Everything above is loud. These are not.
 
 - **A patch can take a row OUT of a live list.** A tether means the query that
   filled it, so a row edited out of the filter is removed. Past the first page a
-  pushed row is not inserted — it is counted on `orders.stale` for a
-  *3 new — refresh* affordance.
+  pushed row is not inserted; `list.reload()` asks again.
 
 - **A `@money` column is an integer of minor units.** `{order.total}` prints a
   price a hundred times too big. Render it with `<Cell value={…} column={c} />`
@@ -460,8 +462,7 @@ Everything above is loud. These are not.
 3. Every `page.*`, `session.*` or `status.*` a component renders is named in a `$:`.
 4. Filters travel as `page.query`, directives as `page.directives`; no `$`-key
    is hand-built into an object.
-5. A kept row is `record(id)`, released with its component; a list is `list()` or a
-   watched tether.
+5. A kept row is `record(id)`, released with its component; a list is `tethered()`.
 6. Money is rendered through the declaration, never as the integer.
 7. A `site/` route declaring `render: static` has `db:` in its surface config, a
    `getStaticPaths` if it is dynamic, a `select:` on every read of a gated model,

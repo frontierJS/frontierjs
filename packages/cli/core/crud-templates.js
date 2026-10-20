@@ -268,18 +268,18 @@ ${idFieldLine(o.res)}
 
   // ── The list ─────────────────────────────────────────────────────────────
   //
-  // list() owns what this page used to wire by hand: the store, the load, its
-  // re-run when the filters change, and the window. The URL is the state -- a
+  // tethered() owns what this page used to wire by hand: the tether, the load,
+  // its re-run when the filters change, and the window. The URL is the state -- a
   // filtered list is a LINK, copied, bookmarked and survived by the back button
   // -- so apply() and sort() navigate and the change comes back through the
-  // router. The resource file's listQuery is what it starts on, and a page
+  // router. The resource file's tetheredQuery is what it starts on, and a page
   // wanting a different default passes directives: { orderBy: '...' } here.
   //
   // The bar is handed BOTH halves, because it hands back the whole query it
   // holds: given the filters alone, the first keystroke in a filter box would
   // drop the sort a header just set. The table is handed the same orderBy the
   // load sends, or it is sorted with no arrow and its header never reverses.
-  const list = ${o.res}.list()
+  const list = ${o.res}.tethered()
 
   let error = null
 

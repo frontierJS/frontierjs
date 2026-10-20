@@ -26,6 +26,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createChannelManager, gradeRecipients } from '../src/transport/channels.ts'
 import type { ServiceContext } from '../src/core/context.ts'
+import { setCallDb } from '../src/core/context.ts'
 
 type Manager = ReturnType<typeof createChannelManager>
 
@@ -76,7 +77,7 @@ function boundary(decide: (principal: any, row: any) => any, grading: 'open' | '
 }
 
 const ctxFor = (db: unknown, service = 'orders'): ServiceContext =>
-  ({ service, locals: { db }, app: {} } as unknown as ServiceContext)
+  setCallDb({ service, locals: {}, app: {} } as unknown as ServiceContext, db)
 
 const ROW = { id: 1, reference: 'ORD-1001', total: 4194, userId: 'u-owner' }
 

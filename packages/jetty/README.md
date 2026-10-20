@@ -179,7 +179,7 @@ as the frame the socket would have carried, Harbor's client makes it, and pushes
 come back over the port. So the tether, query matching, `stale` and
 `save()`'s patch-what-changed all behave as they do on a web page. A call only
 HTTP can carry (a file upload, a filtered bulk write, a findFirst) is refused by
-name. Sign-in is `login()` / `submitCode()` / `logout()` from the same import,
+name. Sign-in is `signIn(email, password)` / `completeSignIn(code)` / `signOut()` from the same import,
 because Harbor holds the token.
 
 ## What's not yet done

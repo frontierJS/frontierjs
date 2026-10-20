@@ -64,14 +64,13 @@ import {
   createLogger,
   channels,
   announce,
-  authenticate,
-  protect,
   health,
   correlationId,
   requestLogger,
   cors,
   defaultConfig,
 } from '../index.ts'
+import { authenticate, protect } from '../src/core/hooks-builtin.ts'
 import { openapi } from '../src/plugins/openapi/index.ts'
 import { mail, type IMail, type MailMessage, type SendResult } from '../src/mail/index.ts'
 
@@ -332,7 +331,7 @@ app.services.register(
 
     // Custom method: POST /api/leads with header `x-service-method: getStats`
     // Returns aggregate stats across all leads. The service has access to
-    // the per-request scoped Litestone client via ctx.locals.db (set by
+    // the per-request scoped Litestone client via $.db (set by
     // withLitestoneDb), so authorization is honored automatically — a
     // STRANGER caller will only see what `0.4.4.5`'s read level allows.
     async getStats(ctx: ServiceContext) {

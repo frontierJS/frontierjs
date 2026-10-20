@@ -20,7 +20,7 @@
 //   - a refusal crosses the port with its status and data
 //   - a call only HTTP can carry is refused by name
 //   - a custom method relays
-//   - login/logout (mocked port)
+//   - signIn/signOut (mocked port)
 //   - getConnectionState reflects port lifecycle + session events
 
 let pass = 0
@@ -191,22 +191,21 @@ group('a Resource over Harbor, against a real Junction app')
 
   const orders = createResource('orders', { app: harborApp() })
 
-  // load → the rows, and the store
-  const loaded = await orders.load({ status: 'paid' })
-  if (loaded.map(r => r.id).join() === '1,2') ok('load() relays through Harbor and answers the rows')
-  else bad('load() rows', JSON.stringify(loaded))
-  if (orders.tether.get().map(r => r.id).join() === '1,2') ok('…and the tether holds them')
-  else bad('tether after load', JSON.stringify(orders.tether.get()))
+  // tethered() → the rows, read through Harbor
+  const paid = orders.tethered({ state: 'local', where: { status: 'paid' } })
+  const ids  = () => paid.rows.map(r => r.id)
+  if (await settle(() => ids().join() === '1,2')) ok('tethered() relays its load through Harbor and holds the rows')
+  else bad('tethered() rows', JSON.stringify(paid.rows), paid.error?.message)
 
   // A push the server sends, graded by the query this tether answers.
   rows[2].status = 'paid'
   app.channel(ROOM).send('orders patched', { ...rows[2] })
-  if (await settle(() => orders.tether.get().some(r => r.id === 3))) ok('a push that enters the filter lands in the page tether')
-  else bad('push into the filter never arrived', JSON.stringify(orders.tether.get()))
+  if (await settle(() => ids().includes(3))) ok('a push that enters the filter lands in the page tether')
+  else bad('push into the filter never arrived', JSON.stringify(paid.rows))
 
   app.channel(ROOM).send('orders patched', { ...rows[0], status: 'shipped' })
-  if (await settle(() => !orders.tether.get().some(r => r.id === 1))) ok('a push that LEAVES the filter removes the row (FJS-493)')
-  else bad('row that left the filter stayed', JSON.stringify(orders.tether.get()))
+  if (await settle(() => !ids().includes(1))) ok('a push that LEAVES the filter removes the row (FJS-493)')
+  else bad('row that left the filter stayed', JSON.stringify(paid.rows))
 
   // save() sends what changed against the row this screen read (FJS-2024) —
   // the key travels too, since it addresses the write. `status` did not
@@ -247,36 +246,36 @@ group('a Resource over Harbor, against a real Junction app')
   await app.stop()
 }
 
-// --- login / logout ---
+// --- signIn / signOut ---
 
-group('login / logout')
+group('signIn / signOut')
 {
-  const { _registerActivePort, login, logout } = await import('../src/resources/active-port.js')
+  const { _registerActivePort, signIn, signOut } = await import('../src/resources/active-port.js')
 
   const port = mockPagePort()
   _registerActivePort(port)
 
   port._enqueueResponse((type, payload) => {
-    if (payload.service === 'auth' && payload.method === 'login' && payload.args.email === 'a@b') {
+    if (payload.service === 'auth' && payload.method === 'signIn' && payload.args.email === 'a@b' && payload.args.password === 'x') {
       return { token: 'T', user: { id: 1, email: 'a@b' } }
     }
     return Promise.reject(new Error('wrong'))
   })
-  const session = await login({ email: 'a@b', password: 'x' })
-  if (session?.user?.id === 1) ok('login → service:call(auth, login) returns session')
+  const session = await signIn('a@b', 'x')
+  if (session?.user?.id === 1) ok('signIn → service:call(auth, signIn) returns session')
 
   port._enqueueResponse((type, payload) => {
-    if (payload.method === 'logout') return { ok: true }
+    if (payload.method === 'signOut') return { ok: true }
     return Promise.reject(new Error('wrong'))
   })
-  const logoutResult = await logout()
-  if (logoutResult?.ok) ok('logout → service:call(auth, logout)')
+  const signOutResult = await signOut()
+  if (signOutResult?.ok) ok('signOut → service:call(auth, signOut)')
 
   // No port → throws
   _registerActivePort(null)
-  try { await login({}); bad('login w/o port should throw') }
+  try { await signIn('', ''); bad('signIn w/o port should throw') }
   catch (e) {
-    if (/no active port/.test(e.message)) ok('login throws clearly when no port')
+    if (/no active port/.test(e.message)) ok('signIn throws clearly when no port')
   }
 }
 

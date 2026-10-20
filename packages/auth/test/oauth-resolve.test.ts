@@ -131,11 +131,11 @@ describe('an address nobody holds', () => {
     expect(await userByEmail('unverified@shop.test')).toBeNull()
   })
 
-  test("onRegister can refuse, and nothing is written when it does", async () => {
+  test("onRegistered can refuse, and nothing is written when it does", async () => {
     const closed = await makeAuth({
       oauthProviders: { google: trusted },
-      onRegister: async ({ email }) => {
-        if (email.endsWith('@blocked.test')) throw new Error('closed beta')
+      onRegistered: async ({ user }) => {
+        if (user.email.endsWith('@blocked.test')) throw new Error('closed beta')
       },
     })
     try {

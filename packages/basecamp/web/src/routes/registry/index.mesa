@@ -55,7 +55,6 @@ title: Registry
       // a stored total would be a second answer to a question the rows already
       // answer — and the tag rows are only fetched for what is open.
       summary = await registry.service.invoke('repositories', null)
-      tags    = (await registry.service.find({}, { limit: 500 })).data
     } catch (e) {
       error = e.message
     } finally {
@@ -63,8 +62,13 @@ title: Registry
     }
   }
 
+  // Every tag, not a page — the server refuses a page above its max.
+  const tagList = registry.tethered({ state: 'local', all: true })
+  $: { tags = tagList.rows }
+  $: { if (tagList.error) error = tagList.error.message }
+
   load()
-  $: session.workspaceId, () => load()
+  $: session.workspaceId, () => { tagList.reload(); load() }
 
   $: repositories = (summary?.repositories ?? []).filter(r =>
     !search || r.repository.toLowerCase().includes(search.toLowerCase()))

@@ -42,7 +42,7 @@ title: Pickup points
 
   // The URL is the state. A near-me list is exactly the screen somebody sends
   // to somebody else, so the center and the radius have to survive a paste.
-  const list = pickupPoints.list()
+  const list = pickupPoints.tethered()
 
   // The boxes, seeded from whatever the URL already carries. A hand-typed
   // coordinate arrives as TEXT when it does not round-trip — `51.507400` is

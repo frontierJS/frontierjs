@@ -30,7 +30,7 @@ describe('a live list drops a row whose window closes', () => {
     const soon  = new Date(Date.now() + 40).toISOString()
     const later = new Date(Date.now() + 60_000).toISOString()
     const { restore } = mockList([{ id: 1, expiresAt: soon }, { id: 2, expiresAt: later }, { id: 3, expiresAt: null }])
-    const { tether, load } = createJunctionClient({ url: 'http://localhost:3000' }).resource('items', 'id', { until })
+    const { tether, load } = createJunctionClient({ url: 'http://localhost:3000' }).resource('items', { until })
     await load()
     restore()
 
@@ -41,7 +41,7 @@ describe('a live list drops a row whose window closes', () => {
 
   it('a pushed row with an edge arms the timer too', async () => {
     const { restore } = mockList([])
-    const { service, tether, load } = createJunctionClient({ url: 'http://localhost:3000' }).resource('items', 'id', { until })
+    const { service, tether, load } = createJunctionClient({ url: 'http://localhost:3000' }).resource('items', { until })
     await load()
     restore()
 
@@ -54,7 +54,7 @@ describe('a live list drops a row whose window closes', () => {
   it('a read that stepped outside the window keeps what it holds', async () => {
     const past = new Date(Date.now() - 1000).toISOString()
     const { restore } = mockList([{ id: 1, expiresAt: past }])
-    const { tether, load } = createJunctionClient({ url: 'http://localhost:3000' }).resource('items', 'id', { until })
+    const { tether, load } = createJunctionClient({ url: 'http://localhost:3000' }).resource('items', { until })
     await load({}, { withExpired: true } as never)
     restore()
     await wait(20)

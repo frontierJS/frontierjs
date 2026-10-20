@@ -22,6 +22,7 @@ title: Dashboard
   // create form in this app: the same three fields, one fewer layer to trap
   // focus in, and it survives being the only thing on a narrow screen.
   import { page, goto } from '@frontierjs/sierra/router'
+  import { createRoot } from '@frontierjs/mesa/runtime'
   import Dashboard, { dashboards } from '../../../resources/Dashboard.mesa'
   import { servers } from '../../../resources/Server.mesa'
   import { apps } from '../../../resources/App.mesa'
@@ -121,20 +122,26 @@ title: Dashboard
     await loadSubjects()
   }
 
-  // Both lists, once. Which one is needed depends on the kind chosen next,
-  // and fetching then would put a spinner between two clicks.
-  async function loadSubjects() {
-    try {
-      if (!serverOptions.length)
-        serverOptions = (await servers.service.find({}, { limit: 200 })).data
-          .map(s => ({ value: s.id, label: s.name }))
-      if (!appOptions.length)
-        appOptions = (await apps.service.find({}, { limit: 200 })).data
-          .map(a => ({ value: a.id, label: a.name }))
-    } catch {
-      // A member who cannot list servers can still add the widgets that take
-      // no subject. The picker below shows an empty select and says why.
-    }
+  // Both lists, once, and every row of each rather than a page. Which one is
+  // needed depends on the kind chosen next, and fetching then would put a
+  // spinner between two clicks. Made under a root on first use, so the `$:`
+  // that may ask for them does not dispose them on its next run. A member who
+  // cannot list servers can still add the widgets that take no subject; the
+  // picker below shows an empty select and says why.
+  let subjects = null
+  function loadSubjects() {
+    if (subjects) return
+    subjects = createRoot((dispose) => ({
+      servers: servers.tethered({ state: 'local', all: true }),
+      // Composed: the apps service includes each app's environment and domains.
+      apps:    apps.tethered({ state: 'local', composed: true, directives: { limit: 100 } }),
+      dispose,
+    }))
+  }
+  $.onDestroy(() => subjects?.dispose())
+  $: {
+    serverOptions = (subjects?.servers.rows ?? []).map(s => ({ value: s.id, label: s.name }))
+    appOptions    = (subjects?.apps.rows ?? []).map(a => ({ value: a.id, label: a.name }))
   }
 
   function choose(spec) {

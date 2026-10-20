@@ -1225,7 +1225,7 @@ try {
     };
   `))
 
-  // ── The list's STATE, which is `resource.list()` and not the page ────────
+  // ── The list's STATE, which is `resource.tethered()` and not the page ────────
   //
   // Every row above reads a page that has just loaded. These three MOVE it,
   // and they are the half a compiled page can get wrong while each row above

@@ -6,29 +6,19 @@
   // is one read rather than a run query per job — the same pair the jobs screen
   // renders in its table.
   import { jobs } from '../../resources/Job.mesa'
-  import { onWrite } from './live.js'
   import { at } from '../../datetime.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
-  let rows    = []
-  let error   = null
-  let loading = true
 
   const TONE = { success: 'success', failed: 'danger', timeout: 'danger', running: 'info', pending: 'muted' }
 
-  async function load() {
-    error = null
-    try {
-      rows = (await jobs.service.find({}, { limit: 6 })).data
-    } catch (e) {
-      error = e.message
-    } finally {
-      loading = false
-    }
-  }
-
-  load()
-  $.onDestroy(onWrite(jobs.service, load))
+  // The jobs tether the shell already holds, newest first, and the card shows
+  // its head. A capped read of its own would narrow the shell's list too: a
+  // list stating no filter IS the resource's tether.
+  const list = jobs.tethered({ state: 'local' })
+  $: rows    = list.rows.slice(0, 6)
+  $: error   = list.error?.message ?? null
+  $: loading = list.loading && !list.rows.length
 
 </script>
 

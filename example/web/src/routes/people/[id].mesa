@@ -56,8 +56,6 @@ title: Person
   let person  = null
   let row     = null
   let unwatch = null
-  let history = []
-  let slips   = []
   let error   = null
   let draft   = payWindows.make()
 
@@ -91,23 +89,26 @@ title: Person
     return row.ready
   }
 
-  async function loadHistory() {
-    const list = await payWindows.service.find(
-      { employeeId: Number(page.params.id) }, { orderBy: '-effectiveFrom', limit: 50 })
-    history = list?.data ?? []
-  }
+  // Every window they have been on, and their last two years of payslips. A
+  // refused payslip read leaves that table off rather than failing the page.
+  const historyList = payWindows.tethered({
+    state: 'local', where: { employeeId: Number(page.params.id) }, all: true, directives: { orderBy: '-effectiveFrom' },
+  })
+  const slipList = payslips.tethered({
+    state: 'local', where: { employeeId: Number(page.params.id) }, directives: { orderBy: '-periodEnd', limit: 24 },
+  })
+  $: history = historyList.rows
+  $: slips   = slipList.rows
+  $: { if (historyList.error) error = historyList.error.message }
 
-  async function loadSlips() {
-    try {
-      const list = await payslips.service.find(
-        { employeeId: Number(page.params.id) }, { orderBy: '-periodEnd', limit: 24 })
-      slips = list?.data ?? []
-    } catch { slips = [] }
+  async function loadHistory() {
+    await historyList.reload()
+    if (historyList.error) throw historyList.error
   }
 
   async function boot() {
     error = null
-    try { await watch(); await Promise.all([loadHistory(), loadSlips()]) }
+    try { await watch() }
     catch (e) { error = e.message }
   }
   boot()

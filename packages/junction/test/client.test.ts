@@ -575,7 +575,7 @@ describe('client.resource()', () => {
 
   function loaded(rows: Array<Record<string, unknown>>, query: Record<string, unknown>) {
     const { restore } = mockFetch({ kind: 'list', object: 'items', data: rows, total: rows.length })
-    const r = makeClient().resource('items', 'id', { match: matchStatus })
+    const r = makeClient().resource('items', { match: matchStatus })
     return { ...r, ready: r.load(query).then(() => restore()) }
   }
 
@@ -608,7 +608,7 @@ describe('client.resource()', () => {
   })
 
   it('nothing is filtered before a load — the tether has no query to mean', () => {
-    const { service, tether } = makeClient().resource('items', 'id', { match: matchStatus })
+    const { service, tether } = makeClient().resource('items', { match: matchStatus })
     service._receive('created', { id: '2', status: 'draft' })
     expect(tether.get()).toHaveLength(1)
   })
@@ -729,7 +729,7 @@ describe('client.resource()', () => {
     const original = globalThis.fetch
     globalThis.fetch = (async () => { calls++; return new Response('[]', { status: 200 }) }) as unknown as typeof fetch
 
-    const { service, tether } = makeClient().resource('items', 'id', { match: matchStatus })
+    const { service, tether } = makeClient().resource('items', { match: matchStatus })
     service._receive('changed', { model: 'Item', operation: 'createMany', count: 3 })
     await new Promise((r) => setTimeout(r, 5))
 

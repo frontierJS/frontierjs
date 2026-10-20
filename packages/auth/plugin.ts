@@ -12,8 +12,9 @@
 // auth error raised from a SERVICE surfacing as a 500.
 
 import type { IAuth, SessionContext, App, Plugin, TransportContext } from '@frontierjs/junction'
-import { parseTtl, normalizePrefix, Unauthorized, BadRequest, Forbidden, NotFound, rateLimitHook } from '@frontierjs/junction'
-import type { AuthPluginOptions }                                   from './types.ts'
+import { parseTtl, normalizePrefix, Unauthorized, BadRequest, Forbidden, NotFound } from '@frontierjs/junction'
+import { rateLimitHook } from '@frontierjs/junction/hooks'
+import type { AuthPluginOptions }                                  from './types.ts'
 import { createAuthServices, asPrincipal, refuseDelegated }         from './services.ts'
 import { SupportEpisodeError }                                     from './errors.ts'
 import { OAUTH_STATE_COOKIE }                                      from './oauth.ts'
@@ -435,7 +436,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
 
         if (!canStartSupport)
           throw new Forbidden('Support sessions are not enabled — the app must supply canStartSupport')
-        if (!(await canStartSupport(operator, subjectId)))
+        if (!(await canStartSupport({ operator, subjectId, reason })))
           throw new Forbidden('Not permitted to start a support session for this user')
 
         // The ceiling is the subject's, so a subject above the operator makes
@@ -501,8 +502,13 @@ export function auth(opts: AuthPluginOptions): Plugin {
           throw new BadRequest('Email verification not supported by this auth provider')
         }
 
-        await auth.verifyEmail(token)
-        return ctx.json({ ok: true })
+        // A registration's click signs in (`FJS-D1310`) and answers what
+        // `/login` does. Confirming an address an account already has signs
+        // nobody in, so it ends no session and issues none.
+        const verified = await auth.verifyEmail(token)
+        if (!('signedIn' in verified)) return ctx.json({ ok: true })
+        await endArrivingSession(auth, ctx, verified.signedIn)
+        return respond(ctx, verified.signedIn, cookieAuth, cookieMaxAge)
       })
 
       // ── GET /auth/oauth ──────────────────────────────────────────────

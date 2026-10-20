@@ -268,7 +268,7 @@ t('staff.theAffordanceKnowsTheProjectionIsGatedAboveThem', await evaluate(`
 // cannot answer.
 t('staff.andTheBoundaryRefusesTheSameSessionAnyway', await evaluate(`
   const { revenue } = await import('/src/resources/Revenue.mesa');
-  try { await revenue.load({}); return 'allowed' }
+  try { await revenue.service.find({}); return 'allowed' }
   catch (e) { return e?.code ?? e?.status ?? String(e) }
 `), 403)
 t('staff.andNoTableIsDrawnBesideTheRefusal',

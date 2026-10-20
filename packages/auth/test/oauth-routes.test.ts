@@ -328,7 +328,7 @@ describe('GET /auth/oauth/{provider}/callback', () => {
     return { userId: made.userId, secret }
   }
 
-  async function signInWith(sub: string, email: string) {
+  async function providerSignIn(sub: string, email: string) {
     const state = await startFlow()
     stubProviderAs(sub, email)
     return request(app)
@@ -343,7 +343,7 @@ describe('GET /auth/oauth/{provider}/callback', () => {
     await userWithTotp(email)
 
     // Branch 4: a verified account, linked on the first provider sign-in.
-    const linked = await signInWith('totp-sub', email)
+    const linked = await providerSignIn('totp-sub', email)
     const where  = new URL(String(linked.headers['location']), PUBLIC_URL)
     expect(where.pathname).toBe('/sign-in')
     expect(where.searchParams.get('oauth_error')).toBe('code_required')
@@ -352,7 +352,7 @@ describe('GET /auth/oauth/{provider}/callback', () => {
     expect(ticketOf(linked)).toBeTruthy()
 
     // Branch 1: the same subject, seen before.
-    const again = await signInWith('totp-sub', email)
+    const again = await providerSignIn('totp-sub', email)
     expect(new URL(String(again.headers['location']), PUBLIC_URL).searchParams.get('oauth_error')).toBe('code_required')
     expect(cookieOf(again)).not.toContain('session=')
   })
@@ -361,7 +361,7 @@ describe('GET /auth/oauth/{provider}/callback', () => {
     const email = 'route-totp-finish@shop.test'
     const { secret } = await userWithTotp(email)
 
-    const res    = await signInWith('totp-finish-sub', email)
+    const res    = await providerSignIn('totp-finish-sub', email)
     const ticket = ticketOf(res)
     expect(ticket).toBeTruthy()
 

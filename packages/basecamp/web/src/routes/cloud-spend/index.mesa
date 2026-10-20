@@ -51,14 +51,12 @@ title: Cloud spend
   async function load() {
     error = null; loading = true
     try {
-      const [srv, tally, use, adapter] = await Promise.all([
-        servers.service.find({}, { limit: 200 }),
+      const [tally, use, adapter] = await Promise.all([
         // The COUNTS, and they are not derived from the list beside them. This
         // is `view fleetByProvider` in db/schema.lite — a projection the
-        // database groups — and the reason it exists is that the list above is
-        // a page: tallying `limit: 200` was silently wrong from the 201st
-        // machine, on the one screen whose whole job is to be right about how
-        // many there are.
+        // database groups — so the tally is the database's own and never a
+        // count over whatever rows have arrived, on the one screen whose whole
+        // job is to be right about how many there are.
         fleet.service.find({}),
         // The fleet's disk totals, asked of the thing that owns them. The
         // volumes screen asks the same method — one answer, two readers.
@@ -67,7 +65,6 @@ title: Cloud spend
         // fleet is this app's own rows either way.
         portal.service.get('cloudSpend').catch(() => null),
       ])
-      machines = srv.data
       shape    = tally.data
       usage = use
       spend = adapter
@@ -78,8 +75,13 @@ title: Cloud spend
     }
   }
 
+  // Every machine, not a page — the server refuses a page above its max.
+  const machineList = servers.tethered({ state: 'local', all: true })
+  $: { machines = machineList.rows }
+  $: { if (machineList.error) error = machineList.error.message }
+
   load()
-  $: session.workspaceId, () => load()
+  $: session.workspaceId, () => { machineList.reload(); load() }
 
   // Rolled up from the PROJECTION, never re-derived from the list. The view's
   // grain is provider x region, so a roll-up to one provider is a sum over

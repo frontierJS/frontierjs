@@ -9,9 +9,8 @@ title: Trash
   // only once whatever holds it is live, so every Restore here can succeed.
   // Refusals are the row's own service's: a viewer's press is a 403 in words.
   import { goto }     from '@frontierjs/sierra/router'
-  import { useTether } from '@frontierjs/sierra/resource'
   import { session }  from '../../session.js'
-  import { trash, loadTrash, restoreItem } from '../../resources/Trash.mesa'
+  import { trash, restoreItem } from '../../resources/Trash.mesa'
   import { at, ago } from '../../datetime.js'
 
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -20,26 +19,18 @@ title: Trash
   import Table      from '@frontierjs/ui/components/display/Table.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
 
-  const { get: items, unsubscribe } = useTether(trash.tether)
-  $.onDestroy(unsubscribe)
+  const bin   = trash.tethered({ state: 'local' })
+  const items = () => bin.rows
 
-  let error   = null
-  let loading = true
-  let busy    = null
+  let error = null
+  let busy  = null
 
-  async function load() {
-    error = null; loading = true
-    try { await loadTrash() }
-    catch (e) { error = e.message }
-    finally { loading = false }
-  }
-  load()
-  $: session.workspaceId, () => load()
+  $: session.workspaceId, () => bin.reload()
 
   async function restore(item) {
     error = null; busy = item.id
     try {
-      await restoreItem(item)
+      await restoreItem(item, bin)
       toasts.success(`${item.name} restored`, undefined, { label: 'Open', run: () => goto(item.href) })
     } catch (e) {
       error = e.message
@@ -66,13 +57,13 @@ title: Trash
   Deleting keeps the record, so anything here comes back as it was. Nothing is emptied automatically.
 </p>
 
-{#if error}
+{#if error || bin.error}
   <article class="alert danger">
-    <div class="alert-content">{error}</div>
+    <div class="alert-content">{error ?? bin.error.message}</div>
   </article>
 {/if}
 
-{#if loading && !items().length}
+{#if bin.loading && !items().length}
   <p class="text-sm text-muted">Loading…</p>
 {:else if !items().length}
   <EmptyState title="Nothing deleted">

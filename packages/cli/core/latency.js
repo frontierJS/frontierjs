@@ -13,6 +13,8 @@
 // measured nothing -- any failed request, or zero samples, makes the case throw,
 // because a run whose requests all 401'd would otherwise print a fast, quiet p99.
 
+import { scaffoldVerificationToken } from './probe.js'
+
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
 /** p50/p95/p99/max of a list of milliseconds. Nearest-rank, no interpolation:
@@ -80,19 +82,29 @@ async function http(method, url, { token, body } = {}) {
  *  lands in the audit trail (User is `@@trail(audit)`). Signs a throwaway user in
  *  through the app's own auth routes and seeds notes through its own service, so
  *  what is timed is the path a client takes. `base` is `http://host:port/api`.
- *  The scaffold has no model with a relation, so there is no list-with-include
- *  here; that case needs an app that has one. */
-export async function scaffoldCases({ base, rate = 50, durationMs = 5000 }) {
+ *  Register answers 202 and the account is made at the mailed link
+ *  (`FJS-D1310`), which the scaffold prints: `output()` is what the server has
+ *  printed so far. The scaffold has no model with a relation, so there is no
+ *  list-with-include here; that case needs an app that has one. */
+export async function scaffoldCases({ base, output, rate = 50, durationMs = 5000 }) {
   const email = `bench-${process.pid}@bench.invalid`
   const password = 'B3nch!Test-Passw0rd'
   const reg = await http('POST', `${base}/auth/register`, { body: { email, password, name: 'Bench' } })
-  if (reg.status !== 201) throw new Error(`register answered ${reg.status}: ${reg.text.slice(0, 200)}`)
+  if (reg.status !== 202) throw new Error(`register answered ${reg.status}: ${reg.text.slice(0, 200)}`)
+
+  let link = null
+  for (let i = 0; i < 40 && !link; i++) {
+    link = scaffoldVerificationToken(output?.() ?? '', email)
+    if (!link) await sleep(100)
+  }
+  if (!link) throw new Error(`register answered 202 and the server printed no verification link for ${email}`)
+  const verified = await http('POST', `${base}/auth/email/verify`, { body: { token: link } })
+  const userId = verified.json?.user?.userId
+  if (verified.status !== 200 || !userId) throw new Error(`the verification link answered ${verified.status} with no session: ${verified.text.slice(0, 200)}`)
+
   const login = await http('POST', `${base}/auth/login`, { body: { email, password } })
   const token = login.json?.token
   if (login.status !== 200 || !token) throw new Error(`login answered ${login.status} with no token: ${login.text.slice(0, 200)}`)
-
-  const userId = reg.json?.user?.userId
-  if (!userId) throw new Error(`register returned no user id: ${reg.text.slice(0, 200)}`)
 
   for (let i = 0; i < 50; i++) {
     const r = await http('POST', `${base}/notes`, { token, body: { title: `note ${i}`, body: 'x'.repeat(200) } })

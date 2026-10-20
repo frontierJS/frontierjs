@@ -17,11 +17,13 @@ import { describe, test, expect } from 'bun:test'
 
 import { createClient } from '../../litestone/src/index.js'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
-import { createApp, mergeHookMaps, bearerClaim, BEARER, header, authorization, cookie, sessionGateLevel } from '../index.ts'
+import { createApp, mergeHookMaps, sessionGateLevel } from '../index.ts'
+import { bearerClaim, BEARER, header, authorization, cookie } from '../src/core/bearer.ts'
 import { buildService } from '../src/core/service.ts'
 import { enterRequest } from '../src/core/context.ts'
 import { declaredCallHeaders } from '../src/core/litestone.ts'
 import type { ServiceContext } from '../src/core/context.ts'
+import { $, setCallDb } from '../index.ts'
 
 const KEY = 'test-app-secret'
 
@@ -87,10 +89,10 @@ async function appWith(db: unknown) {
       seen.user  = ctx.auth.user
       seen.grant = ctx.locals[BEARER]
       seen.level = sessionGateLevel(ctx.auth.user as never)
-      return (ctx.locals.db as any).formResponse.findMany({})
+      return ($.db as any).formResponse.findMany({})
     },
     async create(ctx: ServiceContext) {
-      return (ctx.locals.db as any).formResponse.create({ data: ctx.data })
+      return ($.db as any).formResponse.create({ data: ctx.data })
     },
   }))
   return { app, seen }
@@ -267,13 +269,13 @@ describe('a claim column may name a relation path', () => {
     })
 
     const headers = { 'x-share-link': 'tok' }
-    const ctx = { locals: { db }, headers, caller: { headers } }
+    const ctx = setCallDb({ locals: {}, headers, caller: { headers } }, db)
     const claims = await enterRequest({ origin: 'http', headers, caller: { headers } } as never,
       () => (nested as any)(ctx, null))
     expect(claims).toEqual({ linkPageId: 1, linkWorkspaceId: 7 })
 
     // A token that resolves to nothing reads no claim through the relation either.
-    const none = { locals: { db }, headers: { 'x-share-link': 'nope' }, caller: { headers: { 'x-share-link': 'nope' } } }
+    const none = setCallDb({ locals: {}, headers: { 'x-share-link': 'nope' }, caller: { headers: { 'x-share-link': 'nope' } } }, db)
     await expect(enterRequest({ origin: 'http', headers: none.headers, caller: none.caller } as never,
       () => (nested as any)(none, null))).rejects.toMatchObject({ code: 401 })
   })
@@ -311,7 +313,7 @@ describe('a grant is found whoever else the holder is', () => {
     })
     const headers = { 'x-survey-token': 'tok' }
     const scoped = as ? db.$setAuth(as) : db
-    const ctx = { locals: { db: scoped, ...(as ? { tenantId: String((as as any).accountId) } : {}) }, headers, caller: { headers } }
+    const ctx = setCallDb({ locals: { ...(as ? { tenantId: String((as as any).accountId) } : {}) }, headers, caller: { headers } }, scoped)
     return enterRequest({ origin: 'http', headers, caller: { headers } } as never, () => (grant as any)(ctx, null))
   }
 
@@ -354,7 +356,7 @@ describe('a grant presented as Authorization: Bearer', () => {
     app.services.register(buildService({
       name: 'answers',
       async find(ctx: ServiceContext) {
-        const rows = await (ctx.locals.db as any).formResponse.findMany({})
+        const rows = await ($.db as any).formResponse.findMany({})
         return [{ user: (ctx.auth.user as any)?.userId ?? null, rows: rows.length }]
       },
     }))
@@ -422,7 +424,7 @@ describe('a grant presented as a cookie', () => {
     app.services.register(buildService({
       name: 'answers',
       async find(ctx: ServiceContext) {
-        const rows = await (ctx.locals.db as any).formResponse.findMany({})
+        const rows = await ($.db as any).formResponse.findMany({})
         return [{ user: (ctx.auth.user as any)?.userId ?? null, rows: rows.length }]
       },
     }))
@@ -524,7 +526,7 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
     const app = createApp({ db, principal: link })
     app.services.register(buildService({
       name: 'customers',
-      async find(ctx: ServiceContext) { return (ctx.locals.db as any).customer.findMany({}) },
+      async find(ctx: ServiceContext) { return ($.db as any).customer.findMany({}) },
     }))
 
     // The unredeemed link is not a cookie.
@@ -565,7 +567,7 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
       name:  'portalLinks',
       model: 'PortalLink',
       async create(ctx: ServiceContext) {
-        return (ctx.locals.db as any).portalLink.create({ data: ctx.data, system: [...ctx.system] })
+        return ($.db as any).portalLink.create({ data: ctx.data, system: [...ctx.system] })
       },
     })
     svc.hooks(link.mintOnCreate())
@@ -595,7 +597,7 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
       model: 'PortalLink',
       hooks: mergeHookMaps(link.mintOnCreate(), { before: { create: [async () => { ownRan = true }] } }),
       async create(ctx: ServiceContext) {
-        return (ctx.locals.db as any).portalLink.create({ data: ctx.data, system: [...ctx.system] })
+        return ($.db as any).portalLink.create({ data: ctx.data, system: [...ctx.system] })
       },
     }))
 
@@ -660,7 +662,7 @@ describe('a session beside a grant', () => {
       async find(ctx: ServiceContext) {
         seen.user  = ctx.auth.user
         seen.grant = ctx.locals[BEARER]
-        return (ctx.locals.db as any).formResponse.findMany({})
+        return ($.db as any).formResponse.findMany({})
       },
     }))
 
@@ -717,7 +719,7 @@ describe('a header bearer stamps lastUsedAt when the row declares it', () => {
     const app = createApp({ db, principal: keyed })
     app.services.register(buildService({
       name: 'notes',
-      async find(ctx: ServiceContext) { return (ctx.locals.db as any).note.findMany({}) },
+      async find(ctx: ServiceContext) { return ($.db as any).note.findMany({}) },
     }))
     const stamp = async () => (await db.asSystem().apiKey.findUnique({ where: { id: made.id } })).lastUsedAt
     const use   = () => asKey('k1', () => app.service('notes').find({}))
@@ -770,7 +772,7 @@ describe('bearerClaim.spend', () => {
     app.services.register(buildService({
       name: 'opens',
       async find(ctx: ServiceContext) {
-        await sends.spend(ctx.locals.db, ctx)
+        await sends.spend($.db, ctx)
         return [{ opened: true }]
       },
     }))
@@ -844,7 +846,7 @@ describe('a grant admits to the tenant and is no member of it', () => {
       data: { accountId: 1, scanId: 1, tokenHash: await fingerprint('tok', { key: KEY, purpose: 'shareGrant.tokenHash' }) },
     })
     const headers = { 'x-share': 'tok' }
-    const ctx = { locals: { db }, headers, caller: { headers } }
+    const ctx = setCallDb({ locals: {}, headers, caller: { headers } }, db)
     const claims = await enterRequest({ origin: 'http', headers, caller: { headers } } as never, () => (grant as any)(ctx, null))
     return { db, claims }
   }

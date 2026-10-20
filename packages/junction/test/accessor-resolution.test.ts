@@ -23,6 +23,8 @@ import { buildService } from '../src/core/service.ts'
 import { createApp, defaultConfig } from '../index.ts'
 import { gateAuth, autoValidate, accessorCandidates, resolveDefsKey } from '../src/core/litestone.ts'
 import type { ServiceContext } from '../src/core/context.ts'
+import { setCallDb } from '../index.ts'
+import { callDb } from '../src/core/context.ts'
 
 // A Litestone-shaped client for `model Post`: accessor is SINGULAR, and the
 // model is gated at level 4 (every operation needs a user). The $schema shape
@@ -54,13 +56,13 @@ function mkClient(rows: Record<string, unknown>[] = []) {
   }
 }
 
-function ctx(service: string, method = 'find', over: Record<string, unknown> = {}): ServiceContext {
-  return {
+function ctx(service: string, method = 'find', over: Record<string, unknown> = {}, db: unknown = mkClient([{ id: '1', title: 'Hi' }])): ServiceContext {
+  return setCallDb({
     service, method, id: undefined, data: null,
     params: {}, query: {}, auth: {}, caller: {},
-    locals: { db: mkClient([{ id: '1', title: 'Hi' }]) }, app: {},
+    locals: {}, app: {},
     ...over,
-  } as unknown as ServiceContext
+  } as unknown as ServiceContext, db)
 }
 
 describe('accessorCandidates', () => {
@@ -125,7 +127,7 @@ describe('@@gate must not fail open on a naming slip', () => {
 
   test('a model with no @@gate stays unrestricted', () => {
     const c = ctx('posts')
-    ;(c.locals.db as { $schema: { models: { attributes: unknown[] }[] } })
+    ;(callDb(c) as { $schema: { models: { attributes: unknown[] }[] } })
       .$schema.models[0]!.attributes = []
     expect(() => gateAuth('posts', 'read')(c)).not.toThrow()
   })
@@ -184,7 +186,7 @@ describe('a model-backed service with no field rules says so', () => {
     const original = console.warn
     console.warn = (...args: unknown[]) => { seen.push(args.join(' ')) }
     try {
-      const c = ctx('widgets', 'create', { data: { id: '1' }, locals: { db: client } })
+      const c = ctx('widgets', 'create', { data: { id: '1' } }, client)
       await autoValidate(accessor, 'create')(c).catch(() => {})
     } finally {
       console.warn = original
@@ -246,7 +248,7 @@ describe('the not-found message against a real Litestone client', () => {
   test('a real client enumerates, so the list is actually there', async () => {
     const db: any = await realClient()
     const svc = buildService({ name: 'widgets', model: 'widget' })
-    const err = await svc.find(ctx('widgets', 'find', { locals: { db } }))
+    const err = await svc.find(ctx('widgets', 'find', {}, db))
       .catch((e: Error) => e) as Error
     expect(err.message).toContain('widget')
     expect(err.message).toContain('Available: author, post')
@@ -262,7 +264,7 @@ describe('the not-found message against a real Litestone client', () => {
       ownKeys() { throw new Error('no enumeration for you') },
     })
     const svc = buildService({ name: 'widgets', model: 'widget' })
-    const err = await svc.find(ctx('widgets', 'find', { locals: { db: hostile } }))
+    const err = await svc.find(ctx('widgets', 'find', {}, hostile))
       .catch((e: Error) => e) as Error
     expect(err.message).toContain('widget')
     expect(err.message).toContain('PascalCase singular')

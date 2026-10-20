@@ -5,6 +5,7 @@
  * lowering landing, and this list moves with it.
  */
 export const REFUSED = {
+  Area:     'onpaste',
   Bars:     '<progress>',
   Checks:   'type="checkbox" on <input>',
   Dates:    'type="date" on <input>',

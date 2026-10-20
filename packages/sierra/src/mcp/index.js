@@ -54,7 +54,7 @@ let _sent = null
  * **What the view shows is the tool's answer, never a live one.** A host
  * delivers results and no push, so the client opens no socket and nothing
  * reaches `client.receive()`: a tether holds what this view's own calls
- * returned, `resource.stale` stays 0 because nothing arrived to misplace,
+ * returned, its `stale` count stays 0 because nothing arrived to misplace,
  * `status.connected` stays false and `status.stale` is never set. Somebody
  * else's write is learned of at save, and only on a `@version` model, as the
  * 409 `resource.conflict()` reads (`IDEAS/agent-client-ui.md` 3.5).
