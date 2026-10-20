@@ -109,6 +109,9 @@ const url  = (v) => (/^https?:\/\//.test(str(v)) ? str(v) : undefined)
 // model is never told of it, so an `/ask` answer has none and Tab finds none.
 const word = (v) => (/^[a-z][a-z-]{0,23}$/.test(str(v)) ? str(v) : undefined)
 const words = (v) => arr(v).map(word).filter(Boolean)
+// Days an item has waited on a reply, which a report states and the model is
+// never told of, as `keys`.
+const days = (v) => (Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v) : undefined)
 
 const READERS = {
   heading: (b) => b.text && { text: str(b.text) },
@@ -135,7 +138,7 @@ const READERS = {
   },
   list:    (b) => {
     const items = arr(b.items).filter((i) => i?.text)
-      .map((i) => ({ text: str(i.text), note: str(i.note), tone: tone(i.tone), url: url(i.url), ...(words(i.keys).length ? { keys: words(i.keys) } : {}) }))
+      .map((i) => ({ text: str(i.text), note: str(i.note), tone: tone(i.tone), url: url(i.url), ...(words(i.keys).length ? { keys: words(i.keys) } : {}), ...(days(i.waited) ? { waited: days(i.waited) } : {}) }))
     return items.length && { items: items.slice(0, 12) }
   },
 }
@@ -206,6 +209,10 @@ export function sparkline(values) {
 }
 
 const run = (x, text, color = INK, url) => (url ? { x, text, color, url } : { x, text, color })
+
+/** Past this many days waiting, an item and its note draw warm unless its own tone is already danger. */
+export const AGED_DAYS = 3
+const ageTone = (i) => (i.waited > AGED_DAYS && i.tone !== 'danger' ? 'warn' : i.tone)
 
 const DRAW = {
   heading: (b, w) => [[run(0, clip(b.text, w), HEAD)], [run(0, '─'.repeat(Math.min(w, cells(b.text))), HEAD)]],
@@ -279,8 +286,8 @@ const DRAW = {
         numbered && i.url
           ? { ...run(0, String(++count.n).padStart(3), inkOf(i.tone ?? 'muted')), link: count.n - 1 }
           : run(numbered ? 2 : 0, '•', inkOf(i.tone ?? 'muted')),
-        run(at, clip(i.text, text), inkOf(i.tone), i.url),
-        ...(i.note ? [run(w - note, clip(i.note, note), TONES.muted)] : []),
+        run(at, clip(i.text, text), inkOf(ageTone(i)), i.url),
+        ...(i.note ? [run(w - note, clip(i.note, note), i.waited > AGED_DAYS ? inkOf(ageTone(i)) : TONES.muted)] : []),
       ],
       // Broken across rows rather than clipped: a URL cut short opens nothing.
       ...(urls && i.url ? i.url.match(new RegExp(`.{1,${w - at}}`, 'g')).map((part) => [run(at, part, TONES.muted)]) : []),

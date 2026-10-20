@@ -19,13 +19,15 @@
   // the one it is on until tomorrow, `S` and a key until another day, `u` on
   // the snoozed list waking it and `z` undoing the last of either. `o` opens
   // the item in the browser, `y` copies its URL, and `?` asks the model about
-  // it alone, Esc going back to where the cursor was.
+  // it alone, Esc going back to where the cursor was. Space peeks: the item's
+  // newest comment in rows under it. `x` marks items, and with any marked `s`,
+  // `S` and `u` act on every one of them instead of the cursor's.
   //
   // It answers only in the home this machine's board names (`HomeBoard.mesa`'s
   // rule), so a visitor's `/ask` runs nothing, and the answer is drawn on this
   // screen only and never sent. A route places it, never the scene file.
   import { at, copyLink, linked, tint } from '#cell'
-  import { askDesk, deskReport, homeBoard, openLink, readSnoozes, setSnooze } from '#errand'
+  import { askDesk, deskReport, homeBoard, openLink, peekItem, readSnoozes, setSnooze } from '#errand'
   import { spotsOf } from '@/pieces/index.js'
   import { clip } from '@/lib/scene/cells.js'
   import { TONES, answerRows, filterAnswer, filtersOf, linksOf, readAnswer, wrap } from '@/lib/home/answer.js'
@@ -38,6 +40,9 @@
   const INNER = PANE.w - 4
   const ROOM  = PANE.h - 3
   const HOT   = '#334155'
+  const SAID  = '#cbd5e1'
+  const MARK  = '#fde68a'
+  const PEEK_ROWS = 4
 
   const desk  = scene.marks.find((m) => m.kind === 'piece' && m.piece.name === 'desk') ?? null
   const chair = desk ? spotsOf(desk.piece, 'seat').map((s) => desk.spot(s.name))[0] : null
@@ -55,7 +60,11 @@
   let told   = ''     // what the foot says for a moment: a link copied, an item snoozed
   let picking = false // `S` waits for the key naming its day
   let snoozes = readSnoozes()   // read again at each answer, so another terminal's and a day passing count
-  var undone = null   // the last snooze or wake, `{ item, was }`, what `z` puts back
+  let marked = {}     // url → item, what `x` marked
+  let peek   = null   // the item Space opened: `{ url, reading }`, `{ url, said }` (null when nothing was) or `{ url, failed }`
+  var peeked = new Map()   // url → a peek read on this pane, so a second Space asks Basecamp nothing
+  var peekStop = null
+  var undone = null   // the last snoozes or wakes, `[{ item, was }]`, what `z` puts back
   var close  = null
   var stop   = null
   var pane   = null   // the pane's box, whose renderer `y` copies through
@@ -63,7 +72,7 @@
 
   let gone = false
   var unsay = null
-  $.onDestroy(() => { gone = true; stop?.abort(); clearTimeout(unsay) })
+  $.onDestroy(() => { gone = true; stop?.abort(); peekStop?.abort(); clearTimeout(unsay) })
 
   function tell(text) {
     if (gone) return
@@ -84,10 +93,12 @@
   $: filters = seen ? filtersOf(seen.answer) : []
   $: answer  = seen ? filterAnswer(seen.answer, filter) : null
   $: links   = answer ? linksOf(answer) : []
-  $: body  = answer ? answerRows(answer, INNER, { urls: !hyper, picked: filter, numbered: links.length > 0 }) : []
+  $: drawn = answer ? answerRows(answer, INNER, { urls: !hyper, picked: filter, numbered: links.length > 0 }) : []
+  $: body  = peek ? withPeek(drawn, peek) : drawn
   $: last  = Math.max(0, body.length - ROOM)
   $: spots = body.flatMap((row, r) => row.some((s) => s.link != null) ? [r] : [])   // the row of each linked item
   $: hot   = links.length ? spots[Math.min(cursor, links.length - 1)] : -1
+  $: marks = new Set(links.flatMap((l, n) => marked[l.url] ? [spots[n]] : []))
 
   const scroll = (by) => (e) => { e.preventDefault?.(); offset = Math.min(last, Math.max(0, offset + by)) }
 
@@ -114,7 +125,7 @@
   // `S` and the key after it: each a word `untilOf` reads.
   const PICKS  = { t: 'tomorrow', f: 'friday', m: 'monday', w: '1w' }
   const pickOf = (key) => PICKS[key] ?? (/^[2-9]$/.test(key) ? `${key}d` : null)
-  const KEYS   = new Set(['s', 'S', 'u', 'z', 'o', 'y', '?'])
+  const KEYS   = new Set(['s', 'S', 'u', 'z', 'o', 'y', '?', ' ', 'x'])
 
   // The letters are read only where the shell prevented them (NORMAL), so an
   // `/ask` typed while the pane is open keeps its s's and u's; Enter is the
@@ -127,20 +138,23 @@
       return true
     }
     if (!e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return false
-    const item = links[cursor]
+    const item  = links[cursor]
+    const these = Object.values(marked).length ? Object.values(marked) : item ? [item] : []
     if (picking) {
       picking = false
       const word  = pickOf(e.key)
       const until = word && untilOf(word)
-      if (item) tell(until ? putAway(item, until) : `no day on "${e.key}" -- S then t, f, m, w or 2-9`)
+      if (these.length) tell(until ? putAway(these, until) : `no day on "${e.key}" -- S then t, f, m, w or 2-9`)
       return true
     }
     if (!KEYS.has(e.key)) return false
     if (e.key === 'z') { tell(undo()); return true }
     if (!item) return true
-    if (e.key === 's' && !reply.asleep) tell(putAway(item, untilOf('tomorrow')))
+    if (e.key === 's' && !reply.asleep) tell(putAway(these, untilOf('tomorrow')))
     if (e.key === 'S' && !reply.asleep) picking = true
-    if (e.key === 'u' && reply.asleep) tell(wake(item))
+    if (e.key === 'u' && reply.asleep) tell(wake(these))
+    if (e.key === 'x') mark(item)
+    if (e.key === ' ') peekAt(item)
     if (e.key === 'o') openLink(item.url).then((ok) => tell(ok ? `opened: ${clip(item.text, 48)}` : 'nothing on this machine opens a browser'))
     if (e.key === 'y') copyLink(pane, item.url).then(copiedLink)
     if (e.key === '?') brief(item)
@@ -167,7 +181,7 @@
         Tab:       step,
       },
       take,
-      closed: () => { stop?.abort(); stop = null; reply = null; thread = null; filter = null; picking = false; close = null },
+      closed: () => { stop?.abort(); stop = null; reply = null; thread = null; filter = null; picking = false; close = null; letGo() },
     })
   }
 
@@ -188,6 +202,7 @@
     filter = null
     picking = false
     snoozes = readSnoozes()
+    letGo()
     try {
       const said = await job(mineStop.signal)
       if (stop !== mineStop) return ''
@@ -208,6 +223,8 @@
     thread = b.thread
     filter = b.filter
     snoozes = readSnoozes()
+    letGo()
+    marked = b.marked
     offset = b.offset
     cursor = b.cursor
     settle()
@@ -217,7 +234,7 @@
 
   /** `?`: the model asked about one item, handed that item alone as the screen. */
   function brief(item) {
-    const back  = { reply, offset, cursor, filter, thread }
+    const back  = { reply, offset, cursor, filter, thread, marked }
     const shown = { title: 'one item', blocks: [{ kind: 'list', items: [item] }] }
     show(`about: ${item.text}`, (signal) => askDesk(BRIEF, { signal, shown }), back)
   }
@@ -256,31 +273,112 @@
     if (filter && !filters.some((f) => f.key === filter)) filter = null
   }
 
+  const named = (items) => items.length === 1 ? clip(items[0].text, 48) : `${items.length} items`
+
   // A browser's `setSnooze` keeps nothing and answers null.
-  function putAway(item, until) {
-    undone = { item, was: snoozes[item.url] ?? null }
-    snoozes = setSnooze(item.url, until, item.text) ?? snoozes
+  function putAway(items, until) {
+    undone = items.map((item) => ({ item, was: snoozes[item.url] ?? null }))
+    for (const item of items) snoozes = setSnooze(item.url, until, item.text) ?? snoozes
+    marked = {}
     settle()
-    return `snoozed until ${wakeLabel(until)}: ${clip(item.text, 48)} · z undoes`
+    return `snoozed until ${wakeLabel(until)}: ${named(items)} · z undoes`
   }
 
-  function wake(item) {
-    undone = { item, was: snoozes[item.url] ?? null }
-    snoozes = setSnooze(item.url, null) ?? snoozes
+  function wake(items) {
+    undone = items.map((item) => ({ item, was: snoozes[item.url] ?? null }))
+    for (const item of items) snoozes = setSnooze(item.url, null) ?? snoozes
+    marked = {}
     reply = { ...reply, answer: asleep() }
     settle()
-    return `back on the desk: ${clip(item.text, 48)} · z undoes`
+    return `back on the desk: ${named(items)} · z undoes`
   }
 
-  /** `z`: the last snooze or wake put back as it was. */
+  /** `z`: the last snoozes or wakes put back as they were. */
   function undo() {
     if (!undone) return 'nothing to undo'
-    const { item, was } = undone
+    const was = undone
     undone = null
-    snoozes = setSnooze(item.url, was?.until ?? null, was?.text ?? item.text) ?? snoozes
+    for (const { item, was: w } of was) snoozes = setSnooze(item.url, w?.until ?? null, w?.text ?? item.text) ?? snoozes
     if (reply?.asleep) reply = { ...reply, answer: asleep() }
     settle()
-    return was ? `snoozed again until ${wakeLabel(was.until)}: ${clip(item.text, 48)}` : `back on the desk: ${clip(item.text, 48)}`
+    const items = was.map((u) => u.item)
+    const until = was[0].was?.until
+    return until && was.every((u) => u.was?.until === until) ? `snoozed again until ${wakeLabel(until)}: ${named(items)}`
+      : was.every((u) => !u.was) ? `back on the desk: ${named(items)}`
+      : `put back as they were: ${named(items)}`
+  }
+
+  /** `x`: the cursor's item marked or let go, and the cursor on to the next. */
+  function mark(item) {
+    const { [item.url]: was, ...rest } = marked
+    marked = was ? rest : { ...marked, [item.url]: item }
+    if (cursor < links.length - 1) { cursor++; reveal(spots[cursor]) }
+  }
+
+  // ─── the peek ──────────────────────────────────────────────────────────────
+
+  /** The peek and the marks let go, as a new answer lets them go. */
+  function letGo() {
+    peekStop?.abort()
+    peekStop = null
+    peek = null
+    peeked = new Map()
+    marked = {}
+  }
+
+  /** Space: the item's newest comment under it, or put away if it is already open. */
+  function peekAt(item) {
+    peekStop?.abort()
+    peekStop = null
+    if (peek?.url === item.url) { peek = null; return }
+    peek = peeked.get(item.url) ?? { url: item.url, reading: true }
+    showPeek()
+    if (!peek.reading) return
+    const mine = peekStop = new AbortController()
+    peekItem(item.url, { signal: mine.signal })
+      .then((said) => ({ url: item.url, said }), (e) => e.name === 'AbortError' ? null : { url: item.url, failed: e.message })
+      .then((p) => {
+        if (!p || gone) return
+        if (!p.failed) peeked.set(p.url, p)
+        if (peekStop === mine) { peek = p; peekStop = null; showPeek() }
+      })
+  }
+
+  /** The peek's rows scrolled into the pane, the item's own row before them. */
+  function showPeek() {
+    const r = spots[Math.min(cursor, links.length - 1)]
+    reveal(Math.min(body.length - 1, r + peekRows(peek).length))
+    reveal(r)
+  }
+
+  const ago = (iso) => {
+    const h = (Date.now() - Date.parse(iso)) / 3_600_000
+    return !(h >= 0) ? '' : h < 1 ? 'just now' : h < 48 ? `${Math.round(h)}h ago` : `${Math.round(h / 24)}d ago`
+  }
+
+  /** What a peek draws, indented under the item's text. */
+  function peekRows(p) {
+    const at = 4
+    const say = (text, color) => [[{ x: at, text: clip(`└ ${text}`, INNER - at), color }]]
+    if (p.reading) return say('reading the newest comment…', TONES.muted)
+    if (p.failed)  return say(`could not read it: ${p.failed}`, TONES.danger)
+    if (!p.said)   return say('nothing said on it yet', TONES.muted)
+    const lines = wrap(p.said.text, INNER - at - 2)
+    const shown = lines.slice(0, PEEK_ROWS)
+    if (lines.length > PEEK_ROWS) shown[PEEK_ROWS - 1] = `${clip(shown[PEEK_ROWS - 1], INNER - at - 4)} …`
+    return [
+      ...say([p.said.who, ago(p.said.at)].filter(Boolean).join(' · '), TONES.info),
+      ...shown.map((t) => [{ x: at + 2, text: t, color: SAID }]),
+    ]
+  }
+
+  /** `rows` with the peek's rows after its item's row, and after the URL printed under it. */
+  function withPeek(rows, p) {
+    const n = links.findIndex((l) => l.url === p.url)
+    let r = n < 0 ? -1 : rows.findIndex((row) => row.some((s) => s.link === n))
+    if (r < 0) return rows
+    while (rows[r + 1]?.length === 1 && rows[r + 1][0].link == null && p.url.includes(rows[r + 1][0].text)) r++
+    return [...rows.slice(0, r + 1), ...peekRows(p), ...rows.slice(r + 1)]
   }
 
   function snooze({ args }) {
@@ -322,14 +420,24 @@
   $: picked = filters.find((f) => f.key === filter)
   $: listed = answer?.blocks.reduce((n, b) => n + (b.kind === 'list' ? b.items.length : 0), 0) ?? 0
   $: sieve  = picked ? `${picked.label}: ${listed}${String(listed) === picked.value ? '' : ` of ${picked.value} listed`} · Tab next` : filters.length ? 'Tab filters' : null
-  $: picks = !links.length ? null : `↑↓ ${reply?.asleep ? 'u wakes' : 's/S snooze'} · o open · y copy · ? brief`
+  $: many  = Object.keys(marked).length
+  $: picks = !links.length ? null
+    : many ? `${many} marked · ${reply?.asleep ? 'u wakes them' : 's/S snooze them'} · x unmarks`
+    : `␣ peek · x mark · ${reply?.asleep ? 'u wakes' : 's/S snooze'} · o open · y copy · ? brief`
   $: when  = picking ? `snooze until? ${Object.entries(PICKS).map(([k, w]) => `${k} ${dayLabel(untilOf(w))}`).join(' · ')} · 2-9 days · Esc` : ''
   $: span  = `${offset + 1}–${Math.min(body.length, offset + ROOM)}`
+  // The time and the cost are let go first when the keys need the width.
   $: foot  = picking ? when : told ? told
     : !reply || reply.asking || reply.failed ? (reply?.back ? 'Esc back' : 'Esc puts it away')
-    : [`${Math.round(reply.ms / 1000)}s`, reply.cost == null ? 'no model' : `$${reply.cost.toFixed(2)}`, ...(sieve ? [sieve] : []), ...(picks ? [picks] : []),
-       ...(last ? [links.length ? `${span}/${body.length}` : `rows ${span} of ${body.length}, ↑↓ PgUp PgDn`] : []), ...(links.length ? [] : ['/ask about this']), reply.back ? 'Esc back' : 'Esc'].join(' · ')
-  $: frame = `${filter}:${offset}:${cursor}:${reply?.at ?? reply?.ms ?? 0}:${rows.length}:${links.length}:${seen?.hidden ?? 0}:${view.x}:${view.y}`
+    : fit([`${Math.round(reply.ms / 1000)}s`, reply.cost == null ? 'no model' : `$${reply.cost.toFixed(2)}`], [...(sieve ? [sieve] : []), ...(picks ? [picks] : []),
+       ...(last ? [links.length ? `${span}/${body.length}` : `rows ${span} of ${body.length}, ↑↓ PgUp PgDn`] : []), ...(links.length ? [] : ['/ask about this']), reply.back ? 'Esc back' : 'Esc'])
+  $: frame = `${filter}:${offset}:${cursor}:${reply?.at ?? reply?.ms ?? 0}:${rows.length}:${links.length}:${seen?.hidden ?? 0}:${view.x}:${view.y}:${Object.keys(marked).join()}:${peek?.url}:${!!peek?.reading}`
+
+  function fit(spare, kept) {
+    const parts = [...spare, ...kept]
+    while (parts.length > kept.length && parts.join(' · ').length > PANE.w - 2) parts.shift()
+    return parts.join(' · ')
+  }
 </script>
 
 {#if reply}
@@ -337,6 +445,9 @@
     <pre class="line" {@attach at(1, 0, 1)} {@attach tint('#fde68a')}>{title}</pre>
     {#key frame}
       {#each rows as row, r (r)}
+        {#if marks.has(offset + r)}
+          <pre class="line" {@attach at(1, 2 + r, 1)} {@attach tint(MARK, offset + r === hot ? HOT : null)}>*</pre>
+        {/if}
         {#each row as s, i (i)}
           <pre class="line" {@attach at(2 + s.x, 2 + r, 1)} {@attach tint(s.color, offset + r === hot ? HOT : null)} {@attach s.url && hyper && linked(s.url, (ok) => { hyper = ok }, copiedLink)}>{s.text}</pre>
         {/each}

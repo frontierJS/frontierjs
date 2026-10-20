@@ -584,8 +584,8 @@ name when it declares none.
 
 ### `drafts` · model `drafts`
 
-- **methods** — `sites`, `list`, `files`, `read`, `open`, `save`, `preview`
-- **custom methods** — `sites`, `list`, `files`, `read`, `open`, `save`, `preview`
+- **methods** — `sites`, `list`, `files`, `read`, `open`, `save`, `preview`, `publish`, `history`, `revert`
+- **custom methods** — `sites`, `list`, `files`, `read`, `open`, `save`, `preview`, `publish`, `history`, `revert`
 - **who may call** —
   - `sites` — standing 1 or above — declared `gate: 1`
   - `list` — standing 1 or above — declared `gate: 1`
@@ -594,6 +594,9 @@ name when it declares none.
   - `open` — standing 1 or above — declared `gate: 1`
   - `save` — standing 1 or above — declared `gate: 1`
   - `preview` — standing 1 or above — declared `gate: 1`
+  - `publish` — standing 1 or above — declared `gate: 1`
+  - `history` — standing 1 or above — declared `gate: 1`
+  - `revert` — standing 1 or above — declared `gate: 1`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

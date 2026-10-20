@@ -211,7 +211,7 @@ describe('what the machine is asked to do', () => {
       expect(runs[0]).toContain('-w /src ')
       expect(runs[1]).toContain('-w /src/site ')
       expect(runs.every(c => c.includes(`--mount type=bind,source=${workDir}/app-1.preview,target=/src`))).toBe(true)
-      expect(argv().some(c => c.includes(`fetch --quiet --depth 1 -- ${SITE.repo} +refs/heads/draft/spring:refs/heads/preview`))).toBe(true)
+      expect(argv().some(c => c.includes(`fetch --quiet --depth 1 -- ${SITE.repo} +refs/heads/draft/spring:refs/heads/build`))).toBe(true)
       expect(argv().at(-1)).toBe(`rm -rf ${workDir}/app-1.preview`)
       expect(existsSync(`${workDir}/app-1.preview-cache`)).toBe(true)
     })
@@ -267,6 +267,61 @@ describe('what the machine is asked to do', () => {
     ])('%s is refused before anything runs', async (_, over) => {
       const { server, argv } = serverFor()
       const res = await send(server, 'POST', '/site/preview', { ...BODY, ...over })
+      expect(res.status).toBe(500)
+      expect(argv().some(c => c.startsWith('git ') || c.startsWith('docker '))).toBe(false)
+    })
+  })
+
+  // A publish (owner-editing 1.4): the preview's containers, without
+  // --preview, from the one commit basecamp decided to ship.
+  describe('a site publish', () => {
+    const SITE   = { kind: 'git', repo: 'https://git.test/acme/site.git', path: 'site' }
+    const COMMIT = 'c0ffee'.padEnd(40, '0')
+    const BODY   = { app_id: 'app-1', source: SITE, branch: 'draft/spring', commit: COMMIT,
+      cloudflare: { token: 'cf-secret-token', account_id: 'acct-1' } }
+    const DEPLOY = 'Uploaded harbor\nDeployed harbor triggers\n  https://harbor.kobami.workers.dev\n  harbor.example.com (custom domain)\n'
+    const serverFor = (answers = {}) => {
+      const fake = fakeRunner({ 'git -C': { stdout: COMMIT + '\n' }, 'docker run --rm': { stdout: DEPLOY }, ...answers })
+      const envs = []
+      const run = async (argv, opts) => {
+        if (opts?.env) envs.push({ argv: argv.join(' '), env: opts.env })
+        return fake.run(argv)
+      }
+      const workDir = mkdtempSync(join(tmpdir(), 'outpost-publish-'))
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ run, workDir }), inspector: createInspector({ run }), log: { warn() {}, error() {} },
+      })
+      return { server, workDir, envs, argv: () => fake.calls.map(c => c.join(' ')) }
+    }
+
+    test('builds and deploys without --preview, and answers the commit and the Worker\'s URL', async () => {
+      const { server, workDir, envs, argv } = serverFor()
+      const res = await send(server, 'POST', '/site/publish', BODY)
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ commit_sha: COMMIT, url: 'https://harbor.kobami.workers.dev' })
+      const runs = argv().filter(c => c.startsWith('docker run --rm'))
+      expect(runs.map(c => c.split(' oven/bun:1.4.2 ')[1])).toEqual([
+        'bun install --frozen-lockfile', 'bun x site-kit build .', 'bun x site-kit deploy .',
+      ])
+      expect(runs.every(c => c.includes(`--mount type=bind,source=${workDir}/app-1.release,target=/src`))).toBe(true)
+      expect(envs).toHaveLength(1)
+      expect(argv().some(c => c.includes('cf-secret-token'))).toBe(false)
+      expect(argv().at(-1)).toBe(`rm -rf ${workDir}/app-1.release`)
+    })
+
+    test('a branch no longer at the decided commit is refused before anything runs in a container', async () => {
+      const { server, argv } = serverFor({ 'git -C': { stdout: 'beef'.padEnd(40, '0') + '\n' } })
+      const res = await send(server, 'POST', '/site/publish', BODY)
+
+      expect(res.status).toBe(500)
+      expect((await res.json()).error).toContain('moved since the release was decided')
+      expect(argv().some(c => c.startsWith('docker run'))).toBe(false)
+    })
+
+    test('a commit that is not a commit id is refused before anything runs', async () => {
+      const { server, argv } = serverFor()
+      const res = await send(server, 'POST', '/site/publish', { ...BODY, commit: '--upload-pack=x' })
       expect(res.status).toBe(500)
       expect(argv().some(c => c.startsWith('git ') || c.startsWith('docker '))).toBe(false)
     })

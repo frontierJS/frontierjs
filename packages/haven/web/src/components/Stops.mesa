@@ -23,6 +23,7 @@
   // door taken; a verb's ends inside its reach.
   import { reaches } from '@/lib/hash/commands.js'
   import { walked, pathTo, STEPS, SPRINT_MS } from '@/lib/scene/paths.js'
+  import { clip } from '@/lib/scene/cells.js'
   import { at, tint } from '#cell'
 
   export let stage
@@ -34,14 +35,18 @@
   // A step as an arrow takes it; false where it is refused.
   export let stepTo
   export let tell
+  // The pane the list draws in, the map's.
+  export let box
 
   var verbs = $context.commands
   const MODE   = 'stops'
+  const LIST   = 'stops list'
   const WALK   = 'walk'
   const MARK   = { ink: '#000000', ground: '#5fd7ff' }
   const ALONE  = new Set(['Shift', 'Control', 'Alt', 'Meta'])
   let named = null   // { list, i } while a stop is named
   let going = null   // the stop walked to
+  let listed = null  // { stops, rows, typed } while the list is open
   var walking = null
 
   $.onDestroy(() => clearInterval(walking))
@@ -105,10 +110,14 @@
 
   function walk(e) {
     e.preventDefault?.()
-    const stop = named.list[named.i]
+    walkTo(named.list[named.i], MODE)
+  }
+
+  /** Walks to `stop`, closing the mode `from` it was picked in; a stop none can reach is refused and the mode stays. */
+  function walkTo(stop, from) {
     const path = route(stop, where())
     if (!path) { tell(`nobody can reach ${stop.name} from here`); return }
-    if (!path.length) { verbs.close(MODE); tell(`you are at ${stop.name}`); return }
+    if (!path.length) { verbs.close(from); tell(`you are at ${stop.name}`); return }
     const close = verbs.open({
       name: WALK,
       take: (k) => { close(); return k.key === 'Escape' },
@@ -118,6 +127,53 @@
     tell(`→ ${stop.name}`)
     walking = setInterval(stepToward, SPRINT_MS)
   }
+
+  /** The list's rows: each stop numbered in Tab's order, its words, and the steps a walk there takes. */
+  function rows(stops, me) {
+    const wide = Math.max(...stops.map((s) => s.name.length))
+    const digits = String(stops.length).length
+    return stops.slice(0, box.h - 1).map((s, i) => {
+      const n = route(s, me)?.length
+      const far = n == null ? 'no way there' : n === 0 ? 'here' : n === 1 ? '1 step' : `${n} steps`
+      return { key: s.name, text: clip(` ${String(i + 1).padStart(digits)}  ${s.name.padEnd(wide)}  ${far}`, box.w) }
+    })
+  }
+
+  /** A digit typed into the list: walks once the number can grow no further, or at Enter. */
+  function pick(e) {
+    e.preventDefault?.()
+    const n = Number(`${listed.typed}${e.key === 'Enter' ? '' : e.key}`)
+    if (!n) return
+    if (e.key === 'Enter' || n * 10 > listed.stops.length) {
+      listed = { ...listed, typed: '' }
+      const stop = listed.stops[n - 1]
+      if (stop) walkTo(stop, LIST)
+      else tell(`no stop ${n}`)
+      return
+    }
+    listed = { ...listed, typed: String(n) }
+  }
+
+  function list() {
+    const stops = verbs.stops(stage.marks)
+    if (!stops.length) return 'nothing here to Tab to'
+    listed = { stops, rows: rows(stops, where()), typed: '' }
+    const keys = { Enter: pick }
+    for (let d = 0; d <= 9; d++) keys[d] = pick
+    const close = verbs.open({
+      name: LIST,
+      keys,
+      take: (e) => {
+        if (ALONE.has(e.key)) return false
+        close()
+        return e.key === 'Escape'
+      },
+      closed: () => { listed = null },
+    })
+    return ''
+  }
+
+  $.onDestroy(verbs.add({ word: 'stops', help: '/stops', run: list }))
 
   /** The cells a stop marks on the art: each reach's own cell, in the view. */
   const marked = (stop, v) => !stop ? [] : stop.reaches
@@ -151,3 +207,17 @@
 {#each marked(going ?? (named && named.list[named.i]), view) as c (c.key)}
   <p {@attach at(c.x, c.y, 9)} {@attach tint(MARK.ink, MARK.ground)}>{c.ch}</p>
 {/each}
+
+{#if listed}
+  <div class="surface pane" {@attach at(box.x, box.y, 13, [box.w, box.h])}>
+    {#each listed.rows as r (r.key)}
+      <pre class="line">{r.text}</pre>
+    {/each}
+    <p {@attach at(0, box.h - 1, 14)}>— the stops · {listed.typed ? `${listed.typed}…` : 'a number walks there'} · Esc closes —</p>
+  </div>
+{/if}
+
+<style>
+  /* Outside a pre the terminal collapses the columns' padding. */
+  .pane p, .line { margin: 0; font: inherit; line-height: inherit; white-space: pre; overflow: hidden }
+</style>

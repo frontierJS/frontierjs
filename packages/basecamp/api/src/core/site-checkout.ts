@@ -8,6 +8,13 @@
 // as a branch. The push is the lock — two people saving one draft at once
 // race to a fast-forward, and the second is refused rather than merged.
 //
+// A publish merges the draft into the site's branch the same way, through a
+// temporary index and `git merge-file` on blobs, with no working tree: a
+// commit is pushed to the draft first, built and deployed from there, and
+// only then is the site's branch moved to it, so a failed build leaves the
+// branch where the last release left it (`FJS-D1229`). Revert is the same
+// merge run backwards onto the site's branch, landing as a new draft.
+//
 // A save never touches a working tree. The commit is built from the draft's
 // tree through a temporary index, so nothing a repository carries runs here:
 // there is no checkout to run a filter or a hook on, and every call pins
@@ -20,7 +27,7 @@
 // than a request that waits forever for a password.
 
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { env } from './env.ts'
@@ -52,7 +59,16 @@ export function sitesDir(): string {
   return env.SITES_DIR || join(homedir(), '.config', 'basecamp', 'sites')
 }
 
-function git(dir: string, argv: string[], { input, env: extra = {} }: { input?: string, env?: Record<string, string> } = {}): Promise<string> {
+function git(dir: string, argv: string[], opts: { input?: string, env?: Record<string, string> } = {}): Promise<string> {
+  return gitRun(dir, argv, opts).then(({ code, stdout, stderr }) => {
+    if (code !== 0) throw new CheckoutError(String(stderr || `git ${argv[0]} exited ${code}`).trim())
+    return stdout
+  })
+}
+
+/** git, answering its exit code rather than refusing on one — `merge-file` counts conflicts in it. */
+function gitRun(dir: string, argv: string[], { input, env: extra = {} }: { input?: string, env?: Record<string, string> } = {}):
+  Promise<{ code: number, stdout: string, stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = execFile('git', [
       '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', '-c', 'core.quotePath=false',
@@ -61,8 +77,9 @@ function git(dir: string, argv: string[], { input, env: extra = {} }: { input?: 
       encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 120_000,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...extra },
     }, (err, stdout, stderr) => {
-      if (err) reject(new CheckoutError(String(stderr || err.message).trim()))
-      else resolve(stdout)
+      const code = err ? (typeof (err as { code?: unknown }).code === 'number' ? (err as { code: number }).code : -1) : 0
+      if (code === -1) reject(new CheckoutError(String(stderr || err!.message).trim()))
+      else resolve({ code, stdout, stderr })
     })
     if (input !== undefined) child.stdin!.end(input)
   })
@@ -228,5 +245,230 @@ export function saveDraftFile(site: GitSite, draft: string, change: { path: stri
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
+  })
+}
+
+// ─── Publish ─────────────────────────────────────────────────────────────
+
+export interface Commit { id: string, author: string, subject: string }
+
+/** Refused because the draft and the site's branch changed the same lines. */
+export class MergeConflict extends CheckoutError {
+  constructor(message: string, readonly paths: string[]) { super(message) }
+}
+
+export interface Merged {
+  /** The merge commit, pushed to the draft's branch and built from there. */
+  commit:   string
+  /** The site's branch, and the head the merge was made on. */
+  base:     string
+  baseHead: string
+  /** The draft's head before the merge, and the files it changes. */
+  draft:    { branch: string, head: string }
+  paths:    string[]
+}
+
+/**
+ * The commits on the site's branch that `released` — the last release's
+ * commit — does not hold, or why there is no answer. The branch is the
+ * developer's and an owner cannot judge a commit of theirs, so any one of
+ * these refuses a publish, naming each author.
+ */
+export function unreleased(site: GitSite, released: string | null, root = sitesDir()): Promise<{ base: string, head: string, commits: Commit[] }> {
+  return serial(site.id, async () => {
+    const dir  = await synced(site, root)
+    const base = await baseBranch(site, dir)
+    const head = await headOf(dir, base)
+    if (!head) throw new CheckoutError(`${site.source.repo} has no branch ${base}`)
+    if (!released) return { base, head, commits: [] }
+    const known = await gitRun(dir, ['cat-file', '-e', `${released}^{commit}`])
+    if (known.code !== 0) throw new CheckoutError(`the last release shipped ${released.slice(0, 7)}, which ${site.source.repo} does not hold — a developer deploys ${base} first`)
+    const out = await git(dir, ['log', '--format=%H%x00%an%x00%s', `${released}..${head}`])
+    return { base, head, commits: out.split('\n').filter(Boolean).map(l => { const [id, author, subject] = l.split('\0'); return { id, author, subject } }) }
+  })
+}
+
+/**
+ * The draft merged into the site's branch, still at `expectBase` — the head
+ * the caller checked — as one commit by `author`, pushed
+ * to the DRAFT's branch — a fast-forward of it, so a save that lands first
+ * refuses the merge, and the site's branch has not moved yet.
+ *
+ * Three-way, file by file: a path only one side changed is taken from it, and
+ * a path both changed is merged with `git merge-file`; any overlap refuses
+ * the publish naming the paths, for a developer to resolve.
+ */
+export function mergeDraft(site: GitSite, draft: string, author: Author, message: string, expectBase: string, root = sitesDir()): Promise<Merged> {
+  return serial(site.id, async () => {
+    const dir  = await synced(site, root)
+    const { branch, head } = await draftHead(site, dir, draft)
+    const base     = await baseBranch(site, dir)
+    const baseHead = await headOf(dir, base)
+    if (!baseHead) throw new CheckoutError(`${site.source.repo} has no branch ${base}`)
+    if (baseHead !== expectBase) throw new CheckoutError(`${base} moved to ${baseHead.slice(0, 7)} while the publish was checked — publish again`)
+    const since = (await git(dir, ['merge-base', baseHead, head])).trim()
+    const paths = (await git(dir, ['diff', '--name-only', '-z', since, head])).split('\0').filter(Boolean)
+    if (!paths.length) throw new CheckoutError(`the draft ${draft} changes nothing that ${base} does not already have`)
+
+    const tmp = mkdtempSync(join(tmpdir(), 'basecamp-publish-'))
+    try {
+      const index = { GIT_INDEX_FILE: join(tmp, 'index') }
+      await git(dir, ['read-tree', '-m', '-i', '--aggressive', since, baseHead, head], { env: index })
+      const conflicted = await resolveBoth(dir, tmp, index)
+      const prefix = repoPath(site, '').length
+      if (conflicted.length)
+        throw new MergeConflict(`${draft} and ${base} both changed ${conflicted.map(p => p.slice(prefix)).join(', ')} — a developer merges them`, conflicted)
+      const tree = (await git(dir, ['write-tree'], { env: index })).trim()
+      const who = {
+        GIT_AUTHOR_NAME: author.name, GIT_AUTHOR_EMAIL: author.email,
+        GIT_COMMITTER_NAME: author.name, GIT_COMMITTER_EMAIL: author.email,
+      }
+      const commit = (await git(dir, ['commit-tree', tree, '-p', baseHead, '-p', head, '-F', '-'], { input: message + '\n', env: who })).trim()
+      await git(dir, ['push', '--quiet', 'origin', `${commit}:refs/heads/${branch}`]).catch((err) => {
+        if (/non-fast-forward|fetch first|rejected/.test(err.message))
+          throw new StaleDraft(`someone saved to ${draft} while it was being published — publish again`)
+        throw new CheckoutError(`could not push ${branch}: ${err.message}`)
+      })
+      await git(dir, ['update-ref', `refs/remotes/origin/${branch}`, commit])
+      return { commit, base, baseHead, draft: { branch, head }, paths: paths.map(p => p.slice(prefix)) }
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+}
+
+/** Every path left unmerged in the index, merged by `git merge-file` where it can be; answers the ones it cannot. */
+async function resolveBoth(dir: string, tmp: string, index: Record<string, string>): Promise<string[]> {
+  const stages = new Map<string, Record<number, { mode: string, id: string }>>()
+  for (const entry of (await git(dir, ['ls-files', '-u', '-z'], { env: index })).split('\0').filter(Boolean)) {
+    const m = /^(\d+) ([0-9a-f]+) (\d)\t(.*)$/s.exec(entry)
+    if (!m) continue
+    stages.set(m[4], { ...stages.get(m[4]), [Number(m[3])]: { mode: m[1], id: m[2] } })
+  }
+  const conflicted: string[] = []
+  for (const [path, s] of stages) {
+    // Added on both sides, deleted on one and changed on the other, or a
+    // photo: no line-wise answer exists, so a person decides.
+    if (!s[1] || !s[2] || !s[3] || s[2].mode !== s[3].mode || !path.endsWith('.md')) { conflicted.push(path); continue }
+    const file = (n: number) => join(tmp, `stage${n}`)
+    for (const n of [1, 2, 3]) writeFileSync(file(n), await git(dir, ['cat-file', 'blob', s[n].id]))
+    const merged = await gitRun(dir, ['merge-file', '-q', '-p', file(2), file(1), file(3)])
+    if (merged.code !== 0) { conflicted.push(path); continue }
+    const blob = (await git(dir, ['hash-object', '-w', '--stdin'], { input: merged.stdout })).trim()
+    await git(dir, ['update-index', '--cacheinfo', `${s[2].mode},${blob},${path}`], { env: index })
+  }
+  return conflicted
+}
+
+/**
+ * The site's branch moved to the released merge — a fast-forward, which the
+ * merge's first parent makes it unless a developer pushed meanwhile — and the
+ * draft's branch removed, unless a save landed on it since.
+ */
+export function advanceBase(site: GitSite, merged: Merged, root = sitesDir()): Promise<{ draftKept: boolean }> {
+  return serial(site.id, async () => {
+    const dir = await synced(site, root)
+    await git(dir, ['push', '--quiet', 'origin', `${merged.commit}:refs/heads/${merged.base}`]).catch((err) => {
+      throw new CheckoutError(`the site is live at ${merged.commit.slice(0, 7)}, and ${merged.base} moved before it could follow — a developer merges ${merged.draft.branch}: ${err.message}`)
+    })
+    await git(dir, ['update-ref', `refs/remotes/origin/${merged.base}`, merged.commit])
+    const gone = await gitRun(dir, ['push', '--quiet', `--force-with-lease=refs/heads/${merged.draft.branch}:${merged.commit}`,
+      'origin', `:refs/heads/${merged.draft.branch}`])
+    if (gone.code === 0) await gitRun(dir, ['update-ref', '-d', `refs/remotes/origin/${merged.draft.branch}`])
+    return { draftKept: gone.code !== 0 }
+  })
+}
+
+// ─── History ─────────────────────────────────────────────────────────────
+
+export interface Shipped {
+  /** Paths from the site root, or null where `from` is no release or a commit this clone does not hold. */
+  files:   string[] | null
+  /** Who wrote the commits, merges left out — the publisher is the release's author, not a writer. */
+  authors: string[]
+}
+
+/** What each release shipped over the one before it, read off the site's own path in the repository. */
+export function shipped(site: GitSite, ranges: { from: string | null, to: string }[], root = sitesDir()): Promise<Shipped[]> {
+  return serial(site.id, async () => {
+    const dir    = await synced(site, root)
+    const prefix = repoPath(site, '')
+    const scope  = prefix ? ['--', prefix] : []
+    const held   = async (c: string) => (await gitRun(dir, ['cat-file', '-e', `${c}^{commit}`])).code === 0
+    const out: Shipped[] = []
+    for (const { from, to } of ranges) {
+      if (!from || !(await held(from)) || !(await held(to))) { out.push({ files: null, authors: [] }); continue }
+      const files   = (await git(dir, ['diff', '--name-only', '-z', from, to, ...scope])).split('\0').filter(Boolean)
+      const authors = (await git(dir, ['log', '--no-merges', '--format=%an', `${from}..${to}`, ...scope])).split('\n').filter(Boolean)
+      out.push({ files: files.map(p => p.slice(prefix.length)), authors: [...new Set(authors)] })
+    }
+    return out
+  })
+}
+
+/**
+ * A new draft `name` holding `commit` undone — a `git revert -m 1`, made as a
+ * three-way merge onto the site's branch with `commit` as the base and its
+ * first parent as the other side, so later lines a publish did not touch
+ * stay. `refusal` grades each path the undo would change before anything is
+ * pushed; a later change to the same lines refuses it, naming the files.
+ */
+export function revertDraft(site: GitSite, commit: string, name: string, author: Author, message: string,
+  refusal: (path: string) => string | null, root = sitesDir()): Promise<Draft> {
+  const named = draftBranch(name)
+  if ('refused' in named) return Promise.reject(new CheckoutError(named.refused))
+  return serial(site.id, async () => {
+    const dir      = await synced(site, root)
+    if (await headOf(dir, named.branch)) throw new CheckoutError(`a draft named ${named.slug} is already open — open that one`)
+    const base     = await baseBranch(site, dir)
+    const baseHead = await headOf(dir, base)
+    if (!baseHead) throw new CheckoutError(`${site.source.repo} has no branch ${base}`)
+    if ((await gitRun(dir, ['merge-base', '--is-ancestor', commit, baseHead])).code !== 0)
+      throw new CheckoutError(`${commit.slice(0, 7)} is not on ${base} any more, so there is nothing of it to undo`)
+    const parent = (await git(dir, ['rev-parse', '--verify', `${commit}^1`])).trim()
+
+    const prefix = repoPath(site, '')
+    const paths  = (await git(dir, ['diff', '--name-only', '-z', parent, commit])).split('\0').filter(Boolean)
+    for (const p of paths) {
+      const why = p.startsWith(prefix) ? refusal(p.slice(prefix.length)) : `${p} is outside the site`
+      if (why) throw new CheckoutError(`undoing ${commit.slice(0, 7)} would change ${p.slice(prefix.length)}: ${why}`)
+    }
+
+    const tmp = mkdtempSync(join(tmpdir(), 'basecamp-revert-'))
+    try {
+      const index = { GIT_INDEX_FILE: join(tmp, 'index') }
+      await git(dir, ['read-tree', '-m', '-i', '--aggressive', commit, baseHead, parent], { env: index })
+      const conflicted = await resolveBoth(dir, tmp, index)
+      if (conflicted.length)
+        throw new MergeConflict(`${conflicted.map(p => p.slice(prefix.length)).join(', ')} changed again since ${commit.slice(0, 7)} — a developer undoes it`, conflicted)
+      const tree = (await git(dir, ['write-tree'], { env: index })).trim()
+      if (tree === (await git(dir, ['rev-parse', `${baseHead}^{tree}`])).trim())
+        throw new CheckoutError(`${base} already holds none of ${commit.slice(0, 7)}`)
+      const who = {
+        GIT_AUTHOR_NAME: author.name, GIT_AUTHOR_EMAIL: author.email,
+        GIT_COMMITTER_NAME: author.name, GIT_COMMITTER_EMAIL: author.email,
+      }
+      const made = (await git(dir, ['commit-tree', tree, '-p', baseHead, '-F', '-'],
+        { input: `${message}\n\nThis reverts ${commit}.\n`, env: who })).trim()
+      await git(dir, ['push', '--quiet', 'origin', `${made}:refs/heads/${named.branch}`]).catch((err) => {
+        throw new CheckoutError(`could not push ${named.branch}: ${err.message}`)
+      })
+      await git(dir, ['update-ref', `refs/remotes/origin/${named.branch}`, made])
+      const at = (await git(dir, ['log', '-1', '--format=%cI', made])).trim()
+      return { name: named.slug, branch: named.branch, head: made, at: new Date(at).toISOString(), author: author.name, subject: message }
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+}
+
+/** The site's branch for a release a developer starts, which drafts also start from. */
+export function siteBranch(site: GitSite, root = sitesDir()): Promise<{ branch: string, head: string }> {
+  return serial(site.id, async () => {
+    const dir    = await synced(site, root)
+    const branch = await baseBranch(site, dir)
+    const head   = await headOf(dir, branch)
+    if (!head) throw new CheckoutError(`${site.source.repo} has no branch ${branch}`)
+    return { branch, head }
   })
 }

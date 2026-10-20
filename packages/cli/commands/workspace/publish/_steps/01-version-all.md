@@ -4,7 +4,7 @@ description: Write the new versions, then commit and tag them
 ---
 
 <script>
-import { readFileSync, writeFileSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { resolve } from 'path'
 import { execSync } from 'child_process'
 </script>
@@ -28,6 +28,33 @@ for (const { dir, pkg, newVersion } of planned) {
   const raw = JSON.parse(readFileSync(pkgPath, 'utf8'))
   raw.version = newVersion
   writeFileSync(pkgPath, JSON.stringify(raw, null, 2) + '\n', 'utf8')
+}
+
+// ─── the scaffold's pins ──────────────────────────────────────────────────────
+//
+// `fli new` installs the exact versions in the cli's `core/app-config.js`, so
+// they are written HERE, to the set this run publishes, and ride in the release
+// commit. Written after the release, a published cli names the release before
+// it (`FJS-3356`). A cli outside this run would ship none of the new pins, so
+// that is said rather than written.
+const cliMember = ($.config.members ?? []).find(m => m.pkg?.name === '@frontierjs/cli')
+const pinFile   = cliMember && resolve(cliMember.dir, 'core/app-config.js')
+if (pinFile && existsSync(pinFile)) {
+  const { writePins } = await import(new URL('file://' + global.fliRoot + '/core/publish-preflight.js'))
+  const versions = new Map((($.config.members) ?? []).map(m => [m.pkg.name, m.pkg.version]))
+  for (const { pkg, newVersion } of planned) versions.set(pkg.name, newVersion)
+  const { text, moved } = writePins(readFileSync(pinFile, 'utf8'), versions)
+  const pins = moved.map(m => `${m.name} ${m.from} → ${m.to}`).join(', ')
+  const cliReleased = planned.some(p => p.pkg.name === '@frontierjs/cli')
+  if (moved.length && !cliReleased)
+    log.warn(`  @frontierjs/cli is not in this release, so its scaffold pins stay behind: ${pins}`)
+  else if (moved.length && flag.dry)
+    log.dry(`  Would raise ${moved.length} scaffold pin(s): ${pins}`)
+  else if (moved.length) {
+    writeFileSync(pinFile, text, 'utf8')
+    execSync('git add core/app-config.js', { cwd: cliMember.dir })
+    log.success(`  raised ${moved.length} scaffold pin(s) in core/app-config.js`)
+  }
 }
 
 // bun rewrites a `workspace:*` dependency from the LOCKFILE, not from the

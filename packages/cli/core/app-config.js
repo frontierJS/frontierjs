@@ -86,30 +86,31 @@ indent_style = tab
 // **Every version here is exact, and the set is one that was published
 // together** (`FJS-2973`). `latest` made two scaffolds a day apart build
 // different frameworks, and left the generated workflow's `--frozen-lockfile`
-// nothing to freeze until someone had installed once. The pin may lag the tree
-// by a patch and may not lag it by a minor — below 1.0 a caret in a peer range
-// pins the MINOR, so a pin on the old one installs peers the tree has left —
-// and `test/app-config.test.js` fails the day it does. A pin is raised by hand
-// after the release that publishes it.
+// nothing to freeze until someone had installed once. `ws:pub` writes each pin
+// to the version it is publishing, in the release commit (`FJS-D1340`), because
+// a pin raised after the release ships in no cli — 0.1.8 scaffolded the
+// litestone before it (`FJS-3356`). Between releases a pin may lag the tree by
+// a patch and never by a minor — below 1.0 a caret in a peer range pins the
+// MINOR — and `test/app-config.test.js` fails the day it does.
 
 export const FJS_PACKAGES = {
-  '@frontierjs/junction':       '0.1.8',
-  '@frontierjs/sierra':         '0.1.7',
-  '@frontierjs/mesa':           '0.1.6',
-  '@frontierjs/litestone':      '1.1.9',
-  '@frontierjs/css':            '0.16.5',
-  '@frontierjs/ui':             '0.1.6',
-  '@frontierjs/auth':           '1.0.7',
-  '@frontierjs/conduit':        '0.1.4',
-  '@frontierjs/caravan':        '0.1.5',
-  '@frontierjs/notifications':  '0.1.5',
-  '@frontierjs/jetty':          '0.0.6',
-  '@frontierjs/toolbelt':       '0.1.5',
+  '@frontierjs/junction':       '0.1.9',
+  '@frontierjs/sierra':         '0.1.8',
+  '@frontierjs/mesa':           '0.1.7',
+  '@frontierjs/litestone':      '1.1.10',
+  '@frontierjs/css':            '0.16.6',
+  '@frontierjs/ui':             '0.1.7',
+  '@frontierjs/auth':           '1.0.8',
+  '@frontierjs/conduit':        '0.1.5',
+  '@frontierjs/caravan':        '0.1.6',
+  '@frontierjs/notifications':  '0.1.6',
+  '@frontierjs/jetty':          '0.0.7',
+  '@frontierjs/toolbelt':       '0.1.6',
 }
 
 export const APP_DEV_DEPS = {
-  '@frontierjs/cli':    '0.1.7',
-  '@frontierjs/config': '0.1.3',
+  '@frontierjs/cli':    '0.1.8',
+  '@frontierjs/config': '0.1.4',
   '@biomejs/biome':     '^2.5.0',
   'bun-types':          '1.4.2',
   'typescript':         '^5.0.0',

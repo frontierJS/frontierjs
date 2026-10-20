@@ -94,6 +94,7 @@ function itemOf(html, customer) {
     tone: late ? 'danger' : TAG.find(([e]) => head.includes(e))?.[1],
     url: unescapeHtml(a[1]),
     keys: keysOf(head, who, timing),
+    waited: Number(timing.match(/^waiting (\d+) days?\b/)?.[1]) || undefined,
   }
 }
 

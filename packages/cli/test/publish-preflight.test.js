@@ -8,7 +8,7 @@
 
 import { describe, test, expect } from 'bun:test'
 
-import { satisfiesRange, dirtyPackages, peerDrift, publishOrder,
+import { satisfiesRange, dirtyPackages, peerDrift, publishOrder, writePins,
          publishRefusals, formatRefusals, matchesSelector, unpublished } from '../core/publish-preflight.js'
 
 describe('a version against a range', () => {
@@ -67,7 +67,7 @@ describe('a dirty package', () => {
   })
 })
 
-describe('peer ranges this release would step outside of', () => {
+describe('sibling ranges this release would step outside of', () => {
   const ui = { name: 'ui', pkg: { peerDependencies: { mesa: '^0.1.0' } } }
 
   test('a minor bump excludes a caret peer, and the declarer is named', () => {
@@ -91,6 +91,17 @@ describe('peer ranges this release would step outside of', () => {
     const d   = peerDrift([odd], [{ name: 'mesa', newVersion: '0.2.0' }])
     expect(d).toHaveLength(1)
     expect(d[0].kind).toBe('undecidable')
+  })
+
+  test('a hand-typed range in dependencies is read too', () => {
+    const mcp = { name: 'mcp', pkg: { dependencies: { toolbelt: '^0.1.0' } } }
+    expect(peerDrift([mcp], [{ name: 'toolbelt', newVersion: '0.2.0' }])[0])
+      .toMatchObject({ kind: 'excluded', by: 'mcp', dep: 'toolbelt' })
+  })
+
+  test('a workspace: or file: spec is not a range', () => {
+    const odd = { name: 'jetty', pkg: { dependencies: { toolbelt: 'workspace:*' }, optionalDependencies: { mesa: 'file:../mesa' } } }
+    expect(peerDrift([odd], [{ name: 'toolbelt', newVersion: '0.2.0' }, { name: 'mesa', newVersion: '0.2.0' }])).toEqual([])
   })
 
   test('a member declaring no peers at all is not a crash', () => {
@@ -254,5 +265,35 @@ describe('a release in flight', () => {
   test('a pending package with commits since its tag is moved, not pending', () => {
     expect(unpublished([{ name: 'a', version: '0.1.1', tagged: true, published: false, moved: true }]))
       .toEqual({ pending: [], unknown: [], moved: ['a'] })
+  })
+})
+
+describe('the scaffold pins a release writes', () => {
+  const source = [
+    "export const FJS_PACKAGES = {",
+    "  '@frontierjs/litestone':      '1.1.9',",
+    "  '@frontierjs/mesa':           '0.1.6',",
+    "}",
+    "export const APP_DEV_DEPS = {",
+    "  '@frontierjs/cli':    '0.1.7',",
+    "  '@biomejs/biome':     '^2.5.0',",
+    "  'bun-types':          '1.4.2',",
+    "}",
+  ].join('\n')
+
+  test('every exact pin on a released name moves, alignment kept', () => {
+    const { text, moved } = writePins(source, new Map([['@frontierjs/litestone', '1.1.10'], ['@frontierjs/cli', '0.1.8']]))
+    expect(text).toContain("  '@frontierjs/litestone':      '1.1.10',")
+    expect(text).toContain("  '@frontierjs/cli':    '0.1.8',")
+    expect(moved).toEqual([
+      { name: '@frontierjs/litestone', from: '1.1.9', to: '1.1.10' },
+      { name: '@frontierjs/cli',       from: '0.1.7', to: '0.1.8' },
+    ])
+  })
+
+  test('a range never moves, and a pin already current is not reported', () => {
+    const { text, moved } = writePins(source, new Map([['@biomejs/biome', '9.9.9'], ['bun-types', '1.5.0'], ['@frontierjs/mesa', '0.1.6']]))
+    expect(text).toContain("'^2.5.0'")
+    expect(moved.map(m => m.name)).toEqual(['bun-types'])
   })
 })

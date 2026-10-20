@@ -92,7 +92,7 @@ export async function cloudflareFor(app: App, workspaceId: string):
   if (!chosen) return {
     refused: accounts.length
       ? `this workspace holds ${accounts.length} Cloudflare accounts and its ingress zone names none of them — set the ingress zone on /dns/`
-      : 'this workspace holds no Cloudflare account — connect one on /secrets/ to upload previews',
+      : 'this workspace holds no Cloudflare account — connect one on /secrets/ to upload its sites',
   }
 
   const connector = edgeConnectorFor('cloudflare')!

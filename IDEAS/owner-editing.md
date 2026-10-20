@@ -6,7 +6,7 @@ dated: 2026-10-17
 
 # Idea — owner editing: a site's owner changes their own words
 
-**Status: PROPOSED. 1.1–1.3 are built. Q1–Q15 are ruled (`FJS-D1225`–`FJS-D1231`, `FJS-D1242`, `FJS-D1246`–`FJS-D1252`).** Do not cite this file as describing
+**Status: PROPOSED. 1.1–1.5 are built. Q1–Q16 are ruled (`FJS-D1225`–`FJS-D1231`, `FJS-D1242`, `FJS-D1246`–`FJS-D1252`, `FJS-D1339`).** Do not cite this file as describing
 behavior — see `VERIFYING.md`.
 
 A site's owner (a Kobami client, or whoever runs frontierjs.com) opens their
@@ -275,6 +275,19 @@ Basecamp itself lists drafts and history and holds the grants.
     host holds, with the account as its own step.
   - **Recommend A** — basecamp already holds the Cloudflare account
     (`FJS-D921`), so it is no new noun; B is 0.3's expired login again.
+- ~~**Q16 — What a site's first publish does, with no release recorded to compare against (1.4).**~~ **Answered 2026-10-20 (`FJS-D1339`): A — refuse by name ("no release of this site is recorded"), and give a static `git` App a real Deploy: `deployments.create` sends the same Outpost build-and-deploy a publish does, recording the commit.** Q5 refuses undeployed commits, and "undeployed" is measured
+  from the last successful `Deployment`'s commit. A static `git` App has no
+  release path today: `buildInitialSteps` gives it *Pull image*, which pulls
+  nothing, so no site has a recorded commit.
+  - **A** — refuse by name ("no release of this site is recorded"), and give a
+    static `git` App a real Deploy: `deployments.create` sends the same
+    Outpost build-and-deploy a publish does, recording the commit.
+  - **B** — the first publish ships the default branch plus the draft and
+    becomes the baseline; Q5 applies from the second publish on.
+  - **C** — refuse by name and leave the developer's Deploy for later.
+  - **Recommend A** — B ships a developer's unreviewed commits once, which is
+    Q5's hazard on the day it matters most. C leaves Publish unable to
+    succeed anywhere. A also mends the broken step list.
 
 ## The plan
 
@@ -470,10 +483,63 @@ preview link shows it, Publish ships it, and the commit carries their name.
     in `website/site` is `.mesa`, so an owner can edit nothing on it, and this
     phase's *Done when* cannot be met there as written. The drive added an
     `.md` page to its scratch remote.
-- [ ] 1.4 Publish: merge, build, deploy, record. A failed build, a conflict,
+- [x] 1.4 Publish: merge, build, deploy, record. A failed build, a conflict,
   or undeployed commits (Q5) each refuse by name.
-- [ ] 1.5 History: each publish lists the files and the author, and Revert
+  **Built 2026-10-20.** `drafts.publish` (the `publish` grant) writes a
+  `Deployment` through asSystem() with trigger `publish` and four steps, and
+  the `site:publish` job (`core/site-publish.ts`, as the app) runs them:
+  **Validate** refuses with no release recorded (Q16, `FJS-D1339`) and names
+  every commit on the site's branch the last release did not ship, with its
+  author (Q5); **Merge** is a three-way merge through a temporary index and
+  `git merge-file`, by the publisher, refusing a line both sides changed by
+  file, and pushed to the DRAFT's branch; **Build and deploy** sends Outpost's
+  new `POST /site/publish` (the preview's containers without `--preview`,
+  refused when the branch is no longer at the merge); **Advance branch** moves
+  the site's branch to the merge only after a deploy, then removes the draft
+  unless a save landed on it. A failed step is the release's, so the workspace
+  gets `deploy_failed` naming it, and `/sites/[id]/` shows it on a Last publish
+  card. Q16's developer path: a static `git` App's Deploy is `Validate`,
+  `Build and deploy` over the same `releaseSite`, recording the commit. The
+  release's writes moved to `core/release-record.ts`, shared with
+  `deployments.startRun`/`stepStatus`/`finishRun`.
+  - Proved by outpost's `test/outpost.test.js` § a site publish (3), basecamp's
+    `api/test/drafts.test.ts` § publishing a draft (the grant, Q16, Q5 naming
+    the developer, the stub refused at Build and deploy with the branch
+    unmoved, a both-sides line refused at Merge) and § the merge a publish
+    ships (both one-sided edits kept, a moved branch refused, the branch
+    advanced and the draft removed, over a real remote), and
+    `inline-app.test.ts` (the static git step list). A scratch browser drive,
+    7/7 (not committed): Lee saves and sees no Publish button, Kim publishes,
+    the card names the step that refused, the merge is on the draft by Kim,
+    and the release is on `/deployments/`.
+  - Left: a real deploy, which needs 0.3's token, and so does the done-when.
+    A site's rollback is refused (its release records no image); 1.5's Revert
+    is the way back.
+- [x] 1.5 History: each publish lists the files and the author, and Revert
   makes a draft from `git revert`.
+  **Built 2026-10-20.** `drafts.history` is derived, nothing stored: the
+  App's last 20 successful releases, each with `shipped()`'s diff from the
+  release before it (paths under the site's own path) and the writers of its
+  non-merge commits, so a publish names Kim as publisher and Lee as the one
+  who wrote it. `drafts.revert { release }` is `git revert -m 1` done as the
+  publish's three-way merge run backwards onto the site's branch (base: the
+  merge, other side: its first parent), so a developer's later line stays,
+  pushed as the new draft `revert-<draft>` by the reverter and previewed like
+  any draft. It takes the `edit` grant, since it only opens a draft and
+  Publish still takes `publish` (`FJS-D1230`); it refuses a developer's deploy,
+  whose files are theirs (`FJS-D1226`), any path site-kit's `pathRefusal`
+  refuses, a line changed again since (naming the files), and a revert draft
+  already open. `/sites/[id]/` has a History card with Revert on each publish.
+  - Proved by `api/test/drafts.test.ts` § publishing a draft (history's files,
+    writers and kinds; the admin's 404; the deploy refused; the revert draft
+    holding the page as it was, Owner's commit on main, main unmoved; a second
+    revert refused) and § the merge a publish ships (the developer's line
+    kept, a refused path, a later change refused as a conflict with no branch
+    pushed). A scratch browser drive, 7/7 (not committed): Lee sees both
+    releases, no Revert on the developer's, and Revert opens and picks
+    `revert-hours` holding the old page.
+  - Left: a revert reaches the live site through Publish, so a real one needs
+    0.3's token too.
 - [ ] 1.6 A deploy key per repository (`FJS-D1228`, deferred by
   `FJS-D1247`), so a private repository clones and pushes without the
   host's own credential.

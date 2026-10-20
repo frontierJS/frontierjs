@@ -51,7 +51,8 @@ Done when: `fli check` passes with the new rows.
 
 - [x] 1.1 B12 brute force against sign-in (auth throttles + bcrypt)
   - Also covers the second-factor and magic-link miss ceilings (`FJS-3185`). Cited from V6.3.1, V6.3.8, V6.5.1, V6.6.3 and V11.4.2 in `docs/ASVS.md`. The row's *Open* cell names `FJS-D1193`, `FJS-3198` and `FJS-3197`.
-- [ ] 1.2 B13 SSRF through a caller-supplied URL (`public-url.ts`)
+- [x] 1.2 B13 SSRF through a caller-supplied URL (`public-url.ts`)
+  - Covers webhooks, conduit's `address_from: 'request'` and Basecamp's monitor sweep. Cited from V1.3.6, V13.2.4 and V15.3.2 in `docs/ASVS.md`. The row's *Open* cell names the denylist and `FJS-3357`, the monitor sweep's unpinned fetch.
 - [ ] 1.3 B14 oversized or flooding requests (body cap, rate limit)
 - [ ] 1.4 B15 error output as an oracle (production error shape)
 - [ ] 1.5 B16 a compromised dependency (CI advisory gate)

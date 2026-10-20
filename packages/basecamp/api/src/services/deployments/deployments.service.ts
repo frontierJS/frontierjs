@@ -16,7 +16,7 @@ import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_
 import { db, getScoped, changesNothing, ws, actor, callerOrder } from '../../core/resource.ts'
 import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
-import { announce } from '../../channels.ts'
+import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow } from '../../core/release-record.ts'
 import { isInline, isGit, imageOf, inlineFilesFor } from '../../core/app-source.ts'
 import { snapshotVariables } from '../../core/variables.ts'
 import { runtimeOf } from '../../core/runtime.ts'
@@ -54,8 +54,14 @@ const WITH_APP = { app: { include: { environment: true } }, environment: true }
  *
  * An inline source holding no files is a release of bytes the machine already
  * holds, named by digest — a preview's Freeze publishes its build itself.
+ *
+ * A static git app is a site the machine builds and deploys to its Worker in
+ * one call (`core/site-publish.ts`), so it has one step past Validate. Its
+ * release records a commit and no image, so `rollback` refuses one; a site
+ * goes back by a revert on its branch (`IDEAS/owner-editing.md` 1.5).
  */
 function buildInitialSteps(target: { type: string; source?: unknown }, built = false): string[] {
+  if (target.type === 'static' && isGit(target.source)) return ['Validate', 'Build and deploy']
   if (isInline(target.source))
     return inlineFilesFor(target.source).length
       ? ['Validate', 'Upload files', 'Activate', 'Health check']
@@ -72,13 +78,6 @@ function buildInitialSteps(target: { type: string; source?: unknown }, built = f
   return ['Validate', 'Pull image', 'Start container', 'Health check']
 }
 
-/**
- * The step that replaces what is serving. A release that stopped at or before
- * it left the previous one answering, so the App's status stays what it was; a
- * release that fails after it has broken what is live (`FJS-1691`). A list
- * without one has no such moment, and any failure is the App's.
- */
-const SWAP_STEPS = new Set(['Start container', 'Activate'])
 
 function steps(deploymentId: string) {
   return db().deploymentStep.findMany({
@@ -148,17 +147,8 @@ async function queueRelease(target: { id: string; environmentId: string; type: s
   return deployment
 }
 
-/** `DeploymentStep` is update-at-SYSTEM — a step's outcome is what the
- *  machine reported, and no standing a workspace grants writes one. */
-const sys = () => $.db.asSystem() as any
 
-/** The whole row, announced. A client assigning an event payload over the
- *  record it renders loses every field a projection omits. */
-async function pushRow(id: string) {
-  const row = await sys().deployment.findUnique({ where: { id } })
-  if (row) await announce($.app, ws(), 'Deployment', 'deployments patched', row)
-  return row
-}
+const pushRow = (id: string) => pushReleaseRow($.app, id)
 
 export default createService({
   name:  'deployments',
@@ -452,137 +442,22 @@ export default createService({
   // itself. It runs as whoever asked for the deploy now (`FJS-384`), and the
   // confinement is `deployInScope` — a release in another workspace answers
   // nothing, where an id off the payload used to be written wherever it
-  // pointed. The step writes stay system: `DeploymentStep` is
-  // update-at-SYSTEM, which is the schema saying a step's outcome is what the
-  // machine reported.
+  // pointed. The writes are `core/release-record.ts`'s, which a site
+  // publish shares.
   //
   // All four are `internalOnly`: a person moving a release through its own
   // steps by hand is a fabricated history, and the screen reads these rows.
 
   async startRun() {
-    const deploy = await deployInScope(String($.id))
-
-    // Not runnable is not an error: a release already terminal has been
-    // retried, cancelled or finished by another attempt.
-    if (!['pending', 'building'].includes(deploy.status))
-      return { runnable: false, status: deploy.status }
-
-    const startedAt = new Date().toISOString()
-    await sys().deployment.update({
-      where: { id: deploy.id },
-      data:  { status: 'building', startedAt },
-    })
-
-    const steps = await sys().deploymentStep.findMany({
-      where:   { deploymentId: deploy.id },
-      orderBy: { position: 'asc' },
-    })
-    const target = await sys().app.findUnique({ where: { id: deploy.appId } })
-
-    await pushRow(deploy.id)
-
-    return { runnable: true, deploy, steps, app: target, startedAt }
+    return startRelease($.app, await deployInScope(String($.id)))
   },
 
   async stepStatus() {
-    const deploy = await deployInScope(String($.id))
-    const { stepId, status, output, digest } = ($.data ?? {}) as {
-      stepId: string; status: string; output?: string; digest?: string
-    }
-
-    // Addressed by the deployment as well as the step, so a step id from
-    // another release cannot be moved through this method.
-    await sys().deploymentStep.updateMany({
-      where: { id: stepId, deploymentId: deploy.id },
-      data:  {
-        status,
-        ...(output !== undefined ? { output } : {}),
-        ...(status === 'running'
-          ? { startedAt: new Date().toISOString(), finishedAt: null }
-          : { finishedAt: new Date().toISOString() }),
-      },
-    })
-
-    // A later step's digest wins: /deploy names the bytes that were started
-    // where /pull names the bytes that were fetched, and a release records
-    // what RAN.
-    if (digest && digest !== deploy.builtImage)
-      await sys().deployment.update({ where: { id: deploy.id }, data: { builtImage: digest } })
-
-    await pushRow(deploy.id)
-    return { stepId, status }
+    return recordStep($.app, await deployInScope(String($.id)), ($.data ?? {}) as Parameters<typeof recordStep>[2])
   },
 
   async finishRun() {
-    const deploy = await deployInScope(String($.id))
-    const { status, error, startedAt, stepId } = ($.data ?? {}) as {
-      status: 'success' | 'failed'; error?: string; startedAt?: string; stepId?: string
-    }
-
-    // A release cancelled while its build was in flight stays cancelled: no
-    // move leaves `cancelled`, for the system client either (`FJS-D502`), and
-    // a late answer from the runner must not put the app back to running.
-    const now = await sys().deployment.findFirst({ where: { id: deploy.id }, select: { status: true } })
-    if (now?.status === 'cancelled') {
-      await pushRow(deploy.id)
-      return { id: deploy.id, status: 'cancelled' }
-    }
-
-    const finishedAt = Date.now()
-    const startedMs  = startedAt ? Date.parse(startedAt)
-                     : deploy.startedAt ? Date.parse(String(deploy.startedAt))
-                     : finishedAt
-
-    await sys().deployment.update({
-      where: { id: deploy.id },
-      data:  {
-        status,
-        finishedAt: new Date(finishedAt).toISOString(),
-        durationMs: finishedAt - startedMs,
-      },
-    })
-
-    // The reason goes on the step the release stopped at — the release row
-    // has no column for it, and the step's output is what the screen shows.
-    if (status === 'failed' && stepId && error)
-      await sys().deploymentStep.updateMany({
-        where: { id: stepId, deploymentId: deploy.id },
-        data:  { status: 'failed', output: error, finishedAt: new Date(finishedAt).toISOString() },
-      })
-
-    // A step still running died with the release. One still pending never ran,
-    // and marking it `failed` read as though the health check had failed
-    // when the release stopped two steps earlier (`FJS-1683`).
-    if (status === 'failed') {
-      await sys().deploymentStep.updateMany({
-        where: { deploymentId: deploy.id, status: 'running' },
-        data:  { status: 'failed' },
-      })
-      await sys().deploymentStep.updateMany({
-        where: { deploymentId: deploy.id, status: 'pending' },
-        data:  { status: 'skipped' },
-      })
-    }
-
-    // Read after the step writes above, so a swap step the release died on
-    // reads `failed` rather than `running`.
-    const swap = status === 'failed'
-      ? (await sys().deploymentStep.findMany({ where: { deploymentId: deploy.id } }))
-          .find((s: { name: string }) => SWAP_STEPS.has(s.name))
-      : undefined
-    const replaced = !swap || swap.status === 'success'
-
-    if (deploy.appId && replaced)
-      await sys().app.update({
-        where: { id: deploy.appId },
-        data:  { status: status === 'success' ? 'running' : 'error' },
-      })
-
-    $.app.events.emit(status === 'success' ? 'deployment:success' : 'deployment:failed',
-      { id: deploy.id, workspace_id: deploy.workspaceId, ...(error ? { error } : {}) })
-
-    await pushRow(deploy.id)
-    return { id: deploy.id, status }
+    return finishRelease($.app, await deployInScope(String($.id)), ($.data ?? {}) as Parameters<typeof finishRelease>[2])
   },
 
   hooks: {

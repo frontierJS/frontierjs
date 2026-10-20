@@ -249,6 +249,15 @@ describe('the release pipeline an inline app runs', () => {
       ['Validate', 'Build image', 'Start container', 'Health check'])
   })
 
+  // A site built from git is built and deployed by the machine in one call
+  // (core/site-publish.ts), and records the commit an owner's publish measures from.
+  test('a static git app is a site: Validate, then one Build and deploy', async () => {
+    const target = await aContainerApp({ kind: 'git', repo: 'git@host:a/site.git' }, 'static')
+    const release: any = await deployments().create({ appId: target.id, workspaceId: ws.id })
+
+    expect(await stepNames(release.id)).toEqual(['Validate', 'Build and deploy'])
+  })
+
   test('an app naming no source at all is still refused: there is nothing to build', async () => {
     const target = await aContainerApp({})
     await expect(deployments().create({ appId: target.id, workspaceId: ws.id }))

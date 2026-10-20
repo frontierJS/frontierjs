@@ -20,6 +20,9 @@
 //   POST /health-check { app_id, digest }                  → { healthy }
 //   POST /exec         { step, deployment_id }             → run the step
 //
+// A static app built from git speaks one route, `POST /site/publish`
+// { app_id, source, branch, commit, cloudflare } → { commit_sha, url }.
+//
 // An app whose source is `inline` speaks a second, shorter protocol. It has no
 // image, so none of the routes above apply to it:
 //   POST /static/publish  { app_id, files }          → { digest }
@@ -49,6 +52,8 @@ import { notifyPeople, workspaceMembers } from '../core/notify.ts'
 import { runsAsCaller }         from './context.ts'
 import domainDns                from './domain-dns.job.ts'
 import { isInline, isGit, inlineFilesFor } from '../core/app-source.ts'
+import { siteBranch } from '../core/site-checkout.ts'
+import { releaseSite } from '../core/site-publish.ts'
 import { releaseEnv } from '../core/variables.ts'
 import { runtimeOf, routedHosts, routedPaths, routedRedirects, markRunning, type Runtime } from '../core/runtime.ts'
 import type { App }         from '@frontierjs/junction'
@@ -90,12 +95,13 @@ function runner(app: App) {
   // refusal at the call.
   async function step(
     deploymentId: string, stepId: string, status: StepStatus,
-    extra: { output?: string; digest?: string | null } = {},
+    extra: { output?: string; digest?: string | null; commit?: string } = {},
   ): Promise<void> {
     await deployments.call('stepStatus', deploymentId, {
       stepId, status,
       ...(extra.output !== undefined ? { output: extra.output } : {}),
       ...(extra.digest ? { digest: extra.digest } : {}),
+      ...(extra.commit ? { commit: extra.commit } : {}),
     })
   }
 
@@ -225,7 +231,7 @@ function runner(app: App) {
         // what RAN. It travels with the step write rather than as a second one.
         if (result.digest && result.digest !== digest) digest = result.digest
 
-        await step(deploymentId, s.id, 'success', { output: result.output, digest })
+        await step(deploymentId, s.id, 'success', { output: result.output, digest, commit: result.commit })
         current = undefined
       }
 
@@ -261,7 +267,7 @@ function runner(app: App) {
       executor: Executor
       digest:   string | null
     }
-  ): Promise<{ output?: string; digest: string | null }> {
+  ): Promise<{ output?: string; digest: string | null; commit?: string }> {
     const { deploy, service, executor, digest } = ctx
     const name  = step.name.toLowerCase()
 
@@ -271,6 +277,7 @@ function runner(app: App) {
     // would put the current files back under the old release's name.
     const source = ctx.config.source ?? service.source ?? {}
     if (isInline(source)) return runInlineStep(step, { ...ctx, source })
+    if (service.type === 'static' && isGit(source)) return runSiteStep(step, { ...ctx, source })
     // The image as the app names it. The digest is what identifies bytes, but a
     // registry still needs a name to pull by, so both travel.
     // A git release is named for itself: two builds of one app share nothing
@@ -460,6 +467,30 @@ function runner(app: App) {
     // is what `/exec` already does for the container pipeline: a list that grew
     // a line is not a release that broke.
     return { output: `step '${step.name}' needs no work for an inline app`, digest }
+  }
+
+  // A static site built from git (`core/site-publish.ts`): the site's branch
+  // at its head, built and deployed by the machine in one call, and the
+  // commit it built recorded — what an owner's next publish measures from.
+  async function runSiteStep(
+    step: StepRow,
+    ctx:  { deploy: DeploymentRow; digest: string | null; source: any },
+  ): Promise<{ output?: string; digest: string | null; commit?: string }> {
+    const { deploy, digest, source } = ctx
+    const name = step.name.toLowerCase()
+    const site = { id: deploy.appId, source }
+
+    if (name.includes('validate')) {
+      const at = await siteBranch(site)
+      return { output: `${at.branch} at ${at.head.slice(0, 7)}`, digest }
+    }
+    if (name.includes('build and deploy')) {
+      const at   = await siteBranch(site)
+      const live = await releaseSite(app, deploy.appId, deploy.workspaceId, source, at.branch, at.head)
+      return { output: live.note ?? `live at ${live.url ?? 'the site\'s own domain'} (${live.commit.slice(0, 7)})`,
+        digest, commit: live.note ? undefined : live.commit }
+    }
+    return { output: `step '${step.name}' needs no work for a static site`, digest }
   }
 
   // The release, the steps it left behind, the app's status and the event —

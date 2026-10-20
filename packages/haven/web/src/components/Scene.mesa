@@ -506,7 +506,7 @@
     <History {room} {nicks} box={PANE} {askNicks} {roomLines} />
     <Sitting {stage} {here} {x} {y} {spawn} tell={(text) => { note = text }} />
     <HomeRow {stage} {here} {spawn} {nicks} {draft} {where} {moveTo} {shapeTo} tell={(text) => { note = text }} />
-    <Stops {stage} {view} {draft} {where} {stepTo} tell={(text) => { note = text }} />
+    <Stops {stage} {view} {draft} {where} {stepTo} box={PANE} tell={(text) => { note = text }} />
     <Whisper {room} {here} />
     <Dice {room} />
     <Fishing {room} {stage} {here} {view} tell={(text) => { note = text }} />

@@ -36,7 +36,7 @@ import { OUTPOST_STATIC_PORT } from '../../core/posture.ts'
  *  workspace carries (a test holds the two together); Docker and Caddy come
  *  from signed apt repositories. */
 export const BUN_VERSION     = '1.4.2'
-export const OUTPOST_VERSION = '0.1.2'
+export const OUTPOST_VERSION = '0.1.3'
 
 /** How long a machine has to enroll. A cloud-init run is seconds; fifteen
  *  minutes is room for a slow image pull and nothing like room for a leaked

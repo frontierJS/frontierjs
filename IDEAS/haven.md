@@ -1936,12 +1936,22 @@ this is the gap a surface painted in cells has, not mesa's.
   screen; Esc partway stops it; Enter on `/kitchen/` walks through the door;
   in the kitchen Enter on `/heard` ends where `/heard` answers. The refusal
   has no scene to try it in; no drive kept (no new tests while experimenting).
-- [ ] 19.4 The stops list. **Ruled 2026-10-18 (owner): yes.** `/stops` (no
+- [x] 19.4 The stops list. **Ruled 2026-10-18 (owner): yes.** `/stops` (no
   reach) opens a pane over the art listing the scene's stops, numbered in
   Tab's order with their words and how far each is walked; a number walks
   there as 19.3, Esc closes. It is a mode on the registry, as the map is, so
   it takes keys before the figure. The screen reader's rotor is the
-  precedent: the same stops, read as a list instead of in turn.
+  precedent: the same stops, read as a list instead of in turn. Built in
+  `Stops.mesa` as the `stops list` mode: each row `n  words  k steps`
+  (`here`, `no way there`), the steps `route()`'s length, so a door counts
+  the step onto it; a digit walks at once unless a longer number could
+  follow (ten stops or more), and then Enter does; a number past the list
+  is `no stop n`; any other key closes it, as Tab's mode does, so the steps
+  shown are never stale. Probed in a pty: the square's eight listed, Esc
+  closes, `4` walks through the tavern's door, the tavern's four, `9`
+  refused, `/ask`'s number walks and the list then reads it `here`. A
+  two-digit pick has no scene to try it in (the square's eight are the
+  most); no drive kept (no new tests while experimenting).
 
 ### Phase 20 — Snooze
 
@@ -2002,6 +2012,21 @@ the top stay as posted and the title says how many are hidden.
   that item as what is on the screen. Esc goes back to the report where the
   cursor was, and a follow-up `/ask` resumes the brief's thread. No test
   kept; not yet pressed in a live terminal.
+- [x] 20.11 Peek (owner, 2026-10-19: the desk's ideas 1–3). Space opens rows
+  under the cursor's item with its newest comment, or a chat line's chat's
+  newest line, and Space again closes them: `#errand`'s `peekItem`, a
+  `basecamp comments list` or `chat messages -n 1` run with no shell, held
+  for the pane so a second Space asks nothing. A link to a whole project is
+  refused by name.
+- [x] 20.12 Mark, then act. `x` marks the cursor's item (`*` beside it) and
+  steps on; with any marked, `s`, `S` and `u` act on every marked item
+  instead, and `z` undoes the whole batch. A new answer lets the marks go.
+- [x] 20.13 Age as ink. A list item may carry `waited`, the days it has waited
+  on a reply, which a report states and the model is never told of (as
+  `keys`); past `AGED_DAYS` (3) its text and note draw in `warn` unless its
+  tone is already `danger`. The daily report reads it off `waiting N days`.
+  The daily check marks most such items an overdue reply already, so few
+  change color. Drawn headless with a probe and a real report; no test kept.
 - [ ] 20.4 Across machines. When it should follow Jordan to another machine,
   the store moves to Basecamp bookmarks, with the date kept beside them, or to
   his own Room. Moving it is a ruling first, because a Room would put a
@@ -2054,13 +2079,8 @@ the fourth animals, each tagged with the mechanism it would add, cheapest first.
   answers, flickering when the analytics check flags a drop.
 - **The clock tower** rings before the next meeting on the member's calendar.
 
-**The desk** (after Phase 20; the first three read only, the rest write)
+**The desk** (after Phase 20; the first two read only, the rest write)
 
-- **`space` peeks.** The cursor's item opens a row under it with the newest
-  comment, a `basecamp` read, so triage needs no browser.
-- **Mark, then act.** `x` marks rows and `s` snoozes every marked one, as
-  mutt's `t` and `;` do.
-- **Age as ink.** An item waiting past three days draws in a warmer tone.
 - **The calendar holds what is away.** Standing at the home's calendar lists
   what comes back each day; on its day the item is a letter on the mat and
   the bell rings, so a return is felt.

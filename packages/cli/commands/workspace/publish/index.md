@@ -49,7 +49,7 @@ flags:
     defaultValue: false
   allow-peer-drift:
     type: boolean
-    description: Publish even though a peer range would no longer resolve, or could not be decided
+    description: Publish even though a sibling range (peer or dependency) would no longer resolve, or could not be decided
     defaultValue: false
   changed-only:
     type: boolean

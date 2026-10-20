@@ -14,6 +14,14 @@ title: Site
   // Opening a draft and each save queue its preview (1.3), built on the
   // site's machine; the list answers each draft's last one, and this screen
   // reads the list again while one is on its way.
+  //
+  // Publish (1.4) is a release of the site: merged, built, deployed, then the
+  // site's branch moved. Its refusals are its steps' words, so the card shows
+  // the step that stopped it.
+  //
+  // History (1.5) is the site's live releases with the files each shipped.
+  // Revert opens a draft undoing one publish; it goes live only when someone
+  // publishes that draft, so an editor may press it.
   import { page } from '@frontierjs/sierra/router'
   import { drafts } from '../../../resources/Draft.mesa'
   import { ago } from '../../../datetime.js'
@@ -30,6 +38,8 @@ title: Site
 
   let site    = null
   let list    = null
+  let published = null
+  let history = null
   let draft   = null
   let files   = null
   let path    = null
@@ -44,6 +54,11 @@ title: Site
 
   const call = (method, data) => drafts.service.invoke(method, null, { appId: page.params.id, ...data })
 
+  async function refresh() {
+    const answer = await call('list')
+    list = answer.drafts; published = answer.published
+  }
+
   async function attempt(what, fn) {
     busy = what; error = null; notice = null
     try { await fn() } catch (err) { error = err.message } finally { busy = null }
@@ -55,7 +70,24 @@ title: Site
       const { sites } = await drafts.service.invoke('sites', null)
       site = sites.find(s => s.id === page.params.id) ?? null
       if (!site) throw new Error('This is not a site you may edit')
-      list = (await call('list')).drafts
+      await refresh()
+    })
+    loadHistory()
+    if (onItsWay(published)) watchPublish()
+  }
+
+  // Read apart from the list, which polls: each entry is a git diff.
+  async function loadHistory() {
+    try { history = (await call('history')).releases } catch (err) { error = err.message }
+  }
+
+  async function revert(r) {
+    if (!confirm(`Open a draft that undoes ${r.draft}? Nothing changes on the site until it is published.`)) return
+    await attempt('revert', async () => {
+      const made = await call('revert', { release: r.id })
+      await refresh()
+      await pick(made.name)
+      notice = `${made.name} undoes ${r.draft} — check its preview, then publish it`
     })
   }
 
@@ -64,7 +96,7 @@ title: Site
     await attempt('open', async () => {
       const made = await call('open', { name: newName })
       newName = ''
-      list = (await call('list')).drafts
+      await refresh()
       await pick(made.name)
     })
   }
@@ -89,7 +121,39 @@ title: Site
     ready:    ['success', 'Ready'],
     failed:   ['danger',  'Failed'],
   }
-  const onItsWay = (p) => p?.state === 'queued' || p?.state === 'building'
+  const onItsWay = (p) => ['queued', 'building', 'pending'].includes(p?.state ?? p?.status)
+
+  const RELEASE = {
+    pending:   ['muted',   'Queued'],
+    building:  ['warning', 'Publishing'],
+    success:   ['success', 'Live'],
+    failed:    ['danger',  'Refused'],
+    cancelled: ['muted',   'Cancelled'],
+  }
+  $: stopped = published?.steps.find(s => s.status === 'failed') ?? null
+
+  async function watchPublish() {
+    for (let i = 0; i < 300; i++) {
+      await new Promise(r => setTimeout(r, 4000))
+      await refresh()
+      if (!onItsWay(published)) {
+        loadHistory()
+        if (published?.status === 'success' && draft === published.draft && !list.some(d => d.name === draft)) {
+          draft = null; files = null; path = null; form = null
+        }
+        return
+      }
+    }
+  }
+
+  async function publish() {
+    if (!confirm(`Publish ${draft}? Its changes go live on the site.`)) return
+    await attempt('publish', async () => {
+      await call('publish', { draft })
+      await refresh()
+      watchPublish()
+    })
+  }
 
   $: current = list && draft ? list.find(d => d.name === draft) ?? null : null
 
@@ -99,7 +163,7 @@ title: Site
     for (let i = 0; i < 300 && draft === name; i++) {
       await new Promise(r => setTimeout(r, 4000))
       if (draft !== name) return
-      list = (await call('list')).drafts
+      await refresh()
       if (!onItsWay(list.find(d => d.name === name)?.preview)) return
     }
   }
@@ -107,7 +171,7 @@ title: Site
   async function rebuild() {
     await attempt('preview', async () => {
       await call('preview', { draft })
-      list = (await call('list')).drafts
+      await refresh()
       watch(draft)
     })
   }
@@ -123,7 +187,7 @@ title: Site
       if (body !== form.body) sent.body = body
       if (changedKeys.length) sent.values = Object.fromEntries(changedKeys.map(k => [k, values[k]]))
       const saved = await call('save', sent)
-      list = (await call('list')).drafts
+      await refresh()
       await edit(path)
       notice = saved.changed ? `Saved to ${draft} as ${saved.commit.slice(0, 7)}` : 'Nothing had changed'
       if (saved.changed) watch(draft)
@@ -191,6 +255,62 @@ title: Site
             <Button size="sm" treatment="ghost" id="preview-rebuild"
                     disabled={onItsWay(current.preview) || busy === 'preview'} onclick={rebuild}>Build again</Button>
           </div>
+        </Card>
+      {/if}
+
+      {#if current}
+        <Card title="Publish">
+          <div class="stack" id="draft-publish">
+            {#if site.role === 'publish'}
+              <p class="text-sm text-muted">Ships {current.name} to the live site, as you see it on the preview.</p>
+              <Button tone="primary" size="sm" id="publish-draft"
+                      disabled={onItsWay(published) || busy === 'publish'} onclick={publish}>Publish {current.name}</Button>
+            {:else}
+              <p class="text-sm text-muted">Someone with the publish grant ships this draft when it is ready.</p>
+            {/if}
+          </div>
+        </Card>
+      {/if}
+
+      {#if published}
+        <Card title="Last publish">
+          <div class="stack" id="last-publish">
+            <div class="cluster">
+              <Pill tone={RELEASE[published.status]?.[0] ?? 'muted'} id="publish-state">{RELEASE[published.status]?.[1] ?? published.status}</Pill>
+              <span class="text-sm text-muted">{published.draft} · {published.author} · {ago(published.at)}</span>
+            </div>
+            {#if stopped}
+              <p class="text-sm" id="publish-error"><strong>{stopped.name}:</strong> {stopped.output}</p>
+            {:else if published.status === 'success'}
+              <p class="text-sm" id="publish-live">{published.steps.find(s => s.name === 'Build and deploy')?.output}</p>
+            {/if}
+          </div>
+        </Card>
+      {/if}
+
+      {#if history?.length}
+        <Card title="History">
+          <ul class="stack" id="site-history">
+            {#each history as r}
+              <li class="stack" style="gap: var(--space-xs)">
+                <div class="text-sm">
+                  <strong>{r.draft ? `Published ${r.draft}` : 'Deployed by a developer'}</strong>
+                  <span class="text-muted"> · {r.by ?? 'someone'} · {ago(r.at)}</span>
+                </div>
+                {#if r.files}
+                  <div class="text-sm text-muted">
+                    {#each r.files as f}<code>{f}</code> {/each}
+                    {#if r.authors.length}<span>— written by {r.authors.join(', ')}</span>{/if}
+                  </div>
+                {:else}
+                  <div class="text-sm text-muted">The first release recorded here.</div>
+                {/if}
+                {#if r.revertable}
+                  <div><Button size="sm" treatment="ghost" disabled={busy === 'revert'} onclick={() => revert(r)}>Revert</Button></div>
+                {/if}
+              </li>
+            {/each}
+          </ul>
         </Card>
       {/if}
 

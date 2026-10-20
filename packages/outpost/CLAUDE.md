@@ -50,7 +50,7 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   unfinished swap, so `deploy` keeps it and only `/stop` removes it. The wait
   is up to 30s, so a caller sending `/deploy` at a 10s timeout reads a working
   release as a failed one.
-- **`/site/preview` runs a STRANGER's edit through the repository's code**
+- **`/site/preview` and `/site/publish` run a STRANGER's edit through the repository's code**
   (`FJS-D1251`): the branch is an owner's draft, so install, build and upload
   each run in a `docker run --rm` as this process's user over a fresh checkout,
   never here. The Cloudflare token reaches the upload alone, as `-e NAME` with

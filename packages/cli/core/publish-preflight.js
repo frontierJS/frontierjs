@@ -92,15 +92,17 @@ export function dirtyPackages(planned = [], stateOf = () => ({})) {
 }
 
 /**
- * Peer ranges this release would step outside of.
+ * Sibling ranges this release would step outside of.
  *
  * Read across every workspace member rather than the release set alone: the
- * package that BREAKS is the one declaring the peer, and it is usually not one
+ * package that BREAKS is the one declaring the range, and it is usually not one
  * of the packages being bumped.
  *
- * Nothing in the publish path has ever read `peerDependencies`, and nothing
- * inside the workspace can notice: a `workspace:*` devDependency answers first,
- * so the range is never consulted until somebody installs from the registry.
+ * Nothing inside the workspace can notice: a `workspace:*` devDependency
+ * answers first, so the range is never consulted until somebody installs from
+ * the registry. A hand-typed range in `dependencies` ships just as stale as a
+ * peer one (`FJS-3349`); a `workspace:`, `file:` or `link:` spec is rewritten
+ * or resolved by the packer and is not a range.
  *
  * @param members  [{ name, pkg }]  every workspace member, published or not
  * @param planned  [{ name, newVersion }]
@@ -110,8 +112,9 @@ export function peerDrift(members = [], planned = []) {
   const out    = []
 
   for (const m of members) {
-    for (const [dep, range] of Object.entries(m.pkg?.peerDependencies ?? {})) {
-      if (!moving.has(dep)) continue
+    const ranges = { ...m.pkg?.optionalDependencies, ...m.pkg?.dependencies, ...m.pkg?.peerDependencies }
+    for (const [dep, range] of Object.entries(ranges)) {
+      if (!moving.has(dep) || /^[a-z]+:/.test(range)) continue
       const version = moving.get(dep)
       const ok      = satisfiesRange(version, range)
       // `null` is reported, not skipped. A range this cannot decide is the one
@@ -185,11 +188,11 @@ export function publishRefusals({ dirty = [], drift = [], cycles = [], heldBack 
   if (excluded.length && !force.peers) {
     out.push({
       check:   'peer-range',
-      message: `${excluded.length} peer range(s) would no longer resolve`,
-      because: 'a caret below 1.0 pins the minor, and nothing in the publish path rewrites a peer range',
+      message: `${excluded.length} sibling range(s) would no longer resolve`,
+      because: 'a caret below 1.0 pins the minor, and nothing in the publish path rewrites a hand-typed range',
       fix:     'bump `patch`, or move the ranges in the same commit',
       override: '--allow-peer-drift',
-      detail:  excluded.map(d => `${d.by} peers ${d.dep} ${d.range} — this release makes it ${d.version}`),
+      detail:  excluded.map(d => `${d.by} wants ${d.dep} ${d.range} — this release makes it ${d.version}`),
     })
   }
 
@@ -197,13 +200,13 @@ export function publishRefusals({ dirty = [], drift = [], cycles = [], heldBack 
   if (unsure.length && !force.peers) {
     out.push({
       check:   'peer-range-undecidable',
-      message: `${unsure.length} peer range(s) could not be decided`,
+      message: `${unsure.length} sibling range(s) could not be decided`,
       // Refused rather than passed. A check that cannot tell and says nothing
       // is indistinguishable from one that checked and approved.
       because: 'this is not a full semver implementation, deliberately — it decides exact, caret and tilde, and refuses to guess at the rest',
       fix:     'state the range as an exact, caret or tilde version, or check it by hand',
       override: '--allow-peer-drift',
-      detail:  unsure.map(d => `${d.by} peers ${d.dep} ${d.range} — this release makes it ${d.version}`),
+      detail:  unsure.map(d => `${d.by} wants ${d.dep} ${d.range} — this release makes it ${d.version}`),
     })
   }
 
@@ -314,4 +317,32 @@ export function matchesSelector(pkg = {}, folder = '', selectors = []) {
   if (!list.length) return false
   const name = String(pkg.name ?? '')
   return list.some(s => name.includes(s) || String(folder).includes(s))
+}
+
+// ─── the scaffold's pins ─────────────────────────────────────────────────────
+
+/**
+ * `core/app-config.js` with its exact pins moved to the versions this release
+ * publishes.
+ *
+ * `fli new` installs exact versions out of a table in the cli's own source
+ * (`FJS-2973`), so a cli published with the last release's table scaffolds the
+ * last release's framework under this release's templates — cli 0.1.8 wrote a
+ * bare `@@gate(8)` into an app pinned to a litestone that refused it
+ * (`FJS-3356`). Only an exact pin on a name in `versions` moves; a range is
+ * somebody's choice.
+ *
+ * @param source    the file's text
+ * @param versions  Map name → version
+ * @returns { text, moved: [{ name, from, to }] }
+ */
+export function writePins(source, versions) {
+  const moved = []
+  const text  = String(source).replace(/^(\s*'([^']+)':\s*)'(\d+\.\d+\.\d+)'/gm, (line, head, name, from) => {
+    const to = versions.get(name)
+    if (!to || to === from) return line
+    moved.push({ name, from, to })
+    return `${head}'${to}'`
+  })
+  return { text, moved }
 }

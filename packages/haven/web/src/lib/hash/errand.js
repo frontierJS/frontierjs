@@ -308,3 +308,40 @@ export function openLink(url, { bin = process.platform === 'darwin' ? 'open' : '
     child.on('spawn', () => { child.unref(); resolve(true) })
   })
 }
+
+// ─── the desk's peek ────────────────────────────────────────────────────────
+//
+// `space` at the desk: the newest word on the cursor's item, read with this
+// machine's `basecamp` — the newest line of a chat the URL names a line of,
+// else the newest comment on the recording it names. No shell: the URL is
+// the post's, not this machine's.
+
+const basecamp = (args, signal) => new Promise((resolve, reject) => {
+  execFile('basecamp', [...args, '--json'], { signal, timeout: 60_000, maxBuffer: 32 << 20 }, (err, out) => {
+    if (err?.code === 'ENOENT') return reject(new Error('basecamp is not installed or not on PATH'))
+    let body = null
+    try { body = JSON.parse(out) } catch {}
+    // A refusal prints its envelope and exits 2, so the envelope is the reason.
+    if (body?.ok) return resolve(body.data)
+    reject(body ? new Error(String(body.error ?? 'basecamp refused')) : err ?? new Error('basecamp printed no JSON'))
+  })
+})
+
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", nbsp: ' ' }
+const textOf = (html) => String(html ?? '').replace(/<br\s*\/?>|<\/(p|div|li)>/g, ' ').replace(/<[^>]+>/g, '')
+  .replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (_, e) => ENTITIES[e]).replace(/\s+/g, ' ').trim()
+
+/**
+ * The newest thing said on `url`: `{ who, at, text }`, or null when nothing
+ * has been. Throws with Basecamp's reason, and on a URL that names no chat
+ * line or recording.
+ */
+export async function peekItem(url, { signal } = {}) {
+  const chat = url.match(/\/buckets\/(\d+)\/chats\/(\d+)@\d+/)
+  if (!chat && !/\/buckets\/\d+\/[a-z_]+\/\d+/.test(url)) throw new Error('nothing to peek at on a link to a whole project')
+  const said = chat
+    ? await basecamp(['chat', 'messages', '-p', chat[1], '-r', chat[2], '-n', '1'], signal)
+    : await basecamp(['comments', 'list', url.replace(/#.*$/, ''), '--all'], signal)
+  const last = Array.isArray(said) ? said.at(-1) : null
+  return last ? { who: String(last.creator?.name ?? 'someone'), at: String(last.created_at ?? ''), text: textOf(last.content) } : null
+}

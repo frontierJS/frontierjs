@@ -13,7 +13,7 @@
 // `core/probe.ts`, which may not be re-derived here.
 
 import { defineJob }      from '@frontierjs/caravan'
-import { assertPublicUrl, type PublicUrlOptions } from '@frontierjs/junction/public-url'
+import { gradePublicUrl, pinTo, type PublicUrlOptions } from '@frontierjs/junction/public-url'
 import { runsAsApp }      from './context.ts'
 import { gradeProbe, nextState, type ProbeOutcome } from '../core/probe.ts'
 import { fanOutToChannels } from '../core/delivery.ts'
@@ -189,14 +189,22 @@ async function probe(
     const signal = AbortSignal.timeout(monitor.timeoutMs)
 
     for (let hops = 0; ; hops++) {
-      await assertPublicUrl(url, destinations)
-      const res = await fetch(url, {
+      // The connect goes to the address that was graded: a name resolved again
+      // by `fetch` could answer loopback this time (`FJS-3357`).
+      const graded = await gradePublicUrl(url, destinations)
+      const pin    = graded.address ? pinTo(graded.url, graded.address) : null
+      const tls    = { ...pin?.tls, ...(monitor.ignoreTls ? { rejectUnauthorized: false } : {}) }
+      // `set`, not a spread: a monitor's own `Host` would be appended beside
+      // the pin's and the server handed both.
+      const headers = new Headers(monitor.headers ?? {})
+      if (pin) headers.set('host', pin.headers.host)
+      const res = await fetch(pin?.url ?? url, {
         method:   hops === 0 ? monitor.method : 'GET',
-        headers:  monitor.headers ?? {},
+        headers,
         body:     hops === 0 && monitor.method !== 'GET' && monitor.method !== 'HEAD' ? monitor.body ?? undefined : undefined,
         redirect: 'manual',
         signal,
-        ...(monitor.ignoreTls ? { tls: { rejectUnauthorized: false } } : {}),
+        ...(Object.keys(tls).length ? { tls } : {}),
       } as RequestInit)
 
       const location = res.headers.get('location')

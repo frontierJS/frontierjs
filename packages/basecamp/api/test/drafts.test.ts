@@ -29,6 +29,7 @@ import { buildBasecampApp }       from '../src/app.ts'
 import { grantsFor }              from '../src/core/capabilities.ts'
 import { env as appEnv }          from '../src/core/env.ts'
 import { cloudflareFor, previewStatuses } from '../src/core/site-preview.ts'
+import { MergeConflict, advanceBase, mergeDraft, revertDraft, saveDraftFile, openDraft, readDraftFile } from '../src/core/site-checkout.ts'
 import { registerAccount }        from '../src/providers/compute/accounts.ts'
 import { startCfSink, SINK_ACCOUNT } from '../src/providers/edge/cloudflare-sink.ts'
 
@@ -206,6 +207,192 @@ describe('a draft\'s preview', () => {
     expect((await refusal(drafts(admin).call('preview', undefined, { appId: site.id, draft: 'no-account' }))).code).toBe(404)
     const again = await drafts(editor).call('preview', undefined, { appId: site.id, draft: 'no-account' })
     expect(again.preview.state).toMatch(/queued|building|failed/)
+  })
+})
+
+// A publish (1.4, FJS-D1229, FJS-D1339): every refusal past the grant is a
+// failed step on the release /sites/ shows, and the site's branch moves only
+// after a deploy. The stub machine deploys nothing, so it is the last refusal
+// a test without a real Outpost reaches; the merge and the branch's move are
+// proved over the real remote below.
+
+describe('publishing a draft', () => {
+  let publisher: any
+  const work = () => join(tmp, 'work')
+  const developerPush = (file: string, text: string, message: string) => {
+    git(work(), 'pull', '--quiet', remote, 'main')
+    writeFileSync(join(work(), 'site', file), text)
+    git(work(), 'add', '.')
+    git(work(), '-c', 'user.name=Dev', '-c', 'user.email=dev@x.co', 'commit', '--quiet', '-m', message)
+    git(work(), 'push', '--quiet', remote, 'HEAD:main')
+    return git(remote, 'rev-parse', 'main')
+  }
+  // What a developer's Deploy records; the drive that runs one is not here.
+  const released = async (commit: string) => {
+    const sys = env.system as any
+    const row = await sys.deployment.create({ data: {
+      workspaceId: site.workspaceId, appId: site.id, environmentId: site.environmentId, trigger: 'manual', commitSha: commit } })
+    await sys.deployment.update({ where: { id: row.id }, data: { status: 'building' } })
+    await sys.deployment.update({ where: { id: row.id }, data: { status: 'success', finishedAt: new Date().toISOString() } })
+  }
+  const published = async (draft: string) => {
+    const queued = await drafts(publisher).call('publish', undefined, { appId: site.id, draft })
+    for (let i = 0; i < 400; i++) {
+      const last = (await drafts(publisher).call('list', undefined, { appId: site.id })).published
+      if (last?.id === queued.published.id && ['success', 'failed'].includes(last.status)) return last
+      await Bun.sleep(25)
+    }
+    throw new Error(`the publish of ${draft} never settled`)
+  }
+  const failedAt = (p: any) => p.steps.find((s: any) => s.status === 'failed')
+
+  beforeAll(async () => {
+    const sys = env.system as any
+    const { accountId } = await sys.workspace.findFirst({ where: { id: site.workspaceId } })
+    const u = await sys.user.create({ data: { email: `kim-${uniq()}@x.co`, name: 'Kim', status: 'active', accountId } })
+    await sys.appEditor.create({ data: { appId: site.id, userId: u.id, role: 'publish' } })
+    publisher = session({ userId: u.id })
+  })
+
+  test('an editor without the publish grant is refused, and nothing is queued', async () => {
+    const e = await refusal(drafts(editor).call('publish', undefined, { appId: site.id, draft: 'spring-hours' }))
+    expect(e.code).toBe(403)
+    expect((await drafts(editor).call('list', undefined, { appId: site.id })).published).toBeNull()
+  })
+
+  test('with no release recorded, what is live is unknown and the publish is refused at Validate', async () => {
+    const p = await published('spring-hours')
+    expect(p.status).toBe('failed')
+    expect(failedAt(p)).toMatchObject({ name: 'Validate' })
+    expect(failedAt(p).output).toMatch(/no release of this site is recorded/)
+    expect(p.steps.slice(1).map((s: any) => s.status)).toEqual(['skipped', 'skipped', 'skipped'])
+  })
+
+  test('a commit on main the live site does not hold is refused, naming it and its author', async () => {
+    await released(git(remote, 'rev-parse', 'main'))
+    const ahead = developerPush('content/settings/site.js', 'export default { a: 1 }\n', 'Tweak config')
+    const p = await published('spring-hours')
+    expect(failedAt(p).name).toBe('Validate')
+    expect(failedAt(p).output).toContain(`${ahead.slice(0, 7)} by Dev (Tweak config)`)
+    expect(failedAt(p).output).toMatch(/Dev deploys it first/)
+  })
+
+  test('the stub machine deploys nothing, so main stays where the live release left it', async () => {
+    const main = git(remote, 'rev-parse', 'main')
+    await released(main)
+    process.env.BASECAMP_STUB_OUTPOST = '1'
+    try {
+      const p = await published('spring-hours')
+      expect(p.steps.map((s: any) => [s.name, s.status])).toEqual([
+        ['Validate', 'success'], ['Merge', 'success'], ['Build and deploy', 'failed'], ['Advance branch', 'skipped']])
+      expect(failedAt(p).output).toMatch(/stub executor — no \/site\/publish was issued, so main stays where it was/)
+      expect(git(remote, 'rev-parse', 'main')).toBe(main)
+      // The merge is on the draft, by the publisher, over both heads.
+      expect(git(remote, 'log', '-1', '--format=%an|%s|%p', 'draft/spring-hours').split('|').slice(0, 2)).toEqual(['Kim', 'Publish spring-hours'])
+      expect(git(remote, 'rev-parse', 'draft/spring-hours^1')).toBe(main)
+    } finally {
+      delete process.env.BASECAMP_STUB_OUTPOST
+    }
+  })
+
+  test('a line the draft and main both changed is refused at Merge, naming the file', async () => {
+    const theirs = developerPush('content/routes/index.md', PAGE.replace('nine', 'eight'), 'Hours')
+    await released(theirs)
+    const p = await published('spring-hours')
+    expect(failedAt(p).name).toBe('Merge')
+    expect(failedAt(p).output).toBe('spring-hours and main both changed content/routes/index.md — a developer merges them')
+  })
+
+  // History (1.5): a publish that went live, as the job leaves it — merged by
+  // the core, the branch advanced, the release recorded with the merge.
+  test('history lists each live release with its files and writers, and Revert opens a draft undoing a publish', async () => {
+    const sys = env.system as any
+    const g = { id: site.id, source: site.source }
+    const opened = await drafts(editor).call('open', undefined, { appId: site.id, name: 'Hours' })
+    const form = await drafts(editor).call('read', undefined, { appId: site.id, draft: opened.name, path: 'content/routes/index.md' })
+    await drafts(editor).call('save', undefined, {
+      appId: site.id, draft: opened.name, path: 'content/routes/index.md', blob: form.blob, body: 'We open at noon.\n' })
+    const before = git(remote, 'rev-parse', 'main')
+    const merged = await mergeDraft(g, opened.name, { name: 'Kim', email: 'kim@x.co' }, 'Publish hours', before)
+    await advanceBase(g, merged)
+    const row = await sys.deployment.create({ data: {
+      workspaceId: site.workspaceId, appId: site.id, environmentId: site.environmentId, trigger: 'publish', author: 'Kim',
+      commitSha: merged.commit, configSnapshot: { source: site.source, draft: 'hours', publisher: { userId: 'u', name: 'Kim', email: 'kim@x.co' } } } })
+    await sys.deployment.update({ where: { id: row.id }, data: { status: 'building' } })
+    await sys.deployment.update({ where: { id: row.id }, data: { status: 'success', finishedAt: new Date(Date.now() + 1000).toISOString() } })
+
+    const { releases } = await drafts(editor).call('history', undefined, { appId: site.id })
+    expect(releases[0]).toMatchObject({ id: row.id, draft: 'hours', by: 'Kim', files: ['content/routes/index.md'], authors: ['Owner'], revertable: true })
+    expect(releases[1]).toMatchObject({ trigger: 'manual', revertable: false })
+
+    expect((await refusal(drafts(admin).call('revert', undefined, { appId: site.id, release: row.id }))).code).toBe(404)
+    const manual = await refusal(drafts(editor).call('revert', undefined, { appId: site.id, release: releases[1].id }))
+    expect([manual.code, manual.message]).toEqual([400, expect.stringMatching(/developer's deploy/)])
+
+    // The edit grant suffices: a revert only opens a draft, and main stays.
+    const undone = await drafts(editor).call('revert', undefined, { appId: site.id, release: row.id })
+    expect(undone.branch).toBe('draft/revert-hours')
+    expect(git(remote, 'show', 'draft/revert-hours:site/content/routes/index.md')).toBe(git(remote, 'show', `${before}:site/content/routes/index.md`))
+    expect(git(remote, 'log', '-1', '--format=%an|%s|%P', 'draft/revert-hours')).toBe(`Owner|Revert hours|${merged.commit}`)
+    expect(git(remote, 'rev-parse', 'main')).toBe(merged.commit)
+    expect((await refusal(drafts(editor).call('revert', undefined, { appId: site.id, release: row.id }))).message).toMatch(/revert-hours is already open/)
+  })
+})
+
+describe('the merge a publish ships', () => {
+  const g = { id: '', source: { repo: '' } as any }
+  const who = { name: 'Kim', email: 'kim@x.co' }
+
+  test('lines only one side changed are both kept, then main follows and the draft is removed', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'basecamp-merge-'))
+    const w = join(dir, 'w'), r = join(dir, 'r.git')
+    mkdirSync(join(w, 'content', 'routes'), { recursive: true })
+    writeFileSync(join(w, 'content', 'routes', 'a.md'), 'one\ntwo\nthree\nfour\nfive\n')
+    git(dir, 'init', '--quiet', '--initial-branch=main', w)
+    git(w, 'add', '.')
+    git(w, '-c', 'user.name=Dev', '-c', 'user.email=dev@x.co', 'commit', '--quiet', '-m', 'Init')
+    git(dir, 'clone', '--quiet', '--bare', w, r)
+    Object.assign(g, { id: `m-${uniq()}`, source: { repo: r } })
+    const root = join(dir, 'sites')
+
+    await openDraft(g, 'Edits', root)
+    const read = await readDraftFile(g, 'edits', 'content/routes/a.md', root)
+    await saveDraftFile(g, 'edits', { path: 'content/routes/a.md', blob: read.blob, text: 'one\ntwo\nthree\nfour\nFIVE\n', message: 'Owner' }, who, root)
+    writeFileSync(join(w, 'content', 'routes', 'a.md'), 'ONE\ntwo\nthree\nfour\nfive\n')
+    git(w, '-c', 'user.name=Dev', '-c', 'user.email=dev@x.co', 'commit', '--quiet', '-am', 'Dev')
+    git(w, 'push', '--quiet', r, 'HEAD:main')
+    const main = git(r, 'rev-parse', 'main')
+
+    // Checked at the head before the developer's push: refused, not merged over.
+    const stale = await mergeDraft(g, 'edits', who, 'x', git(r, 'rev-parse', 'main^'), root).catch((err: Error) => err)
+    expect((stale as Error).message).toMatch(/main moved to .* while the publish was checked/)
+
+    const merged = await mergeDraft(g, 'edits', who, 'Publish edits', main, root)
+    expect(merged.paths).toEqual(['content/routes/a.md'])
+    expect(git(r, 'show', `${merged.commit}:content/routes/a.md`)).toBe('ONE\ntwo\nthree\nfour\nFIVE')
+    expect(git(r, 'rev-parse', 'draft/edits')).toBe(merged.commit)
+    expect(git(r, 'rev-parse', 'main')).toBe(main)
+
+    expect(await advanceBase(g, merged, root)).toEqual({ draftKept: false })
+    expect(git(r, 'rev-parse', 'main')).toBe(merged.commit)
+    expect(git(r, 'branch', '--list', 'draft/*')).toBe('')
+
+    // Revert undoes the draft's side only: the developer's ONE came through
+    // main, the merge's first parent, so it stays.
+    const undo = await revertDraft(g, merged.commit, 'Undo', who, 'Revert edits', () => null, root)
+    expect(git(r, 'show', `${undo.head}:content/routes/a.md`)).toBe('ONE\ntwo\nthree\nfour\nfive')
+    expect(((await revertDraft(g, merged.commit, 'Vetoed', who, 'x', p => `${p} is no`, root).catch((e: Error) => e)) as Error).message)
+      .toBe(`undoing ${merged.commit.slice(0, 7)} would change content/routes/a.md: content/routes/a.md is no`)
+
+    git(w, 'pull', '--quiet', r, 'main')
+    writeFileSync(join(w, 'content', 'routes', 'a.md'), 'ONE\ntwo\nthree\nfour\nFive!\n')
+    git(w, '-c', 'user.name=Dev', '-c', 'user.email=dev@x.co', 'commit', '--quiet', '-am', 'Again')
+    git(w, 'push', '--quiet', r, 'HEAD:main')
+    const again = await revertDraft(g, merged.commit, 'Late', who, 'x', () => null, root).catch((e: Error) => e)
+    expect(again).toBeInstanceOf(MergeConflict)
+    expect((again as Error).message).toMatch(/^content\/routes\/a\.md changed again since/)
+    expect(git(r, 'branch', '--list', 'draft/late')).toBe('')
+    rmSync(dir, { recursive: true, force: true })
   })
 })
 

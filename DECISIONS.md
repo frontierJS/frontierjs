@@ -14508,6 +14508,12 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1340"></a>2026-10-20 · `FJS-D1340` — `ws:pub` writes the scaffold's exact pins in `packages/cli/core/app-config.js` to the versions it is publishing, in the release commit, and names the pins left behind when cli is not in the run.
+
+Asked after `FJS-3356`: published cli 0.1.8 pinned litestone 1.1.9, because the pins were raised by hand after a release, and its templates wrote a `@@gate(8)` that version refused. **A** (`ws:pub` writes the pins) was picked over **B** (`ws:pub` prints a reminder after publishing — still by hand, and a pin raised after the release ships in no cli) and **C** (leave it). As recommended.
+
+Only an exact pin on a workspace member's name moves; a range is somebody's choice. A cli outside the run is warned about, not written, because its tarball would not carry the edit. `writePins()` in `packages/cli/core/publish-preflight.js`, graded by `test/publish-preflight.test.js` § the scaffold pins a release writes; the step is `_steps/01-version-all.md`.
+
 ### <a id="fjs-d1337"></a>2026-10-19 · `FJS-D1337` — `ws:pub` finishes a release in flight rather than bumping it: a package whose `<name>@<version>` tag exists and whose version the registry lacks is published as it stands, and the run says the bump is ignored.
 
 Asked in chat after a lapsed npm session left 21 packages versioned, tagged and unpublished, and `ws:pub` answered *nothing to publish*. **A** (`ws:pub` detects it) was picked over **B** (a separate `ws:pub:resume` command — a second command to know, and plain `ws:pub` keeps the trap) and **C** (a `--resume` flag — the caller must already know the state). As recommended.
@@ -17677,6 +17683,12 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d1339"></a>2026-10-20 · `FJS-D1339` — Q16 — What a site's first publish does, with no release recorded to compare against (1.4) — Refuse by name ("no release of this site is recorded"), and give a static `git` App a real Deploy: `deployments.create` sends the same Outpost build-and-deploy a publish does, recording the commit.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (the first publish ships the default branch plus the draft and becomes the baseline; Q5 applies from the second publish on), **C** (refuse by name and leave the developer's Deploy for later).
+
+The paper's recommendation, taken as written: B ships a developer's unreviewed commits once, which is Q5's hazard on the day it matters most. C leaves Publish unable to succeed anywhere. A also mends the broken step list.
 
 ### <a id="fjs-d1252"></a>2026-10-18 · `FJS-D1252` — Q15 — Which credential uploads the preview (1.3) — The workspace's Cloudflare edge account (the `provider_key` Secret `services/edge/` already reads), handed to wrangler as `CLOUDFLARE_API_TOKEN` for the one run. The token then needs Workers Scripts edit beside DNS.
 

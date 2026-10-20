@@ -130,6 +130,20 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           the workspace's Cloudflare account and the account id off its zone
           (`FJS-D1252`); each draft's last preview is a file beside the clone,
           and a save during a build is the same run's next round
+          core/site-publish.ts is a site's LIVE release: `releaseSite` sends
+          `/site/publish` for a developer's Deploy of a static git App and for
+          an owner's Publish alike, and the commit it answers is recorded on the
+          release. A publish (`drafts.publish`, the `site:publish` job, as the
+          app) is a `Deployment` whose refusals are its steps — no release
+          recorded (`FJS-D1339`), undeployed commits named by author
+          (`FJS-D1229`), a both-sides line — and the site's branch moves only
+          after the deploy, so a failed build never strands the owner's merge.
+          `drafts.history` is DERIVED (releases + git diff, nothing stored);
+          `drafts.revert` is that merge run backwards into a new draft at the
+          `edit` grant, and refuses a developer's deploy.
+          core/release-record.ts is the ONE writer of a release's run (start,
+          step, finish), called by `deployments` at the caller's standing and
+          by a publish as the app
           core/credentials.ts owns both conduit ref forms — `secret:<id>` and
           `env:<NAME>`; a target carries the ref, never the material
           core/runtime.ts is the ONE reader of how a container starts —
