@@ -218,7 +218,7 @@ validates, and a select that silently drops an option.
 - `BackupDestination` — `local`, `s3`
 - `DependencyKind` — `dependency`, `dev`, `peer`, `optional`
 - `NotificationContext` — `Deployment`, `AlertEvent`, `JobRun`, `Server`, `Workspace`, `Monitor`
-- `NotificationKind` — `deploy_success`, `deploy_failed`, `alert_firing`, `alert_resolved`, `server_unreachable`, `monitor_down`, `monitor_up`, `posture_failed`, `dependency_vulnerable`, `member_joined`, `job_failed`, `weekly_digest`
+- `NotificationKind` — `DeploySuccess`, `DeployFailed`, `AlertFiring`, `AlertResolved`, `ServerUnreachable`, `MonitorDown`, `MonitorUp`, `PostureFailed`, `DependencyVulnerable`, `MemberJoined`, `JobFailed`, `WeeklyDigest`
 - `EditorRole` — `edit`, `publish`
 - `Capability` — `Environment.create`, `Environment.delete`, `Environment.update`, `Server.create`, `Server.delete`, `Server.destroy`, `Server.drain`, `Server.provision`, `Server.reboot`, `Server.undrain`, `Server.update`, `Variable.create`, `Variable.delete`, `Variable.update`
 

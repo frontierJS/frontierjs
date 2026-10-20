@@ -169,3 +169,18 @@ describe('through the real plugin', () => {
     await expect(h.app.notify({ id: 'u3' }, orphan(undefined))).rejects.toThrow(/has no type/)
   })
 })
+
+// FJS-2103 — a custom transport's formatter takes its payload type from
+// `defineNotification<P>`. `bun test` does not typecheck, so this block is
+// proved by `bun run typecheck`: an implicit any there is a TS7031.
+describe('defineNotification — a custom transport formatter is typed by P', () => {
+  test('its payload parameter is P, not an implicit any', async () => {
+    const d = defineNotification<{ text: string }>({
+      type: 'Texted',
+      via:  () => ['sms'],
+      sms:  ({ text }) => ({ text }),
+    })
+    const msg = d({ text: 'hi' })
+    expect(await msg.getMessageFor('sms', { id: 'u1' })).toEqual({ text: 'hi' })
+  })
+})

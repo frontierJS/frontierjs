@@ -202,7 +202,7 @@ describe('check', () => {
   // FJS-2715 — the advisory is on /dependencies/ and nobody is told.
   test('a version that gains an advisory tells the workspace once, not again each run', async () => {
     const told = async () => (env.system as any).notification.findMany({
-      where: { userId: ownerUser.id, type: 'dependency_vulnerable' },
+      where: { userId: ownerUser.id, type: 'DependencyVulnerable' },
     })
     // The first run found lodash@4.17.15 vulnerable: that is the news.
     const first = await told()

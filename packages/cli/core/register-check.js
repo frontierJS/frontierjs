@@ -67,6 +67,7 @@ export const RULES = [
   { id: 'env-cause',        level: 'error', what: 'an `env:` segment naming a cause outside the table — the row is counted under no cause' },
   { id: 'seam-name',        level: 'error', what: 'a `seam:` segment naming no entry in the root `CLAUDE.md` § Bridge index key list — the row is counted under no seam' },
   { id: 'lives-in',         level: 'error', what: 'a ruling\'s `*Lives in:*` naming a path that is not in the tree, a symbol its file no longer mentions, or a package no package.json declares — advice that fails when taken' },
+  { id: 'dead-path',        level: 'error', what: 'a code-span file path in a ruling that no clone holds, written from the root or from `packages/` — cited as if from the root when it lives in a package, renamed, moved or retired' },
   { id: 'overview-status',  level: 'error', what: 'an `IDEAS/overview.md` row whose Status cell says the work is still open while its paper says `shipped` or `withdrawn`, or its only cited defects are closed' },
   { id: 'ruling-order',     level: 'warn',  what: 'a ruling dated later than the one above it — a section runs newest first, so the top of one is the current thinking' },
   { id: 'unnamed-ruling',   level: 'warn',  what: 'a ruling with no id — nothing can cite it' },
@@ -118,6 +119,39 @@ function workspaceNames(root) {
     } catch {}
   }
   return { names, dirs }
+}
+
+// ─── what a ruling's prose can be held to ────────────────────────────────────
+//
+// A code span that is a file path with a known extension, written from the
+// root or from `packages/`. Only a path whose first segment names something at
+// one of those two places is graded: `api/src/x.ts` is an app's file and
+// `docs/x.md` is either the root's or a package's, which is the citation that
+// goes dead when read from the root. The first segment is asked of the tree and
+// not the disk, so an ignored sibling checkout grades the same on every machine.
+
+const PATH_EXT = /\.(js|ts|md|mesa|lite|css|mjs|json|html|sh|sql|ya?ml)$/
+
+function deadPathFindings(ruling, { root, inTree, tree }) {
+  const out    = []
+  const lives  = new Set((ruling.livesIn ?? []).map(l => l.token))
+  const prose  = (ruling.raw ?? '').replace(/^\s*```[\s\S]*?^\s*```/gm, '')
+  const seen   = new Set()
+  const topHas = (seg) => tree
+    ? tree.has(seg) || tree.has(`packages/${seg}`)
+    : existsSync(resolve(root, seg)) || existsSync(resolve(root, 'packages', seg))
+
+  for (const [, token] of prose.matchAll(/`([^`\n]+)`/g)) {
+    if (seen.has(token) || lives.has(token)) continue
+    seen.add(token)
+    if (DEAD_SHAPE.test(token) || /^https?:|^~|^@|\$|\(|\|/.test(token)) continue
+
+    const rel = token.replace(/#.*/, '').replace(/:\d+(-\d+)?$/, '')
+    if (!rel.includes('/') || leavesTree(rel) || !PATH_EXT.test(rel) || !topHas(rel.split('/')[0])) continue
+    if (inTree(resolve(root, rel)) || inTree(resolve(root, 'packages', rel))) continue
+    out.push({ message: `cites ${token}, which is not in the tree` })
+  }
+  return out
 }
 
 function packageOf(token) {
@@ -521,7 +555,7 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
 
   // ── decisions ──
 
-  const lives = { root, ...workspaceNames(root), inTree }
+  const lives = { root, ...workspaceNames(root), inTree, tree }
 
   // The ruling above this one, within the same section. `doc.decisions` is in
   // file order, so a section change resets it.
@@ -562,6 +596,7 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
     // A retired ruling describes the tree as it was, as a closed row does.
     if (ruling.status == null) {
       for (const f of livesInFindings(ruling, lives)) add('lives-in', ruling, f.message, f.detail)
+      for (const f of deadPathFindings(ruling, lives)) add('dead-path', ruling, f.message)
     }
 
     // ── what a ruling says about itself ──

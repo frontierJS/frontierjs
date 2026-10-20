@@ -8,7 +8,7 @@
  */
 
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -88,5 +88,29 @@ describe('db:migrate JSON Schema', () => {
     } finally { process.chdir(cwd) }
     expect(existsSync(join(dir, 'db', '.json', 'schema.json'))).toBe(true)
     expect(existsSync(join(dir, 'db', 'schema.json'))).toBe(false)
+  })
+})
+
+// FJS-1722: `migrate dev` prints *no migration needed* and exits 0 when the
+// schema change has no DDL (a @@gate edit), so the success line is earned by a
+// file appearing, as it is for --create-only.
+describe('db:migrate reports what was written', () => {
+  async function real() {
+    const events = []
+    const emit = (e) => { events.push(e); return Promise.resolve() }
+    const cmd = await Command({ file, arg: [], flag: {}, emit })
+    await cmd()
+    return events.map(e => e.text ?? '').join('\n')
+  }
+
+  test('a file written is named, and a run with nothing to do says none was', async () => {
+    const schema = join(dir, 'db', 'schema.lite')
+    writeFileSync(schema, readFileSync(schema, 'utf8') + '\nmodel Tag {\n  id Int @id\n}\n')
+    const first = await real()
+    expect(first).toContain('Migration created and applied')
+    expect(first).toMatch(/\.sql/)
+    const second = await real()
+    expect(second).not.toContain('Migration created and applied')
+    expect(second).toContain('No migration file written')
   })
 })

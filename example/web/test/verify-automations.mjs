@@ -460,6 +460,33 @@ try {
   const runId = await evaluate(`return ${fresh}?.getAttribute('data-run') ?? ''`)
   t('runs.theMetricsCountIt', await until(`document.querySelector('#runs-metrics')`, 4000), true)
 
+  // ─── the filter bar, the metrics and the node catalog ─────────────────────
+  //
+  // Each is paired: the filter that matches the run lists it and the one that
+  // does not leaves the table without it, so a bar that drew and filtered
+  // nothing fails the second half.
+
+  t('runs.theFilterBarIsDrawn', await until(`document.querySelector('#runs-filters')`, 4000), true)
+  await go('/automations/runs/?status=completed')
+  t('runs.aStatusFilterKeepsTheRun', await until(`document.querySelector('[data-run="${runId}"]')`, 6000), true)
+  await go('/automations/runs/?status=cancelled')
+  t('runs.andAnotherDropsIt', await until(`document.querySelector('table') && !document.querySelector('[data-run="${runId}"]')`, 6000), true)
+
+  await go('/automations/metrics/')
+  t('metrics.theTilesRender', await until(`document.querySelector('#metrics-tiles')`, 6000), true)
+  t('metrics.theRunIsCounted', await until(`document.querySelector('#metrics-status [data-status="completed"]')`, 4000), true)
+  await evaluate(`
+    const sel = document.querySelector('#metrics-flow');
+    const opt = [...sel.options].find(o => o.value === ${JSON.stringify(flowId)});
+    sel.value = opt.value;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  `)
+  t('metrics.oneFlowKeepsItsRun', await until(`document.querySelector('#metrics-status [data-status="completed"]')`, 6000), true)
+
+  await go('/automations/nodes/')
+  t('nodes.theTriggersAreListed', await until(`document.querySelector('[data-category="trigger"] [data-node-type]')`, 6000), true)
+  t('nodes.andTheLogicNodeIsToo', await until(`document.querySelector('[data-node-type="flow.condition"]') || document.querySelector('[data-category="flow-control"] [data-node-type]')`, 4000), true)
+
   // ─── the run, read back ───────────────────────────────────────────────────
 
   await go(`/automations/runs/${runId}/`)

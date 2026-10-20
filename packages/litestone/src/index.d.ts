@@ -923,6 +923,8 @@ export interface ParseResult {
   valid:    boolean
   errors:   string[]
   warnings: string[]
+  /** `parseFile` only: every file it read, imports included. */
+  files?:   string[]
 }
 
 export interface LitestoneSchema {
@@ -1087,6 +1089,7 @@ export declare class LitestonePlugin {
   onBeforeUpdate(model: string, args: unknown, ctx: LitestoneCtx): Promise<void>
   onBeforeDelete(model: string, args: unknown, ctx: LitestoneCtx): Promise<void>
   onAfterRead(model: string, rows: unknown[], ctx: LitestoneCtx): Promise<void>
+  onWriteResult(model: string, rows: unknown[], ctx: LitestoneCtx): Promise<void>
   onAfterWrite(model: string, operation: string, result: unknown, ctx: LitestoneCtx): Promise<void>
   onAfterDelete(model: string, rows: unknown[], ctx: LitestoneCtx): Promise<void>
   buildReadFilter(model: string, ctx: LitestoneCtx): Record<string, unknown> | null

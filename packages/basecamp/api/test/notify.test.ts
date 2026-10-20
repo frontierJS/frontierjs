@@ -162,7 +162,7 @@ describe('a preference decides, and no row means the default', () => {
     const { app, db } = await makeApp()
     const { user } = await member(db, 'default')
 
-    expect(await transportsFor(app, user.id, 'deploy_success')).toEqual(['inApp'])
+    expect(await transportsFor(app, user.id, 'DeploySuccess')).toEqual(['inApp'])
   })
 
   test('switching a kind off means nothing is sent — paired with leaving it on', async () => {
@@ -171,11 +171,11 @@ describe('a preference decides, and no row means the default', () => {
     const on  = await member(db, 'on')
 
     await db.notificationPreference.create({
-      data: { userId: off.user.id, kind: 'deploy_success', inApp: false, email: false },
+      data: { userId: off.user.id, kind: 'DeploySuccess', inApp: false, email: false },
     })
 
-    expect(await notifyPeople(app, 'deploy_success', [off.user.id], PAYLOAD)).toBe(0)
-    expect(await notifyPeople(app, 'deploy_success', [on.user.id],  PAYLOAD)).toBe(1)
+    expect(await notifyPeople(app, 'DeploySuccess', [off.user.id], PAYLOAD)).toBe(0)
+    expect(await notifyPeople(app, 'DeploySuccess', [on.user.id],  PAYLOAD)).toBe(1)
 
     expect(await db.notification.count({ where: { userId: off.user.id } })).toBe(0)
     expect(await db.notification.count({ where: { userId: on.user.id } })).toBe(1)
@@ -188,9 +188,9 @@ describe('a preference decides, and no row means the default', () => {
     const { app, db } = await makeApp()
     const { user } = await member(db, 'type')
 
-    await notifyPeople(app, 'deploy_failed', [user.id], { ...PAYLOAD, reason: 'boom' })
+    await notifyPeople(app, 'DeployFailed', [user.id], { ...PAYLOAD, reason: 'boom' })
     const row = await db.notification.findFirst({ where: { userId: user.id } })
-    expect(row.type).toBe('deploy_failed')
+    expect(row.type).toBe('DeployFailed')
     expect(row.contextType).toBe('Deployment')
     expect(row.readAt).toBe(null)
   })
@@ -202,7 +202,7 @@ describe('a preference decides, and no row means the default', () => {
     const { app, db } = await makeApp()
     const { user } = await member(db, 'dupe')
 
-    expect(await notifyPeople(app, 'deploy_success', [user.id, user.id, user.id], PAYLOAD)).toBe(1)
+    expect(await notifyPeople(app, 'DeploySuccess', [user.id, user.id, user.id], PAYLOAD)).toBe(1)
     expect(await db.notification.count({ where: { userId: user.id } })).toBe(1)
   })
 
@@ -212,8 +212,8 @@ describe('a preference decides, and no row means the default', () => {
     const active = await member(db, 'live')
     await db.user.update({ where: { id: gone.user.id }, data: { status: 'suspended' } })
 
-    expect(await notifyPeople(app, 'deploy_success', [gone.user.id],   PAYLOAD)).toBe(0)
-    expect(await notifyPeople(app, 'deploy_success', [active.user.id], PAYLOAD)).toBe(1)
+    expect(await notifyPeople(app, 'DeploySuccess', [gone.user.id],   PAYLOAD)).toBe(0)
+    expect(await notifyPeople(app, 'DeploySuccess', [active.user.id], PAYLOAD)).toBe(1)
   })
 
   test('a kind with no notification file is reported, not thrown', async () => {
@@ -235,11 +235,11 @@ describe('email is a capability, not a preference', () => {
     const { app, db } = await makeApp({ mail: false })
     const { user } = await member(db, 'nomail')
     await db.notificationPreference.create({
-      data: { userId: user.id, kind: 'deploy_failed', inApp: true, email: true },
+      data: { userId: user.id, kind: 'DeployFailed', inApp: true, email: true },
     })
 
-    expect(await transportsFor(app, user.id, 'deploy_failed')).toEqual(['inApp'])
-    expect(await notifyPeople(app, 'deploy_failed', [user.id], { ...PAYLOAD, reason: 'boom' })).toBe(1)
+    expect(await transportsFor(app, user.id, 'DeployFailed')).toEqual(['inApp'])
+    expect(await notifyPeople(app, 'DeployFailed', [user.id], { ...PAYLOAD, reason: 'boom' })).toBe(1)
     expect(await db.notification.count({ where: { userId: user.id } })).toBe(1)
   })
 
@@ -249,11 +249,11 @@ describe('email is a capability, not a preference', () => {
     const { app, db, sent } = await makeApp({ mail: true })
     const { user } = await member(db, 'mail')
     await db.notificationPreference.create({
-      data: { userId: user.id, kind: 'deploy_failed', inApp: true, email: true },
+      data: { userId: user.id, kind: 'DeployFailed', inApp: true, email: true },
     })
 
-    expect(await transportsFor(app, user.id, 'deploy_failed')).toEqual(['inApp', 'email'])
-    await notifyPeople(app, 'deploy_failed', [user.id], { ...PAYLOAD, reason: 'boom' })
+    expect(await transportsFor(app, user.id, 'DeployFailed')).toEqual(['inApp', 'email'])
+    await notifyPeople(app, 'DeployFailed', [user.id], { ...PAYLOAD, reason: 'boom' })
 
     expect(await db.notification.count({ where: { userId: user.id } })).toBe(1)
     expect(sent).toHaveLength(1)

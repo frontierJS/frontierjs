@@ -1,4 +1,4 @@
-// src/notifications/member_joined.notification.ts
+// src/notifications/MemberJoined.notification.ts
 //
 // The one kind here that is about a PERSON rather than a machine, which is why
 // its in-app default is off and its email default is on: somebody gaining sight

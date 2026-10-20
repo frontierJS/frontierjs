@@ -128,7 +128,7 @@ function runner(app: App) {
       // incremented when the handler runs and terminal is `attempts >= max`
       // (caravan's worker), so the caller's test is the same one the queue makes.
       if (lastAttempt && job.workspaceId)
-        await notifyPeople(app, 'job_failed', await workspaceMembers(app, job.workspaceId as string), {
+        await notifyPeople(app, 'JobFailed', await workspaceMembers(app, job.workspaceId as string), {
           runId, jobId, jobName: job.name, reason: msg,
         })
 

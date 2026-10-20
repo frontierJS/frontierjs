@@ -274,12 +274,7 @@ export default createService({
 
     if (changesNothing(patch)) return deployment
 
-    const updated = await db().deployment.update({ where: { id: deployment.id }, data: patch })
-    if (patch.status)
-      $.app.events.emit(`deployment:${patch.status}`,
-        { id: deployment.id, workspace_id: ws(), status: patch.status })
-
-    return updated
+    return db().deployment.update({ where: { id: deployment.id }, data: patch })
   },
 
   // `remove` cancels an in-flight release. It does NOT delete the row: the
@@ -296,7 +291,6 @@ export default createService({
       where: { id: deployment.id },
       data:  { status: 'cancelled', finishedAt: new Date().toISOString() },
     })
-    $.app.events.emit('deployment:cancelled', { id: deployment.id, workspace_id: ws() })
     return updated
   },
 
@@ -425,9 +419,6 @@ export default createService({
       workspace_id:  ws(),
     }, { queue: 'deployments', priority: 5 })
 
-    $.app.events.emit('deployment:rolled_back', {
-      id: being.id, replacement: replacement.id, workspace_id: ws(),
-    })
     await pushRow(being.id)
 
     // The REPLACEMENT is the answer: it is the row the screen navigates to

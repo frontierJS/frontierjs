@@ -167,9 +167,6 @@ export default createService({
     const data = $.data as Record<string, unknown>
     data.slug ??= slugify(String(data.name ?? ''))
 
-    if (await db().workspace.exists({ where: { slug: data.slug } }))
-      throw new Conflict(`Slug '${data.slug}' is already taken`)
-
     // One transaction: a workspace whose creator is not a member of it is
     // unreachable by its own owner.
     const ws = await ($.db.asSystem() as any).$transaction(async (tx: any) => {
@@ -183,7 +180,6 @@ export default createService({
       return ws
     })
 
-    $.app.events.emit('workspace:created', { id: ws.id, slug: ws.slug, owner_id: user.userId })
     return ws
   },
 
@@ -192,10 +188,6 @@ export default createService({
     if (!ws) throw new NotFound(`Workspace '${$.id}' not found`)
 
     const data = $.data as Record<string, unknown>
-    if (data.slug && data.slug !== ws.slug &&
-        await db().workspace.exists({ where: { slug: data.slug } }))
-      throw new Conflict(`Slug '${data.slug}' is already taken`)
-
     // accountId and ownerId are not a client's to change: one moves the
     // workspace between tenants, the other hands over ownership, and neither
     // belongs on a general PATCH.
@@ -211,7 +203,6 @@ export default createService({
     // @@softDelete(cascade) — projects, servers, secrets and jobs are stamped
     // with it rather than left live under a deleted parent.
     const removed = await db().workspace.remove({ where: { id: $.id as string } })
-    $.app.events.emit('workspace:deleted', { id: $.id })
     return Array.isArray(removed) ? removed[0] : removed
   },
 

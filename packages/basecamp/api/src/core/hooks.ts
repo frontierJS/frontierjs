@@ -6,7 +6,7 @@ import { BadRequest, Forbidden, NotFound, Unauthorized, applyClaims, MEMBERSHIP,
 import { authenticate } from '@frontierjs/junction/hooks'
 import type { App, Hook, ILogger, ServiceContext, CredentialVerifier, InboundRequest }  from '@frontierjs/junction'
 import { REDACTED }                       from '@frontierjs/toolbelt/redact'
-import { workspaceChannelName }       from '../channels.ts'
+import { workspaceChannelName }       from './channels.ts'
 import type { BasecampDb }                 from './db.ts'
 import { grantsFor, grantsWithin }         from './capabilities.ts'
 

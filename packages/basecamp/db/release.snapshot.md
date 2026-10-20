@@ -47,7 +47,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `MetricType` | `counter` · `gauge` · `histogram` |
 | `MonitorStatus` | `down` · `paused` · `pending` · `up` |
 | `NotificationContext` | `AlertEvent` · `Deployment` · `JobRun` · `Monitor` · `Server` · `Workspace` |
-| `NotificationKind` | `alert_firing` · `alert_resolved` · `dependency_vulnerable` · `deploy_failed` · `deploy_success` · `job_failed` · `member_joined` · `monitor_down` · `monitor_up` · `posture_failed` · `server_unreachable` · `weekly_digest` |
+| `NotificationKind` | `AlertFiring` · `AlertResolved` · `DependencyVulnerable` · `DeployFailed` · `DeploySuccess` · `JobFailed` · `MemberJoined` · `MonitorDown` · `MonitorUp` · `PostureFailed` · `ServerUnreachable` · `WeeklyDigest` |
 | `ParamGenerator` | `random_hex_16` · `random_hex_32` · `random_hex_64` |
 | `ProviderKind` | `cloudflare` · `custom` · `digitalocean` · `hetzner` |
 | `ProvisionStepName` | `create` · `poll` · `start` · `timeout` |

@@ -13,6 +13,6 @@
 // it could show its hostname is the failure this whole surface exists to end,
 // one column along from a price rendered in cents.
 import { registerDisplayComponent } from '@frontierjs/ui/controls'
-import RelationCell from './RelationCell.mesa'
+import RelationCell from './components/RelationCell.mesa'
 
 registerDisplayComponent('relation', RelationCell)

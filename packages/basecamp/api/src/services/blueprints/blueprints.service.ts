@@ -111,13 +111,6 @@ export default createService({
     const data = $.data as Record<string, unknown>
     if (!data.slug && typeof data.name === 'string') data.slug = slugify(data.name)
 
-    // `slug` is `@unique`, so SQLite would refuse this anyway — but its
-    // sentence names a physical table. Litestone translates it now
-    // (`UniqueConflictError`), and this is the same answer with the word a
-    // person uses for the thing.
-    if (await db().blueprint.exists({ where: { slug: data.slug } }))
-      throw new Conflict(`A blueprint with the slug '${data.slug}' already exists`)
-
     const created = await db().blueprint.create({ data })
     return await db().blueprint.findFirst({ where: { id: created.id }, include: WITH_PARAMS })
   },

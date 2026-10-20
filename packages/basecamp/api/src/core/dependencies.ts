@@ -277,7 +277,7 @@ async function refreshOnce(app: App, db: any, opts: { workspaceId?: string }) {
   // After the write: a send that throws must not leave the advisory unrecorded
   // and the next run announcing it a second time.
   for (const [workspaceId, found] of news)
-    await notifyPeople(app, 'dependency_vulnerable', await workspaceMembers(app, workspaceId), { workspaceId, found })
+    await notifyPeople(app, 'DependencyVulnerable', await workspaceMembers(app, workspaceId), { workspaceId, found })
 
   return { checked: results.length, failed }
 }

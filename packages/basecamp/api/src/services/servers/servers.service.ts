@@ -44,7 +44,7 @@ import { createService, NotFound, BadRequest, seriesKey, isStale, $ } from '@fro
 import { normalizeOrderBy, type SortParam } from '@frontierjs/toolbelt/query'
 import { LEVELS }                from '@frontierjs/litestone'
 import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, ws, actor, findScoped, getScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, slugify } from '../../core/resource.ts'
+import { db, ws, actor, findScoped, getScoped, deriveSlug, narrowPatch, changesNothing, slugify } from '../../core/resource.ts'
 import { secretRef }             from '../../core/credentials.ts'
 import { recordHealth, SERVER_SERIES, SERVER_READINGS } from '../../core/server-metrics.ts'
 import { connectorFor, targetFor, computeProviders, markFor, fleetMark, priceIn, sizeRegions } from '../../providers/compute/index.ts'
@@ -236,15 +236,6 @@ export default createService({
   // ── create ────────────────────────────────────────────────────────
   async create() {
     const data = $.data as Record<string, unknown>
-
-    // The slug was derived by deriveSlug in before/create. `workspaceId` is
-    // not read here and is not in the uniqueness clause: the declaration
-    // stamps the column at the Data boundary and scopes this `exists` to the
-    // caller's own tenant, so a name is unique within a workspace for free.
-    const slug = data.slug as string
-
-    await assertSlugFree('server', { slug },
-      `A server named '${slug}' already exists`)
 
     // $.data has already been through autoValidate(model, 'create'): unknown
     // keys are stripped and types are checked against the schema, so it is a

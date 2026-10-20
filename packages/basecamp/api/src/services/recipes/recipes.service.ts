@@ -35,9 +35,9 @@
 
 import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, ws, actor, slugify, findScoped, getScoped, assertSlugFree, removeScoped, narrowPatch, changesNothing } from '../../core/resource.ts'
+import { db, ws, actor, slugify, findScoped, getScoped, removeScoped, narrowPatch, changesNothing } from '../../core/resource.ts'
 import recipeRun from '../../jobs/recipe-run.job.ts'
-import { announce } from '../../channels.ts'
+import { announce } from '../../core/channels.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 /** How many runs a screen is handed at once. A fleet run writes one row per
@@ -138,9 +138,6 @@ export default createService({
     if (!(data.script as string | undefined)?.trim())
       throw new BadRequest('script is required — a recipe with no script is a name')
 
-    await assertSlugFree('recipe', { workspaceId: ws(), slug: data.slug },
-      `A recipe called '${data.name}' already exists in this workspace`)
-
     const recipe = await db().recipe.create({ data })
     // The same shape `get` answers, so a screen that selects the new recipe
     // renders it rather than a record with no runs key.
@@ -157,9 +154,6 @@ export default createService({
     const patch = narrowPatch(data, ['slug', 'createdBy', 'runCount', 'lastRunAt'])
     if (typeof patch.name === 'string' && patch.name !== recipe.name) {
       patch.slug = slugify(patch.name as string)
-      await assertSlugFree('recipe',
-        { workspaceId: ws(), slug: patch.slug, id: { not: recipe.id } },
-        `A recipe called '${patch.name}' already exists in this workspace`)
     }
 
     if (changesNothing(patch)) return { ...recipe, runs: await runsFor(recipe.id as string) }

@@ -3,7 +3,7 @@
  *
  * `IDEAS/orion-port.md` phase 7's second half. The flow is the one an operator
  * actually wants: **when a release fails, page the workspace's ops channel.**
- * People are already told (`deployment-run.job.ts` sends `deploy_failed`); a
+ * People are already told (`deployment-run.job.ts` sends `DeployFailed`); a
  * channel was reached only by a metric alert rule, so a failed release reached
  * no Slack, no PagerDuty and no webhook at all.
  *

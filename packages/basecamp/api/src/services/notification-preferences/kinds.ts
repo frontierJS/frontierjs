@@ -36,54 +36,54 @@ export interface NotificationKindDef {
  * somebody joining who can now see the fleet. A success is in-app only.
  */
 export const NOTIFICATION_KINDS: NotificationKindDef[] = [
-  { kind: 'deploy_success', label: 'Deploy succeeded',
+  { kind: 'DeploySuccess', label: 'Deploy succeeded',
     description: 'A deployment reached its last step.',
     email: false, inApp: true },
 
-  { kind: 'deploy_failed',  label: 'Deploy failed',
+  { kind: 'DeployFailed',  label: 'Deploy failed',
     description: 'A deployment stopped at a step that failed.',
     email: true,  inApp: true },
 
-  { kind: 'server_unreachable', label: 'Server unreachable',
+  { kind: 'ServerUnreachable', label: 'Server unreachable',
     description: 'A machine stopped checking in. Its apps may still be running — nobody here can tell.',
     email: true,  inApp: true },
 
-  { kind: 'monitor_down', label: 'Monitor down',
+  { kind: 'MonitorDown', label: 'Monitor down',
     description: 'A URL Basecamp probes stopped answering, past its retries.',
     email: true,  inApp: true },
 
-  { kind: 'monitor_up',   label: 'Monitor recovered',
+  { kind: 'MonitorUp',   label: 'Monitor recovered',
     description: 'A monitor that was down is answering again.',
     email: false, inApp: true },
 
-  { kind: 'posture_failed', label: 'Server posture failing',
+  { kind: 'PostureFailed', label: 'Server posture failing',
     description: 'A security control on a machine stopped holding — password SSH, an unexpected listener, updates pending.',
     email: true,  inApp: true },
 
-  { kind: 'dependency_vulnerable', label: 'Dependency vulnerable',
+  { kind: 'DependencyVulnerable', label: 'Dependency vulnerable',
     description: 'An installed version of a package gained a published advisory.',
     email: true,  inApp: true },
 
-  { kind: 'alert_firing',   label: 'Alert firing',
+  { kind: 'AlertFiring',   label: 'Alert firing',
     description: 'An alert rule crossed its threshold.',
     email: true,  inApp: true },
 
-  { kind: 'alert_resolved', label: 'Alert resolved',
+  { kind: 'AlertResolved', label: 'Alert resolved',
     description: 'A firing alert came back inside its threshold.',
     email: false, inApp: true },
 
-  { kind: 'member_joined',  label: 'Member joined',
+  { kind: 'MemberJoined',  label: 'Member joined',
     description: 'Somebody accepted an invitation to a workspace you are in.',
     email: true,  inApp: false },
 
-  { kind: 'job_failed',     label: 'Job failed',
+  { kind: 'JobFailed',     label: 'Job failed',
     description: 'A scheduled or triggered job ended in failure.',
     email: true,  inApp: true },
 
   // Spend is NOT in it. `cloudSpend` is a declared adapter with nothing behind
   // it (docs/ADAPTERS.md), and a digest reporting a figure it cannot source is
   // a number somebody would act on. The description says what is counted.
-  { kind: 'weekly_digest',  label: 'Weekly digest',
+  { kind: 'WeeklyDigest',  label: 'Weekly digest',
     description: 'A summary of the week — deploys, alerts and job failures.',
     email: true,  inApp: false },
 ]

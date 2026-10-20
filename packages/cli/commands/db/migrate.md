@@ -94,8 +94,13 @@ if (flag.dry) {
 // about to write, and `duplicate column name` from the middle of a generated
 // file is not an answer anybody can act on (FJS-D123).
 log.info('Creating and applying the migration...')
+// `migrate dev` exits 0 when the schema change has no DDL (a @@gate edit), so
+// the success line waits on a file appearing (FJS-1722).
+const before = new Set(migrationFiles($))
 $.exec({ command: `${ls} migrate dev${named} --schema ${schema}${withOps}` })
-log.success('Migration created and applied')
+const written = migrationFiles($).filter(f => !before.has(f))
+if (written.length) log.success(`Migration created and applied: ${written.map(f => path.relative($.paths.root, f)).join(', ')}`)
+else log.info('No migration file written - the schema change needs no DDL')
 
 // The derived path `db:push` and `db:jsonschema` write. With no `--out` the
 // document lands beside the .lite, and an app then holds two copies of it

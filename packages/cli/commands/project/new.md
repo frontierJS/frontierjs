@@ -391,16 +391,14 @@ ${features.join('\n')}
 bun install
 
 # 2. Start
-bun run dev
+fli dev
 \`\`\`
 
-${[
-  useApi     && 'the api on 8100',
-  useWeb     && 'the web app on 8000',
-  useWidgets && 'the widget surface on 8200',
-  useExtension && 'the extension watcher on 8400',
-].filter(Boolean).join(', ')} — ${surface.length > 1 ? 'concurrently' : 'in watch mode'}. The
-ports are derived, not chosen: \`env*1000 + category*100 + project*10 + service\`.
+${surface.length > 1 ? 'Every surface runs concurrently' : 'The surface runs in watch mode'}, and \`fli dev\` prints the
+address each one answers on. The ports belong to this app's root, not to the
+framework: \`fli dev\` gives each app on the machine its own slot, so a second
+app does not collide with the first. \`fli ps\` shows which port each running
+app holds, and \`fli dev --dry\` shows this one's before it starts.
 
 ${useDb ? `Schema DDL runs automatically on first start — no migration step.
 
@@ -515,6 +513,7 @@ ${useDb ? '├── db/\n│   └── schema.lite             # Single sourc
 │   │   │   ├── gate.ts         # Who a caller is, as a gate level
 │   │   │   ├── db.ts           # Litestone client, graded by gate.ts
 │   │   │   ├── channels.ts     # Who receives a broadcast
+│   │   │   ├── principal.ts    # Per-request claims -- createApp({ principal })
 │   │   │   └── auth.ts         # createLitestoneAuth + plugin (if auth)
 │   │   └── services/           # Service files autoloaded at boot
 │   └── test/                   # access.test.ts (if auth)
@@ -528,7 +527,7 @@ ${useDb ? '├── db/\n│   └── schema.lite             # Single sourc
     └── src/
         ├── main.js             # Entry: boots the router + client, mounts App
         ├── datetime.js         # The app's clock and zone — at(), ago()
-        ├── App.mesa            # Root: <RouterView />
+${useApi ? '        ├── controls.js         # Form controls the app contributes (registerControl)\n' : ''}        ├── App.mesa            # Root: <RouterView />
         ├── lib/nav.js          # The nav table — the Shell draws it, make:scaffold adds to it
         ├── routes/             # Sierra file-based routes (.mesa)
 ${useDb ? '        └── resources/          # One Resource per model — Note.mesa (.mesa)\n' : ''}`
@@ -629,7 +628,8 @@ app.configure(notifications({ db }))
 import { createApp, channels } from '@frontierjs/junction'${queueImport}
 import { auth, authPlugin } from './core/auth.ts'
 import { joinChannels }     from './core/channels.ts'
-import { db }               from './core/db.ts'${systemImport}
+import { db }               from './core/db.ts'
+import { principal }        from './core/principal.ts'${systemImport}
 
 // ─── The app ──────────────────────────────────────────────────────────────
 // The db client is passed rather than wired, and it is not a convenience:
@@ -642,7 +642,8 @@ const app = createApp({
   // services/, jobs/, notifications/ beside this file, ../config above it.
   root: import.meta.url,
   auth,
-  db,${systemLine}
+  db,
+  principal,${systemLine}
 })
 
 // ─── Real-time ────────────────────────────────────────────────────────────
@@ -676,7 +677,8 @@ export default app
 
 import { createApp, channels } from '@frontierjs/junction'${queueImport}
 import { joinChannels }                                  from './core/channels.ts'
-import { db }                                            from './core/db.ts'${systemImport}
+import { db }                                            from './core/db.ts'
+import { principal }                                     from './core/principal.ts'${systemImport}
 
 // ─── The app ──────────────────────────────────────────────────────────────
 // The db client is passed rather than wired: handing it here installs the
@@ -686,7 +688,8 @@ import { db }                                            from './core/db.ts'${sy
 const app = createApp({
   // services/, jobs/, notifications/ beside this file, ../config above it.
   root: import.meta.url,
-  db,${systemLine}
+  db,
+  principal,${systemLine}
 })
 
 // ─── Real-time ────────────────────────────────────────────────────────────
@@ -700,6 +703,23 @@ app.configure(channels((a) => {
 ${queue}${notify}// Services in api/src/services/*.service.ts are autoloaded at boot.
 
 export default app
+`
+}
+
+// A stub, because the resolver an app needs is its own: what a caller holds for
+// THIS request (a workspace they belong to, a pass in a link) cannot be derived
+// from the schema. An empty list runs nothing.
+function makeApiCorePrincipalTs() {
+  return `// api/src/core/principal.ts -- what a caller holds for THIS request, beyond who
+// they are. createApp({ principal }) runs each resolver for every request, a
+// guest's included, and merges the claims onto the principal the Data boundary
+// scopes the client from. Emit a claim only for a caller you have verified:
+// membershipClaim() and bearerClaim() from '@frontierjs/junction' do, and
+// a resolver returns {} for a caller with no standing.
+
+import type { PrincipalResolver } from '@frontierjs/junction'
+
+export const principal: PrincipalResolver[] = []
 `
 }
 
@@ -757,15 +777,24 @@ function makeApiCoreGateTs(useQueue = false) {
 // STANDING, not a role string: isAdmin / isOwner / isSystemAdmin are what
 // Litestone's own resolver reads and what schema.lite's @@allow and field
 // policies read, so a level and a policy cannot disagree about who an
-// administrator is. What 'admin' MEANS is the app's decision, made once where
-// the session is built (auth's sessionFields), not matched as a string here.
+// administrator is. What 'admin' MEANS is the app's decision, made once in
+// standing() below, which auth takes as its sessionFields -- getLevel never
+// matches a role string.
 //
 // Its own file so a test can install it without opening the app's database
 // (api/test/access.test.ts), and so \`fli db:repl --gate api/src/core/gate.ts\`
 // can grade a console the way the API grades a request. Anything graded by a
-// different resolver passes against a ladder the API does not run.
+// different resolver passes against a ladder the API does not run. It imports
+// nothing from ./db.ts, which opens db/app.db at import: a test reaches
+// standing() here because auth.ts, which holds the db, cannot be imported
+// without the database.
 
 import { GatePlugin, LEVELS } from '@frontierjs/litestone'
+
+/** The standing a signed-in user's session carries, read off their row. */
+export function standing(user: { role?: unknown }) {
+  return { isAdmin: user.role === 'admin' }
+}
 
 export function getLevel(user: unknown) {
   const u = user as { id?: unknown; isAdmin?: boolean; isOwner?: boolean; isSystemAdmin?: boolean } | null
@@ -814,7 +843,7 @@ import { afterAll, describe, expect, test } from 'bun:test'
 import { randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { createTestEnv } from '@frontierjs/litestone/testing'
-import { gate } from '../src/core/gate.ts'
+import { gate, standing } from '../src/core/gate.ts'
 
 const schema = fileURLToPath(new URL('../../db/schema.lite', import.meta.url))
 
@@ -840,9 +869,9 @@ const users = env.factories.user.asSystem()
 const system   = env.system
 const actingAs = (principal: unknown) => env.actingAs(principal)
 
-// A principal is the SESSION the API builds, not a row: auth's sessionFields
-// turns role "admin" into isAdmin at sign-in, and gate.ts reads isAdmin.
-const admin = { id: 'admin', isAdmin: true }
+// A principal is the SESSION the API builds, not a row: standing() turns role
+// "admin" into isAdmin at sign-in, and getLevel reads isAdmin.
+const admin = { id: 'admin', ...standing({ role: 'admin' }) }
 
 test('every @@gate answers the way the schema declares it', async () => {
   expect(await env.verifyGateLadder()).toEqual([])
@@ -1075,12 +1104,13 @@ function makeApiCoreAuthTs() {
 import { createLitestoneAuth, auth as authRoutes } from '@frontierjs/auth'
 import { db }   from './db.ts'
 import { env }  from './env.ts'
-import { getLevel } from './gate.ts'
+import { getLevel, standing } from './gate.ts'
 
 export const auth = createLitestoneAuth(db, {
   encryptionKey:        env.ENCRYPTION_KEY,
 
-  // The one place this app says what 'admin' MEANS, and it is load-bearing.
+  // standing() in gate.ts is the one place this app says what 'admin' MEANS,
+  // and it is load-bearing.
   // gate.ts grades the gate on \`isAdmin\`, and schema.lite spends it three times —
   // \`@@gate(4.4.4.5)\` for who may delete a person, \`@@allow(update, … ||
   // auth().isAdmin)\` for whose row, \`@allow(write, auth().isAdmin)\` on role
@@ -1090,7 +1120,7 @@ export const auth = createLitestoneAuth(db, {
   // is a 403 nobody can clear, editing another person's row is a 404 because a
   // row policy that matches nothing hides it, and a write to role returns 200
   // with the field silently stripped.
-  sessionFields: (user) => ({ isAdmin: user.role === 'admin' }),
+  sessionFields:        standing,
 
   sessionTtl:           '30 days',
   passwordResetTtl:     '1 hour',
@@ -1434,7 +1464,10 @@ ${useApi ? `// Boots the router, the Junction client and — because db/schema.l
 // schema, so no client is wired. Import it first: a route module that evaluates
 // before the router exists has nothing to register with.
 `}import 'virtual:sierra'
-
+${useApi ? `
+// Contributed form controls, registered before any route renders.
+import './controls.js'
+` : ''}
 // The design system. One import, no build step, no config.
 import '@frontierjs/css'
 
@@ -1448,6 +1481,23 @@ const anchor = document.createTextNode('')
 root.appendChild(anchor)
 
 mount(anchor, App, { root })
+`
+}
+
+// A stub, imported by main.js before any route renders: a control is registered
+// at startup or a generated form has already picked its own.
+function makeControlsJs() {
+  return `// web/src/controls.js -- the form controls this app contributes, imported by
+// main.js before any route renders. A generated form asks controlFor(rule) which
+// control a column gets, and a name registered here replaces a built-in of that
+// name. Two halves, one per side of the dependency rule:
+//
+//   import { registerControl }     from '@frontierjs/sierra/resource'
+//   import { registerFormControl } from '@frontierjs/ui/controls'
+//   import Rating from './components/Rating.mesa'
+//
+//   registerControl('rating', (rule, { field }) => (field === 'rating' ? 'rating' : null))
+//   registerFormControl('rating', Rating)
 `
 }
 
@@ -2711,6 +2761,7 @@ if (useApi) {
     ['api/src/core/gate.ts',        makeApiCoreGateTs(useQueue)],
     ['api/src/core/db.ts',          makeApiCoreDbTs(useQueue)],
     ['api/src/core/channels.ts',    makeApiCoreChannelsTs(useAuth)],
+    ['api/src/core/principal.ts',   makeApiCorePrincipalTs()],
     ['api/config/junction.config.js', makeJunctionConfig(appName, useWeb, useQueue)],
   )
 }
@@ -2736,6 +2787,7 @@ if (useWeb) {
     ['web/src/App.mesa',                    makeAppMesa()],
     ['web/src/main.js',                     makeMainJs(useApi)],
     ['web/src/datetime.js',                 makeDatetimeJs()],
+    ...(useApi ? [['web/src/controls.js',   makeControlsJs()]] : []),
     ['web/src/lib/nav.js',                  makeNavJs(useAuth)],
     ['web/src/routes/_module.mesa',         makeRouteModule(appName, useAuth, useApi)],
     ['web/src/routes/index.mesa',           makeRouteIndex(appName, useApi)],
@@ -3009,7 +3061,7 @@ if (useGit) {
 // Everything a reader has to ACT on is an `echo`; everything that explains why
 // is `log.detail` and comes back with `--verbose`. The split is not cosmetic —
 // the full text is forty lines under a scaffold that already printed a hundred,
-// and the two lines that matter (`cd`, `bun run dev`) were in the middle of it.
+// and the two lines that matter (`cd`, `fli dev`) were in the middle of it.
 
 echo('')
 log.success(`${appName} created`)
@@ -3030,7 +3082,7 @@ if (useApi && !keySet) {
   // when taken is worse than none.
   echo('  fli keygen aes --format hex --name ENCRYPTION_KEY --env   # .env needs a key before the API starts')
 }
-echo('  bun run dev')
+echo('  fli dev')
 
 // A scaffold with --auth has an empty `user` table, so the login page it just
 // wrote can sign nobody in and every screen behind a gate answers

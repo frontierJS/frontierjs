@@ -15,8 +15,6 @@
 // pass here until the fix lands, and then as a failure, which is the signal to
 // turn it into ok().
 //
-// FJS-2336: the failing() below asserts the fixed behavior, so it fails until
-// the fix lands; drop the failing() wrapper then.
 
 import { JSDOM } from 'jsdom'
 
@@ -68,13 +66,26 @@ group('handleConnect — what a port is believed to be')
   })
   handleConnect(impostor, registry, () => null)
 
-  if (registry.countFor('dock') === 1) ok('a tab-origin port named dock:dock:v1 is registered as the dock')
+  if (registry.countFor('dock') === 0) ok('a tab-origin port named dock:dock:v1 is refused')
+  else bad('a tab-origin port named dock:dock:v1 was registered as the dock')
   const delivered = pages.dock.send('app:secret', { forTheDockOnly: true })
-  if (delivered && impostor._messages().some(m => m.type === 'app:secret')) {
-    ok('pages.dock.send() reaches the tab-origin port')
+  if (!delivered && !impostor._messages().some(m => m.type === 'app:secret')) ok('pages.dock.send() does not reach the tab-origin port')
+  else bad('pages.dock.send() reached the tab-origin port')
+
+  for (const name of ['options:options:v1', 'pier:main:v1']) {
+    handleConnect(mockPort(name, { id: 'mock-ext-id', url: 'https://evil.example/', tab: { id: 7 } }), registry, () => null)
   }
-  failing('a port whose sender is a tab is refused the dock, options and pier names',
-    registry.countFor('dock') === 0)
+  if (registry.countFor('options') === 0 && registry.countFor('pier:main') === 0) ok('options and pier names are refused to a tab-origin port')
+  else bad('options or pier name accepted from a tab-origin port')
+
+  const own = mockPort('dock:dock:v1', { id: 'mock-ext-id', url: 'chrome-extension://mock-ext-id/dock.html' })
+  handleConnect(own, registry, () => null)
+  if (registry.countFor('dock') === 1) ok('a port from the extension\'s own page is the dock')
+  else bad('the extension\'s own dock page was refused')
+
+  handleConnect(mockPort('island:badge:v1', { id: 'mock-ext-id', url: 'https://host.example/', tab: { id: 7 } }), registry, () => null)
+  if (registry.countFor('island:badge') === 1) ok('an island port from a tab is accepted')
+  else bad('an island port from a tab was refused')
 }
 
 // ─── jsdom for the two DOM seams ──────────────────────────────────────────

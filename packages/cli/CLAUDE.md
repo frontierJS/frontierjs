@@ -742,7 +742,10 @@ test/     one file per module under core/, plus the deploy pipeline's own
   thrown error instead of rethrowing** — `status` is the exit code and
   `stdout`/`stderr` are what the child wrote, so a probe reads the same two keys
   whether it succeeded or not; `exitCode` and `code` are neither of them there.
-  A signal still stops everything. `test/exec-options.test.js` reads every
+  A signal still stops everything: `exec` throws an error carrying `interrupt`
+  (the exit code) and the function `Command()` returns turns it into `_stop`,
+  because exiting from inside the synchronous body would skip `tty.onExit`
+  (`FJS-1350`). `test/exec-options.test.js` reads every
   `exec({…})` in every shipped command, because a command is markdown and a
   compile is not a run.
 - **Never shell out to a bare `fli`.** That is a GLOBAL install, present on the

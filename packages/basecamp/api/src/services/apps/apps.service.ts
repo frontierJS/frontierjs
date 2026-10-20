@@ -26,7 +26,7 @@ import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/
 import { normalizeOrderBy, type SortParam } from '@frontierjs/toolbelt/query'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws,
+import { db, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, ws,
          slugify, }
   from '../../core/resource.ts'
 // The ONE definition of a certificate's condition, imported rather than
@@ -278,13 +278,7 @@ export default createService({
     checkSource(data)
     checkRuntime(data)
     await assertEnvironmentInWorkspace(data.environmentId as string)
-    await assertSlugFree('app', { environmentId: data.environmentId, slug: data.slug },
-      `App slug '${data.slug}' already exists in this environment`)
-
     const created = await db().app.create({ data })
-    $.app.events.emit('app:created', {
-      id: created.id, workspace_id: ws(), environment_id: created.environmentId, type: created.type,
-    })
     return db().app.findFirst({ where: { id: created.id }, include: WITH_DETAIL })
   },
 
@@ -305,7 +299,6 @@ export default createService({
     const target  = await getScoped('app', 'App')
     const machine = await retireFromMachine($.app, target)
     const removed = await removeScoped('app', 'App')
-    $.app.events.emit('app:deleted', { id: $.id, workspace_id: ws() })
     return { ...removed, machine }
   },
 
@@ -396,9 +389,6 @@ export default createService({
     await assertEnvironmentInWorkspace(environmentId)
     const appName = name || bp.name
     const slug    = typeof data.slug === 'string' && data.slug ? data.slug : slugify(appName)
-    await assertSlugFree('app', { environmentId, slug },
-      `App slug '${slug}' already exists in this environment`)
-
     checkRuntime(runtimeOf(bp))
 
     const values = (data.values ?? {}) as Record<string, unknown>
@@ -427,9 +417,6 @@ export default createService({
       return row
     })
 
-    $.app.events.emit('app:created', {
-      id: created.id, workspace_id: ws(), environment_id: created.environmentId, type: created.type,
-    })
     return detail(created.id)
   },
 

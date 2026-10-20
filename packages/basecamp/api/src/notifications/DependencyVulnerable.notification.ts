@@ -1,4 +1,4 @@
-// src/notifications/dependency_vulnerable.notification.ts
+// src/notifications/DependencyVulnerable.notification.ts
 
 import { defineNotification, inApp, mail } from '@frontierjs/notifications'
 import { declaredTransports, appUrl }      from './_shared.ts'

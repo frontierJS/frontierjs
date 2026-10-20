@@ -376,7 +376,7 @@ if (health.clash) {
 // ─── envCheck setup ───────────────────────────────────────────────────────
 renderHeader('Environment')
 
-const envCheckOn = deployConf.api?.envCheck === true || deployConf.api?.env_check === true
+const envCheckOn = deployConf.api?.envCheck === true
 const envExample = resolvePath($.paths.root, '.env.example')
 const envKeys    = resolvePath($.paths.root, '.env.keys')
 const refExists  = existsSync(envExample) || existsSync(envKeys)

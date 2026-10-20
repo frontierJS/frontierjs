@@ -211,13 +211,17 @@ const symbolTicks = ticks => ticks
   // `id` and `db` appear in every diff ever written.
   .filter(sym => sym.length >= 4)
 
+// `holder`, `port`, `error`: a word every script uses. Only where the row lives
+// does it name the row's subject; `queue_pauses` and `hookContext` name it anywhere.
+const PLAIN_WORD = /^[a-z][a-z0-9]*$/
+
 /** The packages a cell names in its leading words, up to the first qualifying punctuation. */
 function leadPackages(changedText, packages) {
   const lead = changedText.toLowerCase().split(/[—·(/]|\s+-\s+/)[0]
   return packages.filter(p => new RegExp(`(^|\\s)${escapeRe(p.name)}(\\b|'s)`).test(lead))
 }
 
-export function matchChanged(changedText, { files, diff = null, packages = [] }) {
+export function matchChanged(changedText, { files, diff = null, packages = [], scope = [] }) {
   const ticks = backticked(changedText)
   const hits  = []
 
@@ -248,8 +252,14 @@ export function matchChanged(changedText, { files, diff = null, packages = [] })
   }
 
   if (diff) {
-    const text = diffText(diff)
+    const read  = diffRead(diff)
+    const where = [...new Set([...owned.map(p => p.dir), ...scope])]
+    // Text of the lines written under the row's own directories, built once and only when asked for.
+    let near = null
+    const nearText = () => near ??= read.entries.filter(e => where.some(d => e.file.startsWith(`${d}/`))).map(e => e.body).join('\n')
+
     for (const sym of symbolTicks(ticks)) {
+      const text = PLAIN_WORD.test(sym) && where.length ? nearText() : read.text
       if (new RegExp(`(?<![\\w$])${escapeRe(sym)}(?![\\w$])`).test(text)) hits.push({ tier: 'symbol', file: null, on: sym })
     }
   }
@@ -331,32 +341,38 @@ export function holdsSymbols(file) {
  * multi-line import, which `-U0` hands over one line at a time.
  */
 export function changedLines(diff, keep = () => true) {
+  return changedEntries(diff, keep).map(e => e.body).join('\n')
+}
+
+/** `changedLines`, each line with the file it was written in. */
+export function changedEntries(diff, keep = () => true) {
   const added   = []
   const removed = []
   let take = true
   let hunk = true
+  let file = null
 
   for (const line of String(diff ?? '').split('\n')) {
     const head = line.match(/^diff --git a\/\S+ b\/(\S+)/)
-    if (head) { take = keep(head[1]); hunk = false; continue }
+    if (head) { file = head[1]; take = keep(file); hunk = false; continue }
     if (line.startsWith('@@')) { hunk = true; continue }
     if (!hunk || !take) continue
     const body = line.slice(1).trim().replace(/\s+/g, ' ').replace(/^export (default )?/, '')
     if (!body || NOT_CODE.some(re => re.test(body))) continue
-    if (line[0] === '+') added.push(body)
-    else if (line[0] === '-') removed.push(body)
+    if (line[0] === '+') added.push({ file, body })
+    else if (line[0] === '-') removed.push({ file, body })
   }
 
   const moved = new Map()
-  for (const l of removed) moved.set(l, (moved.get(l) ?? 0) + 1)
+  for (const e of removed) moved.set(e.body, [...(moved.get(e.body) ?? []), e])
   const out = []
-  for (const l of added) {
-    const n = moved.get(l)
-    if (n) moved.set(l, n - 1)
-    else out.push(l)
+  for (const e of added) {
+    const left = moved.get(e.body)
+    if (left?.length) left.pop()
+    else out.push(e)
   }
-  for (const [l, n] of moved) for (let i = 0; i < n; i++) out.push(l)
-  return out.join('\n')
+  for (const left of moved.values()) out.push(...left)
+  return out
 }
 
 const NOT_CODE = [
@@ -368,10 +384,13 @@ const NOT_CODE = [
 ]
 
 // Every row asks about the same diff, and a split's diff is megabytes.
-let lastDiff = { diff: null, text: '' }
-function diffText(diff) {
-  if (lastDiff.diff !== diff) lastDiff = { diff, text: changedLines(diff, holdsSymbols) }
-  return lastDiff.text
+let lastDiff = { diff: null, entries: [], text: '' }
+function diffRead(diff) {
+  if (lastDiff.diff !== diff) {
+    const entries = changedEntries(diff, holdsSymbols)
+    lastDiff = { diff, entries, text: entries.map(e => e.body).join('\n') }
+  }
+  return lastDiff
 }
 
 // Words from the row that could name a directory or a file under the package.
@@ -418,9 +437,10 @@ export function provesFor(root, { files, diff = null, rows = [] } = {}) {
   const packages = packageDirs(root)
 
   return readProofs(root)
-    .map(p => ({ ...p, match: matchChanged(p.changed, { files, diff, packages }) }))
-    .filter(p => p.match)
     .map(p => ({ ...p, targets: resolveRun(p.run, { root, rows }) }))
+    // The drives a row runs live where the row's subject does.
+    .map(p => ({ ...p, match: matchChanged(p.changed, { files, diff, packages, scope: p.targets.map(t => t.dir).filter(Boolean) }) }))
+    .filter(p => p.match)
     .sort((a, b) => TIER_ORDER[a.match.tier] - TIER_ORDER[b.match.tier] || a.line - b.line)
 }
 

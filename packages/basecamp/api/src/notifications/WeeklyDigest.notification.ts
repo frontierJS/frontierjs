@@ -1,4 +1,4 @@
-// src/notifications/weekly_digest.notification.ts
+// src/notifications/WeeklyDigest.notification.ts
 //
 // **`kinds.ts` promised deploys, alerts AND SPEND, and spend has no source.**
 // `cloudSpend` is a declared adapter with nothing behind it (`docs/ADAPTERS.md`),

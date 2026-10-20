@@ -135,13 +135,13 @@ export async function runPublish(app: App, deploymentId: string): Promise<{ stat
     current = undefined
 
     await finishRelease(app, deploy, { status: 'success', startedAt: opened.startedAt })
-    await tell(app, 'deploy_success', deploy, row)
+    await tell(app, 'DeploySuccess', deploy, row)
     return { status: 'success' }
   } catch (err) {
     const reason = (err as Error).message ?? 'unknown error'
     await finishRelease(app, deploy, { status: 'failed', error: reason, stepId: current, startedAt: opened.startedAt })
     const step = [...steps].find(([, id]) => id === current)?.[0]
-    await tell(app, 'deploy_failed', deploy, row, { reason, step })
+    await tell(app, 'DeployFailed', deploy, row, { reason, step })
     return { status: 'failed' }
   }
 }

@@ -1712,6 +1712,13 @@ should end a session. Phase granularity and no finer — the ninth question was
 answered well partly because the same session still held `FJS-D143` and the
 first question's answer, and a boundary drawn per-task would have cost that.
 
+**Keep `PLAN.md` under 32 KB; `fli check` grades it as `plan-size`.** A prototype
+session runs a median 150 turns, so the one-session-per-phase rule above does not
+hold in practice and the plan is paid on every turn (`FJS-1562`: 19 plans held
+1.56 MB, read 3 times a session). A finished phase moves its found-record and
+answered questions verbatim to `docs/plan-done.md` and leaves a stub under the
+heading; a reader takes one section with `fli outline PLAN.md '<heading>'`.
+
 **Give the sharpest question its own phase, before any screen exists.** Rank the
 questions by what the answer is worth and run them in that order, not in the
 order a product would be built. Calendly's hardest question needed no UI at all,

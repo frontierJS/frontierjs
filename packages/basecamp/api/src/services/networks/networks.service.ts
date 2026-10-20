@@ -15,7 +15,7 @@
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, assertSlugFree, ws }
+import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
@@ -74,9 +74,6 @@ export default createService({
     const data = $.data as Record<string, unknown>
     if (data.cidr && !CIDR.test(data.cidr as string))
       throw new BadRequest(`cidr must look like 10.0.0.0/16 — got '${data.cidr}'`)
-
-    await assertSlugFree('network', { workspaceId: ws(), slug: data.slug },
-      `A network with slug '${data.slug}' already exists in this workspace`)
 
     return db().network.create({ data })
   },

@@ -120,7 +120,7 @@ describe('injectAnalyticsTag', () => {
     expect(await injectAnalyticsTag(PLAUSIBLE, outDir)).toContain('2 page(s)')
     for (const f of ['index.html', 'catalog/index.html']) {
       const html = await readFile(join(outDir, f), 'utf8')
-      expect(html).toContain('<script id="sierra-analytics" defer data-domain="shop.example" src="https://plausible.io/js/script.js"></script>')
+      expect(html).toContain('<script id="sierra-analytics" defer data-domain="shop.example" src="https://plausible.io/js/script.manual.js"></script>')
       expect(html.indexOf('sierra-analytics')).toBeLessThan(html.indexOf('</head>'))
     }
     expect(await readFile(join(outDir, 'assets/thing.html'), 'utf8')).not.toContain('sierra-analytics')
@@ -151,10 +151,19 @@ describe('injectAnalyticsTag', () => {
   test('gtm\'s start event is serialized into the page and runs on its own', () => {
     const html = vendorTagHtml({ provider: 'gtm', containerId: 'GTM-ABC' })
     const inline = /<script>([\s\S]*?)<\/script>/.exec(html)[1]
-    const window = {}
+    const window = { location: { origin: 'https://shop.example', pathname: '/reset', search: '?token=SECRET' } }
     runInNewContext(inline, { window, Date })
-    expect(window.dataLayer[0]).toMatchObject({ event: 'gtm.js' })
+    expect(window.dataLayer[0]).toMatchObject({ event: 'gtm.js', page_location: 'https://shop.example/reset' })
     expect(html).toContain('src="https://www.googletagmanager.com/gtm.js?id=GTM-ABC"')
+  })
+
+  test('plausible\'s first pageview is queued by the page, with the address and no search (FJS-3317)', () => {
+    const html = vendorTagHtml(PLAUSIBLE)
+    const inline = /<script>([\s\S]*?)<\/script>/.exec(html)[1]
+    const window = { location: { origin: 'https://shop.example', pathname: '/reset', search: '?token=SECRET' } }
+    runInNewContext(inline, { window })
+    expect([...window.plausible.q].map(a => [...a])).toEqual([['pageview', { u: 'https://shop.example/reset' }]])
+    expect(html).not.toContain('script.js"')
   })
 
   test('escapes what the config puts in an attribute', () => {

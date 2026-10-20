@@ -9,17 +9,16 @@ title: Runs
   // `runs.metrics` method over the same rows, asked again when the filter moves.
   import { runs } from '../../resources/Run.mesa'
   import { session } from '@frontierjs/sierra/resource'
-  import { page, goto } from '@frontierjs/sierra/router'
+  import { page } from '@frontierjs/sierra/router'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import FilterBar     from '@frontierjs/ui/components/display/FilterBar.mesa'
   import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
   import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
-  import Select        from '@frontierjs/ui/components/forms/Select.mesa'
   import StatCard      from '@frontierjs/ui/components/display/StatCard.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
 
   const TONE = { completed: 'success', failed: 'danger', waiting: 'warning', running: 'info', pending: 'muted', cancelled: 'muted' }
-  const STATUSES = ['pending', 'running', 'waiting', 'completed', 'failed', 'cancelled']
 
   const columns = [
     { name: 'status',    label: 'Status' },
@@ -31,7 +30,11 @@ title: Runs
 
   const list = runs.tethered({ directives: { orderBy: '-createdAt', limit: 50 } })
   const rows = () => list.rows
-  $: (session.level, page.query.status)
+  // The bar is the schema's: `Run.status` is an enum and so filters by
+  // membership, `createdAt` is an instant and so filters by day range. No list
+  // of either is written here.
+  const { filters } = runs.filters()
+  $: (session.level)
 
   let error   = null
   let metrics = null
@@ -45,24 +48,15 @@ title: Runs
   loadMetrics()
   $: page.query, page.directives, () => loadMetrics()
 
-  function filter(status) {
-    const q = new URLSearchParams(page.search)
-    status ? q.set('status', status) : q.delete('status')
-    goto('/automations/runs/' + (q.toString() ? '?' + q : ''))
-  }
-
   const pct = (n) => n == null ? '—' : Math.round(n * 100) + '%'
   const ms  = (n) => n == null ? '—' : n < 1000 ? n + ' ms' : (n / 1000).toFixed(1) + ' s'
 </script>
 
-<SectionHeader title="Runs" level={1}>
-  {#snippet action()}
-    <Select id="runs-status" placeholder="Every status" value={page.query.status ?? null}
-      options={STATUSES.map(s => ({ value: s, label: s }))} onchange={(e) => filter(e.target.value)} />
-  {/snippet}
-</SectionHeader>
+<SectionHeader title="Runs" level={1} />
 
 {#if error || list.error}<Alert tone="danger" id="runs-error">{error ?? list.error.message}</Alert>{/if}
+
+<FilterBar id="runs-filters" {filters} value={list.query} directives={list.directives} onchange={list.apply} />
 
 {#if metrics}
   <div class="tiles" style="--tile-min: 10rem" id="runs-metrics">

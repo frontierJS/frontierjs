@@ -1,0 +1,77 @@
+---
+title: Node types
+---
+<script>
+  // Every node type this app's registry knows, grouped by category.
+  //
+  // The catalog is `flows.nodeTypes()`, the registry's own list and not the
+  // built-ins', so a node a host's plugin registered is here with its config
+  // fields. Read-only: a plugin is registered in code at startup, and nothing
+  // here installs, disables or removes one.
+  import { flows } from '../../resources/Flow.mesa'
+  import { session } from '@frontierjs/sierra/resource'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Input         from '@frontierjs/ui/components/forms/Input.mesa'
+  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+
+  const columns = [
+    { name: 'type',        label: 'Type' },
+    { name: 'label',       label: 'Name' },
+    { name: 'description', label: 'What it does' },
+    { name: 'config',      label: 'Config', align: 'right' },
+  ]
+
+  $: (session.level)
+
+  let types  = []
+  let error  = null
+  let search = ''
+
+  async function load() {
+    error = null
+    try { types = await flows.service.invoke('nodeTypes') } catch (e) { error = e.message }
+  }
+  load()
+
+  // Registration order is the registry's: built-ins first, then each plugin's.
+  $: needle = search.trim().toLowerCase()
+  $: shown  = needle ? types.filter(d => (d.type + ' ' + d.label + ' ' + d.description).toLowerCase().includes(needle)) : types
+  $: groups = [...new Set(shown.map(d => d.category))].map(category => ({
+    category,
+    nodes: shown.filter(d => d.category === category),
+  }))
+
+  const fields = (d) => Object.keys(d.configSchema?.properties ?? {}).length
+</script>
+
+<SectionHeader title="Node types" level={1}>
+  {#snippet action()}
+    <Input id="nodes-search" type="search" aria-label="Search node types" placeholder="Search…"
+      value={search} oninput={(e) => { search = e.target.value }} />
+  {/snippet}
+</SectionHeader>
+
+{#if error}<Alert tone="danger" id="nodes-error">{error}</Alert>{/if}
+
+{#each groups as g (g.category)}
+  <section data-category={g.category} aria-label={g.category}>
+    <h2>{g.category}</h2>
+    <Table {columns} rows={g.nodes} compact hover>
+      {#snippet row(d)}
+        <tr data-node-type={d.type}>
+          <td><Mono>{d.type}</Mono></td>
+          <td>{d.label}</td>
+          <td class="text-muted text-sm">{d.description}</td>
+          <td class="text-right">{fields(d)}</td>
+        </tr>
+      {/snippet}
+    </Table>
+  </section>
+{/each}
+
+{#if types.length > 0 && groups.length === 0}
+  <Alert tone="muted" id="nodes-empty">No node type matches that.</Alert>
+{/if}

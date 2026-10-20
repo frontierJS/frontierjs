@@ -291,6 +291,16 @@ describe('what a mutation announced', () => {
     await t.act(() => env.as(developer).service('projects').create({ name: 'Announced', slug: `ann-${Math.random().toString(36).slice(2, 8)}` }))
     expect(env.announced('projects:created')).toHaveLength(1)
   })
+
+  // FJS-2359: a service spelled the write a second time, `project:created`, onto
+  // a bus nothing subscribes to. The write event is the one callService puts
+  // there; a service states no name of its own.
+  test('a service create puts one event on the bus, the write event callService names', async () => {
+    env.clearAnnounced()
+    const t = env.phases({ as: developer })
+    await t.act(() => env.as(developer).service('projects').create({ name: 'Once', slug: `once-${Math.random().toString(36).slice(2, 8)}` }))
+    expect(env.announced().map((e: any) => e.event)).toEqual(['projects:created'])
+  })
 })
 
 describe('the HTTP pipeline answers the same app', () => {
@@ -379,7 +389,7 @@ describe('the two transports answer the same app', () => {
       // the send is repeated until one lands rather than timed against it.
       const deadline = Date.now() + 5000
       while (!got.length && Date.now() < deadline) {
-        await notifyPeople(penv.app, 'deploy_failed', [parityUser],
+        await notifyPeople(penv.app, 'DeployFailed', [parityUser],
           { deploymentId: 'd-1', appName: 'Site', environment: 'prod', step: 'build' })
         await new Promise(r => setTimeout(r, 200))
       }
@@ -1568,20 +1578,20 @@ describe('a person notification preferences are their own', () => {
     expect(out.data.every((r: any) => r.source === 'default')).toBe(true)
     // The defaults are a judgement, not a shrug: a failure is emailed, a success
     // is not. Asserting one of each keeps that from being quietly inverted.
-    expect(out.data.find((r: any) => r.kind === 'deploy_failed').email).toBe(true)
-    expect(out.data.find((r: any) => r.kind === 'deploy_success').email).toBe(false)
+    expect(out.data.find((r: any) => r.kind === 'DeployFailed').email).toBe(true)
+    expect(out.data.find((r: any) => r.kind === 'DeploySuccess').email).toBe(false)
   })
 
   test('choosing one transport does not silently reset the other', async () => {
-    // `deploy_success` defaults to email:false, inApp:true. Turning email ON
+    // `DeploySuccess` defaults to email:false, inApp:true. Turning email ON
     // writes the row for the first time — and the OTHER column must come from
     // the kind's default rather than the column's, which is `true` for `inApp`
     // by coincidence here and would not be for a kind whose default is off.
     await env.as(developer).service('notification-preferences')
-      .call('save', null, { kind: 'deploy_success', email: true })
+      .call('save', null, { kind: 'DeploySuccess', email: true })
 
     const out = await env.as(developer).service('notification-preferences').find()
-    const row = out.data.find((r: any) => r.kind === 'deploy_success')
+    const row = out.data.find((r: any) => r.kind === 'DeploySuccess')
     expect(row.email).toBe(true)
     expect(row.inApp).toBe(true)
     expect(row.source).toBe('chosen')
@@ -1589,20 +1599,20 @@ describe('a person notification preferences are their own', () => {
     // And it is still the default for somebody else — the policy, not a filter
     // this service wrote.
     const theirs = await env.as(viewer).service('notification-preferences').find()
-    expect(theirs.data.find((r: any) => r.kind === 'deploy_success').source).toBe('default')
+    expect(theirs.data.find((r: any) => r.kind === 'DeploySuccess').source).toBe('default')
   })
 
   test('reset forgets the choice rather than storing the opposite', async () => {
     await env.as(developer).service('notification-preferences')
-      .call('reset', null, { kind: 'deploy_success' })
+      .call('reset', null, { kind: 'DeploySuccess' })
     const out = await env.as(developer).service('notification-preferences').find()
-    expect(out.data.find((r: any) => r.kind === 'deploy_success').source).toBe('default')
+    expect(out.data.find((r: any) => r.kind === 'DeploySuccess').source).toBe('default')
   })
 
   test('an unknown kind is a sentence naming the kinds', async () => {
     await expect(env.as(developer).service('notification-preferences')
       .call('save', null, { kind: 'deploy_fail', email: true }))
-      .rejects.toThrow(/kind must be one of: deploy_success/)
+      .rejects.toThrow(/kind must be one of: DeploySuccess/)
   })
 })
 
@@ -3457,7 +3467,7 @@ describe('notifications — the inbox reads what the driver writes', () => {
   const mine = () => env.as(owner).service('notifications')
   const note = (userId: string, title: string, at: string) =>
     (env.system as any).notification.create({ data: {
-      userId, type: 'deploy_failed', data: { title }, createdAt: at,
+      userId, type: 'DeployFailed', data: { title }, createdAt: at,
     } })
 
   let older: any, newer: any, theirs: any
@@ -3481,9 +3491,9 @@ describe('notifications — the inbox reads what the driver writes', () => {
   })
 
   test('a patch rewrites nothing but readAt', async () => {
-    const out = await mine().patch(older.id, { data: { title: 'forged' }, type: 'job_failed' })
+    const out = await mine().patch(older.id, { data: { title: 'forged' }, type: 'JobFailed' })
     expect(out.data.title).toBe('older')
-    expect(out.type).toBe('deploy_failed')
+    expect(out.type).toBe('DeployFailed')
   })
 
   test('nobody marks somebody else\'s', async () => {
@@ -4056,7 +4066,7 @@ describe('preference and ownership verbs declare their input', () => {
   test('a kind outside the enum, or a transport that is not a boolean, is refused naming it', async () => {
     const prefs = env.as(developer).service('notification-preferences')
     await expect(prefs.call('save', null, { kind: 'deploy_fail', email: true })).rejects.toThrow(/kind/)
-    await expect(prefs.call('save', null, { kind: 'deploy_success', email: 'yes' })).rejects.toThrow(/email/)
+    await expect(prefs.call('save', null, { kind: 'DeploySuccess', email: 'yes' })).rejects.toThrow(/email/)
     await expect(prefs.call('reset', null, { kind: 'deploy_fail' })).rejects.toThrow(/kind/)
   })
 

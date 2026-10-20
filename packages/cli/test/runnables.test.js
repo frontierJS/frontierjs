@@ -207,6 +207,17 @@ describe('tools', () => {
   })
 })
 
+describe('a tool declares the flags that start it', () => {
+  // FJS-2278. project:map serves only under --as=serve and declares its port
+  // past the head the port match reads, so the row had no command at all.
+  test('pmap starts project:map as a server, not as the terminal report', () => {
+    const pmap = runnables(REPO).find(r => r.id === 'tool:pmap')
+    expect(pmap.start).toBe('fli pmap --as=serve --no-open')
+    expect(pmap.argv).toEqual(['fli', 'pmap', '--as=serve', '--no-open'])
+    expect(pmap.source).toMatch(/commands\/project\/map\.md$/)
+  })
+})
+
 describe('the tools group is derived, not listed', () => {
   // The claim step 6 rests on: a slot added to `ports.js` § GLOBAL is a tile
   // with nothing edited here. A hand-written name→command table would be the

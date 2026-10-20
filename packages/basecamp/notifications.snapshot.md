@@ -20,18 +20,18 @@ on the definition is what holds it still.
 
 | Type | Transports |
 | --- | --- |
-| `alert_firing` | `inApp` · `email` |
-| `alert_resolved` | `inApp` · `email` |
-| `dependency_vulnerable` | `inApp` · `email` |
-| `deploy_failed` | `inApp` · `email` |
-| `deploy_success` | `inApp` · `email` |
-| `job_failed` | `inApp` · `email` |
-| `member_joined` | `inApp` · `email` |
-| `monitor_down` | `inApp` · `email` |
-| `monitor_up` | `inApp` · `email` |
-| `posture_failed` | `inApp` · `email` |
-| `server_unreachable` | `inApp` · `email` |
-| `weekly_digest` | `inApp` · `email` |
+| `AlertFiring` | `inApp` · `email` |
+| `AlertResolved` | `inApp` · `email` |
+| `DependencyVulnerable` | `inApp` · `email` |
+| `DeployFailed` | `inApp` · `email` |
+| `DeploySuccess` | `inApp` · `email` |
+| `JobFailed` | `inApp` · `email` |
+| `MemberJoined` | `inApp` · `email` |
+| `MonitorDown` | `inApp` · `email` |
+| `MonitorUp` | `inApp` · `email` |
+| `PostureFailed` | `inApp` · `email` |
+| `ServerUnreachable` | `inApp` · `email` |
+| `WeeklyDigest` | `inApp` · `email` |
 
 12 notification(s).
 

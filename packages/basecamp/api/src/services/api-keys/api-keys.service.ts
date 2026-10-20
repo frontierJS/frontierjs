@@ -18,7 +18,7 @@
 // that was skipped: building it would mean storing the token, which is the one
 // thing an API key exists not to do.
 
-import { createService, BadRequest, Forbidden, $ } from '@frontierjs/junction'
+import { createService, BadRequest, Conflict, Forbidden, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, roleOf, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor } from '../../core/resource.ts'
@@ -169,9 +169,9 @@ async function mintKey(input: Record<string, unknown>): Promise<Record<string, u
 
   // Checked before the mint, not after: the unique is [workspaceId, name],
   // and a name collision found by SQLite would already have cost a real
-  // credential that nothing then points at.
+  // credential that nothing then points at. The constraint stays the rule.
   if (await db().apiKey.exists({ where: { workspaceId: ws(), name } }))
-    throw new BadRequest(`An API key named '${name}' already exists in this workspace`)
+    throw new Conflict(`An API key named '${name}' already exists in this workspace`)
 
   // auth mints and hashes. Nothing in this app stores the plaintext; it
   // travels on $.locals to the response and stops there.

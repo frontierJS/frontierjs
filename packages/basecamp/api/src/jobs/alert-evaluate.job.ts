@@ -33,7 +33,7 @@
 //   where the WORKSPACE is paged, it is configured per rule, and nobody can opt
 //   out of it individually: that is what a pager is.
 //
-//   Every member, as a `Notification` — `alert_firing` / `alert_resolved`, two
+//   Every member, as a `Notification` — `AlertFiring` / `AlertResolved`, two
 //   of the seven kinds `NotificationPreference` lets one PERSON switch off for
 //   themselves.
 //
@@ -131,7 +131,7 @@ export default defineJob({
           },
         })
         fired++
-        await notifyPeople(app, 'alert_firing',
+        await notifyPeople(app, 'AlertFiring',
           await workspaceMembers(app, rule.workspaceId), {
             eventId: event.id, ruleName: rule.name, severity: rule.severity, message,
           })
@@ -149,7 +149,7 @@ export default defineJob({
         })
         resolved++
         const recovered = describeBreach(rule.metricName, rule, verdict.value)
-        await notifyPeople(app, 'alert_resolved',
+        await notifyPeople(app, 'AlertResolved',
           await workspaceMembers(app, rule.workspaceId), {
             eventId: open.id, ruleName: rule.name, severity: rule.severity, message: recovered,
           })

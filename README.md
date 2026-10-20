@@ -145,7 +145,7 @@ export default createService({
 })
 ```
 
-```javascript
+```mesa
 // web/src/resources/Lead.mesa — API → UI connection
 
 <script module>

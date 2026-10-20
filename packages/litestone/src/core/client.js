@@ -6226,7 +6226,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
         }
       }
       if (doomed) await cascadeRemoved(doomed)
-      return select === false ? null : final
+      if (select === false || !final) return null
+      // The caller's row is resolved like a read (FJS-D1324), on a copy: the
+      // event, the plugins and the trail above hold `final`, and a stored ref
+      // resolved in place would be the URL they are told.
+      if (!plugins?.hasPlugins) return final
+      const out = { ...final }
+      await plugins.shapeWriteResult(modelName, [out], ctx, { select })
+      return out
     }
     if (affected.length) await plugins.afterDelete(modelName, affected, ctx)
     // Row by row, as the single-row verbs are: a copy a plugin derives from
@@ -10126,6 +10133,9 @@ export async function createClient({
       '  parsed: parseFile(...)'
     )
   })()
+
+  if (parseResult.files && !untrusted)
+    await (await import('./watch.js')).watchSchemaFiles(parseResult.files)
 
   if (!parseResult.valid)
     throw new Error(`schema.lite has errors:\n${parseResult.errors.join('\n')}`)

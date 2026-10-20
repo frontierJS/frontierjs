@@ -11,7 +11,7 @@
 import { createService, NotFound, Forbidden, $ } from '@frontierjs/junction'
 import { sessionScope, workspaceChannel, getPagination, refuseProtectedForDeveloper, WORKSPACE_QUERY }
   from '../../core/hooks.ts'
-import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws }
+import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
 import { retireAppsIn }         from '../apps/apps.service.ts'
 import type { ServiceContext } from '@frontierjs/junction'
@@ -54,13 +54,7 @@ export default createService({
   async create() {
     const data = $.data as Record<string, unknown>
     await assertProjectInWorkspace(data.projectId as string)
-    await assertSlugFree('environment', { projectId: data.projectId, slug: data.slug },
-      `Environment slug '${data.slug}' already exists in this project`)
-
-    const env = await db().environment.create({ data })
-    $.app.events.emit('environment:created',
-      { id: env.id, project_id: env.projectId, workspace_id: ws() })
-    return env
+    return db().environment.create({ data })
   },
 
   async patch(ctx: ServiceContext) {
@@ -83,7 +77,6 @@ export default createService({
     // no machine, so the Apps are retired first.
     const apps    = await retireAppsIn($.app, [env.id])
     const removed = await removeScoped('environment', 'Environment')
-    $.app.events.emit('environment:deleted', { id: $.id })
     return { ...removed, apps }
   },
 

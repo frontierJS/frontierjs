@@ -286,3 +286,49 @@ test('db:types writes one types file per audience, and only the browser one augm
   expect(web).toContain('--augment junction')
   expect(web).toContain('--out web/src/db.d.ts')
 }, 60_000)
+
+// FJS-2439 — auth.ts imports db.ts, which opens db/app.db at import, so what
+// 'admin' means has to live in gate.ts for a test to reach it without the
+// database.
+test('what admin means is exported from gate.ts, which opens no database', () => {
+  const app    = scaffold('standing', '--full')
+  const gate   = readFileSync(join(app, 'api/src/core/gate.ts'), 'utf8')
+  const auth   = readFileSync(join(app, 'api/src/core/auth.ts'), 'utf8')
+  const access = readFileSync(join(app, 'api/test/access.test.ts'), 'utf8')
+  expect(gate).toMatch(/export function standing\(/)
+  expect(gate).not.toMatch(/from '\.\/db\.ts'/)
+  expect(auth).toMatch(/sessionFields:\s*standing,/)
+  expect(auth).not.toContain("role === 'admin'")
+  expect(access).toContain('standing(')
+}, 60_000)
+
+// FJS-1892 — each app worked out createApp({ principal }) and a controlFor
+// override by hand. Both now start as a stub the entry already imports.
+test('a full-stack scaffold wires a claim resolver stub and a controls stub', () => {
+  const app  = scaffold('stubs', '--full')
+  const read = (rel) => readFileSync(join(app, rel), 'utf8')
+  expect(read('api/src/core/principal.ts')).toMatch(/export const principal: PrincipalResolver\[\] = \[\]/)
+  expect(read('api/src/app.ts')).toContain("from './core/principal.ts'")
+  expect(read('api/src/app.ts')).toMatch(/^\s*principal,$/m)
+  expect(read('web/src/controls.js')).toContain('registerControl')
+  expect(read('web/src/main.js')).toContain("import './controls.js'")
+}, 60_000)
+
+test('a web-only scaffold writes neither stub, which need a schema and an API', () => {
+  const app = scaffold('no-stubs', '--template', 'web-only')
+  expect(existsSync(join(app, 'web/src/controls.js'))).toBe(false)
+  expect(readFileSync(join(app, 'web/src/main.js'), 'utf8')).not.toContain('controls.js')
+}, 60_000)
+
+// FJS-1287 — `fli dev` claims a slot per app root, so a README that says the
+// api is on 8100 and the web app on 8000 sends a second app's owner to a port
+// the first app holds, and `bun run dev` (which does not claim) dies on it.
+test('a scaffold README starts the app with fli dev and names no fixed port', () => {
+  const app = scaffold('readme-ports', '--full')
+  const readme = readFileSync(join(app, 'README.md'), 'utf8')
+  expect(readme).toContain('fli dev')
+  expect(readme).toContain('fli ps')
+  expect(readme).not.toMatch(/bun run dev/)
+  expect(readme).not.toMatch(/\b8[0-9]00\b/)
+  expect(readme).not.toContain('env*1000')
+}, 60_000)

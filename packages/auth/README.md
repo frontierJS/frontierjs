@@ -17,7 +17,7 @@ bun add @frontierjs/auth
 ## Setup
 
 ```typescript
-// api/src/auth.ts
+// api/src/core/auth.ts
 import { createLitestoneAuth }               from '@frontierjs/auth'
 import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
 import { defineEnv }                        from '@frontierjs/junction'
@@ -74,8 +74,8 @@ export const auth = createLitestoneAuth(db, {
 ```
 
 ```typescript
-// api/src/server.ts
-import { auth, db }         from './auth.ts'
+// api/src/app.ts
+import { auth, db }         from './core/auth.ts'
 import { auth as authPlugin } from '@frontierjs/auth'
 import { createApp }        from '@frontierjs/junction'
 

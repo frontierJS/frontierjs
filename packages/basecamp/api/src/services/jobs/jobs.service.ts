@@ -12,7 +12,7 @@ import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, w
   from '../../core/resource.ts'
 import { syncSchedule, unscheduleJob, nextRunAt } from './job-schedule.ts'
 import jobRun from '../../jobs/job-run.job.ts'
-import { announce } from '../../channels.ts'
+import { announce } from '../../core/channels.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 /** Five fields: min hour dom month dow. */
@@ -155,7 +155,6 @@ export default createService({
     // A soft-deleted row is invisible to every read, so a schedule still
     // holding its id would dispatch runs for a job nobody can see.
     unscheduleJob($.app, $.id as string)
-    $.app.events.emit('job:deleted', { id: $.id })
     return removed
   },
 
@@ -185,7 +184,6 @@ export default createService({
     // says which one it cannot.
     const updated = await db().job.update({ where: { id: job.id }, data: { status: 'cancelled' } })
     unscheduleJob($.app, job.id)
-    $.app.events.emit('job:cancelled', { id: job.id, workspace_id: ws() })
     return updated
   },
 
@@ -254,8 +252,6 @@ export default createService({
         : { status: 'failed',  lastRunStatus: 'failed' },
     })
 
-    $.app.events.emit(status === 'success' ? 'job:success' : 'job:failed',
-      { job_id: job.id, run_id: runId, ...(error ? { error } : {}) })
     await pushJob(job.id, job.workspaceId)
 
     return { runId, status }

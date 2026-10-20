@@ -2,7 +2,7 @@
 title: 01b-env-check
 description: Validate that the server's .env.production has all required keys from .env.example
 optional: true
-skip: "!$.config.doApi || (!$.config.deployConf.api?.envCheck && !$.config.deployConf.api?.env_check && !Object.keys({ ...$.config.deployConf?.configuration, ...$.config.deployConf?.secrets, ...$.config.deployConf?.[$.config.target]?.configuration, ...$.config.deployConf?.[$.config.target]?.secrets }).length)"
+skip: "!$.config.doApi || (!$.config.deployConf.api?.envCheck && !Object.keys({ ...$.config.deployConf?.configuration, ...$.config.deployConf?.secrets, ...$.config.deployConf?.[$.config.target]?.configuration, ...$.config.deployConf?.[$.config.target]?.secrets }).length)"
 ---
 
 ```js

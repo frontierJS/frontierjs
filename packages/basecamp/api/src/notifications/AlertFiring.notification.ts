@@ -1,4 +1,4 @@
-// src/notifications/alert_firing.notification.ts
+// src/notifications/AlertFiring.notification.ts
 //
 // **This is not the same thing as the alert fan-out**, and the distinction is
 // the reason both exist. `alert-evaluate.job.ts` delivers a fired event to the

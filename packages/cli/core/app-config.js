@@ -235,7 +235,9 @@ export function appCheckScripts({ tests = false } = {}) {
     // The test file types its tables off db/schema.d.ts, which a clone does not
     // carry until `db:types` has run.
     scripts.typecheck = 'bun run db:types && fli typecheck'
-    scripts.test   = 'bun test api/test'
+    // `./` makes it a path: bun reads a bare `api/test` as a substring of every
+    // test file's path, so an app holding another app below it ran that app's tests.
+    scripts.test   = 'bun test ./api/test'
     scripts.check += ' && bun run test'
   }
   return scripts

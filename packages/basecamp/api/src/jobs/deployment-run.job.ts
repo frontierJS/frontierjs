@@ -180,7 +180,7 @@ function runner(app: App) {
     const service = opened.app as ServiceRow
     if (!service) {
       await failDeploy(deploymentId, startedAt, 'App not found')
-      await tellThem('deploy_failed', deploy, null, { reason: 'App not found' })
+      await tellThem('DeployFailed', deploy, null, { reason: 'App not found' })
       return
     }
 
@@ -196,7 +196,7 @@ function runner(app: App) {
       // A release refused before it started is still a release that failed, and
       // it is the one people most need telling about: nothing happened on the
       // machine, so there is no half-finished state on a screen to notice.
-      await tellThem('deploy_failed', deploy, service, { reason: executor.reason })
+      await tellThem('DeployFailed', deploy, service, { reason: executor.reason })
       return
     }
 
@@ -245,13 +245,13 @@ function runner(app: App) {
       await markRunning(app.db, deploy.appId, executor.serverId)
       await toZones(deploy.appId, deploymentId)
       log.info('deployment succeeded', { id: deploymentId, duration_ms: Date.now() - startedAt })
-      await tellThem('deploy_success', deploy, service)
+      await tellThem('DeploySuccess', deploy, service)
 
     } catch (err: unknown) {
       const msg = (err as Error).message ?? 'unknown error'
       await failDeploy(deploymentId, startedAt, msg, current)
       log.error('deployment failed', { id: deploymentId, error: msg })
-      await tellThem('deploy_failed', deploy, service, { reason: msg })
+      await tellThem('DeployFailed', deploy, service, { reason: msg })
     }
   }
 

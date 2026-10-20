@@ -10,7 +10,7 @@
 // so the ones with real behavior (servers' drain/heartbeat, deployments'
 // job handoff) read as themselves rather than as config for a base class.
 
-import { NotFound, Conflict, $ } from '@frontierjs/junction'
+import { NotFound, $ } from '@frontierjs/junction'
 import type { ServiceContext } from '@frontierjs/junction'
 import { normalizeOrderBy, normalizeSelect, comparatorFor, type SortParam, type SelectParam } from '@frontierjs/toolbelt/query'
 
@@ -136,15 +136,6 @@ export async function getScoped(
   const row = await db()[accessor].findFirst({ where: { id } })
   if (!row) throw new NotFound(`${label} '${id}' not found`)
   return row
-}
-
-/** Throw Conflict if a sibling already holds this slug. */
-export async function assertSlugFree(
-  accessor: string,
-  where:    Record<string, unknown>,
-  message:  string,
-) {
-  if (await db()[accessor].exists({ where })) throw new Conflict(message)
 }
 
 // ─── Writes ──────────────────────────────────────────────────────────────

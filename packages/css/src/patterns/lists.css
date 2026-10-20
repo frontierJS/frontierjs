@@ -188,6 +188,16 @@
   border-radius: var(--btn-radius);
 }
 
+/*
+ * The current row — the selected message, the open record. Any token but
+ * "false" counts, as ARIA reads it, and it follows `.rows.hover` so a hovered
+ * current row stays tinted. Same tint as `.navlink[aria-current]`.
+ */
+.list-row[aria-current]:not([aria-current="false"]) {
+  background:    color-mix(in srgb, var(--bg-mix, var(--color-primary)) 12%, var(--surface));
+  border-radius: var(--btn-radius);
+}
+
 /* Trailing actions — pushed to the row's end, shrink-proof */
 .row-actions {
   display:     flex;

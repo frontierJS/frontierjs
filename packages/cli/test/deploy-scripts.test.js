@@ -211,3 +211,15 @@ describe('every script the lock builds', () => {
     expect(script.split('\n').filter(l => l.includes('run='))).toHaveLength(1)
   })
 })
+
+// ─── one spelling per config key ─────────────────────────────────────────────
+//
+// FJS-1133: `deploy.api.envCheck` was also read as `env_check` by the step and by
+// doctor, so a config written either way worked in one place and was ignored in
+// the other.
+describe('deploy config keys', () => {
+  test('envCheck has no second spelling in the pipeline', () => {
+    const files = walk(DEPLOY).filter(f => readFileSync(f, 'utf8').includes('env_check'))
+    expect(files).toEqual([])
+  })
+})

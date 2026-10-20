@@ -386,6 +386,36 @@ describe('surface-config', () => {
   })
 })
 
+// ─── plan-size ────────────────────────────────────────────────────────────────
+
+describe('plan-size', () => {
+  const phase = (n, box, pad) =>
+    `### Phase ${n} — work\n\nGoal: g\n\n- [${box}] ${n}.1 step\n  - ${'found '.repeat(pad)}\n\n`
+  const big   = 40 * 1024
+
+  test('a plan past the limit is a finding naming its finished phases, largest first', () => {
+    const plan = '# Plan\n\n' + phase(0, 'x', big / 6) + phase(1, 'x', big / 3) + phase(2, ' ', big / 6)
+    const { findings } = only(tree('ps-big', { 'PLAN.md': plan }), 'plan-size')
+    expect(findings.length).toBe(1)
+    expect(findings[0].message).toMatch(/Finished phases still inline: Phase 1 — work \(\d+ KB\), Phase 0 — work/)
+    expect(findings[0].message).not.toMatch(/Phase 2/)
+    expect(findings[0].message).toMatch(/docs\/plan-done\.md/)
+  })
+
+  test('a plan under the limit, and an app with no plan, are silent', () => {
+    // Paired with the first: size is what fires, not the presence of a finished phase.
+    expect(only(tree('ps-small', { 'PLAN.md': '# Plan\n\n' + phase(0, 'x', 10) }), 'plan-size').findings).toEqual([])
+    expect(only(tree('ps-none', { 'db/schema.lite': SCHEMA }), 'plan-size').findings).toEqual([])
+  })
+
+  test('a heading inside a fence is not a phase', () => {
+    const plan = '# Plan\n\n```md\n' + phase(0, 'x', 10) + '```\n\n' + 'pad '.repeat(big / 4)
+    const { findings } = only(tree('ps-fence', { 'PLAN.md': plan }), 'plan-size')
+    expect(findings.length).toBe(1)
+    expect(findings[0].message).not.toMatch(/Finished phases/)
+  })
+})
+
 beforeAll(() => { ROOT = mkdtempSync(join(tmpdir(), 'fli-checks-')) })
 afterAll(()  => { rmSync(ROOT, { recursive: true, force: true }) })
 
@@ -1703,6 +1733,31 @@ describe('surface-src', () => {
     expect(findings[0].file).toMatch(/api\/seed\.ts$/)
   })
 
+  test('a directory of loaded source beside src/ is a finding (FJS-1268)', () => {
+    // `api/notifications/` was where the notifications loader probed first, and
+    // a directory of application source at the surface root reported nothing.
+    const root = tree('ss-dir', { ...CLEAN, 'api/notifications/ShiftReminder.notification.ts': '// n\n' })
+    const { findings } = only(root, 'surface-src')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].file).toMatch(/api\/notifications$/)
+    expect(findings[0].message).toMatch(/api\/src\/notifications/)
+  })
+
+  test('a surface with no src/ and only a loaded directory is a finding too', () => {
+    const root = tree('ss-dir-flat', without('api/', {
+      'api/config/junction.config.js': 'export default {}\n',
+      'api/services/x.service.ts':     '// s\n',
+    }))
+    const { findings } = only(root, 'surface-src')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/api\/ has no src\/.*services/)
+  })
+
+  test('a directory that is not a loader\'s is left alone', () => {
+    const root = tree('ss-dir-ok', { ...CLEAN, 'api/deploy/Dockerfile': 'FROM scratch\n' })
+    expect(only(root, 'surface-src').findings).toEqual([])
+  })
+
   test('a config file at the surface root belongs to surface-config, not here', () => {
     // Two rules pointing at one file teaches the reader to skip both.
     const root = tree('ss-config', {
@@ -2961,6 +3016,37 @@ describe('service-as-system', () => {
     expect(only(root, 'service-as-system').findings).toEqual([])
   })
 
+  // FJS-2077. `app.withDb(fn)` hands `fn` the client of a call it entered, so
+  // the callback's first parameter stays in the tenant `runAs` named.
+  test('the client app.withDb hands over is the request shape, in either spelling', () => {
+    const root = tree('sas-withdb', svc('export default createService({\n' +
+      '  sync: (ctx) => ctx.app.runAs(null, { tenant: 1 }, () => ctx.app.withDb(async (tdb) => {\n' +
+      '    await tdb.asSystem().lead.create({ data: {} })\n' +
+      '  })),\n' +
+      '  other: (ctx) => ctx.app.withDb(function (scoped: any) {\n' +
+      '    return scoped.asSystem().lead.findMany({ where: {} })\n' +
+      '  }),\n' +
+      '  third: (ctx) => ctx.app.withDb(async db => db.asSystem().lead.findMany({ where: {} })),\n' +
+      '})\n'))
+    expect(only(root, 'service-as-system').findings).toEqual([])
+  })
+
+  test('a withDb callback does not exempt the app client beside it', () => {
+    const root = tree('sas-withdb-app', svc('export default createService({\n' +
+      '  sync: (ctx) => ctx.app.withDb(async (tdb) => {\n' +
+      '    await $.app.data.asSystem().lead.create({ data: {} })\n' +
+      '  }),\n' +
+      '})\n'))
+    expect(only(root, 'service-as-system').findings).toHaveLength(1)
+  })
+
+  test('no tenancy block: a withDb client crosses every user too', () => {
+    const root = tree('sas-withdb-none', svc('export default createService({\n' +
+      '  sync: (ctx) => ctx.app.withDb(async (tdb) => { await tdb.asSystem().lead.create({ data: {} }) }),\n' +
+      '})\n', ''))
+    expect(only(root, 'service-as-system').findings).toHaveLength(1)
+  })
+
   test('a local bound to the request client is the same shape', () => {
     const root = tree('sas-local', svc('export default createService({\n' +
       '  find: (ctx) => {\n    const db = $.db\n' +
@@ -3793,6 +3879,32 @@ model ActivityLog {
 }
 `))
     expect(only(root, 'polymorphic-subject').findings).toEqual([])
+  })
+
+  // FJS-2275: a polymorphic id points at a subject many rows share, so a column
+  // that is unique on its own is a delivery's key, and its `*Type` neighbor
+  // names a kind of event rather than a model.
+  test('a unique id beside a type is a delivery key, not a pair', () => {
+    const root = tree('ps-delivery', withModel(`
+model InboundEvent {
+  id        Int    @id
+  eventType String
+  eventId   String @unique
+}
+`))
+    expect(only(root, 'polymorphic-subject').findings).toEqual([])
+  })
+
+  test('a unique id on a composite pair is still reported', () => {
+    const root = tree('ps-composite', withModel(`
+model Pin {
+  id          Int    @id
+  subjectType String
+  subjectId   Int
+  @@unique([subjectType, subjectId])
+}
+`))
+    expect(only(root, 'polymorphic-subject').findings).toHaveLength(1)
   })
 
   test('an app with no schema is skipped rather than passed', () => {
@@ -5230,6 +5342,7 @@ describe('app-layout grades the src/ layout (FJS-1888)', () => {
       'api/src/core/texting.ts':  "import type { App } from '@frontierjs/junction'\nexport const configureTexting = (app: App, opts: object) => {}\n",
       'api/src/core/mine.ts':     "import type { App } from '@frontierjs/junction'\nexport function mine(app: App): void {}\n",
       'api/src/core/arrow.ts':    "import type { App } from '@frontierjs/junction'\nexport const arrow = (app: App) => {}\n",
+      'api/src/core/getter.ts':   "import type { App } from '@frontierjs/junction'\nexport function manager(app: App): Manager | undefined { return undefined }\n",
     })
     expect(f.map(x => x.file.replace(/.*\/api\//, 'api/')).sort()).toEqual(['api/src/core/arrow.ts', 'api/src/core/mine.ts'])
   })

@@ -1,7 +1,7 @@
-// src/notifications/deploy_success.notification.ts
+// src/notifications/DeploySuccess.notification.ts
 //
 // THE FILE NAME IS THE TYPE AND THE TYPE IS A `NotificationKind`. The loader
-// stamps `deploy_success` verbatim onto every row it writes, and that is the
+// stamps `DeploySuccess` verbatim onto every row it writes, and that is the
 // same string `NotificationPreference.kind` holds — which is what makes the
 // preference screen decidable against the senders instead of decorative.
 // `db/test/schema.test.ts` holds the enum, `kinds.ts` and this directory

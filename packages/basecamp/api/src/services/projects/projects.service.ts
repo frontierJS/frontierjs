@@ -11,7 +11,7 @@
 
 import { createService, $ } from '@frontierjs/junction'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws }
+import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing }
   from '../../core/resource.ts'
 import { retireAppsIn }         from '../apps/apps.service.ts'
 import { keyScope } from '../api-keys/scopes.ts'
@@ -37,12 +37,7 @@ export default createService({
 
   async create() {
     const data = $.data as Record<string, unknown>
-    await assertSlugFree('project', { workspaceId: ws(), slug: data.slug },
-      `Project slug '${data.slug}' already exists in this workspace`)
-
-    const project = await db().project.create({ data })
-    $.app.events.emit('project:created', { id: project.id, workspace_id: ws() })
-    return project
+    return db().project.create({ data })
   },
 
   async patch() {
@@ -63,7 +58,6 @@ export default createService({
     const envs    = await db().environment.findMany({ where: { projectId: project.id }, select: { id: true } })
     const apps    = await retireAppsIn($.app, envs.map((e: { id: string }) => e.id))
     const removed = await removeScoped('project', 'Project')
-    $.app.events.emit('project:deleted', { id: $.id, workspace_id: ws() })
     return { ...removed, apps }
   },
 

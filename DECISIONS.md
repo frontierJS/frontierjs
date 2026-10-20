@@ -217,7 +217,7 @@ Asked in chat, two picks through the question tool. **Model**: *"a data structur
 
 Two models can share a structure and still be different things — Form and Survey, Quote and Invoice, Booking and Shift — because what tells them apart is what is declared around the columns: the gate, the policy, the transitions, the relations. The structure half is what litestone's `trait` already shares, so it gets the row, and a trait declares no `@@gate` (`FJS-D819`) for the same reason: who may reach a row is the host model's semantics.
 
-The Factory's `traits = { admin: {…} }` was FactoryBot's sense of the word in the same package — a named `state()`, which is what each entry lowers to. It is now `states`, in `seeder.js`, its types, `docs/testing.md`, the README, the tests and `fli make:factory --states` (`-s`). Where it lives: `VOCABULARY.md` § Terms, `ARCHITECT.md` § 1, `README.md`.
+The Factory's `traits = { admin: {…} }` was FactoryBot's sense of the word in the same package — a named `state()`, which is what each entry lowers to. It is now `states`, in `seeder.js`, its types, `packages/litestone/docs/testing.md`, the README, the tests and `fli make:factory --states` (`-s`). Where it lives: `VOCABULARY.md` § Terms, `ARCHITECT.md` § 1, `README.md`.
 
 ### <a id="fjs-d976"></a>2026-10-14 · `FJS-D976` — Q1 — The noun — `haven`, which is what the screen draws and gives the rooms their words: square, tavern, door.
 
@@ -558,7 +558,7 @@ are seed syntax and one layer of the Warden.
 umbrella over existing ones, adding no mechanism. Complexity: the problem's, and the
 reference monitor is its older name. Predictability: unchanged. Derived: the layer
 list is hand-written. Owner: Litestone, at the Data boundary. Boundary and failure:
-nothing executes, so neither applies. Silence: `docs/warden.md`'s layer list can fall
+nothing executes, so neither applies. Silence: `packages/litestone/docs/warden.md`'s layer list can fall
 behind the code with nothing failing. Its artefact is `none`, and each layer links to
 the file that is graded.
 
@@ -1174,7 +1174,7 @@ object and throws if it is taken, which is Fastify's `decorate`. It becomes
 throws. And `_metricsProviders` was `Provider` in a third sense — *a thing that
 supplies a number* — so it becomes **`_metricsSources`**, reached through a
 blessed `app.registerMetricsSource(name, fn)`, which also retires the
-private-field reach-in §5 objected to and conduit's own `docs/AUDIT.md` warned
+private-field reach-in §5 objected to and conduit's own audit (since retired) warned
 about by name.
 
 **§6 — two collisions were already resolved in practice; one needed a side
@@ -1925,7 +1925,7 @@ The paper's recommendation, taken as written: the gate already states what SYSTE
 
 ### <a id="fjs-d685"></a>2026-10-10 · `FJS-D685` — Does a write fold the app's global filter and the plugins' read filters — Fold both scopes into `update`, `updateMany`, `remove`, `removeMany`, `delete` and `deleteMany` (move them from `WALKS` to `NOT_RESTORE`). The filter is then one predicate for every verb that reaches a row, matching "every path that reaches a row applies every rule that guards it". The six cells promote to `on`; an update/delete of a hidden row answers `null`/`count: 0` like an absent id. `asSystem()` still does not lift it, so a job that maintains rows the app filter hides must say so with a flag.
 
-Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Keep writes unscoped and write it down: the filter is a READ view, access to writes is the policy and the gate (Invariant 6). The six cells become `-` with the reason; `docs/filtering.md` § Global filters says "reads" rather than "every query". The tenant function filter then needs a `@@allow` beside it to scope a write).
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Keep writes unscoped and write it down: the filter is a READ view, access to writes is the policy and the gate (Invariant 6). The six cells become `-` with the reason; `packages/litestone/docs/filtering.md` § Global filters says "reads" rather than "every query". The tenant function filter then needs a `@@allow` beside it to scope a write).
 
 The paper's recommendation, taken as written: docs say "every query on a model, regardless of call site", a per-caller function filter is read by an author as scoping, and a write that ignores it is the silent hole Invariant 6 exists to refuse; B leaves the common tenant-filter case unsafe by default.
 
@@ -1935,9 +1935,9 @@ Asked in [`ISSUES.md`](ISSUES.md) by the litestone docs audit. **A** was picked 
 
 **Why not `env.factories` too.** Binding in `_buildEnv` would turn every bare `env.factories.x.createOne()` into a system write, and a test that relies on a gate refusing an unscoped factory would pass the write instead of failing it. Scoping it to the two arrange surfaces fixes the trap without moving anything else; `env.factories` widening is a separate question if one is ever asked.
 
-The nine, answered after the code was green and named as late. Origin: none added — the arrange map is derived from `env.factories` through `Factory.usingDb`, never kept beside it. Concept: none; `factories` keeps its name and shape. Complexity: the problem's — arrange/act/assert is the field's own split. Predictability: up inside a phase (`system` and `factories` now agree), and one cost named: `factories` binds differently in `env` than in the tools, which the d.ts says on both. Derived: yes, memoized once per env. Owner: `usingDb` already owned rebinding a factory and propagates it through `_factoryFor`; nothing new rebinds. Boundary: `ArrangeTools` typed and tested. Failure: a fixture is no longer refused, and `env.factories` still is, loudly. Silence: arrange and setup factories write past a gate while `env.factories` stays graded — the test named below asserts both halves. Adjudication: *ergonomics vs. strictness* — strictness follows cost, and refusing a fixture protects no row. Tier: Register; the map is `docs/testing.md` and the d.ts.
+The nine, answered after the code was green and named as late. Origin: none added — the arrange map is derived from `env.factories` through `Factory.usingDb`, never kept beside it. Concept: none; `factories` keeps its name and shape. Complexity: the problem's — arrange/act/assert is the field's own split. Predictability: up inside a phase (`system` and `factories` now agree), and one cost named: `factories` binds differently in `env` than in the tools, which the d.ts says on both. Derived: yes, memoized once per env. Owner: `usingDb` already owned rebinding a factory and propagates it through `_factoryFor`; nothing new rebinds. Boundary: `ArrangeTools` typed and tested. Failure: a fixture is no longer refused, and `env.factories` still is, loudly. Silence: arrange and setup factories write past a gate while `env.factories` stays graded — the test named below asserts both halves. Adjudication: *ergonomics vs. strictness* — strictness follows cost, and refusing a fixture protects no row. Tier: Register; the map is `packages/litestone/docs/testing.md` and the d.ts.
 
-*Lives in:* `packages/litestone/src/testing.js` (`arrangeTools`) · `testing.d.ts` (`ArrangeTools.factories`, `TestEnv.factories`, and the factory options on `TestEnvOptions`) · `docs/testing.md` · `test/litestone.test.ts` § *arrange and setup hand out system-bound factories*.
+*Lives in:* `packages/litestone/src/testing.js` (`arrangeTools`) · `testing.d.ts` (`ArrangeTools.factories`, `TestEnv.factories`, and the factory options on `TestEnvOptions`) · `packages/litestone/docs/testing.md` · `test/litestone.test.ts` § *arrange and setup hand out system-bound factories*.
 
 ### <a id="fjs-d511"></a>2026-10-10 · `FJS-D511` — Should a named move's `@gate` be able to LOWER the model's update level, rather than only floor it — Keep the floor; *many may submit, few may edit* is a capability grant, not a gate. Everyone who makes the move sits at the update level, and `@@capabilities` (which covers moves by default, `FJS-D140`) grants `Timesheet.submit` to many roles and `Timesheet.update` to few. No new gate spelling, and the access stays in the schema.
 
@@ -2115,7 +2115,7 @@ Asked in [`IDEAS/compliance-from-the-seed.md`](IDEAS/compliance-from-the-seed.md
 
 The paper's recommendation, taken as written: `read: true` is the only evidence that no framework store keeps the value, so stating *not stored* for a write method's input is the map being wrong without saying so. B costs nothing over A: `isReadMethod` already answers.
 
-### <a id="fjs-d719"></a>2026-10-09 · `FJS-D719` — Does retention interact with `@@softDelete` — Retention ignores soft deletion: the sweep runs unfiltered from `createdAt`, so a soft-deleted row ages out like any other. This is what the database-level pass in `packages/litestone/src/tools/retention.js` does, with a raw `DELETE` that never reads `deletedAt`.
+### <a id="fjs-d719"></a>2026-10-09 · `FJS-D719` — Does retention interact with `@@softDelete` — Retention ignores soft deletion: the sweep runs unfiltered from `createdAt`, so a soft-deleted row ages out like any other. This is what the database-level pass in `packages/litestone/src/core/retention.js` does, with a raw `DELETE` that never reads `deletedAt`.
 
 Asked in [`IDEAS/compliance-from-the-seed.md`](IDEAS/compliance-from-the-seed.md) § Open questions. **A** was picked over **B** (soft deletion starts its own clock: a soft-deleted row is purged a declared period after `deletedAt`, on top of the `createdAt` window).
 
@@ -2568,7 +2568,7 @@ The paper's recommendation, taken as written: strictness follows cost (§ IV), a
 
 ### <a id="fjs-d309"></a>2026-09-16 · `FJS-D309` — A device's local database is a CACHE of what the server already answered, so a read of it is replayed and never re-graded: sierra reads it through `asSystem()`, and its rows go when the identity does.
 
-Decided while building `FJS-D307`'s storage swap — `sierra/src/junction/local-db.js`.
+Decided while building `FJS-D307`'s storage swap — `sierra/src/resource/local-db.js`.
 
 **The doctrinal answer is to enforce the gate locally, and the code had already
 decided otherwise.** `list-cache.js` replays the rows a gate let this caller read
@@ -2603,7 +2603,7 @@ have an answer for.
 
 Asked as `FJS-1159`. **A** — the tenancy block scopes them — was picked over **B**, a declared `@@unique([…], tenant: true)` expanded with the rest of the block, and **C**, an `extend model` that widens a unique it inherits.
 
-**The declaration is usually made somewhere that cannot fix it.** `@frontierjs/orion` ships `FlowCredential.name @unique` and `KvEntry @@unique([scope, key])`; a host adds `workspaceId` with `extend model`, and no edit either of them can make repairs the index — the fragment does not know the column's name and the host cannot rewrite an inherited constraint. That is a property of every package that ships a schema fragment, not of orion, so **C** fixes one app at a time and leaves the class open. **B** is expressible in a fragment and was the close call; it was declined because forgetting it leaves the defect, and the defect is silent in the direction that matters — the second tenant is refused by a message naming a value they may not read, which `docs/access-control.md` says a refusal must never do.
+**The declaration is usually made somewhere that cannot fix it.** `@frontierjs/orion` ships `FlowCredential.name @unique` and `KvEntry @@unique([scope, key])`; a host adds `workspaceId` with `extend model`, and no edit either of them can make repairs the index — the fragment does not know the column's name and the host cannot rewrite an inherited constraint. That is a property of every package that ships a schema fragment, not of orion, so **C** fixes one app at a time and leaves the class open. **B** is expressible in a fragment and was the close call; it was declined because forgetting it leaves the defect, and the defect is silent in the direction that matters — the second tenant is refused by a message naming a value they may not read, which `packages/litestone/docs/access-control.md` says a refusal must never do.
 
 **What makes A cost nothing is that the exception already had a word.** `@unique(global)` was added for exactly the constraints that are deliberately installation-wide — a token, a public subdomain — so the language could already say the thing the rewrite must not touch. Making the default correct needed no new vocabulary, which is the whole of why the ruling is not a coinage.
 
@@ -6007,7 +6007,7 @@ it a Rails import turns every id in the app into a string.
 ### <a id="fjs-d173"></a>2026-09-02 · `FJS-D173` — an announcement travels as far as the DATABASE declares, and `crossProcess` records it rather than sending it; the reach is one machine, and that is stated rather than approximated.
 
 `FJS-642`. The live layer was in-process callbacks, so a second process
-announced nothing to the first — and `docs/concurrency.md` recommended running
+announced nothing to the first — and `packages/litestone/docs/concurrency.md` recommended running
 one. Not a gap in a mechanism: SQLite has no central server, so there is nothing
 to LISTEN to. `sqlite3_update_hook`, the pre-update hook and the sessions API
 are all in-process by construction, which is why every real system solving this
@@ -6020,7 +6020,7 @@ a messages table polled at 100 ms.
 second machine shares nothing and hears nothing, and no file-based signal can
 change that — so the alternative was a declared bus (Redis, NATS), which
 contradicts the whole premise of a package whose deployment story is a file.
-The supported shape is what `docs/concurrency.md` already recommends: a worker
+The supported shape is what `packages/litestone/docs/concurrency.md` already recommends: a worker
 or a second replica beside the API.
 
 **It is DECLARED, per database.** `database main { announce crossProcess }`,
@@ -6195,7 +6195,7 @@ doc: { push: 'x' } }` stores `{"push":"x"}` — `FJS-D54` working as ruled, sinc
 `Json` column carries objects. Reserving the five bare operator names at the top
 level of a document and refusing them with *did you mean `$merge`* was weighed
 and declined (2026-09-07). It fails *can it be derived instead of restated* — the
-engine could refuse, and a note in `docs/querying.md` is the restated branch —
+engine could refuse, and a note in `packages/litestone/docs/querying.md` is the restated branch —
 and *is the failure proportional to the cost of being wrong*, since the cost is a
 document silently replaced. The adjudication is **ergonomics vs. strictness**,
 and what carries it is that a refusal would be the framework deciding what a
@@ -6499,7 +6499,7 @@ it yet, which is a box that looks writable and 409s.
 **Where it lives.** `packages/litestone/src/core/seal.js` is the one owner of
 *which states are sealed* — three readers ask it and a second walk is how they end
 up disagreeing about `void`. The guards are in `client.js` beside
-`applyTransitionWhereClause`, composed the same way. `docs/modeling.md` § `@seals`,
+`applyTransitionWhereClause`, composed the same way. `packages/litestone/docs/modeling.md` § `@seals`,
 `access.snapshot.md` (a **Seals** column and the relation list), and the release
 surface, where gaining either half is a **contract**.
 
@@ -6889,7 +6889,7 @@ what changes is that the stored column can no longer disagree with it. A Money
 value object is a separate question with a separate home (toolbelt, beside
 `formatMoney`), and one file must not promise both.
 
-**Storing a Money as JSON TEXT stays retired** (`packages/litestone/docs/roadmap.md`):
+**Storing a Money as JSON TEXT stays retired** (litestone's roadmap, since retired):
 `opaqueSortKind` classifies a `Json` column as opaque, so `$checkOrderBy` throws
 on it, and a price nobody can sort, group or sum is not a price column.
 
@@ -7223,7 +7223,7 @@ is a silent no-op (an object) or malformed JSON (a scalar), which is why the
 declared type is the only thing that makes it safe.
 
 *Lives in:* `extractWriteOps` in `packages/litestone/src/core/client.js`;
-`test/write-operators.test.ts`; `docs/querying.md` § Atomic update operators.
+`test/write-operators.test.ts`; `packages/litestone/docs/querying.md` § Atomic update operators.
 
 ### <a id="fjs-d55"></a>2026-08-16 · `FJS-D55` — A write announcement has two shapes, and the write says which (`FJS-307`).
 
@@ -7467,7 +7467,7 @@ The paper's recommendation, taken as written: the DDL stays the one record the d
 
 ### <a id="fjs-d1103"></a>2026-10-17 · `FJS-D1103` — How does `litestone restore` learn where a layout file goes: the copy names it, or the live tree does — The copy carries a manifest. `backup` writes `db-layout.json` (`{ sqlite: [{ name, rel }], files: [rel] }`), `replicate` writes the same file to `<url>/db-layout.json`; restore reads it, so the hyphen ambiguity (`db-a-b.db`) and the unlistable bucket both go away. `db-files/` is put back only where nothing is at the path, and `schema.lite`/`migrations/` are skipped by name. One new file in the copy format and a replicate step that must rewrite it when the layout changes.
 
-Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (No manifest; read the source. A backup restore lists `db-*.db` and `db-files/` from the directory and places `db-<rest>.db` at `<root>/<rest>.db` (hyphens literal, so a nested `a/b.db` comes back as `a-b.db` — refuse a name that matches no flat file and say so); a replica restore names only what a flag lists (`--include jobs`). No new noun, but a nested `*.db` is a guess and a replica restore needs the operator to know the layout), **C** (Keep restore scoped to the declared set and make the gap loud: `restore` prints every `db-*` / `db-files` it found in the backup and did not place, exits non-zero without `--partial`, and `docs/replication.md` names the by-hand copy. Zero format change; the gap stays, now refused rather than a footnote).
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (No manifest; read the source. A backup restore lists `db-*.db` and `db-files/` from the directory and places `db-<rest>.db` at `<root>/<rest>.db` (hyphens literal, so a nested `a/b.db` comes back as `a-b.db` — refuse a name that matches no flat file and say so); a replica restore names only what a flag lists (`--include jobs`). No new noun, but a nested `*.db` is a guess and a replica restore needs the operator to know the layout), **C** (Keep restore scoped to the declared set and make the gap loud: `restore` prints every `db-*` / `db-files` it found in the backup and did not place, exits non-zero without `--partial`, and `packages/litestone/docs/replication.md` names the by-hand copy. Zero format change; the gap stays, now refused rather than a footnote).
 
 The paper's recommendation, taken as written: `FJS-D493` made the layout the list, and a list that can only be read off the tree being replaced is empty exactly when it is needed; a manifest is the smallest thing that lets the source say where its own files go, and it covers the replica, which B cannot.
 
@@ -7652,7 +7652,7 @@ has a reason to turn off.
 
 A `driver logger` database is schema-global — every tenant's client and every
 process appends to one `.jsonl` and one companion index — and
-`docs/concurrency.md` recommends running a second process. Three things were
+`packages/litestone/docs/concurrency.md` recommends running a second process. Three things were
 wrong with that, each destroying a trail rather than inconveniencing it, and
 they share one fix (`FJS-665`).
 
@@ -8797,9 +8797,9 @@ Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A
 
 The paper's recommendation, taken as written: one owner for the implementations (Invariant 4), the same order at both boundaries, and sierra gets client-side transforms for free. B stays the fallback if A's cost can't be paid yet.
 
-### <a id="fjs-d483"></a>2026-09-29 · `FJS-D483` — Where does each `junction.config.js` section's known-key list live, so a misspelled nested key is refused at `start()` — Each consuming subsystem exports its keys (caravan `CARAVAN_CONFIG_KEYS`, conduit, attachments, …), and a check in `config/index.ts` reads them and reports at `start()` the way FJS-D199 does. For `middleware:`/`plugins:`, the list is derived from `loadConfig`'s key-by-key map.
+### <a id="fjs-d483"></a>2026-09-29 · `FJS-D483` — Where does each `junction.config.js` section's known-key list live, so a misspelled nested key is refused at `start()` — Each consuming subsystem exports its keys (caravan `CARAVAN_CONFIG_KEYS`, conduit, attachments, …), and a check in `packages/junction/src/config/index.ts` reads them and reports at `start()` the way FJS-D199 does. For `middleware:`/`plugins:`, the list is derived from `loadConfig`'s key-by-key map.
 
-Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (One table in `config/index.ts` maps each section to its keys, graded both directions by `config-surface.test.ts`. That puts every list in one place, away from the subsystems that read the keys), **C** (Refuse nested keys only in `middleware:`/`plugins:`, where FJS-D256 already made `loadConfig` the owner. The other four sections keep failing silently, and that gap is recorded as `none` in `invariants.snapshot.md`).
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (One table in `packages/junction/src/config/index.ts` maps each section to its keys, graded both directions by `config-surface.test.ts`. That puts every list in one place, away from the subsystems that read the keys), **C** (Refuse nested keys only in `middleware:`/`plugins:`, where FJS-D256 already made `loadConfig` the owner. The other four sections keep failing silently, and that gap is recorded as `none` in `invariants.snapshot.md`).
 
 The paper's recommendation, taken as written: The reader is the only honest owner of what it reads, as the row itself argues. B is a second origin, and C leaves most of the row open.
 
@@ -8959,7 +8959,7 @@ Ratified as built: graded on § V after the fact, not before the first edit. No 
 
 ### <a id="fjs-d447"></a>2026-09-26 · `FJS-D447` — An outbox row is dead by derivation from `attempts`, never deleted or stamped, so raising `maxAttempts` revives it
 
-Past `maxAttempts` (default 10, doubling backoff) a row stops matching the relay's query, keeps its `lastError`, counts as `dead` rather than `pending`, and fails readiness. Because nothing is written to mark it, raising the cap is the way back once a handler is fixed, and `maxAttempts: 0` never gives up. The counts stay split because a dead row is owed forever and counted as pending would hold readiness down. Lives in `owedWhere` and the counts, `packages/junction/src/core/outbox.ts`. Refused alternative: deleting or stamping the row, which loses the intent or needs a second write to revive.
+Past `maxAttempts` (default 10, doubling backoff) a row stops matching the relay's query, keeps its `lastError`, counts as `dead` rather than `pending`, and fails readiness. Because nothing is written to mark it, raising the cap is the way back once a handler is fixed, and `maxAttempts: 0` never gives up. The counts stay split because a dead row is owed forever and counted as pending would hold readiness down. Lives in `owedWhere` and the counts, `packages/junction/src/plugins/outbox/engine.ts`. Refused alternative: deleting or stamping the row, which loses the intent or needs a second write to revive.
 
 Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a dead row is recoverable by configuration alone* — `packages/junction/test/outbox-relay.test.ts` › "raising the cap revives a dead row — dead is derived, never stamped" and "a dead row leaves pending, or a readiness probe never comes back". ([`FJS-778`](ISSUES_ARCHIVE.md#fjs-778)) Picked by the owner in session.
 
@@ -12169,7 +12169,7 @@ The paper's recommendation, taken as written: every config in the tree already m
 
 ### <a id="fjs-d552"></a>2026-10-15 · `FJS-D552` — How does `virtual:sierra` hand `junction`, `analytics` and `theme` to the browser without importing `sierra.config.js` whole, when a custom analytics provider holds functions — Emit the three keys by value (`JSON.stringify`), and refuse a function anywhere in them at config load, naming the key path. A custom analytics provider becomes a module path, `analytics: { provider: '/src/analytics.js' }`, root-relative like `routeTable.output`. `virtual:sierra` imports that module alone. `virtual:sierra-config` (it re-exports the whole config and nothing imports it) is deleted.
 
-Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a separate client-side config file (`config/sierra.client.js`) holding the browser keys, which `virtual:sierra` imports instead. It is a second origin for one config and a new file noun), **C** (emit by value when the three keys are pure data, and fall back to the whole import when a function is present. That leaves two mechanisms, and the fallback silently brings the defect back for any app with a custom provider).
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a separate client-side config file (`sierra.client.js`) holding the browser keys, which `virtual:sierra` imports instead. It is a second origin for one config and a new file noun), **C** (emit by value when the three keys are pure data, and fall back to the whole import when a function is present. That leaves two mechanisms, and the fallback silently brings the defect back for any app with a custom provider).
 
 The paper's recommendation, taken as written: the config stays the one origin, and a function the browser cannot receive is refused by name instead of dropped. Only one README shape changes, and nothing in the tree uses it.
 
@@ -12449,7 +12449,7 @@ Asked in [`IDEAS/app-conventions-audit.md`](IDEAS/app-conventions-audit.md) § O
 
 The paper's recommendation, taken as written: `$async` is already the owner of *this call is in flight*, so a handle beside it is a second origin for one fact (§ V question 6). Per-call keys close the one case it misses while staying declarative, and nothing then writes to a node the template also binds. C is worth reopening only when a busy element outside a `.mesa` file turns up; none has.
 
-*Spelled:* `$async.f.for(key)`, answering `{ pending, error, status }` — the fields the whole state has, so a keyed read teaches nothing new. `pendingFor` was the placeholder. Built 2026-10-05, `packages/mesa/CHANGES.md`.
+*Spelled:* `$async.f.for(key)`, answering `{ pending, error, status }` — the fields the whole state has, so a keyed read teaches nothing new. `pendingFor` was the placeholder. Built 2026-10-05.
 
 ### <a id="fjs-d590"></a>2026-10-05 · `FJS-D590` — FJS-390 — Who owns the busy state of an element that is not a submit button — `busy(el)` in `@frontierjs/ui` answers `release(error?)`, and `busy(el, promise)` releases itself when the promise settles. It sets `disabled` and `aria-busy` and puts back whatever was there before.
 **Status:** superseded-by [`FJS-D591`](#fjs-d591) — `$async` already owned *this call is in flight*, and this ruling was written without reading it.
@@ -13173,7 +13173,7 @@ being read at all. The failure this would catch is real and rare; the noise
 would be constant.
 
 **What was actually missing is a position.** Mesa's server-render contract
-(now `docs/STATIC_RENDERING.md`) took none, so an author had nowhere to learn the trap before
+(now `packages/mesa/docs/STATIC_RENDERING.md`) took none, so an author had nowhere to learn the trap before
 hitting it. It now states which globals answer and what they answer, which is
 the artefact the ninth question asks for: this ruling knowingly leaves a defect
 invisible at runtime, so it may not also be undocumented.
@@ -14581,7 +14581,7 @@ Asked in [`IDEAS/tip-of-the-day.md`](IDEAS/tip-of-the-day.md) § Open questions.
 
 The paper's recommendation, taken as written: for Phase 0, then A if C proves too coarse.
 
-### <a id="fjs-d1216"></a>2026-10-18 · `FJS-D1216` — Q2 — How does the corpus reach an installed cli — A generated `packages/cli/tips.snapshot.json`, written by `fli ws:tips` and failed when stale by CI's `snapshots` phase.
+### <a id="fjs-d1216"></a>2026-10-18 · `FJS-D1216` — Q2 — How does the corpus reach an installed cli — A generated `tips.snapshot.json` in `packages/cli`, written by `fli ws:tips` and failed when stale by CI's `snapshots` phase.
 
 Asked in [`IDEAS/tip-of-the-day.md`](IDEAS/tip-of-the-day.md) § Open questions. **A** was picked over **B** (tips written by hand into `packages/cli/tips/`).
 
@@ -14969,7 +14969,7 @@ Why refuse rather than merge: a merge rule (shell wins, or `document` wins) is a
 
 Asked in `IDEAS/site-kit-plan.md` Phase 3 step 5(b). **A** was picked over **B** (the whole check stays in `@kobami/ksite`, and a second preset or the website copies it) and **C** (a second `check` key holding `{ rules, launched }`, so the launch mode is a preset hook of its own).
 
-The check's two halves were already named in the plan, and the test is `FJS-D604`'s: a site that is not a cleaning company runs every built-stage rule (sitemap, canonical, titles, descriptions, headings, social, links, images, JSON-LD against schema.org) and every source-stage rule but the template leftovers unchanged, so they are site-kit's, and `@kobami/ksite`'s `config/names.js`, which restated site-kit's layout order for the components rule, goes with them. The nine, answered before the move:
+The check's two halves were already named in the plan, and the test is `FJS-D604`'s: a site that is not a cleaning company runs every built-stage rule (sitemap, canonical, titles, descriptions, headings, social, links, images, JSON-LD against schema.org) and every source-stage rule but the template leftovers unchanged, so they are site-kit's, and `@kobami/ksite`'s own names file, which restated site-kit's layout order for the components rule, goes with them. The nine, answered before the move:
 
 - **Origin.** It removes one: `names.js` restated what `siteKit()` composes, and the check now reads the resolved site (`resolveSite()`), the same object the build is made from. The check's own rules read `dist/`, which the build wrote.
 - **Concept.** One key, `rules`, in a noun the check already used (`rules/*.js`, "Adding a rule" in its README) and `fli check` uses for the same shape. No *Check* noun: a preset's rule is a Rule.
@@ -15066,7 +15066,7 @@ Asked in [`IDEAS/site-hosting.md`](IDEAS/site-hosting.md) § Open questions. **A
 
 The paper's recommendation, taken as written: the credentials, the DNS and the deploy record are already there, and C puts auth and writes on the edge, which this file exists to keep dumb.
 
-### <a id="fjs-d920"></a>2026-10-12 · `FJS-D920` — Who owns the host files and the adapters — Sierra owns `_redirects`, `_headers`, the function bundle and each adapter; site-kit is a pass-through that presets the static-site defaults, layered site-kit, then preset, then site, as `config/vite.js` does.
+### <a id="fjs-d920"></a>2026-10-12 · `FJS-D920` — Who owns the host files and the adapters — Sierra owns `_redirects`, `_headers`, the function bundle and each adapter; site-kit is a pass-through that presets the static-site defaults, layered site-kit, then preset, then site, as `packages/site-kit/config/vite.js` does.
 
 Asked in [`IDEAS/site-hosting.md`](IDEAS/site-hosting.md) § Open questions. **A** was picked over **B** (site-kit owns all of it and Sierra stays unaware of hosts), **C** (`fli` owns the adapters, as a deploy concern, and Sierra the files).
 
@@ -15706,7 +15706,7 @@ The paper's recommendation, taken as written: it keeps `fli` model-free, the sam
 
 ### <a id="fjs-d443"></a>2026-09-26 · `FJS-D443` — No suite bun runs calls `mock.module()`; a test injects the transport or uses the real implementation
 
-Bun applies `mock.module()` process-wide and never undoes it, so one file mocking a transport made every later file in the run grade the mock, and three suites spawned subprocesses to escape it. A seam takes the transport instead (`createSystemSender(config, { transport })`, Outpost's runner); a double for an interface is shipped once and applies the real path's guards (`createTestMailer()`), and `createMemoryCache()` and local `FileStorage` are the cache and storage doubles. Lives in `packages/junction/src/plugins/email/system/sender.ts` and `packages/testing/src/doubles.ts`. Refused alternative: `mock.module()` per file, whose result depends on which file ran first. Vitest's file-isolated `vi.mock` is outside this reason.
+Bun applies `mock.module()` process-wide and never undoes it, so one file mocking a transport made every later file in the run grade the mock, and three suites spawned subprocesses to escape it. A seam takes the transport instead (`createSystemSender(config, { transport })`, Outpost's runner); a double for an interface is shipped once and applies the real path's guards (`createTestMailer()`), and `createMemoryCache()` and local `FileStorage` are the cache and storage doubles. Lives in `packages/testing/src/doubles.ts`. Refused alternative: `mock.module()` per file, whose result depends on which file ran first. Vitest's file-isolated `vi.mock` is outside this reason.
 
 Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *no bun suite contains a module mock* — `packages/cli/test/checks.test.js` › "a collected test binding a fixed port or launching Chrome is an error" pins the `mock.module(` pattern of `fli check`'s `test-not-hermetic`, which the `structure` phase runs over every collected test. ([`FJS-908`](ISSUES_ARCHIVE.md#fjs-908)) Picked by the owner in session.
 
@@ -15866,7 +15866,7 @@ because this layout already has a meaning for `src/` and a surface keeps one
 
 **What is not settled here.** ~~`fli make:desktop` does not exist; `example/desktop/`
 is the shape it will generate.~~ Built the same day; `example/desktop/` is its output,
-held byte for byte (`packages/cli/CHANGES.md`). Installers, signing and updates are off
+held byte for byte. Installers, signing and updates are off
 (`bundle.active: false`). Windows and macOS are unrun, which is also the unproven
 half of `FJS-1090`. Mobile stays where `IDEAS/overview.md` row 5.18 put it — a
 different problem wearing the same word. `fli check` reads `desktop/src` with every
@@ -16145,7 +16145,7 @@ reading one surface and reporting on four.
    source ([`FJS-D163`](#fjs-d163)). Owed by a package somebody writes against,
    and by no other.
 3. **A generated reference, where the subject is a closed vocabulary.**
-   litestone's `docs/reference.snapshot.md` is the shape and the precedent —
+   litestone's reference snapshot (since retired) was the shape and the precedent —
    every word the language holds, written by `litestone catalog --reference`,
    its examples the same text `test/catalog.test.ts` parses, and the whole file
    regraded by the `snapshots` phase. It is the only reference here that cannot
@@ -17908,7 +17908,7 @@ Asked in [`IDEAS/inbound-integrations.md`](IDEAS/inbound-integrations.md) § Ord
 
 The nine, answered after the build. It is one new origin, named: the applied-not-seen order (`FJS-1805`) is written in `conduit/src/receive.ts` and in `junction/src/plugins/webhooks/index.ts`, and what keeps them from drifting is that verify, rotation (`verifyRequest({ secrets })`) and the nonce memory are toolbelt's, the outcome words (`applied · ignored · parked · duplicate`) and the three wire answers (`200 { received, outcome }`, `401 { error: 'not verified' }`, `500 { error: 'not applied' }`) are the same on both, and each suite holds the throw-once-then-retry case. One word added. The complexity is the problem's — Graph calls the row a subscription, Svix an endpoint secret — and nothing is added past the row, one route and one handler. Predictable: the route answers what conduit's does, the row lives in the webhook store beside the registrations, the path is fixed like the other eight. Derived, not restated: `path` is read from `apiPrefix` the way `app.get` reads it, the secret is minted on this side so the row is whole before anything is registered anywhere, and the dedupe key is the body's `id` — the SIGNED one, since `X-Webhook-Id` is outside the canonical string. One owner, and it already existed: the plugin that signs the scheme reads it. The boundary is `ReceiveHandler` → `ReceiveOutcome`; a `receive` answering any other word is a 500 by name. Failure is proportional: a forgery, a stale clock, a replayed nonce and an unknown id are one 401 sentence with the reason in the log and never the body; a throw leaves the receipt unapplied and answers 500 so the sender's retry gets a clean run; a verified body that is not the envelope is 200 ignored, because a 4xx retries for a day; with no `receive` the route is not mounted, so a subscription with nothing behind it is a 404 and not a 500 per delivery. What says so: `junction/test/webhooks.test.ts` § receiving, eleven cases, one of them a second junction app delivering over a real socket. Unenforced: a custom `IWebhookStore` lacking the seven receiving methods compiles only through `as never`.
 
-Adjudications: batteries vs. smallness — the receiving end rides inside the webhooks battery, not a package; paved road vs. the workaround — the README's *verify by hand with `verifyRequest`* block was the workaround and is gone. Tier: Register here; Map in junction's `README.md` § Webhooks, `CLAUDE.md` and `docs/internals.md`. Not built: management routes and REPL commands for subscriptions, and a rotation verb — `secrets` is a list so a rotation is two valid keys, but nothing yet turns one. Resilience does not cross and the route mints no principal (`FJS-D177`); a counterparty becoming a caller stays `createApp({ credentials })` (`FJS-D475`). Closes `IDEAS/inbound-integrations.md` § Order.
+Adjudications: batteries vs. smallness — the receiving end rides inside the webhooks battery, not a package; paved road vs. the workaround — the README's *verify by hand with `verifyRequest`* block was the workaround and is gone. Tier: Register here; Map in junction's `README.md` § Webhooks, `CLAUDE.md` and `packages/junction/docs/internals.md`. Not built: management routes and REPL commands for subscriptions, and a rotation verb — `secrets` is a list so a rotation is two valid keys, but nothing yet turns one. Resilience does not cross and the route mints no principal (`FJS-D177`); a counterparty becoming a caller stays `createApp({ credentials })` (`FJS-D475`). Closes `IDEAS/inbound-integrations.md` § Order.
 
 ### <a id="fjs-d1075"></a>2026-10-15 · `FJS-D1075` — A resolver's answer says when it expires: `get()` and `getFor()` answer `string | { value, expires_at }`, and `withCache` holds an answer until its `expires_at` or the cache's `ttl_ms`, whichever is first.
 

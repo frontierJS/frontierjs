@@ -1,4 +1,4 @@
-// src/notifications/monitor_down.notification.ts
+// src/notifications/MonitorDown.notification.ts
 
 import { defineNotification, inApp, mail } from '@frontierjs/notifications'
 import { declaredTransports, appUrl }      from './_shared.ts'

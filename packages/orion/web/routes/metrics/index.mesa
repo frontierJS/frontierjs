@@ -1,0 +1,91 @@
+---
+title: Metrics
+---
+<script>
+  // How runs went over a window, for every flow or for one.
+  //
+  // The answer is `runs.metrics`: counts per status, the success rate over the
+  // runs that ended completed or failed, and the mean and p95 duration of those
+  // that ended. It has no series, no per-node timings and no error summary, so
+  // this screen draws none; they are not here to be hidden.
+  import { runs } from '../../resources/Run.mesa'
+  import { flows } from '../../resources/Flow.mesa'
+  import { session } from '@frontierjs/sierra/resource'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Bar           from '@frontierjs/ui/components/display/Bar.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Select        from '@frontierjs/ui/components/forms/Select.mesa'
+  import StatCard      from '@frontierjs/ui/components/display/StatCard.mesa'
+
+  const HOUR = 3_600_000
+  const WINDOWS = [
+    { value: String(HOUR),           label: 'Last hour' },
+    { value: String(24 * HOUR),      label: 'Last 24 hours' },
+    { value: String(7 * 24 * HOUR),  label: 'Last 7 days' },
+    { value: String(30 * 24 * HOUR), label: 'Last 30 days' },
+  ]
+  const STATUSES = ['pending', 'running', 'waiting', 'completed', 'failed', 'cancelled']
+  const TONE = { completed: 'success', failed: 'danger', waiting: 'warning', running: 'info', pending: 'muted', cancelled: 'muted' }
+
+  const list = flows.tethered({ directives: { orderBy: 'name' } })
+  $: (session.level)
+
+  let windowMs = WINDOWS[1].value
+  let flowId   = null
+  let error    = null
+  let metrics  = null
+
+  async function load() {
+    error = null
+    try {
+      metrics = await runs.service.invoke('metrics', null, {
+        windowMs: Number(windowMs),
+        ...(flowId ? { flowId } : {}),
+      })
+    } catch (e) { error = e.message }
+  }
+  $: windowMs, flowId, () => load()
+
+  const pct = (n) => n == null ? '—' : Math.round(n * 100) + '%'
+  const ms  = (n) => n == null ? '—' : n < 1000 ? n + ' ms' : (n / 1000).toFixed(1) + ' s'
+</script>
+
+<SectionHeader title="Metrics" level={1}>
+  {#snippet action()}
+    <div class="cluster">
+      <Select id="metrics-flow" placeholder="Every flow" value={flowId}
+        options={list.rows.map(f => ({ value: f.id, label: f.name }))}
+        onchange={(e) => { flowId = e.target.value || null }} />
+      <Select id="metrics-window" value={windowMs} options={WINDOWS}
+        onchange={(e) => { windowMs = e.target.value }} />
+    </div>
+  {/snippet}
+</SectionHeader>
+
+{#if error || list.error}<Alert tone="danger" id="metrics-error">{error ?? list.error.message}</Alert>{/if}
+
+{#if metrics}
+  <div class="tiles" style="--tile-min: 10rem" id="metrics-tiles">
+    <StatCard label="Runs"          value={String(metrics.totalRuns)} />
+    <StatCard label="Succeeded"     value={pct(metrics.successRate)} />
+    <StatCard label="Mean duration" value={ms(metrics.avgDurationMs)} />
+    <StatCard label="p95 duration"  value={ms(metrics.p95DurationMs)} />
+  </div>
+
+  <section id="metrics-status" aria-label="Runs by status">
+    {#each STATUSES as s}
+      {#if metrics.byStatus[s]}
+        <div class="cluster" data-status={s} data-count={metrics.byStatus[s]}>
+          <Pill tone={TONE[s]}>{s}</Pill>
+          <Bar size="sm" tone={TONE[s]} value={metrics.byStatus[s]} max={metrics.totalRuns} />
+          <span>{metrics.byStatus[s]}</span>
+        </div>
+      {/if}
+    {/each}
+    {#if metrics.totalRuns === 0}
+      <Alert tone="muted" id="metrics-empty">No run started in this window.</Alert>
+    {/if}
+  </section>
+{/if}

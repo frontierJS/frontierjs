@@ -1,4 +1,4 @@
-// src/channels.ts
+// src/core/channels.ts
 // The one spelling of a workspace's channel, and the one way to send on it.
 //
 // The name was written in five places and the cast that reaches the manager in

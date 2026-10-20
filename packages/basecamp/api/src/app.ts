@@ -12,6 +12,7 @@ import {
   health,
   membershipClaim,
   Forbidden,
+  Conflict,
   BadRequest,
 } from '@frontierjs/junction'
 import { metrics } from '@frontierjs/junction/metrics'
@@ -51,7 +52,7 @@ import { basecampGateLevel, roleForLevel } from './core/gate.ts'
 import { basecampNodes }                  from './plugins/automations.ts'
 import { restoreSchedules }          from './services/jobs/job-schedule.ts'
 import { pushAppsOn }                from './jobs/domain-dns.job.ts'
-import { workspaceChannelName, workspaceIdFromChannel, notificationChannelName } from './channels.ts'
+import { workspaceChannelName, workspaceIdFromChannel, notificationChannelName } from './core/channels.ts'
 
 import type { App }         from '@frontierjs/junction'
 
@@ -272,6 +273,28 @@ export async function buildBasecampApp(
     if (!role) return null
 
     return new Forbidden(`Requires ${role} role in this workspace to ${e.transition ?? e.operation ?? 'make this change'}`)
+  })
+
+  // A duplicate under a @@unique is refused by the constraint, and litestone's
+  // sentence names columns ("workspaceId + name is already taken"), one of
+  // which the caller never wrote. A `…Id` column is the parent the row lives
+  // in, whether or not litestone redacted its value, so it becomes that noun:
+  // `workspaceId` → "in this workspace". The per-field `errors` ride on through
+  // `adopt`, so a form still marks the box.
+  app.errorMapper((err: unknown) => {
+    const e = err as { name?: string; model?: string; fields?: string[]; values?: unknown[] }
+    if (e?.name !== 'UniqueConflictError' || !e.model || !e.fields?.length) return null
+
+    const named: string[] = []
+    const scope: string[] = []
+    e.fields.forEach((field, i) => {
+      const value = e.values?.[i]
+      if (field.endsWith('Id')) scope.push(field.slice(0, -2).replace(/[A-Z]/g, c => ` ${c.toLowerCase()}`))
+      else named.push(value === undefined ? field : `${field} '${String(value)}'`)
+    })
+    if (!named.length) return null
+
+    return new Conflict(`${e.model} ${named.join(' + ')} already exists${scope.length ? ` in this ${scope.join(' / ')}` : ''}`)
   })
 
   // Attach the Basecamp-specific subsystems through `app.own`, which throws on

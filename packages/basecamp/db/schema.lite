@@ -563,8 +563,8 @@ enum DependencyKind { dependency dev peer optional }
 // a row per transport makes "off everywhere" the ABSENCE of rows and therefore
 // indistinguishable from never having chosen.
 //
-// `deploy_failed` rather than the mock's `deploy_fail`, so it reads the same
-// way as `job_failed` beside it.
+// `DeployFailed` rather than the mock's `deploy_fail`, so it reads the same
+// way as `JobFailed` beside it.
 /// What a notification is ABOUT, for the row it links to. The pair carries no
 /// foreign key — nothing cascades and nothing joins — so this is the only half
 /// that can be constrained, and constraining it means a migration, a seed and
@@ -574,18 +574,18 @@ enum DependencyKind { dependency dev peer optional }
 enum NotificationContext { Deployment AlertEvent JobRun Server Workspace Monitor }
 
 enum NotificationKind {
-  deploy_success
-  deploy_failed
-  alert_firing
-  alert_resolved
-  server_unreachable
-  monitor_down
-  monitor_up
-  posture_failed
-  dependency_vulnerable
-  member_joined
-  job_failed
-  weekly_digest
+  DeploySuccess
+  DeployFailed
+  AlertFiring
+  AlertResolved
+  ServerUnreachable
+  MonitorDown
+  MonitorUp
+  PostureFailed
+  DependencyVulnerable
+  MemberJoined
+  JobFailed
+  WeeklyDigest
 }
 
 // ============================================================
