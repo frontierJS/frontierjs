@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/notifications",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "engines": {
     "bun": ">=1.4.0"
   },
