@@ -253,7 +253,7 @@ title: Flow
       <div class="cluster">
         <Pill tone={TONE[flow.status] ?? 'muted'} id="flow-status" data-status={flow.status}>{flow.status}</Pill>
         {#each moves as [name, label, treatment]}
-          <Button {treatment}id={'flow-' + name} disabled={busy} onclick={() => move(name)}>{label}</Button>
+          <Button {treatment} id={'flow-' + name} disabled={busy} onclick={() => move(name)}>{label}</Button>
         {/each}
       </div>
     {/snippet}
