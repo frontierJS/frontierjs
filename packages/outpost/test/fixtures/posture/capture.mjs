@@ -49,6 +49,7 @@ const READINGS = {
   'ssh.keys.root':       ['ssh-keygen', '-lf', '/root/.ssh/authorized_keys'],
   'accounts.uid0':       ['awk', '-F:', '$3 == 0 { print $1 }', '/etc/passwd'],
   'accounts.nopasswd':   ['grep', '-rh', 'NOPASSWD', '/etc/sudoers', '/etc/sudoers.d'],
+  'accounts.dockerGroup': ['getent', 'group', 'docker'],
   'time.sync':           ['timedatectl', 'show'],
   'time.tracking':       ['chronyc', '-c', 'tracking'],
   'runtime.outpostUnit': ['systemd-analyze', 'security', 'outpost', '--json=short'],
@@ -82,6 +83,11 @@ const ids = readings['runtime.containers'].stdout.split('\n').filter(Boolean)
 const inspectArgv = ['docker', 'inspect', '--format',
   '{{json .Name}} {{json .HostConfig.Privileged}} {{json .Mounts}}', ...ids]
 readings['runtime.inspect'] = ids.length ? { argv: inspectArgv, ...await run(inspectArgv) } : null
+
+// Whoever holds docker as a PRIMARY group, which the group's own line omits.
+const dockerGid = readings['accounts.dockerGroup'].stdout.split(':')[2]
+const primaryArgv = ['awk', '-F:', `$4 == ${dockerGid} { print $1 }`, '/etc/passwd']
+readings['accounts.dockerPrimary'] = /^\d+$/.test(dockerGid ?? '') ? { argv: primaryArgv, ...await run(primaryArgv) } : null
 
 const label = process.argv[2] ?? 'host'
 const name  = hostname()

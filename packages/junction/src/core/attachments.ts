@@ -16,7 +16,7 @@
 // ─── why this is not just `defineEnv` ────────────────────────────────────────
 //
 // Every per-key question here — present, non-empty, a URL, long enough — is
-// already answered by `checkEnvField`, and this module calls it rather than
+// already answered by `checkEnvKey`, and this module calls it rather than
 // asking again. What an attachment adds is the three things a flat spec cannot
 // say:
 //
@@ -35,7 +35,7 @@
 //      service bound here* — otherwise an app that defaults one key of four
 //      makes every unbound attachment look partial.
 
-import { checkEnvField } from './env.ts'
+import { checkEnvKey } from './env.ts'
 import type { EnvSpec } from './env.ts'
 
 export interface Attachment {
@@ -68,7 +68,7 @@ export type Attachments = Record<string, Attachment>
 /** Why one declared key is not satisfied. */
 export interface AttachmentKeyProblem {
   key:     string
-  /** Already worded for a person; comes from `checkEnvField`. */
+  /** Already worded for a person; comes from `checkEnvKey`. */
   message: string
 }
 
@@ -138,7 +138,7 @@ export function checkAttachment(
     const isSignal = field.default === undefined
     if (isSignal) signals.push(key)
 
-    const r = checkEnvField(key, field, env[key])
+    const r = checkEnvKey(key, field, env)
     for (const w of r.warnings) warnings.push(w)
     if (r.present && isSignal) present.push(key)
     if (r.error) (r.present ? unusable : absent).push({ key, message: r.error })

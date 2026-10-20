@@ -857,6 +857,9 @@ describe('IEventBus.onAny()', () => {
 
 // ─── defineEnv ────────────────────────────────────────────────────────────
 
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { defineEnv, generateEnvExample } from '../src/core/env.ts'
 
 describe('defineEnv', () => {
@@ -1033,6 +1036,71 @@ describe('defineEnv', () => {
         })
       )
     ).toThrow(/VAR_A/)
+  })
+
+  // ── <KEY>_FILE ───────────────────────────────────────────────────────
+
+  function secretFile(contents: string): string {
+    const dir = mkdtempSync(join(tmpdir(), 'junction-env-'))
+    const path = join(dir, 'secret')
+    writeFileSync(path, contents)
+    return path
+  }
+
+  it('reads a declared key from the file <KEY>_FILE names, less trailing newlines', () => {
+    const key  = 'ab'.repeat(32)
+    const path = secretFile(`${key}\n`)
+    const env  = withEnv({ ENCRYPTION_KEY: undefined, ENCRYPTION_KEY_FILE: path }, () =>
+      defineEnv({ ENCRYPTION_KEY: { required: true, minLength: 64, maxLength: 64 } })
+    )
+    expect(env.ENCRYPTION_KEY).toBe(key)
+  })
+
+  it('coerces a value read from a file like one read from the variable', () => {
+    const path = secretFile('4000\r\n')
+    const env  = withEnv({ PORT: undefined, PORT_FILE: path }, () =>
+      defineEnv({ PORT: { type: 'port', required: true } })
+    )
+    expect(env.PORT).toBe(4000)
+  })
+
+  it('refuses a key set both ways, since one of the two is stale', () => {
+    const path = secretFile('from-file')
+    expect(() =>
+      withEnv({ API_TOKEN: 'from-env', API_TOKEN_FILE: path }, () =>
+        defineEnv({ API_TOKEN: { required: true } })
+      )
+    ).toThrow(/API_TOKEN and API_TOKEN_FILE are both set/)
+  })
+
+  it('refuses a <KEY>_FILE that cannot be read, even for an optional key', () => {
+    const missing = join(tmpdir(), 'junction-env-missing', 'nope')
+    expect(() =>
+      withEnv({ API_TOKEN: undefined, API_TOKEN_FILE: missing }, () =>
+        defineEnv({ API_TOKEN: {} })
+      )
+    ).toThrow(/API_TOKEN_FILE: cannot read .*nope \(ENOENT\)/)
+  })
+
+  it('names the file, never the value, when what it holds fails the field', () => {
+    const path = secretFile('not-a-number')
+    let message = ''
+    try {
+      withEnv({ DB_PASSWORD: undefined, DB_PASSWORD_FILE: path }, () =>
+        defineEnv({ DB_PASSWORD: { type: 'number' } })
+      )
+    } catch (e) { message = (e as Error).message }
+    expect(message).toContain(`read from DB_PASSWORD_FILE=${path}`)
+    expect(message).not.toContain('not-a-number')
+  })
+
+  it('reads an empty file as an unset key', () => {
+    const path = secretFile('\n')
+    expect(() =>
+      withEnv({ API_TOKEN: undefined, API_TOKEN_FILE: path }, () =>
+        defineEnv({ API_TOKEN: { required: true } })
+      )
+    ).toThrow(/API_TOKEN is required but not set/)
   })
 
   // ── generateEnvExample ───────────────────────────────────────────────

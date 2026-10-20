@@ -311,6 +311,27 @@
       "exitCode": 0,
       "stdout": "\"/fjs-12ec1da7-ac83-459d-980d-f95eea84a8d6\" false []\n",
       "stderr": ""
+    },
+    "accounts.dockerGroup": {
+      "argv": [
+        "getent",
+        "group",
+        "docker"
+      ],
+      "exitCode": 0,
+      "stdout": "docker:x:1001:j\n",
+      "stderr": ""
+    },
+    "accounts.dockerPrimary": {
+      "argv": [
+        "awk",
+        "-F:",
+        "$4 == 1001 { print $1 }",
+        "/etc/passwd"
+      ],
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
     }
   }
 }

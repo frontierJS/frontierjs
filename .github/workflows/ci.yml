@@ -25,7 +25,10 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # A full run is ~45 min serial on a 12-core laptop and slower here; a cap
+    # under that cancels the run before any phase can say what is red.
+    # GitHub's own ceiling for a hosted job is 360.
+    timeout-minutes: 90
 
     steps:
       - uses: actions/checkout@v7

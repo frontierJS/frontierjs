@@ -29,7 +29,7 @@ machines.**
 | --- | --- |
 | Ring 0 | `fli deploy` installs Basecamp. It has run on one real box (the run behind `FJS-D1191`). It needs a framework checkout, because Basecamp is `private`. |
 | Basecamp's own box as a fleet machine | Built: `fli deploy` enrolls it by default (`FJS-D1202`, `FJS-D1241`) |
-| Ring 1 on DigitalOcean | `providers/compute/digitalocean.ts`: catalog, create with `user_data`, enroll, destroy, reconcile (`docs/PROVISIONING.md` P1–P5). **Driven only against the stand-in on 8122. Cloud-init has never run on a real droplet** (`FJS-1397`, `FJS-257`). |
+| Ring 1 on DigitalOcean | `providers/compute/digitalocean.ts`: catalog, create with `user_data`, enroll, destroy, reconcile (`docs/PROVISIONING.md` P1–P5). **Driven only against the stand-in on 8122. Cloud-init has never run on a real droplet** (`FJS-1397`; step 0.3). |
 | Ring 2 | `/pull` → `/deploy` → `/health-check`, put-back on failure, Caddy routes, and a digest already on the machine skips the pull (`FJS-2645`). `verify:outpost` fails at HEAD (`FJS-3183`). |
 | App release from a laptop | `fli deploy:basecamp`: build here, `docker save \| ssh docker load`, release that digest (`FJS-D942`). It needs an App id copied out of the UI. |
 | Cloudflare | Basecamp's `edge` service: the token is a workspace account, records are marked, a CNAME goes to the ingress record, `domain:dns` syncs it (`cloudflare-edge.md` Phases 1–5). There is no screen for the ingress zone. |
@@ -69,7 +69,7 @@ Basecamp onto a droplet Basecamp created, and § 0.4's list of hand steps exists
 
 - [ ] 0.1 The owner supplies a DigitalOcean API token and a Cloudflare zone with a token scoped to it (`FJS-1397`; nothing in the tree can do this)
 - [ ] 0.2 Fix `verify:outpost` at HEAD (`FJS-3183`) and the missing git in the Basecamp image (`FJS-3280`)
-- [ ] 0.3 Create a real droplet through `/servers/provision/`: cloud-init runs, Outpost enrolls, the row reaches `online` (closes `FJS-257`)
+- [ ] 0.3 Create a real droplet through `/servers/provision/`: cloud-init runs, Outpost enrolls, the row reaches `online`. The install script (Docker, Bun, the sandboxed systemd unit, the enrollment exchange) has only been `sh -n`-parsed, and Outpost's `build`, `run` and `logs` have never met a real daemon; 0.4's release is their first (was `FJS-257`)
 - [ ] 0.4 Release one real FJS app to it with `fli deploy:basecamp` on a Cloudflare hostname, and list every step done by hand: that list is Phases 2 and 3's backlog
 - [ ] 0.5 Rewrite `packages/cli/docs/deploy.md` from what 0.3 and 0.4 actually did
 - [ ] 0.6 Destroy the droplet through Basecamp and run `servers.reconcile`, so nothing is left billing
@@ -110,7 +110,7 @@ Secrets, and its own box `online` in its fleet.
 - [ ] 3.2 `FJS-D1253`: create the droplet through an existing DigitalOcean connector, with `enrollment.ts`'s install script as `user_data`, then run ring 0 on it
 - [ ] 3.3 A non-interactive first run: `ENCRYPTION_KEY` generated locally and seeded with the env file, the admin made through `POST /setup`
 - [ ] 3.4 `FJS-D1254`: a script in the container (the `enroll-host.ts` shape) stores the DigitalOcean and Cloudflare tokens as the first workspace's Secrets, makes the Domain row for Basecamp's host, and runs `edge.sync`
-- [ ] 3.5 Grade the host: whatever is left of `FJS-2714` once the hardening install has run on a real box
+- [ ] 3.5 Grade the host on the real box: `/hub/security/` shows `hub.db-mode` and `hub.env-mode` graded rather than unknown, beside the `basecamp-host` row's fleet controls (built under `FJS-2714`)
 
 ### Phase 4 — Continuous
 

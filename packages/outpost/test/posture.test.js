@@ -71,7 +71,7 @@ describe('the dev-host capture, replayed', () => {
     const { at, readings } = await reading
     expect(new Date(at).toISOString()).toBe(at)
     expect(Object.keys(readings).sort()).toEqual([
-      'auto_updates', 'cert', 'containers', 'files', 'firewall', 'kernel', 'listening', 'nopasswd',
+      'auto_updates', 'cert', 'containers', 'docker_group', 'files', 'firewall', 'kernel', 'listening', 'nopasswd',
       'os', 'outpost_unit', 'privileged', 'reboot', 'ssh', 'ssh_keys', 'time', 'uid0', 'updates', 'versions',
     ])
   })
@@ -143,6 +143,8 @@ describe('the dev-host capture, replayed', () => {
     expect(readings.files).toBeNull()
     expect(readings.cert).toBeNull()
     expect(readings.uid0).toEqual(['root'])
+    // A dev host's own user runs docker without sudo, which is root there.
+    expect(readings.docker_group).toEqual(['j'])
   })
 
   test('time is synced, and the offset is unknown without chrony', async () => {
@@ -304,6 +306,22 @@ describe('each reading, from what the command prints', () => {
     expect(readings.nopasswd).toEqual([])
     expect(readings.cert).toEqual({ expires_at: '2036-10-03T08:00:00.000Z' })
     expect(readings.files).toContainEqual({ path: '/etc/basecamp/outpost.key', mode: '600', owner: 'root', group: 'root' })
+  })
+
+  test('the docker group: listed members and primary-gid users, no group is nobody', async () => {
+    const group = (line) => ({ 'getent group docker': { exitCode: 0, stdout: line } })
+    expect((await postureOf({
+      ...group('docker:x:999:bob,alice\n'),
+      'awk -F: $4 == 999': { exitCode: 0, stdout: 'deploy\nalice\n' },
+    })).docker_group).toEqual(['alice', 'bob', 'deploy'])
+    expect((await postureOf({
+      ...group('docker:x:999:\n'),
+      'awk -F: $4 == 999': { exitCode: 0, stdout: '' },
+    })).docker_group).toEqual([])
+    expect((await postureOf({ 'getent group docker': { exitCode: 2 } })).docker_group).toEqual([])
+    // The members are known and the primary-gid half is not: unknown, never clean.
+    expect((await postureOf(group('docker:x:999:\n'))).docker_group).toBeNull()
+    expect((await postureOf({})).docker_group).toBeNull()
   })
 
   test('one binary missing costs its own reading and nothing else', async () => {

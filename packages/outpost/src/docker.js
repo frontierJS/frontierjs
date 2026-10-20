@@ -746,6 +746,7 @@ const POSTURE = {
   rootKeys:        ['ssh-keygen', '-lf', '/root/.ssh/authorized_keys'],
   uid0:            ['awk', '-F:', '$3 == 0 { print $1 }', '/etc/passwd'],
   nopasswd:        ['grep', '-rh', 'NOPASSWD', '/etc/sudoers', '/etc/sudoers.d'],
+  dockerGroup:     ['getent', 'group', 'docker'],
   timeSync:        ['timedatectl', 'show'],
   timeTracking:    ['chronyc', '-c', 'tracking'],
   unitJson:        ['systemd-analyze', 'security', 'outpost', '--json=short'],
@@ -760,6 +761,9 @@ const UNIT_TEXT = ['systemd-analyze', 'security', '--no-pager', 'outpost']
 // Privileged and the socket mount and nothing else: `docker inspect` whole
 // carries every container's environment, secrets included, into this report.
 const INSPECT   = ['docker', 'inspect', '--format', '{{json .Name}} {{json .HostConfig.Privileged}} {{json .Mounts}}']
+// The group's member list names only those who hold it as a SECONDARY group; a
+// user whose primary gid is docker's is in it too and appears nowhere there.
+const PRIMARY   = gid => ['awk', '-F:', `$4 == ${gid} { print $1 }`, '/etc/passwd']
 
 // A reading is slow-moving and asked every few hours; a wedged `apt-get` must
 // not hold the report for the runner's ten-minute default.
@@ -921,6 +925,16 @@ function readNopasswd(r) {
   if (r?.exitCode === 1) return []
   if (!ok(r)) return null
   return lines(r.stdout).filter(l => !l.startsWith('#'))
+}
+
+/** `docker:x:999:alice,bob` → its gid and its listed members. getent exits 2
+ *  for a group that does not exist, which is a box nobody can reach dockerd
+ *  from without root. */
+function readDockerGroup(r) {
+  if (r?.exitCode === 2) return { gid: null, members: [] }
+  if (!ok(r)) return null
+  const [, , gid, list = ''] = r.stdout.trim().split(':')
+  return /^\d+$/.test(gid ?? '') ? { gid, members: list.split(',').map(s => s.trim()).filter(Boolean) } : null
 }
 
 function readTime(sync, tracking) {
@@ -1161,6 +1175,12 @@ export function createInspector({ run = spawnRun, hostFiles = null } = {}) {
         ssh_keys:     await guard(() => readKeys(r.rootKeys, 'root')),
         uid0:         await guard(() => ok(r.uid0) ? lines(r.uid0.stdout) : null),
         nopasswd:     await guard(() => readNopasswd(r.nopasswd)),
+        docker_group: await guard(async () => {
+          const group = readDockerGroup(r.dockerGroup)
+          if (!group?.gid) return group?.members ?? null
+          const primary = await read(PRIMARY(group.gid))
+          return ok(primary) ? [...new Set([...group.members, ...lines(primary.stdout)])].sort() : null
+        }),
         time:         await guard(() => readTime(r.timeSync, r.timeTracking)),
         outpost_unit: await guard(async () => unitFromJson(r.unitJson) ?? unitFromText(await read(UNIT_TEXT))),
         privileged:   await guard(async () => {

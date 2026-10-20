@@ -24,11 +24,15 @@
 //   env.DEBUG          // boolean
 //   env.RESEND_API_KEY // string | undefined
 //
+// Any declared key may instead be read from a file: `ENCRYPTION_KEY_FILE=/run/secrets/key`
+// supplies `ENCRYPTION_KEY`, less its trailing newlines. Setting both refuses.
+//
 // Generation:
 //
 //   printEnvExample(spec)  // prints an .env.example to stdout
 //   generateEnvExample(spec)  // returns the string
 
+import { readFileSync } from 'node:fs'
 import { colorEnabled } from './logger.ts'
 import { isDevelopmentEnv } from './errors.ts'
 import { isSecretEnvName, redactUrl, REDACTED } from '@frontierjs/toolbelt/redact'
@@ -247,6 +251,40 @@ export function checkEnvField(key: string, field: EnvFieldSpec, raw: string | un
   return { value, warnings, present }
 }
 
+// ─── checkEnvKey ──────────────────────────────────────────────────────────
+//
+// `checkEnvField` over a key as an environment holds it: the variable itself,
+// or the file `<KEY>_FILE` names. A variable passed with `--env` or
+// `--env-file` sits in the container's Config.Env, which `docker inspect` shows
+// to anyone in the docker group; a file mounted into the container does not.
+// The spelling is the Docker official images' (`POSTGRES_PASSWORD_FILE`), and
+// as there, both set is refused: one of the two is stale, and letting either
+// win in silence is how a deploy boots on the old ENCRYPTION_KEY and cannot
+// read its own encrypted columns.
+
+export function checkEnvKey(
+  key: string,
+  field: EnvFieldSpec,
+  env: Record<string, string | undefined> = process.env,
+): EnvFieldResult {
+  const fileKey = `${key}_FILE`
+  const path    = env[fileKey]
+  if (path === undefined || path === '') return checkEnvField(key, field, env[key])
+
+  const fail = (error: string): EnvFieldResult => ({ value: undefined, error, warnings: [], present: true })
+  if (env[key] !== undefined && env[key] !== '')
+    return fail(`${key} and ${fileKey} are both set — unset one (the file is the one docker inspect does not show)`)
+
+  let raw: string
+  try { raw = readFileSync(path, 'utf8') }
+  catch (e) { return fail(`${fileKey}: cannot read ${path} (${(e as NodeJS.ErrnoException).code ?? (e as Error).message})`) }
+
+  // A file written by `echo` or an editor ends in a newline the value does not
+  // have, and a 64-character key read as 65 fails at the first encrypted write.
+  const r = checkEnvField(key, field, raw.replace(/(\r?\n)+$/, ''))
+  return r.error ? { ...r, error: `${r.error}  (read from ${fileKey}=${path})` } : r
+}
+
 // ─── defineEnv ────────────────────────────────────────────────────────────
 
 export function defineEnv<S extends EnvSpec>(spec: S): EnvOutput<S> {
@@ -256,7 +294,7 @@ export function defineEnv<S extends EnvSpec>(spec: S): EnvOutput<S> {
   const result:   Record<string, unknown> = {}
 
   for (const [key, field] of Object.entries(spec)) {
-    const r = checkEnvField(key, field, process.env[key])
+    const r = checkEnvKey(key, field)
     // Two spaces, because these are rendered as an indented block below.
     for (const w of r.warnings) warnings.push(`  ${w}`)
     if (r.error) { errors.push(`  ${r.error}`); continue }

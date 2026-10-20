@@ -833,6 +833,7 @@ export class BasecampSeeder extends Seeder {
             ssh_keys:     null,
             uid0:         ['root'],
             nopasswd:     [],
+            docker_group: [],
             time:         { synced: true, offset_s: 0.001 },
             outpost_unit: { exposure: 9.6, predicate: 'UNSAFE' },
             privileged:   [],

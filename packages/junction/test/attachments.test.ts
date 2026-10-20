@@ -22,6 +22,9 @@
 // `defineEnv` and the whole of `env.ts` was untested.
 
 import { describe, it, expect } from 'bun:test'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   checkAttachment, checkAttachments, formatAttachmentRefusal, formatAttachmentSkips,
 } from '../src/core/attachments.ts'
@@ -48,6 +51,17 @@ describe('an attachment against an environment', () => {
     expect(r.state).toBe('bound')
     expect(r.fatal).toBe(false)
     expect(r.present).toEqual(['N8N_URL', 'N8N_API_KEY'])
+  })
+
+  it('is bound by a key read from <KEY>_FILE, and invalid when that file is missing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'junction-att-'))
+    writeFileSync(join(dir, 'key'), 'k-123\n')
+    const viaFile = { N8N_URL: bound.N8N_URL, N8N_API_KEY_FILE: join(dir, 'key') }
+    expect(checkAttachment('n8n', n8n.n8n, viaFile).state).toBe('bound')
+
+    const r = checkAttachment('n8n', n8n.n8n, { ...viaFile, N8N_API_KEY_FILE: join(dir, 'gone') })
+    expect(r.state).toBe('invalid')
+    expect(r.problems[0].message).toContain('N8N_API_KEY_FILE: cannot read')
   })
 
   it('refuses when nothing is bound and the service is required', () => {

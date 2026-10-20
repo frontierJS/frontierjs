@@ -454,3 +454,22 @@ app it writes builds.
   - **Recommend B** — the scaffold, example and portal are topbar shells, and
     Phase 4 cannot put a new app on the Shell without one. Portal's overflow menu is
     the single-caller field the contract leaves out.
+- **FJS-D1345 — When `reset: true` on a `_module.mesa` reaches the pages beneath it (`FJS-D954`), does the declaring layout itself still render, or does nothing?**
+  D954 left this open, and `FJS-2787` measured the gap: `/portal/` and
+  `/portal/inner/` under a `reset: true` `_module.mesa` both resolve
+  `[root, portal]`, because `build-tree.js` strips `reset` from layout
+  frontmatter and `parseRouteFile` reads it off the page alone. A page that
+  declares it resolves `[]`: the layouts ABOVE the page go and the page renders.
+  - **A** — the declaring layout renders and everything above it goes: the chain
+    for a page beneath starts at the declaring `_module.mesa`
+    (`/portal/inner/` → `[portal]`). A bare section can still have a frame of its
+    own. SvelteKit's `+layout@.svelte` is the same shape: a layout resets what is
+    above it and still renders itself
+    (https://svelte.dev/docs/kit/advanced-layouts#@-layout).
+  - **B** — nothing renders: `reset` on a `_module.mesa` makes every page beneath
+    bare, the declaring layout's own markup included, so the file exists only to
+    carry the key.
+  - **Recommend A** — a page's `reset` already means *drop what is above me*, and
+    A gives a layout's `reset` the same meaning, so knowing one predicts the
+    other. B leaves a `_module.mesa` whose markup never draws, which is a key that
+    does something nobody sees. Confidence 2.

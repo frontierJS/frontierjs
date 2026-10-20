@@ -36,7 +36,8 @@ export interface PostureReadings {
   ssh_keys?:     { user: string; type?: string; bits?: number; fingerprint: string; comment?: string }[] | null
   uid0?:         string[] | null
   nopasswd?:     string[] | null
-  time?:         { synced: boolean; offset_s: number | null } | null
+  docker_group?: string[] | null
+  time?:        { synced: boolean; offset_s: number | null } | null
   outpost_unit?: { exposure: number; predicate: string | null } | null
   privileged?:   { name: string; privileged: boolean; docker_sock: boolean }[] | null
   files?:        { path: string; mode: string; owner: string; group: string }[] | null
@@ -306,6 +307,17 @@ const CONTROLS: { id: string; group: string; severity: Severity; hardenedAtInsta
     return extra.length
       ? { ok: false, message: `uid 0 besides root: ${extra.join(', ')}` }
       : { ok: true,  message: 'Only root has uid 0' }
+  } },
+
+  // CIS Docker 1.2.2. dockerd mounts the host's / into any container it is
+  // asked for, so a member is root, and reads every secret a file mode or an
+  // env file was meant to keep from them (`FJS-3359`). The Outpost runs as
+  // root and needs nobody in it.
+  { id: 'accounts.docker-group', group: 'accounts', severity: 'high', grade: (r) => {
+    if (!r.docker_group) return unknown('The docker group could not be read')
+    return r.docker_group.length
+      ? { ok: false, message: `In the docker group, which is root on this box: ${r.docker_group.join(', ')}` }
+      : { ok: true,  message: 'The docker group has no members' }
   } },
 
   { id: 'docker.privileged', group: 'runtime', severity: 'high', grade: (r) => {

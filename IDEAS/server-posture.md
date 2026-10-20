@@ -134,7 +134,7 @@ in a comment:
 on the forward hook) · `net.caddy-admin-loopback` · `patch.security-pending` ·
 `patch.auto-updates-on` · `patch.reboot-pending` (graded on age) · `os.eol` ·
 `time.synced` · `outpost.sandbox` · `outpost.cert-expiry` ·
-`accounts.extra-uid0` · `docker.privileged`.
+`accounts.extra-uid0` · `accounts.docker-group` (CIS Docker 1.2.2) · `docker.privileged`.
 
 ### The outside view
 

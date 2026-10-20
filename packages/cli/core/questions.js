@@ -84,8 +84,8 @@ export const QUESTIONS = [
   // ─── status ────────────────────────────────────────────────────────────────
   { intent: 'status', cite: 'FJS-1262',
     q: 'is there an open issue about a custom method with an empty payload over HTTP' },
-  { intent: 'status', cite: 'FJS-257',
-    q: 'is there an open issue about the outpost existing but never having run on a real machine' },
+  { intent: 'status', cite: 'FJS-1397',
+    q: 'is there an open issue about having no real cloud account for a fleet drive' },
   { intent: 'status', cite: 'FJS-1404',
     q: 'is there an open issue about the editor extension carrying a frozen litestone parser' },
   { intent: 'status', cite: 'FJS-1129',

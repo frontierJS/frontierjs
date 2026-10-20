@@ -48,6 +48,7 @@ const CLEAN: PostureReadings = {
   ssh_keys:     [],
   uid0:         ['root'],
   nopasswd:     [],
+  docker_group: [],
   time:         { synced: true, offset_s: 0.0004 },
   outpost_unit: { exposure: 4.2, predicate: 'OK' },
   privileged:   [{ name: '/fjs-web', privileged: false, docker_sock: false }],
@@ -80,6 +81,13 @@ describe('the grader', () => {
     expect(c['net.unexpected-listener'].ok).toBe(false)
     expect(c['net.unexpected-listener'].message).toContain('6379 (redis-server)')
     expect(c['patch.security-pending'].ok).toBe(false)
+  })
+
+  test('anyone in the docker group is root on the box, and named', () => {
+    const c = byId({ ...CLEAN, docker_group: ['deploy', 'j'] })['accounts.docker-group']
+    expect(c.ok).toBe(false)
+    expect(c.message).toContain('deploy, j')
+    expect(byId({ ...CLEAN, docker_group: null })['accounts.docker-group'].ok).toBe('unknown')
   })
 
   test('a reading the box could not take is unknown, never passing', () => {

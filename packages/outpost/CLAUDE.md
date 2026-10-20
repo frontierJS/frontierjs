@@ -34,7 +34,7 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   a transient unit outside that namespace. A new write path in this package
   needs a `ReadWritePaths` entry there, or it fails on a machine and in no test.
   Killing the systemd-run client does not stop its unit, so the timeout is
-  `RuntimeMaxSec` on the unit. Never run on a machine (`FJS-257`).
+  `RuntimeMaxSec` on the unit. Never run on a machine (`IDEAS/zero-to-live.md` 0.3).
 - **The route bodies are basecamp's wire contract and they are snake_case.**
   `app_id`, `timeout_s`, `keep_images`, `server_id`. Inside is camelCase. A route
   that passes a body straight through addresses a container called
