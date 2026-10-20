@@ -85,7 +85,7 @@ which is why the check asks.
 ## Wiring
 
 ```typescript
-// api/server.ts
+// api/src/app.ts
 import { notifications } from '@frontierjs/notifications'
 
 // mail must be configured before notifications if the email transport is used
@@ -298,7 +298,7 @@ export default defineNotification<void>({
     .action('Go to dashboard', 'https://app.example.com/dashboard'),
 })
 
-// api/src/services/users.ts
+// api/src/services/users.service.ts
 import welcomeUser from '../notifications/WelcomeUser.notification.ts'
 
 after: {
@@ -411,7 +411,7 @@ export class SlackDriver implements NotificationDriver {
   async shutdown(): Promise<void> {}
 }
 
-// api/server.ts
+// api/src/app.ts
 app.configure(notifications({
   db,
   transports: {

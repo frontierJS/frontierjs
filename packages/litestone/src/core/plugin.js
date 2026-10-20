@@ -38,6 +38,10 @@
 //     After rows are fetched, before returning to caller. Can mutate rows.
 //     rows is always an array (even for findFirst/findUnique).
 //
+//   async onWriteResult(model, rows, ctx, opts)
+//     Hook. The row a single-row write hands its caller, a copy the event and
+//     onAfterWrite never see. Shape it as onAfterRead shapes a read's.
+//
 //   async onAfterWrite(model, operation, result, ctx)
 //     After a write commits. operation is 'create'|'update'|'delete'.
 //     result is the written row; createMany and updateMany call it once per
@@ -77,6 +81,7 @@ export class LitestonePlugin {
   async onBeforeDelete(model, args, ctx) {}
 
   async onAfterRead(model, rows, ctx, opts = {}) {}
+  async onWriteResult(model, rows, ctx, opts = {}) {}
   async onAfterWrite(model, operation, result, ctx) {}
 
   // Called after any delete completes — single or bulk.
@@ -161,6 +166,10 @@ export class PluginRunner {
 
   async afterRead(model, rows, ctx, opts = {}) {
     for (const p of this._plugins) await p.onAfterRead?.(model, rows, ctx, opts)
+  }
+
+  async shapeWriteResult(model, rows, ctx, opts = {}) {
+    for (const p of this._plugins) await p.onWriteResult?.(model, rows, ctx, opts)
   }
 
   // Write lifecycle

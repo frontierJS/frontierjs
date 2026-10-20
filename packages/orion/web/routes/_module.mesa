@@ -9,6 +9,8 @@
 <nav class="cluster" aria-label="Automations" id="orion-nav">
   <a class="navlink" href="/automations/"             aria-current={(page.route, isActive('/automations/', { exact: true }) || isActive('/automations/flows/')) ? 'page' : null}>Flows</a>
   <a class="navlink" href="/automations/runs/"        aria-current={(page.route, isActive('/automations/runs/')) ? 'page' : null}>Runs</a>
+  <a class="navlink" href="/automations/metrics/"     aria-current={(page.route, isActive('/automations/metrics/')) ? 'page' : null}>Metrics</a>
+  <a class="navlink" href="/automations/nodes/"       aria-current={(page.route, isActive('/automations/nodes/')) ? 'page' : null}>Node types</a>
   <a class="navlink" href="/automations/credentials/" aria-current={(page.route, isActive('/automations/credentials/')) ? 'page' : null}>Credentials</a>
 </nav>
 

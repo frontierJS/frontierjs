@@ -108,7 +108,7 @@ export type DependencyKind = 'dependency' | 'dev' | 'peer' | 'optional'
 
 export type NotificationContext = 'Deployment' | 'AlertEvent' | 'JobRun' | 'Server' | 'Workspace' | 'Monitor'
 
-export type NotificationKind = 'deploy_success' | 'deploy_failed' | 'alert_firing' | 'alert_resolved' | 'server_unreachable' | 'monitor_down' | 'monitor_up' | 'posture_failed' | 'dependency_vulnerable' | 'member_joined' | 'job_failed' | 'weekly_digest'
+export type NotificationKind = 'DeploySuccess' | 'DeployFailed' | 'AlertFiring' | 'AlertResolved' | 'ServerUnreachable' | 'MonitorDown' | 'MonitorUp' | 'PostureFailed' | 'DependencyVulnerable' | 'MemberJoined' | 'JobFailed' | 'WeeklyDigest'
 
 export type EditorRole = 'edit' | 'publish'
 

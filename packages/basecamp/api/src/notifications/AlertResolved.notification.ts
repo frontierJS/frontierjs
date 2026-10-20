@@ -1,4 +1,4 @@
-// src/notifications/alert_resolved.notification.ts
+// src/notifications/AlertResolved.notification.ts
 //
 // Its default is in-app only, and that is a judgement rather than a shrug: a
 // recovery is worth knowing and is not worth an interruption. See `kinds.ts` —
@@ -6,7 +6,7 @@
 
 import { defineNotification, inApp, mail } from '@frontierjs/notifications'
 import { declaredTransports, appUrl }      from './_shared.ts'
-import type { AlertPayload }               from './alert_firing.notification.ts'
+import type { AlertPayload }               from './AlertFiring.notification.ts'
 
 export default defineNotification<AlertPayload>({
   via: declaredTransports,

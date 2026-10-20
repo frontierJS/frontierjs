@@ -457,6 +457,16 @@ describe('Command() closes the tty', () => {
     expect(r.stdout).not.toContain('not reached')
   })
 
+  // exec is synchronous: the runtime's SIGINT handler cannot run
+  // until execSync returns, so exec must not exit from inside the body.
+  test.skipIf(!hasScript)('Ctrl-C during $.exec runs onExit and exits 130', () => {
+    const mark = join(dir, 'away-exec')
+    const r = inPty('exec', [away(mark), `$.exec({ command: 'sleep 5' })`, `echo('not reached')`])
+    expect(r.status).toBe(130)
+    expect(existsSync(mark) && readFileSync(mark, 'utf8')).toBe('away')
+    expect(r.stdout).not.toContain('not reached')
+  })
+
   test.skipIf(!hasScript)('Ctrl-C inside aside is the child\'s, and the command carries on', () => {
     const r = inPty('aside', [
       `try { await tty.aside(() => $.stream({ command: 'sleep 5' })) } catch (e) { echo('caught ' + e.message) }`,

@@ -89,7 +89,7 @@ async function ingest(server: any, data: ReportData) {
   })
 
   if (failed.length)
-    await notifyPeople($.app, 'posture_failed', await workspaceMembers($.app, server.workspaceId), {
+    await notifyPeople($.app, 'PostureFailed', await workspaceMembers($.app, server.workspaceId), {
       serverId:   server.id,
       serverName: server.name,
       failed:     failed.map(c => `${c.id}: ${c.message}`),

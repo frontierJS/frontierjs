@@ -1004,10 +1004,10 @@ async function seedInstallation(sys, owner, users) {
   // (*chosen* against *default*), which is the one thing that would go
   // unnoticed.
   await sys.notificationPreference.create({
-    data: { userId: owner.id, kind: 'weekly_digest', email: false, inApp: false },
+    data: { userId: owner.id, kind: 'WeeklyDigest', email: false, inApp: false },
   })
   await sys.notificationPreference.create({
-    data: { userId: owner.id, kind: 'deploy_success', email: true, inApp: true },
+    data: { userId: owner.id, kind: 'DeploySuccess', email: true, inApp: true },
   })
 }
 

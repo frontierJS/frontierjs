@@ -194,16 +194,13 @@ export default createService({
     const email     = data.email as string          // lower-cased by stampInvitation
     const workspace = await sys().workspace.findUnique({ where: { id: ws() } })
 
-    // Both refusals name the state rather than leaving SQLite to answer the
-    // @@unique with a constraint error at the end of the write.
+    // Membership is no constraint, so it is said here; an open invitation is
+    // the @@unique's.
     const existing = await sys().user.findFirst({ where: { email } })
     if (existing && await sys().workspaceMember.exists({
       where: { workspaceId: ws(), userId: existing.id },
     }))
       throw new Conflict(`${email} is already a member of this workspace`)
-
-    if (await sys().invitation.exists({ where: { workspaceId: ws(), email } }))
-      throw new Conflict(`${email} already has an open invitation — resend it or revoke it first`)
 
     // asSystem: `token` is `@guarded`, a system-context lock in both
     // directions with no `ctx.system` hatch, so the caller's own client is
@@ -390,7 +387,7 @@ export default createService({
     // they know. The de-dupe in `notifyPeople` would not have caught that —
     // they are a member now, so the roster includes them.
     const existing = (await workspaceMembers($.app, workspace.id)).filter(id => id !== userId)
-    await notifyPeople($.app, 'member_joined', existing, {
+    await notifyPeople($.app, 'MemberJoined', existing, {
       workspaceId:   workspace.id,
       workspaceName: workspace.name,
       // `data.name` and not `name`: that `const` is scoped to the branch that

@@ -583,6 +583,19 @@ ${kids.markup}{#if record}
 export const routeSegment = (dir) => dir.toLowerCase()
 
 /**
+ * The URL a route file is served at, from its path under src/routes/. A file
+ * named `index` serves its directory, so `tasks/inbox/index` is /tasks/inbox/.
+ */
+export function routeUrl(file) {
+  const segs = file.replace(/\.(mesa|md)$/, '').split('/')
+  if (segs[segs.length - 1] === 'index') segs.pop()
+  const url = segs.map((s) => /^\[\.\.\.\w+\]$/.test(s) ? '*'
+                            : /^\[\w+\]$/.test(s) ? ':' + s.slice(1, -1)
+                            : routeSegment(s))
+  return '/' + url.map((s) => s + '/').join('')
+}
+
+/**
  * `src/lib/nav.js` with an entry for a generated list page, the file unchanged
  * where it already names the page, or null where the file holds no `groups`
  * table to put one in. make:scaffold used to end on *Add a nav link to your

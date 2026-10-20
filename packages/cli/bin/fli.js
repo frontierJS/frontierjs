@@ -128,6 +128,7 @@ try {
 } catch (err) {
   // Signal-based exits should already be handled inside exec/stream, but if
   // anything slips through, treat them as quiet exits.
+  if (err?.interrupt) process.exit(err.interrupt)
   if (err?.signal === 'SIGINT')  process.exit(130)
   if (err?.signal === 'SIGTERM') process.exit(143)
 

@@ -364,7 +364,10 @@ export async function Command({ file, arg, flag, emit }) {
         const note = err.signal === 'SIGINT' ? 'aborted (Ctrl+C)' : 'terminated'
         if (emit) emit({ type: 'log', level: 'warn', text: note })
         else logger(note, 'warn')
-        process.exit(code)
+        // exec is synchronous, so the SIGINT handler has not run and exiting
+        // here would skip tty.onExit. The function Command() returns catches
+        // this once the body has unwound and goes through _stop.
+        throw Object.assign(new Error(note), { interrupt: code, quiet: true })
       }
       throw err
     }
@@ -553,7 +556,10 @@ export async function Command({ file, arg, flag, emit }) {
   if (defaultStepsDir && existsSync(defaultStepsDir)) {
     // Return a function that runs the orchestrator then all steps
     const runSteps = async () => {
-      try { return await runStepsOnce() } finally { await config.tty.close() }
+      try { return await runStepsOnce() } catch (err) {
+        if (err?.interrupt) await _stop(err.interrupt)
+        throw err
+      } finally { await config.tty.close() }
     }
     const runStepsOnce = async () => {
       // config.config is already there — see the initialization above.
@@ -914,6 +920,9 @@ export async function Command({ file, arg, flag, emit }) {
       const out = await config.run(config)
       assertNotRefused(config, null)
       return out
+    } catch (err) {
+      if (err?.interrupt) await _stop(err.interrupt)
+      throw err
     } finally {
       await config.tty.close()
     }

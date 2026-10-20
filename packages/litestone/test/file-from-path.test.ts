@@ -74,7 +74,7 @@ describe('a string in a File column is never a path (FJS-2061)', () => {
 
   test('fromPath(path) is how code uploads from disk', async () => {
     const { db, puts } = await client()
-    const row = await db.asSystem().photo.create({ data: { id: 1, name: 'x', original: fromPath(secret) } })
+    const row = await db.asSystem().photo.create({ data: { id: 1, name: 'x', original: fromPath(secret) }, select: { original: { resolve: false } } })
     expect(puts.map(p => p.bytes)).toEqual(['server-only bytes'])
     expect(puts[0].key.endsWith('.txt')).toBe(true)
     expect(row.original.key).toBe(puts[0].key)
@@ -120,7 +120,7 @@ describe('a file reaches the provider without being read whole (FJS-3094)', () =
   test('a Blob is written to the local store with only its head read, and its type sniffed from that head', async () => {
     const { db, root } = await onDisk()
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Uint8Array(100_000).fill(7)])
-    const row = await db.asSystem().photo.create({ data: { id: 1, original: new Unreadable([png], { type: 'text/plain' }) } })
+    const row = await db.asSystem().photo.create({ data: { id: 1, original: new Unreadable([png], { type: 'text/plain' }) }, select: { original: { resolve: false } } })
     expect(row.original.mime).toBe('image/png')
     expect(row.original.size).toBe(png.length)
     expect(new Uint8Array(await Bun.file(join(root, row.original.key)).arrayBuffer())).toEqual(png)
@@ -136,7 +136,7 @@ describe('a file reaches the provider without being read whole (FJS-3094)', () =
     await autoMigrate(db)
     const bodies: unknown[] = []
     files._provider = { async put(_key: string, body: unknown) { bodies.push(body) }, async get() { return null }, async delete() {} }
-    const row = await db.asSystem().photo.create({ data: { id: 1, original: fromPath(secret) } })
+    const row = await db.asSystem().photo.create({ data: { id: 1, original: fromPath(secret) }, select: { original: { resolve: false } } })
     expect(bodies[0]).toBeInstanceOf(Blob)
     expect(row.original.size).toBe('server-only bytes'.length)
     db.$close()

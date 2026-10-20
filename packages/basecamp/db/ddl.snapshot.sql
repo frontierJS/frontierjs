@@ -428,7 +428,7 @@ CREATE TABLE IF NOT EXISTS "notification_preference" (
   "email" INTEGER NOT NULL DEFAULT 0,
   "inApp" INTEGER NOT NULL DEFAULT 1,
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("kind" IN ('deploy_success', 'deploy_failed', 'alert_firing', 'alert_resolved', 'server_unreachable', 'monitor_down', 'monitor_up', 'posture_failed', 'dependency_vulnerable', 'member_joined', 'job_failed', 'weekly_digest')),
+  CHECK ("kind" IN ('DeploySuccess', 'DeployFailed', 'AlertFiring', 'AlertResolved', 'ServerUnreachable', 'MonitorDown', 'MonitorUp', 'PostureFailed', 'DependencyVulnerable', 'MemberJoined', 'JobFailed', 'WeeklyDigest')),
   UNIQUE ("userId", "kind"),
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;

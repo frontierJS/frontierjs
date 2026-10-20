@@ -39,6 +39,7 @@ import { createConnection }                         from 'node:net'
 import { hostname }                                 from 'node:os'
 import { dirname, join }                            from 'node:path'
 import { fileURLToPath }                            from 'node:url'
+import { createJunctionClient }                     from '@frontierjs/junction/client'
 import { ensureCert }                               from '@frontierjs/outpost/cert'
 
 const API          = (process.env.BASECAMP_URL ?? 'http://localhost:8120').replace(/\/$/, '')
@@ -63,30 +64,15 @@ const fail = (line: string, hint?: string): never => {
   process.exit(1)
 }
 
-// ─── HTTP ────────────────────────────────────────────────────────────────
+// ─── The API ─────────────────────────────────────────────────────────────
 
-interface Call { method?: string; body?: unknown; token?: string; workspace?: string; serviceMethod?: string }
+const client = createJunctionClient({ url: API })
 
-async function call(path: string, o: Call = {}) {
-  const headers: Record<string, string> = { accept: 'application/json' }
-  if (o.body)          headers['content-type']     = 'application/json'
-  if (o.token)         headers.authorization       = `Bearer ${o.token}`
-  if (o.workspace)     headers['x-workspace-id']   = o.workspace
-  if (o.serviceMethod) headers['x-service-method'] = o.serviceMethod
-
-  const res  = await fetch(API + path, {
-    method: o.method ?? (o.body || o.serviceMethod ? 'POST' : 'GET'),
-    headers,
-    body:   o.body ? JSON.stringify(o.body) : undefined,
-  })
-  const text = await res.text()
-  const data = text ? JSON.parse(text) : null
-  return { ok: res.ok, status: res.status, data }
-}
-
-/** The service's own sentence, which names what to fix far more often than a
- *  status code does. */
-const said = (r: { status: number; data: any }) => r.data?.message ?? `HTTP ${r.status}`
+/** A client call that failed, as this script's refusal. The client throws the
+ *  service's own sentence, which names what to fix far more often than a status
+ *  code does. */
+const refuse = (what: string, hint?: string) => (err: any): never =>
+  fail(`${what}: ${err?.message ?? err}`, hint)
 
 // ─── Preflight ───────────────────────────────────────────────────────────
 
@@ -116,19 +102,23 @@ if (!(await apiUp()))
 
 // ─── Who, and where ──────────────────────────────────────────────────────
 
-const login = await call('/auth/login', { body: { email: EMAIL, password: PASSWORD } })
-if (!login.ok)
-  fail(`could not sign in as ${EMAIL}: ${said(login)}`,
-    'A seeded database has this account (`bun run db:seed`); otherwise set BASECAMP_EMAIL and BASECAMP_PASSWORD.')
-const token = login.data.token as string
+const session = await client.auth.signIn(EMAIL, PASSWORD).catch(refuse(`could not sign in as ${EMAIL}`,
+  'A seeded database has this account (`bun run db:seed`); otherwise set BASECAMP_EMAIL and BASECAMP_PASSWORD.'))
+if (!('token' in session))
+  fail(`${EMAIL} owes a second factor`, 'Sign in as an account without one — this script has no code to give.')
+// Signing in opens the client's socket. The calls below are HTTP, each stating
+// its workspace, and a socket opening mid-script would take the later ones.
+client.disconnect()
 
-const workspaces = (await call('/workspaces', { token })).data?.data ?? []
+const workspaces: any[] = (await client.service('workspaces').find().catch(refuse('could not list workspaces'))).data
 const workspace  = WORKSPACE
   ? workspaces.find((w: any) => w.slug === WORKSPACE || w.name === WORKSPACE)
   : workspaces[0]
 if (!workspace)
   fail(WORKSPACE ? `${EMAIL} is not in a workspace called '${WORKSPACE}'` : `${EMAIL} is in no workspace`,
     workspaces.length ? `Theirs: ${workspaces.map((w: any) => w.slug).join(', ')}` : undefined)
+client.setWorkspace(workspace.id)
+const servers = client.service('servers')
 
 // ─── The machine ─────────────────────────────────────────────────────────
 
@@ -147,34 +137,35 @@ function remembered(): Machine | null {
 /** The row, if this caller can still see it. A reset database answers 404 and
  *  a different workspace answers nothing — either way the identity is stale. */
 async function stillThere(serverId: string) {
-  const r = await call(`/servers/${serverId}`, { token, workspace: workspace.id })
-  return r.ok ? r.data : null
+  return servers.get(serverId).catch(() => null) as Promise<any>
 }
 
 async function enroll(): Promise<Machine> {
   // The row this laptop left behind, if the file went and the database did not.
-  let server: any = (await call(`/servers?slug=${SLUG}&$limit=1`, { token, workspace: workspace.id })).data?.data?.[0] ?? null
+  let server: any = (await servers.find({ slug: SLUG }, { limit: 1 }).catch(refuse('could not look for this machine'))).data[0] ?? null
 
-  if (!server) {
-    const made = await call('/servers', { token, workspace: workspace.id, body: {
+  if (!server)
+    server = await servers.create({
       name: `${SLUG} (${hostname()})`, slug: SLUG, ipAddress: '127.0.0.1', role: 'general',
-    } })
-    if (!made.ok) fail(`could not add this machine to the fleet: ${said(made)}`)
-    server = made.data
-  }
+    }).catch(refuse('could not add this machine to the fleet'))
 
-  const issued = await call(`/servers/${server.id}`, {
-    token, workspace: workspace.id, serviceMethod: 'issueEnrollment' })
-  if (!issued.ok)
-    fail(`could not issue an enrollment for ${SLUG}: ${said(issued)}`,
-      `Enrolling a machine takes an admin or an owner of '${workspace.slug}'.`)
+  const issued: any = await servers.invoke('issueEnrollment', server.id).catch(
+    refuse(`could not issue an enrollment for ${SLUG}`,
+      `Enrolling a machine takes an admin or an owner of '${workspace.slug}'.`))
 
+  // The exchange is the machine's own door: a route with no session, which
+  // the install script reaches with curl. Not a service call, so not the client's.
   // `token` beside the command, not scraped out of it: this is an installer,
   // and the command is written for a person pasting into a shell.
-  const exchanged = await call(`/servers/${server.id}/enroll`, { body: { token: issued.data.token, cert: tls.cert } })
-  if (!exchanged.ok) fail(`the enrollment was refused: ${said(exchanged)}`)
+  const res = await fetch(`${API}/servers/${server.id}/enroll`, {
+    method:  'POST',
+    headers: { 'content-type': 'application/json' },
+    body:    JSON.stringify({ token: issued.token, cert: tls.cert }),
+  })
+  const exchanged: any = await res.json().catch(() => null)
+  if (!res.ok) fail(`the enrollment was refused: ${exchanged?.message ?? `HTTP ${res.status}`}`)
 
-  const machine = { api: API, workspaceId: workspace.id, serverId: server.id, secret: exchanged.data.secret, cert: tls.cert }
+  const machine = { api: API, workspaceId: workspace.id, serverId: server.id, secret: exchanged.secret, cert: tls.cert }
   mkdirSync(HOME, { recursive: true })
   // This machine's own key: whoever reads it can sign as it.
   writeFileSync(MACHINE_FILE, JSON.stringify(machine, null, 2) + '\n', { mode: 0o600 })

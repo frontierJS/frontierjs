@@ -65,8 +65,11 @@ export interface NotificationDefinition<P> {
   inApp?:  Formatter<P, InAppMessage>
   email?:  Formatter<P, MailMessage>
 
-  /** A custom transport, named for the driver registered under it. */
-  [transport: string]: unknown
+  /** A custom transport, named for the driver registered under it. The index
+   *  type must admit `type` and the `via`/`key` functions, and must stay a
+   *  `Formatter<P, …>` so a custom formatter's parameters are contextually
+   *  typed; `unknown` here left them an implicit any. */
+  [transport: string]: Formatter<P, unknown> | string | undefined
 }
 
 /** What `app.notify()` takes: the three members it reads, and the optional

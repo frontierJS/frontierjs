@@ -15,9 +15,9 @@
 // the OpenAPI spec, both of which went on advertising create/patch/remove.
 // Junction FJS-004 / FJS-D07.
 //
-// The schema records the intent (`AuditEvent` update/delete are meant to be
-// LOCKED, which not even asSystem() passes), but no `@@gate` is installed yet,
-// so today the service is the only thing enforcing it.
+// The schema enforces it too: `AuditEvent` is `@@gate(5.8.9.9)`, so update and
+// delete are LOCKED, which not even asSystem() passes, and a read needs
+// ADMINISTRATOR. The service's `readOnly` is what /manifest and OpenAPI show.
 //
 // There are TWO trails and they answer different questions. This one is the
 // APPLICATION trail: `servers.create` by a named actor, written by the

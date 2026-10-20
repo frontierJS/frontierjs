@@ -210,7 +210,7 @@ describe('the vendor tag', () => {
     expect(scripts).toHaveLength(0)
     vi.advanceTimersByTime(10)
     expect(scripts).toHaveLength(1)
-    expect(scripts[0].src).toBe('https://plausible.io/js/script.js')
+    expect(scripts[0].src).toBe('https://plausible.io/js/script.manual.js')
     expect(scripts[0].attrs['data-domain']).toBe('shop.example')
     expect(scripts[0].defer).toBe(true)
   })
@@ -223,6 +223,46 @@ describe('the vendor tag', () => {
     expect(window.dataLayer[0]).toMatchObject({ event: 'gtm.js' })
     expect(typeof window.dataLayer[0]['gtm.start']).toBe('number')
     expect(scripts[0].src).toBe('https://www.googletagmanager.com/gtm.js?id=GTM-ABC')
+  })
+
+  // FJS-3317 — the vendor's auto-capturing script reads location.href itself,
+  // so a token in a query string from a link that is not Sierra's scaffold
+  // reached the vendor whatever the provider code sent.
+  test('plausible loads the manual script and reports the address, not the address bar', async () => {
+    installWindow({ idle: true, href: 'https://shop.example/reset?token=SECRET-RESET-TOKEN#frag' })
+    const A = await freshAnalytics()
+    A.initAnalytics({ provider: 'plausible', domain: 'shop.example' })
+    vi.advanceTimersByTime(10)
+    expect(scripts[0].src).toBe('https://plausible.io/js/script.manual.js')
+    const queued = [...window.plausible.q].map(a => [...a])
+    expect(queued).toEqual([['pageview', { u: 'https://shop.example/reset' }]])
+    expect(JSON.stringify(queued)).not.toContain('SECRET-RESET-TOKEN')
+  })
+
+  test('plausible navigations send the address too', async () => {
+    installWindow({ idle: true, href: 'https://shop.example/reset?token=SECRET-RESET-TOKEN' })
+    const A = await freshAnalytics()
+    A.initAnalytics({ provider: 'plausible', domain: 'shop.example' })
+    vi.advanceTimersByTime(10)
+    await vi.dynamicImportSettled()
+    window.plausible.q.length = 0
+    globalThis.__afterNav.forEach(fn => fn({ to: { pathname: '/reset', node: { meta: {} } } }))
+    const queued = [...window.plausible.q].map(a => [...a])
+    expect(queued[0][0]).toBe('pageview')
+    expect(queued[0][1].u).toBe('https://shop.example/reset')
+    expect(JSON.stringify(queued)).not.toContain('SECRET-RESET-TOKEN')
+  })
+
+  test('gtm hands the container the address as page_location, without the query', async () => {
+    installWindow({ idle: true, href: 'https://shop.example/reset?token=SECRET-RESET-TOKEN' })
+    const A = await freshAnalytics()
+    A.initAnalytics({ provider: 'gtm', containerId: 'GTM-ABC' })
+    vi.advanceTimersByTime(10)
+    await vi.dynamicImportSettled()
+    globalThis.__afterNav.forEach(fn => fn({ to: { pathname: '/reset', node: { meta: {} } } }))
+    expect(window.dataLayer[0].page_location).toBe('https://shop.example/reset')
+    expect(window.dataLayer.at(-1)).toMatchObject({ event: 'pageview', page_location: 'https://shop.example/reset' })
+    expect(JSON.stringify(window.dataLayer)).not.toContain('SECRET-RESET-TOKEN')
   })
 
   test('a named provider missing its id warns and loads nothing, rather than throwing at boot', async () => {

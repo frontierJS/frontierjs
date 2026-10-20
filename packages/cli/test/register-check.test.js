@@ -945,3 +945,69 @@ describe('lives-in', () => {
     expect(of(runRegisterCheck({ root: REPO, staleDays: 0 }), 'lives-in')).toEqual([])
   })
 })
+
+// ─── a ruling's path citations, held to the tree (FJS-2393) ──────────────────
+
+describe('dead-path', () => {
+  let DROOT
+
+  beforeAll(() => {
+    DROOT = mkdtempSync(join(tmpdir(), 'fli-deadpath-'))
+    writeFileSync(join(DROOT, 'package.json'), DECLARED)
+    mkdirSync(join(DROOT, 'docs'), { recursive: true })
+    mkdirSync(join(DROOT, 'packages', 'alpha', 'docs'), { recursive: true })
+    mkdirSync(join(DROOT, 'packages', 'alpha', 'src'), { recursive: true })
+    writeFileSync(join(DROOT, 'docs', 'root.md'), '# root\n')
+    writeFileSync(join(DROOT, 'packages', 'alpha', 'package.json'), JSON.stringify({ name: '@frontierjs/alpha' }))
+    writeFileSync(join(DROOT, 'packages', 'alpha', 'docs', 'guide.md'), '# guide\n')
+    writeFileSync(join(DROOT, 'packages', 'alpha', 'src', 'a.js'), 'export const a = 1\n')
+    writeFileSync(join(DROOT, 'ISSUES.md'), '## S1 — blockers\n| Id | Pkg | Title | Status | Verified | Detail |\n| --- | --- | --- | --- | --- | --- |\n')
+    writeFileSync(join(DROOT, 'DECISIONS.md'), [
+      '# Decisions', '', '## Rulings', '',
+      '### <a id="fjs-d21"></a>2026-08-18 · `FJS-D21` — every spelling that resolves.',
+      'See `packages/alpha/docs/guide.md`, `alpha/docs/guide.md#top`, `alpha/src/a.js:3`, `docs/root.md`.', '',
+      '### <a id="fjs-d22"></a>2026-08-18 · `FJS-D22` — a package file cited as if from the root, and one gone.',
+      'The map is `docs/guide.md`; the rest is `alpha/docs/gone.md`.', '',
+      '### <a id="fjs-d23"></a>2026-08-18 · `FJS-D23` — a path with no known first segment is another tree\'s.',
+      'Read `src/a.js`, `api/src/x.ts`, `https://example.com/docs/y.md`, `../sibling/z.md`, `docs/*.md` and `a/b.md`.', '',
+      '### <a id="fjs-d24"></a>2026-08-18 · `FJS-D24` — retired, so its paths are history.',
+      '**Status:** superseded-by [`FJS-D21`](#fjs-d21)',
+      'It lived in `alpha/docs/gone.md`.', '',
+      '### <a id="fjs-d25"></a>2026-08-18 · `FJS-D25` — Lives in is lives-in\'s.',
+      '*Lives in:* `docs/guide.md`.', '',
+      '### <a id="fjs-d26"></a>2026-08-18 · `FJS-D26` — a fence is not a citation.',
+      '```', 'cat alpha/docs/gone.md', '```', '',
+    ].join('\n'))
+  })
+
+  afterAll(() => { rmSync(DROOT, { recursive: true, force: true }) })
+
+  const hits = () => of(runRegisterCheck({ root: DROOT, staleDays: 0 }), 'dead-path').map(h => `${h.id}: ${h.message}`)
+
+  test('a path that resolves, in any of the spellings in use, is silent', () => {
+    expect(hits().filter(h => h.startsWith('FJS-D21:'))).toEqual([])
+  })
+
+  test('a path that resolves from no root is reported, a package file cited from the root included', () => {
+    expect(hits().filter(h => h.startsWith('FJS-D22:'))).toEqual([
+      'FJS-D22: cites docs/guide.md, which is not in the tree',
+      'FJS-D22: cites alpha/docs/gone.md, which is not in the tree',
+    ])
+  })
+
+  test('a path whose first segment names nothing here is another tree\'s', () => {
+    expect(hits().filter(h => h.startsWith('FJS-D23:'))).toEqual([])
+  })
+
+  test('a retired ruling is exempt, and so is a Lives in paragraph', () => {
+    expect(hits().filter(h => h.startsWith('FJS-D24:') || h.startsWith('FJS-D25:'))).toEqual([])
+  })
+
+  test('a fenced block is not graded', () => {
+    expect(hits().filter(h => h.startsWith('FJS-D26:'))).toEqual([])
+  })
+
+  test('the register this ships with has no dead path', () => {
+    expect(of(runRegisterCheck({ root: REPO, staleDays: 0 }), 'dead-path')).toEqual([])
+  })
+})

@@ -537,7 +537,7 @@ try {
 
   // Flip one and prove it stuck — the write goes through `save`, which fills the
   // other transport from the KIND's default rather than the column's.
-  await click('#notify-member_joined-email')
+  await click('#notify-MemberJoined-email')
   await until(`document.getElementById('settings-notifications').textContent`,
     t => t.includes(`3 of ${KINDS} chosen`), 'flipping a switch never marked the kind chosen')
   ok('flipping a transport marks that kind chosen')

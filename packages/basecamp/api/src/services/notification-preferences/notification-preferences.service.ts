@@ -96,7 +96,7 @@ export default createService({
     } else {
       // A first choice about one transport still writes a whole row, so the
       // other transport is stamped from the kind's default rather than from
-      // the column's — otherwise turning email ON for `deploy_success` would
+      // the column's — otherwise turning email ON for `DeploySuccess` would
       // silently turn its in-app notice off, the column defaulting to true
       // and the kind's default being the thing the person was looking at.
       const def = notificationKind(kind)!

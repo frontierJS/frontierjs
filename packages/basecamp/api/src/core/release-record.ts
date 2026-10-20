@@ -11,7 +11,7 @@
 // what the machine reported.
 
 import type { App } from '@frontierjs/junction'
-import { announce } from '../channels.ts'
+import { announce } from './channels.ts'
 
 /**
  * The step that replaces what is serving. A release that stopped at or before
@@ -124,9 +124,6 @@ export async function finishRelease(app: App, deploy: Row, { status, error, star
 
   if (deploy.appId && replaced)
     await sys(app).app.update({ where: { id: deploy.appId }, data: { status: status === 'success' ? 'running' : 'error' } })
-
-  app.events.emit(status === 'success' ? 'deployment:success' : 'deployment:failed',
-    { id: deploy.id, workspace_id: deploy.workspaceId, ...(error ? { error } : {}) })
 
   await pushRow(app, deploy.id)
   return { id: deploy.id, status }

@@ -21,7 +21,7 @@ import { GatePlugin }     from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor }         from '../src/core/capabilities.ts'
-import { announce, workspaceChannelName } from '../src/channels.ts'
+import { announce, workspaceChannelName } from '../src/core/channels.ts'
 
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')

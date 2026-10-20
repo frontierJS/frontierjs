@@ -133,9 +133,6 @@ export default createService({
     // credential it could never send.
     if (!spec) throw new BadRequest(`kind must be one of ${Object.keys(KINDS).join(', ')}`)
 
-    if (await db().notificationChannel.exists({ where: { workspaceId: ws(), name: data.name } }))
-      throw new Conflict(`A channel named '${data.name}' already exists in this workspace`)
-
     // `secret` is @transient — validated by the model's own rules and lifted
     // off the payload by autoValidate, so `data` is columns only.
     const credential = $.transients.secret as string | undefined

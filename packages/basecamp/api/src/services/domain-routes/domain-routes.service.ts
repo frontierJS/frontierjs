@@ -10,7 +10,7 @@
 // matcher expands: a wildcard or a brace in a prefix would match more than the
 // person who wrote it meant.
 
-import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws } from '../../core/resource.ts'
 import domainDns from '../../jobs/domain-dns.job.ts'
@@ -65,8 +65,6 @@ export default createService({
     const data = $.data as Record<string, unknown>
     const domain = await guard(data.domainId as string, data.appId as string)
     const pathPrefix = normalizePrefix(data.pathPrefix)
-    if (await db().domainRoute.exists({ where: { domainId: domain.id, pathPrefix } }))
-      throw new Conflict(`${domain.hostname}${pathPrefix} already goes to an App`)
     const created = await db().domainRoute.create({ data: { ...data, pathPrefix } })
     await toMachines(domain.id, created.id, 'created')
     return created
@@ -79,9 +77,6 @@ export default createService({
     if ('pathPrefix' in patch) patch.pathPrefix = normalizePrefix(patch.pathPrefix)
     if (changesNothing(patch)) return route
     const domain = await guard(route.domainId, (patch.appId as string | undefined) ?? route.appId)
-    if (patch.pathPrefix && patch.pathPrefix !== route.pathPrefix
-      && await db().domainRoute.exists({ where: { domainId: domain.id, pathPrefix: patch.pathPrefix } }))
-      throw new Conflict(`${domain.hostname}${patch.pathPrefix} already goes to an App`)
     const updated = await db().domainRoute.update({ where: { id: route.id }, data: patch })
     await toMachines(domain.id, route.id, `patched:${updated.updatedAt}`)
     return updated

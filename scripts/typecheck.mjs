@@ -21,17 +21,24 @@
 // no ceiling to hold; it is either clean or it is not.
 // ============================================================
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { basename, join, dirname }      from 'node:path'
 import { fileURLToPath }                from 'node:url'
 
 import { runTypecheck }                 from '../packages/cli/core/typecheck.js'
 
-const args   = process.argv.slice(2)
+const REPO = join(dirname(fileURLToPath(import.meta.url)), '..')
+const args = process.argv.slice(2)
+
+// An answer from a check that did not run is worse than none, so every way of
+// asking for a check this script cannot make is refused by name.
+refuseUnknownFlags(args)
+
 const quiet  = args.includes('--quiet')
 const update = args.includes('--update')
 
 const pkgDir  = process.cwd()
+refuseNonPackage(pkgDir)
 
 // The ceiling lives in scripts/typecheck-baselines.json, keyed by package
 // directory name — one file so that raising a number shows up in a diff as a
@@ -86,6 +93,36 @@ if (baseline > 0 && ownCount < baseline) {
 }
 
 // ─── helpers ────────────────────────────────────────────────
+
+function refuseUnknownFlags(argv) {
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]
+    if (a === '--quiet' || a === '--update') continue
+    if (a === '--baseline') { i++; continue }
+    console.error(
+      `[typecheck] unknown argument ${a} — this script takes --quiet, --update and --baseline N, ` +
+      `and checks the package it is run from. To check one package: cd packages/<name> && bun run typecheck`
+    )
+    process.exit(2)
+  }
+}
+
+// A package is a directory with a package.json that is not the workspace root.
+// At the root there is nothing to check, and saying `clean` there reads as a
+// verdict on every package.
+function refuseNonPackage(dir) {
+  let pkg = null
+  try { pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) } catch {}
+  if (pkg && !pkg.workspaces) return
+  const members = readdirSync(join(REPO, 'packages'), { withFileTypes: true })
+    .filter(d => d.isDirectory() && existsSync(join(REPO, 'packages', d.name, 'package.json')))
+    .map(d => `packages/${d.name}`)
+  console.error(
+    `[typecheck] no package here (${dir}) — nothing was checked. This script checks the package it is run from; ` +
+    `\`bun run typecheck\` at the root checks every member. Run it from one of: ${members.join(' ')}`
+  )
+  process.exit(2)
+}
 
 function loadBaselines() {
   try { return JSON.parse(readFileSync(BASELINES, 'utf8')) } catch { return {} }

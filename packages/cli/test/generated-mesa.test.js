@@ -27,7 +27,7 @@ const { compileSource } = await import(resolve(HERE, '../../mesa/src/compiler.js
 // acorn is mesa's dependency, not this package's — reached the same way the
 // compiler itself is, by path, so the CLI gains no dependency for a test.
 const { parse: parseJs } = await import(resolve(HERE, '../../mesa/node_modules/acorn/dist/acorn.mjs'))
-const { listPage, createPage, editPage, resourceRoutePage } = await import(resolve(HERE, '../core/crud-templates.js'))
+const { listPage, createPage, editPage, resourceRoutePage, routeUrl } = await import(resolve(HERE, '../core/crud-templates.js'))
 const { resourceFile } = await import(resolve(HERE, '../core/resource-template.js'))
 const { homePage, isStarterHome } = await import(resolve(HERE, '../core/home-template.js'))
 
@@ -322,6 +322,18 @@ describe('make:route --resource', () => {
     expect(route('orders/index').file).toBe('orders/index.mesa')
     expect(route('orders/[id]').file).toBe('orders/[id].mesa')
     expect(route('admin/orders').file).toBe('admin/orders/index.mesa')
+  })
+
+  // `make:route tasks/inbox/index` printed /tasks/inbox/index/ for a file that
+  // serves /tasks/inbox/ (`FJS-2017`).
+  test('the URL printed is the one the file is served at', () => {
+    expect(routeUrl('tasks/inbox/index')).toBe('/tasks/inbox/')
+    expect(routeUrl('tasks/inbox/index.mesa')).toBe('/tasks/inbox/')
+    expect(routeUrl('index')).toBe('/')
+    expect(routeUrl('users/[id]')).toBe('/users/:id/')
+    expect(routeUrl('docs/[...rest]')).toBe('/docs/*/')
+    expect(routeUrl('searchIndexes/index.mesa')).toBe('/searchindexes/')
+    expect(routeUrl(route('tasks/inbox/index').file)).toBe('/tasks/inbox/')
   })
 
   test('each import reaches src/resources from where the file lands', () => {

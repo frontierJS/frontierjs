@@ -139,6 +139,15 @@ log.info(`Starting ${container} on port ${port}...`)
 
 const envArg = existsSync(envFilePath) ? `--env-file ${envFilePath}` : ''
 
+// A `./db/…` path in the .env is relative to the app root, not the container's
+// cwd, so it is re-rooted at the mount; passed whole it names an empty file
+// inside the image.
+const { containerEnvOverrides } = await import(new URL('file://' + global.fliRoot + '/core/local-env.js'))
+const overrides   = existsSync(envFilePath)
+  ? containerEnvOverrides((await import('fs')).readFileSync(envFilePath, 'utf8'), CONTAINER_DB_DIR)
+  : {}
+const overrideArgs = Object.entries(overrides).map(([k, v]) => `--env ${k}=${shQuote(v)}`).join(' ')
+
 // The mount is the developer's own ./db, not a server directory deploy:setup chowned
 // to the image's uid, so the process runs as whoever owns it. Docker also creates a
 // missing bind source as root, which the developer's next run could not write.
@@ -152,6 +161,7 @@ const runCmd = [
   `-p 127.0.0.1:${port}:3000`,
   `--volume ${resolve($.paths.root, dbDir)}:${CONTAINER_DB_DIR}`,
   envArg,
+  overrideArgs,
   // AFTER --env-file, so it wins. The image EXPOSEs 3000 and the port mapping
   // targets 3000, but junction binds FRONTIER_PORT_BE, else PORT, else the
   // scaffold's 8100 — so without this the container listens on a port nothing

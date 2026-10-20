@@ -45,6 +45,9 @@ flags:
     type: boolean
     description: Open the browser once the server is up, with --as=serve (--no-open to skip)
     defaultValue: true
+tool:
+  name: pmap
+  flags: --as=serve --no-open
 ---
 
 One reader of the project, presented three ways: the terminal report and

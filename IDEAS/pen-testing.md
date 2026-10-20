@@ -58,7 +58,7 @@ Done when: `fli check` passes with the new rows.
 - [x] 1.4 B15 error output as an oracle (production error shape)
   - Covers the 5xx sentence on both transports, protected keys in an error's `data` and a `@unique` refusal, and the 404 a hidden row answers. Cited from V13.4.2 and V16.5.1 in `docs/ASVS.md`. The row's *Open* cell names the unset-`NODE_ENV` default and the `@unique` 409, which is by design.
 - [x] 1.5 B16 a compromised dependency (CI advisory gate)
-  - Covers the advisories phase, the workflow's `FJS_CI_REQUIRE_AUDIT` and Basecamp's post-deploy re-check (`FJS-2715`). Cited from V15.1.1 and V15.2.1 in `docs/ASVS.md`. Writing it found the gate blind to a runtime dependency whose exports map hides `package.json` (`FJS-3363`, fixed), which had let a high advisory in `@frontierjs/mcp` pass. The row's *Open* cell names the unadvised malicious release, this tree's lockfile against an app's, `FJS-3364` and V15.1.1.
+  - Covers the advisories phase, the workflow's `FJS_CI_REQUIRE_AUDIT` and Basecamp's post-deploy re-check (`FJS-2715`). Cited from V15.1.1 and V15.2.1 in `docs/ASVS.md`. Writing it found the gate blind to a runtime dependency whose exports map hides `package.json` (`FJS-3370`, fixed), which had let a high advisory in `@frontierjs/mcp` pass. The row's *Open* cell names the unadvised malicious release, this tree's lockfile against an app's, `FJS-3371` and V15.1.1.
 
 ### Phase 2 — Fix the defaults
 

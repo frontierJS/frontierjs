@@ -9670,6 +9670,7 @@ export function parseFile(filePath) {
     valid:    allErrors.length === 0,
     errors:   allErrors,
     warnings: allWarnings,
+    files:    [...visited],
   }
 }
 

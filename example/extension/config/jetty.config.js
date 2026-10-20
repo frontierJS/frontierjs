@@ -18,11 +18,19 @@
 // manifest, and the harbor bundles it into the service worker, where there is
 // no `process` — so Vite's inlined value is asked first and `process` only
 // where it exists.
-const API = new URL(
-  import.meta.env?.FRONTIER_PUBLIC_API_URL ??
-  (typeof process !== 'undefined' ? process.env.FRONTIER_PUBLIC_API_URL : undefined) ??
-  'http://localhost:8110'
-).origin
+const fromEnv = name =>
+  import.meta.env?.[name] ??
+  (typeof process !== 'undefined' ? process.env[name] : undefined)
+
+const API = new URL(fromEnv('FRONTIER_PUBLIC_API_URL') ?? 'http://localhost:8110').origin
+
+// Where the storefront is: FRONTIER_PUBLIC_SITE_URL, or this app's two dev
+// origins (the test slot and the dev one). It lands in two places too — the
+// host permission and the island's `matches` — and a build that names the
+// storefront links nobody to a laptop.
+const SITE = fromEnv('FRONTIER_PUBLIC_SITE_URL')
+  ? [`${new URL(fromEnv('FRONTIER_PUBLIC_SITE_URL')).origin}/*`]
+  : ['http://localhost:7710/*', 'http://localhost:8710/*']
 
 export default {
   name:        'Shop Desk',
@@ -43,8 +51,7 @@ export default {
   // problem, so both origins the island and the harbor touch are named.
   hostPermissions: [
     `${API}/*`,
-    'http://localhost:7710/*',
-    'http://localhost:8710/*',
+    ...SITE,
   ],
 
   // 8410 = dev / ext / project 1 / service 0 — `example` is project 1, so this
@@ -56,7 +63,7 @@ export default {
   // the manifest and are a permission question rather than a build one.
   islands: {
     'stock-badge': {
-      matches: ['http://localhost:7710/*', 'http://localhost:8710/*'],
+      matches: SITE,
       runAt:   'document_idle',
     },
   },

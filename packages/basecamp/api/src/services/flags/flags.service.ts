@@ -24,7 +24,7 @@
 // mod 100. `resolve` will apply it for a stated `unitId`, which is what makes it
 // checkable against an SDK rather than merely described.
 
-import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
@@ -294,11 +294,6 @@ export default createService({
   async create() {
     const data = $.data as Record<string, unknown>
     assertVariants((data.type as string) ?? 'boolean', data.variants)
-
-    // The unique is [workspaceId, key]; a raw constraint violation reaches an
-    // HTTP caller as a SQLite message rather than a sentence.
-    if (await db().featureFlag.exists({ where: { workspaceId: ws(), key: data.key } }))
-      throw new Conflict(`A flag with key '${data.key}' already exists in this workspace`)
 
     return flagWithOverrides(await db().featureFlag.create({ data }))
   },

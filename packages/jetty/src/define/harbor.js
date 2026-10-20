@@ -166,6 +166,15 @@ export function defineHarbor(config = {}) {
 
 // --- connect handling ---
 
+// A port name is chosen by the caller, so it proves nothing: a content script
+// on a hostile page can name itself the dock and receive pages.dock.send.
+// dock/options/pier are extension pages; only an island runs in a host page.
+function senderMayHoldType(sender, type) {
+  if (type === 'island') return true
+  if (!sender) return true // chrome always fills sender; only a bare mock port lacks it
+  return /^(chrome|moz)-extension:\/\//.test(sender.url ?? '')
+}
+
 export function handleConnect(port, registry, getBootContext = () => null, lifecycleHooks = {}) {
   const parsed = parsePortName(port.name)
   if (!parsed) {
@@ -174,8 +183,14 @@ export function handleConnect(port, registry, getBootContext = () => null, lifec
     return
   }
 
+  if (!senderMayHoldType(port.sender, parsed.type)) {
+    console.warn('[harbor] rejected port — name claims an extension page but sender is not one:', port.name)
+    safeDisconnect(port)
+    return
+  }
+
   if (parsed.version < PROTOCOL_VERSION) {
-    console.log(`[harbor] protocol mismatch (client v${parsed.version} < harbor v${PROTOCOL_VERSION}) → protocol:upgrade`)
+    console.log(`[harbor] protocol mismatch (client v${parsed.version} <harbor v${PROTOCOL_VERSION}) → protocol:upgrade`)
     try { port.postMessage({ type: 'protocol:upgrade', payload: { harborVersion: PROTOCOL_VERSION } }) } catch {}
     safeDisconnect(port)
     return

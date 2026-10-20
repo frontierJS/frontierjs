@@ -124,11 +124,6 @@ export default createService({
     const data = $.data as Record<string, unknown>
     await appInWorkspace(data.appId as string)
 
-    // The unique is [workspaceId, hostname], and a raw constraint violation
-    // reaches an HTTP caller as a SQLite message rather than a sentence.
-    if (await db().domain.exists({ where: { workspaceId: ws(), hostname: data.hostname } }))
-      throw new Conflict(`'${data.hostname}' is already claimed in this workspace`)
-
     // The first hostname an app gets IS its primary — nobody means to add a
     // domain and leave the app with none.
     const existing = await db().domain.count({ where: { appId: data.appId } })

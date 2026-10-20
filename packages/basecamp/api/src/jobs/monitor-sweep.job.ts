@@ -149,7 +149,7 @@ async function checkOne(
   const down = state.page !== 'up'
   // After the move, so a send that throws cannot leave the row `up` with
   // somebody already told it is down.
-  await notifyPeople(app, down ? 'monitor_down' : 'monitor_up',
+  await notifyPeople(app, down ? 'MonitorDown' : 'MonitorUp',
     await workspaceMembers(app, monitor.workspaceId), {
       monitorId:   monitor.id,
       monitorName: monitor.name,

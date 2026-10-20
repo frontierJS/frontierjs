@@ -42,10 +42,10 @@ the plan, module by module, and the rulings it rests on are
 | `test/fixtures/` | `host.ts` — the schema, a node registry and test nodes that leave evidence on disk; `app.ts` — an app with two gated models, notifications' model and orion's catalog; `notifications/` — the one notification a flow sends; `worker.ts` — the process the crash test kills |
 | `bench/checkpoint.ts` | what one checkpoint costs at 10, 100 and 1,000 nodes; `bun run bench` |
 | `web/routes.js` | the directory a host mounts — `export { default } from '@frontierjs/orion/routes'` in a `*.mount.js` (`FJS-D282`) |
-| `web/routes/` | the screens: flows, a flow, runs, a run, credentials, and the section layout |
+| `web/routes/` | the screens: flows, a flow, runs (with the schema's `FilterBar`), a run, metrics, node types, credentials, and the section layout |
 | `web/components/` | `NodeInspector.mesa` (a node's config, one field per `configSchema` property), `ConfigValue.mesa` (one value — a literal on the schema's control, a computed one on `ExpressionField`) and `ExpressionField.mesa` (an expression as the line that parses back to it) |
 | `web/resources/` | `Flow.mesa`, `Run.mesa`, `FlowCredential.mesa` — the resources the screens read through |
-| `mockup/ui/components/` | four files, the specification for what is not built and not a source: `flow-editor.jsx` (the canvas), `pages.jsx` (metrics, templates, plugins, the run filter bar), and `nodes.jsx` + `node-types.js`, whose `NODE_CONFIG_FIELDS` is the design the inspector DECLINED. **It does not run** — no `package.json`, no vite — so it is read, never driven |
+| `mockup/ui/components/` | four files, the specification for what is not built and not a source: `flow-editor.jsx` (the canvas), `pages.jsx` (templates, the run preview and review mode), and `nodes.jsx` + `node-types.js`, whose `NODE_CONFIG_FIELDS` is the design the inspector DECLINED. **It does not run** — no `package.json`, no vite — so it is read, never driven |
 
 ## What bites here
 

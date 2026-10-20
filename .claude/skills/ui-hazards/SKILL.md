@@ -7,7 +7,7 @@ description: Mesa and Sierra — a `.mesa` file, a resource, a form or control, 
 
 **Correct behavior you have to know about.** Things that are *wrong* live in `ISSUES.md`, one id each; things that are *fixed* live in git. If a rule here is pinned by a test that cannot be deleted quietly, it does not need to be here.
 
-**The index below is each hazard's rule; its section's reference file holds the rest** — the mechanism, the measurement, and what it refuses. Read that file before changing code the rule is about.
+**The index below is each hazard's rule; its section's reference file holds the rest** — the mechanism, the measurement, and what it refuses. Read that file before changing code the rule is about. A term the rules use without defining (`asSystem()`, `@system`, `callService`) is one line in `references/glossary.md` under `bridge-index`.
 
 ## Routes, prerender and static
 Detail: `references/routes-prerender-and-static.md`

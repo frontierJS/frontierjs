@@ -18,8 +18,9 @@
 // `isSystemAdmin` still wins, because it is standing rather than membership:
 // the hub tier is not a role a workspace can grant. It is also the one field
 // this mapping shares with sessionGateLevel(), which is deliberate — the hub's
-// own reads go through asSystem() because `User` is @@gate(8), a level even
-// SYSADMIN does not pass.
+// own reads go through asSystem() because `User` is @@gate(1.8.1.5) with
+// @@allow rows that narrow a read to oneself, and a create is level 8, a level
+// even SYSADMIN does not pass.
 //
 // ─── The ladder, and where the roles land ─────────────────────────────────
 //

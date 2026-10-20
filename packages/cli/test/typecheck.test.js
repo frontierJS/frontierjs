@@ -123,3 +123,36 @@ describe('finding tsc', () => {
     }
   })
 })
+
+// FJS-965 — the script answered `clean` when it checked nothing.
+describe('scripts/typecheck.mjs refuses to answer when it checked nothing', () => {
+  const { spawnSync } = require('node:child_process')
+  const { resolve }   = require('node:path')
+  const SCRIPT = resolve(import.meta.dir, '../../../scripts/typecheck.mjs')
+  const ROOT   = resolve(import.meta.dir, '../../..')
+  const run = (cwd, ...args) => spawnSync('node', [SCRIPT, ...args], { cwd, encoding: 'utf8' })
+
+  test('an unknown flag is refused by name', () => {
+    const r = run(resolve(ROOT, 'packages/toolbelt'), '--only', 'junction')
+    expect(r.status).toBe(2)
+    expect(r.stderr).toContain('--only')
+    expect(r.stdout).not.toContain('clean')
+  })
+
+  test('the workspace root is not a package: say so, name the packages', () => {
+    const r = run(ROOT)
+    expect(r.status).toBe(2)
+    expect(r.stdout).not.toContain('clean')
+    expect(r.stderr).toContain('no package')
+    expect(r.stderr).toContain('packages/junction')
+  })
+
+  test('a directory with no package.json is not a package either', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fjs-965-'))
+    try {
+      const r = run(dir)
+      expect(r.status).toBe(2)
+      expect(r.stdout).not.toContain('clean')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+})

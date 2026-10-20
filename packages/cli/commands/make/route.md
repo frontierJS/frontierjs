@@ -87,7 +87,7 @@ ${body}
 // The list, create and detail pages `make:scaffold` writes, from the one module
 // that writes them — which of the three is read off the path's last segment.
 
-const { resourceRoutePage } = await import(resolve(global.fliRoot, 'core/crud-templates.js'))
+const { resourceRoutePage, routeUrl } = await import(resolve(global.fliRoot, 'core/crud-templates.js'))
 
 // ─── A layout ─────────────────────────────────────────────────────────────────
 // _module.mesa wraps this directory and everything under it. Layouts nest: this
@@ -253,7 +253,7 @@ if (flag.component) {
 echo('')
 
 if (!flag.layout) {
-  echo(`  URL: /${raw.replace(/\[\.\.\.(\w+)\]/g, '*').replace(/\[(\w+)\]/g, ':$1')}/`)
+  echo(`  URL: ${routeUrl(rel.join('/'))}`)
 }
 
 // The route imports the resource whether or not it exists; say so rather than

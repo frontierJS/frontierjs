@@ -238,6 +238,22 @@ describe('matching the changed column', () => {
     expect(matchChanged(row, { files: [], diff: section('packages/caravan/src/queue.ts', 'export function pause(name) {'), packages: [] })?.tier).toBe('symbol')
   })
 
+  test('a plain word is a symbol only where the row lives; a shaped one is a symbol anywhere', () => {
+    // FJS-1147: `holder`, `port` and `error` are in every script ever written.
+    const section = (file, line) => `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1 +1 @@\n+${line}\n`
+    const row   = "a queue's operator verbs — `pause`, `queue_pauses`, a `holder`"
+    const scope = ['packages/caravan']
+    const other = section('scripts/lanes.mjs', 'const holder = lock.holder')
+    const own   = section('packages/caravan/src/queue.ts', 'const holder = lock.holder')
+
+    expect(matchChanged(row, { files: [], diff: other, packages: [], scope })).toBeNull()
+    expect(matchChanged(row, { files: [], diff: own, packages: [], scope })?.tier).toBe('symbol')
+    // A shaped identifier names itself wherever it turns up.
+    expect(matchChanged(row, { files: [], diff: section('scripts/lanes.mjs', 'await queue_pauses.clear()'), packages: [], scope })?.tier).toBe('symbol')
+    // A row that names no package has nowhere to scope to, so a plain word still reads everywhere.
+    expect(matchChanged(row, { files: [], diff: other, packages: [], scope: [] })?.tier).toBe('symbol')
+  })
+
   test('a fli command is code, even under a namespace called test', () => {
     expect(changesBehavior('packages/cli/commands/test/done.md')).toBe(true)
     expect(changesBehavior('packages/cli/test/done.test.js')).toBe(false)

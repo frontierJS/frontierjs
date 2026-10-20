@@ -111,7 +111,10 @@ describe('the check gate', () => {
     expect(scripts.check).not.toContain('bun run test')
 
     const withTests = appCheckScripts({ tests: true })
-    expect(withTests.test).toBe('bun test api/test')
+    // A path, not a name filter: bun reads a bare `api/test` as a substring of
+    // the file path, so an app holding another app below it (FJS-1774) would
+    // run that app's tests as its own.
+    expect(withTests.test).toBe('bun test ./api/test')
     expect(withTests.check.endsWith('&& bun run test')).toBe(true)
     expect(withTests.check.indexOf('fli check')).toBe(0)
     // The scaffolded test types its tables off the generated db/schema.d.ts
@@ -533,7 +536,7 @@ describe('the scaffolded auth plugin is handed the app’s getLevel', () => {
   test('project/new.md wires services.level to gate.ts', () => {
     const text = readFileSync(join(CLI, 'commands', 'project', 'new.md'), 'utf8')
     const auth = text.slice(text.indexOf('function makeApiCoreAuthTs'), text.indexOf('function makeJunctionConfig'))
-    expect(auth).toContain("import { getLevel }")
+    expect(auth).toMatch(/import \{ getLevel[^}]*\} from '\.\/gate\.ts'/)
     expect(auth).toMatch(/authRoutes\(\{\s*auth,[\s\S]*services:\s*\{\s*level:\s*getLevel\s*\}/)
   })
 

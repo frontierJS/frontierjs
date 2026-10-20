@@ -27,7 +27,7 @@
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, assertSlugFree, slugify, ws, actor }
+import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, slugify, ws, actor }
   from '../../core/resource.ts'
 import { WIDGET_KINDS, WIDGET_KIND_BY_NAME, STAT_SOURCES } from './kinds.ts'
 import { PORTAL_SERVICE_IDS } from '../portal/portal.service.ts'
@@ -225,9 +225,6 @@ export default createService({
 
   async create() {
     const data = $.data as Record<string, unknown>
-    await assertSlugFree('dashboard', { workspaceId: ws(), slug: data.slug },
-      `A dashboard called '${data.name}' already exists in this workspace`)
-
     const created = await db().dashboard.create({ data })
     // The same shape `get` answers, so a screen that navigates straight to
     // the new board renders it rather than a record with no widgets key.
@@ -244,9 +241,6 @@ export default createService({
     const patch = narrowPatch(data, ['slug', 'createdBy'])
     if (typeof patch.name === 'string' && patch.name !== dashboard.name) {
       patch.slug = slugify(patch.name as string)
-      await assertSlugFree('dashboard',
-        { workspaceId: ws(), slug: patch.slug, id: { not: dashboard.id } },
-        `A dashboard called '${patch.name}' already exists in this workspace`)
     }
 
     if (changesNothing(patch)) return withWidgets(dashboard)

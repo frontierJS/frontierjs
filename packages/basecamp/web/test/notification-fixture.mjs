@@ -34,7 +34,7 @@ for (const [i, r] of rows.entries()) {
   const n = await sys.notification.create({
     data: {
       userId:    owner.id,
-      type:      'deploy_failed',
+      type:      'DeployFailed',
       data:      { title: r.title, body: r.body, action: { label: 'Open', url: r.url } },
       createdAt: new Date(base - i * 1000).toISOString(),
       readAt:    r.read ? new Date(base).toISOString() : null,

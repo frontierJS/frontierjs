@@ -162,15 +162,15 @@ const recordTracking = defineMethod('TrackingUpdate', async ctx => {
  * ─── Why nothing here reads the database ──────────────────────────────────
  *
  * A rule like "that customer is no longer on file" belongs in this file and is
- * deliberately not in it. An app's before-hook runs AHEAD of the derived
- * `gateAuth` (`app.snapshot.md` prints the chain), so a read here happens
- * for a caller nothing has authenticated yet — measured, and a working
- * existence oracle for the customer table. `FJS-403` is that ordering; until it
- * is settled these rules judge only the payload the caller sent them, which is
- * theirs to know.
+ * deliberately not in it. The gate is an AROUND hook and runs first, so a read
+ * here would be for a caller it has graded — but a before hook still sees the
+ * RAW payload, ahead of `autoValidate`. A rule that reads the database off
+ * `ctx.data` belongs in `validated:`, which runs after the derived layer
+ * (`FJS-403`, `FJS-D124`; `app.snapshot.md` prints the chain). These two judge
+ * only the payload the caller sent, so they have no need of it.
  *
  * For the same reason `total` is coerced here rather than trusted: `autoValidate`
- * has not run either, so this is the raw wire value.
+ * has not run yet, so this is the raw wire value.
  */
 /**
  * The code that lets somebody pay for this order, for a caller who may already
@@ -233,9 +233,10 @@ export default createService({
   channel: 'orders',
   paginate: { default: 20, max: 200 },
 
-  // BEFORE the derived gateAuth and autoValidate — an app's layer is merged
-  // first and there is no slot after them (`FJS-403`). That is why these
-  // rules read nothing but the payload.
+  // AFTER the gate (an around hook wraps every before hook) and BEFORE
+  // `autoValidate` — the app's before layer is merged ahead of the validators.
+  // That is why these rules read nothing but the raw payload; one that reads
+  // the database goes in `validated:`.
   hooks: { before: { create: [checkOrderRules], update: [checkOrderRules] } },
 
   // `pay` writes an outbox row and $.enqueue refuses outside a transaction —

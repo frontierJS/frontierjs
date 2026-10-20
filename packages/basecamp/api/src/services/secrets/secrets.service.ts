@@ -21,7 +21,7 @@
 import { createService, BadRequest, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, ws, actor }
+import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, actor }
   from '../../core/resource.ts'
 import { targetFor } from '../../providers/compute/index.ts'
 import { registerAccount, unregisterAccount, sendVia, tokenDocument, TOKEN_FIELD, accountConnectorFor }
@@ -104,11 +104,6 @@ export default createService({
     if (!data.data) throw new BadRequest('data is required — a secret with no value is a name')
 
     normalizeProviderKey(data)
-
-    // The unique is [workspaceId, name], and a raw constraint violation
-    // reaches an HTTP caller as a SQLite message rather than a sentence.
-    if (await db().secret.exists({ where: { workspaceId: ws(), name: data.name } }))
-      throw new BadRequest(`A secret named '${data.name}' already exists in this workspace`)
 
     const secret = await db().secret.create({ data })
 

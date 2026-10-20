@@ -219,6 +219,8 @@ export const RULES = [
     title: 'a kit component is passed only props it declares or attributes HTML has' },
   { id: 'preview-ui-only',      scope: 'app',  severity: 'error', invariant: null,
     title: 'a preview branch changes web/ and nothing else' },
+  { id: 'plan-size',            scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'a PLAN.md stays small enough to read whole: finished phases live in docs/plan-done.md' },
   { id: 'package-root-md',      scope: 'repo', severity: 'warn',  invariant: 17,
     title: 'three markdown files are the standard at a package root' },
   { id: 'test-files-run',       scope: 'repo', severity: 'error', invariant: null,
@@ -902,6 +904,50 @@ const CHECKS = {
       message: `changed against ${p.into}, outside web/. A preview runs against production's API, so this ` +
                `branch can be neither previewed nor submitted until the change is taken off it.`,
     })) }
+  },
+
+  // A session opens by reading PLAN.md and every later turn re-reads it, so a
+  // plan that keeps each finished phase inline costs its whole length on every
+  // turn: measured at 31-155 KB, 1.4M characters of Read output in one audit
+  // window (FJS-1562). The limit is the smallest plan that audit found grown.
+  'plan-size': ({ root }) => {
+    const file = join(root, 'PLAN.md')
+    if (!existsSync(file)) return { findings: [] }
+    const text  = readFileSync(file, 'utf8')
+    const bytes = Buffer.byteLength(text)
+    if (bytes <= PLAN_LIMIT) return { findings: [] }
+
+    const lines = text.split('\n')
+    const heads = []
+    let fence = false
+    lines.forEach((line, i) => {
+      if (/^\s*```/.test(line)) { fence = !fence; return }
+      const m = !fence && line.match(/^(#{1,6})\s+(.*)$/)
+      if (m) heads.push({ at: i, level: m[1].length, title: m[2].trim() })
+    })
+    const finished = []
+    heads.forEach((h, k) => {
+      if (!/^Phase\s+\d/i.test(h.title)) return
+      const next = heads.slice(k + 1).find(n => n.level <= h.level)
+      const body = lines.slice(h.at, next ? next.at : lines.length)
+      const boxes = body.filter(l => /^- \[[ x~]\]\s/.test(l))
+      if (!boxes.length || boxes.some(l => l.startsWith('- [ ]'))) return
+      finished.push({ title: h.title, size: Buffer.byteLength(body.join('\n')) })
+    })
+    finished.sort((a, b) => b.size - a.size)
+
+    const kb = n => `${Math.round(n / 1024)} KB`
+    const held = finished.length
+      ? ` Finished phases still inline: ${finished.slice(0, 5).map(p => `${p.title} (${kb(p.size)})`).join(', ')}` +
+        `${finished.length > 5 ? `, and ${finished.length - 5} more` : ''}.`
+      : ''
+    return { findings: [{
+      file,
+      message: `${kb(bytes)}, past the ${kb(PLAN_LIMIT)} a session can afford to read on every turn.${held} ` +
+               `Move finished phases, answered questions and the finding record verbatim to docs/plan-done.md, ` +
+               `leave a one-line stub under each heading so Q and step numbers still resolve, and read one ` +
+               `section at a time with fli outline PLAN.md '<heading>'.`,
+    }] }
   },
 
   'vite-strict-port': ({ root }) => {
@@ -1639,6 +1685,10 @@ const CHECKS = {
     const isEntry = f => basename(f, extname(f)) === 'index'
     // surface-config's own list, restated only to be EXCLUDED.
     const CONFIG  = /^(junction|sierra|vite|jetty|desktop)\.config\.[cm]?[jt]s$/
+    // Directories a loader reads by NAME from `app.root` (`FJS-D1080`). Named and
+    // not every directory: a surface root legitimately holds `deploy/`, `public/`,
+    // `shell/`, so only a directory a loader owns is known to be source.
+    const LOADED_DIRS = ['services', 'jobs', 'notifications']
 
     const findings = []
     let looked = 0
@@ -1649,15 +1699,17 @@ const CHECKS = {
 
       const rootScripts = readdirSync(dir).filter(f =>
         SCRIPT.has(extname(f)) && !CONFIG.test(f) && statSync(join(dir, f)).isFile())
+      const strayDirs = LOADED_DIRS.filter(d => existsSync(join(dir, d)) && statSync(join(dir, d)).isDirectory())
       const hasSrc = existsSync(join(dir, 'src'))
       // A directory somebody made is not a surface yet.
-      if (!hasSrc && !rootScripts.length) continue
+      if (!hasSrc && !rootScripts.length && !strayDirs.length) continue
       looked++
 
       // The whole surface is flat. The sharper of the two: nothing in it sits
       // where a generator, a doc or a drive resolves a path to.
       if (!hasSrc) {
-        const shown = rootScripts.slice(0, 3).join(', ') + (rootScripts.length > 3 ? ', …' : '')
+        const named = [...rootScripts, ...strayDirs.map(d => `${d}/`)]
+        const shown = named.slice(0, 3).join(', ') + (named.length > 3 ? ', …' : '')
         findings.push({
           file: dir,
           message: `${surface}/ has no src/ — its source is at the surface root (${shown}). The ` +
@@ -1675,6 +1727,13 @@ const CHECKS = {
         message: `${surface}/${f} sits at the surface root beside ${surface}/src/. Only the entry ` +
                  `belongs there — the file a runner is pointed at, which starts the app and ` +
                  `assembles nothing. Everything it imports lives under src/.`,
+      })
+
+      for (const d of strayDirs) findings.push({
+        file: join(dir, d),
+        message: `${surface}/${d}/ sits at the surface root beside ${surface}/src/. A loader reads ` +
+                 `${d}/ from the directory the app is created in, which is src/ — so it belongs ` +
+                 `at ${surface}/src/${d}/, where the app that declares it keeps it.`,
       })
     }
 
@@ -2651,6 +2710,7 @@ const CHECKS = {
   // decides whether the result is scoped at all:
   //
   //   $.db.asSystem()            the caller's tenant, gate and policies crossed
+  //   app.withDb(db => db.asSystem())   the same, in the tenant runAs named
   //   app.data.asSystem()        no principal, no claim, every tenant
   //
   // The app-level client cannot be named positively — it is `app.own(<any
@@ -2692,6 +2752,7 @@ const CHECKS = {
 
     const REQUEST = /^\$\.db$/
     const BOUND   = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*\$\.db\b/g
+    const WITH_DB = /\.withDb\s*\(\s*(?:async\s+)?(?:(?:function\s*[\w$]*\s*)?\(\s*([A-Za-z_$][\w$]*)|([A-Za-z_$][\w$]*)\s*=>)/g
 
     // The receiver of a `.asSystem()`, read backwards so a cast survives:
     // `(app.data as any).asSystem()` is the spelling three of basecamp's use.
@@ -2721,6 +2782,10 @@ const CHECKS = {
       // Names this file binds to the request's client — `const db = $.db`.
       const local = new Set()
       for (const m of code.matchAll(BOUND)) local.add(m[1])
+      // `app.withDb(fn)` enters a call and hands `fn` that call's client, so its
+      // first parameter stays in the tenant `runAs` named — the identifier is
+      // not `$.db`, the client it names is.
+      for (const m of code.matchAll(WITH_DB)) local.add(m[1] ?? m[2])
 
       const seen = new Set()
       for (const m of code.matchAll(/\.asSystem\s*\(/g)) {
@@ -4056,6 +4121,11 @@ const CHECKS = {
           : (byName.get(`${base}_id`) ?? byName.get(`${base}_ID`))
         if (!id || owned.has(id.name) || !SCALARS.has(id.type)) continue
 
+        // A pair's id points at a subject many rows share; one that is unique
+        // by itself is a delivery's or an event's own key, and its `*Type`
+        // names a kind of event rather than a model (a receiver's dedupe key).
+        if (/@unique\b/.test(id.rest)) continue
+
         // Already told what it may hold. `@values` counts: it is a declared set
         // enforced at the Data boundary, which is the question being asked —
         // that it is not also a table CHECK is `@values`' own trade.
@@ -4604,7 +4674,7 @@ function subpathExported(exports, subpath) {
 // ─── the src/ layout (FJS-D625, FJS-D626, FJS-D627) ───────────────────────────
 
 // Files `fli new` writes loose in web/src. A declaration file is not a module.
-const WEB_SRC_LOOSE_OK = new Set(['main.js', 'main.ts', 'datetime.js'])
+const WEB_SRC_LOOSE_OK = new Set(['main.js', 'main.ts', 'datetime.js', 'controls.js'])
 const WEB_SRC_KINDS    = new Set(['routes', 'resources', 'components'])
 // A surface folded into web/ is reported once already, by name, above.
 const WEB_SRC_REPORTED = new Set(['Embeds', 'harbor'])
@@ -4707,7 +4777,8 @@ function srcLayoutFindings(root) {
     const typed = /import\s*(type\s*)?\{[^}]*\bPlugin(Fn|Input)?\b[^}]*\}\s*from\s*['"]@frontierjs\/junction/.test(text)
     // `app` alone: app.configure(fn) calls it with nothing else, so a helper taking more
     // (joinChannels(app, session, conn), configureTexting(app, opts)) is called by app.ts.
-    const shaped = /export\s+(async\s+)?(const|function)\s+\w+\s*(=\s*(async\s*)?)?\(\s*app\s*:\s*App\b(<[^>]*>)?\s*,?\s*\)/.test(text)
+    // A plugin returns nothing, so `channelManager(app): Manager | undefined` is a getter.
+    const shaped = /export\s+(async\s+)?(const|function)\s+\w+\s*(=\s*(async\s*)?)?\(\s*app\s*:\s*App\b(<[^>]*>)?\s*,?\s*\)\s*(:\s*(Promise<\s*void\s*>|void)\s*)?(=>|\{)/.test(text)
     if (!/\bexport\b/.test(text) || !(typed || shaped)) continue
     warn(rel(root, file), `a core/ file that exports a plugin. core/ sets up what the framework ships; a plugin ` +
       `the app wrote goes in api/src/plugins/, which app.ts installs one by one because order matters (FJS-D625).`)
@@ -5862,6 +5933,8 @@ for (const mount of mounts) {
 }
 console.log(JSON.stringify({ failed: await checkMesaFiles(files, { root: process.cwd() }) }))
 `
+
+const PLAN_LIMIT = 32 * 1024
 
 // Reads the flag off the config a surface RETURNS. `null` is a config that would
 // not load, left to the caller's text grade.

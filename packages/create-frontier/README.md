@@ -52,7 +52,7 @@ my-app/
 
 ```bash
 cd my-app
-bun run dev      # api on 8100, web on 8000
+fli dev          # every surface, on this app's own slot -- fli ps shows the ports
 bun run check    # fli check, then lint, then typecheck — what CI runs
 ```
 

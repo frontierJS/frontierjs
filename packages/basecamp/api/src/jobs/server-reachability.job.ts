@@ -101,7 +101,7 @@ export async function sweepUnreachable(
 
     // After the move, so a send that throws cannot leave the row `online` with
     // somebody already told it is gone.
-    await notifyPeople(app, 'server_unreachable',
+    await notifyPeople(app, 'ServerUnreachable',
       await workspaceMembers(app, server.workspaceId as string), {
         serverId:   server.id,
         serverName: server.name,

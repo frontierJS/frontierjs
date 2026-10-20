@@ -144,9 +144,9 @@ export function track(event, props = {}) {
 function buildPlausibleProvider(tag) {
   return {
     init() { mountTag(tag) },
-    pageview({ path, meta }) {
+    pageview({ url, meta }) {
       window.plausible?.('pageview', {
-        u: path,
+        u: url,
         props: meta,
       })
     },
@@ -159,8 +159,8 @@ function buildPlausibleProvider(tag) {
 function buildGtmProvider(tag) {
   return {
     init() { mountTag(tag) },
-    pageview({ path }) {
-      window.dataLayer?.push({ event: 'pageview', page: path })
+    pageview({ url, path }) {
+      window.dataLayer?.push({ event: 'pageview', page: path, page_location: url })
     },
     track(event, props) {
       window.dataLayer?.push({ event, ...props })

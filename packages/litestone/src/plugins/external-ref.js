@@ -381,6 +381,12 @@ export class ExternalRefPlugin extends LitestonePlugin {
     await this._resolveRows(model, rows, ctx, opts.select ?? null, new Set())
   }
 
+  // A write answers its row like a read does (FJS-D1324); the ref is the
+  // server's, and `select: { f: { resolve: false } }` asks for it.
+  async onWriteResult(model, rows, ctx, opts = {}) {
+    return this.onAfterRead(model, rows, ctx, opts)
+  }
+
   /**
    * Resolve this model's ref fields on every row, then do the same for every
    * INCLUDED row hanging off them.

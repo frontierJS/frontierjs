@@ -100,16 +100,17 @@ const user = await db.user.findUnique({ where: { id: 1 } })
 if (!/^http:\/\/localhost:3001\/storage\/User\/avatar\/\w+\.png$/.test(user.avatar)) throw new Error(user.avatar)
 ```
 
-The row a write hands back carries the column as the stored reference, the
-parsed object a `File[]` item is, rather than the resolved URL, so a handler
-answers the URL from a read:
+A write answers its row like a read: the column is the resolved URL, or `null` where
+the store has no address. A caller that wants the stored reference asks with
+`select: { avatar: { resolve: false } }`, as on a read, and a handler answering a
+private file keeps that key to itself:
 
 ```js
 import { FileStorage } from '@frontierjs/litestone/storage'
 const db = await createClient({ path: './schema.lite', db: './app.db', plugins: [FileStorage({ provider: 'local', publicBase: 'http://localhost:3001/storage' })] })
 const file = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], 'me.png', { type: 'image/png' })
 await db.user.create({ data: { id: 1, email: 'ada@example.com' } })
-const user = await db.user.update({ where: { id: 1 }, data: { avatar: file } })
+const user = await db.user.update({ where: { id: 1 }, data: { avatar: file }, select: { avatar: { resolve: false } } })
 if (user.avatar.mime !== 'image/png') throw new Error(`update() returned ${JSON.stringify(user.avatar)}`)
 ```
 

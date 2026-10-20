@@ -64,7 +64,7 @@ export default defineJob<{ at?: number }>({
         countJobFailures(db, ws.id, from, to),
       ])
 
-      sent += await notifyPeople(app, 'weekly_digest', await workspaceMembers(app, ws.id), {
+      sent += await notifyPeople(app, 'WeeklyDigest', await workspaceMembers(app, ws.id), {
         workspaceId: ws.id, workspaceName: ws.name, from, to,
         deploysOk, deploysFailed, alertsFired, jobsFailed,
       })

@@ -64,7 +64,7 @@
 - **The canvas's finer half** — `web/components/FlowCanvas.mesa` draws, moves,
   pans, zooms, connects and removes, but a conditional or fan-out edge, an
   error edge and snapping are still the JSON's, and the flow's name is too.
-  The metrics, templates and plugins screens are
+  The templates screen, the run preview and review mode are
   [`FJS-1196`](../../ISSUES.md#fjs-1196). `mockup/ui/components/` is the
   specification for what is left.
 - **The expression text grammar is a subset of what the engine runs** — a

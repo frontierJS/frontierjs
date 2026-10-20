@@ -48,3 +48,19 @@ describe('a File with no public address (FJS-1504)', () => {
     db.$close()
   })
 })
+
+describe('a write answers its row like a read (FJS-1504, FJS-D1324)', () => {
+  test('create and update answer null where the store has no address, the ref on resolve:false', async () => {
+    const db = await client()
+    const made = await db.doc.create({ data: { id: 1, file: Buffer.from('a'), pics: [Buffer.from('b')] } })
+    expect(made.file).toBeNull()
+    expect(made.pics).toEqual([null])
+    const kept = await db.doc.create({ data: { id: 2, file: Buffer.from('a') }, select: { file: { resolve: false } } })
+    expect(kept.file.key).toMatch(/^Doc\/file\//)
+    const changed = await db.doc.update({ where: { id: 1 }, data: { file: Buffer.from('c') } })
+    expect(changed.file).toBeNull()
+    const asked = await db.doc.update({ where: { id: 1 }, data: { file: Buffer.from('d') }, select: { file: { resolve: false } } })
+    expect(asked.file.key).toMatch(/^Doc\/file\//)
+    db.$close()
+  })
+})

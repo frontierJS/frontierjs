@@ -264,6 +264,7 @@ src/
     migrations.js — file migrations, buildShadow, historyGap, autoMigrate
     tenancy.js — resolveTenancy + tenantFrom; four readers, one answer
     retention.js — the database block's retention: the SQLite sweep and the jsonl compaction
+    watch.js — under bun --watch/--hot, imports each file parseFile read so a schema edit restarts the process (FJS-1235)
   plugins/
     gate.js — GatePlugin
     capability.js — the capability grid, ANDed with the gate as its floor (FJS-D146)

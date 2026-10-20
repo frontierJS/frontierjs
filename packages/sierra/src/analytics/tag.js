@@ -22,8 +22,13 @@ export function vendorTag(config) {
   if (config?.provider === 'plausible') {
     if (!config.domain) throw refusal(`[Sierra] analytics: provider 'plausible' needs a domain`)
     return {
-      src:   `${config.apiHost ?? 'https://plausible.io'}/js/script.js`,
-      attrs: { defer: true, 'data-domain': config.domain },
+      // The manual build, not `script.js`: the auto-capturing one reads
+      // `location.href` itself, query string included, so a token in a link
+      // that is not Sierra's scaffold reached the vendor whatever Sierra sent
+      // (`FJS-3317`). Here the page sends its own pageviews, with the address.
+      src:    `${config.apiHost ?? 'https://plausible.io'}/js/script.manual.js`,
+      attrs:  { defer: true, 'data-domain': config.domain },
+      before: plausibleStart,
     }
   }
   if (config?.provider === 'gtm') {
@@ -37,12 +42,29 @@ export function vendorTag(config) {
   return null
 }
 
+// The manual script sends nothing by itself, so the first pageview is queued
+// here, before the script loads, with the address minus its search and
+// fragment. Called by the runtime and serialized by `vendorTagHtml`, so it
+// reads globals only and carries its own address expression.
+function plausibleStart() {
+  window.plausible = window.plausible || function () {
+    (window.plausible.q = window.plausible.q || []).push(arguments)
+  }
+  window.plausible('pageview', { u: window.location.origin + window.location.pathname })
+}
+
 // GTM's own snippet pushes this before loading. Without it the container never
-// sees a `gtm.js` event, so every Page View trigger stays silent. Called by the
-// runtime and serialized by `vendorTagHtml`, so it reads globals only.
+// sees a `gtm.js` event, so every Page View trigger stays silent. `page_location`
+// is the address without its search: a container whose tags read it, rather
+// than the built-in Page URL variable, never sees a token (`FJS-3317`). Called
+// by the runtime and serialized by `vendorTagHtml`, so it reads globals only.
 function gtmStart() {
   window.dataLayer = window.dataLayer || []
-  window.dataLayer.push({ 'gtm.start': Date.now(), event: 'gtm.js' })
+  window.dataLayer.push({
+    'gtm.start': Date.now(),
+    event: 'gtm.js',
+    page_location: window.location.origin + window.location.pathname,
+  })
 }
 
 /**

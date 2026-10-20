@@ -1,4 +1,4 @@
-// src/notifications/posture_failed.notification.ts
+// src/notifications/PostureFailed.notification.ts
 
 import { defineNotification, inApp, mail } from '@frontierjs/notifications'
 import { declaredTransports, appUrl }      from './_shared.ts'
