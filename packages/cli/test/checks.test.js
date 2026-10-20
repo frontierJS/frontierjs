@@ -1793,6 +1793,21 @@ describe('an app root with no schema (FJS-1617)', () => {
     expect(r.findings[0].file).toMatch(/Broken\.mesa$/)
   })
 
+  // orion's flow page did not compile for two days with this rule green (FJS-3352).
+  test('mesa-compiles follows a mount to a package directory outside src/', () => {
+    const root = tree('web-mount', {
+      'package.json':                     '{ "name": "web-mount" }\n',
+      'web/config/sierra.config.js':      'export default {}\n',
+      'web/src/routes/index.mesa':        '<h1>hi</h1>\n',
+      'web/src/routes/section.mount.js':  "export default new URL('../../../pkg/routes/', import.meta.url)\n",
+      'pkg/routes/Broken.mesa':           WEB_ONLY['web/src/Broken.mesa'],
+    })
+    installSierra(root)
+    const r = only(root, 'mesa-compiles')
+    expect(r.skipped).toEqual([])
+    expect(r.findings.map(f => f.file)).toEqual([expect.stringMatching(/pkg\/routes\/Broken\.mesa$/)])
+  })
+
   test('the surface rules run over it rather than skipping as not an app root', () => {
     const root = tree('web-only-rules', WEB_ONLY)
     for (const id of ['app-layout', 'surface-config', 'surface-src'])
