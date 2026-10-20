@@ -7,6 +7,7 @@ examples:
   - fli ghist --days 90
   - fli ghist --days 365 --by week
   - fli ghist --lines
+  - fli ghist --files --days 365
   - fli ghist --author Jordan
   - fli ghist --claude
   - fli ghist --json
@@ -26,6 +27,11 @@ flags:
     char: l
     type: boolean
     description: Height is lines changed (added + deleted), not commits
+    defaultValue: false
+  files:
+    char: f
+    type: boolean
+    description: Two charts on one scale — files created, then files edited — instead of commits
     defaultValue: false
   author:
     char: a
@@ -83,6 +89,11 @@ weeks.
 `--lines` makes the height lines changed instead, which is the reading that
 tells a rename sweep from a day of small fixes.
 
+`--files` reads which files each commit touched instead, and draws two
+charts on one scale: files created above, files edited below. The pair is
+where a project stands — new ground or work on what exists. A rename counts
+as an edit and a deletion is only counted in the summary.
+
 `--claude` draws a second chart under it on the same columns: Claude Code
 output tokens, read from the session transcripts under `~/.claude/projects/`
 whose working directory is inside this repo. Output, not total, because total
@@ -103,7 +114,9 @@ const back = flag.days - 1 + (by === 'week' ? (today.getDay() - (flag.days - 1) 
 const from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - back)
 
 // argv, not a shell string: `--author` and `--path` are the caller's text.
-const argv = ['log', `--since=${ymd(from)} 00:00`, '--date=short-local', '--format=@%ad', '--shortstat', '--no-color']
+if (flag.files && flag.lines) { log.error('--files and --lines are two readings of the height — pick one'); return }
+// git prints --name-status or --shortstat, never both.
+const argv = ['log', `--since=${ymd(from)} 00:00`, '--date=short-local', '--format=@%ad', flag.files ? '--name-status' : '--shortstat', '--no-color']
 if (flag.author) argv.push(`--author=${flag.author}`)
 if (flag.path) argv.push('--', flag.path)
 let text = ''
@@ -129,31 +142,51 @@ if (flag.claude) {
   claude = buildSeries(days, { from: ymd(from), to: ymd(today), by, zero: CLAUDE_ZERO })
 }
 
-if (flag.json) { console.log(JSON.stringify(claude ? { ...series, claude: claude.buckets } : series, null, 2)); return }
+if (flag.json) {
+  // A field git did not print this run is absent, never a 0 that reads as measured.
+  const unread = flag.files ? ['added', 'deleted'] : ['created', 'edited', 'removed']
+  const out = { ...series, buckets: series.buckets.map(b => Object.fromEntries(Object.entries(b).filter(([k]) => !unread.includes(k)))) }
+  console.log(JSON.stringify(claude ? { ...out, claude: claude.buckets } : out, null, 2))
+  return
+}
 
-const value = flag.lines ? (b) => b.added + b.deleted : (b) => b.commits
-const s = summarize(series, value)
 const n = (v) => v.toLocaleString('en-US')
-const unit = flag.lines ? 'lines changed' : 'commits'
-console.log('')
-console.log(`  ${chalk.bold(`${unit} per ${by}`)}${chalk.dim(` · last ${flag.days} day${flag.days === 1 ? '' : 's'}${flag.author ? ` · ${flag.author}` : ''}${flag.path ? ` · ${flag.path}` : ''}`)}`)
-console.log('')
-echo.lines(renderChart(series, {
-  height: flag.height,
-  width,
-  value,
-  bar: chalk.cyan,
-  dim: chalk.dim,
-}))
-console.log('')
-if (!s.commits) log.warn('no commits in range')
-else console.log('  ' + [
-  `${n(s.commits)} commits`,
-  `${chalk.green(`+${n(s.added)}`)} ${chalk.red(`-${n(s.deleted)}`)}`,
-  `${s.active}/${s.buckets} ${by}s active`,
-  `busiest ${by === 'week' ? 'week of ' : ''}${s.busiest.date} (${n(value(s.busiest))})`,
-].join(chalk.dim('  ·  ')))
-console.log('')
+const scope = chalk.dim(` · last ${flag.days} day${flag.days === 1 ? '' : 's'}${flag.author ? ` · ${flag.author}` : ''}${flag.path ? ` · ${flag.path}` : ''}`)
+const chart = (unit, value, bar, max = 0) => {
+  console.log('')
+  console.log(`  ${chalk.bold(`${unit} per ${by}`)}${scope}`)
+  console.log('')
+  echo.lines(renderChart(series, { height: flag.height, width, value, max, bar, dim: chalk.dim }))
+  console.log('')
+}
+const when = (b) => `${by === 'week' ? 'week of ' : ''}${b.date}`
+
+if (flag.files) {
+  const s = summarize(series, (b) => b.created + b.edited)
+  const max = Math.max(0, ...series.buckets.map(b => Math.max(b.created, b.edited)))
+  chart('files created', (b) => b.created, chalk.green, max)
+  chart('files edited', (b) => b.edited, chalk.cyan, max)
+  if (!s.commits) log.warn('no commits in range')
+  else console.log('  ' + [
+    `${n(s.commits)} commits`,
+    `${chalk.green(`${n(s.created)} created`)} ${chalk.cyan(`${n(s.edited)} edited`)} ${chalk.red(`${n(s.removed)} removed`)}`,
+    s.created ? `${(s.edited / s.created).toFixed(1)} edits per new file` : 'no new files',
+    `busiest ${when(s.busiest)} (${n(s.busiest.created + s.busiest.edited)} files)`,
+  ].join(chalk.dim('  ·  ')))
+  console.log('')
+} else {
+  const value = flag.lines ? (b) => b.added + b.deleted : (b) => b.commits
+  const s = summarize(series, value)
+  chart(flag.lines ? 'lines changed' : 'commits', value, chalk.cyan)
+  if (!s.commits) log.warn('no commits in range')
+  else console.log('  ' + [
+    `${n(s.commits)} commits`,
+    `${chalk.green(`+${n(s.added)}`)} ${chalk.red(`-${n(s.deleted)}`)}`,
+    `${s.active}/${s.buckets} ${by}s active`,
+    `busiest ${when(s.busiest)} (${n(value(s.busiest))})`,
+  ].join(chalk.dim('  ·  ')))
+  console.log('')
+}
 
 if (claude) {
   const { compact } = await import(joinPath(global.fliRoot, 'core/claude-usage.js'))

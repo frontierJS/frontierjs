@@ -76,6 +76,10 @@ const DROPLETS = new Map<string, Record<string, unknown>>([
  *  is in here, which is the whole install. */
 export const CREATED: Record<string, unknown>[] = []
 
+/** SSH keys at the account. A fingerprint is made up from the id: nothing here
+ *  computes one, and a caller only ever hands it back. */
+const KEYS: Record<string, unknown>[] = []
+
 let nextId = 1000
 
 /** Reset between tests. A stand-in that accumulates state across a suite makes
@@ -83,6 +87,7 @@ let nextId = 1000
  *  a provisioning test exists to ask. */
 export function resetSink(): void {
   CREATED.length = 0
+  KEYS.length    = 0
   nextId = 1000
   for (const id of [...DROPLETS.keys()]) if (id !== '901') DROPLETS.delete(id)
 }
@@ -153,7 +158,7 @@ export function sinkBoot(providerServerId: string, ip = '203.0.113.50'): void {
 export function startDoSink(port = PORT) {
   return Bun.serve({
     port,
-    fetch(req) {
+    async fetch(req) {
       const url = new URL(req.url)
 
       // The token is read off the header conduit wrote. A wrong one is DO's own
@@ -169,6 +174,16 @@ export function startDoSink(port = PORT) {
 
       if (url.pathname === '/v2/account')
         return json({ account: { uuid: 'acct-dev', email: 'dev@localhost', status: 'active' } })
+
+      if (url.pathname === '/v2/account/keys') {
+        if (req.method !== 'POST') return json({ ssh_keys: KEYS })
+        const body = await req.json().catch(() => null) as Record<string, unknown> | null
+        if (!body?.public_key) return json({ id: 'unprocessable_entity', message: 'public_key is required' }, 422)
+        const id  = nextId++
+        const key = { id, name: body.name, public_key: body.public_key, fingerprint: `sink:fp:${id}` }
+        KEYS.push(key)
+        return json({ ssh_key: key }, 201)
+      }
 
       if (url.pathname === '/v2/regions') return json({ regions: REGIONS })
       if (url.pathname === '/v2/sizes')   return json({ sizes:   SIZES   })

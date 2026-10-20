@@ -637,6 +637,32 @@ describe('sync', () => {
     expect(out.routed.map(r => r.hosts)).toEqual([['paste.example.test']])
   })
 
+  test('a preview\'s thaw sends the redirects and paths beside the hosts, or Outpost removes them (FJS-2562)', async () => {
+    const { thawPreview } = await import('../src/core/preview.ts')
+    const sys    = env.system as any
+    const prev   = await sys.app.create({ data: { workspaceId: site.id, environmentId: web.environmentId, name: 'prev', slug: 'prev', port: 5173 } })
+    const other  = await sys.app.create({ data: { workspaceId: site.id, environmentId: web.environmentId, name: 'other', slug: 'other' } })
+    const d      = await sys.domain.create({ data: { workspaceId: site.id, appId: prev.id, hostname: 'try.preview.test' } })
+    await sys.domain.create({ data: { workspaceId: site.id, appId: prev.id, hostname: 'old.preview.test', redirectTo: 'https://try.preview.test' } })
+    await sys.domainRoute.create({ data: { workspaceId: site.id, domainId: d.id, appId: other.id, pathPrefix: '/api' } })
+
+    const sent: any[] = []
+    const conduit = { resolve: async () => ({ pinned_cert: true }), send: async (call: any) => { sent.push(call); return { data: {} } } }
+    const via = new Proxy(app, { get: (t, k) => k === 'conduit' ? conduit : typeof t[k] === 'function' ? t[k].bind(t) : t[k] })
+
+    const settings = { serverId: online1.id } as any
+    const thaw = (appId: string) => app.runAs(admin.userId, { tenant: site.id }, () => thawPreview(via, settings, { appId } as any))
+    const out = await thaw(prev.id)
+    expect(out.ok).toBe(true)
+    expect(sent.map(s => s.path)).toEqual(['/route'])
+    expect(sent[0].body).toMatchObject({ app_id: prev.id, hosts: ['try.preview.test'], port: 5173,
+      redirects: [{ host: 'old.preview.test', to: 'https://try.preview.test' }] })
+
+    await sys.app.update({ where: { id: other.id }, data: { port: 5174 } })
+    await thaw(other.id)
+    expect(sent[1].body).toMatchObject({ app_id: other.id, hosts: [], paths: [{ host: 'try.preview.test', prefix: '/api' }] })
+  })
+
   test('a path route pushes both Apps, the prefix to the one holding it and the host to the Domain\'s own (FJS-2647)', async () => {
     const { routeDomainApp } = await import('../src/jobs/domain-dns.job.ts')
     const { routedPaths }    = await import('../src/core/runtime.ts')

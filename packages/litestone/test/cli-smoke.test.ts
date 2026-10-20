@@ -115,11 +115,12 @@ async function spawnUntil(
   cwd: string,
   args: string[],
   matcher: (buf: string) => boolean,
-  opts: { timeoutMs?: number } = {},
+  opts: { timeoutMs?: number; env?: Record<string, string> } = {},
 ): Promise<{ proc: ReturnType<typeof Bun.spawn>; output: string }> {
   const timeoutMs = opts.timeoutMs ?? 10_000
   const proc = Bun.spawn(['bun', CLI, ...args], {
     cwd,
+    env:    { ...process.env, ...(opts.env ?? {}) },
     stdout: 'pipe',
     stderr: 'pipe',
   })
@@ -1685,6 +1686,30 @@ describe('studio refuses a non-loopback bind that carries no token', () => {
       const ok = await repl({ Authorization: 'Bearer s3cret' })
       expect(ok.status).toBe(200)
       expect((await ok.json() as any).result).toBe(2)
+    } finally { await killProc(proc) }
+  }, 40_000)
+
+  // FJS-3368: a studio started without `--no-open` opened a tab on the desktop
+  // of whoever ran the suite. The opener is a stub on PATH that leaves a marker,
+  // so the assertion is on the spawn rather than on a browser appearing.
+  test('a studio with no terminal never launches a browser', async () => {
+    const dir  = await studioDir('studio-no-tty')
+    const bin  = makeFixtureDir('studio-opener-stub')
+    const mark = join(bin, 'opened')
+    for (const name of ['xdg-open', 'open', 'start']) {
+      const stub = join(bin, name)
+      writeFileSync(stub, `#!/bin/sh\necho "$@" >> "${mark}"\n`, { mode: 0o755 })
+    }
+    const { proc, output } = await spawnUntil(
+      dir, ['studio', '--port=0'],
+      buf => buf.includes('Litestone Studio at'),
+      { timeoutMs: 20_000, env: { PATH: `${bin}:${process.env.PATH}` } },
+    )
+    try {
+      expect(output).toContain('Litestone Studio at')
+      // The spawn follows the banner immediately; give a launched stub time to run.
+      await new Promise(r => setTimeout(r, 500))
+      expect(existsSync(mark)).toBe(false)
     } finally { await killProc(proc) }
   }, 40_000)
 

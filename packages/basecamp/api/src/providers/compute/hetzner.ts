@@ -31,7 +31,7 @@
 import { minorUnits, roundMinor } from '@frontierjs/toolbelt/units'
 import { env }                    from '../../core/env.ts'
 import type { TargetDescriptor }  from '@frontierjs/conduit'
-import { FLEET }                  from './index.ts'
+import { FLEET, keyBody }         from './index.ts'
 import type {
   ComputeConnector, ComputeCatalog, ComputeMachine, MachineState,
   ComputeRegion, ComputeSize, ComputeImage, MachineSpec, MachineMark,
@@ -275,6 +275,7 @@ export const hetzner: ComputeConnector = {
       image:       spec.image,
       location:    spec.region,
       user_data:   spec.userData,
+      ssh_keys:    spec.sshKeys,
       labels:      markLabels(spec.mark),
       // Hetzner will hand back a root password for a machine created without
       // an SSH key unless it is told to start on its own. There is nothing here
@@ -294,6 +295,25 @@ export const hetzner: ComputeConnector = {
         + 'the machine may exist; reconcile by mark')
 
     return { providerServerId: String(server.id) }
+  },
+
+  async sshKey(send, key): Promise<string> {
+    // The NAME is the handle: a create's `ssh_keys` takes an id or a name, and
+    // a name is unique per project where a numeric string would read as one.
+    const listed = await send({ method: 'GET', path: `/v1/ssh_keys?per_page=${PER_PAGE}` })
+    if (listed.error) throw new Error(said(listed))
+
+    const want = keyBody(key.publicKey)
+    const have = rows(listed.data, 'ssh_keys').find(k => keyBody(str(k.public_key)) === want)
+    if (have) return str(have.name)
+
+    const made = await send({ method: 'POST', path: '/v1/ssh_keys', body: {
+      name: key.name, public_key: key.publicKey.trim(),
+    }})
+    if (made.error) throw new Error(`Hetzner refused the SSH key — ${said(made)}`)
+    const name = str(((made.data as Row | null)?.ssh_key as Row | undefined)?.name)
+    if (!name) throw new Error('Hetzner accepted the SSH key and answered no name')
+    return name
   },
 
   async destroy(send, providerServerId): Promise<boolean> {

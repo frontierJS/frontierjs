@@ -438,7 +438,8 @@ core/
                 file from a listing somebody is reading to decide what to commit,
                 and a dropped row reads as a clean file
   git-history.js  commits per day as a column chart, time across — behind
-                `fli ghist`. Pure: `git log --shortstat` text in, rows out. Every
+                `fli ghist`. Pure: `git log --shortstat` text in, or
+                `--name-status` for `--files`, rows out. Every
                 day in range is a bucket, zero or not, or the x axis stops being
                 time; week buckets start Monday
   claude-usage.js  Claude Code sessions and output tokens per day — `fli

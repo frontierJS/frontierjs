@@ -14,7 +14,7 @@
 import { test, expect, describe } from 'bun:test'
 import { signRequest }            from '@frontierjs/toolbelt/signature'
 import { createOutpostServer }    from '../src/server.js'
-import { createDocker, createInspector, isDigest } from '../src/docker.js'
+import { createDocker, createInspector, isDigest, BACKUP_SCRIPT } from '../src/docker.js'
 import { createReporter }         from '../src/report.js'
 import { createIngress }          from '../src/ingress.js'
 import { createVitals }           from '../src/vitals.js'
@@ -816,6 +816,50 @@ describe('what the machine is asked to do', () => {
       const { status, body } = await backup(server, { app_id: 'ela' })
       expect(status).toBe(500)
       expect(body.error).toContain('no space left on device')
+    })
+
+    // The script itself, run by the host's sh over temp directories, with a
+    // `tar` ahead of the real one on PATH that writes to the database's -wal
+    // while it runs -- the write landing mid-tar (FJS-3178).
+    describe('the capture script, with a writer landing mid-tar (FJS-3178)', () => {
+      const capture = ({ writes }) => {
+        const root = mkdtempSync(join(tmpdir(), 'outpost-capture-'))
+        const data = join(root, 'data'), out = join(root, 'out'), bin = join(root, 'bin')
+        for (const d of [data, out, bin]) mkdirSync(d)
+        writeFileSync(join(data, 'app.db'), 'db')
+        writeFileSync(join(data, 'app.db-wal'), 'wal-0')
+        const realTar = Bun.which('tar')
+        writeFileSync(join(bin, 'tar'), `#!/bin/sh
+n=$(cat "${root}/count" 2>/dev/null || echo 0)
+echo $((n + 1)) > "${root}/count"
+if [ "$n" -lt ${writes} ]; then sleep 0.01; echo "wal-$((n + 1))" > "${data}/app.db-wal"; fi
+exec "${realTar}" "$@"
+`, { mode: 0o755 })
+        const script = BACKUP_SCRIPT.replace(/\/(data|out)\b/g, (_, d) => d === 'data' ? data : out)
+        const done = Bun.spawnSync(['sh', '-c', script], {
+          env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FJS_NAME: 'a.tar.gz' },
+        })
+        return { done, out, data }
+      }
+      const walIn = (out) => {
+        const x = mkdtempSync(join(tmpdir(), 'outpost-unpack-'))
+        Bun.spawnSync(['tar', '-xzf', join(out, 'a.tar.gz'), '-C', x])
+        return Bun.file(join(x, 'app.db-wal')).text()
+      }
+
+      test('a write during the tar is retried until the archive holds the file as it now stands', async () => {
+        const { done, out, data } = capture({ writes: 1 })
+        expect(done.exitCode).toBe(0)
+        expect(await walIn(out)).toBe(await Bun.file(join(data, 'app.db-wal')).text())
+      })
+
+      test('a volume that never holds still is refused, and no archive is left that reads as finished', () => {
+        const { done, out } = capture({ writes: 99 })
+        expect(done.exitCode).toBe(4)
+        expect(done.stderr.toString()).toContain('kept changing')
+        expect(existsSync(join(out, 'a.tar.gz'))).toBe(false)
+        expect(existsSync(join(out, 'a.tar.gz.partial'))).toBe(false)
+      })
     })
   })
 })

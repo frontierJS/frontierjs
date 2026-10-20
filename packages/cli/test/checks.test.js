@@ -749,6 +749,7 @@ describe('a @frontierjs import names a subpath its package exports', () => {
                  './components/*': './src/components/*.mesa', './components/internal': null },
     }),
     'node_modules/@frontierjs/kit/src/resource/local-db.js': 'export const x = 1\n',
+    'node_modules/@frontierjs/kit/src/components/Button.mesa': '<button></button>\n',
   }
   const app = (name, files) => tree(name, { 'package.json': '{}', ...PKG, ...files })
   const route = (body) => `<script>\n  ${body}\n</script>\n`
@@ -783,6 +784,28 @@ describe('a @frontierjs import names a subpath its package exports', () => {
       "const c = await import('@frontierjs/kit/resource')",
     ].join('\n  ')) })
     expect(only(root, 'import-subpath-exported').findings).toEqual([])
+  })
+
+  test('a pattern match whose target file is gone is an error (FJS-3330)', () => {
+    const root = app('ise-gone', { 'web/src/routes/a.mesa': route([
+      "import D from '@frontierjs/kit/components/DropdownLabel'",
+      "import B from '@frontierjs/kit/components/Button'",
+    ].join('\n  ')) })
+    const { findings } = only(root, 'import-subpath-exported')
+    expect(findings.map(f => f.line)).toEqual([2])
+    expect(findings[0].message).toMatch(/src\/components\/DropdownLabel\.mesa/)
+  })
+
+  test('a wildcard that makes a double extension from the specifier is an error (FJS-3330)', () => {
+    const root = tree('ise-dbl', { 'package.json': '{}',
+      'node_modules/@frontierjs/kit/package.json': JSON.stringify({
+        name: '@frontierjs/kit', exports: { './stores/*': './src/stores/*.js' } }),
+      'node_modules/@frontierjs/kit/src/stores/toast.js': 'export const t = 1\n',
+      'web/src/routes/a.mesa': route([
+        "import { t } from '@frontierjs/kit/stores/toast'",
+        "import { u } from '@frontierjs/kit/stores/toast.js'",
+      ].join('\n  ')) })
+    expect(only(root, 'import-subpath-exported').findings.map(f => f.line)).toEqual([3])
   })
 
   test('a null carve-out under a pattern is not exported', () => {

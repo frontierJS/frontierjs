@@ -139,10 +139,23 @@ const RESTORE_TIMEOUT_MS = 3_600_000
 // written under a `.partial` name and renamed, so a tar that dies partway never
 // leaves a file that reads as a finished backup; `umask 077` because the
 // archive holds whatever the app keeps, including secrets it stored itself.
+// The container the app runs in keeps writing, and a write landing while tar
+// reads can leave the database from one moment beside a `-wal` from another.
+// The file list (name, size, mtime) is taken before and after each tar, and a
+// tar that saw anything move is thrown away and taken again; a volume that
+// never holds still for five tries exits 4 rather than archive a split copy.
 // The last line is `<bytes> <files>`.
-const BACKUP_SCRIPT = `set -e
+export const BACKUP_SCRIPT = `set -e
 umask 077
-tar -czf "/out/$FJS_NAME.partial" -C /data .
+state() { find /data -type f -exec stat -c '%n %s %y' {} + | sort; }
+tries=0
+while :; do
+  before=$(state)
+  tar -czf "/out/$FJS_NAME.partial" -C /data .
+  [ "$before" = "$(state)" ] && break
+  tries=$((tries + 1))
+  [ "$tries" -lt 5 ] || { rm -f "/out/$FJS_NAME.partial"; echo "the volume kept changing under the tar" >&2; exit 4; }
+done
 mv "/out/$FJS_NAME.partial" "/out/$FJS_NAME"
 echo "$(stat -c %s "/out/$FJS_NAME") $(find /data -type f | wc -l)"`
 const BACKUP_TIMEOUT_MS = 3_600_000
@@ -651,8 +664,9 @@ export function createDocker({
      * (`FJS-D679`, `FJS-1782`). The archive stays here and the answer is its
      * path, so no bytes cross the command port; a lost machine takes its
      * backups with it. A running container is a SQLite writer with the file
-     * open: its `-wal` is in the archive beside the database, and a restore
-     * replays it, but the copy is a crash-consistent one, not a checkpointed one.
+     * open: its `-wal` is in the archive beside the database and a restore
+     * replays it, so the script retakes a tar that saw a file move and refuses
+     * a volume that never holds still (exit 4).
      */
     async backup({ appId }) {
       if (typeof appId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(appId))

@@ -32,7 +32,7 @@ import { isAbsolute, join, normalize, relative } from 'node:path'
 import { executorOn, isExecutor, resolveExecutor } from '../providers/executor.ts'
 import { snapshotVariables }        from './variables.ts'
 import { db }                       from './resource.ts'
-import { routedHosts }              from './runtime.ts'
+import { routedHosts, routedPaths, routedRedirects } from './runtime.ts'
 import { childEnv }                 from '@frontierjs/junction'
 import type { App }                 from '@frontierjs/junction'
 import { env }                      from './env.ts'
@@ -136,7 +136,10 @@ async function routeTo(app: App, serverId: string | null, appId: string, hosts: 
   if (!serverId) return { ok: false, why: 'no machine is named in the checkout\'s preview settings, so nothing routes the hostname' }
   const executor = await executorOn(app, serverId)
   if (!isExecutor(executor)) return { ok: false, why: executor.reason }
-  const reply = await executor.call('/route', { app_id: appId, hosts, port })
+  // A /route that names no redirects or paths removes the ones the machine holds.
+  const paths     = await routedPaths(app.db, appId)
+  const redirects = await routedRedirects(app.db, appId)
+  const reply = await executor.call('/route', { app_id: appId, hosts, paths, redirects, port })
   if (reply.error) return { ok: false, why: reply.error.message }
   const note = (reply.data as { note?: unknown } | undefined)?.note
   return { ok: true, note: typeof note === 'string' ? note : null }

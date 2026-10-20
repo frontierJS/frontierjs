@@ -76,6 +76,13 @@ export function priceIn(size: ComputeSize, region: string): number | null {
   return typeof minor === 'number' ? minor : null
 }
 
+/** A public key as `<type> <base64>`, without the comment. Two uploads of one
+ *  key differ only in the comment, and a vendor refuses the second as a
+ *  duplicate, so the comment cannot be part of the match. */
+export function keyBody(publicKey: string): string {
+  return publicKey.trim().split(/\s+/).slice(0, 2).join(' ')
+}
+
 /**
  * What a machine is doing, in ONE vocabulary.
  *
@@ -117,14 +124,20 @@ export interface ComputeMachine {
  * and crashed before recording the id is recoverable: the machine is then one
  * nobody here knows about, billing forever, and the mark is the only thread
  * back to it. Every connector must send it.
+ *
+ * Basecamp's OWN box is the one machine with no `userData` and with `sshKeys`
+ * (`FJS-D1253`): `install.sh` is served by a Basecamp, so the box it will run
+ * on cannot boot from it, and `fli deploy` reaches that box over SSH instead.
  */
 export interface MachineSpec {
-  name:     string
-  region:   string
-  size:     string
-  image:    string
-  userData: string
-  mark:     MachineMark
+  name:      string
+  region:    string
+  size:      string
+  image:     string
+  userData?: string
+  /** What `sshKey()` answered — the vendor's own handle for each key. */
+  sshKeys?:  string[]
+  mark:      MachineMark
 }
 
 /** The send half, bound to one ACCOUNT's target. Handed to a connector so a
@@ -175,6 +188,14 @@ export interface ComputeConnector {
    * without it the machine is an orphan the tag has to find.
    */
   create(send: AccountSend, spec: MachineSpec): Promise<{ providerServerId: string }>
+
+  /**
+   * The vendor's handle for this public key, registering it at the account if
+   * it is not there yet. Matched on the key itself and never the name: one key
+   * uploaded twice under two names is refused by both vendors, so a match by
+   * name would answer a different key or fail to find this one.
+   */
+  sshKey(send: AccountSend, key: { name: string; publicKey: string }): Promise<string>
 
   /**
    * Unmake one. Answers whether the vendor accepted the instruction — NOT

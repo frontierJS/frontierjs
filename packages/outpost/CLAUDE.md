@@ -129,8 +129,10 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   volume first — a `-wal` left beside a new database is replayed into it.
 - **`/backup` is a tar of the live volume, not a checkpointed copy**
   (`FJS-D679`). The container keeps running, so the SQLite file is archived
-  with its `-wal` beside it and a restore replays that; a write landing
-  mid-tar can still split the two. The archive is written as `.partial` and
+  with its `-wal` beside it and a restore replays that. The script lists every
+  file's size and mtime before and after the tar and retakes it when they
+  differ, five tries, then exits 4 (`FJS-3178`): a busy app's backup is
+  refused, never a split database. The archive is written as `.partial` and
   renamed, so a dead tar never leaves a file that reads as a backup, and it
   stays on the machine — a lost machine takes its backups with it.
 - **A path with no extension is served `index.html`.** An app using the History

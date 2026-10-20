@@ -2490,7 +2490,20 @@ const CHECKS = {
         graded++
         const subpath = '.' + tail
         const exported = exportedSubpaths(manifest.exports)
-        if (!exported || subpathExported(manifest.exports, subpath)) continue
+        if (!exported) continue
+        if (subpathExported(manifest.exports, subpath)) {
+          const targets = patternTargets(manifest.exports, subpath, manifestDir.get(manifest))
+          if (!targets?.length || targets.some(existsSync)) continue
+          findings.push({
+            file: path, line: lineOf(code, m.index),
+            message: `\`${pkg}${tail}\` matches an export pattern of ${pkg}, but the file it ` +
+                     `resolves to is not there (${relative(manifestDir.get(manifest), targets[0])}), ` +
+                     'so the import fails to resolve wherever it is built or run. The pattern adds ' +
+                     'the extension itself — import the subpath without it — and a removed ' +
+                     'component or store is gone from the package.',
+          })
+          continue
+        }
         findings.push({
           file: path, line: lineOf(code, m.index),
           message: `\`${pkg}${tail}\` is not a subpath ${pkg} exports, so the import fails wherever ` +
@@ -4626,6 +4639,7 @@ const DEEP_IMPORT_RE = /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)(['"`])
  * `require.resolve`, which bun answers from its global cache (`FJS-666`).
  */
 const manifestCache = new Map()
+const manifestDir   = new WeakMap()
 function installedManifest(dir, pkg) {
   const key = `${dir}\0${pkg}`
   if (manifestCache.has(key)) return manifestCache.get(key)
@@ -4633,7 +4647,10 @@ function installedManifest(dir, pkg) {
   for (let here = dir; ; here = dirname(here)) {
     const file = join(here, 'node_modules', pkg, 'package.json')
     if (existsSync(file)) {
-      try { found = JSON.parse(readFileSync(file, 'utf8')) } catch { found = null }
+      try {
+        found = JSON.parse(readFileSync(file, 'utf8'))
+        if (found && typeof found === 'object') manifestDir.set(found, dirname(file))
+      } catch { found = null }
       break
     }
     if (dirname(here) === here) break
@@ -4652,12 +4669,16 @@ function exportedSubpaths(exports) {
   return keys.filter(k => exports[k] !== null)
 }
 
-/** Node's subpath matching: an exact key, a one-`*` pattern, or a legacy `./dir/` prefix. */
-function subpathExported(exports, subpath) {
+/**
+ * Node's subpath matching: an exact key, a one-`*` pattern, or a legacy `./dir/`
+ * prefix. `{ key, rest }` is the key that wins and what its `*` (or prefix)
+ * captured; null when no key matches or a `null` carve-out wins.
+ */
+function matchSubpath(exports, subpath) {
   const isMap = typeof exports === 'object' && !Array.isArray(exports) &&
                 Object.keys(exports).some(k => k.startsWith('.'))
-  if (!isMap) return subpath === '.'
-  if (Object.hasOwn(exports, subpath)) return exports[subpath] !== null
+  if (!isMap) return subpath === '.' ? { key: '.', rest: null } : null
+  if (Object.hasOwn(exports, subpath)) return exports[subpath] !== null ? { key: subpath, rest: null } : null
   let hit = null
   for (const key of Object.keys(exports)) {
     const star = key.indexOf('*')
@@ -4668,7 +4689,34 @@ function subpathExported(exports, subpath) {
     // The longest matching key wins, which is how a `null` carve-out beats `./*`.
     if (match && (hit === null || key.length > hit.length)) hit = key
   }
-  return hit !== null && exports[hit] !== null
+  if (hit === null || exports[hit] === null) return null
+  const star = hit.indexOf('*')
+  const rest = star === -1 ? subpath.slice(hit.length)
+    : subpath.slice(star, subpath.length - (hit.length - star - 1))
+  return { key: hit, rest }
+}
+
+const subpathExported = (exports, subpath) => matchSubpath(exports, subpath) !== null
+
+/**
+ * The files a pattern or `./dir/` match resolves to, one per condition, as paths
+ * inside the package; null for an exact key, which is not graded (a built
+ * package's `dist/` is absent from a source tree). Node substitutes `*` into the
+ * target textually, so `./stores/*` → `./src/stores/*.js` turns an import that
+ * already says `.js` into `toast.js.js`.
+ */
+function patternTargets(exports, subpath, pkgDir) {
+  const hit = matchSubpath(exports, subpath)
+  if (!hit || hit.rest === null) return null
+  const leaves = []
+  const walk = t => {
+    if (typeof t === 'string') leaves.push(t)
+    else if (Array.isArray(t)) t.forEach(walk)
+    else if (t && typeof t === 'object') Object.values(t).forEach(walk)
+  }
+  walk(exports[hit.key])
+  return leaves.filter(t => t.startsWith('./'))
+    .map(t => join(pkgDir, hit.key.includes('*') ? t.replaceAll('*', hit.rest) : t + hit.rest))
 }
 
 // ─── the src/ layout (FJS-D625, FJS-D626, FJS-D627) ───────────────────────────

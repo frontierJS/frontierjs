@@ -23,7 +23,7 @@
 import { minorUnits, roundMinor } from '@frontierjs/toolbelt/units'
 import { env }                    from '../../core/env.ts'
 import type { TargetDescriptor }  from '@frontierjs/conduit'
-import { FLEET }                  from './index.ts'
+import { FLEET, keyBody }         from './index.ts'
 import type {
   ComputeConnector, ComputeCatalog, ComputeMachine, MachineState,
   ComputeRegion, ComputeSize, ComputeImage, MachineSpec, MachineMark,
@@ -224,6 +224,7 @@ export const digitalOcean: ComputeConnector = {
       size:      spec.size,
       image:     spec.image,
       user_data: spec.userData,
+      ssh_keys:  spec.sshKeys,
       tags:      markTags(spec.mark),
       // Private networking is on by default at DO now and the flag is
       // deprecated; monitoring is free and is what `Server.health` would
@@ -245,6 +246,27 @@ export const digitalOcean: ComputeConnector = {
         + 'the machine may exist; reconcile by tag')
 
     return { providerServerId: String(id.id) }
+  },
+
+  async sshKey(send, key): Promise<string> {
+    // The FINGERPRINT is the handle, not the numeric id: a create's `ssh_keys`
+    // reads a string as a fingerprint, so an id passed as a string names no key.
+    const listed = await send({ method: 'GET', path: `/v2/account/keys?per_page=${PER_PAGE}` })
+    if (listed.error) throw new Error(`DigitalOcean: ${listed.error.kind}`)
+
+    const want = keyBody(key.publicKey)
+    const have = rows(listed.data, 'ssh_keys').find(k => keyBody(str(k.public_key)) === want)
+    if (have) return str(have.fingerprint)
+
+    const made = await send({ method: 'POST', path: '/v2/account/keys', body: {
+      name: key.name, public_key: key.publicKey.trim(),
+    }})
+    if (made.error)
+      throw new Error(`DigitalOcean refused the SSH key: ${made.error.kind}`
+        + `${made.error.message ? ` — ${made.error.message}` : ''}`)
+    const fingerprint = str(((made.data as Row | null)?.ssh_key as Row | undefined)?.fingerprint)
+    if (!fingerprint) throw new Error('DigitalOcean accepted the SSH key and answered no fingerprint')
+    return fingerprint
   },
 
   async destroy(send, providerServerId): Promise<boolean> {

@@ -24,9 +24,9 @@ const LOG = [
 
 test('parseLog counts commits and both stat halves per day', () => {
   const days = parseLog(LOG)
-  expect(days.get('2026-10-06')).toEqual({ commits: 2, added: 11, deleted: 2 })
+  expect(days.get('2026-10-06')).toMatchObject({ commits: 2, added: 11, deleted: 2 })
   // A commit with no shortstat (an empty or merge commit) still counts.
-  expect(days.get('2026-10-08')).toEqual({ commits: 2, added: 0, deleted: 4 })
+  expect(days.get('2026-10-08')).toMatchObject({ commits: 2, added: 0, deleted: 4 })
 })
 
 test('a day with no commits is a zero bucket, never a missing one', () => {
@@ -38,7 +38,7 @@ test('a day with no commits is a zero bucket, never a missing one', () => {
 
 test('a commit outside the range is not counted', () => {
   const { buckets } = buildSeries(parseLog(LOG), { from: '2026-10-07', to: '2026-10-07' })
-  expect(buckets).toEqual([{ date: '2026-10-07', commits: 0, added: 0, deleted: 0 }])
+  expect(buckets).toEqual([{ date: '2026-10-07', commits: 0, added: 0, deleted: 0, created: 0, edited: 0, removed: 0 }])
 })
 
 test('weekly buckets start on Monday and hold every day of their week', () => {
@@ -93,4 +93,37 @@ test('summarize: busiest follows the value being charted', () => {
   const s = summarize(series, (b) => b.deleted)
   expect(s.busiest.date).toBe('2026-10-08')
   expect(s).toMatchObject({ commits: 4, added: 11, deleted: 6, active: 2, buckets: 3 })
+})
+
+const NAMES = [
+  '@2026-10-06',
+  '',
+  'A\tsrc/new.js',
+  'M\tsrc/old.js',
+  'M\tdocs/changed.md',
+  'R087\tsrc/a.js\tsrc/b.js',
+  'D\tsrc/gone.js',
+  '@2026-10-06',
+  '',
+  'A\tsrc/other.js',
+].join('\n')
+
+test('parseLog counts name-status lines as created, edited and removed', () => {
+  // A rename is an edit; a path holding the word "changed" is not a shortstat.
+  expect(parseLog(NAMES).get('2026-10-06')).toEqual({ commits: 2, added: 0, deleted: 0, created: 2, edited: 3, removed: 1 })
+})
+
+test('renderChart: max puts two charts on one scale', () => {
+  const series = buildSeries(parseLog(NAMES), { from: '2026-10-06', to: '2026-10-06' })
+  const created = renderChart(series, { height: 4, width: 40, value: (b) => b.created, max: 4 })
+  // 2 of 4 fills the bottom two rows and leaves the top two empty.
+  expect(plot(created[0]).trim()).toBe('')
+  expect(plot(created[2])[0]).toBe('█')
+  // Without max, the taller of the two would be drawn to the top on its own.
+  expect(plot(renderChart(series, { height: 4, width: 40, value: (b) => b.created })[0])[0]).toBe('█')
+})
+
+test('summarize totals the file fields', () => {
+  const s = summarize(buildSeries(parseLog(NAMES), { from: '2026-10-06', to: '2026-10-06' }))
+  expect(s).toMatchObject({ created: 2, edited: 3, removed: 1 })
 })

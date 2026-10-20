@@ -1,6 +1,7 @@
 // ─── git-history — commits per day as a column chart, time across ───────────
 //
-// Pure: `git log --shortstat` text in, a series out, rows of text out. The
+// Pure: `git log --shortstat` or `--name-status` text in, a series out, rows of
+// text out. The
 // command runs git and prints. No exec here, so it is testable with fixtures.
 //
 // Time is the x axis and it must be CONTINUOUS: a day with no commits is a
@@ -8,6 +9,7 @@
 // quiet one read as one stretch.
 
 const DAY = 86_400_000
+const COMMIT_ZERO = { commits: 0, added: 0, deleted: 0, created: 0, edited: 0, removed: 0 }
 const EIGHTHS = ['', '▁', '▂', '▃', '▄', '▅', '▆', '▇']
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -16,18 +18,28 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const toTime = (ymd) => Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7) - 1, +ymd.slice(8, 10))
 const toYmd = (t) => new Date(t).toISOString().slice(0, 10)
 
-// The log format the command asks for: `--format=@%ad --shortstat`. The `@`
-// marks a commit line, because a shortstat line also starts with a digit.
+// A name-status line: the letter, a similarity score on R and C, a tab. A
+// rename is an edit to a file that already existed; git detects copies only
+// when asked, so C is rare and counts as a new file.
+const STATUS = /^([ACDMRT])\d*\t/
+const FILE_FIELD = { A: 'created', C: 'created', M: 'edited', T: 'edited', R: 'edited', D: 'removed' }
+
+// The log format the command asks for: `--format=@%ad` with `--shortstat` or
+// `--name-status` (git prints one or the other, never both). The `@` marks a
+// commit line, because a shortstat line also starts with a digit.
 export const parseLog = (text) => {
   const days = new Map()
   let day = null
   for (const line of text.split('\n')) {
     if (line.startsWith('@')) {
       day = line.slice(1).trim()
-      const d = days.get(day) ?? { commits: 0, added: 0, deleted: 0 }
+      const d = days.get(day) ?? { ...COMMIT_ZERO }
       d.commits++
       days.set(day, d)
-    } else if (day && line.includes('changed')) {
+    } else if (!day) continue
+    // Checked before the shortstat test: a path can contain the word "changed".
+    else if (STATUS.test(line)) days.get(day)[FILE_FIELD[line[0]]]++
+    else if (line.includes('changed')) {
       const d = days.get(day)
       d.added += +(line.match(/(\d+) insertion/)?.[1] ?? 0)
       d.deleted += +(line.match(/(\d+) deletion/)?.[1] ?? 0)
@@ -39,7 +51,6 @@ export const parseLog = (text) => {
 // One bucket per day from `from` to `to` inclusive, or per week (Monday start)
 // when `by` is 'week'. Every bucket exists, zero or not. `zero` names the fields
 // a bucket sums, so a second source charts on the same columns.
-const COMMIT_ZERO = { commits: 0, added: 0, deleted: 0 }
 export const buildSeries = (days, { from, to, by = 'day', zero = COMMIT_ZERO }) => {
   let start = toTime(from)
   const end = toTime(to)
@@ -67,11 +78,12 @@ const niceMax = (max, rows) => {
 }
 
 // The chart as plain rows — `bar` is applied to each column's glyphs so the
-// caller decides color. `width` is the whole line, axis included.
-export const renderChart = (series, { height = 12, width = 100, value = (b) => b.commits, bar = (s) => s, dim = (s) => s, label = (v) => String(Math.round(v)) } = {}) => {
+// caller decides color. `width` is the whole line, axis included. `max` puts
+// two charts drawn one above the other on one scale, so their heights compare.
+export const renderChart = (series, { height = 12, width = 100, value = (b) => b.commits, max = 0, bar = (s) => s, dim = (s) => s, label = (v) => String(Math.round(v)) } = {}) => {
   const { buckets, by } = series
   const values = buckets.map(value)
-  const top = niceMax(Math.max(0, ...values), height)
+  const top = niceMax(Math.max(max, ...values), height)
   // Measured over every tick, because a compact label is not widest at the top: 4.5M over 6M.
   const axisW = Math.max(1, ...Array.from({ length: height }, (_, i) => label((top * (height - i)) / height).length))
 
@@ -132,5 +144,9 @@ export const summarize = (series, value = (b) => b.commits) => {
   const sum = (k) => buckets.reduce((a, b) => a + b[k], 0)
   const busiest = buckets.reduce((a, b) => (value(b) > value(a) ? b : a), buckets[0])
   const active = buckets.filter(b => b.commits).length
-  return { commits: sum('commits'), added: sum('added'), deleted: sum('deleted'), active, buckets: buckets.length, busiest }
+  return {
+    commits: sum('commits'), added: sum('added'), deleted: sum('deleted'),
+    created: sum('created'), edited: sum('edited'), removed: sum('removed'),
+    active, buckets: buckets.length, busiest,
+  }
 }
