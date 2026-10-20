@@ -109,7 +109,7 @@ export const FJS_PACKAGES = {
 }
 
 export const APP_DEV_DEPS = {
-  '@frontierjs/cli':    '0.1.8',
+  '@frontierjs/cli':    '0.1.9',
   '@frontierjs/config': '0.1.4',
   '@biomejs/biome':     '^2.5.0',
   'bun-types':          '1.4.2',
