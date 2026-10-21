@@ -47,6 +47,7 @@ account, so a retry never buys two. `fli provision:destroy <id>` removes it.
 ```js
 const { existsSync, readFileSync } = await import('node:fs')
 const { homedir }                  = await import('node:os')
+const { resolve }                  = await import('node:path')
 
 const home = homedir()
 const expand = p => p.replace(/^~(?=\/|$)/, home)
@@ -61,6 +62,16 @@ if (!keyPath || !existsSync(keyPath)) {
 if (!keyPath.endsWith('.pub')) {
   log.error(`${keyPath} is not a .pub file: pass the PUBLIC key`)
   return
+}
+
+let install = false
+if (process.stdin.isTTY && !flag.json) {
+  const { createPrompts } = await import(resolve(global.fliRoot, 'core/prompt.js'))
+  const p = createPrompts()
+  install = await p.confirm('Install Basecamp on it once it is up? (fli deploy:setup --auto-install, then fli deploy)', { default: false })
+  p.close()
+  if (install && flag.key)
+    log.warn(`ssh offers your default identity, not ${keyPath}: if the install cannot connect, add the Host block it prints and run it from packages/basecamp`)
 }
 
 log.info(`Creating ${flag.name} (${flag.size}, ${flag.region}) — about a minute`)
@@ -81,6 +92,7 @@ if (made.pending) {
   return
 }
 
+const identity = keyPath.replace(/\.pub$/, '')
 echo`  ip       ${made.ip}
 
   Add to ~/.ssh/config:
@@ -88,9 +100,33 @@ echo`  ip       ${made.ip}
   Host ${made.name}
     HostName ${made.ip}
     User root
-    IdentityFile ${keyPath.replace(/\.pub$/, '').replace(home, '~')}
+    IdentityFile ${identity.replace(home, '~')}
+`
 
-  Then, in packages/basecamp, set deploy.server to that Host and run:
+if (!install) {
+  echo`  Then, in packages/basecamp, set deploy.server to that Host and run:
     fli deploy:setup --auto-install && fli deploy
 `
+  return
+}
+
+// Ring 0 on the box it just made, named as `root@ip` so nothing has to be in
+// ~/.ssh/config yet. Each command runs on this terminal: what it asks, it asks
+// the person, and what fails, fails with its own words.
+const dest = `root@${made.ip}`
+log.info(`Waiting for ssh on ${dest} — a fresh droplet answers in about a minute`)
+if (!await waitForSsh(dest, { identity })) {
+  log.error(`${dest} did not answer ssh in four minutes. When it does, in packages/basecamp: fli deploy:setup --auto-install --server ${dest} && fli deploy --server ${dest}`)
+  process.exitCode = 1
+  return
+}
+for (const argv of [['deploy:setup', '--auto-install', '--server', dest], ['deploy', '--server', dest]]) {
+  const status = await runFli(argv)
+  if (status !== 0) {
+    log.error(`fli ${argv.join(' ')} exited ${status}. Fix what it said and run it again from packages/basecamp`)
+    process.exitCode = status || 1
+    return
+  }
+}
+log.success(`Basecamp is on ${made.name} (${made.ip})`)
 ```

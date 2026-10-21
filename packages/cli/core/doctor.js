@@ -24,6 +24,8 @@
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
 import { existsSync }   from 'node:fs'
+import { requiresOf }                 from './requires.js'
+import { esetHint, globalEnvPath }    from './global-env.js'
 import { execSync }     from 'node:child_process'
 import { join }         from 'node:path'
 import { homedir }      from 'node:os'
@@ -99,7 +101,7 @@ export function onPath(cmd) {
  * @param {string}   o.home       home directory
  */
 export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf = binVersion, env = process.env, home = homedir() } = {}) {
-  const globalEnv = join(home, '.config', 'fli', '.env')
+  const globalEnv = globalEnvPath(home)
 
   const system = BINARIES.map(b => {
     const present = has(b.name)
@@ -134,7 +136,7 @@ export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf 
   for (const mod of modules) {
     for (const key of mod.requires ?? []) {
       const ok = Boolean(env[key])
-      namespaces.push({ ns: mod.ns, key, ok, level: ok ? 'ok' : 'error', fix: `fli eset ${key} <value> --global` })
+      namespaces.push({ ns: mod.ns, key, ok, level: ok ? 'ok' : 'error', fix: esetHint(key) })
     }
   }
 
@@ -167,8 +169,8 @@ export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf 
 export function requiringModules({ commands, getModule }) {
   const out = []
   for (const ns of [...new Set(commands.map(c => c.title.split(':')[0]))]) {
-    const requires = getModule(ns)?.meta?.requires
-    if (requires?.length) out.push({ ns, requires })
+    const requires = requiresOf(getModule(ns)?.meta).map(r => r.key)
+    if (requires.length) out.push({ ns, requires })
   }
   return out.sort((a, b) => a.ns.localeCompare(b.ns))
 }

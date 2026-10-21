@@ -22,16 +22,21 @@ export const TONES = {
 const INK  = '#e5e7eb'
 const HEAD = '#fde68a'
 const inkOf = (tone) => TONES[tone] ?? INK
+// A stat with no tone still gets a color of its own, so a row of tiles reads
+// apart at a glance; the order is fixed, so a tile keeps its color across runs.
+const ACCENTS = ['#38bdf8', '#a78bfa', '#34d399', '#f472b6', '#fb923c', '#facc15']
+/** `hex` taken `t` of the way to black: a tile's frame, under its own bright label. */
+const dim = (hex, t = 0.45) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * (1 - t)).toString(16).padStart(2, '0')).join('')
 
 /** Each block's fields as the model is told them; `DESK_PROMPT` lists these. */
 export const BLOCKS = {
   heading: '{ kind, text } -- a section title',
   text:    '{ kind, text, tone? } -- a sentence or two, wrapped',
-  stats:   '{ kind, items: [{ label, value, note?, tone? }] } -- one to four numbers side by side; value short ("12", "3d", "$4k")',
+  stats:   '{ kind, items: [{ label, value, note?, tone?, noteTone?, foot? }] } -- one to four numbers side by side, foot a short caption; value short ("12", "3d", "$4k")',
   table:   '{ kind, columns: [string], rows: [[string]] } -- records; at most 5 columns, 12 rows',
   bars:    '{ kind, items: [{ label, value: number, tone? }] } -- an amount per category, largest first',
   spark:   '{ kind, label, values: [number], note? } -- a value over time, oldest first',
-  list:    '{ kind, items: [{ text, note?, tone?, url? }] } -- items with a status; note is a when or a who, url the Basecamp link of what the item names',
+  list:    '{ kind, items: [{ text, note?, tone?, noteTone?, url? }] } -- items with a status; note is a when or a who, url the Basecamp link of what the item names',
   callout: '{ kind, text, tone } -- the one thing to notice',
 }
 
@@ -119,8 +124,8 @@ const READERS = {
   callout: (b) => b.text && { text: str(b.text), tone: tone(b.tone) ?? 'info' },
   stats:   (b) => {
     const items = arr(b.items).filter((i) => i?.label != null && i?.value != null)
-      .map((i) => ({ label: str(i.label), value: str(i.value), note: str(i.note), tone: tone(i.tone), key: word(i.key) }))
-    return items.length && { items: items.slice(0, 4) }
+      .map((i) => ({ label: str(i.label), value: str(i.value), note: str(i.note), tone: tone(i.tone), noteTone: tone(i.noteTone), foot: str(i.foot), key: word(i.key) }))
+    return items.length && { items: items.slice(0, 8) }
   },
   table:   (b) => {
     const columns = arr(b.columns).map(str).slice(0, 5)
@@ -138,7 +143,7 @@ const READERS = {
   },
   list:    (b) => {
     const items = arr(b.items).filter((i) => i?.text)
-      .map((i) => ({ text: str(i.text), note: str(i.note), tone: tone(i.tone), url: url(i.url), ...(words(i.keys).length ? { keys: words(i.keys) } : {}), ...(days(i.waited) ? { waited: days(i.waited) } : {}) }))
+      .map((i) => ({ text: str(i.text), note: str(i.note), tone: tone(i.tone), noteTone: tone(i.noteTone), url: url(i.url), ...(words(i.keys).length ? { keys: words(i.keys) } : {}), ...(days(i.waited) ? { waited: days(i.waited) } : {}) }))
     return items.length && { items: items.slice(0, 12) }
   },
 }
@@ -219,18 +224,44 @@ const DRAW = {
   text:    (b, w) => wrap(b.text, w).map((t) => [run(0, t, inkOf(b.tone))]),
   callout: (b, w) => wrap(b.text, w - 2).map((t) => [run(0, '▌', inkOf(b.tone)), run(2, t, inkOf(b.tone))]),
 
+  // Each number in a box of its own, the label set in the top edge and a foot
+  // in the bottom one, as many to
+  // a row as stay MIN_TILE wide. Where every value is a count, a meter under
+  // it shows it against the largest, so a row compares without reading.
   stats: (b, w, { picked }) => {
-    const tile = Math.floor(w / b.items.length)
-    const inner = tile - 2
-    const row = (pick) => b.items.flatMap((i, n) => {
-      const [text, color] = pick(i)
-      return text ? [run(n * tile, clip(text, inner), color)] : []
-    })
-    return [
-      row((i) => i.key && i.key === picked ? [`▸ ${i.label}`, HEAD] : [i.label, TONES.muted]),
-      row((i) => [i.value, inkOf(i.tone)]),
-      row((i) => [i.note, TONES.muted]),
-    ].filter((r) => r.length)
+    const MIN_TILE = 17
+    const lines = Math.ceil(b.items.length / Math.max(1, Math.min(b.items.length, Math.floor((w + 1) / (MIN_TILE + 1)))))
+    const per = Math.ceil(b.items.length / lines)
+    const tile = Math.floor((w + 1) / per) - 1
+    const inner = tile - 4
+    const counts = b.items.every((i) => /^\d+$/.test(i.value)) && b.items.length > 1
+    const max = Math.max(...b.items.map((i) => Number(i.value)))
+    const out = []
+    for (let r = 0; r < lines; r++) {
+      const row = b.items.slice(r * per, r * per + per)
+      const box = row.map((i, n) => {
+        const x = n * (tile + 1)
+        const ink = i.tone ? inkOf(i.tone) : ACCENTS[(r * per + n) % ACCENTS.length]
+        const frame = dim(ink)
+        const hot = i.key && i.key === picked
+        const label = clip(hot ? `▸ ${i.label}` : i.label, tile - 6)
+        const foot = (i) => clip(i.foot, tile - 6)
+        const fill = counts && max > 0 ? Math.round((Number(i.value) / max) * inner) : 0
+        const body = (runs) => [run(x, '│', frame), ...runs, run(x + tile - 1, '│', frame)]
+        return [
+          [run(x, '╭─', frame), run(x + 3, label, hot ? HEAD : ink), run(x + 4 + cells(label), '─'.repeat(Math.max(0, tile - 6 - cells(label))) + '─╮', frame)],
+          body([run(x + 2, clip(i.value, inner), ink)]),
+          ...(counts ? [body([run(x + 2, '━'.repeat(fill), ink), run(x + 2 + fill, '━'.repeat(inner - fill), dim(ink, 0.75))].filter((t) => t.text))] : []),
+          body(i.note ? [run(x + 2, clip(i.note, inner), inkOf(i.noteTone ?? 'muted'))] : []),
+          i.foot
+            ? [run(x, '╰─', frame), run(x + 3, foot(i), TONES.muted), run(x + 4 + cells(foot(i)), '─'.repeat(Math.max(0, tile - 6 - cells(foot(i)))) + '─╯', frame)]
+            : [run(x, '╰' + '─'.repeat(tile - 2) + '╯', frame)],
+        ]
+      })
+      if (r) out.push([])
+      for (let k = 0; k < box[0].length; k++) out.push(box.flatMap((rows) => rows[k]))
+    }
+    return out
   },
 
   table: (b, w) => {
@@ -287,7 +318,7 @@ const DRAW = {
           ? { ...run(0, String(++count.n).padStart(3), inkOf(i.tone ?? 'muted')), link: count.n - 1 }
           : run(numbered ? 2 : 0, '•', inkOf(i.tone ?? 'muted')),
         run(at, clip(i.text, text), inkOf(ageTone(i)), i.url),
-        ...(i.note ? [run(w - note, clip(i.note, note), i.waited > AGED_DAYS ? inkOf(ageTone(i)) : TONES.muted)] : []),
+        ...(i.note ? [run(w - note, clip(i.note, note), i.noteTone ? inkOf(i.noteTone) : i.waited > AGED_DAYS ? inkOf(ageTone(i)) : TONES.muted)] : []),
       ],
       // Broken across rows rather than clipped: a URL cut short opens nothing.
       ...(urls && i.url ? i.url.match(new RegExp(`.{1,${w - at}}`, 'g')).map((part) => [run(at, part, TONES.muted)]) : []),

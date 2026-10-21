@@ -73,6 +73,15 @@ core/
                 surface that exits or stays silent past `settleMs` releases it
   open-url.js   a URL in the person's browser — argv, detached; `fli dev`'s `o`,
                 `fli gui --open`, `project:map --as=serve`
+  requires.js   what a namespace's `_module.md` says it cannot run without —
+                `- KEY` or `- KEY: <url where one is made>`, read by the
+                runtime, the doctor, `--verbose` and the gui through one
+                `requiresOf`. At a terminal a missing key is ACQUIRED: the page
+                offered, the paste stored, the run goes on; with no person
+                present it is the refusal, plus a placeholder in the global env
+  global-env.js `~/.config/fli/.env` — the one spelling of the path, the line
+                writer `fli eset` uses, the placeholder and the header. `~/.fli/`
+                is machine state (locks, caches, a walk's defaults), never a key
   command-parse.js  does every command in a routes tree parse — each compiled
                 with the module the runtime pairs it with, checked by `node
                 --check`, reported at the `.md` line. The `command-parses` rule
@@ -1305,6 +1314,18 @@ test/     one file per module under core/, plus the deploy pipeline's own
   grades the copy at `CLAUDE.md` § Bridge index, which is kept inline because
   that is the whole of its value and checked because it had drifted. A bullet
   naming no owner is not a finding, on `invariants.js`'s argument.
+- **`core/surface.js` asks the question `ws:exports` cannot: what is REACHED.**
+  `exports.snapshot.md` is what a package ships; `surface.snapshot.md` is each
+  `exports` entry no file outside the package imports and each exported name no
+  outside source file mentions, re-exports followed, read as a token so a type
+  position or a destructure counts. Biased toward live: a common word is never
+  called dead. A name only a string the package itself writes out names is
+  EMITTED and counted apart — the mesa compiler writes `$$runtime.bindClass(`
+  into output no source file holds, and sierra's auto-import writes the import of
+  its own root into every page. Only crossings are recorded, never importer
+  counts, or the `snapshots` phase would go red on every unrelated import. The
+  linked prototypes are callers no runner has, so `--also ../fjs-prototypes`
+  prints what they reach and writes nothing.
 - **A rule about a NAME written twice has to accept every spelling of it.**
   `transition-methods` asks whether a declared `@@transitions` move is reachable
   from `api/`, and reachable means the move name OR the state it moves to —

@@ -15712,6 +15712,14 @@ describe('createTestEnv', () => {
     env.close()
   })
 
+  // FJS-D1133: a minted column is named on the write, so the ladder grades it.
+  test('a required @guarded @system column is named on the create and graded', async () => {
+    const schema = LADDER_SCHEMA.replace('handle String @length(3, 12)', 'handle String @length(3, 12)\n    auditTag String @guarded @system')
+    const env    = await createTestEnv({ schema })
+    expect(await env.verifyGateLadder({ ops: ['create'] })).toEqual([])
+    env.close()
+  })
+
   // FJS-3044: the factory read each @@check alone, so a rule that moved one
   // column broke its sibling and the model had no fixture at all.
   const checked = (body: string) => `

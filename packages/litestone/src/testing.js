@@ -524,9 +524,12 @@ export async function createTestEnv(opts = {}) {
         const guarded = _guardedFields(modelName)
         // Required means the create cannot be assembled without it: no default,
         // no `?`. An optional one is simply left out.
-        const guardedRequired = guarded.filter(f =>
+        const required = guarded.filter(f =>
           !f.type.optional && !f.attributes.some(a => a.kind === 'default'))
-        const guardedOptional = guarded.filter(f => !guardedRequired.includes(f))
+        const guardedOptional = guarded.filter(f => !required.includes(f))
+        // A `@guarded @system` column is named below, which lifts its write
+        // half, so only plain `@guarded` makes a create ungradable.
+        const guardedRequired = required.filter(f => !f.attributes.some(a => a.kind === 'system'))
         // A `@system` column is written the way the application writes it,
         // named through `system: [...]`. Passed as ordinary data it is refused
         // with an AccessDeniedError, which below reads as the gate's deny at

@@ -38,6 +38,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createServer }  from 'http'
+import { requiresOf }                    from './requires.js'
+import { globalEnvPath, GLOBAL_ENV_HEADER } from './global-env.js'
 import { execFileSync }  from 'child_process'
 import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { basename } from 'path'
@@ -885,10 +887,10 @@ async function handlePortsSchema(req, res) {
 
 // ─── GET /api/env ─────────────────────────────────────────────────────────────
 function handleEnv(req, res) {
-  const envPath = resolve(homedir(), '.config', 'fli', '.env')
+  const envPath = globalEnvPath()
   let content = ''
   try { content = readFileSync(envPath, 'utf8') }
-  catch { content = '# FLI global environment\n# Add env vars here that apply across all projects\n' }
+  catch { content = GLOBAL_ENV_HEADER }
   json(res, 200, { path: envPath, content })
 }
 
@@ -901,8 +903,8 @@ async function handleEnvSave(req, res) {
       req.on('end', () => { try { resolve(JSON.parse(data)) } catch { reject(new Error('Invalid JSON')) } })
     })
     const { content } = body
-    const envPath = resolve(homedir(), '.config', 'fli', '.env')
-    mkdirSync(resolve(homedir(), '.config', 'fli'), { recursive: true })
+    const envPath = globalEnvPath()
+    mkdirSync(dirname(envPath), { recursive: true })
     writeFileSync(envPath, content, 'utf8')
     json(res, 200, { ok: true, path: envPath })
   } catch (err) {
@@ -1048,7 +1050,7 @@ async function handleMeta(req, res, name) {
       },
       _module: mod ? {
         description: mod.meta?.description || null,
-        requires:    mod.meta?.requires    || [],
+        requires:    requiresOf(mod.meta).map(r => r.key),
         script:      moduleSource?.script   || null,
         segments:    moduleSource?.segments || [],
       } : null,

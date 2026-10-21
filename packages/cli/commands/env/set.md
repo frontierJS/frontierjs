@@ -37,43 +37,14 @@ flags:
 
 <script>
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { homedir } from 'os'
-import { resolve } from 'path'
-
-const setEnvVar = (content, key, value) => {
-  const lines    = content.split('\n')
-  const quoted   = value.includes(' ') || value.includes('#') ? `"${value}"` : value
-  const newLine  = `${key}=${quoted}`
-  let   found    = false
-
-  const updated = lines.map(line => {
-    const trimmed = line.trim()
-    if (trimmed.startsWith('#') || !trimmed.includes('=')) return line
-    const lineKey = trimmed.slice(0, trimmed.indexOf('=')).trim()
-    if (lineKey === key) { found = true; return newLine }
-    return line
-  })
-
-  if (!found) {
-    // Append — add a blank line before if the file doesn't end with one
-    if (updated[updated.length - 1] !== '') updated.push('')
-    updated.push(newLine)
-  }
-
-  return updated.join('\n')
-}
+import { resolve, dirname } from 'path'
 </script>
 
 ```js
-const configDir = resolve(homedir(), '.config', 'fli')
-const envPath   = flag.global
-  ? resolve(configDir, '.env')
-  : resolve($.paths.root, flag.file)
+const { globalEnvPath, setEnvLine } = await import(resolve(global.fliRoot, 'core/global-env.js'))
+const envPath = flag.global ? globalEnvPath() : resolve($.paths.root, flag.file)
 
-// Ensure global config dir exists
-if (flag.global && !existsSync(configDir)) {
-  mkdirSync(configDir, { recursive: true })
-}
+if (flag.global) mkdirSync(dirname(envPath), { recursive: true })
 
 if (!existsSync(envPath)) {
   if (!flag.create) {
@@ -91,7 +62,7 @@ if (!existsSync(envPath)) {
 }
 
 const current = readFileSync(envPath, 'utf8')
-const updated = setEnvVar(current, arg.key, arg.value)
+const updated = setEnvLine(current, arg.key, arg.value)
 
 if (flag.dry) {
   log.dry(`Would set ${arg.key}=${arg.value} in ${flag.global ? '~/.config/fli/.env' : flag.file}`)

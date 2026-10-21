@@ -73,17 +73,20 @@
 trait Grant {
   /// The hash of the token the bearer holds. `@unique` because a lookup by
   /// hash is the only read this column ever has; `@guarded` because the hash
-  /// is as good as the token to anyone who can read the row. `(global)`
-  /// because the exchange has no tenant yet -- bearerClaim finds the row BY
-  /// the digest and learns the tenant from it -- so one digest must name one
-  /// row across the installation. Without tenancy it is a no-op.
-  tokenHash  String    @unique(global) @guarded
+  /// is as good as the token to anyone who can read the row; `@system`
+  /// because it is MINTED -- bearerClaim's mint fills it on the caller's own
+  /// create by naming it, and plain `@guarded` would be asSystem() only
+  /// (FJS-D1133). `(global)` because the exchange has no tenant yet --
+  /// bearerClaim finds the row BY the digest and learns the tenant from it --
+  /// so one digest must name one row across the installation. Without tenancy
+  /// it is a no-op.
+  tokenHash  String    @unique(global) @guarded @system
 
   /// Optional, and the instances disagree: basecamp requires it (an invitation
   /// that never expires is a standing hole), everyone else leaves it nullable
   /// (a booking's manage-link lives as long as the booking). The trait takes
-  /// the permissive shape; a host that means `required` overrides the field,
-  /// which is the one case where the host winning a trait field is the point.
+  /// the permissive shape; a host that means `required` redeclares the field
+  /// with `@override` (FJS-D1276).
   expiresAt  DateTime?
 
   /// Set by the owner, never cleared. A revoked grant is kept rather than

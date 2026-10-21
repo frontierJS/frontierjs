@@ -93,7 +93,7 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 - **A `file:` dependency (jetty's `file:../mesa`) installs a COPY under `node_modules/.bun/`, not a symlink**, so an edit to mesa is invisible to it until reinstall. In-repo tests import workspace source by relative path.
 - **Nested directories are invisible to the `packages/*` glob** — uninstalled, untested, unrunnable. `oracle/mockup` is the one named allowance; a second shows up as a CI note naming the path.
 - **`bun test` runs in UTC whatever the host is set to.** A test that means local time sets `TZ` itself and builds every `Date` after setting it. Everything STORED is UTC.
-- **Publishing a package silences every loose peer range that names it**, and below 1.0 a caret pins the MINOR. `fli ws:exports` commits the published surface to `exports.snapshot.md`, and the `snapshots` phase fails a stale one.
+- **Publishing a package silences every loose peer range that names it**, and below 1.0 a caret pins the MINOR. `fli ws:exports` commits the published surface to `exports.snapshot.md`, and the `snapshots` phase fails a stale one. **What SHIPS is not what is REACHED**: `surface.snapshot.md` (`fli ws:surface`) lists every entry and export no file outside its package imports or names, and `--also ../fjs-prototypes` asks the linked prototypes — a removal here breaks them at boot.
 
 ---
 

@@ -212,7 +212,7 @@ export const RULES = [
     id:       'required-guarded-uncreatable',
     severity: 'error',
     title:    'a required @guarded column makes the model uncreatable',
-    blurb:    'A @guarded column is writable only from asSystem(). Required with no default, every ' +
+    blurb:    'A @guarded column without @system is writable only from asSystem(). Required with no default, every ' +
               'create below level 8 must supply a value nothing at that level may write, so the model ' +
               'cannot be created through the ordinary path at all.',
     run(schema) {
@@ -222,9 +222,12 @@ export const RULES = [
         if (gate && gate.create >= 8) continue   // already system-only; nothing is lost
         for (const f of model.fields ?? []) {
           if (!has(f, 'guarded') || isOptional(f) || hasDefault(f)) continue
+          // `@guarded @system` is a minted column the application fills by
+          // naming it, so `required-system-unfilled` is the rule that grades it.
+          if (has(f, 'system')) continue
           out.push({
             model: model.name, field: f.name,
-            message: `${model.name}.${f.name} is @guarded and required, so every create must supply a value nothing below level 8 may write. Three ways out and they are not equivalent: a @default generates it at the Data boundary; making it optional says a row without one is legitimate; or the service creates the row through asSystem(), which is the right answer for a credential the caller must never see — and is the reason a service reaches for asSystem() rather than a sign it has gone wrong. What asSystem() costs is the gate, the row policies and the audit actor, for the whole create.`,
+            message: `${model.name}.${f.name} is @guarded and required, so every create must supply a value nothing below level 8 may write. Four ways out and they are not equivalent: a @default generates it at the Data boundary; making it optional says a row without one is legitimate; @guarded @system says the application mints it on the caller's own create by naming it (system: ['${f.name}']), which keeps the gate and the row policies; or the service creates the row through asSystem(), which is the right answer for a credential the caller must never see — and is the reason a service reaches for asSystem() rather than a sign it has gone wrong. What asSystem() costs is the gate, the row policies and the audit actor, for the whole create.`,
           })
         }
       }

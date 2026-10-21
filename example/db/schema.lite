@@ -2367,7 +2367,7 @@ model CartGrant {
   /// `fingerprint(token, { key, purpose })`, and never the token. `@guarded`
   /// for the reason every stored credential is: the app writes it, `asSystem()`
   /// reads it, and no response carries it.
-  tokenHash String @unique @guarded
+  tokenHash String @unique @guarded @system
 
   createdAt DateTime @default(now())
 

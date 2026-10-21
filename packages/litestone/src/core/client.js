@@ -3627,20 +3627,31 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return mirrorExtSlots(data, stamped, where, blob)
   }
 
-  // `system: ['col']` lifts the write half of @guarded as it lifts @system: a
-  // grant's digest is required and @guarded, so without this the model was
-  // uncreatable below 8 and every app minted it as asSystem() in a second
-  // write, dropping the create policy that says who may issue a link
-  // (FJS-1749). Naming the column keeps the gate, the policies and the audit
-  // actor, and the read half stays locked.
+  // A MINTED column is spelt `@guarded @system` (`FJS-D1133`): naming it in
+  // `system:` lifts the write half, so a grant's digest is written by the
+  // caller's own create and keeps the gate, the policies and the audit actor
+  // (`FJS-1749`); the read half stays locked. Plain `@guarded` is asSystem()
+  // only, and a `system:` naming of one is refused rather than honored, so the
+  // schema alone says which columns the application fills on a caller's write.
   function refuseGuardedWrite(data, stamped, system) {
     const named  = new Set(Array.isArray(system) ? system : system ? [system] : [])
-    const denied = Object.keys(data).filter(k => _guardedWriteKeys.has(k) && !stamped?.has(k) && !named.has(k))
-    if (denied.length) throw new AccessDeniedError(
-      `${modelName}: ${denied.map(f => `"${f}"`).join(', ')} ${denied.length > 1 ? 'are' : 'is'} @guarded — ` +
-      `a system-context column on write as well as read. Name it on the call to write it as the application ` +
-      `(system: [${denied.map(f => `'${f}'`).join(', ')}]), write it through asSystem(), or leave it out of the ` +
-      `payload. For a column some callers may write, @allow(write, …) is the tool; @guarded answers both ` +
+    const denied = Object.keys(data).filter(k =>
+      _guardedWriteKeys.has(k) && !stamped?.has(k) && !(named.has(k) && _systemWriteKeys.has(k)))
+    if (!denied.length) return
+    const list     = (ks) => ks.map(f => `"${f}"`).join(', ')
+    const are      = (ks) => ks.length > 1 ? 'are' : 'is'
+    const unminted = denied.filter(k => named.has(k))
+    if (unminted.length) throw new AccessDeniedError(
+      `${modelName}: ${list(unminted)} ${are(unminted)} @guarded without @system, so naming it in system: lifts ` +
+      `nothing — plain @guarded is written through asSystem() only. A column the application mints on the ` +
+      `caller's own write is spelt @guarded @system.`,
+      { model: modelName, operation: 'write' }
+    )
+    throw new AccessDeniedError(
+      `${modelName}: ${list(denied)} ${are(denied)} @guarded — a system-context column on write as well as read. ` +
+      `Write it through asSystem() or leave it out of the payload; a column the application mints on the ` +
+      `caller's own write is spelt @guarded @system and named on the call (system: [${denied.map(f => `'${f}'`).join(', ')}]). ` +
+      `For a column some callers may write, @allow(write, …) is the tool; @guarded answers both ` +
       `halves at once, which is why the two cannot sit on one field.`,
       { model: modelName, operation: 'write' }
     )

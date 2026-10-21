@@ -15,8 +15,7 @@ flags:
 ---
 
 <script>
-import { homedir } from 'os'
-import { resolve } from 'path'
+import { resolve, dirname } from 'path'
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs'
 </script>
 
@@ -24,12 +23,12 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs'
 const { getConfig } = await import(resolve(global.fliRoot, 'core/config.js'))
 const { editor: configEditor } = getConfig()
 const editor     = configEditor || process.env.EDITOR || process.env.VISUAL || 'vi'
-const configDir  = resolve(homedir(), '.config', 'fli')
-const configFile = resolve(configDir, '.env')
+const { globalEnvPath, GLOBAL_ENV_HEADER } = await import(resolve(global.fliRoot, 'core/global-env.js'))
+const configFile = globalEnvPath()
 
-if (!existsSync(configDir)) mkdirSync(configDir, { recursive: true })
+mkdirSync(dirname(configFile), { recursive: true })
 if (!existsSync(configFile)) {
-  writeFileSync(configFile, '# FLI global environment\n# Add env vars here that apply across all projects\n', 'utf8')
+  writeFileSync(configFile, GLOBAL_ENV_HEADER, 'utf8')
   log.info(`Created ${configFile}`)
 }
 

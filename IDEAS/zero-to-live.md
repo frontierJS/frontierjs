@@ -30,7 +30,7 @@ machines.**
 | Ring 0 | `fli deploy` installs Basecamp. It has run on one real box (the run behind `FJS-D1191`). It needs a framework checkout, because Basecamp is `private`. |
 | Basecamp's own box as a fleet machine | Built: `fli deploy` enrolls it by default (`FJS-D1202`, `FJS-D1241`) |
 | Ring 1 on DigitalOcean | `providers/compute/digitalocean.ts`: catalog, create with `user_data`, enroll, destroy, reconcile (`docs/PROVISIONING.md` P1–P5). **Driven only against the stand-in on 8122. Cloud-init has never run on a real droplet** (`FJS-1397`; step 0.3). |
-| Ring 2 | `/pull` → `/deploy` → `/health-check`, put-back on failure, Caddy routes, and a digest already on the machine skips the pull (`FJS-2645`). `verify:outpost` fails at HEAD (`FJS-3183`). |
+| Ring 2 | `/pull` → `/deploy` → `/health-check`, put-back on failure, Caddy routes, and a digest already on the machine skips the pull (`FJS-2645`). `verify:outpost` fails 4 of 48 checks on the loopback bind (`FJS-3325`). |
 | App release from a laptop | `fli deploy:basecamp`: build here, `docker save \| ssh docker load`, release that digest (`FJS-D942`). It needs an App id copied out of the UI. |
 | Cloudflare | Basecamp's `edge` service: the token is a workspace account, records are marked, a CNAME goes to the ingress record, `domain:dns` syncs it (`cloudflare-edge.md` Phases 1–5). There is no screen for the ingress zone. |
 | Certificates | Caddy ACME. A Cloudflare origin certificate is not built (`fleet-ingress.md` Phase 4). |
@@ -44,10 +44,10 @@ things the drive found), so choose the account by name.
 
 ```
 # once: a box, Basecamp on it, its DNS, both tokens handed in
-fli <command, named in Phase 3> --do-token $DO --cf-token $CF --domain ops.acme.com --admin me@acme.com
+fli provision --do-token $DO --cf-token $CF --domain ops.acme.com --admin me@acme.com
 
 # per app
-fli new myapp && cd myapp && fli make:deploy --basecamp ops.acme.com --domain app.acme.com
+fli new myapp && cd myapp && fli make:deploy --server app.acme.com --domain app.acme.com   # a --basecamp flag is not built; 2.2 decides it
 fli deploy:basecamp     # App + Domain if missing, env seeded, release, CNAME, certificate
 ```
 
@@ -68,7 +68,7 @@ Done when: an FJS app answers over HTTPS at a Cloudflare hostname, released by
 Basecamp onto a droplet Basecamp created, and § 0.4's list of hand steps exists.
 
 - [ ] 0.1 The owner supplies a DigitalOcean API token and a Cloudflare zone with a token scoped to it (`FJS-1397`; nothing in the tree can do this)
-- [ ] 0.2 Fix `verify:outpost` at HEAD (`FJS-3183`) and the missing git in the Basecamp image (`FJS-3280`)
+- [ ] 0.2 Fix the four `verify:outpost` loopback-bind checks (`FJS-3325`). `FJS-3183` and the missing git in the Basecamp image (`FJS-3280`) are closed
 - [ ] 0.3 Create a real droplet through `/servers/provision/`: cloud-init runs, Outpost enrolls, the row reaches `online`. The install script (Docker, Bun, the sandboxed systemd unit, the enrollment exchange) has only been `sh -n`-parsed, and Outpost's `build`, `run` and `logs` have never met a real daemon; 0.4's release is their first (was `FJS-257`)
 - [ ] 0.4 Release one real FJS app to it with `fli deploy:basecamp` on a Cloudflare hostname, and list every step done by hand: that list is Phases 2 and 3's backlog
 - [ ] 0.5 Rewrite `packages/cli/docs/deploy.md` from what 0.3 and 0.4 actually did
@@ -92,7 +92,7 @@ Goal: from a scaffolded app to a live release with no click in Basecamp's UI.
 Done when: Phase 0.4's app releases again from a clean Basecamp with
 `fli deploy:basecamp` alone, and the list from 0.4 has nothing left in this phase.
 
-- [ ] 2.1 `FJS-D1040` A: a Domain's path routes, `ingress.js` matching host plus path, and the host-conflict refusal narrowed to host plus path (closes `FJS-2647`)
+- [ ] 2.1 `FJS-D1040` A: a Domain's path routes. **Engine built, `FJS-2647` closed**: `DomainRoute`, the `domain-routes` service and `ingress.js` prefix matching, proved against a real caddy:2. Left: a control for routes on the Domains screen, and routes across two machines (both Apps must sit on one today)
 - [ ] 2.2 `deploy:basecamp` finds or creates the App and its Domains from the `frontier.config.js` deploy block, so no App id is copied out of the UI
 - [ ] 2.3 An App's env reaches Basecamp seeded once from `.env.production`, the rule `FJS-D1186` set for ring 0
 - [ ] 2.4 `domain:dns` reads the zone's SSL mode and refuses anything but Full (strict): Flexible plus Caddy's HTTPS redirect is a redirect loop
@@ -107,7 +107,7 @@ Basecamp answering at its hostname with an admin, both tokens stored as
 Secrets, and its own box `online` in its fleet.
 
 - [x] 3.1 Name the command — owner 2026-10-20: `fli provision`, Basecamp's own word for making a machine (`/servers/provision/`), over a flag on `deploy:setup`
-- [ ] 3.2 `FJS-D1253`: create the droplet through an existing DigitalOcean connector, then run ring 0 on it. **Box half built**: `fli provision` / `provision:destroy` run `packages/basecamp/api/src/core/provision-host.ts`, which drives `providers/compute/digitalocean.ts` (new `sshKey()`, `MachineSpec.sshKeys`) and prints the ssh block; proved on the 8122 sink only. No `user_data`: `install.sh` is served by a running Basecamp, so this box cannot boot from it, and `fli deploy:setup` installs over SSH. Left: run ring 0 from the same command, and one real droplet (0.1)
+- [ ] 3.2 `FJS-D1253`: create the droplet through an existing DigitalOcean connector, then run ring 0 on it. **Box half built**: `fli provision` / `provision:destroy` run `packages/basecamp/api/src/core/provision-host.ts`, which drives `providers/compute/digitalocean.ts` (new `sshKey()`, `MachineSpec.sshKeys`) and prints the ssh block; proved on the 8122 sink only. No `user_data`: `install.sh` is served by a running Basecamp, so this box cannot boot from it, and `fli deploy:setup` installs over SSH. Ring 0 from the same command is built: at a terminal, `fli provision` asks whether to install Basecamp once the box answers ssh, then runs `deploy:setup --auto-install` and `deploy` with `--server root@<ip>` from `packages/basecamp`; a run with no token opens the DigitalOcean token page, takes the paste and stores it (`core/requires.js`). Left: one real droplet (0.1)
 - [ ] 3.3 A non-interactive first run: `ENCRYPTION_KEY` generated locally and seeded with the env file, the admin made through `POST /setup`
 - [ ] 3.4 `FJS-D1254`: a script in the container (the `enroll-host.ts` shape) stores the DigitalOcean and Cloudflare tokens as the first workspace's Secrets, makes the Domain row for Basecamp's host, and runs `edge.sync`
 - [ ] 3.5 Grade the host on the real box: `/hub/security/` shows `hub.db-mode` and `hub.env-mode` graded rather than unknown, beside the `basecamp-host` row's fleet controls (built under `FJS-2714`)

@@ -76,6 +76,14 @@ describe('required-guarded-uncreatable', () => {
     expect(findings(`model Thing { id Int @id  token String @guarded  @@gate(8) }`,
       'required-guarded-uncreatable')).toEqual([])
   })
+
+  // FJS-D1133: a minted column is spelt @guarded @system, which the app fills
+  // by naming it, so it is graded as a @system column rather than uncreatable.
+  test('a @guarded @system column falls to required-system-unfilled', () => {
+    const schema = `model Thing { id Int @id  token String @guarded @system  @@gate(2.4.4.5) }`
+    expect(findings(schema, 'required-guarded-uncreatable')).toEqual([])
+    expect(findings(schema, 'required-system-unfilled').map((f: any) => f.field)).toEqual(['token'])
+  })
 })
 
 describe('required-system-unfilled', () => {

@@ -5,6 +5,7 @@
 // it also means `Command` is imported where a command is actually run, since a
 // static import of runtime.js pulls zx back in for every `fli list`.
 import { parseArgv, BOOL_ARGV } from './argv.js'
+import { requiresOf } from './requires.js'
 import { chalk, amber } from './color.js'
 import { homedir } from 'os'
 import { logger, loadFliEnv, fliVersion } from './utils.js'
@@ -98,7 +99,7 @@ async function printNamespace(ns, commands, verbose = false) {
 
   process.stdout.write('\n')
   const mod = getModule(ns)
-  const hasModule = mod && (mod.prose || mod.meta?.requires?.length)
+  const hasModule = mod && (mod.prose || requiresOf(mod.meta).length)
 
   process.stdout.write(`  ${yellow(ns)}  ${dim('namespace')}  ${dim('·')}  ${dim(commands.length + ' command' + (commands.length !== 1 ? 's' : ''))}`)
   if (hasModule && !verbose) process.stdout.write(dim('  · fli ' + ns + ' --verbose for setup docs'))
@@ -106,13 +107,14 @@ async function printNamespace(ns, commands, verbose = false) {
 
   // Show module docs if --verbose or if requires are unmet
   if (verbose && mod) {
-    if (mod.meta?.requires?.length) {
-      const _unmet = mod.meta.requires.filter(k => !process.env[k])
+    const required = requiresOf(mod.meta)
+    if (required.length) {
       process.stdout.write(`  ${dim('requires')}\n`)
-      for (const k of mod.meta.requires) {
-        const set = process.env[k]
+      for (const { key, url } of required) {
+        const set = process.env[key]
         const indicator = set ? green('✓') : red('✗')
-        process.stdout.write(`    ${indicator}  ${k}${set ? dim('  set') : ''}\n`)
+        const where = set ? dim('  set') : url ? dim(`  make one at ${url}`) : ''
+        process.stdout.write(`    ${indicator}  ${key}${where}\n`)
       }
       process.stdout.write('\n')
     }

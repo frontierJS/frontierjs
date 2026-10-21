@@ -19,7 +19,7 @@ const SCHEMA = `
   model Vault {
     id     Int     @id
     name   String
-    apiKey String? @secret
+    apiKey String? @secret @system
     @@db(main)
     @@gate(0)
     @@trail(audit)

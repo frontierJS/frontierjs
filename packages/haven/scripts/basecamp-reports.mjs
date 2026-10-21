@@ -138,6 +138,7 @@ function dailyBlocks(html) {
 // `collect.py` reads; this reads the same table, so the two never disagree.
 const CHECKLIST = ['files', 'show', '10338849264', '--in', '29933190']
 const PLANS = ['established', 'pro', 'starter', 'unset']
+const chunks = (xs, n) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n))
 const projectUrl = (id) => `https://app.basecamp.com/5483754/projects/${id}`
 
 /** `{ projectId: { plan, status } }` from the checklist's table and its "Internal / unmapped" list. */
@@ -162,17 +163,18 @@ const REPORTS = {
   plans: {
     help: 'open to-dos per client plan, each plan its projects with the most open first',
     async run() {
+      // An archived to-do is not open, and the listing leaves it out.
       const [doc, buckets] = await Promise.all([basecamp(...CHECKLIST), basecamp('todos', 'list', '--all-projects', '--all')])
       const table = planTable(doc.content ?? '')
       // A project the table does not name is counted with unset, as the plan's own name says.
       const groups = new Map([...PLANS, 'on hold'].map((p) => [p, []]))
-      for (const { bucket, todos } of buckets) {
+      for (const { bucket: project, todos } of buckets) {
         const open = todos.filter((t) => !t.completed)
         if (!open.length) continue
-        const row = table[bucket.id]
+        const row = table[project.id]
         const late = open.filter((t) => t.due_on && daysFrom(t.due_on) < 0)
         groups.get(row?.status === 'on-hold' ? 'on hold' : row?.plan ?? 'unset').push({
-          name: bucket.name.trim(), id: bucket.id, open: open.length, late: late.length,
+          name: project.name.trim(), id: project.id, open: open.length, late: late.length,
           oldest: late.length ? -Math.min(...late.map((t) => daysFrom(t.due_on))) : 0,
           undated: open.filter((t) => !t.due_on).length,
         })
@@ -184,20 +186,20 @@ const REPORTS = {
         title: `${sum(all, 'open')} open to-dos by plan`,
         blocks: [
           { kind: 'stats', items: [...groups].filter(([p, rows]) => p !== 'on hold' || rows.length).map(([p, rows]) => ({
-            label: title(p), value: sum(rows, 'open'), note: `${sum(rows, 'late')} late · ${rows.length} projects`,
+            label: title(p), value: sum(rows, 'open'),
+            note: `${sum(rows, 'late')} late`, noteTone: sum(rows, 'late') ? 'danger' : 'muted',
+            foot: `${rows.length} project${rows.length === 1 ? '' : 's'}`,
             tone: p === 'unset' || p === 'on hold' ? 'muted' : undefined,
           })) },
-          { kind: 'table', columns: ['Plan', 'Open', 'Late', 'No date', 'Projects'],
-            rows: [...groups].filter(([, rows]) => rows.length)
-              .map(([p, rows]) => [title(p), sum(rows, 'open'), sum(rows, 'late'), sum(rows, 'undated'), rows.length]) },
           ...[...groups].filter(([, rows]) => rows.length).flatMap(([p, rows]) => [
-            { kind: 'heading', text: `${title(p)} — ${sum(rows, 'open')} open` },
-            { kind: 'list', items: rows.sort((a, b) => b.open - a.open || a.name.localeCompare(b.name)).map((r) => ({
+            { kind: 'heading', text: `${title(p)} — ${sum(rows, 'open')} open in ${rows.length} project${rows.length === 1 ? '' : 's'}` },
+            // The desk keeps twelve items a list, so a long plan is several lists in a row.
+            ...chunks(rows.sort((a, b) => b.open - a.open || a.name.localeCompare(b.name)), 12).map((part) => ({ kind: 'list', items: part.map((r) => ({
               text: `${r.name} · ${r.open} open`,
-              note: r.late ? `${r.late} late, oldest ${r.oldest}d` : r.undated === r.open ? 'none dated' : '',
-              tone: r.late ? 'warn' : undefined,
+              note: r.late ? `${r.late} late · ${r.oldest}d` : r.undated === r.open ? 'none dated' : '',
+              noteTone: r.late ? 'danger' : undefined,
               url: projectUrl(r.id),
-            })) },
+            })) })),
           ]),
         ],
       }

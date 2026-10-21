@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync, existsSync, mkdirSync, rmSync, accessSync, constants } from 'fs'
+import { globalEnvPath } from './global-env.js'
 import { join, resolve, basename } from 'path'
 import { pathToFileURL } from 'url'
 import { tmpdir } from 'os'
@@ -461,7 +462,7 @@ export function fliVersion(root = global.fliRoot) {
 // `DATABASE_URL=./other.db fli db:migrate` and migrate the .env's database.
 export function loadFliEnv(projectRoot, home) {
   loadEnv(join(projectRoot, '.env'))
-  loadEnv(join(home, '.config', 'fli', '.env'))
+  loadEnv(globalEnvPath(home))
 }
 
 // The local name `name` is imported under from `from` or one of its subpaths —

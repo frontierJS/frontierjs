@@ -30,7 +30,8 @@ model Invoice {
   id       Int     @id
   ownerId  Int
   number   String
-  token    String  @guarded @default("minted")
+  token    String  @guarded @system @default("minted")
+  memo     String? @guarded
   lines    Line[]
   @@gate(1.8.8.9)
   @@allow(read,   true)
@@ -210,7 +211,7 @@ describe('an entry that lifts nothing is refused by name', () => {
       .rejects.toThrow(/"trackingCod" is not a @system or @guarded column/)
   })
 
-  it('a @guarded column is named the same way, and only its write half opens', async () => {
+  it('a @guarded @system column is named the same way, and only its write half opens', async () => {
     // A required @guarded digest left a grant model uncreatable below 8, so
     // every app minted it as asSystem() in a second write and lost the create
     // policy that says who may issue a link (FJS-1749, FJS-D819).
@@ -222,6 +223,16 @@ describe('an entry that lifts nothing is refused by name', () => {
     expect((await db.asSystem().invoice.findUnique({ where: { id: row.id } })).token).toBe('by-hand')
     // Naming it on one call does not open a read on the next.
     await expect(db.$setAuth(USER).invoice.findMany({ where: { token: 'by-hand' } })).rejects.toThrow()
+  })
+
+  // FJS-D1133: which columns the app fills on a caller's write is the
+  // schema's to say, so naming a plain @guarded column opens nothing.
+  it('a plain @guarded column named on the call is refused, and asSystem() still writes it', async () => {
+    const db = await client()
+    await expect(db.$setAuth(USER).invoice.create({ data: { ownerId: 1, number: 'G-3', memo: 'm' }, system: ['@@gate', 'memo'] }))
+      .rejects.toThrow(/"memo" is @guarded without @system, so naming it in system: lifts nothing/)
+    const row = await db.asSystem().invoice.create({ data: { ownerId: 1, number: 'G-3', memo: 'm' } })
+    expect((await db.asSystem().invoice.findUnique({ where: { id: row.id } })).memo).toBe('m')
   })
 
   it('the gate, on a model with none, is the SYSTEM-only default and lifting it reaches the model', async () => {
