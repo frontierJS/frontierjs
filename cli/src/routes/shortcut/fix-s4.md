@@ -18,7 +18,7 @@ here, not a migration.
 
 ```js
 $.exec({
-  command: `bun run fix:loop -- --sev S4 --rows 75 --lanes 2`,
+  command: `bun run fix:loop -- --sev S3,S4 --rows 75 --lanes 2`,
   args:    $.forwarded,
   cwd:     $.paths.root,
   dry:     flag.dry,

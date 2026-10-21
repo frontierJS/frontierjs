@@ -15,6 +15,7 @@
 // mine     this account's own last fourteen days of activity
 // team     each teammate's open to-dos: how many, how many late, what falls due this week
 // daily    the newest daily check posted in the Kobami chat, each item a link
+// plans    open to-dos per client plan (the Daily Checklist doc's table), project by project
 import { execFile } from 'node:child_process'
 
 const basecamp = (...args) => new Promise((resolve, reject) => {
@@ -132,7 +133,77 @@ function dailyBlocks(html) {
   return [...rows, ...blocks]
 }
 
+// The plan each client project is on is the plan table in the "Daily
+// Checklist" doc, which the team edits and the daily-check skill's
+// `collect.py` reads; this reads the same table, so the two never disagree.
+const CHECKLIST = ['files', 'show', '10338849264', '--in', '29933190']
+const PLANS = ['established', 'pro', 'starter', 'unset']
+const projectUrl = (id) => `https://app.basecamp.com/5483754/projects/${id}`
+
+/** `{ projectId: { plan, status } }` from the checklist's table and its "Internal / unmapped" list. */
+function planTable(html) {
+  const plans = {}
+  const cell = (c) => plain(c)
+  const table = html.match(/<table[\s\S]*?<\/table>/)?.[0]
+  if (!table) throw new Error('no plan table in the Daily Checklist doc')
+  for (const [, row] of table.matchAll(/<tr>([\s\S]*?)<\/tr>/g)) {
+    const cells = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => m[1])
+    const id = cells[1]?.match(/\/(?:projects|buckets)\/(\d+)/)?.[1]
+    const plan = cell(cells[0] ?? '').split(' ')[0].toLowerCase()
+    if (cells.length < 4 || !id || !PLANS.includes(plan)) continue
+    plans[id] = { plan, status: cell(cells[3]).toLowerCase() || 'active' }
+  }
+  const internal = html.split('Internal / unmapped')[1] ?? ''
+  for (const [, id] of internal.matchAll(/<li[^>]*><a href="[^"]*\/projects\/(\d+)">/g)) plans[id] ??= { plan: 'unset', status: 'active' }
+  return plans
+}
+
 const REPORTS = {
+  plans: {
+    help: 'open to-dos per client plan, each plan its projects with the most open first',
+    async run() {
+      const [doc, buckets] = await Promise.all([basecamp(...CHECKLIST), basecamp('todos', 'list', '--all-projects', '--all')])
+      const table = planTable(doc.content ?? '')
+      // A project the table does not name is counted with unset, as the plan's own name says.
+      const groups = new Map([...PLANS, 'on hold'].map((p) => [p, []]))
+      for (const { bucket, todos } of buckets) {
+        const open = todos.filter((t) => !t.completed)
+        if (!open.length) continue
+        const row = table[bucket.id]
+        const late = open.filter((t) => t.due_on && daysFrom(t.due_on) < 0)
+        groups.get(row?.status === 'on-hold' ? 'on hold' : row?.plan ?? 'unset').push({
+          name: bucket.name.trim(), id: bucket.id, open: open.length, late: late.length,
+          oldest: late.length ? -Math.min(...late.map((t) => daysFrom(t.due_on))) : 0,
+          undated: open.filter((t) => !t.due_on).length,
+        })
+      }
+      const sum = (rows, key) => rows.reduce((n, r) => n + r[key], 0)
+      const all = [...groups.values()].flat()
+      const title = (p) => p[0].toUpperCase() + p.slice(1)
+      return {
+        title: `${sum(all, 'open')} open to-dos by plan`,
+        blocks: [
+          { kind: 'stats', items: [...groups].filter(([p, rows]) => p !== 'on hold' || rows.length).map(([p, rows]) => ({
+            label: title(p), value: sum(rows, 'open'), note: `${sum(rows, 'late')} late · ${rows.length} projects`,
+            tone: p === 'unset' || p === 'on hold' ? 'muted' : undefined,
+          })) },
+          { kind: 'table', columns: ['Plan', 'Open', 'Late', 'No date', 'Projects'],
+            rows: [...groups].filter(([, rows]) => rows.length)
+              .map(([p, rows]) => [title(p), sum(rows, 'open'), sum(rows, 'late'), sum(rows, 'undated'), rows.length]) },
+          ...[...groups].filter(([, rows]) => rows.length).flatMap(([p, rows]) => [
+            { kind: 'heading', text: `${title(p)} — ${sum(rows, 'open')} open` },
+            { kind: 'list', items: rows.sort((a, b) => b.open - a.open || a.name.localeCompare(b.name)).map((r) => ({
+              text: `${r.name} · ${r.open} open`,
+              note: r.late ? `${r.late} late, oldest ${r.oldest}d` : r.undated === r.open ? 'none dated' : '',
+              tone: r.late ? 'warn' : undefined,
+              url: projectUrl(r.id),
+            })) },
+          ]),
+        ],
+      }
+    },
+  },
+
   overdue: {
     help: "the team's past-due to-dos: how late, who holds them, which can still be saved",
     async run() {
