@@ -122,7 +122,7 @@ the 22 bad-schema probes from Phase 0 each get the message the row asks for.
 - [x] 4.1 Gate order and model case refuse in `parse()` (`FJS-2948`)
 - [x] 4.2 The schema-function branch only for a declared `function`; a typo'd attribute gets *did you mean* (`FJS-2949`, `FJS-2977`) — built: `FJS-2949`, `FJS-2977` closed
 - [x] 4.3 `scope` (exclusion key) renamed away from `@@scope` (`FJS-2950`); a move word of its own or the overload documented once (`FJS-2951`) — ruled `FJS-D1095` C, both words stay and are told apart by position (`FJS-2950`); the overload said once per `FJS-D1094` A (`FJS-2951`)
-- [ ] 4.4 Named keys for every optional operand, positional only for the required one (`FJS-2978`); migration verbs off the main barrel (`FJS-2979`)
+- [ ] 4.4 Named keys for every optional operand, positional only for the required one (`FJS-2978`, built); migration verbs off the main barrel (`FJS-2979`)
 - [ ] 4.5 The eight open `@@transitions` and access gaps ruled additive-or-not before the word is called locked: `FJS-2801`, `FJS-1971`, `FJS-2435`, `FJS-2920`, `FJS-1815`, `FJS-2035`, `FJS-1745`, `FJS-2289`
 
 ### Phase 5 — Re-scaffold and re-read

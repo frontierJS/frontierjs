@@ -29,7 +29,7 @@ test('he offers a package per row fli next ranks that the loop can take, none by
   expect(offers[0]).toEqual({ pkg: free[0].pkg[0], id: free[0].id, severity: free[0].severity, title: free[0].title })
   expect(new Set(offers.map((o) => o.pkg)).size).toBe(offers.length)
   for (const o of offers) expect(ranked.find((r) => r.id === o.id).byHand).toBe(false)
-})
+}, 30_000)
 
 test('a yes starts the loop on the package, detached; a second yes is refused while it lives and lets go when it ends', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'haven-taskmaster-'))

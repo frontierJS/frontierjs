@@ -946,9 +946,9 @@ class Parser {
       case 'scoped': return { kind: 'scoped', ...this.parseScoped() }
 
       case 'computed':   return { kind: 'computed' }
-      // @values(TaskTag)             — required, the default
-      // @values(TaskTag, open)       — a value outside the set is accepted AND joins it
-      // @values(LeadSource, suggested) — accepted, the set is offered and not enforced
+      // @values(TaskTag)                     — required, the default
+      // @values(TaskTag, strength: open)     — a value outside the set is accepted AND joins it
+      // @values(LeadSource, strength: suggested) — accepted, the set is offered and not enforced
       //
       // Beside @relation rather than instead of it: storage (a foreign key with
       // referential integrity) and resolution (where the offered values come
@@ -958,8 +958,8 @@ class Parser {
       // The dependency is a JOIN and it goes on the BINDING, for the reason the
       // strength does: a set is reusable and a controlling column is
       // model-local (`FJS-D122`). Which column of the SOURCE matches is derived
-      // from the relation path and never written here — `on <column>` is the
-      // escape for a source that reaches the same model twice.
+      // from the relation path and never written here — `matching: <column>`
+      // is the escape for a source that reaches the same model twice.
       case 'values': {
         this.eat(TK.LPAREN)
         const set = this.eat(TK.IDENT).value
@@ -968,28 +968,39 @@ class Parser {
         while (this.maybeEat(TK.COMMA)) {
           const tok  = this.peek()
           const word = this.eat(TK.IDENT).value
-          // A named argument, told from the positional strength by the colon.
-          if (this.maybeEat(TK.COLON)) {
-            if (word !== 'dependsOn') throw new ParseError(
-              `@values(${set}, ${word}: …): unknown argument. The only named one is 'dependsOn', ` +
-              `which takes the column on THIS model whose value narrows the list.`, tok)
+          if (!this.maybeEat(TK.COLON)) {
+            if (VALUE_STRENGTHS.has(word)) throw new ParseError(
+              `@values(${set}, ${word}): a strength is a named argument — write 'strength: ${word}'`, tok)
+            throw new ParseError(
+              `@values(${set}, ${word}): expected a named argument — 'strength:', 'dependsOn:' or 'matching:'`, tok)
+          }
+          if (word === 'strength') {
+            if (strength) throw new ParseError(`@values(${set}): 'strength' is declared twice`, tok)
+            const at = this.peek()
+            strength = this.eat(TK.IDENT).value
+            if (!VALUE_STRENGTHS.has(strength)) throw new ParseError(
+              `@values(${set}, strength: ${strength}): unknown strength. One of ${[...VALUE_STRENGTHS].join(', ')}. ` +
+              `Unstated is 'required'.`, at)
+          } else if (word === 'dependsOn') {
             if (dependsOn) throw new ParseError(`@values(${set}): 'dependsOn' is declared twice`, tok)
             dependsOn = this.eat(TK.IDENT).value
-            // `dependsOn: countryId on regionCountryId` — the source side, for
-            // the case the relation walk cannot decide.
-            if (this.check(TK.IDENT) && this.peek().value === 'on') {
-              this.advance()
-              dependsOnSource = this.eat(TK.IDENT).value
-            }
-            continue
+            if (this.check(TK.IDENT) && this.peek().value === 'on') throw new ParseError(
+              `@values(${set}, dependsOn: ${dependsOn} on …): the source column is a named argument — ` +
+              `write 'dependsOn: ${dependsOn}, matching: <column>'`, this.peek())
+          } else if (word === 'matching') {
+            if (dependsOnSource) throw new ParseError(`@values(${set}): 'matching' is declared twice`, tok)
+            dependsOnSource = this.eat(TK.IDENT).value
+          } else {
+            throw new ParseError(
+              `@values(${set}, ${word}: …): unknown argument. The named ones are 'strength' (required, open or suggested), ` +
+              `'dependsOn' (the column on THIS model whose value narrows the list) and 'matching' ` +
+              `(the column on the source it is matched against).`, tok)
           }
-          if (strength) throw new ParseError(`@values(${set}): a strength is declared twice`, tok)
-          if (!VALUE_STRENGTHS.has(word)) throw new ParseError(
-            `@values(${set}, ${word}): unknown strength. One of ${[...VALUE_STRENGTHS].join(', ')}. ` +
-            `Unstated is 'required'.`, tok)
-          strength = word
         }
         this.eat(TK.RPAREN)
+        if (dependsOnSource && !dependsOn) throw new ParseError(
+          `@values(${set}, matching: ${dependsOnSource}): 'matching' names the source side of a dependency, ` +
+          `so it needs 'dependsOn: <column>' beside it`, this.peek())
         return { kind: 'values', set, strength: strength ?? 'required', dependsOn, dependsOnSource }
       }
 
@@ -2238,9 +2249,9 @@ class Parser {
         this.eat(TK.RPAREN)
         return { kind: 'arc', fields, optional, message }
       }
-      // @@relator([workspaceId, userId], once)            — the pair happens at most once
-      // @@relator([appId, serverId], many: replicaIndex)  — many, told apart by a column
-      // @@relator([recipeId, serverId], many)             — many, told apart by nothing
+      // @@relator([workspaceId, userId], once)              — the pair happens at most once
+      // @@relator([appId, serverId], many, by: replicaIndex)  — many, told apart by a column
+      // @@relator([recipeId, serverId], many)               — many, told apart by nothing
       //
       // A relationship that is a row, existentially dependent on the things it
       // relates. The argument that cannot be left off is REPEATABILITY, because
@@ -2252,21 +2263,27 @@ class Parser {
         const fields = this.parseFieldList()
         if (!this.maybeEat(TK.COMMA)) throw new ParseError(
           `@@relator([${fields.join(', ')}]) does not say whether this relationship may happen twice. ` +
-          `Write 'once' if the relata identify the row, 'many: <column>' if a column tells two of them ` +
+          `Write 'once' if the relata identify the row, 'many, by: <column>' if a column tells two of them ` +
           `apart, or 'many' if nothing does`, this.peek())
         const at     = this.peek()
         const repeat = this.eat(TK.IDENT).value
         if (repeat !== 'once' && repeat !== 'many') throw new ParseError(
           `@@relator: expected 'once' or 'many', got '${repeat}'`, at)
+        if (this.check(TK.COLON)) throw new ParseError(
+          repeat === 'once'
+            ? `@@relator(…, once: …) takes no column — 'once' says the relata identify the row on their own. ` +
+              `A column that tells two apart is 'many, by: <column>'`
+            : `@@relator(…, many: <column>): the column is a named argument — write 'many, by: <column>'`, this.peek())
         let discriminator = null
-        if (this.maybeEat(TK.COLON)) {
-          // `once: col` is refused rather than read as `many: col`. The two
-          // words are the whole declaration, and a form that accepts a column
-          // beside the one that says there is nothing to tell apart is a line
-          // whose meaning depends on which half the reader trusts.
+        if (this.maybeEat(TK.COMMA)) {
+          const argAt   = this.peek()
+          const argName = this.eat(TK.IDENT).value
+          if (argName !== 'by') throw new ParseError(
+            `@@relator: unknown argument '${argName}' — the only named one is 'by', the column that tells two apart`, argAt)
+          this.eat(TK.COLON)
           if (repeat === 'once') throw new ParseError(
-            `@@relator(…, once: …) takes no column — 'once' says the relata identify the row on their ` +
-            `own. A column that tells two apart is 'many: <column>'`, at)
+            `@@relator(…, once, by: …) takes no column — 'once' says the relata identify the row on their ` +
+            `own. A column that tells two apart is 'many, by: <column>'`, argAt)
           discriminator = this.eat(TK.IDENT).value
         }
         this.eat(TK.RPAREN)
@@ -3433,7 +3450,7 @@ class Parser {
         default:
           throw new ParseError(
             `valueset '${name}': unknown key '${key}'. A value set takes source, value, scope, where and order. ` +
-            `A strength is not one of them — it goes on the field, as @values(${name}, required|open|suggested), ` +
+            `A strength is not one of them — it goes on the field, as @values(${name}, strength: required|open|suggested), ` +
             `because one list can be enforced on one field and only offered on another.`,
             keyTok,
           )
@@ -4940,7 +4957,7 @@ function expandMirror(schema) {
 // cannot know that both ends of the pair are read from. A relator, by
 // definition, does — so the reverse index is emitted rather than remembered.
 //
-// Which relata need one falls out of prefix matching: `once` and `many: col`
+// Which relata need one falls out of prefix matching: `once` and `many, by: col`
 // both emit a unique LEADING with the first relatum, so only the trailing ones
 // are uncovered. A bare `many` emits no unique at all, so every relatum is.
 function expandRelator(schema) {
@@ -4955,7 +4972,7 @@ function expandRelator(schema) {
     // check, which owns that sentence for every attribute. The first is the one
     // in force there, so it is the one expanded here.
     const a    = declared[0]
-    const shown = `@@relator([${a.fields.join(', ')}], ${a.repeat}${a.discriminator ? `: ${a.discriminator}` : ''})`
+    const shown = `@@relator([${a.fields.join(', ')}], ${a.repeat}${a.discriminator ? `, by: ${a.discriminator}` : ''})`
     const fieldNamed = (n) => model.fields.find(f => f.name === n)
 
     // The relation attribute that OWNS a column, which is what makes the column
@@ -4999,7 +5016,7 @@ function expandRelator(schema) {
         `Model '${model.name}': ${shown} names ${notForeign.map(n => `'${n}'`).join(', ')}, which ` +
         `${notForeign.length > 1 ? 'are not foreign key columns' : 'is not a foreign key column'} — a relatum is ` +
         `something this row relates, so it is named by a @relation. A column that tells two of these apart is ` +
-        `'many: <column>'`)
+        `'many, by: <column>'`)
       continue
     }
 
@@ -6170,7 +6187,7 @@ function validate(schema) {
           errors.push(`${at} — dependsOn names '${field.name}', the column it is bound to. A list cannot narrow by itself`)
         } else if (bind.dependsOnSource) {
           if (!src2(vs).fields.some(f => f.name === bind.dependsOnSource))
-            errors.push(`${at} — dependsOn ... on '${bind.dependsOnSource}' is not a field on '${vs.source}'`)
+            errors.push(`${at} — matching: '${bind.dependsOnSource}' is not a field on '${vs.source}'`)
           else bind.dependsOnField = bind.dependsOnSource
         } else {
           // What does the controlling column point AT? The relation beside it
@@ -6181,7 +6198,7 @@ function validate(schema) {
           if (!target) {
             errors.push(
               `${at} — dependsOn '${bind.dependsOn}' is not a foreign key, so there is no relation to follow to ` +
-              `'${vs.source}'. Name the column on '${vs.source}' it is matched against: dependsOn: ${bind.dependsOn} on <column>`)
+              `'${vs.source}'. Name the column on '${vs.source}' it is matched against: dependsOn: ${bind.dependsOn}, matching: <column>`)
           } else {
             const hops = src2(vs).fields
               .filter(f => f.type?.name === target && f.attributes?.some(a => a.kind === 'relation'))
@@ -6190,11 +6207,11 @@ function validate(schema) {
             if (hops.length === 1) bind.dependsOnField = hops[0]
             else if (!hops.length) errors.push(
               `${at} — dependsOn '${bind.dependsOn}' points at '${target}' and '${vs.source}' has no relation to it, ` +
-              `so the two lists are unrelated. Name the column to match on: dependsOn: ${bind.dependsOn} on <column>`)
+              `so the two lists are unrelated. Name the column to match on: dependsOn: ${bind.dependsOn}, matching: <column>`)
             else errors.push(
               `${at} — dependsOn '${bind.dependsOn}' points at '${target}' and '${vs.source}' reaches it ` +
               `${hops.length} ways (${hops.join(', ')}), so which one narrows the list is not decidable. ` +
-              `State it: dependsOn: ${bind.dependsOn} on <column>`)
+              `State it: dependsOn: ${bind.dependsOn}, matching: <column>`)
           }
         }
       }

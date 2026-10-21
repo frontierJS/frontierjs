@@ -40,8 +40,8 @@ model Task {
   id    Int     @id
   title String
   tag   String? @values(TaskTag)
-  grow  String? @values(TaskTag, open)
-  free  String? @values(TaskTag, suggested)
+  grow  String? @values(TaskTag, strength: open)
+  free  String? @values(TaskTag, strength: suggested)
   who   String? @values(Assignee)
   live  String? @values(LiveTag)
   tags  String[] @values(TaskTag)
@@ -100,7 +100,7 @@ describe('the three strengths', () => {
       schema: `
         model Tag { id Int @id  label String @unique  @@label(label)  @@gate(8) }
         valueset TaskTag { source Tag value label }
-        model Task { id Int @id  title String  free String? @values(TaskTag, suggested)  @@gate(0) }`,
+        model Task { id Int @id  title String  free String? @values(TaskTag, strength: suggested)  @@gate(0) }`,
       db: ':memory:',
     })
     await db.task.create({ data: { title: 'a', free: 'anything' }, select: false })
@@ -168,7 +168,7 @@ describe('the set is resolved through the CALLER’S accessor', () => {
       id    Int @id
       title String
       tag   String? @values(TaskTag)
-      grow  String? @values(TaskTag, open)
+      grow  String? @values(TaskTag, strength: open)
       @@gate(0)
     }`
 
@@ -291,7 +291,7 @@ valueset ProductColor { source Color  value name  scope current }
 model Variant {
   id     Int    @id
   sku    String @unique
-  color String @values(ProductColor, open)
+  color String @values(ProductColor, strength: open)
 }
 `
 

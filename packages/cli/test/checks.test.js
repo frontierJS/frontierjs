@@ -3860,7 +3860,7 @@ model Comment {
 model Comment {
   id          Int    @id
   workspaceId Int
-  subjectType String @values(SubjectSet, open)
+  subjectType String @values(SubjectSet, strength: open)
   subjectId   Int
 }
 `))

@@ -36,7 +36,7 @@ import { parse } from './core/parser.js'
 // is used, and one that does not parse is a kill the parser made.
 
 const GATE_RE = /@@gate\(\s*([\d.]+)\s*\)/
-const RELATOR_RE = /@@relator\(\s*\[([^\]]*)\]\s*,\s*(once|many)(?:\s*:\s*(\w+))?\s*\)/
+const RELATOR_RE = /@@relator\(\s*\[([^\]]*)\]\s*,\s*(once|many)(?:\s*,\s*by\s*:\s*(\w+))?\s*\)/
 
 const MUTATIONS = [
   {
@@ -118,7 +118,7 @@ const MUTATIONS = [
     // The two directions a relator can be wrong, and they fail differently.
     //
     // TIGHTEN is the one the word was built for. `@@relator([appId, serverId],
-    // many: replicaIndex)` against `once` collapses the key onto the pair, so
+    // many, by: replicaIndex)` against `once` collapses the key onto the pair, so
     // the SECOND replica of an app on a machine is refused — the app quietly
     // loses the ability to scale, and before the word existed no suite in this
     // repo could see it.
@@ -132,7 +132,7 @@ const MUTATIONS = [
     apply(line) {
       const hit = line.match(RELATOR_RE)
       if (!hit || hit[2] === 'once') return []
-      const from = hit[3] ? `many: ${hit[3]}` : 'many'
+      const from = hit[3] ? `many, by: ${hit[3]}` : 'many'
       return [{
         line: line.replace(RELATOR_RE, `@@relator([${hit[1]}], once)`),
         meta: { from },
@@ -148,7 +148,7 @@ const MUTATIONS = [
     apply(line) {
       const hit = line.match(RELATOR_RE)
       if (!hit || (hit[2] === 'many' && !hit[3])) return []
-      const from = hit[2] === 'once' ? 'once' : `many: ${hit[3]}`
+      const from = hit[2] === 'once' ? 'once' : `many, by: ${hit[3]}`
       return [{
         line: line.replace(RELATOR_RE, `@@relator([${hit[1]}], many)`),
         meta: { from },

@@ -294,11 +294,11 @@ the word exists to ask.
 | form | means | emits |
 | --- | --- | --- |
 | `once` | the relata identify the row | `UNIQUE(relata)` |
-| `many: <column>` | the column tells two apart | `UNIQUE(relata + column)` |
+| `many, by: <column>` | the column tells two apart | `UNIQUE(relata + column)` |
 | `many` | nothing tells two apart | no key |
 
 **Plus an index on every relatum the emitted key does not already cover.** A
-key is prefix-matched, so `once` and `many: <column>` leave only the trailing
+key is prefix-matched, so `once` and `many, by: <column>` leave only the trailing
 relata uncovered; a bare `many` emits no key, so it indexes all of them. This is
 the half `@@unique` cannot do on its own: both ends of a relator are entrances,
 and a composite leading with one side leaves the other with nothing to use —
@@ -367,7 +367,7 @@ model AppServer {
   server       Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
   replicaIndex Int
 
-  @@relator([appId, serverId], many: replicaIndex)
+  @@relator([appId, serverId], many, by: replicaIndex)
 }
 ```
 
@@ -379,7 +379,7 @@ await db.recipeRun.upsert({ where: { recipeId: 1, serverId: 2 }, create: { recip
 ```
 
 ```js throws
-// @@relator([appId, serverId], many: replicaIndex)
+// @@relator([appId, serverId], many, by: replicaIndex)
 await db.appServer.upsert({ where: { appId: 1, serverId: 2 }, create: { appId: 1, serverId: 2, replicaIndex: 0 }, update: {} })
 // ValidationError: …what identifies a row is appId + serverId + replicaIndex,
 // and this where names replicaIndex nowhere.
@@ -391,9 +391,9 @@ addressed by the row's own id.
 **`verifyConstraints` grades the answer, and `litestone mutate` grades the
 check.** The derived suite writes a row, writes the same tuple again, and
 compares what happened against what the word says: `once` must refuse it, `many`
-must take it, and `many: <column>` must refuse the identical tuple while
+must take it, and `many, by: <column>` must refuse the identical tuple while
 accepting the same pair under a different value. That second case is the one
-worth having — without it, tightening `many: replicaIndex` to `once` looks
+worth having — without it, tightening `many, by: replicaIndex` to `once` looks
 correct from the outside, which is precisely the change that costs an app the
 ability to run two replicas of one thing on one machine.
 

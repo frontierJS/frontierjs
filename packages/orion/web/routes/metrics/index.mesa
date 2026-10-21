@@ -46,6 +46,8 @@ title: Metrics
       })
     } catch (e) { error = e.message }
   }
+  // A watch handler is deferred -- it does not run on mount.
+  load()
   $: windowMs, flowId, () => load()
 
   const pct = (n) => n == null ? '—' : Math.round(n * 100) + '%'

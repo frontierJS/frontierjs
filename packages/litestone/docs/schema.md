@@ -179,8 +179,10 @@ See [access-control.md](./access-control.md).
 @generated(`{a} {b}`)            BACKTICKS: a template — the string it produces, rather
                                  than SQL. A NULL column takes the separator beside it
 @values(SetName)                 the column's legal values come from a declared `valueset`.
-@values(SetName, open)           A second declaration BESIDE @relation, never instead of it —
-@values(SetName, suggested)      storage is a foreign key, this is resolution. Strength is on
+@values(SetName, strength: open)
+@values(SetName, strength: suggested)
+                                 A second declaration BESIDE @relation, never instead of it —
+                                 storage is a foreign key, this is resolution. Strength is on
                                  the BINDING because one list is legitimately enforced on one
                                  column and merely offered on another: `required` (unstated)
                                  refuses a value outside the set, `open` accepts it AND creates

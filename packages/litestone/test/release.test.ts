@@ -419,8 +419,8 @@ describe('value sets — a rule about legal values, which no other line of the s
   })
 
   it('binding it weakly is an expand — nothing is refused', () => {
-    expect(verdictOf(VS_UNBOUND, VS({ strength: ', suggested' })).verdict).toBe('expand')
-    expect(verdictOf(VS_UNBOUND, VS({ strength: ', open' })).verdict).toBe('expand')
+    expect(verdictOf(VS_UNBOUND, VS({ strength: ', strength: suggested' })).verdict).toBe('expand')
+    expect(verdictOf(VS_UNBOUND, VS({ strength: ', strength: open' })).verdict).toBe('expand')
   })
 
   it('removing a binding is an expand', () => {
@@ -428,7 +428,7 @@ describe('value sets — a rule about legal values, which no other line of the s
   })
 
   it('tightening into required is the pivot; every other move between strengths is not', () => {
-    const at = (s: string) => VS({ strength: s ? `, ${s}` : '' })
+    const at = (s: string) => VS({ strength: s ? `, strength: ${s}` : '' })
 
     expect(verdictOf(at('suggested'), at('')).verdict).toBe('contract')
     expect(verdictOf(at('open'),      at('')).verdict).toBe('contract')
@@ -457,7 +457,7 @@ describe('value sets — a rule about legal values, which no other line of the s
   })
 
   it('…and an expand where nothing enforces it — a picker offers less and nothing refuses', () => {
-    const weak = (o = {}) => VS({ ...o, strength: ', suggested' })
+    const weak = (o = {}) => VS({ ...o, strength: ', strength: suggested' })
     const v = verdictOf(weak(), weak({ scope: '  scope mine' }))
     expect(v.verdict).toBe('expand')
     expect(about(v, 'valueset TaskTag')!.detail).toContain('nothing binds it as `required`')
@@ -477,7 +477,7 @@ describe('value sets — a rule about legal values, which no other line of the s
   it('changing which column a record stores is a contract whatever the strength', () => {
     // Not gated on enforcement: the stored form changed, so a value N-1 wrote
     // and a value this release writes stop meaning the same thing.
-    const v = verdictOf(VS({ strength: ', suggested' }), VS({ value: 'slug', strength: ', suggested' }))
+    const v = verdictOf(VS({ strength: ', strength: suggested' }), VS({ value: 'slug', strength: ', strength: suggested' }))
     expect(v.verdict).toBe('contract')
     expect(about(v, 'valueset TaskTag')!.detail).toContain('value column `code` → `slug`')
   })
@@ -500,7 +500,7 @@ describe('value sets — a rule about legal values, which no other line of the s
 
     expect(md).toContain('## Value sets')
     expect(md).toContain('| `TaskTag` | `Tag` | `code` | `mine` | — |')
-    expect(md).toContain('`@values(TaskTag, required)`')
+    expect(md).toContain('`@values(TaskTag, strength: required)`')
     expect(renderReleaseSnapshot(surface(VS({ scope: '  scope mine' })))).toBe(md)
   })
 

@@ -635,7 +635,7 @@ function compareValueBinding(old, field, at, f) {
   if (!b) {
     add(f, n.strength === 'required' ? CONTRACT : EXPAND, at, n.strength === 'required'
       ? `@values(${n.set}) added — every N-1 write of a value outside \`${n.set}\` is refused`
-      : `@values(${n.set}, ${n.strength}) added — the set is offered and a value outside it is still accepted`)
+      : `@values(${n.set}, strength: ${n.strength}) added — the set is offered and a value outside it is still accepted`)
     return
   }
 
@@ -1176,7 +1176,7 @@ export function renderReleaseSnapshot(surface, { source = 'schema.lite' } = {}) 
           // A policy expression legitimately contains `||`, which ends the cell
           // and silently drops the rest of the row.
           ...x.allows.map(a => `\`@allow(${a.replace(/\|/g, '\\|')})\``),
-          x.values ? `\`@values(${x.values.set}, ${x.values.strength})\`` : null,
+          x.values ? `\`@values(${x.values.set}, strength: ${x.values.strength})\`` : null,
           x.writeRequired ? '**required on write**' : null,
         ].filter(Boolean)
         const nullable = x.optional === null ? '—' : x.optional ? 'yes' : 'no'

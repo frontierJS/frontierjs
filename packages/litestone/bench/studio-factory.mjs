@@ -2,24 +2,33 @@
 //
 //   bun bench/studio-factory.mjs
 //
-// Copies basecamp's db to a tmpdir first, so it never writes to the real one.
+// Builds a scratch db from basecamp's schema in a tmpdir, so it never writes to
+// the real one and never grades a stale basecamp.db.
 // The claim under test is not "a row appeared" but "a row appeared WITH its
 // required parents, graded by the gate, and the response said which tables it
 // touched" — a generated row that silently writes six tables is the shape that
 // stops a scratch database being one.
 import { spawn } from 'node:child_process'
-import { mkdtempSync, cpSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { appendFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { copyBasecampDb } from './basecamp-copy.mjs'
 const R = join(dirname(fileURLToPath(import.meta.url)), '../../..')
 const PORT = 7503
 let fails = 0
 const ok = (n, c, x = '') => { console.log((c ? 'ok   ' : 'FAIL ') + n + (c ? '' : '  → ' + x)); if (!c) fails++ }
 
-// copy basecamp's db so the drive never writes to the real one
-const work = mkdtempSync(join(tmpdir(), 'factory-'))
-cpSync(`${R}/packages/basecamp/db`, work, { recursive: true })
+const work = copyBasecampDb('factory-')
+// basecamp keeps its audit trail in a sqlite file, so none of its models is append-only
+// and the refusal below would have nothing to refuse
+appendFileSync(join(work, 'schema.lite'), `
+database events { path "./events/"; driver jsonl }
+model ScratchEvent {
+  id   Int    @id @default(autoincrement())
+  name String
+  @@db(events)
+}
+`)
 
 const studio = spawn('bun', [`${R}/packages/litestone/src/tools/cli.js`, 'studio', `--port=${PORT}`],
   { cwd: work, env: { ...process.env, ENCRYPTION_KEY: 'a'.repeat(64) }, stdio: ['ignore','pipe','pipe'] })
@@ -86,8 +95,8 @@ try {
   const badRow = await api('/factory', { table: 'nope2' })
   ok('a non-access error offers no retry', !badRow.retryAsSystem, JSON.stringify(badRow))
 
-  const log = await api('/factory', { table: 'AuditTrail' })
-  ok('logger model refused by name', !log.ok && /append-only|Unknown table/.test(log.error ?? ''), log.error)
+  const log = await api('/factory', { table: 'ScratchEvent' })
+  ok('logger model refused by name', !log.ok && /append-only/.test(log.error ?? ''), log.error)
 
   const bad = await api('/factory', { table: 'nope' })
   ok('unknown table refused', !bad.ok && /Unknown table/.test(bad.error ?? ''), bad.error)
