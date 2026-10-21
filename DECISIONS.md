@@ -4296,6 +4296,12 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d1368"></a>2026-10-21 · `FJS-D1368` — What language does `@from(…, where:)` take, and how does a screen ask for a draft's computed columns — The expression language only, as every other `where:` (`@required`, `@@unique`, `@@index`) already is; a quoted string is refused at parse with the rewrite named. The AST reaches the client in `x-litestone-from` beside `rel`, the list field holding the children, and `resource.preview(draft)` — one verb, replacing `FJS-D1112`'s `generated(draft)` — answers each previewable `@generated` and each aggregate `@from` over `draft[rel]`, a child's own `@generated` answered first. Django's conditional aggregate is the same shape: `Sum('amount', filter=Q(...))` takes an ORM expression, not `RawSQL`.
+
+Asked in chat (FJS-3387). **A** was picked over **D** (quote says which, mirroring `FJS-D1112`: unquoted previewable, quoted SQL server-only) and **stay SQL** (close FJS-3387 won't-fix). Unlike `@generated`, all ten `@from where:` in the tree fit the language (`IS NULL` → `== null`, `and` → `&&`), so the SQL escape had no caller; a filter wider than the language is a `@derived` or a hook.
+
+The filter compiles through the POLICY compiler (`compileFromWhere`, `policy.js`), three-valued, not `compileDerived`, which is two-valued for a column's sake (`FJS-2614`): under it `status != 'lost'` counted a null-status row that `evaluate` and the SQL string it replaced both leave out — the oracle in `test/generated-expression.test.ts` was red on exactly that. Literals are inlined and `now()` becomes the `strftime` `clockedDb` stamps, so a `@from` now reads the client's clock as `findMany` does. *Lives in:* `packages/litestone/src/core/{parser,policy,schema-maps}.js`, `src/jsonschema.js` (`aggregateFrom`); `packages/sierra/src/resource/field-rules.js` (`fromFor`, `previewOf`).
+
 ### <a id="fjs-d1365"></a>2026-10-21 · `FJS-D1365` — Does arithmetic reach an orion flow and a stored fill template, or only a schema — Extend to both now: `arith`/`round` in orion's compile and evaluator, and in `values.js`'s allow-list.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (leave both until a caller asks; the refusals stay by name), **C** (fill templates only: `values.js` already answers through `evaluate`, so it is one allow-list line; flows wait).

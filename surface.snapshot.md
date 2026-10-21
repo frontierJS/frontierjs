@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3737 source file(s) read
+26 package(s) · 3743 source file(s) read
 229 entry point(s), 36 imported by nothing outside their package, 16 emitted
-1521 value export(s), 613 reached by nothing outside, 161 emitted
+1526 value export(s), 612 reached by nothing outside, 161 emitted
 442 type export(s), 340 reached by nothing outside
 ```
 
@@ -37,11 +37,11 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `litestone` | 26 | 6 | 251 | 130 | 37 | 1 | 1 |
 | `junction` | 26 | 4 | 263 | 121 | 13 | 265 | 210 |
 | `mesa` | 17 | 4 | 276 | 99 | 67 | 0 | 0 |
-| `sierra` | 25 | 6 | 193 | 80 | 21 | 0 | 0 |
+| `sierra` | 25 | 6 | 196 | 82 | 21 | 0 | 0 |
 | `auth` | 6 | 1 | 51 | 36 | 3 | 15 | 13 |
 | `jetty` | 7 | 4 | 43 | 29 | 0 | 0 | 0 |
 | `ui` | 9 | 0 | 51 | 33 | 4 | 0 | 0 |
-| `toolbelt` | 55 | 0 | 238 | 30 | 9 | 0 | 0 |
+| `toolbelt` | 55 | 0 | 240 | 27 | 9 | 0 | 0 |
 | `conduit` | 4 | 2 | 26 | 15 | 1 | 59 | 45 |
 | `site-kit` | 9 | 4 | 30 | 12 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 8 | 0 | 36 | 21 |
@@ -265,13 +265,13 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/sierra`
 
-`packages/sierra` · 25 entry point(s) · 193 value, 0 type export(s)
+`packages/sierra` · 25 entry point(s) · 196 value, 0 type export(s)
 
 **Entries imported by nothing outside (6):** `./scanner` `./fetch` `./components/RouterView` `./components/ChainRenderer` `./check` `./tui`
 
 **Entries emitted (7):** `.` `./router/internals` `./analytics` `./islands` `./devtools` `./widget` `./mcp`
 
-**Unreached values (80):** `_deepMerge` `_findCatchAll` `_resetInternals` `_resetMcpApp` `_resetPage` `_resetPresenceHolders` `_scrollMemoryHas` `_scrollMemorySize` `afterNavigate` `allSchemas` `appFailed` `applyHostContext` `buildCommitments` `buildGate` `buildLayoutMap` `buildRelations` `buildTransitions` `buildVersion` `ChainRenderer` `columnList` `commitmentsAt` `COMMITTED_MESSAGE` `COMPATIBILITY_DATE` `configureFetch` `createMemoryHistory` `defaultControlFor` `defaultDisplayFor` `followLink` `generateRouteTable` `getComponents` `getDirection` `getLayoutChainForNode` `hasFileComponent` `hasSchemas` `hmrInvalidate` `isLegalTag` `isPublicRoute` `isSameDocumentOrigin` `isStaleWrite` `labelFieldInfo` `linkHrefOf` `loadLayoutChain` `mountIsland` `mountView` `normalizeBlanks` `oauthErrorMessage` `offlineStatus` `PAGE_RESERVED` `pathAliases` `pickFilter` `readEvents` `readFrontmatter` `refusedFor` `registeredDisplays` `registerFileComponent` `registerModule` `renderRouteTable` `resolveHtmlClass` `ResourceHookError` `runPostBuild` `scanAndWrite` `seedDetermined` `setScheme` `sierraFetch` `siteEntry` `STALE_WRITE_MESSAGE` `stampedPage` `stripReadOnly` `submitInPlace` `suggestModel` `toConflict` `toolAnswer` `toolCall` `transitionsAt` `unregisterDisplay` `updateParams` `whenReady` `WORKER_ENTRY` `workerName` `WRANGLER_CONFIG`
+**Unreached values (82):** `_deepMerge` `_findCatchAll` `_resetInternals` `_resetMcpApp` `_resetPage` `_resetPresenceHolders` `_scrollMemoryHas` `_scrollMemorySize` `afterNavigate` `allSchemas` `appFailed` `applyHostContext` `buildCommitments` `buildGate` `buildLayoutMap` `buildRelations` `buildTransitions` `buildVersion` `ChainRenderer` `columnList` `commitmentsAt` `COMMITTED_MESSAGE` `COMPATIBILITY_DATE` `configureFetch` `createMemoryHistory` `defaultControlFor` `defaultDisplayFor` `followLink` `fromFor` `generatedFor` `generateRouteTable` `getComponents` `getDirection` `getLayoutChainForNode` `hasFileComponent` `hasSchemas` `hmrInvalidate` `isLegalTag` `isPublicRoute` `isSameDocumentOrigin` `isStaleWrite` `labelFieldInfo` `linkHrefOf` `loadLayoutChain` `mountIsland` `mountView` `normalizeBlanks` `oauthErrorMessage` `offlineStatus` `PAGE_RESERVED` `pathAliases` `pickFilter` `readEvents` `readFrontmatter` `refusedFor` `registeredDisplays` `registerFileComponent` `registerModule` `renderRouteTable` `resolveHtmlClass` `ResourceHookError` `runPostBuild` `scanAndWrite` `seedDetermined` `setScheme` `sierraFetch` `siteEntry` `STALE_WRITE_MESSAGE` `stampedPage` `stripReadOnly` `submitInPlace` `suggestModel` `toConflict` `toolAnswer` `toolCall` `transitionsAt` `unregisterDisplay` `updateParams` `whenReady` `WORKER_ENTRY` `workerName` `WRANGLER_CONFIG`
 
 **Emitted (21):** `_setStaticPage` `buildThemeScript` `columnLabel` `configureAnalytics` `configureLocalDb` `connectApp` `CSS_MARK` `generateSchemas` `hmrReload` `hydrateIslands` `initAnalytics` `initRouter` `INTERACTION_TASKS` `mcpApp` `paletteSource` `pendingQueue` `registerSchemas` `remountKey` `resolveChain` `resourceIn` `startView`
 
@@ -301,11 +301,11 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/toolbelt`
 
-`packages/toolbelt` · 55 entry point(s) · 238 value, 0 type export(s)
+`packages/toolbelt` · 55 entry point(s) · 240 value, 0 type export(s)
 
 **Entries not source (20, not graded):** `./bearer` `./cells` `./cron` `./datetime` `./devline` `./directives` `./fill` `./gate` `./geo` `./env` `./hooks` `./ids` `./mailbox` `./mime` `./query` `./rank` `./redact` `./sigv4` `./sse` `./trace`
 
-**Unreached values (30):** `and3` `assertValues` `baseUnit` `canonicalQuery` `canonicalRequest` `canonicalUri` `centroid` `CONTENT_TYPES` `DIGITS` `encodePairs` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `matchesFingerprint` `mergeKeys` `mergeRanges` `not3` `or3` `patchText` `resolveWall` `RUNNABLE_LANGS` `SECRET_KEY_NAMES` `sha256Hex` `TRANSFORM_NAMES`
+**Unreached values (27):** `assertValues` `baseUnit` `canonicalQuery` `canonicalRequest` `canonicalUri` `centroid` `CONTENT_TYPES` `DIGITS` `encodePairs` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `matchesFingerprint` `mergeKeys` `mergeRanges` `patchText` `resolveWall` `RUNNABLE_LANGS` `SECRET_KEY_NAMES` `sha256Hex` `TRANSFORM_NAMES`
 
 **Emitted (9):** `CRON_FIELDS` `dayHeader` `fromWall` `inBoxes` `parseRow` `pointInPolygon` `polygonArea` `renderRow` `SIGNATURE_VERSION`
 

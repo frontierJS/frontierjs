@@ -23,7 +23,7 @@ model Source {
   lastRun   Run?   @from(Run, last: true, orderBy: id)
   runCount  Int    @from(Run, count: true)
   lastId    Int?   @from(Run, max: id)
-  anyFailed Boolean @from(Run, exists: true, where: "status = 'failed'")
+  anyFailed Boolean @from(Run, exists: true, where: status == 'failed')
   notes     Note[]
   noteCount Int    @from(Note, count: true)
   @@gate(3.5.5.5)

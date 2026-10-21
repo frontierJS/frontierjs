@@ -15,6 +15,7 @@ import {
   MouseButton, StyledText, TextAttributes, TextRenderable,
   createClipboard, createHostClipboard, createRendererClipboardAdapter,
 } from '@opentui/core'
+import { cells } from './cells.js'
 
 export const at = (col, row, layer = 10, size = null) => (el) => {
   el.position = 'absolute'
@@ -72,11 +73,36 @@ export const linked = (url, seen = () => {}, copied = () => {}) => (el) => {
 /** `url` copied as a right click on a link copies it, from any box drawn by `el`'s renderer. */
 export const copyLink = (el, url) => copy(el?.ctx, url).catch(() => false)
 
+const SEGMENTS = new Intl.Segmenter()
+
+/**
+ * The cells `el`'s box showed on the frame last drawn, as text, copied as a
+ * link is: a pane drawn over the box is in it, and a row under it is not. A
+ * wide glyph is one span cell with no placeholder for its second, so a row is
+ * cut by `cells`, never by `slice`.
+ */
+export function copyBox(el) {
+  const lines = el?.ctx?.currentRenderBuffer?.getSpanLines()
+  if (!lines) return Promise.resolve(false)
+  const { screenX: left, screenY: top, width, height } = el
+  const rows = lines.slice(top, top + height).map((line) => {
+    let col = 0
+    let row = ''
+    for (const { segment } of SEGMENTS.segment(line.spans.map((s) => s.text).join(''))) {
+      const n = cells(segment)
+      if (col >= left && col + n <= left + width) row += segment
+      col += n
+    }
+    return row.trimEnd()
+  })
+  return copy(el.ctx, rows.join('\n').trimEnd()).catch(() => false)
+}
+
 // One per renderer, released with it. The X clipboard is served by the
 // process that wrote it, so a URL copied here pastes only while Haven runs.
 const clipboards = new WeakMap()
 
-async function copy(renderer, url) {
+async function copy(renderer, text) {
   if (!renderer) return false
   let clip = clipboards.get(renderer)
   if (!clip) {
@@ -84,6 +110,6 @@ async function copy(renderer, url) {
     clipboards.set(renderer, clip)
     renderer.once?.('destroy', () => clip.dispose())
   }
-  const { host, terminal } = await clip.writeText(url, { destination: 'best-available' })
+  const { host, terminal } = await clip.writeText(text, { destination: 'best-available' })
   return host.status === 'written' || terminal.status === 'attempted'
 }

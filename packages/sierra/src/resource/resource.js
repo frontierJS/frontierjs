@@ -128,7 +128,7 @@ import { defaultRegistry, serviceNameFor, resolveRef } from './schema-registry.j
 import {buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildCommitments, commitmentsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
   validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError, ResourceHookError,
-  toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, columnLabel, labelFieldFor, labelFieldInfo, matchesQuery, leavesAt, sealedFor, refusedFor, declinedFields, requiredFor, blankRefused, withheldFields,
+  toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, columnLabel, labelFieldFor, labelFieldInfo, matchesQuery, leavesAt, sealedFor, refusedFor, declinedFields, requiredFor, generatedFor, fromFor, previewOf, blankRefused, withheldFields,
   displayFor, defaultDisplayFor, registerDisplay, unregisterDisplay, registeredDisplays, filterOpFor,
   registerControl, unregisterControl, registeredControls, INTERACTION_TASKS, seedDetermined, pickFilter,
 } from './field-rules.js'
@@ -290,7 +290,7 @@ export {
   buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildCommitments, commitmentsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
   validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError, ResourceHookError,
-  toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, labelFieldFor, labelFieldInfo, matchesQuery, sealedFor, declinedFields, requiredFor, withheldFields,
+  toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, labelFieldFor, labelFieldInfo, matchesQuery, sealedFor, declinedFields, requiredFor, generatedFor, fromFor, previewOf, withheldFields,
   displayFor, defaultDisplayFor, registerDisplay, unregisterDisplay, registeredDisplays, filterOpFor,
   registerControl, unregisterControl, registeredControls, INTERACTION_TASKS,
 }
@@ -2217,6 +2217,23 @@ export function createResource(serviceName, opts = {}, ...extra) {
   }
 
   /**
+   * What each column the server computes will hold once this draft is written,
+   * by name — `{ amount: 3125 }` for a line being typed, `{ subtotalWeek: 9000 }`
+   * for a quote whose `lines` are in the draft. A quoted SQL `@generated` is
+   * absent, because only the server can answer it (`FJS-D1112`, `FJS-D1368`).
+   */
+  const _childRules = new Map()
+  function preview(record) {
+    return previewOf(readFields, record, (target) => {
+      if (!_childRules.has(target)) {
+        const def = registry.readSchemaFor(target)
+        _childRules.set(target, def ? buildFieldRules(def, registry.resolveRef, registry.modelNameFor) : {})
+      }
+      return _childRules.get(target)
+    })
+  }
+
+  /**
    * Which columns this caller was not allowed to READ on the row it opened.
    *
    * The third member of the family and the only one that is about what is NOT
@@ -3138,7 +3155,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
     cachedAt: () => _cachedAt,
     fields, relations, gate, can, transitions, commitments, validate, normalize, coerce,
     version, versionField: versionOf, templateField, conflict,
-    formFields, columns, declaredFields, summary, children, filters, options, sealedFields, requiredFields, declined,
+    formFields, columns, declaredFields, summary, children, filters, options, sealedFields, requiredFields, preview, declined,
     withheld: withheldFor,
     labelField: labelInfo.field, labelSource: labelInfo.source, labelAlt: labelInfo.alt, labelParts: labelInfo.parts,
     fieldErrors, context, hooks: addHooks,
@@ -3212,6 +3229,7 @@ function _emptyResource(name) {
     // `initJunction` — a prerendered island, an SSR pass (`FJS-823`).
     sealedFields: () => [],
     requiredFields: () => [],
+    generated: () => ({}),
     declined: () => ({}),
     withheld: () => [],
     validate:  () => [],

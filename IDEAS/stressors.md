@@ -73,6 +73,7 @@ than started.
 | 27 | **maid.tech** — the live legacy-FJS cleaning-business CRM the trunk came from, 148 accounts, being ported | a role a tenant wrote, read by the gate; a report that is a stored query, stored SQL and stored code on one row; a client who signs in but is not a user; a page a tenant authored, served on a domain the app does not own | `conversion-maid-tech.md` · `tenant-authored-queries.md` · `tenant-declared-fields.md` · `tables-from-the-seed.md` · #14 · #24 |
 | 28 | **Darkroom** — a browser photo editor: adjustments, curves, selective color, layers, crop, draw, export, batch, a social-card composer, ported from a React mockup | a bitmap as the record, with undo as thirty PNG snapshots of every layer; a slider at drag rate driving full-resolution pixel work on the main thread; a pointer drag owned twenty-eight times and never on touch; a color that IS the data under Invariant 13; one outbound call from an app with no `api/` | `@frontierjs/ui` `Slider.mesa` · `FileUpload.mesa` · `CommandPalette.mesa` · `static-safety.md` · `third-party-credentials.md` · #20 · #16 |
 | 42 | **page-performer** — a WebPageTest-shaped page-load tester: a URL in, headless Chromium, a waterfall, Core Web Vitals and a HAR out; a live Kobami tool, ported | one service call holding a browser for up to a minute, cancelled only by the caller hanging up; a stranger's URL whose subresources and redirects are the browser's requests, past any grader; a multi-MB document as one row; a second headless-Chromium owner beside print-kit, which the deploy image does not see ([`FJS-3113`](../ISSUES.md#fjs-3113)) | `print-kit` · `@frontierjs/junction/public-url` (`FJS-681`) · #8 |
+| 43 | **Intake** (codename, provisional) — a browser extension that clips a highlighted selection or a picked element with its tab's context, hands it to an AI clarify step, and files the result in 37signals Basecamp as a to-do, card, message or document | the extension surface carrying a product, at first with no `api/` behind it; a clip that must outlive the worker that captured it; a webhook secret in an extension store anyone on the machine can read; a kind decided by a model and never by the capturer; a flow that starts in n8n and is ported to orion | `jetty` · `orion` · `conduit-anthropic` · `conduit-37signals` · `third-party-credentials.md` · #37 · #28 |
 
 **#29–#40 are Phase 2** — a gap scan, none started, in § Phase 2 below the
 entries.
@@ -1406,6 +1407,61 @@ prefix bug; `deploy-image-needs` passes an app that needs Chromium
 `css-raw-literal` 43 times, and only in `<style>` blocks: the same literals
 written as `style:` directives pass unchecked. They are tokens now, as
 `calc()` over a `--space-*` step so the default-density look is unchanged.
+
+### 43. Intake — the extension surface carrying a product, with a flow engine beside it
+
+*Added 2026-10-20. The codename is provisional — coining the noun is the owner's
+(`decision-rules`). Numbered past #42 so `#N` stays unique; the row sits here
+because it is about to start, at `fjs-prototypes/intake`.*
+
+**The product.** Highlight text or pick an element on any page; the popup takes a
+note and an optional hint; the clip leaves with the tab's context — URL and
+canonical, title, meta and `og:*`, favicon, the instant, and a text-quote anchor
+in the W3C Web Annotation shape (exact, prefix, suffix) so the quote is
+verifiable later. A clarify step shapes it into a structured record and files it
+in 37signals Basecamp. **GTD's line between CAPTURE and CLARIFY is the design**:
+the extension captures and never classifies, the processor decides the kind, and
+nothing goes back into the inbox. Prior art: Notion's clipper cannot clip part of
+a page and the third-party clippers exist to fill that; one of them saves every
+clip locally first and retries, which is the shape Harbor needs.
+
+**The kinds are GTD's clarify outcomes, five of them.** Action (a next action) →
+a to-do; Project (multi-step) → a to-do list or a card; Question (delegate,
+waiting-for) → a message or a to-do assigned to a person; Reference → a document;
+Someday → a card in a Someday column. Trash is a refusal, not a kind. Below a
+confidence the processor files a Question to the owner, never silently a to-do.
+The processor answers by schema — a tool-use call with the record's shape — so a
+prose answer is a refusal rather than a parse.
+
+**Why it is not #37.** Hypothesis re-finds an anchor after the page is edited;
+Intake stores the anchor and never re-finds. The overlap is the anchor's shape.
+
+**Two phases, the cheaper first.**
+
+1. **No `api/`.** Jetty alone: an Island for the selection and the picker
+   overlay, the Dock for note and hint, Harbor queuing in idb and posting to an
+   n8n webhook; n8n runs its Anthropic node and an HTTP node to Basecamp's API
+   (`todolists/{id}/todos.json`, `card_tables/lists/{id}/cards.json`). What this
+   breaks first: a secret in `chrome.storage` (`third-party-credentials.md`), a
+   Harbor worker stopped mid-send, a classic content script with a picker in it.
+   It is #28's *one outbound call from an app with no `api/`*, on the extension
+   surface.
+2. **A record.** `db/schema.lite` with a `Capture` model and `@@transitions
+   captured → clarified → filed → failed`, and an `api/` that Harbor relays to,
+   so the inbox is a list the owner can review and re-clarify — which GTD's
+   weekly review needs anyway. The n8n flow ported to orion over
+   `conduit-anthropic` and `conduit-37signals`. **The finding is what n8n had
+   that orion lacks**; the n8n hop exists to be removed.
+
+**Gradable**: a paragraph highlighted on any page arrives in Basecamp as the
+right kind with the URL and the quote; the service worker killed mid-send, the
+clip still arrives; a low-confidence clip lands as a Question, not a to-do.
+
+**Named before a line is written.** `packages/basecamp` is the fleet app; the
+sink here is 37signals, spelled so in code and prose. Basecamp's webhooks do not
+cover cards (secondhand, 2025), so the flow is one-way. The web store is not a
+drive — the extension loads unpacked, and the drive is a CDP session against a
+profile that has it.
 
 ## Phase 2 — the gap scan
 

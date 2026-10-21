@@ -399,7 +399,7 @@ model Task {
   messages  Message[]
   msgCount  Int       @from(Message, count: true)
   msgScore  Int       @from(Message, sum: score)
-  hasLoud   Boolean   @from(Message, exists: true, where: "score > 5")
+  hasLoud   Boolean   @from(Message, exists: true, where: score > 5)
   ${extra}
 }
 model Message {

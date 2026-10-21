@@ -7,14 +7,14 @@
 import { isKnownCurrency, minorUnits, isKnownUnit, unitInfo, suggestUnit, MEASURE_UNITS }
   from '@frontierjs/toolbelt/units'
 import { LEVELS }                       from '@frontierjs/toolbelt/gate'
-import { parseExpression, tokenize, TK, ParseError } from '@frontierjs/toolbelt/predicate'
+import { parseExpression, tokenize, TK, ParseError, templateShape } from '@frontierjs/toolbelt/predicate'
 import { expandCapabilityType } from './capabilities.js'
 import { parseGateString, validateGate } from '../plugins/gate.js'
 // One owner for the range a value round-trips through a JS number in — the
 // validator's, so a refusal here and a refusal at the boundary name one number.
 import { EXACT_INT_MAX, validateTypedBinding } from './validate.js'
 import { suggestKey } from './args.js'
-import { compileStatic, policyExprToString } from './policy.js'
+import { compileStatic, policyExprToString, compileGenerated, generatedProblems, compileFromWhere } from './policy.js'
 import { tenantAdmission } from './tenancy.js'
 import { pointColumnNames, isStoredField, mapIdentifiers, labelColumn, COLLATIONS } from './ddl.js'
 import { inferFromFk, inferFromHop, inferToOneFrom } from './schema-maps.js'
@@ -80,65 +80,21 @@ export const SYNC_NEEDS_VERSION = new Set(['refuse', 'field'])
 
 // ─── @generated template compiler ─────────────────────────────────────────────
 //
-// `"{firstName} {lastName}"` → SQL producing that string from this row.
-// `{name}` is a column, everything else is literal text, and a NULL column
-// takes the separator beside it rather than leaving a hole.
-//
-// Two shapes come out, because SQLite has an exact answer for the common one.
-// Where every gap between fields is the SAME text and nothing sits outside the
-// fields, that is `concat_ws(sep, …)`: it drops a NULL argument and the
-// separator that would have followed it, which is precisely what the template
-// means, and it is one function call rather than a chain.
-//
-// A template with mixed or outer literals has no single separator, so each
-// field is paired with the text preceding it and the pair vanishes together —
-// `coalesce('-' || "year", '')` is empty when `year` is NULL, taking the dash
-// with it. The chain is wrapped in `trim()` because the leading literal has no
-// field to disappear with.
+// `{firstName} {lastName}` → SQL producing that string from this row. The
+// shape is toolbelt's `templateShape`, which a screen's preview reads too, so
+// this emits SQL for a shape and decides none of it: `concat_ws` for a uniform
+// separator, a coalesce chain where each field takes the text in front of it.
 
 function sqlText(s) { return `'${s.replace(/'/g, "''")}'` }
 
 export function compileFormat(tpl) {
-  // Segments: literal text and {field} references, in order.
-  const segs = []
-  const re   = /\{([^}]*)\}/g
-  let last = 0, m
-  while ((m = re.exec(tpl)) !== null) {
-    if (m.index > last) segs.push({ lit: tpl.slice(last, m.index) })
-    const name = m[1]
-    if (!/^\w+$/.test(name))
-      throw new Error(`'{${name}}' is not a field name — a template reference is {fieldName}, and everything outside the braces is literal text`)
-    segs.push({ field: name })
-    last = re.lastIndex
-  }
-  if (last < tpl.length) segs.push({ lit: tpl.slice(last) })
-
-  const fields = segs.filter(s => s.field)
-  if (!fields.length)
-    throw new Error(`the template \`${tpl}\` names no field, so it is a constant — a column that is the same for every row belongs in @default`)
-
-  // The exact shape: fields separated by one repeated literal, nothing outside.
-  const inner = segs.slice(
-    segs[0].field ? 0 : 1,
-    segs[segs.length - 1].field ? segs.length : segs.length - 1,
-  )
-  const outerLit = !segs[0].field || !segs[segs.length - 1].field
-  const gaps     = inner.filter(s => s.lit).map(s => s.lit)
-  const uniform  = gaps.length === fields.length - 1 && new Set(gaps).size <= 1
-  if (!outerLit && uniform)
-    return `concat_ws(${sqlText(gaps[0] ?? ' ')}, ${fields.map(f => `"${f.field}"`).join(', ')})`
-
-  // The general shape: every field carries the literal in front of it.
-  const parts = []
-  let pending = ''
-  for (const seg of segs) {
-    if (seg.lit) { pending += seg.lit; continue }
-    parts.push(pending
-      ? `coalesce(${sqlText(pending)} || "${seg.field}", '')`
-      : `coalesce("${seg.field}", '')`)
-    pending = ''
-  }
-  if (pending) parts.push(sqlText(pending))
+  const shape = templateShape(tpl)
+  if (shape.kind === 'uniform')
+    return `concat_ws(${sqlText(shape.sep)}, ${shape.fields.map(f => `"${f}"`).join(', ')})`
+  const parts = shape.parts.map(({ lit, field }) =>
+    field === null ? sqlText(lit)
+    : lit ? `coalesce(${sqlText(lit)} || "${field}", '')`
+    : `coalesce("${field}", '')`)
   return `trim(${parts.join(' || ')})`
 }
 
@@ -1798,22 +1754,27 @@ class Parser {
     return s
   }
 
-  // @generated takes two languages and the QUOTE says which.
+  // @generated takes three languages and the QUOTE says which (FJS-D1112).
   //
-  //   @generated("{qty} * {price}")        SQL, with {field} → "field"
-  //   @generated(`{firstName} {lastName}`) a template: the string it produces
+  //   @generated(qty * price)              the expression language, previewable
+  //   @generated(`{firstName} {lastName}`) a template, previewable
+  //   @generated("coalesce({a}, {b})")     SQL, with {field} → "field"; server-only
   //
-  // `{field}` means the same thing in both — this row's column — so the only
-  // thing the delimiter changes is what the text AROUND the braces is. In SQL
-  // it is an expression; in a template it is literal text, and a NULL column
-  // takes the separator beside it (compileFormat).
+  // The first two reach the client as `x-litestone-generated`, so a screen can
+  // answer a draft's value with the server's rule; SQL text cannot.
   parseGenerated() {
     this.eat(TK.LPAREN)
     const tok      = this.peek()
     const template = this.check(TK.TEMPLATE)
-    const raw      = template ? this.eat(TK.TEMPLATE).value : this.eat(TK.STRING).value
+    const quoted   = template || this.check(TK.STRING)
+    const ast      = quoted ? null : this.parsePolicyExpr()
+    const raw      = quoted ? this.eat(template ? TK.TEMPLATE : TK.STRING).value : null
     const stored   = this.check(TK.COMMA) && (this.advance(), this.eat(TK.IDENT).value === 'stored')
     this.eat(TK.RPAREN)
+    if (ast) {
+      try { return { expr: compileGenerated(ast), stored, ast } }
+      catch (e) { throw new ParseError(e.message, tok) }
+    }
     if (!template) {
       // Expand {fieldName} → "fieldName" so no quote-escaping is needed in the schema.
       // @generated("{price} * 1.08") becomes "price" * 1.08 in SQL.
@@ -1826,7 +1787,7 @@ class Parser {
   }
 
   // ── @from parser ────────────────────────────────────────────────────────────
-  // @from(targetModel, op: value, [where: "sql", orderBy: field])
+  // @from(targetModel, op: value, [where: expr, orderBy: field])
   //
   // @from(relationField, column) — a column of the parent a to-one relation points at
   //
@@ -1886,8 +1847,16 @@ class Parser {
           op = key
           break
         }
+        // The expression language, as every other `where:` is (FJS-D1368), so
+        // a screen can answer it over a draft's unsaved rows.
         case 'where': {
-          where = this.eat(TK.STRING).value
+          const tok = this.peek()
+          if (this.check(TK.STRING) && [TK.COMMA, TK.RPAREN].includes(this.peek(1)?.type))
+            throw new ParseError(
+              `@from(${target}, where: …) takes the expression language, unquoted, as every where: does — ` +
+              `where: status != 'lost' && per == 'week', where: completedAt == null. ` +
+              `A quoted string is one constant, not SQL`, tok)
+          where = this.parsePolicyExpr()
           break
         }
         case 'orderBy': {
@@ -5753,15 +5722,6 @@ function validate(schema) {
     //   1. Referenced {fields} exist on this model
     //   2. No self-reference (field references itself)
     //   3. No circular reference among generated fields
-    //
-    // Extract {fieldName} tokens from an expr string
-    function refsInExpr(expr) {
-      const refs = []
-      let m
-      const re = /\{(\w+)\}/g
-      while ((m = re.exec(expr)) !== null) refs.push(m[1])
-      return [...new Set(refs)]
-    }
 
     // Build dependency map: generatedField → [referencedFields]
     const genDeps = {}
@@ -5772,11 +5732,12 @@ function validate(schema) {
       // INTEGER column without a word.
       if (gen.template !== undefined && field.type.name !== 'String') {
         errors.push(`Model '${model.name}', field '${field.name}': a @generated template produces text, and '${field.name}' is ${field.type.name} — ` +
-                    `write the expression with double quotes: @generated("{a} * {b}")`)
+                    `write the arithmetic unquoted: @generated(a * b)`)
       }
-      const _refs =refsInExpr(gen.expr)  // expr already has {x} → "x" substituted in parseGenerated
-      // Note: parseGenerated already expanded {x} → "x" — we need to re-extract from raw
-      // Actually gen.expr has quotes already, extract names from quoted: "fieldName"
+      if (gen.ast)
+        for (const why of generatedProblems(model, field, gen.ast))
+          errors.push(`Model '${model.name}', field '${field.name}': ${why}`)
+      // Every form's text names a column as "field", so one scan reads all three.
       const quotedRefs = []
       let qm
       const qre = /"(\w+)"/g
@@ -8193,6 +8154,10 @@ function validate(schema) {
       const targetModel = schema.models.find(m => m.name === target)
       if (!targetModel)
         errors.push(`Model '${model.name}', field '${field.name}': @from(${target}, ...) — unknown model '${target}'`)
+      if (fromAttr.where && targetModel) {
+        try { compileFromWhere(targetModel, `Model '${model.name}', field '${field.name}': @from(${target}, where: …)`, fromAttr.where, schema) }
+        catch (e) { errors.push(e.message) }
+      }
       // Type compatibility checks
       if (op === 'last' || op === 'first') {
         if (field.type.name !== target)
@@ -8918,17 +8883,12 @@ function validate(schema) {
   // ── @from over an @@expires model ─────────────────────────────────────────
   // Refused, because the honest alternatives are both worse.
   //
-  // A `@from` is a correlated subquery compiled ONCE at startup into a SQL
-  // string with no binds, so it cannot read the client's injected clock —
-  // `now()` in a `@from(where:)` expands to SQLite's own `strftime(…,'now')`.
-  // Filtering it that way would give one model two clocks: `findMany` answers
-  // at the client's and the `@from` beside it at the wall, which agree in
-  // production and disagree under exactly the frozen clock a test uses to stage
-  // expiry. Not filtering at all is the other way to be silently wrong, and it
-  // is the one `@from`'s own contract rules out — it reads the target the way
-  // the target is read, `@@softDelete` and `@@hasTemplates` included.
-  //
-  // So the caller states it. An `@@effective` target is not refused: nothing
+  // A `@from` is a correlated subquery compiled ONCE at startup, and the
+  // expiry filter a read gets is not injected into it. Not filtering is
+  // silently wrong — a `@from` reads the target the way the target is read,
+  // `@@softDelete` and `@@hasTemplates` included — so the caller states it, and
+  // `now()` in a `where:` reads the client's clock as `findMany` does.
+  // An `@@effective` target is not refused: nothing
   // filters it without a stated `asOf`, so a `@from` reading every row IS
   // reading it the way it is read.
   for (const model of schema.models) {
@@ -8940,9 +8900,9 @@ function validate(schema) {
       if (!exp) continue
       errors.push(
         `Model '${model.name}': @from(${from.target}, …) on '${field.name}' reads a model declaring ` +
-        `@@expires, and a @from is compiled once at startup — it cannot read the clock every other ` +
-        `read of ${from.target} is filtered by. State it yourself: where: "${exp.column} > now()", ` +
-        `or where: "1=1" to count every row, expired or not`)
+        `@@expires, and a @from is compiled once at startup — it does not get the expiry filter every other ` +
+        `read of ${from.target} is filtered by. State it yourself: where: ${exp.column} > now(), ` +
+        `or where: true to count every row, expired or not`)
     }
   }
 

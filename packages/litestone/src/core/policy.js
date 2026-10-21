@@ -29,7 +29,7 @@
 import { AccessDeniedError }   from './plugin.js'
 import { tenantAdmission }     from './tenancy.js'
 import { modelToTableName, sqlType, columnMapFor, isStoredField } from './ddl.js'
-import { sqlFragment, inList, pairsOn } from './query.js'
+import { sqlFragment, inList, pairsOn, quoteIdent } from './query.js'
 import { comparisonEncoderFor } from './encryption.js'
 import { ValidationError }     from './validate.js'
 import { DERIVED_NOW_ARG, rawClause }  from './query.js'
@@ -652,6 +652,98 @@ export function compileDerived(model, fieldName, node, fromOf = () => null) {
     }
   }
   return walk(node)
+}
+
+// ─── an @from's where: ────────────────────────────────────────────────────────
+//
+// `@from(Line, sum: amount, where: status != 'lost')` filters the target's rows
+// as every `where:` does: the policy compiler, three-valued, so a null status
+// is UNKNOWN and not counted — what a screen's `evaluate` answers over a
+// draft's rows (`FJS-D1368`). `compileDerived` is two-valued for a column's
+// sake (`FJS-2614`) and would count it. The SQL is static, built once: the
+// schema's literals are inlined and a clock node becomes the `strftime` that
+// `clockedDb` stamps, so `now()` reads the client's clock as a read does.
+export function compileFromWhere(target, label, node, schema) {
+  const refuse = (why) => { throw new Error(`${label} ${why}`) }
+  const clocks = []
+  const swap = (n) => {
+    if (!n || typeof n !== 'object') return n
+    if (n.type === 'auth')  refuse(`names auth(), and a @from is one value for the row, not one per reader`)
+    if (n.type === 'check' || n.type === 'path' || n.type === 'some')
+      refuse(`reads past ${target.name}, and a @from's where: reads the ${target.name} row it is counting and nothing else`)
+    if (n.type === 'field' && !target.fields.some(f => f.name === n.name))
+      refuse(`names '${n.name}', which is not a field of ${target.name}`)
+    if (n.type === 'now' || n.type === 'shift') {
+      clocks.push(n.type === 'now' ? `strftime('%Y-%m-%dT%H:%M:%fZ',${DERIVED_NOW_ARG})` : nowShifted(n))
+      return { type: 'literal', value: `\0clock${clocks.length - 1}\0` }
+    }
+    if (Array.isArray(n)) return n.map(swap)
+    return Object.fromEntries(Object.entries(n).map(([k, v]) => [k, swap(v)]))
+  }
+  const { sql, params } = compileStatic(swap(node), target.name, schema)
+  const literal = (v) => {
+    const clock = typeof v === 'string' && /^\0clock(\d+)\0$/.exec(v)
+    if (clock)                  return clocks[+clock[1]]
+    if (v === null)             return 'NULL'
+    if (typeof v === 'boolean') return v ? '1' : '0'
+    if (typeof v === 'number')  return String(v)
+    if (typeof v === 'string')  return `'${v.replace(/'/g, "''")}'`
+    refuse(`compares against ${JSON.stringify(v)}, and a @from is static SQL — compare columns against literals`)
+  }
+  let out = '', i = 0, quote = null
+  for (const ch of sql) {
+    if (quote) { out += ch; if (ch === quote) quote = null; continue }
+    if (ch === "'" || ch === '"') { quote = ch; out += ch; continue }
+    out += ch === '?' ? literal(params[i++]) : ch
+  }
+  return out
+}
+
+// ─── an unquoted @generated ───────────────────────────────────────────────────
+//
+// The expression language as a generated column (`FJS-D1112`): `+ - *` and
+// `round()` over this row's own columns, so a screen previews it with the same
+// `evaluate`. Anything wider stays a quoted SQL string, which no screen can
+// answer. Model-free, because the parser writes the DDL text before a model is
+// known; the names it reads are graded by `generatedProblems`.
+export function compileGenerated(node) {
+  switch (node?.type) {
+    case 'field':   return quoteIdent(node.name)
+    case 'arith':   return `(${compileGenerated(node.left)} ${node.op} ${compileGenerated(node.right)})`
+    case 'round':   return `round(${compileGenerated(node.expr)})`
+    case 'literal': if (typeof node.value === 'number') return String(node.value)
+  }
+  throw new Error(`an unquoted @generated is + - * and round() over this row's numeric fields, and ` +
+                  `'${policyExprToString(node)}' is not — SQL goes in double quotes: @generated("...")`)
+}
+
+// A STRICT Int column refuses the REAL that `qty * price * 0.01` produces at
+// INSERT, not at build, so the round() it needs is asked for here.
+export function generatedProblems(model, field, node) {
+  const out = []
+  const walk = (n) => {
+    if (n?.type !== 'arith' && n?.type !== 'round') return
+    const why = nonNumeric(model, n)
+    if (why) out.push(why)
+    walk(n.left); walk(n.right); walk(n.expr)
+  }
+  walk(node)
+  const declared = field.type?.name
+  if (!NUMERIC_TYPES.has(declared) || field.type.array)
+    out.push(`an unquoted @generated produces a number and '${field.name}' is ${declared}${field.type.array ? '[]' : ''}`)
+  // A name that is missing or not a number is already refused, and infers Float.
+  else if (declared === 'Int' && !out.length && refsIn(node).every(n => model.fields.some(f => f.name === n)) &&
+           inferType(model, null, node) === 'Float')
+    out.push(`'${field.name}' is Int and ${policyExprToString(node)} produces Float — wrap it in round()`)
+  if (!refsIn(node).length)
+    out.push(`${policyExprToString(node)} names no field, so it is a constant — a column that is the same for every row belongs in @default`)
+  return out
+}
+
+const refsIn = (n, out = []) => {
+  if (n?.type === 'field') out.push(n.name)
+  for (const k of ['left', 'right', 'expr']) if (n?.[k]) refsIn(n[k], out)
+  return out
 }
 
 // ─── a @derived, answered in JS ───────────────────────────────────────────────

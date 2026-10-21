@@ -92,7 +92,7 @@ title: Plans
 </Table>
 
 <Alert tone="muted">
-  <code>currentPrice</code> is <code>@from(PlanVersion, max: price, where: "effectiveTo IS NULL")</code> —
+  <code>currentPrice</code> is <code>@from(PlanVersion, max: price, where: effectiveTo == null)</code> —
   the open window's price, read as a subquery. Retiring a plan is
   <code>active</code>; it does not delete the versions past subscriptions point at.
 </Alert>

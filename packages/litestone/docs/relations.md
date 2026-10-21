@@ -411,7 +411,7 @@ model Account {
   biggest    Float?   @from(Order, max: amount)
   typical    Float?   @from(Order, avg: amount)        // null when there are no orders
   lastOrder  Order?   @from(Order, last: true)         // the whole row, not a column
-  hasBig     Boolean  @from(Order, exists: true, where: "amount > 100")
+  hasBig     Boolean  @from(Order, exists: true, where: amount > 100)
 }
 
 model Order {
@@ -493,7 +493,9 @@ Exactly one is required.
 | `first: true` / `last: true` | the target model, e.g. `Order?` | the whole row, or `null` |
 | `exists: true` | `Boolean` | `true` / `false` |
 
-Options: `where: "sql"` filters the rows considered; `orderBy: field` picks what `first`/`last`
+Options: `where:` filters the rows considered, in the expression language every `where:`
+takes (`status != 'lost' && per == 'week'`, `completedAt == null`), so a screen can answer it
+over a draft's unsaved children (`resource.preview`); `orderBy: field` picks what `first`/`last`
 order by (default is `id`).
 
 Against the `Account` / `Order` schema above, with one account holding orders of 50, 120 and 30 and a second holding none:

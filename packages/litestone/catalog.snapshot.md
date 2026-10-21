@@ -47,7 +47,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@computed` | Compute a value |  |  |  |  |
 | `@transient` | Compute a value |  |  |  |  |
 | `@derived` | Compute a value | (<expression>) |  |  |  |
-| `@generated` | Compute a value | ("sql expr" \| `{a} {b}` template [, stored]) | on a model's field · on a trait's field |  |  |
+| `@generated` | Compute a value | (a * b \| `{a} {b}` template \| "sql expr" [, stored]) | on a model's field · on a trait's field |  |  |
 | `@hardDelete` | Compute a value |  |  |  |  |
 | `@keep` | Compute a value |  |  |  |  |
 | `@omit` | Hide or lock a value | [(all)] |  | level: all |  |

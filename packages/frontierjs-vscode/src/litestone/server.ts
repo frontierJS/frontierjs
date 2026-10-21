@@ -634,7 +634,7 @@ const ATTR_DOCS: Record<string, string> = {
     'On a relation field in a `@@softDelete(cascade)` model: hard-deletes those children (removes the rows) instead of stamping `deletedAt`.\n\n```\nmodel Account {\n  sessions Session[] @hardDelete  // ← rows gone permanently\n  users    User[]                  // ← soft-deleted\n  deletedAt DateTime?\n  @@softDelete(cascade)\n}\n```',
 
   '@from':
-    'Derived field — computed from a relation at query time, not stored in the DB.\n\n```\nmodel Account {\n  userCount Int @from(users, count: true)\n  revenue   Float   @from(orders, sum: amount)\n  lastOrder DateTime @from(orders, last: true)\n  hasOverdue Boolean @from(invoices, exists: true, where: "paid = 0 AND due_at < date(\'now\')")\n}\n```\n\nSupported: `count`, `sum`, `max`, `min`, `first`, `last`, `exists`.',
+    'Derived field — computed from a relation at query time, not stored in the DB.\n\n```\nmodel Account {\n  userCount Int @from(users, count: true)\n  revenue   Float   @from(orders, sum: amount)\n  lastOrder DateTime @from(orders, last: true)\n  hasOverdue Boolean @from(invoices, exists: true, where: !paid && dueAt < now())\n}\n```\n\nSupported: `count`, `sum`, `max`, `min`, `first`, `last`, `exists`.',
 
   '@phone':
     'Validates the value is a valid phone number (E.164 and common formats) on every write.',

@@ -536,7 +536,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
 | `firstName` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
 | `lastName` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
-| `fullName` | `string`? | — | — | `x-litestone-kind` | — |
+| `fullName` | `string`? | — | — | `x-litestone-generated` `x-litestone-kind` | — |
 | `email` | `string` | yes | — | `format: "email"` `x-transforms` | — |
 | `notes` | `string`? | — | — | `x-litestone-read-policy` | — |
 | `userId` | `string`? | — | — | `x-litestone-kind` | — |

@@ -175,9 +175,11 @@ See [access-control.md](./access-control.md).
 ### Derived & generated
 ```
 @computed                        app-layer derived field (implement in computed.js)
-@generated("sql expr")           SQL GENERATED ALWAYS AS column (STORED)
+@generated(a * b)                UNQUOTED: + - * and round() over this row's numeric
+                                 columns — the expression language, so a screen previews it
 @generated(`{a} {b}`)            BACKTICKS: a template — the string it produces, rather
                                  than SQL. A NULL column takes the separator beside it
+@generated("sql expr")           DOUBLE QUOTES: SQL with {field} → "field"; server-only
 @values(SetName)                 the column's legal values come from a declared `valueset`.
 @values(SetName, strength: open)
 @values(SetName, strength: suggested)
@@ -195,7 +197,7 @@ See [access-control.md](./access-control.md).
 @from(Model, first|last: true)   the whole related ROW — field must be typed Model?
 @from(Model, exists: true)       field must be Boolean
 @from(relField, column)          a column of the parent a to-one relation points at — field must match its type
-@from(Model, count: true, where: "sql", orderBy: field)  filtered / ordered
+@from(Model, count: true, where: expr, orderBy: field)  filtered / ordered
 @from(Model, count: true, withDeleted: true)     include the target's soft-deleted rows
 @from(Model, count: true, withTemplates: true)   include the target's @@hasTemplates rows
 ```
@@ -1492,12 +1494,43 @@ model User {
 }
 ```
 
+## `@generated(a * b)` — arithmetic a screen can preview
+
+`@generated` takes three languages, and **the quote says which** (`FJS-D1112`):
+no quote is the expression language, backticks are a template, double quotes
+are SQL. The first two reach the client as `x-litestone-generated`, so a form
+can show a line's amount while it is typed — `resource.preview(draft)` in
+Sierra — by the server's own rule rather than a copy of it. SQL text reaches
+no client, because no client can run it.
+
+```lite
+model QuoteLine {
+  id        Int @id
+  unitPrice Int @money(USD)
+  quantity  Int @scale(2)
+
+  amount    Int @money(USD) @generated(round(unitPrice * quantity * 0.01))
+}
+```
+
+The unquoted form is `+ - *` and `round()` over this row's numeric columns —
+the arithmetic `@derived` and `@@allow` read (`FJS-D1107`), with a null operand
+making the value null and `round` half away from zero, as SQLite rounds. There
+is no `/`: a constant divisor is a decimal multiplier. Refused by name at
+parse:
+
+- **an Int column over a REAL value** — `unitPrice * quantity * 0.01` is REAL,
+  which a STRICT Int column refuses at INSERT rather than at build; the
+  refusal says to wrap it in `round()`
+- **a String, Boolean, array or encrypted operand**, and a non-numeric column
+- **anything wider** — a comparison, a ternary, `now()`, `auth()`. Those are
+  SQL in double quotes, which stays legal and stays server-only
+
 ## ``@generated(`{a} {b}`)`` — a template, not SQL
 
-`@generated` takes two languages, and **the quote says which**: double quotes
-are SQL, backticks are a template — the string the column produces. `{field}`
-means this row's column in both, so the delimiter changes only what the text
-*around* the braces is.
+Backticks are a template — the string the column produces. `{field}` means
+this row's column here and in the quoted SQL form, so the delimiter changes
+only what the text *around* the braces is.
 
 The commonest `@generated` by a distance is a string joined out of two or three
 columns, and the reason that shape earns a second language is not length. It is
@@ -1558,8 +1591,8 @@ refused on one says which language it was in — *its value comes from its
 template* against *from its expression*.
 
 **When backticks are not the answer:** a derivation that is not a joined string.
-The double-quoted form takes arbitrary SQL and is still how to write
-`@generated("{qty} * {price}")` or a `lower(replace(…))` slug.
+Arithmetic is the unquoted form; the double-quoted form takes arbitrary SQL and
+is how to write a `coalesce(…)` or a `lower(replace(…))` slug.
 
 
 ## `@derived(expr)` — computed in SQL, so it can be queried

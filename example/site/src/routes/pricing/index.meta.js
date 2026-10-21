@@ -12,8 +12,8 @@
 //
 // A price is a `PlanVersion` row with a lifetime, so *what does this plan cost
 // today* is *the open window's price* — which the model already answers:
-// `currentPrice` is `@from(PlanVersion, max: price, where: "effectiveTo IS
-// NULL")`, a subquery litestone compiles into the read. Assembling it here
+// `currentPrice` is `@from(PlanVersion, max: price, where: effectiveTo ==
+// null)`, a subquery litestone compiles into the read. Assembling it here
 // would mean shipping the whole version table into a page that renders four
 // rows, and would put a second opinion about *what a price is* in a file
 // nobody looks at again.

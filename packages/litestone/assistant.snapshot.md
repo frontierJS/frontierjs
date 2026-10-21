@@ -805,14 +805,14 @@ A value computed in SQL from this row's own columns, in the declarative expressi
 overdue Boolean @derived(dueAt < now() && completedAt == null)
 ```
 
-#### `@generated` ("sql expr" | `{a} {b}` template [, stored])
+#### `@generated` (a * b | `{a} {b}` template | "sql expr" [, stored])
 
 tier: **common** · legal in: on a model's field, on a trait's field · also called: stored column · see also: `function`, `derived`
 
-A real generated column. The quote picks the language: a plain string is SQL with {field} → "field", a backtick template is literal text with the fields interpolated. `stored` writes it to disk instead of computing on read.
+A real generated column. The quote picks the language: unquoted is + - * and round() over numeric columns, a backtick template is literal text with the fields interpolated — both reach the client as x-litestone-generated, so a screen previews a draft — and a double-quoted string is SQL with {field} → "field", server-only. `stored` writes it to disk instead of computing on read.
 
 ```lite
-total Float @generated("{qty} * {price}")
+total Float @generated(qty * price)
 ```
 
 #### `@hardDelete`

@@ -243,7 +243,11 @@ src/predicate/       the `.lite` expression language, whole. `tokenize.js` is th
                      `.some()` and any name off the caller's closed list (own
                      keys only), and `evaluateValues` grades again before it
                      answers, because `evaluate`'s resolver defaults are a
-                     policy's (`FJS-1998`)
+                     policy's (`FJS-1998`). `template.js` is a `@generated`
+                     backtick template: `templateShape`, which litestone
+                     compiles to SQL, and `formatTemplate`, which a screen
+                     previews a draft with, so the two cannot shape it two ways
+                     (`FJS-D1112`)
 src/fill/            merge fields into text a user wrote -- `fill(source, ctx,
                      { mode })` and `check(source, names)` (`FJS-D980`). A hole
                      is `{path}` or a `/predicate` values expression; `\{` is a

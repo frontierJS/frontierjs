@@ -120,7 +120,7 @@
   import Emotes          from '@/components/Emotes.mesa'
   import Pets            from '@/components/Pets.mesa'
   import Work            from '@/components/Work.mesa'
-  import { at, tint }    from '#cell'
+  import { at, copyBox, tint } from '#cell'
   import { paint }       from '#paint'
 
   export let slug
@@ -137,6 +137,8 @@
 
   var stage = createStage({ slug, palette, spawn, layers, sight })
   $context.scene = stage
+  // The art's box, for Shift+Y.
+  var art = null
   // A verb's answer is the note under the art.
   var commands = createCommands()
   $context.commands = commands
@@ -425,6 +427,12 @@
   const face = (id, glyph, stunned, beat) => (stunned[id] && beat ? 'x' : glyph)
 
   const keydown = (e) => {
+    // Shift+Y in NORMAL copies the art and whatever pane is open over it as
+    // text, before any mode can take the key; never the rows under the art.
+    if (e.key === 'Y' && e.defaultPrevented && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      copyBox(art).then((ok) => { note = ok ? 'screen copied' : 'this terminal takes no copy' })
+      return
+    }
     if (room && e.key === 'Tab' && partial(draft) !== null) {
       e.preventDefault()
       draft = complete(draft, commands.words({ x, y }))
@@ -488,7 +496,7 @@
 </script>
 
 <mesa:window onkeydown={keydown} />
-<div {@attach paint(stage, scale)}>
+<div {@attach paint(stage, scale)} {@attach (el) => { art = el }}>
   <slot />
   {#if here}
     {#each figures(here.get(), view, stage, spawn).filter((f) => !covered(stage, cell(f.m), f.m.meta?.shape)) as f (f.m.connectionId)}

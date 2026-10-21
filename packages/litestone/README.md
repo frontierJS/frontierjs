@@ -375,7 +375,7 @@ model User {
 @from(Model, sum: field)         derived sum/max/min from a relation — sum/max/min take a field
 @from(Model, last: true)         first/last related ROW — field is typed Model?
 @from(Model, exists: true)       Boolean
-@from(Model, count: true, where: "sql", orderBy: field)  filtered / ordered derived field
+@from(Model, count: true, where: expr, orderBy: field)  filtered / ordered derived field
 @from(Model, count: true, withDeleted: true, withTemplates: true)  opt back into the target's
                                  soft-deleted / template rows. By DEFAULT a @from reads its
                                  target the way the target is read — both out
@@ -1659,7 +1659,7 @@ model Account {
   revenue    Float    @from(Order, sum: amount)
   biggest    Float    @from(Order, max: amount)
   lastOrder  Order?   @from(Order, last: true)         // the whole row, not a column
-  hasBig     Boolean  @from(Order, exists: true, where: "amount > 100")
+  hasBig     Boolean  @from(Order, exists: true, where: amount > 100)
 }
 
 model Order {

@@ -450,6 +450,21 @@ function viewToJsonSchema(view, schema, enumDefs, typeDefs, opts) {
   return result
 }
 
+// An aggregate @from, as much of it as a screen needs to answer it over a
+// draft's unsaved children (`FJS-D1368`): `rel` is the list field on this row
+// that holds them — absent where none or several could, so nothing guesses —
+// and `where` the filter's AST, which `evaluate` reads.
+function aggregateFrom(model, from) {
+  const lists = model.fields.filter(f => f.type.kind === 'relation' && f.type.array && f.type.name === from.target)
+  const rel   = (from.via && lists.find(f => f.name === from.via)) || (lists.length === 1 ? lists[0] : null)
+  return {
+    target: from.target, op: from.op,
+    ...(rel                              && { rel: rel.name }),
+    ...(typeof from.opValue === 'string' && { field: from.opValue }),
+    ...(from.where                       && { where: from.where }),
+  }
+}
+
 function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   const { mode, includeDeletedAt, includeTimestamps, inlineEnums, audience } = opts
   const fileDef   = fileDefFor(mode)
@@ -483,7 +498,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
         properties[field.name] = { ...fs, readOnly: true, 'x-litestone-kind': 'from',
           'x-litestone-from': fromAttr.op === 'column'
             ? { rel: fromAttr.rel, column: fromAttr.opValue, op: fromAttr.op }
-            : { target: fromAttr.target, op: fromAttr.op } }
+            : aggregateFrom(model, fromAttr) }
       }
       continue
     }
@@ -545,6 +560,11 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
         const fs = fieldToJsonSchema(field, schema, enumDefs, inlineEnums, audience, typeDefs, fileDef)
         const kind = isComputed ? 'computed' : 'generated'
         properties[field.name] = { ...fs, readOnly: true, 'x-litestone-kind': kind }
+        // The rule itself, where a screen can answer it for a draft
+        // (FJS-D1112). A quoted SQL string is the server's alone.
+        const gen = field.attributes.find(a => a.kind === 'generated')
+        if (gen?.ast)                    properties[field.name]['x-litestone-generated'] = { expr: gen.ast }
+        else if (gen?.template != null) properties[field.name]['x-litestone-generated'] = { template: gen.template }
       }
       continue
     }

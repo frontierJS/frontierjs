@@ -28,7 +28,7 @@
 
 import { tokenize } from '../../src/predicate/tokenize.js'
 import { parseFlowExpression } from '../../src/predicate/parse.js'
-import { evaluate, shiftInstant, compare, truth, and3, or3, not3, parseText, assertValues, evaluateValues, ParseError } from '../../src/predicate/predicate.js'
+import { evaluate, shiftInstant, compare, truth, and3, or3, not3, parseText, assertValues, evaluateValues, ParseError, templateShape, formatTemplate } from '../../src/predicate/predicate.js'
 
 // The AST shapes here are hand-written, because toolbelt depends on nothing and
 // cannot reach litestone's parser to build one. What holds them to what the
@@ -384,4 +384,37 @@ test('template: \\n \\t \\r are the control character in the token value and in 
   }
   const ast = parseFlowExpression(p)
   assert.equal(ast.parts[0].value, 'a\nb ')
+})
+
+// ── a @generated template, answered for a draft (FJS-D1112) ──────────────────
+//
+// litestone compiles the same `templateShape` into SQL, and its
+// `generated-expression.test.ts` holds the two against stored rows. Here: the
+// shape decision and the null rule with nothing injected, as a browser has it.
+
+test('template: a uniform separator drops a null field and the separator with it', function () {
+  assert.deepEqual(templateShape('{a} {b} {c}'), { kind: 'uniform', sep: ' ', fields: ['a', 'b', 'c'] })
+  assert.equal(formatTemplate('{a} {b} {c}', { a: 'Ada', b: null, c: 'Lovelace' }), 'Ada Lovelace')
+  assert.equal(formatTemplate('{a} {b}', {}), '')
+  // '' is a value: concat_ws keeps it, so the separator stays.
+  assert.equal(formatTemplate('{a}|{b}', { a: '', b: 'x' }), '|x')
+})
+
+test('template: an outer or mixed literal pairs each field with the text before it', function () {
+  assert.equal(templateShape('[{code}-{n}]').kind, 'pairs')
+  assert.equal(formatTemplate('[{code}-{n}]', { code: 'Q', n: 12 }), '[Q-12]')
+  assert.equal(formatTemplate('[{code}-{n}]', { code: null, n: 12 }), '-12]')
+  // The leading literal has no field to go with, and only spaces are trimmed.
+  assert.equal(formatTemplate('{a}, {b} {c}', { a: null, b: 'x', c: 'y' }), ', x y')
+  // SQLite stores a boolean as 1 or 0, and that is the text it joins.
+  assert.equal(formatTemplate('{a}-{b}', { a: true, b: false }), '1-0')
+})
+
+test('template: a brace holding no field name, or no field at all, is refused', function () {
+  assert.throws(() => templateShape('{a b}'), /not a field name/)
+  assert.throws(() => templateShape('plain'), /names no field/)
+})
+
+test('template: a name inherited from Object is not a field', function () {
+  assert.equal(formatTemplate('{toString} {a}', { a: 'x' }), 'x')
 })

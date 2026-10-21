@@ -6,7 +6,7 @@
   // `Plan` is `@@gate(0.5.5.5)`, so this resource is READ by a caller with no
   // session at all. That is what makes the storefront's pricing page possible
   // and it is why `currentPrice` is on the model rather than assembled here: a
-  // `@from(PlanVersion, max: price, where: "effectiveTo IS NULL")` reaches this
+  // `@from(PlanVersion, max: price, where: effectiveTo == null)` reaches this
   // client as an ordinary readOnly column, so a list of plans and their prices
   // is ONE query and never a join a screen writes.
 

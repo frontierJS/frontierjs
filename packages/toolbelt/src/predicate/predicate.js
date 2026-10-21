@@ -58,6 +58,7 @@
 export { parseExpression, parseFlowExpression, TOKEN, OPERATORS } from './parse.js'
 export { tokenize, TK, ParseError }         from './tokenize.js'
 export { parseText, assertValues, evaluateValues } from './values.js'
+export { templateShape, formatTemplate }       from './template.js'
 
 import { unitInfo } from '../units/units.js'
 

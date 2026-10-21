@@ -17533,8 +17533,8 @@ const FROM_SCHEMA = `
     latestOrder  Order?  @from(Order, last: true)
     firstOrder   Order?  @from(Order, first: true)
     hasOrders    Boolean  @from(Order, exists: true)
-    pendingCount Int  @from(Order, count: true, where: "status = 'pending'")
-    latestPending Order? @from(Order, last: true, where: "status = 'pending'", orderBy: id)
+    pendingCount Int  @from(Order, count: true, where: status == 'pending')
+    latestPending Order? @from(Order, last: true, where: status == 'pending', orderBy: id)
   }
 
   model Order {
@@ -17831,26 +17831,25 @@ describe('now() is one instant per evaluation', () => {
   })
 })
 
-describe('@from — a where: string is raw SQL, and carries the clock trap', () => {
-  test("datetime('now') in a @from where: is refused at createClient, naming the field", async () => {
-    // Refused on the SCHEMA rather than on a query nobody has run yet. A @from
-    // subquery is built once at startup, so this is the last moment anything
-    // reads the string before it starts answering the wrong question.
+describe('@from — a where: is the expression language, and now() is the client clock', () => {
+  const TASKS = `model Task { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])  dueAt DateTime }`
+
+  test('a quoted SQL where: is refused at parse, naming the form', async () => {
     await expect(makeDb(`
       model Account { id Int @id  tasks Task[]  overdueCount Int @from(Task, count: true, where: "dueAt < datetime('now')") }
-      model Task    { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])  dueAt DateTime }
-    `, 'from-clock')).rejects.toThrow(/@from\(Task, where: …\) on Account\.overdueCount/)
+      ${TASKS}
+    `, 'from-clock')).rejects.toThrow(/@from\(Task, where: …\) takes the expression language, unquoted/)
   })
 
-  test('the same schema is accepted with now(), which a schema string can write', async () => {
+  test('now() reads the clock the client was given, as findMany does', async () => {
+    const t = Date.parse('2030-06-01T12:00:00.000Z')
     const db = await makeDb(`
-      model Account { id Int @id  tasks Task[]  overdueCount Int @from(Task, count: true, where: "dueAt < now()") }
-      model Task    { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])  dueAt DateTime }
-    `, 'from-clock-ok')
-    const t = Date.now()
+      model Account { id Int @id  tasks Task[]  overdueCount Int @from(Task, count: true, where: dueAt < now()) }
+      ${TASKS}
+    `, 'from-clock-ok', { now: () => new Date(t) })
     await db.account.create({ data: { id: 1 } })
     await db.task.createMany({ data: [
-      { id: 1, accountId: 1, dueAt: new Date(t - 60e3) },      // a minute overdue
+      { id: 1, accountId: 1, dueAt: new Date(t - 60e3) },      // a minute overdue on the frozen clock
       { id: 2, accountId: 1, dueAt: new Date(t + 3600e3) },
     ]})
     expect((await db.account.findUnique({ where: { id: 1 } })).overdueCount).toBe(1)
@@ -18031,7 +18030,7 @@ describe('@from — first/last returns a properly read row', () => {
 
   test('a declared where: on the @from survives the repick', async () => {
     const db = await makeDb(`
-      model Account { id Int @id  orders Order[]  lastBig Order? @from(Order, last: true, where: "amount > 100")  @@gate(0) }
+      model Account { id Int @id  orders Order[]  lastBig Order? @from(Order, last: true, where: amount > 100)  @@gate(0) }
       model Order   { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])
                       ownerId Int  amount Int
                       @@allow(read, ownerId == auth().id) }
@@ -18102,7 +18101,7 @@ describe('@from — a self-relation', () => {
       deletedAt   DateTime?
 
       childCount  Int       @from(Task, count: true)
-      doneCount   Int       @from(Task, count: true, where: "completedAt IS NOT NULL")
+      doneCount   Int       @from(Task, count: true, where: completedAt != null)
       anyKids     Boolean   @from(Task, exists: true)
       newestKid   Task?     @from(Task, last: true)
       @@softDelete
@@ -18454,7 +18453,7 @@ describe('@from — target model defaults', () => {
         id    Int @id
         name  String
         notes Note[]
-        heavyLive Int @from(Note, count: true, where: "weight > 15")
+        heavyLive Int @from(Note, count: true, where: weight > 15)
       }
       model Note {
         id        Int @id

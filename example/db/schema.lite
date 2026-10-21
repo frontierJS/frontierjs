@@ -1765,7 +1765,7 @@ model Plan {
   /// The price a new subscriber would pay today — the one version whose window
   /// is open. Ordered so *today's* row wins when two windows touch, and read as
   /// a subquery rather than joined, so the pricing page costs one query.
-  currentPrice Int?         @from(PlanVersion, max: price, where: "effectiveTo IS NULL")
+  currentPrice Int?         @from(PlanVersion, max: price, where: effectiveTo == null)
 
   /// A pricing page is public, exactly as the catalog is. Editing what a shop
   /// charges is staff, at the same level as a `Discount`.

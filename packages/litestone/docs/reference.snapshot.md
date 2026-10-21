@@ -496,16 +496,16 @@ model Example {
 - **Deeper** — [modeling.md](modeling.md)
 - **See also** — [`@generated`](#generated-field) · [`@computed`](#computed-field)
 
-#### `@generated` `("sql expr" | `{a} {b}` template [, stored])` <a id="generated-field"></a>
+#### `@generated` `(a * b | `{a} {b}` template | "sql expr" [, stored])` <a id="generated-field"></a>
 
-A real generated column. The quote picks the language: a plain string is SQL with {field} → "field", a backtick template is literal text with the fields interpolated. `stored` writes it to disk instead of computing on read.
+A real generated column. The quote picks the language: unquoted is + - * and round() over numeric columns, a backtick template is literal text with the fields interpolated — both reach the client as x-litestone-generated, so a screen previews a draft — and a double-quoted string is SQL with {field} → "field", server-only. `stored` writes it to disk instead of computing on read.
 
 ```lite
 model Example {
   id Int @id
   qty Int
   price Float
-  total Float @generated("{qty} * {price}")
+  total Float @generated(qty * price)
 }
 ```
 

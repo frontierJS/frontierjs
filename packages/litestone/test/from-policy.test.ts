@@ -25,7 +25,7 @@ model Parent {
   kidSum    Int     @from(Kid, sum: score)
   maxKid    Int?    @from(Kid, max: id)
   minScore  Int?    @from(Kid, min: score)
-  anyHigh   Boolean @from(Kid, exists: true, where: "score > 50")
+  anyHigh   Boolean @from(Kid, exists: true, where: score > 50)
   tags      Tag[]
   tagCount  Int     @from(Tag, count: true)
   @@allow(read, true)

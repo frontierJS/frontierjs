@@ -14,8 +14,8 @@
 // something was inserted between them — so each is reunited with its own pass.
 
 import { isSoftDelete, modelToTableName, isUpdatedAtField, detectM2MPairs, sqlType, columnMapFor, mapExprCols } from './ddl.js'
-import { assertNoBareClock, expandNowTokens, quoteIdent }          from './query.js'
-import { compileDerived, checkDerivedType, dependsOnClock, evalDerived } from './policy.js'
+import { quoteIdent }                                            from './query.js'
+import { compileDerived, compileFromWhere, checkDerivedType, dependsOnClock, evalDerived } from './policy.js'
 import { ID_GENERATORS, GENERATED_DEFAULTS }                       from './ids.js'
 
 
@@ -778,11 +778,10 @@ export function buildFromMap(schema, pluralize = false) {
         : fkCols.map((c, i) => `_from."${c}" = %SELF%."${refCols[i]}"`)
       if (targetSoftDelete && !withDeleted)   whereParts.push(`_from."deletedAt" IS NULL`)
       if (targetHtField    && !withTemplates) whereParts.push(`_from."${targetHtField}" = 0`)
-      // A @from's `where:` is a raw SQL string in the schema, so the clock trap
-      // reaches it too — and refused HERE it is refused at startup, on the
-      // schema, rather than on a query nobody ran yet.
-      if (where) assertNoBareClock(where, `@from(${target}, where: …) on ${model.name}.${field.name}`)
-      if (where) whereParts.push(`(${expandNowTokens(where)})`)
+      const whereSql = where
+        ? compileFromWhere(targetModel, `${model.name}.${field.name}: @from(${target}, where: …)`, where, schema)
+        : null
+      if (whereSql) whereParts.push(`(${whereSql})`)
       const whereClause = whereParts.join(' AND ')
 
       let subquerySql, isObject = false, rowRef = null, aggRef = null
@@ -793,7 +792,7 @@ export function buildFromMap(schema, pluralize = false) {
       const extra = [
         ...(targetSoftDelete && !withDeleted ? [`%T%."deletedAt" IS NULL`] : []),
         ...(targetHtField    && !withTemplates ? [`%T%."${targetHtField}" = 0`] : []),
-        ...(where ? [`(${expandNowTokens(where)})`] : []),
+        ...(whereSql ? [`(${whereSql})`] : []),
       ]
 
       switch (op) {

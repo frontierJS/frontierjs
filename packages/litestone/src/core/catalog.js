@@ -455,9 +455,9 @@ const FIELD = [
     'generated',
     'field',
     'derive',
-    '("sql expr" | `{a} {b}` template [, stored])',
-    'A real generated column. The quote picks the language: a plain string is SQL with {field} → "field", a backtick template is literal text with the fields interpolated. `stored` writes it to disk instead of computing on read.',
-    'total Float @generated("{qty} * {price}")',
+    '(a * b | `{a} {b}` template | "sql expr" [, stored])',
+    'A real generated column. The quote picks the language: unquoted is + - * and round() over numeric columns, a backtick template is literal text with the fields interpolated — both reach the client as x-litestone-generated, so a screen previews a draft — and a double-quoted string is SQL with {field} → "field", server-only. `stored` writes it to disk instead of computing on read.',
+    'total Float @generated(qty * price)',
     { extraFields: 'qty Int\n  price Float', seeAlso: ['function', 'derived'] }
   ),
   t(

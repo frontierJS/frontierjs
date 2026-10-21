@@ -585,15 +585,15 @@ evaluator, and a test that needs a frozen instant binds its own ISO string.
 Modifiers are **bound as parameters**, not spliced, so a caller-supplied string
 never enters the SQL pattern.
 
-`now()` also works written as a **token** — in the `sql` tag, and in a
-`@from(where: …)` string in the schema, which is the one caller that cannot
-interpolate:
+`now()` also works written as a **token** in the `sql` tag, and in a
+`@from(where: …)` — the expression language, compiled once — where it reads
+the clock `createClient({ now })` was given:
 
 ```lite
 model Account {
   id           Int    @id
   tasks        Task[]
-  overdueCount Int    @from(Task, count: true, where: "dueAt < now()")
+  overdueCount Int    @from(Task, count: true, where: dueAt < now())
 }
 
 model Task {
@@ -609,8 +609,7 @@ await db.task.findMany({ where: { $raw: sql`dueAt < now()` } })
 ```
 
 Six spellings are refused — `datetime('now')`, `date('now')`, `time('now')`,
-`CURRENT_TIMESTAMP`, `CURRENT_DATE`, `CURRENT_TIME` — in the `sql` tag and in a
-`@from(where: …)` string at client construction.
+`CURRENT_TIMESTAMP`, `CURRENT_DATE`, `CURRENT_TIME` — in the `sql` tag.
 Each produces a format no stored `DateTime` can equal, so a comparison against
 one does not return too few rows; it answers a different question.
 

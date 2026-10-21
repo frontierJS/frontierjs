@@ -180,7 +180,12 @@ system will ignore.
 and that coherence is its advantage — but coherence only transfers through
 vocabulary, documents, and enforcement. A rule that lives only in the
 author's head is already broken for everyone else. Write it down or lose
-it.
+it. The cost of a change is set by how many models of one thing the change
+has to be translated between, and that count moves only when something is
+changed — never by time passing. A gap is opened by an edit and closed by
+one, which is why every translation has one named owner (Invariant 4), why a
+rename moves every caller in the same change, and why the review runs on the
+act rather than on the calendar.
 
 **Doctrine vs. discovery.** Sometimes the code is smarter than the
 principle. When code and doctrine disagree, don't automatically side with

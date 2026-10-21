@@ -241,7 +241,7 @@ before you build on one** — several are emitted and nothing yet reads them.
 | `x-aggregatable` | field | **ABSENT means an aggregate may name it.** A string says why not — `computed` \| `transient` \| `from` \| `relation` — or, on a real column whose storage is opaque, what an aggregate would answer about: `encrypted` \| `array` \| `json` \| `file`. Narrower than sortable: a `@from` sorts fine and cannot be summed (`FJS-D226`) | nothing yet |
 | `x-litestone-file` | `FileRef` def | `true` — marks the def as a file ref, not a user `type` | junction (maps it to `any`), `fli` |
 | `x-litestone-kind` | field | `'version'` \| `'computed'` \| `'generated'` \| `'from'` \| `'system'` \| `'transient'` \| `'stamped'` | junction (`liftTransient`), toolbelt `make()` (`'stamped'` — a writable `@default(auth().x)` column, left out of a blank record so the stamp applies; `FJS-2108`), tests |
-| `x-litestone-from` | field | `{target, op}` from `@from(Model, count: true)` | nothing yet |
+| `x-litestone-from` | field | `{target, op}` from `@from(Model, count: true)`; an aggregate adds `rel`, the list field holding the children, `field`, the column it reads, and `where`, the filter's AST (`FJS-D1368`) | sierra (`fromFor` → `resource.preview(draft)`) |
 | `x-litestone-accept` | field | the `@accept("image/png,image/jpeg")` **string**, verbatim — not an array | tests only |
 | `x-litestone-policies` | model | `true` when the model has any `@@allow`/`@@deny` | nothing yet |
 | `x-determined` | model | `{ hostId: 'auth().id' }` — a column every create `@@allow` pins to the caller as a top-level `&&` conjunct (`hostId == auth().id`) | sierra drops it from a generated form and `required`, and fills it from the session at create (`FJS-D492`) |
@@ -250,6 +250,7 @@ before you build on one** — several are emitted and nothing yet reads them.
 | `x-litestone-write-policy` | field | `true` when a field-level `@allow(write, …)` may DROP the value written to it | sierra (`buildFieldRules` → `declinedFields`), `<Form>` |
 | `x-litestone-write-claims` | field | `{ isStaff: true }` — beside the write flag, when the whole predicate is `auth().<claim>` truthiness, `auth().<claim> == <literal>` and `&&` and the field has one write allow; `true` means truthy, any other value strictly equal. A predicate reading the row, `\|\|` or `!=` stays the bare flag | sierra (`buildFieldRules` → `refusedFor`) freezes the control for a session failing it (`FJS-D578`) |
 | `x-litestone-required-where` | field | the AST of `@required(where: …)` — the predicate deciding whether this column needs a value | sierra (`buildFieldRules` → `requiredFor`), `<Form>` |
+| `x-litestone-generated` | field | an unquoted `@generated` as `{ expr }`, its AST, or a backtick one as `{ template }`; absent for quoted SQL. `full` mode only, beside `readOnly` | sierra (`generatedFor` → `resource.preview(draft)`) |
 | `x-litestone-secret` | field | `true` — `audience: 'system'` only | nothing yet |
 | `x-litestone-guarded` | field | `true` — `audience: 'system'` only | nothing yet |
 

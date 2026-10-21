@@ -22,7 +22,7 @@ import { humanize }                    from '@frontierjs/toolbelt/inflect'
 import { transform }                   from '@frontierjs/toolbelt/transforms'
 // The evaluator litestone's own `evalJs` is, so an affordance and the boundary
 // cannot disagree about a row (`FJS-D259`).
-import { evaluate as evaluatePredicate, truth } from '@frontierjs/toolbelt/predicate'
+import { evaluate as evaluatePredicate, truth, formatTemplate } from '@frontierjs/toolbelt/predicate'
 import { dueAt }                     from '@frontierjs/toolbelt/datetime'
 
 // `derefFieldSchema` is `@frontierjs/toolbelt/jsonschema`'s — the same walk
@@ -125,6 +125,15 @@ const _CARRIED = [
   // is *not unconditionally required*, so a form that never asked would behave
   // exactly as it did before.
   'x-litestone-required-where',
+  // `x-litestone-generated` is a `@generated` a screen can answer: `{ expr }`,
+  // the arithmetic AST, or `{ template }`, the backtick text. A quoted SQL
+  // `@generated` carries none and has no preview. `generatedFor` is the reader.
+  'x-litestone-generated',
+  // `x-litestone-from` is an `@from`: an aggregate carries `rel`, the list
+  // field holding the children, and `where`, the filter's AST, so a draft's
+  // unsaved children can be counted the way the server will (`FJS-D1368`).
+  // `fromFor` is the reader.
+  'x-litestone-from',
   // `x-litestone-write-policy` is a field `@allow(write, …)`: whether this
   // caller may write this column depends on the CALLER and the ROW, so no
   // keyword on the schema can answer it and the boundary answers it by DROPPING
@@ -2224,6 +2233,86 @@ export function requiredFor(rule, record, mode) {
     // what Invariant 6 requires: the server enforces regardless.
     return false
   }
+}
+
+/**
+ * The value a `@generated` column will hold once this record is written.
+ *
+ * A live total over unsaved lines is the generated column's own rule, and an
+ * app restating it by hand drifts from the server's the first time either
+ * changes (`FJS-2747`). The evaluator is `@frontierjs/toolbelt/predicate`, the
+ * one litestone's policies run, and a template is shaped by the same
+ * `templateShape` litestone compiles into SQL (`FJS-D1112`).
+ *
+ * `undefined` where there is no rule a screen can answer — a quoted SQL
+ * `@generated`, or a schema newer than this client — so a caller keeps
+ * whatever value it had rather than showing a guess.
+ *
+ * @param {object} rule   a field rule from buildFieldRules
+ * @param {object} record the draft as it stands now
+ */
+export function generatedFor(rule, record) {
+  const gen = rule?.['x-litestone-generated']
+  if (!gen || !record) return undefined
+  try {
+    if (gen.template != null) return formatTemplate(gen.template, record)
+    if (gen.expr) return evaluatePredicate(gen.expr, { record })
+  } catch {}
+  return undefined
+}
+
+/**
+ * The value an aggregate `@from` will hold once this record and the children
+ * under its `rel` are written, in SQLite's terms: only a row the filter answers
+ * TRUE for is counted, `sum` of none is 0, `avg`/`max`/`min` skip a null and
+ * are null over nothing. A child's previewable `@generated` columns are
+ * answered first, so a line whose quantity was just typed is summed at its new
+ * amount rather than the one it was loaded with.
+ *
+ * `undefined` where a screen cannot answer it — no `rel` on the rule, the
+ * children not in the record, a row pick (`first`/`last`), a to-one copy.
+ *
+ * @param {object} rule        a field rule from buildFieldRules
+ * @param {object} record      the draft, its children under `rule['x-litestone-from'].rel`
+ * @param {object} childRules  the target model's read rules, for its `@generated`
+ */
+export function fromFor(rule, record, childRules = {}) {
+  const from = rule?.['x-litestone-from']
+  const rows = from?.rel ? record?.[from.rel] : undefined
+  if (!Array.isArray(rows) || !FROM_AGGREGATES.has(from.op)) return undefined
+  const now = new Date().toISOString()
+  try {
+    const kept = rows.map(row => ({ ...row, ...previewOf(childRules, row) }))
+      .filter(row => !from.where || evaluatePredicate(from.where, { record: row, now }) === true)
+    if (from.op === 'count')  return kept.length
+    if (from.op === 'exists') return kept.length > 0
+    const vals = kept.map(row => row[from.field]).filter(v => v != null)
+      .map(v => typeof v === 'string' && v.trim() !== '' && !isNaN(v) ? Number(v) : v)
+    if (from.op === 'sum') return vals.reduce((a, v) => a + (typeof v === 'number' ? v : 0), 0)
+    if (!vals.length)      return null
+    if (from.op === 'avg') return vals.reduce((a, v) => a + (typeof v === 'number' ? v : 0), 0) / vals.length
+    return vals.reduce((a, v) => (from.op === 'max' ? v > a : v < a) ? v : a)
+  } catch {}
+  return undefined
+}
+
+const FROM_AGGREGATES = new Set(['count', 'exists', 'sum', 'avg', 'max', 'min'])
+
+/**
+ * Every column of this record a screen can answer before it is written, by
+ * name: each previewable `@generated`, and each aggregate `@from` over the
+ * children the record holds. `childRulesOf(target)` hands a `@from` its
+ * target's read rules.
+ */
+export function previewOf(rules, record, childRulesOf = () => ({})) {
+  const out = {}
+  for (const [name, rule] of Object.entries(rules ?? {})) {
+    const v = rule?.['x-litestone-from']
+      ? fromFor(rule, record, childRulesOf(rule['x-litestone-from'].target))
+      : generatedFor(rule, record)
+    if (v !== undefined) out[name] = v
+  }
+  return out
 }
 
 /**
