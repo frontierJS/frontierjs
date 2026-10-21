@@ -52,6 +52,8 @@ export type PredicateNode =
   | { type: "not";     expr: PredicateNode }
   | { type: "and" | "or"; left: PredicateNode; right: PredicateNode }
   | { type: "compare"; op: string; left: PredicateNode; right: PredicateNode }
+  | { type: "arith";   op: "+" | "-" | "*"; left: PredicateNode; right: PredicateNode }
+  | { type: "round";   expr: PredicateNode }
 
 export interface NodeMeta {
   name:               string

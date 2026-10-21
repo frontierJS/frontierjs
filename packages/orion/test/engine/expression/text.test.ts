@@ -89,6 +89,30 @@ describe('conditions answer the way a policy does', () => {
   })
 })
 
+describe('arithmetic answers the way a policy does (FJS-D1365)', () => {
+  test('* binds tighter than + -, and a sum compares', () => {
+    expect(run('$.trigger.body.amount + 2 * 3', CART)).toBe(126)
+    expect(run('($.trigger.body.amount + 2) * 3', CART)).toBe(366)
+    expect(run('$.trigger.body.amount * 2 > 200', CART)).toBe(true)
+  })
+
+  test('a missing operand makes the sum null, not 0', () => {
+    expect(run('$.empty.value * 3', CART)).toBe(null)
+    expect(run('$.empty.value * 3 == null', CART)).toBe(true)
+  })
+
+  test('round() is SQLite\'s, and the function table rounds the same way', () => {
+    expect(run('round($.trigger.body.amount * 0.025)', CART)).toBe(3)
+    expect(run('round(0 - 2.5)', CART)).toBe(-3)
+    expect(resolver.resolve({ type: 'fn', name: 'round', args: [{ type: 'literal', value: -2.5 }] } as never,
+      { trigger: null, nodes: {} } as never)).toBe(-3)
+  })
+
+  test('arithmetic inside a lambda', () => {
+    expect(run('reduce($.cart.items, 0, (acc, i) => acc + i.price * i.qty)', CART)).toBe(700)
+  })
+})
+
 describe('refusals', () => {
   test('a bare name is not a column here', () => {
     expect(() => compileExpression("status == 'paid'")).toThrow(/'status' is not defined here/)

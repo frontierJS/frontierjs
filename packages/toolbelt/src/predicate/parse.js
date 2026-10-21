@@ -94,7 +94,7 @@ function durationOffset(p, base) {
 //   and      ::= not  ('&&' not)*
 //   not      ::= '!' not | primary
 //   primary  ::= sum [compOp sum]
-//   sum      ::= term (('+' | '-') term)*     (a policy only — FJS-D1107)
+//   sum      ::= term (('+' | '-') term)*     (FJS-D1107)
 //   term     ::= operand ('*' operand)*
 //   operand  ::= '(' expr ')' | value
 //   value    ::= auth() [.field] | now() [('+' | '-') duration] | check(field [,op]) | null | bool | string | number
@@ -208,14 +208,13 @@ function primary(p, ctx) {
 // ─── arithmetic ───────────────────────────────────────────────────────────────
 //
 // `+ - *` over numbers, `*` tighter than `+ -` and both tighter than a
-// comparison (`FJS-D1107`). No `/`: SQLite divides two integers to an integer
-// and by zero to NULL, and the JS half would have to copy both. A flow has its
-// own function table and no ruling for operators, so it keeps the old grammar.
+// comparison (`FJS-D1107`), in a flow as in a policy (`FJS-D1365`). No `/`:
+// SQLite divides two integers to an integer and by zero to NULL, and the JS
+// half would have to copy both.
 //
 // `a -1` lexes as `a` and the NUMBER -1, so a negative number straight after an
 // operand is a subtraction, the reading `now() -2d` already gets.
 function sum(p, ctx) {
-  if (ctx.flow) return operand(p, ctx)
   let left = term(p, ctx)
   for (;;) {
     const t = p.peek()
@@ -366,6 +365,10 @@ function lambdaParams(p) {
 function value(p, ctx) {
   const t = p.peek()
 
+  // Ahead of a flow's generic call, so `round` is one function in both dialects.
+  if (t.type === TK.IDENT && t.value === 'round' && p.peek(1)?.type === TK.LPAREN)
+    return round(p, ctx, t)
+
   if (ctx.flow) {
     // `$.a.b.c` — a value from the run, at any depth (`FJS-D284`). Bare `$` is
     // the run itself.
@@ -426,9 +429,6 @@ function value(p, ctx) {
     p.eat(TK.LPAREN); p.eat(TK.RPAREN)
     return durationOffset(p, { type: 'now' })
   }
-
-  if (t.type === TK.IDENT && t.value === 'round' && p.peek(1)?.type === TK.LPAREN)
-    return round(p, ctx, t)
 
   // check(field) or check(field, 'operation')
   if (t.type === TK.IDENT && t.value === 'check') {

@@ -49,12 +49,12 @@ export function parseText(src) {
   return ast
 }
 
-// What a value can be made of: a name, a literal, and choosing or comparing
-// between them. Everything else reads something other than what was handed in.
+// What a value can be made of: a name, a literal, a sum, and choosing or
+// comparing between them. Everything else reads something other than what was handed in.
 const CHILDREN = {
   literal: [], list: [], path: [],
   ternary: ['cond', 'then', 'else'],
-  compare: ['left', 'right'],
+  compare: ['left', 'right'], arith: ['left', 'right'], round: ['expr'],
   and: ['left', 'right'], or: ['left', 'right'],
   not: ['expr'],
 }

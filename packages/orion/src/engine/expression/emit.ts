@@ -20,8 +20,8 @@
 // something else, and neither side can see it alone. So every emission states
 // the tightness it is being read at and wraps itself when it is looser, the
 // levels being the parser's own ladder — ternary, `||`, `&&`, `!`, a
-// comparison, a value. A comparison's operands sit at VALUE, because the
-// grammar gives it `operand` and an operand is a value or a group.
+// comparison, a sum, a product, a value. A comparison's operands sit at SUM,
+// because the grammar gives it `sum`.
 //
 // `test/engine/expression/emit.test.ts` is what holds it: text → Expression →
 // text → Expression, asserting the two trees are equal. STRUCTURE rather than
@@ -37,13 +37,15 @@ export interface TextForm {
 }
 
 // The parser's ladder. A child emitted below the tightness its position
-// demands is wrapped, and `operand` — what a comparison takes — is VALUE.
+// demands is wrapped.
 const TERNARY = 0
 const OR      = 1
 const AND     = 2
 const NOT     = 3
 const COMPARE = 4
-const VALUE   = 5
+const SUM     = 5
+const TERM    = 6
+const VALUE   = 7
 
 const IDENT = /^[_a-zA-Z]\w*$/
 
@@ -51,7 +53,7 @@ const IDENT = /^[_a-zA-Z]\w*$/
 // three it reads as iteration. A `fn` carrying one of these has no text form:
 // re-parsed, `now()` is not a call at all and `map(x)` is an iterator missing
 // its lambda, so the round trip would refuse text this file had just written.
-const RESERVED_CALLS = new Set(["auth", "check", "now", "map", "filter", "reduce"])
+const RESERVED_CALLS = new Set(["auth", "check", "now", "round", "map", "filter", "reduce"])
 
 class NoText extends Error {}
 
@@ -195,12 +197,20 @@ function predicate(node: PredicateNode, min: number): string {
     case "and":     return wrap(`${predicate(node.left, AND)} && ${predicate(node.right, NOT)}`, AND, min)
     case "or":      return wrap(`${predicate(node.left, OR)} || ${predicate(node.right, AND)}`, OR, min)
 
-    // A comparison takes an `operand` on each side, which is a value or a
-    // bracketed group — never another comparison — so both sides are at VALUE.
+    // A comparison takes a sum on each side — never another comparison.
     case "compare": {
       if (typeof node.op !== "string") return refuse("a comparison with no operator")
-      return wrap(`${predicate(node.left, VALUE)} ${node.op} ${predicate(node.right, VALUE)}`, COMPARE, min)
+      return wrap(`${predicate(node.left, SUM)} ${node.op} ${predicate(node.right, SUM)}`, COMPARE, min)
     }
+
+    // Left-associative like `&&`, so the right child sits one level tighter.
+    case "arith": {
+      if (node.op === "*") return wrap(`${predicate(node.left, TERM)} * ${predicate(node.right, VALUE)}`, TERM, min)
+      if (node.op === "+" || node.op === "-")
+        return wrap(`${predicate(node.left, SUM)} ${node.op} ${predicate(node.right, TERM)}`, SUM, min)
+      return refuse(`there is no text form for the operator '${node.op}'`)
+    }
+    case "round":   return wrap(`round(${predicate(node.expr, TERNARY)})`, VALUE, min)
   }
 
   return refuse(`there is no text form for a '${(node as { type: string }).type}' condition`)

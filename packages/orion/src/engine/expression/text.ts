@@ -59,7 +59,9 @@ export function compileExpression(src: string): Expression {
 
 // ─── the parsed tree → an Expression ──────────────────────────────────────────
 
-const CONDITIONS = new Set(['and', 'or', 'not', 'compare'])
+// A sum and round() answer in the predicate kit's terms too, so a flow and a
+// policy agree about `null * 3` and `round(-2.5)` (`FJS-D1365`).
+const CONDITIONS = new Set(['and', 'or', 'not', 'compare', 'arith', 'round'])
 
 // The iteration calls. Each takes its collection first and a lambda last, and
 // what it compiles to is the node the resolver already has for it.
@@ -131,6 +133,8 @@ function withHoles(ast: Ast): PredicateNode {
     case 'or':      return { type: ast.type, left: withHoles(ast.left), right: withHoles(ast.right) } as PredicateNode
     case 'not':     return { type: 'not', expr: withHoles(ast.expr) } as PredicateNode
     case 'compare': return { type: 'compare', op: ast.op, left: operandHole(ast.left), right: operandHole(ast.right) } as PredicateNode
+    case 'arith':   return { type: 'arith', op: ast.op, left: operandHole(ast.left), right: operandHole(ast.right) } as PredicateNode
+    case 'round':   return { type: 'round', expr: operandHole(ast.expr) } as PredicateNode
     default:        return operandHole(ast)
   }
 }
@@ -148,7 +152,8 @@ function operandHole(ast: Ast): PredicateNode {
 
 /**
  * Fill the holes with the resolver's answers, then let the predicate kit judge.
- * Answers `true`, `false`, or `null` for unknown.
+ * A condition answers `true`, `false`, or `null` for unknown; a sum its number,
+ * or `null`.
  *
  * A filled hole becomes a FIELD over a record built here, never a literal. The
  * language spells `IS NULL` as `x == null`, so the kit reads a literal null as
@@ -160,14 +165,14 @@ function operandHole(ast: Ast): PredicateNode {
 export function answerPredicate(
   node: PredicateNode,
   resolveValue: (expr: Expression) => unknown,
-): boolean | null {
+): unknown {
   const record: Record<string, unknown> = {}
   const filled = fill(node, (expr) => {
     const name = `h${Object.keys(record).length}`
     record[name] = resolveValue(expr)
     return name
   })
-  return evaluate(filled, { record }) as boolean | null
+  return evaluate(filled, { record })
 }
 
 function fill(node: PredicateNode, bind: (expr: Expression) => string): Ast {
@@ -177,7 +182,9 @@ function fill(node: PredicateNode, bind: (expr: Expression) => string): Ast {
     case 'and':
     case 'or':      return { type: n.type, left: fill(n.left, bind), right: fill(n.right, bind) }
     case 'not':     return { type: 'not', expr: fill(n.expr, bind) }
-    case 'compare': return { type: 'compare', op: n.op, left: fill(n.left, bind), right: fill(n.right, bind) }
+    case 'compare':
+    case 'arith':   return { type: n.type, op: n.op, left: fill(n.left, bind), right: fill(n.right, bind) }
+    case 'round':   return { type: 'round', expr: fill(n.expr, bind) }
     default:        return n
   }
 }

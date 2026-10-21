@@ -13,6 +13,7 @@
  */
 
 import { parseExpression, parseFlowExpression, tokenize, TOKEN, OPERATORS, evaluate, ParseError } from '../../src/predicate/predicate.js'
+import { parseText, assertValues, evaluateValues } from '../../src/predicate/values.js'
 
 const T = TOKEN
 const tok = (type, value = null) => ({ type, value, line: 1, col: 0 })
@@ -196,9 +197,16 @@ test('evaluate: arithmetic answers in SQLite\'s terms — null propagates, round
   assert.equal(at('a + b', { a: '3', b: 1 }), 4)
 })
 
-test('parse: a flow keeps its own grammar — round() is a call there', function () {
-  const p = cursor(tokenize('round($.a)').slice(0, -1))
-  assert.equal(parseFlowExpression(p).type, 'call')
+test('parse: a flow reads the same arithmetic, and round() is the same node there (FJS-D1365)', function () {
+  const flowOf = (src) => parseFlowExpression(cursor(tokenize(src).slice(0, -1)))
+  assert.equal(flowOf('round($.a)').type, 'round')
+  assert.equal(flowOf('$.a + $.b * 2').type, 'arith')
+  assert.equal(flowOf('lower($.a)').type, 'call')
+})
+
+test('values: a template may hold a sum, over the names it was handed', function () {
+  assert.equal(evaluateValues(parseText('round(line.qty * line.price * 0.01)'), { line: { qty: 7, price: 333 } }), 23)
+  assert.throws(() => assertValues(parseText('line.qty * other.x'), { line: ['qty'] }), /other\.x is not a name/)
 })
 
 // ── the flow dialect ─────────────────────────────────────────────────────────

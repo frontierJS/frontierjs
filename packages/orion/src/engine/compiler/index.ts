@@ -372,10 +372,12 @@ function holesOf(node: PredicateNode): Expression[] {
   const n = node as { type: string; [k: string]: any }
   switch (n.type) {
     case "hole":    return [n.expr]
-    case "not":     return holesOf(n.expr)
+    case "not":
+    case "round":   return holesOf(n.expr)
     case "and":
     case "or":
-    case "compare": return [...holesOf(n.left), ...holesOf(n.right)]
+    case "compare":
+    case "arith":   return [...holesOf(n.left), ...holesOf(n.right)]
     default:        return []
   }
 }

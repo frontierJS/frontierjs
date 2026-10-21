@@ -94,6 +94,16 @@ const SOURCES = [
   '$.a > 1 || $.b > 2 && $.c > 3',
   "$.a > 1 && $.b > 2 ? 'both' : 'not'",
   "($.a > 1 ? $.b : $.c) > 2",
+
+  // arithmetic (FJS-D1365): * over + -, both left to right, all under a comparison
+  '$.a + $.b * $.c',
+  '($.a + $.b) * $.c',
+  '$.a - ($.b - $.c)',
+  '$.a - $.b - $.c',
+  '$.a * ($.b * $.c)',
+  '$.qty * $.price > 100',
+  'round($.qty * $.price * 0.01)',
+  '$.a * -1 + 2 == 1',
 ]
 
 describe('the round trip', () => {
@@ -180,7 +190,7 @@ describe('what has no text form says so rather than guessing', () => {
     // `now()` parses to a node the flow compiler does not accept and
     // `map(x)` to an iterator with no lambda, so emitting either would write
     // text this package refuses to read back.
-    for (const name of ['now', 'auth', 'check', 'map', 'filter', 'reduce']) {
+    for (const name of ['now', 'auth', 'check', 'round', 'map', 'filter', 'reduce']) {
       expect(none({ type: 'fn', name, args: [] }).text).toBe(null)
     }
   })

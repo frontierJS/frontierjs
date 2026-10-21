@@ -1,4 +1,5 @@
 import type { Expression, PipeStep } from "../types"
+import { evaluate } from "@frontierjs/toolbelt/predicate"
 import { answerPredicate } from "./text"
 
 // ─────────────────────────────────────────────
@@ -55,7 +56,9 @@ const BUILTINS: Record<string, BuiltinFn> = {
   sub:   (a, b) => (a as number) - (b as number),
   mul:   (a, b) => (a as number) * (b as number),
   div:   (a, b) => (a as number) / (b as number),
-  round: (a)    => Math.round(a as number),
+  // The expression language's round(), half away from zero, so a step and a
+  // policy round -2.5 alike.
+  round: (a)    => evaluate({ type: 'round', expr: { type: 'literal', value: a } }),
   floor: (a)    => Math.floor(a as number),
   ceil:  (a)    => Math.ceil(a  as number),
   abs:   (a)    => Math.abs(a   as number),
