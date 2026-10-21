@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**127 words** — 13 declarations · 73 field attributes · 37 model attributes · 4 move words.
+**128 words** — 13 declarations · 74 field attributes · 37 model attributes · 4 move words.
 
 ## Index
 
@@ -36,6 +36,7 @@ and shows you the diff first.
 - *Refuse a bad value* — [`@values`](#values-field) · [`@label`](#label-field) · [`@required`](#required-field) · [`@email`](#email-field) · [`@url`](#url-field) · [`@phone`](#phone-field) · [`@syntax`](#syntax-field) · [`@accept`](#accept-field) · [`@date`](#date-field) · [`@datetime`](#datetime-field) · [`@time`](#time-field) · [`@zone`](#zone-field) · [`@regex`](#regex-field) · [`@length`](#length-field) · [`@startsWith`](#startswith-field) · [`@endsWith`](#endswith-field) · [`@contains`](#contains-field) · [`@lt`](#lt-field) · [`@lte`](#lte-field) · [`@gt`](#gt-field) · [`@gte`](#gte-field) · [`@minItems`](#minitems-field) · [`@maxItems`](#maxitems-field) · [`@uniqueItems`](#uniqueitems-field) · [`@type`](#type-field)
 - *Shape the table* — [`@big`](#big-field) · [`@collate`](#collate-field) · [`@scale`](#scale-field) · [`@money`](#money-field) · [`@unit`](#unit-field) · [`@point`](#point-field) · [`@vector`](#vector-field) · [`@zoned`](#zoned-field)
 - *Decide who may* — [`@allow`](#allow-field)
+- *Wire it to the app* — [`@override`](#override-field)
 
 **Model attributes**
 
@@ -1408,6 +1409,28 @@ model Example {
 - **Deeper** — [access-control.md](access-control.md)
 - **See also** — [`@guarded`](#guarded-field) · [`@system`](#system-field) · [`@@allow`](#allow-model)
 
+### Wire it to the app
+
+#### `@override` <a id="override-field"></a>
+
+This field replaces, whole line, the one a @@trait supplies under the same name — a host tightening a reference trait's default or column name. Without it a redeclare is refused, naming both the field and the trait; on a field no trait supplies it is refused, so a trait that drops the field says so at every host. Not in a trait or a type.
+
+```lite
+trait Dates {
+  createdAt DateTime @default(now())
+}
+
+model Example {
+  id Int @id
+  @@trait(Dates)
+  createdAt DateTime @default(now()) @map("created_at") @override
+}
+```
+
+- **Legal** — on a model's field
+- **Deeper** — [traits.md](traits.md)
+- **See also** — [`trait`](#trait-declaration) · [`@@trait`](#trait-model)
+
 ## Model attributes
 
 Two `@@`, and it describes the whole model rather than one of its columns.
@@ -2159,8 +2182,8 @@ entry above says so only when its answer is not the ordinary one.
 
 | position | refuses |
 | --- | --- |
-| on a type's field | `@id`, `@unique`, `@map`, `@relation`, `@generated`, `@from`, `@encrypted`, `@guarded`, `@secret`, `@updatedAt`, `@version`, `@allow`, `@values`, `@scale`, `@money`, `@big` |
-| on a trait's field | `@id` |
+| on a type's field | `@id`, `@unique`, `@map`, `@relation`, `@generated`, `@from`, `@encrypted`, `@guarded`, `@secret`, `@updatedAt`, `@version`, `@allow`, `@values`, `@scale`, `@money`, `@big`, `@override` |
+| on a trait's field | `@id`, `@override` |
 | in a trait | `@id`, `@map`, `@db`, `@fts` |
 | on an enum member | everything except `@label` |
 | on a view column | everything except `@money`, `@scale`, `@unit` |

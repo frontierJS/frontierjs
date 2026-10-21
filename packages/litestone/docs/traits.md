@@ -107,7 +107,7 @@ For all other purposes, order doesn't matter.
 
 Three rules, in order:
 
-**1. Host wins.** If both a trait and the host model declare a field with the same name, the host's version wins and the trait's is dropped silently. Useful for tightening defaults:
+**1. A host replaces a trait field only with `@override`.** A host model declaring a field a trait already supplies is refused unless the host's line says `@override`; with it, the host's whole line replaces the trait's (`FJS-D1276`). Useful for tightening a reference trait's default:
 
 ```lite
 trait Dates {
@@ -116,10 +116,23 @@ trait Dates {
 
 model Post {
   id        Int  @id
-  createdAt DateTime @default(now()) @map("created_at")  // host wins, gets a custom column name
+  createdAt DateTime @default(now()) @map("created_at") @override
   @@trait(Dates)
 }
 ```
+
+```lite throws
+trait Dates { createdAt DateTime @default(now()) }
+
+model Post {
+  id        Int @id
+  createdAt DateTime
+  @@trait(Dates)
+}
+//  Error: Model 'Post': field 'createdAt' is declared by the model and by trait 'Dates' — mark it @override or remove one
+```
+
+`@override` on a field no trait supplies is refused too, so a trait that drops the field says so at the host. A trait field cannot carry it — a trait colliding with a nested trait is rule 2.
 
 **2. Two traits → same field name → parse error.** No silent ordering-based winner, and the host declaring the field itself does not lift it — the two traits are still both providing `foo`:
 
@@ -137,7 +150,7 @@ trait Y { foo String }
 
 model M {
   id  Int @id
-  foo String                // still refused — rule 1 is host against ONE trait
+  foo String @override      // still refused — rule 1 is host against ONE trait
   @@trait(X)
   @@trait(Y)
 }

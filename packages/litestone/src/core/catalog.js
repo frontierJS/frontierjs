@@ -64,8 +64,8 @@ export const POSITIONS = {
 export const POSITION_RULES = {
   typeField:  { excludes: ['id', 'unique', 'map', 'relation', 'generated', 'from',
                            'encrypted', 'guarded', 'secret', 'updatedAt', 'version', 'allow',
-                           'values', 'scale', 'money', 'big'] },
-  traitField: { excludes: ['id'] },
+                           'values', 'scale', 'money', 'big', 'override'] },
+  traitField: { excludes: ['id', 'override'] },
   traitBlock: { excludes: ['id', 'map', 'db', 'fts'] },
   enumMember: { only: ['label'] },
   viewColumn: { only: [...VIEW_COLUMN_ATTRS] },
@@ -548,6 +548,19 @@ const FIELD = [
       extraFields:
         'state DocState @default(draft)\n  @@transitions(state, issue: draft -> issued @seals)',
       seeAlso: ['transitions', 'immutable', 'keep']
+    }
+  ),
+  t(
+    'override',
+    'field',
+    'operate',
+    '',
+    "This field replaces, whole line, the one a @@trait supplies under the same name — a host tightening a reference trait's default or column name. Without it a redeclare is refused, naming both the field and the trait; on a field no trait supplies it is refused, so a trait that drops the field says so at every host. Not in a trait or a type.",
+    'createdAt DateTime @default(now()) @map("created_at") @override',
+    {
+      context: 'trait Dates {\n  createdAt DateTime @default(now())\n}',
+      extraFields: '@@trait(Dates)',
+      seeAlso: ['schema:trait', 'model:trait']
     }
   ),
   t(
@@ -1745,6 +1758,7 @@ export const DOCS = {
   'model:anonymous': 'trail.md',
   'model:db': 'multi-database.md',
   'model:trait': 'traits.md',
+  'field:override': 'traits.md',
   'model:createdBy': 'schema.md',
   'model:updatedBy': 'schema.md'
 }
@@ -1854,6 +1868,7 @@ export const TIERS = {
     'model:scope',
     'model:tenant',
     'model:trait',
+    'field:override',
     'model:createdBy',
     'model:updatedBy',
     // move words
@@ -1966,7 +1981,7 @@ export const AXES = {
     'field:minItems', 'field:maxItems', 'field:uniqueItems', 'field:type', 'model:index',
     'model:id', 'model:unique', 'model:exclude', 'model:check', 'model:arc', 'model:relator',
     'model:map', 'model:label', 'model:noStrict', 'model:fts', 'model:extensible',
-    'model:hasTemplates', 'model:db', 'model:trait'
+    'model:hasTemplates', 'model:db', 'model:trait', 'field:override'
   ],
   access: [
     'schema:tenancy', 'schema:claim', 'field:omit', 'field:guarded', 'field:system',

@@ -242,7 +242,7 @@ model Session {
   /// Required where the trait leaves it open: the key re-mints one in a
   /// signature, so a session that never expires buys nothing and is a standing
   /// hole for a token that leaked.
-  expiresAt DateTime
+  expiresAt DateTime @override
 
   @@gate(8)
 }

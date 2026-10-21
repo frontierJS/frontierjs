@@ -1067,6 +1067,12 @@ class Parser {
       // the row that must keep arriving.
       case 'sealed': return { kind: 'sealed' }
 
+      // A host field replacing the one a @@trait supplies, whole line
+      // (`FJS-D1276`). Without it the redeclare is refused, because the host
+      // winning in silence let a schema diverge from its reference trait with
+      // nothing in either file saying so.
+      case 'override': return { kind: 'override' }
+
       // ── Field visibility + access control ─────────────────────────────────
       case 'omit': {
         // @omit        → skip lists, include on findUnique
@@ -3647,7 +3653,11 @@ function logTargetHint(schema, dbName) {
 
 export const DATABASE_DRIVERS     = new Set(['sqlite', 'jsonl', 'trail'])
 
-export const TRAIT_FORBIDDEN_FIELD_ATTRS = new Set(['id'])
+export const TRAIT_FORBIDDEN_FIELD_ATTRS = new Set(['id', 'override'])
+const TRAIT_FORBIDDEN_FIELD_WHY = {
+  id:       'the host model owns its primary key',
+  override: 'only a host model replaces a trait field; a trait that collides with a nested trait is refused',
+}
 export const TRAIT_FORBIDDEN_MODEL_ATTRS = new Set(['id', 'map', 'db', 'fts'])
 
 // Attributes a model may legitimately carry more than one of. Everything else
@@ -3799,7 +3809,11 @@ function resolveExtends(schema) {
 function resolveTraits(schema) {
   const errors = []
   const traits = schema.traits ?? []
+  const overrides = m => m.fields.filter(f => f.attributes.some(a => a.kind === 'override'))
   if (!traits.length && !schema.models.some(m => m.attributes.some(a => a.kind === 'trait'))) {
+    for (const m of schema.models)
+      for (const f of overrides(m))
+        errors.push(`Model '${m.name}': field '${f.name}' is marked @override and no trait supplies it — remove @override`)
     return errors
   }
 
@@ -3818,7 +3832,7 @@ function resolveTraits(schema) {
     for (const f of t.fields) {
       for (const attr of f.attributes) {
         if (TRAIT_FORBIDDEN_FIELD_ATTRS.has(attr.kind)) {
-          errors.push(`Trait '${t.name}' field '${f.name}': @${attr.kind} is not allowed in a trait (the host model owns its primary key)`)
+          errors.push(`Trait '${t.name}' field '${f.name}': @${attr.kind} is not allowed in a trait (${TRAIT_FORBIDDEN_FIELD_WHY[attr.kind]})`)
         }
       }
     }
@@ -3895,7 +3909,11 @@ function resolveTraits(schema) {
   // Splice traits into each model.
   for (const model of schema.models) {
     const traitRefs = model.attributes.filter(a => a.kind === 'trait')
-    if (!traitRefs.length) continue
+    if (!traitRefs.length) {
+      for (const f of overrides(model))
+        errors.push(`Model '${model.name}': field '${f.name}' is marked @override and no trait supplies it — remove @override`)
+      continue
+    }
 
     const seenFromTraits = new Map()  // field name → originating trait
     const splicedFields = []
@@ -3916,8 +3934,14 @@ function resolveTraits(schema) {
       splicedAttrs.push(...resolved.attrs)
     }
 
-    // Host wins: if the model itself already declares a field, drop the
-    // trait-provided version. Same for attributes that take a single value.
+    // A host field replaces the trait's only where it says @override.
+    for (const f of model.fields) {
+      const marked = f.attributes.some(a => a.kind === 'override')
+      if (seenFromTraits.has(f.name) && !marked)
+        errors.push(`Model '${model.name}': field '${f.name}' is declared by the model and by trait '${seenFromTraits.get(f.name)}' — mark it @override or remove one`)
+      else if (!seenFromTraits.has(f.name) && marked)
+        errors.push(`Model '${model.name}': field '${f.name}' is marked @override and no trait supplies it — remove @override`)
+    }
     const hostFieldNames = new Set(model.fields.map(f => f.name))
     const finalTraitFields = splicedFields.filter(f => !hostFieldNames.has(f.name))
 
@@ -3971,6 +3995,8 @@ function resolveTraits(schema) {
 export const TYPE_FORBIDDEN_FIELD_ATTRS = new Set([
   'id', 'unique', 'map', 'relation', 'generated', 'from',
   'encrypted', 'guarded', 'secret', 'updatedAt', 'version', 'allow', 'deny',
+  // A type takes no trait, so there is nothing to replace.
+  'override',
   // Storage facts about a COLUMN. A `type` describes a shape inside a Json
   // column or a custom method's input, where there is no column to scale — and
   // no int64 either, since a `type` is carried as JSON and JSON's number is the

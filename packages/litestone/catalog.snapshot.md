@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**127 words** — 13 declarations · 73 field attributes · 37 model attributes · 4 move words.
+**128 words** — 13 declarations · 74 field attributes · 37 model attributes · 4 move words.
 
 ## Declarations
 
@@ -56,6 +56,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@local` | Hide or lock a value |  |  |  |  |
 | `@immutable` | Hide or lock a value | [(after: <move>)] |  |  |  |
 | `@sealed` | Hide or lock a value |  |  |  |  |
+| `@override` | Wire it to the app |  | on a model's field |  |  |
 | `@capability` | Hide or lock a value |  |  |  |  |
 | `@encrypted` | Hide or lock a value |  | on a model's field · on a trait's field |  |  |
 | `@hashed` | Hide or lock a value |  |  |  |  |
@@ -166,8 +167,8 @@ A blank `legal` column above means the ordinary answer for that level.
 
 | position | refuses |
 | --- | --- |
-| on a type's field | `id`, `unique`, `map`, `relation`, `generated`, `from`, `encrypted`, `guarded`, `secret`, `updatedAt`, `version`, `allow`, `values`, `scale`, `money`, `big` |
-| on a trait's field | `id` |
+| on a type's field | `id`, `unique`, `map`, `relation`, `generated`, `from`, `encrypted`, `guarded`, `secret`, `updatedAt`, `version`, `allow`, `values`, `scale`, `money`, `big`, `override` |
+| on a trait's field | `id`, `override` |
 | in a trait | `id`, `map`, `db`, `fts` |
 | on an enum member | everything except `@label` |
 | on a view column | everything except `@money`, `@scale`, `@unit` |

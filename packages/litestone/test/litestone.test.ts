@@ -20134,12 +20134,45 @@ describe('trait declarations', () => {
     expect(r.errors[0]).toMatch(/field 'foo' provided by both/)
   })
 
-  test('host field overrides trait field of same name', () => {
+  // FJS-D1276: the host replaced a trait field in silence, so a schema could
+  // drift from its reference trait with nothing in either file saying so.
+  test('a host field redeclaring a trait field is refused without @override', () => {
     const r = parse(`
       trait T { foo String @default("from-trait") }
       model M {
         id  Int @id
         foo String @default("from-host")
+        @@trait(T)
+      }
+    `)
+    expect(r.valid).toBe(false)
+    expect(r.errors).toContain(`Model 'M': field 'foo' is declared by the model and by trait 'T' — mark it @override or remove one`)
+  })
+
+  test('@override where no trait supplies the field is refused, with or without a trait', () => {
+    for (const text of [
+      `trait T { bar String }\n model M { id Int @id; foo String @override; @@trait(T) }`,
+      `model M { id Int @id; foo String @override }`,
+    ]) {
+      const r = parse(text)
+      expect(r.valid).toBe(false)
+      expect(r.errors).toContain(`Model 'M': field 'foo' is marked @override and no trait supplies it — remove @override`)
+    }
+  })
+
+  test('@override in a trait or a type is refused', () => {
+    expect(parse(`trait T { foo String @override }\n model M { id Int @id; @@trait(T) }`).errors[0])
+      .toMatch(/Trait 'T' field 'foo': @override is not allowed in a trait/)
+    expect(parse(`type P { foo String @override }\n model M { id Int @id }`).errors[0])
+      .toMatch(/Type 'P' field 'foo': @override not allowed in a type/)
+  })
+
+  test('host field marked @override replaces the trait field of the same name', () => {
+    const r = parse(`
+      trait T { foo String @default("from-trait") }
+      model M {
+        id  Int @id
+        foo String @default("from-host") @override
         @@trait(T)
       }
     `)

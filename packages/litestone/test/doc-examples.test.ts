@@ -181,6 +181,7 @@ async function runAll() {
         if (block.lang === 'lite') await buildSchema(block.body)
         else await runBlock(block)
       } catch (e) { err = e as Error }
+      if (block.lang === 'lite' && block.words.has('throws')) err = err ? null : new Error('expected the schema to be refused')
       if (block.words.has('failing')) err = err ? null : new Error('the example passes now — remove `failing` from its fence')
       results.set(id, err)
     }
