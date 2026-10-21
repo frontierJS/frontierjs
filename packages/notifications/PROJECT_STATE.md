@@ -141,5 +141,5 @@ throws is logged and the rest still run.
 
 Nothing package-specific is open. `../../ISSUES.md` is the register; add there,
 not here. What this package still does not have is a **preferences model** (per
-recipient, per transport), a **push transport** (APNs/FCM, needs a device-token
-model), digest batching, and a bulk mark-as-read.
+recipient, per transport), a **native push transport** (APNs/FCM, needs a device-token
+model; Web Push ships as the `webPush()` driver), digest batching, and a bulk mark-as-read.

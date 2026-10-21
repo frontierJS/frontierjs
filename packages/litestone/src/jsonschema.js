@@ -1018,13 +1018,13 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   // is the only one now.
   const derived = capabilitiesForModel(model)
   if (derived.length) {
-    const operations = {}, moves = {}, columns = {}
+    const operations = {}, transitions = {}, columns = {}
     for (const c of derived) {
       if (c.kind === 'operation') operations[c.target] = c.name
-      if (c.kind === 'move')      moves[c.target]      = c.name
+      if (c.kind === 'transition') transitions[c.target] = c.name
       if (c.kind === 'column')    columns[c.target]    = c.name
     }
-    result['x-capabilities'] = { operations, moves, columns }
+    result['x-capabilities'] = { operations, transitions, columns }
   }
 
   // ── x-transitions ──────────────────────────────────────────────────────────
@@ -1429,6 +1429,12 @@ function applyValidators(schema, attributes) {
 
       case 'unit':
         schema['x-unit'] = { symbol: attr.symbol, dimension: unitInfo(attr.symbol)?.dimension ?? null }
+        break
+
+      // The order the column sorts in. A live list places a pushed row without
+      // asking the server, and only the schema can tell it the column is not BINARY.
+      case 'collate':
+        schema['x-collate'] = attr.name
         break
 
       case 'regex':

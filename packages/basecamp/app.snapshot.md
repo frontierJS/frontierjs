@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-55 services · 40 routes · 18 plugins · prefix (none)
+55 services · 42 routes · 19 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -26,6 +26,8 @@ text, so a body that elevates through a helper is not listed.
 | `app-backups.take` | standing 5 or above — declared `gate: 5` |
 | `apps.place` | standing 4 or above — declared `gate: 4` |
 | `apps.unplace` | standing 4 or above — declared `gate: 4` |
+| `apps.enablePush` | standing 5 or above — declared `gate: 5` |
+| `apps.disablePush` | standing 5 or above — declared `gate: 5` |
 | `channels.test` | standing 5 or above — declared `gate: 5` |
 | `edge.syncStep` | anyone, a stranger included — declared `gate: 0` |
 | `infra.onboarding` | standing 2 or above — declared `gate: 2` |
@@ -306,8 +308,8 @@ name when it declares none.
 
 ### `apps` · model `App`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`
-- **custom methods** — `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `enablePush`, `disablePush`
+- **custom methods** — `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `enablePush`, `disablePush`
 - **input** — `fromBlueprint` takes `AppFromBlueprint`
 - **input** — `place` takes `AppPlace`
 - **input** — `restoreVolume` takes `AppVolumeRestore`
@@ -319,6 +321,8 @@ name when it declares none.
   - `place` — standing 4 or above — declared `gate: 4`; body writes as the app
   - `unplace` — standing 4 or above — declared `gate: 4`; body writes as the app
   - `restoreVolume` — standing 5 or above — declared `gate: 5`
+  - `enablePush` — standing 5 or above — declared `gate: 5`; body writes as the app
+  - `disablePush` — standing 5 or above — declared `gate: 5`; body writes as the app
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -1446,6 +1450,8 @@ once; everything else was registered by hand or by a plugin.
 | GET | `/health` | raw |
 | GET | `/health/live` | raw |
 | GET | `/health/ready` | raw |
+| POST | `/hooks/git/{appId}` | raw |
+| POST | `/hooks/git/{appId}/{token}` | raw |
 | GET | `/install.sh` | raw |
 | DELETE | `/mcp` | raw |
 | GET | `/mcp` | raw |
@@ -1479,6 +1485,7 @@ In configure order, which is what `requires:` is checked against.
 13. `terminalRoute`
 14. `staticRoutes`
 15. `basecamp-cloud-accounts`
-16. `basecamp-dns-follows-fleet`
-17. `basecamp-cleanup`
-18. `corsPlugin`
+16. `basecamp-push`
+17. `basecamp-dns-follows-fleet`
+18. `basecamp-cleanup`
+19. `corsPlugin`

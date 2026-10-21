@@ -5480,7 +5480,7 @@ export function buildBlock(data, option = {}) {
               if (cssText) {
                 binds.push(xNode('headStyle', { cssText }, (w, nd) => {
                   const escaped = nd.cssText.replace(/`/g, '\\`').replace(/\\${/g, '\\${')
-                  w.write(true, `$$runtime.addToHead((() => { const s = document.createElement('style'); s.textContent = \`${escaped}\`; return s; })());`, true)
+                  w.write(true, `$$runtime.addHeadStyle(\`${escaped}\`);`, true)
                 }))
               }
             }
@@ -7935,6 +7935,35 @@ function _valueReads(exprSrc) {
 }
 
 /**
+ * Member reads off the result of a call to a bare name — `media(q).matches` —
+ * as `[{ callee, member }]`. A member that is itself called (`fmt(x).trim()`)
+ * is a method invocation and is left out, like `_valueReads`'s callee skip.
+ */
+function _callResultReads(exprSrc) {
+  let ast
+  try { ast = acorn.parseExpressionAt(exprSrc, 0, { ecmaVersion: 'latest' }) }
+  catch { return [] }
+
+  const found = []
+  const walk = (n, parent, key) => {
+    if (!n || typeof n !== 'object') return
+    if (Array.isArray(n)) { n.forEach(c => walk(c, parent, key)); return }
+    if (typeof n.type !== 'string') return
+    if (n.type === 'MemberExpression' && !n.computed && n.property?.type === 'Identifier' &&
+        n.object?.type === 'CallExpression' && n.object.callee?.type === 'Identifier' &&
+        !(parent?.type === 'CallExpression' && key === 'callee')) {
+      found.push({ callee: n.object.callee.name, member: n.property.name })
+    }
+    for (const k of Object.keys(n)) {
+      if (k === 'start' || k === 'end' || k === 'loc' || k === 'raw') continue
+      walk(n[k], n, k)
+    }
+  }
+  walk(ast, null, null)
+  return found
+}
+
+/**
  * Warn about template reads of imported names that externalSignals doesn't
  * cover, for modules it otherwise describes — and record every read of an
  * imported object that no `$:` here covers, warned or not, on
@@ -8185,6 +8214,34 @@ function _checkExternalReactivity(ctx, imports) {
           `a plain value.`
         )
       }
+    }
+  }
+
+  // ── Call-result tier ────────────────────────────────────────────────────
+  // `{media(q).matches}` — a member read off an imported call's result. Only a
+  // local `const` holding the call is tracked; written inline with nothing
+  // reactive local to the expression, the whole read hoists static and renders
+  // once (`FJS-3096`). Strict only: a factory and a plain function are
+  // indistinguishable here, as with the path tier.
+  if (!strict) return
+  const reactiveLocal = (n) => {
+    const v = vars?.[n]
+    return !!v && (v.kind !== 'const' || v.isDerived || v.isProp || v.isWritableDerived)
+  }
+  for (const expr of _collectTemplateExpressions(ctx.DOM.body)) {
+    const calls = _callResultReads(expr)
+    if (!calls.length || [..._valueReads(expr).keys()].some(reactiveLocal)) continue
+    for (const { callee, member } of calls) {
+      const b = bindings.get(callee)
+      if (!b || b.isNamespace || b.source.endsWith('.mesa') || vars?.[callee]) continue
+      if (seen.has(`c:${callee}.${member}`)) continue
+      seen.add(`c:${callee}.${member}`)
+      const hint =
+        `'${callee}(...).${member}' is read in the template off an imported call's result, ` +
+        `which compiles to a static value and will not update if that result is a signal. ` +
+        `Hold the call in a \`const\` — const x = ${callee}(...) — and read '{x.${member}}'.`
+      ctx.analysis.warnings.push(hint)
+      ;(ctx.analysis.reactivityHints ??= []).push(hint)
     }
   }
 }

@@ -210,15 +210,24 @@ t('screen.andTheCountsAreTheProjectionsOwn',
   served.data.map(r => [r.status, r.orders]).sort())
 t('screen.theSummaryTilesRender', onScreen.stats, 2)
 
-// Nothing on this page is summed by this page. The view keeps the answer, so a
-// total that disagreed with its own rows would mean the screen re-derived it.
-t('screen.theBankedTileIsTheSumOfTheRowsShown', await evaluate(`
-  const rows  = [...document.querySelectorAll('[data-total]')];
-  const cells = rows.map(td => Number(td.textContent.replace(/[^0-9.-]/g, '')));
-  const tile  = document.querySelector('#rp-stats');
+// FJS-1121: *Taken* is money collected, so a pending (unpaid), refunded or
+// cancelled row is not in it. The sum is over the rows shown, restricted to the
+// states that are taken.
+t('screen.theTakenTileSumsOnlyThePaidAndShippedRows', await evaluate(`
+  const taken = new Set(['paid', 'shipped']);
+  const cells = [...document.querySelectorAll('[data-status]')]
+    .filter(tr => taken.has(tr.getAttribute('data-status')))
+    .map(tr => Number(tr.querySelector('[data-total]').textContent.replace(/[^0-9.-]/g, '')));
+  const tile  = document.querySelector('#rp-stats .tile');
   const shown = Number((tile.textContent.match(/[0-9][0-9,.]*/) || ['0'])[0].replace(/,/g, ''));
   const sum   = cells.reduce((a, b) => a + b, 0);
   return Math.abs(sum - shown) < 0.02;
+`), true)
+// A seed with no unpaid money would pass the assertion above for the wrong
+// reason, so the rows that must NOT be counted are required to exist.
+t('screen.theSeedHasMoneyThatIsNotTaken', await evaluate(`
+  const states = [...document.querySelectorAll('[data-status]')].map(tr => tr.getAttribute('data-status'));
+  return states.some(s => s !== 'paid' && s !== 'shipped');
 `), true)
 
 // ─── the inversion ────────────────────────────────────────────────────────

@@ -663,6 +663,8 @@ function acmeProvider() {
   const seen: Array<{ method: string; path: string; auth: string | null }> = []
   const bodies: unknown[] = []
   let n = 0
+  // Set, the next DELETE lands and its answer is lost: a 503 after the row is gone.
+  const lose = { delete: false }
   const server = Bun.serve({
     port: 0,
     async fetch(req) {
@@ -682,11 +684,15 @@ function acmeProvider() {
       const post = id ? posts.get(id) : undefined
       if (!post) return Response.json({ message: 'not found' }, { status: 404 })
       if (req.method === 'PATCH') { post.text = body!.text!; return Response.json(post) }
-      if (req.method === 'DELETE') { posts.delete(post.id); return Response.json({ status: 'OK' }) }
+      if (req.method === 'DELETE') {
+        posts.delete(post.id)
+        if (lose.delete) { lose.delete = false; return Response.json({ message: 'unavailable' }, { status: 503 }) }
+        return Response.json({ status: 'OK' })
+      }
       return Response.json(post)
     },
   })
-  return { server, posts, seen, bodies }
+  return { server, posts, seen, bodies, lose }
 }
 
 const acmeClaim = (): MirrorClaim => ({
@@ -780,6 +786,21 @@ describe('a claimed mirror model forwards its generated writes', () => {
       expect(await (db as any).asSystem().post.findMany()).toEqual([])
       expect(acme.seen.map(s => `${s.method} ${s.path} ${s.auth}`)).toEqual([
         'POST /posts Bearer tok-u2', 'PATCH /posts/p1 Bearer tok-u2', 'DELETE /posts/p1 Bearer tok-u2'])
+    } finally { acme.server.stop(true) }
+  })
+
+  // FJS-3369: the replay of a DELETE that landed is answered 404.
+  it('removes the local row when a delete\'s answer is lost and its replay finds the row gone', async () => {
+    const { app, db, acme } = await mirrorApp()
+    try {
+      await app._startForTest()
+      const made = await request(app).post('/posts').auth('test-token-u1').send({ channelExternalId: 'c1', message: 'first' })
+      const id = (made.body as { id: number }).id
+      acme.lose.delete = true
+      const gone = await request(app).delete(`/posts/${id}`).auth('test-token-u1')
+      expect(gone.status).toBe(200)
+      expect(acme.seen.filter(s => s.method === 'DELETE')).toHaveLength(2)
+      expect(await (db as any).asSystem().post.findMany()).toEqual([])
     } finally { acme.server.stop(true) }
   })
 

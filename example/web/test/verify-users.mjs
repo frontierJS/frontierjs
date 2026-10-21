@@ -256,10 +256,11 @@ check('…nor did role', selfRole.row?.role, 'user')
 const rename = await patch(asShopper, robin.id, { name: 'Robin V' })
 check('…while a column with no field policy DOES move', rename.row?.name, 'Robin V')
 
-// A member of staff who is not an admin, on somebody else's row: 404 rather
-// than 403, because a refusal must never confirm a row exists.
+// A member of staff who is not an admin, on somebody else's row: 403. Staff READ
+// every User (`@@allow(read, … || auth().isStaff)`), so a refusal confirms
+// nothing they cannot already see — the 404 is for a row the caller cannot read.
 const byStaff = await patch(asStaff, robin.id, { name: 'Nope' })
-check('staff editing another person is 404, not 403', byStaff.status, 404)
+check('staff editing another person is 403: they read the row, they may not change it', byStaff.status, 403)
 
 // POSITIVE, last. Everything above has already been asked.
 const promoted = await patch(asAdmin, robin.id, { isStaff: true })
@@ -491,7 +492,7 @@ check('the seeded operator grades SYSADMIN', await levelOf(asOps), 7)
 check('…and the admin one rung below does not', await levelOf(asAdmin), 5)
 
 const climber = await post('/auth/register', { email: addr('s'), password: PASSWORD, name: 'Climber' })
-const climberId = climber.body?.user?.userId
+const climberId = climber.body?.user?.id
 check('an admin may still set somebody\'s role — that column is theirs to write',
       (await patch(asAdmin, climberId, { role: 'system' })).row?.role, 'system')
 check('…and it no longer grades anything: the next session is not SYSADMIN',
@@ -515,7 +516,7 @@ console.log('\n  users — a lost second factor, reset by an operator')
 
 await fetch(`${MAIL}/outbox`, { method: 'DELETE' })
 const lost   = await enrolledAccount(API, addr('r'), PASSWORD)
-const lostId = (await (await fetch(`${BASE}/account/me`, { headers: { authorization: `Bearer ${lost.token}` } })).json())?.userId
+const lostId = (await (await fetch(`${BASE}/account/me`, { headers: { authorization: `Bearer ${lost.token}` } })).json())?.id
 const resetFor = (tok) => post(`/account-recovery/${encodeURIComponent(lostId)}`, {}, tok, 'resetTotp')
 
 check('an admin (5) resetting somebody\'s factor is refused', (await resetFor(asAdmin)).status, 403)
@@ -553,11 +554,27 @@ const evaluate = (expr) => browser.evaluate(`return (${expr})`)
 // The token is planted rather than typed, so the browser half costs no further
 // sign-ins against the 10-per-15-minutes limiter — the three above are the
 // whole budget.
+//
+// Page.navigate answers when the navigation STARTS, so an evaluate straight after
+// it hits the old document or one torn down mid-call ("Inspected target navigated
+// or closed"). `go` polls until the NEW document is complete, and leaves through
+// about:blank so a link differing only by its fragment is a load, not a jump.
+async function go(url) {
+  await cmd('Page.navigate', { url: 'about:blank' })
+  await cmd('Page.navigate', { url })
+  for (let i = 0; i < 200; i++) {
+    const ready = await evaluate(`location.href !== 'about:blank' && document.readyState === 'complete'`)
+      .catch((e) => { if (/navigated or closed|context/i.test(e.message)) return false; throw e })
+    if (ready) return
+    await new Promise(r => setTimeout(r, 50))
+  }
+  throw new Error(`${url}: never finished loading`)
+}
+
 async function open(path, token, waitSel, atLeast = 1) {
-  await cmd('Page.navigate', { url: UI + '/' })
-  await evaluate(`(async () => { if (document.readyState !== 'complete') await new Promise(r => addEventListener('load', r, { once: true })); return true })()`)
+  await go(UI + '/')
   await evaluate(`(localStorage.setItem('shop_token', ${JSON.stringify(token)}), true)`)
-  await cmd('Page.navigate', { url: UI + path })
+  await go(UI + path)
   for (let i = 0; i < 120; i++) {
     const n = await evaluate(`document.querySelectorAll('${waitSel}').length`)
     if (n >= atLeast) return
@@ -683,7 +700,7 @@ check('…and the server agrees', (await account(screenJoin.body.token, 'totpSta
 // Signed out, the long way round: no token in storage and a fresh load, so the
 // app boots as a stranger and nothing from the enrollment survives in memory.
 await evaluate(`(localStorage.removeItem('shop_token'), true)`)
-await cmd('Page.navigate', { url: UI + '/sign-in/' })
+await go(UI + '/sign-in/')
 await until(has('#si-email'))
 await fill('#si-email', onScreen2)
 await fill('#si-password', PASSWORD)
@@ -733,7 +750,7 @@ await fetch(`${MAIL}/outbox`, { method: 'DELETE' })
 
 const askForLink = async (email) => {
   await evaluate(`(localStorage.removeItem('shop_token'), true)`)
-  await cmd('Page.navigate', { url: UI + '/sign-in/' })
+  await go(UI + '/sign-in/')
   await until(has('#si-forgot'))
   await click('#si-forgot')
   await until(has('#fp-email'))
@@ -756,7 +773,7 @@ check('one link reached that address, and none reached the address with no accou
         .some(m => JSON.stringify(m).includes(`nobody-${tag}`))], [1, false])
 check('…and it opens THIS console\'s reset page, not a path on the API', link?.startsWith(`${UI}/reset/#token=`), true)
 
-await cmd('Page.navigate', { url: link })
+await go(link)
 await until(has('#rp-password'))
 await fill('#rp-password', 'Forgot-Passw0rd')
 await fill('#rp-again', 'Forgot-Passw0rX')
@@ -773,7 +790,7 @@ const newIn = await post('/auth/login', { email: forgetful, password: 'Forgot-Pa
 check('…the new one signs in and the old one does not',
       [typeof newIn.body?.token, (await password(forgetful)).status], ['string', 401])
 
-await cmd('Page.navigate', { url: link })
+await go(link)
 await until(has('#rp-password'))
 await fill('#rp-password', 'Second-Passw0rd')
 await fill('#rp-again', 'Second-Passw0rd')

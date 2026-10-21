@@ -1356,6 +1356,7 @@ CREATE TABLE IF NOT EXISTS "payment" (
 CREATE INDEX IF NOT EXISTS "idx_payment_orderId" ON "payment" ("orderId");
 CREATE INDEX IF NOT EXISTS "idx_payment_invoiceId" ON "payment" ("invoiceId");
 CREATE INDEX IF NOT EXISTS "idx_payment_paymentMethodId" ON "payment" ("paymentMethodId");
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_payment_orderId" ON "payment" ("orderId") WHERE ("status" = 'pending' OR "status" = 'requiresAction');
 
 -- One line of the statement, frozen with it.
 -- 

@@ -211,6 +211,10 @@ const own = (o, k) => (o != null && Object.hasOwn(o, k) ? o[k] : undefined)
  *   `resolvePath`   (node) → value, for a one-hop read. Default null.
  *   `resolveCheck`  (node) → boolean, for `check(field)`. Default true.
  *   `resolveSome`   (node) → boolean, for `rel.some(…)`. Default null.
+ *   `truthOf`       value → true | false | null, how `and`/`or`/`not` and a
+ *                   ternary's condition read an operand. Default `truth`, the
+ *                   SQLite reading a policy is held to; a value template passes
+ *                   its own, because `Ann` has no numeric prefix (`FJS-3226`).
  *   `claimOf`       field → the value `auth().field` reads. Default: the
  *                   principal's own property. Litestone answers `level` here,
  *                   which is graded per model and carried by no principal.
@@ -240,15 +244,16 @@ export function evaluate(node, env = {}) {
     resolveCheck = () => true,
     resolveSome  = () => null,
     claimOf      = (field) => own(auth, field) ?? null,
+    truthOf      = truth,
   } = env
 
   const ev = (n) => evaluate(n, env)
   const read = (name) => own(record, columnOf(name)) ?? null
 
   switch (node?.type) {
-    case 'or':      return or3(truth(ev(node.left)), truth(ev(node.right)))
-    case 'and':     return and3(truth(ev(node.left)), truth(ev(node.right)))
-    case 'not':     return not3(truth(ev(node.expr)))
+    case 'or':      return or3(truthOf(ev(node.left)), truthOf(ev(node.right)))
+    case 'and':     return and3(truthOf(ev(node.left)), truthOf(ev(node.right)))
+    case 'not':     return not3(truthOf(ev(node.expr)))
 
     case 'literal': return node.value
     case 'field':   return read(node.name)
@@ -264,7 +269,7 @@ export function evaluate(node, env = {}) {
     // The other half of the same sentence. `create` has no WHERE to put a CASE
     // in, so a ternary landing only in the SQL compiler would be decided one
     // way by the reader and another by the writer — `FJS-195` exactly.
-    case 'ternary': return truth(ev(node.cond)) === true ? ev(node.then) : ev(node.else)
+    case 'ternary': return truthOf(ev(node.cond)) === true ? ev(node.then) : ev(node.else)
 
     case 'compare': {
       const { left, right, op } = node

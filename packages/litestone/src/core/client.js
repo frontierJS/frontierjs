@@ -7,7 +7,7 @@
 
 import { currentEngine } from './engine.js'
 import { validateBusyTimeout } from './pragmas.js'
-import { resolve, join, dirname, mkdirSync, AsyncLocalStorage, processId } from '#host'
+import { resolve, join, dirname, mkdirSync, rmSync, AsyncLocalStorage, processId } from '#host'
 import { resolveAnchor } from './db-path.js'
 import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField, pointColumns, fieldToColumnName,
          SEARCH_TABLE, searchModels, searchRankExpr } from './ddl.js'
@@ -407,7 +407,7 @@ function authStamped(row, modelName, ctx) {
  * @property {{ field: string, scope: string[] }[]} ranks   `@rank` columns and the fields each orders within
  * @property {Record<string, any> | null} transitions   by field, where the model declares `@@transitions`
  * @property {{ self: any | null, parents: any[] }} seal
- * @property {{ read: boolean, moves: Set<string>, columns: Set<string>, moveFields: Set<string> } | null} capabilities
+ * @property {{ read: boolean, transitions: Set<string>, columns: Set<string>, transitionFields: Set<string> } | null} capabilities
  * @property {any[] | null} commitments
  * @property {Record<string, { allows: any[], denies: any[] }>} policy   by operation
  * @property {Record<string, any>} scopes       `@@scope` predicates by name
@@ -1735,7 +1735,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   function enterDeclared(field, spec, rows) {
     return rows.map(row => {
       if (row == null) return row
-      const entries = declaredMoves(field, row[spec.scope]).filter(m => m.from == null).map(m => m.to)
+      const entries = declaredTransitions(field, row[spec.scope]).filter(m => m.from == null).map(m => m.to)
       if (row[field] != null) {
         if (!entries.includes(row[field]))
           throw new TransitionViolationError(modelName, field, null, row[field], entries)
@@ -1776,7 +1776,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // Every move a scope declares. A raw read, as @@extensible reads its
   // declarations: the machine binds every caller alike, so the declarer's own
   // gate and policy do not decide whether a move exists.
-  function declaredMoves(field, scopeValue) {
+  function declaredTransitions(field, scopeValue) {
     if (scopeValue == null) return []
     const d = _declaredMachines[field]
     return readDb.query(
@@ -1849,7 +1849,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // `transition(id, 'pay')` and an update setting the column are the same
       // move, and both arrive as a payload. ANDed with the gate above it
       // (`FJS-D146`) — the gate is a floor, so both have to pass.
-      if (_tableCapabilities?.moves.has(moveName))
+      if (_tableCapabilities?.transitions.has(moveName))
         requireCapability(modelName, moveName, ctx)
 
       // ── @system, the move half ──────────────────────────────────────────
@@ -1882,7 +1882,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
         if (!current) return NOT_VISIBLE
         const from = current.v
         if (from == null) return null
-        const moves   = declaredMoves(fieldName, current.s)
+        const moves   = declaredTransitions(fieldName, current.s)
         const targets = () => moves.filter(m => m.from === from).map(m => m.to)
         const move    = moves.find(m => m.from === from && m.to === newValue)
         if (requestedMove != null) {
@@ -9863,7 +9863,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         if (spec.declaredBy) {
           const scopeValue = spec.scope in row ? row[spec.scope]
             : (await this.findUnique({ where: { [idField]: row[idField] }, select: { [spec.scope]: true } }))?.[spec.scope]
-          moves = declaredMoves(fieldName, scopeValue).filter(m => m.from != null)
+          moves = declaredTransitions(fieldName, scopeValue).filter(m => m.from != null)
             .map(m => [m.to, { from: [m.from], to: m.to, gate: m.gate, system: false }])
         }
         for (const [name, { from, to, gate, system }] of moves) {
@@ -12292,6 +12292,16 @@ function makeLockPrimitive(rawWriteDb) {
     return modelForAccessor(accessor)?.attributes?.find(a => a.kind === 'mirror')?.key ?? null
   }
 
+  // ─── $declaresAccessRules ────────────────────────────────────────────
+  //
+  // $declaresAccessRules() → whether this schema declares any access rule, the
+  // line `FJS-D1212` draws between a closed schema and an open one. A GatePlugin
+  // installed by hand on a plain schema answers `$levelOf` and still leaves it
+  // open, so a layer above cannot read "closed" off `$levelOf` answering.
+  function $declaresAccessRules() {
+    return schemaDeclaresAccessRules(schema)
+  }
+
   // ─── $readAs ────────────────────────────────────────────────────────────
   //
   // $readAs(accessor, row, principal) → the row as that principal would have
@@ -13345,7 +13355,7 @@ function makeLockPrimitive(rawWriteDb) {
       })
     }
 
-    const sysOwnProps = ['asSystem', '$close', '$schema', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const sysOwnProps = ['asSystem', '$close', '$schema', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
     const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $search: (q, opts) => $searchWith(sysTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
@@ -13366,6 +13376,7 @@ function makeLockPrimitive(rawWriteDb) {
         if (prop === '$protectedFields') return $protectedFields
         if (prop === '$primaryKey') return $primaryKey
         if (prop === '$mirrorKey')  return $mirrorKey
+        if (prop === '$declaresAccessRules') return $declaresAccessRules
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$claimsFor')       return $claimsFor
       if (prop === '$readAs')          return $readAs
@@ -13484,7 +13495,7 @@ function makeLockPrimitive(rawWriteDb) {
       })
     }
 
-    const authOwnProps = ['$close', '$schema', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
+    const authOwnProps = ['$close', '$schema', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
     const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $search: (q, opts) => $searchWith(authTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
@@ -13502,6 +13513,7 @@ function makeLockPrimitive(rawWriteDb) {
         if (prop === '$protectedFields') return $protectedFields
         if (prop === '$primaryKey') return $primaryKey
         if (prop === '$mirrorKey')  return $mirrorKey
+        if (prop === '$declaresAccessRules') return $declaresAccessRules
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$claimsFor')       return $claimsFor
       if (prop === '$readAs')          return $readAs
@@ -13662,7 +13674,7 @@ function makeLockPrimitive(rawWriteDb) {
     scopedFlavor.tables = rawTables
     sCtx.tables = rawTables
     const tables = installScopesLazy(rawTables, () => sCtx)
-    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
     const target = {
       $scopedBy: (b) => _makeScopedProxy({ ...overrides, scopedBy: { ...(overrides.scopedBy ?? {}), ...(b ?? {}) } }),
       $setAuth:  (u) => _makeScopedProxy({ ...overrides, auth: u }),
@@ -13689,6 +13701,7 @@ function makeLockPrimitive(rawWriteDb) {
         if (prop === '$protectedFields') return $protectedFields
         if (prop === '$primaryKey') return $primaryKey
         if (prop === '$mirrorKey')  return $mirrorKey
+        if (prop === '$declaresAccessRules') return $declaresAccessRules
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$claimsFor')       return $claimsFor
       if (prop === '$readAs')          return $readAs
@@ -13879,6 +13892,10 @@ function makeLockPrimitive(rawWriteDb) {
     for (const table of jsonlTables) {
       try { table._close?.() } catch {}
     }
+    // After the tables: an open appender or index db would be writing into it.
+    for (const conn of Object.values(dbRegistry)) {
+      if (conn.ownedDir) try { rmSync(conn.absPath, { recursive: true, force: true }) } catch {}
+    }
   }
 
   // Cache size summary across all sqlite databases
@@ -13895,7 +13912,7 @@ function makeLockPrimitive(rawWriteDb) {
     return result
   }
 
-  const rootOwnProps = ['$close', '$attached', '$schema', '$search', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
+  const rootOwnProps = ['$close', '$attached', '$schema', '$search', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
   clientProxy = new Proxy({ sql, query, $transaction, $search: (q, opts) => $searchWith(scopedTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
     get(target, prop) {
       if (typeof prop === 'symbol')   return undefined
@@ -13929,6 +13946,7 @@ function makeLockPrimitive(rawWriteDb) {
       if (prop === '$protectedFields') return $protectedFields
       if (prop === '$primaryKey')      return $primaryKey
       if (prop === '$mirrorKey')      return $mirrorKey
+      if (prop === '$declaresAccessRules') return $declaresAccessRules
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$claimsFor')       return $claimsFor
       if (prop === '$readAs')          return $readAs

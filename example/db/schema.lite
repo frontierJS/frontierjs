@@ -1656,9 +1656,14 @@ model Payment {
   createdAt DateTime  @default(now())
   settledAt DateTime?
 
-  /// One live attempt per order at a time is a rule this shop does not need:
-  /// a failed card followed by a good one is two rows, and the history is the
-  /// point. The index is what makes "this order's payments" cheap.
+  /// A failed card followed by a good one is two rows, and the history is the
+  /// point; what the history may not hold is two OPEN attempts at once. Two
+  /// intents are two charges for the whole order, and `payments.start` checks
+  /// for an open one and then calls the provider before it writes — a gap two
+  /// requests in flight together both fall through. The database closes it:
+  /// the second insert is refused and `start` answers with the row that won.
+  /// The index is also what makes "this order's payments" cheap.
+  @@unique([orderId], where: status == 'pending' || status == 'requiresAction')
   @@index([orderId])
   @@index([invoiceId])
 

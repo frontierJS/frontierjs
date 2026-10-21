@@ -139,7 +139,7 @@ try {
   // once per database for its whole life (`FJS-546`, `FJS-530`); the release
   // below is the same one `verify.mjs` does and the documented way out of a
   // `SoftDeletedUniqueError`.
-  for (const ref of ['ORD-PAY-1', 'ORD-PAY-2', 'ORD-PAY-3', 'ORD-PAY-4']) {
+  for (const ref of ['ORD-PAY-1', 'ORD-PAY-RACE', 'ORD-PAY-2', 'ORD-PAY-3', 'ORD-PAY-4']) {
     const stale = await json(await fetch(`${API}/api/orders?reference=${ref}&$withDeleted=true`, { headers: auth }))
     for (const row of stale?.data ?? []) {
       // `@length(3, 20)`, so the freed reference is truncated rather than grown.
@@ -241,6 +241,38 @@ try {
     providerRef: typeof started?.providerRef === 'string' && started.providerRef.startsWith('pi_'),
     amount:      started?.amount,
     paymentStatus: started?.status,
+  })
+
+  // A retried link while the first payment is still open. Charging an order
+  // twice is the failure; the answer is the payment already open, as
+  // `chargeInvoice` answers for an invoice, and the ledger holds one row.
+  const startTwice = await json(await fetch(`${API}/api/payments`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-service-method': 'start' },
+    body: JSON.stringify({ code: payCode }),
+  }))
+  const openRows = (await json(await fetch(`${API}/api/payments?orderId=${orderId}`, { headers: auth })))?.data ?? []
+  t('start.reusesTheOpenPayment', {
+    sameRef: startTwice?.providerRef === started?.providerRef,
+    samePayment: startTwice?.paymentId === started?.paymentId,
+    rows: openRows.length,
+  })
+
+  // Two starts in flight together both read no open row before either writes,
+  // so the read above cannot be what stops them: the database's one-open-
+  // payment-per-order index is, and the loser answers with the winner's row.
+  const raceOrderId = await newOrder('ORD-PAY-RACE', 1800)
+  const raceCode = await codeFor(raceOrderId)
+  const raced = await Promise.all([0, 1, 2].map(async () => json(await fetch(`${API}/api/payments`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-service-method': 'start' },
+    body: JSON.stringify({ code: raceCode }),
+  }))))
+  const raceRows = (await json(await fetch(`${API}/api/payments?orderId=${raceOrderId}`, { headers: auth })))?.data ?? []
+  t('start.concurrentStartsOpenOne', {
+    answered: raced.every(r => typeof r?.paymentId === 'number'),
+    samePayment: new Set(raced.map(r => r?.paymentId)).size === 1,
+    rows: raceRows.length,
   })
 
   // ── 2b. who may open a payment, and the oracle that used to be here ──
@@ -756,6 +788,8 @@ const expected = {
   'provider.refusesUnsigned': { unsigned: 401, bodySwapped: 401 },
 
   'start.answers': { status: 200, providerRef: true, amount: 4250, paymentStatus: 'pending' },
+  'start.reusesTheOpenPayment': { sameRef: true, samePayment: true, rows: 1 },
+  'start.concurrentStartsOpenOne': { answered: true, samePayment: true, rows: 1 },
   'start.refusesAStrangerNamingAnId': {
     status: 404, leaksAmount: false, leaksStatus: false, wrongCode: 404, sameAsMissing: true,
   },

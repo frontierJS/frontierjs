@@ -357,9 +357,10 @@ export async function voidInvoice(client: Client, id: number): Promise<unknown> 
  * Prorating a yearly price over what is left of a month charges half a year for
  * half a month, and the renewal at the old period end then charges the year
  * again (`FJS-1103`). So monthly → yearly credits the unused month and starts a
- * whole year at `at`. Yearly → monthly is refused until renewal: the credit is
+ * whole year at `at`. Yearly → monthly is refused outright: the credit is
  * most of a year, and whether one credit note may carry that against the last
- * invoice is a rule nobody has made.
+ * invoice is a rule nobody has made. Nothing records the move for renewal
+ * either, so the refusal must not read as a schedule (`FJS-1120`).
  *
  * `client` is the caller's, so the document says who changed the plan (see
  * `issueInvoice`). Two things go through its `asSystem()`: the document
@@ -395,7 +396,7 @@ export async function changePlan(
   if (reanchor && plan.interval === 'monthly')
     throw Object.assign(new Error(
       `${sub.reference} is paid for the year ${describeSpan(sub.currentPeriodStart, sub.currentPeriodEnd)} — ` +
-      `a move to a monthly plan takes effect at renewal`), { status: 409 })
+      `a move to a monthly plan is not made mid-year, and nothing schedules it for renewal`), { status: 409 })
 
   let periodStart = sub.currentPeriodStart
   let periodEnd   = sub.currentPeriodEnd

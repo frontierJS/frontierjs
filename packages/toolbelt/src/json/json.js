@@ -1225,6 +1225,14 @@ export const JSON_KINDS = ['string', 'number', 'boolean', 'null', 'object', 'arr
  */
 
 /**
+ * Case-folded text for matching. `toLowerCase` reads a capital sigma by its
+ * neighbors (`ΑΣ` is `ας`, a lone `Σ` is `σ`), so a whole string and its
+ * characters one at a time lower differently; folding `ς` to `σ` makes both
+ * agree and lets either spelling find the other.
+ */
+const fold = (s) => s.toLowerCase().replaceAll('ς', 'σ')
+
+/**
  * text + a term → the runs it splits into, each marked hit or not.
  *
  * Every run rather than the first: a key and a value can both hold the term
@@ -1247,12 +1255,12 @@ export function markRuns(text, term) {
   const ends = []
   for (let p = 0; p < source.length;) {
     const ch = String.fromCodePoint(source.codePointAt(p))
-    const lower = ch.toLowerCase()
+    const lower = fold(ch)
     for (let k = 0; k < lower.length; k++) { starts.push(p); ends.push(p + ch.length) }
     hay += lower
     p += ch.length
   }
-  const nee = Array.from(needle, ch => ch.toLowerCase()).join('')
+  const nee = Array.from(needle, fold).join('')
   const out = []
   let at = 0
   let i  = 0
@@ -1296,14 +1304,14 @@ export function markRuns(text, term) {
  * digits.
  */
 export function searchDoc(value, term) {
-  const needle = String(term ?? '').trim().toLowerCase()
+  const needle = fold(String(term ?? '').trim())
   if (!needle) return { keep: [], open: [], count: 0, active: false }
 
   const keep  = new Set()
   const open  = new Set()
   let   count = 0
 
-  const has = (text) => String(text).toLowerCase().includes(needle)
+  const has = (text) => fold(String(text)).includes(needle)
 
   /** What a reader would see for this value, which is what they search by. */
   const asText = (v) => {

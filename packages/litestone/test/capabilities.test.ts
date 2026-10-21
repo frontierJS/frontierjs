@@ -56,7 +56,7 @@ describe('the derived set', () => {
   })
 
   it('a named move is a capability and carries its own gate', () => {
-    const moves = derive(SHOP).filter(c => c.kind === 'move')
+    const moves = derive(SHOP).filter(c => c.kind === 'transition')
     expect(moves.map(m => m.name)).toEqual(['Invoice.issue', 'Invoice.void'])
     expect(moves.find(m => m.name === 'Invoice.void')!.gate).toBe(5)
     expect(moves.find(m => m.name === 'Invoice.issue')!.gate).toBeNull()
@@ -821,7 +821,7 @@ describe('x-capabilities', () => {
         update: 'Invoice.update',
         delete: 'Invoice.delete',
       },
-      moves:   { issue: 'Invoice.issue' },
+      transitions: { issue: 'Invoice.issue' },
       columns: { memo:  'Invoice.memo' },
     })
   })
@@ -832,7 +832,7 @@ describe('x-capabilities', () => {
   it('omits a move no caller can make', () =>
     // `seal` is @gate(8) — the engine's. An affordance for a grant nobody can
     // hold is a button that can only disappoint.
-    expect(defs().Invoice['x-capabilities'].moves.seal).toBeUndefined())
+    expect(defs().Invoice['x-capabilities'].transitions.seal).toBeUndefined())
 
   it('is absent on a model that declares no grid', () =>
     expect(defs().Plain['x-capabilities']).toBeUndefined())
@@ -852,7 +852,7 @@ describe('x-capabilities', () => {
       }`
     const schema = parsed(src)
     const caps   = (generateJsonSchema(schema).$defs as any).Doc['x-capabilities']
-    const offered = new Set([caps.operations, caps.moves, caps.columns]
+    const offered = new Set([caps.operations, caps.transitions, caps.columns]
       .flatMap((g: Record<string, string>) => Object.values(g ?? {})))
     expect(offered).toEqual(capabilityNames(schema))
     expect(offered.has('Doc.settle')).toBe(false)

@@ -112,6 +112,9 @@ const _CARRIED = [
   // RENDERS the value rather than for what picks the input: a cell, a label, a
   // summary, and `registerControl` for an app that wants the symbol in the box.
   'x-unit',
+  // `x-collate` is `@collate`: the live list reads it to place a pushed row in
+  // the order the column sorts in.
+  'x-collate',
   // `x-litestone-required-where` is `@required(where: …)`: the AST of a
   // predicate over THIS ROW's own columns, deciding whether the column needs a
   // value. Carried as the EXPRESSION where the write policy one line down is
@@ -1475,7 +1478,12 @@ export function buildTransitions(schema) {
  * @param {object|null} spec   from buildTransitions()
  * @param {object} row         the record to evaluate
  * @param {number} [level]     the current user's gate level (0–9)
- * @returns {{name:string, label:string, field:string, from:string, to:string, gate:number|null, system:boolean, allowed:boolean, refusedBy:'system'|'gate'|null}[]}
+ * `terminal` is true when no declared move leaves `to` -- the state machine
+ * itself says nothing comes back from this move, `@system` moves counted as
+ * ways out. A screen asks before one, rather than reading it off the order of
+ * a lifecycle it drew.
+ *
+ * @returns {{name:string, label:string, field:string, from:string, to:string, gate:number|null, system:boolean, allowed:boolean, refusedBy:'system'|'gate'|null, terminal:boolean}[]}
  */
 export function transitionsAt(spec, row, level) {
   if (!spec || !row) return []
@@ -1484,6 +1492,7 @@ export function transitionsAt(spec, row, level) {
   for (const [field, transitions] of Object.entries(spec)) {
     const current = row[field]
     if (current == null) continue
+    const leavable = new Set(Object.values(transitions ?? {}).flatMap(t => Array.isArray(t?.from) ? t.from : []))
     for (const [name, t] of Object.entries(transitions ?? {})) {
       if (!Array.isArray(t?.from) || !t.from.includes(current)) continue
       const gate   = t.gate ?? null
@@ -1503,7 +1512,7 @@ export function transitionsAt(spec, row, level) {
 
       // `label` is the move's name for a READER, the axis `columnLabel` is for
       // a column -- a button saying `markShipped` is an identifier on screen.
-      out.push({ name, label: humanize(name), field, from: current, to: t.to, gate, system, allowed, refusedBy })
+      out.push({ name, label: humanize(name), field, from: current, to: t.to, gate, system, allowed, refusedBy, terminal: !leavable.has(t.to) })
     }
   }
   return out

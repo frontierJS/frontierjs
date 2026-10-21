@@ -44,7 +44,7 @@ export const POSITIONS = {
   viewColumn: 'on a view column',
   model:      'in a model',
   traitBlock: 'in a trait',
-  move:       'on a @@transitions move',
+  transition: 'on a @@transitions transition',
 }
 
 /**
@@ -1408,59 +1408,59 @@ const MODEL = [
   )
 ]
 
-// ─── move ─────────────────────────────────────────────────────────────────────
+// ─── transition ─────────────────────────────────────────────────────────────────────
 //
 // The three words a `@@transitions` move takes after its target. They are typed
 // with one `@` like a field attribute, and two of them share a spelling with
 // another row while meaning something else -- `@system` with the column's,
 // `@gate` with the model's `@@gate` -- so the prefix alone cannot pick the row,
 // and `explain` answers a `@` word with every `@` row of that name. `example` is
-// the whole `@@transitions` line, because a move word is legal nowhere else.
+// the whole `@@transitions` line, because a transition word is legal nowhere else.
 
-const MOVE_CONTEXT = 'enum DocState {\n  draft\n  issued\n  void\n}'
-const MOVE_FIELDS  = 'state DocState @default(draft)'
+const TRANSITION_CONTEXT = 'enum DocState {\n  draft\n  issued\n  void\n}'
+const TRANSITION_FIELDS  = 'state DocState @default(draft)'
 
-const MOVE = [
+const TRANSITION = [
   t(
     'gate',
-    'move',
+    'transition',
     'access',
     '(<0-9>)',
     "The model's @@gate at move grain: the level a caller needs to MAKE this move, a floor on top of the model's update level. @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller reaches it and asSystem() bypasses. With @system it must stay below 8, because 8 says no caller and @system says the application makes the move through one. Not the model's @@gate, which grades the four operations on every row.",
     '@@transitions(state, void: [draft, issued] -> void @gate(5))',
-    { context: MOVE_CONTEXT, extraFields: MOVE_FIELDS, seeAlso: ['transitions', 'move:system'] }
+    { context: TRANSITION_CONTEXT, extraFields: TRANSITION_FIELDS, seeAlso: ['transitions', 'transition:system'] }
   ),
   t(
     'system',
-    'move',
+    'transition',
     'access',
     '',
     "The column's @system at move grain: the move is the APPLICATION's write, where the column is a value the application writes. A caller may ask for it and never make one, and the app states { system: true } on the call. The move still runs on the caller's own client, so the gate, the row policies and the audit actor all survive, which is the whole difference from asSystem(). Takes no argument. Combine with @gate(N) below 8 to say who may ask.",
     '@@transitions(state, issue: draft -> issued @system @gate(5))',
-    { context: MOVE_CONTEXT, extraFields: MOVE_FIELDS, seeAlso: ['transitions', 'move:gate', 'guarded'] }
+    { context: TRANSITION_CONTEXT, extraFields: TRANSITION_FIELDS, seeAlso: ['transitions', 'transition:gate', 'guarded'] }
   ),
   t(
     'seals',
-    'move',
+    'transition',
     'protect',
     '',
     "The move is the moment this row becomes a DOCUMENT. After it the row's @sealed children may not be created, changed or removed, and its @immutable columns freeze (SealedDocumentError). A seal is an event rather than a state, so it is declared on the move and not as a predicate over the state column, and the sealed set is computed from the move's target. Takes no argument: WHICH children seal is @sealed on the relation field.",
     '@@transitions(state, issue: draft -> issued @seals)',
     {
-      context: MOVE_CONTEXT,
+      context: TRANSITION_CONTEXT,
       extraFields: 'state DocState @default(draft)\n  total Int @immutable',
       seeAlso: ['transitions', 'sealed', 'immutable']
     }
   ),
   t(
     'stamps',
-    'move',
+    'transition',
     'stamp',
     '(<column>, …)',
     "The move records WHEN it was made: the named DateTime columns get the clock in the move's own UPDATE, the way @updatedAt does, whether the move was made by transition(id, name) or by an update that lands it. The column is the engine's, so a payload naming it is refused by name; a direct transition() cannot leave it null, and a @@check requiring it holds in the same statement. Move-keyed, so two moves into one state can stamp different columns.",
     '@@transitions(state, issue: draft -> issued @stamps(issuedAt))',
     {
-      context: MOVE_CONTEXT,
+      context: TRANSITION_CONTEXT,
       extraFields: 'state DocState @default(draft)\n  issuedAt DateTime?',
       seeAlso: ['transitions', 'field:updatedAt']
     }
@@ -1469,17 +1469,17 @@ const MOVE = [
 
 // ─── the table ────────────────────────────────────────────────────────────────
 
-export const CATALOG = [...TOP, ...FIELD, ...MODEL, ...MOVE]
+export const CATALOG = [...TOP, ...FIELD, ...MODEL, ...TRANSITION]
 
 export const TOP_LEVEL       = TOP
 export const FIELD_ATTRS     = FIELD
 export const MODEL_ATTRS     = MODEL
-export const MOVE_WORDS      = MOVE
+export const TRANSITION_WORDS = TRANSITION
 
 /** Every position a word is legal in, computed from POSITION_RULES. */
 export function positionsOf(row) {
   if (row.level === 'schema') return ['schema']
-  if (row.level === 'move')   return ['move']
+  if (row.level === 'transition') return ['transition']
   const all = row.level === 'field' ? FIELD_POSITIONS : MODEL_POSITIONS
   return all.filter(pos => {
     const rule = POSITION_RULES[pos]
@@ -1493,7 +1493,7 @@ const ORDINARY_POSITIONS = {
   field:  ['field', 'typeField', 'traitField'],
   model:  ['model', 'traitBlock'],
   schema: ['schema'],
-  move:   ['move'],
+  transition: ['transition'],
 }
 
 /**
@@ -1735,10 +1735,10 @@ export const DOCS = {
   'model:scope': 'filtering.md',
   'model:tenant': 'multi-tenancy.md',
   'model:transitions': 'schema.md',
-  'move:gate': 'schema.md',
-  'move:system': 'schema.md',
-  'move:seals': 'modeling.md',
-  'move:stamps': 'schema.md',
+  'transition:gate': 'schema.md',
+  'transition:system': 'schema.md',
+  'transition:seals': 'modeling.md',
+  'transition:stamps': 'schema.md',
   'model:auth': 'access-control.md',
   'model:person': 'trail.md',
   'model:trail': 'trail.md',
@@ -1856,11 +1856,11 @@ export const TIERS = {
     'model:trait',
     'model:createdBy',
     'model:updatedBy',
-    // move words
-    'move:gate',
-    'move:system',
-    'move:seals',
-    'move:stamps'
+    // transition words
+    'transition:gate',
+    'transition:system',
+    'transition:seals',
+    'transition:stamps'
   ],
   situational: [
     'model:mirror',
@@ -1971,12 +1971,12 @@ export const AXES = {
   access: [
     'schema:tenancy', 'schema:claim', 'field:omit', 'field:guarded', 'field:system',
     'field:capability', 'field:encrypted', 'field:hashed', 'field:personal', 'field:opaque',
-    'field:secret', 'field:allow', 'move:gate', 'move:system', 'model:capabilities', 'model:gate', 'model:export',
+    'field:secret', 'field:allow', 'transition:gate', 'transition:system', 'model:capabilities', 'model:gate', 'model:export',
     'model:allow', 'model:deny', 'model:require', 'model:scope', 'model:tenant', 'model:auth', 'model:person',
     'model:anonymous'
   ],
   life: [
-    'field:keep', 'field:immutable', 'field:sealed', 'move:seals', 'move:stamps', 'field:updatedAt', 'field:updatedBy', 'field:createdBy',
+    'field:keep', 'field:immutable', 'field:sealed', 'transition:seals', 'transition:stamps', 'field:updatedAt', 'field:updatedBy', 'field:createdBy',
     'field:version', 'field:trail', 'model:sync', 'model:mirror', 'field:local', 'model:softDelete', 'model:expires',
     'model:effective', 'model:commitment', 'model:transitions', 'model:trail', 'model:createdBy',
     'model:updatedBy'

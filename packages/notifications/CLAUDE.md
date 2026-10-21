@@ -25,6 +25,7 @@ errors.ts
 drivers/
   inapp.ts        writes the record, publishes on app.channel()
   email.ts        renders lines → text/html, hands off to the mailer
+  webpush.ts      `webPush()` — a driver the app REGISTERS (RFC 8291/8188/8292); the subscription is the app's row
 examples/         wiring.ts + two notifications + Notification.mesa
 test/            harness.ts, fanout.test.ts, hook.test.ts, email-render.test.ts,
                   define.test.ts, schema-fragment.test.ts + fixtures/notifications/
@@ -97,6 +98,8 @@ the transport that needs no account.
   plus the optional `key(recipient)`.
   That is why the class and `defineNotification` coexist with no adapter, and
   why a plain object satisfying those three has always worked.
+
+- **A wrong `webPush` build answers `201`.** The push service cannot read the body, so no status or length check can fail; `test/webpush.test.ts` holds RFC 8291 Appendix A byte for byte and decrypts from the device's private key. A change to `drivers/webpush.ts` keeps both. The driver prunes on 404/410 only and collects every other refusal until each device was tried.
 
 ## Proving a change
 

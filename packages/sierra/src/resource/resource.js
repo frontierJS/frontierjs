@@ -865,6 +865,9 @@ export function createResource(serviceName, opts = {}, ...extra) {
     ...(modelDef?.['x-effective']?.imposed
       ? { until: (record, params) => leavesAt(modelDef['x-effective'], record, params) }
       : {}),
+    // A pushed row is placed in the order the column sorts in, not BINARY.
+    collations: Object.fromEntries(
+      Object.entries(fields).filter(([, rule]) => rule?.['x-collate']).map(([name, rule]) => [name, rule['x-collate']])),
     // Which MODEL these rows are. Junction holds no schema and cannot derive it
     // from the service name, so two services over one model would otherwise be
     // two rows — the thing entries exist to stop (`FJS-D138`).

@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**127 words** — 13 declarations · 73 field attributes · 37 model attributes · 4 move words.
+**127 words** — 13 declarations · 73 field attributes · 37 model attributes · 4 transition words.
 
 ## Declarations
 
@@ -150,7 +150,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@createdBy` | Wire it to the app | [(<base>)] |  |  |  |
 | `@@updatedBy` | Wire it to the app | [(<base>)] |  |  |  |
 
-## Move words
+## Transition words
 
 | word | group | arity | legal | accepts | notes |
 | --- | --- | --- | --- | --- | --- |

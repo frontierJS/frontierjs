@@ -61,7 +61,7 @@ export const KINDS = {
   entity:      'data',   // a noun the app might hold: "rewards points"
   attribute:   'data',   // a property of a noun: "a private note on a customer"
   edit:        'data',   // changing a value that is already stored: "change the size on an order"
-  move:        'data',   // a state change: "undo a shipped order", "mark invoices paid"
+  transition:  'data',   // a state change: "undo a shipped order", "mark invoices paid"
   sum:         'data',   // a derived number over children: "total of a pay run"
   view:        'data',   // a projection over rows: "best-selling candles"
   export:      'data',   // rows leaving as a file: "every invoice from last month"
@@ -193,8 +193,8 @@ export function buildIndex({ schema, app = '', routes = '', notifications = '' }
       add({ type: 'field', id: `${m.name}.${f.name}`, model: m.name, field: f }, [humanize(f.name), label])
     }
     for (const t of attrs(m, 'transitions')) {
-      for (const [name, move] of Object.entries(t.transitions ?? {}))
-        add({ type: 'move', id: `${m.name}.${t.field}:${name}`, model: m.name, field: t.field, name, move }, [humanize(name)])
+      for (const [name, transition] of Object.entries(t.transitions ?? {}))
+        add({ type: 'transition', id: `${m.name}.${t.field}:${name}`, model: m.name, field: t.field, name, transition }, [humanize(name)])
     }
   }
   for (const v of schema?.views ?? [])
@@ -376,8 +376,8 @@ export function judgeFact(index, fact, claim) {
       return { verdict: 'exists', depth: 'none', fact, target: hit.match.id, tier: hit.tier, cite, notes, prose: prose(field) }
     }
 
-    case 'move': {
-      if (!model) return unhomed(fact, fact.about ? `nothing in the seed is called "${fact.about}"` : 'a move of what? the fact names no noun')
+    case 'transition': {
+      if (!model) return unhomed(fact, fact.about ? `nothing in the seed is called "${fact.about}"` : 'a transition of what? the fact names no noun')
       const t = attrs(model, 'transitions')[0]
       if (!t) return { verdict: 'needs us', depth: 'data-migration', fact, target: model.name, why: `${model.name} has no state machine` }
       const values = index.enums.get(model.fields.find(f => f.name === t.field)?.type?.name)?.values?.map(v => v.name ?? v) ?? []
@@ -387,41 +387,41 @@ export function judgeFact(index, fact, claim) {
       if (fact.from && !from) return unhomed(fact, `${model.name}.${t.field} has no state "${fact.from}"`)
       if (fact.to && !to) return unhomed(fact, `${model.name}.${t.field} has no state called "${fact.to}" — it may exist under another name`)
 
-      let move = null
+      let edge = null
       if (fact.words || picked) {
-        const hit = lookup(fact.words, within('move'))
-        if (hit.status === 'ambiguous') return unhomed(fact, `"${fact.words}" matches more than one move`, hit.matches)
-        if (hit.status === 'resolved') move = hit.match
+        const hit = lookup(fact.words, within('transition'))
+        if (hit.status === 'ambiguous') return unhomed(fact, `"${fact.words}" matches more than one transition`, hit.matches)
+        if (hit.status === 'resolved') edge = hit.match
       }
-      if (!move && to) {
-        const moves = index.entries.filter(e => within('move')(e) && e.move.to === to && (!from || e.move.from.includes(from)))
-        if (moves.length > 1) return unhomed(fact, `more than one move reaches ${to}`, moves)
-        move = moves[0] ?? null
+      if (!edge && to) {
+        const edges = index.entries.filter(e => within('transition')(e) && e.transition.to === to && (!from || e.transition.from.includes(from)))
+        if (edges.length > 1) return unhomed(fact, `more than one transition reaches ${to}`, edges)
+        edge = edges[0] ?? null
       }
-      if (!move) {
+      if (!edge) {
         if (from && to) return { verdict: 'needs us', depth: 'data-declaration', fact, target: `${model.name}.${t.field}`,
-          cite: `db/schema.lite · ${model.name} @@transitions`, why: `no move takes ${model.name}.${t.field} from ${from} to ${to} — one edge` }
-        return unhomed(fact, `no move on ${model.name} matches`)
+          cite: `db/schema.lite · ${model.name} @@transitions`, why: `no transition takes ${model.name}.${t.field} from ${from} to ${to} — one edge` }
+        return unhomed(fact, `no transition on ${model.name} matches`)
       }
-      if (from && !move.move.from.includes(from))
-        return { verdict: 'needs us', depth: 'data-declaration', fact, target: move.id, cite: `db/schema.lite · ${model.name} @@transitions`,
-          why: `${move.name} starts from ${move.move.from.join(' or ')}, not ${from} — one edge` }
+      if (from && !edge.transition.from.includes(from))
+        return { verdict: 'needs us', depth: 'data-declaration', fact, target: edge.id, cite: `db/schema.lite · ${model.name} @@transitions`,
+          why: `${edge.name} starts from ${edge.transition.from.join(' or ')}, not ${from} — one edge` }
 
-      const cite = `db/schema.lite · ${model.name} @@transitions ${move.name}`
-      // A `@system` move is not a person's to ask for — unless a service method
+      const cite = `db/schema.lite · ${model.name} @@transitions ${edge.name}`
+      // A `@system` transition is not a person's to ask for — unless a service method
       // makes it on a caller's behalf, which only the app snapshot can say. Reading
       // the seed alone here was run 1's one wrong answer (A24, `invoices.settle`).
-      if (move.move.system) {
-        const method = index.entries.find(e => e.type === 'method' && e.model === model.name && e.name === move.name)
+      if (edge.transition.system) {
+        const method = index.entries.find(e => e.type === 'method' && e.model === model.name && e.name === edge.name)
         if (method) return { verdict: 'you can do this', depth: 'none', fact, target: method.id, cite: `app.snapshot.md · ${method.id}`,
-          why: `the move is the application's, and ${method.id} makes it for a person`, grade: method.grade }
-        return { verdict: 'declined by design', depth: 'none', fact, target: move.id, cite, why: `${move.name} is @system — the application makes it, a person does not`, prose: prose(model) }
+          why: `the transition is the application's, and ${method.id} makes it for a person`, grade: method.grade }
+        return { verdict: 'declined by design', depth: 'none', fact, target: edge.id, cite, why: `${edge.name} is @system — the application makes it, a person does not`, prose: prose(model) }
       }
-      const level = Math.max(gateOf(model)?.update ?? 0, move.move.gate ?? 0)
+      const level = Math.max(gateOf(model)?.update ?? 0, edge.transition.gate ?? 0)
       // A grid ANDed with the ladder: saying only the level would tell a
       // developer without the grant that they can.
-      const grant = attr(model, 'capabilities') ? ` holding ${model.name}.${move.name}` : ''
-      return { verdict: 'you can do this', depth: 'none', fact, target: move.id, cite, why: level ? `a person at level ${level}${grant} makes it` : `a person${grant} may make it` }
+      const grant = attr(model, 'capabilities') ? ` holding ${model.name}.${edge.name}` : ''
+      return { verdict: 'you can do this', depth: 'none', fact, target: edge.id, cite, why: level ? `a person at level ${level}${grant} makes it` : `a person${grant} may make it` }
     }
 
     case 'sum':

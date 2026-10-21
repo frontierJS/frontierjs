@@ -26,9 +26,11 @@ import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/
 import { normalizeOrderBy, type SortParam } from '@frontierjs/toolbelt/query'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, ws,
+import { db, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, ws, actor,
          slugify, }
   from '../../core/resource.ts'
+import { env }      from '../../core/env.ts'
+import { mintPush } from '../../core/push.ts'
 // The ONE definition of a certificate's condition, imported rather than
 // recomputed: an include returns raw Domain rows, so without this the app
 // detail screen received hostnames with no cert_status at all and every one of
@@ -37,7 +39,7 @@ import { certStatusOf } from '../domains/domains.service.ts'
 import { resolveExecutor, executorOn, isExecutor } from '../../providers/executor.ts'
 // The one reader of `App.source`. A service that parsed the blob itself would
 // be the second, and the two would disagree the first time a kind was added.
-import { parseAppSource, sourceKindOf, summarizeSource, describeSource } from '../../core/app-source.ts'
+import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit } from '../../core/app-source.ts'
 import { runtimeOf } from '../../core/runtime.ts'
 import type { App }            from '@frontierjs/junction'
 import { keyScope } from '../api-keys/scopes.ts'
@@ -233,6 +235,10 @@ export default createService({
     { method: 'unplace', gate: LEVELS.USER, input: 'AppUnplace' },
     // Replaces what a database holds, so the level that may prune a volume.
     { method: 'restoreVolume', gate: LEVELS.ADMINISTRATOR, input: 'AppVolumeRestore' },
+    // Both write @system columns as the app; the level is stated for that.
+    // `enablePush` hands a standing to the push receiver, so it is a release's.
+    { method: 'enablePush',  gate: LEVELS.ADMINISTRATOR },
+    { method: 'disablePush', gate: LEVELS.ADMINISTRATOR },
   ],
   // Announced by the service DEFINITION, not by an after hook: `callService`
   // is junction's one announcement point and it excludes `find`/`get` by name,
@@ -494,6 +500,37 @@ export default createService({
     }, { timeoutMs: VOLUME_RESTORE_TIMEOUT_MS })
     if (reply.error) throw new BadRequest(`The volume was not restored: ${reply.error.message}`)
     return { serverId: placed.serverId, ...(reply.data ?? {}) }
+  },
+
+  // ── enablePush · disablePush — deploy on push (FJS-D884) ─────────
+  //
+  // Enabling mints BOTH credentials again, so it is also the rotation: the old
+  // secret and token stop verifying the moment this returns. They are in this
+  // answer and nowhere else — the row keeps the secret encrypted and the token
+  // as a hash, and neither reads back.
+  async enablePush() {
+    const target = await getScoped('app', 'App')
+    if (!isGit(target.source))
+      throw new BadRequest(`App '${target.name}' is not built from a git repository — only a git source has a push to release`)
+    const { secret, token, tokenHash } = mintPush()
+    await $.db.asSystem().app.update({
+      where: { id: target.id },
+      data:  { deployOnPush: true, pushSecret: secret, pushTokenHash: tokenHash, pushActorId: actor() },
+    })
+    // The answer holds the credentials, so the announcement states the row
+    // instead and the workspace's other tabs never see them.
+    $.dispatch = await db().app.findFirst({ where: { id: target.id, workspaceId: ws() } })
+    const base = `${env.FRONTIER_API_URL.replace(/\/$/, '')}/hooks/git/${target.id}`
+    return { url: base, tokenUrl: `${base}/${token}`, secret, token }
+  },
+
+  async disablePush() {
+    const target = await getScoped('app', 'App')
+    await $.db.asSystem().app.update({
+      where: { id: target.id },
+      data:  { deployOnPush: false, pushSecret: null, pushTokenHash: null, pushActorId: null },
+    })
+    return detail(target.id)
   },
 
   hooks: {

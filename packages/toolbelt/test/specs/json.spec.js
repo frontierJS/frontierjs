@@ -510,6 +510,15 @@ test('markRuns: a character whose lowercase is longer does not shift the hit', (
   assert.deepEqual(markRuns('İİ', 'İ').filter(r => r.hit).map(r => r.text), ['İ', 'İ'])
 })
 
+test('markRuns: a final sigma is the same letter as a medial one, as searchDoc has it', () => {
+  // `ΑΣ`.toLowerCase() is `ας` whole and `ασ` per character, so the filter
+  // kept a row the highlighter then left unmarked.
+  for (const [text, term] of [['ΑΣ', 'ας'], ['ΑΣ', 'ασ'], ['ας', 'ΑΣ'], ['ΑΣ', 'ΑΣ'], ['ΟΔΟΣ x', 'οδος']]) {
+    assert.equal(searchDoc({ k: text }, term).count, 1, `${text} / ${term} kept`)
+    assert.equal(markRuns(text, term).filter(r => r.hit).length, 1, `${text} / ${term} marked`)
+  }
+})
+
 test('markRuns: no term is one run, not zero', () => {
   assert.deepEqual(markRuns('abc', ''), [{ i: 0, text: 'abc', hit: false }])
   assert.deepEqual(markRuns('', 'x'), [{ i: 0, text: '', hit: false }])

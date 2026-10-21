@@ -1839,7 +1839,7 @@ export class JunctionClient extends EventEmitter {
     const stale = new Stale()
 
     const orderOf = (): ((a: T, b: T) => number) | null =>
-      comparatorFor(lastParams.orderBy as Parameters<typeof comparatorFor>[0]) as ((a: T, b: T) => number) | null
+      comparatorFor(lastParams.orderBy as Parameters<typeof comparatorFor>[0], opts.collations) as ((a: T, b: T) => number) | null
 
     // `total` is the query's row count as of the last load, kept in step with
     // the tether so `hasMore()` keeps meaning what it meant then. Two of the
@@ -3224,6 +3224,16 @@ export interface ResourceOptions<T extends Record<string, unknown> = Record<stri
    * `match`'s reason: this package holds no schema.
    */
   until?: (record: T, params: QueryDirectives) => number | null
+
+  /**
+   * Column → its `@collate` (`nocase`, `rtrim`), for the order a pushed row is
+   * placed in. Absent, every column is BINARY and a `@collate(nocase)` list
+   * re-sorts wrong when a write lands.
+   *
+   * Sierra supplies it from the model's `x-collate`, for `match`'s reason: this
+   * package holds no schema.
+   */
+  collations?: Record<string, string>
 }
 
 export interface ResourceResult<T extends Record<string, unknown> = Record<string, unknown>> {

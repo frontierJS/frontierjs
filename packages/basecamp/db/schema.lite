@@ -1658,6 +1658,17 @@ model App {
   // a public listener no app declares is `net.unexpected-listener`.
   exposesPort   Boolean     @default(false)
 
+  // Deploy on push (`FJS-D884`): a forge's push event releases this app through
+  // the `git` Receiver. `pushSecret` is the HMAC key a forge signs with and
+  // `pushTokenHash` is the hash of the URL token for a sender that signs
+  // nothing; both are shown once, by `apps.enablePush`, its only writer.
+  // `pushActorId` is whose standing the release runs with, read again when the
+  // push arrives, so a person removed since is refused and not replayed.
+  deployOnPush  Boolean     @default(false) @system
+  pushSecret    String?     @encrypted @system
+  pushTokenHash String?     @guarded @system
+  pushActorId   String?     @system
+
   // The catalog entry this app was made from, or null for one a person
   // described by hand. A record of origin and never a live link: what the
   // blueprint said was COPIED into `type`, `source` and the columns above when the app

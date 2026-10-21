@@ -148,6 +148,37 @@ describe('a due row is transitioned', () => {
     expect(fires(queue)).toHaveLength(1)
   })
 
+  it('rows due a millisecond apart move in the order they fell due with no hook (FJS-3313)', async () => {
+    const committed: number[] = []
+    const { app, db, advance } = await started()
+    db.$tapEvents((e: any) => { if (e.event === 'transition') committed.push((e.record ?? e.result).id) })
+    for (let i = 0; i < 30; i++) await db.order.create({ data: { createdAt: new Date(T0 + i) } })
+
+    advance(15 * DAY)
+    expect(await app.commitments.sweep()).toEqual({ due: 30 })
+    await until('all thirty', () => committed.length === 30)
+    expect(committed).toEqual(Array.from({ length: 30 }, (_, i) => i + 1))
+  })
+
+  it('two rows due a millisecond apart commit in the order they fell due, under concurrency 2 (FJS-3313)', async () => {
+    // The first to fall due holds its transaction open: the second's waits on the
+    // client's lock rather than committing ahead of it.
+    const committed: number[] = []
+    const { app, db, advance } = await started(SCHEMA, { hooks: {
+      'Order.abandon': defineCommitment({ after: async ({ record, afterCommit }) => {
+        if (record.id === 1) await Bun.sleep(100)
+        afterCommit(() => { committed.push(record.id) })
+      } }),
+    } })
+    await db.order.create({ data: { createdAt: new Date(T0) } })
+    await db.order.create({ data: { createdAt: new Date(T0 + 1) } })
+
+    advance(15 * DAY)
+    expect(await app.commitments.sweep()).toEqual({ due: 2 })
+    await until('both fires', () => committed.length === 2)
+    expect(committed).toEqual([1, 2])
+  })
+
   it('the move announces under the transition\'s name', async () => {
     const { app, db, advance } = await started()
     const heard: string[] = []

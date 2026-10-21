@@ -45,6 +45,11 @@ title: Customers
   const list = customers.tethered({ state: 'local' })
   const rows = () => list.rows
 
+  // This shop's own fields, one read for the screen. Until it lands the form is
+  // the schema's columns alone, and a refusal leaves it that way.
+  let declared = null
+  customers.declaredFields().then(rows => { declared = rows }).catch(() => {})
+
   $: (session.level, session.user, prefs.dense)
 
   let error   = null
@@ -332,6 +337,7 @@ title: Customers
       bind:autosaveState={autoState}
       autosave={1000}
       method="patch"
+      declaredFields={declared}
       submitId="c-save"
       oncancel={close}
       showError={!conflict}

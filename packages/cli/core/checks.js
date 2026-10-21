@@ -3698,7 +3698,7 @@ const CHECKS = {
     const schema = schemaFile(root)
     if (!schema) return { skipped: 'no db/schema.lite' }
 
-    const moves = declaredMoves(schema)
+    const moves = declaredTransitions(schema)
     if (!moves.length) return { skipped: 'no @@transitions in db/schema.lite' }
 
     const files = scripts(root, 'api')
@@ -3858,7 +3858,7 @@ const CHECKS = {
     const files = scripts(root, 'api').filter(p => /\.job\.[cm]?[jt]s$/.test(p))
     if (!files.length) return { skipped: 'no *.job.* under api/' }
 
-    const moves    = declaredMoves(schema)
+    const moves    = declaredTransitions(schema)
     const findings = []
 
     for (const path of files) {
@@ -5568,7 +5568,7 @@ function declaredGates({ text }) {
  */
 // Every `@@commitment` and the model its move is made ON — the declaring model
 // for `close`, the relation's type for `subscription.lapse`. A line scan like
-// `declaredMoves`, reading the relation's type off the field that names it.
+// `declaredTransitions`, reading the relation's type off the field that names it.
 function declaredCommitments({ text }) {
   const out    = []
   const fields = {}
@@ -5626,7 +5626,7 @@ function servingServices(root, files, code, schema) {
 /**
  * Every column a create cannot leave out and no caller may supply — required,
  * `@system`, and nothing at the Data boundary that fills it. `{ model, field,
- * line }`, a line scan for `declaredMoves`' reason.
+ * line }`, a line scan for `declaredTransitions`' reason.
  *
  * A scalar list is not one: its column is `NOT NULL DEFAULT '[]'`, so a create
  * that never names it succeeds (`FJS-2044`). `@updatedAt` stamps the create too.
@@ -5666,7 +5666,7 @@ function requiredSystemColumns({ text }) {
   return out
 }
 
-function declaredMoves({ text }) {
+function declaredTransitions({ text }) {
   const out   = []
   const lines = text.split('\n')
   let model   = null

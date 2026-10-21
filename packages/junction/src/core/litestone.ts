@@ -3381,12 +3381,20 @@ const SYSTEM_LEVEL = 8
  * levels, `null` where nothing grades it, or `'system'` where the service is over
  * no model and the client grades access. That last is a method with no access
  * declaration in a schema that declares some, which `FJS-D1206` makes SYSTEM-only
- * as it does an undeclared model; `$levelOf` answering is the client saying its
- * schema grades anyone, the line `FJS-D1212` draws.
+ * as it does an undeclared model. `$declaresAccessRules` is the line `FJS-D1212`
+ * draws; `$levelOf` answering is not, since a GatePlugin installed by hand on a
+ * plain schema answers it too.
  */
 export function methodGateBasis(client: unknown, accessor: string | null): Record<GateOp, number> | 'system' | null {
   if (accessor !== null && accessorIfModel(client, accessor)) return _gateLevels(client, accessor)
-  return askLevel(client, undefined, []) === null ? null : 'system'
+  return declaresAccessRules(client) ? 'system' : null
+}
+
+/** Whether the client's schema declares an access rule; `$levelOf` answering is not that. */
+function declaresAccessRules(db: unknown): boolean {
+  if (!db || typeof db !== 'object' || !('$declaresAccessRules' in db)) return false
+  const fn = (db as Record<string, unknown>).$declaresAccessRules
+  return typeof fn === 'function' && (fn as () => boolean).call(db) === true
 }
 
 // ─── Who the APP says this caller is ─────────────────────────────────────

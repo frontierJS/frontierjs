@@ -18,7 +18,7 @@
  * imported name compiles to a static value, so an exported signal object
  * would render once and never again — the reason sierra exports none
  * (`FJS-060`). `{media(q).matches}` written inline is static for the same
- * reason.
+ * reason, and `externalReactivityHints: 'strict'` says so.
  *
  * `colorScheme()` is the operating system's preference, not the app's theme: the
  * theme is a class on `<html>` and sierra owns the switch, which reads this.

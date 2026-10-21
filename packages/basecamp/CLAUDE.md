@@ -655,6 +655,17 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   is why `take` states its own gate, and a stub executor's answer is recorded
   `failed`: no archive was taken. Restoring is `apps.restoreVolume` once the
   file is in the machine's restore directory.
+- **A git push is a conduit Receiver, and the release runs as the person who
+  enabled it** (`FJS-D884`, `core/push.ts`). Two doors on one apply: the
+  forge's HMAC at `/hooks/git/{appId}` and a per-App token URL at
+  `/hooks/git/{appId}/{token}`; `apps.enablePush` mints both once (the secret
+  `@encrypted`, the token a hash) and re-running it rotates them. A refusal is
+  conduit's one 401 whatever was wrong, push off included. The apply calls
+  `deployments.create` under `app.runAs(pushActorId, { tenant })`, because a
+  service call as the system answers 401 and the standing is read again: a
+  person removed since enabling is a 500 the forge shows red. A push to another
+  branch, a tag, a deleted branch and a forge ping are `ignored`. `api/test/push.test.ts`
+  signs the exact bytes `env.http` sends, which for an object is `JSON.stringify(body)`.
 - **Deleting an app retires it from the machine** — `/static/retire` for inline,
   `/stop` for a container, which also drops its Caddy route. Neither stops on
   its own, so a row removed here and a page still answering on the internet is

@@ -122,6 +122,25 @@ describe('comparatorFor', () => {
     const cmp = comparatorFor('-score')!
     expect(cmp({ score: 1 }, { score: null })).toBeLessThan(0)
   })
+
+  // FJS-3234: a column declared @collate(nocase) is ordered by the column, so a
+  // live list re-sorting in BINARY put BNI before apple when a write landed.
+  it('orders a nocase column the way the column does', () => {
+    const rows = [{ label: 'BNI' }, { label: 'apple' }, { label: 'Bing' }]
+    const binary = [...rows].sort(comparatorFor('label')!).map(r => r.label)
+    expect(binary).toEqual(['BNI', 'Bing', 'apple'])
+    const nocase = [...rows].sort(comparatorFor('label', { label: 'nocase' })!).map(r => r.label)
+    expect(nocase).toEqual(['apple', 'Bing', 'BNI'])
+    const desc = [...rows].sort(comparatorFor('-label', { label: 'nocase' })!).map(r => r.label)
+    expect(desc).toEqual(['BNI', 'Bing', 'apple'])
+  })
+
+  it('a collation names its own column only, and rtrim ignores trailing spaces', () => {
+    const cmp = comparatorFor('label,name', { label: 'rtrim' })!
+    expect(cmp({ label: 'a  ', name: 'x' }, { label: 'a', name: 'y' })).toBeLessThan(0)
+    const other = comparatorFor('name', { label: 'nocase' })!
+    expect(other({ name: 'B' }, { name: 'a' })).toBeLessThan(0)
+  })
 })
 
 // ─── Tether.place ─────────────────────────────────────────────────────────────

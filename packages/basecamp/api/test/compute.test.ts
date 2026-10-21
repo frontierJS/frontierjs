@@ -489,6 +489,16 @@ describe('a machine is made, and can be unmade', () => {
       .rejects.toThrow(/refused the create/)
   })
 
+  test('the refusal carries the vendor\'s OWN sentence, not just the status', async () => {
+    // Conduit fills `error.message` with the status line; the reason is in the
+    // body `sendVia` hands over as `data`.
+    const send = sendVia(app, await registerAtSink(account))
+    await expect(digitalOcean.create(send, spec({ region: 'ams2' })))
+      .rejects.toThrow(/ams2 is not available/)
+    await expect(digitalOcean.create(send, spec({ size: 'nope' })))
+      .rejects.toThrow(/unknown size nope/)
+  })
+
   test('a destroy removes it, and running it AGAIN still answers true', async () => {
     // Idempotent on purpose: every path into a destroy is a job that may be
     // redelivered, and a destroy that throws the second time is one that cannot
@@ -1618,6 +1628,12 @@ describe('Hetzner answers through conduit, and is marked with LABELS', () => {
     // Paired with the same call one location over, which the vendor accepts.
     await expect(hetzner.create(send, hzSpec({ size: 'cax11', region: 'fsn1' })))
       .resolves.toMatchObject({ providerServerId: expect.any(String) })
+  })
+
+  test('a refused create carries the vendor\'s OWN sentence, not just the status', async () => {
+    const send = sendVia(app, await registerAtHz(hzAccount))
+    await expect(hetzner.create(send, hzSpec({ size: 'cax11', region: 'nbg1' })))
+      .rejects.toThrow(/not available in nbg1/)
   })
 
   test('a destroy answers 200 WITH A BODY, where DigitalOcean answers 204 with none', async () => {

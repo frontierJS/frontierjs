@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**127 words** — 13 declarations · 73 field attributes · 37 model attributes · 4 move words.
+**127 words** — 13 declarations · 73 field attributes · 37 model attributes · 4 transition words.
 
 ## Index
 
@@ -44,11 +44,11 @@ and shows you the diff first.
 - *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@export`](#export-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@require`](#require-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
 - *Wire it to the app* — [`@@sync`](#sync-model) · [`@@auth`](#auth-model) · [`@@person`](#person-model) · [`@@trail`](#trail-model) · [`@@mirror`](#mirror-model) · [`@@anonymous`](#anonymous-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
 
-**Move words**
+**Transition words**
 
-- *Hide or lock a value* — [`@seals`](#seals-move)
-- *Record who and when* — [`@stamps`](#stamps-move)
-- *Decide who may* — [`@gate`](#gate-move) · [`@system`](#system-move)
+- *Hide or lock a value* — [`@seals`](#seals-transition)
+- *Record who and when* — [`@stamps`](#stamps-transition)
+- *Decide who may* — [`@gate`](#gate-transition) · [`@system`](#system-transition)
 
 ## Declarations
 
@@ -627,7 +627,7 @@ model Example {
 
 - **Also typed** — `write-once` · `append-only`
 - **Deeper** — [modeling.md](modeling.md)
-- **See also** — [`@system`](#system-field) · [`@guarded`](#guarded-field) · [`@version`](#version-field) · [`@seals`](#seals-move)
+- **See also** — [`@system`](#system-field) · [`@guarded`](#guarded-field) · [`@version`](#version-field) · [`@seals`](#seals-transition)
 
 #### `@sealed` <a id="sealed-field"></a>
 
@@ -2055,13 +2055,13 @@ model Example {
 - **Deeper** — [schema.md](schema.md)
 - **See also** — [`@updatedBy`](#updatedby-field) · [`@@auth`](#auth-model)
 
-## Move words
+## Transition words
 
 One `@`, after the target of a `@@transitions` move. `@system` and `@gate` are the column's `@system` and the model's `@@gate` at move grain: the same fact, said of one act rather than of a value or of every row.
 
 ### Hide or lock a value
 
-#### `@seals` <a id="seals-move"></a>
+#### `@seals` <a id="seals-transition"></a>
 
 The move is the moment this row becomes a DOCUMENT. After it the row's @sealed children may not be created, changed or removed, and its @immutable columns freeze (SealedDocumentError). A seal is an event rather than a state, so it is declared on the move and not as a predicate over the state column, and the sealed set is computed from the move's target. Takes no argument: WHICH children seal is @sealed on the relation field.
 
@@ -2085,7 +2085,7 @@ model Example {
 
 ### Record who and when
 
-#### `@stamps` `(<column>, …)` <a id="stamps-move"></a>
+#### `@stamps` `(<column>, …)` <a id="stamps-transition"></a>
 
 The move records WHEN it was made: the named DateTime columns get the clock in the move's own UPDATE, the way @updatedAt does, whether the move was made by transition(id, name) or by an update that lands it. The column is the engine's, so a payload naming it is refused by name; a direct transition() cannot leave it null, and a @@check requiring it holds in the same statement. Move-keyed, so two moves into one state can stamp different columns.
 
@@ -2109,7 +2109,7 @@ model Example {
 
 ### Decide who may
 
-#### `@gate` `(<0-9>)` <a id="gate-move"></a>
+#### `@gate` `(<0-9>)` <a id="gate-transition"></a>
 
 The model's @@gate at move grain: the level a caller needs to MAKE this move, a floor on top of the model's update level. @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller reaches it and asSystem() bypasses. With @system it must stay below 8, because 8 says no caller and @system says the application makes the move through one. Not the model's @@gate, which grades the four operations on every row.
 
@@ -2128,9 +2128,9 @@ model Example {
 ```
 
 - **Deeper** — [schema.md](schema.md)
-- **See also** — [`@@transitions`](#transitions-model) · [`@system`](#system-move)
+- **See also** — [`@@transitions`](#transitions-model) · [`@system`](#system-transition)
 
-#### `@system` <a id="system-move"></a>
+#### `@system` <a id="system-transition"></a>
 
 The column's @system at move grain: the move is the APPLICATION's write, where the column is a value the application writes. A caller may ask for it and never make one, and the app states { system: true } on the call. The move still runs on the caller's own client, so the gate, the row policies and the audit actor all survive, which is the whole difference from asSystem(). Takes no argument. Combine with @gate(N) below 8 to say who may ask.
 
@@ -2149,7 +2149,7 @@ model Example {
 ```
 
 - **Deeper** — [schema.md](schema.md)
-- **See also** — [`@@transitions`](#transitions-model) · [`@gate`](#gate-move) · [`@guarded`](#guarded-field)
+- **See also** — [`@@transitions`](#transitions-model) · [`@gate`](#gate-transition) · [`@guarded`](#guarded-field)
 
 ## Where a word is legal
 

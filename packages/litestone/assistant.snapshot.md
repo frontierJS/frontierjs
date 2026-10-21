@@ -1799,13 +1799,13 @@ The model-level form of @updatedBy.
 @@updatedBy
 ```
 
-### Move words
+### Transition words
 
 **Hide or lock a value**
 
 #### `@seals`
 
-tier: **common** · legal in: on a @@transitions move · see also: `transitions`, `sealed`, `immutable`
+tier: **common** · legal in: on a @@transitions transition · see also: `transitions`, `sealed`, `immutable`
 
 The move is the moment this row becomes a DOCUMENT. After it the row's @sealed children may not be created, changed or removed, and its @immutable columns freeze (SealedDocumentError). A seal is an event rather than a state, so it is declared on the move and not as a predicate over the state column, and the sealed set is computed from the move's target. Takes no argument: WHICH children seal is @sealed on the relation field.
 
@@ -1817,7 +1817,7 @@ The move is the moment this row becomes a DOCUMENT. After it the row's @sealed c
 
 #### `@stamps` (<column>, …)
 
-tier: **common** · legal in: on a @@transitions move · see also: `transitions`, `updatedAt`
+tier: **common** · legal in: on a @@transitions transition · see also: `transitions`, `updatedAt`
 
 The move records WHEN it was made: the named DateTime columns get the clock in the move's own UPDATE, the way @updatedAt does, whether the move was made by transition(id, name) or by an update that lands it. The column is the engine's, so a payload naming it is refused by name; a direct transition() cannot leave it null, and a @@check requiring it holds in the same statement. Move-keyed, so two moves into one state can stamp different columns.
 
@@ -1829,7 +1829,7 @@ The move records WHEN it was made: the named DateTime columns get the clock in t
 
 #### `@gate` (<0-9>)
 
-tier: **common** · legal in: on a @@transitions move · see also: `transitions`, `system`
+tier: **common** · legal in: on a @@transitions transition · see also: `transitions`, `system`
 
 The model's @@gate at move grain: the level a caller needs to MAKE this move, a floor on top of the model's update level. @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller reaches it and asSystem() bypasses. With @system it must stay below 8, because 8 says no caller and @system says the application makes the move through one. Not the model's @@gate, which grades the four operations on every row.
 
@@ -1839,7 +1839,7 @@ The model's @@gate at move grain: the level a caller needs to MAKE this move, a 
 
 #### `@system`
 
-tier: **common** · legal in: on a @@transitions move · see also: `transitions`, `gate`, `guarded`
+tier: **common** · legal in: on a @@transitions transition · see also: `transitions`, `gate`, `guarded`
 
 The column's @system at move grain: the move is the APPLICATION's write, where the column is a value the application writes. A caller may ask for it and never make one, and the app states { system: true } on the call. The move still runs on the caller's own client, so the gate, the row policies and the audit actor all survive, which is the whole difference from asSystem(). Takes no argument. Combine with @gate(N) below 8 to say who may ask.
 

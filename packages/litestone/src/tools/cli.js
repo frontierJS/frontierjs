@@ -2113,9 +2113,9 @@ async function cmdExplain(word) {
   if (!word) {
     if (asJson) { process.stdout.write(JSON.stringify(CATALOG, null, 2) + '\n'); return }
     header('litestone explain')
-    for (const level of ['schema', 'field', 'model', 'move']) {
+    for (const level of ['schema', 'field', 'model', 'transition']) {
       const label = { schema: 'Declarations', field: 'Field attributes', model: 'Model attributes',
-                      move: 'Move words (inside @@transitions)' }[level]
+                      transition: 'Transition words (inside @@transitions)' }[level]
       console.log(`  ${bold(label)}`)
       for (const g of grouped(level)) {
         console.log(`    ${dim(g.title)}`)

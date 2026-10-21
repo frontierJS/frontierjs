@@ -51,7 +51,7 @@ function strangerMayCreate(model) {
  * Every capability this schema declares, sorted by model then by name.
  *
  * Each entry is `{ name, model, kind, target, gate }` — `kind` is
- * `'operation' | 'move' | 'column'`, `target` is the operation, move or column
+ * `'operation' | 'transition' | 'column'`, `target` is the operation, move or column
  * name, and `gate` is a move's own `@gate(N)` where it has one.
  *
  * A model that does not carry `@@capabilities` contributes nothing: the switch
@@ -72,7 +72,7 @@ export function capabilitiesForModel(model) {
   for (const attr of (model.attributes ?? []).filter(a => a.kind === 'transitions')) {
     for (const [name, t] of Object.entries(attr.transitions ?? {})) {
       if (machineMove(t)) continue
-      add('move', name, t.gate ?? null)
+      add('transition', name, t.gate ?? null)
     }
   }
 
@@ -98,17 +98,17 @@ export function capabilityNames(schema) {
  * The same declarations keyed by model, for a reader that has a model in hand and
  * needs an answer per call rather than a list — enforcement asks this one.
  *
- * `{ [model]: { read, create: boolean, moves: Set<string>, columns: Set<string> } }`, and a
+ * `{ [model]: { read, create: boolean, transitions: Set<string>, columns: Set<string> } }`, and a
  * model absent from it declares no grid. One reading of the attributes, because two
  * would let the set a picker OFFERS drift from the set the boundary ENFORCES.
  */
 export function capabilityDeclarations(schema) {
   const out = {}
   for (const c of deriveCapabilities(schema)) {
-    const m = out[c.model] ??= { read: false, create: false, moves: new Set(), columns: new Set(), moveFields: new Set() }
+    const m = out[c.model] ??= { read: false, create: false, transitions: new Set(), columns: new Set(), transitionFields: new Set() }
     if (c.kind === 'operation' && c.target === 'read') m.read = true
     if (c.kind === 'operation' && c.target === 'create') m.create = true
-    if (c.kind === 'move')   m.moves.add(c.target)
+    if (c.kind === 'transition') m.transitions.add(c.target)
     if (c.kind === 'column') m.columns.add(c.target)
   }
 
@@ -122,7 +122,7 @@ export function capabilityDeclarations(schema) {
     const m = out[model.name]
     if (!m) continue
     for (const attr of model.attributes.filter(a => a.kind === 'transitions'))
-      if (attr.field) m.moveFields.add(attr.field)
+      if (attr.field) m.transitionFields.add(attr.field)
   }
   return out
 }

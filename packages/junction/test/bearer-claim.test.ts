@@ -508,6 +508,8 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
 
     const { token, row } = await link.mint(me, { customerId: 1, expiresAt: new Date(Date.now() + 86_400_000).toISOString() })
     expect(typeof token).toBe('string')
+    // ASVS V11.5.1: at least 128 random bits. 43 chars of a 64-symbol alphabet is 258 (FJS-3199).
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(row.customerId).toBe(1)
     expect('tokenHash' in row).toBe(false)
     // A cookie bearer's token is a LINK token: stored under the link purpose,

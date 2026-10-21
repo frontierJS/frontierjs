@@ -430,6 +430,31 @@ export default defineNotification<Order>({
 })
 ```
 
+### Web Push
+
+`webPush()` is the one driver this package ships beyond the two built-ins, because the part worth sharing is not the vendor (there is none: a push service is plain HTTPS) but the RFC 8291/8188/8292 cryptography, which fails identically whether right or wrong — the push service answers `201` to a body it cannot read.
+
+```typescript
+import { webPush, generateVapidKeys } from '@frontierjs/notifications'
+
+// once, kept beside the app's other secrets: generateVapidKeys('mailto:ops@acme.test')
+app.configure(notifications({
+  db,
+  transports: {
+    push: webPush({
+      vapid: { publicKey, privateKey, subject: 'mailto:ops@acme.test' },
+      subscriptions: {
+        // the app's own PushSubscription model; keys @encrypted, read through asSystem()
+        list:   (recipient) => subscriptionsOf(recipient.id),
+        remove: (sub)       => forget(sub.endpoint),   // called on a 404/410 and nowhere else
+      },
+    }),
+  },
+}))
+```
+
+A formatter named `push:` answers `{ title, body, url, data, ttl, urgency, topic }`. One recipient is every device the store lists, each sent independently: a retired endpoint is removed, any other refusal is thrown after every device was tried. **The driver holds the decrypted keys, so it cannot keep `@guarded` columns out of a payload — the `push:` formatter is where the payload is built and the only place that can.** A body over ~3.9 KB is refused; send an id and let the service worker fetch the rest.
+
 ---
 
 ## Sierra resource

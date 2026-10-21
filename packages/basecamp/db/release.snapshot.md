@@ -227,6 +227,7 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |
 | `deployments` | `Deployment[]` | — | — | relation |
+| `deployOnPush` | `Boolean` | no | `0` | @system |
 | `domainRoutes` | `DomainRoute[]` | — | — | relation |
 | `domains` | `Domain[]` | — | — | relation |
 | `editors` | `AppEditor[]` | — | — | relation |
@@ -239,6 +240,9 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `memLimitMb` | `Int` | yes | — | — |
 | `name` | `String` | no | — | **required on write** |
 | `port` | `Int` | yes | — | — |
+| `pushActorId` | `String` | yes | — | @system |
+| `pushSecret` | `String` | yes | — | @encrypted |
+| `pushTokenHash` | `String` | yes | — | @guarded @system |
 | `slug` | `String` | no | — | **required on write** |
 | `source` | `Json` | no | `'{}'` | — |
 | `status` | `AppStatus` | no | `'unknown'` | @system |

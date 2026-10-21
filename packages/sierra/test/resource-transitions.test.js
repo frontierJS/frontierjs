@@ -101,7 +101,16 @@ describe('transitionsAt — the button list', () => {
 
   test('carries where it came from and where it goes', () => {
     const pay = transitionsAt(spec(), { status: 'pending' }, 4).find(t => t.name === 'pay')
-    expect(pay).toEqual({ name: 'pay', label: 'Pay', field: 'status', from: 'pending', to: 'paid', gate: null, system: false, allowed: true, refusedBy: null })
+    expect(pay).toEqual({ name: 'pay', label: 'Pay', field: 'status', from: 'pending', to: 'paid', gate: null, system: false, allowed: true, refusedBy: null, terminal: false })
+  })
+
+  // FJS-1118: whether a move can be walked back is a fact about the machine,
+  // not about where its target sits in a screen's list of steps.
+  test('a move into a state nothing leaves is terminal, and one into a state with a way on is not', () => {
+    const at = (status) => Object.fromEntries(
+      transitionsAt(spec(), { status }, 9).map(t => [t.name, t.terminal]))
+    expect(at('pending')).toEqual({ pay: false, cancel: true })
+    expect(at('paid')).toEqual({ ship: true, refund: true, settle: true, cancel: true })
   })
 
   test('labels the move for a reader, so a button does not show an identifier', () => {

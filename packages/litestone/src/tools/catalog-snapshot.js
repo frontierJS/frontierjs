@@ -16,7 +16,7 @@
 // Rendered by `litestone catalog --snapshot`, byte-compared by `--check`.
 // Never imported by production code.
 
-import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, MOVE_WORDS, GROUPS, POSITIONS,
+import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, TRANSITION_WORDS, GROUPS, POSITIONS,
          POSITION_RULES, positionsOf, hasOrdinaryPositions, typed } from '../core/catalog.js'
 import { VISIBILITY, PER_CALLER, RULES } from '../core/advise.js'
 
@@ -56,7 +56,7 @@ export function renderCatalogSnapshot() {
        'snapshot that reshuffles on an edited sentence is one nobody reads.', '')
   push(`**${CATALOG.length} words** — ${TOP_LEVEL.length} declarations · ` +
        `${FIELD_ATTRS.length} field attributes · ${MODEL_ATTRS.length} model attributes · ` +
-       `${MOVE_WORDS.length} move words.`, '')
+       `${TRANSITION_WORDS.length} transition words.`, '')
 
   push('## Declarations', '')
   push('| word | arity | accepts |', '| --- | --- | --- |')
@@ -65,7 +65,7 @@ export function renderCatalogSnapshot() {
   push('')
 
   for (const [rows, title] of [[FIELD_ATTRS, 'Field attributes'], [MODEL_ATTRS, 'Model attributes'],
-                           [MOVE_WORDS, 'Move words']]) {
+                           [TRANSITION_WORDS, 'Transition words']]) {
     push(`## ${title}`, '')
     push('| word | group | arity | legal | accepts | notes |', '| --- | --- | --- | --- | --- | --- |')
     for (const r of rows) {

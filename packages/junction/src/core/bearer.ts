@@ -11,9 +11,13 @@ import type { HookMap } from './hooks.ts'
 import { BadRequest, Unauthorized } from './errors.ts'
 import { callDb, currentCall, requestMeta } from './context.ts'
 import { resultData, isServiceResult } from './envelope.ts'
-import { generateCuid } from '@frontierjs/toolbelt/ids'
+import { generateNanoid } from '@frontierjs/toolbelt/ids'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
 import type { PrincipalClaims, SelfDescribedResolver, LitestoneClient, ResolvedTenancy } from './litestone.ts'
+
+// 43 characters of a 64-symbol alphabet is 258 bits. A cuid is 24 base36
+// characters, about 124, under the 128-bit floor of ASVS V11.5.1.
+const mintToken = () => generateNanoid(43)
 
 // ─── bearerClaim ─────────────────────────────────────────────────────────────
 //
@@ -418,7 +422,7 @@ export function bearerClaim(opts: BearerClaimOptions): BearerResolver {
     if (typeof table?.create !== 'function') throw new BadRequest(
       `bearerClaim: no accessor '${opts.model}' on the client handed to mint(). ` +
       `A model's accessor is its name with a lower first letter.`)
-    const token  = generateCuid()
+    const token  = mintToken()
     const digest = await fingerprint(token, { key: keyFor(currentCall()), purpose: isLink ? linkPurpose : purpose })
     const row = await table.create({
       data:   { ...data, [opts.column]: digest },
@@ -433,7 +437,7 @@ export function bearerClaim(opts: BearerClaimOptions): BearerResolver {
       // After validation, because a @guarded column is not in the client's
       // schema and a digest added before it is refused as an unknown key.
       validated: { create: [async (ctx) => {
-        const token = generateCuid()
+        const token = mintToken()
         const data  = ctx.data as Record<string, unknown> | null
         ctx.data = { ...data, [opts.column]: await fingerprint(token, { key: keyFor(ctx), purpose: isLink ? linkPurpose : purpose }) }
         ctx.system.add(opts.column)
@@ -474,7 +478,7 @@ export function bearerClaim(opts: BearerClaimOptions): BearerResolver {
       // resolver's own (`FJS-D696`).
       if (!row || !isLive(row, clock)) return ctx.json({ message: 'This link does not work. It may have expired or been withdrawn.' }, 401)
 
-      const fresh = generateCuid()
+      const fresh = mintToken()
       await table.update({
         where: { id: row.id },
         data:  { [opts.column]: await fingerprint(fresh, { key, purpose }),

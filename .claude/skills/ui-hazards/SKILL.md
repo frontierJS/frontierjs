@@ -51,6 +51,7 @@ Detail: `references/mesa.md`
 - **A Mesa instance `<script>` exports two kinds of thing: a prop and a method.**
 - **On an ELEMENT `bind:` means the DOM writes back, so it is `value`, `checked`, `files` — plus `group` and `this` — and every other `bind:x` there is refused, naming `x={expr}`** (`FJS-D136`)
 - **Mesa's scoped styles do not reach into child components.**
+- **A component's stylesheet is ADOPTED, not appended, and an adopted sheet sorts after every `<style>` and `<link>` in the document.**
 - **A block that reads a `const` derived from another `const` can mount a STALE value** (`FJS-1684`)
 - **A `const` read off a getter is a constant, whatever the getter reads.**
 - **A `const` that CALLS something with a `let` in its arguments is made again on every write to that `let`.**

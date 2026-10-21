@@ -317,7 +317,7 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
       // The NAMES, which is what a client compares against the set on its
       // principal — the one spelling that must never be guessed, since a wrong
       // guess is an affordance that silently never matches.
-      const names = [caps.operations, caps.moves, caps.columns]
+      const names = [caps.operations, caps.transitions, caps.columns]
         .flatMap(g => Object.values(g ?? {}))
         .map(n => `\`${n}\``)
       bullets.push(`- capabilities — ${names.join(' · ') || 'none'}` +

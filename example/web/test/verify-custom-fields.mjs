@@ -483,7 +483,10 @@ try {
     })
     if (row?.id) made.customers.push(row.id)
     t('http.creatingACustomerIsNotA403', cs === 201)
-    t('http.andTheMirrorWasDerived', row?.fieldsSlots?.[declaredRow?.slot] === 'gold')
+    // No read answers `fieldsSlots` (`FJS-1426`); the slot column is generated
+    // from it, so a system read of the stored row is the mirror's witness.
+    const stored = row?.id ? await sys.customer.findUnique({ where: { id: row.id } }) : null
+    t('http.andTheMirrorWasDerived', stored?.[declaredRow?.slot] === 'gold')
     t('http.andTheGeneratedColumnReadsIt', row?.[declaredRow?.slot] === 'gold')
 
     // The pair: the same column, sent by the CALLER this time. The derivation
@@ -496,9 +499,10 @@ try {
       email: `cf-${RUN}-http2@example.test`, fields: { [key]: 'bronze' }, fieldsSlots: { t1: 'forged' },
     })
     if (forged?.id) made.customers.push(forged.id)
+    const forgedStored = forged?.id ? await sys.customer.findUnique({ where: { id: forged.id } }) : null
     t('http.aCallersOwnSlotsAreOverwrittenByTheHook',
-      bs === 201 && forged?.fieldsSlots?.[declaredRow?.slot] === 'bronze'
-      && !Object.values(forged?.fieldsSlots ?? {}).includes('forged'))
+      bs === 201 && forgedStored?.[declaredRow?.slot] === 'bronze'
+      && !Object.values(forgedStored ?? {}).includes('forged'))
 
     // A patch rebuilds the mirror WHOLE, so the old value has to leave its slot
     // — merging would keep segmenting a row on a value it no longer holds.
@@ -526,6 +530,27 @@ try {
     // actually answers a shop.
     const [us, unknown] = await post('/customers', { terms: [{ key: 'nope', op: 'eq', value: 'x' }] }, 'segment')
     t('http.anUnknownKeyIsA400NamingIt', us === 400 && /nope/.test(JSON.stringify(unknown)))
+
+    // ─── What the PAGE sends, which the requests above never did ────────────
+    //
+    // Every request above names `model` itself, so a screen that forgot to was
+    // never asked (`FJS-1116`). The payload is lifted out of the page's own
+    // `save(...)` call and posted as written; no browser is needed to know
+    // whether the Data boundary takes it.
+    const pageSrc = await Bun.file(new URL('../src/routes/settings/fields.mesa', import.meta.url)).text()
+    const literal = pageSrc.match(/customFields\.save\(\s*(\{[^}]*\})/)?.[1]
+    const pageKey = `page_${RUN}`
+    const pageBody = literal
+      ? new Function('key', 'label', 'type', `return (${literal})`)(pageKey, 'Page tier', 'text')
+      : null
+    const [pgs, pageRow] = pageBody ? await post('/custom-fields', pageBody) : [0, null]
+    if (pageRow?.id) made.fields.push(pageRow.id)
+    t('page.theCreateItSendsIsNotRefused', pgs === 201 && pageRow?.model === 'Customer')
+
+    // The other half: a declared field only reaches a form that is handed it.
+    const customersSrc = await Bun.file(new URL('../src/routes/customers/index.mesa', import.meta.url)).text()
+    t('page.theCustomerFormIsHandedTheDeclaredFields',
+      /<Customer\b[^>]*\bdeclaredFields=/.test(customersSrc) && /\.declaredFields\(\)/.test(customersSrc))
   })
 
 } catch (err) {
@@ -604,6 +629,8 @@ const expected = {
   'http.segmentingFindsTheRow': true,
   'http.andReportsNothingUnindexed': true,
   'http.anUnknownKeyIsA400NamingIt': true,
+  'page.theCreateItSendsIsNotRefused': true,
+  'page.theCustomerFormIsHandedTheDeclaredFields': true,
 }
 
 process.exit(report(got, expected, { stoppedEarly: failedEarly }))

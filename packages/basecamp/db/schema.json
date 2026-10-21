@@ -2189,7 +2189,7 @@
           "update": "Server.update",
           "delete": "Server.delete"
         },
-        "moves": {
+        "transitions": {
           "reboot": "Server.reboot",
           "drain": "Server.drain",
           "undrain": "Server.undrain",
@@ -2838,7 +2838,7 @@
           "update": "Environment.update",
           "delete": "Environment.delete"
         },
-        "moves": {},
+        "transitions": {},
         "columns": {}
       },
       "x-relations": [
@@ -3216,7 +3216,7 @@
           "update": "Variable.update",
           "delete": "Variable.delete"
         },
-        "moves": {},
+        "transitions": {},
         "columns": {}
       },
       "x-relations": [
