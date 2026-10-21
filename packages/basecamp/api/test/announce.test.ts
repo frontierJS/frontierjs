@@ -58,7 +58,7 @@ function subscriber(user: { id: string }) {
   const frames: Array<{ event?: string; data?: any }> = []
   const conn = {
     id:     Math.random().toString(36).slice(2),
-    user:   { id: user.id, userId: user.id },
+    user:   { id: user.id },
     socket: { send: (d: string) => { frames.push(JSON.parse(d)); return 1 }, close: () => {}, readyState: 1 },
     data:   {},
   }

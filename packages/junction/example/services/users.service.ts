@@ -148,7 +148,7 @@ export function verifyDemoToken(token: string) {
   const user = tokens.get(token)
   if (!user) return null
   return {
-    userId:     user.id,
+    id:         user.id,
     userType:   'user',
     role:        user.role,
     authMethod: 'session' as const,

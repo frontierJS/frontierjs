@@ -37,7 +37,7 @@ app.get('/ping', (ctx: any) => ctx.json({ ok: true }))
 // What `client.auth.me()` resolves to — service('account').get('me').
 app.get('/account/me', (ctx: any) => {
   hits.push('GET /account/me')
-  return ctx.json({ userId: 'restored-person', email: 'p@x.test', level: 4 })
+  return ctx.json({ id: 'restored-person', email: 'p@x.test', level: 4 })
 })
 
 // What `client.auth.signOut()` calls, and the whole question of FJS-787's

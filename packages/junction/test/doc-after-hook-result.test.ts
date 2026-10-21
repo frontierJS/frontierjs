@@ -29,7 +29,7 @@ describe('an after hook reads the envelope', () => {
     })
 
     const ctx = setCallDb(bridge.internal('orders', 'create' as never, { id: 7, total: 12.5 } as never, {
-      auth:   { user: { userId: 1, id: 1, isAdmin: true } },
+      user: { id: 1, isAdmin: true },
     } as never), db)
     await callService(svc, ctx)
 

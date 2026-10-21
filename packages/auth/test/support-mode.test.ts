@@ -24,7 +24,7 @@ async function person(tag: string) {
   const email = `${tag}-${n++}@example.com`
   const user  = await h.auth.createUser({ email, password: 'pw-correct-1', name: tag })
   const { token } = signedIn(await h.auth.login(email, 'pw-correct-1'))
-  return { email, userId: user.userId, token }
+  return { email, userId: user.id, token }
 }
 
 describe('an episode resolves to the subject and remembers the operator', () => {
@@ -35,14 +35,14 @@ describe('an episode resolves to the subject and remembers the operator', () => 
 
     // Before: the token is the operator's own and answers as them.
     const before = await h.auth.verifySession(operator.token)
-    expect(before?.userId).toBe(operator.userId)
+    expect(before?.id).toBe(operator.userId)
     expect(before?.support).toBeUndefined()
 
     await h.auth.startSupport!(operator.token, subject.userId, 'ticket-4192')
 
     const during = await h.auth.verifySession(operator.token)
     // The half that bounds it: every layer above grades THIS principal.
-    expect(during?.userId).toBe(subject.userId)
+    expect(during?.id).toBe(subject.userId)
     expect(during?.email).toBe(subject.email)
     // The half that makes it evidence: the operator is still here.
     expect(during?.support?.operatorId).toBe(operator.userId)
@@ -56,13 +56,13 @@ describe('an episode resolves to the subject and remembers the operator', () => 
     const subject  = await person('sub')
 
     await h.auth.startSupport!(operator.token, subject.userId, 'ticket-1')
-    expect((await h.auth.verifySession(operator.token))?.userId).toBe(subject.userId)
+    expect((await h.auth.verifySession(operator.token))?.id).toBe(subject.userId)
 
     const { ended } = await h.auth.endSupport!(operator.token)
     expect(ended).toBe(true)
 
     const after = await h.auth.verifySession(operator.token)
-    expect(after?.userId).toBe(operator.userId)
+    expect(after?.id).toBe(operator.userId)
     expect(after?.support).toBeUndefined()
   })
 
@@ -80,7 +80,7 @@ describe('the ceiling is read at resolution, not swept', () => {
     const subject  = await person('sub')
 
     await h.auth.startSupport!(operator.token, subject.userId, 'ticket-2', '1 second')
-    expect((await h.auth.verifySession(operator.token))?.userId).toBe(subject.userId)
+    expect((await h.auth.verifySession(operator.token))?.id).toBe(subject.userId)
 
     // Move the column into the past by hand, which is what the clock does. No
     // job runs, nothing is cleaned up: the next resolution is simply the
@@ -92,7 +92,7 @@ describe('the ceiling is read at resolution, not swept', () => {
     })
 
     const after = await h.auth.verifySession(operator.token)
-    expect(after?.userId).toBe(operator.userId)
+    expect(after?.id).toBe(operator.userId)
     expect(after?.support).toBeUndefined()
   })
 
@@ -113,7 +113,7 @@ describe('the ceiling is read at resolution, not swept', () => {
     await h.auth.deleteUser(subject.userId)
 
     const after = await h.auth.verifySession(operator.token)
-    expect(after?.userId).toBe(operator.userId)
+    expect(after?.id).toBe(operator.userId)
   })
 })
 
@@ -150,7 +150,7 @@ describe('what the provider refuses whatever the app allows', () => {
     })
 
     expect(await h.auth.startSupport!(operator.token, b.userId, 'ticket-next')).toHaveProperty('endsAt')
-    expect((await h.auth.verifySession(operator.token))?.userId).toBe(b.userId)
+    expect((await h.auth.verifySession(operator.token))?.id).toBe(b.userId)
   })
 
   test('an episode inside an episode', async () => {

@@ -311,8 +311,11 @@ function makeGitignore() {
     // committing it commits a version of the framework nobody can read off a
     // spec.
     'deploy/generated/',
-    // Sierra's build-time route table — derived, rewritten by every build.
+    // Sierra's route tables — the scanner writes routes.js on every dev run and
+    // a build writes routes.build.js beside it. Derived from web/src/routes/, so
+    // a committed copy churns with every route edit.
     'routes.build.js',
+    'web/config/routes.js',
     '',
   ].join('\n')
 }
@@ -814,7 +817,7 @@ ${useQueue ? `
 // the gate AND the model's row policies admit it. Not a row in the users
 // table and cannot log in.
 export const SYSTEM = {
-  userId:        'system',
+  id:            'system',
   userType:      'service',
   role:          'system',
   isSystemAdmin: true,
@@ -1036,7 +1039,7 @@ function makeApiCoreChannelsTs(useAuth) {
   // owns this spelling; an anonymous connection has none to join, which is the
   // only reason this is not "join everything".
   const who    = (session ?? {}) as Session
-  const userId = who.userId ?? who.id
+  const userId = who.id
   if (userId) app.channel(\`notifications:user:\${userId}\`).join(conn as never)
 `
     : ''
@@ -1047,10 +1050,9 @@ function makeApiCoreChannelsTs(useAuth) {
   const sessionType = useAuth
     ? `/** A session as this app can read one. Junction hands the handler \`unknown\`,
  *  because what a session IS belongs to whichever auth provider issued it —
- *  auth's own shape puts the id at \`userId\`, a hand-built principal puts it at
- *  \`id\`, so both are read here and the wrong one is undefined, which joins
- *  nothing and says nothing. */
-type Session = { userId?: string; id?: string }
+
+ *  a session and a hand-built principal both put the id at \`id\`. */
+type Session = { id?: string }
 `
     : ''
 
@@ -2207,7 +2209,7 @@ ${withName ? `  // The password and the sessions go through client.auth, which i
   }
 
 ${withName ? `  const saveName = () => run(async () => {
-    await getClient().service('users').patch(session.user.userId, { name: name.trim() })
+    await getClient().service('users').patch(session.user.id, { name: name.trim() })
     // The session is what the topbar reads, and it was built before the write.
     await refresh()
     return 'Name saved.'

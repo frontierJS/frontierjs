@@ -22,6 +22,6 @@ export async function standingOf (db: Db, userId: string | number | undefined): 
 /** `createApp({ principal })` — puts the standing on every signed-in caller. */
 export function standing (db: Db): PrincipalResolver {
   return async function standing (_ctx, user) {
-    return user ? await standingOf(db, user.userId) : {}
+    return user ? await standingOf(db, user.id) : {}
   }
 }

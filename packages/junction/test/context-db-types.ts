@@ -22,7 +22,7 @@ export async function usesTheClient(ctx: ServiceContext) {
   const count = await $.db.post.count()
 
   // The principal. Declared, and reached without a cast.
-  const actor = ctx.auth.user?.userId ?? null
+  const actor = ctx.user?.id ?? null
 
   // The pagination a `paginate()` hook leaves behind, in the one shape `clampPagination`
   // answers rather than a third spelling of it.

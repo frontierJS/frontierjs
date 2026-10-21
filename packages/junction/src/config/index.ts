@@ -62,7 +62,9 @@ export interface AppConfig {
      */
     maxConcurrentRequests?: number
     cors: {
-      origins:    string[]
+      /** A predicate is an app's own run-time answer, set in code rather than
+       *  in `junction.config.js` (basecamp's draft previews, `FJS-D1357`). */
+      origins:    string[] | ((origin: string) => boolean)
       methods:    string[]
       headers:    string[]
     }

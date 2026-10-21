@@ -28,7 +28,7 @@ import { keyScope } from '../api-keys/scopes.ts'
  *  spelling. Any other id is a 404, not a 403: whether it exists is not this
  *  service's to say. */
 function ownRow(ctx: ServiceContext): void {
-  const me = ($.me as { userId?: string } | null | undefined)?.userId
+  const me = ($.me as { id?: string } | null | undefined)?.id
   // The gate reads at 1 and refuses a stranger first. This is what stops a
   // gate lowered to 0 from turning `me` into an id of undefined.
   if (!me) throw new Unauthorized('Sign in to see your profile')

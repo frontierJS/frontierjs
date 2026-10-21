@@ -92,7 +92,7 @@ const auth = {
     if (!s) return null
 
     return {
-      userId: s.userId, userType: 'user', role: 'user', authMethod: 'session' as const,
+      id: s.userId, userType: 'user', role: 'user', authMethod: 'session' as const,
 
       // The only standing this demo declares. sessionGateLevel() grades an
       // authenticated session as USER (4) on its own, which covers read and

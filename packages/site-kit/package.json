@@ -23,6 +23,7 @@
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "dependencies": {
+    "@frontierjs/junction": "workspace:*",
     "happy-dom": "^20.11.6",
     "linkedom": "^0.18.12",
     "rehype-slug": "^6.0.0",

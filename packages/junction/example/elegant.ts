@@ -99,7 +99,7 @@ const sessions = new Map<string, { userId: string }>()
 const auth = {
   async verifySession(token: string) {
     const s = sessions.get(token)
-    return s ? { userId: s.userId, userType: 'user', role: 'user', authMethod: 'session' as const } : null
+    return s ? { id: s.userId, userType: 'user', role: 'user', authMethod: 'session' as const } : null
   },
 } as IAuth
 

@@ -643,7 +643,7 @@ describe('app.conduit.send() inside an afterCommit drain', () => {
     try {
       await conduitOf(app).send({ target: 'nowhere', method: 'GET', path: '/' } as never)
       expect(logged).toEqual([])
-      const ctx = () => ({ service: 'pings', method: 'create', data: {}, query: {}, auth: { user: null },
+      const ctx = () => ({ service: 'pings', method: 'create', data: {}, query: {}, user: null,
         caller: {}, route: {}, locals: {}, app, result: null, type: 'before' }) as never
       await (callService as any)(svc, ctx())
       await (callService as any)(svc, ctx())

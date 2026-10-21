@@ -17,6 +17,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createSierraViteConfig } from '@frontierjs/sierra/build'
 import { readSettings, siteContent, writeSettingsModule } from './content.js'
 import { siteDialect } from './dialect.js'
+import { editorBuild, editorTag, siteEditor } from './editor.js'
 import { siteImages } from './images.js'
 import { loadPreset } from './preset.js'
 import { presetPublic } from './public.js'
@@ -104,10 +105,12 @@ export async function resolveSite({ root }) {
  * @param {boolean} [opts.host] — listen on every interface, not just localhost
  * @param {boolean} [opts.preview] — a review build: Sierra's `preview`, which no
  *   site states, because the same content ships both ways
+ * @param {string} [opts.editor] — basecamp's page for the draft being previewed;
+ *   a preview build then carries the owner's editor, and any other build ignores it
  * @param {Awaited<ReturnType<typeof resolveSite>>} [opts.site] — already resolved, by the check
  * @returns {Promise<import('vite').InlineConfig>}
  */
-export async function siteKit({ root, port, host = false, preview = false, site }) {
+export async function siteKit({ root, port, host = false, preview = false, editor, site }) {
   site ??= await resolveSite({ root })
   const { content, keys, preset, sierra } = site
   root = site.root
@@ -130,6 +133,9 @@ export async function siteKit({ root, port, host = false, preview = false, site 
     routeTable: { output: '.sierra/routes.js' },
     ...sierra,
     preview,
+    ...(preview && editor
+      ? { document: { ...sierra.document, bodyEnd: [sierra.document?.bodyEnd, editorTag(editor, sierra.base)].filter(Boolean).join('\n') } }
+      : {}),
     // The kit's dialect runs first, so a preset's passes see a page already
     // split into bands and articles. The check runs before a preset's
     // post-build steps rewrite the output.
@@ -145,6 +151,7 @@ export async function siteKit({ root, port, host = false, preview = false, site 
 
   return {
     ...base,
+    ...(preview && editor ? { build: editorBuild(base.build) } : {}),
     configFile: false,
     root,
     publicDir,
@@ -154,6 +161,7 @@ export async function siteKit({ root, port, host = false, preview = false, site 
       ...(presetPublicDir && existsSync(presetPublicDir) ? [presetPublic({ dir: presetPublicDir, site: publicDir })] : []),
       siteRedirects({ content, publicDir }),
       siteContent({ root, content, keys }),
+      ...(preview && editor ? [siteEditor()] : []),
       siteShell({
         html:  preset.shell?.html ?? resolve(KIT, 'index.html'),
         entry: preset.shell?.entry ?? resolve(KIT, 'src/main.js'),

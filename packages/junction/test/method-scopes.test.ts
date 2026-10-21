@@ -45,11 +45,11 @@ async function clockApp() {
   app.services.register(buildService({
     name:    'relay',
     scope:   'clock:read',
-    async pull(ctx: any) { ran.push('relay.pull'); return app.service('audit').find({}, { auth: ctx.auth }) },
+    async pull(ctx: any) { ran.push('relay.pull'); return app.service('audit').find({}, { user: ctx.user }) },
   }))
   app.setAuth({
     verifySession: async (t: string) => t in TOKENS
-      ? { userId: 'u1', authMethod: t === 'session' ? 'session' : 'apiKey', ...TOKENS[t] }
+      ? { id: 'u1', authMethod: t === 'session' ? 'session' : 'apiKey', ...TOKENS[t] }
       : null,
   })
   await app.start()

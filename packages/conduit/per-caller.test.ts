@@ -137,7 +137,7 @@ describe('withCache over a per-caller resolver — FJS-2232', () => {
 })
 
 describe('under junction, who is the call in progress', () => {
-  const SYSTEM = { userId: 'system', userType: 'service', authMethod: 'created' } as never
+  const SYSTEM = { id: 'system', userType: 'service', authMethod: 'created' } as never
 
   async function boot() {
     revoked.clear()

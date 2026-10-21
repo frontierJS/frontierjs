@@ -1,0 +1,27 @@
+---
+title: Edit from the preview
+---
+<script>
+  // Where a draft preview's Edit button sends the person (`FJS-D1357`): its
+  // address and a PKCE challenge come in on the query, and a one-time code goes
+  // back on the preview's own URL. Signing in first is the router guard's, which
+  // returns here. The server refuses an address that is not one of this site's
+  // previews, so a link naming another one hands nothing out.
+  import { page } from '@frontierjs/sierra/router'
+  import { drafts } from '../../../../resources/Draft.mesa'
+
+  let error = null
+
+  drafts.service.invoke('handoff', null, {
+    appId: page.params.id, returnTo: page.query?.return, challenge: page.query?.challenge,
+  })
+    .then(({ redirect }) => { location.replace(redirect) })
+    .catch(err => { error = err.message })
+</script>
+
+{#if error}
+  <article class="alert danger" id="screen-error"><div class="alert-content">{error}</div></article>
+  <p><a href={`/sites/${page.params.id}/`}>Edit this site here instead</a></p>
+{:else}
+  <p class="text-muted" id="handoff-pending">Signing you in to the preview…</p>
+{/if}

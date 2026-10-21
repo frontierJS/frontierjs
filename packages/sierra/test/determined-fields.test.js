@@ -78,13 +78,13 @@ describe('create', () => {
   afterEach(() => { session.user = null })
 
   test('fills the column from the session', async () => {
-    session.user = { userId: 'usr_9' }
+    session.user = { id: 'usr_9' }
     await createResource('events',{ model: 'Event' }).save({ name: 'Intro' }, { mode: 'create' })
     expect(_calls[0]).toMatchObject({ name: 'Intro', hostId: 'usr_9' })
   })
 
   test('a blank seed from make() is replaced, a stated value is not', async () => {
-    session.user = { userId: 'usr_9' }
+    session.user = { id: 'usr_9' }
     const events = createResource('events',{ model: 'Event' })
     await events.save({ name: 'A', hostId: '' }, { mode: 'create' })
     await events.save({ name: 'B', hostId: 'usr_2' }, { mode: 'create' })
@@ -117,13 +117,13 @@ describe('options() under x-pick-where', () => {
   afterEach(() => { session.user = null })
 
   test('the picker asks for the caller\'s rows, the claim filled from the session', async () => {
-    session.user = { userId: 'usr_9' }
+    session.user = { id: 'usr_9' }
     await createResource('bookings',{ model: 'Booking' }).options('scheduleId', { reload: true })
     expect(_finds[0]).toMatchObject({ hostId: 'usr_9' })
   })
 
   test('a filter the caller states wins over the derived one', async () => {
-    session.user = { userId: 'usr_9' }
+    session.user = { id: 'usr_9' }
     await createResource('bookings',{ model: 'Booking' }).options('scheduleId', { query: { hostId: 'usr_2' }, reload: true })
     expect(_finds[0].hostId).toBe('usr_2')
   })

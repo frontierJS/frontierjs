@@ -81,16 +81,16 @@ if (made.pending) {
   return
 }
 
-echo(`  ip       ${made.ip}`)
-echo('')
-echo('  Add to ~/.ssh/config:')
-echo('')
-echo(`  Host ${made.name}`)
-echo(`    HostName ${made.ip}`)
-echo('    User root')
-echo(`    IdentityFile ${keyPath.replace(/\.pub$/, '').replace(home, '~')}`)
-echo('')
-echo('  Then, in packages/basecamp, set deploy.server to that Host and run:')
-echo('    fli deploy:setup --auto-install && fli deploy')
-echo('')
+echo`  ip       ${made.ip}
+
+  Add to ~/.ssh/config:
+
+  Host ${made.name}
+    HostName ${made.ip}
+    User root
+    IdentityFile ${keyPath.replace(/\.pub$/, '').replace(home, '~')}
+
+  Then, in packages/basecamp, set deploy.server to that Host and run:
+    fli deploy:setup --auto-install && fli deploy
+`
 ```

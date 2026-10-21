@@ -86,7 +86,7 @@ async function mkApp(opts: { claims?: (name: string, conn: unknown) => null } = 
       verifySession: async (token: string) => {
         const m = /^u(\d+)$/.exec(token)
         if (!m) throw new Error('bad token')
-        return { userId: m[1], userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x' }
+        return { id: m[1], userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x' }
       },
     },
   })
@@ -165,7 +165,7 @@ describe('a write the read policy reaches asks every member again', () => {
 
     // The page is the guest's now and no longer the first owner's.
     const room = app.channel(`page:${page.id}`)
-    expect([...room.connections].map((c: any) => c.user.userId)).toEqual([GUEST])
+    expect([...room.connections].map((c: any) => c.user.id)).toEqual([GUEST])
     expect(lastSync(guest)?.members).not.toEqual([])
   })
 
@@ -242,7 +242,7 @@ describe('a claim an app resolver derives', () => {
         verifySession: async (token: string) => {
           const m = /^u(\d+)$/.exec(token)
           if (!m) throw new Error('bad token')
-          return { userId: m[1], userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x' }
+          return { id: m[1], userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x' }
         },
       },
     })
@@ -251,7 +251,7 @@ describe('a claim an app resolver derives', () => {
     }, {
       rooms: { 'doc:{id}': 'Doc' }, presence: ['doc:*'], presenceFlushMs: 0,
       claims: async (_name: string, conn: any) => {
-        const m = await sys.member.findFirst({ where: { userId: conn.user.userId } })
+        const m = await sys.member.findFirst({ where: { userId: conn.user.id } })
         return m ? { memberRole: m.role } : null
       },
     }))
@@ -267,7 +267,7 @@ describe('a claim an app resolver derives', () => {
     await settle()
 
     const room = app.channel(`doc:${doc.id}`)
-    expect([...room.connections].map((c: any) => c.user.userId)).toEqual([OWNER])
+    expect([...room.connections].map((c: any) => c.user.id)).toEqual([OWNER])
     expect(lastSync(guest)).toMatchObject({ channelId: `doc:${doc.id}`, members: [] })
     expect(lastSync(owner)?.members).not.toEqual([])
   })
@@ -307,7 +307,7 @@ model Page {
         verifySession: async (token: string) => {
           const m = /^u(\d+)$/.exec(token)
           if (!m) throw new Error('bad token')
-          return { userId: m[1], userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x' }
+          return { id: m[1], userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x' }
         },
       },
     })

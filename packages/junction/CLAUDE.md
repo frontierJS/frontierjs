@@ -79,7 +79,7 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
 - **`$` throws outside a call, and a call that has ended is outside it**
   (`FJS-687`, `test/call-scope.test.ts`).
 - **A claim resolver runs inside the data hook, for a guest as well as a
-  session, and a guest's claims never become `ctx.auth.user`** (`FJS-D113`,
+  session, and a guest's claims never become `ctx.user`** (`FJS-D113`,
   `test/principal-claims.test.ts`).
 - **`principal` may be a list, run in order and merged; a claim name two
   elements emit is refused by name, and every element's `describe()` is read**
@@ -191,7 +191,7 @@ Which one you hold is decided by where the code is mounted.
 | --- | --- | --- |
 | You get one by | `app.get` / `app.post` / a middleware / a WS handler | a service method, any hook, `app.service(x).method()` |
 | Created per | **request** | **call** — one request may make several |
-| The principal | `ctx.user` — flat, may be `null` | `ctx.auth.user` — frozen, propagates |
+| The principal | `ctx.user` — flat, may be `null` | `ctx.user` — frozen, propagates |
 | Caller environment | `ctx.ip`, `ctx.headers` | `ctx.caller.{ip,userAgent,headers}` |
 | Path captures | `ctx.route` | `ctx.route` — `{}` on an internal call |
 | The URL's search | `ctx.query` — **raw, `$` keys present** | `ctx.query` (filters) + `ctx.directives` (shape) |

@@ -31,9 +31,9 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import { createApp, channels, defaultConfig } from '../index.ts'
 import { createJunctionClient } from '../src/client/index.ts'
 
-const USERS: Record<string, { userId: string; userType: string; authMethod: 'session' }> = {
-  'tok-alice': { userId: 'alice', userType: 'user', authMethod: 'session' },
-  'tok-bob':   { userId: 'bob',   userType: 'user', authMethod: 'session' },
+const USERS: Record<string, { id: string; userType: string; authMethod: 'session' }> = {
+  'tok-alice': { id: 'alice', userType: 'user', authMethod: 'session' },
+  'tok-bob':   { id: 'bob',   userType: 'user', authMethod: 'session' },
 }
 
 const ROOM  = 'room:a'

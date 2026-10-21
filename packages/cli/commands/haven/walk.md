@@ -12,12 +12,12 @@ flags:
   api:
     char: a
     type: string
-    description: Haven's API origin, when it is not the one Haven's web/ config names
+    description: Haven's API origin, when it is not haven.api in ~/.fli/config.json or the one Haven's web/ config names
     defaultValue: ''
   nick:
     char: n
     type: string
-    description: The nick a first login walks in as — this machine's user name when not given
+    description: The nick a first login walks in as — haven.nick in ~/.fli/config.json, else this machine's user name
     defaultValue: ''
   frame:
     char: f
@@ -46,13 +46,25 @@ registry bun is pointed at, which is how it is rehearsed before a publish. A
 machine with no checkout walks into the hosted Haven, `haven.knightly.dev`,
 unless `--api` names another.
 
+`~/.fli/config.json` states this machine's defaults, and a flag wins over it:
+
+```json
+{ "haven": { "api": "https://haven.knightly.dev", "nick": "sam" } }
+```
+
+From a checkout with no `--api` and no `haven.api`, the door knocks on the
+checkout's own API at 5505. A haven already answering there is walked into;
+when nothing answers, the door runs `bun run api` in the checkout, logging to
+`~/.fli/haven/api.log`, and stops it when the walk ends. Something else on the
+port is refused rather than walked into (`FJS-740`).
+
 From a checkout the study rides beside the scene: `Ctrl+\` or `/work` shows
 it, Ctrl+O moves between them, and it runs Claude in the checkout
 (`IDEAS/study.md`). An installed Haven has none.
 
 ```js
 const { join, resolve, sep } = await import('node:path')
-const { existsSync, mkdirSync, writeFileSync } = await import('node:fs')
+const { existsSync, mkdirSync, readFileSync, writeFileSync } = await import('node:fs')
 const { homedir } = await import('node:os')
 const { shippedFile } = await import(resolve(global.fliRoot, 'core/app-schema.js'))
 
@@ -71,12 +83,68 @@ const signInOf = (haven) => join(haven, 'web', 'src', 'lib', 'session', 'sign-in
 const sibling  = resolve(global.fliRoot, '..', 'haven')
 const checkout = !sibling.split(sep).includes('node_modules') && existsSync(signInOf(sibling))
 
-let haven, root, api
+const CONFIG_FILE = join(homedir(), '.fli', 'config.json')
+let saved = {}
+if (existsSync(CONFIG_FILE)) {
+  try { saved = JSON.parse(readFileSync(CONFIG_FILE, 'utf8')).haven ?? {} }
+  catch (e) { log.warn(`${CONFIG_FILE} is not JSON (${e.message}) — walking in without it`) }
+}
+const nick = flag.nick || saved.nick || undefined
+
+// What the server at `origin` says it runs, or null when nothing answers.
+const clientOf = async (origin) => {
+  try {
+    const res = await fetch(origin + CLIENT_PATH, { signal: AbortSignal.timeout(1000) })
+    return res.ok ? await res.json().catch(() => ({})) : {}
+  } catch { return null }
+}
+
+let haven, root, api, local
 if (checkout) {
   haven = root = sibling
-  api  = flag.api || (await import(join(haven, 'web', 'config', 'sierra.config.js'))).default.junction.url
+  api  = flag.api || saved.api || (await import(join(haven, 'web', 'config', 'sierra.config.js'))).default.junction.url
+  if (!flag.api && !saved.api) {
+    const answer = await clientOf(api)
+    if (answer && answer.package !== HAVEN_PACKAGE) {
+      log.error(`${api} answers, and not as a haven — free the port or name one with --api`)
+      process.exitCode = 1
+      return
+    }
+    if (!answer) {
+      if (flag.dry) {
+        log.dry(`Would run bun run api in ${haven}, sign this machine in to ${api}, then run the haven's web/ in this terminal`)
+        return
+      }
+      const { spawn } = await import('node:child_process')
+      const { openSync } = await import('node:fs')
+      const logFile = join(homedir(), '.fli', 'haven', 'api.log')
+      mkdirSync(join(homedir(), '.fli', 'haven'), { recursive: true })
+      const out = openSync(logFile, 'a')
+      // Its own process group: `bun run api` is bun running a script that runs
+      // the app, and a signal to the wrapper's pid leaves the server answering.
+      local = spawn('bun', ['run', 'api'], { cwd: haven, detached: true, stdio: ['ignore', out, out] })
+      // Unref'd, or a server that never ends holds fli open after the walk does.
+      local.unref()
+      const stop = () => { try { process.kill(-local.pid, 'SIGTERM') } catch {} }
+      // Closing the terminal window is a SIGHUP, which ends fli without 'exit'.
+      process.on('exit', stop)
+      for (const sig of ['SIGHUP', 'SIGINT', 'SIGTERM']) process.on(sig, () => { stop(); process.exit(1) })
+      log.info(`Starting the checkout's haven at ${api} — its log is ${logFile}`)
+      let up = false
+      for (let i = 0; i < 60 && !up && local.exitCode === null; i++) {
+        await new Promise(r => setTimeout(r, 500))
+        up = (await clientOf(api))?.package === HAVEN_PACKAGE
+      }
+      if (!up) {
+        stop()
+        log.error(`The checkout's haven did not answer at ${api} — see ${logFile}`)
+        process.exitCode = 1
+        return
+      }
+    }
+  }
 } else {
-  api = (flag.api || HOSTED).replace(/\/+$/, '')
+  api = (flag.api || saved.api || HOSTED).replace(/\/+$/, '')
   let stated
   try {
     const res = await fetch(api + CLIENT_PATH)
@@ -132,11 +200,11 @@ let walker
 try {
   const { keys, made } = await machineKeys()
   if (made) log.info(`This machine's key is ${KEY_FILE} — it is who you are in the haven, so keep it.`)
-  walker = await signIn(api, { keys, nick: flag.nick || undefined })
+  walker = await signIn(api, { keys, nick })
 } catch (e) {
   // The default nick is this machine's user name, which the haven's schema can
   // refuse, so the refusal names the flag that answers it.
-  log.error(/\bnick\b/.test(e.message) && !flag.nick ? `${e.message} — choose one with --nick` : e.message)
+  log.error(/\bnick\b/.test(e.message) && !nick ? `${e.message} — choose one with --nick` : e.message)
   process.exitCode = 1
   return
 }

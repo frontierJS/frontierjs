@@ -24,7 +24,7 @@ const mkDb = () => createClient({ db: ':memory:', schema: SCHEMA }) as unknown a
 function ctx(db: unknown, over: Record<string, unknown> = {}): ServiceContext {
   return setCallDb({
     service: 'posts', method: 'create', id: undefined, data: { title: 't' },
-    query: {}, auth: { user: null }, caller: {}, route: {},
+    query: {}, user: null, caller: {}, route: {},
     locals: {}, app: {}, result: null, type: 'before', ...over,
   } as unknown as ServiceContext, db)
 }
@@ -155,7 +155,7 @@ describe('the scope survives into the transaction', () => {
     const svc = buildService(writes({ transactional: true }) as never)
     const appHooks = { around: { all: [withLitestoneDb(db)] } }
 
-    const c = ctx(undefined, { auth: { user: { id: 7, userId: 7 } } })
+    const c = ctx(undefined, { user: { id: 7 } })
     await callService(svc, c, appHooks as never)
 
     const rows = await db.asSystem().post.findMany({})

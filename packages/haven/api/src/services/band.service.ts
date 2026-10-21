@@ -43,7 +43,7 @@ export default createService({
 
   /** `{ roomId, song }` — answers the cue and the song's name; the room hears `song` with the cue. */
   async request () {
-    const me = Number(($.auth?.user as { userId?: string } | undefined)?.userId)
+    const me = Number(($.user as { id?: string } | undefined)?.id)
     if (!Number.isInteger(me)) throw new BadRequest('Walk in first: nobody asked')
     const { song } = ($.data ?? {}) as { song?: unknown }
     if (!Number.isInteger(song) || (song as number) < 0 || (song as number) > MAX_SONG) throw new BadRequest(`A song is a number from 0 to ${MAX_SONG}`)

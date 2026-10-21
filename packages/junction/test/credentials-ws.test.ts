@@ -14,14 +14,14 @@ import type { SessionContext } from '../src/auth/types.ts'
 
 const SECRET = 'outpost-secret'
 const NOW    = 1_800_000_000
-const ROBOT  = { userId: 'outpost:op-1' } as SessionContext
-const ALICE  = { userId: 'u-alice' } as SessionContext
-const KEYED  = { userId: 'u-keyed' } as SessionContext
+const ROBOT  = { id: 'outpost:op-1' } as SessionContext
+const ALICE  = { id: 'u-alice' } as SessionContext
+const KEYED  = { id: 'u-keyed' } as SessionContext
 
 const probe = createService({
   name: 'probe',
   methods: ['find'],
-  async find(ctx: any) { return [{ user: ctx.auth?.user?.userId ?? null }] },
+  async find(ctx: any) { return [{ user: ctx.user?.id ?? null }] },
 })
 
 let app: any
@@ -45,7 +45,7 @@ beforeAll(async () => {
     async verifyApiKey(k: string)  { return k === 'k-1' ? KEYED : null },
   })
   app.services.register(probe)
-  app.post('/whoami', (ctx: any) => ctx.json({ userId: ctx.user?.userId ?? null }))
+  app.post('/whoami', (ctx: any) => ctx.json({ userId: ctx.user?.id ?? null }))
   app.configure(channels())
   await app.start()
   port = app.http.port

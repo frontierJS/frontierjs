@@ -37,7 +37,7 @@ afterAll(() => h.cleanup())
 const PW = 'pw-x-1'
 async function person(role = 'user') {
   const email = `xu-${Date.now()}-${seq++}@example.com`
-  const { userId } = await h.auth.createUser({ email, password: PW, role })
+  const { id: userId } = await h.auth.createUser({ email, password: PW, role })
   const token = ((await request(app).post('/auth/login').send({ email, password: PW })).body as any).token as string
   const sessionId = ((await request(app).get('/account/me').auth(token)).body as any).sessionId as string
   return { email, userId, token, sessionId }
@@ -100,7 +100,7 @@ describe('api-keys', () => {
     const res = await request(app).post('/api-keys').auth(alice.token).send({ name: 'spoof', userId: bob.userId })
     expect(res.status).toBe(201)
     const who = await h.auth.verifySession((res.body as any).key)
-    expect(who?.userId).toBe(alice.userId)
+    expect(who?.id).toBe(alice.userId)
   })
 })
 

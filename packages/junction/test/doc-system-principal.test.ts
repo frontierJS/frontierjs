@@ -1,6 +1,6 @@
 // FJS-2817 — nothing exports a `SYSTEM` principal. The app acts as itself
 // through `app.runAs(null, fn)` (`createApp({ system })`), so a guide or a
-// type comment spelling `{ auth: { user: SYSTEM } }` sends a reader to an
+// type comment spelling `{ user: SYSTEM }` sends a reader to an
 // identifier that is a ReferenceError.
 
 import { describe, test, expect } from 'bun:test'

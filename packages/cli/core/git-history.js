@@ -67,25 +67,30 @@ export const buildSeries = (days, { from, to, by = 'day', zero = COMMIT_ZERO }) 
   return { by, buckets }
 }
 
-// A tick step for the y axis that lands on 1·2·5 × 10ⁿ, so labels read as round
-// numbers whatever the peak is.
+// A labeled row every TICK rows, counted from the bottom so every label is a
+// multiple of one step whatever the height.
+const TICK = 3
+
+// The chart's top, chosen so the step between labels is a round number. Steps
+// spaced only 1·2·5 leave the peak at 40% of the chart when it falls just past
+// a boundary, so the finer ladder keeps it nearer the top.
 const niceMax = (max, rows) => {
   if (max <= rows) return Math.max(max, 1)
-  const raw = max / rows
+  const ticks = rows / TICK
+  const raw = max / ticks
   const mag = 10 ** Math.floor(Math.log10(raw))
-  const step = [1, 2, 5, 10].map(m => m * mag).find(s => s >= raw)
-  return step * rows
+  const step = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map(m => m * mag).find(s => Number.isInteger(s) && s >= raw)
+  return step * ticks
 }
 
 // The chart as plain rows — `bar` is applied to each column's glyphs so the
-// caller decides color. `width` is the whole line, axis included. `max` puts
-// two charts drawn one above the other on one scale, so their heights compare.
-export const renderChart = (series, { height = 12, width = 100, value = (b) => b.commits, max = 0, bar = (s) => s, dim = (s) => s, label = (v) => String(Math.round(v)) } = {}) => {
+// caller decides color. `width` is the whole line, axis included.
+export const renderChart = (series, { height = 12, width = 100, value = (b) => b.commits, bar = (s) => s, dim = (s) => s, label = (v) => String(Math.round(v)) } = {}) => {
   const { buckets, by } = series
   const values = buckets.map(value)
-  const top = niceMax(Math.max(max, ...values), height)
+  const top = niceMax(Math.max(...values), height)
   // Measured over every tick, because a compact label is not widest at the top: 4.5M over 6M.
-  const axisW = Math.max(1, ...Array.from({ length: height }, (_, i) => label((top * (height - i)) / height).length))
+  const axisW = Math.max(1, ...Array.from({ length: Math.floor(height / TICK) }, (_, i) => label((top * TICK * (i + 1)) / height).length))
 
   // Column width: as wide as the screen allows, up to three cells. The last
   // cell of a wide column is a gap so neighbors stay apart.
@@ -96,8 +101,7 @@ export const renderChart = (series, { height = 12, width = 100, value = (b) => b
 
   const rows = []
   for (let r = height; r >= 1; r--) {
-    // Label every other row from the top, and always the top one.
-    const tick = (height - r) % 3 === 0
+    const tick = r % TICK === 0
     const y = tick ? label((top * r) / height).padStart(axisW) : ' '.repeat(axisW)
     let line = ''
     for (const v of values) {

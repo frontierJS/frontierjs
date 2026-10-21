@@ -20,9 +20,9 @@ const WS   = `ws://localhost:${PORT}/ws`
 const ROOM = 'room:1'
 
 // Two users so presence has someone to be a list of.
-const USERS: Record<string, { userId: string; userType: string; authMethod: 'session' }> = {
-  'tok-alice': { userId: 'alice', userType: 'user', authMethod: 'session' },
-  'tok-bob':   { userId: 'bob',   userType: 'user', authMethod: 'session' },
+const USERS: Record<string, { id: string; userType: string; authMethod: 'session' }> = {
+  'tok-alice': { id: 'alice', userType: 'user', authMethod: 'session' },
+  'tok-bob':   { id: 'bob',   userType: 'user', authMethod: 'session' },
 }
 
 let app: any
@@ -103,7 +103,7 @@ beforeAll(async () => {
     presence: true,
     presenceFlushMs: 0,
     presenceMeta: (meta: Record<string, unknown>, at: any) => {
-      judged.push({ meta, channel: at.channel, userId: at.conn.user?.userId, was: at.was })
+      judged.push({ meta, channel: at.channel, userId: at.conn.user?.id, was: at.was })
       return meta
     },
   }))

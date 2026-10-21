@@ -815,7 +815,7 @@ export function pickFilter(rule, user) {
   for (const [col, claim] of Object.entries(rule.pickWhere)) {
     if (typeof claim !== 'string' || !claim.startsWith('auth().')) continue
     const name  = claim.slice('auth().'.length)
-    const value = name === 'id' ? (user.userId ?? user.id) : user[name]
+    const value = name === 'id' ? user.id : user[name]
     if (value != null) out[col] = value
   }
   return out
@@ -825,7 +825,7 @@ export function pickFilter(rule, user) {
  * The caller-supplied value of every determined column the record leaves
  * blank — what `x-determined` says the create policy will demand.
  *
- * `auth().id` is the session's `userId`; any other claim is read off the session
+ * `auth().id` is the session's `id`; any other claim is read off the session
  * by name. A claim the session does not carry is left unset, and the Data
  * boundary refuses by name, which is the right answer for a caller it cannot
  * name. A value the record already states is never replaced.
@@ -841,7 +841,7 @@ export function seedDetermined(fields, data, user) {
     if (!rule?.determined) continue
     if (out[name] != null && out[name] !== '') continue
     const claim = rule.determined.slice('auth().'.length)
-    const value = claim === 'id' ? (user.userId ?? user.id) : user[claim]
+    const value = claim === 'id' ? user.id : user[claim]
     if (value == null) continue
     if (out === data) out = { ...data }
     out[name] = value

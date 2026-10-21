@@ -3,7 +3,7 @@
 // Five fields, five different rules, and they are the substance of what a
 // Context IS here rather than a list of names:
 //
-//   auth        the principal. Frozen. PROPAGATES.
+//   user        the principal. Frozen. PROPAGATES.
 //   client      caller environment. Read-only. Propagates. Information, never authority.
 //   route       path captures. Router-only — {} on an internal call.
 //   locals      per-call scratch. Fresh {} every call. Does NOT propagate.
@@ -18,8 +18,8 @@
 //               PROPAGATES with the request (`FJS-D469`).
 //
 // This file exists because those four rules were written in `context.ts` and
-// **one of them was false**: `auth` was documented as propagating and did not —
-// it was built from `opts.auth` alone, so a nested `ctx.app.service(x)` call ran
+// **one of them was false**: the principal was documented as propagating and did not —
+// it was built from the call's own options alone, so a nested `ctx.app.service(x)` call ran
 // as STRANGER(0) while the doc promised the caller's identity. Nothing failed;
 // the sub-call was simply refused by the model's own gate, or worse, allowed.
 //
@@ -34,8 +34,8 @@ import { bridge }        from '../src/transport/bridge.ts'
 import { readFileSync }  from 'node:fs'
 import { join }          from 'node:path'
 
-const alice = { userId: 'alice', role: 'user' } as never
-const bob   = { userId: 'bob',   role: 'user' } as never
+const alice = { id: 'alice', role: 'user' } as never
+const bob   = { id: 'bob',   role: 'user' } as never
 
 /** An app whose `leaf` service records the context it was called with. */
 function harness() {
@@ -47,7 +47,7 @@ function harness() {
     methods: ['find'],
     find(ctx: any) {
       seen[ctx.query.tag ?? 'default'] = {
-        user:   ctx.auth?.user?.userId ?? null,
+        user:   ctx.user?.id ?? null,
         caller: ctx.caller,
         route:  ctx.route,
         locals: ctx.locals,
@@ -63,7 +63,19 @@ function harness() {
   return { app, seen }
 }
 
-describe('auth — the principal, frozen, and it propagates', () => {
+describe('user — the principal, frozen, and it propagates', () => {
+  test('a service context has no auth key: the principal is ctx.user', async () => {
+    const { app } = harness()
+    let keys: string[] = []
+    app.services.register(buildService({
+      name: 'root', methods: ['find'],
+      async find(ctx: any) { keys = Object.keys(ctx); return [] },
+    } as never))
+    await app.service('root').find({}, { user: { id: 'alice', role: 'user' } } as never)
+    expect(keys).toContain('user')
+    expect(keys).not.toContain('auth')
+  })
+
   test('a call naming no principal inherits the one in scope', async () => {
     const { app, seen } = harness()
 
@@ -72,7 +84,7 @@ describe('auth — the principal, frozen, and it propagates', () => {
       async find(ctx: any) { await ctx.app.service('leaf').find({ tag: 'a' }); return [] },
     } as never))
 
-    await app.service('root').find({}, { auth: { user: alice } } as never)
+    await app.service('root').find({}, { user: alice } as never)
     expect(seen.a.user).toBe('alice')
   })
 
@@ -88,7 +100,7 @@ describe('auth — the principal, frozen, and it propagates', () => {
       async find(ctx: any) { await ctx.app.service('mid').find({}); return [] },
     } as never))
 
-    await app.service('root').find({}, { auth: { user: alice } } as never)
+    await app.service('root').find({}, { user: alice } as never)
     expect(seen.deep.user).toBe('alice')
   })
 
@@ -101,12 +113,12 @@ describe('auth — the principal, frozen, and it propagates', () => {
     app.services.register(buildService({
       name: 'root', methods: ['find'],
       async find(ctx: any) {
-        await ctx.app.service('leaf').find({ tag: 'nobody' }, { auth: { user: null } })
+        await ctx.app.service('leaf').find({ tag: 'nobody' }, { user: null })
         return []
       },
     } as never))
 
-    await app.service('root').find({}, { auth: { user: alice } } as never)
+    await app.service('root').find({}, { user: alice } as never)
     expect(seen.nobody.user).toBeNull()
   })
 
@@ -121,10 +133,10 @@ describe('auth — the principal, frozen, and it propagates', () => {
     } as never))
     app.services.register(buildService({
       name: 'root', methods: ['find'],
-      async find(ctx: any) { await ctx.app.service('mid').find({}, { auth: { user: bob } }); return [] },
+      async find(ctx: any) { await ctx.app.service('mid').find({}, { user: bob }); return [] },
     } as never))
 
-    await app.service('root').find({}, { auth: { user: alice } } as never)
+    await app.service('root').find({}, { user: alice } as never)
     expect(seen.grandchild.user).toBe('bob')
   })
 
@@ -135,12 +147,12 @@ describe('auth — the principal, frozen, and it propagates', () => {
     app.services.register(buildService({
       name: 'root', methods: ['find'],
       async find(ctx: any) {
-        try { ctx.auth.user.role = 'admin' } catch (e) { caught = e }
+        try { ctx.user.role = 'admin' } catch (e) { caught = e }
         return []
       },
     } as never))
 
-    await app.service('root').find({}, { auth: { user: { userId: 'alice', role: 'user' } } } as never)
+    await app.service('root').find({}, { user: { id: 'alice', role: 'user' } } as never)
     // Frozen in strict mode throws rather than silently dropping the write —
     // the frozen reference is SHARED across calls, so a silent drop would be
     // the good case and a silent success would be privilege escalation.
@@ -362,7 +374,7 @@ describe('madeAt — when the write was made, and it propagates', () => {
 type Axis = 'admission' | 'call' | 'carriage' | 'announcement'
 
 const FIELD_AXIS: Record<string, Axis> = {
-  auth:         'admission',
+  user:         'admission',
   service:      'call',
   method:       'call',
   type:         'call',

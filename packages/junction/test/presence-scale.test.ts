@@ -18,9 +18,9 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { createApp, channels, defaultConfig } from '../index.ts'
 
-const USERS: Record<string, { userId: string; userType: string; authMethod: 'session' }> =
+const USERS: Record<string, { id: string; userType: string; authMethod: 'session' }> =
   Object.fromEntries(Array.from({ length: 40 }, (_, i) =>
-    [`tok-${i}`, { userId: `u${i}`, userType: 'user', authMethod: 'session' as const }]))
+    [`tok-${i}`, { id: `u${i}`, userType: 'user', authMethod: 'session' as const }]))
 
 let running: any[] = []
 

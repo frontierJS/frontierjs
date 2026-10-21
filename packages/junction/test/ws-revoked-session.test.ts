@@ -21,8 +21,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { createApp, createService, channels, defaultConfig } from '../index.ts'
 import type { SessionContext }                               from '../src/auth/types.ts'
 
-const ALICE = { userId: 'u-alice', userType: 'user', roles: [], scopes: [] } as unknown as SessionContext
-const MACHINE = { userId: 'm-1', userType: 'peer', roles: [], scopes: [] } as unknown as SessionContext
+const ALICE = { id: 'u-alice', userType: 'user', roles: [], scopes: [] } as unknown as SessionContext
+const MACHINE = { id: 'm-1', userType: 'peer', roles: [], scopes: [] } as unknown as SessionContext
 
 // What each live token answers. A fresh object per call, as `@frontierjs/auth`
 // answers one, so an unchanged principal is told apart by value.
@@ -32,7 +32,7 @@ let machineAsked = 0
 const probe = createService({
   name: 'probe',
   methods: ['find'],
-  async find(ctx: any) { return [{ user: ctx.auth?.user?.userId ?? null }] },
+  async find(ctx: any) { return [{ user: ctx.user?.id ?? null }] },
 })
 
 let app: any
@@ -140,7 +140,7 @@ describe('a raw route is handed the token it may own', () => {
 describe('a session that changes after the upgrade closes the socket (FJS-3187)', () => {
 
   test('a revoke, then a frame: closed 4001 and the frame is not answered', async () => {
-    live.set('bob', () => ({ ...ALICE, userId: 'u-bob' }))
+    live.set('bob', () => ({ ...ALICE, id: 'u-bob' }))
     const s = open('/ws', { protocols: ['fjs', 'fjs.bearer.bob'] })
     expect(await whoami(s)).toBe('u-bob')
     live.delete('bob')
@@ -150,7 +150,7 @@ describe('a session that changes after the upgrade closes the socket (FJS-3187)'
   })
 
   test('a socket that only receives is closed on the interval', async () => {
-    live.set('carol', () => ({ ...ALICE, userId: 'u-carol' }))
+    live.set('carol', () => ({ ...ALICE, id: 'u-carol' }))
     const s = open('/ws', { protocols: ['fjs', 'fjs.bearer.carol'] })
     expect(await whoami(s)).toBe('u-carol')
     live.delete('carol')
@@ -160,10 +160,10 @@ describe('a session that changes after the upgrade closes the socket (FJS-3187)'
   })
 
   test('a changed principal closes 1001, so the client reconnects as the new one', async () => {
-    live.set('dave', () => ({ ...ALICE, userId: 'u-dave' }))
+    live.set('dave', () => ({ ...ALICE, id: 'u-dave' }))
     const s = open('/ws', { protocols: ['fjs', 'fjs.bearer.dave'] })
     expect(await whoami(s)).toBe('u-dave')
-    live.set('dave', () => ({ ...ALICE, userId: 'u-dave', roles: ['admin'] }))
+    live.set('dave', () => ({ ...ALICE, id: 'u-dave', roles: ['admin'] }))
     expect(await s.closed).toBe(1001)
   })
 

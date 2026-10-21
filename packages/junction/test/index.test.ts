@@ -358,7 +358,7 @@ function makeCtx(overrides: Partial<CtxSeed> = {}): ServiceContext {
     query:     {},
     directives: {},
     data:      null,
-    auth:      { user: null },
+    user: null,
     caller:    { headers: {} },
     route:     {},
     locals:    {},
@@ -1801,7 +1801,7 @@ describe('ChannelManager', () => {
     let handlerRan = false
     manager.on('connection', () => { handlerRan = true })
 
-    const conn = await manager.handleConnection(socket, { userId: 'u1', userType: 'user', authMethod: 'session' })
+    const conn = await manager.handleConnection(socket, { id: 'u1', userType: 'user', authMethod: 'session' })
     expect(conn.id).toBeDefined()
     expect(acks.length).toBe(1)
     expect(JSON.parse(acks[0]).type).toBe('connection')
@@ -1834,7 +1834,7 @@ describe('ChannelManager', () => {
     const ch = manager.channel('workspace:1')
     ch.join(conn)
 
-    const fakeCtx = { service: 'deployments', method: 'create', auth: { user: null }, caller: { headers: {} }, route: {}, locals: {} } as any
+    const fakeCtx = { service: 'deployments', method: 'create', user: null, caller: { headers: {} }, route: {}, locals: {} } as any
     await manager.announce('deployments created', { id: 'dep-1' }, fakeCtx, () => ch)
 
     expect(sent.length).toBe(2)  // 1 connection ack + 1 event
@@ -1872,7 +1872,7 @@ describe('createStubAuth', () => {
     const auth  = createStubAuth()
     const token = auth.addUser({ id: 'u1', role: 'admin', workspaceId: 'ws-1' })
     const ctx   = await auth.verifySession(token)
-    expect(ctx?.userId).toBe('u1')
+    expect(ctx?.id).toBe('u1')
     expect(ctx?.role).toBe('admin')
     expect(ctx?.workspaceId).toBe('ws-1')
   })
@@ -1880,7 +1880,7 @@ describe('createStubAuth', () => {
   it('pre-seeded users are available immediately', async () => {
     const auth  = createStubAuth({ users: [{ id: 'u1', role: 'developer' }] })
     const ctx   = await auth.verifySession('test-token-u1')
-    expect(ctx?.userId).toBe('u1')
+    expect(ctx?.id).toBe('u1')
   })
 })
 
@@ -1914,13 +1914,13 @@ describe('testCtx', () => {
   it('creates a service context for direct testing', () => {
     const ctx = testCtx('notes', 'create',
       { title: 'Hello', body: 'World' },
-      { user: { userId: 'u1', role: 'admin' }, workspaceId: 'ws-1' }
+      { user: { id: 'u1', role: 'admin' }, workspaceId: 'ws-1' }
     )
     expect(ctx.service).toBe('notes')
     expect(ctx.method).toBe('create')
     // ctx.data is a record OR a bulk array; a field read states which.
     expect((ctx.data as Record<string, unknown>).title).toBe('Hello')
-    expect(ctx.auth.user?.userId).toBe('u1')
+    expect(ctx.user?.id).toBe('u1')
     expect(ctx.locals.workspaceId).toBe('ws-1')
   })
 })
@@ -2351,17 +2351,17 @@ describe('app.service()', () => {
     expect(result.data[0].workspace).toBe('ws-99')
   })
 
-  it('passing params threads user into ctx.auth.user', async () => {
+  it('passing params threads user into ctx.user', async () => {
     const app = await createTestApp({
       services: [buildService({
         name: 'items',
-        find: async (ctx) => [{ callerUser: ctx.auth.user?.userId ?? null }],
+        find: async (ctx) => [{ callerUser: ctx.user?.id ?? null }],
         hooks: { before: { find: [authenticate] } },
       })],
     })
-    const fakeUser = { userId: 'u-1', role: 'user', userType: 'user', authMethod: 'session', scopes: [] }
+    const fakeUser = { id: 'u-1', role: 'user', userType: 'user', authMethod: 'session', scopes: [] }
     // With user → hook passes, result has the user
-    const result = await app.service('items').find({}, { auth: { user: fakeUser as any } }) as { data: Record<string, unknown>[] }
+    const result = await app.service('items').find({}, { user: fakeUser as any }) as { data: Record<string, unknown>[] }
     expect(result.data[0].callerUser).toBe('u-1')
   })
 
@@ -2505,7 +2505,7 @@ describe('Bidirectional WS service calls', () => {
     const received: unknown[] = []
     const socket = { send: (m: string) => received.push(JSON.parse(m)), close: () => {}, readyState: 1 }
 
-    const conn = await manager.handleConnection(socket, { userId: 'u1', role: 'user', userType: 'user', authMethod: 'session', scopes: [] })
+    const conn = await manager.handleConnection(socket, { id: 'u1', role: 'user', userType: 'user', authMethod: 'session', scopes: [] })
 
     const app = await createTestApp({
       users: [{ id: 'u1', role: 'user' }],
@@ -2521,7 +2521,7 @@ describe('Bidirectional WS service calls', () => {
 
     const svc    = app.services.get('pings')!
     const svcCtx = _bridge.internal('pings', 'find', null, {
-      auth:       { user: conn.user as any },
+      user: conn.user as any,
       transport:  'websocket',
       locals:     { __channels: manager },
     })
@@ -2595,7 +2595,7 @@ describe('authenticate hook', () => {
 
   it('throws Unauthorized (not plain Error) when no user', () => {
     const ctx = testCtx('users', 'find')
-    ctx.auth.user = null
+    ctx.user = null
 
     let thrown: unknown
     try { authenticate(ctx) } catch (e) { thrown = e }
@@ -2606,7 +2606,7 @@ describe('authenticate hook', () => {
 
   it('passes when user is present', () => {
     const ctx = testCtx('users', 'find', null, {
-      user: { userId: 'u1', role: 'admin' }
+      user: { id: 'u1', role: 'admin' }
     })
     expect(() => authenticate(ctx)).not.toThrow()
   })
@@ -2626,7 +2626,7 @@ describe('requireRole hook', () => {
 
   it('throws Forbidden when no user at all', () => {
     const ctx = testCtx('users', 'find')
-    ctx.auth.user = null
+    ctx.user = null
 
     let thrown: unknown
     try { requireRole('admin')(ctx) } catch (e) { thrown = e }
@@ -2979,11 +2979,11 @@ describe('rateLimit hook', () => {
     ).rejects.toBeInstanceOf(TooManyRequests)
   })
 
-  it('keys on userId for authenticated requests', async () => {
+  it('keys on the principal id for authenticated requests', async () => {
     const svc = makeService({ max: 1, window: '1 minute' })
 
-    const userA: SessionContext = { userId: 'u-alice', userType: 'user', authMethod: 'session', scopes: [] }
-    const userB: SessionContext = { userId: 'u-bob',   userType: 'user', authMethod: 'session', scopes: [] }
+    const userA: SessionContext = { id: 'u-alice', userType: 'user', authMethod: 'session', scopes: [] }
+    const userB: SessionContext = { id: 'u-bob',   userType: 'user', authMethod: 'session', scopes: [] }
 
     // Alice uses her 1 request
     await callService(svc, testCtx('items', 'find', null, { user: userA }))
@@ -3063,7 +3063,7 @@ describe('rateLimit hook', () => {
 describe('SessionContext shape', () => {
   it('has the expected camelCase fields', () => {
     const session: SessionContext = {
-      userId:     'u-1',
+      id:     'u-1',
       userType:   'user',
       authMethod: 'session',
       email:      'alice@example.com',
@@ -3073,7 +3073,7 @@ describe('SessionContext shape', () => {
       role:       'admin',
       scopes:     ['read', 'write'],
     }
-    expect(session.userId).toBe('u-1')
+    expect(session.id).toBe('u-1')
     expect(session.userType).toBe('user')
     expect(session.authMethod).toBe('session')
     expect(session.accountId).toBe('acc-1')

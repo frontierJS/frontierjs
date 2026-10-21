@@ -19,6 +19,8 @@
 //   POST /drafts  publish { appId, draft } — merge, build, deploy (the `publish` grant)
 //   GET  /drafts  history { appId } — the site's live releases, newest first, each with what it shipped
 //   POST /drafts  revert  { appId, release } — a draft undoing one publish
+//   POST /drafts  handoff { appId, returnTo, challenge } — a one-time code for the site's preview
+//   POST /drafts  redeem  { appId, code, verifier } — that code, for a key reaching only drafts
 //
 // Opening a draft and every save that changes a file queue its preview
 // (`core/site-preview.ts`), and `list` answers each draft's last one.
@@ -30,6 +32,14 @@
 //
 // What an owner may write is site-kit's rule (`FJS-D1226`), asked here by
 // path and again of the file the edit produces.
+//
+// **A preview signs in through a handoff** (`FJS-D1357`). Its Edit button
+// sends the person to /sites/<id>/edit/, which calls `handoff` with the
+// preview's address and a PKCE challenge; the address must be one this site's
+// previews were recorded at, or a code would go to whoever asked. `redeem` is
+// the preview's POST of code and verifier, from that same origin, and answers
+// an API key scoped to `drafts` that lapses in hours. Each method still reads
+// the grant, so a key outliving its grant reaches nothing.
 //
 // History is derived: the App's successful releases, and git's diff between
 // each and the one before it. Revert takes the `edit` grant, since it only
@@ -44,19 +54,36 @@ import { isGit } from '../../core/app-source.ts'
 import {
   CheckoutError, StaleDraft, draftFiles, listDrafts, openDraft, readDraftFile, revertDraft, saveDraftFile, shipped, type GitSite,
 } from '../../core/site-checkout.ts'
-import { markPreview, previewStatuses } from '../../core/site-preview.ts'
+import { isSitePreviewOrigin, markPreview, previewStatuses } from '../../core/site-preview.ts'
 import { dispatchPreview } from '../../jobs/site-preview.job.ts'
 import { dispatchPublish } from '../../jobs/site-publish.job.ts'
 import { PUBLISH_STEPS, type PublishSnapshot } from '../../core/site-publish.ts'
 import { keyScope } from '../api-keys/scopes.ts'
+import { maskToken } from '../api-keys/api-keys.service.ts'
 
 const sys = (): any => $.db.asSystem()
-const me  = (): string | undefined => ($.me as { userId?: string } | null | undefined)?.userId
+const me  = (): string | undefined => ($.me as { id?: string } | null | undefined)?.id
 
 const ARGS = ['appId', 'draft', 'path'] as const
 
 /** Releases `history` answers — a site's recent past, which is what an owner undoes. */
 const HISTORY = 20
+
+/** How long a preview's key works: a sitting, not a standing credential. */
+const EDIT_KEY_MS = 8 * 60 * 60 * 1000
+
+const EDIT_SCOPES = Object.values(keyScope('drafts'))
+
+type Handoffs = Required<Pick<import('@frontierjs/junction').IAuth, 'issueHandoff' | 'redeemHandoff' | 'createApiKey'>>
+
+function handoffs(): Handoffs {
+  const auth = $.app.auth
+  if (typeof auth?.issueHandoff !== 'function' || typeof auth.redeemHandoff !== 'function')
+    throw new BadRequest('the configured auth provider has no handoff, so a preview cannot sign in')
+  return auth as unknown as Handoffs
+}
+
+const SPENT = 'That sign-in has been used or has run out — press Edit on the preview again'
 
 /** A named argument, off the body or, on a GET, the query. */
 function arg(name: string): string {
@@ -66,6 +93,8 @@ function arg(name: string): string {
 }
 
 function signedIn(): void {
+  // The preview's redemption is how it gets a session at all.
+  if ($.method === 'redeem') return
   if (!me()) throw new Unauthorized('Sign in to edit a site')
 }
 
@@ -131,6 +160,8 @@ export default createService({
     { method: 'publish', gate: LEVELS.VISITOR },
     { method: 'history', read: true, gate: LEVELS.VISITOR },
     { method: 'revert',  gate: LEVELS.VISITOR },
+    { method: 'handoff', gate: LEVELS.VISITOR },
+    { method: 'redeem',  gate: LEVELS.STRANGER },
   ],
 
   async sites() {
@@ -209,6 +240,46 @@ export default createService({
       { name: user?.name || user?.email, email: user?.email }, `Revert ${draft}`, pathRefusal))
     await queuePreview(site.id, opened.name, opened.head)
     return opened
+  },
+
+  async handoff() {
+    // A key that could hand itself on would renew itself for as long as it was
+    // used, and a support episode or an agent would mint past its own end.
+    const user = $.user as { authMethod?: string, support?: unknown } | null
+    if (user?.authMethod === 'apiKey') throw new Forbidden('A preview signs in from basecamp itself, not with a key')
+    if (user?.support || $.transport === 'mcp') throw new Forbidden('A preview signs in as the person at the screen, not for somebody else')
+    const site = await grantedSite()
+    let back: URL
+    try { back = new URL(arg('returnTo')) } catch { throw new BadRequest('returnTo is not an address') }
+    if (!isSitePreviewOrigin(site.id, back.origin))
+      throw new BadRequest(`${back.origin} is not a preview of this site — open Edit from the draft's own preview link`)
+    const { code } = await handoffs().issueHandoff(me()!, { challenge: arg('challenge'), audience: back.origin, scopes: EDIT_SCOPES })
+      .catch((err: Error) => { throw new BadRequest(err.message) })
+    back.hash = `fjs-edit=${encodeURIComponent(code)}`
+    return { redirect: back.toString() }
+  },
+
+  async redeem() {
+    const appId = arg('appId')
+    const held  = await handoffs().redeemHandoff(arg('code'), arg('verifier'))
+    // The page that made the challenge redeems it; a code carried anywhere else is spent for nothing.
+    const origin = ($.caller?.headers as Record<string, string> | undefined)?.origin
+    if (!held || origin !== held.audience) throw new Unauthorized(SPENT)
+    const grant = await sys().appEditor.findFirst({ where: { appId, userId: held.userId } })
+    const app   = grant && await sys().app.findFirst({ where: { id: appId } })
+    if (!app) throw new Unauthorized(SPENT)
+
+    const user = await sys().user.findFirst({ where: { id: held.userId } })
+    const expiresAt = new Date(Date.now() + EDIT_KEY_MS).toISOString()
+    // Named for where it was made, so the workspace's API keys list says what it is.
+    const name = `Editing ${app.name} on ${new URL(held.audience).host} · ${crypto.randomUUID().slice(0, 8)}`
+    const { key, id } = await handoffs().createApiKey(held.userId, { name, scopes: held.scopes, expiresAt: new Date(expiresAt) })
+    await sys().apiKey.create({ data: {
+      workspaceId: app.workspaceId, userId: held.userId, credentialId: id, name,
+      tokenHint: maskToken(key),
+      scopes: held.scopes, expiresAt, createdBy: held.userId,
+    } })
+    return { key, expiresAt, editor: { name: user?.name || user?.email }, site: { id: app.id, name: app.name }, role: grant.role }
   },
 
   async open() {

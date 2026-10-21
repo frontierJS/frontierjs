@@ -1128,11 +1128,11 @@ export class HttpTransport {
       if (handlerSet) {
         // The handler's word stands. An authenticated read still varies on
         // the credential, whatever it allowed, so no shared cache serves it across.
-        if (isRead && ctx.user?.userId != null) varyOnCredential()
+        if (isRead && ctx.user?.id != null) varyOnCredential()
       } else if (!isRead) {
         // Writes must never be cached anywhere
         headers.set('cache-control', 'no-store')
-      } else if (ctx.user?.userId != null) {
+      } else if (ctx.user?.id != null) {
         // A credentialed answer is not kept on disk: `private, no-cache` lets
         // a browser store it. Cookie mode carries no Authorization, so the
         // Vary names both.

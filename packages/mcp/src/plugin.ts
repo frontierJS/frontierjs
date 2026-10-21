@@ -537,7 +537,7 @@ const VERB: Record<string, string> = {
  *
  * Through `app.service(name)` and never through `bridge.toContext()`, which is
  * HTTP-shaped: one execution path, or the hook pipeline and the boundary run
- * twice in two arrangements. `{ auth: { user } }` goes at `CALL_OPTIONS_AT`'s
+ * twice in two arrangements. `{ user }` goes at `CALL_OPTIONS_AT`'s
  * index for the method — absent, the call INHERITS whatever principal is in
  * scope, which in a plugin route is the app's own.
  */
@@ -546,7 +546,7 @@ async function run(app: App, tool: Tool, args: unknown, user: unknown, call: Cal
   const a      = (args ?? {}) as Record<string, unknown>
   // `'mcp'`, never the `'internal'` an in-process caller defaults to: an agent
   // is outside, and an *is this call from inside* check must say so (`FJS-D609`).
-  const opts   = { auth: { user }, transport: 'mcp' } as Record<string, unknown>
+  const opts   = { user, transport: 'mcp' } as Record<string, unknown>
   const since  = Date.now()
   const base   = ctx?.mcpReq?._meta?.[BASE_META]
 

@@ -47,7 +47,6 @@ export function levelPasses(required: number, userLevel: number): boolean
  */
 export interface GradableUser {
   id?:            unknown
-  userId?:        unknown
   verifiedAt?:    Date | string | null
   activatedAt?:   Date | string | null
   isAdmin?:       boolean
@@ -56,7 +55,7 @@ export interface GradableUser {
   role?:          string | null
 }
 
-/** Does this principal name somebody — an `id` or a `userId`? No identity grades STRANGER (`FJS-D515`). */
+/** Does this principal name somebody — does it carry an `id`? No identity grades STRANGER (`FJS-D515`). */
 export function isIdentified(user?: GradableUser | null): boolean
 
 /** The principal fields `gradeStanding` reads beyond identity; Litestone admits `auth().<field>` for each. */

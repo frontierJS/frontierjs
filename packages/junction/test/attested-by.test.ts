@@ -35,7 +35,7 @@ async function harness() {
   })
   const auth = {
     async sessionFor(userId: string) {
-      return userId === 'gone' ? null : { userId, userType: 'user', authMethod: 'created' }
+      return userId === 'gone' ? null : { id: userId, userType: 'user', authMethod: 'created' }
     },
   } as any
   const app = createApp({ db: db as never, auth })
@@ -103,7 +103,7 @@ describe('a write a device attested files the device as the actor', () => {
     h.app.services.register(createService({
       name: 'handoff', methods: ['create'],
       async create(ctx: any) {
-        await ctx.app.service('orders').create({ id: 2, status: 'other' }, { auth: { user: { userId: 'emp-2', userType: 'user', authMethod: 'created' } } })
+        await ctx.app.service('orders').create({ id: 2, status: 'other' }, { user: { id: 'emp-2', userType: 'user', authMethod: 'created' } })
         return { ok: true }
       },
     } as never))

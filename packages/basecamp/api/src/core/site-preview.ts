@@ -17,11 +17,16 @@
 // and why the last attempt failed. Losing it loses only the link, which the
 // next save makes again; the branch is the draft and the Worker holds the bytes.
 //
+// **A recorded preview's origin is one the editor may write from** (`FJS-D1357`):
+// basecamp's CORS asks `isPreviewOrigin`, and a handoff returns only to an
+// origin this site's statuses name. The set is read once per directory and
+// kept by `markPreview`, its one writer, so a request asks no file.
+//
 // **A save during a build is not lost.** The job's `unique` key makes a second
 // dispatch a no-op while one runs, so the run builds the draft's head, then
 // reads the head again and goes round once more if a save moved it.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { draftBranch, listDrafts, sitesDir, type GitSite } from './site-checkout.ts'
 import { createSecretResolver } from './credentials.ts'
@@ -30,6 +35,7 @@ import { edgeConnectorFor } from '../providers/edge/index.ts'
 import { targetFor } from '../providers/compute/index.ts'
 import { sendVia, tokenRef } from '../providers/compute/accounts.ts'
 import { isGit } from './app-source.ts'
+import { env } from './env.ts'
 import type { App } from '@frontierjs/junction'
 
 export interface PreviewStatus {
@@ -60,6 +66,40 @@ export function previewStatuses(appId: string, root = sitesDir()): Record<string
   }
 }
 
+const originOf = (url: string | null): string | null => {
+  try { return url ? new URL(url).origin : null } catch { return null }
+}
+
+const known = new Map<string, Set<string>>()
+
+function originsUnder(root: string): Set<string> {
+  let set = known.get(root)
+  if (set) return set
+  set = new Set()
+  const files = existsSync(root) ? readdirSync(root).filter(f => f.endsWith('.previews.json')) : []
+  for (const f of files)
+    for (const p of Object.values(previewStatuses(f.slice(0, -'.previews.json'.length), root))) {
+      const o = originOf(p.url)
+      if (o) set.add(o)
+    }
+  known.set(root, set)
+  return set
+}
+
+/** Whether some site's preview was recorded at this origin — the editor's CORS. */
+export function isPreviewOrigin(origin: string, root = sitesDir()): boolean {
+  return originsUnder(root).has(origin)
+}
+
+/** Whether this site's own preview was recorded at this origin — where a handoff may return. */
+export function isSitePreviewOrigin(appId: string, origin: string, root = sitesDir()): boolean {
+  return Object.values(previewStatuses(appId, root)).some(p => originOf(p.url) === origin)
+}
+
+/** The basecamp page a preview's Edit button goes back to (`FJS-D1357`): the site, and its draft. */
+export const editorUrl = (appId: string, draft: string): string =>
+  `${env.FRONTIER_APP_URL.replace(/\/+$/, '')}/sites/${appId}/?draft=${encodeURIComponent(draft)}`
+
 /** One draft's status changed, the rest kept. Written whole and renamed, so a reader never sees half. */
 export function markPreview(appId: string, draft: string, patch: Partial<PreviewStatus> & { state: PreviewStatus['state'] },
   root = sitesDir()): PreviewStatus {
@@ -74,6 +114,8 @@ export function markPreview(appId: string, draft: string, patch: Partial<Preview
   const file = fileOf(appId, root)
   writeFileSync(`${file}.tmp`, JSON.stringify(all, null, 2))
   renameSync(`${file}.tmp`, file)
+  const origin = originOf(next.url)
+  if (origin) originsUnder(root).add(origin)
   return next
 }
 
@@ -152,6 +194,7 @@ async function buildOnce(app: App, appId: string, workspaceId: string, site: Git
 
   const reply = await executor.call('/site/preview', {
     app_id: appId, source: site.source, branch: named.branch, alias: named.slug,
+    editor: editorUrl(appId, named.slug),
     cloudflare: { token: cloudflare.token, account_id: cloudflare.accountId },
   }, { timeoutMs: BUILD_TIMEOUT_MS })
   if (reply.error) return { error: reply.error.message }

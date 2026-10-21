@@ -17,7 +17,7 @@ import { rateLimit as rateLimitHook } from '../src/core/hooks-resilience.ts'
 import { rateLimit as rateLimitMw }   from '../src/transport/middleware.ts'
 
 const svcCtx = (ip: string, userId?: string) =>
-  ({ caller: { ip }, auth: { user: userId ? { userId } : null } }) as never
+  ({ caller: { ip }, user: userId ? { id: userId } : null }) as never
 const wireCtx = (ip: string) => ({ ip }) as never
 
 describe('one limiter under both tiers', () => {
@@ -97,7 +97,7 @@ describe('the hook keys on the principal, the middleware on the address', () => 
 
   it('the hook survives a context with NO auth — which is how auth uses it', () => {
     // /auth/login holds a TransportContext: no principal, because signing in is
-    // what produces one. Reaching ctx.auth.user directly threw here, and that is
+    // what produces one. Reaching ctx.user directly threw here, and that is
     // what @frontierjs/auth forked a whole limiter over.
     const hook = rateLimitHook({ max: 1, window: '1 hour' })
     expect(() => hook(wireCtx('9.9.9.9'))).not.toThrow()

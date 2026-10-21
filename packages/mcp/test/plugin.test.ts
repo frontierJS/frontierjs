@@ -300,7 +300,7 @@ describe('narrow withholds what a standing cannot say (FJS-D407)', () => {
 
   // A read-only credential for staff alone — the shape of an API key's scopes.
   const readOnlyStaff: McpOptions['narrow'] = (t, u) =>
-    (u as { userId?: string } | null)?.userId !== 'staff' || t.method === 'find' || t.method === 'get'
+    (u as { id?: string } | null)?.id !== 'staff' || t.method === 'find' || t.method === 'get'
 
   test('it only removes: the narrowed list is the graded list less the writes, and another caller is untouched', async () => {
     const graded   = (await list('staff')).map(t => t.name)

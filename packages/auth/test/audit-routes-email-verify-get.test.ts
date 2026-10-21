@@ -27,7 +27,7 @@ const post = (token: string) => raw(app, 'POST', '/auth/email/verify', {
 describe('/auth/email/verify', () => {
   test('POST answers no account fields to the holder of the link', async () => {
     const u = await h.auth.createUser({ email: 'scanme@example.com', password: 's-pw-1', name: 'Scan Me' })
-    await h.auth.requestEmailVerification!(u.userId)
+    await h.auth.requestEmailVerification!(u.id)
 
     const res = await post(h.verifyToken())
     expect(res.status).toBe(200)
@@ -36,7 +36,7 @@ describe('/auth/email/verify', () => {
 
   test('a scanner\'s GET does not consume the link for the person who clicks it', async () => {
     const u = await h.auth.createUser({ email: 'scanned@example.com', password: 's-pw-1', name: 'Scanned' })
-    await h.auth.requestEmailVerification!(u.userId)
+    await h.auth.requestEmailVerification!(u.id)
     const token = h.verifyToken()
 
     const scanner = await raw(app, 'GET', `/auth/email/verify?token=${encodeURIComponent(token)}`)

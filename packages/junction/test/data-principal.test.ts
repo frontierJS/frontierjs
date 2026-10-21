@@ -1,18 +1,10 @@
 // data-principal.test.ts — the second half of the identity translation.
 //
-// Junction's SessionContext names the caller `userId`. Litestone's policy
-// language reads `auth().id` — its documented spelling, the one every `@@allow`
-// example in its docs uses. Nothing bridged the two, so a session handed
-// straight to `$setAuth` reached the Data boundary with NO `id`, and
-//
-//   @@allow(read, userId == auth().id)
-//
-// compared a column to `undefined` and matched nothing. Silent: an empty list,
-// not an error, and only for policies — every `@@gate` still worked, because
-// `sessionGateLevel()` was written against Junction's shape.
-//
-// Found 2026-08-06 in example/: a signed-in user's own notifications were
-// invisible to them and plainly there under `asSystem()`.
+// Junction's SessionContext and Litestone's `auth()` name the caller the same
+// way, `id` (`FJS-D1307`), so a session handed to `$setAuth` is the principal a
+// row policy reads: `@@allow(read, userId == auth().id)`. What still crosses is
+// the KIND of caller, `userType` → `type`, which the audit trail's `actorType`
+// reads.
 
 import { describe, it, expect } from 'bun:test'
 import { mkdtempSync, rmSync } from 'fs'
@@ -26,14 +18,15 @@ import { callDb } from '../src/core/context.ts'
 
 describe('toDataPrincipal', () => {
 
-  it('gives a SessionContext the `id` Litestone policies read', () => {
-    const session = { userId: 'u-1', userType: 'user', role: 'admin', authMethod: 'session' }
-    expect(toDataPrincipal(session)).toEqual({ ...session, id: 'u-1' })
+  it('a SessionContext is already the principal — `id` is its key, nothing is copied', () => {
+    const session = { id: 'u-1', userType: 'user', role: 'admin', authMethod: 'session' }
+    expect(toDataPrincipal(session)).toBe(session)
+    expect('userId' in (toDataPrincipal(session) as object)).toBe(false)
   })
 
   it('leaves every other field alone — the names already agree', () => {
     const session = {
-      userId: 'u-1', email: 'a@b.test', role: 'admin',
+      id: 'u-1', email: 'a@b.test', role: 'admin',
       accountId: 'acc-9', workspaceId: 'w-2', scopes: ['read'],
     }
     const out = toDataPrincipal(session) as Record<string, unknown>
@@ -44,9 +37,8 @@ describe('toDataPrincipal', () => {
     expect(out.scopes).toEqual(['read'])
   })
 
-  it('an explicit id wins — a caller already speaking Litestone is untouched', () => {
-    const user = { id: 42, userId: 'u-1' }
-    expect(toDataPrincipal(user)).toBe(user)
+  it('a kind other than user crosses as `type`', () => {
+    expect(toDataPrincipal({ id: 'b-1', userType: 'bot' })).toEqual({ id: 'b-1', userType: 'bot', type: 'bot' })
   })
 
   it('passes null, undefined and non-objects straight through', () => {
@@ -55,16 +47,10 @@ describe('toDataPrincipal', () => {
     expect(toDataPrincipal('nope')).toBe('nope')
   })
 
-  it('does not invent an id from a missing userId', () => {
-    // An anonymous-ish principal must stay without an id rather than gain
-    // `id: undefined`, which a policy would compare against a NULL column.
+  it('does not invent an id', () => {
     const odd = { role: 'admin' }
     expect(toDataPrincipal(odd)).toBe(odd)
     expect('id' in (toDataPrincipal(odd) as object)).toBe(false)
-  })
-
-  it('a null id is treated as absent, not as a value', () => {
-    expect(toDataPrincipal({ id: null, userId: 'u-1' })).toEqual({ id: 'u-1', userId: 'u-1' })
   })
 })
 
@@ -79,12 +65,12 @@ describe('withLitestoneDb scopes with the translated principal', () => {
   }
 
   const ctxWith = (user: unknown) => ({
-    auth: { user }, locals: {} as Record<string, unknown>,
+    user, locals: {} as Record<string, unknown>,
   } as unknown as ServiceContext)
 
-  it('$setAuth receives an id, not a bare userId', async () => {
+  it('$setAuth receives the session, whose key is `id`', async () => {
     const { client, seen } = clientSpy()
-    const ctx = ctxWith({ userId: 'u-7', role: 'user' })
+    const ctx = ctxWith({ id: 'u-7', role: 'user' })
 
     await withLitestoneDb(client)(ctx, async () => {})
 
@@ -109,7 +95,7 @@ describe('withLitestoneDb scopes with the translated principal', () => {
 // one translation between the two shapes is `toDataPrincipal`. Asserted against
 // a REAL client: a unit test on either side of the crossing passes unwired.
 describe('toDataPrincipal carries the kind of caller to the audit trail', () => {
-  const SYSTEM = { userId: 'system', userType: 'service', role: 'system', authMethod: 'created' }
+  const SYSTEM = { id: 'system', userType: 'service', role: 'system', authMethod: 'created' }
 
   const writeAs = async (principal: unknown) => {
     const dir = mkdtempSync(join(tmpdir(), 'fjs-dp-'))
@@ -137,7 +123,7 @@ describe('toDataPrincipal carries the kind of caller to the audit trail', () => 
   })
 
   it('a user principal is still a user, whatever its role', async () => {
-    const row = await writeAs(toDataPrincipal({ userId: 'u-1', userType: 'user', role: 'admin' }))
+    const row = await writeAs(toDataPrincipal({ id: 'u-1', userType: 'user', role: 'admin' }))
     expect(row.actorType).toBe('user')
   })
 })

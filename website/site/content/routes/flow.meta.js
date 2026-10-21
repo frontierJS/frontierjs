@@ -47,7 +47,7 @@ export default createService({})`,
 })
 
 function stampOwner(ctx) {
-  ctx.data.ownerId = ctx.auth.user.userId   // who, from the Context
+  ctx.data.ownerId = ctx.user.id   // who, from the Context
 }`,
   S3: `const app = createApp({ db, auth })
 

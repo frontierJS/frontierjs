@@ -52,15 +52,13 @@ export const OPEN_CHANNELS = ['orders', 'products', 'customers', 'flows', 'runs'
  *  owns this spelling; it is repeated here and nowhere else. */
 export const notificationChannel = (userId: string): string => `notifications:user:${userId}`
 
-/** A session as this app can read one. Auth's own shape puts the id at
- *  `userId`; a hand-built principal puts it at `id`, so both are read — the
- *  wrong one is `undefined`, which joins nothing and says nothing. */
-type Session = { userId?: string; id?: string } | null | undefined
+/** A session as this app can read one: the caller's id is `id`. */
+type Session = { id?: string } | null | undefined
 
 /** Everything one connection listens to. Called once, on connection. */
 export function joinChannels(app: App, session: Session, conn: unknown): void {
   for (const name of OPEN_CHANNELS) app.channel(name).join(conn as never)
 
-  const userId = session?.userId ?? session?.id
+  const userId = session?.id
   if (userId) app.channel(notificationChannel(userId)).join(conn as never)
 }

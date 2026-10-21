@@ -95,7 +95,7 @@ test('gate: no identity is a stranger, whatever it carries', function () {
   // anything but identity it was CREATOR (`FJS-1462`, ruled `FJS-D515`).
   assert.equal(gradeStanding({ cartToken: 'x' }), LEVELS.STRANGER)
   assert.equal(gradeStanding({ role: 'user', isAdmin: true }), LEVELS.STRANGER)
-  assert.equal(gradeStanding({ userId: 7 }), LEVELS.CREATOR)
+  assert.equal(gradeStanding({ id: 7 }), LEVELS.CREATOR)
   assert.equal(gradeStanding({ id: 0 }), LEVELS.CREATOR)
 })
 
@@ -282,7 +282,7 @@ test('gate: STANDING_FIELDS names every field gradeStanding reads (FJS-770)', fu
     get(target, key) { touched.add(key); return target[key] },
   }))
 
-  const identity = new Set(['id', 'userId'])
+  const identity = new Set(['id'])
   const read = [...touched].filter(k => !identity.has(k)).sort()
   assert.deepEqual([...STANDING_FIELDS].sort(), read)
 })

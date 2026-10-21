@@ -67,8 +67,8 @@ beforeAll(async () => {
 
   // ADMIN is 5 and DEVELOPER is 4, which is the pair the gate sits between:
   // `@gate(5)` on the move against `Deployment`'s own update gate of USER(4).
-  admin     = session({ userId: a.id, workspaceId: ws.id })
-  developer = session({ userId: d.id, workspaceId: ws.id })
+  admin     = session({ id: a.id, workspaceId: ws.id })
+  developer = session({ id: d.id, workspaceId: ws.id })
 
   // A machine that can take a release, or `resolveExecutor` refuses before any
   // of this is reached.

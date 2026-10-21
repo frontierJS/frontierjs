@@ -86,6 +86,11 @@ model Session {
   userAgent  String?
   createdAt  DateTime  @default(now())
 
+  /// Signed in on a first factor alone, where `requireSecondFactor` says the
+  /// account owes a second. The plugin refuses every service call but the
+  /// enrollment three while it is set; `confirmTotp` clears it.
+  enrollmentOnly  Boolean  @default(false)
+
   /// SUPPORT MODE — this session is an operator's, and while these are set it
   /// resolves to somebody else.
   ///

@@ -6,7 +6,8 @@ import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, mkdirSy
 import { resolve, dirname, basename, join } from 'path'
 import { logger, findWorkspaceRoot, fliTmpRoot, sweepStaleTmp } from './utils.js'
 import { getModule } from './registry.js'
-import { printPlanFromFile } from './prose.js'
+import { printPlanFromFile, renderProse } from './prose.js'
+import { isVerbose } from './verbosity.js'
 import { declarationProblem, valueProblem, withModuleFlags, DEFAULT_FLAGS } from './flags.js'
 import { effectsProblem, approvalRefusal, APPROVED } from './effects.js'
 import { createTty, settleTtys, ttyAside } from './tty.js'
@@ -197,15 +198,20 @@ export async function Command({ file, arg, flag, emit }) {
       const missing = mod.meta.requires.filter(k => !process.env[k])
       if (missing.length) {
         const ns = mod.meta.namespace || metadata.title?.split(':')?.[0]
+        // A namespace with an index command never reaches printNamespace, so
+        // the setup docs the hint promises are printed here or nowhere.
+        const verbose = isVerbose()
         const msgs = [
           `${ns} namespace requires: ${missing.join(', ')}`,
           ...missing.map(k => `  Set with:  fli eset ${k} <value> --global`),
-          `  Or run:    fli ${ns} --verbose  for setup instructions`,
+          ...(verbose ? [] : [`  Or run:    fli ${ns} --verbose  for setup instructions`]),
         ]
         if (emit) {
           for (const m of msgs) await emit({ type: 'log', level: 'error', text: m })
+          if (verbose && mod.prose) await emit({ type: 'output', text: mod.prose })
         } else {
           for (const m of msgs) logger(m, 'error')
+          if (verbose && mod.prose) renderProse(mod.prose, {})
         }
         throw new Error('Missing required environment variables')
       }

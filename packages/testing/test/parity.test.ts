@@ -20,8 +20,8 @@ const gate = new GatePlugin({
 })
 
 const USERS: Record<string, any> = {
-  'tok-member': { userId: 'u-member', userType: 'user', authMethod: 'session', role: 'member' },
-  'tok-admin':  { userId: 'u-admin',  userType: 'user', authMethod: 'session', role: 'member', isAdmin: true },
+  'tok-member': { id: 'u-member', userType: 'user', authMethod: 'session', role: 'member' },
+  'tok-admin':  { id: 'u-admin',  userType: 'user', authMethod: 'session', role: 'member', isAdmin: true },
 }
 
 /** The app's own auth. A token maps to a session; anything else is anonymous. */
@@ -51,7 +51,7 @@ function buildApp(db: unknown, { sockets = true, leadHooks }: BuildOpts = {}) {
     // whose `method` IS the action. Nothing else in the derived set covers it.
     async qualify(ctx: ServiceContext) {
       ctx.dispatch = false     // read-shaped; it answers no row and announces nothing
-      return { id: ctx.id, by: (ctx.auth?.user as { userId?: string })?.userId ?? null }
+      return { id: ctx.id, by: (ctx.user as { id?: string })?.id ?? null }
     },
   } as never))
   app.services.register(createService({ name: 'accounts', model: 'Account' }))

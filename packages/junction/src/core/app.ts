@@ -390,7 +390,7 @@ export interface App {
   //   const owner = await app.service('users').get(ctx.data.userId)
   //
   //   // Deliberately as nobody. Absent is not null:
-  //   await app.service('audit').create({ action: 'x' }, { auth: { user: null } })
+  //   await app.service('audit').create({ action: 'x' }, { user: null })
   //
   //   // As the app itself (createApp({ system })):
   //   await app.runAs(null, () => app.service('servers').call('reboot', serverId))
@@ -399,7 +399,7 @@ export interface App {
   /**
    * WHO is in scope right now — the request-wide principal, or null.
    *
-   * The same value `ctx.auth.user` shows, asked from somewhere that holds no
+   * The same value `ctx.user` shows, asked from somewhere that holds no
    * ctx: a plugin's own route, a scheduler tick, the code that enqueues a job.
    * Reading it is how work that outlives the request records who asked for it.
    */
@@ -740,7 +740,7 @@ export interface AppOptions {
    * place an app says who it is when it acts on its own behalf, and it is
    * graded by the app's own `getLevel` like any other principal:
    *
-   *   createApp({ system: { userId: 'system', role: 'system', … } })
+   *   createApp({ system: { id: 'system', role: 'system', … } })
    *
    * Declaring none is a valid answer — an app whose background work touches
    * nothing gated needs no system identity, and inventing one would hand every
@@ -779,7 +779,7 @@ export interface AppOptions {
    *   createApp({ db, principal: async (ctx, user) => ({ workspaceId, memberRole }) })
    *
    * Runs for every request, a guest's included — `user` is null for one — and
-   * may not set `userId`/`id`: a claim says what a caller holds, never who they
+   * may not set `id`: a claim says what a caller holds, never who they
    * are. `membershipClaim()` is the shipped resolver for a session and
    * `bearerClaim()` for a token with no session; neither can emit a claim it
    * did not verify.
@@ -831,7 +831,7 @@ export interface AppOptions {
 //
 //   ctx.app.service('users').get(userId)               ← inherits the caller
 //   ctx.app.service('audit').create({ action: 'x' },
-//                   { auth: { user: null } })          ← deliberately as nobody
+//                   { user: null })          ← deliberately as nobody
 //   ctx.app.service('servers').call('reboot', id)      ← call a custom method
 //
 // The second argument is CallOptions, not Feathers' `params`. What varies per
@@ -1234,7 +1234,7 @@ export function createApp(opts: AppOptions = {}): App {
           // nobody* and gets it. Absent ≠ null, tested with `in` rather than
           // `??` — the same rule Invariant 9 makes about a patch, and here it
           // is what lets a service deliberately read as a stranger would.
-          auth: { user: resolvePrincipal(opts) },
+          user: resolvePrincipal(opts),
           // Propagates, like the principal and for the same reason: an audit
           // hook three calls deep has no other route to the IP of the request
           // that caused the write. `{}` when there is no request at all.
@@ -1412,13 +1412,13 @@ export function createApp(opts: AppOptions = {}): App {
       // in scope and nothing a request carries. A resolver reads the tenant off
       // the request meta `runAs` set, as it does for a job's own service calls.
       const ctx = {
-        app, auth: { user: app.principal() }, locals: {}, caller: inheritedCaller(),
+        app, user: app.principal(), locals: {}, caller: inheritedCaller(),
         route: {}, query: {}, directives: {}, reserved: {}, data: null, id: null,
       } as unknown as ServiceContext
       let out!: T
       // Entered as a call, so a principal resolver reading `$.db` reads this
       // context's client rather than the call that asked, or nothing.
-      await enterCall(ctx, () => dataHook!(ctx, async () => { out = await fn(callDb(ctx), (ctx.auth.user ?? null) as import('../auth/types.ts').SessionContext | null) }))
+      await enterCall(ctx, () => dataHook!(ctx, async () => { out = await fn(callDb(ctx), (ctx.user ?? null) as import('../auth/types.ts').SessionContext | null) }))
       return out
     },
 
@@ -1510,8 +1510,8 @@ export function createApp(opts: AppOptions = {}): App {
         // had, while matching the declared id runs the app's own work as the
         // app — which is what "no enqueuer resolves to createApp({ system })"
         // already promises for the case where nobody asked at all.
-        const declared = opts.system as { userId?: string } | undefined
-        if (declared && declared.userId !== undefined && String(declared.userId) === String(userId)) {
+        const declared = opts.system as { id?: string } | undefined
+        if (declared && declared.id !== undefined && String(declared.id) === String(userId)) {
           user = opts.system as import('../auth/types.ts').SessionContext
         } else {
 
@@ -1842,7 +1842,7 @@ export function createApp(opts: AppOptions = {}): App {
   // auth() and match nothing, so the app looks broken rather than insecure.
   //
   // Installed here, after app.hooks() exists, so it composes with anything the
-  // application adds later. ctx.auth.user is populated by the transport bridge
+  // application adds later. ctx.user is populated by the transport bridge
   // before callService(), so it is always available by the time this runs.
   //
   // withLitestoneDb does the $setAuth itself, so this covers services built
@@ -2410,9 +2410,11 @@ function applyConfiguredCors(app: App, config: AppConfig): void {
  * Join the origins `fli deploy` derived (`FRONTIER_CORS_ORIGINS`, comma-separated:
  * the web domain plus a wrapped shell's schemes) onto what the app declared
  * (`FJS-D912`). Union, never replacement: a declared list keeps its own
- * entries, and a declared '*' or predicate stays as written, because a wildcard
- * already admits what the deploy would add. csrf gains them only where it has a
- * list of its own; without one it borrows cors', which already carries them.
+ * entries, a declared '*' stays as written, because a wildcard already admits
+ * what the deploy would add, and a declared predicate is asked after the derived
+ * list, because a predicate admits only what its app knows of and the deploy's
+ * web domain is not that. csrf gains them only where it has a list of its own;
+ * without one it borrows cors', which already carries them.
  */
 function withDerivedOrigins(config: AppConfig, env: string | undefined): AppConfig {
   const derived = (env ?? '').split(',').map(o => o.trim()).filter(Boolean)
@@ -2420,7 +2422,7 @@ function withDerivedOrigins(config: AppConfig, env: string | undefined): AppConf
 
   const http = (config.http ?? {}) as Record<string, unknown>
   const join = (declared: unknown): unknown => {
-    if (typeof declared === 'function') return declared
+    if (typeof declared === 'function') return (o: string) => derived.includes(o) || (declared as (o: string) => boolean)(o)
     const have = Array.isArray(declared) ? declared as string[] : typeof declared === 'string' ? [declared] : []
     if (have.includes('*')) return declared
     return [...new Set([...have, ...derived])]
@@ -2473,26 +2475,29 @@ function applyConfiguredMiddleware(app: App, written: AppConfig): void {
   // A cors '*' says who may READ a response, and cors() refuses it beside
   // credentials, so it names no origin that may write with the cookie.
   // Borrowed without it, or a dev app with an open cors list cannot start.
-  const corsOrigins = (((http.cors as Record<string, unknown> | undefined)?.origins) as string[] | undefined)
-    ?.filter(o => o !== '*')
+  // A predicate is borrowed whole: it is how an app admits origins it learns at
+  // run time (basecamp's draft previews), and a list cannot hold those.
+  const corsList = (http.cors as Record<string, unknown> | undefined)?.origins as string[] | ((o: string) => boolean) | undefined
+  const corsOrigins = typeof corsList === 'function' ? corsList : corsList?.filter(o => o !== '*')
   const origins = (declared.origins as string[] | undefined) ?? corsOrigins
+  const named = typeof origins === 'function' || !!origins?.length
 
   // The upgrade checks Origin with or without csrf installed (`FJS-D1207`), and
   // a bearer app with a cors list has a page on another origin to admit. A
   // csrf() the app installed by hand has already named its own list.
-  if (origins?.length && !app.http?.upgradeOrigins) app.http?.setUpgradeOrigins(origins)
+  if (named && !app.http?.upgradeOrigins) app.http?.setUpgradeOrigins(origins)
 
   if (csrfCfg || app.http?.authCookie) {
     // A '*' written for csrf lets every origin through, which is no guard.
     // Refused by name rather than installed permissive, because an app that
     // declared it believes it is guarded.
-    if (origins?.includes('*')) {
+    if (Array.isArray(origins) && origins.includes('*')) {
       throw new Error(
         `[Junction] middleware.csrf.origins includes '*', which allows every origin. ` +
         `With no list csrf allows the app's own origin only; list the others by name.`
       )
     }
-    app.configure(csrf({ ...(origins?.length ? { origins } : {}),
+    app.configure(csrf({ ...(named ? { origins } : {}),
       ...(declared.methods ? { methods: declared.methods as string[] } : {}),
       ...(declared.allowMissingOrigin !== undefined ? { allowMissingOrigin: declared.allowMissingOrigin as boolean } : {}) }))
 
@@ -2501,11 +2506,10 @@ function applyConfiguredMiddleware(app: App, written: AppConfig): void {
     // reports an opaque "Failed to fetch", and the list that would fix it
     // differs by host (a Tauri shell is tauri://localhost on Linux and macOS,
     // http://tauri.localhost on Windows and Android).
-    const cors = http.cors as { origins?: string | string[]; credentials?: boolean } | undefined
-    const corsList = cors?.origins
-    const corsDeclared = Array.isArray(corsList) ? corsList.length > 0 : !!corsList
+    const cors = http.cors as { origins?: unknown; credentials?: boolean } | undefined
+    const corsDeclared = Array.isArray(cors?.origins) ? cors.origins.length > 0 : !!cors?.origins
     if (corsDeclared) {
-      if (!origins?.length) {
+      if (!named) {
         app.logger.warn(
           `[Junction] cross-origin pages are refused: csrf is on and cors names '*', which csrf does not borrow, ` +
           `so only the app's own origin may write. List each web origin by name in middleware.cors.origins or middleware.csrf.origins.`
@@ -2628,9 +2632,9 @@ export function registerServiceRoutes(app: App): void {
         // The `correlationId()` middleware's id where it is installed, which
         // read the headers by the same rule; otherwise enterRequest reads them.
         correlationId: (ctx as unknown as { requestId?: string }).requestId,
-        // WHO, request-wide. This is what makes `ctx.auth` propagate: an
+        // WHO, request-wide. This is what makes `ctx.user` propagate: an
         // internal call naming no principal reads it back out of the store.
-        user:   svcCtx.auth.user,
+        user:   svcCtx.user,
         caller: svcCtx.caller,
       }, async () => {
         await callService(service, svcCtx, app._appHooks, app.events, app.telemetry)

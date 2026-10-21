@@ -57,24 +57,24 @@ describe('sealedFields', () => {
   afterEach(() => { session.user = null })
 
   test('a caller failing the claims is locked out of the column, on a create too', () => {
-    expect(locked({ userId: 'u1', isStaff: false, role: 'admin' })).toEqual(['channel', 'kind'])
-    expect(locked({ userId: 'u1', isStaff: false, role: 'admin' }, { id: 'a1' })).toEqual(['channel', 'kind'])
+    expect(locked({ id: 'u1', isStaff: false, role: 'admin' })).toEqual(['channel', 'kind'])
+    expect(locked({ id: 'u1', isStaff: false, role: 'admin' }, { id: 'a1' })).toEqual(['channel', 'kind'])
   })
 
   test('a caller holding every claim is locked out of nothing', () => {
-    expect(locked({ userId: 'u1', isStaff: true, role: 'admin' })).toEqual([])
+    expect(locked({ id: 'u1', isStaff: true, role: 'admin' })).toEqual([])
   })
 
   test('an equality claim compares the value, not its truthiness', () => {
-    expect(locked({ userId: 'u1', isStaff: true, role: 'editor' })).toEqual(['kind'])
+    expect(locked({ id: 'u1', isStaff: true, role: 'editor' })).toEqual(['kind'])
   })
 
   test('unknown answers are permissive: no session, or a claim the session does not carry', () => {
     expect(locked(null)).toEqual([])
-    expect(locked({ userId: 'u1' })).toEqual([])
+    expect(locked({ id: 'u1' })).toEqual([])
   })
 
   test('a predicate carried only as the bit locks nothing', () => {
-    expect(locked({ userId: 'u1', isStaff: false, role: 'admin' })).not.toContain('notes')
+    expect(locked({ id: 'u1', isStaff: false, role: 'admin' })).not.toContain('notes')
   })
 })

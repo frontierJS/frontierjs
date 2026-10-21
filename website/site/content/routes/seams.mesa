@@ -94,7 +94,7 @@ render: static
         <div><b>ctx.route</b><span>path params</span></div>
         <div><b>ctx.query</b><span>filters</span></div>
         <div><b>ctx.directives</b><span>$limit, $orderBy</span></div>
-        <div><b>ctx.auth.user</b><span>identity</span></div>
+        <div><b>ctx.user</b><span>identity</span></div>
         <div><b>ctx.locals</b><span>per-request state</span></div>
       </div>
     </div>

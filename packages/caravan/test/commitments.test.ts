@@ -56,7 +56,7 @@ const T0  = Date.parse('2026-01-01T00:00:00.000Z')
 const closers: Array<() => unknown> = []
 afterEach(async () => { for (const c of closers.splice(0)) await c() })
 
-const SYSTEM = { userId: 'system', role: 'system' } as any
+const SYSTEM = { id: 'system', role: 'system' } as any
 
 type BootOpts = {
   plugin?: boolean; timeZone?: string; hooks?: Record<string, CommitmentSpec>; relay?: boolean
@@ -726,7 +726,7 @@ ${SCHEMA.replace('database main { path "./app.db" }', '').replace('  @@db(main)\
 `
     const db: any = await createClient({ db: ':memory:', schema })
     closers.push(() => db.$close())
-    const app = createApp({ db, system: { userId: 'system', role: 'system' } as any }) as any
+    const app = createApp({ db, system: { id: 'system', role: 'system' } as any }) as any
     const queue = caravan({ db: ':memory:', pollInterval: 10 })
     app.configure(queue)
     app.configure(commitments({ cron: '0 0 1 1 *' }))
@@ -766,7 +766,7 @@ extend model OutboxMessage { @@tenant(none) }
 `
     const db: any = await createClient({ db: ':memory:', schema })
     closers.push(() => db.$close())
-    const app = createApp({ db, system: { userId: 'system', role: 'system' } as any }) as any
+    const app = createApp({ db, system: { id: 'system', role: 'system' } as any }) as any
     const queue = caravan({ db: ':memory:', pollInterval: 10 })
     app.configure(queue)
     app.configure(outbox())

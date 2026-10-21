@@ -67,7 +67,7 @@ export function createStubAuth(opts: { users?: StubUser[] } = {}): IAuth & {
 
   function toSession(user: StubUser, method: 'session' | 'apiKey' = 'session'): SessionContext {
     return {
-      userId:      user.id,
+      id:      user.id,
       userType:    user.kind ?? 'user',
       accountId:   user.accountId,
       workspaceId: user.workspaceId,
@@ -391,16 +391,14 @@ export function testCtx(
 ): ServiceContext {
 
   const ctx = bridge.internal(service, method as 'create', data ?? null, {
-    auth: opts?.user
+    user: opts?.user
       ? {
-          user: {
-            userId:     opts.user.userId ?? 'test-user',
-            userType:   opts.user.userType ?? 'user',
-            authMethod: opts.user.authMethod ?? 'session',
-            role:        opts.user.role ?? 'admin',
-            ...opts.user,
-          } as SessionContext,
-        }
+          id:         opts.user.id ?? 'test-user',
+          userType:   opts.user.userType ?? 'user',
+          authMethod: opts.user.authMethod ?? 'session',
+          role:        opts.user.role ?? 'admin',
+          ...opts.user,
+        } as SessionContext
       : undefined,
     locals: {
       ...(opts?.workspaceId ? { workspaceId: opts.workspaceId } : {}),

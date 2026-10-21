@@ -166,7 +166,7 @@ describe('POST /auth/register where the app mails a verification', () => {
   test('confirming an existing account\'s address signs nobody in', async () => {
     const address = email('rv-existing')
     const user = await mh.auth.createUser({ email: address, password: 'pw-1' })
-    await mh.auth.requestEmailVerification!(user.userId)
+    await mh.auth.requestEmailVerification!(user.id)
     await settled(() => mails.some(m => m.to === address))
     const res = await request(mailApp).post('/auth/email/verify').send({ token: mails.find(m => m.to === address)!.token })
 
@@ -578,7 +578,7 @@ describe('POST /auth/email/verify', () => {
     const reg = await request(app).post('/auth/register')
       .send({ email: email('ev-victim'), password: 'pw', name: 'EV' })
     expect(reg.status).toBe(201)
-    await (h.auth as any).requestEmailVerification((reg.body as any).user.userId)
+    await (h.auth as any).requestEmailVerification((reg.body as any).user.id)
 
     const pendingBefore = await h.sys.verification.findMany({ where: { purpose: 'emailVerify' } })
     expect(pendingBefore.length).toBeGreaterThan(0)
@@ -602,7 +602,7 @@ describe('POST /auth/email/verify', () => {
     // guard refusing every token would satisfy the refusals on its own.
     const reg = await request(app).post('/auth/register')
       .send({ email: email('ev-ok'), password: 'pw', name: 'OK' })
-    await (h.auth as any).requestEmailVerification((reg.body as any).user.userId)
+    await (h.auth as any).requestEmailVerification((reg.body as any).user.id)
     const token = h.verifyToken()
 
     const res = await request(app).post('/auth/email/verify').send({ token })

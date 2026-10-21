@@ -325,12 +325,12 @@ describe('the socket half', () => {
     expect(frames.map(f => JSON.parse(f).event)).toEqual(['orders created'])
   })
 
-  // A resolver written against a request -- `ctx.auth.user.workspaceId` --
+  // A resolver written against a request -- `ctx.user.workspaceId` --
   // throws on null. The write is not failed by it, the bus still hears it,
   // and the warning names the fix.
   test('a resolver that reads ctx throws, and the bus alone hears it', async () => {
     const { db, app, seen } = await mkApp({
-      channel: ((_row: unknown, ctx: { auth: { user: { w: string } } }) => app.channels.channel(`w:${ctx.auth.user.w}`)) as never,
+      channel: ((_row: unknown, ctx: { user: { w: string } }) => app.channels.channel(`w:${ctx.user.w}`)) as never,
     })
     const warn = console.warn, said: string[] = []
     console.warn = (m: string) => { said.push(String(m)) }

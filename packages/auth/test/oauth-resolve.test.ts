@@ -56,7 +56,7 @@ describe('a provider account we have seen', () => {
     const again = await h.auth.oauthResolve('google', id({ providerId: 's-100', email: 'renamed@shop.test' }))
     expect(again.outcome).toBe('signed-in')
     if (again.outcome !== 'signed-in' || first.outcome !== 'signed-in') throw new Error('unreachable')
-    expect(again.user.userId).toBe(first.user.userId)
+    expect(again.user.id).toBe(first.user.id)
   })
 
   test('the same subject at a DIFFERENT provider is a different person', async () => {
@@ -81,7 +81,7 @@ describe('a provider account we have seen', () => {
     if (out.outcome !== 'signed-in') throw new Error('expected sign-in')
     expect(out.token).toBeTruthy()
 
-    const [cred] = await credsFor(out.user.userId)
+    const [cred] = await credsFor(out.user.id)
     expect(cred.type).toBe('oauth:google')
     expect(cred.value).toBe('s-tok')
     expect(cred.accessToken).toBeNull()
@@ -217,7 +217,7 @@ describe('an address somebody already holds', () => {
 
     expect(out.outcome).toBe('signed-in')
     if (out.outcome !== 'signed-in') throw new Error('unreachable')
-    expect(out.user.userId).toBe(user.id)
+    expect(out.user.id).toBe(user.id)
     expect((await credsFor(user.id)).some((c: any) => c.type === 'oauth:google')).toBe(true)
   })
 

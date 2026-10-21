@@ -34,7 +34,7 @@ async function call(
   key?:   string,
 ) {
   const ctx = bridge.internal(svc.name, method as 'create', { q: 'canary-7f3a' }, {
-    auth: { user: { userId: 'u1' } as never },
+    user: { id: 'u1' } as never,
   }, app)
   ctx.method = method
   await enterRequest(
@@ -134,7 +134,7 @@ describe('a declared read is handed a client that refuses writes', () => {
     } as never)
     const app = await createTestApp()
     const ctx = bridge.internal('passes', method as 'create', {}, {
-      auth: { user: { userId: 'u1' } as never },
+      user: { id: 'u1' } as never,
     }, app)
     ctx.method = method
     const hooks = { around: { all: [withLitestoneDb(db)] } }

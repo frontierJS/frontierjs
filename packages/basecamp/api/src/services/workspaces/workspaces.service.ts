@@ -68,7 +68,7 @@ function stampOwnership(): void {
   const data = ($.data ?? {}) as Record<string, unknown>
   // Assigned, not defaulted: whatever a client sent for these is discarded.
   data.accountId = user.accountId
-  data.ownerId   = user.userId
+  data.ownerId   = user.id
   // Derived, not assigned — a caller may name their own slug. It has to
   // happen HERE for the same reason the two above do: `slug` is required and
   // autoValidate runs after this hook and before the method, so deriving it
@@ -79,8 +79,8 @@ function stampOwnership(): void {
 }
 
 function sessionOf() {
-  const user = $.auth?.user as { userId?: string; accountId?: string } | undefined
-  if (!user?.userId) throw new Unauthorized('Not authenticated')
+  const user = $.user as { id?: string; accountId?: string } | undefined
+  if (!user?.id) throw new Unauthorized('Not authenticated')
   return user
 }
 
@@ -127,11 +127,11 @@ export default createService({
   // JOIN; `memberships: { some: { userId } }` is the relation the schema
   // already declares.
   async find() {
-    const user = $.auth?.user as { userId?: string } | undefined
-    if (!user?.userId) return { total: 0, limit: 20, offset: 0, data: [] }
+    const user = $.user as { id?: string } | undefined
+    if (!user?.id) return { total: 0, limit: 20, offset: 0, data: [] }
 
     const { limit, offset } = getPagination()
-    const mine = await members().findMany({ where: { userId: user.userId } })
+    const mine = await members().findMany({ where: { userId: user.id } })
     const ids  = mine.map((m: any) => m.workspaceId)
     if (!ids.length) return { total: 0, limit, offset, data: [] }
 
@@ -154,7 +154,7 @@ export default createService({
     const ws   = await db().workspace.findUnique({ where: { id: $.id as string } })
     if (!ws) throw new NotFound(`Workspace '${$.id}' not found`)
 
-    const member = await members().findFirst({ where: { workspaceId: $.id as string, userId: user.userId } })
+    const member = await members().findFirst({ where: { workspaceId: $.id as string, userId: user.id } })
     if (!member) throw new NotFound(`Workspace '${$.id}' not found`)
 
     return ws
@@ -171,10 +171,10 @@ export default createService({
     // unreachable by its own owner.
     const ws = await ($.db.asSystem() as any).$transaction(async (tx: any) => {
       const ws = await tx.workspace.create({
-        data: { ...data, accountId: user.accountId, ownerId: user.userId },
+        data: { ...data, accountId: user.accountId, ownerId: user.id },
       })
       await tx.workspaceMember.create({
-        data: { workspaceId: ws.id, userId: user.userId, role: 'owner',
+        data: { workspaceId: ws.id, userId: user.id, role: 'owner',
                 capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString() },
       })
       return ws
@@ -221,7 +221,7 @@ export default createService({
   async members() {
     $.dispatch = false          // a read — do not announce it on a channel
     const user = sessionOf()
-    const mine = await members().findFirst({ where: { workspaceId: $.id as string, userId: user.userId } })
+    const mine = await members().findFirst({ where: { workspaceId: $.id as string, userId: user.id } })
     if (!mine) throw new NotFound(`Workspace '${$.id}' not found`)
 
     const rows = await members().findMany({
@@ -327,7 +327,7 @@ export default createService({
   /** End your own membership. Any role may; the last owner may not, because
    *  a workspace with no owner is one nobody can administer or delete. */
   async leave() {
-    const me     = sessionOf().userId as string
+    const me     = sessionOf().id as string
     const wsId   = $.id as string
     const mine   = await members().findFirst({ where: { workspaceId: wsId, userId: me } })
     if (!mine) throw new NotFound(`Workspace '${wsId}' not found`)
@@ -355,7 +355,7 @@ export default createService({
   /** Hand the workspace to another member and step down to admin, in one
    *  write: two steps would leave a window with no owner, or two. */
   async transferOwnership() {
-    const me     = sessionOf().userId as string
+    const me     = sessionOf().id as string
     const target = ($.data as { userId: string }).userId
     if (target === me) throw new BadRequest('You already own this workspace')
 

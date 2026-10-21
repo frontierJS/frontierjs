@@ -193,7 +193,7 @@ the ladder is per WORKSPACE rather than per app. `api/src/core/gate.ts` maps
 
 `createApp({ principal: membershipClaim(…) })` resolves it once per request
 **onto the principal**, not onto the client — Junction re-derives its scoped
-client from `ctx.auth.user`, so a standing set on the client alone is dropped.
+client from `ctx.user`, so a standing set on the client alone is dropped.
 An unknown role grades VISITOR rather than defaulting upward: an enum value
 added to the schema and forgotten here must lose access, not gain it.
 

@@ -14,7 +14,7 @@ const env = await createTestEnv({
   api:        ({ db }) => buildApp(db),
 })
 
-const developer = session({ userId: 'u1', role: 'developer' })
+const developer = session({ id: 'u1', role: 'developer' })
 
 test('a developer archives a lead', async () => {
   const t = env.phases({ as: developer })
@@ -69,7 +69,7 @@ than that:
 | principal → `SessionContext` | the auth provider | the standing fields are absent and everyone grades down |
 | `SessionContext` → `sessionGateLevel()` | `junction/src/core/litestone.ts` | a gate refuses or admits the wrong tier |
 | `SessionContext` → `toDataPrincipal()` | same | `userId` never becomes `id`, every row policy matches nothing, and the screen is empty with a 200 |
-| `ctx.auth.user` → the scoped client | `withLitestoneDb` | the service queries unscoped |
+| `ctx.user` → the scoped client | `withLitestoneDb` | the service queries unscoped |
 
 `env.as(user).service('leads')` puts a user through all four — the path a request
 takes, minus the socket.

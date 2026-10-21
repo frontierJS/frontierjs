@@ -49,19 +49,19 @@ async function mkDb() {
 // Two graders read this principal (junction's `sessionGateLevel` for the 401,
 // litestone's own for the 403) and only the explicit standing satisfies both
 // without modeling a lifecycle these tests are not about.
-const SIGNED_IN = { userId: 1, id: 1, isAdmin: true }
+const SIGNED_IN = { id: 1, isAdmin: true }
 
 /** A context with no principal — the stranger the gate is there to refuse. */
 function anonCtx(db: unknown, method: string, data: unknown): ServiceContext {
   return setCallDb(bridge.internal('orders', method as never, data as never, {
-    auth:   { user: null },
+    user: null,
   } as never), db)
 }
 
 /** The same call, made by a caller the gate admits. */
 function userCtx(db: unknown, method: string, data: unknown, id?: string): ServiceContext {
   const ctx = setCallDb(bridge.internal('orders', method as never, data as never, {
-    auth:   { user: SIGNED_IN },
+    user: SIGNED_IN,
   } as never), db)
   if (id !== undefined) ctx.id = id
   return ctx

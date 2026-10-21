@@ -303,9 +303,9 @@ describe("runs", () => {
     // somebody else's flow, and another USER's does not (`FJS-1170`).
     const row     = await env.system.run.findFirst({ where: { id: runId } })
     const graded  = (user: Record<string, unknown>) => env.db.$readAs("run", row, toDataPrincipal(user as never))
-    expect((await graded({ userId: "u-admin", role: "admin", isAdmin: true }))?.id).toBe(runId)
-    expect((await graded({ userId: "u-manager", role: "manager" }))?.id).toBe(runId)
-    expect(await graded({ userId: "u-other", role: "member" })).toBeNull()
+    expect((await graded({ id: "u-admin", role: "admin", isAdmin: true }))?.id).toBe(runId)
+    expect((await graded({ id: "u-manager", role: "manager" }))?.id).toBe(runId)
+    expect(await graded({ id: "u-other", role: "member" })).toBeNull()
 
     // Read on the administrator's own client, so a protected column is stripped
     // the way it is for anybody who is not system.

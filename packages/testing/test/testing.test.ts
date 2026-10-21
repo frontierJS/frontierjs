@@ -42,9 +42,9 @@ async function env(extra: Record<string, unknown> = {}) {
   }) as any
 }
 
-const member = session({ userId: 'u-member', role: 'member' })
-const admin  = session({ userId: 'u-admin',  role: 'member', isAdmin: true })
-const reader = session({ userId: 'u-reader', role: 'reader' })
+const member = session({ id: 'u-member', role: 'member' })
+const admin  = session({ id: 'u-admin',  role: 'member', isAdmin: true })
+const reader = session({ id: 'u-reader', role: 'reader' })
 
 describe('createTestEnv — the API tier', () => {
 
@@ -97,11 +97,11 @@ describe('createTestEnv — the API tier', () => {
     await e.close()
   })
 
-  test('a row policy sees the principal — userId became id somewhere', async () => {
+  test('a row policy sees the principal', async () => {
     // The seam this tier exists for. `@@allow(read, ownerId == auth().id)` is
     // compiled into the WHERE, so a principal that arrives as `undefined`
-    // returns an empty list with a 200 and nothing raises (FJS-097). Junction's
-    // toDataPrincipal() renames userId → id; if it stops, this is what goes red.
+    // returns an empty list with a 200 and nothing raises (FJS-097); if the session
+    // stops carrying `id`, this is what goes red.
     const e = await env()
     await e.system.account.create({ data: { id: 1, name: 'acme' } })
     await e.system.lead.createMany({ data: [
@@ -158,13 +158,12 @@ describe('createTestEnv — the API tier', () => {
     await e.close()
   })
 
-  test('a User row bound as the principal is refused, naming session()', async () => {
-    // A row puts the caller's id at `id` and a session at `userId`; bound as
-    // given, every service reading `$.me.userId` saw no caller while the gate
-    // and the row policy saw one (`FJS-1890`).
+  test('a principal spelling its id `userId` is refused, naming session()', async () => {
+    // A session and a User row put the id at `id`; a `userId` ran as a caller
+    // with no id while nothing complained (`FJS-1890`, `FJS-D1307`).
     const e = await env()
-    await expect(e.as({ id: 'u-member', role: 'member' }).service('leads').find())
-      .rejects.toThrow(/auth\.user has no 'userId'[\s\S]*session\(\{ userId \}\)/)
+    await expect(e.as({ userId: 'u-member', role: 'member' } as never).service('leads').find())
+      .rejects.toThrow(/user has no 'id'[\s\S]*session\(\{ id \}\)/)
     await e.close()
   })
 
@@ -256,14 +255,14 @@ describe('session()', () => {
     // Defaulting verifiedAt to null would grade every session it built down to
     // VISITOR(1) through sessionGateLevel — absent means the app does not model
     // the stage, and only null grades down.
-    const s = session({ userId: 'u1' })
-    expect(s).toEqual({ userId: 'u1', userType: 'user', authMethod: 'session' })
+    const s = session({ id: 'u1' })
+    expect(s).toEqual({ id: 'u1', userType: 'user', authMethod: 'session' })
     expect('verifiedAt'   in s).toBe(false)
     expect('activatedAt'  in s).toBe(false)
     expect('isSystemAdmin' in s).toBe(false)
   })
 
   test('a stated field wins', () => {
-    expect(session({ userId: 'u1', userType: 'bot', verifiedAt: null }).userType).toBe('bot')
+    expect(session({ id: 'u1', userType: 'bot', verifiedAt: null }).userType).toBe('bot')
   })
 })

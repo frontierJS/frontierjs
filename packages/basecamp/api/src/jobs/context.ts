@@ -81,7 +81,7 @@ export interface AppJob {
  */
 export function runsAsCaller(ctx: JobContext<unknown>, job: string): CallerJob {
   const app    = appFrom(ctx, job)
-  const actor  = app.principal()?.userId
+  const actor  = app.principal()?.id
   const tenant = app.tenant()
 
   if (!actor || !tenant) throw new Error(
@@ -107,7 +107,7 @@ export function runsAsCaller(ctx: JobContext<unknown>, job: string): CallerJob {
  */
 export function runsAsApp(ctx: JobContext<unknown>, job: string): AppJob {
   const app   = appFrom(ctx, job)
-  const actor = app.principal()?.userId
+  const actor = app.principal()?.id
 
   if (actor) throw new Error(
     `[${job}] declares runsAsApp and the queue recorded actor '${actor}'. Somebody asked ` +
@@ -124,7 +124,7 @@ export function runsAsApp(ctx: JobContext<unknown>, job: string): AppJob {
  * discovering which one it is in the middle of its work.
  */
 export function runsEitherWay(ctx: JobContext<unknown>, job: string): CallerJob | AppJob {
-  return appFrom(ctx, job).principal()?.userId
+  return appFrom(ctx, job).principal()?.id
     ? runsAsCaller(ctx, job)
     : runsAsApp(ctx, job)
 }

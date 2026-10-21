@@ -70,7 +70,7 @@ None of them broke a request. Six of the seven were silent.
 `@@gate` grades the caller on Litestone's 0–7 scale. Litestone's own default
 resolver, `FrontierGateGetLevel`, grades a shape Junction does not produce — it
 reads `verifiedAt → activatedAt → role → isAdmin/isOwner/isSystemAdmin`, while
-`SessionContext` declares `{ userId, userType, email, name, accountId,
+`SessionContext` declares `{ id, userType, email, name, accountId,
 workspaceId, role, scopes, authMethod }`. The two overlap on `role` alone, and
 `role` is tested third. So a session without `verifiedAt` graded as VISITOR (1)
 whatever it carried, and a write from a *logged-in* user came back

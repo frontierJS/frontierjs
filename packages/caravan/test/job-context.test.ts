@@ -5,7 +5,7 @@
 // principal is STRANGER(0), so a job writing back through
 // `app.service('x').patch(…)` was refused by the model's own `@@gate`. It was
 // documented rather than fixed, and every job in every app carried a
-// hand-written `{ auth: { user: SYSTEM } }` to work around it — which ALSO
+// hand-written `{ user: SYSTEM }` to work around it — which ALSO
 // meant a job asked for by a customer ran with the authority of the shop.
 //
 // Now a dispatch records WHO asked and the worker opens a scope for them.
@@ -56,13 +56,13 @@ function authStub(users: Record<string, Partial<SessionContext>>) {
     async sessionFor(userId: string): Promise<SessionContext | null> {
       calls++
       const u = users[userId]
-      return u ? { userId, userType: 'user', authMethod: 'created', ...u } as SessionContext : null
+      return u ? { id: userId, userType: 'user', authMethod: 'created', ...u } as SessionContext : null
     },
   } as unknown as IAuth
   return { auth, users, resolved: () => calls }
 }
 
-const SYSTEM = { userId: 'system', userType: 'service', role: 'system', authMethod: 'created' } as SessionContext
+const SYSTEM = { id: 'system', userType: 'service', role: 'system', authMethod: 'created' } as SessionContext
 
 async function bootApp(o: {
   system?: SessionContext
@@ -96,12 +96,12 @@ describe('the principal a job runs as', () => {
       async create() { await jobsOf(app).dispatch('record', {}); return {} },
     } as never))
 
-    await app.service('orders').create({}, { auth: { user: { userId: 'alice' } } } as never)
+    await app.service('orders').create({}, { user: { id: 'alice' } } as never)
 
     expect(await until(() => seen.length > 0)).toBe(true)
     expect(seen[0].actorId).toBe('alice')
-    expect(seen[0].auth.user?.userId).toBe('alice')
-    expect(seen[0].auth.user?.role).toBe('staff')
+    expect(seen[0].user?.id).toBe('alice')
+    expect(seen[0].user?.role).toBe('staff')
 
     await app.stop()
   })
@@ -119,13 +119,13 @@ describe('the principal a job runs as', () => {
       async create() { await jobsOf(app).dispatch('record', {}, { delay: 50 }); return {} },
     } as never))
 
-    await app.service('orders').create({}, { auth: { user: { userId: 'alice' } } } as never)
+    await app.service('orders').create({}, { user: { id: 'alice' } } as never)
 
     // Demoted after the work was asked for and before it runs.
     stub.users.alice = { role: 'viewer' }
 
     expect(await until(() => seen.length > 0)).toBe(true)
-    expect(seen[0].auth.user?.role).toBe('viewer')
+    expect(seen[0].user?.role).toBe('viewer')
     expect(stub.resolved()).toBeGreaterThan(0)
 
     await app.stop()
@@ -140,7 +140,7 @@ describe('the principal a job runs as', () => {
 
     expect(await until(() => seen.length > 0)).toBe(true)
     expect(seen[0].actorId).toBeNull()
-    expect(seen[0].auth.user?.userId).toBe('system')
+    expect(seen[0].user?.id).toBe('system')
 
     await app.stop()
   })
@@ -152,7 +152,7 @@ describe('the principal a job runs as', () => {
     await jobsOf(app).dispatch('record', {})
 
     expect(await until(() => seen.length > 0)).toBe(true)
-    expect(seen[0].auth.user).toBeNull()
+    expect(seen[0].user).toBeNull()
 
     await app.stop()
   })
@@ -167,11 +167,11 @@ describe('the principal a job runs as', () => {
       async create() { await jobsOf(app).dispatch('record', {}, { actor: null }); return {} },
     } as never))
 
-    await app.service('orders').create({}, { auth: { user: { userId: 'alice' } } } as never)
+    await app.service('orders').create({}, { user: { id: 'alice' } } as never)
 
     expect(await until(() => seen.length > 0)).toBe(true)
     expect(seen[0].actorId).toBeNull()
-    expect(seen[0].auth.user?.userId).toBe('system')
+    expect(seen[0].user?.id).toBe('system')
 
     await app.stop()
   })
@@ -186,10 +186,10 @@ describe('the principal a job runs as', () => {
       async create() { await jobsOf(app).dispatch('record', {}, { actor: 'bob' }); return {} },
     } as never))
 
-    await app.service('orders').create({}, { auth: { user: { userId: 'alice' } } } as never)
+    await app.service('orders').create({}, { user: { id: 'alice' } } as never)
 
     expect(await until(() => seen.length > 0)).toBe(true)
-    expect(seen[0].auth.user?.userId).toBe('bob')
+    expect(seen[0].user?.id).toBe('bob')
 
     await app.stop()
   })
@@ -207,7 +207,7 @@ describe('what the handler can reach', () => {
     let sawInService: string | null = 'unset'
     app.services.register(createService({
       name: 'audit', methods: ['create'],
-      async create(ctx: any) { sawInService = ctx.auth.user?.userId ?? null; return {} },
+      async create(ctx: any) { sawInService = ctx.user?.id ?? null; return {} },
     } as never))
 
     jobsOf(app).handle('write-audit', async (ctx) => {
@@ -219,7 +219,7 @@ describe('what the handler can reach', () => {
       async create() { await jobsOf(app).dispatch('write-audit', {}); return {} },
     } as never))
 
-    await app.service('orders').create({}, { auth: { user: { userId: 'alice' } } } as never)
+    await app.service('orders').create({}, { user: { id: 'alice' } } as never)
 
     expect(await until(() => sawInService !== 'unset')).toBe(true)
     expect(sawInService).toBe('alice')
@@ -251,7 +251,7 @@ describe('what the handler can reach', () => {
 
     expect(await until(() => seen.length > 0)).toBe(true)
     expect(seen[0].app).toBeUndefined()
-    expect(seen[0].auth.user).toBeNull()
+    expect(seen[0].user).toBeNull()
     expect(seen[0].data).toEqual({ n: 1 })
 
     await queue.stop()
@@ -275,7 +275,7 @@ describe('what cannot be resolved', () => {
       async create() { await jobsOf(app).dispatch('vanish', {}, { delay: 50 }); return {} },
     } as never))
 
-    await app.service('orders').create({}, { auth: { user: { userId: 'alice' } } } as never)
+    await app.service('orders').create({}, { user: { id: 'alice' } } as never)
     delete stub.users.alice
 
     const failed = () => jobsOf(app).list({ status: 'dead' })
@@ -309,7 +309,7 @@ describe('what cannot be resolved', () => {
     await jobsOf(app).dispatch('receipt', {}, { actor: 'gone-7' })
 
     expect(await until(() => seen.length > 0)).toBe(true)
-    expect(seen[0].auth.user?.userId).toBe('system')
+    expect(seen[0].user?.id).toBe('system')
     expect(seen[0].actorId).toBe('gone-7')
     await app.stop()
   })
@@ -364,7 +364,7 @@ describe('the tenant a job runs in', () => {
 
     jobsOf(app).handle('record2', async () => { inHandler = app.tenant() })
 
-    await app.service('orders').create({}, { auth: { user: { userId: 'alice' } } } as never)
+    await app.service('orders').create({}, { user: { id: 'alice' } } as never)
 
     expect(await until(() => seen.length > 0)).toBe(true)
     expect(seen[0].tenantId).toBe('acme')
@@ -393,7 +393,7 @@ describe('the tenant a job runs in', () => {
       },
     } as never))
 
-    await app.service('orders').create({}, { auth: { user: { userId: 'alice' } } } as never)
+    await app.service('orders').create({}, { user: { id: 'alice' } } as never)
 
     expect(await until(() => seen.length > 1)).toBe(true)
     const byN = (n: number) => seen.find(s => (s.data as { n: number }).n === n)!

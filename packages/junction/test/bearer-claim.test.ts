@@ -86,9 +86,9 @@ async function appWith(db: unknown) {
   app.services.register(buildService({
     name: 'answers',
     async find(ctx: ServiceContext) {
-      seen.user  = ctx.auth.user
+      seen.user  = ctx.user
       seen.grant = ctx.locals[BEARER]
-      seen.level = sessionGateLevel(ctx.auth.user as never)
+      seen.level = sessionGateLevel(ctx.user as never)
       return ($.db as any).formResponse.findMany({})
     },
     async create(ctx: ServiceContext) {
@@ -129,7 +129,7 @@ describe('bearerClaim', () => {
     const { app, seen } = await appWith(db)
 
     await holding('live-one', () => app.service('answers').find({}))
-    // `ctx.auth.user` stays null: a claims-only object handed to the gate grades
+    // `ctx.user` stays null: a claims-only object handed to the gate grades
     // CREATOR(3), which would promote every guest in the app silently.
     expect(seen.user).toBeNull()
     expect(seen.level).toBe(0)
@@ -322,11 +322,11 @@ describe('a grant is found whoever else the holder is', () => {
   })
 
   test('a member of ANOTHER account holding the token resolves it too', async () => {
-    expect(await open({ userId: 'u2', accountId: 2 })).toEqual({ grantSurveyId: 9, grantAccountId: 1 })
+    expect(await open({ id: 'u2', accountId: 2 })).toEqual({ grantSurveyId: 9, grantAccountId: 1 })
   })
 
   test('a member of the grant\'s own account resolves it', async () => {
-    expect(await open({ userId: 'u1', accountId: 1 })).toEqual({ grantSurveyId: 9, grantAccountId: 1 })
+    expect(await open({ id: 'u1', accountId: 1 })).toEqual({ grantSurveyId: 9, grantAccountId: 1 })
   })
 })
 
@@ -349,7 +349,7 @@ describe('a grant presented as Authorization: Bearer', () => {
       auth: {
         verifySession: async (token: string) => {
           if (token !== 'session-ana') throw new Error('bad token')
-          return { userId: 'ana', userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x' }
+          return { id: 'ana', userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x' }
         },
       },
     })
@@ -357,7 +357,7 @@ describe('a grant presented as Authorization: Bearer', () => {
       name: 'answers',
       async find(ctx: ServiceContext) {
         const rows = await ($.db as any).formResponse.findMany({})
-        return [{ user: (ctx.auth.user as any)?.userId ?? null, rows: rows.length }]
+        return [{ user: (ctx.user as any)?.id ?? null, rows: rows.length }]
       },
     }))
     await app.start()
@@ -417,7 +417,7 @@ describe('a grant presented as a cookie', () => {
       auth: {
         verifySession: async (token: string) => {
           if (token !== 'session-ana') throw new Error('bad token')
-          return { userId: 'ana', userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x' }
+          return { id: 'ana', userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x' }
         },
       },
     })
@@ -425,7 +425,7 @@ describe('a grant presented as a cookie', () => {
       name: 'answers',
       async find(ctx: ServiceContext) {
         const rows = await ($.db as any).formResponse.findMany({})
-        return [{ user: (ctx.auth.user as any)?.userId ?? null, rows: rows.length }]
+        return [{ user: (ctx.user as any)?.id ?? null, rows: rows.length }]
       },
     }))
     await app.start()
@@ -481,7 +481,7 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
     from: cookie('portal'), model: 'portalLink', column: 'tokenHash', key: KEY,
     claims: { portalCustomerId: 'customerId' }, subject: 'customerId',
   })
-  const SELLER = { id: 7, userId: 'ana', role: 'member', customerId: 1 }
+  const SELLER = { id: 7, role: 'member', customerId: 1 }
 
   async function grants() {
     const db: any = await createClient({ db: ':memory:', schema: GRANTS, claims: ['customerId', 'portalCustomerId'] })
@@ -575,7 +575,7 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
     let announced: unknown = undefined
     app.events.on('portalLinks:created', (p: unknown) => { announced = p })
 
-    const made: any = await app.service('portalLinks').create({ customerId: 1 }, { auth: { user: SELLER as never } })
+    const made: any = await app.service('portalLinks').create({ customerId: 1 }, { user: SELLER as never })
     expect(typeof made.token).toBe('string')
     expect(made.customerId).toBe(1)
     expect('tokenHash' in made).toBe(false)
@@ -601,7 +601,7 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
       },
     }))
 
-    const made: any = await app.service('portalLinks').create({ customerId: 1 }, { auth: { user: SELLER as never } })
+    const made: any = await app.service('portalLinks').create({ customerId: 1 }, { user: SELLER as never })
     expect(typeof made.token).toBe('string')
     expect('tokenHash' in made).toBe(false)
     expect(ownRan).toBe(true)
@@ -629,7 +629,7 @@ describe('bearerClaim refuses a model name where the accessor is wanted', () => 
 // default refuses; an app whose signed-in callers still hold a grant says so
 // (`FJS-D832`).
 describe('a session beside a grant', () => {
-  const SESSION = { auth: { user: { userId: 'u1', id: 'u1', role: 'user' } as never } }
+  const SESSION = { user: { id: 'u1', role: 'user' } as never }
 
   test('is refused 400 by default, before the grant is read', async () => {
     const db = await seeded()
@@ -660,7 +660,7 @@ describe('a session beside a grant', () => {
     app.services.register(buildService({
       name: 'answers',
       async find(ctx: ServiceContext) {
-        seen.user  = ctx.auth.user
+        seen.user  = ctx.user
         seen.grant = ctx.locals[BEARER]
         return ($.db as any).formResponse.findMany({})
       },
@@ -668,7 +668,7 @@ describe('a session beside a grant', () => {
 
     const rows = rowsOf(await holding('live-one', () => app.service('answers').find({}, SESSION)))
     expect(rows.map(r => r.answer)).toEqual(['one'])
-    expect(seen.user.userId).toBe('u1')
+    expect(seen.user.id).toBe('u1')
     expect(seen.user.portalClientId).toBe(1)
     expect((seen.grant as any).subject).toBe(1)
     // A dead token is still a dead token under merge.

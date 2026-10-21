@@ -22,6 +22,7 @@
 // removal — `revokeSession` on a lapsed row, and the sweep itself.
 
 import { describe, test, expect, afterAll } from 'bun:test'
+import { createHash } from 'node:crypto'
 import { createAuthCleanupJobs } from '../cleanup.ts'
 import { makeAuth, signedIn, type Harness } from './harness.ts'
 
@@ -74,9 +75,9 @@ describe('a session lapses on the clock, with nothing written', () => {
     const { auth, advance } = await staged()
     const { user } = await signIn(auth, 'list@example.com')
 
-    expect((await auth.listSessions!(user.userId)).length).toBe(1)
+    expect((await auth.listSessions!(user.id)).length).toBe(1)
     advance(31 * DAY)
-    expect((await auth.listSessions!(user.userId)).length).toBe(0)
+    expect((await auth.listSessions!(user.id)).length).toBe(0)
   })
 })
 
@@ -92,7 +93,7 @@ describe('the window filters writes, so a purge has to say so', () => {
     // 0 and they are told `No session with id …`, which is both wrong and
     // unactionable — and nothing else in the suite would have noticed.
     advance(31 * DAY)
-    await auth.revokeSession!(user.userId, String(row.id))
+    await auth.revokeSession!(user.id, String(row.id))
 
     expect(await sys.session.findFirst({ where: { id: row.id }, withExpired: true })).toBeNull()
   })
@@ -105,10 +106,10 @@ describe('the window filters writes, so a purge has to say so', () => {
     // what is under test: one either side of the staged instant.
     const hour = 60 * 60 * 1000
     await sys.session.create({
-      data: { userId: user.userId, token: 'LAPSED', expiresAt: new Date(at() - hour) },
+      data: { userId: user.id, token: 'LAPSED', expiresAt: new Date(at() - hour) },
     })
     await sys.session.create({
-      data: { userId: user.userId, token: 'LIVE', expiresAt: new Date(at() + hour) },
+      data: { userId: user.id, token: 'LIVE', expiresAt: new Date(at() + hour) },
     })
 
     // The SHIPPED predicate, which is now `onlyExpired` rather than a
@@ -154,5 +155,36 @@ describe('the one read that wants the lapsed row', () => {
       .map((r: any) => (typeof r.meta === 'string' ? JSON.parse(r.meta) : r.meta)?.reason)
     expect(reasons).toContain('challenge-expired')
     expect(reasons).toContain('no-such-challenge')
+  })
+})
+
+describe('a handoff code: once, with its verifier, inside its minute (FJS-D1357)', () => {
+  const VERIFIER = 'v'.repeat(20) + 'erifier-of-at-least-43-chars-xx'
+  const CHALLENGE = createHash('sha256').update(VERIFIER).digest('base64url')
+  const AUDIENCE = 'https://hours-site.acct.workers.dev'
+
+  test('redeemed by its verifier, once', async () => {
+    const { auth } = await staged()
+    const { user } = await signIn(auth, 'handoff@example.com')
+    const { code } = await auth.issueHandoff!(user.id, { challenge: CHALLENGE, audience: AUDIENCE, scopes: ['drafts:read', 'drafts:write'] })
+    expect(await auth.redeemHandoff!(code, 'w' + VERIFIER.slice(1))).toBeNull()
+    expect(await auth.redeemHandoff!(code, VERIFIER)).toEqual({ userId: user.id, audience: AUDIENCE, scopes: ['drafts:read', 'drafts:write'] })
+    expect(await auth.redeemHandoff!(code, VERIFIER)).toBeNull()
+  })
+
+  test('a plain-method challenge is refused at issue', async () => {
+    const { auth } = await staged()
+    const { user } = await signIn(auth, 'plain@example.com')
+    await expect(auth.issueHandoff!(user.id, { challenge: VERIFIER, audience: AUDIENCE })).rejects.toThrow(/S256/)
+  })
+
+  test('lapses on the clock, and the sweep takes it', async () => {
+    const { auth, sys, db, advance } = await staged()
+    const { user } = await signIn(auth, 'late@example.com')
+    const { code } = await auth.issueHandoff!(user.id, { challenge: CHALLENGE, audience: AUDIENCE })
+    advance(61_000)
+    await createAuthCleanupJobs(db).sweepNow()
+    expect(await sys.credential.count({ where: { type: 'handoff' } })).toBe(0)
+    expect(await auth.redeemHandoff!(code, VERIFIER)).toBeNull()
   })
 })

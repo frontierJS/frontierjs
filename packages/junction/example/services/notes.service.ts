@@ -77,7 +77,7 @@ export default createService({
       title:      data.title as string,
       body:       data.body  as string,
       tags:       (data.tags ?? []) as string[],
-      author_id:  ctx.auth.user?.userId ?? 'anonymous',
+      author_id:  ctx.user?.id ?? 'anonymous',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }

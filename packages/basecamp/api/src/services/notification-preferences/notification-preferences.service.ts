@@ -26,7 +26,7 @@ import { keyScope } from '../api-keys/scopes.ts'
  *  `@@gate(1)` is VISITOR — but it refuses with a level, and somebody who is
  *  simply signed out needs the sentence. */
 function me(): string {
-  const id = ($.me as { userId?: string } | null | undefined)?.userId
+  const id = ($.me as { id?: string } | null | undefined)?.id
   if (!id) throw new Unauthorized('Sign in to manage your notification preferences')
   return id
 }

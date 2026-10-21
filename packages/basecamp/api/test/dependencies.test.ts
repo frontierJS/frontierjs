@@ -117,7 +117,7 @@ beforeAll(async () => {
     await sys.workspaceMember.create({ data: {
       workspaceId: ws.id, userId: u.id, role, capabilities: grantsFor(role), acceptedAt: new Date().toISOString(),
     } })
-  const at = (u: any) => session({ userId: u.id, workspaceId: ws.id })
+  const at = (u: any) => session({ id: u.id, workspaceId: ws.id })
   developer = at(d); viewer = at(v)
 })
 

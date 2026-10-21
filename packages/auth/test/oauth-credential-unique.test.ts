@@ -65,8 +65,8 @@ describe('two concurrent callbacks for one new subject', () => {
     ])
 
     expect(await h.sys.credential.count({ where: { type: 'oauth:google', value: 'sub-race' } })).toBe(1)
-    expect(x).toMatchObject({ outcome: 'signed-in', user: { userId: user.id } })
-    expect(y).toMatchObject({ outcome: 'signed-in', user: { userId: user.id } })
+    expect(x).toMatchObject({ outcome: 'signed-in', user: { id: user.id } })
+    expect(y).toMatchObject({ outcome: 'signed-in', user: { id: user.id } })
   })
 
   // Branch 3: the user row's own unique email already refuses the second; it

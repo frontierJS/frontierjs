@@ -136,7 +136,7 @@ export async function enqueueOutbox(
 
   const actorId = 'actor' in opts
     ? opts.actor ?? null
-    : ctx.auth?.user?.userId ?? null
+    : ctx.user?.id ?? null
 
   // The call's own tenant under `strategy row` (a claim resolved per call), or
   // the one runAs / a job stated. Recorded for a person too: it is a pointer to

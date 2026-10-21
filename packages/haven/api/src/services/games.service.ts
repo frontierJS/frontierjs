@@ -42,7 +42,7 @@ const alone = <T>(roomId: number, fn: () => Promise<T>): Promise<T> => {
 }
 
 const caller = (): number => {
-  const me = Number(($.auth?.user as { userId?: string } | undefined)?.userId)
+  const me = Number(($.user as { id?: string } | undefined)?.id)
   if (!Number.isInteger(me)) throw new BadRequest('Walk in first: nobody is playing')
   return me
 }

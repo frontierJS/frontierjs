@@ -65,7 +65,7 @@ export function shopGateLevel(user: Gradable): number {
  * Work a PERSON asked for does not use this. Caravan records who dispatched a
  * job and Junction re-resolves them when it runs, so booking a courier happens
  * with the standing of the staff member who pressed Ship. Every job here used
- * to pass `{ auth: { user: SYSTEM } }` by hand instead, which quietly gave a
+ * to pass `{ user: SYSTEM }` by hand instead, which quietly gave a
  * customer's checkout the authority of the shop.
  *
  * Graded in this file like every other principal — `isSystemAdmin` is SYSADMIN
@@ -73,7 +73,7 @@ export function shopGateLevel(user: Gradable): number {
  * is a label, and grades nothing.
  */
 export const SYSTEM = {
-  userId:     'system',
+  id:         'system',
   userType:   'service',
   role:       'system',
   isSystemAdmin: true,

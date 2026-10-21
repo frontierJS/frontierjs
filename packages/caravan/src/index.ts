@@ -241,7 +241,7 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
   // Absent is not null: an unstated actor is whoever is in scope, a stated
   // `null` is nobody. The same rule `dispatch` makes about the same column.
   const operatorOf = (o: OperatorOptions = {}): string | null =>
-    'actor' in o ? o.actor ?? null : host?.principal?.()?.userId ?? null
+    'actor' in o ? o.actor ?? null : host?.principal?.()?.id ?? null
 
   const recordEvent = (queue: string, verb: QueueEvent['verb'], actor: string | null, detail: Record<string, unknown> | null) => {
     const at = Date.now()
@@ -785,7 +785,7 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
     // rest of the framework makes about a principal.
     const actorId = 'actor' in dispatchOpts
       ? dispatchOpts.actor ?? null
-      : host?.principal?.()?.userId ?? null
+      : host?.principal?.()?.id ?? null
 
     // WHERE, on the same absent-is-not-null rule. A job queued inside a
     // request is for the tenant that asked for it and nothing has to be

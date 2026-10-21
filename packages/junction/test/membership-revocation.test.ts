@@ -67,7 +67,7 @@ async function mkApp() {
       // what this file is about.
       verifySession: async (token: string) => {
         if (!['ana', 'bob'].includes(token)) throw new Error('bad token')
-        return { userId: token, userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x' }
+        return { id: token, userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x' }
       },
     },
   })

@@ -192,7 +192,7 @@ describe('a session', () => {
   test('expired or revoked no longer reads as anyone', async () => {
     const auth = createHavenAuth(env.db, { key: KEY })
     const sam  = await signIn(env.port, 'sam')
-    expect((await auth.verifySession(sam.token))?.userId).toBe(String(sam.id))
+    expect((await auth.verifySession(sam.token))?.id).toBe(String(sam.id))
 
     await auth.logout(sam.token)
     expect(await auth.verifySession(sam.token)).toBeNull()

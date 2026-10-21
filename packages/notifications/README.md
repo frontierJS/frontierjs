@@ -265,7 +265,7 @@ app.post('/orders/{id}/complete', async (ctx) => {
   const order = await completeOrder(ctx.route.id)
 
   // ctx.user is a SessionContext — `userId`, not `id`. A Recipient wants `id`.
-  await app.notify({ id: ctx.user.userId, email: ctx.user.email }, orderCompleted(order))
+  await app.notify({ id: ctx.user.id, email: ctx.user.email }, orderCompleted(order))
   return ctx.json(order)
 })
 
@@ -305,7 +305,7 @@ after: {
   create: [
     async (ctx) => {
       // authMethod: 'created' is stamped by @frontierjs/auth createUser()
-      if (ctx.auth.user?.authMethod === 'created') {
+      if (ctx.user?.authMethod === 'created') {
         await ctx.app.notify(ctx.result.data, welcomeUser())
       }
     }

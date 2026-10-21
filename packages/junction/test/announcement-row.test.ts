@@ -53,7 +53,7 @@ async function mkDb() {
 function ctxFor(db: unknown, over: Record<string, unknown> = {}): ServiceContext {
   return setCallDb({
     service: 'servers', method: 'heartbeat', id: null, data: null,
-    query: {}, auth: { user: null }, caller: {}, route: {},
+    query: {}, user: null, caller: {}, route: {},
     locals: {}, app: {}, result: null, directives: {},
     ...over,
   } as unknown as ServiceContext, db)

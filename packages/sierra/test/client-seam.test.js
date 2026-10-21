@@ -141,7 +141,7 @@ describe('the credential mode Sierra hands the client', () => {
     await J.ready
 
     expect(await hits()).toContain('GET /account/me')
-    expect(J.session.user).toMatchObject({ userId: 'restored-person' })
+    expect(J.session.user).toMatchObject({ id: 'restored-person' })
     expect(J.session.level).toBe(4)
   })
 

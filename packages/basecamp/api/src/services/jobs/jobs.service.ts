@@ -41,7 +41,7 @@ const sys = () => $.db.asSystem() as any
  * what `runsAsApp` in the handler declares.
  */
 async function jobInScope(jobId: string) {
-  const client = $.auth?.user ? db() : sys()
+  const client = $.user ? db() : sys()
   const row    = await client.job.findUnique({ where: { id: jobId } })
   if (!row) throw new NotFound(`Job '${jobId}' not found`)
   return row as Record<string, any>

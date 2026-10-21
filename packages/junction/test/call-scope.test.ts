@@ -23,7 +23,7 @@ import { createClient }                                   from '../../litestone/
 import { setCallDb } from '../index.ts'
 import { callDb } from '../src/core/context.ts'
 
-const alice = { userId: 'alice', role: 'user' } as never
+const alice = { id: 'alice', role: 'user' } as never
 
 function app(...services: any[]) {
   const a: any = createApp({
@@ -172,7 +172,7 @@ describe('read-only', () => {
   })
 
   test('reading still works through spread and destructuring', () => {
-    enterCall({ service: 'x', method: 'find', locals: {}, auth: { user: null } } as never, () => {
+    enterCall({ service: 'x', method: 'find', locals: {}, user: null } as never, () => {
       const { service, method } = $
       expect([service, method]).toEqual(['x', 'find'])
       expect(Object.keys({ ...$ })).toContain('service')
@@ -285,19 +285,19 @@ describe('leakage', () => {
     const seen: Record<string, unknown> = {}
     const inner = buildService({
       name: 'inner', methods: ['find'],
-      async find() { seen.innerUser = $.auth.user?.userId; seen.innerSvc = $.service; return [] },
+      async find() { seen.innerUser = $.user?.id; seen.innerSvc = $.service; return [] },
     })
     const outer = buildService({
       name: 'outer', methods: ['find'],
       async find(ctx: any) {
-        await ctx.app.service('inner').find(undefined, { auth: { user: { userId: 'bob' } } })
-        seen.outerUser = $.auth.user?.userId ?? null
+        await ctx.app.service('inner').find(undefined, { user: { id: 'bob' } })
+        seen.outerUser = $.user?.id ?? null
         seen.outerSvc  = $.service
         return []
       },
     })
     const a = app(inner, outer)
-    await a.service('outer').find(undefined, { auth: { user: { userId: 'alice' } } })
+    await a.service('outer').find(undefined, { user: { id: 'alice' } })
     expect(seen).toEqual({
       innerUser: 'bob', innerSvc: 'inner',
       outerUser: 'alice', outerSvc: 'outer',
@@ -397,10 +397,10 @@ describe('log', () => {
       find() { $.log.info('x'); return [] },
     } as never))
 
-    await a.service('orders').find({}, { auth: { user: alice } })
+    await a.service('orders').find({}, { user: alice })
     expect(entries[0].data.userId).toBe('alice')
 
-    await a.service('orders').find({}, { auth: { user: null } })
+    await a.service('orders').find({}, { user: null })
     expect('userId' in entries[1].data).toBe(false)
   })
 
@@ -586,29 +586,29 @@ describe('a call that has ended (FJS-687)', () => {
 })
 
 describe('$.me — one spelling of the caller', () => {
-  // A principal handed in as a User row put the id at `id`, where a session
-  // puts it at `userId`. A service reading `$.me.userId` got null for every
-  // such caller and passed every test written with a session (`FJS-1890`).
+  // A session and a User row put the id at the same key, `id` (`FJS-D1307`);
+  // a principal spelling it `userId` ran as a caller with no id and passed every
+  // test written with the other spelling (`FJS-1890`).
   const echo = () => buildService({
     name: 'whoami', methods: ['find'],
-    find() { return [{ userId: ($.me as any)?.userId ?? null }] },
+    find() { return [{ userId: ($.me as any)?.id ?? null }] },
   } as never)
 
-  test('an internal call made as a session reads $.me.userId', async () => {
-    const res: any = await app(echo()).service('whoami').find({}, { auth: { user: alice } })
+  test('an internal call made as a session reads $.me.id', async () => {
+    const res: any = await app(echo()).service('whoami').find({}, { user: alice })
     expect(res.data[0].userId).toBe('alice')
   })
 
-  test('a principal with no userId is refused by name, never run as a caller with no id', async () => {
+  test('a principal with no id is refused by name, never run as a caller with no id', async () => {
     const a = app(echo())
-    await expect(a.service('whoami').find({}, { auth: { user: { id: 'u1', role: 'user' } } } as never))
-      .rejects.toThrow(/auth\.user has no 'userId'/)
-    await expect(a.service('whoami').call('find', null, null, { auth: { user: { id: 'u1' } } } as never))
-      .rejects.toThrow(/session\(\{ userId \}\)/)
+    await expect(a.service('whoami').find({}, { user: { userId: 'u1', role: 'user' } } as never))
+      .rejects.toThrow(/user has no 'id'/)
+    await expect(a.service('whoami').call('find', null, null, { user: { userId: 'u1' } } as never))
+      .rejects.toThrow(/session\(\{ id \}\)/)
   })
 
   test('null still means as nobody, and absent still inherits', async () => {
-    const res: any = await app(echo()).service('whoami').find({}, { auth: { user: null } })
+    const res: any = await app(echo()).service('whoami').find({}, { user: null })
     expect(res.data[0].userId).toBe(null)
   })
 })

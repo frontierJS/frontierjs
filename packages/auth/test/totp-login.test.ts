@@ -43,7 +43,7 @@ const nextEmail = () => `totp-${Date.now()}-${seq++}@example.com`
 async function makeUser(env: Harness = h) {
   const email = nextEmail()
   const user  = await env.auth.createUser({ email, password: PASSWORD })
-  return { email, userId: user.userId }
+  return { email, userId: user.id }
 }
 
 /** A user with a CONFIRMED second factor, and the secret to answer with. */
@@ -472,8 +472,8 @@ describe('what a half-finished login records', () => {
     try {
       const email = `stage-${Date.now()}@example.com`
       const user  = await own.auth.createUser({ email, password: PASSWORD })
-      const { secret } = await own.auth.setupTotp!(user.userId, PASSWORD)
-      await own.auth.confirmTotp!(user.userId, totp(secret, new Date()))
+      const { secret } = await own.auth.setupTotp!(user.id, PASSWORD)
+      await own.auth.confirmTotp!(user.id, totp(secret, new Date()))
 
       await rejectsWith(() => own.auth.login(email, 'wrong'), InvalidCredentialsError)
       expect(seen.at(-1)).toMatchObject({ stage: 'password', email, reason: 'bad-password' })
@@ -481,7 +481,7 @@ describe('what a half-finished login records', () => {
       const res = await own.auth.login(email, PASSWORD) as any
       await rejectsWith(() => own.auth.completeLogin!(res.challenge, '000000'), InvalidSecondFactorError)
       expect(seen.at(-1)).toMatchObject({ stage: 'second-factor', email: null, reason: 'bad-code' })
-      expect(seen.at(-1).userId).toBe(user.userId)
+      expect(seen.at(-1).userId).toBe(user.id)
     } finally {
       own.cleanup()
     }
@@ -496,8 +496,8 @@ describe('what a half-finished login records', () => {
     try {
       const email = `locked-${Date.now()}@example.com`
       const user  = await own.auth.createUser({ email, password: PASSWORD })
-      const { secret } = await own.auth.setupTotp!(user.userId, PASSWORD)
-      await own.auth.confirmTotp!(user.userId, totp(secret, new Date()))
+      const { secret } = await own.auth.setupTotp!(user.id, PASSWORD)
+      await own.auth.confirmTotp!(user.id, totp(secret, new Date()))
 
       const res = await own.auth.login(email, PASSWORD) as any
       const err = await rejectsWith(() => own.auth.completeLogin!(res.challenge, '000000'), Locked)

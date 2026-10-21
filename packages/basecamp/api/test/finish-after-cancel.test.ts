@@ -39,7 +39,7 @@ beforeAll(async () => {
   await sys.workspaceMember.create({ data: {
     workspaceId: ws.id, userId: a.id, role: 'admin',
     capabilities: grantsFor('admin'), acceptedAt: new Date().toISOString() } })
-  admin = session({ userId: a.id, workspaceId: ws.id })
+  admin = session({ id: a.id, workspaceId: ws.id })
 
   const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'Shop', slug: `p-${uniq()}` } })
   const environment = await sys.environment.create({ data: {

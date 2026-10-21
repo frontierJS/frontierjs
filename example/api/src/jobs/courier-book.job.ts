@@ -69,7 +69,7 @@ export default defineJob<BookCourier>({
     // took one argument and it was the job, so reaching the service layer meant
     // a module holding a mutable app; and an in-process call had no principal,
     // and no principal is STRANGER(0) — refused by Order's @@gate exactly as an
-    // anonymous browser is — so every job passed `{ auth: { user: SYSTEM } }`.
+    // anonymous browser is — so every job passed `{ user: SYSTEM }`.
     //
     // The dispatch recorded who asked, and this runs as them, re-resolved. The
     // staff member who pressed Ship books the courier; the shop's own standing is

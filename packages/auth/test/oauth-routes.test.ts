@@ -322,10 +322,10 @@ describe('GET /auth/oauth/{provider}/callback', () => {
 
   async function userWithTotp(email: string) {
     const made = await h.auth.createUser({ email, password: 'correct-horse-1' })
-    await h.sys.user.update({ where: { id: made.userId }, data: { emailVerified: true } })
-    const { secret } = await h.auth.setupTotp!(made.userId, 'correct-horse-1')
-    await h.auth.confirmTotp!(made.userId, totp(secret, new Date()))
-    return { userId: made.userId, secret }
+    await h.sys.user.update({ where: { id: made.id }, data: { emailVerified: true } })
+    const { secret } = await h.auth.setupTotp!(made.id, 'correct-horse-1')
+    await h.auth.confirmTotp!(made.id, totp(secret, new Date()))
+    return { userId: made.id, secret }
   }
 
   async function providerSignIn(sub: string, email: string) {

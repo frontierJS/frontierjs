@@ -119,6 +119,10 @@ export class BrokerTransport extends BaseTransport {
     gap: ((g: BrokerGap) => void | Promise<void>) | null = null,
   ): Promise<void> {
     if (this.handler) throw new Error(`[conduit] ${this.descriptor.id} already has a subscriber`)
+    if (framing.dial && this.descriptor.auth.type !== 'none')
+      throw new TypeError(`[conduit] ${this.descriptor.id}: a framing that dials mints a URL carrying its own credential, so the target's auth is 'none', not '${this.descriptor.auth.type}' — a credential would go to whatever host the Provider named`)
+    if (!framing.dial && !this.descriptor.address)
+      throw new TypeError(`[conduit] ${this.descriptor.id}: the target has no address, so its framing must dial one`)
     this.handler      = handler
     this.traceHeaders = traceHeaders
     this.framing      = framing
@@ -150,7 +154,17 @@ export class BrokerTransport extends BaseTransport {
     // unauthenticated connection — the websocket transport's rule. The secret
     // the dial spent is the one a handshake presents, so the two cannot name
     // different credentials.
-    const address = this.descriptor.address
+    const framing = this.framing
+    let address = this.descriptor.address
+    if (framing.dial) {
+      try {
+        address = await framing.dial()
+        if (!/^wss?:\/\//.test(address)) throw new TypeError(`dial answered '${address.slice(0, 8)}…', not a ws:// or wss:// URL`)
+      } catch (err) {
+        console.error(`[conduit] broker ${this.descriptor.id} dial failed:`, (err as Error)?.message ?? err)
+        throw err
+      }
+    }
     const spent: { value?: string } = {}
     // Trace sits under auth, so nothing can displace a credential.
     const headers = this.mergeHeaders(this.traceHeaders?.(), await this.buildAuthHeaders({
@@ -159,7 +173,6 @@ export class BrokerTransport extends BaseTransport {
       query:  queryOf(address),
       spent,
     }))
-    const framing = this.framing
 
     await new Promise<void>((resolve) => {
       const ws = new WebSocket(address, { headers } as unknown as string[])
@@ -227,8 +240,9 @@ export class BrokerTransport extends BaseTransport {
         if (keepalive) {
           let n = 0
           heard = Date.now()
-          beat = setInterval(() => {
-            if (ws.readyState === WebSocket.OPEN) ws.send(keepalive.ping(++n, state))
+          const ping = keepalive.ping
+          if (ping) beat = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(ping(++n, state))
           }, keepalive.every_ms ?? PING_EVERY_MS)
           // Checked when it would have expired rather than reset on every
           // frame, so a busy connection costs no timer per frame.
@@ -260,7 +274,7 @@ export class BrokerTransport extends BaseTransport {
         const frame = this.admit(e)
         if (frame === null) return
         if (!believed) { link.push(frame); return }
-        try { if (keepalive?.pong?.(frame, state)) return } catch {}
+        try { if (keepalive?.beat?.(frame, state)) return } catch {}
         order = order.then(() => this.onFrame(ws, framing, frame, state, seq))
       })
     })

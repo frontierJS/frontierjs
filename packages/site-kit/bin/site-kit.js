@@ -226,7 +226,9 @@ if (cmd === 'fetch') {
   }
   const vite = await import(vitePath)
   const { siteKit } = await import('../config/vite.js')
-  const config = await siteKit({ root, port, host: lan, preview })
+  // SITE_EDITOR is how Outpost names basecamp's page for the draft it builds
+  // (`FJS-D1357`); siteKit reads it only under --preview.
+  const config = await siteKit({ root, port, host: lan, preview, editor: process.env.SITE_EDITOR || undefined })
 
   if (cmd === 'build') {
     await vite.build(config)

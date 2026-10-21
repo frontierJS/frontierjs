@@ -120,7 +120,7 @@ title: Flow
   $.onDestroy(() => { unwatch?.(); row?.release() })
 
   // Affordances only. The owner test is the service's, and so is the gate.
-  $: isOwner     = !!flow && String(flow.ownerId) === String(session.user?.userId ?? session.user?.id ?? '')
+  $: isOwner     = !!flow && String(flow.ownerId) === String(session.user?.id ?? '')
   $: isAdmin     = (session.level ?? 0) >= 5
   $: mayChange   = isOwner || isAdmin
 

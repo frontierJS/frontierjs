@@ -79,7 +79,7 @@ describe('an oauthLink invitation the address holder did not start', () => {
 
     // The attacker comes back through their provider.
     const again = await h.auth.oauthResolve('okta', attackerIdentity(email, 'mallory-sub-v'))
-    expect(again.outcome === 'signed-in' && again.user.userId === victim.id).toBe(false)
+    expect(again.outcome === 'signed-in' && again.user.id === victim.id).toBe(false)
   })
 
   test('an UNVERIFIED account: clicking neither admits the attacker nor evicts the holder', async () => {
@@ -92,7 +92,7 @@ describe('an oauthLink invitation the address holder did not start', () => {
     await h.auth.confirmOAuthLink(lastToken(), 'okta', holderIdentity(email)).catch(() => null)
 
     const again = await h.auth.oauthResolve('okta', attackerIdentity(email, 'mallory-sub-u'))
-    expect(again.outcome === 'signed-in' && again.user.userId === victim.id).toBe(false)
+    expect(again.outcome === 'signed-in' && again.user.id === victim.id).toBe(false)
 
     // The holder's own password survives, or a reset is still open to them.
     let holderIn = false

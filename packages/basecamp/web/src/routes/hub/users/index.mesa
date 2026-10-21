@@ -193,8 +193,8 @@ title: Hub users
     ai:    rows.filter(u => u.kind === 'ai').length,
   }
   $: suspended = rows.filter(u => u.status === 'suspended').length
-  $: session.user.userId
-  $: me = session.user?.userId
+  $: session.user.id
+  $: me = session.user?.id
   const HUB_USER_COLUMNS = [
     { name: 'actor',      label: 'Actor' },
     { name: 'kind',       label: 'Kind' },

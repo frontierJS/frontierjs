@@ -13,7 +13,7 @@ const guardSaw: string[] = []
 beforeAll(async () => {
   h = await makeAuth()
   app = await appWith(h.auth, {
-    canStartSupport: ({ operator }) => { guardSaw.push(operator.userId); return true },
+    canStartSupport: ({ operator }) => { guardSaw.push(operator.id); return true },
     services:        { standingLevel: () => 5 },
   })
 })
@@ -24,7 +24,7 @@ async function person(tag: string) {
   const email = `${tag}-${n++}@example.com`
   const user  = await h.auth.createUser({ email, password: 'pw-correct-1', name: tag })
   const { token } = signedIn(await h.auth.login(email, 'pw-correct-1'))
-  return { email, userId: user.userId, token, bearer: { authorization: `Bearer ${token}` } }
+  return { email, userId: user.id, token, bearer: { authorization: `Bearer ${token}` } }
 }
 
 describe('ttl', () => {
@@ -62,7 +62,7 @@ describe('from inside an episode', () => {
     expect(res.status).toBeLessThan(500)
     // And nothing changed: the session still resolves to the first subject.
     const me = await raw(app, 'GET', '/account/me', { headers: op.bearer })
-    expect(me.body.userId).toBe(sub.userId)
+    expect(me.body.id).toBe(sub.userId)
   })
 
   test('a chained start for a user that does not exist does not answer 404 before the chaining refusal', async () => {

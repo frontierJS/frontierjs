@@ -5833,7 +5833,7 @@ const keepalive = (every_ms: number, dead_ms: number) => ({
   ...CONDUIT_FRAMING,
   keepalive: {
     ping: (n: number) => JSON.stringify({ type: 'ping', n }),
-    pong: (f: string) => JSON.parse(f).type === 'pong',
+    beat: (f: string) => JSON.parse(f).type === 'pong',
     every_ms, dead_ms,
   },
 })
@@ -5886,6 +5886,90 @@ describe('broker keepalive', () => {
     clearInterval(busy)
     expect(broker.dials).toBe(1)
     expect(c.stats().subscriptions['broker:orders']!.connected).toBe(true)
+    await c.destroy()
+    broker.stop()
+  })
+})
+
+// A broker that beats on its own every `every_ms` until `quiet()`, records each
+// dial's URL and every frame a client sends, and closes the first connection.
+function beatingBroker(every_ms: number) {
+  const urls: string[] = []
+  const sent: string[] = []
+  let beating = true
+  const server = Bun.serve({
+    port: 0,
+    fetch(req, srv) { urls.push(new URL(req.url).search); return srv.upgrade(req) ? undefined : new Response('no', { status: 400 }) },
+    websocket: {
+      open(ws) {
+        const n = urls.length
+        const t = setInterval(() => { if (beating) ws.send(JSON.stringify({ type: 'ping' })) }, every_ms)
+        ;(ws as unknown as { data: unknown }).data = t
+        if (n === 1) setTimeout(() => ws.close(), 30)
+      },
+      close(ws) { clearInterval((ws as unknown as { data: ReturnType<typeof setInterval> }).data) },
+      message(_ws, raw) { sent.push(String(raw)) },
+    },
+  })
+  return { url: `ws://localhost:${server.port}/`, urls, sent, quiet: () => { beating = false }, stop: () => server.stop(true) }
+}
+
+describe('broker dial', () => {
+  it('asks the framing for a fresh address before every dial', async () => {
+    const broker = beatingBroker(1000)
+    const c = createConduit()
+    await c.register(brokerTarget(''))
+    let n = 0
+    await subscribeFramed(c, () => {}, { ...CONDUIT_FRAMING, dial: async () => `${broker.url}?ticket=t${++n}` })
+    expect(await until(() => broker.urls.length === 2, 3000)).toBe(true)
+    expect(broker.urls).toEqual(['?ticket=t1', '?ticket=t2'])
+    await c.destroy()
+    broker.stop()
+  })
+
+  it('refuses a dialing framing on a target with a credential, and a target with no address and no dial', async () => {
+    const c = createConduit()
+    await c.register(brokerTarget('', { id: 'broker:orders', auth: { type: 'bearer', ref: 'X' } }))
+    await expect(subscribeFramed(c, () => {}, { ...CONDUIT_FRAMING, dial: async () => 'ws://localhost:1/' })).rejects.toThrow(/auth is 'none', not 'bearer'/)
+    await c.destroy()
+    const d = createConduit()
+    await d.register(brokerTarget(''))
+    await expect(subscribeFramed(d, () => {}, CONDUIT_FRAMING)).rejects.toThrow(/must dial one/)
+    await d.destroy()
+  })
+
+  it('takes a dial that throws or answers no ws URL as a failed dial', async () => {
+    const c = createConduit()
+    await c.register(brokerTarget(''))
+    const errors = console.error; console.error = () => {}
+    try {
+      await expect(subscribeFramed(c, () => {}, { ...CONDUIT_FRAMING, dial: async () => 'https://x/' })).rejects.toThrow(/not a ws/)
+    } finally { console.error = errors }
+    await c.destroy()
+  })
+})
+
+describe('broker keepalive, listen-only', () => {
+  it('sends nothing, swallows the Provider\'s beat, and redials once the beat stops', async () => {
+    const broker = beatingBroker(30)
+    const c = createConduit()
+    await c.register(brokerTarget(''))
+    let n = 0
+    const errors = console.error; console.error = () => {}
+    try {
+      await subscribeFramed(c, () => {}, {
+        ...CONDUIT_FRAMING,
+        dial: async () => `${broker.url}?ticket=t${++n}`,
+        keepalive: { beat: (f: string) => JSON.parse(f).type === 'ping', dead_ms: 150 },
+      })
+      expect(await until(() => broker.urls.length === 2 && c.stats().subscriptions['broker:orders']!.connected, 3000)).toBe(true)
+      await new Promise(r => setTimeout(r, 300))
+      expect(broker.urls.length).toBe(2)   // a beating connection is kept
+      expect(c.stats().subscriptions['broker:orders']).toMatchObject({ received: 0, dropped: 0 })
+      broker.quiet()
+      expect(await until(() => broker.urls.length === 3, 3000)).toBe(true)
+    } finally { console.error = errors }
+    expect(broker.sent).toEqual([])
     await c.destroy()
     broker.stop()
   })

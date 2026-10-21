@@ -162,9 +162,21 @@ export interface LitestoneAuthOptions {
   //   • The app's own keys. They travel on the session object untouched;
   //     nothing in the framework reads them, and an app's hooks can.
   //
-  // Returning a key auth itself sets (userId, email, authMethod, …) overwrites
+  // Returning a key auth itself sets (id, email, authMethod, …) overwrites
   // it. Don't — the caller identity is not the app's to restate.
   sessionFields?: (user: Record<string, any>) => Record<string, unknown>
+
+  // Which accounts must have a second factor (`FJS-D1008`). `true` is every
+  // person; a function is asked with the User row (`u => u.role === 'admin'`).
+  // An account it names that has no confirmed factor signs in to a session held
+  // to enrollment: the plugin refuses every service call but
+  // `account.totpStatus` / `setupTotp` / `confirmTotp` with a 403 whose
+  // `data.reason` is `second_factor_required`, until `confirmTotp` clears it.
+  // An account that has a factor is unchanged -- it owes its code.
+  //
+  // Sessions only: an API key is a credential its holder minted on purpose and
+  // is not held. Needs `encryptionKey`, which enrollment itself needs.
+  requireSecondFactor?: boolean | ((user: Record<string, any>) => boolean)
 
   // ─── Acting on an auth event ────────────────────────────────────────────
   //

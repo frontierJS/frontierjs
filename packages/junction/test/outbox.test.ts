@@ -48,7 +48,7 @@ const appWithRelay = () => ({ outbox: { enqueue: enqueueOutbox, deliver: async (
 function ctx(db: unknown, over: Record<string, unknown> = {}): ServiceContext {
   return setCallDb(withCallEffects({
     service: 'posts', method: 'create', id: null, data: { title: 't' },
-    query: {}, directives: {}, auth: { user: null }, caller: { headers: {} }, route: {},
+    query: {}, directives: {}, user: null, caller: { headers: {} }, route: {},
     locals: {}, app: appWithRelay(), result: null, error: null, type: 'before',
     transport: 'internal', model: 'posts', raw: null, ...over,
   } as unknown as Parameters<typeof withCallEffects>[0]), db)
@@ -111,7 +111,7 @@ describe('ctx.enqueue — the row commits with the write', () => {
     const db = await mkDb()
     await callService(shippingService(), ctx(db, {
       app:  appWithRelay(),
-      auth: { user: { userId: 'u-7' } },
+      user: { id: 'u-7' },
     }))
 
     expect((await rows(db))[0].actorId).toBe('u-7')
@@ -133,7 +133,7 @@ describe('ctx.enqueue — the row commits with the write', () => {
 
     await callService(svc, ctx(db, {
       app:  appWithRelay(),
-      auth: { user: { userId: 'u-7' } },
+      user: { id: 'u-7' },
     }))
 
     expect((await rows(db))[0].actorId).toBeNull()

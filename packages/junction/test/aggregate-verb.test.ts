@@ -254,7 +254,7 @@ describe('the numbers are computed over the rows the caller may READ', () => {
   const as = (app: unknown, userId: number, body: Record<string, unknown>) =>
     (app as { service: (n: string) => { aggregate: (b: unknown, o: unknown) => Promise<unknown> } })
       .service('notes')
-      .aggregate(body, { auth: { user: { userId, userType: 'user', authMethod: 'session', role: 'user' } } })
+      .aggregate(body, { user: { id: userId, userType: 'user', authMethod: 'session', role: 'user' } })
 
   test('one caller’s total is their own rows, not the table’s', async () => {
     const app = await owned()

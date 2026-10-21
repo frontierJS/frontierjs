@@ -502,7 +502,7 @@ const CHAPTERS: TutorialChapter[] = [
         title:   'Make an authenticated request',
         explain: [
           'Now make any request — the token rides along automatically.',
-          'The service receives ${cmd}ctx.auth.user${r} populated with your session.',
+          'The service receives ${cmd}ctx.user${r} populated with your session.',
           '',
           'Routes protected by the ${cmd}authenticate${r} hook will now succeed.',
         ],

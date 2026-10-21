@@ -335,6 +335,28 @@ The four that change what the account requires are refused inside a support
 episode. `totpStatus` is not — seeing what somebody sees is what an episode is
 for, and it answers about the subject.
 
+### Requiring a second factor
+
+A factor is opt-in per account until the app says otherwise:
+
+```typescript
+createLitestoneAuth(db, {
+  encryptionKey,
+  requireSecondFactor: true,                          // every person
+  // requireSecondFactor: u => u.role === 'admin',    // or the accounts a function names
+})
+```
+
+An account it names that has a factor is unchanged: it owes its code. One with
+none **signs in to a session held to enrollment** (`FJS-D1008`): the login answers
+a token like any other, with `user.enrollmentOnly: true`, and the plugin refuses
+every service call but `account.totpStatus`, `setupTotp` and `confirmTotp` with a
+403 whose `data.reason` is `second_factor_required`. `confirmTotp` releases the
+account's held sessions, so the same token carries on without a second sign-in.
+
+A held session cannot start a support episode, and an API key is not held. It
+needs `encryptionKey`, and `createLitestoneAuth` refuses to start without one.
+
 ### When a factor is lost
 
 A person without their phone or their recovery codes cannot get back in alone.

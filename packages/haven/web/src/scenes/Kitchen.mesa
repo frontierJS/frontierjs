@@ -21,12 +21,14 @@
     s: { fg: '#9ca3af' },
     S: { fg: '#57534e' },
     b: { fg: '#3f6212' },
-    Y: { fg: ['#f97316', '#fb923c', '#ea580c', '#fdba74'], chars: 'vVvv', ms: 260, flicker: true, light: 3 },
-    F: { fg: ['#3b82f6', '#60a5fa', '#f97316', '#3b82f6'], chars: '@*@o', ms: 180, flicker: true, light: 1 },
-    a: { fg: ['#d6d3d1', '#a8a29e', '#e7e5e4'], chars: "'`,.", ms: 420, flicker: true },
+    // Nothing here cycles: the kitchen sits on a screen beside the work, and
+    // the brigade's tickets are what the eye should land on.
+    Y: { fg: '#f97316', light: 3 },
+    F: { fg: '#3b82f6', light: 1 },
+    a: { fg: '#d6d3d1' },
     k: { fg: '#c2410c' },
     u: { fg: '#854d0e' },
-    q: { fg: ['#38bdf8', '#7dd3fc'], chars: '~≈', ms: 900, flicker: true },
+    q: { fg: '#38bdf8' },
     i: { fg: '#bae6fd' },
     r: { fg: '#ef4444' },
     n: { fg: '#fef3c7' },

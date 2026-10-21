@@ -197,7 +197,7 @@ function assertAddressable(
     // shape is the difference between a one-line fix and a hunt.
     const hint = recipient.userId != null
       ? ' It carries `userId`, so this looks like a SessionContext — pass ' +
-        '`{ id: session.userId, email: session.email }`.'
+        '`{ id: session.id, email: session.email }`.'
       : ''
 
     throw new NotificationRecipientError(

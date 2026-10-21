@@ -28,7 +28,7 @@ const haven = () => $.app as PondApp
 
 /** The caller, the room they stand in and their cell -- or the refusal that says which is missing. */
 async function standing (verb: string) {
-  const me = Number(($.auth?.user as { userId?: string } | undefined)?.userId)
+  const me = Number(($.user as { id?: string } | undefined)?.id)
   if (!Number.isInteger(me)) throw new BadRequest(`Walk in first: nobody is ${verb}`)
   const { roomId } = ($.data ?? {}) as { roomId?: unknown }
   const row = await ($.db as any).room.findFirst({ where: { id: roomId }, select: { id: true, slug: true } })

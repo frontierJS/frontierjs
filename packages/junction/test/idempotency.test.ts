@@ -39,7 +39,7 @@ async function callWithKey(
   // none is not claimed at all (`FJS-680`) — the anonymous case is asserted on
   // its own below rather than being the shape every other test runs under.
   const ctx = bridge.internal(svc.name, method as 'create', (opts.data ?? { title: 'x' }) as Record<string, unknown>, {
-    auth: { user: (opts.user === undefined ? { userId: 'u-default' } : opts.user) as never },
+    user: (opts.user === undefined ? { id: 'u-default' } : opts.user) as never,
   }, app)
   ctx.method = method
   await enterRequest(
@@ -180,7 +180,7 @@ describe('an Idempotency-Key executes a mutation once', () => {
 
 // A key needs a principal, and the principal is established at the TRANSPORT —
 // `claimIdempotency` runs ahead of the pipeline, so a hook setting
-// `ctx.auth.user` is already too late. Signed in for real, with a token.
+// `ctx.user` is already too late. Signed in for real, with a token.
 const TOKEN = 'test-token-u1'
 const signedIn = { auth: createStubAuth({ users: [{ id: 'u1' }] }) }
 
@@ -309,7 +309,7 @@ describe('over the socket', () => {
       config: { port: 0,
                 http: { ...defaultConfig.http, drainTimeout: 50 } },
     } as never)
-    app.setAuth({ async verifySession(t: string) { return t === 'alice' ? { userId: 'u-alice', userType: 'user', roles: [], scopes: [] } : null } })
+    app.setAuth({ async verifySession(t: string) { return t === 'alice' ? { id: 'u-alice', userType: 'user', roles: [], scopes: [] } : null } })
     app.services.register(svc)
     app.configure(channels())
     await app.start()
@@ -350,7 +350,7 @@ describe('a replay after the session was revoked', () => {
     let live = true
     const app = await createTestApp({
       services: [svc],
-      auth: { async verifySession(t: string) { return live && t === 'alice' ? { userId: 'u-alice', userType: 'user', roles: [], scopes: [] } : null } } as never,
+      auth: { async verifySession(t: string) { return live && t === 'alice' ? { id: 'u-alice', userType: 'user', roles: [], scopes: [] } : null } } as never,
     })
 
     const a = await request(app).post('/things').auth('alice').set('idempotency-key', 'k').send({ title: 'x' })

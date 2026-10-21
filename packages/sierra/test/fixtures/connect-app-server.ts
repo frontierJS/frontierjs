@@ -63,7 +63,7 @@ const hosted = createApp({
   },
   auth: {
     verifySession: async (token: string) => token === OWNER_TOKEN
-      ? { userId: 'owner', userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x', isOwner: true }
+      ? { id: 'owner', userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x', isOwner: true }
       : null,
   },
   logLevel: 'silent',

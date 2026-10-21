@@ -6,7 +6,7 @@ dated: 2026-10-17
 
 # Idea — owner editing: a site's owner changes their own words
 
-**Status: PROPOSED. 1.1–1.5 are built. Q1–Q16 are ruled (`FJS-D1225`–`FJS-D1231`, `FJS-D1242`, `FJS-D1246`–`FJS-D1252`, `FJS-D1339`).** Do not cite this file as describing
+**Status: PROPOSED. 1.1–1.5 and 2.1 are built. Q1–Q18 are ruled (`FJS-D1225`–`FJS-D1231`, `FJS-D1242`, `FJS-D1246`–`FJS-D1252`, `FJS-D1339`, `FJS-D1357`, `FJS-D1358`).** Do not cite this file as describing
 behavior — see `VERIFYING.md`.
 
 A site's owner (a Kobami client, or whoever runs frontierjs.com) opens their
@@ -288,6 +288,59 @@ Basecamp itself lists drafts and history and holds the grants.
   - **Recommend A** — B ships a developer's unreviewed commits once, which is
     Q5's hazard on the day it matters most. C leaves Publish unable to
     succeed anywhere. A also mends the broken step list.
+- ~~**Q17 — How a preview's Edit button gets a credential for basecamp (2.1).**~~ **Answered 2026-10-20 (`FJS-D1357`): A — a one-time code with PKCE, the OAuth pattern for browser apps. Edit sends the browser to basecamp's `/sites/<id>/edit/`, carrying the preview's address and a PKCE challenge. Basecamp signs the person in there if needed, checks the `AppEditor` grant, and redirects back with a code that works once, for a minute. The preview posts the code and its verifier and gets an API key that reaches only `drafts`. The key is held in the tab's `sessionStorage` and expires within hours.**
+  The preview is `<draft>-<worker>.<sub>.workers.dev` and basecamp is another
+  site, so basecamp's session cookie is a third-party cookie there. Safari and
+  Firefox block those by default. Auth's own OAuth note says the
+  short-lived-code exchange that would carry a session across a redirect
+  "is not built" (`packages/auth/plugin.ts`). Framer shows the button to
+  everyone on a staging link and lets only permitted users edit
+  ([Framer](https://www.framer.com/help/articles/editor-bar/)), which
+  `FJS-D1225` already took.
+  - **A** — a one-time code with PKCE, the OAuth pattern for browser apps.
+    Edit sends the browser to basecamp's `/sites/<id>/edit/`, carrying the preview's
+    address and a PKCE challenge. Basecamp signs the person in there if needed,
+    checks the `AppEditor` grant, and redirects back with a code that works
+    once, for a minute. The preview posts the code and its verifier and gets an
+    API key that reaches only `drafts`. The key is held in the tab's
+    `sessionStorage` and expires within hours.
+  - **B** — the same redirect, with the key itself in the URL fragment. This
+    is the implicit grant, which RFC 9700 recommends against: the key sits in
+    the browser's history.
+  - **C** — basecamp's own session cookie, `SameSite=None`, with credentialed
+    CORS from the preview. It needs no new code, but it fails wherever
+    third-party cookies are blocked (Safari, Firefox, an owner's phone), and
+    the preview would hold the person's whole basecamp session.
+  - **D** — a sign-in form on the preview that posts the password to
+    basecamp. It puts the password on a link meant for reviewers, carries the
+    whole session, and has no path for SSO.
+  - **Recommend A.** It is what the OAuth browser-apps draft and RFC 9700
+    prescribe ([draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/),
+    [oauth.net](https://oauth.net/implicit)). The scoped key already exists
+    (`FJS-D916`), so the preview never holds more than `drafts`. The exchange
+    is auth's unbuilt one, and Bearer-mode OAuth needs the same piece.
+- ~~**Q18 — Where the preview's editor code comes from (2.1).**~~ **Answered 2026-10-20 (`FJS-D1358`): A — site-kit carries the editor and gains `@frontierjs/junction` as a dependency, which pulls in only toolbelt. Under `--preview` with an editor URL, the build emits `_fjs/editor.js` and adds its tag to each page through Sierra's `document.bodyEnd`.** The editor calls
+  basecamp through junction's browser client, which owns unwrapping the result
+  envelope (Invariant 4). A site-kit site installs css, mesa, sierra, site-kit
+  and toolbelt. It does not install junction, which is an optional peer of
+  Sierra. Vercel's toolbar on a preview deployment is a script served from
+  vercel.live, and Netlify's Drawer is served from Netlify's origin. The tree's
+  own sibling, the ask panel (`on-page-editing.md`), is built into the site by
+  Sierra's `askPlugin`.
+  - **A** — site-kit carries the editor and gains `@frontierjs/junction` as a
+    dependency, which pulls in only toolbelt. Under `--preview` with an editor
+    URL, the build emits `_fjs/editor.js` and adds its tag to each page through
+    Sierra's `document.bodyEnd`.
+  - **B** — basecamp serves the editor from its own web build, and the
+    preview build adds only `<script type="module" src="<basecamp>/editor.js">`.
+    Sites install nothing new, and the editor always matches the API it calls.
+    The cost: a cross-origin module script needs CORS on basecamp's static
+    files and a fixed-name second entry in its web build, in dev and in the
+    deploy's proxy.
+  - **Recommend A** (confidence 2). It matches the in-tree sibling, the ask
+    panel built into the site, and adds no deploy plumbing. Skew between
+    editor and API stays small, because every save rebuilds the preview. B is
+    the reopen path if previews start to outlive basecamp's releases.
 
 ## The plan
 
@@ -551,9 +604,48 @@ Done when: an owner changes a paragraph by clicking it on the draft's
 preview, the page shows the change before it is saved, and a reviewer without
 a grant sees the Edit button but has every save refused.
 
-- [ ] 2.1 The Edit button and sign-in on a preview (`FJS-D1225`). Basecamp's
+- [x] 2.1 The Edit button and sign-in on a preview (`FJS-D1225`). Basecamp's
   API accepts a write from the site's preview host and checks the grant on
   every one.
+  **Built 2026-10-20.** The sign-in is Q17 (`FJS-D1357`). Edit sends the
+  browser to `/sites/<id>/edit/` with the page's address and an S256
+  challenge; a signed-out person goes through `/login/?next=` and comes back.
+  `drafts.handoff` reads the grant, refuses an address that is not one of this
+  site's recorded previews, refuses a key, a support episode and an agent, and
+  answers a redirect carrying auth's one-minute code on the fragment.
+  `drafts.redeem` (`gate: 0`) spends it with the verifier, from the origin it
+  was issued for, and mints an 8-hour API key scoped `drafts:read`/`drafts:write`
+  with an `ApiKey` row in the site's workspace, so its admins can see and
+  revoke it. The editor keeps the key in `sessionStorage`. auth gained
+  `issueHandoff`/`redeemHandoff`, which store the HMAC of code and challenge as
+  a `handoff` Credential that the hourly sweep clears. Basecamp's CORS origins
+  are the declared list plus any recorded preview origin
+  (`site-preview.ts` `isPreviewOrigin`). Junction now borrows a predicate into
+  CSRF and composes one with `FRONTIER_CORS_ORIGINS`. The editor is site-kit's
+  (Q18, `FJS-D1358`): `src/editor/`, built only by `build --preview` with
+  `SITE_EDITOR`, which Outpost sets from the `editor` URL basecamp sends. It is
+  emitted as `assets/fjs-editor.js` so Sierra's prune keeps its chunks, and
+  minified, and each page loads it through `document.bodyEnd`. Signed in, it
+  names the person and the draft; a 401 or 404 forgets the key.
+  - Proved by `api/test/drafts.test.ts` § a preview signs in: an unrecorded
+    address refused by name, a stranger's 404, a wrong origin, a wrong verifier
+    and a second redemption each 401. The key reads and saves from the preview
+    origin, CORS answers that origin, `/apps` and a second handoff are 403, and
+    a dropped grant is 404. Also by auth's `test/expiry.test.ts` § a handoff
+    code, junction's `test/derived-origins.test.ts` (a predicate composes with
+    the derived list, and CSRF borrows it), outpost's `SITE_EDITOR` case and
+    refusal, and site-kit's `test/content-build.mjs` (a release ignores
+    `SITE_EDITOR`; a preview carries the tag and every chunk the editor
+    imports). A scratch browser drive, 9/9 (not committed), on a temp-db API,
+    the dev web and the built preview on its own origin: Edit shows signed
+    out, goes through sign-in and comes back as Lee. The code leaves the
+    address bar, the key is in the tab and reaches no other service, Sign out
+    forgets it, and Sam, with no grant, is refused at basecamp.
+  - Left: the editor is styled by the page's own `@frontierjs/css`, with no
+    shadow root, so a preset that restyles `.btn` restyles it. The key reaches
+    every site the person may edit, not just this one; the grant still decides
+    each call. Sign out forgets the key in the tab, and the key itself lapses
+    after 8 hours.
 - [ ] 2.2 The editor outlines stamped elements and turns a click's `loc` into
   a field. It ships only under `preview: true`.
 - [ ] 2.3 Edit a prose element inline. The save writes that `.md` line

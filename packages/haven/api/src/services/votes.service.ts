@@ -26,7 +26,7 @@ export default createService({
 
   /** `{ ideas: { [id]: { aye, nay } }, mine: { [id]: aye } }` — every count the caller may read, and the caller's own votes. */
   async tally () {
-    const me   = Number(($.auth?.user as { userId?: string } | undefined)?.userId)
+    const me   = Number(($.user as { id?: string } | undefined)?.id)
     const rows = await ($.db as any).vote.findMany({ select: { idea: true, aye: true, memberId: true } }) as Array<{ idea: string, aye: boolean, memberId: number }>
     $.dispatch = false
     return {
@@ -37,7 +37,7 @@ export default createService({
 
   /** `{ idea, aye }` — `aye` true or false casts or changes the caller's vote, `null` withdraws it. Answers the caller's vote now. */
   async cast () {
-    const me = Number(($.auth?.user as { userId?: string } | undefined)?.userId)
+    const me = Number(($.user as { id?: string } | undefined)?.id)
     if (!Number.isInteger(me)) throw new BadRequest('Walk in first: nobody is voting')
     const { idea, aye } = ($.data ?? {}) as { idea?: unknown, aye?: unknown }
     if (typeof idea !== 'string' || !hallIdeas().has(idea)) throw new BadRequest(`Nobody in the hall stands for ${String(idea)}`)

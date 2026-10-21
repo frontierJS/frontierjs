@@ -12,7 +12,7 @@ import { createApp, channels, defaultConfig }                from '../index.ts'
 import { createJunctionClient }                              from '../src/client/index.ts'
 import type { SessionContext }                               from '../src/auth/types.ts'
 
-const ALICE = { userId: 'u-alice', userType: 'user', roles: [], scopes: [] } as unknown as SessionContext
+const ALICE = { id: 'u-alice', userType: 'user', roles: [], scopes: [] } as unknown as SessionContext
 
 // What each connection's upgrade asked for, as the connection hook read it.
 const joined: string[] = []

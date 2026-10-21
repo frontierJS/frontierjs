@@ -46,7 +46,7 @@ afterAll(() => h.cleanup())
 async function makeUser() {
   const email = `cred-${Date.now()}-${seq++}@example.com`
   const user  = await h.auth.createUser({ email, password: PASSWORD })
-  return { email, userId: user.userId }
+  return { email, userId: user.id }
 }
 
 async function withFactor() {

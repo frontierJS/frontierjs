@@ -304,7 +304,7 @@ export default createService({
     const { invitation, workspace } = await resolveToken(data.token)
 
     const email   = invitation.email as string
-    const caller  = $.auth?.user as { userId?: string; email?: string } | undefined
+    const caller  = $.user as { id?: string; email?: string } | undefined
     const account = await sys().user.findFirst({ where: { email } })
 
     // The trail files this under the workspace it happened in. Nothing else
@@ -315,9 +315,9 @@ export default createService({
     let session: { token: string; user: unknown } | null = null
 
     if (account) {
-      if (!caller?.userId)
+      if (!caller?.id)
         throw new Unauthorized(`${email} already has an account — sign in as ${email}, then open this link again`)
-      if (caller.userId !== account.id)
+      if (caller.id !== account.id)
         throw new Forbidden(`This invitation is for ${email}, and you are signed in as ${caller.email ?? 'somebody else'}`)
       userId = account.id
     } else {
@@ -334,7 +334,7 @@ export default createService({
         throw new BadRequest('This deployment cannot create accounts')
 
       const created = await auth.createUser({ email, name, password })
-      userId = created.userId as string
+      userId = created.id as string
 
       // The workspace's account, not a new one: an invited person joins the
       // tenant that invited them. Doing anything else gives them a session

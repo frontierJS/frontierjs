@@ -973,6 +973,12 @@ export interface BrokerLink {
  * (`FJS-D1127`). The default is conduit's own: `{ id, type: 'message', body }`
  * in, `{ id, type: 'ack' }` out, no handshake.
  *
+ * `dial` is for a Provider that mints the address of each connection — a
+ * ticket in the URL, a host it chooses — and says never to build it: it is
+ * asked before every dial, a throw is a failed dial, and the target's
+ * `address` is `''`. The URL carries its own credential, so the target's
+ * `auth` is `none`: a bearer would ride to whatever host the Provider named.
+ *
  * `handshake` runs after `open` and before the first frame is believed, with
  * the secret the target's `auth` resolved for the dial (`null` under
  * `none`); what it answers is handed to every `decode` on that connection —
@@ -994,6 +1000,7 @@ export interface BrokerLink {
  * lower or repeated number is no gap.
  */
 export interface BrokerFraming<State = unknown> {
+  dial?(): Promise<string>
   handshake?(link: BrokerLink, secret: string | null): Promise<State>
   decode(frame: string, state: State): BrokerMessage | null
   ack?(message: BrokerMessage): string
@@ -1012,12 +1019,15 @@ export interface BrokerGap {
  * Once a connection is believed, `ping(n, state)` is sent every `every_ms`
  * (30 s), `n` counting from 1 per connection. With no frame at all for
  * `dead_ms` (60 s) — any frame, an event or the reply — the connection is
- * dropped without waiting on a close and redialed. `pong` names the reply,
+ * dropped without waiting on a close and redialed. `ping` absent is a
+ * Provider that beats on its own and refuses a frame it does not know, so
+ * nothing is sent and silence alone is the watch. `beat` names a frame that
+ * is only proof of life — the reply to `ping`, or the Provider's own beat —
  * so it is neither decoded nor counted dropped.
  */
 export interface BrokerKeepalive<State = unknown> {
-  ping(n: number, state: State): string
-  pong?(frame: string, state: State): boolean
+  ping?(n: number, state: State): string
+  beat?(frame: string, state: State): boolean
   every_ms?: number
   dead_ms?: number
 }

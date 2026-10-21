@@ -22,8 +22,8 @@
 //   service.hooks({
 //     after: {
 //       create: [announce((result, ctx) =>
-//         ctx.auth.user?.workspaceId
-//           ? app.channel(`workspace:${ctx.auth.user.workspaceId}`)
+//         ctx.user?.workspaceId
+//           ? app.channel(`workspace:${ctx.user.workspaceId}`)
 //           : null
 //       )],
 //     }
@@ -664,14 +664,9 @@ export async function gradeRecipients(
 
   const out: Cohort[] = []
   for (const [key, group] of byPrincipal) for (const { claims, conns } of group.byClaims.values()) {
-    // `toDataPrincipal` for the reason the Bridge index gives it: a
-    // `SessionContext` puts the id at `userId` and litestone's `auth()` reads
-    // `.id`, so handing the session straight over compares every row policy
-    // against `undefined`. It does not merely refuse — measured on `example`,
-    // `userId == auth().id` was FALSE for the buyer's own order and TRUE for a
-    // guest order whose `userId` is null, so the fix delivered the one row the
-    // recipient may not read and withheld the one they own. The two functions
-    // are one boundary: change either and ask whether the other needs it.
+    // `toDataPrincipal` is the one translation between a session and the
+    // Data boundary's principal; the grade here and the grade on the service
+    // path must go through the same one.
     // Claims are merged OVER the principal: the resolver is answering about this
     // channel, and the principal was built where the channel was not known.
     const base = key === ANON ? null : toDataPrincipal(group.user as never)
@@ -1396,7 +1391,7 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
     localConnectionsOf(userId: string | number): Connection[] {
       const out: Connection[] = []
       for (const conn of connections.values()) {
-        if (conn.user?.userId === userId && conn.socket.readyState === 1) out.push(conn)
+        if (conn.user?.id === userId && conn.socket.readyState === 1) out.push(conn)
       }
       return out
     },
@@ -1689,7 +1684,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
 
           app.telemetry?.emit('junction.ws.connect', {
             connectionId: conn.id,
-            userId:       session?.userId ?? null,
+            userId:       session?.id ?? null,
             ip:           ctx.ip,
           })
         },
@@ -1839,7 +1834,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
                 (data as Record<string, unknown> | null) ?? null,
                 {
                   query: wsQuery,
-                  auth:  { user: (conn?.user ?? null) as import('../auth/types.ts').SessionContext | null },
+                  user: (conn?.user ?? null) as import('../auth/types.ts').SessionContext | null,
                   transport: 'websocket',
                   signal: conn?.__gone?.signal,
                   base: (_base && typeof _base === 'object' && !Array.isArray(_base)
@@ -1906,7 +1901,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
                   headers:        _frameProtocolHeaders(extra.headers),
                   // Same as the HTTP path — the principal is request-wide, and
                   // it is what an internal call inherits when it names none.
-                  user:           svcCtx.auth.user,
+                  user:           svcCtx.user,
                   caller:         svcCtx.caller,
                 }, () =>
                   _call(svc, svcCtx, app._appHooks, app.events, app.telemetry))
@@ -2221,7 +2216,7 @@ function _frameProtocolHeaders(frame: unknown): Record<string, string> | undefin
 //   service.hooks({
 //     after: {
 //       create: [announce((result, ctx) =>
-//         app.channel(`workspace:${ctx.auth.user?.workspace_id}`)
+//         app.channel(`workspace:${ctx.user?.workspace_id}`)
 //       )],
 //     }
 //   })

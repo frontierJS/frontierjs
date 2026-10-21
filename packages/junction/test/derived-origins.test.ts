@@ -42,6 +42,14 @@ describe('FRONTIER_CORS_ORIGINS — the derived cross-origin list', () => {
     expect(await allowed(WEB, { cors: { origins: ['*'] } }, 'https://other.example.com')).toBe('https://other.example.com')
   })
 
+  it('a declared predicate is asked after the derived list', async () => {
+    const PREVIEW = 'https://hours-site.acct.workers.dev'
+    const http = { cors: { origins: (o: string) => o === PREVIEW } }
+    expect(await allowed(WEB, http, PREVIEW)).toBe(PREVIEW)
+    expect(await allowed(WEB, http, WEB)).toBe(WEB)
+    expect(await allowed(WEB, http, 'https://evil.example.com')).toBeNull()
+  })
+
   it('unset changes nothing', async () => {
     expect(await allowed(undefined, {}, WEB)).toBeNull()
   })
@@ -58,6 +66,20 @@ describe('FRONTIER_CORS_ORIGINS — the derived cross-origin list', () => {
         method: 'POST', headers: { origin, cookie: 'sid=x', 'content-type': 'application/json' }, body: '{}',
       })).then(r => r.status)
       expect(await post(WEB)).not.toBe(403)
+      expect(await post('https://evil.example.com')).toBe(403)
+    } finally { await app.stop() }
+  })
+
+  it('csrf borrows a cors predicate whole', async () => {
+    const PREVIEW = 'https://hours-site.acct.workers.dev'
+    const app = createApp({ config: { ...base, http: { csrf: true, cors: { origins: (o: string) => o === PREVIEW } } } as never })
+    app.post('/ping', (ctx) => ctx.json({ ok: true }))
+    await app.start()
+    try {
+      const post = (origin: string) => app.http.fetch(new Request('http://localhost/ping', {
+        method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: '{}',
+      })).then(r => r.status)
+      expect(await post(PREVIEW)).not.toBe(403)
       expect(await post('https://evil.example.com')).toBe(403)
     } finally { await app.stop() }
   })

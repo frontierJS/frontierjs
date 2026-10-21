@@ -151,7 +151,7 @@ describe('token reuse after a revoking event', () => {
   test('after POST /auth/email/verify earlier sessions survive (documented, not a revocation event)', async () => {
     const a = await person('verify')
     const { token, user } = signedIn(await h.auth.login(a.email, a.password))
-    await h.auth.requestEmailVerification!(user.userId)
+    await h.auth.requestEmailVerification!(user.id)
     const v = await json(bearerApp, 'POST', '/auth/email/verify', { token: h.verifyToken() })
     expect(v.status).toBe(200)
     expect((await raw(bearerApp, 'GET', '/account/me', { headers: { authorization: `Bearer ${token}` } })).status).toBe(200)

@@ -227,6 +227,14 @@ describe('what the machine is asked to do', () => {
       expect(argv().some(c => c.includes('cf-secret-token'))).toBe(false)
     })
 
+    test('the editor\'s basecamp page reaches the build alone, as SITE_EDITOR', async () => {
+      const { server, argv } = serverFor()
+      const editor = 'https://basecamp.test/sites/app-1/?draft=spring'
+      await send(server, 'POST', '/site/preview', { ...BODY, editor })
+      const runs = argv().filter(c => c.startsWith('docker run --rm'))
+      expect(runs.map(c => c.includes(`-e SITE_EDITOR=${editor}`))).toEqual([false, true, false])
+    })
+
     test('a failed build is the machine\'s words, uploads nothing, and removes the checkout', async () => {
       const { server, workDir, envs, argv } = serverFor({ 'docker run --rm': { exitCode: 1, stderr: 'site-kit build: no content/routes\n' } })
       const res = await send(server, 'POST', '/site/preview', BODY)
@@ -264,6 +272,7 @@ describe('what the machine is asked to do', () => {
       ['an alias that is not a label', { alias: 'Spring Sale' }],
       ['a source path outside the checkout', { source: { ...SITE, path: '../etc' } }],
       ['no token', { cloudflare: { account_id: 'acct-1' } }],
+      ['an editor that is not an http(s) address', { editor: 'javascript:alert(1)' }],
     ])('%s is refused before anything runs', async (_, over) => {
       const { server, argv } = serverFor()
       const res = await send(server, 'POST', '/site/preview', { ...BODY, ...over })

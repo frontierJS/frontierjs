@@ -56,7 +56,7 @@ afterAll(async () => { await app?.stop?.(); h?.cleanup() })
 
 async function person() {
   const email = `agent-${Date.now()}-${seq++}@example.com`
-  const { userId } = await h.auth.createUser({ email, password: PW })
+  const { id: userId } = await h.auth.createUser({ email, password: PW })
   const { token }  = await h.auth.login(email, PW) as { token: string }
   return { email, userId, token }
 }

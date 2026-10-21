@@ -90,14 +90,14 @@ async function appWith(db: unknown, principal: PrincipalResolver) {
   app.services.register(createService({
     name: 'docs',
     async find(ctx: ServiceContext) {
-      seen.user = ctx.auth.user
+      seen.user = ctx.user
       return ($.db as any).doc.findMany({})
     },
   }))
   return { app, seen }
 }
 
-const AS_U1 = { auth: { user: { userId: 'u1', role: 'user' } as unknown as SessionContext } }
+const AS_U1 = { user: { id: 'u1', role: 'user' } as unknown as SessionContext }
 
 describe('createApp({ principal })', () => {
 
@@ -147,14 +147,14 @@ describe('createApp({ principal })', () => {
   })
 
   test('the claims are on the PRINCIPAL, not only on the client', async () => {
-    // `getTable()` re-derives its own scoped copy from ctx.auth.user, so a
+    // `getTable()` re-derives its own scoped copy from ctx.user, so a
     // standing that lived only on $.db is dropped the moment a service
     // touches a model.
     const db = await seeded()
     const { app, seen } = await appWith(db, async () => ({ workspaceId: 1, memberRole: 'admin' }))
 
     rowsOf(await app.service('docs').find({}, AS_U1))
-    expect(seen.user).toMatchObject({ userId: 'u1', workspaceId: 1, memberRole: 'admin' })
+    expect(seen.user).toMatchObject({ id: 'u1', workspaceId: 1, memberRole: 'admin' })
   })
 
   test('a FRESH principal — the session handed in is never mutated', async () => {
@@ -164,16 +164,16 @@ describe('createApp({ principal })', () => {
     const db = await seeded()
     const { app } = await appWith(db, async () => ({ workspaceId: 1 }))
 
-    const session = { userId: 'u1', role: 'user' }
-    await app.service('docs').find({}, { auth: { user: session as unknown as SessionContext } })
-    expect(session).toEqual({ userId: 'u1', role: 'user' })
+    const session = { id: 'u1', role: 'user' }
+    await app.service('docs').find({}, { user: session as unknown as SessionContext })
+    expect(session).toEqual({ id: 'u1', role: 'user' })
   })
 
   test('a resolver may not change WHO is calling — refused by name', async () => {
     const db = await seeded()
-    const { app } = await appWith(db, async () => ({ userId: 'someone-else' }))
+    const { app } = await appWith(db, async () => ({ id: 'someone-else' }))
 
-    await expect(app.service('docs').find({}, AS_U1)).rejects.toThrow(/may not set 'userId'/)
+    await expect(app.service('docs').find({}, AS_U1)).rejects.toThrow(/may not set 'id'/)
   })
 
   test('RUNS for an anonymous caller — a guest may hold a claim', async () => {
@@ -186,7 +186,7 @@ describe('createApp({ principal })', () => {
     let saw: unknown = 'never ran'
     const { app } = await appWith(db, async (_ctx, user) => { saw = user; return {} })
 
-    await app.service('docs').find({}, { auth: { user: null } })
+    await app.service('docs').find({}, { user: null })
     expect(saw).toBeNull()
   })
 
@@ -194,11 +194,11 @@ describe('createApp({ principal })', () => {
     const db = await seeded()
     const { app } = await appWith(db, async () => ({ workspaceId: 2 }))
 
-    const rows = rowsOf(await app.service('docs').find({}, { auth: { user: null } }))
+    const rows = rowsOf(await app.service('docs').find({}, { user: null }))
     expect(rows.map((r: any) => r.title)).toEqual(['ws two'])
   })
 
-  test('a guest principal does NOT become ctx.auth.user', async () => {
+  test('a guest principal does NOT become ctx.user', async () => {
     // The whole of the care this path needs. `sessionGateLevel` grades any
     // object it is handed, and a claims-only principal sets none of
     // isSystemAdmin/isOwner/isAdmin while leaving verifiedAt and activatedAt
@@ -208,7 +208,7 @@ describe('createApp({ principal })', () => {
     const db = await seeded()
     const { app, seen } = await appWith(db, async () => ({ workspaceId: 2 }))
 
-    await app.service('docs').find({}, { auth: { user: null } })
+    await app.service('docs').find({}, { user: null })
     expect(seen.user).toBeNull()
     expect(sessionGateLevel(seen.user as never)).toBe(0)
   })
@@ -222,7 +222,7 @@ describe('createApp({ principal })', () => {
     const db = await seeded()
     const { app } = await appWith(db, async () => ({}))
 
-    const rows = rowsOf(await app.service('docs').find({}, { auth: { user: null } }))
+    const rows = rowsOf(await app.service('docs').find({}, { user: null }))
     expect(rows.length).toBe(0)
   })
 
@@ -242,10 +242,10 @@ describe('createApp({ principal })', () => {
     let claims: unknown
     app.services.register(createService({
       name: 'probe',
-      async find(ctx: ServiceContext) { claims = ctx.auth.user; return [] },
+      async find(ctx: ServiceContext) { claims = ctx.user; return [] },
     }))
 
-    await app.service('probe').find({}, { auth: { user: null } })
+    await app.service('probe').find({}, { user: null })
     expect(claims).toBeNull()
   })
 

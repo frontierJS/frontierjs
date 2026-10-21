@@ -33,8 +33,8 @@ model Answer {
 `
 
 const AS: Record<string, unknown> = {
-  owner:    { userId: 'u1', userType: 'user', role: 'user' },
-  stranger: { userId: 'u2', userType: 'user', role: 'user' },
+  owner:    { id: 'u1', userType: 'user', role: 'user' },
+  stranger: { id: 'u2', userType: 'user', role: 'user' },
 }
 
 let app: any

@@ -39,7 +39,7 @@ afterAll(() => h.cleanup())
 
 async function person(role = 'user', factor = true) {
   const email = `rec-${Date.now()}-${seq++}@example.com`
-  const { userId } = await h.auth.createUser({ email, password: PW, role })
+  const { id: userId } = await h.auth.createUser({ email, password: PW, role })
   let token = ''
   if (factor) {
     const { secret } = await h.auth.setupTotp!(userId, PW)

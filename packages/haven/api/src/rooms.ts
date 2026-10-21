@@ -163,7 +163,7 @@ export function roomChannels (db: { asSystem: () => any }, memory: RoomMemory, i
             if (!standable(world, meta.x + i, meta.y, gone)) throw new Error(`Cell ${meta.x + i},${meta.y} of ${world.slug} is not floor`)
           }
         }
-        const by = Number(conn.user?.userId) || undefined
+        const by = Number(conn.user?.id) || undefined
         if (stepped(was, meta)) memory.add(channel, { kind: 'step', x: meta.x, y: meta.y, by })
         // A pickup is lifted by whoever stands on it first and lies there again
         // when its trace expires (9.9). A full quiver leaves it for the next.
@@ -182,7 +182,7 @@ export function roomChannels (db: { asSystem: () => any }, memory: RoomMemory, i
       presenceMetaBytes:        128,
       // The connection's principal was built at the upgrade, so a ban written
       // since would not reach it; every frame reads the column again.
-      claims: async (_name, conn) => conn.user ? await standingOf(db, conn.user.userId) : null,
+      claims: async (_name, conn) => conn.user ? await standingOf(db, conn.user.id) : null,
     },
   }
 }

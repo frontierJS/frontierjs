@@ -143,7 +143,7 @@ const app = createApp({
       const entry = tokens.get(token)
       if (!entry) return null
       return {
-        userId:     entry.userId,
+        id:         entry.userId,
         userType:   'user',
         authMethod: 'session' as const,
         role:        'user',
@@ -152,14 +152,14 @@ const app = createApp({
     },
     async login()          { return { token: '', user: null as never } },
     async logout()         { return },
-    async createUser()     { return { userId: '', userType: 'user', authMethod: 'session' as const, role: 'user', scopes: [] } },
+    async createUser()     { return { id: '', userType: 'user', authMethod: 'session' as const, role: 'user', scopes: [] } },
     async deleteUser()     { return },
     async createApiKey(id) { return { key: `key-${id}`, id: `key-${id}` } },
     async revokeApiKey()   { return },
     async verifyApiKey(k)  {
       const entry = tokens.get(k)
       if (!entry) return null
-      return { userId: entry.userId, userType: 'user', authMethod: 'session' as const, role: 'user', scopes: [] }
+      return { id: entry.userId, userType: 'user', authMethod: 'session' as const, role: 'user', scopes: [] }
     },
   },
 })

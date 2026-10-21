@@ -140,13 +140,13 @@ describe('an OAuth refusal on the URL', () => {
     // browser may already be holding.
     atUrl('https://shop.test/?oauth_error=denied')
     const s = await freshSession()
-    const client = fakeClient({ cookieAuth: true, me: { userId: 'u1', email: 'a@b.c' } })
+    const client = fakeClient({ cookieAuth: true, me: { id: 'u1', email: 'a@b.c' } })
 
     s.initSession(client)
     await s.ready
 
     expect(s.session.oauthError).toBe('denied')
-    expect(s.session.user?.userId).toBe('u1')
+    expect(s.session.user?.id).toBe('u1')
   })
 
   // ── the sentence ─────────────────────────────────────────────────────────
@@ -243,7 +243,7 @@ describe('an OAuth refusal on the URL', () => {
   test('completeSignIn finishes an OAuth sign-in exactly as it finishes a password one', async () => {
     atUrl('https://shop.test/sign-in?oauth_error=code_required&oauth_expires=2030-01-01T00%3A00%3A00.000Z')
     const s = await freshSession()
-    const client = fakeClient({ cookieAuth: true, me: { userId: 'u1', email: 'a@b.c' } })
+    const client = fakeClient({ cookieAuth: true, me: { id: 'u1', email: 'a@b.c' } })
     client.auth._c = client
 
     s.initSession(client)
@@ -277,18 +277,18 @@ describe('the boot restore', () => {
     // that is absent, and reading `token` alone rendered every cookie-mode app
     // signed out on each cold load with a valid session in the jar.
     const s = await freshSession()
-    const client = fakeClient({ cookieAuth: true, me: { userId: 'u1', email: 'a@b.c' } })
+    const client = fakeClient({ cookieAuth: true, me: { id: 'u1', email: 'a@b.c' } })
 
     s.initSession(client)
     await s.ready
 
     expect(client.calls).toEqual(['me'])
-    expect(s.session.user?.userId).toBe('u1')
+    expect(s.session.user?.id).toBe('u1')
   })
 
   test('with a token it loads the session before ready resolves', async () => {
     const s = await freshSession()
-    const client = fakeClient({ token: 't', me: { userId: 'u1', email: 'a@b.c' } })
+    const client = fakeClient({ token: 't', me: { id: 'u1', email: 'a@b.c' } })
 
     s.initSession(client)
     await s.ready
@@ -327,7 +327,7 @@ describe('signing in', () => {
 
   test('resolves with the session already loaded', async () => {
     const s = await freshSession()
-    const client = fakeClient({ me: { userId: 'u1', email: 'a@b.c' } })
+    const client = fakeClient({ me: { id: 'u1', email: 'a@b.c' } })
     client.auth._c = client
     s.initSession(client)
     await s.ready
@@ -358,7 +358,7 @@ describe('signing in with a second factor', () => {
     // account.me with no credential, takes the 401 as a dead session and clears —
     // a correct sign-in reported to the person as a failure.
     const s = await freshSession()
-    const client = fakeClient({ challenge: 'token', me: { userId: 'u1', email: 'a@b.c' } })
+    const client = fakeClient({ challenge: 'token', me: { id: 'u1', email: 'a@b.c' } })
     client.auth._c = client
     s.initSession(client)
     await s.ready
@@ -375,7 +375,7 @@ describe('signing in with a second factor', () => {
     // Told apart by the absence of a USER, never by the presence of a ticket:
     // the transport strips `challenge` in cookie mode the way it strips `token`.
     const s = await freshSession()
-    const client = fakeClient({ challenge: 'cookie', cookieAuth: true, me: { userId: 'u1', email: 'a@b.c' } })
+    const client = fakeClient({ challenge: 'cookie', cookieAuth: true, me: { id: 'u1', email: 'a@b.c' } })
     client.auth._c = client
     s.initSession(client)
     await s.ready
@@ -390,7 +390,7 @@ describe('signing in with a second factor', () => {
 
   test('completeSignIn finishes it, loads the session and closes the box', async () => {
     const s = await freshSession()
-    const client = fakeClient({ challenge: 'token', me: { userId: 'u1', email: 'a@b.c' } })
+    const client = fakeClient({ challenge: 'token', me: { id: 'u1', email: 'a@b.c' } })
     client.auth._c = client
     s.initSession(client)
     await s.ready
@@ -439,7 +439,7 @@ describe('signing in with a second factor', () => {
 
   test('verifyEmail on a registration link loads the session it signed in', async () => {
     const s = await freshSession()
-    const client = fakeClient({ me: { userId: 'u1', email: 'a@b.c' } })
+    const client = fakeClient({ me: { id: 'u1', email: 'a@b.c' } })
     client.auth._c = client
     s.initSession(client)
     await s.ready
@@ -486,7 +486,7 @@ describe('signing out', () => {
 
   test('tells the server, then clears here', async () => {
     const s = await freshSession()
-    const client = fakeClient({ token: 't', me: { userId: 'u1', email: 'a@b.c' } })
+    const client = fakeClient({ token: 't', me: { id: 'u1', email: 'a@b.c' } })
     s.initSession(client)
     await s.ready
     expect(s.session.user).not.toBeNull()
@@ -506,7 +506,7 @@ describe('signing out', () => {
   // promise was inherited rather than kept.
   test('clears here even when the server half throws', async () => {
     const s = await freshSession()
-    const client = fakeClient({ token: 't', me: { userId: 'u1', level: 5 } })
+    const client = fakeClient({ token: 't', me: { id: 'u1', level: 5 } })
     client.auth.signOut = async () => { throw new Error('network down') }
     s.initSession(client)
     await s.ready
@@ -524,7 +524,7 @@ describe('signing out', () => {
     // of a `finally` would clear the session and satisfy it, while telling a
     // sign-out button that the server had agreed.
     const s = await freshSession()
-    const client = fakeClient({ token: 't', me: { userId: 'u1' } })
+    const client = fakeClient({ token: 't', me: { id: 'u1' } })
     const boom = new Error('network down')
     client.auth.signOut = async () => { throw boom }
     s.initSession(client)
@@ -537,7 +537,7 @@ describe('signing out', () => {
     // …and the other control: a `finally` that swallowed the value would make
     // every sign-out look like it revoked nothing.
     const s = await freshSession()
-    const client = fakeClient({ token: 't', me: { userId: 'u1' } })
+    const client = fakeClient({ token: 't', me: { id: 'u1' } })
     s.initSession(client)
     await s.ready
 
@@ -549,7 +549,7 @@ describe('the level', () => {
 
   test('is UNKNOWN for a signed-in caller whose app publishes none', async () => {
     const s = await freshSession()
-    const client = fakeClient({ token: 't', me: { userId: 'u1' } })
+    const client = fakeClient({ token: 't', me: { id: 'u1' } })
     s.initSession(client)
     await s.ready
 
@@ -561,7 +561,7 @@ describe('the level', () => {
 
   test('is the number the server graded', async () => {
     const s = await freshSession()
-    const client = fakeClient({ token: 't', me: { userId: 'u1', level: 5 } })
+    const client = fakeClient({ token: 't', me: { id: 'u1', level: 5 } })
     s.initSession(client)
     await s.ready
 
@@ -581,7 +581,7 @@ describe('the level', () => {
     expect(s.session.level).toBe(0)
 
     const s2 = await freshSession()
-    const c2 = fakeClient({ token: 't', me: { userId: 'u1', level: 5 } })
+    const c2 = fakeClient({ token: 't', me: { id: 'u1', level: 5 } })
     s2.initSession(c2)
     await s2.ready
     await s2.signOut()

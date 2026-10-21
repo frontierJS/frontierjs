@@ -156,7 +156,7 @@ Register a handler for a job type. Must be called before `start()`.
 ```ts
 queue.handle('send-email', async (ctx) => {
   // ctx.id, ctx.queue, ctx.name, ctx.data, ctx.attempts
-  // ctx.app, ctx.auth, ctx.actorId — see "Who a job runs as" below
+  // ctx.app, ctx.user, ctx.actorId — see "Who a job runs as" below
   await mailer.send(ctx.data)
 }, {
   queue:       'email',
@@ -226,7 +226,7 @@ Start/stop the worker polling loop. `stop()` waits for in-flight jobs to finish 
 Deferred work runs long after the request that asked for it, so by the time a
 handler runs there is no session to inherit. A job used to get no principal at
 all — and no principal is `STRANGER(0)`, refused by the model's own `@@gate` —
-so every job carried a hand-written `{ auth: { user: SYSTEM } }`, which *also*
+so every job carried a hand-written `{ user: SYSTEM }`, which *also*
 meant work a customer asked for was done with the authority of the application.
 
 Now `dispatch()` records who asked and the worker runs the handler on their
@@ -260,7 +260,7 @@ long as the retry schedule runs.
 | nothing is in scope — a cron fire, boot | the app's own `createApp({ system })` |
 | `{ actor: 'usr_123' }` | that user, re-resolved |
 | `{ actor: null }` | the app's own `system`, even inside a request |
-| standalone Caravan (no Junction) | nobody — `ctx.auth.user` is `null` |
+| standalone Caravan (no Junction) | nobody — `ctx.user` is `null` |
 
 An actor that cannot be resolved — a deleted user, or an auth provider with no
 `sessionFor` — **fails the job by name**. Falling back to no principal is the
@@ -276,7 +276,7 @@ nothing gated.
 | --- | --- |
 | `ctx.id` · `ctx.queue` · `ctx.name` · `ctx.data` · `ctx.attempts` | the job |
 | `ctx.app` | the running Junction app. `undefined` standalone |
-| `ctx.auth.user` | the principal this runs as. `null` when there is none |
+| `ctx.user` | the principal this runs as. `null` when there is none |
 | `ctx.actorId` | the id recorded at dispatch. `null` when nobody asked |
 
 ## Retry behavior

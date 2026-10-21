@@ -72,6 +72,9 @@ title: Site
       if (!site) throw new Error('This is not a site you may edit')
       await refresh()
     })
+    // The link a preview's editor names, so it lands on the draft it came from.
+    const named = page.query?.draft
+    if (typeof named === 'string' && list?.some(d => d.name === named)) await pick(named)
     loadHistory()
     if (onItsWay(published)) watchPublish()
   }

@@ -73,7 +73,7 @@ export interface Job<T = unknown> {
 
 export interface JobContext<T = unknown> extends Job<T> {
   /** The principal this work runs on behalf of — re-resolved at run time. */
-  auth: { user: SessionContext | null }
+  user: SessionContext | null
 
   /**
    * The running Junction app. Absent when Caravan runs standalone, which is
@@ -653,7 +653,7 @@ export interface CaravanApp {
    * principal to read. A job dispatched with neither this nor an explicit
    * `actor` records nobody and runs as the app itself.
    */
-  principal?: () => { userId?: string } | null
+  principal?: () => { id?: string } | null
 
   /**
    * The app's Data client, scoped as a call would be — asked what level the app
@@ -686,14 +686,14 @@ export interface CaravanApp {
    * The seam that removes the oldest hazard in this package: a job had no
    * principal, and no principal is STRANGER(0), so a handler writing back
    * through `app.service('x').patch(…)` was refused by the model's own `@@gate`
-   * unless every job carried a hand-written `{ auth: { user: SYSTEM } }`.
+   * unless every job carried a hand-written `{ user: SYSTEM }`.
    *
    * Junction's implementation opens an AsyncLocalStorage scope, so a service
    * call inside the handler that names no auth inherits this principal — the
    * same propagation any nested call gets.
    *
    * Absent (standalone Caravan) means the handler is called directly and
-   * `ctx.auth.user` is null. Nothing to be graded by, and nothing pretending.
+   * `ctx.user` is null. Nothing to be graded by, and nothing pretending.
    */
   runAs?: <T>(
     userId:   string | null,

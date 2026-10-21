@@ -106,7 +106,7 @@ function resolveCache(ctx: ServiceContext): ICache {
  * callers in two tenants shared too.
  */
 function buildCacheKey(ctx: ServiceContext): string {
-  const userSeg = ctx.auth.user?.userId != null ? `:uid=${ctx.auth.user.userId}` : ''
+  const userSeg = ctx.user?.id != null ? `:uid=${ctx.user.id}` : ''
   const shape   = sortedPairs(ctx.directives)
   const dirSeg  = shape ? `:$=${shape}` : ''
 
@@ -549,7 +549,7 @@ export async function callService(
   // runInServiceCall below: that one is read by litestone's write tap to
   // suppress a double announcement, and widening it to this span would stop a
   // write inside an afterCommit effect from announcing at all.
-  return reenterAs(ctx.auth.user, () =>
+  return reenterAs(ctx.user, () =>
     enterCall(ctx, () => _callService(service, ctx, appHooks, events, telemetry)))
 }
 
@@ -655,7 +655,7 @@ async function _callService(
   // code acting inside a call already admitted, so the scope was graded at
   // the edge it came through.
   if (ctx.transport && ctx.transport !== 'internal') {
-    const refused = scopeRefusal(service, method as string, ctx.auth?.user)
+    const refused = scopeRefusal(service, method as string, ctx.user)
     if (refused) throw new Forbidden(refused)
   }
 
@@ -711,7 +711,7 @@ async function _callService(
       service:     service.name,
       method:      method as string,
       transport:   ctx.transport ?? 'internal',
-      userId:      ctx.auth.user?.userId ?? null,
+      userId:      ctx.user?.id ?? null,
       id:          ctx.id,
     } satisfies CallStartEvent)
   }
@@ -830,7 +830,7 @@ async function _callService(
       service:     service.name,
       method:      method as string,
       transport:   ctx.transport ?? 'internal',
-      userId:      ctx.auth.user?.userId ?? null,
+      userId:      ctx.user?.id ?? null,
       id:          ctx.id,
       durationMs:  Date.now() - start,
       status:      failed ? 'error' : 'ok',
@@ -2594,7 +2594,7 @@ function makeBypass(
           service:     serviceName,
           method,
           transport:   ctx.transport ?? 'internal',
-          userId:      ctx.auth.user?.userId ?? null,
+          userId:      ctx.user?.id ?? null,
           id:          ctx.id,
           durationMs:  Date.now() - start,
           status:      ctx.error ? 'error' : 'ok',

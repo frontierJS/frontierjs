@@ -57,16 +57,16 @@ async function appWith(db: unknown, principal?: PrincipalResolver) {
   app.services.register(createService({
     name: 'shifts',
     async find(ctx: ServiceContext) {
-      seen.user = ctx.auth.user
+      seen.user = ctx.user
       return ($.db as any).shift.findMany({})
     },
   }))
   return { app, seen }
 }
 
-// A session carries its id as `userId`, which is junction's shape; the lookup
+// A session carries its id as `id`; the lookup
 // must reach it through toDataPrincipal like every other policy read.
-const as = (userId: string) => ({ auth: { user: { userId } as unknown as SessionContext } })
+const as = (id: string) => ({ user: { id } as unknown as SessionContext })
 const notes = async (app: any, userId: string) => rowsOf(await app.service('shifts').find({}, as(userId))).map(r => r.note)
 
 describe('a claim the schema reads off a row', () => {
@@ -81,7 +81,7 @@ describe('a claim the schema reads off a row', () => {
     expect(await notes(app, 'u2')).toEqual([])
   })
 
-  test('is on ctx.auth.user, where a service and the gate read it', async () => {
+  test('is on ctx.user, where a service and the gate read it', async () => {
     const { app, seen } = await appWith(await seeded())
     await app.service('shifts').find({}, as('u1'))
     expect(seen.user.employeeId).toBe(1)
@@ -98,7 +98,7 @@ describe('a claim the schema reads off a row', () => {
 
   test('a guest is looked up by nothing', async () => {
     const { app } = await appWith(await seeded())
-    expect(rowsOf(await app.service('shifts').find({}, { auth: { user: null } } as any))).toEqual([])
+    expect(rowsOf(await app.service('shifts').find({}, { user: null } as any))).toEqual([])
   })
 })
 

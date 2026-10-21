@@ -29,12 +29,12 @@ describe('the default minimum is 8 characters', () => {
 
   test('createUser with no password stays an invitation', async () => {
     const made = await h.auth.createUser({ email: 'invited@example.test' })
-    expect(made.userId).toBeTruthy()
+    expect(made.id).toBeTruthy()
   })
 
   test('createUser accepts exactly the minimum', async () => {
     const made = await h.auth.createUser({ email: 'exact@example.test', password: 'abcd1234' })
-    expect(made.userId).toBeTruthy()
+    expect(made.id).toBeTruthy()
   })
 
   test('POST /auth/register answers 400 for a one-character password', async () => {
@@ -45,7 +45,7 @@ describe('the default minimum is 8 characters', () => {
 
   test('changePassword refuses a short new password and keeps the old one', async () => {
     const made = await h.auth.createUser({ email: 'change@example.test', password: 'long-enough-1' })
-    await rejectsWith(() => h.auth.changePassword!(made.userId, 'long-enough-1', 'short'), WeakPasswordError)
+    await rejectsWith(() => h.auth.changePassword!(made.id, 'long-enough-1', 'short'), WeakPasswordError)
     expect(await h.auth.login('change@example.test', 'long-enough-1')).toBeTruthy()
   })
 

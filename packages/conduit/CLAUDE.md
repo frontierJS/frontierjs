@@ -241,6 +241,12 @@ src/
   `socket.editThenDeleteInOrder` and `socket.frameTwiceAppliedOnce`). The
   framing is a value in code, never a descriptor field: a descriptor is
   stored as JSON and a function does not survive the store.
+- **A framing that `dial`s owns the address and the credential** (`FJS-D1355`).
+  The minted URL carries its own ticket and names a host the Provider picks,
+  so the target is `address: ''`, `auth: 'none'`, and `subscribe` refuses a
+  bearer beside a `dial`: it would ride to whatever host the Provider named.
+  A keepalive with no `ping` sends nothing (`FJS-D1356`) — ActionCable closes
+  a socket for good on a command it does not know.
 - **A mirror forward spends `self.send`, read at call time** (`FJS-D1125`).
   The junction plugin replaces `send` after `createConduit` returns, to write
   `who`; a forward holding the unwrapped one sends a per-caller verb with no

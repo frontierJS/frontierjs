@@ -125,12 +125,12 @@ export function createPresenceTracker(deps: PresenceDeps) {
 
   function presenceJoin(conn: Connection, channelId: string): void {
     const session = conn.user
-    if (!session?.userId) return   // anonymous — not tracked
+    if (!session?.id) return   // anonymous — not tracked
 
     const meta = conn.__joinMeta ?? {}
     const member: PresenceMember = {
       connectionId: conn.id,
-      userId:       session.userId,
+      userId:       session.id,
       channelId,
       joinedAt:     new Date(),
       meta,

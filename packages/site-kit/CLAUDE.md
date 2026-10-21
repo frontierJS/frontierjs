@@ -155,6 +155,13 @@ what they mean in any app.
   one — a `<script>`, a `{…}`, a tag with its attributes — or a `javascript:`
   link (`FJS-D1250`), because a build runs a body's script. Basecamp's save
   and the grade of a model's diff both call it.
+- `src/editor/` + `config/editor.js` — the owner's Edit button on a draft's
+  preview (`FJS-D1225`, `FJS-D1358`), built only by `build --preview` with
+  `SITE_EDITOR` (basecamp's page for the draft, set by Outpost). Emitted as
+  `assets/fjs-editor.js` because Sierra's prune keeps only chunks a page names
+  under `assets/`, and with `build.minify` stated, since Sierra skips minifying
+  a bundle it expects no page to reach. Each page loads it through
+  `document.bodyEnd`. `handoff.js` is the PKCE sign-in (`FJS-D1357`).
 - `src/block-look.js` — the one owner of what a look word may be and where its
   class lands, imported by both `Block.mesa` and `config/dividers.js`.
 - `config/shell.js` — `siteShell({ html, entry })`, the kit's own pair or a

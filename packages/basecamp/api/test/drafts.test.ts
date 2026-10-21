@@ -19,6 +19,7 @@
 
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { execFileSync }           from 'node:child_process'
+import { createHash, randomBytes } from 'node:crypto'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir }                 from 'node:os'
 import { join }                   from 'node:path'
@@ -28,7 +29,7 @@ import { basecampGateLevel }      from '../src/core/gate.ts'
 import { buildBasecampApp }       from '../src/app.ts'
 import { grantsFor }              from '../src/core/capabilities.ts'
 import { env as appEnv }          from '../src/core/env.ts'
-import { cloudflareFor, previewStatuses } from '../src/core/site-preview.ts'
+import { cloudflareFor, markPreview, previewStatuses } from '../src/core/site-preview.ts'
 import { MergeConflict, advanceBase, mergeDraft, revertDraft, saveDraftFile, openDraft, readDraftFile } from '../src/core/site-checkout.ts'
 import { registerAccount }        from '../src/providers/compute/accounts.ts'
 import { startCfSink, SINK_ACCOUNT } from '../src/providers/edge/cloudflare-sink.ts'
@@ -86,9 +87,9 @@ beforeAll(async () => {
     source: { kind: 'git', repo: remote, path: 'site' } } })
   await sys.appEditor.create({ data: { appId: site.id, userId: e.id, role: 'edit' } })
 
-  admin    = session({ userId: a.id, workspaceId: ws.id })
-  editor   = session({ userId: e.id })
-  stranger = session({ userId: s.id })
+  admin    = session({ id: a.id, workspaceId: ws.id })
+  editor   = session({ id: e.id })
+  stranger = session({ id: s.id })
 })
 
 const sink = startCfSink(0)
@@ -251,7 +252,7 @@ describe('publishing a draft', () => {
     const { accountId } = await sys.workspace.findFirst({ where: { id: site.workspaceId } })
     const u = await sys.user.create({ data: { email: `kim-${uniq()}@x.co`, name: 'Kim', status: 'active', accountId } })
     await sys.appEditor.create({ data: { appId: site.id, userId: u.id, role: 'publish' } })
-    publisher = session({ userId: u.id })
+    publisher = session({ id: u.id })
   })
 
   test('an editor without the publish grant is refused, and nothing is queued', async () => {
@@ -404,5 +405,71 @@ describe('the deployed image', () => {
     const runtime = dockerfile.slice(dockerfile.lastIndexOf('FROM oven/bun:1-slim'))
     expect(runtime).toMatch(/apt-get install[^\n]*(\\\n[^\n]*)*\bgit\b/)
     expect(runtime).toMatch(/apt-get install[^\n]*(\\\n[^\n]*)*openssh-client/)
+  })
+})
+
+// FJS-D1357: a preview on another site signs in through a one-time code bound
+// to its PKCE challenge and to the origin its preview was recorded at, and
+// gets a key that reaches only drafts. Over HTTP, because the origin is a header.
+describe('a preview signs in', () => {
+  const PREVIEW  = 'https://spring-hours-spa.acct.workers.dev'
+  const verifier = randomBytes(32).toString('base64url')
+  const challenge = createHash('sha256').update(verifier).digest('base64url')
+  const call = (method: string, body: Record<string, unknown>, headers: Record<string, string> = {}) => {
+    let req = env.http.post('/drafts').set('x-service-method', method)
+    for (const [k, v] of Object.entries(headers)) req = req.set(k, v)
+    return req.send(body)
+  }
+  const handoff = async () => {
+    const back = await drafts(editor).call('handoff', undefined, { appId: site.id, returnTo: `${PREVIEW}/hours/`, challenge })
+    return new URL(back.redirect).hash.replace('#fjs-edit=', '')
+  }
+
+  beforeAll(() => { markPreview(site.id, 'spring-hours', { state: 'ready', commit: 'c0ffee', url: PREVIEW }) })
+
+  test('a handoff returns only to a recorded preview of this site, and only for an editor', async () => {
+    const elsewhere = await refusal(drafts(editor).call('handoff', undefined, { appId: site.id, returnTo: 'https://evil.example.com/', challenge }))
+    expect([elsewhere.code, elsewhere.message]).toEqual([400, expect.stringContaining('https://evil.example.com is not a preview of this site')])
+    expect((await refusal(drafts(stranger).call('handoff', undefined, { appId: site.id, returnTo: PREVIEW, challenge }))).code).toBe(404)
+    const back = await drafts(editor).call('handoff', undefined, { appId: site.id, returnTo: `${PREVIEW}/hours/`, challenge })
+    expect(back.redirect).toMatch(/^https:\/\/spring-hours-spa\.acct\.workers\.dev\/hours\/#fjs-edit=/)
+  })
+
+  test('the code is redeemed once, from the preview\'s origin, with its verifier', async () => {
+    const wrongOrigin = await call('redeem', { appId: site.id, code: await handoff(), verifier }, { origin: 'https://evil.example.com' })
+    expect(wrongOrigin.status).toBe(401)
+
+    const code = await handoff()
+    expect((await call('redeem', { appId: site.id, code, verifier: verifier.replace(/^./, c => c === 'a' ? 'b' : 'a') }, { origin: PREVIEW })).status).toBe(401)
+    const code2 = await handoff()
+    const ok = await call('redeem', { appId: site.id, code: code2, verifier }, { origin: PREVIEW })
+    expect(ok.status).toBe(200)
+    expect(ok.headers['access-control-allow-origin']).toBe(PREVIEW)
+    const answer = ok.body.data ?? ok.body
+    expect(answer).toMatchObject({ editor: { name: 'Owner' }, site: { id: site.id }, role: 'edit' })
+    expect((await call('redeem', { appId: site.id, code: code2, verifier }, { origin: PREVIEW })).status).toBe(401)
+
+    const key = answer.key
+    const files = await call('files', { appId: site.id, draft: 'spring-hours' }, { origin: PREVIEW, authorization: `Bearer ${key}` })
+    expect([files.status, (files.body.data ?? files.body).files]).toEqual([200, ['content/routes/index.md']])
+    const asKey = { origin: PREVIEW, authorization: `Bearer ${key}` }
+    const form = (await call('read', { appId: site.id, draft: 'spring-hours', path: 'content/routes/index.md' }, asKey)).body
+    const saved = await call('save', { appId: site.id, draft: 'spring-hours', path: 'content/routes/index.md',
+      blob: (form.data ?? form).blob, body: 'We open at eleven.\n', message: 'From the preview' }, asKey)
+    expect(saved.status).toBe(200)
+    expect(git(remote, 'log', '-1', '--format=%an|%s', 'draft/spring-hours')).toBe('Owner|From the preview')
+    // Another service, and a second handoff, are out of the key's reach.
+    expect((await env.http.get('/apps').auth(key)).status).toBe(403)
+    expect((await call('handoff', { appId: site.id, returnTo: PREVIEW, challenge }, { origin: PREVIEW, authorization: `Bearer ${key}` })).status).toBe(403)
+
+    // The grant is read on every call, so a key outliving it reaches nothing.
+    const sys = env.system as any
+    const grant = await sys.appEditor.findFirst({ where: { appId: site.id, userId: editor.user?.id ?? editor.id } })
+    await sys.appEditor.delete({ where: { id: grant.id } })
+    try {
+      expect((await call('files', { appId: site.id, draft: 'spring-hours' }, { origin: PREVIEW, authorization: `Bearer ${key}` })).status).toBe(404)
+    } finally {
+      await sys.appEditor.create({ data: { appId: site.id, userId: grant.userId, role: grant.role } })
+    }
   })
 })

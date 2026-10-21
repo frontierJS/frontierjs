@@ -37,7 +37,7 @@ beforeAll(async () => {
     workspaceId: ws.id, userId: user.id, role: 'owner',
     capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString(),
   } })
-  owner = session({ userId: user.id, workspaceId: ws.id })
+  owner = session({ id: user.id, workspaceId: ws.id })
 }, 120_000)
 
 afterAll(async () => { await env?.close() })

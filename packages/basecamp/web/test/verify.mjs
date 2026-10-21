@@ -2794,7 +2794,7 @@ check('a second human can sign in', (await patLogin()).status, 200)
 // never looks at it, so "suspended" was a word with no enforcement anywhere.
 await apiCall('/hub', {
   method: 'POST', header: { 'x-service-method': 'setUserStatus' },
-  body: { userId: pat.user.userId, status: 'suspended' },
+  body: { userId: pat.user.id, status: 'suspended' },
 })
 const refused = await patLogin()
 check('a suspended account cannot sign in', refused.status, 403)
@@ -2810,7 +2810,7 @@ check('…and a token issued before it stops working too', stale.status, s => s 
 
 await apiCall('/hub', {
   method: 'POST', header: { 'x-service-method': 'setUserStatus' },
-  body: { userId: pat.user.userId, status: 'active' },
+  body: { userId: pat.user.id, status: 'active' },
 })
 check('restoring lets them back in', (await patLogin()).status, 200)
 
@@ -2860,7 +2860,7 @@ check('a non-member is refused the workspace outright', (await asPat('/servers')
 
 await apiCall(`/workspaces/${firstWs.id}`, {
   method: 'POST', header: { 'x-service-method': 'addMember' },
-  body:   { userId: pat.user.userId, role: 'viewer' },
+  body:   { userId: pat.user.id, role: 'viewer' },
 })
 
 check('a viewer reads the fleet',          (await asPat('/servers')).status, 200)
@@ -2878,7 +2878,7 @@ check('…refused by a level, which is the schema talking',
 
 await apiCall(`/workspaces/${firstWs.id}`, {
   method: 'POST', header: { 'x-service-method': 'setMemberRole' },
-  body:   { userId: pat.user.userId, role: 'developer' },
+  body:   { userId: pat.user.id, role: 'developer' },
 })
 
 check('promoting to developer opens the write',

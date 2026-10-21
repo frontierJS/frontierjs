@@ -2449,7 +2449,7 @@ describe('ctx-params', () => {
 
   test('the four that do exist are not reported', () => {
     const root = tree('cp-real', api(
-      'export const guard = ctx => ctx.auth.user && ctx.route.id && ctx.caller.ip && ctx.locals\n'))
+      'export const guard = ctx => ctx.user && ctx.route.id && ctx.caller.ip && ctx.locals\n'))
     expect(only(root, 'ctx-params').findings).toEqual([])
   })
 

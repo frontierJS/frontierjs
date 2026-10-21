@@ -78,7 +78,7 @@ describe('an unproven address claimed through OAuth', () => {
     const again = await h.auth.oauthResolve('okta', {
       providerId: 'attacker-sub-1', email, emailVerified: true, name: 'Mallory',
     })
-    expect(again.outcome === 'signed-in' && again.user.userId === victim.user.userId).toBe(false)
+    expect(again.outcome === 'signed-in' && again.user.id === victim.user.id).toBe(false)
   })
 
   test('TRUSTED issuer, unverified claim: the same', async () => {
@@ -106,7 +106,7 @@ describe('an unproven address claimed through OAuth', () => {
     })
     if (squat.outcome !== 'signed-in') return   // refused at branch 3 — nothing to launder
 
-    await h.auth.requestEmailVerification!(squat.user.userId)
+    await h.auth.requestEmailVerification!(squat.user.id)
     const token = h.verifyToken()
     if (token) await h.auth.verifyEmail!(token).catch(() => null)
 
@@ -116,7 +116,7 @@ describe('an unproven address claimed through OAuth', () => {
       providerId: 'victim-google-sub', email, emailVerified: true, name: 'Victim',
     })
     if (out.outcome === 'signed-in') {
-      const creds = await h.sys.credential.findMany({ where: { userId: out.user.userId } })
+      const creds = await h.sys.credential.findMany({ where: { userId: out.user.id } })
       expect(creds.some((c: any) => c.type === 'oauth:okta' && c.value === 'attacker-sub-3')).toBe(false)
     }
   })

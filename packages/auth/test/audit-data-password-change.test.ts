@@ -22,7 +22,7 @@ describe('changePassword and the other sessions', () => {
     const stolen = signedIn(await h.auth.login(email, 'pw-old-1'))
     expect(await h.auth.verifySession(stolen.token)).not.toBeNull()
 
-    await h.auth.changePassword!(made.userId, 'pw-old-1', 'pw-new-2', { exceptSessionId: mine.user.sessionId })
+    await h.auth.changePassword!(made.id, 'pw-old-1', 'pw-new-2', { exceptSessionId: mine.user.sessionId })
 
     // The session that changed the password may stay; every other one must go.
     expect(await h.auth.verifySession(stolen.token)).toBeNull()

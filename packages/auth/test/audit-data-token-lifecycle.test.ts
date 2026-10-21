@@ -25,7 +25,7 @@ afterAll(() => h.cleanup())
 const fresh = async (name: string) => {
   const email = `${name}@example.test`
   const made  = await h.auth.createUser({ email, password: 'pw-1' })
-  return { email, userId: made.userId, password: 'pw-1' }
+  return { email, userId: made.id, password: 'pw-1' }
 }
 
 describe('session tokens', () => {

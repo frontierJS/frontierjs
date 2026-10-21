@@ -161,11 +161,11 @@ const app = createApp({
     async verifySession(token: string) {
       const userId = tokens.get(token)
       if (!userId) return null
-      return { userId: userId, userType: 'user', authMethod: 'session' as const, role: 'user', scopes: [] }
+      return { id: userId, userType: 'user', authMethod: 'session' as const, role: 'user', scopes: [] }
     },
     async login()          { return { token: '', user: null as never } },
     async logout()         { return },
-    async createUser()     { return { userId: '', userType: 'user', authMethod: 'session' as const, role: 'user', scopes: [] } },
+    async createUser()     { return { id: '', userType: 'user', authMethod: 'session' as const, role: 'user', scopes: [] } },
     async deleteUser()     { return },
     async createApiKey(id) { return { key: `key-${id}`, id: `key-${id}` } },
     async revokeApiKey()   { return },

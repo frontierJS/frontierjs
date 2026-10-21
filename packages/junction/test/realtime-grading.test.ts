@@ -56,13 +56,13 @@ const settle = async () => { await sleep(120) }
 // the crossing `toDataPrincipal` sits on — asserted here rather than typed
 // around, because a policy comparing `'5'` to `5` is exactly the shape that
 // refuses the owner and admits a stranger (`FJS-D175`).
-interface Session { userId: string; userType: 'user'; authMethod: 'session'; isAdmin?: boolean; verifiedAt: string; activatedAt: string }
+interface Session { id: string; userType: 'user'; authMethod: 'session'; isAdmin?: boolean; verifiedAt: string; activatedAt: string }
 
 function sessionFor(token: string): Session | null {
   const base = { userType: 'user' as const, authMethod: 'session' as const, verifiedAt: 'x', activatedAt: 'x' }
-  if (token === 'admin') return { ...base, userId: '1', isAdmin: true }
+  if (token === 'admin') return { ...base, id: '1', isAdmin: true }
   const m = /^u(\d+)$/.exec(token)
-  return m ? { ...base, userId: m[1] } : null
+  return m ? { ...base, id: m[1] } : null
 }
 
 const LITESTONE = resolve(import.meta.dir, '../../litestone/src/index.js')
@@ -234,7 +234,7 @@ describe('a background write is graded like a published one (FJS-672)', () => {
     const membership: Record<string, number> = { '5': 5 }
     const { db, port } = await mkApp({
       schema,
-      getLevel: (u: any) => !u ? 0 : membership[String(u.id ?? u.userId)] ?? 1,
+      getLevel: (u: any) => !u ? 0 : membership[String(u.id)] ?? 1,
     })
     const member    = open(port, 'u5')
     const outsider  = open(port, 'u6')
@@ -261,7 +261,7 @@ describe('a background write is graded like a published one (FJS-672)', () => {
     const { app, port } = await mkApp()
     const owner = open(port, 'u5')
     expect(await ready(owner)).toBe(true)
-    await app.service('orders').create({ customerId: '5' }, { auth: { user: sessionFor('admin') } })
+    await app.service('orders').create({ customerId: '5' }, { user: sessionFor('admin') })
     await settle()
     expect(owner.events.filter(e => e.event === 'orders created')).toHaveLength(1)
   })
@@ -276,7 +276,7 @@ describe('a channel function may answer a channel name (FJS-D1079)', () => {
     expect(await ready(owner)).toBe(true)
     expect(await ready(stranger)).toBe(true)
 
-    await app.service('orders').create({ customerId: '5' }, { auth: { user: sessionFor('admin') } })
+    await app.service('orders').create({ customerId: '5' }, { user: sessionFor('admin') })
     await (db as any).asSystem().order.create({ data: { customerId: '5' } })
     await settle()
 

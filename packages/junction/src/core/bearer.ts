@@ -99,7 +99,7 @@ export function authorization(): BearerSource {
     // ahead of the cookie and `x-api-key`, so a caller who is signed in on this
     // request was signed in BY this token: it is a session, not a grant, and
     // fingerprinting it would refuse the person as a dead link.
-    if (ctx.auth?.user) return null
+    if (ctx.user) return null
     const value = raw(ctx)
     if (typeof value !== 'string' || !value.startsWith('Bearer ')) return null
     const token = value.slice(7).trim()
@@ -116,7 +116,7 @@ export function cookie(name: string): BearerSource {
     // of their own session, and once that link is replaced, reading it refuses
     // the seller as a dead link for the cookie's life (`FJS-2175`). A session
     // and a grant are not held together (`FJS-D344`); the session wins.
-    if (ctx.auth?.user) return null
+    if (ctx.user) return null
     const direct = (ctx as { cookies?: Record<string, string> }).cookies?.[name]
                 ?? (ctx.caller as { cookies?: Record<string, string> } | undefined)?.cookies?.[name]
     if (typeof direct === 'string' && direct) return direct
@@ -296,7 +296,7 @@ export function bearerClaim(opts: BearerClaimOptions): BearerResolver {
     return sys?.[opts.model] as Record<string, (a: Record<string, unknown>) => Promise<unknown>> | undefined
   }
 
-  const resolver = async function bearerClaim(ctx: ServiceContext, user: ServiceContext['auth']['user'] | null): Promise<PrincipalClaims> {
+  const resolver = async function bearerClaim(ctx: ServiceContext, user: ServiceContext['user'] | null): Promise<PrincipalClaims> {
     // A token this request does not carry is not a refusal to report: most
     // callers are ordinary signed-in people, and a resolver that recorded
     // *refused* for every one of them would make `NO_CLAIM` meaningless for

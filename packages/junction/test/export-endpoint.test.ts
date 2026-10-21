@@ -236,45 +236,6 @@ describe('a claim the app resolves per request reaches the extract', () => {
   })
 })
 
-// ─── the shape a session actually has ─────────────────────────────────────
-
-describe('a session names the account userId and the boundary reads id', () => {
-
-  // Every fixture above hands `verifySession` an object with `id` on it, which
-  // is the ROW's shape and not always the SESSION's. `@frontierjs/auth` issues a
-  // context carrying `userId`, and `toDataPrincipal` is the one owner of that
-  // translation — `applyClaims` calls it before its own `$setAuth`, and this
-  // route has to call it before handing the principal to `runExport`.
-  //
-  // Getting it wrong is silent in the worst way: `auth().id` compares against
-  // NULL, the policy matches no rows, and the caller is handed an empty extract
-  // with a 200. Found in `example`, where the same account exported one order
-  // through the CLI and none over HTTP.
-  test('a userId-shaped session still exports its own rows', async () => {
-    const db = await createClient({ databases: ':memory:', schema: SCHEMA, encryptionKey: 'a'.repeat(64) }) as any
-    for (const a of [STAFF, SHOPPER]) await db.asSystem().account.create({ data: a })
-    await db.asSystem().order.create({ data: { ref: 'MINE',   ownerId: 'u-shop',  total: 1 } })
-    await db.asSystem().order.create({ data: { ref: 'THEIRS', ownerId: 'u-other', total: 2 } })
-
-    const app = createApp({
-      db,
-      config: { port: 0 },
-      logLevel: 'silent',
-    })
-    // No `id` anywhere on it — the shape auth's own session context has.
-    app.setAuth({ verifySession: async () => ({ userId: 'u-shop', email: SHOPPER.email, isAdmin: false }) as any })
-    app.configure(exporter())
-    await app.start()
-    try {
-      const res  = await get(app.http.port as number, '/exports/Order', 'anything')
-      const refs = (await lines(res)).map(l => JSON.parse(l).ref)
-      // Paired: the row that IS theirs arrives, and the one that is not does
-      // not. A translation that handed everything through passes the first half.
-      expect(refs).toEqual(['MINE'])
-    } finally { await app.stop() }
-  })
-})
-
 // ─── whose data ───────────────────────────────────────────────────────────
 //
 // Under `strategy database` the rows are in a TENANT's file, so WHICH CLIENT is

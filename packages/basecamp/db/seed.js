@@ -351,7 +351,7 @@ export class BasecampSeeder extends Seeder {
           email: person.email, name: person.name, password: PASSWORD,
         })
         const user = await sys.user.update({
-          where: { id: session.userId },
+          where: { id: session.id },
           data: {
             accountId:     account.id,
             status:        'active',
@@ -908,9 +908,9 @@ export class BasecampSeeder extends Seeder {
           source: { kind: 'git', repo: 'git@forgejo.local:acme/harbor-spa.git', branch: 'main', path: 'site' },
         } })
         const client = await auth.createUser({ email: 'lee@example.com', name: 'Lee Carter', password: PASSWORD })
-        await sys.user.update({ where: { id: client.userId },
+        await sys.user.update({ where: { id: client.id },
           data: { status: 'active', displayName: 'Lee Carter', emailVerified: true } })
-        await sys.appEditor.create({ data: { appId: site.id, userId: client.userId, role: 'edit' } })
+        await sys.appEditor.create({ data: { appId: site.id, userId: client.id, role: 'edit' } })
         await sys.appEditor.create({ data: { appId: site.id, userId: users[1].id, role: 'publish' } })
       }
 

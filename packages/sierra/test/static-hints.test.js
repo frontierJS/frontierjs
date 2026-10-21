@@ -37,8 +37,9 @@ beforeAll(async () => {
   }
 
   // A real site's entry imports its route table, which is what puts every route
-  // through the main build. The fixture's entry is a bare comment.
-  await writeFile(join(TMP, 'src/main.js'), "import '../config/routes.js'\n")
+  // through the main build. The fixture's entry is a bare comment. The table is
+  // the one this build writes: dev's routes.js is ignored, so a clone has none.
+  await writeFile(join(TMP, 'src/main.js'), "import '../config/routes.build.js'\n")
 
   // One content module, read without a watch by an island and by a page with none.
   await writeFile(join(TMP, 'src/content.js'), "export const site = { name: 'n', tag: 't' }\n")

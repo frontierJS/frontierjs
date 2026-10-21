@@ -251,7 +251,7 @@ propagated into sub-calls, which is the FeathersJS shared-mutation footgun. It
 is four typed fields instead, each with one propagation rule:
 
 ```typescript
-ctx.auth.user       // WHO is calling. Frozen. Propagates to internal calls.
+ctx.user       // WHO is calling. Frozen. Propagates to internal calls.
 ctx.caller.headers  // caller environment — ip, userAgent, headers. Read-only,
 ctx.caller.ip       //   propagates. `{}` on internal calls.
 ctx.route.roomId    // path captures ({id}, {room}). Router-only; {} internal.
@@ -324,7 +324,7 @@ createService({
       create: [requireRole('developer'), validate],
     },
     after: {
-      all: [announce((_, ctx) => app.channel(`workspace:${ctx.auth.user?.workspaceId}`))],
+      all: [announce((_, ctx) => app.channel(`workspace:${ctx.user?.workspaceId}`))],
     },
     error: { all: [logError] },
   },
@@ -402,7 +402,7 @@ hooks: {
     create: [rateLimitHook({
       max:     100,
       window:  '1 hour',
-      key:     (ctx) => ctx.auth.user?.accountId ?? ctx.caller.ip,
+      key:     (ctx) => ctx.user?.accountId ?? ctx.caller.ip,
       message: 'Organization limit reached',
     })]
   }
@@ -533,7 +533,7 @@ app.configure(channels(app => {
 
 // In a service hook
 after: {
-  create: [announce((_, ctx) => app.channel(`workspace:${ctx.auth.user?.workspaceId}`))],
+  create: [announce((_, ctx) => app.channel(`workspace:${ctx.user?.workspaceId}`))],
 }
 ```
 
@@ -1021,7 +1021,7 @@ app.configure(authPlugin({ auth }))  // mounts /auth/* routes
 
 Junction defines the `IAuth` interface and ships no vendor adapter. An app that wants another library implements `IAuth` over it and mounts the library's handler on a raw route.
 
-The transport reads `Authorization: Bearer` or `X-API-Key`, calls `auth.verifySession()` and stamps `ctx.auth.user`; the `authenticate` hook only refuses a call that has no `ctx.auth.user`.
+The transport reads `Authorization: Bearer` or `X-API-Key`, calls `auth.verifySession()` and stamps `ctx.user`; the `authenticate` hook only refuses a call that has no `ctx.user`.
 
 ### Sessions from a cookie
 
@@ -1049,7 +1049,7 @@ Three rules worth knowing:
   withholds the cookie from cross-site writes, but a cross-site POST to
   `/auth/login` needs no cookie: it sets one. See `csrf()` below.
 
-**`SessionContext` shape** — what `ctx.auth.user` looks like inside hooks and services:
+**`SessionContext` shape** — what `ctx.user` looks like inside hooks and services:
 
 ```typescript
 interface SessionContext {
@@ -1097,7 +1097,7 @@ These are optional on `IAuth` — if your provider handles them differently (e.g
 
 ## Running as somebody
 
-`ctx.auth.user` propagates, so a service call made inside a request already runs
+`ctx.user` propagates, so a service call made inside a request already runs
 as that caller and nothing has to be said. Work that outlives the request — a
 queued job, a retry, a scheduled sweep — is the case that does not: the store is
 gone by the time it runs, and no principal is `STRANGER(0)`, refused by the
@@ -1137,7 +1137,7 @@ Neither is safe, so there is no fallback.
 is reached only from code that has already decided whose behalf it acts on, and
 must never be wired to anything a request can name.
 
-`@frontierjs/caravan` is the first caller: it records `app.principal()?.userId`
+`@frontierjs/caravan` is the first caller: it records `app.principal()?.id`
 at dispatch and runs the handler inside `app.runAs(actorId, …)`.
 
 ## Schema validation
@@ -1730,7 +1730,7 @@ const app = await createTestApp({
 })
 
 // Direct service call — no HTTP at all
-const ctx = testCtx('notes', 'create', { title: 'Hello' }, { user: { userId: 'u1' } })
+const ctx = testCtx('notes', 'create', { title: 'Hello' }, { user: { id: 'u1' } })
 await callService(app.services.get('notes')!, ctx)
 expect(ctx.result.data.title).toBe('Hello')
 

@@ -35,7 +35,7 @@ Sending is one line, in an `after` hook on create:
 
 ```text
 await ctx.app.notify(
-  { id: who.userId, email: who.email, name: who.name },
+  { id: who.id, email: who.email, name: who.name },
   noteAdded(row),
 )
 ```
@@ -128,13 +128,13 @@ if (!src.includes('notify(')) {
     '        // still the envelope, and reading .title off it is undefined',
     '        // with no error — a notification about nothing.',
     '        const row = resultData(ctx.result) as { id?: number, title?: string } | undefined',
-    '        const who = ctx.auth?.user as { userId?: string, email?: string, name?: string } | undefined',
+    '        const who = ctx.user as { id?: string, email?: string, name?: string } | undefined',
     '        if (!row?.id || !who) return',
     '',
     '        // A Recipient, not a User: { id, email, name }. id is optional,',
     '        // which is what lets somebody with no account be emailed.',
     '        await ctx.app.notify(',
-    '          { id: who.userId, email: who.email, name: who.name },',
+    '          { id: who.id, email: who.email, name: who.name },',
     '          noteAdded(row as { id: number, title: string }),',
     '        )',
     '      }],',
@@ -160,7 +160,7 @@ const registered = await registerAccount($, {
 })
 if (!await must($, registered, { likely: 'auth is not installed in this app' })) return
 $.config.userToken = registered.json.token
-$.config.userId    = registered.json.user?.userId
+$.config.userId    = registered.json.user?.id
 $.config.userEmail = email
 
 const title = `notified-${Date.now().toString(36)}`

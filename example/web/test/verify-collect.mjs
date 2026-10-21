@@ -176,9 +176,9 @@ async function freshSubscription(suffix, who = customer) {
 
 /** The shopper, as a caller. */
 const asShopper = {
-  auth: { user: { id: customer.userId, userId: customer.userId,
+  user: { id: customer.userId, userId: customer.userId,
                   isStaff: false, role: 'user',
-                  verifiedAt: new Date().toISOString() } },
+                  verifiedAt: new Date().toISOString() },
 }
 
 /** Confirm a setup intent the way a person does — on the provider's own page,

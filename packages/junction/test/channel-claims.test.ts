@@ -91,7 +91,7 @@ async function announce(manager: Manager, db: unknown, row: any, channels: strin
 describe('a connection carries no per-request claim', () => {
   test('without a resolver a member of the row’s own workspace receives nothing', async () => {
     const manager  = createChannelManager()
-    const member   = subscriber(manager, [`workspace:${WS_A}`], { userId: 'u-1', isSystemAdmin: true })
+    const member   = subscriber(manager, [`workspace:${WS_A}`], { id: 'u-1', isSystemAdmin: true })
     const { db }   = tenantBoundary()
 
     await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
@@ -101,7 +101,7 @@ describe('a connection carries no per-request claim', () => {
 
   test('and the control — the same frame, the same principal, one claim added', async () => {
     const manager = createChannelManager(undefined, workspaceClaims)
-    const member  = subscriber(manager, [`workspace:${WS_A}`], { userId: 'u-1', isSystemAdmin: true })
+    const member  = subscriber(manager, [`workspace:${WS_A}`], { id: 'u-1', isSystemAdmin: true })
     const { db }  = tenantBoundary()
 
     await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
@@ -111,13 +111,13 @@ describe('a connection carries no per-request claim', () => {
 
   test('the claim reaches the boundary merged onto the principal, not beside it', async () => {
     const manager      = createChannelManager(undefined, workspaceClaims)
-    subscriber(manager, [`workspace:${WS_A}`], { userId: 'u-1' })
+    subscriber(manager, [`workspace:${WS_A}`], { id: 'u-1' })
     const { db, asked } = tenantBoundary()
 
     await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
 
     expect(asked).toHaveLength(1)
-    expect(asked[0]).toMatchObject({ userId: 'u-1', workspaceId: WS_A })
+    expect(asked[0]).toMatchObject({ id: 'u-1', workspaceId: WS_A })
   })
 })
 
@@ -126,7 +126,7 @@ describe('a connection carries no per-request claim', () => {
 describe('one principal, two workspaces, one socket', () => {
   test('each channel grades with its own claim', async () => {
     const manager = createChannelManager(undefined, workspaceClaims)
-    const both    = subscriber(manager, [`workspace:${WS_A}`, `workspace:${WS_B}`], { userId: 'u-1' })
+    const both    = subscriber(manager, [`workspace:${WS_A}`, `workspace:${WS_B}`], { id: 'u-1' })
     const { db }  = tenantBoundary()
 
     await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
@@ -141,7 +141,7 @@ describe('one principal, two workspaces, one socket', () => {
       // upgrade wins in both channels, so one of the two rows is refused. This
       // is the shape the fix deliberately does not have.
       const manager = createChannelManager(undefined, () => ({ workspaceId: WS_A }))
-      const both    = subscriber(manager, [`workspace:${WS_A}`, `workspace:${WS_B}`], { userId: 'u-1' })
+      const both    = subscriber(manager, [`workspace:${WS_A}`, `workspace:${WS_B}`], { id: 'u-1' })
       const { db }  = tenantBoundary()
 
       await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
@@ -157,7 +157,7 @@ describe('one principal, two workspaces, one socket', () => {
     // the principal alone grades them both under whichever channel was reached
     // first. The row belongs to A, so the socket watching B must not receive it.
     const manager = createChannelManager(undefined, workspaceClaims)
-    const user    = { userId: 'u-1' }
+    const user    = { id: 'u-1' }
     const inA     = subscriber(manager, [`workspace:${WS_A}`], user)
     const inB     = subscriber(manager, [`workspace:${WS_B}`], user)
     const { db, asked } = tenantBoundary()
@@ -174,7 +174,7 @@ describe('one principal, two workspaces, one socket', () => {
     // claim: `seen` is per connection, so a connection in two target channels
     // is graded and sent once, under the first channel that held it.
     const manager = createChannelManager(undefined, workspaceClaims)
-    const both    = subscriber(manager, [`workspace:${WS_A}`, `workspace:${WS_B}`], { userId: 'u-1' })
+    const both    = subscriber(manager, [`workspace:${WS_A}`, `workspace:${WS_B}`], { id: 'u-1' })
     const { db, asked } = tenantBoundary()
 
     await announce(manager, db, ROW_A, [`workspace:${WS_A}`, `workspace:${WS_B}`])
@@ -189,7 +189,7 @@ describe('one principal, two workspaces, one socket', () => {
 describe('cohorts', () => {
   test('two tabs of one person in one channel are one verdict and one frame each', async () => {
     const manager = createChannelManager(undefined, workspaceClaims)
-    const user    = { userId: 'u-1' }
+    const user    = { id: 'u-1' }
     const tab1    = subscriber(manager, [`workspace:${WS_A}`], user)
     const tab2    = subscriber(manager, [`workspace:${WS_A}`], user)
     const { db, asked } = tenantBoundary()
@@ -203,8 +203,8 @@ describe('cohorts', () => {
 
   test('two people in one channel are two verdicts', async () => {
     const manager = createChannelManager(undefined, workspaceClaims)
-    subscriber(manager, [`workspace:${WS_A}`], { userId: 'u-1' })
-    subscriber(manager, [`workspace:${WS_A}`], { userId: 'u-2' })
+    subscriber(manager, [`workspace:${WS_A}`], { id: 'u-1' })
+    subscriber(manager, [`workspace:${WS_A}`], { id: 'u-2' })
     const { db, asked } = tenantBoundary()
 
     await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
@@ -255,14 +255,14 @@ describe('cohorts', () => {
     const manager = createChannelManager()
     // One object, because a cohort is keyed on the principal's IDENTITY — two
     // equal literals are two people to this map and always were.
-    const user = { userId: 'u-1' }
+    const user = { id: 'u-1' }
     subscriber(manager, ['servers'], user)
     subscriber(manager, ['servers'], user)
     const { db, asked } = tenantBoundary('database')
 
     await announce(manager, db, ROW_A, ['servers'])
 
-    expect(asked).toEqual([{ userId: 'u-1', id: 'u-1' }])
+    expect(asked).toEqual([{ id: 'u-1' }])
   })
 })
 
@@ -299,7 +299,7 @@ describe('an empty answer is not a claim', () => {
     // Application code on the fan-out path: without the guard one throw takes
     // down the announcement for every recipient of every channel.
     const manager = createChannelManager(undefined, () => { throw new Error('lookup failed') })
-    const member  = subscriber(manager, [`workspace:${WS_A}`], { userId: 'u-1' })
+    const member  = subscriber(manager, [`workspace:${WS_A}`], { id: 'u-1' })
     const { db, asked } = tenantBoundary()
 
     const lines: string[] = []
@@ -308,7 +308,7 @@ describe('an empty answer is not a claim', () => {
     try { await announce(manager, db, ROW_A, [`workspace:${WS_A}`]) }
     finally { console.warn = original }
 
-    expect(asked).toEqual([{ userId: 'u-1', id: 'u-1' }])
+    expect(asked).toEqual([{ id: 'u-1' }])
     expect(member.sent()).toEqual([])
     expect(lines.join('\n')).toContain('resolver threw')
   })
@@ -318,7 +318,7 @@ describe('an empty answer is not a claim', () => {
     // about this channel, so the resolver wins. A session that had somehow
     // carried a workspace would otherwise pin every channel to it.
     const manager = createChannelManager(undefined, workspaceClaims)
-    const member  = subscriber(manager, [`workspace:${WS_B}`], { userId: 'u-1', workspaceId: WS_A })
+    const member  = subscriber(manager, [`workspace:${WS_B}`], { id: 'u-1', workspaceId: WS_A })
     const { db }  = tenantBoundary()
 
     await announce(manager, db, ROW_B, [`workspace:${WS_B}`])
@@ -340,7 +340,7 @@ describe('the refuse-all warning names the cause', () => {
 
   test('a `strategy row` schema with no resolver is told which claim is missing', async () => {
     const manager = createChannelManager()
-    subscriber(manager, [`workspace:${WS_A}`], { userId: 'u-1' })
+    subscriber(manager, [`workspace:${WS_A}`], { id: 'u-1' })
     const { db } = tenantBoundary()
 
     // A distinct service label per test: the warning is deduped per label for
@@ -358,7 +358,7 @@ describe('the refuse-all warning names the cause', () => {
     // still refusing everybody has a different problem, and being told about
     // tenancy would send them the wrong way.
     const manager = createChannelManager(undefined, () => ({ workspaceId: 'ws-other' }))
-    subscriber(manager, [`workspace:${WS_A}`], { userId: 'u-1' })
+    subscriber(manager, [`workspace:${WS_A}`], { id: 'u-1' })
     const { db } = tenantBoundary()
 
     const said = await captureWarn(() =>
@@ -371,7 +371,7 @@ describe('the refuse-all warning names the cause', () => {
 
   test('and a schema that is not row-tenanted is not told about tenancy either', async () => {
     const manager = createChannelManager()
-    subscriber(manager, ['servers'], { userId: 'u-1' })
+    subscriber(manager, ['servers'], { id: 'u-1' })
     const { db } = tenantBoundary('database')
 
     const said = await captureWarn(() =>
@@ -398,10 +398,10 @@ describe('a resolver that reads the database is asked on every frame', () => {
     const rows = new Map(Object.entries(initial))
     const calls: string[] = []
     const claimsFor = async (name: string, conn: any) => {
-      calls.push(`${conn.user?.userId}@${name}`)
+      calls.push(`${conn.user?.id}@${name}`)
       await Promise.resolve()               // the read is a real await
       const ws = name.slice('workspace:'.length)
-      return (rows.get(conn.user?.userId) ?? []).includes(ws) ? { workspaceId: ws } : null
+      return (rows.get(conn.user?.id) ?? []).includes(ws) ? { workspaceId: ws } : null
     }
     return { rows, calls, claimsFor }
   }
@@ -409,7 +409,7 @@ describe('a resolver that reads the database is asked on every frame', () => {
   test('a member removed mid-session stops receiving on the socket they already have', async () => {
     const m       = memberships({ ana: [WS_A] })
     const manager = createChannelManager(undefined, m.claimsFor)
-    const ana     = subscriber(manager, [`workspace:${WS_A}`], { userId: 'ana' })
+    const ana     = subscriber(manager, [`workspace:${WS_A}`], { id: 'ana' })
     const { db }  = tenantBoundary()
 
     await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
@@ -422,7 +422,7 @@ describe('a resolver that reads the database is asked on every frame', () => {
   test('and the other way — a person added mid-session starts receiving', async () => {
     const m       = memberships({ ana: [] })
     const manager = createChannelManager(undefined, m.claimsFor)
-    const ana     = subscriber(manager, [`workspace:${WS_A}`], { userId: 'ana' })
+    const ana     = subscriber(manager, [`workspace:${WS_A}`], { id: 'ana' })
     const { db }  = tenantBoundary()
 
     await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
@@ -435,8 +435,8 @@ describe('a resolver that reads the database is asked on every frame', () => {
   test('asked once per principal per channel per frame, however many sockets they hold', async () => {
     const m       = memberships({ ana: [WS_A], lea: [WS_A] })
     const manager = createChannelManager(undefined, m.claimsFor)
-    const tabs    = [1, 2, 3].map(() => subscriber(manager, [`workspace:${WS_A}`], { userId: 'ana' }))
-    const lea     = subscriber(manager, [`workspace:${WS_A}`], { userId: 'lea' })
+    const tabs    = [1, 2, 3].map(() => subscriber(manager, [`workspace:${WS_A}`], { id: 'ana' }))
+    const lea     = subscriber(manager, [`workspace:${WS_A}`], { id: 'lea' })
     const { db }  = tenantBoundary()
 
     await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
@@ -452,11 +452,11 @@ describe('a resolver that reads the database is asked on every frame', () => {
 
   test('a resolver that rejects refuses its recipients, and the others still receive', async () => {
     const manager = createChannelManager(undefined, async (name: string, conn: any) => {
-      if (conn.user?.userId === 'broken') throw new Error('db gone')
+      if (conn.user?.id === 'broken') throw new Error('db gone')
       return { workspaceId: name.slice('workspace:'.length) }
     })
-    const broken = subscriber(manager, [`workspace:${WS_A}`], { userId: 'broken' })
-    const fine   = subscriber(manager, [`workspace:${WS_A}`], { userId: 'fine' })
+    const broken = subscriber(manager, [`workspace:${WS_A}`], { id: 'broken' })
+    const fine   = subscriber(manager, [`workspace:${WS_A}`], { id: 'fine' })
     const { db } = tenantBoundary()
 
     const original = console.warn
@@ -479,7 +479,7 @@ describe('a resolver that reads the database is asked on every frame', () => {
 describe('a fixed channel carries rows of every tenant', () => {
   test('a member of the row’s workspace receives it on a channel that names none', async () => {
     const manager = createChannelManager(undefined, workspaceClaims)
-    const member  = subscriber(manager, ['flows', `workspace:${WS_A}`], { userId: 'u-1' })
+    const member  = subscriber(manager, ['flows', `workspace:${WS_A}`], { id: 'u-1' })
     const { db }  = tenantBoundary()
 
     await announce(manager, db, ROW_A, ['flows'])
@@ -489,8 +489,8 @@ describe('a fixed channel carries rows of every tenant', () => {
 
   test('and the control — a member of ANOTHER workspace on the same channel does not', async () => {
     const manager  = createChannelManager(undefined, workspaceClaims)
-    const member   = subscriber(manager, ['flows', `workspace:${WS_A}`], { userId: 'u-1' })
-    const stranger = subscriber(manager, ['flows', `workspace:${WS_B}`], { userId: 'u-2' })
+    const member   = subscriber(manager, ['flows', `workspace:${WS_A}`], { id: 'u-1' })
+    const stranger = subscriber(manager, ['flows', `workspace:${WS_B}`], { id: 'u-2' })
     const { db }   = tenantBoundary()
 
     await announce(manager, db, ROW_A, ['flows'])
@@ -501,7 +501,7 @@ describe('a fixed channel carries rows of every tenant', () => {
 
   test('a recipient in no workspace channel holds no claim, and is refused', async () => {
     const manager = createChannelManager(undefined, workspaceClaims)
-    const loner   = subscriber(manager, ['flows'], { userId: 'u-3' })
+    const loner   = subscriber(manager, ['flows'], { id: 'u-3' })
     const { db }  = tenantBoundary()
 
     await announce(manager, db, ROW_A, ['flows'])
@@ -511,7 +511,7 @@ describe('a fixed channel carries rows of every tenant', () => {
 
   test('a person in two workspaces is graded under the one the row belongs to', async () => {
     const manager = createChannelManager(undefined, workspaceClaims)
-    const both    = subscriber(manager, ['flows', `workspace:${WS_A}`, `workspace:${WS_B}`], { userId: 'u-1' })
+    const both    = subscriber(manager, ['flows', `workspace:${WS_A}`, `workspace:${WS_B}`], { id: 'u-1' })
     const { db }  = tenantBoundary()
 
     await announce(manager, db, ROW_A, ['flows'])
@@ -522,7 +522,7 @@ describe('a fixed channel carries rows of every tenant', () => {
 
   test('with no resolver there is nothing verified to borrow, and nothing changes', async () => {
     const manager = createChannelManager()
-    const member  = subscriber(manager, ['flows', `workspace:${WS_A}`], { userId: 'u-1' })
+    const member  = subscriber(manager, ['flows', `workspace:${WS_A}`], { id: 'u-1' })
     const { db }  = tenantBoundary()
 
     await announce(manager, db, ROW_A, ['flows'])
@@ -545,7 +545,7 @@ describe('a count is graded by the tenant the write touched', () => {
     $schema: { models: [{ name: 'Server', attributes: [{ kind: 'gate', value: '5' }] }] },
     // Standing is the app's mapping, and here it is the same in every workspace:
     // the gate alone cannot tell one workspace from another.
-    $levelOf: (_a: string, principal: any) => (principal?.userId ? 5 : 0),
+    $levelOf: (_a: string, principal: any) => (principal?.id ? 5 : 0),
   })
   const count = { model: 'Server', operation: 'update', count: 1 }
   const send  = (manager: Manager, db: unknown, tenants: unknown[] | null) =>
@@ -553,8 +553,8 @@ describe('a count is graded by the tenant the write touched', () => {
 
   test('a tab in another workspace is not told, and the workspace’s own member is', async () => {
     const manager = createChannelManager(undefined, workspaceClaims)
-    const inA     = subscriber(manager, ['flows', `workspace:${WS_A}`], { userId: 'u-1' })
-    const inB     = subscriber(manager, ['flows', `workspace:${WS_B}`], { userId: 'u-2' })
+    const inA     = subscriber(manager, ['flows', `workspace:${WS_A}`], { id: 'u-1' })
+    const inB     = subscriber(manager, ['flows', `workspace:${WS_B}`], { id: 'u-2' })
 
     await send(manager, gated(), [WS_A])
 
@@ -564,7 +564,7 @@ describe('a count is graded by the tenant the write touched', () => {
 
   test('a recipient whose tenant cannot be established is refused', async () => {
     const manager = createChannelManager(undefined, workspaceClaims)
-    const loner   = subscriber(manager, ['flows'], { userId: 'u-3' })
+    const loner   = subscriber(manager, ['flows'], { id: 'u-3' })
 
     await send(manager, gated(), [WS_A])
 
@@ -573,7 +573,7 @@ describe('a count is graded by the tenant the write touched', () => {
 
   test('a person in both workspaces hears a write to either', async () => {
     const manager = createChannelManager(undefined, workspaceClaims)
-    const both    = subscriber(manager, ['flows', `workspace:${WS_A}`, `workspace:${WS_B}`], { userId: 'u-1' })
+    const both    = subscriber(manager, ['flows', `workspace:${WS_A}`, `workspace:${WS_B}`], { id: 'u-1' })
 
     await send(manager, gated(), [WS_B])
 
@@ -582,7 +582,7 @@ describe('a count is graded by the tenant the write touched', () => {
 
   test('an app with no claims resolver is single-tenant on the wire and unchanged', async () => {
     const manager = createChannelManager()
-    const anyone  = subscriber(manager, ['flows'], { userId: 'u-1', isAdmin: true })
+    const anyone  = subscriber(manager, ['flows'], { id: 'u-1', isAdmin: true })
 
     await send(manager, gated(), [WS_A])
 

@@ -99,7 +99,7 @@ export async function scaffoldCases({ base, output, rate = 50, durationMs = 5000
   }
   if (!link) throw new Error(`register answered 202 and the server printed no verification link for ${email}`)
   const verified = await http('POST', `${base}/auth/email/verify`, { body: { token: link } })
-  const userId = verified.json?.user?.userId
+  const userId = verified.json?.user?.id
   if (verified.status !== 200 || !userId) throw new Error(`the verification link answered ${verified.status} with no session: ${verified.text.slice(0, 200)}`)
 
   const login = await http('POST', `${base}/auth/login`, { body: { email, password } })

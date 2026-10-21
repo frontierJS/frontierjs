@@ -183,6 +183,7 @@ index.ts     public API
   the app, so a new credential write that calls `audit()` directly records the
   change and tells nobody — `test/credential-events.test.ts` fails on it. A new
   kind of change is a name in `CREDENTIAL_EVENTS` and a call through the helper.
+- **A handoff code is a `handoff` Credential storing the HMAC of code and PKCE challenge together** (`FJS-D1357`), so a wrong verifier finds no row. `redeemHandoff` spends it by delete and answers who, the audience and the scopes; the app mints what it grants. The hourly sweep clears lapsed ones by `tokenExpiresAt`, since Credential declares no window (`test/expiry.test.ts` § a handoff code).
 - **`Credential (type, value)` is unique for every type except the four whose `value` is not an identity** (`FJS-2658`): `password`, `totp`, `totpPending`, `recoveryCode`, listed in `auth.lite`'s partial `@@unique` because `.lite` has no prefix test to say `oauth:`. **A new credential type whose `value` is a hash or a secret joins that list** or two users holding it are refused. `oauthResolve` treats the refusal as a lost race and re-reads branch 1.
 - **`account-recovery` is the one service that takes somebody else's id, and its
   floor is SYSADMIN(7) with no option** (`FJS-D264`). It grades both people with

@@ -81,7 +81,7 @@ try {
 // An operator made this person, so there is no address to prove.
 await db.asSystem().user.update({ where: { id: made.userId }, data: { emailVerified: true } })
 
-console.log(JSON.stringify({ id: made.userId, email: made.email, role: made.role }))
+console.log(JSON.stringify({ id: made.id, email: made.email, role: made.role }))
 await db.$close()
 `
 </script>

@@ -1,0 +1,71 @@
+<script>
+  // Editor.mesa — the Edit button a draft's preview carries (`FJS-D1225`). It
+  // shows to anyone holding the link; signing in is basecamp's, and every write
+  // is graded against the person's grant there, so a reviewer with none is
+  // refused at basecamp rather than hidden from here.
+  //
+  // Signed in, it names who is editing and checks the key still reaches the
+  // draft: a key outliving its grant, or revoked from the workspace's API keys,
+  // is forgotten with the reason shown.
+  import { arrive, begin, clientFor, forget, held } from './handoff.js'
+
+  export let site
+
+  let who   = held()
+  let error = null
+  let busy  = false
+  let files = null
+
+  async function check() {
+    if (!who) return
+    try {
+      files = (await clientFor(site, who.key).service('drafts').invoke('files', null, { appId: site.appId, draft: site.draft })).files
+    } catch (err) {
+      // 401 is a dead key and 404 a grant that is gone; anything else is the
+      // draft's trouble, and the person stays signed in to see it fixed.
+      if (err.code === 401 || err.code === 404) { forget(); who = null }
+      error = err.message
+    }
+  }
+
+  arrive(site).then((back) => {
+    if (back && 'error' in back) error = back.error
+    if (back && 'held' in back) who = back.held
+    check()
+  })
+
+  async function edit() {
+    busy = true; error = null
+    try { await begin(site) } catch (err) { error = err.message; busy = false }
+  }
+
+  function signOut() {
+    forget(); who = null; files = null
+  }
+</script>
+
+<article class="card fjs-editor" data-fjs-editor-bar>
+  {#if who}
+    <span>Editing <strong>{site.draft}</strong> as <strong>{who.editor?.name}</strong>
+      {#if files} · {files.length} {files.length === 1 ? 'page' : 'pages'}{/if}</span>
+    <a class="btn ghost" href={site.page}>Open in basecamp</a>
+    <button class="btn ghost" onclick={signOut}>Sign out</button>
+  {:else}
+    <button class="btn primary" disabled={busy} onclick={edit}>Edit</button>
+  {/if}
+  {#if error}<span class="text-danger" role="alert">{error}</span>{/if}
+</article>
+
+<style>
+  .fjs-editor {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 2147483000;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    max-width: calc(100vw - 2rem);
+    flex-wrap: wrap;
+  }
+</style>

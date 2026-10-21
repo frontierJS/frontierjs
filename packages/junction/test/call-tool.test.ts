@@ -48,11 +48,11 @@ export async function buildApp() {
   const app = createApp({
     db,
     auth:   createStubAuth({ users: [{ id: '1', role: 'member' }, { id: '2', role: 'member' }] }),
-    system: { userId: 'app', role: 'system' },
+    system: { id: 'app', role: 'system' },
   })
   app.services.register(createService({
     name: 'notes', model: 'Note',
-    async whoami(ctx) { return { id: ctx.auth.user?.userId ?? null } },
+    async whoami(ctx) { return { id: ctx.user?.id ?? null } },
     async refuse()    { throw new Forbidden('not today') },
   }))
   app.configure({

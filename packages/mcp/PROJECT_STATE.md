@@ -8,7 +8,7 @@ inside the API that is already running; `projectTools()` is what it serves.
 - `mcp({ path })` is a Junction plugin. It registers POST/GET/DELETE at
   `/mcp` (under the app's own `apiPrefix`), builds the projection at the caller's
   standing on every request, and dispatches through `app.service(name)` with
-  `{ auth: { user } }` at `CALL_OPTIONS_AT`. Stateless: nothing is kept between
+  `{ user }` at `CALL_OPTIONS_AT`. Stateless: nothing is kept between
   two requests, so nothing outlives a sign-out.
 - `projectTools(services, views, level)` answers the tool list, the withheld
   list, the unresolved models and the name collisions — each row carrying its

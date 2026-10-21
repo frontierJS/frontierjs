@@ -37,3 +37,4 @@ db/schema.json
 # beside it is. `web/routes.snapshot.md` is the reviewed, gated form of the same
 # table; a committed copy is a second answer that churns with every route edit.
 web/config/routes.js
+site/config/routes.js

@@ -22,14 +22,14 @@ export {
 
 /** Reject unauthenticated requests */
 export function authenticate(ctx: ServiceContext): void {
-  if (!ctx.auth.user)
+  if (!ctx.user)
     throw new Unauthorized('Authentication required')
 }
 
 /** Require specific role */
 export function requireRole(...roles: string[]): Hook {
   return (ctx: ServiceContext): void => {
-    const userRole = ctx.auth.user?.role
+    const userRole = ctx.user?.role
     if (!userRole || !roles.includes(userRole))
       throw new Forbidden(`Role required: ${roles.join(' | ')}`)
   }

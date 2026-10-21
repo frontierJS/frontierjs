@@ -2,7 +2,7 @@
 // Internal cryptographic utilities.
 // Nothing here is exported from the package — all usage is via auth.ts.
 
-import { createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'crypto'
+import { createHash, createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'crypto'
 import { parseTtl }                from '@frontierjs/junction'
 
 // ─── Password hashing ─────────────────────────────────────────────────────
@@ -85,6 +85,19 @@ export function generateApiKey(): string {
 
 export function hashApiKey(rawKey: string, secret: string): string {
   return createHmac('sha256', secret).update(rawKey).digest('hex')
+}
+
+// ─── Handoff codes ────────────────────────────────────────────────────────
+// A code and the PKCE challenge it was issued for, hashed as one value: a code
+// presented with any other verifier hashes to a row that does not exist.
+
+/** RFC 7636's S256: base64url(sha256(verifier)), what the page sent as its challenge. */
+export function pkceChallenge(verifier: string): string {
+  return createHash('sha256').update(verifier).digest('base64url')
+}
+
+export function hashHandoff(code: string, challenge: string, secret: string): string {
+  return createHmac('sha256', secret).update(`handoff:${code}:${challenge}`).digest('hex')
 }
 
 // ─── Verification tokens ──────────────────────────────────────────────────

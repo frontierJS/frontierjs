@@ -334,7 +334,7 @@ export function createDocker({
    * since the caller looked; a caller that names `commit` is refused when it
    * did, since a release ships the commit it was decided on or nothing.
    */
-  async function siteBuild({ appId, source, branch, commit: expected, alias, token, accountId }) {
+  async function siteBuild({ appId, source, branch, commit: expected, alias, editor, token, accountId }) {
     const preview = alias != null
     if (source?.kind !== 'git' || !source.repo) throw new Error(`a ${preview ? 'preview' : 'release'} needs a git source with a repo`)
     if (source.path != null) {
@@ -345,6 +345,10 @@ export function createDocker({
     if (preview && !ALIAS.test(alias)) throw new Error(`alias: ${JSON.stringify(alias)} is not a lowercase label`)
     if (expected != null && !/^[0-9a-f]{40}$/.test(expected)) throw new Error(`commit: ${JSON.stringify(expected)} is not a commit id`)
     if (!token || !accountId) throw new Error('an upload needs the Cloudflare token and account id')
+    // The basecamp page the preview's Edit button returns to (`FJS-D1357`). A
+    // release carries no editor, and the URL reaches the build as one variable.
+    if (editor != null && (!preview || !/^https?:\/\/[^\s"'<>]+$/.test(editor)))
+      throw new Error(preview ? `editor: ${JSON.stringify(editor)} is not an http(s) address` : 'a release carries no editor')
 
     const dir  = `${workDir}/${appId}.${preview ? 'preview' : 'release'}`
     // One install cache per site, shared by its previews and its releases.
@@ -370,7 +374,8 @@ export function createDocker({
         throw new Error(`${branch} is at ${commit.slice(0, 7)}, not ${expected.slice(0, 7)} — it moved since the release was decided`)
 
       await docker([...box(['-w', '/src']), 'bun', 'install', '--frozen-lockfile'], { timeoutMs: 900_000 })
-      await docker([...box(['-w', site]), 'bun', 'x', 'site-kit', 'build', '.', ...(preview ? ['--preview'] : [])], { timeoutMs: 900_000 })
+      await docker([...box(['-w', site, ...(editor ? ['-e', `SITE_EDITOR=${editor}`] : [])]),
+        'bun', 'x', 'site-kit', 'build', '.', ...(preview ? ['--preview'] : [])], { timeoutMs: 900_000 })
 
       // Run directly rather than through `docker()`, whose last three lines
       // of a failed wrangler are its bug-report footer and never the reason.
@@ -440,8 +445,8 @@ export function createDocker({
     },
 
     /** A draft's review build, uploaded as an aliased version and never deployed. */
-    sitePreview: ({ appId, source, branch, alias, token, accountId }) =>
-      siteBuild({ appId, source, branch, alias: alias ?? '', token, accountId }),
+    sitePreview: ({ appId, source, branch, alias, editor, token, accountId }) =>
+      siteBuild({ appId, source, branch, alias: alias ?? '', editor, token, accountId }),
 
     /** The site built and deployed as the live one, from `commit` on `branch`. */
     sitePublish: ({ appId, source, branch, commit, token, accountId }) =>

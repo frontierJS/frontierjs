@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { createApp, defaultConfig } from '../index.ts'
 import type { SessionContext }      from '../src/auth/types.ts'
 
-const ALICE = { userId: 'u-alice', userType: 'user', roles: [], scopes: [] } as unknown as SessionContext
+const ALICE = { id: 'u-alice', userType: 'user', roles: [], scopes: [] } as unknown as SessionContext
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 let app: any
@@ -30,8 +30,8 @@ beforeAll(async () => {
     async verifyApiKey() { return null },
   })
   app.ws('/stream', {
-    open(ctx: any)  { log.push(`open:${ctx.user?.userId ?? null}`) },
-    message(ctx: any, msg: any) { log.push(`message:${msg}:${ctx.user?.userId ?? null}`) },
+    open(ctx: any)  { log.push(`open:${ctx.user?.id ?? null}`) },
+    message(ctx: any, msg: any) { log.push(`message:${msg}:${ctx.user?.id ?? null}`) },
   })
   app.ws('/slow-open', {
     async open() { log.push('open:start'); await sleep(30); log.push('open:end') },

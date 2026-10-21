@@ -116,7 +116,7 @@ describe('an account with a password', () => {
 
     const mail   = await mailed(email)
     const result = signedIn(await h.auth.verifyMagicLink!({ token: mail.token }))
-    expect(result.user.userId).toBe(made.userId)
+    expect(result.user.id).toBe(made.id)
     expect((await h.sys.user.findFirst({ where: { email } })).emailVerified).toBe(true)
   })
 
@@ -199,19 +199,19 @@ describe('an account with a second factor', () => {
   test('the link earns a ticket, not a session, and the TOTP code finishes it', async () => {
     const email = nextEmail()
     const u = await h.auth.createUser({ email, password: 'pw-correct-1' })
-    const { secret } = await h.auth.setupTotp!(u.userId, 'pw-correct-1')
-    await h.auth.confirmTotp!(u.userId, totp(secret, new Date()))
+    const { secret } = await h.auth.setupTotp!(u.id, 'pw-correct-1')
+    await h.auth.confirmTotp!(u.id, totp(secret, new Date()))
 
     const mail   = await mailed(email)
     const result = await h.auth.verifyMagicLink!({ token: mail.token })
     expect('challenge' in result).toBe(true)
     expect('token' in result).toBe(false)
-    expect(await h.sys.session.count({ where: { userId: u.userId } })).toBe(0)
+    expect(await h.sys.session.count({ where: { userId: u.id } })).toBe(0)
 
     // Next step, so it is not the code that confirmed enrollment.
     const code = totp(secret, new Date(Date.now() + 30_000))
     const done = await h.auth.completeLogin!((result as any).challenge, code)
-    expect(done.user.userId).toBe(u.userId)
+    expect(done.user.id).toBe(u.id)
   })
 })
 
@@ -245,9 +245,9 @@ describe('an account whose only way in is a provider', () => {
   test('the same account with a password beside the provider signs in', async () => {
     const email = nextEmail()
     const u = await h.auth.createUser({ email, password: 'pw-correct-1' })
-    await h.sys.credential.create({ data: { userId: u.userId, type: 'oauth:google', value: `sub-${email}` } })
+    await h.sys.credential.create({ data: { userId: u.id, type: 'oauth:google', value: `sub-${email}` } })
     const mail = await mailed(email)
-    expect(signedIn(await h.auth.verifyMagicLink!({ token: mail.token })).user.userId).toBe(u.userId)
+    expect(signedIn(await h.auth.verifyMagicLink!({ token: mail.token })).user.id).toBe(u.id)
   })
 })
 
@@ -264,7 +264,7 @@ describe('an account the mailbox made, then linked to a provider (FJS-2545)', ()
     expect(linked.outcome).toBe('signed-in')
 
     const again = await mailed(email)
-    expect(signedIn(await h.auth.verifyMagicLink!({ token: again.token })).user.userId).toBe(made.user.userId)
+    expect(signedIn(await h.auth.verifyMagicLink!({ token: again.token })).user.id).toBe(made.user.id)
   })
 
   test('keeps password reset, which sets the first password', async () => {
@@ -275,7 +275,7 @@ describe('an account the mailbox made, then linked to a provider (FJS-2545)', ()
 
     await h.requestReset(email)
     await h.auth.confirmPasswordReset!(h.resetToken(), 'pw-correct-1')
-    expect(signedIn(await h.auth.login(email, 'pw-correct-1')).user.userId).toBe(made.user.userId)
+    expect(signedIn(await h.auth.login(email, 'pw-correct-1')).user.id).toBe(made.user.id)
   })
 
   test('an account the provider made is still refused both', async () => {
@@ -301,7 +301,7 @@ describe('the hooks a password login runs', () => {
     const u     = await vetoed.auth.createUser({ email, password: 'pw-correct-1' })
     const mail  = await mailed(email, vetoed)
     await expect(vetoed.auth.verifyMagicLink!({ token: mail.token })).rejects.toThrow('locked')
-    expect(await vetoed.sys.session.count({ where: { userId: u.userId } })).toBe(0)
+    expect(await vetoed.sys.session.count({ where: { userId: u.id } })).toBe(0)
     vetoed.cleanup()
   })
 

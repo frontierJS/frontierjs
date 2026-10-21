@@ -67,7 +67,7 @@ beforeAll(async () => {
   await sys.workspaceMember.create({ data: {
     workspaceId: ws.id, userId: user.id, role: 'owner', capabilities: grantsFor('owner'),
   }})
-  owner   = session({ userId: user.id, workspaceId: ws.id })
+  owner   = session({ id: user.id, workspaceId: ws.id })
   account = await cfAccount('cf-main', CF_TOKEN)
 })
 
@@ -206,7 +206,7 @@ describe('the edge service', () => {
     const { grantsFor } = await import('../src/core/capabilities.ts')
     const u = await sys.user.create({ data: { email: `${role}-${tag()}@x.co`, accountId } })
     await sys.workspaceMember.create({ data: { workspaceId, userId: u.id, role, capabilities: grantsFor(role) } })
-    return session({ userId: u.id, workspaceId })
+    return session({ id: u.id, workspaceId })
   }
 
   beforeAll(async () => {
@@ -424,10 +424,10 @@ describe('sync', () => {
     const own  = await sys.user.create({ data: { email: `sync-${tag()}@x.co`, accountId: acct.id } })
     site = await sys.workspace.create({ data: { accountId: acct.id, name: 'Sync', slug: `sync-${tag()}`, ownerId: own.id } })
     await sys.workspaceMember.create({ data: { workspaceId: site.id, userId: own.id, role: 'owner', capabilities: grantsFor('owner') } })
-    admin = session({ userId: own.id, workspaceId: site.id })
+    admin = session({ id: own.id, workspaceId: site.id })
     const dev = await sys.user.create({ data: { email: `dev-${tag()}@x.co`, accountId: acct.id } })
     await sys.workspaceMember.create({ data: { workspaceId: site.id, userId: dev.id, role: 'developer', capabilities: grantsFor('developer') } })
-    developer = session({ userId: dev.id, workspaceId: site.id })
+    developer = session({ id: dev.id, workspaceId: site.id })
 
     good = await sys.secret.create({ data: {
       workspaceId: site.id, name: 'cf-sync', kind: 'provider_key', providerKind: 'cloudflare', data: JSON.stringify({ token: CF_TOKEN }),

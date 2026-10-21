@@ -106,8 +106,8 @@ Done when: one command, run against an empty DigitalOcean project, leaves
 Basecamp answering at its hostname with an admin, both tokens stored as
 Secrets, and its own box `online` in its fleet.
 
-- [ ] 3.1 Name the command (`decision-rules` before coining one; a flag on `deploy:setup` is the first candidate)
-- [ ] 3.2 `FJS-D1253`: create the droplet through an existing DigitalOcean connector, with `enrollment.ts`'s install script as `user_data`, then run ring 0 on it
+- [x] 3.1 Name the command — owner 2026-10-20: `fli provision`, Basecamp's own word for making a machine (`/servers/provision/`), over a flag on `deploy:setup`
+- [ ] 3.2 `FJS-D1253`: create the droplet through an existing DigitalOcean connector, then run ring 0 on it. **Box half built**: `fli provision` / `provision:destroy` run `packages/basecamp/api/src/core/provision-host.ts`, which drives `providers/compute/digitalocean.ts` (new `sshKey()`, `MachineSpec.sshKeys`) and prints the ssh block; proved on the 8122 sink only. No `user_data`: `install.sh` is served by a running Basecamp, so this box cannot boot from it, and `fli deploy:setup` installs over SSH. Left: run ring 0 from the same command, and one real droplet (0.1)
 - [ ] 3.3 A non-interactive first run: `ENCRYPTION_KEY` generated locally and seeded with the env file, the admin made through `POST /setup`
 - [ ] 3.4 `FJS-D1254`: a script in the container (the `enroll-host.ts` shape) stores the DigitalOcean and Cloudflare tokens as the first workspace's Secrets, makes the Domain row for Basecamp's host, and runs `edge.sync`
 - [ ] 3.5 Grade the host on the real box: `/hub/security/` shows `hub.db-mode` and `hub.env-mode` graded rather than unknown, beside the `basecamp-host` row's fleet controls (built under `FJS-2714`)

@@ -61,7 +61,7 @@ export function workbenchTerminal(app: App) {
 
       const workspaceId = String(ctx.query.workspace ?? '')
       const member = workspaceId
-        ? await app.db!.asSystem().workspaceMember.findFirst({ where: { workspaceId, userId: user.userId }, select: { role: true } })
+        ? await app.db!.asSystem().workspaceMember.findFirst({ where: { workspaceId, userId: user.id }, select: { role: true } })
         : null
       const level = basecampGateLevel({ ...user, workspaceId, memberRole: member?.role })
       if (level < LEVELS.ADMINISTRATOR) return ctx.close(4003, 'The terminal is for a workspace administrator')

@@ -60,8 +60,8 @@ export function createOrionServices(deps: {
   // ─── who is asking ─────────────────────────────────────────────────────────
 
   function caller(ctx: ServiceContext): SessionContext {
-    const user = ctx.auth?.user as SessionContext | null | undefined
-    if (!user?.userId) throw new Unauthorized("Authentication required")
+    const user = ctx.user as SessionContext | null | undefined
+    if (!user?.id) throw new Unauthorized("Authentication required")
     return user
   }
 
@@ -99,7 +99,7 @@ export function createOrionServices(deps: {
    */
   function writerFor(ctx: ServiceContext, flow: { id: string; ownerId: string }, what: string): Client {
     const user = caller(ctx)
-    if (String(flow.ownerId) === String(user.userId)) return clientOf(ctx)
+    if (String(flow.ownerId) === String(user.id)) return clientOf(ctx)
     if (levelPasses(LEVELS.ADMINISTRATOR, levelOf(ctx))) return systemOf(ctx)
     throw new Forbidden(`Only the owner of flow '${flow.id}', or an administrator, may ${what}`)
   }
@@ -162,8 +162,8 @@ export function createOrionServices(deps: {
       const last    = await system.flowVersion.findFirst({ where: { flowId: flow.id }, orderBy: { version: "desc" }, select: { version: true } })
       const version = (last?.version ?? 0) + 1
       // Written as system, the version records the administrator who wrote it.
-      const byOwner = String(flow.ownerId) === String(caller(ctx).userId)
-      await db.flowVersion.create({ data: { flowId: flow.id, version, definition, ...(byOwner ? {} : { authorId: caller(ctx).userId }) } })
+      const byOwner = String(flow.ownerId) === String(caller(ctx).id)
+      await db.flowVersion.create({ data: { flowId: flow.id, version, definition, ...(byOwner ? {} : { authorId: caller(ctx).id }) } })
 
       const current = flow.status !== "active"
       if (current) await db.flow.update({ where: { id: flow.id }, data: { currentVersion: version } })
@@ -238,7 +238,7 @@ export function createOrionServices(deps: {
       const flow = await readableFlow(ctx, ctx.id)
       writerFor(ctx, flow, "run it")
       const payload = (ctx.data as { payload?: unknown } | null)?.payload ?? null
-      return { runId: await runner.start(flow.id, { payload, by: caller(ctx).userId }, { via: "trigger.manual", ...tenantOf(ctx) }) }
+      return { runId: await runner.start(flow.id, { payload, by: caller(ctx).id }, { via: "trigger.manual", ...tenantOf(ctx) }) }
     },
 
     /** Runs a version as the owner, rolled back and with nothing sent (`FJS-D283`). */
@@ -351,7 +351,7 @@ export function createOrionServices(deps: {
       })
       if (!run) throw new NotFound(`No run '${ctx.id}'`)
       writerFor(ctx, run.flowVersion.flow, "cancel its runs")
-      if (!(await runner.cancel(run.id, `cancelled by ${caller(ctx).userId}`, tenantOf(ctx)))) {
+      if (!(await runner.cancel(run.id, `cancelled by ${caller(ctx).id}`, tenantOf(ctx)))) {
         throw new Conflict(`Run '${run.id}' has already ended`)
       }
       const row = await clientOf(ctx).run.findFirst({ where: { id: run.id } })

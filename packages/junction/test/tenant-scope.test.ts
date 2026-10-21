@@ -55,7 +55,7 @@ async function seeded() {
 /** A caller whose session already carries the claim — the `sessionFields`
  *  shape, where no resolver runs at all. */
 const as = (userId: string, workspaceId?: number) => ({
-  auth: { user: { userId, ...(workspaceId != null ? { workspaceId } : {}) } as unknown as SessionContext },
+  user: { id: userId, ...(workspaceId != null ? { workspaceId } : {}) } as unknown as SessionContext,
 })
 
 describe('the tenant is on ctx.locals under strategy row', () => {
@@ -107,7 +107,7 @@ describe('the tenant is on ctx.locals under strategy row', () => {
       },
     }))
 
-    await app.service('docs').find({}, { auth: { user: null } })
+    await app.service('docs').find({}, { user: null })
     expect(seen).toBeUndefined()
   })
 
@@ -212,7 +212,7 @@ describe('a job runs IN a tenant', () => {
 
   const auth = {
     async sessionFor(userId: string) {
-      return { userId, userType: 'user', authMethod: 'created' } as unknown as SessionContext
+      return { id: userId, userType: 'user', authMethod: 'created' } as unknown as SessionContext
     },
   } as any
 
@@ -283,7 +283,7 @@ describe('requestMeta().tenant versus app.tenant() in a request', () => {
     const { enterRequest } = await import('../src/core/context.ts')
     const auth = {
       async sessionFor(userId: string) {
-        return { userId, userType: 'user', authMethod: 'created' } as unknown as SessionContext
+        return { id: userId, userType: 'user', authMethod: 'created' } as unknown as SessionContext
       },
     } as any
     const app = createApp({
@@ -304,7 +304,7 @@ describe('requestMeta().tenant versus app.tenant() in a request', () => {
     }))
     const headers = { 'x-workspace-id': '2' }
     await enterRequest({ origin: 'http', headers, caller: { headers } } as never, () =>
-      app.service('docs').find({}, { auth: { user: { userId: 'u1' } as unknown as SessionContext }, headers, caller: { headers } } as never))
+      app.service('docs').find({}, { user: { id: 'u1' } as unknown as SessionContext, headers, caller: { headers } } as never))
 
     expect(seen.app).toBe('2')
     expect(seen.meta ?? null).toBeNull()
@@ -325,7 +325,7 @@ describe('app.tenant() prefers the call over the request', () => {
     const db  = await seeded()
     const { enterRequest, enterCall } = await import('../src/core/context.ts')
     const app = createApp({ db })
-    const ctx = (tenantId?: string) => ({ locals: tenantId ? { tenantId } : {}, auth: { user: null } }) as unknown as ServiceContext
+    const ctx = (tenantId?: string) => ({ locals: tenantId ? { tenantId } : {}, user: null }) as unknown as ServiceContext
 
     await enterRequest({ origin: 'http', tenant: 'request-tenant' } as never, async () => {
       expect(app.tenant()).toBe('request-tenant')

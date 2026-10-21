@@ -53,8 +53,7 @@ Ranked by how often Feathers, Express, Nest and Prisma habits produce them.
 
 | You will write | Junction wants |
 |---|---|
-| `async pay(data, params)` / `ctx.params.user` | a method receives the context: `$.data`, `$.me`, or `(ctx) => ctx.auth.user`. There is no `params` anywhere |
-| `$.me.id` / `req.user.id` | `$.me.userId` — a string. The schema side reads the same value as `auth().id` |
+| `async pay(data, params)` / `ctx.params.user` | a method receives the context: `$.data`, `$.me`, or `(ctx) => ctx.user`. There is no `params` anywhere |
 | `import { db } from '../core/db'` inside a service | `$.db` — the client scoped to this caller |
 | `if (!user.isAdmin) throw` in a `before` hook | `@@gate` / `@@allow` in the schema |
 | `app.get('/orders/:id', …)` | `app.get('/orders/{id}', …)`, read as `ctx.route.id` |
@@ -252,7 +251,7 @@ app.runAs(null, () => app.service('orders').call('pay', id, data))   // as the a
 ```
 
 **A call that names no `auth` inherits the principal in scope**, at any depth,
-including from a raw route handling a signed-in request. `{ auth: { user: null } }`
+including from a raw route handling a signed-in request. `{ user: null }`
 is a different statement — *as nobody* — and is how you ask what a stranger would
 see.
 
@@ -350,7 +349,7 @@ it reads is gated at 0 for that operation and its `@@allow` does the scoping; a
 custom method it calls states `gate: 0` and `claims: ['portalClientId']`
 (*Services*, above). A resolver may not set `id` or `userId`.
 
-**A bearer's claims are not on `$.me`.** With no session `ctx.auth.user` stays
+**A bearer's claims are not on `$.me`.** With no session `ctx.user` stays
 `null` — promoting the claims to a user would grade every guest CREATOR(3) — so the
 claims reach only the Data boundary, through `$.db`. A `gate: 0` method that needs
 the grant itself reads it off the call: `bearerOf($, 'portalGrant')?.row` (or

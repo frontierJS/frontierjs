@@ -25,14 +25,14 @@ const cfg = {
 /** One method. No cast. This is the whole provider. */
 const minimal: SessionVerifier = {
   async verifySession(t) {
-    return t === 'good' ? ({ userId: 'u1', userType: 'user', authMethod: 'session' } as SessionContext) : null
+    return t === 'good' ? ({ id: 'u1', userType: 'user', authMethod: 'session' } as SessionContext) : null
   },
 }
 
 function appWith(auth: SessionVerifier) {
   const app = createApp({ config: cfg as never, auth })
   app.get('/whoami', (ctx: any) =>
-    ctx.user ? ctx.json({ userId: ctx.user.userId }) : ctx.json({ anon: true }, 401))
+    ctx.user ? ctx.json({ userId: ctx.user.id }) : ctx.json({ anon: true }, 401))
   return app
 }
 
@@ -62,7 +62,7 @@ describe('a provider is what Junction calls', () => {
   it('setAuth() takes the same narrow provider after construction', async () => {
     const app = createApp({ config: cfg as never })
     app.setAuth(minimal)
-    app.get('/whoami', (ctx: any) => ctx.json({ userId: ctx.user?.userId ?? null }))
+    app.get('/whoami', (ctx: any) => ctx.json({ userId: ctx.user?.id ?? null }))
     await app.start()
     const res = await app.http.fetch(new Request('http://localhost/whoami', {
       headers: { authorization: 'Bearer good' },
@@ -84,7 +84,7 @@ describe('a provider is what Junction calls', () => {
       async verifySession(t, from) {
         seen = from
         return t === 'good'
-          ? ({ userId: 'u1', userType: 'user', authMethod: 'session' } as SessionContext)
+          ? ({ id: 'u1', userType: 'user', authMethod: 'session' } as SessionContext)
           : null
       },
     })
@@ -114,13 +114,13 @@ describe('a provider is what Junction calls', () => {
   it('a provider that DOES implement sessionFor is used by runAs', async () => {
     const withSessionFor: SessionVerifier = {
       ...minimal,
-      async sessionFor(userId) {
-        return { userId, userType: 'user', authMethod: 'session' } as SessionContext
+      async sessionFor(id) {
+        return { id, userType: 'user', authMethod: 'session' } as SessionContext
       },
     }
     const app = appWith(withSessionFor)
     await app.start()
-    const seen = await app.runAs('u9', async () => app.principal()?.userId ?? null)
+    const seen = await app.runAs('u9', async () => app.principal()?.id ?? null)
     expect(seen).toBe('u9')
     await app.stop()
   })

@@ -144,7 +144,7 @@ render: static
                 </thead>
                 <tbody>
                   <tr>
-                    <td><code>ctx.auth.user</code></td>
+                    <td><code>ctx.user</code></td>
                     <td>Who is calling. Frozen.</td>
                     <td>Yes — identity must stay consistent</td>
                   </tr>

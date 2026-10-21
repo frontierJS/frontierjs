@@ -36,7 +36,7 @@ async function run(svc: ReturnType<typeof buildService>, ctx: ServiceContext) {
 }
 
 function findCtx(service: string, directives: ServiceContext['directives']) {
-  const ctx = testCtx(service, 'find', null, { user: { userId: 'u1' }, query: { q: 'page' } })
+  const ctx = testCtx(service, 'find', null, { user: { id: 'u1' }, query: { q: 'page' } })
   ctx.directives = directives
   return ctx
 }
@@ -61,7 +61,7 @@ describe('service cache keys on directives as well as the query', () => {
   it('a get with $select is not answered with the full row, nor the reverse', async () => {
     const { svc } = pagedService('cache-select')
     const get = (select?: string[]) => {
-      const ctx = testCtx('cache-select', 'get', null, { user: { userId: 'u1' }, id: '1' })
+      const ctx = testCtx('cache-select', 'get', null, { user: { id: 'u1' }, id: '1' })
       if (select) ctx.directives = { select }
       return run(svc, ctx) as Promise<Record<string, unknown>>
     }

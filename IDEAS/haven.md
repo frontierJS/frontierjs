@@ -1633,7 +1633,7 @@ passes with Haven's snapshots in its count.
 - [ ] 16.8 `DRIVES.md` rows for the seven drives it does not name, so
   `fli proves` can: `verify:taskmaster`, `ledger`, `townhall`, `nameplate`,
   `home-row`, `bolt`, `bar`.
-- [ ] 16.9 `web/config/routes.js` out of git: Sierra writes it, so it is
+- [x] 16.9 `web/config/routes.js` out of git: Sierra writes it, so it is
   ignored in Haven's `.gitignore` with a `generatedIgnored` entry in
   `scripts/ci-allowances.json`, as Basecamp's is.
 - [ ] 16.10 The small ones: Haven's row in the root `CLAUDE.md` Packages table

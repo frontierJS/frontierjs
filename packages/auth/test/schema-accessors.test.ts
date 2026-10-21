@@ -259,10 +259,10 @@ describe('the @@auth model is the person, whatever it is called', () => {
   test('an app whose @@auth model is Account registers, signs in and resolves a session', async () => {
     const h = await makeAuth({}, undefined, { authModel: 'Account' })
     const made = await h.auth.createUser({ email: 'acct@x.test', password: 'pw-1', name: 'Acct' })
-    expect(await h.sys.account.findFirst({ where: { email: 'acct@x.test' } })).toMatchObject({ id: made.userId })
+    expect(await h.sys.account.findFirst({ where: { email: 'acct@x.test' } })).toMatchObject({ id: made.id })
 
     const { token, user } = signedIn(await h.auth.login('acct@x.test', 'pw-1'))
-    expect(user.userId).toBe(made.userId)
-    expect((await h.auth.verifySession(token))?.userId).toBe(made.userId)
+    expect(user.id).toBe(made.id)
+    expect((await h.auth.verifySession(token))?.id).toBe(made.id)
   })
 })

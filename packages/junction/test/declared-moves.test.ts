@@ -43,10 +43,10 @@ model Todo {
 `
 
 const AS: Record<string, unknown> = {
-  owner:    { userId: 'u1', userType: 'user', role: 'user' },
-  stranger: { userId: 'u2', userType: 'user', role: 'user' },
+  owner:    { id: 'u1', userType: 'user', role: 'user' },
+  stranger: { id: 'u2', userType: 'user', role: 'user' },
   // Reads every todo and updates none of them: the case a 404 would lie about.
-  staff:    { userId: 'u3', userType: 'user', role: 'user', isStaff: true },
+  staff:    { id: 'u3', userType: 'user', role: 'user', isStaff: true },
 }
 
 let app: any

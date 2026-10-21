@@ -121,7 +121,7 @@ const auth: IAuth = {
     return { token: email, user: sess }
   },
   async logout()         { return },
-  async createUser()     { return { userId: '', userType: 'user', authMethod: 'session' as const, role: 'user', scopes: [] } },
+  async createUser()     { return { id: '', userType: 'user', authMethod: 'session' as const, role: 'user', scopes: [] } },
   async deleteUser()     { return },
   async createApiKey(id) { return { key: `key-${id}`, id: `key-${id}` } },
   async revokeApiKey()   { return },
@@ -363,7 +363,7 @@ app.ws('/chat/{room}', {
     chatRooms.get(room)!.add(ctx)
 
     ctx.send({ type: 'joined', room, online: chatRooms.get(room)!.size })
-    log.debug(`ws:chat/${room} joined`, { user: ctx.user?.userId ?? 'anon' })
+    log.debug(`ws:chat/${room} joined`, { user: ctx.user?.id ?? 'anon' })
   },
 
   message(ctx, msg) {
@@ -378,7 +378,7 @@ app.ws('/chat/{room}', {
     const payload = {
       type:   'message',
       room,
-      from:   ctx.user?.userId ?? 'anonymous',
+      from:   ctx.user?.id ?? 'anonymous',
       text:   String(parsed.text ?? ''),
       ts:     Date.now(),
     }

@@ -45,7 +45,7 @@ export function ws(): string {
 
 /** The acting user's id, or 'system' for job and outpost paths. */
 export function actor(): string {
-  return ($.me as { userId?: string } | null | undefined)?.userId ?? 'system'
+  return ($.me as { id?: string } | null | undefined)?.id ?? 'system'
 }
 
 export function slugify(s: string): string {

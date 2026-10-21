@@ -453,7 +453,7 @@ describe('ctx.app.service() — internal calls from hooks', () => {
       name: 'logs',
       find: async () => [],
       async create(ctx) {
-        seenUserIds.push(ctx.auth.user?.userId ?? null)
+        seenUserIds.push(ctx.user?.id ?? null)
         return { logged: true }
       },
     }))
@@ -465,7 +465,7 @@ describe('ctx.app.service() — internal calls from hooks', () => {
       hooks: {
         after: {
           create: [async (ctx) => {
-            await ctx.app.service('logs').create({ action: 'lead.created' }, { auth: ctx.auth })
+            await ctx.app.service('logs').create({ action: 'lead.created' }, { user: ctx.user })
           }],
         },
       },
@@ -486,7 +486,7 @@ describe('ctx.app.service() — internal calls from hooks', () => {
     app.services.register(buildService({
       name: 'logs',
       find: async () => [],
-      async create(ctx) { seenUser = ctx.auth.user; return { logged: true } },
+      async create(ctx) { seenUser = ctx.user; return { logged: true } },
     }))
 
     app.services.register(buildService({
@@ -512,7 +512,7 @@ describe('ctx.app.service() — internal calls from hooks', () => {
       .auth(app.tokenFor('u1'))
       .send({ name: 'test' })
 
-    expect((seenUser as { userId?: string })?.userId).toBe('u1')
+    expect((seenUser as { id?: string })?.id).toBe('u1')
   })
 
   it('an explicit { user: null } is still anonymous — absent is not null', async () => {
@@ -525,7 +525,7 @@ describe('ctx.app.service() — internal calls from hooks', () => {
     app.services.register(buildService({
       name: 'logs',
       find: async () => [],
-      async create(ctx) { seenUser = ctx.auth.user; return { logged: true } },
+      async create(ctx) { seenUser = ctx.user; return { logged: true } },
     }))
 
     app.services.register(buildService({
@@ -535,7 +535,7 @@ describe('ctx.app.service() — internal calls from hooks', () => {
       hooks: {
         after: {
           create: [async (ctx) => {
-            await ctx.app.service('logs').create({ action: 'lead.created' }, { auth: { user: null } })
+            await ctx.app.service('logs').create({ action: 'lead.created' }, { user: null })
           }],
         },
       },

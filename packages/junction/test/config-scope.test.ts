@@ -101,7 +101,7 @@ describe('the view is stable', () => {
 
 describe('$.config — the ambient read', () => {
   const inCall = <T>(app: unknown, locals: Record<string, unknown>, fn: () => T): T =>
-    enterCall({ app, locals, auth: { user: null }, caller: {}, route: {} } as never, fn)
+    enterCall({ app, locals, user: null, caller: {}, route: {} } as never, fn)
 
   test('answers the same view the app does, inside a call', () => {
     const app = build()
@@ -289,7 +289,7 @@ describe('the hook warms it, which is what makes the sync read correct', () => {
     const hook = withLitestoneDb({} as never)
 
     let seen = ''
-    const ctx = { app, locals: { tenantId: 'acme' }, auth: { user: null }, caller: {}, route: {} }
+    const ctx = { app, locals: { tenantId: 'acme' }, user: null, caller: {}, route: {} }
     await hook(ctx as never, async () => {
       seen = enterCall(ctx as never, () =>
         ($.config as unknown as { mail: { from: string } }).mail.from)
@@ -303,7 +303,7 @@ describe('the hook warms it, which is what makes the sync read correct', () => {
     const hook = withLitestoneDb({} as never)
 
     let seen = ''
-    const ctx = { app, locals: {}, auth: { user: null }, caller: {}, route: {} }
+    const ctx = { app, locals: {}, user: null, caller: {}, route: {} }
     await hook(ctx as never, async () => {
       seen = enterCall(ctx as never, () => $.config.name)
     })
@@ -317,7 +317,7 @@ describe('the hook warms it, which is what makes the sync read correct', () => {
       tenantConfig: { resolve: async () => { throw new Error('settings row unreadable') }, keys: ['name'] },
     })
     const hook = withLitestoneDb({} as never)
-    const ctx  = { app, locals: { tenantId: 'acme' }, auth: { user: null }, caller: {}, route: {} }
+    const ctx  = { app, locals: { tenantId: 'acme' }, user: null, caller: {}, route: {} }
 
     await expect(hook(ctx as never, async () => {})).rejects.toThrow('settings row unreadable')
   })

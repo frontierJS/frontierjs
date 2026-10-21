@@ -100,7 +100,7 @@ describe('confirmOAuthLink', () => {
     const issued = signedIn(await h.auth.confirmOAuthLink(lastToken(), 'google', id({ providerId: 'c-1' })))
 
     expect(issued.token).toBeTruthy()
-    expect(issued.user.userId).toBe(user.id)
+    expect(issued.user.id).toBe(user.id)
     expect((await credsFor(user.id)).some((c: any) => c.type === 'oauth:google' && c.value === 'c-1')).toBe(true)
   })
 
@@ -273,7 +273,7 @@ describe('an unproven claim on an address nobody holds', () => {
     const issued = signedIn(await h.auth.confirmOAuthLink(lastToken(), 'google', id({ providerId: 'nh-2', name: 'Later' })))
 
     const user = await h.sys.user.findFirst({ where: { email: 'later@shop.test' } })
-    expect(issued.user.userId).toBe(user.id)
+    expect(issued.user.id).toBe(user.id)
     expect(user.emailVerified).toBe(true)
     expect(user.name).toBe('Later')
     expect((await credsFor(user.id)).map((c: any) => [c.type, c.value])).toEqual([['oauth:google', 'nh-2']])

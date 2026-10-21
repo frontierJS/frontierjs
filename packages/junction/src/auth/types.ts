@@ -4,7 +4,8 @@
 // the vendor); the rest of the framework imports from here only.
 
 export interface SessionContext {
-  userId:       string
+  /** The principal's id — the key Litestone's `auth().id` reads. The session row is `sessionId`. */
+  id:           string
   /** What kind of caller, never a role: `user` · `bot` · `peer` · `service`. The trail's `actorType`. */
   userType:     string
   email?:       string
@@ -34,6 +35,14 @@ export interface SessionContext {
   credentialId?: string
 
   /**
+   * This session was issued on a first factor alone, to an account the app
+   * requires a second factor of. A provider that sets it also refuses every
+   * call but enrollment (`@frontierjs/auth`'s `requireSecondFactor`); a UI reads
+   * it to send the person to set one up.
+   */
+  enrollmentOnly?: boolean
+
+  /**
    * SUPPORT MODE — this session resolves to the subject, and an operator is
    * standing behind it.
    *
@@ -48,7 +57,7 @@ export interface SessionContext {
    * be a second thing to keep in step.
    *
    * There is no `subjectId` here because this object hangs off the subject's
-   * principal — `userId` beside it is the answer.
+   * principal — `id` beside it is the answer.
    */
   support?: {
     operatorId: string
@@ -234,6 +243,17 @@ export interface IAuth {
   createApiKey(userId: string, opts?: ApiKeyOptions):  Promise<{ key: string; id: string }>
   revokeApiKey(keyId: string, opts: { userId: string, actorId?: string }): Promise<void>
   verifyApiKey(key: string):                           Promise<SessionContext | null>
+
+  /**
+   * A signed-in person handed to a page on another origin (`FJS-D1357`): a
+   * one-minute code bound to that page's S256 PKCE challenge, redeemed once
+   * with the verifier. Redeem answers who and for what, or null for a code that
+   * is spent, lapsed, unknown or presented with the wrong verifier; what the
+   * redemption grants is the app's to mint. Optional, like the other flows a
+   * provider may not have.
+   */
+  issueHandoff?(userId: string, opts: { challenge: string; audience: string; scopes?: string[] }): Promise<{ code: string; expiresAt: string }>
+  redeemHandoff?(code: string, verifier: string): Promise<{ userId: string; audience: string; scopes: string[] } | null>
 
   // ── The caller acting on their own credentials ────────────────────────
   //

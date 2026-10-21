@@ -100,7 +100,7 @@ beforeAll(async () => {
 
   // The workspace id rides on the SESSION here. resolveWorkspaceId() reads the
   // header first, then ?workspace_id, then the principal.
-  const at = (u: any) => session({ userId: u.id, workspaceId: ws.id })
+  const at = (u: any) => session({ id: u.id, workspaceId: ws.id })
   owner = at(o); developer = at(d); viewer = at(v)
   // A real account with no membership anywhere in this workspace — VISITOR(1).
   outsider = at(x)
@@ -111,7 +111,7 @@ beforeAll(async () => {
   // exempting a `@@tenant(none)` service, this is what would go red.
   const a = await mk(`sys-${uniq()}@x.co`)
   await sys.user.update({ where: { id: a.id }, data: { isSystemAdmin: true } })
-  sysadmin = session({ userId: a.id, isSystemAdmin: true })
+  sysadmin = session({ id: a.id, isSystemAdmin: true })
 
   // The machine the outpost-signature tests check in as. Its own row, so those
   // tests never move a server another test is asserting the status of.
@@ -345,17 +345,17 @@ describe('the two transports answer the same app', () => {
     const user  = await penv.app.auth.createUser({ email, password: 'hunter2hunter2', name: 'Parity' })
     // Active, because a registered account starts `pending_verification` and
     // `notifyPeople` pages nobody who is not.
-    await sys.user.update({ where: { id: user.id ?? user.userId }, data: { accountId: acct.id, status: 'active' } })
+    await sys.user.update({ where: { id: user.id }, data: { accountId: acct.id, status: 'active' } })
     const wsp = await sys.workspace.create({
-      data: { accountId: acct.id, name: 'Parity', slug: `pw-${uniq()}`, ownerId: user.id ?? user.userId },
+      data: { accountId: acct.id, name: 'Parity', slug: `pw-${uniq()}`, ownerId: user.id },
     })
     await sys.workspaceMember.create({
-      data: { workspaceId: wsp.id, userId: user.id ?? user.userId, role: 'owner',
+      data: { workspaceId: wsp.id, userId: user.id, role: 'owner',
               capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString() },
     })
     const login = await penv.app.auth.login(email, 'hunter2hunter2')
     token = login.token ?? login.accessToken
-    parityUser = user.id ?? user.userId
+    parityUser = user.id
   }, 120_000)
 
   afterAll(async () => { await penv?.close() })
@@ -411,7 +411,7 @@ describe('the two transports answer the same app', () => {
     const acct   = await sys.account.create({ data: { slug: `s-${uniq()}`, displayName: 'Stranger' } })
     const email  = `stranger-${uniq()}@x.co`
     const user   = await penv.app.auth.createUser({ email, password: 'hunter2hunter2', name: 'Stranger' })
-    const theirs = user.id ?? user.userId
+    const theirs = user.id
     await sys.user.update({ where: { id: theirs }, data: { accountId: acct.id, status: 'active' } })
     const wsp = await sys.workspace.create({ data: { accountId: acct.id, name: 'Elsewhere', slug: `sw-${uniq()}`, ownerId: theirs } })
     await sys.workspaceMember.create({ data: { workspaceId: wsp.id, userId: theirs, role: 'admin',
@@ -432,7 +432,7 @@ describe('the two transports answer the same app', () => {
     const owner = await open(token), stranger = await open(strangerToken)
     try {
       const ownerWs = (await sys.workspaceMember.findFirst({ where: { userId: parityUser } })).workspaceId
-      const flows   = penv.as(session({ userId: parityUser, workspaceId: ownerWs })).service('flows')
+      const flows   = penv.as(session({ id: parityUser, workspaceId: ownerWs })).service('flows')
       // The joins run after `connect`, so a flow is drafted until one lands.
       const deadline = Date.now() + 5000
       while (!owner.got.length && Date.now() < deadline) {
@@ -471,7 +471,7 @@ describe('?workspace_id= — the documented fallback, which had never worked', (
 
     // No workspaceId on the session — the third fallback cannot answer, so the
     // query is the only thing that can.
-    const bare = session({ userId: u.id })
+    const bare = session({ id: u.id })
 
     const rows = await env.as(bare).service('projects').find({ workspace_id: ws.id })
     expect(Array.isArray(rows.data ?? rows)).toBe(true)
@@ -482,7 +482,7 @@ describe('?workspace_id= — the documented fallback, which had never worked', (
     const uniq = Math.random().toString(36).slice(2, 8)
     const acct = await sys.account.findFirst({ where: {} })
     const u    = await sys.user.create({ data: { email: `q2-${uniq}@x.co`, accountId: acct.id } })
-    const bare = session({ userId: u.id })
+    const bare = session({ id: u.id })
 
     // Refused by `tenantClaimGuard` now rather than by `requireWorkspace`: the
     // schema declares row tenancy, so junction installs a guard that fires
@@ -976,7 +976,7 @@ describe('a workspace role is not a thing you may hand yourself', () => {
     }
     const admin = await mk('admin')
     const pat   = await mk('developer')
-    return { admin, adminS: session({ userId: admin.id, workspaceId: ws.id }), pat }
+    return { admin, adminS: session({ id: admin.id, workspaceId: ws.id }), pat }
   }
 
   const roleOfMember = async (userId: string) =>
@@ -1199,7 +1199,7 @@ describe('auth\'s people service reaches only the operator\'s workspace', () => 
     }
     const admin = await mk([[ws, 'admin']])
     return {
-      people:  env.as(session({ userId: admin.id, workspaceId: ws.id })).service('people'),
+      people:  env.as(session({ id: admin.id, workspaceId: ws.id })).service('people'),
       onlyB:   await mk([[other, 'developer']]),
       both:    await mk([[ws, 'developer'], [other, 'developer']]),
       onlyA:   await mk([[ws, 'developer']]),
@@ -2465,7 +2465,7 @@ describe('infra.summary counts the fleet Home opens on', () => {
     const w    = await sys.workspace.create({ data: { accountId: acct.id, name: 'Sum', slug: `sum-${tag()}`, ownerId: u.id } })
     await sys.workspaceMember.create({ data: { workspaceId: w.id, userId: u.id, role: 'viewer',
       capabilities: grantsFor('viewer'), acceptedAt: new Date().toISOString() } })
-    me = session({ userId: u.id, workspaceId: w.id })
+    me = session({ id: u.id, workspaceId: w.id })
 
     await serverAt('online',  { workspaceId: w.id, name: 'a', slug: `a-${tag()}` })
     await serverAt('online',  { workspaceId: w.id, name: 'b', slug: `b-${tag()}` })
@@ -3433,7 +3433,7 @@ describe('infra.launch walks to the screen each step happens on', () => {
     await sys.workspaceMember.create({ data: {
       workspaceId: w.id, userId: o.id, role: 'owner', capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString(),
     } })
-    const me = env.as(session({ userId: o.id, workspaceId: w.id })).service('infra')
+    const me = env.as(session({ id: o.id, workspaceId: w.id })).service('infra')
 
     const empty = await me.call('launch')
     expect(empty.done).toBe(0)
@@ -3538,7 +3538,7 @@ describe('users — a person edits their own profile, at any standing', () => {
   })
 
   test('a caller naming no workspace edits theirs too', async () => {
-    const bare = session({ userId: viewer.userId })
+    const bare = session({ id: viewer.userId })
     const out = await env.as(bare).service('users').patch(viewer.userId, { displayName: 'Vee 2' })
     expect(out.displayName).toBe('Vee 2')
   })
@@ -3601,7 +3601,7 @@ describe('leaving a workspace, and handing one over', () => {
         workspaceId: w.id, userId: p.id, role: p.role,
         capabilities: grantsFor(p.role), acceptedAt: new Date().toISOString(),
       } })
-    const as = (i: number) => env.as(session({ userId: people[i].id, workspaceId: w.id })).service('workspaces')
+    const as = (i: number) => env.as(session({ id: people[i].id, workspaceId: w.id })).service('workspaces')
     const roleOf = async (i: number) =>
       (await sys().workspaceMember.findFirst({ where: { workspaceId: w.id, userId: people[i].id } }))?.role ?? null
     const ownerId = async () => (await sys().workspace.findUnique({ where: { id: w.id } })).ownerId

@@ -65,8 +65,10 @@ for (const { name, slug, path } of SCENES) {
   })
 
   test(`${slug}: a cycling cell changes over time and never moves a wall`, () => {
-    const tick = stage.tickOf()
-    expect(tick).toBeGreaterThan(0)
+    // A still scene -- the kitchen, kept on a screen beside the work -- has
+    // no clock, and must look the same a minute on.
+    const still = stage.tickOf() === 0
+    const tick = still ? 60_000 : stage.tickOf()
     let changed = false
     for (let y = 0; y < stage.height; y++) {
       for (let x = 0; x < stage.width; x++) {
@@ -76,7 +78,7 @@ for (const { name, slug, path } of SCENES) {
         expect(b.ch === ' ').toBe(expected[y][x] === ' ')
       }
     }
-    expect(changed).toBe(true)
+    expect(changed).toBe(!still)
   })
 
   test(`${slug}: every painted cell has a glyph and a color at every tick`, () => {

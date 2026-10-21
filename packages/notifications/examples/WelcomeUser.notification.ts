@@ -15,7 +15,7 @@
 //   after: {
 //     create: [
 //       async (ctx) => {
-//         if (ctx.auth.user?.authMethod === 'created') {
+//         if (ctx.user?.authMethod === 'created') {
 //           await ctx.app.notify(ctx.result.data, welcomeUser())
 //         }
 //       }

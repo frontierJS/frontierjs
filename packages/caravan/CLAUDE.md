@@ -196,7 +196,7 @@ bin/
   workaround. There was no route from an autoloaded `*.job.ts` to
   `app.service(…)`, so apps grew a module holding a mutable app reference; and a
   job had no principal, and no principal is STRANGER(0), so every job carried a
-  hand-written `{ auth: { user: SYSTEM } }`.
+  hand-written `{ user: SYSTEM }`.
 - **`ctx.signal` is the only way a running handler is told to stop** (`FJS-1523`).
   It aborts on the declared `timeout`, on `cancel()` of a RUNNING job, and past
   the drain deadline. A handler that ignores it keeps running, as before. A cancel
@@ -239,10 +239,10 @@ bin/
   a provider with no `sessionFor`. Downgrading to STRANGER(0) is the hazard this
   removes and upgrading to `system` would be worse, so neither happens.
 - **Standalone Caravan has no `runAs` and no principal** — the handler is called
-  directly, `ctx.app` is `undefined` and `ctx.auth.user` is `null`. That is the
+  directly, `ctx.app` is `undefined` and `ctx.user` is `null`. That is the
   one case a handler tests for.
 - `db.asSystem()` is still the wrong fix for any of this — a job carries its own
-  `ctx.auth`, and reaching past it means a write with no principal attributed.
+  `ctx.user`, and reaching past it means a write with no principal attributed.
 - **`GET /jobs` pages at 50, newest first.** The queue accumulates every job every
   drive has ever run, so an unbounded scan stops before the row you are asking
   about and reads as "there is no such job". Pass `?limit=500`.

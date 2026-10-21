@@ -30,12 +30,12 @@ const named  = [...new Set([...told.matchAll(/session\.user\.(\w+)/g)].map(m => 
 
 describe('AGENTS.md — session.user', () => {
   test('the SessionContext read is the real one', () => {
-    expect(fields.has('userId')).toBe(true)
-    expect(fields.has('id')).toBe(false)
+    expect(fields.has('id')).toBe(true)
+    expect(fields.has('userId')).toBe(false)
   })
 
-  test('the guide names the id the way the session spells it', () => {
-    expect(named).toContain('userId')
+  test('the guide never names the id as userId', () => {
+    expect(named).not.toContain('userId')
   })
 
   test('every field the guide names is on the SessionContext', () => {

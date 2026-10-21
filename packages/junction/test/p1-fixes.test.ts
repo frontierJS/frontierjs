@@ -80,13 +80,13 @@ describe('P1: frozen shared auth principal', () => {
       services: [createService({
         name: 'whoami',
         async find(ctx) {
-          seenFrozen = ctx.auth.user !== null && Object.isFrozen(ctx.auth.user)
+          seenFrozen = ctx.user !== null && Object.isFrozen(ctx.user)
           return [{ ok: true }]
         },
       })],
     })
     await app.service('whoami').find(undefined, {
-      auth: { user: { userId: 'u1', userType: 'user', authMethod: 'session' } as never },
+      user: { id: 'u1', userType: 'user', authMethod: 'session' } as never,
     })
     expect(seenFrozen).toBe(true)
   })

@@ -8,17 +8,17 @@
   //   first, its cook under it and its package's STATION on the line; the
   //   cook spins while the model writes and holds `⚙` inside a tool, the
   //   ticket's foot naming the tool and its age (`lib/working.js`); a session
-  //   stopped on a prompt flashes CHEF! on its ticket and under its station,
+  //   stopped on a prompt shows CHEF! on its ticket and under its station,
   //   since it waits on you and nothing else shows that until you tab to it;
   //   its head fills amber, then red, as the wait passes each of `WAIT`;
   // - two cooks at one station are about to edit one package in a shared
   //   tree, and the station says so (`N here`);
-  // - a session that has stopped is a PLATE on the pass, and ORDER UP flashes
+  // - a session that has stopped is a PLATE on the pass, and ORDER UP hangs
   //   over the heat lamps while one waits, its age on the counter under it
   //   and both going amber, then red, by the same `WAIT`;
   // - `/bump` at the pass closes a plate out and it leaves, as a kitchen
   //   display's bump bar clears a ticket; `/heard` at the line answers a
-  //   CHEF! the way a cook calls back, and it stops flashing but stays on the
+  //   CHEF! the way a cook calls back, and it reads HEARD but stays on the
   //   rail, since only the session's own terminal can answer it. Each is
   //   `closeOut` in `#workers`, so the next stop or ask is drawn again;
   // - a package's mark (`lib/marks.js`) leads its name on a ticket, a
@@ -79,7 +79,7 @@
     // Fresh, late, over; a CHEF! ticket's head is filled late and over, `[ink, ground]`.
     plate: ['#4ade80', '#fbbf24', '#ef4444'],
     head:  [null, ['#fde68a', '#78350f'], ['#fecaca', '#7f1d1d']],
-    order: ['#fbbf24', '#f97316'],
+    order: '#fbbf24',
     chalk: '#e5e7eb',
     // Two cooks at one station: worth knowing, not an alarm.
     note:  '#93c5fd',
@@ -202,7 +202,7 @@
   // ─── closing out ───────────────────────────────────────────────────────────
 
   const BUMP  = '/bump [id | all] — the plate in front of you leaves the pass'
-  const HEARD = '/heard [id | all] — a CHEF! at the station in front of you stops flashing'
+  const HEARD = '/heard [id | all] — a CHEF! at the station in front of you reads HEARD'
 
   /**
    * Close out `what` of the workers `args` names, else of `here` -- an id's
@@ -274,9 +274,8 @@
   const ago = (ms) => (ms < 60_000 ? `${Math.max(0, Math.round(ms / 1000))}s` : `${Math.round(ms / 60_000)}m`)
   const fit = (s, n) => String(s).slice(0, n).padEnd(n)
   const base = (file) => file.split('/').pop()
-  const flash = (pair, now) => pair[Math.floor(now / POLL_MS) % 2]
-  /** A CHEF!'s ink: flashing until it is heard, then held. */
-  const asked = (w, now) => (w.asking.heard ? INK.chef[0] : flash(INK.chef, now))
+  /** A CHEF!'s ink: bright until it is heard, then held. */
+  const asked = (w) => (w.asking.heard ? INK.chef[0] : INK.chef[1])
   /** 0 fresh, 1 late, 2 over, for a wait of `ms`. */
   const late = (ms) => WAIT.filter((t) => ms >= t).length
 
@@ -285,17 +284,17 @@
     const inner = TICKET.w - 2
     const waited = now - (w.asking?.at ?? w.seen)
     const head = `${id(w)}${ago(waited).padStart(inner - 4)}`
-    const foot = w.asking?.heard ? 'HEARD' : w.asking ? (Math.floor(now / POLL_MS) % 2 ? 'CHEF!' : '  CHEF!')
+    const foot = w.asking?.heard ? 'HEARD' : w.asking ? 'CHEF!'
       : w.tool ? `${fit(`${TOOL} ${w.tool.name}`, inner - 4)}${ago(now - w.tool.at).padStart(4)}`
       : base(w.file) || 'firing…'
     const rows = [`.${'-'.repeat(inner)}.`, `|${fit(head, inner)}|`, `|${fit(`${markOf(w.bench).glyph} ${w.bench}`, inner)}|`, `|${fit(foot, inner)}|`, `'${'-'.repeat(inner)}'`]
-    return { rows, color: w.asking ? asked(w, now) : INK.paper, head: w.asking ? INK.head[late(waited)] : null }
+    return { rows, color: w.asking ? asked(w) : INK.paper, head: w.asking ? INK.head[late(waited)] : null }
   }
 
   /** A cook's glyph and ink: `?` asking, `⚙` inside a tool, else the spinner. */
   function cook(w, now) {
     const s = stateOf(w)
-    if (s === 'asking') return { text: '?', color: asked(w, now) }
+    if (s === 'asking') return { text: '?', color: asked(w) }
     if (s === 'tool') return { text: TOOL, color: INK.tool }
     return { text: spinAt(now), color: INK.cook }
   }
@@ -322,7 +321,7 @@
       [/(?<=^\()\S+/g, BUBBLE.nick],
       ...(MARKS[w.bench] ? [[new RegExp(esc(m.glyph), 'g'), m.ink]] : []),
       [new RegExp(`\\b${esc(w.bench)}\\b`, 'g'), m.ink],
-      [TASK, INK.order[0]],
+      [TASK, INK.order],
       [/\basks:/g, INK.chef[0]],
       [/\bplated:/g, INK.plate[0]],
       [/\d+[sm] ago/g, BUBBLE.old],
@@ -375,7 +374,7 @@
   /** Everything drawn, in stage cells, then cut to the view. */
   function placed(ws, v, me, now, rung, menu, list) {
     const out = []
-    if (rung) out.push({ key: 'bell', x: BELL.x - 1, y: BELL.y, text: '\\ô/', color: rung.kind === 'chef' ? INK.chef[0] : INK.order[0], layer: 11 })
+    if (rung) out.push({ key: 'bell', x: BELL.x - 1, y: BELL.y, text: '\\ô/', color: rung.kind === 'chef' ? INK.chef[0] : INK.order, layer: 11 })
     const cooking = cooks(ws)
 
     // ─── the rail ───────────────────────────────────────────
@@ -410,7 +409,7 @@
       const asks = s.cooks.filter((w) => w.asking)
       const unheard = asks.find((w) => !w.asking.heard)
       const says = [s.cooks.length > 1 && `${s.cooks.length} here`, asks.length && (unheard ? 'CHEF!' : 'HEARD')].filter(Boolean).join(' · ')
-      if (says) out.push({ key: `n:${s.name}`, x: s.x + 1, y: LINE.y + 1, text: says.slice(0, s.w - 1), color: asks.length ? asked(unheard ?? asks[0], now) : INK.note, layer: 11 })
+      if (says) out.push({ key: `n:${s.name}`, x: s.x + 1, y: LINE.y + 1, text: says.slice(0, s.w - 1), color: asks.length ? asked(unheard ?? asks[0]) : INK.note, layer: 11 })
     }
 
     // ─── the pass ───────────────────────────────────────────
@@ -423,8 +422,8 @@
       out.push({ key: `pa:${p.w.session}`, x: p.x + Math.floor((PLATE - 2 - age.length) / 2), y: PASS.y, text: age, color, layer: 11 })
     }
     if (plates.length) {
-      const text = Math.floor(now / POLL_MS) % 2 ? '* ORDER UP *' : '· ORDER UP ·'
-      out.push({ key: 'order', x: PASS.x + Math.floor((PASS.w - text.length) / 2), y: LAMPS.y - 1, text, color: flash(INK.order, now), layer: 11 })
+      const text = '* ORDER UP *'
+      out.push({ key: 'order', x: PASS.x + Math.floor((PASS.w - text.length) / 2), y: LAMPS.y - 1, text, color: INK.order, layer: 11 })
     }
 
     // ─── the 86 board ───────────────────────────────────────

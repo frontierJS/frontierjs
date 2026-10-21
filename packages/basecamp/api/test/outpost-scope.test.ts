@@ -13,10 +13,10 @@ import { test, expect, describe } from 'bun:test'
 import { Forbidden, Unauthorized } from '@frontierjs/junction'
 import { outpostScope } from '../src/core/hooks.ts'
 
-const machine = (id: string) => ({ userId: `outpost:${id}`, userType: 'service', authMethod: 'outpost' })
+const machine = (id: string) => ({ id: `outpost:${id}`, userType: 'service', authMethod: 'outpost' })
 
 function call(service: string, method: string, user: unknown, extra: Record<string, unknown> = {}) {
-  return outpostScope()({ service, method, auth: { user }, ...extra } as never)
+  return outpostScope()({ service, method, user, ...extra } as never)
 }
 
 describe('the grade on a machine principal', () => {
@@ -40,11 +40,11 @@ describe('the grade on a machine principal', () => {
 
   test('an outpost endpoint with no machine behind it is refused', () => {
     expect(() => call('servers', 'heartbeat', null, { id: 'srv_1' })).toThrow(Unauthorized)
-    expect(() => call('servers', 'heartbeat', { userId: 'u1', authMethod: 'session' }, { id: 'srv_1' })).toThrow(Unauthorized)
+    expect(() => call('servers', 'heartbeat', { id: 'u1', authMethod: 'session' }, { id: 'srv_1' })).toThrow(Unauthorized)
   })
 
   test('a person calling an ordinary method is not this hook\'s business', () => {
-    expect(() => call('servers', 'drain', { userId: 'u1', authMethod: 'session' }, { id: 'srv_1' })).not.toThrow()
+    expect(() => call('servers', 'drain', { id: 'u1', authMethod: 'session' }, { id: 'srv_1' })).not.toThrow()
     expect(() => call('apps', 'find', null)).not.toThrow()
   })
 })

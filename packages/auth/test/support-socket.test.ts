@@ -51,7 +51,7 @@ afterAll(async () => { clients.forEach(c => { try { c.disconnect() } catch {} })
 let seq = 0
 async function person(role = 'user') {
   const email = `sock-${Date.now()}-${seq++}@example.com`
-  const { userId } = await h.auth.createUser({ email, password: PW, role })
+  const { id: userId } = await h.auth.createUser({ email, password: PW, role })
   const { token } = await h.auth.login(email, PW) as any
   return { userId, token }
 }
@@ -77,13 +77,13 @@ describe('a support episode’s edges, asked over a live socket', () => {
       await until(() => client.connected)
       await client.auth.startSupport(subject.userId, `ticket ${i}`)
       const during = await client.auth.me()
-      expect(during.userId).toBe(subject.userId)
+      expect(during.id).toBe(subject.userId)
       expect(during.support?.operatorId).toBe(operator.userId)
 
       await until(() => client.connected)
       await client.auth.endSupport()
       const after = await client.auth.me()
-      expect(after.userId).toBe(operator.userId)
+      expect(after.id).toBe(operator.userId)
       expect(after.support ?? null).toBeNull()
     }
   }, 30_000)

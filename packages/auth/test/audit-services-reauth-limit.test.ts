@@ -30,7 +30,7 @@ afterAll(() => h.cleanup())
 const PW = 'pw-rl-1'
 async function person() {
   const email = `rl-${Date.now()}-${seq++}@example.com`
-  const { userId } = await h.auth.createUser({ email, password: PW })
+  const { id: userId } = await h.auth.createUser({ email, password: PW })
   const token = ((await request(app).post('/auth/login').send({ email, password: PW })).body as any).token as string
   return { email, userId, token }
 }

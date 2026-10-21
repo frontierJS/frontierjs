@@ -63,12 +63,12 @@ model Variant {
 /** Who is calling. `sessionGateLevel` grades a plain user 4 and this admin 5. */
 const AS: Record<string, unknown> = {
   nobody:  null,
-  shopper: { userId: 'u1', userType: 'user',  role: 'user' },
-  staff:   { userId: 'u2', userType: 'user',  role: 'admin', isStaff: true, isAdmin: true },
+  shopper: { id: 'u1', userType: 'user',  role: 'user' },
+  staff:   { id: 'u2', userType: 'user',  role: 'admin', isStaff: true, isAdmin: true },
   // For the app-mapping block below: a standing the shipped grader cannot see.
   // `role` is read for PRESENCE there, so this is USER(4) to it and whatever
   // the app's own `getLevel` says to the app.
-  manager: { userId: 'u3', userType: 'user',  role: 'manager' },
+  manager: { id: 'u3', userType: 'user',  role: 'manager' },
 }
 
 async function shop(getLevel?: (u: unknown) => number) {
@@ -252,11 +252,11 @@ describe('a method may declare a level above the floor', () => {
 
     const svc: any = (s.app as any).service('reports')
     s.ran.length = 0
-    await svc.call('ping', 1, {}, { auth: { user: null } })
+    await svc.call('ping', 1, {}, { user: null })
     expect(s.ran).toEqual(['ping'])
 
     s.ran.length = 0
-    await expect(svc.call('ping', 1, {}, { auth: { user: AS.staff } })).rejects.toThrow(/requires level 8/)
+    await expect(svc.call('ping', 1, {}, { user: AS.staff })).rejects.toThrow(/requires level 8/)
     expect(s.ran).toEqual([])
 
     await s.close()
@@ -602,7 +602,7 @@ describe('an in-process caller gets the mapper’s words for a refused method', 
       err?.name === 'AccessDeniedError' && err.required === 5
         ? new Forbidden('Requires admin role') : null)
     const svc: any = (s.app as any).service('orders')
-    await expect(svc.call('settle', 1, {}, { auth: { user: AS.shopper } })).rejects.toThrow('Requires admin role')
+    await expect(svc.call('settle', 1, {}, { user: AS.shopper })).rejects.toThrow('Requires admin role')
     expect(s.ran).toEqual([])
     await s.close()
   })

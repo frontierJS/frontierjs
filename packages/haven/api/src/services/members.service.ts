@@ -12,7 +12,7 @@ export default createService({
 
   /** `{ arrow: 7 }` — a count per item the caller holds. */
   async inventory () {
-    const me = Number(($.auth?.user as { userId?: string } | undefined)?.userId)
+    const me = Number(($.user as { id?: string } | undefined)?.id)
     if (!Number.isInteger(me)) throw new BadRequest('Walk in first: nobody is carrying anything')
     $.dispatch = false
     return ($.app as HavenApp).inventory.held(me)

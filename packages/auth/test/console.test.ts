@@ -20,7 +20,7 @@ beforeAll(async () => {
   h = await makeAuth()
   await h.auth.createUser({ email: 'a@console.test', password: 'original-pass-1', name: 'a' })
   const b = await h.auth.createUser({ email: 'b@console.test', password: 'original-pass-2', name: 'b' })
-  await h.sys.credential.create({ data: { userId: b.userId, type: 'oauth:github', value: 'github-subject-42' } })
+  await h.sys.credential.create({ data: { userId: b.id, type: 'oauth:github', value: 'github-subject-42' } })
 })
 
 afterEach(() => { delete process.env.NODE_ENV })

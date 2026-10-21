@@ -273,7 +273,7 @@ export class QueueWorker {
     // Junction's runAs opens an AsyncLocalStorage scope, so a service call
     // inside the handler that names no auth inherits this principal without
     // being handed anything. Standalone, there is no runAs and no principal;
-    // the handler is called directly and ctx.auth.user is null.
+    // the handler is called directly and ctx.user is null.
     const runAs = this._app?.runAs
     const run = async (user: unknown | null) => {
       const ctx: JobContext = {
@@ -286,7 +286,7 @@ export class QueueWorker {
         tenantId: record.tenant_id ?? null,
         correlationId: record.correlation_id ?? null,
         signal:   controller.signal,
-        auth:     { user: user as JobContext['auth']['user'] },
+        user: user as JobContext['user'],
         // undefined rather than null when there is no app: a handler tests
         // `ctx.app?` and an optional property that is present-but-null reads
         // as a bug in the app wiring rather than as standalone Caravan.

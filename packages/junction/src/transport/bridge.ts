@@ -198,9 +198,7 @@ export const bridge = {
       directives,
       data,
       base: envelopeBase,
-      auth: {
-        user: raw.user,
-      },
+      user: raw.user,
       caller: {
         ip:        raw.ip,
         userAgent: raw.headers?.['user-agent'],
@@ -260,7 +258,7 @@ export const bridge = {
   },
 
   // ── Internal service call context ────────────────────────────────────
-  // opts carries only what you VARY per call. auth is deep-cloned
+  // opts carries only what you VARY per call. user is deep-cloned
   // (frozen-propagates), locals starts fresh {} (never inherits the
   // caller's — this is what kills the shared-mutation footgun).
   // Request-wide metadata (correlation/idempotency/locale) is NOT here
@@ -273,7 +271,7 @@ export const bridge = {
     opts:    CallOptions & { query?: Record<string, unknown> } = {},
     appRef?: import('../core/app.ts').App
   ): ServiceContext {
-    const { query = {}, auth, transport = 'internal', locals, directives, base = null } = opts
+    const { query = {}, user, transport = 'internal', locals, directives, base = null } = opts
     // An internal caller may still hand us a `$`-spelled query (older code,
     // and tests that predate ctx.directives). Translate rather than ignore:
     // explicit opts.directives wins, `$` keys are the fallback.
@@ -298,12 +296,8 @@ export const bridge = {
       directives: merged,
       data,
       base,
-      auth: {
-        // Shared frozen reference — same immutability guarantee the old
-        // per-call structuredClone gave, without deep-clone cost on every
-        // internal call (see freezeUser).
-        user: auth?.user ? freezeUser(auth.user) : null,
-      },
+      // Shared frozen reference: no deep clone on every internal call (see freezeUser).
+      user: user ? freezeUser(user) : null,
       caller: {
         headers: {},
       },

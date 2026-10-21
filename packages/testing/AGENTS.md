@@ -40,11 +40,11 @@ Without `api` the result is litestone's env unchanged — no `as`, `http` or
 
 `env.actingAs(user)` (Data tier) grades with the app's `getLevel` and never
 touches Junction. `env.as(user)` is the same user through the whole API path.
-A test about a hook, a plugin guard or `ctx.auth` wants `as`.
+A test about a hook, a plugin guard or `ctx.user` wants `as`.
 
 ## Principals
 
-- `session({ userId, role, isAdmin, … })` builds a `SessionContext`. A standing
+- `session({ id, role, isAdmin, … })` builds a `SessionContext`. A standing
   field you omit is *absent*, which grades as permissive; `verifiedAt: null` is
   what grades down to VISITOR.
 - `createStubAuth({ users: [{ id: 'u1', isAdmin: true }] })` is an `IAuth`;

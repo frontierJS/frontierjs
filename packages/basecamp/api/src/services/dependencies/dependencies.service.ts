@@ -170,7 +170,7 @@ export default createService({
       // A key's scopes are graded at the method it called, and the create
       // below is the app calling `projects` in-process — so a key scoped to
       // dependencies alone would mint a project it was never issued for.
-      const key = $.auth?.user as { authMethod?: string; scopes?: string[] } | undefined
+      const key = $.user as { authMethod?: string; scopes?: string[] } | undefined
       const needs = keyScope('projects').write
       if (key?.authMethod === 'apiKey' && key.scopes?.length && !key.scopes.includes(needs)) throw new Forbidden(
         `Creating project '${push.project}' needs a key that also holds ${needs}, or create the project at /projects/ first`)

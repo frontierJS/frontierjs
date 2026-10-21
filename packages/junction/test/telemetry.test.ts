@@ -169,7 +169,7 @@ describe('junction.call.start + junction.call.end lifecycle', () => {
     })
 
     const ctx = bridge.internal('items', 'find', null, {
-      auth: { user: { userId: 'u-42', userType: 'user', authMethod: 'session' } }
+      user: { id: 'u-42', userType: 'user', authMethod: 'session' }
     })
     await callService(svc, ctx, undefined, undefined, emitter)
 

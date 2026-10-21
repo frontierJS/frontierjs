@@ -404,8 +404,25 @@ echo(b.command
 Markup is read only from the template's own text, so a path or a command line
 interpolated into it prints as itself, braces included. A `{` opens a style
 only when a style name and a space follow it, and an unclosed one throws at the
-call. A row of parts with one separator is an array `.join(chalk.dim(' · '))`;
-a block of rows is `echo.lines`.
+call. A row of parts with one separator is an array `.join(chalk.dim(' · '))`.
+
+**A fixed block is one tagged `echo`, written in the shape it prints** —
+`echo` is a tag as well as a call, and the template prints verbatim, so every
+leading space in the source is output and a body line starts at column 0.
+`echo` adds the final newline, so the closing backtick on its own line leaves
+one blank line after the block. `commands/provision/index.md` is the reference:
+
+```js
+echo`  Add to ~/.ssh/config:
+
+  Host ${made.name}
+    HostName ${made.ip}
+    User root
+`
+```
+
+A block whose rows exist only sometimes is `echo.lines`, which drops a `false`
+or `null` row, so `started && dim(started)` needs no `if` around it.
 
 ### `exec` and `stream`
 

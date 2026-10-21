@@ -55,7 +55,7 @@ beforeAll(async () => {
   // what the flow's owner is, so it answers with that.
   const ai = new AIRegistry().register({
     name:     "echo",
-    complete: async (req) => ({ content: `${app.principal()?.userId}: ${req.messages[0]!.content}`, model: "echo" }),
+    complete: async (req) => ({ content: `${app.principal()?.id}: ${req.messages[0]!.content}`, model: "echo" }),
     stream:   async () => { throw new Error("not streamed") },
   })
 
@@ -78,7 +78,7 @@ beforeAll(async () => {
   app.configure(notifications({ db: env.db }))
   // An app's own job, which records who it ran as.
   app.jobs.handle("leads.touch", async (job: any) => {
-    touched.push({ id: job.id, actorId: job.actorId, principal: app.principal()?.userId ?? null, data: job.data })
+    touched.push({ id: job.id, actorId: job.actorId, principal: app.principal()?.id ?? null, data: job.data })
   })
   app.configure(orion({
     deadlineMs:    1_000,

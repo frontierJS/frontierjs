@@ -413,7 +413,7 @@ nothing for it to be inside of.
     second to send a key the first had used was replayed the first one's row —
     somebody else's created record — or refused a 409 about a request they
     never made. There is nothing to key on instead: a guest's claims
-    deliberately never become `ctx.auth.user` (`applyClaims` scopes the Data
+    deliberately never become `ctx.user` (`applyClaims` scopes the Data
     client and stops), so two anonymous POSTs with one key are two calls.
   - **The key names ONE request.** The claim stores a hash of method + path +
     query + body, and the same key with a different payload is a **422** rather
@@ -525,7 +525,7 @@ nothing for it to be inside of.
 - **`createApp({ principal })` is where a claim gets onto the principal, and the
   ordering is the feature.** It runs INSIDE `withLitestoneDb`/`withTenantDb` —
   after the client is scoped to the caller, before `next()` — because
-  `getTable()` re-derives its own scoped client from `ctx.auth.user`, so a
+  `getTable()` re-derives its own scoped client from `ctx.user`, so a
   standing that lives only on `$.db` is dropped the moment a service
   touches a model (`FJS-D113`). A tenant claim and a per-request standing are
   the same thing and resolve together; `applyClaims` is exported because a
@@ -615,7 +615,7 @@ The table is `CLAUDE.md` § The two contexts; `ctx.system` is the `bridge-index`
   prefix on a parameter name, not about `$` the identifier). Conflating the two is what
   once made `?limit=1` a filter on a column named `limit` — zero rows, no error.
 - **The principal's spelling.** `ctx.user` is flat because a raw route has no
-  pipeline and nothing to propagate. `ctx.auth.user` is nested because `auth` is
+  pipeline and nothing to propagate. `ctx.user` is nested because `auth` is
   one of four fields with four different lifetimes, and grouping them is what
   makes the contract statable at all.
 - **`locals` exists on one side only.** A raw route has no phases, so there is

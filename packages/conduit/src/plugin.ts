@@ -151,7 +151,7 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
           )
         const who = {
           tenant:    app.tenant(),
-          principal: requestMeta()?.user?.userId ?? null,
+          principal: requestMeta()?.user?.id ?? null,
           grant:     req.grant ?? null,
         }
         return send({ ...req, who })

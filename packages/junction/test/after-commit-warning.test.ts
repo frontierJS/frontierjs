@@ -19,7 +19,7 @@ const SCHEMA = `model Post { id Int @id @default(autoincrement())  title String 
 function ctx(db: unknown, app: unknown): ServiceContext {
   return setCallDb({
     service: 'posts', method: 'create', id: undefined, data: { title: 't' },
-    query: {}, auth: { user: null }, caller: {}, route: {},
+    query: {}, user: null, caller: {}, route: {},
     locals: {}, app, result: null, type: 'before',
   } as unknown as ServiceContext, db)
 }

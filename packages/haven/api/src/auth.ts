@@ -59,7 +59,7 @@ export function createHavenAuth (db: Db, opts: HavenAuthOptions): HavenAuth {
   // No `role`: the ladder ranks a role's presence, and a member is CREATOR(3)
   // until the standing read off the row per call (`principal.ts`) says `mod`.
   const sessionOf = (memberId: number | string, extra: Partial<SessionContext> = {}): SessionContext => ({
-    userId:     String(memberId),
+    id:     String(memberId),
     userType:   'user',
     scopes:     [],
     authMethod: 'session',

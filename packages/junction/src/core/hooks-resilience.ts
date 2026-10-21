@@ -98,7 +98,7 @@ export function circuitBreaker(opts: CircuitBreakerOptions = {}): AroundHook {
 
 // ─── Rate limiter ─────────────────────────────────────────────────────────
 // Before hook — operates inside the pipeline where the full ServiceContext
-// is available (ctx.auth.user, ctx.caller.ip, ctx.service, ctx.method).
+// is available (ctx.user, ctx.caller.ip, ctx.service, ctx.method).
 //
 // In-process memory store — correct for single-instance deployments.
 // For multi-instance, replace with a Redis-backed counter via the key option.
@@ -114,7 +114,7 @@ export function circuitBreaker(opts: CircuitBreakerOptions = {}): AroundHook {
 //   })
 //
 // Keyed by IP by default. Key by user for authenticated routes:
-//   rateLimitHook({ max: 100, window: '1 hour', key: (ctx) => ctx.auth.user?.userId ?? ctx.caller.ip })
+//   rateLimitHook({ max: 100, window: '1 hour', key: (ctx) => ctx.user?.id ?? ctx.caller.ip })
 
 
 
@@ -151,14 +151,14 @@ export function rateLimit(opts: RateLimitHookOptions): BridgeHook {
   // `auth` is reached optionally because this hook is also the limiter
   // @frontierjs/auth uses on its own /auth/* routes, and those are plain HTTP
   // handlers holding a TransportContext — no principal, by definition, since
-  // signing in is what produces one. Reaching through `ctx.auth.user` directly
+  // signing in is what produces one. Reaching through `ctx.user` directly
   // would throw there, which is the difference auth forked over (FJS-017).
   // The app joins every key. A hook written in a service definition is built
   // once at import and shared by every app that registers it, so without this a
   // second app in the process — every test builds its own — finds its user 1's
   // budget already spent by another app's user 1 (FJS-D1079).
   const keyOf = (opts.key as ((ctx: ServiceContext) => string) | undefined)
-    ?? ((ctx: ServiceContext) => (ctx.auth?.user?.userId as string) ?? clientIp(ctx))
+    ?? ((ctx: ServiceContext) => (ctx.user?.id as string) ?? clientIp(ctx))
   const limiter = createRateLimiter<ServiceContext>(
     { ...opts, key: (ctx) => `${appKey((ctx as { app?: object }).app)}:${keyOf(ctx)}` } as RateLimitOptions<ServiceContext>,
     keyOf,

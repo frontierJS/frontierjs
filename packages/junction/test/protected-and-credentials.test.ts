@@ -90,7 +90,7 @@ describe('FJS-2258 a protected column is not missing from the answer', () => {
     return db
   }
   const ctxFor = (db: unknown, method: string) => setCallDb({
-    service: 'invites', method, id: 1, data: null, query: {}, auth: { user: null }, caller: {},
+    service: 'invites', method, id: 1, data: null, query: {}, user: null, caller: {},
     route: {}, locals: {}, app: {}, result: null, directives: {},
   }, db) as never
   const events = { emit() {} }

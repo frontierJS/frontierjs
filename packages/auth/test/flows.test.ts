@@ -150,19 +150,19 @@ describe('login', () => {
     const h = await makeAuth({ encryptionKey: TEST_KEY })
     const mine   = await h.auth.createUser({ email: 'mine@x.test',   password: 'Passw0rd!aaa' })
     const theirs = await h.auth.createUser({ email: 'theirs@x.test', password: 'Passw0rd!bbb' })
-    const a = await h.auth.createApiKey!(mine.userId, { name: 'k' })
+    const a = await h.auth.createApiKey!(mine.id, { name: 'k' })
 
     // The owner is REQUIRED now: omitting it used to delete on the id alone.
     await expect((h.auth.revokeApiKey as any)(a.id)).rejects.toThrow(/owner/i)
 
     // Somebody else's id does not revoke it — and the refusal is the same
     // "no such key" a missing id gets, so whose key it is stays unlearnable.
-    await expect(h.auth.revokeApiKey!(a.id, { userId: theirs.userId }))
+    await expect(h.auth.revokeApiKey!(a.id, { userId: theirs.id }))
       .rejects.toThrow(/No API key/)
 
     // The control: the real owner still can, or the two rows above would pass
     // against a revoke that refused everybody.
-    await h.auth.revokeApiKey!(a.id, { userId: mine.userId })
+    await h.auth.revokeApiKey!(a.id, { userId: mine.id })
     h.cleanup()
   })
 
@@ -465,7 +465,7 @@ describe('api keys', () => {
     const { key } = await h.auth.createApiKey!(user.id, { name: 'ci' })
 
     const ctx = await h.auth.verifyApiKey!(key)
-    expect(ctx!.userId).toBe(user.id)
+    expect(ctx!.id).toBe(user.id)
     expect(ctx!.authMethod).toBe('apiKey')
   })
 
@@ -545,7 +545,7 @@ describe('api keys', () => {
 
     const ctx = await h.auth.verifySession(key)
     expect(ctx).not.toBeNull()
-    expect(ctx!.userId).toBe(user.id)
+    expect(ctx!.id).toBe(user.id)
     expect(ctx!.authMethod).toBe('apiKey')
   })
 
@@ -748,7 +748,7 @@ describe('the gate walls the credential tables off, and User is readable by a us
 
   test('registration is unaffected by the ladder — it writes asSystem()', async () => {
     const ctx = await h.auth.createUser!({ email: `gate-${Date.now()}@example.com`, password: 'hunter22!' })
-    expect(ctx.userId).toBeTruthy()
+    expect(ctx.id).toBeTruthy()
   })
 })
 
@@ -784,7 +784,7 @@ describe('auth records what @@trail(audit) cannot see', () => {
     const row  = rows.find((r: any) => r.operation === 'login.succeeded')
 
     expect(row).toBeDefined()
-    expect(row.actorId).toBe(u.userId)
+    expect(row.actorId).toBe(u.id)
 
     // Beside the @@trail row, not instead of it.
     expect(rows.some((r: any) => r.operation === 'create' && r.model === 'Session')).toBe(true)
@@ -801,7 +801,7 @@ describe('auth records what @@trail(audit) cannot see', () => {
     const row  = rows.find((r: any) => r.operation === 'login.failed')
 
     expect(row).toBeDefined()
-    expect(row.actorId).toBe(u.userId)
+    expect(row.actorId).toBe(u.id)
     expect(row.meta.reason).toBe('bad-password')
     h.cleanup()
   })
@@ -838,7 +838,7 @@ describe('auth records what @@trail(audit) cannot see', () => {
     const row  = rows.find((r: any) => r.operation === 'logout')
 
     expect(row).toBeDefined()
-    expect(row.actorId).toBe(u.userId)
+    expect(row.actorId).toBe(u.id)
     expect(row.records).toHaveLength(1)
     h.cleanup()
   })
@@ -1081,7 +1081,7 @@ describe('onRegistered', () => {
     })
 
     const made = await h.auth.createUser({ email: 'first@acme.co', password: 'correct-horse-1' })
-    expect(seen.id).toBe(made.userId)
+    expect(seen.id).toBe(made.id)
     expect(seen.inTx).toBe(true)
     expect(made.name).toBe('Owner of Acme')
 

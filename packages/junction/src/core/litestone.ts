@@ -35,7 +35,7 @@ import { CRUD_METHODS } from './methods.ts'
 import type { ServiceContext, QueryDirectives } from './context.ts'
 import { clampPagination, pageBounds, type PageBounds } from './directives.ts'
 import { columnsUnmoved } from './write-narrowing.ts'
-import { coveredWrite, freezeUser, requestMeta, currentCall, callDb, setCallDb } from './context.ts'
+import { coveredWrite, freezeUser, setPrincipal, requestMeta, currentCall, callDb, setCallDb } from './context.ts'
 import { toBulkFailure, partitionBulk, BULK_FAILURES, list, type BulkFailure } from './envelope.ts'
 import { singularize } from '@frontierjs/toolbelt/inflect'
 import { COMBINATORS } from '@frontierjs/toolbelt/directives'
@@ -987,8 +987,8 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       // client THROWS on a property it lacks, so a hook that put `asSystem()`
       // on `$.db` — having graded the caller itself — made every
       // derived CRUD verb a 500. Such a client is used as the hook left it.
-      const scopedDb: LitestoneClient = ctx.auth.user && '$setAuth' in baseDb && typeof baseDb.$setAuth === 'function'
-        ? baseDb.$setAuth(toDataPrincipal(ctx.auth.user))
+      const scopedDb: LitestoneClient = ctx.user && '$setAuth' in baseDb && typeof baseDb.$setAuth === 'function'
+        ? baseDb.$setAuth(toDataPrincipal(ctx.user))
         : baseDb
 
       // The query tap is NOT installed here. `$tapQuery` lives on the ROOT
@@ -3291,7 +3291,7 @@ export function gateAuth(accessor: string | undefined, op: GateOp) {
     // createService({}) is still gated by the model's @@gate.
     const levels = _gateLevels(callDb(ctx), accessor ?? ctx.service)
     if (!levels) return
-    if (levels[op] > 0 && !ctx.auth?.user) {
+    if (levels[op] > 0 && !ctx.user) {
       throw new Unauthorized('Authentication required')
     }
   }
@@ -3533,7 +3533,7 @@ export function gateAuthAround(
     } else {
       const grade = customMethodGrade(method, declared,
         methodGateBasis(callDb(ctx), accessor === null ? null : accessor ?? ctx.service))
-      const appItself = grade.source === 'system' && ctx.transport === 'internal' && !ctx.auth?.user
+      const appItself = grade.source === 'system' && ctx.transport === 'internal' && !ctx.user
       if (grade.source !== 'unchecked' && !appItself) {
         const need = grade.level as number
         if (need > 0) {
@@ -3541,7 +3541,7 @@ export function gateAuthAround(
           // answers and a client acts on them differently — a 401 is what a
           // browser client responds to by discarding its token. Same split the
           // webhooks plugin makes.
-          if (!ctx.auth?.user) {
+          if (!ctx.user) {
             // The 401 body stays generic — it is written for a caller, and
             // naming the declaration in it would hand an attacker the shape of
             // the fix. The actionable sentence goes to the OPERATOR's log
@@ -3562,7 +3562,7 @@ export function gateAuthAround(
           // number this refusal names is the number every read and write in the
           // call would have been graded with.
           if (grade.graded) {
-            const has = callerGateLevel(callDb(ctx), accessor === null ? undefined : accessor ?? ctx.service, ctx.auth.user)
+            const has = callerGateLevel(callDb(ctx), accessor === null ? undefined : accessor ?? ctx.service, ctx.user)
             if (!levelPasses(need, has))
               throw methodRefusal(ctx.service, method, need, has)
           }
@@ -3575,7 +3575,7 @@ export function gateAuthAround(
         if (missing.length) {
           // A guest with no claim is a stranger to this method; a session
           // lacking one is known and not entitled, and must keep its token.
-          if (!ctx.auth?.user) throw new Unauthorized('Authentication required')
+          if (!ctx.user) throw new Unauthorized('Authentication required')
           throw new Forbidden(`'${ctx.service}.${method}' requires a claim the caller does not hold`)
         }
       }
@@ -3671,42 +3671,22 @@ export const sessionGateLevel: (user?: GradableUser | null) => number = gradeSta
 /**
  * A Junction session as Litestone's `auth()` sees it.
  *
- * **The one translation between two identity shapes.** Junction's
- * `SessionContext` names the caller `userId`; Litestone's policy language reads
- * `auth().id` — that is its documented spelling, used by `@default(auth().id)`
- * and by every `@@allow` example it ships. Handing a `SessionContext` straight
- * to `$setAuth` therefore gives the Data boundary a principal with **no `id`**,
- * and a row policy written the documented way:
- *
- *   @@allow(read, userId == auth().id)
- *
- * compares a column to `undefined` and matches nothing. No error, no warning —
- * an empty list. Every gate still worked, because `sessionGateLevel()` was
- * written against Junction's shape; policies read Litestone's, and nothing
- * bridged the two. Found 2026-08-06 in `example/`, where a user's own
- * notifications were invisible to them and visible to `asSystem()`.
- *
- * Everything else passes through by name — `role`, `accountId`, `workspaceId`,
- * `email` are already spelled the same on both sides — and an explicit `id`
- * wins, so a caller that already speaks Litestone's shape is untouched.
+ * A session and a Litestone principal name the caller the same way, `id`
+ * (`FJS-D1307`), so the only translation left is the KIND of caller: the audit
+ * trail's `actorType` reads `type` and a session states `userType`. The app's
+ * own principal (`createApp({ system })`) writing through its scoped client was
+ * filed as a user on every entry without it (`FJS-2514`). Every kind but `user`
+ * crosses — `service`, and auth's `bot` and `peer` (`FJS-D1196`) — and `user` is
+ * what the trail already files for a principal with an id.
  *
  * Sibling of `sessionGateLevel()`: same boundary, same direction, one for the
  * ordinal gate and one for the policy predicate.
- *
- * The same rename carries the KIND of caller. The audit trail's `actorType`
- * reads `type` and a session states `userType`, so the app's own principal
- * (`createApp({ system })`) writing through its scoped client was filed as a
- * user on every entry (`FJS-2514`). Every kind but `user` crosses — `service`,
- * and auth's `bot` and `peer` (`FJS-D1196`) — and `user` is what the trail
- * already files for a principal with an id.
  */
 export function toDataPrincipal(user: unknown): unknown {
   if (!user || typeof user !== 'object') return user
-  const u = user as { id?: unknown; userId?: unknown; type?: unknown; userType?: unknown }
-  const type = u.type == null && typeof u.userType === 'string' && u.userType !== 'user' ? { type: u.userType } : null
-  if (u.id !== undefined && u.id !== null) return type ? { ...user, ...type } : user
-  if (u.userId === undefined || u.userId === null) return type ? { ...user, ...type } : user
-  return { ...user, id: u.userId, ...type }
+  const u = user as { type?: unknown; userType?: unknown }
+  if (u.type == null && typeof u.userType === 'string' && u.userType !== 'user') return { ...user, type: u.userType }
+  return user
 }
 
 // ─── Claims resolved per request ─────────────────────────────────────────────
@@ -3723,9 +3703,9 @@ export function toDataPrincipal(user: unknown): unknown {
 // wrong at least once before this existed:
 //
 //   1. resolve the claims, which needs the request
-//   2. build a FRESH principal and assign `ctx.auth.user` — not just the
+//   2. build a FRESH principal and assign `ctx.user` — not just the
 //      client, because `getTable()` re-derives its own scoped copy from
-//      `ctx.auth.user`, so a standing living only on `$.db` is dropped
+//      `ctx.user`, so a standing living only on `$.db` is dropped
 //      the moment a service touches a model
 //   3. scope the client from that principal
 //
@@ -3746,7 +3726,7 @@ export type PrincipalClaims = Record<string, unknown>
  * Runs for a GUEST as well as a session, with `user` null — a cart token or an
  * emailed link is the only standing a guest has, and this is the only thing
  * that can turn it into a claim a row policy reads. A guest's claims scope the
- * Data client and stop there: they never become `ctx.auth.user`, because
+ * Data client and stop there: they never become `ctx.user`, because
  * minting a principal out of claims alone would turn *anonymous* into
  * *someone* — an object that satisfies `auth() != null` while carrying no
  * identity. A tenant for an anonymous caller is what `strategy database`
@@ -3760,7 +3740,7 @@ export type PrincipalClaims = Record<string, unknown>
  */
 export type PrincipalResolver = (
   ctx:  ServiceContext,
-  user: ServiceContext['auth']['user'] | null,
+  user: ServiceContext['user'] | null,
 ) => PrincipalClaims | Promise<PrincipalClaims>
 
 /**
@@ -3779,7 +3759,7 @@ export const TENANT_REGISTRY = Symbol.for('junction.tenantRegistry')
 export const TENANT_CLIENT_OBSERVERS = Symbol.for('junction.tenantClientObservers')
 
 /** Claims that would change WHO is calling rather than what they hold here. */
-const IDENTITY_KEYS = ['userId', 'id'] as const
+const IDENTITY_KEYS = ['id'] as const
 
 // Whether a resolver ran for this call, and why it produced nothing.
 //
@@ -3794,7 +3774,7 @@ const IDENTITY_KEYS = ['userId', 'id'] as const
 // half.
 const RESOLVED = 'principal.resolved'
 // Every claim merged this request, guest or session: a guest's never reach
-// `ctx.auth.user`, and `gateAuth` grades a method's `claims:` against them.
+// `ctx.user`, and `gateAuth` grades a method's `claims:` against them.
 const HELD_CLAIMS = 'principal.claims'
 const NO_CLAIM = 'principal.noClaim'
 
@@ -3820,7 +3800,7 @@ export function applyClaims(
   claims: PrincipalClaims,
 ): void {
   // Refused by name rather than stripped in silence. A resolver answering
-  // `{ userId: someoneElse }` is not a claim about what this caller holds, it
+  // `{ id: someoneElse }` is not a claim about what this caller holds, it
   // is a different caller — and a framework that quietly dropped the key would
   // leave an app believing it had switched identity.
   const identity = IDENTITY_KEYS.filter(k => k in claims)
@@ -3839,7 +3819,7 @@ export function applyClaims(
 // from the schema still gets the tenant guard's *this session carries no
 // claim* rather than *you do not belong to the tenant this request names*.
 function mergeClaims(ctx: ServiceContext, db: unknown, claims: PrincipalClaims): void {
-  const user   = ctx.auth?.user
+  const user   = ctx.user
   const client = db as LitestoneClient
 
   liftRowTenant(ctx, client, claims)
@@ -3853,13 +3833,13 @@ function mergeClaims(ctx: ServiceContext, db: unknown, claims: PrincipalClaims):
   // the bearer, which is the only way a schema can own access for a population
   // that has no `auth().id`.
   //
-  // **The claims must NOT become `ctx.auth.user`, and this is the whole of the
+  // **The claims must NOT become `ctx.user`, and this is the whole of the
   // care this path needs.** `sessionGateLevel` grades any object it is handed:
   // a claims-only principal sets none of `isSystemAdmin`/`isOwner`/`isAdmin`
   // and leaves `verifiedAt`/`activatedAt` undefined — which is SILENCE, not
   // `null` — so it falls through to CREATOR(3). Promoting a guest to a session
   // object would therefore grade every anonymous caller above a stranger in
-  // every app that adopted a resolver, silently. `ctx.auth.user` stays null, so
+  // every app that adopted a resolver, silently. `ctx.user` stays null, so
   // Junction's gate grades STRANGER(0) and the claim decides only WHICH ROWS.
   //
   // The Data boundary grades this object with the APP's `getLevel`, which sees
@@ -3875,7 +3855,7 @@ function mergeClaims(ctx: ServiceContext, db: unknown, claims: PrincipalClaims):
   }
 
   const principal = freezeUser({ ...user, ...claims })
-  ctx.auth.user   = principal as typeof user
+  setPrincipal(ctx, principal as typeof user)
 
   if (typeof client?.$setAuth === 'function')
     setCallClient(ctx, client.$setAuth(toDataPrincipal(principal)))
@@ -3914,7 +3894,7 @@ async function warmTenantConfig(ctx: ServiceContext): Promise<void> {
 // A resolver answering a claim the schema reads off a row is refused by name.
 // Two origins for one value, and whichever ran second would win in silence.
 async function applySchemaClaims(ctx: ServiceContext, db: unknown): Promise<void> {
-  const user   = ctx.auth?.user
+  const user   = ctx.user
   const client = db as LitestoneClient
   if (!user || typeof client?.$claimsFor !== 'function') return
   const claims = await client.$claimsFor(toDataPrincipal(user))
@@ -3932,7 +3912,7 @@ async function resolveAppClaims(ctx: ServiceContext, db: unknown, principal: Pri
   const claims: PrincipalClaims = {}
   const origin = new Map<string, string>()
   for (const resolver of list) {
-    const got = await resolver(ctx, ctx.auth?.user ?? null)
+    const got = await resolver(ctx, ctx.user ?? null)
     for (const [name, value] of Object.entries(got ?? {})) {
       // Refused rather than last-wins: a claim two sources both emit is a
       // precedence the app has to state, and silently taking the later one
@@ -4001,7 +3981,7 @@ function refuseWrites(client: unknown, service: string, method: string): unknown
 export function withLitestoneDb(
   db:         unknown,
   principal?: PrincipalSetting,
-  system?:    { userId?: string | number } | null,
+  system?:    { id?: string | number } | null,
 ): import('./hooks.ts').AroundHook {
   return async (ctx, next) => {
     // Scope to the caller here, not in the service.
@@ -4014,12 +3994,12 @@ export function withLitestoneDb(
     // worked.
     //
     // Doing it once here means both factories get a caller-scoped client, and
-    // ctx.auth.user is already populated by the transport bridge before
+    // ctx.user is already populated by the transport bridge before
     // callService() runs.
     const client = db as LitestoneClient
     setCallClient(ctx,
-      ctx.auth?.user && typeof client?.$setAuth === 'function'
-        ? client.$setAuth(toDataPrincipal(ctx.auth.user))
+      ctx.user && typeof client?.$setAuth === 'function'
+        ? client.$setAuth(toDataPrincipal(ctx.user))
         : client)
 
     if (ctx.locals.readCall) setCallClient(ctx, refuseWrites(callClient(ctx), ctx.service, ctx.method) as LitestoneClient)
@@ -4089,7 +4069,7 @@ export interface MembershipClaimOptions {
   }
   /** The membership accessor — `workspaceMember` for `model WorkspaceMember`. */
   model:      string
-  /** The column holding the caller: matched against the principal's `userId`. */
+  /** The column holding the caller: matched against the principal's `id`. */
   subject:    string
   /** The column holding the tenant. Also the CLAIM's name on the principal,
    *  unless `as` says otherwise — it has to agree with `tenancy { claim }`. */
@@ -4151,7 +4131,7 @@ export function membershipClaim(opts: MembershipClaimOptions): SelfDescribedReso
     `membershipClaim: \`guests\` names standings and this resolver reads none — add \`standing: '<column>'\`. ` +
     `Without it no row could be a guest, and every one would be admitted as a member.`)
 
-  const resolver = async function membershipClaim(ctx: ServiceContext, user: ServiceContext['auth']['user'] | null) {
+  const resolver = async function membershipClaim(ctx: ServiceContext, user: ServiceContext['user'] | null) {
     // A GUEST cannot hold a membership. The resolver runs for a caller with no
     // session now — that is what lets a bearer-token claim reach a row policy —
     // so this refuses by name rather than reading `userId` off nothing and
@@ -4204,7 +4184,7 @@ export function membershipClaim(opts: MembershipClaimOptions): SelfDescribedReso
     )
 
     const row = await table.findFirst({
-      where: { [opts.tenant]: tenant, [opts.subject]: (user as { userId?: string }).userId },
+      where: { [opts.tenant]: tenant, [opts.subject]: (user as { id?: string }).id },
       ...(opts.include?.length
         ? { include: Object.fromEntries(opts.include.map(r => [r, true])) }
         : {}),
@@ -4616,7 +4596,7 @@ export function installLogContext(db: unknown): (() => void) | null {
       episodeId:     meta?.user?.support?.episodeId  ?? null,
       // Only an attester names its kind; an operator is `support` to litestone.
       operatorType:  meta?.user?.support ? null : (meta?.attestedBy?.type ?? null),
-      // A bearer. `ctx.auth.user` is null for one — that is what keeps the gate
+      // A bearer. `ctx.user` is null for one — that is what keeps the gate
       // at STRANGER(0) — so the principal carries no id and the trail would
       // record the write as a caller with no name. The GRANT is the actor
       // (`FJS-D342`), because revoking one link has to be answerable by *which
@@ -4670,7 +4650,7 @@ export function installQueryTelemetry(
     telemetry.emit('litestone.query', {
       ...event,
       telemetryId: call?.telemetryId ?? null,
-      isSystem:    !call?.auth?.user,
+      isSystem:    !call?.user,
     })
   })
 }
@@ -5246,7 +5226,7 @@ function liftRowTenant(ctx: ServiceContext, client: unknown, claims?: PrincipalC
 
   const held       = (from: Record<string, unknown> | undefined) =>
     from?.[t.claim!] ?? (t.admission ? from?.[t.admission] : undefined)
-  const user       = ctx.auth?.user
+  const user       = ctx.user
   const value      = held(claims) ?? (user ? held(toDataPrincipal(user) as Record<string, unknown>) : undefined)
 
   if (value != null) ctx.locals.tenantId = String(value)
@@ -5272,14 +5252,14 @@ function liftRowTenant(ctx: ServiceContext, client: unknown, claims?: PrincipalC
 function statedTenantClaim(
   ctx:    ServiceContext,
   client: unknown,
-  system: { userId?: string | number } | null | undefined,
+  system: { id?: string | number } | null | undefined,
 ): PrincipalClaims | null {
-  if (system?.userId == null) return null
+  if (system?.id == null) return null
   const t = tenancyOf(client)
   if (t?.strategy !== 'row' || !t.claim) return null
 
-  const user = ctx.auth?.user as { userId?: string | number } | null | undefined
-  if (user?.userId == null || String(user.userId) !== String(system.userId)) return null
+  const user = ctx.user as { id?: string | number } | null | undefined
+  if (user?.id == null || String(user.id) !== String(system.id)) return null
   if ((toDataPrincipal(user) as Record<string, unknown>)[t.claim] != null) return null
 
   const tenant = requestMeta()?.tenant
@@ -5335,7 +5315,7 @@ function tapTenantWrites(app: unknown, client: unknown, tenantId: string): void 
  */
 export function withTenantDb(registry: TenantRegistryLike, principal?: PrincipalSetting): import('./hooks.ts').AroundHook {
   return async function withTenantDb(ctx, next) {
-    const dataPrincipal = ctx.auth?.user ? toDataPrincipal(ctx.auth.user) : null
+    const dataPrincipal = ctx.user ? toDataPrincipal(ctx.user) : null
     const headers   = (ctx.caller?.headers ?? {}) as Record<string, unknown>
     const host      = (headers.host ?? headers.Host ?? null) as string | null
 
@@ -5466,7 +5446,7 @@ export function tenantClaimGuard(db: unknown): (ctx: ServiceContext) => void {
     const tenancy = tenancyOf(db)
     if (!tenancy || tenancy.strategy !== 'row' || !tenancy.claim) return
 
-    const user = ctx.auth?.user
+    const user = ctx.user
     if (!user) return
 
     const principal = toDataPrincipal(user) as Record<string, unknown>

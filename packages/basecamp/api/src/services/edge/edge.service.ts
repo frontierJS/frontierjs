@@ -384,7 +384,7 @@ export default createService({
   // holds the newcomer's CNAME by the time this runs.
   async syncStep() {
     const id     = String($.id)
-    const caller = !!$.auth?.user
+    const caller = !!$.user
     const domain = await (caller ? db() : $.app.db!.asSystem()).domain.findFirst({
       where: caller ? { id, workspaceId: ws() } : { id }, withDeleted: true,
     }) as (DomainRow & { workspaceId: string; deletedAt: string | null }) | null
@@ -404,7 +404,7 @@ export default createService({
       // no session to authenticate — so it is scoped only when a caller IS
       // there, and `internalOnly` keeps it off the wire either way.
       all: [sessionScope({ except: ['syncStep'] })],
-      syncStep: [internalOnly(), function scopedWhenACaller(ctx) { return ctx.auth?.user ? scoped(ctx) : undefined }],
+      syncStep: [internalOnly(), function scopedWhenACaller(ctx) { return ctx.user ? scoped(ctx) : undefined }],
     },
   },
 })

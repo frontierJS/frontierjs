@@ -16,6 +16,8 @@ import {
   passwordNeedsRehash,
   generateApiKey,
   hashApiKey,
+  hashHandoff,
+  pkceChallenge,
   generateToken,
   generateCode,
   codesMatch,
@@ -91,6 +93,7 @@ export function createLitestoneAuth(
     onPasswordResetRequested,
     onEmailVerificationRequested,
     sessionFields,
+    requireSecondFactor,
     onLogin,
     onLoginFailed,
     onLogout,
@@ -114,6 +117,10 @@ export function createLitestoneAuth(
   const authModel = authModelOf(db.$schema as AuthSchema)
   if (!authModel) throw new AuthConfigError(
     'No model declares @@auth, and none is called User. Mark the model a person signs in as with @@auth')
+  // Enrollment mints recovery codes with the key, so a held session would reach
+  // `confirmTotp` and throw there: every required account locked out at once.
+  if (requireSecondFactor && !encryptionKey) throw new AuthConfigError(
+    'requireSecondFactor needs encryptionKey: the enrollment it sends people to mints recovery codes with it')
   const personModel: string = authModel.name
   const person:      string = modelToAccessor(personModel)
 
@@ -204,7 +211,7 @@ export function createLitestoneAuth(
 
   function toContext(user: any, authMethod: SessionContext['authMethod']): SessionContext {
     return {
-      userId:    user.id,
+      id:        user.id,
       // The kind, never the role: the trail files `userType` as `actorType`,
       // so a role named `service` was filed as the app and left out of every
       // author column.
@@ -280,6 +287,7 @@ export function createLitestoneAuth(
     user:       any,
     authMethod: SessionContext['authMethod'],
     meta:       Record<string, unknown> = {},
+    held        = false,
   ): Promise<{ token: string; user: SessionContext }> {
     // A bot or a peer reaches this app through its API keys only. The refusal is
     // the wrong-password one, so a login form does not tell a stranger which
@@ -315,6 +323,7 @@ export function createLitestoneAuth(
         userId:    user.id,
         token,
         expiresAt: expiresAt(sessionTtl, sys.$now()),
+        ...(held ? { enrollmentOnly: true } : {}),
       }
     })
 
@@ -323,10 +332,13 @@ export function createLitestoneAuth(
     // records the EVENT and does.
     await audit('login.succeeded', {
       model: 'Session', records: [session.id], actorId: user.id, actorType: 'user',
-      ...(Object.keys(meta).length ? { meta } : {}),
+      ...(Object.keys(meta).length || held ? { meta: { ...meta, ...(held ? { enrollmentOnly: true } : {}) } } : {}),
     })
 
-    return { token, user: { ...toContext(user, authMethod), sessionId: String(session.id) } }
+    return {
+      token,
+      user: { ...toContext(user, authMethod), sessionId: String(session.id), ...(held ? { enrollmentOnly: true } : {}) },
+    }
   }
 
   // The one grade of a new password. Every door that writes one calls it before
@@ -413,7 +425,14 @@ export function createLitestoneAuth(
   // (`FJS-D261`).
   async function firstFactorProven(user: any, meta: Record<string, unknown> = {}): Promise<LoginResult> {
     const totp = await liveTotp(user.id)
-    if (!totp) return issueSession(user, 'session', meta)
+    if (!totp) {
+      // A session that exists before the factor does (`FJS-D1008`): the plugin
+      // holds it to enrollment. A bot or a peer is refused in issueSession, so
+      // the predicate is only asked about a person.
+      const owed = (user.kind ?? 'user') === 'user' && typeof requireSecondFactor === 'function'
+        ? requireSecondFactor(user) : requireSecondFactor === true
+      return issueSession(user, 'session', meta, owed)
+    }
 
     // One live ticket per person. A second sign-in supersedes the first rather
     // than adding to it: two open tickets are two independent attempt budgets,
@@ -838,7 +857,7 @@ export function createLitestoneAuth(
         model: personModel, records: [String(made.id)], actorId: String(made.id), actorType: 'user',
         meta:  MAGIC_META,
       })
-      return issueSession(made, 'session', MAGIC_META)
+      return firstFactorProven(made, MAGIC_META)
     }
 
     // Re-asked at the click: a provider linked between the mail and the click
@@ -930,7 +949,9 @@ export function createLitestoneAuth(
         // The session id travels on the context so a service can tell which of
         // the caller's sessions is the one asking — without ever being handed
         // the token that would let it answer by comparison.
-        return user ? { ...toContext(user, 'session'), sessionId: String(session.id) } : null
+        return user
+          ? { ...toContext(user, 'session'), sessionId: String(session.id), ...(session.enrollmentOnly ? { enrollmentOnly: true } : {}) }
+          : null
       }
 
       // A key issued before the prefix existed, or by an app that generates its
@@ -1311,6 +1332,11 @@ export function createLitestoneAuth(
       })
 
       const recoveryCodes = await issueRecoveryCodes(userId)
+
+      // The factor exists, so a session held to enrollment (`FJS-D1008`) is
+      // released: the same token carries on, with no second sign-in to type a
+      // code that was spent a line ago.
+      await sys.session.updateMany({ where: { userId, enrollmentOnly: true }, data: { enrollmentOnly: false } })
 
       await credentialChanged('totp.enabled', userId, {
         model: 'Credential', records: [String(pending.id)],
@@ -2269,6 +2295,44 @@ export function createLitestoneAuth(
         model: 'Credential', records: [String(keyId)],
         actorId: opts.actorId ?? opts.userId, actorType: 'user',
       })
+    },
+
+    // ── issueHandoff / redeemHandoff ─────────────────────────────────────
+    // A signed-in person handed to a page on another origin, where this
+    // origin's cookie is third-party (`FJS-D1357`): RFC 9700's code with PKCE.
+    // The code crosses a redirect, so it lives a minute, is spent by its one
+    // redemption, and is stored as the HMAC of code and challenge together.
+    // `audience` is the origin the caller vouched for; redeem answers it so the
+    // caller can hold the redeeming request to it. What a redemption grants is
+    // the caller's to mint: this proves who, for what, and nothing else.
+
+    async issueHandoff(userId: string, opts: { challenge: string, audience: string, scopes?: string[] }): Promise<{ code: string, expiresAt: string }> {
+      const secret = requireEncryptionKey('issueHandoff')
+      // S256's output, 43 characters; a plain-method challenge is the verifier
+      // itself, and a code issued against one is redeemable by anyone who saw it.
+      if (typeof opts?.challenge !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(opts.challenge))
+        throw new InvalidTokenError('challenge must be an S256 PKCE challenge')
+      if (typeof opts.audience !== 'string' || !opts.audience) throw new AuthConfigError('issueHandoff needs the audience the code is for')
+      const code  = generateToken()
+      const until = expiresAt('1m', sys.$now())
+      await sys.credential.create({ data: {
+        userId, type: 'handoff', value: hashHandoff(code, opts.challenge, secret),
+        label: opts.audience, scope: opts.scopes?.join(' ') ?? null, tokenExpiresAt: until,
+      } })
+      return { code, expiresAt: until }
+    },
+
+    async redeemHandoff(code: string, verifier: string): Promise<{ userId: string, audience: string, scopes: string[] } | null> {
+      const secret = requireEncryptionKey('redeemHandoff')
+      if (typeof code !== 'string' || typeof verifier !== 'string' || !code || verifier.length < 43) return null
+      const value = hashHandoff(code, pkceChallenge(verifier), secret)
+      const row   = await sys.credential.findFirst({ where: { type: 'handoff', value } })
+      if (!row) return null
+      // The delete is the spend, and its count says which of two racing
+      // redemptions won.
+      const { count } = await sys.credential.deleteMany({ where: { id: row.id, type: 'handoff' } })
+      if (!count || !row.tokenExpiresAt || new Date(row.tokenExpiresAt) <= sys.$now()) return null
+      return { userId: String(row.userId), audience: String(row.label), scopes: row.scope ? String(row.scope).split(/\s+/).filter(Boolean) : [] }
     },
 
     // ── changePassword ───────────────────────────────────────────────────

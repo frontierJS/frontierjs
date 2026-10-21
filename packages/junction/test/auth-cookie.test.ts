@@ -33,7 +33,7 @@ import type { SessionVerifier, SessionContext } from '../src/auth/types.ts'
 function oneTokenAuth(token: string, user: Partial<SessionContext>): SessionVerifier {
   return {
     async verifySession(t: string) {
-      return t === token ? ({ userId: 'u1', ...user } as SessionContext) : null
+      return t === token ? ({ id: 'u1', ...user } as SessionContext) : null
     },
   }
 }
@@ -46,7 +46,7 @@ function appWith(auth: SessionVerifier, cookieName: string | null) {
   })
   if (cookieName) app.http.setAuthCookie(cookieName)
   app.get('/whoami', (ctx: any) =>
-    ctx.user ? ctx.json({ userId: ctx.user.userId }) : ctx.json({ anon: true }, 401))
+    ctx.user ? ctx.json({ userId: ctx.user.id }) : ctx.json({ anon: true }, 401))
   return app
 }
 
@@ -56,7 +56,7 @@ const hit = (app: any, headers: Record<string, string>) =>
 describe('session from a cookie', () => {
 
   it('authenticates from the cookie once a name is set', async () => {
-    const app = appWith(oneTokenAuth('tok-1', { userId: 'alice' }), 'session')
+    const app = appWith(oneTokenAuth('tok-1', { id: 'alice' }), 'session')
     await app.start()
     const res = await hit(app, { cookie: 'session=tok-1' })
     expect(res.status).toBe(200)
@@ -86,8 +86,8 @@ describe('session from a cookie', () => {
     // possible from a browser that is also holding a session cookie.
     const auth: SessionVerifier = {
       async verifySession(t: string) {
-        if (t === 'cookie-tok') return { userId: 'from-cookie' } as SessionContext
-        if (t === 'bearer-tok') return { userId: 'from-bearer' } as SessionContext
+        if (t === 'cookie-tok') return { id: 'from-cookie' } as SessionContext
+        if (t === 'bearer-tok') return { id: 'from-bearer' } as SessionContext
         return null
       },
     }
@@ -101,8 +101,8 @@ describe('session from a cookie', () => {
   it('an x-api-key also wins over the cookie', async () => {
     const auth: SessionVerifier = {
       async verifySession(t: string) {
-        if (t === 'cookie-tok') return { userId: 'from-cookie' } as SessionContext
-        if (t === 'key-tok')    return { userId: 'from-key' } as SessionContext
+        if (t === 'cookie-tok') return { id: 'from-cookie' } as SessionContext
+        if (t === 'key-tok')    return { id: 'from-key' } as SessionContext
         return null
       },
     }
@@ -163,10 +163,10 @@ describe('session from a cookie', () => {
         ...defaultConfig, port: 0,
         auth: { cookie: 'my_session' },
       } as any,
-      auth: oneTokenAuth('tok-1', { userId: 'configured' }),
+      auth: oneTokenAuth('tok-1', { id: 'configured' }),
     })
     app.get('/whoami', (ctx: any) =>
-      ctx.user ? ctx.json({ userId: ctx.user.userId }) : ctx.json({ anon: true }, 401))
+      ctx.user ? ctx.json({ userId: ctx.user.id }) : ctx.json({ anon: true }, 401))
     await app.start()
     const res = await hit(app, { cookie: 'my_session=tok-1' })
     expect(res.status).toBe(200)
@@ -210,11 +210,11 @@ describe('session from a cookie, over the WebSocket upgrade', () => {
   it('the socket knows who you are from the cookie', async () => {
     const app = createApp({
       config: { ...defaultConfig, port: 0 },
-      auth: oneTokenAuth('tok-ws', { userId: 'wsuser' }),
+      auth: oneTokenAuth('tok-ws', { id: 'wsuser' }),
     })
     app.http.setAuthCookie('session')
     app.ws('/sock', {
-      open(ctx: any) { ctx.send(JSON.stringify({ userId: ctx.user?.userId ?? null })) },
+      open(ctx: any) { ctx.send(JSON.stringify({ userId: ctx.user?.id ?? null })) },
     })
     await app.start()
     PORT = (app as unknown as { http: { port: number } }).http.port

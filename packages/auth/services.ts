@@ -26,7 +26,7 @@
 //              POST /people                        X-Service-Method: invite
 //
 // Four nouns are the caller's OWN: every method on them scopes to
-// `ctx.auth.user.userId` and nothing takes a user id from the caller.
+// `ctx.user.userId` and nothing takes a user id from the caller.
 // `account-recovery` is the exception and is a service of its own for that
 // reason — an operator acting on somebody else's account, where the id IS the
 // person, behind a floor none of the other four have.
@@ -157,8 +157,8 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
   /** The caller, or a 401 — whatever credential presented. Only `account.get` stops here. */
   function identify(ctx: ServiceContext): SessionContext {
-    const user = ctx.auth?.user as SessionContext | null | undefined
-    if (!user?.userId) throw new Unauthorized('Authentication required')
+    const user = ctx.user as SessionContext | null | undefined
+    if (!user?.id) throw new Unauthorized('Authentication required')
     return user
   }
 
@@ -311,7 +311,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     const operator = identify(ctx)
     if (what) refuseDelegated(ctx, operator, what)
     const userId = String(ctx.id ?? '')
-    if (!userId || userId === 'me' || userId === operator.userId) {
+    if (!userId || userId === 'me' || userId === operator.id) {
       throw new Forbidden('That is your own account — manage it from sessions and api-keys')
     }
     // Somebody in another tenant is the same miss as nobody at all, so a
@@ -366,7 +366,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       // link built from `session.userId` is the obvious second spelling.
       // Anything else is a 404 rather than a 403: whether that id exists is
       // not this service's to disclose.
-      if (ctx.id !== 'me' && String(ctx.id) !== user.userId) {
+      if (ctx.id !== 'me' && String(ctx.id) !== user.id) {
         throw new NotFound(`No account '${ctx.id}' — this service answers for the caller ('me')`)
       }
       // `level` is opt-in and absent by default. The app owns the role→level
@@ -393,7 +393,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       if (!newPassword)     throw new BadRequest('newPassword is required')
 
       reauthenticate(ctx)
-      await need('changePassword')(user.userId, currentPassword, newPassword, { exceptSessionId: user.sessionId })
+      await need('changePassword')(user.id, currentPassword, newPassword, { exceptSessionId: user.sessionId })
       return { ok: true }
     },
 
@@ -412,7 +412,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       }
 
       reauthenticate(ctx)
-      await need('requestEmailChange')(user.userId, currentPassword, newEmail)
+      await need('requestEmailChange')(user.id, currentPassword, newEmail)
       return { ok: true }
     },
 
@@ -428,7 +428,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     /** Is it on, and how many ways back are left. What a settings screen reads. */
     async totpStatus(ctx: ServiceContext) {
       const user = caller(ctx)
-      return need('totpStatus')(user.userId)
+      return need('totpStatus')(user.id)
     },
 
     /**
@@ -444,7 +444,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       if (!currentPassword) throw new BadRequest('currentPassword is required')
 
       reauthenticate(ctx)
-      return need('setupTotp')(user.userId, currentPassword)
+      return need('setupTotp')(user.id, currentPassword)
     },
 
     /**
@@ -464,7 +464,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       if (!code) throw new BadRequest('code is required')
 
       reauthenticate(ctx)
-      return need('confirmTotp')(user.userId, code)
+      return need('confirmTotp')(user.id, code)
     },
 
     /** Switch it off and forget the secret and every recovery code. */
@@ -475,7 +475,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       if (!currentPassword) throw new BadRequest('currentPassword is required')
 
       reauthenticate(ctx)
-      await need('disableTotp')(user.userId, currentPassword)
+      await need('disableTotp')(user.id, currentPassword)
       return { ok: true }
     },
 
@@ -487,7 +487,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       if (!currentPassword) throw new BadRequest('currentPassword is required')
 
       reauthenticate(ctx)
-      return need('regenerateRecoveryCodes')(user.userId, currentPassword)
+      return need('regenerateRecoveryCodes')(user.id, currentPassword)
     },
   }))
 
@@ -502,7 +502,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     // row — see AuthSessionInfo.
     async find(ctx: ServiceContext) {
       const user = caller(ctx)
-      const rows = await need('listSessions')(user.userId)
+      const rows = await need('listSessions')(user.id)
       // The one row the caller is asking FROM. Marked here rather than in the
       // data layer, which is not told which token presented.
       return rows.map(s => ({ ...s, current: Boolean(user.sessionId) && s.id === user.sessionId }))
@@ -512,7 +512,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       const user = caller(ctx)
       refuseDelegated(ctx, user, 'revoke a session')
       const id   = String(ctx.id)
-      await need('revokeSession')(user.userId, id)
+      await need('revokeSession')(user.id, id)
       // Ending the session that is asking is allowed — "sign out this device"
       // from a device list is the same operation as logging out — but it is
       // said in the answer, because the next request from this token is a 401
@@ -523,7 +523,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     async revokeOthers(ctx: ServiceContext) {
       const user = caller(ctx)
       refuseDelegated(ctx, user, 'revoke sessions')
-      const revoked = await need('revokeSessions')(user.userId, { exceptSessionId: user.sessionId })
+      const revoked = await need('revokeSessions')(user.id, { exceptSessionId: user.sessionId })
       return { revoked }
     },
   }))
@@ -537,7 +537,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
     async find(ctx: ServiceContext) {
       const user = caller(ctx)
-      return need('listApiKeys')(user.userId)
+      return need('listApiKeys')(user.id)
     },
 
     // The raw key exists in this response and nowhere else — what is stored is
@@ -561,7 +561,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       // subtractive at the app's own check. A caller cannot mint themselves
       // standing they do not have by asking for it here, because no key
       // reaches this line (`caller`).
-      const { id, key } = await auth.createApiKey(user.userId, {
+      const { id, key } = await auth.createApiKey(user.id, {
         ...(name      ? { name }   : {}),
         ...(scopes    ? { scopes } : {}),
         ...(expiresAt ? { expiresAt: new Date(expiresAt as string) } : {}),
@@ -576,7 +576,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       // The owner goes into the delete rather than being checked after a read:
       // the id comes from the caller, and matching on it alone revokes any key
       // in the system whose id can be guessed.
-      await auth.revokeApiKey(id, { userId: user.userId })
+      await auth.revokeApiKey(id, { userId: user.id })
       return { id }
     },
   }))
@@ -594,7 +594,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
     async find(ctx: ServiceContext) {
       const user = caller(ctx)
-      return need('listConnections')(user.userId)
+      return need('listConnections')(user.id)
     },
 
     async remove(ctx: ServiceContext) {
@@ -604,7 +604,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       refuseDelegated(ctx, user, 'remove a connection')
       // The caller's own id, never one from the payload — the same rule the
       // three services above hold to.
-      return need('removeConnection')(user.userId, String(ctx.id))
+      return need('removeConnection')(user.id, String(ctx.id))
     },
   }))
 
@@ -651,7 +651,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       }
 
       const userId = String(ctx.id ?? '')
-      if (!userId || userId === 'me' || userId === operator.userId) {
+      if (!userId || userId === 'me' || userId === operator.id) {
         throw new Forbidden('Resetting your own second factor is account.disableTotp, which asks for your password')
       }
 
@@ -662,7 +662,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
         throw new Forbidden('That account stands at or above yours — it cannot be reset from here')
       }
 
-      return need('resetTotp')(userId, { actorId: operator.userId })
+      return need('resetTotp')(userId, { actorId: operator.id })
     },
   }))
 
@@ -693,17 +693,17 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     async get(ctx: ServiceContext) {
       const { person } = await aim(ctx)
       const [sessions, apiKeys] = await Promise.all([
-        need('listSessions')(person.userId),
-        need('listApiKeys')(person.userId),
+        need('listSessions')(person.id),
+        need('listApiKeys')(person.id),
       ])
-      return { userId: person.userId, sessions, apiKeys }
+      return { userId: person.id, sessions, apiKeys }
     },
 
     async revokeSession(ctx: ServiceContext) {
       const { operator, person } = await aim(ctx, 'sign somebody out')
       const sessionId = String((ctx.data as { sessionId?: unknown } | undefined)?.sessionId ?? '')
       if (!sessionId) throw new BadRequest('sessionId is required')
-      await need('revokeSession')(person.userId, sessionId, { actorId: operator.userId })
+      await need('revokeSession')(person.id, sessionId, { actorId: operator.id })
       return { id: sessionId }
     },
 
@@ -711,13 +711,13 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       const { operator, person } = await aim(ctx, "revoke somebody's API key")
       const keyId = String((ctx.data as { keyId?: unknown } | undefined)?.keyId ?? '')
       if (!keyId) throw new BadRequest('keyId is required')
-      await auth.revokeApiKey(keyId, { userId: person.userId, actorId: operator.userId })
+      await auth.revokeApiKey(keyId, { userId: person.id, actorId: operator.id })
       return { id: keyId }
     },
 
     async signOut(ctx: ServiceContext) {
       const { operator, person } = await aim(ctx, 'sign somebody out')
-      const revoked = await need('revokeSessions')(person.userId, { actorId: operator.userId })
+      const revoked = await need('revokeSessions')(person.id, { actorId: operator.id })
       return { revoked }
     },
 
@@ -727,15 +727,15 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       const { operator, person } = await aim(ctx, 'remove somebody')
       // The row is the person in every tenant, so deleting it from one reaches
       // into the others; below SYSADMIN that is somebody else's admin's call.
-      if (await heldElsewhere(ctx, person.userId)) {
+      if (await heldElsewhere(ctx, person.id)) {
         const mine = standingLevel?.(operator)
         if (!Number.isFinite(mine) || !((mine as number) >= LEVELS.SYSADMIN)) throw new Forbidden(
           'That person also belongs to another tenant — remove them from this one instead. ' +
           'Deleting their account requires SYSADMIN (7)'
         )
       }
-      await need('deleteUser')(person.userId, { actorId: operator.userId })
-      return { id: person.userId }
+      await need('deleteUser')(person.id, { actorId: operator.id })
+      return { id: person.id }
     },
 
     // POST /people — no id: the person does not exist yet.
@@ -754,7 +754,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       return need('createInvitation')(email.trim().toLowerCase(), {
         ...(name ? { name: name as string } : {}),
         ...(placed ? { tenant: String(tenant) } : {}),
-        actorId: operator.userId,
+        actorId: operator.id,
       })
     },
   }))

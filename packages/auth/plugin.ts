@@ -11,11 +11,11 @@
 // handlers to translate them — which only covered these routes, and left an
 // auth error raised from a SERVICE surfacing as a 500.
 
-import type { IAuth, SessionContext, App, Plugin, TransportContext } from '@frontierjs/junction'
+import type { IAuth, SessionContext, ServiceContext, App, Plugin, TransportContext } from '@frontierjs/junction'
 import { parseTtl, normalizePrefix, Unauthorized, BadRequest, Forbidden, NotFound } from '@frontierjs/junction'
 import { rateLimitHook } from '@frontierjs/junction/hooks'
 import type { AuthPluginOptions }                                  from './types.ts'
-import { createAuthServices, asPrincipal, refuseDelegated }         from './services.ts'
+import { createAuthServices, asPrincipal, refuseDelegated, DEFAULT_SERVICE_NAMES } from './services.ts'
 import { SupportEpisodeError }                                     from './errors.ts'
 import { OAUTH_STATE_COOKIE }                                      from './oauth.ts'
 import type { AuthCleanupHandle }                                 from './cleanup.ts'
@@ -27,6 +27,9 @@ import type { AuthCleanupHandle }                                 from './cleanu
  * browser holds is a credential in flight and not a row.
  */
 const CHALLENGE_COOKIE = 'login_challenge'
+
+/** The calls a session held to enrollment may make; the last of them ends the hold. */
+const ENROLLMENT_METHODS = new Set(['totpStatus', 'setupTotp', 'confirmTotp'])
 import type { AuthOAuth }                                          from './oauth.ts'
 
 // Rate limiting is junction's `rateLimitHook`, not a copy of it.
@@ -199,6 +202,29 @@ export function auth(opts: AuthPluginOptions): Plugin {
       // sets one (`FJS-1818`).
       if (cookieAuth) app.http?.setAuthCookie?.('session')
 
+      // ── A session held to enrollment (`FJS-D1008`) ───────────────────
+      //
+      // `requireSecondFactor` issues a real session to an account with no
+      // factor, flagged on its row. Everything but the three calls that END the
+      // flag is refused here, in the hook rather than at the data boundary,
+      // because it is a fact about the session and no row's gate can see it.
+      // A service the plugin does not know is refused as well: the allowance is
+      // a list of what may be reached, never of what may not.
+      const accountName = (services === false ? undefined : (services.account as string | false | undefined) || undefined) ?? DEFAULT_SERVICE_NAMES.account
+      app.hooks({
+        before: {
+          all: [function secondFactorRequired(ctx: ServiceContext) {
+            if (!(ctx.user as SessionContext | null)?.enrollmentOnly) return
+            if (ctx.service === accountName && ENROLLMENT_METHODS.has(ctx.method)) return
+            throw new Forbidden(
+              'A second factor is required before this account can do anything else -- set one up with ' +
+              'setupTotp and confirmTotp.',
+              { reason: 'second_factor_required' },
+            )
+          }],
+        },
+      })
+
       // ── POST /auth/register ──────────────────────────────────────────
       // Plugin-level only — not on IAuth.
       // createUser + login in one step. Issues a session token.
@@ -234,7 +260,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
         // The email is sent via the onEmailVerificationRequested callback
         // configured in createLitestoneAuth opts — not handled here.
         if (auth.requestEmailVerification) {
-          await auth.requestEmailVerification(result.user.userId).catch(() => {
+          await auth.requestEmailVerification(result.user.id).catch(() => {
             // Non-fatal — user is created and logged in regardless
           })
         }
@@ -399,7 +425,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
         refuseDelegated(ctx, user, 'request a verification email')
 
         if (auth.requestEmailVerification) {
-          await auth.requestEmailVerification(user.userId)
+          await auth.requestEmailVerification(user.id)
         }
 
         return ctx.json({ ok: true })
@@ -429,10 +455,13 @@ export function auth(opts: AuthPluginOptions): Plugin {
 
         const operator = ctx.user as SessionContext
         if (operator.support) throw new SupportEpisodeError('Already in a support session — end it before starting another')
+        // A route is outside the hook above, and an episode would swap the held
+        // session for the subject's, whose enrollment methods act on the subject.
+        if (operator.enrollmentOnly) throw new Forbidden('A second factor is required before this account can do anything else', { reason: 'second_factor_required' })
         const { subjectId, reason, ttl } = body(ctx) as { subjectId?: string; reason?: string; ttl?: string }
         if (!subjectId) throw new BadRequest('subjectId is required')
         if (!reason)    throw new BadRequest('reason is required')
-        if (subjectId === operator.userId) throw new BadRequest('Cannot start a support session against yourself')
+        if (subjectId === operator.id) throw new BadRequest('Cannot start a support session against yourself')
 
         if (!canStartSupport)
           throw new Forbidden('Support sessions are not enabled — the app must supply canStartSupport')

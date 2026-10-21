@@ -121,7 +121,7 @@ describe('@@gate must not fail open on a naming slip', () => {
   }
 
   test('an authenticated caller still passes', () => {
-    const c = ctx('posts', 'find', { auth: { user: { userId: 'u1' } } })
+    const c = ctx('posts', 'find', { user: { userId: 'u1' } })
     expect(() => gateAuth('posts', 'read')(c)).not.toThrow()
   })
 

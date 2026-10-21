@@ -43,7 +43,7 @@ const address = (tag = 'u') => `${tag}-${Date.now()}-${seq++}@example.com`
 
 async function person() {
   const email = address('old')
-  const { userId } = await h.auth.createUser({ email, password: PW })
+  const { id: userId } = await h.auth.createUser({ email, password: PW })
   return { email, userId }
 }
 
@@ -65,7 +65,7 @@ describe('requestEmailChange, then the link', () => {
     expect(after.email).toBe(to)
     expect(after.emailVerified).toBe(true)
 
-    expect(signedIn(await h.auth.login(to, PW)).user.userId).toBe(u.userId)
+    expect(signedIn(await h.auth.login(to, PW)).user.id).toBe(u.userId)
     await expect(h.auth.login(u.email, PW)).rejects.toThrow()
   })
 
@@ -161,7 +161,7 @@ describe('requestEmailChange, then the link', () => {
   test('without a way to mail the link the request is refused, not answered as sent', async () => {
     const bare = await makeAuth({ encryptionKey: TEST_KEY, onEmailVerificationRequested: undefined })
     const email = address('bare')
-    const { userId } = await bare.auth.createUser({ email, password: PW })
+    const { id: userId } = await bare.auth.createUser({ email, password: PW })
     await rejectsWith(() => bare.auth.requestEmailChange!(userId, PW, address('new')), AuthConfigError)
   })
 })

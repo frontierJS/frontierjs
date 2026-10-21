@@ -8,6 +8,7 @@ examples:
   - fli ghist --days 365 --by week
   - fli ghist --lines
   - fli ghist --files --days 365
+  - fli ghist --files --code
   - fli ghist --author Jordan
   - fli ghist --claude
   - fli ghist --json
@@ -31,7 +32,7 @@ flags:
   files:
     char: f
     type: boolean
-    description: Two charts on one scale — files created, then files edited — instead of commits
+    description: Two charts, each on its own scale — files created, then files edited — instead of commits
     defaultValue: false
   author:
     char: a
@@ -43,6 +44,10 @@ flags:
     type: string
     description: Only commits touching this path, from the repo root
     defaultValue: ''
+  code:
+    type: boolean
+    description: Leave out tests, specs and markdown — what is left is source code
+    defaultValue: false
   claude:
     char: c
     type: boolean
@@ -90,9 +95,15 @@ weeks.
 tells a rename sweep from a day of small fixes.
 
 `--files` reads which files each commit touched instead, and draws two
-charts on one scale: files created above, files edited below. The pair is
-where a project stands — new ground or work on what exists. A rename counts
-as an edit and a deletion is only counted in the summary.
+charts, each scaled to its own tallest day: files created above, files
+edited below. Edits run several times creations, so a shared scale draws
+creation flat. The pair is where a project stands — new ground or work on
+what exists. A rename counts as an edit and a deletion is only counted in
+the summary.
+
+`--code` leaves out tests, specs and markdown, so `--files` counts new
+source rather than new docs and suites. It is three exclude pathspecs, and
+composes with `--path`.
 
 `--claude` draws a second chart under it on the same columns: Claude Code
 output tokens, read from the session transcripts under `~/.claude/projects/`
@@ -118,7 +129,9 @@ if (flag.files && flag.lines) { log.error('--files and --lines are two readings 
 // git prints --name-status or --shortstat, never both.
 const argv = ['log', `--since=${ymd(from)} 00:00`, '--date=short-local', '--format=@%ad', flag.files ? '--name-status' : '--shortstat', '--no-color']
 if (flag.author) argv.push(`--author=${flag.author}`)
-if (flag.path) argv.push('--', flag.path)
+// `:!` is git's exclude pathspec; with no positive path it excludes from the whole tree.
+const paths = [flag.path, ...(flag.code ? [':!*.test.*', ':!*.spec.*', ':!*.md'] : [])].filter(Boolean)
+if (paths.length) argv.push('--', ...paths)
 let text = ''
 try { text = execFileSync('git', argv, { cwd: root, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 }) }
 catch (e) { log.error(`git log failed — ${e.message.split('\n')[0]}`); return }
@@ -151,21 +164,20 @@ if (flag.json) {
 }
 
 const n = (v) => v.toLocaleString('en-US')
-const scope = chalk.dim(` · last ${flag.days} day${flag.days === 1 ? '' : 's'}${flag.author ? ` · ${flag.author}` : ''}${flag.path ? ` · ${flag.path}` : ''}`)
-const chart = (unit, value, bar, max = 0) => {
+const scope = chalk.dim(` · last ${flag.days} day${flag.days === 1 ? '' : 's'}${flag.author ? ` · ${flag.author}` : ''}${flag.path ? ` · ${flag.path}` : ''}${flag.code ? ' · code only' : ''}`)
+const chart = (unit, value, bar) => {
   console.log('')
   console.log(`  ${chalk.bold(`${unit} per ${by}`)}${scope}`)
   console.log('')
-  echo.lines(renderChart(series, { height: flag.height, width, value, max, bar, dim: chalk.dim }))
+  echo.lines(renderChart(series, { height: flag.height, width, value, bar, dim: chalk.dim }))
   console.log('')
 }
 const when = (b) => `${by === 'week' ? 'week of ' : ''}${b.date}`
 
 if (flag.files) {
   const s = summarize(series, (b) => b.created + b.edited)
-  const max = Math.max(0, ...series.buckets.map(b => Math.max(b.created, b.edited)))
-  chart('files created', (b) => b.created, chalk.green, max)
-  chart('files edited', (b) => b.edited, chalk.cyan, max)
+  chart('files created', (b) => b.created, chalk.green)
+  chart('files edited', (b) => b.edited, chalk.cyan)
   if (!s.commits) log.warn('no commits in range')
   else console.log('  ' + [
     `${n(s.commits)} commits`,

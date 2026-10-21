@@ -49,7 +49,7 @@ afterAll(async () => { await app.stop?.(); h.cleanup() })
 
 async function person(role = 'user') {
   const email = `ppl-${Date.now()}-${seq++}@example.com`
-  const { userId } = await h.auth.createUser({ email, password: PW, role })
+  const { id: userId } = await h.auth.createUser({ email, password: PW, role })
   const { token } = await h.auth.login(email, PW) as any
   return { email, userId, token }
 }
@@ -297,7 +297,7 @@ extend model User { accountId String? @allow(write, auth().isAdmin) }`, accountG
 
   async function member(accountId: string | null, role = 'user') {
     const email = `acct-${Date.now()}-${seq++}@example.com`
-    const { userId } = await t.th.auth.createUser({ email, password: PW, role, ...(accountId ? { tenant: accountId } : {}) })
+    const { id: userId } = await t.th.auth.createUser({ email, password: PW, role, ...(accountId ? { tenant: accountId } : {}) })
     const { token } = await t.th.auth.login(email, PW) as any
     return { email, userId, token }
   }
@@ -339,7 +339,7 @@ extend model User { accountId String? @allow(write, auth().isAdmin) }`, accountG
   test('createUser places the person in the tenant, on the row and the session', async () => {
     const email = `placed-${Date.now()}-${seq++}@example.com`
     const made = await t.th.auth.createUser({ email, password: PW, tenant: 'sparkle' })
-    expect((await t.th.sys.user.findFirst({ where: { id: made.userId } })).accountId).toBe('sparkle')
+    expect((await t.th.sys.user.findFirst({ where: { id: made.id } })).accountId).toBe('sparkle')
     expect(made.accountId).toBe('sparkle')
     const { token } = await t.th.auth.login(email, PW) as any
     expect((await t.th.auth.verifySession(token))?.accountId).toBe('sparkle')
@@ -376,7 +376,7 @@ model Member {
 
   async function person(memberships: Record<string, string>, role = 'user') {
     const email = `ws-${Date.now()}-${seq++}@example.com`
-    const { userId } = await t.th.auth.createUser({ email, password: PW, role })
+    const { id: userId } = await t.th.auth.createUser({ email, password: PW, role })
     for (const [workspaceId, r] of Object.entries(memberships)) {
       await t.th.sys.member.create({ data: { workspaceId, userId, role: r } })
     }

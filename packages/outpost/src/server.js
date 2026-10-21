@@ -66,7 +66,7 @@ export function createOutpostServer(config, {
     // and never deployed; nothing on this machine serves it afterwards.
     'POST /site/preview': async (body) => {
       const built = await docker.sitePreview({
-        appId: body.app_id, source: body.source, branch: body.branch, alias: body.alias,
+        appId: body.app_id, source: body.source, branch: body.branch, alias: body.alias, editor: body.editor,
         token: body.cloudflare?.token, accountId: body.cloudflare?.account_id,
       })
       return { commit_sha: built.commit, url: built.url, version_url: built.versionUrl }

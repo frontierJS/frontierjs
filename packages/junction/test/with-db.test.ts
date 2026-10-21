@@ -190,7 +190,7 @@ describe('app.withDb under strategy row', () => {
     await app._startForTest()
     return { db, app }
   }
-  const SYSTEM = { userId: 'system', role: 'system' } as any
+  const SYSTEM = { id: 'system', role: 'system' } as any
 
   test('the app\'s own principal holds the tenant runAs states, through withDb and through a service', async () => {
     const { db, app } = await rowApp()

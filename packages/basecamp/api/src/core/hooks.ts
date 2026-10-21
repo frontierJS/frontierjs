@@ -11,13 +11,13 @@ import type { BasecampDb }                 from './db.ts'
 import { grantsFor, grantsWithin }         from './capabilities.ts'
 
 // ─── The session ─────────────────────────────────────────────────────────
-// Junction puts the caller on ctx.auth.user as a SessionContext — camelCase
-// (userId, authMethod), not the snake_case user_id these hooks used to read.
+// Junction puts the caller on ctx.user as a SessionContext — camelCase
+// (id, authMethod), not the snake_case user_id these hooks used to read.
 // Every one of those reads was undefined, which is why role checks silently
 // passed for everyone.
 
 interface Session {
-  userId?: string; authMethod?: string; workspaceId?: string
+  id?: string; authMethod?: string; workspaceId?: string
   // Put here by @frontierjs/auth for a caller holding an API key.
   credentialId?: string
   // Put here by basecampSessionFields (core/session-auth.ts) off this app's own
@@ -31,7 +31,7 @@ interface Session {
 interface MemberRow { role?: string; capabilities?: string[] | null; workspace?: { status?: string } }
 
 function userOf(ctx: ServiceContext): Session | undefined {
-  return ctx.auth?.user as Session | undefined
+  return ctx.user as Session | undefined
 }
 
 // ─── requireWorkspace ────────────────────────────────────────────────────
@@ -173,12 +173,12 @@ export async function restandingFor(
   workspaceId: string,
 ): Promise<MemberRow | null> {
   const user = userOf(ctx)
-  if (!user?.userId) return null
+  if (!user?.id) return null
 
   const db       = ctx.app.db!
   const sys: any = db.asSystem()
   const member: MemberRow | null = await sys.workspaceMember.findFirst({
-    where:   { workspaceId, userId: user.userId },
+    where:   { workspaceId, userId: user.id },
     include: { workspace: true },
   })
 
@@ -203,7 +203,7 @@ export async function restandingFor(
 
 export function scopeToWorkspace(): Hook {
   return async function scopeToWorkspace(ctx: ServiceContext): Promise<void> {
-    const userId      = userOf(ctx)?.userId
+    const userId      = userOf(ctx)?.id
     const workspaceId = ctx.locals.workspaceId as string | undefined
 
     if (!userId || !workspaceId) return
@@ -248,7 +248,7 @@ export function requireWorkspaceRole(...roles: string[]): Hook {
   const minLevel = Math.min(...roles.map(r => ROLE_LEVEL[r] ?? 99))
 
   return async function requireWorkspaceRole(ctx: ServiceContext): Promise<void> {
-    const userId      = userOf(ctx)?.userId
+    const userId      = userOf(ctx)?.id
     const workspaceId = ctx.locals.workspaceId as string | undefined
 
     if (!userId || !workspaceId) return
@@ -558,7 +558,7 @@ async function rememberNonce(app: OutpostDeps, nonce: string, windowMs: number):
   }
 }
 
-/** What a machine's principal is named, so the id survives into `ctx.auth.user.userId`. */
+/** What a machine's principal is named, so the id survives into `ctx.user.id`. */
 const OUTPOST_PRINCIPAL = 'outpost:'
 
 /**
@@ -706,7 +706,7 @@ export function outpostCredential(app: OutpostDeps): CredentialVerifier {
         // The machine's own workspace rides on the principal: every service is
         // row-scoped and `tenantClaimGuard` refuses a signed-in caller who
         // holds no claim, and nothing here may let it name another one.
-        session: { userId: `${OUTPOST_PRINCIPAL}${serverId}`, userType: 'service', authMethod: 'outpost', workspaceId: keyed.workspaceId },
+        session: { id: `${OUTPOST_PRINCIPAL}${serverId}`, userType: 'service', authMethod: 'outpost', workspaceId: keyed.workspaceId },
       }
     },
     // A throw here reaches the transport as a refusal, so a broken database
@@ -752,7 +752,7 @@ export function outpostScope(): Hook {
       if (machine) throw new Forbidden('An outpost may only call its own endpoints')
       return
     }
-    const subject = user?.userId?.startsWith(OUTPOST_PRINCIPAL) ? user.userId.slice(OUTPOST_PRINCIPAL.length) : undefined
+    const subject = user?.id?.startsWith(OUTPOST_PRINCIPAL) ? user.id.slice(OUTPOST_PRINCIPAL.length) : undefined
     if (!machine || endpoint.fromCall(ctx) !== subject) throw new Unauthorized(REFUSED)
   }
 }
@@ -953,12 +953,12 @@ export function basecampAuditLog({ except = [] }: { except?: string[] } = {}): H
           workspaceId: (ctx.locals.workspaceId as string | undefined) ?? subjectWorkspace ?? null,
           // Support mode inverts the actor. Inside an episode the session
           // resolves to the SUBJECT — that is what bounds an operator at the
-          // subject's own standing — so `session.userId` answers who the write
+          // subject's own standing — so `session.id` answers who the write
           // was made AS and nobody answers who made it. Filing it under the
           // person it was done to is `FJS-142`'s complaint stated exactly, and
           // is what Laravel Nova does today.
-          actorId:     support?.operatorId ?? session?.userId ?? null,
-          ...(support ? { onBehalfOfId: session?.userId } : {}),
+          actorId:     support?.operatorId ?? session?.id ?? null,
+          ...(support ? { onBehalfOfId: session?.id } : {}),
           // No session is not an anonymous user — it is a job or an
           // outpost acting for itself. `AuditEvent.actorType` defaults to 'user',
           // so leaving it unstated would file every machine write under people.

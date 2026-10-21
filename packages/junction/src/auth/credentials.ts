@@ -91,7 +91,7 @@ export function signedRequest(opts: SignedRequestOptions): CredentialVerifier {
       secret: key.secret, method: req.method, path: req.path, query: req.query,
       body: req.body, headers: req.headers, prefix,
       toleranceSeconds: window, now: now(),
-      seenNonce: opts.seenNonce ?? remember(String(key.session.userId)),
+      seenNonce: opts.seenNonce ?? remember(String(key.session.id)),
     })
     return verdict.ok ? key.session : REFUSE
   }

@@ -68,7 +68,7 @@ const app = createApp({
   config: { port },
   auth: {
     verifySession: async (token: string) => token === TOKEN
-      ? { userId: 'ana', userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x' }
+      ? { id: 'ana', userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x' }
       : null,
   },
   logLevel: 'silent',

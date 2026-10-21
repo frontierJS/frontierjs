@@ -33,7 +33,7 @@ async function connect(manager: Manager, sessionId: string | undefined, userId =
   const { s, closed } = live()
   const conn = await manager.handleConnection(
     s as never,
-    (sessionId ? { userId, sessionId, userType: 'user', authMethod: 'session' } : null) as never,
+    (sessionId ? { id: userId, sessionId, userType: 'user', authMethod: 'session' } : null) as never,
   )
   return { conn, closed }
 }

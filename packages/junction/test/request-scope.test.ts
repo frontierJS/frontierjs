@@ -30,9 +30,9 @@ import type { SessionContext }                              from '../src/auth/ty
 const PORT = 3399
 const BASE = `http://localhost:${PORT}`
 
-const ALICE = { userId: 'u-alice', userType: 'user', roles: [], scopes: [] } as unknown as SessionContext
-const BOB   = { userId: 'u-bob',   userType: 'user', roles: [], scopes: [] } as unknown as SessionContext
-const SYS   = { userId: 'u-sys',   userType: 'system', roles: [], scopes: [] } as unknown as SessionContext
+const ALICE = { id: 'u-alice', userType: 'user', roles: [], scopes: [] } as unknown as SessionContext
+const BOB   = { id: 'u-bob',   userType: 'user', roles: [], scopes: [] } as unknown as SessionContext
+const SYS   = { id: 'u-sys',   userType: 'system', roles: [], scopes: [] } as unknown as SessionContext
 
 /** What the method saw, from inside the call. Overwritten per call. */
 let seen: RequestMeta | undefined
@@ -44,7 +44,7 @@ let seenAuth: SessionContext | null | undefined
 const probe = createService({
   name: 'probe',
   methods: ['find', 'create', 'nested'],
-  async find(ctx: any)        { seen = requestMeta(); seenAuth = ctx.auth?.user; return [] },
+  async find(ctx: any)        { seen = requestMeta(); seenAuth = ctx.user; return [] },
   async create(_ctx: unknown) { seen = requestMeta(); return { ok: true } },
   async nested(_ctx: unknown) {
     await app.service('probe').find()
@@ -142,7 +142,7 @@ describe('every entry point opens the request scope', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toContain('text/plain')
     expect(seen!.origin).toBe('http')
-    expect((seenAuth as SessionContext | undefined)?.userId).toBe('u-alice')
+    expect((seenAuth as SessionContext | undefined)?.id).toBe('u-alice')
   })
 
   test('a route on app.http.router opens the scope too (FJS-3104)', async () => {
@@ -156,7 +156,7 @@ describe('every entry point opens the request scope', () => {
     expect(meta.correlationId).toBe('root-1')
     expect(meta.caller.userAgent).toBe('bw-probe')
     expect(typeof meta.caller.ip).toBe('string')
-    expect(meta.user?.userId).toBe('u-alice')
+    expect(meta.user?.id).toBe('u-alice')
   })
 
   test('HTTP — the store is open, and carries who and where', async () => {
@@ -173,7 +173,7 @@ describe('every entry point opens the request scope', () => {
 
     expect(seen).toBeDefined()
     expect(seen!.origin).toBe('http')
-    expect(seen!.user?.userId).toBe('u-alice')
+    expect(seen!.user?.id).toBe('u-alice')
     expect(seen!.caller).toBeDefined()
     // The header-derived fields have one reader, and this is what it reads.
     expect(seen!.correlationId).toBe('corr-http')
@@ -267,13 +267,13 @@ describe('every entry point opens the request scope', () => {
     seen = undefined
     await app.runAs('u-bob', async () => { await app.service('probe').find() })
     expect(seen!.origin).toBe('internal')
-    expect(seen!.user?.userId).toBe('u-bob')
+    expect(seen!.user?.id).toBe('u-bob')
   })
 
   test('runAs(null) — the app acting on its own behalf', async () => {
     seen = undefined
     await app.runAs(null, async () => { await app.service('probe').find() })
-    expect(seen!.user?.userId).toBe('u-sys')
+    expect(seen!.user?.id).toBe('u-sys')
   })
 
   // ── FJS-467 ───────────────────────────────────────────────────────────
@@ -293,8 +293,8 @@ describe('every entry point opens the request scope', () => {
   // authority they never held.
   test("runAs(<the app's own principal>) — recognized, not looked up", async () => {
     seen = undefined
-    await app.runAs(SYS.userId, async () => { await app.service('probe').find() })
-    expect(seen!.user?.userId).toBe('u-sys')
+    await app.runAs(SYS.id, async () => { await app.service('probe').find() })
+    expect(seen!.user?.id).toBe('u-sys')
   })
 
   test('an id the provider cannot resolve still throws by name', async () => {
@@ -317,7 +317,7 @@ describe('every entry point opens the request scope', () => {
       { user: ALICE, caller: { ip: '1.2.3.4', headers: {} }, origin: 'http' },
       () => { inner = requestMeta() },
     )
-    expect(inner!.user?.userId).toBe('u-alice')
+    expect(inner!.user?.id).toBe('u-alice')
     expect(inner!.caller?.ip).toBe('1.2.3.4')
     expect(inner!.origin).toBe('http')
   })
@@ -329,7 +329,7 @@ describe('the scope propagates, and re-opens only when the principal changes', (
     seen = undefined
     await app.runAs('u-bob', async () => { await app.service('probe').call('nested') })
     // The inner find() named no principal, so it inherited bob's.
-    expect(seen!.user?.userId).toBe('u-bob')
+    expect(seen!.user?.id).toBe('u-bob')
   })
 
   test('same principal opens nothing — the trace is not restarted', () => {
@@ -345,7 +345,7 @@ describe('the scope propagates, and re-opens only when the principal changes', (
   test('a changed principal carries the correlation id over', () => {
     enterRequest({ origin: 'http', correlationId: 'trace-2', user: ALICE }, () => {
       reenterAs(BOB, () => {
-        expect(requestMeta()!.user?.userId).toBe('u-bob')
+        expect(requestMeta()!.user?.id).toBe('u-bob')
         // A correlation id that changed mid-request is a broken trace.
         expect(requestMeta()!.correlationId).toBe('trace-2')
       })
@@ -356,7 +356,7 @@ describe('the scope propagates, and re-opens only when the principal changes', (
     expect(requestMeta()).toBeUndefined()
     reenterAs(ALICE, () => {
       expect(requestMeta()!.origin).toBe('internal')
-      expect(requestMeta()!.user?.userId).toBe('u-alice')
+      expect(requestMeta()!.user?.id).toBe('u-alice')
     })
   })
 })

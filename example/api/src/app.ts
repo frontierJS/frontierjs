@@ -665,7 +665,7 @@ app.conduit.receive({
   credential: 'SHOP_PSP_WEBHOOK_SECRET',
   apply:      async (ev) => {
     const result = await app.service('payments')
-      .call('record', null, ev.payload, { auth: { user: SYSTEM } }) as { status?: string }
+      .call('record', null, ev.payload, { user: SYSTEM }) as { status?: string }
     return result.status === 'unknown-payment' ? 'ignored' : 'applied'
   },
 })
@@ -695,7 +695,7 @@ app.conduit.receive({
 // now, with `services: { level: shopGateLevel }` above supplying exactly the
 // half the framework could not answer for itself. The route had to re-resolve
 // the token because it ran outside the service pipeline; the service is handed
-// `ctx.auth.user` like everything else.
+// `ctx.user` like everything else.
 
 // ─── Serve ────────────────────────────────────────────────────────────────
 //

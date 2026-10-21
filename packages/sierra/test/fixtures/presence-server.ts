@@ -23,9 +23,9 @@ import { createApp, channels, defaultConfig } from '../../../junction/index.ts'
 
 const port = Number(process.argv[2] ?? 7924)
 
-const USERS: Record<string, { userId: string; userType: string; authMethod: 'session' }> = {
-  'tok-alice': { userId: 'alice', userType: 'user', authMethod: 'session' },
-  'tok-bob':   { userId: 'bob',   userType: 'user', authMethod: 'session' },
+const USERS: Record<string, { id: string; userType: string; authMethod: 'session' }> = {
+  'tok-alice': { id: 'alice', userType: 'user', authMethod: 'session' },
+  'tok-bob':   { id: 'bob',   userType: 'user', authMethod: 'session' },
 }
 
 const app: any = createApp({

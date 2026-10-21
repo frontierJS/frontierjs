@@ -32,7 +32,10 @@
     // their token at the server, as the invitation is.
     if (path === '/reset-password/' || path === '/verify-email/') return undefined
 
-    if (!session.user) return path === '/login/' ? undefined : '/login/'
+    // `next` brings the person back to the link they followed: a preview's Edit
+    // lands on /sites/<id>/edit/ signed out as often as signed in.
+    if (!session.user) return path === '/login/' ? undefined
+      : path === '/' ? '/login/' : `/login/?next=${encodeURIComponent(path + (to.search ?? ''))}`
     if (path === '/login/') return '/'
 
     // The hub tier. `isSystemAdmin` reaches the browser on the SessionContext

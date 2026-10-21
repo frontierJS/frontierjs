@@ -101,10 +101,10 @@ describe('a broadcast is graded per recipient', () => {
   test('a patch refused to a reader is its removal only when the before-image admitted them (FJS-1425, FJS-1742)',
     async () => {
       const manager  = createChannelManager()
-      const held     = subscriber(manager, 'orders', { userId: 'u-was' })
+      const held     = subscriber(manager, 'orders', { id: 'u-was' })
       const stranger = subscriber(manager, 'orders', null)
       const now      = { ...ROW, userId: 'u-now' }
-      const { db }   = boundary((p, row) => (p?.userId === row.userId ? row : null))
+      const { db }   = boundary((p, row) => (p?.id === row.userId ? row : null))
       const was      = { ...ROW, userId: 'u-was' }
 
       await manager.sendGraded('orders', 'orders patched', now, { db, accessor: 'order', before: was })
@@ -115,10 +115,10 @@ describe('a broadcast is graded per recipient', () => {
 
   test('removalsOnly sends the removal and leaves the admitted frame to the announcement (FJS-1742)', async () => {
     const manager = createChannelManager()
-    const held    = subscriber(manager, 'orders', { userId: 'u-was' })
-    const owner   = subscriber(manager, 'orders', { userId: 'u-now' })
+    const held    = subscriber(manager, 'orders', { id: 'u-was' })
+    const owner   = subscriber(manager, 'orders', { id: 'u-now' })
     const now     = { ...ROW, userId: 'u-now' }
-    const { db }  = boundary((p, row) => (p?.userId === row.userId ? row : null))
+    const { db }  = boundary((p, row) => (p?.id === row.userId ? row : null))
 
     await manager.sendGraded('orders', 'orders patched', now, {
       db, accessor: 'order', before: { ...ROW, userId: 'u-was' }, removalsOnly: true,
@@ -130,7 +130,7 @@ describe('a broadcast is graded per recipient', () => {
 
   test('and the control — a connection it admits receives the row', async () => {
     const manager = createChannelManager()
-    const staff   = subscriber(manager, 'orders', { userId: 'u-staff', isStaff: true })
+    const staff   = subscriber(manager, 'orders', { id: 'u-staff', isStaff: true })
     const { db }  = boundary((p) => (p ? ROW : null))
 
     await publishOnce(manager, db)
@@ -142,7 +142,7 @@ describe('a broadcast is graded per recipient', () => {
     async () => {
       const manager = createChannelManager()
       const anon    = subscriber(manager, 'orders', null)
-      const staff   = subscriber(manager, 'orders', { userId: 'u-staff' })
+      const staff   = subscriber(manager, 'orders', { id: 'u-staff' })
       const { db }  = boundary((p) => (p ? ROW : null))
 
       await publishOnce(manager, db)
@@ -155,8 +155,8 @@ describe('a broadcast is graded per recipient', () => {
     // The writer was staff, so the announced row carries a column a shopper may
     // not read. Field policies are per caller, so the frame has to be too.
     const manager = createChannelManager()
-    const staff   = subscriber(manager, 'orders', { userId: 'u-staff', isStaff: true })
-    const shopper = subscriber(manager, 'orders', { userId: 'u-owner' })
+    const staff   = subscriber(manager, 'orders', { id: 'u-staff', isStaff: true })
+    const shopper = subscriber(manager, 'orders', { id: 'u-owner' })
     const withNote = { ...ROW, secretNote: 'margin 40%' }
     const { db } = boundary((p, row) =>
       p?.isStaff ? row : { ...row, secretNote: undefined })
@@ -180,7 +180,7 @@ describe('cohorts', () => {
     // broadcast will be encoded N times instead of a single shared encoding".
     // Hasura's answer is a cohort, and the principal is the key.
     const manager = createChannelManager()
-    const user    = { userId: 'u-owner' }
+    const user    = { id: 'u-owner' }
     const tabA    = subscriber(manager, 'orders', user, 'a')
     const tabB    = subscriber(manager, 'orders', user, 'b')
     const { asked, db } = boundary(() => ROW)
@@ -207,8 +207,8 @@ describe('cohorts', () => {
 
   test('two DIFFERENT people are two cohorts', async () => {
     const manager = createChannelManager()
-    subscriber(manager, 'orders', { userId: 'u1' }, 'a')
-    subscriber(manager, 'orders', { userId: 'u2' }, 'b')
+    subscriber(manager, 'orders', { id: 'u1' }, 'a')
+    subscriber(manager, 'orders', { id: 'u2' }, 'b')
     const { asked, db } = boundary(() => ROW)
 
     await publishOnce(manager, db)
@@ -221,7 +221,7 @@ describe('cohorts', () => {
     // FIRST channel that it is in" — and a set keyed by connection removes the
     // ordering question rather than answering it.
     const manager = createChannelManager()
-    const user = { userId: 'u1' }
+    const user = { id: 'u1' }
     const s = subscriber(manager, 'orders', user, 'dual')
     manager.channel('everything').join(s.conn as never)
     const { asked, db } = boundary(() => ROW)
@@ -285,13 +285,13 @@ describe('what is not graded, and why that is not a hole', () => {
     // must refuse. Refusing costs a subscriber an update; passing hands them a
     // row the schema says is not theirs.
     const manager = createChannelManager()
-    const admitted = subscriber(manager, 'orders', { userId: 'ok' }, 'ok')
-    const thrower  = subscriber(manager, 'orders', { userId: 'bad' }, 'bad')
+    const admitted = subscriber(manager, 'orders', { id: 'ok' }, 'ok')
+    const thrower  = subscriber(manager, 'orders', { id: 'bad' }, 'bad')
     const db = {
       $schema:      { models: [{ name: 'Order' }] },
       $readGrading: () => 'graded',
       $readAs:      async (_a: string, row: any, p: any) => {
-        if (p?.id === 'bad' || p?.userId === 'bad') throw new Error('undecidable')
+        if (p?.id === 'bad') throw new Error('undecidable')
         return row
       },
     }
@@ -305,15 +305,13 @@ describe('what is not graded, and why that is not a hole', () => {
 
 describe('the principal has to be translated', () => {
   test('the session’s id reaches the policy as `id`, not `userId`', async () => {
-    // A `SessionContext` puts the id at `userId` and litestone's `auth()` reads
-    // `.id`. Handing the session straight over compares every row policy
-    // against `undefined` — and it does not merely refuse: measured on
-    // `example`, `userId == auth().id` was FALSE for the buyer's own order and
-    // TRUE for a guest order whose `userId` is null, so the first working
-    // version delivered the one row the recipient may not read and withheld the
-    // one they own. `toDataPrincipal` is the one owner of the translation.
+    // A session and litestone's `auth()` both name the caller `id`, so the
+    // policy must be asked about the session's own principal. A principal with
+    // no `id` compares every row policy against `undefined`: `userId == auth().id`
+    // was FALSE for the buyer's own order and TRUE for a guest order whose
+    // `userId` is null. `toDataPrincipal` is the one owner of the translation.
     const manager = createChannelManager()
-    subscriber(manager, 'orders', { userId: 'u-owner', email: 'a@b.test' })
+    subscriber(manager, 'orders', { id: 'u-owner', email: 'a@b.test' })
     const { asked, db } = boundary(() => ROW)
 
     await publishOnce(manager, db)
@@ -338,7 +336,7 @@ describe('the cohort key is the principal value, not the object', () => {
 
   test('100 sockets of one person, each with its own session object, ask once', async () => {
     const manager = createChannelManager()
-    const subs    = many(manager, 100, () => ({ userId: 'u-owner', isStaff: true }))
+    const subs    = many(manager, 100, () => ({ id: 'u-owner', isStaff: true }))
     const { asked, db } = boundary(() => ROW)
 
     await publishOnce(manager, db)
@@ -352,8 +350,8 @@ describe('the cohort key is the principal value, not the object', () => {
   // hand one person's row to the other.
   test('two people whose sessions differ in ONE field are still two cohorts', async () => {
     const manager = createChannelManager()
-    const staff  = subscriber(manager, 'orders', { userId: 'u-1', isStaff: true },  'a')
-    const buyer  = subscriber(manager, 'orders', { userId: 'u-1', isStaff: false }, 'b')
+    const staff  = subscriber(manager, 'orders', { id: 'u-1', isStaff: true },  'a')
+    const buyer  = subscriber(manager, 'orders', { id: 'u-1', isStaff: false }, 'b')
     const { asked, db } = boundary((p) => (p.isStaff ? ROW : null))
 
     await publishOnce(manager, db)
@@ -365,8 +363,8 @@ describe('the cohort key is the principal value, not the object', () => {
 
   test('the key order a session was built in does not split a cohort', async () => {
     const manager = createChannelManager()
-    subscriber(manager, 'orders', { userId: 'u-1', isStaff: true }, 'a')
-    subscriber(manager, 'orders', { isStaff: true, userId: 'u-1' }, 'b')
+    subscriber(manager, 'orders', { id: 'u-1', isStaff: true }, 'a')
+    subscriber(manager, 'orders', { isStaff: true, id: 'u-1' }, 'b')
     const { asked, db } = boundary(() => ROW)
 
     await publishOnce(manager, db)
@@ -377,9 +375,9 @@ describe('the cohort key is the principal value, not the object', () => {
   test('a Date is compared by its instant, and two instants are two cohorts', async () => {
     const at = 1756900000000
     const manager = createChannelManager()
-    subscriber(manager, 'orders', { userId: 'u-1', verifiedAt: new Date(at) },     'a')
-    subscriber(manager, 'orders', { userId: 'u-1', verifiedAt: new Date(at) },     'b')
-    subscriber(manager, 'orders', { userId: 'u-1', verifiedAt: new Date(at + 1) }, 'c')
+    subscriber(manager, 'orders', { id: 'u-1', verifiedAt: new Date(at) },     'a')
+    subscriber(manager, 'orders', { id: 'u-1', verifiedAt: new Date(at) },     'b')
+    subscriber(manager, 'orders', { id: 'u-1', verifiedAt: new Date(at + 1) }, 'c')
     const { asked, db } = boundary(() => ROW)
 
     await publishOnce(manager, db)
@@ -389,9 +387,9 @@ describe('the cohort key is the principal value, not the object', () => {
 
   test('a nested claim bag collapses by value', async () => {
     const manager = createChannelManager()
-    subscriber(manager, 'orders', { userId: 'u-1', roles: ['a', 'b'], org: { id: 7 } }, 'a')
-    subscriber(manager, 'orders', { userId: 'u-1', roles: ['a', 'b'], org: { id: 7 } }, 'b')
-    subscriber(manager, 'orders', { userId: 'u-1', roles: ['b', 'a'], org: { id: 7 } }, 'c')
+    subscriber(manager, 'orders', { id: 'u-1', roles: ['a', 'b'], org: { id: 7 } }, 'a')
+    subscriber(manager, 'orders', { id: 'u-1', roles: ['a', 'b'], org: { id: 7 } }, 'b')
+    subscriber(manager, 'orders', { id: 'u-1', roles: ['b', 'a'], org: { id: 7 } }, 'c')
     const { asked, db } = boundary(() => ROW)
 
     await publishOnce(manager, db)
@@ -405,8 +403,8 @@ describe('the cohort key is the principal value, not the object', () => {
   // itself, which is the behavior this replaced — never to a collapse.
   test('a session carrying a function is not collapsed with a structural twin', async () => {
     const manager = createChannelManager()
-    subscriber(manager, 'orders', { userId: 'u-1', can: () => true }, 'a')
-    subscriber(manager, 'orders', { userId: 'u-1', can: () => true }, 'b')
+    subscriber(manager, 'orders', { id: 'u-1', can: () => true }, 'a')
+    subscriber(manager, 'orders', { id: 'u-1', can: () => true }, 'b')
     const { asked, db } = boundary(() => ROW)
 
     await publishOnce(manager, db)
@@ -415,7 +413,7 @@ describe('the cohort key is the principal value, not the object', () => {
   })
 
   test('a class instance is not treated as its fields', async () => {
-    class Session { constructor(public userId: string) {} }
+    class Session { constructor(public id: string) {} }
     const manager = createChannelManager()
     subscriber(manager, 'orders', new Session('u-1'), 'a')
     subscriber(manager, 'orders', new Session('u-1'), 'b')
@@ -427,7 +425,7 @@ describe('the cohort key is the principal value, not the object', () => {
   })
 
   test('a cycle answers rather than throwing, and does not collapse', async () => {
-    const cyclic = () => { const u: any = { userId: 'u-1' }; u.self = u; return u }
+    const cyclic = () => { const u: any = { id: 'u-1' }; u.self = u; return u }
     const manager = createChannelManager()
     subscriber(manager, 'orders', cyclic(), 'a')
     subscriber(manager, 'orders', cyclic(), 'b')
@@ -450,7 +448,7 @@ describe('the cohort key is the principal value, not the object', () => {
     })
 
     const manager = createChannelManager()
-    const staff = many(manager, 3, () => ({ userId: 'u-1', isAdmin: true, activatedAt: new Date(0), verifiedAt: new Date(0) }))
+    const staff = many(manager, 3, () => ({ id: 'u-1', isAdmin: true, activatedAt: new Date(0), verifiedAt: new Date(0) }))
     subscriber(manager, 'orders', null, 'anon')
 
     // Gate mode is `sendGraded`'s parameter and not something a payload can

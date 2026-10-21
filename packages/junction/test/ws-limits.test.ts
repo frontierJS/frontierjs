@@ -34,9 +34,9 @@ const ROOM = 'room:1'
 // Presence skips an anonymous caller, so the presence half of this file needs
 // identities — which is also the diagnosis in `FJS-703`: the cost is paid
 // exactly by the signed-in users an application has.
-const USERS: Record<string, { userId: string; userType: string; authMethod: 'session' }> = {
-  'tok-a': { userId: 'a', userType: 'user', authMethod: 'session' },
-  'tok-b': { userId: 'b', userType: 'user', authMethod: 'session' },
+const USERS: Record<string, { id: string; userType: string; authMethod: 'session' }> = {
+  'tok-a': { id: 'a', userType: 'user', authMethod: 'session' },
+  'tok-b': { id: 'b', userType: 'user', authMethod: 'session' },
 }
 
 let app: any

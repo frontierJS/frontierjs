@@ -20,7 +20,7 @@ function mkService(around: Array<(ctx: never, next: () => Promise<void>) => Prom
 }
 
 const call = (svc: ReturnType<typeof mkService>) =>
-  callService(svc, bridge.internal('items', 'get', null, { auth: { user: null } } as never))
+  callService(svc, bridge.internal('items', 'get', null, { user: null } as never))
 
 describe('FJS-946 — an around hook that ended the call without an answer', () => {
 

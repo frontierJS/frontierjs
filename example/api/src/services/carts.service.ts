@@ -543,8 +543,8 @@ export default createService({
     // The customer link is written only when it is empty. It is `@unique`, so
     // overwriting one is taking somebody else's record — an address shared by
     // two accounts is a support conversation, not a silent reassignment.
-    const buyer = $.me as { userId?: string } | null
-    const buyerId = buyer?.userId ?? null
+    const buyer = $.me as { id?: string } | null
+    const buyerId = buyer?.id ?? null
     if (buyerId && !customer.userId) {
       await system.customer.update({ where: { id: customer.id }, data: { userId: buyerId } })
     }

@@ -117,7 +117,7 @@ export function agentGuard(): Hook {
 
 export function apiKeyGuard(): Hook {
   return async function apiKeyGuard(ctx: ServiceContext): Promise<void> {
-    const user = $.auth?.user as KeyPrincipal | undefined
+    const user = $.user as KeyPrincipal | undefined
 
     if (user?.authMethod !== 'apiKey') return
 

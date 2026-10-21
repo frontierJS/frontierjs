@@ -107,15 +107,13 @@ export interface ServiceContext {
    */
   base?: Record<string, unknown> | null
 
-  // ── auth: WHO is calling — the principal only. Frozen. PROPAGATES
+  // ── user: WHO is calling — the principal only. Frozen. PROPAGATES
   // across internal calls (carry caller identity so authz stays
   // consistent). Nothing environmental lives here.
-  auth: {
-    user: import('../auth/types.ts').SessionContext | null
-  }
+  user: import('../auth/types.ts').SessionContext | null
 
   // ── caller: the machine end of the call, never the person (that is
-  // auth.user). Read-only. Propagates. {} on internal calls with no request
+  // user). Read-only. Propagates. {} on internal calls with no request
   // behind them. ip / user-agent / raw headers.
   caller: {
     ip?:        string
@@ -436,9 +434,9 @@ export type AnyMethod     = ServiceMethod | string
 
 // ─── Call options (internal service-to-service calls) ─────────────────────
 export interface CallOptions {
-  // Run as this principal. Default: system (null user). Pass ctx.auth
-  // to propagate the caller's identity so authz stays consistent.
-  auth?: { user: import('../auth/types.ts').SessionContext | null }
+  // Run as this principal. Default: inherit the request's. null is nobody;
+  // pass ctx.user to propagate the caller's identity explicitly.
+  user?: import('../auth/types.ts').SessionContext | null
 
   // Provenance. Default 'internal'. Hooks branch on this — a re-entrant
   // 'http'-flagged call fires webhooks/notifications; a plain
@@ -453,7 +451,7 @@ export interface CallOptions {
    * Result-shaping directives — limit, offset, orderBy, select, …
    *
    * Internal callers had no way to express these at all: CallOptions carried
-   * only auth/transport/locals, and the `$`-prefixed spellings lived on the
+   * only user/transport/locals, and the `$`-prefixed spellings lived on the
    * wire. `app.service('posts').find({}, { limit: 10 })` was simply ignored.
    */
   directives?: QueryDirectives
@@ -527,19 +525,14 @@ export interface RequestMeta {
   /**
    * WHO the request is on behalf of — the principal, request-wide.
    *
-   * `ctx.auth.user` is the per-call view of this. It lives here because
+   * `ctx.user` is the per-call view of this. It lives here because
    * identity belongs to the request rather than to any one call in it, which
    * is what makes it propagate: an internal call that names no principal
    * inherits this one, at any depth, through a hook or a fan-out or a
    * sub-service three levels down.
    *
-   * Before this, `ctx.auth` was built from `opts.auth` alone and nothing
-   * else — so `ctx.app.service('inner').find()` from inside a service ran as
-   * STRANGER(0) while `context.ts` documented auth as propagating. Measured:
-   * the inner service saw `null`.
-   *
-   * **Absent is not null.** A caller passing `{ auth: { user: null } }` means
-   * *as nobody* and keeps it; a caller passing no `auth` at all means *say
+   * **Absent is not null.** A caller passing `{ user: null }` means
+   * *as nobody* and keeps it; a caller passing no `user` at all means *say
    * nothing*, and inherits. Same distinction Invariant 9 makes about a patch,
    * one realm over — and it is what lets a service deliberately read as an
    * anonymous caller would.
@@ -781,7 +774,7 @@ export function requestMeta(): RequestMeta | undefined {
 
 // ─── `$` — the service call you are inside ────────────────────────────────
 //
-// A request is one thing; a CALL inside it is another. `ctx.auth` and
+// A request is one thing; a CALL inside it is another. `ctx.user` and
 // `ctx.caller` belong to the request and ride RequestMeta above. `ctx.data`,
 // `ctx.id`, `ctx.locals` and `$.db` belong to one invocation: fresh
 // per call, and `transactional:` swaps the db under the method mid-call. So
@@ -864,8 +857,8 @@ export function currentCall(): ServiceContext | undefined {
 export type CallContext = ServiceContext & {
   /** The caller-scoped Litestone client — its one spelling. */
   readonly db: NonNullable<CallDb>
-  /** `ctx.auth.user` — the principal this call is running as. */
-  readonly me: ServiceContext['auth']['user']
+  /** `ctx.user` — the principal this call is running as. */
+  readonly me: ServiceContext['user']
   /**
    * What this app is configured with, FOR THIS CALL.
    *
@@ -978,7 +971,7 @@ function callLogger(ctx: ServiceContext): import('./logger.ts').ILogger {
   // legitimately have no tenant and no principal.
   const bound: Record<string, unknown> = {}
   if (meta?.correlationId)        bound.correlationId = meta.correlationId
-  if (ctx.auth?.user?.userId)     bound.userId        = ctx.auth.user.userId
+  if (ctx.user?.id)         bound.userId        = ctx.user.id
   if (ctx.locals?.tenantId)       bound.tenantId      = ctx.locals.tenantId
 
   const ns  = ctx.service ? `${ctx.service}.${ctx.method ?? '?'}` : 'call'
@@ -1000,7 +993,7 @@ export const $: CallContext = new Proxy({} as CallContext, {
       )
       return db
     }
-    if (key === 'me') return held(key).auth.user
+    if (key === 'me') return held(key).user
     if (key === 'config') {
       const app = (held(key) as { app?: { configFor?: (t: string | null) => unknown } }).app
       if (!app?.configFor) throw new Error(
@@ -1224,15 +1217,15 @@ export function settleCoverage(call: CallCoverage, ids: Set<string>): void {
 }
 
 /**
- * The principal for an internal call — the one owner of *auth propagates*.
+ * The principal for an internal call — the one owner of *the principal propagates*.
  *
  * Both places that build an internal `ServiceContext` ask this rather than
  * carrying the rule, because the rule is three lines and the two copies would
  * be the same call answering two things depending on which door it came in by.
  *
- *   opts has no `auth` key   → inherit the request's principal (propagation)
- *   opts.auth.user is null   → as nobody, deliberately
- *   opts.auth.user is a user → that one, frozen
+ *   opts has no `user` key   → inherit the request's principal (propagation)
+ *   opts.user is null   → as nobody, deliberately
+ *   opts.user is a user → that one, frozen
  *
  * `in`, not `??`: absent and null are different answers, and conflating them
  * removes the only way to say *read this as a stranger would*.
@@ -1245,30 +1238,28 @@ export function inheritedCaller(): { ip?: string; userAgent?: string; headers: R
 }
 
 export function resolvePrincipal(opts: CallOptions): SessionContext | null {
-  if ('auth' in opts && opts.auth !== undefined)
-    return opts.auth?.user ? freezeUser(statedSession(opts.auth.user)) : null
+  if ('user' in opts && opts.user !== undefined)
+    return opts.user ? freezeUser(statedSession(opts.user)) : null
 
   const inherited = _requestStore.getStore()?.user
   return inherited ? freezeUser(inherited) : null
 }
 
-// A stated principal is a SessionContext, and the caller's id is `userId`.
-// A User row puts it at `id` — Litestone's spelling, the one `actingAs` takes —
-// and run as given, `$.me.userId`, the audit line, the logger and the response
-// cache key all read no caller while the Data boundary, through
-// `toDataPrincipal`, reads one. A service written against either spelling then
-// passes every test written in the other (`FJS-1890`).
+// A stated principal is a SessionContext, and the caller's id is `id`. A hand-
+// built one that spells it `userId` would run with no caller: `$.me.id`, the
+// audit line, the logger and the response cache key all read nothing while the
+// test passes (`FJS-1890`, `FJS-D1307`).
 function statedSession(user: SessionContext): SessionContext {
   const u = user as unknown as Record<string, unknown>
-  if (u.userId !== undefined && u.userId !== null) return user
-  const shape = 'id' in u ? `it has 'id' (${JSON.stringify(u.id)}), which is a row's spelling` : `its keys are ${Object.keys(u).join(', ') || 'none'}`
+  if (u.id !== undefined && u.id !== null) return user
+  const shape = 'userId' in u ? `it has 'userId' (${JSON.stringify(u.userId)}), which is not the key` : `its keys are ${Object.keys(u).join(', ') || 'none'}`
   throw new Error(
-    `[Junction] auth.user has no 'userId' — ${shape}.
+    `[Junction] the stated user has no 'id' — ${shape}.
 ` +
     `An internal call's principal is a SessionContext, and the caller's id is ` +
-    `'userId'; a service reads it as $.me.userId. Build one with ` +
-    `session({ userId }) from @frontierjs/testing, run deferred work through ` +
-    `app.runAs(userId, fn), or pass { auth: { user: null } } to call as nobody.`
+    `'id'; a service reads it as $.me.id. Build one with ` +
+    `session({ id }) from @frontierjs/testing, run deferred work through ` +
+    `app.runAs(id, fn), or pass { user: null } to call as nobody.`
   )
 }
 
@@ -1280,6 +1271,16 @@ function statedSession(user: SessionContext): SessionContext {
 // of silently leaking into sibling calls, and already-frozen objects pass
 // through for free. Session objects are created fresh per verifySession(),
 // so freezing never bleeds across requests.
+
+/**
+ * The one writer of a call's principal after the call began (a claim resolved
+ * for it). `$` refuses assignment, and a hook may hand `$` where it was given
+ * a context, so the write goes to the held context either way.
+ */
+export function setPrincipal(ctx: ServiceContext, user: SessionContext | null): void {
+  const target = (ctx as unknown) === ($ as unknown) ? held('user') : ctx
+  target.user = user
+}
 
 export function freezeUser<T extends object>(user: T): T {
   if (Object.isFrozen(user)) return user

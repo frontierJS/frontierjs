@@ -172,7 +172,7 @@ export function exporter(opts: ExportPluginOptions = {}) {
         const principal = (app as any)[PRINCIPAL_RESOLVER] ?? undefined
 
         const sctx: any = {
-          auth:     { user: (ctx as any).user ?? null },
+          user: (ctx as any).user ?? null,
           caller:   { headers: (ctx as any).headers ?? {}, ip: (ctx as any).ip },
           query:    { ...query },
           reserved: { ...reserved },
@@ -195,12 +195,9 @@ export function exporter(opts: ExportPluginOptions = {}) {
         // carries WHICH DATABASE (tenancy); the principal carries WHO.
         //
         // `toDataPrincipal` for the same reason `applyClaims` uses it before
-        // its own `$setAuth`: a session context names the account `userId` and
-        // the Data boundary reads `auth().id`, so an untranslated principal
-        // makes `@@allow(read, userId == auth().id)` compare against NULL —
-        // which matches no rows and answers 200. Measured in `example`, where
-        // the same account exported one order through the CLI and none here.
-        return { client: resolved ?? db, principal: toDataPrincipal(sctx.auth.user) }
+        // its own `$setAuth`: the trail's `actorType` reads `type`, which a
+        // session states as `userType`.
+        return { client: resolved ?? db, principal: toDataPrincipal(sctx.user) }
       }
 
       // ── What may leave ───────────────────────────────────────────────

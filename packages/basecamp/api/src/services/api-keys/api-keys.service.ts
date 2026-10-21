@@ -41,7 +41,7 @@ const EXPIRY: Record<string, number | null> = {
 export const EXPIRY_PRESETS = Object.keys(EXPIRY)
 
 /** `fjs_AbCd…wXyZ` — enough to recognize a key in a list, useless as a token. */
-function maskToken(raw: string): string {
+export function maskToken(raw: string): string {
   const body = raw.replace(/^fjs_/, '')
   return `fjs_${body.slice(0, 4)}…${body.slice(-4)}`
 }
@@ -367,7 +367,7 @@ export default createService({
  * something a reader can find. Stated here it is one line with a reason.
  */
 function noKeyManagementByKey(): void {
-  const user = $.auth?.user as { authMethod?: string } | undefined
+  const user = $.user as { authMethod?: string } | undefined
   if (user?.authMethod === 'apiKey')
     throw new Forbidden('An API key cannot manage API keys — sign in to issue or revoke one')
 }

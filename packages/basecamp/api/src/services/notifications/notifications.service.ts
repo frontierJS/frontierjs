@@ -29,7 +29,7 @@ import { keyScope } from '../api-keys/scopes.ts'
  *  open and the policy scopes it — which reads as *you have no notifications*
  *  rather than *you are signed out*. */
 function signedIn(_ctx?: ServiceContext): void {
-  if (!($.me as { userId?: string } | null | undefined)?.userId) {
+  if (!($.me as { id?: string } | null | undefined)?.id) {
     throw new Unauthorized('Sign in to read your notifications')
   }
 }

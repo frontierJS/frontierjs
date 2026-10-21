@@ -305,7 +305,7 @@ export function devtools(opts: DevtoolsOptions = {}) {
           const entry: ConnectionEntry = {
             id:          String(c?.id ?? '?'),
             connectedAt: Date.now(),
-            user:        s ? String(s.email ?? s.userId ?? '?') : null,
+            user:        s ? String(s.email ?? s.id ?? '?') : null,
             ip:          String((c?.data as Record<string, unknown>)?.ip ?? ''),
           }
           connections.set(entry.id, entry)

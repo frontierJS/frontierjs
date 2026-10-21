@@ -23,8 +23,8 @@
 //
 // A Data-realm test grades the caller with the app's own `getLevel` and stops
 // there. Above the boundary there is more derivation than that: Junction builds
-// a `SessionContext`, `toDataPrincipal()` renames `userId` to `id`, and
-// `withLitestoneDb` re-derives the scoped client from `ctx.auth.user` per call.
+// a `SessionContext`, `toDataPrincipal()` carries its kind across as `type`, and
+// `withLitestoneDb` re-derives the scoped client from `ctx.user` per call.
 // Every one of those is a place a principal can arrive correct and land wrong,
 // and none of them is reachable from `@frontierjs/litestone/testing`. `env.as(user)`
 // puts a user through all of it — the same path a request takes, minus the socket.
@@ -65,7 +65,7 @@ export interface AnnouncedEvent {
 }
 
 /**
- * A service caller bound to a principal. Every call carries `{ auth: { user } }`,
+ * A service caller bound to a principal. Every call carries `{ user }`,
  * so the app's own hooks, gate and scoped client derive from it exactly as they
  * do for a request.
  */
@@ -232,7 +232,7 @@ export async function createTestEnv<TClient = RegisteredClient>(
             const bound = args.slice()
             while (bound.length < at) bound.push(undefined)
             const stated = bound[at] as Record<string, unknown> | undefined
-            bound[at] = { ...(stated ?? {}), auth: { user } }
+            bound[at] = { ...(stated ?? {}), user }
             return fn(...bound)
           }
         },
@@ -300,15 +300,15 @@ export async function createTestEnv<TClient = RegisteredClient>(
 
 /**
  * A `SessionContext` from the fields a test cares about. The required three
- * (`userId`, `userType`, `authMethod`) are filled, and nothing else is invented:
+ * (`id`, `userType`, `authMethod`) are filled, and nothing else is invented:
  * the standing fields grade a caller through `sessionGateLevel()`, where absent
  * means *the app does not model this stage* and only `null` grades down. A
  * helper that defaulted `verifiedAt: null` would silently drop every session it
  * built to VISITOR(1).
  */
-export function session(fields: Partial<SessionContext> & { userId?: string } = {}): SessionContext {
+export function session(fields: Partial<SessionContext> = {}): SessionContext {
   return {
-    userId:     fields.userId   ?? 'test-user',
+    id:         fields.id       ?? 'test-user',
     userType:   fields.userType ?? 'user',
     authMethod: fields.authMethod ?? 'session',
     ...fields,

@@ -29,7 +29,7 @@ import type { SessionContext } from '../src/auth/types.ts'
 // of the role branch by accident, which is the branch the two graders drifted
 // on — see `the role branch` below, where it is asked deliberately.
 const session = (over: Partial<SessionContext> = {}): SessionContext => ({
-  userId: 'u1', userType: 'user', authMethod: 'session', role: 'user', ...over,
+  id: 'u1', userType: 'user', authMethod: 'session', role: 'user', ...over,
 })
 
 describe('the scale matches Litestone\'s', () => {

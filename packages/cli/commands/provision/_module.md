@@ -34,14 +34,13 @@ const runProvision = async (input) => {
 
 ## Setup
 
-A DigitalOcean personal access token with write scope
-(**cloud.digitalocean.com → API → Generate New Token**), in your global fli env:
+A DigitalOcean personal access token, in your global fli env.
 
-```
-fli eset DIGITALOCEAN_TOKEN <token> --global
-```
-
-A project `.env` overrides it, for a client's own account.
+- Make one: https://cloud.digitalocean.com/account/api/tokens/new
+- **Full Access**, or **Custom Scopes**: `droplet` create/read/delete, `ssh_key` create/read, `tag` create, `regions` `sizes` `image` read
+- **For Basecamp too** — the same token as a cloud account in Basecamp (Secrets, kind `provider_key`) — add `account` read: Basecamp's Verify reads `/v2/account`, and a token without it fails Verify though it provisions
+- Store it: `fli eset DIGITALOCEAN_TOKEN <token> --global`
+- The token is shown once; a project `.env` overrides it, for a client's own account
 
 ## What it makes
 

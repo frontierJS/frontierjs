@@ -189,7 +189,7 @@ beforeAll(async () => {
   await sys.workspaceMember.create({ data: {
     workspaceId: ws.id, userId: o.id, role: 'owner', capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString(),
   } })
-  owner   = session({ userId: o.id, workspaceId: ws.id })
+  owner   = session({ id: o.id, workspaceId: ws.id })
   machine = await sys.server.create({ data: { workspaceId: ws.id, name: 'drifted-01', slug: `d-${uniq()}`, status: 'pending' } })
   await sys.server.create({ data: { workspaceId: ws.id, name: 'quiet-02',   slug: `q-${uniq()}`, status: 'pending' } })
 
@@ -324,7 +324,7 @@ describe('the host row on /hub/security/', () => {
     const sys = env.system
     const a   = await sys.user.create({ data: { email: `hub-${Date.now()}@x.co`, accountId: (await sys.account.findFirst({})).id } })
     await sys.user.update({ where: { id: a.id }, data: { isSystemAdmin: true } })
-    admin = session({ userId: a.id, isSystemAdmin: true })
+    admin = session({ id: a.id, isSystemAdmin: true })
   })
 
   test('with no host row nothing reads the box, and only the backup is graded', async () => {

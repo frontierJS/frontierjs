@@ -141,6 +141,11 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           `drafts.history` is DERIVED (releases + git diff, nothing stored);
           `drafts.revert` is that merge run backwards into a new draft at the
           `edit` grant, and refuses a developer's deploy.
+          A preview SIGNS IN through `drafts.handoff` → `drafts.redeem`
+          (`FJS-D1357`): a one-time code to a recorded preview origin only,
+          redeemed for an 8-hour `drafts`-scoped key with an `ApiKey` row.
+          CORS admits that origin because app.ts asks `isPreviewOrigin`, the
+          set `markPreview` keeps; a preview recorded nowhere is refused.
           core/release-record.ts is the ONE writer of a release's run (start,
           step, finish), called by `deployments` at the caller's standing and
           by a publish as the app
@@ -476,7 +481,7 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   `$setAuth(u).$transaction`, silently ran with `auth()` null.
 - **A session carries three columns auth knows nothing about.** `isSystemAdmin`,
   `status` and `kind` are Basecamp's additions to auth's `User`, and they reach
-  `ctx.auth.user` through `sessionFields` (`core/session-auth.ts`), which auth
+  `ctx.user` through `sessionFields` (`core/session-auth.ts`), which auth
   calls from `toContext()` with the row already in hand. Read them off the
   session; **do not re-read the user to get one** — that is a third query on the
   hottest path in the app, which is the thing the seam exists to avoid.
@@ -501,7 +506,7 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   `ctx.params.headers`, every one `undefined`, so role checks silently
   passed for everyone; both are fixed now, and the idiom survives only in two
   comments (`app.ts`, `core/hooks.ts`) warning against it. Fixing an occurrence
-  means `ctx.auth.user` / `ctx.caller.headers` / `ctx.route` — and `ctx.route`
+  means `ctx.user` / `ctx.caller.headers` / `ctx.route` — and `ctx.route`
   is the answer on a raw route too, which is what changed: the word used to
   mean path captures there and nothing here, and that asymmetry is what kept
   the idiom arriving.

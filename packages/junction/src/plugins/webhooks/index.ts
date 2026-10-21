@@ -697,7 +697,7 @@ export interface WebhookOptions {
   // What to do with a verified delivery from an app this one subscribed to.
   // Absent, the receiving route is not mounted: a subscription with nothing to
   // receive it would be a 500 on every delivery. Runs inside the request scope
-  // with no principal — call a service `{ auth: { user: SYSTEM } }` or as whom
+  // with no principal — call a service `{ user: SYSTEM }` or as whom
   // the app decides; the route itself never mints one.
   receive?: ReceiveHandler
 }
@@ -941,7 +941,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
           // registrant chose is exactly that: level 5 is the bar for making
           // one, and it would then be the bar for receiving anything.
           const who = subscriber === undefined
-            ? ((app.principal() as { userId?: string | number } | null)?.userId ?? null)
+            ? ((app.principal() as { id?: string | number } | null)?.id ?? null)
             : subscriber
 
           if (who === null) sayUnowned(url, app.db)

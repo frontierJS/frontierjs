@@ -98,13 +98,13 @@ function cacheKey(ctx: ServiceContext, principal: string, key: string): string {
  * a key the first had used was replayed the first one's row — somebody else's
  * created record, with their id in it — or refused with a 409 about a request
  * they never made (`FJS-680`). There is nothing here to key on: a guest's
- * claims deliberately never become `ctx.auth.user` (they scope the Data client
+ * claims deliberately never become `ctx.user` (they scope the Data client
  * and nothing else), so the honest answer is that the header cannot be honored
  * and the call runs normally. Two anonymous POSTs with one key are two calls,
  * which is the safe reading of an ambiguous request.
  */
 function principalOf(ctx: ServiceContext): string | null {
-  return ctx.auth.user?.userId ?? null
+  return ctx.user?.id ?? null
 }
 
 function cacheOf(ctx: ServiceContext): ICache | null {

@@ -50,7 +50,7 @@ title: Members
 
   // What this caller holds here, read off the members list they are already
   // looking at rather than asked for a second time.
-  $: myRole = members.find((m) => m.userId === session.user?.userId)?.role
+  $: myRole = members.find((m) => m.userId === session.user?.id)?.role
 
   // The server refuses a role above your own on all three doors that hand one
   // out (`FJS-410`), so the pickers offer what it will accept. An affordance
@@ -275,18 +275,18 @@ title: Members
                     placeholder=""
                     value={member.role}
                     options={grantable.includes(member.role) ? grantable : [...grantable, member.role]}
-                    disabled={busy === member.id || member.userId === session.user?.userId}
+                    disabled={busy === member.id || member.userId === session.user?.id}
                     onchange={(e) => setRole(member, e.target.value)} />
           </td>
           <td class="text-sm text-muted">{day(member.acceptedAt ?? member.createdAt)}</td>
           <td>
-            {#if member.userId !== session.user?.userId && myRole === 'owner'}
+            {#if member.userId !== session.user?.id && myRole === 'owner'}
               <Button treatment="ghost" disabled={busy === member.id} id={`hand-over-${member.id}`}
                       data-confirm={`${member.user?.displayName ?? member.user?.email ?? 'This person'} becomes the owner, and you become an admin.`}
                       data-confirm-title="Hand over ownership?" data-confirm-label="Hand over" data-confirm-tone="warning"
                       onclick={() => handOver(member)}>Hand over</Button>
             {/if}
-            {#if member.userId !== session.user?.userId}
+            {#if member.userId !== session.user?.id}
               <Button treatment="ghost" tone="danger" disabled={busy === member.id}
                       data-confirm={`${member.user?.displayName ?? member.user?.email ?? 'This person'} loses access to this workspace.`}
                       data-confirm-title="Remove this member?" data-confirm-label="Remove"

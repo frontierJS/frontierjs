@@ -16,14 +16,14 @@ import { createApp, createService, channels, defaultConfig } from '../index.ts'
 import { createJunctionClient }                              from '../src/client/index.ts'
 import type { SessionContext }                               from '../src/auth/types.ts'
 
-const ALICE = { userId: 'u-alice', userType: 'user', roles: [], scopes: [] } as unknown as SessionContext
+const ALICE = { id: 'u-alice', userType: 'user', roles: [], scopes: [] } as unknown as SessionContext
 
 const probe = createService({
   name: 'probe',
   methods: ['find'],
   async find(ctx: any) {
     return [{
-      user:     ctx.auth?.user?.userId ?? null,
+      user:     ctx.user?.id ?? null,
       protocol: ctx.caller?.headers?.['sec-websocket-protocol'] ?? null,
     }]
   },

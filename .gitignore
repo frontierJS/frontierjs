@@ -119,3 +119,5 @@ packages/haven/editor/.copy-*/
 
 # The bench copies each fixture app here and builds it in place.
 packages/sierra/bench/dist/
+# The island-site fixture's route table, written by the scanner its tests run.
+packages/sierra/test/fixtures/island-site/config/routes.js

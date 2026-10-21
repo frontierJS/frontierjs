@@ -91,7 +91,11 @@ try {
       "<script>import Block from '@frontierjs/site-kit/layouts/Block.mesa'</script>", '',
       '<Block name="Reviews">Kind words.</Block>', ''].join('\n'))
 
-  const built = spawnSync('bun', [join(ROOT, 'bin/site-kit.js'), 'build', SITE], { encoding: 'utf8' })
+  // SITE_EDITOR is set on both builds: a release ignores it, a preview carries the editor (FJS-D1357).
+  const EDITOR = 'https://basecamp.test/sites/app-1/?draft=spring'
+  const kit = (...extra) => spawnSync('bun', [join(ROOT, 'bin/site-kit.js'), 'build', SITE, ...extra],
+    { encoding: 'utf8', env: { ...process.env, SITE_EDITOR: EDITOR } })
+  const built = kit()
   check('the site builds', built.status === 0, `${built.stdout}\n${built.stderr}`.slice(-1200))
   if (built.status === 0) {
     const html = readFileSync(join(SITE, 'dist/index.html'), 'utf8')
@@ -132,6 +136,16 @@ try {
     check('a Block in a Block layout\'s Markdown prerenders as an article, not a second Band',
       (reviews.match(/class="band/g) ?? []).length === 1 && /<article class="reviews"[^>]*>\s*Kind words\./.test(reviews),
       reviews.match(/<section class="band[\s\S]*?<\/section>/)?.[0] ?? reviews.slice(0, 600))
+    check('a release carries no editor, whatever SITE_EDITOR says', !html.includes('fjs-editor') && read('assets/fjs-editor.js') === null)
+
+    const preview = kit('--preview')
+    check('the site builds as a preview', preview.status === 0, `${preview.stdout}\n${preview.stderr}`.slice(-1200))
+    const page = read('index.html') ?? ''
+    check("a preview's page loads the editor, naming basecamp's page for the draft",
+      page.includes(`<script type="module" src="/assets/fjs-editor.js" data-fjs-editor="${EDITOR.replace(/&/g, '&amp;')}"></script>`), page.slice(-400))
+    const editor = read('assets/fjs-editor.js') ?? ''
+    const missing = [...editor.matchAll(/from\s*"\.\/([^"]+)"/g)].map((m) => m[1]).filter((f) => read(`assets/${f}`) === null)
+    check('the editor ships with every chunk it imports', !!editor && missing.length === 0, missing.join(', ') || 'no editor')
   }
 } finally {
   rmSync(SITE, { recursive: true, force: true })

@@ -81,8 +81,8 @@ export function refuseSuspendedLogin(auth: IAuth & { _sessionTtl: string }, db: 
    * (`FJS-D261`), and a suspension checked only on the password step would let a
    * suspended account with an authenticator straight through.
    */
-  async function refuseIfSuspended<T extends { token: string; user: { userId: string } }>(result: T): Promise<T> {
-    const user = await sys.user.findUnique({ where: { id: result.user.userId } })
+  async function refuseIfSuspended<T extends { token: string; user: { id: string } }>(result: T): Promise<T> {
+    const user = await sys.user.findUnique({ where: { id: result.user.id } })
     if (user?.status === 'suspended') {
       // The session row was already written. Delete it rather than leave a valid
       // token nobody was handed — logout takes the token, which is the one thing
@@ -135,7 +135,7 @@ export function refuseSuspendedLogin(auth: IAuth & { _sessionTtl: string }, db: 
  */
 export function refuseSuspended(): Hook {
   return function refuseSuspended(ctx: ServiceContext): void {
-    const user = ctx.auth?.user as BasecampSession | undefined
+    const user = ctx.user as BasecampSession | undefined
     if (!user) return
     if (user.status === 'suspended')
       throw new Forbidden('This account is suspended.')

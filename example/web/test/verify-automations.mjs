@@ -496,7 +496,7 @@ try {
   t('run.theTriggerNamesTheCustomer', await until(`document.body.textContent.includes(${JSON.stringify(email)})`, 4000), true)
   t('run.itRanAsTheOwner', await evaluate(`
     const { session } = await import(${JSON.stringify(SESSION_MODULE)});
-    return document.body.textContent.includes(String(session.user.userId ?? session.user.id));
+    return document.body.textContent.includes(String(session.user.id));
   `), true)
 
   // The note is read off the CUSTOMER. The run's own status is the engine's word

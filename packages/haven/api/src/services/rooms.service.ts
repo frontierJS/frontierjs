@@ -38,7 +38,7 @@ export default createService({
 
   /** `{ withId }` — the member across the table. Answers the booth's Room row. */
   async booth () {
-    const me = Number(($.auth?.user as { userId?: string } | undefined)?.userId)
+    const me = Number(($.user as { id?: string } | undefined)?.id)
     if (!Number.isInteger(me)) throw new BadRequest('Sit down first: nobody walked in')
     return boothFor($.db as any, me, ($.data as { withId?: unknown } | undefined)?.withId)
   },
@@ -65,7 +65,7 @@ export default createService({
    * room as a `bolt` event and returned to the caller.
    */
   async bolt () {
-    const me = Number(($.auth?.user as { userId?: string } | undefined)?.userId)
+    const me = Number(($.user as { id?: string } | undefined)?.id)
     if (!Number.isInteger(me)) throw new BadRequest('Stand in a room first: nobody walked in')
     const { roomId, facing: asked, volley } = ($.data ?? {}) as { roomId?: unknown, facing?: unknown, volley?: unknown }
     const row = await ($.db as any).room.findFirst({ where: { id: roomId }, select: { id: true, slug: true } })

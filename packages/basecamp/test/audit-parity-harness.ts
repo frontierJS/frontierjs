@@ -37,7 +37,7 @@ export async function build(): Promise<Fixture> {
   async function person(who: Who, opts: { role?: string; sysadmin?: boolean } = {}) {
     const email = `${who}-${uniq()}@x.co`
     const u = await env.app.auth.createUser({ email, password: PW, name: who })
-    const id = u.id ?? u.userId
+    const id = u.id
     await sys.user.update({ where: { id }, data: { accountId: acct.id, status: 'active', ...(opts.sysadmin ? { isSystemAdmin: true } : {}) } })
     ids[who] = id
     return id

@@ -37,7 +37,7 @@ export default createService({
     const cells   = new Map<string, Cell>(roster.map(m => [m.connectionId, m.meta as Cell]))
     const speaker = roster.filter(m => String(m.userId) === String(line.memberId)).map(m => m.meta as Cell)
     return room.filter(conn =>
-      String(conn.user?.userId) === String(line.memberId) || hears(line, speaker, cells.get(conn.id)))
+      String(conn.user?.id) === String(line.memberId) || hears(line, speaker, cells.get(conn.id)))
   },
   hooks: {
     before: {

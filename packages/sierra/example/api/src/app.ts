@@ -70,7 +70,7 @@ const auth = {
     const s = sessions.get(token)
     if (!s) return null
     return {
-      userId: s.userId, userType: 'user', role: 'user', authMethod: 'session' as const,
+      id: s.userId, userType: 'user', role: 'user', authMethod: 'session' as const,
       // sessionGateLevel grades a plain session as USER(4): enough to create and
       // update, one short of the 5 this schema wants for DELETE. Signing in as
       // admin lifts it to ADMINISTRATOR(5) — which is what the UI's disabled

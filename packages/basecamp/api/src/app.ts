@@ -40,6 +40,7 @@ import { createSecretResolver }          from './core/credentials.ts'
 import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts'
 import { dependencyTargets }  from './core/dependencies.ts'
 import { accountMail }         from './core/account-mail.ts'
+import { isPreviewOrigin }      from './core/site-preview.ts'
 import { registerAllAccounts } from './providers/compute/accounts.ts'
 import { enrollTokenMatches, mintOutpostSecret, installScript, isCertificate } from './providers/compute/enrollment.ts'
 import { notifications }  from '@frontierjs/notifications'
@@ -180,12 +181,16 @@ export async function buildBasecampApp(
   ).catch(() => defaultConfig)
 
   const corsOrigins = env.CORS_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean)
+  const listed = corsOrigins?.length ? corsOrigins : (loadedConfig.http?.cors?.origins as string[] | undefined) ?? []
 
   const config = {
     ...loadedConfig,
-    ...(corsOrigins?.length
-      ? { http: { ...loadedConfig.http, cors: { ...loadedConfig.http?.cors, origins: corsOrigins } } }
-      : {}),
+    // A draft's preview is an origin learned at run time, so the list becomes a
+    // question (`FJS-D1357`). Credentials stay on for the SPA: the session
+    // cookie is SameSite=Lax, so a workers.dev page never sends it.
+    http: { ...loadedConfig.http, cors: { ...loadedConfig.http?.cors,
+      // A '*' stays a list, so junction still refuses it beside credentials.
+      origins: listed.includes('*') ? listed : (origin: string) => listed.includes(origin) || isPreviewOrigin(origin) } },
     // env wins over the config file for the host. env.ts declared HOST and
     // nothing read it, so the app silently took junction's default. The port is
     // junction's own read (FRONTIER_PORT_BE, else PORT, else the file's 8120),
@@ -478,11 +483,11 @@ export async function buildBasecampApp(
   // without reconnecting.
   app.configure(channels((a) => {
     a.channels?.on('connection', async (session: unknown, conn) => {
-      const s = session as { userId?: string } | null
-      if (!s?.userId) return
+      const s = session as { id?: string } | null
+      if (!s?.id) return
 
       a.channel?.('authenticated').join(conn)
-      a.channel?.(notificationChannelName(s.userId)).join(conn)
+      a.channel?.(notificationChannelName(s.id)).join(conn)
       // Orion's flows and runs broadcast on one channel for every workspace.
       // The resolver below answers no claim for it, and junction grades each
       // row under the workspaces this connection is in (`FJS-1772`).
@@ -493,7 +498,7 @@ export async function buildBasecampApp(
       // makes, and WorkspaceMember is not readable through the caller's own
       // scope at connect time — there is no workspace header on an upgrade.
       const memberships = await db.asSystem().workspaceMember.findMany({
-        where:  { userId: s.userId },
+        where:  { userId: s.id },
         select: { workspaceId: true },
       })
 
@@ -520,7 +525,7 @@ export async function buildBasecampApp(
     // put on the connection.
     claims: async (channelName, conn) => {
       const workspaceId = workspaceIdFromChannel(channelName)
-      const userId      = (conn.user as { userId?: string } | null | undefined)?.userId
+      const userId      = (conn.user as { id?: string } | null | undefined)?.id
       if (!workspaceId || !userId) return null
       const member = await db.asSystem().workspaceMember.findFirst({
         where:  { workspaceId, userId },
@@ -703,7 +708,7 @@ export async function buildBasecampApp(
     a.get('/auth/workspace', async (ctx) => {
       if (!ctx.user) return ctx.json({ message: 'Not authenticated' }, 401)
       const member = await sys.workspaceMember.findFirst({
-        where:   { userId: (ctx.user as { userId: string }).userId },
+        where:   { userId: (ctx.user as { id: string }).id },
         orderBy: { createdAt: 'asc' },
       })
       return ctx.json({ workspace_id: member?.workspaceId ?? null })
@@ -755,7 +760,7 @@ export async function buildBasecampApp(
         // ship with a tier nobody could ever reach. Every subsequent one is
         // granted from /hub/users/ by someone who already holds it.
         const user    = await tx.user.update({
-          where: { id: session.userId },
+          where: { id: session.id },
           data:  { accountId: account.id, status: 'active', displayName: name.trim(),
                    emailVerified: true, isSystemAdmin: true },
         })

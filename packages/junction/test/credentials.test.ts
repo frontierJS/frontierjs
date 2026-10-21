@@ -21,12 +21,12 @@ function appWith(auth?: { verifySession: (t: string) => Promise<SessionContext |
     credentials: [signedRequest({
       now: () => NOW,
       keyFor: req => req.headers['x-outpost-id'] === 'op-1'
-        ? { secret: SECRET, session: { userId: 'outpost:op-1' } as SessionContext }
+        ? { secret: SECRET, session: { id: 'outpost:op-1' } as SessionContext }
         : null,
     })],
   })
   app.post('/whoami', (ctx: any) =>
-    ctx.user ? ctx.json({ userId: ctx.user.userId }) : ctx.json({ anon: true }, 401))
+    ctx.user ? ctx.json({ userId: ctx.user.id }) : ctx.json({ anon: true }, 401))
   return app
 }
 
@@ -57,7 +57,7 @@ describe('credentials: a signed request', () => {
   })
 
   it('is refused for a caller the app does not know, even with a valid bearer token', async () => {
-    const app = appWith({ async verifySession(t) { return t === 'tok' ? { userId: 'alice' } as SessionContext : null } })
+    const app = appWith({ async verifySession(t) { return t === 'tok' ? { id: 'alice' } as SessionContext : null } })
     await app.start()
     const req = await signed('{"n":1}', { id: 'stranger' })
     req.headers.set('authorization', 'Bearer tok')
@@ -66,7 +66,7 @@ describe('credentials: a signed request', () => {
   })
 
   it('leaves a request with no signature to the bearer path', async () => {
-    const app = appWith({ async verifySession(t) { return t === 'tok' ? { userId: 'alice' } as SessionContext : null } })
+    const app = appWith({ async verifySession(t) { return t === 'tok' ? { id: 'alice' } as SessionContext : null } })
     await app.start()
     const res = await app.http.fetch(new Request('http://localhost/whoami', {
       method: 'POST', headers: { authorization: 'Bearer tok' }, body: '{}',
@@ -81,7 +81,7 @@ describe('credentials: a signed request', () => {
 // upgrade. junction ships the memory so a receiver that passes nothing is not
 // the one that replays.
 describe('credentials: a signed request replayed', () => {
-  const ROBOT = { userId: 'outpost:op-1' } as SessionContext
+  const ROBOT = { id: 'outpost:op-1' } as SessionContext
   async function inbound(nonce: string, timestamp = NOW) {
     const sig = await signRequest({ secret: SECRET, method: 'GET', path: '/ws', body: '', timestamp, nonce })
     return { method: 'GET', path: '/ws', query: '', headers: Object.fromEntries(Object.entries(sig).map(([k, v]) => [k.toLowerCase(), v])), body: '', host: null }

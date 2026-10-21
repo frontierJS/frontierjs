@@ -78,7 +78,7 @@ const sys = (): any => $.app.db!.asSystem()
 
 /** The acting sysadmin, for the two self-lockout guards. */
 function actor(): string {
-  return ($.auth?.user as { userId?: string } | undefined)?.userId as string
+  return ($.user as { id?: string } | undefined)?.id as string
 }
 
 async function userOr404(id: unknown) {

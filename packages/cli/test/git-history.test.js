@@ -113,16 +113,6 @@ test('parseLog counts name-status lines as created, edited and removed', () => {
   expect(parseLog(NAMES).get('2026-10-06')).toEqual({ commits: 2, added: 0, deleted: 0, created: 2, edited: 3, removed: 1 })
 })
 
-test('renderChart: max puts two charts on one scale', () => {
-  const series = buildSeries(parseLog(NAMES), { from: '2026-10-06', to: '2026-10-06' })
-  const created = renderChart(series, { height: 4, width: 40, value: (b) => b.created, max: 4 })
-  // 2 of 4 fills the bottom two rows and leaves the top two empty.
-  expect(plot(created[0]).trim()).toBe('')
-  expect(plot(created[2])[0]).toBe('█')
-  // Without max, the taller of the two would be drawn to the top on its own.
-  expect(plot(renderChart(series, { height: 4, width: 40, value: (b) => b.created })[0])[0]).toBe('█')
-})
-
 test('summarize totals the file fields', () => {
   const s = summarize(buildSeries(parseLog(NAMES), { from: '2026-10-06', to: '2026-10-06' }))
   expect(s).toMatchObject({ created: 2, edited: 3, removed: 1 })

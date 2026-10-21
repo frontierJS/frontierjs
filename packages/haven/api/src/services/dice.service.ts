@@ -25,7 +25,7 @@ export default createService({
 
   /** `{ roomId, dice }` -- `dice` as `2d6`. Answers `{ body, dice, total }`; the line itself reaches the room as a Message. */
   async roll () {
-    const me = Number(($.auth?.user as { userId?: string } | undefined)?.userId)
+    const me = Number(($.user as { id?: string } | undefined)?.id)
     if (!Number.isInteger(me)) throw new BadRequest('Walk in first: nobody is rolling')
     const { roomId, dice: spec } = ($.data ?? {}) as { roomId?: unknown, dice?: unknown }
     const roll = parseRoll(typeof spec === 'string' ? spec : '')

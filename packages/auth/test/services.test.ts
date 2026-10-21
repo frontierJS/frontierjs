@@ -66,13 +66,13 @@ describe('account', () => {
 
   test('an id that is not the caller is 404, not somebody else', async () => {
     const bob = await request(app).get('/account/me').auth(bobToken)
-    const res = await request(app).get(`/account/${(bob.body as any).userId}`).auth(aliceToken)
+    const res = await request(app).get(`/account/${(bob.body as any).id}`).auth(aliceToken)
     expect(res.status).toBe(404)
   })
 
   test('the caller may address their own id as well as `me`', async () => {
     const me  = await request(app).get('/account/me').auth(aliceToken)
-    const res = await request(app).get(`/account/${(me.body as any).userId}`).auth(aliceToken)
+    const res = await request(app).get(`/account/${(me.body as any).id}`).auth(aliceToken)
     expect(res.status).toBe(200)
     expect((res.body as any).email).toBe(ALICE)
   })

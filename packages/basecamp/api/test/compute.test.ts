@@ -114,7 +114,7 @@ beforeAll(async () => {
   // The workspace rides on the SESSION. A principal with no workspace is
   // refused by the tenant claim guard before any service runs — which is the
   // declaration working, not a fixture detail to route around.
-  owner = session({ userId: owner.id, workspaceId: ws.id })
+  owner = session({ id: owner.id, workspaceId: ws.id })
   account = await sys.secret.create({ data: {
     workspaceId: ws.id, name: 'do-main', kind: 'provider_key',
     providerKind: 'digitalocean', data: JSON.stringify({ token: 'dop_v1_devtoken' }),

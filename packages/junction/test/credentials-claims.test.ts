@@ -41,7 +41,7 @@ const SCHEMA = `
 
 // What the key was issued with: the agency it belongs to and the standing it holds there.
 const PARTNER = {
-  userId: 'key:7', userType: 'service', agencyId: 'a2', memberRole: 'partner',
+  id: 'key:7', userType: 'service', agencyId: 'a2', memberRole: 'partner',
 } as unknown as SessionContext
 
 async function callAs(principal?: PrincipalSetting) {
@@ -60,7 +60,7 @@ async function callAs(principal?: PrincipalSetting) {
   app.services.register(createService({
     name: 'docs',
     async find(ctx: ServiceContext) {
-      seen.user = ctx.auth.user
+      seen.user = ctx.user
       return ($.db as any).doc.findMany({})
     },
   }))
