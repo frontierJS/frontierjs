@@ -12,6 +12,7 @@ import {
 import { ValidationError } from './validate.js'
 import { AccessDeniedError } from './plugin.js'
 import { compileFieldPredicate, buildPolicyFilter } from './policy.js'
+import { aggModelsOf } from './schema-maps.js'
 import { hoistedFieldRead } from './field-policy.js'
 
 // Suggest the closest match for an unknown key from a set of valid keys.
@@ -405,9 +406,10 @@ function guardedArgsError(found, accessorName, method) {
 /** @param {Found[]} found @param {string} accessorName @param {string} method @param {Ctx} ctx */
 function policiedAggregateError(found, accessorName, method, ctx) {
   const first  = found[0]
-  const target = ctx.shapes[first.model].fromFields[first.key].aggRef.model
+  const def    = ctx.shapes[first.model].fromFields[first.key]
+  const target = aggModelsOf(def).find(m => buildPolicyFilter(m, 'read', ctx)) ?? aggModelsOf(def)[0]
   return new AccessDeniedError(
-    `${first.model}: "${first.key}" is a @from aggregate over ${target}, and ${target}'s read policy ` +
+    `${first.model}: "${first.key}" is ${def.derivedFrom ? `@derived over an @from aggregate of ${target}` : `a @from aggregate over ${target}`}, and ${target}'s read policy ` +
     `decides which of its rows this caller counts. A where or an orderBy runs the aggregate over ` +
     `every row of ${target}, so ${accessorName}.${method} cannot name it. Read the field and ` +
     `filter the answer, or read it through asSystem().`,
@@ -774,6 +776,8 @@ const AGG_REASONS = {
                        `column SQLite can aggregate. Make it @generated to aggregate it in SQL, or aggregate in JS after the read.`,
   from:     (/** @type {string} */ k, /** @type {string} */ op) => `Cannot ${op} '${k}' on %MODEL% — it is a @from field, a correlated subquery aliased into the SELECT ` +
                        `rather than a column, so it cannot be aggregated in the same statement. Aggregate the target model instead.`,
+  fromDerived: (/** @type {string} */ k, /** @type {string} */ op) => `Cannot ${op} '${k}' on %MODEL% — it is @derived over an @from, so it carries ` +
+                       `that @from's correlated subquery and cannot be aggregated in the same statement. Aggregate the target model instead.`,
   relation: (/** @type {string} */ k, /** @type {string} */ op) => `Cannot ${op} '${k}' on %MODEL% — it is a relation, not a column. Aggregate the related model, or use ` +
                        `orderBy: { ${k}: { _count: … } } to sort by it.`,
   opaque:   (/** @type {string} */ k, /** @type {string} */ op, /** @type {keyof typeof OPAQUE_AGG} */ why) => `Cannot ${op} '${k}' on %MODEL% — it is ${OPAQUE_AGG[why]}. Aggregate a column that holds the value itself.`,
@@ -802,12 +806,13 @@ const OPAQUE_AGG = {
  * @param {KeyProblem[]} [out]
  */
 export function collectAggKeyProblems(names, sets, op, valueRead, out = []) {
-  const { columns, computed, transient, from, relations, opaque } = sets
+  const { columns, computed, transient, from, fromDerived, relations, opaque } = sets
   for (const key of names) {
     if (key == null) continue
     if (computed.has(key))  { out.push({ key, reason: 'computed', message: AGG_REASONS.computed(key, op) }); continue }
     if (transient.has(key)) { out.push({ key, reason: 'transient', message: AGG_REASONS.transient(key, op) }); continue }
     if (from.has(key))      { out.push({ key, reason: 'from',     message: AGG_REASONS.from(key, op) });     continue }
+    if (fromDerived?.has(key)) { out.push({ key, reason: 'from',  message: AGG_REASONS.fromDerived(key, op) }); continue }
     if (relations.has(key)) { out.push({ key, reason: 'relation', message: AGG_REASONS.relation(key, op) }); continue }
     if (!columns.has(key)) {
       const hint = suggestKey(key, columns)
@@ -1301,8 +1306,8 @@ export function withArgValidation(table, model, ctx) {
       walkGuardedWhere(args.where, modelName, 'policiedAggregates', ctx.shapes, found)
       walkGuardedOrderBy(args.orderBy, modelName, 'policiedAggregates', ctx.shapes, found)
       walkGuardedInclude(args.include, modelName, 'policiedAggregates', ctx.shapes, found)
-      const live = found.filter(f => buildPolicyFilter(
-        ctx.shapes[f.model].fromFields[f.key].aggRef.model, 'read', ctx))
+      const live = found.filter(f =>
+        aggModelsOf(ctx.shapes[f.model].fromFields[f.key]).some(m => buildPolicyFilter(m, 'read', ctx)))
       if (live.length) throw policiedAggregateError(live, modelName, method, ctx)
     }
     checkWhereKeys(args?.where, whereKeys, modelName, method, isWrite, scopeNames, ctx)

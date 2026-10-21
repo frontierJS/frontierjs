@@ -28,10 +28,11 @@ export function gatedFromFields(fromFields, ctx) {
   if (!fromFields || !ctx?.gateFor || !ctx.levelFor || ctx.isSystem) return null
   let out = null
   for (const [name, f] of Object.entries(fromFields)) {
-    if (!f.target) continue
     // `through` is a to-one column that is the parent's own aggregate: it is
-    // read off the parent's rows AND the rows the aggregate counts.
+    // read off the parent's rows AND the rows the aggregate counts. A @derived
+    // over an @from has no target of its own and reads through that @from's.
     for (const model of [f.target, ...(f.through ?? [])]) {
+      if (!model) continue
       const required = ctx.gateFor(model, 'read')
       if (required == null || levelPasses(required, ctx.levelFor(model, ctx))) continue
       ;(out ??= new Set()).add(name)

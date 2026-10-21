@@ -10,7 +10,8 @@
 //   - `@@allow(read, event.enrolled > 4)` built and answered every read
 //     with a raw `no such column`, and `@@scope` the same at `$scope`;
 //   - `@@check("adults >= 1")` parsed valid and died on the build.
-// Each is refused by name before a query runs.
+// Each is refused by name before a query runs — except the @derived, which
+// FJS-D1364 lets read the @from by splicing its subquery (the first describe).
 import { describe, test, expect } from 'bun:test'
 import { createClient } from '../src/index.js'
 import { parse } from '../src/core/parser.js'
@@ -39,10 +40,88 @@ model Assignment {
 
 const build = (s: string) => createClient({ db: ':memory:', schema: s })
 
-describe('a @derived naming a field with no column', () => {
-  test('refuses one naming a @from field', async () => {
-    await expect(build(schema('noAdults Boolean @derived(adults < 1)')))
-      .rejects.toThrow(/Shift\.noAdults: 'adults' is @from/)
+// FJS-D1364: a @derived may name an @from aggregate. It splices that @from's
+// subquery, so the read and the filter agree; under the target's read policy it
+// is answered again from the recount, and the filter is refused as the @from's is.
+describe('a @derived naming an @from', () => {
+  const policied = (shift: string) => schema(`${shift}\n  @@allow(read, true)`, '@@allow(read, true)')
+    .replace(/model Assignment \{([^}]*)\}/, (_, body) =>
+      `model Assignment {${body}  ownerId String\n  @@allow(read, ownerId == auth().id)\n  @@allow(create, true)\n}`)
+  const seeded = async (s: string) => {
+    const db: any = await build(s)
+    const sys = db.asSystem()
+    await sys.event.create({ data: { id: 1 } })
+    for (const id of [1, 2, 3]) await sys.shift.create({ data: { id, eventId: 1 } })
+    for (const [id, shiftId, ownerId] of [[1, 1, 'u1'], [2, 2, 'u1'], [3, 2, 'u2']] as const)
+      await sys.assignment.create({ data: { id, shiftId, ...(s.includes('ownerId') ? { ownerId } : {}) } })
+    return db
+  }
+  const byId = (rows: any[], key: string) => Object.fromEntries(rows.map(r => [r.id, r[key]]))
+
+  test('reads and filters the same answer', async () => {
+    const db = await seeded(schema('short Boolean @derived(adults * 2 < 3)'))
+    const sys = db.asSystem()
+    expect(byId(await sys.shift.findMany(), 'short')).toEqual({ 1: true, 2: false, 3: true })
+    expect((await sys.shift.findMany({ where: { short: true }, orderBy: { id: 'asc' } })).map((r: any) => r.id)).toEqual([1, 3])
+    db.$close()
+  })
+
+  test('a caller the target policy narrows reads it from the recount, select or not', async () => {
+    const db = await seeded(policied('short Boolean @derived(adults * 2 < 3)'))
+    const u1 = db.$setAuth({ id: 'u1' })
+    const rows = await u1.shift.findMany({ orderBy: { id: 'asc' } })
+    expect(rows.map((r: any) => [r.adults, r.short])).toEqual([[1, true], [1, true], [0, true]])
+    expect(await u1.shift.findMany({ select: { short: true }, orderBy: { id: 'asc' } }))
+      .toEqual([{ short: true }, { short: true }, { short: true }])
+    db.$close()
+  })
+
+  test('that caller is refused the filter and the sort, as the @from is', async () => {
+    const db = await seeded(policied('short Boolean @derived(adults * 2 < 3)'))
+    const u1 = db.$setAuth({ id: 'u1' })
+    await expect(u1.shift.findMany({ where: { short: true } })).rejects.toThrow(/"short" is @derived over an @from aggregate of Assignment/)
+    await expect(u1.shift.findMany({ orderBy: { short: 'asc' } })).rejects.toThrow(/"short" is @derived over an @from/)
+    db.$close()
+  })
+
+  test('an aggregate over it is refused, as one over an @from is', async () => {
+    const db = await seeded(schema('short Boolean @derived(adults * 2 < 3)'))
+    await expect(db.asSystem().shift.aggregate({ _count: { distinct: 'short' } })).rejects.toThrow(/it is @derived over an @from/)
+    db.$close()
+  })
+
+  // The recompute is a second compilation of the same expression, so it is held
+  // to the SQL: a policy that admits every row recounts what SQLite counted.
+  test.each([
+    'x Boolean @derived(adults * 2 < 3)',
+    'x Boolean @derived(!(adults == 1))',
+    'x Boolean @derived(adults != 2 && adults > 0)',
+    'x Boolean @derived(adults in [0, 2])',
+    'x Boolean @derived(top * adults > 1)',
+    'x Boolean @derived(top * adults == null)',
+    'x Boolean @derived(!(top * adults > 1))',
+    'x Int @derived(adults > 1 ? adults * 10 : round(adults * 0.5))',
+    'x Int @derived(top - adults)',
+  ])('the recompute agrees with the SQL: %s', async (decl) => {
+    const open = schema(`top Int?\n  ${decl}\n  @@allow(read, true)`, '@@allow(read, true)')
+      .replace(/model Assignment \{([^}]*)\}/, (_, body) => `model Assignment {${body}  @@allow(read, true)\n}`)
+    const db: any = await build(open)
+    const sys = db.asSystem()
+    await sys.event.create({ data: { id: 1 } })
+    for (const [id, top] of [[1, 3], [2, null], [3, 1]] as const) await sys.shift.create({ data: { id, eventId: 1, top } })
+    for (const [id, shiftId] of [[1, 1], [2, 2], [3, 2]] as const) await sys.assignment.create({ data: { id, shiftId } })
+    const sql = byId(await sys.shift.findMany(), 'x')
+    expect(byId(await db.$setAuth({ id: 'u1' }).shift.findMany(), 'x')).toEqual(sql)
+    db.$close()
+  })
+
+  test('refuses an @from that picks a row, and a to-one @from that reads one', async () => {
+    await expect(build(schema('latest Assignment? @from(Assignment, last: true)\n  x Boolean @derived(latest == null)')))
+      .rejects.toThrow(/Shift\.x: 'latest' is @from\(…, first\/last\) — a row of another model/)
+    await expect(build(schema('few Boolean @derived(adults < 2)', '').replace(
+      'model Assignment {', 'model Note {\n  id Int @id\n  shiftId Int\n  shift Shift @relation(fields: [shiftId], references: [id])\n  few Boolean @from(shift, few)\n}\nmodel Assignment {')
+      .replace('  assignments Assignment[]', '  assignments Assignment[]\n  notes Note[]')))
+      .rejects.toThrow(/Note\.few: @from\(shift, few\) reads a @derived over an @from on Shift/)
   })
   test('refuses one naming a relation field', async () => {
     await expect(build(schema('none Boolean @derived(assignments == null)')))

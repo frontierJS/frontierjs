@@ -39,7 +39,7 @@ import { DERIVED_NOW_ARG, rawClause }  from './query.js'
 // compilation: `compileSql` below and this are still the two halves an oracle
 // holds together (`verifyRowPolicies`, `test/policy-interpreters.test.ts`), and
 // the browser runs these same bytes.
-import { evaluate as evalPredicate, truth, shiftInstant } from '@frontierjs/toolbelt/predicate'
+import { evaluate as evalPredicate, truth, shiftInstant, compare, and3, or3, not3 } from '@frontierjs/toolbelt/predicate'
 import { STANDING_FIELDS } from '@frontierjs/toolbelt/gate'
 
 // ─── Debug logger ─────────────────────────────────────────────────────────────
@@ -557,7 +557,11 @@ function nowShifted(n) {
   return `strftime('%Y-%m-%dT%H:%M:%fZ',${DERIVED_NOW_ARG},'${amount > 0 ? '+' : ''}${amount} ${unit}')`
 }
 
-export function compileDerived(model, fieldName, node) {
+// A column is `%SELF%."name"`, the placeholder an @from subquery correlates on,
+// so one entry serves an unaliased SELECT, a `t`-aliased one and a relation
+// filter's alias alike. `fromOf(name)` answers an @from operand's own SQL in the
+// same form, or a reason it is not a value (`FJS-D1364`).
+export function compileDerived(model, fieldName, node, fromOf = () => null) {
   const bad = (msg) => {
     throw new Error(`${model.name}.${fieldName}: ${msg} — in @derived(${policyExprToString(node)})`)
   }
@@ -593,12 +597,14 @@ export function compileDerived(model, fieldName, node) {
         // resolves it — so the row and the filter disagree. And an aggregate
         // is recomputed under the caller's policy after the read, which a
         // value compiled into SQL would not be.
-        if (f.attributes?.some(a => a.kind === 'from'))
-          bad(`'${n.name}' is @from — a read across a relation, with no column on this row. ` +
-              `Compare it in a where (where: { ${n.name}: { lt: 1 } }), or use @from(…, exists: true) for a Boolean`)
+        if (f.attributes?.some(a => a.kind === 'from')) {
+          const from = fromOf(n.name)
+          if (typeof from === 'string') return from
+          bad(from?.why ?? `'${n.name}' is @from — a read across a relation, with no column on this row`)
+        }
         if (noColumn(f))
           bad(`'${n.name}' is not a stored column — relation and @edge fields have none`)
-        return `"${n.name}"`
+        return `%SELF%."${n.name}"`
       }
       case 'literal':
         if (n.value === null)  return 'NULL'
@@ -643,6 +649,63 @@ export function compileDerived(model, fieldName, node) {
         break
       default:
         bad(`unsupported expression node '${n.type}'`)
+    }
+  }
+  return walk(node)
+}
+
+// ─── a @derived, answered in JS ───────────────────────────────────────────────
+//
+// What `compileDerived`'s SQL answers, for a row in hand: an @from it names was
+// recounted under the caller's row policy after the read, so the value the SQL
+// computed from the startup subquery is not this caller's (`FJS-D1364`). Two-
+// valued where that SQL is: `==`/`!=` are IS/IS NOT, an ordering or a list
+// membership over null is false, and a nullable column under a connective is 0.
+export function evalDerived(model, node, record, now) {
+  const fieldOf = (name) => model.fields.find(x => x.name === name)
+  const affinity = (n) => {
+    if (n?.type !== 'field') return null
+    const f = fieldOf(n.name)
+    if (!f || f.attributes?.some(a => a.kind === 'from')) return null
+    const t = sqlType(f.type)
+    return t === 'INTEGER' || t === 'REAL' ? 'NUMERIC' : t === 'BLOB' ? 'BLOB' : 'TEXT'
+  }
+  const lit = (value) => ({ type: 'literal', value })
+  const isNull = (n) => n?.type === 'literal' && n.value === null
+  const asTruth = (n) => truth(n?.type === 'field' ? (walk(n) ?? 0) : walk(n))
+  const walk = (n) => {
+    switch (n.type) {
+      case 'or':      return or3(asTruth(n.left), asTruth(n.right))
+      case 'and':     return and3(asTruth(n.left), asTruth(n.right))
+      case 'not':     return not3(asTruth(n.expr))
+      case 'ternary': return truth(walk(n.cond)) === true ? walk(n.then) : walk(n.else)
+      case 'now':     return now
+      case 'shift':   return shiftInstant(now, n)
+      case 'field':   return Object.hasOwn(record, n.name) ? record[n.name] ?? null : null
+      case 'literal': return n.value
+      case 'arith':   return evalPredicate({ ...n, left: lit(walk(n.left)), right: lit(walk(n.right)) })
+      case 'round':   return evalPredicate({ type: 'round', expr: lit(walk(n.expr)) })
+      case 'compare': {
+        if (isNull(n.left) || isNull(n.right)) {
+          const v = walk(isNull(n.right) ? n.left : n.right)
+          return (v == null) === (n.op === '==')
+        }
+        const L = walk(n.left)
+        if (n.op === 'in') {
+          if (L == null) return false
+          let items = n.right.type === 'list' ? n.right.items : walk(n.right)
+          if (typeof items === 'string') { try { items = JSON.parse(items) } catch { items = [] } }
+          return (Array.isArray(items) ? items : []).some(v => compare(L, '==', v, affinity(n.left), null) === true)
+        }
+        const R = walk(n.right)
+        if (n.op === '==' || n.op === '!=') {
+          const same = L == null || R == null ? L == null && R == null
+            : compare(L, '==', R, affinity(n.left), affinity(n.right)) === true
+          return n.op === '==' ? same : !same
+        }
+        return compare(L, n.op, R, affinity(n.left), affinity(n.right)) === true
+      }
+      default: throw new Error(`${model.name}: @derived cannot answer a '${n.type}' node in JS`)
     }
   }
   return walk(node)

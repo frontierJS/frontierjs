@@ -2020,8 +2020,11 @@ export function parseSelectArg(select, modelName, shapes, include, computedFns, 
       else       needsAllDbCols = true
 
     } else if ((key in tableFrom)) {
-      // @from field — subquery is injected at buildSQL time, track for trimming
+      // @from field — subquery is injected at buildSQL time, track for trimming.
+      // A @derived over an @from is answered again after the read from what it
+      // names, so those come along and are trimmed off like a @computed's.
       requestedFrom.add(key)
+      if (tableFrom[key].needs) computedDeps.push(...tableFrom[key].needs)
 
     } else if (windowNames?.has(key)) {
       // Computed by the window, not stored: naming it as a column would bind
@@ -2930,6 +2933,7 @@ export function aggregatableKeysFor(model) {
   const computed  = new Set()
   const transient = new Set()
   const from      = new Set()
+  const fromDerived = new Set()
   const relations = new Set()
   const opaque    = new Map()
   for (const f of model.fields) {
@@ -2937,12 +2941,27 @@ export function aggregatableKeysFor(model) {
     if (f.attributes?.some(a => a.kind === 'computed'))                  { computed.add(f.name);  continue }
     if (f.attributes?.some(a => a.kind === 'transient'))                 { transient.add(f.name); continue }
     if (f.attributes?.some(a => a.kind === 'from'))                      { from.add(f.name);      continue }
+    if (derivedOverFrom(model, f))                                       { fromDerived.add(f.name); continue }
     if (f.attributes?.some(a => a.kind === 'edge' || a.kind === 'scoped')) continue
     const why = opaqueSortKind(f)
     if (why) opaque.set(f.name, why)
     columns.add(f.name)
   }
-  return { columns, computed, transient, from, relations, opaque }
+  return { columns, computed, transient, from, fromDerived, relations, opaque }
+}
+
+// A @derived whose expression names an @from carries that @from's subquery, and
+// with it the subquery's limits.
+/** @param {ModelDef} model @param {FieldDef} field */
+function derivedOverFrom(model, field) {
+  const expr = field.attributes?.find(a => a.kind === 'derived')?.expr
+  let hit = false
+  ;(/** @param {any} n */ function walk(n) {
+    if (!n || typeof n !== 'object' || hit) return
+    if (n.type === 'field' && model.fields.find(x => x.name === n.name)?.attributes?.some(a => a.kind === 'from')) hit = true
+    for (const k of ['left', 'right', 'expr', 'cond', 'then', 'else']) walk(n[k])
+  })(expr)
+  return hit
 }
 
 // Which columns identify a row TO A PERSON — the answer `@@label` gives for one

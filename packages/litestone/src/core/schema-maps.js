@@ -15,7 +15,7 @@
 
 import { isSoftDelete, modelToTableName, isUpdatedAtField, detectM2MPairs, sqlType, columnMapFor, mapExprCols } from './ddl.js'
 import { assertNoBareClock, expandNowTokens, quoteIdent }          from './query.js'
-import { compileDerived, checkDerivedType, dependsOnClock }        from './policy.js'
+import { compileDerived, checkDerivedType, dependsOnClock, evalDerived } from './policy.js'
 import { ID_GENERATORS, GENERATED_DEFAULTS }                       from './ids.js'
 
 
@@ -661,30 +661,64 @@ export function buildGeneratedMap(schema) {
 // `now()` becomes a marker on SQLite's clock, which SQLite fixes for the
 // duration of a statement. A client given `{ now }` has the marker swapped for
 // that instant by `clockedDb`. That keeps `subquerySql` a static string.
-export function addDerivedFields(map, model, schema) {
-  const derived = model.fields.filter(f => f.attributes.find(a => a.kind === 'derived'))
-  if (!derived.length) return
-  map[model.name] ??= {}
-  for (const field of derived) {
-    const attr = field.attributes.find(a => a.kind === 'derived')
-    checkDerivedType(model, schema, field, attr.expr)
-    const sql  = `(${compileDerived(model, field.name, attr.expr)})`
-    map[model.name][field.name] = {
-      subquerySql:        sql,
-      subquerySqlAliased: sql.replace(/"([A-Za-z_][A-Za-z0-9_]*)"/g, 't."$1"'),
-      subquerySqlFor:     alias => sql.replace(/"([A-Za-z_][A-Za-z0-9_]*)"/g, `${alias}."$1"`),
-      isObject: false,
-      isBool:   field.type?.name === 'Boolean',
-      derived:  true,
-      clock:    dependsOnClock(attr.expr),
-    }
+//
+// One that names an @from splices that field's subquery and inherits its
+// rules (`FJS-D1364`): `through` puts the models it reads under the gate,
+// `aggModels` under `policiedAggregates`, `needs` brings its inputs into a
+// `select`, and `recompute` answers it again once an aggregate it read has been
+// recounted under the caller's row policy.
+// The models whose read policy decides an entry's value: an aggregate's target,
+// or every target a @derived over an @from reads.
+/** @param {any} def @returns {string[]} */
+export function aggModelsOf(def) {
+  return def?.aggRef ? [def.aggRef.model] : def?.aggModels ?? []
+}
+
+function addDerivedField(map, model, schema, field, pluralize) {
+  const attr = field.attributes.find(a => a.kind === 'derived')
+  const own  = map[model.name] ??= {}
+  const fromNames = new Set()
+  const fromOf = (name) => {
+    const entry = own[name]
+    if (!entry) return { why: `'${name}' is @from and has no subquery` }
+    if (entry.rowRef) return { why: `'${name}' is @from(…, first/last) — a row of another model, not a value. ` +
+                                    `Bring the column on with @from(${name}, <column>) or count it` }
+    if (entry.derivedFrom) return { why: `'${name}' reads a @derived over an @from — one derived field cannot read another yet` }
+    fromNames.add(name)
+    return entry.subquerySqlFor('%SELF%')
+  }
+  checkDerivedType(model, schema, field, attr.expr)
+  const sql  = `(${compileDerived(model, field.name, attr.expr, fromOf)})`
+  const self = quoteIdent(modelToTableName(model, pluralize))
+  const reads = [...fromNames].map(n => own[n])
+  const named = []
+  ;(function walk(n) {
+    if (!n || typeof n !== 'object') return
+    if (n.type === 'field') named.push(n.name)
+    for (const k of ['left', 'right', 'expr', 'cond', 'then', 'else']) walk(n[k])
+  })(attr.expr)
+  own[field.name] = {
+    target:             null,
+    through:            [...new Set(reads.flatMap(e => [e.target, ...(e.through ?? [])]).filter(Boolean))],
+    subquerySql:        sql.replaceAll('%SELF%', self),
+    subquerySqlAliased: sql.replaceAll('%SELF%', 't'),
+    subquerySqlFor:     alias => sql.replaceAll('%SELF%', alias),
+    isObject: false,
+    isBool:   field.type?.name === 'Boolean',
+    derived:  true,
+    clock:    dependsOnClock(attr.expr),
+    ...(fromNames.size && {
+      derivedFrom: [...fromNames],
+      aggModels:   [...new Set(reads.map(e => e.aggRef?.model).filter(Boolean))],
+      needs:       [...new Set(named)],
+      recompute:   (row, now) => evalDerived(model, attr.expr, row, now),
+    }),
   }
 }
 
 export function buildFromMap(schema, pluralize = false) {
   const map = {}
   for (const model of schema.models) {
-    addDerivedFields(map, model, schema)
     const fromFields = model.fields.filter(f => f.attributes.find(a => a.kind === 'from')?.op !== 'column' &&
                                                  f.attributes.find(a => a.kind === 'from'))
     if (!fromFields.length) continue
@@ -824,8 +858,44 @@ export function buildFromMap(schema, pluralize = false) {
       }
     }
   }
-  // After every aggregate entry exists: a to-one column may itself be one.
-  for (const model of schema.models) addToOneFromFields(map, model, schema, pluralize)
+  // After every aggregate entry exists. A to-one column may read a parent's
+  // aggregate or @derived and a @derived may read this row's @from, so each is
+  // built once what it names is: built in source order, a name not built yet
+  // read as a plain column -- a string constant to SQLite.
+  let pending = []
+  for (const model of schema.models) for (const field of model.fields) {
+    if (field.attributes.find(a => a.kind === 'from')?.op === 'column') pending.push({ model, field, toOne: true })
+    else if (field.attributes.some(a => a.kind === 'derived'))          pending.push({ model, field, toOne: false })
+  }
+  const virtual = (m, name) => m?.fields.find(f => f.name === name)?.attributes
+    .some(a => a.kind === 'derived' || a.kind === 'from') ?? false
+  const ready = ({ model, field, toOne }) => {
+    if (toOne) {
+      const hop = inferToOneFrom(model, schema, field.attributes.find(a => a.kind === 'from'))
+      const name = field.attributes.find(a => a.kind === 'from').opValue
+      return hop.error || !virtual(hop.targetModel, name) || !!map[hop.targetModel.name]?.[name]
+    }
+    const waits = []
+    ;(function walk(n) {
+      if (!n || typeof n !== 'object') return
+      if (n.type === 'field' && model.fields.find(f => f.name === n.name)?.attributes.find(a => a.kind === 'from')?.op === 'column')
+        waits.push(n.name)
+      for (const k of ['left', 'right', 'expr', 'cond', 'then', 'else']) walk(n[k])
+    })(field.attributes.find(a => a.kind === 'derived').expr)
+    return waits.every(name => map[model.name]?.[name])
+  }
+  while (pending.length) {
+    const next = pending.filter(p => {
+      if (!ready(p)) return true
+      if (p.toOne) addToOneFromField(map, p.model, schema, p.field, pluralize)
+      else addDerivedField(map, p.model, schema, p.field, pluralize)
+      return false
+    })
+    if (next.length === pending.length)
+      throw new Error(`${next.map(p => `${p.model.name}.${p.field.name}`).join(', ')}: each reads another ` +
+        `through @from or @derived, round in a circle, so none of them has a value to start from`)
+    pending = next
+  }
   return map
 }
 
@@ -843,49 +913,51 @@ export function buildFromMap(schema, pluralize = false) {
 // an orderBy naming it is refused while that policy applies. `valueSql` is the
 // column (or the parent's own derived/aggregate expression) with `%T%` for the
 // parent's table.
-function addToOneFromFields(map, model, schema, pluralize) {
-  for (const field of model.fields) {
-    const attr = field.attributes.find(a => a.kind === 'from')
-    if (attr?.op !== 'column') continue
-    const hop = inferToOneFrom(model, schema, attr)
-    if (hop.error) continue                       // validate() named it
-    const { targetModel, fkFields, refFields } = hop
-    const tCols = columnMapFor(targetModel)
-    const sCols = columnMapFor(model)
-    const t     = (f) => tCols[f] ?? f
-    const selfTable   = modelToTableName(model, pluralize)
-    const targetTable = modelToTableName(targetModel, pluralize)
-    const inner = map[targetModel.name]?.[attr.opValue]
-    const value = inner ? inner.subquerySqlFor('_to') : `_to.${quoteIdent(t(attr.opValue))}`
-    const where = refFields.map((r, i) =>
-      `_to.${quoteIdent(t(r))} = %SELF%.${quoteIdent(sCols[fkFields[i]] ?? fkFields[i])}`).join(' AND ')
-    const sql   = `(SELECT ${value} FROM ${quoteIdent(targetTable)} AS _to WHERE ${where})`
-    map[model.name] ??= {}
-    map[model.name][field.name] = {
-      target:             targetModel.name,
-      // The models whose rows the value is counted off beyond the parent, for
-      // the read gate.
-      through:            inner?.target ? [inner.target] : [],
-      subquerySql:        sql.replaceAll('%SELF%', quoteIdent(selfTable)),
-      subquerySqlAliased: sql.replaceAll('%SELF%', 't'),
-      subquerySqlFor:     alias => sql.replaceAll('%SELF%', alias),
-      isObject:           false,
-      isBool:             field.type?.name === 'Boolean',
-      rowRef:             null,
-      aggRef: {
-        model:   targetModel.name,
-        fkCols:  refFields.map(t),
-        refCols: fkFields,
-        op:      'column',
-        isBool:  field.type?.name === 'Boolean',
-        opValue: attr.opValue,
-        valueSql: inner ? inner.subquerySqlFor('%T%') : `%T%.${quoteIdent(t(attr.opValue))}`,
-        // The parent's own aggregate counts rows the caller's policy on THEIR
-        // model may hide, which this recompute does not apply.
-        reads:   inner?.aggRef?.model ?? null,
-        extra:   [],
-      },
-    }
+function addToOneFromField(map, model, schema, field, pluralize) {
+  const attr = field.attributes.find(a => a.kind === 'from')
+  const hop = inferToOneFrom(model, schema, attr)
+  if (hop.error) return                         // validate() named it
+  const { targetModel, fkFields, refFields } = hop
+  const tCols = columnMapFor(targetModel)
+  const sCols = columnMapFor(model)
+  const t     = (f) => tCols[f] ?? f
+  const selfTable   = modelToTableName(model, pluralize)
+  const targetTable = modelToTableName(targetModel, pluralize)
+  const inner = map[targetModel.name]?.[attr.opValue]
+  // Its recount re-reads the parent's value and not the @from beneath it, so
+  // the rows that @from counts would go uncounted under the caller's policy.
+  if (inner?.derivedFrom) throw new Error(
+    `${model.name}.${field.name}: @from(${attr.rel ?? targetModel.name}, ${attr.opValue}) reads a @derived over an ` +
+    `@from on ${targetModel.name}. Bring that @from on instead and derive on this side`)
+  const value = inner ? inner.subquerySqlFor('_to') : `_to.${quoteIdent(t(attr.opValue))}`
+  const where = refFields.map((r, i) =>
+    `_to.${quoteIdent(t(r))} = %SELF%.${quoteIdent(sCols[fkFields[i]] ?? fkFields[i])}`).join(' AND ')
+  const sql   = `(SELECT ${value} FROM ${quoteIdent(targetTable)} AS _to WHERE ${where})`
+  map[model.name] ??= {}
+  map[model.name][field.name] = {
+    target:             targetModel.name,
+    // The models whose rows the value is counted off beyond the parent, for
+    // the read gate.
+    through:            inner?.target ? [inner.target] : [],
+    subquerySql:        sql.replaceAll('%SELF%', quoteIdent(selfTable)),
+    subquerySqlAliased: sql.replaceAll('%SELF%', 't'),
+    subquerySqlFor:     alias => sql.replaceAll('%SELF%', alias),
+    isObject:           false,
+    isBool:             field.type?.name === 'Boolean',
+    rowRef:             null,
+    aggRef: {
+      model:   targetModel.name,
+      fkCols:  refFields.map(t),
+      refCols: fkFields,
+      op:      'column',
+      isBool:  field.type?.name === 'Boolean',
+      opValue: attr.opValue,
+      valueSql: inner ? inner.subquerySqlFor('%T%') : `%T%.${quoteIdent(t(attr.opValue))}`,
+      // The parent's own aggregate counts rows the caller's policy on THEIR
+      // model may hide, which this recompute does not apply.
+      reads:   inner?.aggRef?.model ?? null,
+      extra:   [],
+    },
   }
 }
 

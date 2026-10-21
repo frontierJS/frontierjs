@@ -368,7 +368,7 @@ function queryabilityFor(model) {
     if (!agg.columns.has(name)) {
       out['x-aggregatable'] = agg.computed.has(name)  ? 'computed'
                             : agg.transient.has(name) ? 'transient'
-                            : agg.from.has(name)      ? 'from'
+                            : agg.from.has(name) || agg.fromDerived.has(name) ? 'from'
                             : agg.relations.has(name) ? 'relation' : 'unknown'
     } else if (agg.opaque.has(name)) {
       // A real column SQLite can aggregate the STORAGE of, which answers a

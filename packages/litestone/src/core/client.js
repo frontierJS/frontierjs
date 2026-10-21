@@ -70,7 +70,7 @@ import {
   buildAffinityMap,
   buildFilterKindMap, buildTransitionMap, buildEnumMap, buildSoftDeleteCascadeMap,
   getCascadeTargets, buildRelationMap, buildFieldReadMap, buildGuardedMap,
-  buildSoftDeleteMap, buildHasTemplatesMap, buildEffectiveMap, buildCoFkMap, buildFtsMap, nowISO,
+  buildSoftDeleteMap, buildHasTemplatesMap, buildEffectiveMap, buildCoFkMap, buildFtsMap, nowISO, aggModelsOf,
 } from './schema-maps.js'
 import {
   wideDb, mappedDb, narrowedDb, clockedDb, rawHandle, resolveAccessConfig, buildDbRegistry, buildModelDbMap,
@@ -10812,7 +10812,7 @@ function makeLockPrimitive(rawWriteDb) {
       if (key.startsWith(`${name}.`)) fieldLogs.set(key.slice(name.length + 1), targets)
     const policiedAggregates = new Set()
     for (const [field, def] of Object.entries(declared(fromMap, name, {})))
-      if (def?.aggRef && policyMap[def.aggRef.model]?.read) policiedAggregates.add(field)
+      if (aggModelsOf(def).some(m => policyMap[m]?.read)) policiedAggregates.add(field)
     return Object.freeze({
       modelName:         name,
       tableName:         isView ? name : modelToTableName(model, pluralizeTableNames),

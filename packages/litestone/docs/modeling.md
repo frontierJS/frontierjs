@@ -209,7 +209,11 @@ tools rather than tastes:
   all: there is no `/` (a constant divisor is a decimal multiplier,
   `round(price * qty * 0.01)`), no other SQL function and no string
   concatenation (`compileDerived` in `src/core/policy.js`, `FJS-D1107`). A null
-  operand makes the sum null.
+  operand makes the sum null. It may name this row's `@from` fields —
+  `underRatio Boolean @derived(adults * ratio < enrolled)` — and then takes
+  their limits: not aggregatable, and under the target's read policy it is read
+  from the recount while a `where` or an `orderBy` naming it is refused, as one
+  naming the `@from` is (`FJS-D1364`).
 - **`@generated("sql expr")`** — a real column, `GENERATED ALWAYS AS`, so it
   takes arbitrary SQL and is the answer whenever the derivation is a **value**
   rather than a question: `@generated("{qty} * {price}")`. `{field}` expands to

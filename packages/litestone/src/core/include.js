@@ -6,8 +6,9 @@ import { modelToTableName } from './ddl.js'
 import { coerceBooleans, deserializeRow, buildWhere, buildOrderBy, parseSelectArg, quoteIdent, inList, keyIn, tupleOf, tuplesOf } from './query.js'
 import { ValidationError } from './validate.js'
 import { buildPolicyFilter } from './policy.js'
+import { truth } from '@frontierjs/toolbelt/predicate'
 import { CapabilityNotDeclaredError } from './errors.js'
-import { nowISO, shapesRead } from './schema-maps.js'
+import { nowISO, shapesRead, aggModelsOf } from './schema-maps.js'
 import { suggestKey } from './args.js'
 import { applyComputed } from './computed.js'
 import { wideDb, mappedDb, plainDb } from './databases.js'
@@ -176,6 +177,21 @@ export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
     } else {
       const byId = new Map(got.map(r => [r[pk], r]))
       for (const r of rows) if (name in r) r[name] = r[name] == null ? null : (byId.get(r[name]) ?? null)
+    }
+  }
+  // A @derived over an @from read its value off the startup subquery, which
+  // counts rows this caller may not see; once that @from is recounted above, the
+  // derived is answered again from the recount (`FJS-D1364`).
+  if (ctx.hasPolicies) {
+    for (const [name, def] of Object.entries(fromFields)) {
+      if (!def.recompute || hidden?.has(name)) continue
+      if (!aggModelsOf(def).some(m => buildPolicyFilter(m, 'read', ctx))) continue
+      const now = nowISO(ctx.now)
+      for (const r of rows) {
+        if (!(name in r)) continue
+        const v = def.recompute(r, now)
+        r[name] = def.isBool ? truth(v) === true : v
+      }
     }
   }
   return rows
