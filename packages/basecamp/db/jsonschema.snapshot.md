@@ -258,6 +258,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
 | `ipAddress` | `string`? | — | — | — | — |
 | `userAgent` | `string`? | — | — | — | — |
+| `enrollmentOnly` | `boolean` = `false` | — | — | — | — |
 | `impersonatingUserId` | `string`? | — | — | — | — |
 | `impersonationReason` | `string`? | — | — | — | — |
 | `impersonationEndsAt` | `string`? | — | — | `format: "date-time"` | — |

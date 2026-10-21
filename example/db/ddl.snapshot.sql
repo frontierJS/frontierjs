@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS "session" (
   "ipAddress" TEXT,
   "userAgent" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "enrollmentOnly" INTEGER NOT NULL DEFAULT 0,
   "impersonatingUserId" TEXT,
   "impersonationReason" TEXT,
   "impersonationEndsAt" TEXT

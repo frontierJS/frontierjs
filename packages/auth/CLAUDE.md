@@ -57,6 +57,7 @@ index.ts     public API
   `Credential.totpLastStep` is the replay guard, compared with `<=` so the whole
   past closes rather than one code. The code that CONFIRMED enrollment is spent by
   that same rule, which is the one request where it is certainly still on screen.
+- **`requireSecondFactor` issues a session and holds it, rather than refusing the login** (`FJS-D1008`, `FJS-2554`). `firstFactorProven` is the one place that decides, so every first factor honors it; `Session.enrollmentOnly` rides `verifySession` onto the context and the plugin's `before` hook refuses all but `account.totpStatus/setupTotp/confirmTotp`. A new door that issues a session without `firstFactorProven` is a way past it. `test/require-second-factor.test.ts`.
 - **A new password is graded in ONE place, `requireStrongPassword`, and three doors call it first:** `createUser`, `confirmPasswordReset` and `changePassword` (`FJS-2349`). It runs before the token is spent or a row is read, so a refusal (`WeakPasswordError`, 400) leaves a reset link usable. `password: { min }` defaults to 8; an app does not restate the length in front of `createUser`. A password-less `createUser` (an invitation) skips it, an empty string does not. `test/harness.ts` sets `min: 1` so fixtures can sign in with `pw-1` -- `password-policy.test.ts` passes `password: undefined` to grade the real default.
 - **A refused proof inside a live session is 403, never 401.** A 401 is what the
   browser client reads as *this credential is not a session*, and sierra signs
