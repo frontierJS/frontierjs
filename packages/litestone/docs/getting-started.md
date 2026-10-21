@@ -144,8 +144,10 @@ await landing.note.create({ data: { body: 'hello' } })
 The text is parsed as text (a one-line string ending in `.lite` is never read
 from disk) and held to the one `db` given: a `database` block, an `import`,
 `tenancy`, a `function`, an `extend`, a claim read off a model, and a model's
-`@@auth`, `@@external`, `@@db`, `@@trail` or `@@tenant` are refused by name, all
-in one error. Built as an ordinary client, such text could name any file and
+`@@auth`, `@@external`, `@@db`, `@@trail` or `@@tenant`, and a field's `@trail`
+or `@secret`, are refused by name, all in one error. `@secret` promises an audit
+trail a row cannot declare, so the honest spelling there is `@encrypted @guarded`
+(`FJS-D1101`). Built as an ordinary client, such text could name any file and
 write it (`FJS-1633`). Models, views, enums, types, traits, value sets, scopes
 and bare `claim`s are what it may hold; it grades with the gates and policies it
 declares, under the plugins the app passes.

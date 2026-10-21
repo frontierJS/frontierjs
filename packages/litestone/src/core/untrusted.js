@@ -14,8 +14,9 @@
 //             one file the caller handed in
 //   refused   import (reads a file), database (names one), tenancy, function,
 //             extends, a claim read off a model, and on a model or view
-//             @@auth, @@external, @@db, @@trail and @@tenant — each reaches a
-//             principal, another database or a file
+//             @@auth, @@external, @@db, @@trail and @@tenant, and on a field
+//             @trail and @secret — each reaches a principal, another database
+//             or a file
 //
 // Every offense is reported at once, by name and line where the parse kept one,
 // so a person fixing a row fixes it in one pass.
@@ -24,7 +25,7 @@ const MODEL_ATTRS_REFUSED = {
   auth:     'makes this model the principal, which only the app may declare',
   external: 'declares a table some other database owns',
   db:       'places the model in a named database, and only the one file handed in is reachable',
-  log:      'writes an audit trail to a database of its own',
+  trail:    'writes an audit trail to a database of its own',
   tenant:   'joins the app\'s tenancy, which a row cannot declare',
 }
 
@@ -55,6 +56,13 @@ export function untrustedSchemaOffenses(schema) {
       if (a.kind in MODEL_ATTRS_REFUSED) out.push(`${m.name}: \`@@${a.kind}\` ${MODEL_ATTRS_REFUSED[a.kind]}`)
     }
     if (m.db && m.db !== 'main') out.push(`${m.name}: \`@@db(${m.db})\` ${MODEL_ATTRS_REFUSED.db}`)
+    for (const f of m.fields ?? []) {
+      const kinds = new Set((f.attributes ?? []).map(a => a.kind))
+      if (kinds.has('secret'))
+        out.push(`${m.name}.${f.name}: \`@secret\` logs to a trail database, which a row cannot declare — spell it \`@encrypted @guarded\``)
+      else if (kinds.has('trail'))
+        out.push(`${m.name}.${f.name}: \`@trail\` ${MODEL_ATTRS_REFUSED.trail}`)
+    }
   }
   return out
 }

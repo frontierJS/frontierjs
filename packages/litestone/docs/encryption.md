@@ -233,7 +233,7 @@ migrating means re-collecting the values from wherever they still exist. See
 
 ## @secret
 
-Composite attribute — expands at parse time to `@encrypted + @guarded + @trail(audit, reads: false)`, `audit` being the first `driver trail` database the schema declares. Every write is logged to it; a read is not, because reads are high-volume — declare `@trail(audit, reads: true)` on the field beside `@secret` to log those too. With no trail database declared the audit half is dropped with a parse warning.
+Composite attribute — expands at parse time to `@encrypted + @guarded + @trail(audit, reads: false)`, `audit` being the first `driver trail` database the schema declares. Every write is logged to it; a read is not, because reads are high-volume — declare `@trail(audit, reads: true)` on the field beside `@secret` to log those too. With no trail database declared the audit half is dropped with a parse warning. A client built with `untrusted: true` refuses `@secret` by name, because schema text held as data can declare no trail database (`FJS-D1101`).
 
 ```lite
 database audit {

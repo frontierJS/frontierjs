@@ -69,6 +69,16 @@ describe('createClient({ untrusted: true })', () => {
     expect(err.message).toMatch(/Remote: `@@external`/)
   })
 
+  // FJS-1655: @secret promises an audit trail, and a row can declare no trail
+  // database, so in a row it was @encrypted @guarded spelled shorter.
+  it('refuses @secret by name, and builds the @encrypted @guarded it would have been', async () => {
+    const key = 'ab'.repeat(32)
+    const model = (attrs: string) => BASE + `model Vault {\n  id String @id\n  token String ${attrs}\n  @@gate(8)\n}\n`
+    await expect(createClient({ schema: model('@secret'), db: ':memory:', encryptionKey: key, untrusted: true }))
+      .rejects.toThrow(/Vault\.token: `@secret` logs to a trail database[\s\S]*`@encrypted @guarded`/)
+    expect(await createClient({ schema: model('@encrypted @guarded'), db: ':memory:', encryptionKey: key, untrusted: true })).toBeTruthy()
+  })
+
   it('takes text only: a one-line string ending in .lite is not read from disk', async () => {
     await expect(createClient({ schema: 'db/schema.lite', db: ':memory:', untrusted: true })).rejects.toThrow(/schema\.lite has errors|schema/)
     await expect(createClient({ path: './db/schema.lite', db: ':memory:', untrusted: true } as any)).rejects.toThrow(/takes the schema as text/)
