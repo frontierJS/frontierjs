@@ -217,7 +217,7 @@ class Parser {
   // ── Top level ───────────────────────────────────────────────────────────────
 
   parseSchema() {
-    const schema = { imports: [], databases: [], models: [], views: [], enums: [], functions: [], traits: [], types: [], valuesets: [], scopes: [], extends: [], claims: [], claimSources: {}, tenancy: null }
+    const schema = { imports: [], databases: [], models: [], views: [], enums: [], functions: [], traits: [], types: [], valuesets: [], scopes: [], extends: [], claims: [], bearerClaims: [], claimSources: {}, tenancy: null }
 
     while (!this.isEOF()) {
       const comments = this.docComments()
@@ -240,11 +240,14 @@ class Parser {
         // the schema can grade `auth().x` the same way the app does. Bare, the
         // app supplies the VALUE per request. With `from`, the value is read off
         // a row that points at the caller — `claim employeeId from
-        // Employee(userId)` — and the app supplies nothing.
+        // Employee(userId)` — and the app supplies nothing. `bearer` says the
+        // principal carrying it is one the app mints for a link or widget
+        // holder, which grades at STRANGER(0) (`FJS-D1134`).
         const c = this.parseClaim()
         if (schema.claims.includes(c.name))
           throw new ParseError(`claim '${c.name}' is declared twice`, t)
         schema.claims.push(c.name)
+        if (c.bearer) schema.bearerClaims.push(c.name)
         if (c.source) schema.claimSources[c.name] = c.source
       } else if (t.type === TK.IDENT && t.value === 'extend') {
         schema.extends.push(this.parseExtend(comments))
@@ -695,12 +698,13 @@ class Parser {
   // BEATS a `@@db` written in the imported file — a package shipping a fragment
   // has to spell some database, and only the importing app knows what its own
   // are called. See parseFile for how it composes with a nested import.
-  // claim <name>
+  // claim <name> [bearer]
   // claim <name> from <Model>(<subject>)            — the row's primary key
   // claim <name> from <Model>(<subject>).<column>   — another column of it
   parseClaim() {
     this.eatIdent('claim')
     const name = this.eat(TK.IDENT).value
+    if (this.check(TK.IDENT, 'bearer')) { this.advance(); return { name, source: null, bearer: true } }
     if (!this.check(TK.IDENT, 'from')) return { name, source: null }
     this.advance()
     const model = this.eat(TK.IDENT).value
@@ -709,6 +713,10 @@ class Parser {
     this.eat(TK.RPAREN)
     let column = null
     if (this.check(TK.DOT)) { this.advance(); column = this.eat(TK.IDENT).value }
+    if (this.check(TK.IDENT, 'bearer'))
+      throw new ParseError(
+        `claim ${name} from ${model}(…) bearer — a claim read off a row is a signed-in caller's, and ` +
+        `bearer marks one the app mints for a link or widget holder. Declare it bare: claim ${name} bearer`, this.peek())
     return { name, source: { model, subject, column } }
   }
 
@@ -9559,6 +9567,7 @@ export function parseFile(filePath) {
     const importedScopes    = []
     const importedExtends   = []
     const importedClaims    = []
+    const importedBearers   = []
     const importedSources   = {}
     let   importedTenancy   = null
 
@@ -9613,6 +9622,7 @@ export function parseFile(filePath) {
         importedScopes.push(...(child.scopes ?? []))
         importedExtends.push(...(child.extends ?? []))
         importedClaims.push(...(child.claims ?? []))
+        importedBearers.push(...(child.bearerClaims ?? []))
         // One claim, one row it is read from. Two files naming the same claim
         // are the union above; two files naming it from two different rows
         // have said two things, and only one could be read.
@@ -9653,6 +9663,7 @@ export function parseFile(filePath) {
       // claim have said one thing, and a package fragment declaring the claim
       // its own policies read is how an app gets it without restating it.
       claims:    [...new Set([...importedClaims, ...(schema.claims ?? [])])],
+      bearerClaims: [...new Set([...importedBearers, ...(schema.bearerClaims ?? [])])],
       claimSources: { ...importedSources, ...(schema.claimSources ?? {}) },
     }
   }
@@ -9674,6 +9685,7 @@ export function parseFile(filePath) {
     scopes:    merged.scopes ?? [],
     extends:   merged.extends ?? [],
     claims:    merged.claims ?? [],
+    bearerClaims: merged.bearerClaims ?? [],
     claimSources: merged.claimSources ?? {},
   }
 

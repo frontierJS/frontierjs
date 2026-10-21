@@ -97,7 +97,7 @@ table `cart_grant` · db `main` · gate `8`
 | `cartId` | `Int` | no | — | **required on write** |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `id` | `Int` | no | — | id |
-| `tokenHash` | `String` | no | — | unique · @guarded · **required on write** |
+| `tokenHash` | `String` | no | — | unique · @guarded @system · **required on write** |
 
 ```
 @@index(cartId)

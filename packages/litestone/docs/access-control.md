@@ -136,7 +136,17 @@ The set has six sources:
 
 ```
 claim cartToken            // read by `@@allow(read, token == auth().cartToken)`
+claim contactId bearer     // carried by a link or widget holder the app mints
 ```
+
+**`bearer` says who carries the claim**: a principal the app mints for someone
+with no account — a link holder, a chat widget's visitor — which grades at
+STRANGER(0). `litestone advise` reads it to say when every `@@allow` for an
+operation reads only such claims under a gate above 0, so the gate refuses the
+one caller the rule admits. A bare `claim` may be a signed-in member's, emitted
+by a `membershipClaim` resolver advise cannot see, and is never graded that way
+(`FJS-D1134`). A claim read off a row is a signed-in caller's, so `from` and
+`bearer` together are refused.
 
 ### A claim that lives on another row
 

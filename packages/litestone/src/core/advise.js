@@ -1282,16 +1282,17 @@ export const RULES = [
     id:       'allow-needs-bearer-claim-under-gate',
     severity: 'warn',
     title:    'an @@allow only a bearer can satisfy sits under a gate a bearer cannot pass',
-    blurb:    'A bare `claim` (one no row supplies) is carried by a principal the app mints for a ' +
-              'link or widget holder, and that principal grades at STRANGER(0). When every @@allow for ' +
+    blurb:    'A `claim … bearer` is carried by a principal the app mints for a link or widget ' +
+              'holder, and that principal grades at STRANGER(0). When every @@allow for ' +
               'an operation reads only such claims and the gate for that operation is above 0, the gate ' +
               'refuses the one caller who could satisfy the rule, and whoever passes the gate carries no ' +
               'claim and fails it. The rule never holds and nothing else says so. Lower the gate to 0 ' +
               'and let the rule decide, or add a branch the gated callers can satisfy.',
     run(schema) {
-      let names
-      try { names = buildClaimSet(schema).names } catch { return [] }
-      const bare = n => names.get(n) === 'claim' && !(n in (schema.claimSources ?? {}))
+      // Only a claim the schema marks `bearer` (`FJS-D1134`): a bare one may be
+      // a signed-in member's, emitted by a resolver advise cannot see.
+      const bearers = new Set(schema.bearerClaims ?? [])
+      const bare = n => bearers.has(n)
 
       const authRefs = (node, acc = []) => {
         if (!node || typeof node !== 'object') return acc
@@ -1322,7 +1323,7 @@ export const RULES = [
           const list = [...claims].map(c => `auth().${c}`).join(', ')
           out.push({
             model: model.name,
-            message: `${model.name}: every @@allow for ${op} reads only ${list}, which no row supplies, and @@gate ` +
+            message: `${model.name}: every @@allow for ${op} reads only ${list}, which a bearer carries, and @@gate ` +
               `requires level ${gate[op]} for ${op}. A bearer grades at 0 and is refused at the gate; a caller ` +
               `who passes the gate carries no ${list}, so the rule admits nobody. Lower the ${op} gate to 0 ` +
               `or add a branch the gated callers can satisfy.`,

@@ -216,7 +216,7 @@ rather than refusing the row.
 | `Cart` | `shippingMethodId` | `@system` |
 | `Cart` | `handoffCode` | `@guarded` |
 | `Cart` | `handoffExpires` | `@guarded` |
-| `CartGrant` | `tokenHash` | `@guarded` |
+| `CartGrant` | `tokenHash` | `@guarded @system` |
 | `CartLine` | `unitPrice` | `@system` |
 | `Credential` | `value` | `@guarded` |
 | `Credential` | `accessToken` | `@secret` |

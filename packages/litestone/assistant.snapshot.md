@@ -445,7 +445,7 @@ Ask these three questions, then pick the row. The row decides the word.
 
 Shapes the parser accepts and something later refuses. Check every proposal against these.
 
-- **a required @guarded column makes the model uncreatable** (error). A @guarded column is writable only from asSystem(). Required with no default, every create below level 8 must supply a value nothing at that level may write, so the model cannot be created through the ordinary path at all.
+- **a required @guarded column makes the model uncreatable** (error). A @guarded column without @system is writable only from asSystem(). Required with no default, every create below level 8 must supply a value nothing at that level may write, so the model cannot be created through the ordinary path at all.
 - **a required @system column has to be filled on every create** (warn). @system is out of create-mode required on purpose, so a generated form never asks for it. A required one with no default therefore has no filler unless the application names the column on the write, and the failure lands at the write rather than at the form.
 - **the gate may let a caller rewrite the column it is graded from** (warn). A @@gate is per model, so a gate low enough to let a signed-in caller update the model that grades them lets them update the column they are graded from. Severity depends on whether the column is one a caller may write.
 - **@guarded with @encrypted is @secret written out** (info). The two together are exactly what @secret expands into. Writing both by hand is legal and means the same thing; the shorter spelling says the intent.
@@ -473,7 +473,7 @@ Shapes the parser accepts and something later refuses. Check every proposal agai
 - **a public create on a model whose required column defaults to auth()** (warn). A required column with @default(auth().id) is filled from the signed-in principal. With create at level 0 a visitor has none, so the runtime refuses the create (401, naming the field) unless the visitor states the column — and a visitor naming a user it cannot read is refused too. Raise the create level, or make the column optional.
 - **a create policy reaches through a relation the picker cannot be narrowed by** (warn). A create @@allow that reads a related row (schedule.hostId == auth().id) accepts only some of that model, and a generated picker offers every row the caller can READ. Litestone derives the narrowing for a top-level rel.col == auth().claim conjunct (x-pick-where); any other shape — an ||, an in, a computed value — it cannot state, so the picker offers rows the write refuses unless the related model's own read policy already narrows them.
 - **a read @@allow written for a claim the tenant's members do not carry hides the model from them** (warn). Under row tenancy a read @@allow is the WHOLE of who reads, not an addition to the tenant's scope: the generated @@deny still narrows to the tenant, and the allow then admits only the rows it names. One that compares a row to a claim only some principals carry (a share-link or widget bearer claim) reads as "and the link's holder may read this one", and is "only the link's holder" — every member reads an empty screen.
-- **an @@allow only a bearer can satisfy sits under a gate a bearer cannot pass** (warn). A bare `claim` (one no row supplies) is carried by a principal the app mints for a link or widget holder, and that principal grades at STRANGER(0). When every @@allow for an operation reads only such claims and the gate for that operation is above 0, the gate refuses the one caller who could satisfy the rule, and whoever passes the gate carries no claim and fails it. The rule never holds and nothing else says so. Lower the gate to 0 and let the rule decide, or add a branch the gated callers can satisfy.
+- **an @@allow only a bearer can satisfy sits under a gate a bearer cannot pass** (warn). A `claim … bearer` is carried by a principal the app mints for a link or widget holder, and that principal grades at STRANGER(0). When every @@allow for an operation reads only such claims and the gate for that operation is above 0, the gate refuses the one caller who could satisfy the rule, and whoever passes the gate carries no claim and fails it. The rule never holds and nothing else says so. Lower the gate to 0 and let the rule decide, or add a branch the gated callers can satisfy.
 - **an @@deny compares a column that can be NULL, and a NULL row is refused** (warn). SQL compares with three values and a `@@deny` fires on TRUE and on UNKNOWN alike, so `@@deny('update', ok == false)` over an optional `ok` refuses every row where `ok` is NULL, not only the ones where it is false. `x == null` is the one compare that answers a boolean. Say what NULL does: `ok != null && ok == false` to let a NULL row through, or `ok == null || ok == false` to refuse it on purpose.
 
 ## Opportunities
@@ -540,14 +540,15 @@ tenancy {
 }
 ```
 
-#### `claim` <name> [from <Model>(<subject>)[.<column>]]
+#### `claim` <name> [bearer | from <Model>(<subject>)[.<column>]]
 
 tier: **situational** · also called: token claim · see also: `auth`, `allow`
 
-A claim the principal carries that is not a column of the `@@auth` model, so `auth().<name>` is graded rather than compiling to NULL. Bare, it is a name and the app resolves the value per request — a cart token, a device id. With `from`, the value is read per request off the one row whose `<subject>` points at the caller — the row's primary key, or `<column>` — so a role held on another model (an Employee, a Customer) needs no resolver. The subject must be a key to the `@@auth` model and unique; a caller with no row holds null.
+A claim the principal carries that is not a column of the `@@auth` model, so `auth().<name>` is graded rather than compiling to NULL. Bare, it is a name and the app resolves the value per request — a cart token, a device id. `bearer` says who carries it: a principal the app mints for a link or widget holder, which grades at STRANGER(0), so `litestone advise` can say when a gate refuses the one caller a rule admits; a bare claim may be a signed-in member's from a resolver, and is never graded that way. With `from`, the value is read per request off the one row whose `<subject>` points at the caller — the row's primary key, or `<column>` — so a role held on another model (an Employee, a Customer) needs no resolver. The subject must be a key to the `@@auth` model and unique; a caller with no row holds null.
 
 ```lite
 claim cartToken
+claim cartId     bearer
 claim employeeId from Employee(userId)
 claim siteId     from Employee(userId).siteId
 ```
@@ -1414,6 +1415,18 @@ Field-level access: the column is stripped from results, or dropped from write d
 
 ```lite
 salary Int @allow(read, auth().isAdmin)
+```
+
+**Wire it to the app**
+
+#### `@override`
+
+tier: **common** · legal in: on a model's field · see also: `trait`, `trait`
+
+This field replaces, whole line, the one a @@trait supplies under the same name — a host tightening a reference trait's default or column name. Without it a redeclare is refused, naming both the field and the trait; on a field no trait supplies it is refused, so a trait that drops the field says so at every host. Not in a trait or a type.
+
+```lite
+createdAt DateTime @default(now()) @map("created_at") @override
 ```
 
 ### Model attributes

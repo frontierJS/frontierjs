@@ -212,7 +212,7 @@ extend model Flow {
 // It is an ID and not the token itself (`FJS-D343`): `bearerClaim` reads the
 // grant row and emits what it was FOR, so the shopper's secret stops at the
 // resolver and this schema never names it.
-claim cartId
+claim cartId bearer
 
 model Product {
   id   Int    @id

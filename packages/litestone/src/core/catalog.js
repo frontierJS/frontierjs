@@ -185,9 +185,9 @@ const TOP = [
     'claim',
     'schema',
     'declare',
-    '<name> [from <Model>(<subject>)[.<column>]]',
-    'A claim the principal carries that is not a column of the `@@auth` model, so `auth().<name>` is graded rather than compiling to NULL. Bare, it is a name and the app resolves the value per request — a cart token, a device id. With `from`, the value is read per request off the one row whose `<subject>` points at the caller — the row\'s primary key, or `<column>` — so a role held on another model (an Employee, a Customer) needs no resolver. The subject must be a key to the `@@auth` model and unique; a caller with no row holds null.',
-    'claim cartToken\nclaim employeeId from Employee(userId)\nclaim siteId     from Employee(userId).siteId',
+    '<name> [bearer | from <Model>(<subject>)[.<column>]]',
+    'A claim the principal carries that is not a column of the `@@auth` model, so `auth().<name>` is graded rather than compiling to NULL. Bare, it is a name and the app resolves the value per request — a cart token, a device id. `bearer` says who carries it: a principal the app mints for a link or widget holder, which grades at STRANGER(0), so `litestone advise` can say when a gate refuses the one caller a rule admits; a bare claim may be a signed-in member\'s from a resolver, and is never graded that way. With `from`, the value is read per request off the one row whose `<subject>` points at the caller — the row\'s primary key, or `<column>` — so a role held on another model (an Employee, a Customer) needs no resolver. The subject must be a key to the `@@auth` model and unique; a caller with no row holds null.',
+    'claim cartToken\nclaim cartId     bearer\nclaim employeeId from Employee(userId)\nclaim siteId     from Employee(userId).siteId',
     {
       seeAlso: ['auth', 'model:allow'],
       context: 'model User { id Int @id  @@auth }\nmodel Employee {\n  id     Int  @id\n  userId Int  @unique\n  user   User @relation(fields: [userId], references: [id])\n  siteId Int\n}',

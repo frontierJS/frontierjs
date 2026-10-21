@@ -100,9 +100,9 @@ tenancy {
 - **Deeper** — [multi-tenancy.md](multi-tenancy.md)
 - **See also** — [`@@tenant`](#tenant-model)
 
-### `claim` `<name> [from <Model>(<subject>)[.<column>]]` <a id="claim-declaration"></a>
+### `claim` `<name> [bearer | from <Model>(<subject>)[.<column>]]` <a id="claim-declaration"></a>
 
-A claim the principal carries that is not a column of the `@@auth` model, so `auth().<name>` is graded rather than compiling to NULL. Bare, it is a name and the app resolves the value per request — a cart token, a device id. With `from`, the value is read per request off the one row whose `<subject>` points at the caller — the row's primary key, or `<column>` — so a role held on another model (an Employee, a Customer) needs no resolver. The subject must be a key to the `@@auth` model and unique; a caller with no row holds null.
+A claim the principal carries that is not a column of the `@@auth` model, so `auth().<name>` is graded rather than compiling to NULL. Bare, it is a name and the app resolves the value per request — a cart token, a device id. `bearer` says who carries it: a principal the app mints for a link or widget holder, which grades at STRANGER(0), so `litestone advise` can say when a gate refuses the one caller a rule admits; a bare claim may be a signed-in member's from a resolver, and is never graded that way. With `from`, the value is read per request off the one row whose `<subject>` points at the caller — the row's primary key, or `<column>` — so a role held on another model (an Employee, a Customer) needs no resolver. The subject must be a key to the `@@auth` model and unique; a caller with no row holds null.
 
 ```lite
 model User { id Int @id  @@auth }
@@ -114,6 +114,7 @@ model Employee {
 }
 
 claim cartToken
+claim cartId     bearer
 claim employeeId from Employee(userId)
 claim siteId     from Employee(userId).siteId
 ```
@@ -2217,7 +2218,7 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 
 ### `required-guarded-uncreatable` — a required @guarded column makes the model uncreatable
 
-*error*. A @guarded column is writable only from asSystem(). Required with no default, every create below level 8 must supply a value nothing at that level may write, so the model cannot be created through the ordinary path at all.
+*error*. A @guarded column without @system is writable only from asSystem(). Required with no default, every create below level 8 must supply a value nothing at that level may write, so the model cannot be created through the ordinary path at all.
 
 ### `required-system-unfilled` — a required @system column has to be filled on every create
 
@@ -2329,7 +2330,7 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 
 ### `allow-needs-bearer-claim-under-gate` — an @@allow only a bearer can satisfy sits under a gate a bearer cannot pass
 
-*warn*. A bare `claim` (one no row supplies) is carried by a principal the app mints for a link or widget holder, and that principal grades at STRANGER(0). When every @@allow for an operation reads only such claims and the gate for that operation is above 0, the gate refuses the one caller who could satisfy the rule, and whoever passes the gate carries no claim and fails it. The rule never holds and nothing else says so. Lower the gate to 0 and let the rule decide, or add a branch the gated callers can satisfy.
+*warn*. A `claim … bearer` is carried by a principal the app mints for a link or widget holder, and that principal grades at STRANGER(0). When every @@allow for an operation reads only such claims and the gate for that operation is above 0, the gate refuses the one caller who could satisfy the rule, and whoever passes the gate carries no claim and fails it. The rule never holds and nothing else says so. Lower the gate to 0 and let the rule decide, or add a branch the gated callers can satisfy.
 
 ### `deny-reads-nullable-column` — an @@deny compares a column that can be NULL, and a NULL row is refused
 

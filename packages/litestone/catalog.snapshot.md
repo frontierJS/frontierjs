@@ -19,7 +19,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `import` | "path" [into <database>] |  |
 | `database` | <name> { path · driver · replication · retention · maxSize · model · announce } | driver: sqlite · jsonl · trail<br>announce: inProcess · crossProcess |
 | `tenancy` | { strategy database \| row, … } | strategy: database · row |
-| `claim` | <name> [from <Model>(<subject>)[.<column>]] |  |
+| `claim` | <name> [bearer \| from <Model>(<subject>)[.<column>]] |  |
 | `model` | <PascalCaseSingular> { … } |  |
 | `view` | <name> { fields… @@sql(…) [@@materialized] [@@refreshOn([…])] [@@db(…)] [@@gate(…)] [@@allow(…)] [@@deny(…)] [@@tenant(…)] } |  |
 | `enum` | <Name> { values… } |  |

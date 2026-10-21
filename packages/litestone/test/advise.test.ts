@@ -1158,13 +1158,13 @@ describe('rule: read-allow-hides-tenant-members', () => {
 // FJS-1954 — a row policy only a claims-only caller can satisfy, under a gate above 0
 // for that operation, is dead: a bearer is STRANGER(0) and refused before the policy runs.
 describe('rule: allow-needs-bearer-claim-under-gate', () => {
-  const model = (gate: string, allows: string) => `
-    claim contactId
+  const model = (gate: string, allows: string, claim = 'claim contactId bearer') => `
+    ${claim}
     model Message { id String @id  senderContactId String  kind String
       @@gate(${gate})  ${allows} }`
   const rule = (src: string) => findings(src, 'allow-needs-bearer-claim-under-gate')
 
-  test('fires when every create allow reads only a bare claim and create is gated above 0', () => {
+  test('fires when every create allow reads only a bearer claim and create is gated above 0', () => {
     const f = rule(model('0.4', `@@allow(create, kind == 'incoming' && senderContactId == auth().contactId)`))
     expect(f.length).toBe(1)
     expect(f[0].model).toBe('Message')
@@ -1177,6 +1177,20 @@ describe('rule: allow-needs-bearer-claim-under-gate', () => {
     expect(rule(model('0.4', `@@allow(create, senderContactId == auth().contactId)
       @@allow(create, kind == 'note')`))).toEqual([])
     expect(rule(model('0.4', `@@allow(read, senderContactId == auth().contactId)`))).toEqual([])
+  })
+  // FJS-D1134: a membershipClaim resolver emits bare claims advise cannot see,
+  // and reading every bare claim as a bearer's warned on members it admits.
+  test('is quiet on a bare claim, which may be a signed-in member from a resolver', () => {
+    expect(rule(model('0.4', `@@allow(create, senderContactId == auth().contactId)`, 'claim contactId'))).toEqual([])
+  })
+
+  test('a claim read off a row cannot be a bearer claim, refused by name', () => {
+    const r = parse(`model User { id Int @id  @@auth }
+      model Contact { id Int @id  userId Int @unique }
+      claim contactId from Contact(userId) bearer
+      model M { id Int @id }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toMatch(/a claim read off a row is a signed-in caller's[\s\S]*claim contactId bearer/)
   })
 })
 
