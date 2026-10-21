@@ -469,7 +469,7 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
     model PortalLink {
       id         Int       @id @default(autoincrement())
       customerId Int
-      tokenHash  String    @unique @guarded
+      tokenHash  String    @unique @guarded @system
       expiresAt  DateTime?
       revokedAt  DateTime?
       lastUsedAt DateTime? @system

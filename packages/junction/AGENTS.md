@@ -305,7 +305,10 @@ host model, which declares its own `@@gate` and `@@allow(create, …)`: who may
 issue a link is the host's declaration, at the Data boundary. **The row is minted
 by the resolver, never by hand**: `portal.mint($.db, { clientId })` is the
 caller's own create with the digest written by naming the column
-(`system: ['tokenHash']`, `FJS-D819`) and answers `{ token, row }` once;
+(`system: ['tokenHash']`, `FJS-D819`) and answers `{ token, row }` once. A
+column named that way is spelt `@guarded @system` — the trait's is — and a
+grant model of the app's own needs the same pair, because naming a plain
+`@guarded` column is refused (`FJS-D1133`);
 `hooks: portal.mintOnCreate()` in the service's definition makes the model's
 `create` the mint, with the token in the answer and out of the broadcast; beside
 hooks of the file's own it is `hooks: mergeHookMaps(portal.mintOnCreate(), { … })`.

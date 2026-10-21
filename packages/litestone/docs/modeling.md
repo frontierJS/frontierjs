@@ -23,6 +23,7 @@ ever touches it.
 | `@system`             | yes    | no — the app names it on the write | yes | yes | yes | the application |
 | `@immutable`          | yes    | **at create only** — every later write is refused, `asSystem()` included | yes | yes | yes | the caller, once |
 | `@guarded`            | yes    | `asSystem()` only | `asSystem()` only | `asSystem()` only | no | the application |
+| `@guarded @system`    | yes    | no — the app names it on the write | `asSystem()` only | `asSystem()` only | no | the application, on the caller's write |
 | `@generated("…")` / ``@generated(`…`)`` | yes | no        | yes    | yes   | yes       | SQLite — per read (`VIRTUAL`) or per write (`STORED`) |
 | `@derived(expr)`      | no     | no               | yes    | yes   | yes       | SQLite, in the SELECT |
 | `@from(Model, op)`    | no     | no               | yes    | yes   | **no**    | SQLite, a correlated subquery |
@@ -59,7 +60,11 @@ to bind.
 (`db.order.update({ …, system: ['trackingCode'] })`); `@guarded` is readable
 and writable only through `asSystem()`. They are not tiers of the same thing —
 `@system` is for a value a screen must show and a caller must not forge, and
-`@guarded` is for one nothing outside the app has any business seeing.
+`@guarded` is for one nothing outside the app has any business seeing. A value
+nobody may read that the app writes on the CALLER's own create — a grant's
+digest — is both, `@guarded @system`: a MINTED column, named on the write so
+the gate and the row policies still grade it. Naming a plain `@guarded` column
+is refused, so the schema alone says which ones the app fills (`FJS-D1133`).
 
 **Does it stop being writable once it exists?** Then it is `@immutable`, and it
 is the only entry in the table above whose answer changes with the row's age
