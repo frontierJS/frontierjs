@@ -200,10 +200,13 @@ function toMachine(server: Row, fallbackId = ''): ComputeMachine {
  *  `{ id, message }`. Only the message is wanted, and only for a sentence a
  *  person reads — the CODE is deliberately not branched on, because the one
  *  decision that turns on which failure it was is 404, and that is a status. */
-const said = (res: { error?: { kind: string; message?: string }; status?: number }) =>
-  `Hetzner: ${res.error?.kind ?? 'error'}`
-  + (res.status ? ` (HTTP ${res.status})` : '')
-  + (res.error?.message ? ` — ${res.error.message}` : '')
+const said = (res: { error?: { kind: string; message?: string }; status?: number; data?: unknown }) => {
+  const body   = (res.data as Row | null)?.error as Row | undefined
+  const reason = str(body?.message) || res.error?.message
+  return `Hetzner: ${res.error?.kind ?? 'error'}`
+    + (res.status ? ` (HTTP ${res.status})` : '')
+    + (reason ? ` — ${reason}` : '')
+}
 
 // ─── The connector ───────────────────────────────────────────────────────
 

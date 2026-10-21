@@ -53,6 +53,7 @@ import {
   insertAfter,
   removeElements,
   addStyles,
+  addHeadStyle,
   // DOM bindings
   bindText,
   bindAttribute,
@@ -924,18 +925,46 @@ describe('removeElements', () => {
   })
 })
 
+describe('addHeadStyle', () => {
+  // FJS-3232: the <mesa:head><style> path, same CSP reason as addStyles.
+  it('adopts a sheet and takes it back off on cleanup', () => {
+    const before = document.adoptedStyleSheets.length
+    const root = createRoot(dispose => { addHeadStyle('i { color: red }'); return dispose })
+    expect(document.adoptedStyleSheets.length).toBe(before + 1)
+    expect(document.head.querySelector('style')).toBeNull()
+    root()
+    expect(document.adoptedStyleSheets.length).toBe(before)
+  })
+})
+
 describe('addStyles', () => {
-  it('injects a style tag into document.head', () => {
+  // FJS-3232: a `<style>` element the runtime appends is refused by any
+  // `style-src` without 'unsafe-inline'; a constructed sheet is not gated.
+  const adopted = (id) => document.adoptedStyleSheets.filter(s => s.__mesaId === id)
+
+  it('adopts a constructed sheet on the document, appending no style element', () => {
     const id = 'mesa-test-' + Date.now()
     addStyles(id, 'body { margin: 0 }')
-    expect(document.head.querySelector(`style#${id}`)).not.toBeNull()
+    expect(document.head.querySelector(`style#${id}`)).toBeNull()
+    expect(adopted(id).length).toBe(1)
+    expect(adopted(id)[0].cssRules[0].cssText).toContain('margin')
   })
 
-  it('does not inject duplicate style tags', () => {
+  it('does not adopt the same id twice', () => {
     const id = 'mesa-dedup-' + Date.now()
     addStyles(id, 'body {}')
     addStyles(id, 'body {}')
-    expect(document.head.querySelectorAll(`style#${id}`).length).toBe(1)
+    expect(adopted(id).length).toBe(1)
+  })
+
+  it('adopts nothing when the document already carries the id as a prerendered style', () => {
+    const id = 'mesa-prerendered-' + Date.now()
+    const el = document.createElement('style')
+    el.id = id
+    document.head.appendChild(el)
+    addStyles(id, 'body {}')
+    expect(adopted(id).length).toBe(0)
+    el.remove()
   })
 })
 
@@ -5457,13 +5486,11 @@ describe('addStyles — shadow root injection', () => {
     imports = await import('../src/runtime.js')
   })
 
-  it('addStyles injects into document.head by default', () => {
+  it('addStyles puts the sheet on the document by default', () => {
     const { addStyles } = imports
     addStyles('test-style-default', 'p { color: red; }')
-    const el = document.head.querySelector('style#test-style-default')
-    expect(el).toBeTruthy()
-    expect(el.textContent).toContain('color: red')
-    el?.remove()
+    const sheet = document.adoptedStyleSheets.find(s => s.__mesaId === 'test-style-default')
+    expect(sheet.cssRules[0].cssText).toContain('color: red')
   })
 
   it('_registerStyleRoot injects styles into shadow root via adoptedStyleSheets or <style>', () => {

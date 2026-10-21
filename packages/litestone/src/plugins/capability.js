@@ -103,11 +103,11 @@ export class CapabilityPlugin extends LitestonePlugin {
     // column or a move field.
     const named    = new Set(Array.isArray(args?.system) ? args.system : args?.system ? [args.system] : [])
     const graded   = keys.filter(k => decl.columns.has(k))
-    const moves    = keys.filter(k => decl.moveFields.has(k) && !decl.columns.has(k))
-    const ungraded = keys.filter(k => !decl.columns.has(k) && !decl.moveFields.has(k) && !named.has(k))
+    const machineKeys = keys.filter(k => decl.transitionFields.has(k) && !decl.columns.has(k))
+    const ungraded = keys.filter(k => !decl.columns.has(k) && !decl.transitionFields.has(k) && !named.has(k))
 
     for (const k of graded) requireCapability(model, k, ctx)
-    if (ungraded.length || (!graded.length && !moves.length)) requireCapability(model, 'update', ctx)
+    if (ungraded.length || (!graded.length && !machineKeys.length)) requireCapability(model, 'update', ctx)
   }
 
   async onBeforeRead(model, args, ctx) {

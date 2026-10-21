@@ -530,6 +530,16 @@ describe('customMethodGrade', () => {
     plain.$close(); graded.$close()
   })
 
+  test('a GatePlugin installed by hand on a plain schema does not close it: still unchecked (FJS-3271)', async () => {
+    const { methodGateBasis } = await import('../src/core/litestone.ts')
+    const hand: any = await createClient({
+      databases: ':memory:', schema: 'model Note {\n  id Int @id\n}\n',
+      plugins: [new GatePlugin({ getLevel: () => 4 })],
+    })
+    expect(methodGateBasis(hand, null)).toBeNull()
+    hand.$close()
+  })
+
   test('a describer holding no schema reports the declaration and does not guess the floor', async () => {
     const { customMethodGrade } = await import('../src/core/litestone.ts')
     expect(customMethodGrade('settle', { settle: 5 }, undefined)).toEqual({ source: 'declared', level: 5, graded: true })

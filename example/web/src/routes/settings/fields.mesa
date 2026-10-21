@@ -43,9 +43,10 @@ title: Customer fields
     error = null
     busy  = true
     try {
-      // An ordinary create. The slot is allocated in the service, because it
-      // is `@system` and a caller choosing one could take another field's.
-      const made = await customFields.save({ key, label, type }, { mode: 'create' })
+      // An ordinary create. `model` is required and this page declares fields
+      // for customers only; the slot is allocated at the Data boundary, because
+      // it is `@system` and a caller choosing one could take another field's.
+      const made = await customFields.save({ model: 'Customer', key, label, type }, { mode: 'create' })
       // `slot: null` is the pool being full. It is a warning and not a failure,
       // and it is said here because nothing else in the app can: the field
       // works everywhere except in an audience.

@@ -2008,6 +2008,30 @@ try {
       && runtime.includes(`${redisBp?.memLimitMb} MiB`) && runtime.includes(String(redisBp?.port)),
     runtime)
 
+  // ─── Deploy on push (FJS-3393) ─────────────────────────────────────────
+  console.log('\n  app detail — deploy on push')
+  const gitApp = ((await apiGet('/apps')).body?.data ?? []).find(a => a.source?.kind === 'git')
+  check('the seed holds a git-source app to enable push on', !!gitApp)
+  await goto(`/apps/${gitApp?.id}/`)
+  await until(`document.getElementById('app-status') !== null`, v => v, 'the git app never rendered')
+  await evaluate(`[...document.querySelectorAll('#app-tabs [role=tab]')].find(b => b.textContent.trim() === 'config').click()`)
+  await until(`document.getElementById('app-push-enable') !== null`, v => v, 'the Config tab offered no Enable deploy on push')
+  await evaluate(`document.getElementById('app-push-enable').click()`)
+  const pushSecret = await until(`document.getElementById('app-push-secret')?.textContent ?? ''`,
+    t => t.length >= 32, 'enabling push never showed its secret')
+  const pushUrl = await text('#app-push-url')
+  check('enabling shows the webhook URL for this app, and a secret',
+    pushUrl.includes(`/hooks/git/${gitApp.id}`) && /^[0-9a-f]{64}$/.test(pushSecret.trim()), pushUrl)
+  check('the token URL carries the minted token', (await text('#app-push-token-url')).includes('bcpt_'))
+  const pushRow = (await apiGet(`/apps/${gitApp.id}`)).body
+  check('the row says push is on and no read carries the secret',
+    pushRow?.deployOnPush === true && !JSON.stringify(pushRow).includes(pushSecret.trim()), String(pushRow?.deployOnPush))
+  await until(`document.getElementById('app-push-off') !== null`, v => v, 'the card never offered Turn off')
+  await evaluate(`document.getElementById('app-push-off').click()`)
+  await until(`document.getElementById('app-push-enable') !== null && !document.getElementById('app-push-secret')`, v => v,
+    'turning push off never cleared the keys')
+  check('turning it off clears the row', (await apiGet(`/apps/${gitApp.id}`)).body?.deployOnPush === false)
+
   // ─── Home's fleet summary ──────────────────────────────────────────────
   console.log('\n  home — the fleet summary')
   await goto('/')

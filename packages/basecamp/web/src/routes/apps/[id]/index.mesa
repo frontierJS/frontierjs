@@ -376,6 +376,37 @@ title: App
     }
   }
 
+  // ─── Deploy on push (FJS-D884) ──────────────────────────────────────────
+
+  // The credentials are in the answer to `enablePush` and nowhere else, so they
+  // live here and only until the page is left: a reload shows the card with
+  // push on and no secret, and Rotate is how a person gets a new pair.
+  let pushKeys = null
+
+  async function enablePush() {
+    error = null; busy = 'push'
+    try {
+      pushKeys = await apps.service.invoke('enablePush', app.id, {})
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function disablePush() {
+    error = null; busy = 'push'
+    try {
+      await apps.service.invoke('disablePush', app.id, {})
+      pushKeys = null
+      toasts.success('Deploy on push is off')
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
   /** Put back what `d` replaced — a new release of the old bytes. The service
    *  names why when it cannot: a first release, or a predecessor that is gone. */
   async function rollback(d) {
@@ -792,6 +823,38 @@ title: App
       <p class="text-sm text-muted">What gets built and run. Written by whatever triggers the release.</p>
       <Json id="app-source" value={app.source} empty="No source recorded yet." copy />
     </Card>
+
+    {#if app.source?.kind === 'git'}
+      <Card id="app-push">
+        <h2 class="h4">Deploy on push</h2>
+        <p class="text-sm text-muted">
+          A push to {app.source.branch ?? 'the default branch'} releases this app, as you. Add
+          the address below to the repository's webhooks on your git host.
+        </p>
+        {#if pushKeys}
+          <Callout tone="warning" id="app-push-keys">
+            Copy these now. They are shown once, and enabling again replaces them.
+          </Callout>
+          <dl class="facts">
+            <dt>Webhook URL</dt><dd><code id="app-push-url">{pushKeys.url}</code></dd>
+            <dt>Secret</dt><dd><code id="app-push-secret">{pushKeys.secret}</code></dd>
+            <dt>Or, for a sender that signs nothing</dt><dd><code id="app-push-token-url">{pushKeys.tokenUrl}</code></dd>
+          </dl>
+          <p class="text-sm text-muted">
+            GitHub, Forgejo and Gitea: content type <code>application/json</code>, the secret above, the push event.
+          </p>
+        {/if}
+        <div class="cluster">
+          {#if app.deployOnPush}
+            <Badge tone="success" id="app-push-on">on</Badge>
+            <Button treatment="outlined" onclick={enablePush} disabled={busy} id="app-push-rotate">Rotate keys</Button>
+            <Button treatment="outlined" tone="danger" onclick={disablePush} disabled={busy} id="app-push-off">Turn off</Button>
+          {:else}
+            <Button onclick={enablePush} disabled={busy} id="app-push-enable">Enable deploy on push</Button>
+          {/if}
+        </div>
+      </Card>
+    {/if}
 
     <Card>
       <h2 class="h4">Runtime</h2>

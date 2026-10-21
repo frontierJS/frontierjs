@@ -230,6 +230,9 @@ export function appCheckScripts({ tests = false } = {}) {
     'lint:fix': 'biome check --write .',
     typecheck:  'fli typecheck',
     check:      'fli check && bun run lint && bun run typecheck',
+    // Its own script and not part of `check`: it reads a registry, and a gate
+    // run offline must not go red for it. The workflow calls it beside `check`.
+    audit:      'bun audit --audit-level=high',
   }
   if (tests) {
     // The test file types its tables off db/schema.d.ts, which a clone does not
@@ -245,9 +248,9 @@ export function appCheckScripts({ tests = false } = {}) {
 
 // ─── .github/workflows/ci.yml ─────────────────────────────────────────────────
 // An app gets a workflow, because the alternative is that it never gets one.
-// It calls `bun run check` and nothing else, for the same reason this repo's
-// own workflow calls `scripts/ci.mjs` and nothing else: a gate that only exists
-// inside a CI provider cannot be run before pushing.
+// It calls `bun run check` and `bun run audit` and nothing else, for the same
+// reason this repo's own workflow calls `scripts/ci.mjs` and nothing else: a
+// gate that only exists inside a CI provider cannot be run before pushing.
 //
 // It installs and runs; it does not deploy, because where an app deploys is not
 // something the scaffold can know.
@@ -255,7 +258,7 @@ export function appCheckScripts({ tests = false } = {}) {
 export function appWorkflow({ name = 'ci' } = {}) {
   return `# ${name} — the same gate you can run locally with \`bun run check\`.
 #
-# Nothing lives in this file but the call. A check that only exists inside a CI
+# Nothing lives in this file but the calls. A check that only exists inside a CI
 # provider cannot be run before pushing, which is how a red main branch happens.
 
 name: CI
@@ -275,6 +278,7 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - run: bun run check
+      - run: bun run audit
 `
 }
 

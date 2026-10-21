@@ -261,15 +261,38 @@ title: Orders
              at mount and never re-grade them on sign-in. -->
         <div class="cluster">
           {#each movesFor(order, session.level) as move}
-            <Button
-              treatment="ghost"
-              loading={busy === order.id + ':' + move.name}
-              disabled={!move.allowed || !canMove || busy !== null}
-              title={!canMove ? 'sign in to move an order'
-                   : move.allowed ? move.from + ' → ' + move.to
-                   : 'needs level ' + move.gate}
-              onclick={() => run(move.name, order.id)}
-            >{move.name}</Button>
+            {#if move.terminal}
+              <!-- No move leaves `move.to`, so it asks where the button is,
+                   as the detail page does. -->
+              <ConfirmationPopover
+                title={move.label + ' this order?'}
+                message={order.reference + ' goes ' + move.from + ' → ' + move.to + ', and @@transitions declares no move out of ' + move.to + '.'}
+                confirmLabel={move.name}
+                onconfirm={() => run(move.name, order.id)}
+              >
+                {#snippet trigger()}
+                  <Button
+                    treatment="ghost"
+                    tone="danger"
+                    loading={busy === order.id + ':' + move.name}
+                    disabled={!move.allowed || !canMove || busy !== null}
+                    title={!canMove ? 'sign in to move an order'
+                         : move.allowed ? move.from + ' → ' + move.to
+                         : 'needs level ' + move.gate}
+                  >{move.name}</Button>
+                {/snippet}
+              </ConfirmationPopover>
+            {:else}
+              <Button
+                treatment="ghost"
+                loading={busy === order.id + ':' + move.name}
+                disabled={!move.allowed || !canMove || busy !== null}
+                title={!canMove ? 'sign in to move an order'
+                     : move.allowed ? move.from + ' → ' + move.to
+                     : 'needs level ' + move.gate}
+                onclick={() => run(move.name, order.id)}
+              >{move.name}</Button>
+            {/if}
           {/each}
           {#if !movesFor(order, session.level).length}
             <span class="text-sm text-muted">—</span>

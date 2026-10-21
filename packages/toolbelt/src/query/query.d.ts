@@ -55,9 +55,13 @@ export function normalizeOrderBy(sort: SortParam): OrderBy
 export function normalizeSelect(select: SelectParam): Record<string, boolean>
 
 /** One value against another, in SQLite's storage-class order. */
-export function compareValues(a: unknown, b: unknown): number
+export function compareValues(a: unknown, b: unknown, collation?: string): number
 
-/** A comparator for an `orderBy`, or `null` for *leave the list alone*. */
+/**
+ * A comparator for an `orderBy`, or `null` for *leave the list alone*.
+ * `collations` maps a column to its `@collate` (`x-collate`); an unnamed column is BINARY.
+ */
 export function comparatorFor(
   sort: SortParam | undefined | null,
+  collations?: Record<string, string>,
 ): ((a: Record<string, unknown>, b: Record<string, unknown>) => number) | null

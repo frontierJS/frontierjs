@@ -9534,53 +9534,53 @@ describe('FrontierGateGetLevel', () => {
     const { FrontierGateGetLevel, LEVELS } = G()
     // No verifiedAt / activatedAt keys at all — exactly what
     // @frontierjs/auth's toContext() emits for a verified user.
-    expect(FrontierGateGetLevel({ userId: 'u1', role: 'user' })).toBe(LEVELS.USER)
+    expect(FrontierGateGetLevel({ id: 'u1', role: 'user' })).toBe(LEVELS.USER)
   })
 
   test('verifiedAt === null → VISITOR (1)', () => {
     const { FrontierGateGetLevel, LEVELS } = G()
-    expect(FrontierGateGetLevel({ userId: 'u1', role: 'user', verifiedAt: null })).toBe(LEVELS.VISITOR)
+    expect(FrontierGateGetLevel({ id: 'u1', role: 'user', verifiedAt: null })).toBe(LEVELS.VISITOR)
   })
 
   test('activatedAt === null → READER (2)', () => {
     const { FrontierGateGetLevel, LEVELS } = G()
-    expect(FrontierGateGetLevel({ userId: 'u1', role: 'user', verifiedAt: '2024-01-01', activatedAt: null }))
+    expect(FrontierGateGetLevel({ id: 'u1', role: 'user', verifiedAt: '2024-01-01', activatedAt: null }))
       .toBe(LEVELS.READER)
   })
 
   test('no role → CREATOR (3)', () => {
     const { FrontierGateGetLevel, LEVELS } = G()
-    expect(FrontierGateGetLevel({ userId: 'u1' })).toBe(LEVELS.CREATOR)
+    expect(FrontierGateGetLevel({ id: 'u1' })).toBe(LEVELS.CREATOR)
   })
 
   test('has role → USER (4)', () => {
     const { FrontierGateGetLevel, LEVELS } = G()
-    expect(FrontierGateGetLevel({ userId: 'u1', role: 'member' })).toBe(LEVELS.USER)
+    expect(FrontierGateGetLevel({ id: 'u1', role: 'member' })).toBe(LEVELS.USER)
   })
 
   // ── standing outranks lifecycle ──────────────────────────────────────────
 
   test('isAdmin → ADMINISTRATOR (5)', () => {
     const { FrontierGateGetLevel, LEVELS } = G()
-    expect(FrontierGateGetLevel({ userId: 'u1', role: 'admin', isAdmin: true })).toBe(LEVELS.ADMINISTRATOR)
+    expect(FrontierGateGetLevel({ id: 'u1', role: 'admin', isAdmin: true })).toBe(LEVELS.ADMINISTRATOR)
   })
 
   test('isOwner → OWNER (6)', () => {
     const { FrontierGateGetLevel, LEVELS } = G()
-    expect(FrontierGateGetLevel({ userId: 'u1', role: 'admin', isOwner: true })).toBe(LEVELS.OWNER)
+    expect(FrontierGateGetLevel({ id: 'u1', role: 'admin', isOwner: true })).toBe(LEVELS.OWNER)
   })
 
   test('isSystemAdmin → SYSADMIN (7)', () => {
     const { FrontierGateGetLevel, LEVELS } = G()
-    expect(FrontierGateGetLevel({ userId: 'u1', role: 'admin', isSystemAdmin: true })).toBe(LEVELS.SYSADMIN)
+    expect(FrontierGateGetLevel({ id: 'u1', role: 'admin', isSystemAdmin: true })).toBe(LEVELS.SYSADMIN)
   })
 
   test('standing wins over an unreached lifecycle stage', () => {
     const { FrontierGateGetLevel, LEVELS } = G()
     // An owner who never completed activation is still the owner. The role
     // check used to run first, so this graded CREATOR(3).
-    expect(FrontierGateGetLevel({ userId: 'u1', isOwner: true, verifiedAt: null })).toBe(LEVELS.OWNER)
-    expect(FrontierGateGetLevel({ userId: 'u1', isSystemAdmin: true })).toBe(LEVELS.SYSADMIN)
+    expect(FrontierGateGetLevel({ id: 'u1', isOwner: true, verifiedAt: null })).toBe(LEVELS.OWNER)
+    expect(FrontierGateGetLevel({ id: 'u1', isSystemAdmin: true })).toBe(LEVELS.SYSADMIN)
   })
 
   test('agrees with junction sessionGateLevel on a real auth session', () => {
@@ -9588,7 +9588,7 @@ describe('FrontierGateGetLevel', () => {
     // cross. If they drift, apps grade differently depending on which resolver
     // is installed — which is exactly what happened.
     const { FrontierGateGetLevel, LEVELS } = G()
-    const session = { userId: 'u1', userType: 'user', role: 'user', email: 'a@b.co', authMethod: 'session' }
+    const session = { id: 'u1', userType: 'user', role: 'user', email: 'a@b.co', authMethod: 'session' }
     expect(FrontierGateGetLevel(session)).toBe(LEVELS.USER)
   })
 })

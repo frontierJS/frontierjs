@@ -1316,9 +1316,9 @@ export async function cmdStudio(cfg) {
         // browser gets an answer instead of a second copy of POSITION_RULES.
         if (path === '/api/catalog')
           return fixedResponse(req, fixed('catalog', JSON.stringify({
-            // A move word is written inside a @@transitions argument, and the
+            // A transition word is written inside a @@transitions argument, and the
             // panel's "place this word" gesture inserts at a field or a model.
-            catalog:   CATALOG.filter(r => r.level !== 'move').map(r => ({ ...r, positions: positionsOf(r), doc: docFor(r),
+            catalog:   CATALOG.filter(r => r.level !== 'transition').map(r => ({ ...r, positions: positionsOf(r), doc: docFor(r),
                                           synonyms: synonymsFor(r), tier: tierFor(r) })),
             groups:    GROUPS,
             positions: POSITIONS,

@@ -57,6 +57,7 @@ import { DERIVED_NOW_ARG } from './query.js'
  * @property {'sqlite' | 'jsonl' | 'trail'}      driver
  * @property {'readwrite' | 'readonly' | false}   access
  * @property {string}                             absPath
+ * @property {boolean}                            [ownedDir]  a temp directory made for an in-memory client, removed on close
  * @property {string | null}                      retention
  * @property {string | null}                      [maxSize]
  * @property {string | null}                      [trailModel]
@@ -702,11 +703,12 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
     if (db.driver === 'jsonl' || db.driver === 'trail') {
       // In-memory mode: use a unique tmpdir so test runs don't pollute the filesystem.
       // The dir is created immediately so the driver can write to it.
+      // `ownedDir` marks it as this registry's to remove: `$close` deletes it.
       let resolvedPath = absPath
       if (inMemory) {
         resolvedPath = mkdtempSync(join(tmpdir(), `litestone-${db.name}-`)) + '/'
       }
-      registry[db.name] = { driver: db.driver, access, absPath: resolvedPath, relative, retention: db.retention, maxSize: db.maxSize, trailModel: db.trailModel, busyTimeout: busyTimeoutFor(busyTimeout, db.name), rawWriteDb: null, rawReadDb: null, writeDb: null, readDb: null }
+      registry[db.name] = { driver: db.driver, access, absPath: resolvedPath, ownedDir: inMemory, relative, retention: db.retention, maxSize: db.maxSize, trailModel: db.trailModel, busyTimeout: busyTimeoutFor(busyTimeout, db.name), rawWriteDb: null, rawReadDb: null, writeDb: null, readDb: null }
       continue
     }
 

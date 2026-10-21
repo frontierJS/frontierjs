@@ -110,10 +110,9 @@ app.post('/orders/{id}/complete', async (ctx) => {
   // No ctx.app on a route handler either — close over the app you created.
   const order = await completeOrder(ctx.route.id)
 
-  // ctx.user is a SessionContext: `userId`, not `id`. Handing it to notify()
-  // straight would address a recipient with no id — refused on inApp by name
-  // rather than written as a row nobody can read.
-  await app.notify({ id: ctx.user.userId, email: ctx.user.email }, new OrderCompleted(order))
+  // ctx.user is a SessionContext, and its key is `id` like any row's, so it
+  // addresses a recipient as it stands.
+  await app.notify(ctx.user, new OrderCompleted(order))
   return ctx.json(order)
 })
 */

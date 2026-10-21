@@ -756,6 +756,7 @@ table `payment` · db `main` · gate `1.8.8.9`
 | `userId` | `String` | yes | — | @system |
 
 ```
+@@unique(orderId), where: ("status" = 'pending' OR "status" = 'requiresAction')
 @@index(invoiceId)
 @@index(orderId)
 @@index(paymentMethodId)

@@ -306,6 +306,18 @@ test('values: text parses without a caller-written cursor, and a ternary over na
   assert.equal(valueOf("contact.name == 'Ada' && agent.name == 'Sam'"), true)
 })
 
+test('values: a string is present when it has text, not by its numeric prefix (FJS-3226)', function () {
+  const D = { contact: { name: 'Ann', zip: '0', blank: '', n: 0 } }
+  const N = { contact: ['name', 'zip', 'blank', 'n'] }
+  const of = (src) => { const ast = parseText(src); assertValues(ast, N); return evaluateValues(ast, D) }
+  assert.equal(of("contact.name ? contact.name : 'there'"), 'Ann')
+  assert.equal(of("contact.zip ? contact.zip : 'none'"), '0')
+  assert.equal(of("contact.blank ? 'y' : 'n'"), 'n')
+  assert.equal(of("contact.n ? 'y' : 'n'"), 'n')
+  assert.equal(of("contact.name && contact.zip"), true)
+  assert.equal(of("!contact.blank"), true)
+})
+
 test('values: text with a token left over is refused, not run as its first half', function () {
   refuses(() => parseText("contact.name 'x'"), /after the expression/)
 })
@@ -315,7 +327,7 @@ test('values: nesting past the bound is a ParseError, not a stack overflow', fun
   refuses(() => parseText('!'.repeat(50000) + 'contact.name'), /nested more than 100 deep/)
   refuses(() => parseText('('.repeat(20000) + 'contact.name' + ')'.repeat(20000)), /nested more than 100 deep/)
   assert.equal(valueOf('('.repeat(50) + 'contact.name' + ')'.repeat(50)), 'Ada')
-  assert.equal(valueOf('!'.repeat(50) + 'contact.name') , false)
+  assert.equal(valueOf('!'.repeat(50) + 'contact.name'), true)
   // The counter is released on a throw, so one refusal does not poison the next parse.
   assert.equal(valueOf('contact.name'), 'Ada')
 })

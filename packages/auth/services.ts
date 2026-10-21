@@ -26,7 +26,7 @@
 //              POST /people                        X-Service-Method: invite
 //
 // Four nouns are the caller's OWN: every method on them scopes to
-// `ctx.user.userId` and nothing takes a user id from the caller.
+// `ctx.user.id` and nothing takes a user id from the caller.
 // `account-recovery` is the exception and is a service of its own for that
 // reason — an operator acting on somebody else's account, where the id IS the
 // person, behind a floor none of the other four have.

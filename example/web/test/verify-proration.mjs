@@ -295,6 +295,10 @@ const annualInvoices = () => sys.invoice.findMany({ where: { subscriptionId: ann
   const s = await sys.subscription.findFirst({ where: { id: annual.id } })
 
   t('interval.yearlyToMonthlyRefused', refusal?.status === 409)
+  // Nothing records the move for renewal (`FJS-1120`), so the refusal must not
+  // read as a schedule — staff relay it to a customer as one.
+  t('interval.refusalPromisesNothing', !/takes effect|will (be|switch)|at renewal/i.test(refusal?.message ?? '')
+    && /not (been )?(changed|made)|refused/i.test(refusal?.message ?? ''))
   t('interval.refusalWritesNothing', s.planVersionId === yearly.id && (await annualInvoices()).length === before)
 
   const r = await changePlan(sys, annual.id, { quantity: 3 }, 'UTC')
@@ -370,6 +374,7 @@ const expected = {
   'interval.periodIsReanchored': true,
   'interval.documentCoversTheYear': true,
   'interval.yearlyToMonthlyRefused': true,
+  'interval.refusalPromisesNothing': true,
   'interval.refusalWritesNothing': true,
   'interval.yearlySeatChangeStillAllowed': true,
 }

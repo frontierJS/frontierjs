@@ -211,27 +211,31 @@ await sys.payment.create({ data: {
   userId: buyerCust.userId,
 } })
 
-const myBills = await (await asBuyer('/invoices')).json()
-check('a shopper asking for every invoice gets only their own',
-      [myBills.data.some(i => i.number === 'INV-3001'),
-       myBills.data.some(i => i.number === OTHER_INV)], [true, false])
+// These three tables grow with every drive that ever ran against this shop, and a
+// list answers one page of them (`FJS-3099`), so each row is asked for by its
+// own key rather than looked for on the first page.
+const byKey = async (path, key, value) =>
+  (await (await asBuyer(`${path}?${key}=${encodeURIComponent(value)}`)).json()).data ?? []
+check('a shopper asking for an invoice gets their own, and not the one issued to somebody else',
+      [(await byKey('/invoices', 'number', 'INV-3001')).length,
+       (await byKey('/invoices', 'number', OTHER_INV)).length], [1, 0])
 
 // The subscriptions are asserted by SHAPE rather than by a list, because the
 // three billing drives mint one each per run against this same shopper. They
 // clear up after themselves now, and a drive that failed halfway through leaves
 // rows behind either way — an assertion that says *exactly these* would then be
 // reporting the last crash rather than this run.
-const buyerId  = loginBody.user?.userId
+const buyerId  = loginBody.user?.id
 const mySubs   = await (await asBuyer('/subscriptions')).json()
 check('…and every subscription is theirs',
-      [mySubs.data.some(x => x.reference === 'SUB-3001'),
-       mySubs.data.every(x => x.userId === buyerId)], [true, true])
+      [(await byKey('/subscriptions', 'reference', 'SUB-3001')).length,
+       mySubs.data.every(x => x.userId === buyerId)], [1, true])
 
 const myPayments = await (await asBuyer('/payments')).json()
 check('a shopper can read the payment their bank is asking about',
-      [myPayments.data.some(p => p.actionUrl === CHALLENGE),
-       myPayments.data.every(p => p.userId === (loginBody.user?.userId))],
-      [true, true])
+      [(await byKey('/payments', 'actionUrl', CHALLENGE)).length,
+       myPayments.data.every(p => p.userId === (loginBody.user?.id))],
+      [1, true])
 
 const anonPayments = await fetch(`${API}/api/payments`)
 check('and a stranger cannot read the ledger at all', anonPayments.status, 401)
@@ -399,22 +403,23 @@ check('opening one shows what was in it', items?.length, 2)
 const subsOnScreen = await until(async () => await evaluate(
   `(() => { const els = [...document.querySelectorAll('[data-sub]')]
             return els.length ? els.map(e => e.dataset.sub) : null })()`))
-check('their standing orders are on it',
-      [subsOnScreen.includes('SUB-3001'), subsOnScreen.includes(OWN_SUB)], [true, true])
+// The screen shows the newest page, so it is THIS run's rows that are on it; the
+// seeded ones are asked for by key above.
+check('their standing orders are on it', subsOnScreen.includes(OWN_SUB), true)
 
 const billsOnScreen = await until(async () => await evaluate(
   `(() => { const els = [...document.querySelectorAll('[data-bill]')]
             return els.length ? els.map(e => e.dataset.bill) : null })()`))
 check('and their invoices, and not the one issued to somebody else',
-      [billsOnScreen.includes('INV-3001'), billsOnScreen.includes(OTHER_INV)],
+      [billsOnScreen.includes(OWN_INV), billsOnScreen.includes(OTHER_INV)],
       [true, false])
 
 // Opening one is the COMPOSED read: `invoices.get()` answers the header AND its
 // lines, because a total with nothing under it is not something anybody can
 // check. The list above is a page of headers and carries none of them.
-await evaluate(`(() => { document.querySelector('[data-open-bill="INV-3001"]').click(); return true })()`)
+await evaluate(`(() => { document.querySelector('[data-open-bill="${OWN_INV}"]').click(); return true })()`)
 const billLines = await until(async () => await evaluate(
-  `(() => { const rows = document.querySelectorAll('[data-bill-lines="INV-3001"] tbody tr td:first-child')
+  `(() => { const rows = document.querySelectorAll('[data-bill-lines="${OWN_INV}"] tbody tr td:first-child')
             const t = [...rows].map(r => r.textContent.trim()).filter(x => x && x !== 'Loading…')
             return t.length ? t : null })()`))
 check('opening an invoice shows the lines the document is made of', billLines?.length, 1)
@@ -477,9 +482,8 @@ check('resuming one that has already ended is refused', revive.status, 409)
 
 // …and the money already owed does not vanish with it. An invoice is a
 // DOCUMENT: cancelling the arrangement that produced it withdraws nothing.
-const afterCancel = await (await asBuyer('/invoices')).json()
 check('the invoices survive the cancellation — a document is not withdrawn',
-      afterCancel.data.some(i => i.number === 'INV-3001'), true)
+      (await byKey('/invoices', 'number', 'INV-3001')).length, 1)
 
 // ── the origin boundary ───────────────────────────────────────────────────
 //

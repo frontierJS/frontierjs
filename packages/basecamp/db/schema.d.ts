@@ -466,6 +466,12 @@ export interface Session {
   userAgent?: string | null
   createdAt: string
   /**
+   * Signed in on a first factor alone, where `requireSecondFactor` says the
+   * account owes a second. The plugin refuses every service call but the
+   * enrollment three while it is set; `confirmTotp` clears it.
+   */
+  enrollmentOnly: boolean
+  /**
    * SUPPORT MODE — this session is an operator's, and while these are set it
    * resolves to somebody else.
    * 
@@ -495,6 +501,12 @@ export interface SessionCreate {
   ipAddress?: string | null
   userAgent?: string | null
   /**
+   * Signed in on a first factor alone, where `requireSecondFactor` says the
+   * account owes a second. The plugin refuses every service call but the
+   * enrollment three while it is set; `confirmTotp` clears it.
+   */
+  enrollmentOnly?: boolean
+  /**
    * SUPPORT MODE — this session is an operator's, and while these are set it
    * resolves to somebody else.
    * 
@@ -523,6 +535,7 @@ export interface SessionUpdate {
   expiresAt?: string | Date
   ipAddress?: string | null
   userAgent?: string | null
+  enrollmentOnly?: boolean
   impersonatingUserId?: string | null
   impersonationReason?: string | null
   impersonationEndsAt?: string | Date | null
@@ -536,6 +549,7 @@ export interface SessionWhere extends WhereBase {
   ipAddress?: string | WhereOp<string> | null
   userAgent?: string | WhereOp<string> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
+  enrollmentOnly?: boolean | WhereOp<boolean> | null
   impersonatingUserId?: string | WhereOp<string> | null
   impersonationReason?: string | WhereOp<string> | null
   impersonationEndsAt?: string | Date | WhereOp<string | Date> | null
@@ -2822,6 +2836,12 @@ export interface App {
   cpuLimit?: number | null
   memLimitMb?: number | null
   exposesPort: boolean
+  deployOnPush: boolean
+  /** @encrypted */
+  pushSecret?: string | null
+  /** @guarded */
+  pushTokenHash?: string | null
+  pushActorId?: string | null
   blueprintId?: string | null
   createdAt: string
   updatedAt: string
@@ -2864,6 +2884,10 @@ export interface AppUpdate {
 
 export interface AppSystem {
   status?: AppStatus
+  deployOnPush?: boolean
+  pushSecret?: string | null
+  pushTokenHash?: string | null
+  pushActorId?: string | null
   blueprintId?: string | null
 }
 
@@ -2883,6 +2907,10 @@ export interface AppWhere extends WhereBase {
   cpuLimit?: number | WhereOp<number> | null
   memLimitMb?: number | WhereOp<number> | null
   exposesPort?: boolean | WhereOp<boolean> | null
+  deployOnPush?: boolean | WhereOp<boolean> | null
+  pushSecret?: string | WhereOp<string> | null
+  pushTokenHash?: string | WhereOp<string> | null
+  pushActorId?: string | WhereOp<string> | null
   blueprintId?: string | WhereOp<string> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
@@ -5912,7 +5940,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly serverNetwork: TableClient<ServerNetwork, ServerNetworkCreate, ServerNetworkUpdate, ServerNetworkWhere, ServerNetworkRelations, never, '@@gate'>
   readonly project: TableClient<Project, ProjectCreate, ProjectUpdate, ProjectWhere, ProjectRelations, never, '@@gate'>
   readonly environment: TableClient<Environment, EnvironmentCreate, EnvironmentUpdate, EnvironmentWhere, EnvironmentRelations, never, '@@gate'>
-  readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'status' | 'blueprintId' | '@@gate', AppSystem>
+  readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'status' | 'deployOnPush' | 'pushSecret' | 'pushTokenHash' | 'pushActorId' | 'blueprintId' | '@@gate', AppSystem>
   readonly variable: TableClient<Variable, VariableCreate, VariableUpdate, VariableWhere, VariableRelations, never, '@@gate'>
   readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere, DomainRelations, never, '@@gate'>
   readonly domainRoute: TableClient<DomainRoute, DomainRouteCreate, DomainRouteUpdate, DomainRouteWhere, DomainRouteRelations, never, '@@gate'>

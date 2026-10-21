@@ -94,9 +94,10 @@ title: Order
     .filter(s => s !== 'cancelled' && s !== 'refunded')
     .map(s => ({ id: s, label: s }))
 
-  // A move nobody can undo asks first. Which ones those are is not a list
-  // either — it is any move whose target is not further along the lifecycle.
-  const isTerminal = (move) => !lifecycle.some(s => s.id === move.to)
+  // A move nobody can undo asks first. `move.terminal` is the schema's answer:
+  // no declared move leaves its target. Lifecycle order is how the page DRAWS
+  // the steps and says nothing about what can be walked back (`shipped` is a step).
+  const isTerminal = (move) => move.terminal
 
   /** The order itself, watched rather than read.
    *
@@ -643,7 +644,7 @@ title: Order
     <p>
       This moves <Mono>{order.reference}</Mono> from <Mono>{confirm.from}</Mono>
       to <Mono>{confirm.to}</Mono>, and <Mono>@@transitions</Mono> declares no
-      way back.
+      move out of <Mono>{confirm.to}</Mono>.
     </p>
 
     <!--

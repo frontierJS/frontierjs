@@ -28,7 +28,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { parse } from '../src/core/parser.js'
 import { deriveAccess } from '../src/access.js'
-import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, MOVE_WORDS, lookup, seeAlsoRow, typed, grouped, GROUPS,
+import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, TRANSITION_WORDS, lookup, seeAlsoRow, typed, grouped, GROUPS,
          POSITIONS, POSITION_RULES, positionsOf, probeFor, DOCS, UNDOCUMENTED, docFor,
          SYNONYMS, synonymsFor, bySynonym, TIERS, tierFor, AXES, axisFor } from '../src/core/catalog.js'
 import { TRAIT_FORBIDDEN_FIELD_ATTRS, TRAIT_FORBIDDEN_MODEL_ATTRS,
@@ -146,7 +146,7 @@ describe('the catalog covers the parser', () => {
     const body = next > 0 ? rest.slice(0, next + 1) : rest
     const arms = [...body.matchAll(/attr\.value === '([A-Za-z]+)'/g)].map(m => m[1])
     expect(arms.length).toBe(4)
-    const have = new Set(MOVE_WORDS.map(r => r.word))
+    const have = new Set(TRANSITION_WORDS.map(r => r.word))
     expect(arms.filter(a => !have.has(a))).toEqual([])
     expect([...have].filter(w => !arms.includes(w))).toEqual([])
   })
@@ -396,7 +396,7 @@ describe('catalog shape', () => {
   test('every row is complete', () => {
     for (const row of CATALOG) {
       expect(typeof row.word).toBe('string')
-      expect(['schema', 'field', 'model', 'move']).toContain(row.level)
+      expect(['schema', 'field', 'model', 'transition']).toContain(row.level)
       expect(Object.keys(GROUPS)).toContain(row.group)
       expect(row.blurb.length).toBeGreaterThan(0)
       expect(row.blurb[0]).toBe(row.blurb[0].toUpperCase())
@@ -581,7 +581,7 @@ describe('lookup and grouping', () => {
   })
 
   test('grouped covers every row of a level exactly once', () => {
-    for (const level of ['schema', 'field', 'model', 'move']) {
+    for (const level of ['schema', 'field', 'model', 'transition']) {
       const flat = grouped(level).flatMap(g => g.rows)
       expect(flat.length).toBe(CATALOG.filter(r => r.level === level).length)
     }

@@ -24,6 +24,7 @@
 <script>
   import { cart, add, bootShop, getClient } from '@/cart.js'
   import { money }                           from '@/money.js'
+  import { stockText, reaskDelay }           from '@/stock.js'
 
   /** From the page, which read it at build time. */
   export let productId = null
@@ -43,14 +44,21 @@
   const colors = [...new Set(variants.map(v => v.color).filter(Boolean))]
   const sizesIn = (c) => variants.filter(v => v.color === c).map(v => v.size)
 
-  $.onMount(async () => {
-    try {
-      // The storefront's one client, built HERE and not at module scope: an
-      // island's body also runs during the static render, where a client would
-      // open a socket from inside the build. `bootShop` is idempotent, so every
-      // island calling it is one client.
-      bootShop()
+  let timer = null
+  let wait  = null   // from the last answer; a failed re-ask keeps it and tries again
 
+  // The storefront's one client is built in $.onMount and not at module scope:
+  // an island's body also runs during the static render, where a client would
+  // open a socket from inside the build. `bootShop` is idempotent, so every
+  // island calling it is one client.
+  $.onMount(() => {
+    bootShop()
+    return load()
+  })
+  $.onDestroy(() => clearTimeout(timer))
+
+  async function load() {
+    try {
       // Addressed to the COLLECTION — one question about a set of shelves —
       // the same call `LivePrices` makes beside this box. Two islands asking
       // the same thing is two requests and it is deliberate: each one is a
@@ -60,16 +68,21 @@
       const body = await getClient().service('product-variants')
         .invoke('availability', null, { productId })
 
+      const rows = body?.variants ?? []
       const next = new Map()
-      for (const row of body?.variants ?? []) if (row.sku) next.set(row.sku, row)
+      for (const row of rows) if (row.sku) next.set(row.sku, row)
       live  = next
       state = 'ready'
+      wait  = reaskDelay(rows)
     } catch {
       // A storefront whose shop is unreachable is still a catalog. It just
       // cannot sell, and it says so rather than offering a button that fails.
-      state = 'offline'
+      // A re-ask that fails leaves the last answer standing.
+      if (state === 'loading') state = 'offline'
     }
-  })
+    clearTimeout(timer)
+    if (wait !== null) timer = setTimeout(load, wait)
+  }
 
   // Pick the first color that has anything in it, then the first size in that
   // color that can actually be bought. A box that opens on a sold-out
@@ -105,11 +118,7 @@
     : state === 'offline' ? 'The shop could not be reached'
     : !sku                ? 'That size is not cut in this color'
     : !shelf?.active      ? 'No longer on sale'
-    // Sold out and held are different sentences because one of them comes back
-    // on its own in twenty minutes and the other does not. Telling a shopper
-    // "sold out" about stock sitting in somebody else's basket loses a customer
-    // the shop did not have to lose.
-    : avail === 0         ? (shelf.onHand > 0 ? 'In other baskets right now' : 'Sold out')
+    : avail === 0         ? stockText(shelf)
     : qty > avail         ? `Only ${avail} left`
     : null
 
@@ -124,23 +133,13 @@
       // shopper stops being told no about something the page says is `3 left`.
       // A success moves it too — their own hold comes off what everyone else
       // may buy, and this page is one of the everyone.
-      await recheck()
+      await load()
     } catch {
       // `cart.error` carries the shop's own sentence and is rendered below; a
       // second message here would say the same thing twice.
       added = null
-      await recheck()
+      await load()
     }
-  }
-
-  async function recheck() {
-    try {
-      const body = await getClient().service('product-variants')
-        .invoke('availability', null, { productId })
-      const next = new Map()
-      for (const row of body?.variants ?? []) if (row.sku) next.set(row.sku, row)
-      live = next
-    } catch { /* the box already says what it can */ }
   }
 
   // Mesa watches PATHS, so the store's fields have to be named for a write to

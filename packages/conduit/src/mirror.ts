@@ -169,6 +169,11 @@ export function createMirrors(send: (req: ConduitRequest) => Promise<ConduitResu
 
     const forward = async (verb: string, req: MirrorVerb): Promise<MirrorRow | null> => {
       const res = await send({ ...req, target: spec.target })
+      // The ladder replays every DELETE, and a Provider answers the replay of
+      // one that landed 404. A first attempt's 404 is not retryable, so a 404
+      // after a replay is the row gone, which is what the caller asked for.
+      if (verb === 'delete' && res.error && (res.meta.replays ?? 0) > 0
+        && res.error.kind === 'client_error' && (res.meta.status === 404 || res.meta.status === 410)) return null
       if (res.error) {
         const open = res.error.indeterminate ? ' — it may have been applied there, and the sync will say' : ''
         throw failure(`${at}.${verb}: ${provider} answered ${res.error.kind}${open}: ${res.error.message}`, statusOf(res.error, res.meta.status))

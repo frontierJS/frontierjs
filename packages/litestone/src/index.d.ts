@@ -710,6 +710,12 @@ export interface LitestoneClient {
    */
   $mirrorKey(accessor: string): string | null
   /**
+   * Whether the schema declares any access rule (`FJS-D1212`). `$levelOf`
+   * answering is not this: a GatePlugin installed by hand on a plain schema
+   * answers it and leaves the schema open.
+   */
+  $declaresAccessRules(): boolean
+  /**
    * The model names whose writes can change who may read a row of this model —
    * the model itself, every model a policy path or `.some()` crosses into, and
    * every model a `check()` delegates to, with its own reach. Where a reader

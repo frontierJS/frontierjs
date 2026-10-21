@@ -10,7 +10,7 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 183**.
+Graded: **13 of 184**.
 
 ## data — 3 of 63
 
@@ -242,7 +242,7 @@ Graded: **13 of 183**.
 | Nothing here mocks a module, and the reason is a design rule. | **none** |
 | A test may not name a port, and the reason is the runner. | `test-port-literal` |
 
-## ui — 4 of 52
+## ui — 4 of 53
 
 ### Routes, prerender and static
 
@@ -290,6 +290,7 @@ Graded: **13 of 183**.
 | A Mesa instance `<script>` exports two kinds of thing: a prop and a method. | **none** |
 | On an ELEMENT `bind:` means the DOM writes back, so it is `value`, `checked`, `files` — plus `group` and `this` — and every other `bind:x` there is refused, naming `x={expr}` | **none** |
 | Mesa's scoped styles do not reach into child components. | **none** |
+| A component's stylesheet is ADOPTED, not appended, and an adopted sheet sorts after every `<style>` and `<link>` in the document. | **none** |
 | A block that reads a `const` derived from another `const` can mount a STALE value | **none** |
 | A `const` read off a getter is a constant, whatever the getter reads. | **none** |
 | A `const` that CALLS something with a `let` in its arguments is made again on every write to that `let`. | **none** |

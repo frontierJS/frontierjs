@@ -368,6 +368,14 @@ try {
     active:  (await sys.plan.findMany({ where: { active: true }, limit: 50 })).length,
   })
 
+  // The premise of `agreed` below. The web drive reprices PRO on every run and
+  // leaves the window open, so a build older than that run reads as a price the
+  // island corrects, and `agreed` and `saidSo` fail on a correction nobody made.
+  t('pricing.buildIsCurrent', activePlans.flatMap(p => {
+    const baked = pricingHTML.match(new RegExp(`data-plan="${p.code}"[\\s\\S]*?data-baked="(\\d*)"`))?.[1]
+    return String(p.currentPrice ?? '') === baked ? [] : [{ code: p.code, baked, now: p.currentPrice }]
+  }))
+
   t('pricing.agreed', await evaluate(`
     await waitFor(() => document.getElementById('live-plans-state'));
     const cards = [...document.querySelectorAll('[data-plan] .price')];
@@ -618,8 +626,9 @@ const expected = {
   // takes it off sale without deleting the versions past subscriptions name.
   'pricing.retiredAbsent':     { inFile: true, inTheDb: true },
   'pricing.onePerActivePlan':  { emitted: activePlans.length, active: activePlans.length },
+  'pricing.buildIsCurrent':    [],
   // Every card checked and none of them moved — the build is seconds old.
-  'pricing.agreed':            { cards: activePlans.length, checked: true, moved: 0 },
+  'pricing.agreed':           { cards: activePlans.length, checked: true, moved: 0 },
   'pricing.fileStillSaysOld':  true,
   'pricing.corrected':         {
     baked:       originalPlanPrice,

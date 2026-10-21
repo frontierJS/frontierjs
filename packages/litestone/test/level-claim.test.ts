@@ -211,3 +211,16 @@ describe('$levelOf', () => {
     db.$close()
   })
 })
+
+describe('$declaresAccessRules', () => {
+  it('is the schema declaring a rule, not a GatePlugin answering $levelOf (FJS-3271)', async () => {
+    const plain = await createClient({
+      schema: 'model Note { id String @id }', db: ':memory:', plugins: [new GatePlugin({ getLevel: byRole })],
+    })
+    const gated = await createClient({ schema: 'model Note {\n  id String @id\n  @@gate(2)\n}', db: ':memory:' })
+    expect(plain.$levelOf('note')).not.toBeNull()
+    for (const db of [plain, plain.$setAuth({ id: 'u1' }), plain.asSystem()]) expect(db.$declaresAccessRules()).toBe(false)
+    for (const db of [gated, gated.$setAuth({ id: 'u1' }), gated.asSystem()]) expect(db.$declaresAccessRules()).toBe(true)
+    plain.$close(); gated.$close()
+  })
+})

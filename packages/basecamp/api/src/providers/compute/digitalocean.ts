@@ -136,6 +136,16 @@ function publicIp(droplet: Row): string | null {
   return pub ? str(pub.ip_address) || null : null
 }
 
+/** A refusal as a sentence: the kind, the status, and the vendor's own reason.
+ *  DO's envelope is `{ id, message }`, read off `data` because conduit fills
+ *  `error.message` with the status line on a 4xx. */
+const said = (res: { error?: { kind: string; message?: string }; status?: number; data?: unknown }) => {
+  const reason = str((res.data as Row | null)?.message) || res.error?.message
+  return `${res.error?.kind ?? 'error'}`
+    + (res.status ? ` (HTTP ${res.status})` : '')
+    + (reason ? ` — ${reason}` : '')
+}
+
 // ─── The connector ───────────────────────────────────────────────────────
 
 export const digitalOcean: ComputeConnector = {
@@ -173,8 +183,7 @@ export const digitalOcean: ComputeConnector = {
     ])
 
     const failed = [regions, sizes, images].find(r => r.error)
-    if (failed?.error)
-      throw new Error(`DigitalOcean: ${failed.error.kind}${failed.error.message ? ` — ${failed.error.message}` : ''}`)
+    if (failed?.error) throw new Error(`DigitalOcean: ${said(failed)}`)
 
     return {
       regions: rows(regions.data, 'regions').map(toRegion).filter(r => r.slug),
@@ -198,7 +207,7 @@ export const digitalOcean: ComputeConnector = {
     // anything at all.
     if (res.error) {
       if (res.status === 404) return null
-      throw new Error(`DigitalOcean: ${res.error.kind}${res.status ? ` (HTTP ${res.status})` : ''}`)
+      throw new Error(`DigitalOcean: ${said(res)}`)
     }
 
     const droplet = (res.data as Row | null)?.droplet as Row | undefined
@@ -232,10 +241,7 @@ export const digitalOcean: ComputeConnector = {
       monitoring: true,
     }})
 
-    if (res.error)
-      throw new Error(`DigitalOcean refused the create: ${res.error.kind}`
-        + `${res.status ? ` (HTTP ${res.status})` : ''}`
-        + `${res.error.message ? ` — ${res.error.message}` : ''}`)
+    if (res.error) throw new Error(`DigitalOcean refused the create: ${said(res)}`)
 
     const id = (res.data as Row | null)?.droplet as Row | undefined
     // A 2xx with no id is the worst answer this call can give: the machine may
@@ -252,7 +258,7 @@ export const digitalOcean: ComputeConnector = {
     // The FINGERPRINT is the handle, not the numeric id: a create's `ssh_keys`
     // reads a string as a fingerprint, so an id passed as a string names no key.
     const listed = await send({ method: 'GET', path: `/v2/account/keys?per_page=${PER_PAGE}` })
-    if (listed.error) throw new Error(`DigitalOcean: ${listed.error.kind}`)
+    if (listed.error) throw new Error(`DigitalOcean: ${said(listed)}`)
 
     const want = keyBody(key.publicKey)
     const have = rows(listed.data, 'ssh_keys').find(k => keyBody(str(k.public_key)) === want)
@@ -261,9 +267,7 @@ export const digitalOcean: ComputeConnector = {
     const made = await send({ method: 'POST', path: '/v2/account/keys', body: {
       name: key.name, public_key: key.publicKey.trim(),
     }})
-    if (made.error)
-      throw new Error(`DigitalOcean refused the SSH key: ${made.error.kind}`
-        + `${made.error.message ? ` — ${made.error.message}` : ''}`)
+    if (made.error) throw new Error(`DigitalOcean refused the SSH key: ${said(made)}`)
     const fingerprint = str(((made.data as Row | null)?.ssh_key as Row | undefined)?.fingerprint)
     if (!fingerprint) throw new Error('DigitalOcean accepted the SSH key and answered no fingerprint')
     return fingerprint
@@ -278,7 +282,7 @@ export const digitalOcean: ComputeConnector = {
     // Not an error: a destroy that cannot be run twice is one that cannot be
     // retried, and every path into this one is a job that may be redelivered.
     if (res.status === 404) return true
-    if (res.error) throw new Error(`DigitalOcean: ${res.error.kind}`)
+    if (res.error) throw new Error(`DigitalOcean: ${said(res)}`)
     return true
   },
 
@@ -287,7 +291,7 @@ export const digitalOcean: ComputeConnector = {
       method: 'GET',
       path:   `/v2/droplets?tag_name=${encodeURIComponent(selectorTag(mark))}&per_page=${PER_PAGE}`,
     })
-    if (res.error) throw new Error(`DigitalOcean: ${res.error.kind}`)
+    if (res.error) throw new Error(`DigitalOcean: ${said(res)}`)
 
     return rows(res.data, 'droplets').map(d => ({
       providerServerId: String(d.id ?? ''),

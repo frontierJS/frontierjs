@@ -245,3 +245,47 @@ describe('does not disturb compilation', () => {
     ).resolves.toBeDefined()
   })
 })
+
+// ─── Call-result tier ────────────────────────────────────────────────────────
+// `{media(q).matches}` — a member read off an imported call's result. The call
+// is a signal factory (`media`, `now`, `persisted`), and the template hoists the
+// whole expression static when nothing local in it is reactive (`FJS-3096`).
+// Strict only, for the reason the path tier is: a plain imported function is
+// indistinguishable from a factory.
+
+describe('call-result tier', () => {
+  const S = "import { media, fmt } from './browser.js'"
+  const strict = { externalReactivityHints: 'strict' }
+
+  const callWarn = async (src, cfg = strict) => {
+    const ctx = await compileSource(src, { filename: '/t/T.mesa', dev: false, ...cfg })
+    return (ctx.analysis?.warnings ?? []).filter(w => /call's result/.test(w))
+  }
+
+  test('a member read off an imported call in the template warns', async () => {
+    const w = await callWarn(`<script>${S}</script><p>{media('(a)').matches}</p>`)
+    expect(w).toHaveLength(1)
+    expect(w[0]).toContain("'media(...).matches'")
+    expect(w[0]).toContain('const')
+  })
+
+  test('silent without strict', async () => {
+    expect(await callWarn(`<script>${S}</script><p>{media('(a)').matches}</p>`, {})).toEqual([])
+  })
+
+  test('a reactive local argument keeps the read in an effect, so it is silent', async () => {
+    expect(await callWarn(`<script>${S}\nlet q = '(a)'</script><p>{media(q).matches}</p>`)).toEqual([])
+  })
+
+  test('the call held in a local const is the fix and is silent', async () => {
+    expect(await callWarn(`<script>${S}\nconst m = media('(a)')</script><p>{m.matches}</p>`)).toEqual([])
+  })
+
+  test('a method call on the result is not a value read', async () => {
+    expect(await callWarn(`<script>${S}</script><p>{fmt('x').trim()}</p>`)).toEqual([])
+  })
+
+  test('a local function is never reported', async () => {
+    expect(await callWarn(`<script>function f() { return { a: 1 } }</script><p>{f().a}</p>`)).toEqual([])
+  })
+})

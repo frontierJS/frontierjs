@@ -396,8 +396,8 @@ if (encKeyExists) {
 }
 
 // No AUTH_SECRET is generated, and that is a statement rather than an omission
-// (`FJS-360`). A session here is a ROW — `generateSessionToken()` is a random
-// UUID stored on `Session`, verified by looking it up — so nothing is signed and
+// (`FJS-360`). A session here is a ROW — `generateSessionToken()` is 32 random
+// bytes of hex stored on `Session`, verified by looking it up — so nothing is signed and
 // there is nothing for a signing secret to sign. An API key is hashed with
 // `ENCRYPTION_KEY`. A second secret with no reader is worse than no secret: it
 // gets rotated, nothing breaks, and everybody learns that rotating is safe.

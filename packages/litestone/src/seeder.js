@@ -64,21 +64,21 @@ function _statePath(transitions, from, to) {
     const at = queue.shift()
     for (const [name, t] of Object.entries(transitions)) {
       if (t.gate === 9 || !t.from.includes(at) || prev.has(t.to)) continue
-      prev.set(t.to, { from: at, move: name })
+      prev.set(t.to, { from: at, transition: name })
       queue.push(t.to)
     }
   }
   if (!prev.has(to)) return null
-  const moves = []
-  for (let s = to; prev.get(s); s = prev.get(s).from) moves.unshift(prev.get(s).move)
-  return moves
+  const names = []
+  for (let s = to; prev.get(s); s = prev.get(s).from) names.unshift(prev.get(s).transition)
+  return names
 }
 
-// Takes the states out of `data` and answers the moves to make once the row
-// exists. Throws, naming the state, when no declared move leads there.
+// Takes the states out of `data` and answers the transitions to make once the row
+// exists. Throws, naming the state, when no declared transition leads there.
 function _machineWalk(schema, modelName, data) {
   const model = schema?.models?.find(m => m.name === modelName)
-  const moves = []
+  const names = []
   for (const attr of model?.attributes ?? []) {
     // A declared machine's moves are rows the seed has not written yet, so the
     // state is the create's to grade against the scope's entries.
@@ -92,9 +92,9 @@ function _machineWalk(schema, modelName, data) {
       `Factory(${modelName}): no declared move leads from '${entry}' to '${want}' on ${attr.field}. ` +
       `A row starts at its @default; create it there and put it where no move leads with db.asSystem().sql.`)
     delete data[attr.field]
-    moves.push(...path)
+    names.push(...path)
   }
-  return moves
+  return names
 }
 
 // The nullable foreign keys a row cannot leave null, so each gets a parent
@@ -577,13 +577,13 @@ export class Factory {
     // construction — but the token pool is finite and the value catalog is small,
     // so at scale two rows can still collide. Rebuilding advances the seq, which
     // changes every generated value; retry rather than fail a 5000-row seed.
-    let row, moves
+    let row, transitions
     const table = this._db[modelToAccessor(this.model)]
     for (let attempt = 0; ; attempt++) {
       const data = attempt === 0 && probe
         ? { ...probe, ...fkOverrides, ...resolvedOverrides }
         : this.buildOne({ ...fkOverrides, ...resolvedOverrides })
-      moves = _machineWalk(this._db.$schema ?? this._schema, this.model, data)
+      transitions = _machineWalk(this._db.$schema ?? this._schema, this.model, data)
       try {
         row = await table.create({ data })
         break
@@ -591,11 +591,11 @@ export class Factory {
         if (attempt >= UNIQUE_RETRIES || !_isUniqueViolation(e)) throw e
       }
     }
-    if (moves.length) {
+    if (transitions.length) {
       const pkField = (this._db.$schema ?? this._schema)?.models?.find(m => m.name === this.model)
         ?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
       const pk = row[pkField]
-      for (const move of moves) Object.assign(row, await table.transition(pk, move))
+      for (const name of transitions) Object.assign(row, await table.transition(pk, name))
     }
 
     // afterCreate hook

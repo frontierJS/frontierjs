@@ -1222,8 +1222,8 @@ const _guardRange = (dom) => {
 // ── Style injection ───────────────────────────────────────────────────────────
 // By default styles go into document.head. Shadow DOM mounts register their
 // shadow root via _registerStyleRoot() so styles land in the right place.
-// Uses adoptedStyleSheets when available (shadow roots support them natively)
-// with a <style> tag fallback for document.head and older environments.
+// Uses adoptedStyleSheets when available, on the document and on a shadow root
+// alike, with a <style> tag fallback for older environments.
 
 const _styleRoots  = new Map()   // styleRoot → Set<id> (already-injected style ids)
 let   _defaultRoot = null        // set to document.head after browser init
@@ -1256,20 +1256,24 @@ export const addStyles = (id, css) => {
 }
 
 function _injectStyle(target, id, css) {
-  // ShadowRoot supports adoptedStyleSheets — use CSSStyleSheet for zero DOM overhead
-  if (target instanceof ShadowRoot && typeof CSSStyleSheet !== 'undefined') {
+  // A constructed sheet is not gated by CSP `style-src`; an appended <style>
+  // element is, so an app under `default-src 'self'` (FJS-D1192) renders
+  // unstyled with only the page's securitypolicyviolation to say why. The
+  // document adopts the sheet exactly as a shadow root does.
+  const owner = target instanceof ShadowRoot ? target : (target === document.head ? document : null)
+  if (owner && typeof CSSStyleSheet !== 'undefined' && owner.adoptedStyleSheets) {
     try {
       const sheet = new CSSStyleSheet()
       sheet.replaceSync(css)
       // Tag it so we can deduplicate
       sheet.__mesaId = id
-      if (!target.adoptedStyleSheets.some(s => s.__mesaId === id)) {
-        target.adoptedStyleSheets = [...target.adoptedStyleSheets, sheet]
+      if (!owner.adoptedStyleSheets.some(s => s.__mesaId === id)) {
+        owner.adoptedStyleSheets = [...owner.adoptedStyleSheets, sheet]
       }
       return
     } catch { /* fall through to <style> tag */ }
   }
-  // Fallback: <style> tag — works for document.head and older shadow root polyfills
+  // Fallback: <style> tag — an engine without constructable sheets
   if (target.querySelector?.(`style#${id}`)) return
   const el = document.createElement('style')
   el.id = id
@@ -2093,6 +2097,27 @@ export function addToHead(domOrFragment) {
     : [domOrFragment]
   nodes.forEach((n) => document.head.appendChild(n))
   onCleanup(() => nodes.forEach((n) => n.parentNode?.removeChild(n)))
+}
+
+/**
+ * <mesa:head><style> — a raw stylesheet for the document, taken off on destroy.
+ * A constructed sheet where the engine has them, so a `style-src` without
+ * 'unsafe-inline' does not refuse it (FJS-3232); a <style> element otherwise.
+ */
+export function addHeadStyle(css) {
+  if (!_isBrowser) return
+  if (typeof CSSStyleSheet !== 'undefined' && document.adoptedStyleSheets) {
+    try {
+      const sheet = new CSSStyleSheet()
+      sheet.replaceSync(css)
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet]
+      onCleanup(() => { document.adoptedStyleSheets = document.adoptedStyleSheets.filter(s => s !== sheet) })
+      return
+    } catch { /* fall through to <style> element */ }
+  }
+  const el = document.createElement('style')
+  el.textContent = css
+  addToHead(el)
 }
 
 /**

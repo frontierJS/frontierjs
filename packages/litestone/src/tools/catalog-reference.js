@@ -26,7 +26,7 @@
 // Rendered by `litestone catalog --reference`, byte-compared by `--check`.
 // Never imported by production code.
 
-import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, MOVE_WORDS, POSITIONS,
+import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, TRANSITION_WORDS, POSITIONS,
          POSITION_RULES, positionsOf, hasOrdinaryPositions, typed, grouped, probeFor, docFor,synonymsFor, seeAlsoRow } from '../core/catalog.js'
 import { VISIBILITY, PER_CALLER, RULES } from '../core/advise.js'
 
@@ -138,12 +138,12 @@ export function renderCatalogReference() {
        'and shows you the diff first.', '')
   push(`**${CATALOG.length} words** — ${TOP_LEVEL.length} declarations · ` +
        `${FIELD_ATTRS.length} field attributes · ${MODEL_ATTRS.length} model attributes · ` +
-       `${MOVE_WORDS.length} move words.`, '')
+       `${TRANSITION_WORDS.length} transition words.`, '')
 
   // ── index ───────────────────────────────────────────────────────────────────
   push('## Index', '')
   for (const [level, title] of [['schema', 'Declarations'], ['field', 'Field attributes'],
-                                ['model', 'Model attributes'], ['move', 'Move words']]) {
+                                ['model', 'Model attributes'], ['transition', 'Transition words']]) {
     push(`**${title}**`, '')
     for (const g of grouped(level))
       push(`- *${g.title}* — ${g.rows.map(link).join(' · ')}`)
@@ -158,7 +158,7 @@ export function renderCatalogReference() {
      'One `@`, and it describes the column it sits on.'],
     ['model', 'Model attributes',
      'Two `@@`, and it describes the whole model rather than one of its columns.'],
-    ['move', 'Move words',
+    ['transition', 'Transition words',
      'One `@`, after the target of a `@@transitions` move. `@system` and `@gate` are the column\'s `@system` and the model\'s `@@gate` at move grain: the same fact, said of one act rather than of a value or of every row.'],
   ]) {
     push(`## ${title}`, '', lead, '')

@@ -145,6 +145,22 @@ const start = async () => {
   if (order.status !== 'pending')
     throw bad(`That order is ${order.status} — there is nothing to pay`)
 
+  // A retried link or a second tab lands here while the first payment is still
+  // open, and a second intent is a second charge for the whole order: both can
+  // settle and `record` stores the later one `succeeded` against an order that
+  // is already paid, with nothing to refund it. The open one is the answer, as
+  // `chargeInvoice` answers for an invoice. `failed` is terminal, so a declined
+  // card still gets a fresh intent.
+  const openOne = () => sys().payment.findFirst({
+    where:   { orderId: order.id, status: { in: ['pending', 'requiresAction'] } },
+    orderBy: { id: 'desc' },
+  }) as Promise<PaymentRow | null>
+  const answerWith = (open: PaymentRow) =>
+    ({ paymentId: open.id, providerRef: open.providerRef, amount: open.amount, status: open.status })
+
+  const open = await openOne()
+  if (open) return answerWith(open)
+
   const { intent, error } = await createIntent($.app!, {
     amount:    order.total,
     currency:  'USD',
@@ -163,17 +179,29 @@ const start = async () => {
     )
   }
 
-  const payment = await sys().payment.create({ data: {
-    providerRef: intent.id,
-    orderId:     order.id,
-    amount:      order.total,
-    currency:    intent.currency ?? 'USD',
-    // Copied from the order, like the invoice path does. Null for a guest,
-    // which is most of this shop's orders and is the honest answer: there is no
-    // account for the row policy to match, and a checkout link is what the
-    // stranger was given instead.
-    userId:      order.userId ?? null,
-  } }) as PaymentRow
+  // The read above and this write straddle the provider call, so two starts in
+  // flight together both reach here. `Payment` declares one open row per order,
+  // which is what refuses the second: it lost the race, and the answer is the
+  // row that won. Its own intent was never written anywhere and is never paid.
+  let payment: PaymentRow
+  try {
+    payment = await sys().payment.create({ data: {
+      providerRef: intent.id,
+      orderId:     order.id,
+      amount:      order.total,
+      currency:    intent.currency ?? 'USD',
+      // Copied from the order, like the invoice path does. Null for a guest,
+      // which is most of this shop's orders and is the honest answer: there is no
+      // account for the row policy to match, and a checkout link is what the
+      // stranger was given instead.
+      userId:      order.userId ?? null,
+    } }) as PaymentRow
+  } catch (err) {
+    if ((err as Error)?.name !== 'UniqueConflictError') throw err
+    const winner = await openOne()
+    if (!winner) throw err
+    return answerWith(winner)
+  }
 
   // ─── Two audiences, two payloads ─────────────────────────────────────────
   //

@@ -97,6 +97,7 @@ a method — it applies to each one.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `withTenantDb` → `anonymous` |
+| before | `all` | `secondFactorRequired` |
 
 ## Services
 

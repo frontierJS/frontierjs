@@ -40,7 +40,7 @@ describe('the index is the committed artefacts', () => {
 
   test('a parse that read nothing would pass every verdict below vacuously, so the counts are asserted', () => {
     expect(index.entries.filter(e => e.type === 'model').length).toBeGreaterThan(30)
-    expect(index.entries.filter(e => e.type === 'move').length).toBeGreaterThan(10)
+    expect(index.entries.filter(e => e.type === 'transition').length).toBeGreaterThan(10)
     expect(index.entries.filter(e => e.type === 'method').length).toBeGreaterThan(10)
   })
 })
@@ -82,25 +82,25 @@ describe('run 1, row by row', () => {
   })
 
   test('A22 — undo a mistaken ship: one missing edge', () => {
-    const r = ask('change', { kind: 'move', about: 'order', from: 'shipped', to: 'paid' })
+    const r = ask('change', { kind: 'transition', about: 'order', from: 'shipped', to: 'paid' })
     expect(r).toMatchObject({ verdict: 'needs us', depth: 'data-declaration' })
     expect(r.facts[0].why).toMatch(/one edge/)
   })
 
   test('A22 and B17 are one target', () => {
-    const a22 = ask('change', { kind: 'move', about: 'order', from: 'shipped', to: 'paid' })
-    const b17 = ask('change', { kind: 'move', about: 'orders', from: 'shipped', to: 'paid' })
+    const a22 = ask('change', { kind: 'transition', about: 'order', from: 'shipped', to: 'paid' })
+    const b17 = ask('change', { kind: 'transition', about: 'orders', from: 'shipped', to: 'paid' })
     expect(a22.identity).toBe(b17.identity)
   })
 
   test('A24 — mark invoices paid: the seed alone says no, and the app snapshot says a person can', () => {
-    const r = ask('question', { kind: 'move', about: 'invoice', to: 'paid' })
+    const r = ask('question', { kind: 'transition', about: 'invoice', to: 'paid' })
     expect(r.verdict).toBe('you can do this')
     expect(r.facts[0].target).toBe('invoices.settle')
   })
 
   test('the same @system move with no method beside it is declined — the control for A24', () => {
-    const r = ask('question', { kind: 'move', about: 'invoice', words: 'issue' })
+    const r = ask('question', { kind: 'transition', about: 'invoice', words: 'issue' })
     expect(r.verdict).toBe('declined by design')
   })
 

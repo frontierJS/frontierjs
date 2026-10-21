@@ -15,7 +15,7 @@
 
 import { TK, tokenize, ParseError } from './tokenize.js'
 import { parseExpression } from './parse.js'
-import { evaluate } from './predicate.js'
+import { evaluate, truth } from './predicate.js'
 
 function cursor(tokens) {
   let pos = 0
@@ -89,6 +89,11 @@ export function assertValues(ast, names) {
   walk(ast)
 }
 
+// A template reads a string as JavaScript does -- text is present, '' is not --
+// because a policy's SQLite reading (numeric prefix) makes 'Ann' false and '0'
+// absent (`FJS-3226`). A number or boolean keeps `truth`'s answer.
+const textTruth = (v) => (typeof v === 'string' ? v !== '' : truth(v))
+
 /**
  * The expression's value over `data` (`{ owner: { field: value } }`), read by
  * own key and never writable through. A name the data lacks answers null.
@@ -98,6 +103,7 @@ export function evaluateValues(ast, data) {
   return evaluate(ast, {
     record: null,
     auth: null,
+    truthOf: textTruth,
     resolvePath: (n) => (Object.hasOwn(data, n.rel) && Object.hasOwn(data[n.rel], n.name) ? data[n.rel][n.name] ?? null : null),
   })
 }

@@ -146,7 +146,7 @@ describe('litestone explain — the words a move takes', () => {
 
   test('--json carries the move rows with their level', () => {
     const rows = JSON.parse(run('@seals', '--json').out)
-    expect(rows.map((r: any) => r.level)).toEqual(['move'])
+    expect(rows.map((r: any) => r.level)).toEqual(['transition'])
   })
 })
 
@@ -161,12 +161,12 @@ describe('litestone explain — one word, two grains', () => {
   const rowsOf = (word: string) => JSON.parse(run(word, '--json').out)
 
   test("a move's @system opens by naming the column's @system as the same fact", () => {
-    const first = firstSentence(rowsOf('@system'), 'move')
+    const first = firstSentence(rowsOf('@system'), 'transition')
     expect(first).toContain("column's @system")
   })
 
   test("a move's @gate opens by naming the model's @@gate as the same fact", () => {
-    const first = firstSentence(rowsOf('@gate'), 'move')
+    const first = firstSentence(rowsOf('@gate'), 'transition')
     expect(first).toContain("model's @@gate")
   })
 
@@ -176,9 +176,9 @@ describe('litestone explain — one word, two grains', () => {
     expect(out).toContain('@@transitions(state, issue: draft -> issued @system')
   })
 
-  test('the Move words lead does not apologize for the shared spelling', () => {
+  test('the Transition words lead does not apologize for the shared spelling', () => {
     const ref = require('fs').readFileSync(resolve(import.meta.dir, '..', 'docs', 'reference.snapshot.md'), 'utf8')
-    const lead = ref.slice(ref.indexOf('## Move words'), ref.indexOf('### ', ref.indexOf('## Move words')))
+    const lead = ref.slice(ref.indexOf('## Transition words'), ref.indexOf('### ', ref.indexOf('## Transition words')))
     expect(lead).not.toContain('answers for both')
   })
 })

@@ -126,14 +126,14 @@ describe('verify tokens', () => {
 })
 
 describe('token shape and entropy', () => {
-  test('reset/verify/challenge tokens are 32 random bytes; session tokens are v4 uuids; api keys are prefixed 32 bytes', () => {
+  test('reset/verify/challenge tokens are 32 random bytes; session tokens are 32 random bytes of hex; api keys are prefixed 32 bytes', () => {
     const seen = new Set<string>()
     for (let i = 0; i < 1000; i++) {
       const t = generateToken()
       expect(t).toMatch(/^[A-Za-z0-9_-]{43}$/)
       seen.add(t)
       const s = generateSessionToken()
-      expect(s).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+      expect(s).toMatch(/^[0-9a-f]{64}$/)
       seen.add(s)
       const k = generateApiKey()
       expect(k).toMatch(/^fjs_[A-Za-z0-9_-]{43}$/)

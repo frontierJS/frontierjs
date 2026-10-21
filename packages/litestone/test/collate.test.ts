@@ -89,3 +89,12 @@ describe('@collate(nocase)', () => {
     expect(parse(lite).errors).toEqual([])
   })
 })
+
+describe('x-collate (FJS-3234)', () => {
+  it('rides the JSON Schema so a live list can place a row in the column\'s order', async () => {
+    const { generateJsonSchema } = await import('../src/jsonschema.js')
+    const p: any = generateJsonSchema(parse(SCHEMA).schema, { mode: 'read' }).$defs.Source.properties
+    expect(p.label['x-collate']).toBe('nocase')
+    expect(p.code['x-collate']).toBeUndefined()
+  })
+})

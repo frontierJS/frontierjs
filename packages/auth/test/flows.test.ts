@@ -241,18 +241,19 @@ describe('login', () => {
 
   test('token-shape: a session token cannot be read as an API key', () => {
     // One door routes both on API_KEY_PREFIX, and the two are told apart only
-    // because a UUID's alphabet excludes the prefix. Written down as an
+    // because a hex alphabet excludes the prefix. Written down as an
     // assertion because the alternative failure is silent and rare: a session
     // token opening with the prefix routes to the API-key branch, matches no
     // credential, and resolves anonymous (FJS-986).
     for (const c of API_KEY_PREFIX) {
-      if (/[0-9a-f-]/.test(c)) continue
-      expect('0123456789abcdef-'.includes(c)).toBe(false)
+      if (/[0-9a-f]/.test(c)) continue
+      expect('0123456789abcdef'.includes(c)).toBe(false)
     }
     for (let i = 0; i < 2000; i++) {
       const t = generateSessionToken()
       expect(t.startsWith(API_KEY_PREFIX)).toBe(false)
-      expect(/^[0-9a-f-]+$/.test(t)).toBe(true)
+      // 64 hex chars is 256 bits, over ASVS V7.2.3's 128-bit floor (FJS-3199).
+      expect(/^[0-9a-f]{64}$/.test(t)).toBe(true)
     }
     // The control: an API key DOES carry the prefix, or the rows above would
     // pass against a routing rule that never fires.

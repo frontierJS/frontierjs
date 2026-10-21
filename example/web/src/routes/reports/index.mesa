@@ -69,10 +69,14 @@ title: Reports
   $: gated   = refused || !canRead
 
   // The one derived number on the page, and it is a SUM OF THE PROJECTION rather
-  // than of the orders — three rows added up, not eight. Re-deriving it from
-  // `Order` would be a second answer to a question the view already answers.
-  console.log(rows())
-  $: banked = (rows() ?? []).reduce((n, r) => n + (r.total ?? 0), 0)
+  // than of the orders — a few rows added up, not every order. Re-deriving it
+  // from `Order` would be a second answer to a question the view already answers.
+  //
+  // The view answers "what is each state worth"; *Taken* is a narrower question.
+  // A pending order is unpaid and a refunded or cancelled one was given back, so
+  // summing every row would show a bookkeeper money the shop does not hold.
+  const TAKEN = new Set(['paid', 'shipped'])
+  $: banked = (rows() ?? []).reduce((n, r) => n + (TAKEN.has(r.status) ? (r.total ?? 0) : 0), 0)
   $: placed = (rows() ?? []).reduce((n, r) => n + (r.orders ?? 0), 0)
 </script>
 
@@ -98,12 +102,12 @@ title: Reports
   <Alert tone="danger" id="rp-error">{error}</Alert>
 {:else}
   <div class="cluster" id="rp-stats">
-    <StatCard label="Taken"  value={money(banked)} sub="across every state" />
-    <StatCard label="Orders" value={String(placed)} sub="counted by the shop" />
+    <StatCard label="Taken"  value={money(banked)} sub="paid and shipped orders" />
+    <StatCard label="Orders" value={String(placed)} sub="across every state" />
   </div>
 
   {#if (rows() ?? []).length === 0}
-    <EmptyState title="Nothing taken yet">A paid order will show up here.</EmptyState>
+    <EmptyState title="No orders yet">An order will show up here as soon as it is placed; it counts as taken once it is paid.</EmptyState>
   {:else}
     <Table {columns} rows={rows()} striped hover compact={prefs.dense}>
       {#snippet row(r)}

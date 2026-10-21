@@ -25,17 +25,20 @@
   import { createJunctionClient } from '@frontierjs/junction/client'
   import { clientOptions }        from '@/api.js'
   import { money }                from '@/money.js'
+  import { stockText, reaskDelay } from '@/stock.js'
 
   export let productId = null
 
   let state = 'loading'   // loading | agreed | corrected | offline
   let moved = []
+  let timer = null
+  let wait  = null        // from the last answer; a failed re-ask keeps it and tries again
 
-  $.onMount(async () => {
-    // Built in $.onMount and not at module scope: an island's body also runs
-    // during the static render, where there is no window, no fetch origin and
-    // no document to correct. `$.onMount` is a no-op on the server, which is
-    // what makes that safe rather than merely lucky.
+  // Called from $.onMount and not at module scope: an island's body also runs
+  // during the static render, where there is no window, no fetch origin and
+  // no document to correct. `$.onMount` is a no-op on the server, which is
+  // what makes that safe rather than merely lucky.
+  async function ask() {
     try {
       // Through the Junction client, not a hand-rolled fetch. A custom method
       // has a URL shape — `POST /{service}` with `X-Service-Method`, or
@@ -74,17 +77,24 @@
 
         const stock = document.querySelector(`tr[data-sku="${row.sku}"] .avail`)
         if (stock) {
-          stock.textContent = row.available > 0 ? `${row.available} available` : 'Sold out'
+          stock.textContent = stockText(row)
           stock.dataset.available = String(row.available)
         }
       }
 
       moved = seen
       state = seen.length ? 'corrected' : 'agreed'
+      wait  = reaskDelay(rows)
     } catch {
-      state = 'offline'
+      // A re-ask that fails leaves the last answer standing; only a page that
+      // never got one is offline.
+      if (state === 'loading') state = 'offline'
     }
-  })
+    if (wait !== null) timer = setTimeout(ask, wait)
+  }
+
+  $.onMount(ask)
+  $.onDestroy(() => clearTimeout(timer))
 </script>
 
 <p class="text-sm" id="live-prices">

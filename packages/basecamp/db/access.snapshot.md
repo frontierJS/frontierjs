@@ -617,6 +617,10 @@ rather than refusing the row.
 | `ApiKey` | `credentialId` | `@system` |
 | `ApiKey` | `tokenHint` | `@system` |
 | `App` | `status` | `@system` |
+| `App` | `deployOnPush` | `@system` |
+| `App` | `pushSecret` | `@encrypted` |
+| `App` | `pushTokenHash` | `@guarded @system` |
+| `App` | `pushActorId` | `@system` |
 | `App` | `blueprintId` | `@system` |
 | `Credential` | `value` | `@guarded` |
 | `Credential` | `accessToken` | `@secret` |

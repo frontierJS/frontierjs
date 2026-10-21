@@ -463,9 +463,11 @@ export function encodeQueryString(query) {
  * that decide a list's order in practice: NULLs first ascending (SQLite's
  * default, which negating gives NULLs last descending), numbers before text,
  * booleans as the 0/1 they are stored as, and ISO-8601 DateTime text comparing
- * as text. It does NOT reproduce a non-BINARY collation, and JavaScript orders
- * strings by UTF-16 code unit where SQLite orders by byte; the two agree on
- * ASCII and can differ past it. A list whose order matters that much re-reads.
+ * as text. A column's `@collate` is reproduced only when the caller passes it
+ * (`collations`, read off `x-collate`); without it the column is BINARY.
+ * JavaScript orders strings by UTF-16 code unit where SQLite orders by byte;
+ * the two agree on ASCII and can differ past it. A list whose order matters
+ * that much re-reads.
  */
 
 /**
@@ -541,6 +543,8 @@ export function normalizeSelect(select) {
   return out
 }
 
+const foldAscii = (s) => s.replace(/[A-Z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 32))
+
 // SQLite's storage-class order: NULL < INTEGER/REAL < TEXT < BLOB. A Boolean is
 // stored as 0/1 and therefore sorts as a number; a DateTime is ISO-8601 TEXT.
 function rank(v) {
@@ -555,9 +559,10 @@ function rank(v) {
  *
  * @param {unknown} a
  * @param {unknown} b
+ * @param {string} [collation]  `nocase` or `rtrim` for a text pair; anything else is BINARY
  * @returns {number}
  */
-export function compareValues(a, b) {
+export function compareValues(a, b, collation) {
   const ra = rank(a), rb = rank(b)
   if (ra !== rb) return ra - rb
   if (ra === 0) return 0
@@ -568,7 +573,12 @@ export function compareValues(a, b) {
     return na < nb ? -1 : na > nb ? 1 : 0
   }
 
-  if (ra === 2) return a < b ? -1 : a > b ? 1 : 0
+  if (ra === 2) {
+    // SQLite's NOCASE folds ASCII only and RTRIM drops trailing spaces only.
+    if (collation === 'nocase') { a = foldAscii(a); b = foldAscii(b) }
+    else if (collation === 'rtrim') { a = a.replace(/ +$/, ''); b = b.replace(/ +$/, '') }
+    return a < b ? -1 : a > b ? 1 : 0
+  }
 
   // A Json, an array or a File column cannot be ordered by at all -- the server
   // refuses it by name (`opaque`), so a load naming one never returned rows for
@@ -583,9 +593,10 @@ export function compareValues(a, b) {
  * *sort by nothing*.
  *
  * @param {string | Record<string, unknown> | Record<string, unknown>[] | null | undefined} sort
+ * @param {Record<string, string>} [collations]  column → its `@collate` (`x-collate`); an unnamed column is BINARY
  * @returns {((a: Record<string, unknown>, b: Record<string, unknown>) => number) | null}
  */
-export function comparatorFor(sort) {
+export function comparatorFor(sort, collations) {
   if (sort == null) return null
   // A structured value is an ordering this side cannot reproduce: a relation
   // hop reads a column that is not on the record, a nulls placement is about
@@ -607,7 +618,7 @@ export function comparatorFor(sort) {
 
   return (a, b) => {
     for (const { field, desc } of keys) {
-      const c = compareValues(a?.[field], b?.[field])
+      const c = compareValues(a?.[field], b?.[field], collations?.[field])
       if (c !== 0) return desc ? -c : c
     }
     return 0

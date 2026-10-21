@@ -145,6 +145,17 @@ describe('the workflow', () => {
   test('it installs from the lockfile', () => {
     expect(yml).toContain('--frozen-lockfile')
   })
+
+  test('it audits the installed packages, through a script a person can run too (FJS-3371)', () => {
+    // `check` is fli check, lint and typecheck, so an advised package the app
+    // installs failed nothing. The audit is its own script and not part of
+    // `check`: it reads a registry, and a gate run offline must not go red for it.
+    const { audit, check } = appCheckScripts()
+    expect(audit).toBe('bun audit --audit-level=high')
+    expect(check).not.toContain('audit')
+    expect(yml).toContain('bun run audit')
+    expect(yml).not.toContain('bun audit')
+  })
 })
 
 describe('.editorconfig', () => {

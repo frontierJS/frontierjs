@@ -26,28 +26,28 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3743 source file(s) read
+26 package(s) · 3752 source file(s) read
 229 entry point(s), 36 imported by nothing outside their package, 16 emitted
-1526 value export(s), 612 reached by nothing outside, 161 emitted
-442 type export(s), 340 reached by nothing outside
+1529 value export(s), 614 reached by nothing outside, 162 emitted
+448 type export(s), 345 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `litestone` | 26 | 6 | 251 | 130 | 37 | 1 | 1 |
 | `junction` | 26 | 4 | 263 | 121 | 13 | 265 | 210 |
-| `mesa` | 17 | 4 | 276 | 99 | 67 | 0 | 0 |
+| `mesa` | 17 | 4 | 277 | 99 | 68 | 0 | 0 |
 | `sierra` | 25 | 6 | 196 | 82 | 21 | 0 | 0 |
 | `auth` | 6 | 1 | 51 | 36 | 3 | 15 | 13 |
 | `jetty` | 7 | 4 | 43 | 29 | 0 | 0 | 0 |
 | `ui` | 9 | 0 | 51 | 33 | 4 | 0 | 0 |
 | `toolbelt` | 55 | 0 | 240 | 27 | 9 | 0 | 0 |
-| `conduit` | 4 | 2 | 26 | 15 | 1 | 59 | 45 |
+| `conduit` | 4 | 2 | 26 | 15 | 1 | 59 | 44 |
 | `site-kit` | 9 | 4 | 30 | 12 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 8 | 0 | 36 | 21 |
 | `outpost` | 7 | 1 | 15 | 7 | 0 | 0 | 0 |
+| `notifications` | 2 | 0 | 11 | 5 | 0 | 24 | 19 |
 | `email-kit` | 3 | 0 | 10 | 4 | 1 | 0 | 0 |
-| `notifications` | 2 | 0 | 9 | 3 | 0 | 18 | 13 |
 | `oracle` | 1 | 0 | 19 | 3 | 2 | 0 | 0 |
 | `print-kit` | 4 | 1 | 6 | 1 | 1 | 0 | 0 |
 | `testing` | 2 | 1 | 10 | 1 | 0 | 16 | 13 |
@@ -107,7 +107,7 @@ Every entry is imported and every name reached.
 
 **Emitted (1):** `withCache`
 
-**Unreached types (45):** `BreakerState` `BrokerFraming` `BrokerGap` `BrokerHandler` `BrokerHealth` `BrokerKeepalive` `BrokerLink` `BrokerMessage` `BrokerReceiver` `ClaimedModel` `ConduitChunk` `ConduitError` `ConduitErrorKind` `ConduitErrorResponse` `ConduitObservers` `ConduitRequest` `ConduitResponse` `ConduitResult` `ConduitStats` `ConduitStore` `CredentialCaller` `CredentialRefusal` `FrameDialect` `IConduit` `MirrorClaim` `MirrorModel` `MirrorRow` `MirrorVerb` `Receiver` `ReceiveResult` `RefusedAnswer` `ResilienceOptions` `ResponseMeta` `ResponseValidator` `Signer` `SignInput` `SignOutput` `StubMocks` `TargetAuth` `TargetKind` `TargetResilience` `TestConduit` `TestConduitOptions` `TraceContextOptions` `VerifyContext`
+**Unreached types (44):** `BreakerState` `BrokerFraming` `BrokerGap` `BrokerHandler` `BrokerHealth` `BrokerKeepalive` `BrokerLink` `BrokerMessage` `BrokerReceiver` `ClaimedModel` `ConduitChunk` `ConduitError` `ConduitErrorKind` `ConduitErrorResponse` `ConduitObservers` `ConduitRequest` `ConduitResponse` `ConduitResult` `ConduitStats` `ConduitStore` `CredentialCaller` `CredentialRefusal` `FrameDialect` `IConduit` `MirrorClaim` `MirrorModel` `MirrorRow` `MirrorVerb` `ReceiveResult` `RefusedAnswer` `ResilienceOptions` `ResponseMeta` `ResponseValidator` `Signer` `SignInput` `SignOutput` `StubMocks` `TargetAuth` `TargetKind` `TargetResilience` `TestConduit` `TestConduitOptions` `TraceContextOptions` `VerifyContext`
 
 ## `@frontierjs/config`
 
@@ -203,7 +203,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/mesa`
 
-`packages/mesa` · 17 entry point(s) · 276 value, 0 type export(s)
+`packages/mesa` · 17 entry point(s) · 277 value, 0 type export(s)
 
 **Entries imported by nothing outside (4):** `./render` `./css-inliner` `./vite/client` `./vite/hmr`
 
@@ -213,17 +213,17 @@ Every entry is imported and every name reached.
 
 **Unreached values (99):** `_registerDelegateRoot` `_registerStyleRoot` `addBlock` `analyzeScript` `applyAttachments` `applyEventModifiers` `attachBlock` `bindClassExp` `bindSetter` `blockSlotTarget` `buildBlock` `buildHead` `buildRuntime` `captureContext` `checkRootName` `classSource` `componentAttributes` `constDeclaration` `constScope` `cssHash` `declareSlotProps` `delegationRootOf` `detectExpressionType` `detectStatic` `EACH_LIFT` `eachFrame` `eachItems` `eachLiftFrame` `elementBindTarget` `emitScript` `emitTransforms` `eventAttribute` `extractKeywords` `extractStyles` `ifBlockReadOnly` `inlineCSS` `insertAfter` `insertBlock` `inspectProp` `isClient` `isSimpleName` `iterNodes` `LISTENER_OPTIONS` `localWatchProxy` `lowerSlots` `makeAwaitBlock` `makeBlockBound` `makeCallState` `makeEachBlock` `makeExternalProperty` `makeifBlock` `makeKeyBlock` `makeRenderTag` `makeSnippet` `makeVirtualEachBlock` `mergeAllEvents` `mesaDevtools` `mesaRollup` `mesaVite` `parseAttributes` `parseBinding` `parseEachHeader` `parseJS` `parseModifiers` `parseRenderTag` `PRESERVE_WHITESPACE` `processCSS` `provideContext` `readSourceMarks` `refer` `removeElements` `renderFailure` `replaceKeyword` `resetAttributeWarnings` `resetContentWarnings` `resetDerivedWriteWarnings` `resetDestructureWarnings` `resetRenderer` `resolveCSSVars` `resolveDependencies` `REST_PROPS` `rewriteTextResult` `routeSlots` `scopeCSS` `slotProp` `snippetParam` `spliceEdits` `stripSourceMarks` `styleSource` `svgElements` `templateSource` `trimEmptyNodes` `unproxy` `unspliceOffset` `unwrapExp` `use_context` `useContext` `xBuild` `xNode`
 
-**Emitted (67):** `__dev` `$$eachBlock` `$$virtualEach` `addEvent` `addGlobalEvent` `addToHead` `ANCHOR_DATA` `awaitBlock` `bindAttribute` `bindClass` `bindClassPassthrough` `bindGroup` `bindInput` `bindMask` `bindProp` `bindStyle` `bindText` `bindWindow` `boundaryBlock` `componentApi` `contentFallback` `contextProvide` `contextRead` `createKeyedEquals` `createWritableSignal` `dynamicElement` `eachBlock` `eachDefaultKey` `get_context` `htmlToFragment` `htmlToFragmentClean` `ifBlock` `initRenderer` `keyBlock` `LOC_ATTR` `makeAsyncState` `makeBlock` `makeEmitter` `makeRootEvent` `markupText` `mergeEvents` `mountedBlock` `mountStatic` `onMounted` `onWindow` `orderedGroup` `PLACED_PROP` `propDefault` `push_component` `pushProps` `reducedMotion` `registerComponentAnchor` `registerExports` `renderAll` `renderToHTML` `restProps` `rewriteAssignments` `rewriteExpr` `set_style` `set_text` `setInnerHTML` `spreadAttributes` `svgToFragment` `toggle_class` `trackDerived` `unclaimedContent` `warnDestructuredAccessors`
+**Emitted (68):** `__dev` `$$eachBlock` `$$virtualEach` `addEvent` `addGlobalEvent` `addHeadStyle` `addToHead` `ANCHOR_DATA` `awaitBlock` `bindAttribute` `bindClass` `bindClassPassthrough` `bindGroup` `bindInput` `bindMask` `bindProp` `bindStyle` `bindText` `bindWindow` `boundaryBlock` `componentApi` `contentFallback` `contextProvide` `contextRead` `createKeyedEquals` `createWritableSignal` `dynamicElement` `eachBlock` `eachDefaultKey` `get_context` `htmlToFragment` `htmlToFragmentClean` `ifBlock` `initRenderer` `keyBlock` `LOC_ATTR` `makeAsyncState` `makeBlock` `makeEmitter` `makeRootEvent` `markupText` `mergeEvents` `mountedBlock` `mountStatic` `onMounted` `onWindow` `orderedGroup` `PLACED_PROP` `propDefault` `push_component` `pushProps` `reducedMotion` `registerComponentAnchor` `registerExports` `renderAll` `renderToHTML` `restProps` `rewriteAssignments` `rewriteExpr` `set_style` `set_text` `setInnerHTML` `spreadAttributes` `svgToFragment` `toggle_class` `trackDerived` `unclaimedContent` `warnDestructuredAccessors`
 
 ## `@frontierjs/notifications`
 
-`packages/notifications` · 2 entry point(s) · 9 value, 18 type export(s)
+`packages/notifications` · 2 entry point(s) · 11 value, 24 type export(s)
 
 **Entries not source (1, not graded):** `./schema.lite`
 
-**Unreached values (3):** `NotificationDeliveryError` `NotificationDriverNotFoundError` `NotificationRecipientError`
+**Unreached values (5):** `generateVapidKeys` `NotificationDeliveryError` `NotificationDriverNotFoundError` `NotificationRecipientError` `webPush`
 
-**Unreached types (13):** `BuiltInTransport` `Formatter` `InAppAction` `InAppMessage` `MailLine` `NotificationDefinition` `NotificationDriver` `NotificationFactory` `NotificationRecord` `NotificationsPluginOptions` `OutgoingMail` `SendableNotification` `TransportError`
+**Unreached types (19):** `BuiltInTransport` `Formatter` `InAppAction` `InAppMessage` `MailLine` `NotificationDefinition` `NotificationDriver` `NotificationFactory` `NotificationRecord` `NotificationsPluginOptions` `OutgoingMail` `PushMessage` `PushRequest` `PushSubscription` `PushSubscriptions` `SendableNotification` `TransportError` `VapidKeys` `WebPushOptions`
 
 ## `@frontierjs/oracle`
 

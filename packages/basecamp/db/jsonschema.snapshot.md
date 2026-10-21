@@ -885,6 +885,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `cpuLimit` | `number`? | — | — | `maximum: 256` `exclusiveMinimum: 0` | — |
 | `memLimitMb` | `integer`? | — | — | `minimum: 6` | — |
 | `exposesPort` | `boolean` = `false` | — | — | — | — |
+| `deployOnPush` | `boolean` = `false` | — | — | `x-litestone-kind` | — |
+| `pushSecret` | `string`? | — | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` `x-litestone-kind` | — |
+| `pushActorId` | `string`? | — | — | `x-litestone-kind` | — |
 | `blueprintId` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `environmentId`, `name`, `slug` · not accepted — `id`

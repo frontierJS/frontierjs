@@ -37,6 +37,13 @@ declare module '@frontierjs/junction' {
 
 export { inApp, mail }           from './builders.ts'
 
+// ─── Drivers an app registers under `transports` ─────────────────────────────
+
+export { webPush, generateVapidKeys } from './drivers/webpush.ts'
+export type {
+  PushMessage, PushRequest, PushSubscription, PushSubscriptions, VapidKeys, WebPushOptions,
+} from './drivers/webpush.ts'
+
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
 export {
