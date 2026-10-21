@@ -255,6 +255,23 @@ This is where the language stops being predicate-only and starts producing
 - `verifyRowPolicies` grades one against the other over it, with rows on both
   sides of the condition.
 
+### Arithmetic — `+ - *` and `round()`
+
+An operand may be a sum: `*` binds tighter than `+ -`, and both bind tighter
+than a comparison (`FJS-D1107`). A ratio between two counts is cross-multiplied
+rather than divided, because there is no `/`:
+
+```
+@@scope(underRatio, adults * ratioAttendees < enrolled * ratioAdults)
+@@allow(create, round(price * qty * 0.01) <= auth().limit)
+```
+
+Each operand is an `Int` or `Float` column, a number, a claim or another sum. A
+String, Boolean, array or encoded column is refused at startup by name, because
+SQLite would answer anyway — `'abc' * 2` is 0. A null operand makes the sum
+null, which a comparison then reads as UNKNOWN. `round()` is SQLite's: half away
+from zero, so `round(2.5)` is 3 and `round(-2.5)` is -3.
+
 ### `in` — a list on one side
 
 The grammar compared scalars, so *this row is visible to these principals* — an

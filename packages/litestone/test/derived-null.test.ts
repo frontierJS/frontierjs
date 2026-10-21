@@ -67,3 +67,44 @@ describe('a Boolean @derived over a null column filters as it reads', () => {
     db.$close()
   })
 })
+
+// FJS-2710 / FJS-D1107: `+ - *` and round() over Int and Float operands. A null
+// operand makes the sum null, so the comparison over it is false on the read
+// and in the filter alike.
+describe('arithmetic in @derived', () => {
+  const ARITH = `
+    model Line {
+      id        Int  @id
+      a         Int
+      b         Int?
+      unitPrice Int
+      quantity  Int
+      c         Int     @derived(a * b)
+      total     Int     @derived(round(unitPrice * quantity * 0.01))
+      under     Boolean @derived(a * 4 < b * 1)
+    }
+  `
+  test('the value reads, filters and sorts', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: ARITH })
+    const sys = db.asSystem()
+    await sys.line.create({ data: { id: 1, a: 3, b: 4, unitPrice: 333, quantity: 7 } })
+    await sys.line.create({ data: { id: 2, a: 1, b: null, unitPrice: 50, quantity: 1 } })
+    expect((await sys.line.findMany({ where: { c: 12 } })).map((r: any) => r.id)).toEqual([1])
+    expect((await sys.line.findMany({ orderBy: { id: 'asc' } })).map((r: any) => [r.c, r.total, r.under]))
+      .toEqual([[12, 23, false], [null, 1, false]])
+    expect((await sys.line.findMany({ where: { under: false } })).map((r: any) => r.id).sort()).toEqual([1, 2])
+    expect((await sys.line.findMany({ orderBy: { total: 'desc' } })).map((r: any) => r.id)).toEqual([1, 2])
+    db.$close()
+  })
+
+  test.each([
+    ['x Int @derived(a * label)', /'label' is String, and \* takes Int or Float operands/],
+    ['x Int @derived(a + flag)', /'flag' is Boolean/],
+    ['x String @derived(a * 2)', /declares String and the expression produces Int/],
+    ['@@scope(s, a * label > 1)', /'label' is String/],
+    ['@@allow(read, secret * 2 > 1)', /'secret' is @encrypted, so the column holds an encoding/],
+  ])('%s is refused by name', async (decl, message) => {
+    const schema = `model T { id Int @id  a Int  label String?  flag Boolean?  secret Int? @encrypted  ${decl} }`
+    await expect(createClient({ db: ':memory:', schema, encryptionKey: 'a'.repeat(64) })).rejects.toThrow(message)
+  })
+})

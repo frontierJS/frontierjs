@@ -58,8 +58,8 @@ function plog(ctx, op, model, msg, extra = '') {
 // written in. The snapshot has to show the predicate itself: a policy compiles
 // silently into the WHERE clause, so "which rows" is invisible everywhere else.
 
-const PREC = { ternary: 0, or: 1, and: 2, not: 3 }
-const prec = (node) => PREC[node?.type] ?? 4
+const PREC = { ternary: 0, or: 1, and: 2, not: 3, compare: 4 }
+const prec = (node) => node?.type === 'arith' ? (node.op === '*' ? 6 : 5) : PREC[node?.type] ?? 7
 
 export function policyExprToString(node) {
   if (!node) return '?'
@@ -75,6 +75,10 @@ export function policyExprToString(node) {
       ? `!(${policyExprToString(node.expr)})`
       : `!${child(node.expr)}`
     case 'compare': return `${child(node.left)} ${node.op} ${child(node.right)}`
+    // Left-associative, so an equal-precedence RIGHT operand keeps its parens:
+    // `a - (b - c)` is not `a - b - c`.
+    case 'arith':   return `${child(node.left)} ${node.op} ${prec(node.right) <= prec(node) ? `(${policyExprToString(node.right)})` : policyExprToString(node.right)}`
+    case 'round':   return `round(${policyExprToString(node.expr)})`
     // Loosest binding, so every operand that is itself a ternary needs no
     // parens on the right and does on the left — `prec` handles it.
     case 'ternary': return `${child(node.cond)} ? ${policyExprToString(node.then)} : ${policyExprToString(node.else)}`
@@ -296,6 +300,13 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
     if (n.type === 'or' || n.type === 'and') { walk(n.left); walk(n.right); return }
     if (n.type === 'not') { walk(n.expr); return }
     if (n.type === 'ternary') { walk(n.cond); walk(n.then); walk(n.else); return }
+    if (n.type === 'round') { walk(n.expr); return }
+    if (n.type === 'arith') {
+      walk(n.left); walk(n.right)
+      const why = nonNumeric(model, n, relationMap, schema)
+      if (why) throw new Error(`${model.name}: ${why} — in ${what} '${policyExprToString(expr)}'`)
+      return
+    }
     // A bare name that is not a column reaches SQLite as `"nope" > 1`, which it
     // resolves as a STRING CONSTANT rather than failing — so the predicate is
     // answered by comparing two literals and the filter silently admits or
@@ -463,9 +474,47 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
             `Put the value the CALLER has on the left — 'auth().something in ${n.right.name}'`)
     } else if (n.left.type === 'list') {
       say(`a list cannot be the left side of 'in'`)
+    } else if ((n.left.type === 'arith' || n.left.type === 'round') && (n.right.type === 'field' || n.right.type === 'path')) {
+      // `scalarOperand` binds the left side as one value, and a sum over the
+      // row's columns has none until the row is read — it would bind null.
+      say(`'${policyExprToString(n.left)}' is computed from the row and the list is a column. ` +
+          `'in' against an array column takes a value the CALLER has on the left`)
     }
   }
   walk(expr)
+}
+
+// ─── arithmetic's operands ────────────────────────────────────────────────────
+//
+// The grammar refuses what can never be a number; a column is one only by its
+// declared type. SQLite answers the rest regardless — `'abc' * 2` is 0 and a
+// Boolean is 0 or 1 — so a String in a sum is a predicate that filters by
+// accident, and an encoded column multiplies its ciphertext.
+const NUMERIC_TYPES = new Set(['Int', 'Float'])
+
+function nonNumeric(model, node, relationMap = null, schema = null) {
+  const columnWhy = (f, said) => {
+    if (!f) return null
+    if (f.type?.kind === 'relation') return `'${said}' is a relation, not a number`
+    for (const kind of ['encrypted', 'hashed', 'secret'])
+      if (f.attributes?.some(a => a.kind === kind))
+        return `'${said}' is @${kind}, so the column holds an encoding rather than the number`
+    if (f.type?.array || !NUMERIC_TYPES.has(f.type?.name))
+      return `'${said}' is ${f.type?.name}${f.type?.array ? '[]' : ''}, and ${node.op ?? 'round()'} takes Int or Float operands`
+    return null
+  }
+  const why = (n) => {
+    if (!n || typeof n !== 'object') return null
+    if (n.type === 'field') return columnWhy(model.fields.find(x => x.name === n.name), n.name)
+    if (n.type === 'path') {
+      const rel = relationMap?.[model.name]?.[n.rel]
+      const target = rel && schema?.models?.find(m => m.name === rel.targetModel)
+      return columnWhy(target?.fields.find(x => x.name === n.name), `${n.rel}.${n.name}`)
+    }
+    if (n.type === 'ternary') return why(n.then) ?? why(n.else)
+    return null
+  }
+  return node.type === 'round' ? why(node.expr) : why(node.left) ?? why(node.right)
 }
 
 // ─── @derived ─────────────────────────────────────────────────────────────────
@@ -523,6 +572,13 @@ export function compileDerived(model, fieldName, node) {
       case 'ternary': return `CASE WHEN ${walk(n.cond)} THEN ${walk(n.then)} ELSE ${walk(n.else)} END`
       case 'now':     return `strftime('%Y-%m-%dT%H:%M:%fZ',${DERIVED_NOW_ARG})`
       case 'shift':   return nowShifted(n)
+      case 'arith':
+      case 'round': {
+        const sql = n.type === 'round' ? `round(${walk(n.expr)})` : `(${walk(n.left)} ${n.op} ${walk(n.right)})`
+        const why = nonNumeric(model, n)
+        if (why) bad(why)
+        return sql
+      }
       case 'field': {
         const f = model.fields.find(x => x.name === n.name)
         if (!f) bad(`'${n.name}' is not a field on this model`)
@@ -606,6 +662,9 @@ function inferType(model, schema, n) {
   switch (n.type) {
     case 'and': case 'or': case 'not': case 'compare': return 'Boolean'
     case 'now': case 'shift': return 'DateTime'
+    case 'round': return 'Int'
+    case 'arith':
+      return inferType(model, schema, n.left) === 'Int' && inferType(model, schema, n.right) === 'Int' ? 'Int' : 'Float'
     case 'literal':
       if (n.value === null) return null
       if (typeof n.value === 'boolean') return 'Boolean'
@@ -695,7 +754,7 @@ export function dependsOnClock(node) {
 // at another, and the case is rare enough that paying per row for it is not
 // worth a second staleness rule (`dependsOnClock` exists for the same reason
 // one table along).
-const ROW_FREE_NODES = new Set(['literal', 'auth', 'and', 'or', 'not', 'compare', 'ternary', 'list'])
+const ROW_FREE_NODES = new Set(['literal', 'auth', 'and', 'or', 'not', 'compare', 'ternary', 'list', 'arith', 'round'])
 
 export function referencesRow(node) {
   if (node == null || typeof node !== 'object') return false
@@ -1641,6 +1700,16 @@ function compileSql(node, params, ctx, modelName, op, visited) {
       return `CASE WHEN ${c} THEN ${t} ELSE ${e} END`
     }
 
+    // Params left then right, the order the operands are emitted in.
+    case 'arith': {
+      const L = compileSql(node.left,  params, ctx, modelName, op, visited)
+      const R = compileSql(node.right, params, ctx, modelName, op, visited)
+      return `(${L} ${node.op} ${R})`
+    }
+
+    case 'round':
+      return `round(${compileSql(node.expr, params, ctx, modelName, op, visited)})`
+
     case 'compare': {
       const { left, right } = node
 
@@ -1723,6 +1792,13 @@ function compileSql(node, params, ctx, modelName, op, visited) {
         return `${pathSql(left, ctx, modelName)} ${node.op === '==' ? 'IS NULL' : 'IS NOT NULL'}`
       if (right.type === 'path' && left.type === 'literal' && left.value === null)
         return `${pathSql(right, ctx, modelName)} ${node.op === '==' ? 'IS NULL' : 'IS NOT NULL'}`
+      // Any other operand — a sum, a ternary — is the same trap: `(a * b) = NULL`
+      // keeps no row where the JS half answers the presence test.
+      const isNull = (n) => n.type === 'literal' && n.value === null
+      if (isNull(left) || isNull(right)) {
+        const other = isNull(right) ? left : right
+        return `(${compileSql(other, params, ctx, modelName, op, visited)}) ${node.op === '==' ? 'IS NULL' : 'IS NOT NULL'}`
+      }
 
       // A column holding encoded bytes is compared against the operand encoded the
       // same way — after the null branches above, which stay a plain IS NULL.

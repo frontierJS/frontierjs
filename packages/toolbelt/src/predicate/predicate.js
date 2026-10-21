@@ -137,6 +137,23 @@ const toNumeric = (v) => {
 }
 const toText = (v) => (typeof v === 'number' ? String(v) : v)
 
+// An operand as SQLite's arithmetic reads it. NULL stays NULL where JS makes
+// `null * 3` a 0, and TEXT is its longest numeric prefix or 0 where JS makes
+// `'3 apples' * 2` a NaN.
+const toArith = (v) => {
+  if (v === null || v === undefined) return null
+  v = toStorage(v)
+  if (typeof v === 'number') return Number.isNaN(v) ? null : v
+  if (typeof v !== 'string') return null
+  const m = /^\s*[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?/.exec(v)
+  return m ? Number(m[0]) : 0
+}
+
+const ARITH = { '+': (a, b) => a + b, '-': (a, b) => a - b, '*': (a, b) => a * b }
+
+// SQLite's round(): half away from zero, by adding a half and truncating.
+const roundHalfAway = (v) => (v < 0 ? -Math.trunc(-v + 0.5) : Math.trunc(v + 0.5))
+
 export function compare(L, op, R, affL = null, affR = null) {
   // Every comparison with an absent operand is UNKNOWN, `IS NULL` included —
   // the presence test is a branch of its own above, and this is a comparison.
@@ -257,6 +274,17 @@ export function evaluate(node, env = {}) {
     case 'some':    return resolveSome(node)
     case 'now':     return now
     case 'shift':   return shiftInstant(ev(node.expr), node)
+
+    case 'arith': {
+      const fn = ARITH[node.op]
+      if (!fn) throw new Error(`Unknown policy arithmetic operator: ${node.op}`)
+      const a = toArith(ev(node.left)), b = toArith(ev(node.right))
+      return a === null || b === null ? null : fn(a, b)
+    }
+    case 'round': {
+      const v = toArith(ev(node.expr))
+      return v === null ? null : roundHalfAway(v)
+    }
 
     case 'auth':
       return node.field ? claimOf(node.field) : auth

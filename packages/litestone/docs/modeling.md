@@ -202,12 +202,14 @@ tools rather than tastes:
   `orderBy` says so rather than answering the right rows in the wrong order
   ([sorting.md](sorting.md)). Reach for it when the derivation needs JavaScript:
   formatting, a lookup table, anything with a branch SQL would make unreadable.
-- **`@derived(expr)`** — a *predicate or a bucket*, in the `@@allow` expression
-  language, emitted into the SELECT. Filterable and sortable, because it is SQL.
-  The language is comparisons, `and`/`or`/`not`, a ternary, `now()` and
-  literals, and that is all: `@derived(qty * price)` does not parse, and neither
-  does any SQL function call (`compileDerived` in `src/core/policy.js`). It is
-  for *is this row overdue*, not *what is this row's total*.
+- **`@derived(expr)`** — a *predicate, a bucket or a sum*, in the `@@allow`
+  expression language, emitted into the SELECT. Filterable and sortable, because
+  it is SQL. The language is comparisons, `and`/`or`/`not`, a ternary, `+ - *`
+  over `Int` and `Float` operands, `round()`, `now()` and literals, and that is
+  all: there is no `/` (a constant divisor is a decimal multiplier,
+  `round(price * qty * 0.01)`), no other SQL function and no string
+  concatenation (`compileDerived` in `src/core/policy.js`, `FJS-D1107`). A null
+  operand makes the sum null.
 - **`@generated("sql expr")`** — a real column, `GENERATED ALWAYS AS`, so it
   takes arbitrary SQL and is the answer whenever the derivation is a **value**
   rather than a question: `@generated("{qty} * {price}")`. `{field}` expands to
@@ -225,14 +227,14 @@ tools rather than tastes:
   groupable**: it is a correlated subquery aliased into the SELECT, not a
   column, so aggregate the target model instead.
 
-The two that get confused are `@derived` and `@generated`, and the test is one
-sentence: **a question about the row is `@derived`, a value built from the row
-is `@generated`.** `overdue Boolean @derived(dueAt < now() && completedAt ==
-null)` is the first; `fullName`, `total`, `slugBase` are all the second, and
-the language `@derived` speaks cannot express any of them — it has comparisons
-and a ternary, and no arithmetic, no concatenation and no function calls. Of
-the second group, the ones that are **joined strings** take `@generated`'s
-backtick form and the rest take its SQL one.
+The two that get confused are `@derived` and `@generated`. Both are filterable,
+and the test is what the expression needs: **the clock, or nothing beyond
+`+ - *` and `round()`, is `@derived`; a division, a string or any other SQL is
+`@generated`.** `overdue Boolean @derived(dueAt < now() && completedAt ==
+null)` and `total Int @derived(qty * price)` are the first, because neither
+needs more than the language has and the first reads the clock, which a
+generated column may not. `fullName` and `slugBase` are the second, and the ones
+that are **joined strings** take `@generated`'s backtick form.
 
 ### What the parser refuses, and what `advise` merely reports
 

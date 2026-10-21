@@ -44,12 +44,13 @@ export const TK = {
   GT:   'GT',   // >
   LTE:  'LTE',  // <=
   GTE:  'GTE',  // >=
-  // ── Offset operators ────────────────────────────────────────────────────
-  // `@@commitment(abandon, on: createdAt + 14d)` — a time moved by a duration.
-  // No expression grammar reads them, so arithmetic in a predicate is still
-  // `Expected …, got '+'` from the parser rather than a value.
+  // ── Arithmetic, and a time moved by a duration ──────────────────────────
+  // `a * b + c` in an expression (`FJS-D1107`); `+`/`-` also move a time,
+  // `now() + 2d` and `@@commitment(abandon, on: createdAt + 14d)`. There is no
+  // `/`, so a `/` is still only the start of a comment.
   PLUS:  'PLUS',  // +
   MINUS: 'MINUS', // -  (a `-` before a digit is a negative NUMBER instead)
+  STAR:  'STAR',  // *
   // `@unit(%)` — the one unit symbol that is not an identifier. No expression
   // grammar reads it, so `%` in a predicate is still `got '%'` from the parser.
   PERCENT: 'PERCENT', // %
@@ -140,6 +141,7 @@ export function tokenize(src) {
     if (src[i] === '>') { tokens.push({ type: TK.GT,   value: '>',  ...pos }); advance(); continue }
     if (src[i] === '!') { tokens.push({ type: TK.BANG, value: '!',  ...pos }); advance(); continue }
     if (src[i] === '+') { tokens.push({ type: TK.PLUS, value: '+',  ...pos }); advance(); continue }
+    if (src[i] === '*') { tokens.push({ type: TK.STAR, value: '*',  ...pos }); advance(); continue }
     if (src[i] === '%') { tokens.push({ type: TK.PERCENT, value: '%', ...pos }); advance(); continue }
     if (src[i] === '-' && !/[0-9]/.test(src[i + 1])) { tokens.push({ type: TK.MINUS, value: '-', ...pos }); advance(); continue }
 
@@ -263,6 +265,7 @@ function pickCharHint(code) {
     case 0x201C: case 0x201D: return 'Looks like a smart double-quote (" or "). Use a plain ASCII ".'
     case 0x2013: case 0x2014: return 'Looks like an en/em dash (– or —). Did you mean - ?'
     case 0x00A0:              return 'Looks like a non-breaking space. Replace with a regular space.'
+    case 0x2F:                return 'There is no division. A constant divisor is a decimal multiplier: round(price * 0.01).'
     case 0x200B: case 0x200C:
     case 0x200D: case 0xFEFF: return 'Looks like an invisible Unicode character. Re-type the line.'
     default:                  return null

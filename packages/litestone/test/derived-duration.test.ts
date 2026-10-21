@@ -63,7 +63,7 @@ describe('now() + <duration> in @derived', () => {
   })
 
   test('only now() takes an offset', () => {
-    expect(errorsOf('d + 2d < now()')).toMatch(/Expected RPAREN/)
+    expect(errorsOf('d + 2d < now()')).toMatch(/only now\(\) takes one/)
   })
 })
 

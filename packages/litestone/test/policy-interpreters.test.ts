@@ -104,6 +104,16 @@ const FORMS = [
   // ternary
   `auth().role == 'admin' ? true : ownerId == auth().id`,
   `qty > 5 ? status == 'published' : status == 'draft'`,
+  // arithmetic (`FJS-D1107`): precedence, a null operand, SQLite's round()
+  `qty * 2 > 9`,
+  `qty + 1 == 6`,
+  `qty - 2 * 2 < 2`,
+  `qty -1 >= 4`,
+  `round(qty * 0.5) == 3`,
+  `round(qty * 0.5) == 5`,
+  `qty * 2 == null`,
+  `qty * 2 != null`,
+  `(qty > 5 ? qty * 2 : qty + 100) >= 18`,
   // membership, all three shapes of the right operand
   `status in ['published', 'review']`,
   `qty in [1, 5, 9]`,

@@ -53,6 +53,8 @@ function sourceHint(node) {
     case 'shift':   return `now() ${node.sign > 0 ? '+' : '-'} ${node.value}${node.unit}`
     case 'literal': return typeof node.value === 'string' ? `'${node.value}'` : String(node.value)
     case 'compare': return `${sourceHint(node.left)} ${node.op} ${sourceHint(node.right)}`
+    case 'arith':   return [node.left, node.right].map(n => n.type === 'compare' ? `(${sourceHint(n)})` : sourceHint(n)).join(` ${node.op} `)
+    case 'round':   return `round(${sourceHint(node.expr)})`
     default:        return '…'
   }
 }
@@ -91,9 +93,12 @@ function durationOffset(p, base) {
 //   or       ::= and  ('||' and)*
 //   and      ::= not  ('&&' not)*
 //   not      ::= '!' not | primary
-//   primary  ::= operand [compOp operand]
+//   primary  ::= sum [compOp sum]
+//   sum      ::= term (('+' | '-') term)*     (a policy only — FJS-D1107)
+//   term     ::= operand ('*' operand)*
 //   operand  ::= '(' expr ')' | value
 //   value    ::= auth() [.field] | now() [('+' | '-') duration] | check(field [,op]) | null | bool | string | number
+//              | round '(' expr ')'
 //              | '[' literal (',' literal)* ']'
 //              | ident | ident '.' ident   (one relation hop — FJS-D221)
 //              | ident '.' 'some' '(' expr ')'   (any row of a to-many — FJS-D566)
@@ -174,14 +179,14 @@ function not(p, ctx) {
 function primary(p, ctx) {
   // A parenthesized group is an OPERAND like any other, so the comparison below
   // applies to it too — `(a ? 1 : 2) == 1` compares the group.
-  const left = operand(p, ctx)
+  const left = sum(p, ctx)
   const op   = compOp(p)
   if (op) {
     const opTok = p.advance()
     // BOTH sides take a group: `ownerId == (open ? auth().id : auth().adminId)`
     // is a ternary choosing which value to compare against, which is most of
     // what a ternary is for here.
-    const right = operand(p, ctx)
+    const right = sum(p, ctx)
     // SQL answers UNKNOWN for `qty > NULL` where the JS half would answer a
     // presence test, so the two interpreters disagree (`FJS-1152`).
     const isNull = (n) => n.type === 'literal' && n.value === null
@@ -198,6 +203,95 @@ function primary(p, ctx) {
       `'${next.value}' is not a policy operator. Available: ${OPERATORS.join(', ')}. ` +
       `Membership is 'in' with the list on the right — 'auth().id in memberIds'.`, next)
   return left
+}
+
+// ─── arithmetic ───────────────────────────────────────────────────────────────
+//
+// `+ - *` over numbers, `*` tighter than `+ -` and both tighter than a
+// comparison (`FJS-D1107`). No `/`: SQLite divides two integers to an integer
+// and by zero to NULL, and the JS half would have to copy both. A flow has its
+// own function table and no ruling for operators, so it keeps the old grammar.
+//
+// `a -1` lexes as `a` and the NUMBER -1, so a negative number straight after an
+// operand is a subtraction, the reading `now() -2d` already gets.
+function sum(p, ctx) {
+  if (ctx.flow) return operand(p, ctx)
+  let left = term(p, ctx)
+  for (;;) {
+    const t = p.peek()
+    let op = null, right
+    if (t.type === TK.PLUS || t.type === TK.MINUS) {
+      p.advance()
+      op = t.value
+      right = term(p, ctx)
+    } else if (t.type === TK.NUMBER && String(t.text ?? '').startsWith('-')) {
+      p.advance()
+      op = '-'
+      right = term(p, ctx, { type: 'literal', value: Math.abs(t.value) })
+    } else return left
+    // `dueAt + 2d` reads as a sum and then a stray `d`. A column moved by a
+    // duration is the type question `durationOffset` leaves to the schema.
+    const unit = p.peek()
+    if (unit.type === TK.IDENT && right.type === 'literal' && unitInfo(unit.value)?.dimension === 'duration')
+      throw p.fail(`'${sourceHint(left)} ${op} ${right.value}${unit.value}' moves a column by a duration, ` +
+        `and only now() takes one — compare the column with now() ${op} ${right.value}${unit.value}`, unit)
+    left = arith(p, op, left, right, t)
+  }
+}
+
+function term(p, ctx, first = null) {
+  let left = first ?? operand(p, ctx)
+  while (p.check(TK.STAR)) {
+    const t = p.advance()
+    left = arith(p, '*', left, operand(p, ctx), t)
+  }
+  return left
+}
+
+// What can never be a number is refused here, where the position is known. A
+// column's type is the schema's, so litestone grades a field operand itself.
+const NEVER_NUMERIC = {
+  now:     'now() is an instant',
+  shift:   'now() moved by a duration is an instant',
+  list:    'a list is not a number',
+  compare: 'a comparison is a truth value',
+  and:     'a && is a truth value',
+  or:      'a || is a truth value',
+  not:     'a ! is a truth value',
+  check:   'check() is a truth value',
+  some:    '.some() is a truth value',
+}
+
+function arith(p, op, left, right, at) {
+  const node = { type: 'arith', op, left, right }
+  numeric(p, left, op, node, at)
+  numeric(p, right, op, node, at)
+  return node
+}
+
+function numeric(p, n, op, whole, at) {
+  const v = n.type === 'literal' ? n.value : undefined
+  const why = NEVER_NUMERIC[n.type]
+    ?? (n.type === 'auth' && !n.field ? 'auth() is the principal'
+      : n.type === 'literal' && typeof v !== 'number' ? `${typeof v === 'string' ? `'${v}'` : v} is not a number`
+      : null)
+  if (why) throw p.fail(`${why}, and ${op} takes numbers — in ${sourceHint(whole)}`, at)
+}
+
+// `round(x)` — the whole number nearest x, half away from zero, which is
+// SQLite's. A constant divisor is a decimal multiplier, `qty * price * 0.01`,
+// and an Int column wants the whole result back.
+function round(p, ctx, t) {
+  p.eat(TK.IDENT)
+  p.eat(TK.LPAREN)
+  if (p.check(TK.RPAREN)) throw p.fail(`round() takes the number to round — round(price * 0.9)`, p.peek())
+  const expr = parseExpression(p, ctx)
+  if (p.check(TK.COMMA))
+    throw p.fail(`round() takes one argument and rounds to a whole number — scale the operand for decimal places`, p.peek())
+  p.eat(TK.RPAREN)
+  const node = { type: 'round', expr }
+  numeric(p, expr, 'round()', node, t)
+  return node
 }
 
 // A comparison operand: a parenthesized expression, or a plain value.
@@ -332,6 +426,9 @@ function value(p, ctx) {
     p.eat(TK.LPAREN); p.eat(TK.RPAREN)
     return durationOffset(p, { type: 'now' })
   }
+
+  if (t.type === TK.IDENT && t.value === 'round' && p.peek(1)?.type === TK.LPAREN)
+    return round(p, ctx, t)
 
   // check(field) or check(field, 'operation')
   if (t.type === TK.IDENT && t.value === 'check') {

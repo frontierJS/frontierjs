@@ -131,10 +131,10 @@ test('parse: a word where an operator belongs names the operators', function () 
 
 // ── the offset operators ─────────────────────────────────────────────────────
 //
-// `+` and `-` lex so `@@commitment(abandon, on: createdAt + 14d)` can be read;
-// no expression grammar accepts one. A `-` before a digit stays a negative
-// NUMBER, so `createdAt -14d` and `createdAt - 14d` reach the reader as two
-// different token runs and it has to take both.
+// `+` and `-` lex for a sum and for `@@commitment(abandon, on: createdAt + 14d)`.
+// A `-` before a digit stays a negative NUMBER, so `createdAt -14d` and
+// `createdAt - 14d` reach the reader as two different token runs and it has to
+// take both.
 
 test('lex: + and - are tokens, and -digit is still a number', function () {
   const types = (src) => tokenize(src).map((t) => t.type + (t.value == null ? '' : ':' + t.value))
@@ -144,11 +144,61 @@ test('lex: + and - are tokens, and -digit is still a number', function () {
   assert.equal(types('a -> b').join(' '), 'IDENT:a ARROW:-> IDENT:b EOF')
 })
 
-test('parse: the expression stops at +, leaving it for the caller', function () {
-  const p   = cursor(tokenize('qty + 1').slice(0, -1))
-  const ast = parseExpression(p)
-  assert.equal(ast.type, 'field')
-  assert.equal(p.peek().type, T.PLUS)
+// ── arithmetic (FJS-D1107) ───────────────────────────────────────────────────
+
+const arithOf = (src) => parseExpression(cursor(tokenize(src).slice(0, -1)))
+const shape = (n) => n.type === 'arith' ? `(${shape(n.left)} ${n.op} ${shape(n.right)})`
+  : n.type === 'compare' ? `${shape(n.left)} ${n.op} ${shape(n.right)}`
+  : n.type === 'round' ? `round(${shape(n.expr)})`
+  : n.type === 'field' ? n.name : String(n.value)
+
+test('parse: * binds tighter than + -, both tighter than a comparison, all left to right', function () {
+  assert.equal(shape(arithOf('a + b * c < d')), '(a + (b * c)) < d')
+  assert.equal(shape(arithOf('a - b - c')), '((a - b) - c)')
+  assert.equal(shape(arithOf('(a + b) * c')), '((a + b) * c)')
+  assert.equal(shape(arithOf('adults * x < y * z')), '(adults * x) < (y * z)')
+  assert.equal(shape(arithOf('round(a * 0.01) == 23')), 'round((a * 0.01)) == 23')
+})
+
+test('parse: a negative number straight after an operand is a subtraction', function () {
+  assert.equal(shape(arithOf('a -1')), shape(arithOf('a - 1')))
+  assert.equal(shape(arithOf('a -2 * b')), '(a - (2 * b))')
+  assert.equal(shape(arithOf('a == -1')), 'a == -1')
+})
+
+test('parse: an operand that can never be a number is refused by name', function () {
+  assert.throws(() => arithOf(`a * 'x'`), /'x' is not a number, and \* takes numbers/)
+  assert.throws(() => arithOf('a + null'), /null is not a number/)
+  assert.throws(() => arithOf('a * now()'), /now\(\) is an instant/)
+  assert.throws(() => arithOf('(a > 1) * 2'), /a comparison is a truth value/)
+  assert.throws(() => arithOf('a * auth()'), /auth\(\) is the principal/)
+  assert.throws(() => arithOf('round(true)'), /true is not a number, and round\(\) takes numbers/)
+})
+
+test('parse: round() takes one argument, and there is no /', function () {
+  assert.throws(() => arithOf('round()'), /takes the number to round/)
+  assert.throws(() => arithOf('round(a, 2)'), /takes one argument/)
+  assert.throws(() => tokenize('a / 2'), /Unexpected character '\/'[\s\S]*no division[\s\S]*decimal multiplier/)
+})
+
+test('parse: a column moved by a duration is refused, not read as a sum', function () {
+  assert.throws(() => arithOf('d + 2d < now()'), /only now\(\) takes one/)
+})
+
+test('evaluate: arithmetic answers in SQLite\'s terms — null propagates, round is half away from zero', function () {
+  const at = (src, record) => evaluate(arithOf(src), { record })
+  assert.equal(at('a * b', { a: 3, b: 4 }), 12)
+  assert.equal(at('a * b', { a: null, b: 4 }), null)
+  assert.equal(at('a * b == null', { a: null, b: 4 }), true)
+  assert.equal(at('round(a * 0.01)', { a: 333 * 7 }), 23)
+  assert.equal(at('round(a)', { a: 2.5 }), 3)
+  assert.equal(at('round(a)', { a: -2.5 }), -3)
+  assert.equal(at('a + b', { a: '3', b: 1 }), 4)
+})
+
+test('parse: a flow keeps its own grammar — round() is a call there', function () {
+  const p = cursor(tokenize('round($.a)').slice(0, -1))
+  assert.equal(parseFlowExpression(p).type, 'call')
 })
 
 // ── the flow dialect ─────────────────────────────────────────────────────────
