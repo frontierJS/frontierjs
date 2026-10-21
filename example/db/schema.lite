@@ -420,7 +420,7 @@ model ProductVariant {
   /// behind it. `open` is what makes it a colorway rather than an enum — the
   /// merchant picks one the shop has run before, and typing a new one adds it
   /// to the list instead of asking for a schema change and a deploy.
-  color         String               @length(1, 30) @default("Default") @values(ProductColor, open)
+  color         String               @length(1, 30) @default("Default") @values(ProductColor, strength: open)
   size          Size                 @default(one)
   
   price         Int                  @money(USD) @gte(0)

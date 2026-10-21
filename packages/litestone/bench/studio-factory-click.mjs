@@ -7,16 +7,15 @@
 // Asserting the endpoint alone would miss the wiring — the first run of this
 // listed the requested row among its own parents.
 import { spawn } from 'node:child_process'
-import { mkdtempSync, cpSync, symlinkSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { symlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../mesa/src/drive.js'
+import { copyBasecampDb } from './basecamp-copy.mjs'
 const R = join(dirname(fileURLToPath(import.meta.url)), '../../..'), PORT = 7503
 let fails = 0
 const ok = (n, c, x = '') => { console.log((c ? 'ok   ' : 'FAIL ') + n + (c ? '' : '  → ' + x)); if (!c) fails++ }
-const work = mkdtempSync(join(tmpdir(), 'factory-click-'))
-cpSync(`${R}/packages/basecamp/db`, work, { recursive: true })
+const work = copyBasecampDb('factory-click-')
 // the schema imports @frontierjs/* packages, which resolve only with a node_modules above the copy
 symlinkSync(`${R}/packages/basecamp/node_modules`, join(work, 'node_modules'))
 

@@ -1016,7 +1016,7 @@ table `product_image` · db `main` · gate `0.4.4.5` · @@softDelete
 | `product` | `Product` | — | — | relation |
 | `productId` | `Int` | no | — | **required on write** |
 | `variant` | `ProductVariant` | — | — | relation |
-| `variantId` | `Int` | yes | — | `@values(ProductVariants, required)` |
+| `variantId` | `Int` | yes | — | `@values(ProductVariants, strength: required)` |
 
 ```
 @@index(productId)
@@ -1031,7 +1031,7 @@ table `product_variant` · db `main` · gate `0.4.4.5` · @@softDelete(cascade)
 | --- | --- | --- | --- | --- |
 | `active` | `Boolean` | no | `1` | — |
 | `barcode` | `String` | yes | — | unique |
-| `color` | `String` | no | `'Default'` | `@values(ProductColor, open)` |
+| `color` | `String` | no | `'Default'` | `@values(ProductColor, strength: open)` |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |
 | `id` | `Int` | no | — | id |

@@ -60,8 +60,8 @@ describe('what each form emits', () => {
     ])
   })
 
-  it('many: <column> keys the relata PLUS the column that tells two apart', () => {
-    expect(indexesOf(member('@@relator([workspaceId, userId], many: seat)'))).toEqual([
+  it('many, by: <column> keys the relata PLUS the column that tells two apart', () => {
+    expect(indexesOf(member('@@relator([workspaceId, userId], many, by: seat)'))).toEqual([
       'CREATE INDEX "idx_member_userId" ON "member" ("userId");',
       'UNIQUE ("workspaceId", "userId", "seat")',
     ])
@@ -119,7 +119,7 @@ describe('the question must be answered', () => {
     const e = joined(member('@@relator([workspaceId, userId])'))
     expect(e).toContain('does not say whether this relationship may happen twice')
     expect(e).toContain('once')
-    expect(e).toContain('many: <column>')
+    expect(e).toContain('many, by: <column>')
   })
 
   it('refuses a word that is neither', () => {
@@ -130,6 +130,19 @@ describe('the question must be answered', () => {
   it('refuses a column beside once', () => {
     expect(joined(member('@@relator([workspaceId, userId], once: seat)')))
       .toContain('takes no column')
+    expect(joined(member('@@relator([workspaceId, userId], once, by: seat)')))
+      .toContain('takes no column')
+  })
+
+  // FJS-2978: the column is a named argument, so the old spelling is refused by name
+  it('refuses many: <column> and names many, by: <column>', () => {
+    expect(joined(member('@@relator([workspaceId, userId], many: seat)')))
+      .toContain("write 'many, by: <column>'")
+  })
+
+  it('refuses an unknown named argument after the repeat word', () => {
+    expect(joined(member('@@relator([workspaceId, userId], many, per: seat)')))
+      .toContain("the only named one is 'by'")
   })
 })
 
@@ -207,15 +220,15 @@ describe('what tells two apart', () => {
   it('refuses one that is optional', () => {
     // Two NULLs never compare equal, so the rows leaving it unset would be
     // unconstrained — the key would silently stop being one.
-    expect(joined(member('@@relator([workspaceId, userId], many: note)'))).toContain('two NULLs never compare equal')
+    expect(joined(member('@@relator([workspaceId, userId], many, by: note)'))).toContain('two NULLs never compare equal')
   })
 
   it('refuses one that is already a relatum', () => {
-    expect(joined(member('@@relator([workspaceId, userId], many: userId)'))).toContain('already a relatum')
+    expect(joined(member('@@relator([workspaceId, userId], many, by: userId)'))).toContain('already a relatum')
   })
 
   it('refuses one that is not a column', () => {
-    expect(joined(member('@@relator([workspaceId, userId], many: nope)'))).toContain("'nope' is not a column")
+    expect(joined(member('@@relator([workspaceId, userId], many, by: nope)'))).toContain("'nope' is not a column")
   })
 })
 
@@ -230,8 +243,8 @@ describe('against a live database', () => {
     await expect(db.member.create({ data: { workspaceId: 1, userId: 1 } })).rejects.toThrow()
   })
 
-  it('many: <column> admits a second one under a different value', async () => {
-    const db = await createClient({ schema: member('@@relator([workspaceId, userId], many: seat)'), db: ':memory:' })
+  it('many, by: <column> admits a second one under a different value', async () => {
+    const db = await createClient({ schema: member('@@relator([workspaceId, userId], many, by: seat)'), db: ':memory:' })
     await db.workspace.create({ data: {} })
     await db.user.create({ data: {} })
     await db.member.create({ data: { workspaceId: 1, userId: 1, seat: 0 } })
@@ -289,14 +302,14 @@ model Place {
     expect((await db.place.findMany())[0].note).toBe('first')
   })
 
-  it('refuses many: <column> when the where leaves the column out, and names it', async () => {
-    const db = await seeded('@@relator([appId, serverId], many: replica)')
+  it('refuses many, by: <column> when the where leaves the column out, and names it', async () => {
+    const db = await seeded('@@relator([appId, serverId], many, by: replica)')
     await expect(up(db, { appId: 1, serverId: 1 })).rejects.toThrow(/names replica nowhere/)
     expect((await db.place.findMany())[0].note).toBe('first')
   })
 
-  it('takes many: <column> once the where carries the whole key', async () => {
-    const db = await seeded('@@relator([appId, serverId], many: replica)')
+  it('takes many, by: <column> once the where carries the whole key', async () => {
+    const db = await seeded('@@relator([appId, serverId], many, by: replica)')
     await up(db, { appId: 1, serverId: 1, replica: 0 })
     const rows = await db.place.findMany()
     expect(rows.length).toBe(1)
@@ -323,7 +336,7 @@ describe('verifyConstraints grades the declaration', () => {
 
   it('finds nothing to report when the database agrees with the word', async () => {
     const { createTestEnv } = await import('../src/testing.js')
-    for (const rel of ['once', 'many', 'many: seat']) {
+    for (const rel of ['once', 'many', 'many, by: seat']) {
       const env = await createTestEnv({ schema: memberSchema(`@@relator([workspaceId, userId], ${rel})`) })
       const found = (await env.verifyConstraints()).filter((m: any) => String(m.rule ?? '').startsWith('@@relator'))
       expect(found, `${rel}: ${JSON.stringify(found)}`).toEqual([])

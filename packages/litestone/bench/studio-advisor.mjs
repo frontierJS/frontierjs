@@ -16,13 +16,13 @@
 // idx_<t>_deletedAt for the predicate while still scanning for the column asked
 // about — the plan has to seek on THAT column.
 import { spawn } from 'node:child_process'
-import { mkdtempSync, cpSync } from 'node:fs'
-import { tmpdir } from 'node:os'; import { dirname, join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { copyBasecampDb } from './basecamp-copy.mjs'
 const R = join(dirname(fileURLToPath(import.meta.url)), '../../..'), PORT = 7503
 let fails = 0
 const ok = (n,c,x='') => { console.log((c?'ok   ':'FAIL ')+n+(c?'':'  → '+x)); if(!c) fails++ }
-const work = mkdtempSync(join(tmpdir(),'adv-')); cpSync(`${R}/packages/basecamp/db`, work, { recursive: true })
+const work = copyBasecampDb('adv-')
 const studio = spawn('bun',[`${R}/packages/litestone/src/tools/cli.js`,'studio',`--port=${PORT}`],{cwd:work,env:{...process.env,ENCRYPTION_KEY:'a'.repeat(64)},stdio:'ignore'})
 try {
   let up=false

@@ -81,7 +81,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@lower` | Clean a value on write |  |  |  |  |
 | `@upper` | Clean a value on write |  |  |  |  |
 | `@slug` | Clean a value on write | [(<field>…)] |  |  |  |
-| `@values` | Refuse a bad value | (<ValueSetName>[, required\|open\|suggested][, dependsOn: <column>[ on <sourceColumn>]]) | on a model's field · on a trait's field | strength: required · open · suggested |  |
+| `@values` | Refuse a bad value | (<ValueSetName>[, strength: required\|open\|suggested][, dependsOn: <column>[, matching: <sourceColumn>]]) | on a model's field · on a trait's field | strength: required · open · suggested |  |
 | `@label` | Refuse a bad value | ("Human name") | on a model's field · on a type's field · on a trait's field · on an enum member |  |  |
 | `@required` | Refuse a bad value | [([where: <expr>][, "message"])] |  |  |  |
 | `@email` | Refuse a bad value | [(message)] |  |  |  |
@@ -118,7 +118,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@exclude` | Shape the table | (<scope>, range: [<start>, <end>][, where: <expr>]) |  |  |  |
 | `@@check` | Shape the table | ("<sql>"[, "<message>"]) |  |  |  |
 | `@@arc` | Shape the table | ([field, …][, optional: true]) |  |  |  |
-| `@@relator` | Shape the table | ([field, …], once \| many \| many: <column>) |  |  |  |
+| `@@relator` | Shape the table | ([field, …], once \| many \| many, by: <column>) |  |  |  |
 | `@@map` | Shape the table | ("table_name") | in a model |  |  |
 | `@@label` | Shape the table | (<field> \| [<field> \| <relation>.<field>, …]) |  |  | parses as `labelField` |
 | `@@external` | Shape the table |  |  |  |  |

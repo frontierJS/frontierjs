@@ -102,9 +102,9 @@ model Address {
 `
     const bad = await parses(plain)
     expect(bad!.message).toContain('is not a foreign key')
-    expect(bad!.message).toContain('on <column>')
+    expect(bad!.message).toContain('matching: <column>')
     // …and the same schema with the escape taken parses.
-    expect(await parses(plain.replace('dependsOn: region', 'dependsOn: region on countryId'))).toBe(null)
+    expect(await parses(plain.replace('dependsOn: region', 'dependsOn: region, matching: countryId'))).toBe(null)
   })
 
   it('refuses an ambiguous path, naming both ways, and the escape settles it', async () => {
@@ -129,11 +129,21 @@ model Address {
     const bad = await parses(two)
     expect(bad!.message).toContain('2 ways')
     expect(bad!.message).toContain('taxCountryId')
-    expect(await parses(two.replace('dependsOn: countryId', 'dependsOn: countryId on countryId'))).toBe(null)
+    expect(await parses(two.replace('dependsOn: countryId', 'dependsOn: countryId, matching: countryId'))).toBe(null)
+  })
+
+  // FJS-2978: strength and the source column are named, so the positional word and the infix are refused by name
+  it('refuses a positional strength and the infix `on`, naming the new spelling', async () => {
+    const pos = await parses(SCHEMA.replace('@values(States, dependsOn', '@values(States, suggested, dependsOn'))
+    expect(pos!.message).toContain("write 'strength: suggested'")
+    const infix = await parses(SCHEMA.replace('dependsOn: countryId', 'dependsOn: countryId on countryId'))
+    expect(infix!.message).toContain('matching: <column>')
+    const orphan = await parses(SCHEMA.replace('dependsOn: countryId', 'matching: countryId'))
+    expect(orphan!.message).toContain("needs 'dependsOn: <column>'")
   })
 
   it('takes a strength beside the dependency, and refuses an unknown named argument', async () => {
-    expect(await parses(SCHEMA.replace('@values(States, dependsOn', '@values(States, suggested, dependsOn'))).toBe(null)
+    expect(await parses(SCHEMA.replace('@values(States, dependsOn', '@values(States, strength: suggested, dependsOn'))).toBe(null)
     const bad = await parses(SCHEMA.replace('dependsOn: countryId', 'narrows: countryId'))
     expect(bad!.message).toContain("unknown argument")
   })
@@ -238,7 +248,7 @@ model Address {
   id        Int     @id
   countryId String
   country   Country @relation(fields: [countryId], references: [id])
-  stateCode String? @values(OpenStates, open, dependsOn: countryId)
+  stateCode String? @values(OpenStates, strength: open, dependsOn: countryId)
 }
 `
 
@@ -263,7 +273,7 @@ model Address {
   })
 
   it('suggested asks nothing at all, dependency included', async () => {
-    const db  = await createClient({ schema: SCHEMA.replace('@values(States, dependsOn', '@values(States, suggested, dependsOn'), db: ':memory:' })
+    const db  = await createClient({ schema: SCHEMA.replace('@values(States, dependsOn', '@values(States, strength: suggested, dependsOn'), db: ':memory:' })
     const sys = db.asSystem()
     await sys.country.create({ data: { id: 'FR', name: 'France' } })
     const row = await sys.address.create({ data: { id: 1, line: 'a', countryId: 'FR', stateId: 'TX' } })

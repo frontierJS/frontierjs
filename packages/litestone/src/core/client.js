@@ -7045,7 +7045,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
         if (missing.length) throw new ValidationError([{
           path: ['where'],
           message:
-            `${modelName} declares @@relator([${_relator.fields.join(', ')}], many: ${_relator.discriminator}), ` +
+            `${modelName} declares @@relator([${_relator.fields.join(', ')}], many, by: ${_relator.discriminator}), ` +
             `so what identifies a row is ${keyed.join(' + ')} — and this where names ` +
             `${missing.join(', ')} nowhere. Without it these columns match every occurrence, and the upsert ` +
             `would overwrite one of them. Name ${missing.join(' and ')}, or address the row by its id.`,

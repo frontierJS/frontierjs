@@ -1644,16 +1644,16 @@ export async function createTestEnv(opts = {}) {
           // the declaration — `once` refuses the second, `many` takes it — so
           // this is the only probe here whose verdict flips with the word.
           //
-          // `many: <column>` is TWO cases, and the second is what makes the
+          // `many, by: <column>` is TWO cases, and the second is what makes the
           // check worth having: the identical tuple is refused, and the same
           // pair under a different discriminator is ACCEPTED. Without the
-          // second, tightening `many: replicaIndex` to `once` looks correct
+          // second, tightening `many, by: replicaIndex` to `once` looks correct
           // from here — which is the survivor this exists to kill, and the one
           // that quietly costs an app the ability to run two replicas.
           const relator = model.attributes.find(a => a.kind === 'relator')
           if (relator) {
             const cols = relator.discriminator ? [...relator.fields, relator.discriminator] : relator.fields
-            const rule = `@@relator(${relator.repeat}${relator.discriminator ? `: ${relator.discriminator}` : ''})`
+            const rule = `@@relator(${relator.repeat}${relator.discriminator ? `, by: ${relator.discriminator}` : ''})`
 
             let base
             try { base = await factory.createOne() }

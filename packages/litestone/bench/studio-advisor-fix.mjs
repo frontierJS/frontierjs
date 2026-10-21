@@ -7,14 +7,15 @@
 // built from that schema creates the index and SQLite stops scanning. Asserting
 // the text landed in the file would prove the button typed, not that it helped.
 import { spawn } from 'node:child_process'
-import { mkdtempSync, cpSync, readFileSync, writeFileSync, symlinkSync } from 'node:fs'
-import { tmpdir } from 'node:os'; import { dirname, join } from 'node:path'
+import { readFileSync, writeFileSync, symlinkSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../mesa/src/drive.js'
+import { copyBasecampDb } from './basecamp-copy.mjs'
 const R = join(dirname(fileURLToPath(import.meta.url)), '../../..'), PORT = 7503
 let fails = 0
 const ok = (n,c,x='') => { console.log((c?'ok   ':'FAIL ')+n+(c?'':'  → '+x)); if(!c) fails++ }
-const work = mkdtempSync(join(tmpdir(),'fix-')); cpSync(`${R}/packages/basecamp/db`, work, { recursive: true })
+const work = copyBasecampDb('fix-')
 // the schema imports @frontierjs/* packages, which resolve only with a node_modules above the copy
 symlinkSync(`${R}/packages/basecamp/node_modules`, join(work, 'node_modules'))
 const schemaPath = join(work, 'schema.lite')

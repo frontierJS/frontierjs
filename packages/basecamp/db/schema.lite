@@ -1875,7 +1875,7 @@ model AppServer {
   // what makes two placements different. Without the column named here, two
   // replicas of one app on one machine is a constraint violation and the app
   // quietly loses the ability to scale.
-  @@relator([appId, serverId], many: replicaIndex)
+  @@relator([appId, serverId], many, by: replicaIndex)
 }
 
 // One archive of an app's data volume, taken on the machine that holds it

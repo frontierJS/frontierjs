@@ -2,7 +2,7 @@
  * web/test/verify-values.mjs — a declared value set, in a real browser.
  *
  * `valueset ProductColor { source Color  value name  scope current  order
- * sortOrder, name }` and `ProductVariant.color @values(ProductColor, open)`.
+ * sortOrder, name }` and `ProductVariant.color @values(ProductColor, strength: open)`.
  * Everything else about the feature is covered by unit tests on both sides of
  * the wire; what nothing else can reach is the claim the whole design rests on:
  *
