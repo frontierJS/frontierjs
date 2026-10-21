@@ -64,7 +64,9 @@ core/
                 this machine's bun never registered, which fail `bun install` itself
   env-preflight.js  `fli dev`'s key preflight — whether `.env` gives the API the
                 `ENCRYPTION_KEY` its `.env.example` names. Only that key: fli
-                can make random bytes and no other blank is fli's to fill
+                can make random bytes and no other blank is fli's to fill.
+                `fillKey` is the same rule for `deploy:setup`'s first seed,
+                written into the LOCAL `.env.production` (`FJS-D1381`)
   dev-run.js    `fli dev`'s surfaces as one labeled stream — each its own process
                 group, stopped as one on exit, so a launcher's child never keeps a port.
                 Compact by default: children get `FLI_DEV=1` and print one ready
@@ -74,7 +76,7 @@ core/
   open-url.js   a URL in the person's browser — argv, detached; `fli dev`'s `o`,
                 `fli gui --open`, `project:map --as=serve`
   requires.js   what a namespace's `_module.md` says it cannot run without —
-                `- KEY` or `- KEY: <url where one is made>`, read by the
+                `- KEY` or `- KEY: <url where one is made> <what to pick there>`, read by the
                 runtime, the doctor, `--verbose` and the gui through one
                 `requiresOf`. At a terminal a missing key is ACQUIRED: the page
                 offered, the paste stored, the run goes on; with no person

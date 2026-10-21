@@ -52,7 +52,7 @@ Counts are files. *Prototypes* is 21 apps under `fjs-prototypes`; *repo* is
 | 2 | **Clock** — `now({ every })` | 42 copies of `now = Date.now()` + `setInterval` + cleanup | `/datetime` `relative()` and `format()` exist | one shared interval per resolution, paused while the page is hidden (#8) |
 | 3 | **Media query** — `media(q)`, `reducedMotion`, `colorScheme` | `matchMedia` 8 prototypes, 14 repo; the same four queries retyped as rems (`47.99rem`, `64rem`) | none — `@frontierjs/css`'s scale (sm 640 … 2xl 1536 px) was stated only in a `tokens.css` comment, so the retyped rems had no source to match; it becomes a table in `vocabulary.js` (Q3) | subscriber over `MediaQueryList`; `setScheme` in the theme switch is the first consumer |
 | 4 | **Element observers** — `visible(el)`, `size(el)` | `IntersectionObserver` 18, `ResizeObserver` 7; mesa's `$$virtualEach`, sierra's islands loader, `prefetch.js` and `mcp/index.js` each hold a private copy | — | one shared observer per option set, delivered through mesa `attach()`; infinite scroll becomes `visible(sentinel)` → `resource.more()` |
-| 5 | **Hotkeys** — `hotkey('mod+k', fn, { scope })` | 9 app files and 15 kit components bind `document` keydown each their own way. `FJS-2611`'s Escape defects closed 2026-10-15 at each owner, so this is consolidation, not a fix | the chord parser `'mod+k'` → `{ key, mods }` | scope is the nearest delegation root (Invariant 11; `_delegateRoots` in `runtime.js` is the table); CommandPalette, Popover and Dialog consume it |
+| 5 | **Hotkeys** — `hotkey('<Mod-k>', fn, { scope })` | 9 app files and 15 kit components bind `document` keydown each their own way. `FJS-2611`'s Escape defects closed 2026-10-15 at each owner, so this is consolidation, not a fix | the chord parser `'mod+k'` → `{ key, mods }` | scope is the nearest delegation root (Invariant 11; `_delegateRoots` in `runtime.js` is the table); CommandPalette, Popover and Dialog consume it |
 | 6 | **Clipboard, share, download** | `writeText` 6 repo + 12 prototypes; `download()` already sits in `ui/utils.js` — the precedent | — | `copy(text \| blob)` with the execCommand fallback, `share()` falling back to copy, `download` moved beside them |
 | 7 | **Files in** — `pickFiles()`, `dropzone(el)`, `objectUrl(file)` | 25 files; the leaked object URL is `FJS-2474` | `/mime` `sniff` grades a name against its bytes — exists | object URL revoked on `onCleanup`; picker, drop and paste one shape; feeds the `attachments` bridge. `ui/dnd.js` is list reordering, a different gesture, and stays |
 | 8 | **Tab state** — `tab.online`, `.visible`, `.focused` | `onLine` 7 repo + 12 prototypes; `bindWindow` carried `online` only; sierra's `offline.js` and `pending.js` arm on the socket's `connect` and read neither, on purpose | — | one object, `watchProxy`-backed like `session`; #2 and the live store pause on it |
@@ -232,10 +232,10 @@ size(cb)                                                 → attachment  // cb(c
 
 // #5 — a chord on the nearest delegation root
 hotkey(chord, fn, { scope, when } = {})  → dispose
-// chord: 'mod+k' | 'escape' | 'g then d'; parsed by toolbelt (chord parser,
-// new). scope: an element; the listener goes on delegationRootOf(scope) —
+// chord: '<Mod-k>' | '<Esc>' | 'gd', vim's spelling (FJS-D1383); parsed by
+// toolbelt /keys (keys.md 1.1). scope: an element; the listener goes on delegationRootOf(scope) —
 // a new runtime export reading _delegateRoots — or on document when none.
-// `mod` is ⌘ on Apple platforms and Ctrl elsewhere. A chord fired inside an
+// `<Mod-…>` is ⌘ on Apple platforms and Ctrl elsewhere. A chord fired inside an
 // editable element is ignored unless the chord names a modifier. `when` is
 // a getter; false means the binding is parked, not removed.
 
@@ -275,14 +275,14 @@ packages/mesa/src/
     clock.js           #2  — the interval pool, parked on tab.visible
     media.js           #3
     observers.js       #4  — the two pools; $$virtualEach imports this one
-    hotkey.js          #5  — chord parser is toolbelt /chord (new, pure)
+    hotkey.js          #5  — chord parser is toolbelt /keys (keys.md, pure)
     out.js             #6
     files.js           #7
     tab.js             #8
     result.js          { ok, via, reason } — one shape, one place
     browser.d.ts       the types; each wrapper's SSR answer is in its doc comment
 packages/mesa/test/browser/kit/     one spec per wrapper on the shared CDP harness
-packages/toolbelt/src/chord/        'mod+k' → { key, mods }, and back
+packages/toolbelt/src/keys/         '<Mod-k>' → { key, mod }, and back (keys.md)
 packages/sierra/src/router/head.js  #9; setPrefix(config.prefix) at boot
 packages/ui/                        consumers: CopyButton, CommandPalette, Popover,
                                     Dialog, FileUpload, Form adopt the kit; utils.js
@@ -433,7 +433,7 @@ Goal: #4 and #5, and the kit components that stop binding `document` themselves.
 Done when: `$$virtualEach`, sierra's islands loader, prefetch and the mcp panel read `visible()` / `size()`; CommandPalette, Popover and Dialog read `hotkey()`; the chord spec in toolbelt parses every chord the kit binds.
 
 - [ ] 2.1 `visible()` and `size()` as attachments, one observer per option set
-- [ ] 2.2 Chord parser in toolbelt (`/chord`), `hotkey()` scoped to the delegation root
+- [ ] 2.2 Chord parser in toolbelt (`/keys`, `FJS-D1382`), `hotkey()` scoped to the delegation root — lands as `keys.md` 1.1 and 2.2, one engine the terminal shell also runs
 - [ ] 2.3 Replace the four private observer copies and the fifteen keydown bindings
 
 ### Phase 3 — Out and in

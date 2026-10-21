@@ -413,12 +413,13 @@ leading space in the source is output and a body line starts at column 0.
 one blank line after the block. `commands/provision/index.md` is the reference:
 
 ```js
+const block = `Host ${made.name}
+  HostName ${made.ip}
+  User root
+`
 echo`  Add to ~/.ssh/config:
 
-  Host ${made.name}
-    HostName ${made.ip}
-    User root
-`
+${block.replace(/^(?=.)/gm, '  ')}`
 ```
 
 A block whose rows exist only sometimes is `echo.lines`, which drops a `false`

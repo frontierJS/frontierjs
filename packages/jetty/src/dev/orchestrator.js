@@ -32,7 +32,7 @@ import { watchTree }      from './watch.js'
 
 const WATCH_DIRS = ['src', 'config', 'public']
 
-export async function startDev({ root, browser = 'chrome', verbose = false, launch = false, startUrl } = {}) {
+export async function startDev({ root, browser = 'chrome', verbose = false, launch = false, startUrl, profile = true } = {}) {
   const log = (...args) => console.log('[jetty:dev]', ...args)
   // Normalize browser arg to array. Accept 'chrome', 'firefox', 'both', or array.
   const browsers = Array.isArray(browser)
@@ -65,12 +65,23 @@ export async function startDev({ root, browser = 'chrome', verbose = false, laun
 
   // Optionally launch the browser(s) — wraps web-ext run.
   // The browser starts AFTER the WS server is up so the dev-client connects
-  // immediately on first load.
+  // immediately on first load. `openBrowsers()` is the same launch on demand
+  // (the `o` key); it does nothing while a launched browser is still open.
+  // `profile`: true keeps one at <root>/.browser-profiles/, a string names the
+  // directory, false is web-ext's temporary profile per launch.
+  const profileDir = profile === true ? resolve(root, '.browser-profiles')
+    : profile ? resolve(profile)
+    : undefined
   let browserHandle = null
-  if (launch) {
-    log('launching browser(s) via web-ext…')
-    browserHandle = await startBrowsers({ root, browsers, verbose, startUrl })
+  const openBrowsers = async () => {
+    if (browserHandle?.children.some(({ child }) => child.exitCode === null && child.signalCode === null)) {
+      log('browser already open')
+      return
+    }
+    log(`launching browser(s) via web-ext${profileDir ? ` (profile: ${profileDir.replace(root + '/', '')})` : ''}…`)
+    browserHandle = await startBrowsers({ root, browsers, verbose, startUrl, profileDir })
   }
+  if (launch) await openBrowsers()
 
   // Watcher
   const watchPaths = WATCH_DIRS
@@ -129,7 +140,8 @@ export async function startDev({ root, browser = 'chrome', verbose = false, laun
   return {
     server,
     watcher,
-    browserHandle,
+    get browserHandle() { return browserHandle },
+    openBrowsers,
     async stop() {
       if (browserHandle) {
         try { await browserHandle.stop() } catch {}

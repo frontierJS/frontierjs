@@ -34,6 +34,9 @@ const CADDY_INSTALL = [
   'systemctl enable --now caddy-api.service',
 ].join(' && ')
 
+// `needs` names a dependency whose install this one runs, so 02 skips it rather
+// than failing a second time with a message about the first. `optional` is not
+// worth stopping setup for.
 const deps = [
   { name: 'docker',  check: 'docker --version',   install: 'curl -fsSL https://get.docker.com | sh' },
   // The caddy-api unit and not caddy.service: the routes are written through the
@@ -46,13 +49,13 @@ const deps = [
   // Into /usr/local/bin and not ~/.bun: every later step runs over `ssh host sh -s`,
   // a non-interactive shell, and Ubuntu's .bashrc returns before the PATH line
   // the installer appends — so a per-user bun is installed and never found.
-  { name: 'bun',     check: 'bun --version',       install: 'curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash' },
+  { name: 'bun',     check: 'bun --version',       install: 'curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash', needs: ['unzip'] },
   { name: 'rsync',   check: 'rsync --version',     install: 'apt-get install -y rsync' },
   // Not required by the pipeline — 05-backup runs `litestone backup` inside the
   // container, where the schema is. Installed because an operator on a box
   // running SQLite will want a shell against it, and finding out at 3am that
   // there isn't one is the wrong time.
-  { name: 'sqlite3', check: 'sqlite3 --version',   install: 'apt-get install -y sqlite3' },
+  { name: 'sqlite3', check: 'sqlite3 --version',   install: 'apt-get install -y sqlite3', optional: true },
   // Pinned and checksum-verified, never apt — see LITESTREAM_PIN.
   { name: 'litestream', check: 'litestream version', install: litestreamInstall() },
 ]
@@ -67,7 +70,7 @@ const published = FLI && await fetch(`https://registry.npmjs.org/@frontierjs%2Fc
   .then(r => r.ok, () => null)
 if (published) {
   deps.push({ name: `fli ${FLI}`, check: `fli --version | grep -qx ${FLI}`,
-              install: `BUN_INSTALL=/usr/local bun add -g @frontierjs/cli@${FLI}` })
+              install: `BUN_INSTALL=/usr/local bun add -g @frontierjs/cli@${FLI}`, needs: ['bun'], optional: true })
 } else {
   log.warn(`  fli ${FLI} — ${published === null ? 'npm did not answer' : 'not on npm'}, so the box gets no fli; publish @frontierjs/cli ${FLI} and run setup again`)
 }

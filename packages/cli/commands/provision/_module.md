@@ -2,7 +2,7 @@
 namespace: provision
 description: Make the box Basecamp will run on, at DigitalOcean, and hand back how to SSH to it
 requires:
-  - DIGITALOCEAN_TOKEN: https://cloud.digitalocean.com/account/api/tokens/new
+  - DIGITALOCEAN_TOKEN: https://cloud.digitalocean.com/account/api/tokens/new  Pick Full Access
 ---
 
 <script>
@@ -12,24 +12,50 @@ requires:
 // checkout fli runs from, the same as ring 0's `fli deploy` of Basecamp.
 const provisionScript = () => {
   const root = new URL('../basecamp/', 'file://' + global.fliRoot + '/').pathname
-  const script = root + 'api/src/core/provision-host.ts'
-  return { root, script }
+  return { root }
 }
 
-const runProvision = async (input) => {
+// `host-record.ts` beside it is the Cloudflare half, for `provision:dns`.
+const runProvision = async (input, file = 'provision-host.ts', env = {}) => {
   const { spawnSync }  = await import('node:child_process')
   const { existsSync } = await import('node:fs')
-  const { root, script } = provisionScript()
+  const { root } = provisionScript()
+  const script = root + 'api/src/core/' + file
   if (!existsSync(script))
     return { error: `no Basecamp checkout at ${root}: fli provision runs from the framework repository` }
 
   const run = spawnSync('bun', [script, JSON.stringify(input)], {
-    cwd: root, encoding: 'utf8', env: process.env, stdio: ['ignore', 'pipe', 'inherit'],
+    cwd: root, encoding: 'utf8', env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'inherit'],
   })
   const last = (run.stdout || '').trim().split('\n').pop()
   try { return JSON.parse(last) }
-  catch { return { error: `provision-host.ts answered no JSON (exit ${run.status})` } }
+  catch { return { error: `${file} answered no JSON (exit ${run.status})` } }
 }
+
+// Basecamp's own hostname, the one `provision:dns` points at the box.
+const webDomain = async () =>
+  (await import(provisionScript().root + 'frontier.config.js')).default.deploy.web?.domain
+
+// The token page and what to pick on it are the cloudflare namespace's, read
+// off its module so the two commands cannot send a person to different pages.
+const cloudflareToken = async ({ interactive, write = true, say }) => {
+  if (process.env.CLOUDFLARE_TOKEN) return true
+  const { resolve }                    = await import('node:path')
+  const { loadModuleFile }             = await import(resolve(global.fliRoot, 'core/registry.js'))
+  const { requiresOf, acquireMissing } = await import(resolve(global.fliRoot, 'core/requires.js'))
+  const { meta } = loadModuleFile(resolve(global.fliRoot, 'commands/cloudflare/_module.md'))
+  const left = await acquireMissing('cloudflare', requiresOf(meta).filter(r => r.key === 'CLOUDFLARE_TOKEN'), { interactive, write, say })
+  return !left.length
+}
+
+// spawnSync hands the child the environment bun STARTED with, so a token
+// pasted just now goes on the call itself.
+const hostRecord = (input) => runProvision(input, 'host-record.ts', { CLOUDFLARE_TOKEN: process.env.CLOUDFLARE_TOKEN })
+
+// One row of `provision:list`, and of the pick `provision:destroy` offers with no id.
+const machineLine = (m) =>
+  `${m.id}  ${m.status}  ${m.ip ?? 'no address yet'}  ${m.region ?? '-'}  `
+  + (m.serverId ? `Basecamp server ${m.serverId} — destroy it in Basecamp` : 'unclaimed')
 
 // ─── Ring 0 from here ─────────────────────────────────────────────────────────
 // `fli deploy:setup` and `fli deploy` as child runs of this fli, in the Basecamp

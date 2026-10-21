@@ -5,6 +5,7 @@
 //
 //   DIGITALOCEAN_TOKEN=… bun api/src/core/provision-host.ts '{"action":"create","size":"4gb",…}'
 //   DIGITALOCEAN_TOKEN=… bun api/src/core/provision-host.ts '{"action":"destroy","id":"123"}'
+//   DIGITALOCEAN_TOKEN=… bun api/src/core/provision-host.ts '{"action":"list"}'
 //
 // The vendor's dialect is providers/compute/digitalocean.ts and nothing here
 // restates it. The box boots with no user_data: install.sh is served by a
@@ -19,10 +20,12 @@
 //   { id, name, ip, region, size, image, monthly }   created and up
 //   { id, name, pending: true, … }                    created, not up before the deadline
 //   { destroyed: '<id>' }
+//   { machines: [{ id, status, ip, region, serverId }] }   every fleet-tagged droplet
 //   { error: '<what>' }                               and the exit is non-zero
 
 import { connectorFor, fleetMark, priceIn, sizeRegions } from '../providers/compute/index.ts'
-import type { AccountSend, ComputeSize } from '../providers/compute/index.ts'
+import type { ComputeSize }   from '../providers/compute/index.ts'
+import { bearerSend }         from './bearer-send.ts'
 
 const answer = (o: Record<string, unknown>) => console.log(JSON.stringify(o))
 const fail   = (error: string): never => { answer({ error }); process.exit(1) }
@@ -41,29 +44,7 @@ const token = process.env.DIGITALOCEAN_TOKEN
 if (!token) fail('DIGITALOCEAN_TOKEN is not set')
 
 const connector = connectorFor('digitalocean')!
-
-// A plain fetch and not conduit: conduit's send needs a registered target, and
-// this process boots no app to hold a registry.
-const send: AccountSend = async ({ method, path, body }) => {
-  let res: Response
-  try {
-    res = await fetch(connector.address + path, {
-      method,
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body:    body === undefined ? undefined : JSON.stringify(body),
-      signal:  AbortSignal.timeout(30_000),
-    })
-  } catch (e) {
-    return { data: null, error: { kind: 'unreachable', message: (e as Error).message } }
-  }
-  const text = await res.text()
-  let data: unknown = null
-  try { data = text ? JSON.parse(text) : null } catch { data = text }
-  if (res.ok) return { data, status: res.status }
-  const message = (data as { message?: string } | null)?.message
-  return { data, status: res.status,
-           error: { kind: res.status >= 500 ? 'server_error' : 'client_error', message } }
-}
+const send      = bearerSend(connector.address, token!)
 
 // ─── Sizes ───────────────────────────────────────────────────────────────
 
@@ -140,14 +121,27 @@ async function destroy() {
   const ours = (await connector.marked(send, fleetMark())).find(m => m.providerServerId === id)
   if (!ours) fail(`${id} is not a droplet fli provision made (no fleet tag at this account)`)
   if (ours!.serverId) fail(`${id} is a fleet machine Basecamp made (server ${ours!.serverId}): destroy it in Basecamp`)
+  // Powering it off first is the second hand on the destroy: a box still
+  // serving cannot be removed by one mistyped id or one wrong pick.
+  if (ours!.status !== 'off') fail(`${id} is ${ours!.status}: power it off at DigitalOcean first, then destroy it`)
 
   await connector.destroy(send, id)
   answer({ destroyed: id })
 }
 
+// A droplet carrying a serverId is Basecamp's, and destroy refuses it — so the
+// list says which, or the id it prints is one destroy will not take.
+async function list() {
+  const machines = (await connector.marked(send, fleetMark())).map(m => ({
+    id: m.providerServerId, status: m.status, ip: m.ipAddress, region: m.region, serverId: m.serverId,
+  }))
+  answer({ machines })
+}
+
 try {
   if (input.action === 'create')       await create()
   else if (input.action === 'destroy') await destroy()
+  else if (input.action === 'list')    await list()
   else fail(`unknown action '${input.action}'`)
   process.exit(0)
 } catch (e) {

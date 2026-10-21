@@ -2,8 +2,7 @@
 namespace: cloudflare
 description: Cloudflare account management — DNS, cache, Pages, Workers
 requires:
-  - CLOUDFLARE_TOKEN
-  - CLOUDFLARE_ACCOUNT_ID
+  - CLOUDFLARE_TOKEN: https://dash.cloudflare.com/profile/api-tokens  Create Token, the Edit zone DNS template, then add Zone / Zone / Read
 defaults:
   flags:
     zone:
@@ -59,6 +58,7 @@ You need a Cloudflare API Token to use any `cloudflare:` command.
 2. Click **Create Token** → use the **Edit zone DNS** template as a starting point
 3. Add permissions for what you need:
    - Zone / DNS / Edit — for DNS commands
+   - Zone / Zone / Read — for finding a zone by its name
    - Zone / Cache Purge / Purge — for cache commands
    - Account / Cloudflare Pages / Edit — for Pages commands
 4. Add it to your global fli env:
@@ -92,6 +92,6 @@ fli cloudflare:dns --zone clientdomain.com --token cf_xxxxx
 
 ## Environment variables
 
-- `CLOUDFLARE_TOKEN` — required, API token with appropriate scopes
-- `CLOUDFLARE_ACCOUNT_ID` — required for Pages/Workers commands
+- `CLOUDFLARE_TOKEN` — required, API token with appropriate scopes; a first run at a terminal opens the token page and takes the paste
+- `CLOUDFLARE_ACCOUNT_ID` — Pages and Workers only, which refuse without it
 - `CLOUDFLARE_DEFAULT_ZONE` — default zone name or ID for DNS/cache commands

@@ -35,6 +35,16 @@ const { existsSync } = await import('fs')
 const { resolve } = await import('path')
 const localEnv = resolve($.paths.root, '.env.production')
 const present  = machine.capture(`[ -f ${envFile} ] && echo yes || echo no`).trim() === 'yes'
+const keyFile  = `${secretsDir}/ENCRYPTION_KEY`
+
+// A box with neither file is a first seed, and an app whose .env.example names
+// ENCRYPTION_KEY would otherwise boot on nothing or be refused by 01b-env-check
+// at its first deploy. The key is made into the LOCAL file, which the seed below
+// then carries up, so the operator holds the copy a restore needs.
+if (!present && machine.capture(`[ -e ${keyFile} ] && echo yes || echo no`).trim() === 'no') {
+  const { fillKey } = await import(new URL('file://' + global.fliRoot + '/core/env-preflight.js'))
+  if (fillKey($.paths.root, localEnv) === 'made') log.info(`  Made a new ENCRYPTION_KEY in ${localEnv} — it is the one copy off the box: keep it`)
+}
 
 let envNote = 'populate before first deploy'
 if (present) envNote = 'already there — left as it is'
@@ -46,7 +56,6 @@ else if (existsSync(localEnv)) {
   // again after, because scp may carry the laptop's looser mode onto the file.
   const { readFileSync, writeFileSync, mkdtempSync, rmSync } = await import('fs')
   const { tmpdir } = await import('os')
-  const keyFile = `${secretsDir}/ENCRYPTION_KEY`
   const lines   = readFileSync(localEnv, 'utf8').split('\n')
   const keyAt   = lines.findIndex(l => /^ENCRYPTION_KEY=./.test(l.trim()))
   const tmp     = mkdtempSync(resolve(tmpdir(), 'fli-setup-'))

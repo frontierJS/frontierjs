@@ -24,7 +24,7 @@
 // running. web-ext's own --reload watching takes care of subsequent rebuilds.
 
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 const TARGETS = {
@@ -40,9 +40,12 @@ const TARGETS = {
  * @param {string[]} opts.browsers — ['chrome'] | ['firefox'] | ['chrome','firefox']
  * @param {boolean} [opts.verbose] — pipe web-ext stdout to our console
  * @param {string} [opts.startUrl] — initial URL to open (default: about:blank for Firefox, none for Chrome)
+ * @param {string} [opts.profileDir] — keep a profile per browser at <profileDir>/<browser>,
+ *   so sign-ins and the extension's own storage survive a restart. Omitted, each
+ *   run gets web-ext's fresh temporary profile.
  * @returns {Promise<{ stop: () => Promise<void> }>}
  */
-export async function startBrowsers({ root, browsers, verbose = false, startUrl }) {
+export async function startBrowsers({ root, browsers, verbose = false, startUrl, profileDir }) {
   const log = (...args) => console.log('[jetty:browser]', ...args)
 
   // Each browser → child process record
@@ -75,6 +78,16 @@ export async function startBrowsers({ root, browsers, verbose = false, startUrl 
 
     if (startUrl) args.push('--start-url', startUrl)
 
+    // --keep-profile-changes: without it web-ext runs on a COPY of the profile
+    // and throws the copy away at exit, which is the temporary profile again.
+    // --profile-create-if-missing makes only the last segment, so the parent
+    // is made here.
+    if (profileDir) {
+      mkdirSync(profileDir, { recursive: true })
+      const flag = browser === 'firefox' ? '--firefox-profile' : '--chromium-profile'
+      args.push(flag, join(profileDir, browser), '--profile-create-if-missing', '--keep-profile-changes')
+    }
+
     // Use npx so users don't need a global install. The first invocation may
     // download web-ext (a few seconds). Subsequent invocations are instant
     // from npm's cache. We use `npx --yes` to skip the "ok to proceed?" prompt.
@@ -85,8 +98,13 @@ export async function startBrowsers({ root, browsers, verbose = false, startUrl 
 
     const child = spawn(cmd, fullArgs, {
       cwd: root,
-      stdio: verbose ? 'inherit' : ['ignore', 'pipe', 'pipe'],
+      // stdin is never the child's: `jetty dev` reads keys from it.
+      stdio: verbose ? ['ignore', 'inherit', 'inherit'] : ['ignore', 'pipe', 'pipe'],
       env: { ...process.env },
+      // Its own process group, so stop() can signal npx, web-ext and the
+      // browser together: npx dies on SIGTERM without passing it on, and the
+      // web-ext it leaves behind keeps the browser open.
+      detached: process.platform !== 'win32',
     })
 
     if (!verbose) {
@@ -122,6 +140,11 @@ export async function startBrowsers({ root, browsers, verbose = false, startUrl 
     log('no browsers launched (all skipped or unsupported)')
   }
 
+  const kill = (child, sig) => {
+    if (process.platform === 'win32') child.kill(sig)
+    else process.kill(-child.pid, sig)
+  }
+
   return {
     async stop() {
       // Send SIGTERM to all children and wait for exit.
@@ -129,14 +152,14 @@ export async function startBrowsers({ root, browsers, verbose = false, startUrl 
         if (child.exitCode !== null) return resolve()
         const timer = setTimeout(() => {
           // Force-kill if it doesn't exit in 3s
-          try { child.kill('SIGKILL') } catch {}
+          try { kill(child, 'SIGKILL') } catch {}
           resolve()
         }, 3000)
         child.once('exit', () => {
           clearTimeout(timer)
           resolve()
         })
-        try { child.kill('SIGTERM') } catch {}
+        try { kill(child, 'SIGTERM') } catch {}
       }))
       await Promise.all(exits)
     },

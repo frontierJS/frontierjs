@@ -108,9 +108,10 @@ Secrets, and its own box `online` in its fleet.
 
 - [x] 3.1 Name the command — owner 2026-10-20: `fli provision`, Basecamp's own word for making a machine (`/servers/provision/`), over a flag on `deploy:setup`
 - [ ] 3.2 `FJS-D1253`: create the droplet through an existing DigitalOcean connector, then run ring 0 on it. **Box half built**: `fli provision` / `provision:destroy` run `packages/basecamp/api/src/core/provision-host.ts`, which drives `providers/compute/digitalocean.ts` (new `sshKey()`, `MachineSpec.sshKeys`) and prints the ssh block; proved on the 8122 sink only. No `user_data`: `install.sh` is served by a running Basecamp, so this box cannot boot from it, and `fli deploy:setup` installs over SSH. Ring 0 from the same command is built: at a terminal, `fli provision` asks whether to install Basecamp once the box answers ssh, then runs `deploy:setup --auto-install` and `deploy` with `--server root@<ip>` from `packages/basecamp`; a run with no token opens the DigitalOcean token page, takes the paste and stores it (`core/requires.js`). Left: one real droplet (0.1)
-- [ ] 3.3 A non-interactive first run: `ENCRYPTION_KEY` generated locally and seeded with the env file, the admin made through `POST /setup`
-- [ ] 3.4 `FJS-D1254`: a script in the container (the `enroll-host.ts` shape) stores the DigitalOcean and Cloudflare tokens as the first workspace's Secrets, makes the Domain row for Basecamp's host, and runs `edge.sync`
+- [ ] 3.3 A non-interactive first run: `ENCRYPTION_KEY` generated locally and seeded with the env file, the admin made through `POST /setup`. **Built** ([`FJS-D1381`](../DECISIONS.md#fjs-d1381)): `deploy:setup` makes the key into the local `.env.production` on a box with none (`fillKey`), `--auto-install` asks nothing (the Caddy routes too), and `fli provision --approved --admin <email>` installs with no terminal and makes the admin over ssh, the password asked at a terminal and generated otherwise. Proved: the refusals and the `/setup` script against a stand-in. Left: one real droplet (0.1)
+- [ ] 3.4 `FJS-D1254`: a script in the container (the `enroll-host.ts` shape) stores the DigitalOcean and Cloudflare tokens as the first workspace's Secrets, makes the Domain row for Basecamp's host, and runs `edge.sync`. **Blocked as ruled** (Q2): `edge.sync` cannot push Basecamp's own host on a fresh box. **Interim, owner 2026-10-21**: `fli provision:dns <ip>` (printed by `fli provision` once Basecamp is up) runs `api/src/core/host-record.ts` from the checkout, the `provision-host.ts` shape, and writes `A <web.domain> → <ip>` DNS-only through `providers/edge/cloudflare.ts` under the fleet's mark, so Basecamp reads the record as its own; a hand-made record at that name is refused. `CLOUDFLARE_TOKEN` is acquired at a terminal like `DIGITALOCEAN_TOKEN`. Proved against the Cloudflare stand-in only. Left: the tokens as Secrets and the ingress zone (Q2)
 - [ ] 3.5 Grade the host on the real box: `/hub/security/` shows `hub.db-mode` and `hub.env-mode` graded rather than unknown, beside the `basecamp-host` row's fleet controls (built under `FJS-2714`)
+- [ ] 3.6 `FJS-D1380`: `fli provision` ends by fetching `https://<host>` and grading the certificate; at a terminal it then offers the flip to proxied, which sets the zone to Full (strict) (2.4) before writing `proxied: true` through `edge.sync`. No terminal, or a refusal, leaves the record DNS-only
 
 ### Phase 4 — Continuous
 
@@ -133,14 +134,18 @@ a restore drill with no hand SSH.
 
 ## Open questions
 
-- **Q1 — Proxied or DNS-only for Basecamp's own hostname.** Proxied hides the
+- ~~**Q1 — Proxied or DNS-only for Basecamp's own hostname.**~~ **Answered 2026-10-21 (`FJS-D1380`): A — DNS-only: step 3.4's script makes Basecamp's Domain row without naming `proxied`, so it takes the schema's `false` (`FJS-D563`, `Domain.proxied` in `packages/basecamp/db/schema.lite`); the A record points straight at the droplet and Caddy's HTTP-01 certificate is what the browser sees. The command's last step then verifies HTTPS answers at the hostname with a valid certificate, and at a terminal offers the flip to proxied — which sets the zone to Full (strict) first (step 2.4), since the origin now has the certificate strict mode needs.** Proxied hides the
   droplet's address. DNS-only keeps the operator console off Cloudflare's path,
   and Caddy's ACME HTTP-01 works either way. `FJS-D563` makes the bit
   per-record, so this is only a default.
   - **A** — DNS-only: step 3.4's script makes Basecamp's Domain row without
     naming `proxied`, so it takes the schema's `false` (`FJS-D563`, `Domain.proxied`
     in `packages/basecamp/db/schema.lite`); the A record points straight at the
-    droplet and Caddy's HTTP-01 certificate is what the browser sees.
+    droplet and Caddy's HTTP-01 certificate is what the browser sees. The
+    command's last step then verifies HTTPS answers at the hostname with a
+    valid certificate, and at a terminal offers the flip to proxied — which
+    sets the zone to Full (strict) first (step 2.4), since the origin now has
+    the certificate strict mode needs.
   - **B** — Proxied: the 3.4 script writes `proxied: true` for Basecamp's own row
     only, so the droplet's address stays behind Cloudflare and the console's
     traffic crosses Cloudflare's edge; an operator flips it per record either way.
@@ -148,6 +153,10 @@ a restore drill with no hand SSH.
     override and keeps one origin for the value (`FJS-D563`'s reason for refusing a
     global flag); the operator console staying off a third party's TLS
     termination outweighs hiding an address the fleet's own enrollment already exposes.
+- **Q2 — Who writes Basecamp's own host record, given `edge.sync` cannot.** `FJS-D1254` has the container script make a Domain row and run `edge.sync`, but a Domain needs an App, and `push` (`services/edge/edge.service.ts`) writes only for an App `running` on an `online` server. The host's Outpost comes online only after fetching `install.sh` over HTTPS from Basecamp's own hostname (`installCommand`, `providers/compute/enrollment.ts`, TLS required), which needs the record first. Deferred by the owner 2026-10-21 until after a real deploy; step 3.4's interim writes the record under the fleet's mark alone, which A would keep.
+  - **A** — an installation record: the script stores both tokens as Secrets and writes `A <host> → <ip>` through Basecamp's Cloudflare connector under a new `installMark()`, DNS-only, and sets the workspace's ingress zone to that zone when none is set. No App, no Domain; 3.6's flip to proxied rewrites the same marked record. Cloudron's shape: setup writes the `my.` record from the DNS token, apart from app records, and *Sync DNS* re-adds it ([docs](https://docs.cloudron.io/domains/)).
+  - **B** — Basecamp as an App: an `image` App placed on the `basecamp-host` Server with a Domain on it, and `servingAddresses` counting the host Server's address while it is still `pending`. Keeps the ruling's words; puts a release no fleet step can act on into the App model.
+  - **Recommend A** — it keeps the ruling's reason (Basecamp's connector writes and marks the record) and needs no exception in the push path.  Confidence 2: the open part is whether Basecamp shows the record anywhere, which A leaves to `edge.records`.
 - Basecamp's own distribution (a checkout, or a published image) stays
   `deploy-plane.md`'s question. It matters only once someone outside this repo
   installs Basecamp.

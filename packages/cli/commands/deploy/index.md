@@ -35,7 +35,7 @@ flags:
     defaultValue: false
   auto-install:
     type: boolean
-    description: If the server needs deploy:setup, install its missing dependencies without asking
+    description: If the server needs deploy:setup, run it with no questions — every missing dependency installed, the Caddy routes written
     defaultValue: false
   outpost:
     type: boolean

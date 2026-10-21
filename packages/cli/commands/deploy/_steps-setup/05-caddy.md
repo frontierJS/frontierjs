@@ -40,7 +40,9 @@ for (const r of routes) {
 }
 echo('')
 
-const answer = await tty.line(`Write these routes into Caddy on ${host}? (y/N) `)
+// --auto-install is setup with no questions (FJS-D1381), which is how `fli
+// provision` runs it with nobody at the terminal.
+const answer = $.flag['auto-install'] ? 'y' : await tty.line(`Write these routes into Caddy on ${host}? (y/N) `)
 if (answer.trim().toLowerCase() !== 'y') {
   log.info('Skipped — nothing routes to this app until the routes are written. Run fli deploy:setup again.')
   return

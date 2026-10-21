@@ -304,6 +304,9 @@ function makeGitignore() {
     'db/.json/',
     '.DS_Store',
     'dist/',
+    // `jetty dev`'s launched browsers keep their profiles here — sign-ins,
+    // cookies and the extension's storage.
+    '.browser-profiles/',
     '.fli-tmp/',
     '.deploy.lock',
     // Written by `fli deploy:vendor` before every build — a rewritten manifest

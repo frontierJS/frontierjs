@@ -88,10 +88,17 @@ walks up from `extension/` to find it — see [Using it in an app](#using-it-in-
 jetty build    --root=. --browser=chrome|firefox|both [--verbose]
 jetty dev      --root=. --browser=chrome|firefox|both [--verbose]
                                                       [--launch] [--start-url=URL]
+                                                      [--profile=DIR | --temp-profile]
 jetty info     --root=. [--browser=chrome]   # print structure summary
 jetty audit    --root=. [--browser=chrome]   # standalone permission audit
 jetty manifest --root=. [--browser=chrome|firefox|both]  # print manifest only
 ```
+
+`jetty dev` in a terminal takes keys: **`o`** opens the browser(s) with the
+extension loaded (what `--launch` does at start), **`q`** quits. A launched
+browser keeps its profile at `<root>/.browser-profiles/<browser>/`, so a
+sign-in on the page under test and the extension's own storage survive a
+restart — gitignore it. `--temp-profile` is web-ext's fresh profile per launch.
 
 ## Permission audit
 

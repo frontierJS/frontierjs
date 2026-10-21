@@ -151,6 +151,11 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           by a publish as the app
           core/credentials.ts owns both conduit ref forms — `secret:<id>` and
           `env:<NAME>`; a target carries the ref, never the material
+          core/provision-host.ts and core/host-record.ts are run by `fli
+          provision` and `fli provision:dns` on a LAPTOP, never by the app:
+          the droplet, and Basecamp's own A record under the fleet's mark,
+          each through this app's connector over core/bearer-send.ts, since
+          no app is booted to hold a conduit registry
           core/runtime.ts is the ONE reader of how a container starts —
           App's port, volume, health path and limits, each a `docker run` flag;
           a column added there and not applied by outpost is `FJS-1605` again

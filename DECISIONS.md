@@ -12124,6 +12124,48 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d1388"></a>2026-10-21 · `FJS-D1388` — Q7 — One `keys()` attachment in mesa's runtime, since both targets deliver DOM-shaped keydown; `hotkey()` is sugar over it.
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (a browser attachment and a terminal listener in sierra's shell).
+
+The paper's recommendation, taken as written: `FJS-D809` made the terminal a target of `web/`, and one binding is what makes Phase 4's box one `.mesa`. Confidence 2.
+
+### <a id="fjs-d1387"></a>2026-10-21 · `FJS-D1387` — Q6 — `/textbox` and `<Textbox>`, ARIA's role for the control.
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (`/buffer`, vim's and Emacs's word, which also names Node's bytes), **C** (`/editline`, which a multi-line box outgrows).
+
+The paper's recommendation, taken as written: the precise word with no collision. Confidence 2.
+
+### <a id="fjs-d1386"></a>2026-10-21 · `FJS-D1386` — Q5 — Inside an editable only a chord with a modifier fires and a letter types, unless the editable's own keymap is active (the Phase 4 box).
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (every active table fires everywhere).
+
+The paper's recommendation, taken as written: it is khat's `is_text_ctx`, `rowlist`'s rule and browser-kit's, stated once. Confidence 3.
+
+### <a id="fjs-d1385"></a>2026-10-21 · `FJS-D1385` — Q4 — One ambiguity timeout, 720ms; Haven's 400ms `d` moves to it.
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (a `timeout` per keymap, default 1000ms).
+
+As recommended, one constant, but 720ms rather than vim's 1000ms: the owner's number to try, between Haven's 400ms and vim's `timeoutlen`. B stays the reopen path if one consumer's feel needs its own.
+
+### <a id="fjs-d1384"></a>2026-10-21 · `FJS-D1384` — Q3 — None; a digit is a key a table may bind (khat, pinned by a test).
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (vim counts in any non-text context).
+
+The paper's recommendation, taken as written: moves no caller and adds no convention; B is the reopen path when a consumer wants `5j`. Confidence 3.
+
+### <a id="fjs-d1383"></a>2026-10-21 · `FJS-D1383` — Q2 — Vim's spelling: `gg`, `<C-k>`, `<S-CR>` (khat), and `<Mod-k>` for the platform modifier.
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **B** was picked over **A** (the web's: `g g`, `mod+k`, `Shift+Enter` (tinykeys, GitHub)), **C** (both parse).
+
+Against the recommendation (**A**): the owner wants vim's spelling; khat's tables port as written and `dd`, `gg`, `ciw` read better. Vim has no platform modifier, so `<Mod-k>` is Cmd on a Mac and Ctrl elsewhere (mousetrap's and tinykeys' `mod`, Electron's `CmdOrCtrl`, in vim's brackets), asked as a follow-up through the question tool; `<C-k>`, `<A-k>`, `<D-k>` stay literal Ctrl, Alt and Cmd. A key string with a literal space or a web shape such as `mod+k` refuses by name, since it would otherwise parse as letters.
+
+### <a id="fjs-d1382"></a>2026-10-21 · `FJS-D1382` — Q1 — `@frontierjs/toolbelt/keys`, a pure reducer that takes `now`.
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (mesa `src/browser/`, beside `hotkey()`; fails the terminal by `FJS-D1097` Q6), **C** (a `keys-kit` package; nothing in it needs a dependency).
+
+The paper's recommendation, taken as written: browser-kit 2.2 already put the chord parser in toolbelt, and `/directives` is the precedent for a table that three realms read. Confidence 3.
+
 ### <a id="fjs-d1086"></a>2026-10-20 · `FJS-D1086` — Does a resource file with only a `<script module>` half render the kit's default form implicitly — No: Invariant 18 stands, the scaffold keeps writing the half.
 
 Asked in [`IDEAS/lockdown.md`](IDEAS/lockdown.md) § Open questions. **B** was picked over **A** (yes: no markup half means the kit's `<Form resource>`; a markup half is an override. Invariant 18's second sentence becomes *the markup half, when present, overrides the model's default form*).
@@ -14613,6 +14655,26 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1381"></a>2026-10-21 · `FJS-D1381` — A non-interactive first run of Basecamp (`zero-to-live.md` 3.3): where the key is made, how setup asks nothing, and what the first admin's password is — `deploy:setup` makes the key, `--auto-install` answers every setup question, and `fli provision --admin` asks the password at a terminal and generates one without.
+
+Asked through the question tool at step 3.3, three forks.
+
+- **Key — A, as recommended**: `deploy:setup`'s `03-directories`, on a box with neither the env file nor `secrets/ENCRYPTION_KEY`, makes a key into the LOCAL `.env.production` (`fillKey` in `core/env-preflight.js`, started from `.env.example` when the file is absent, mode 600) when the app's `.env.example` names `ENCRYPTION_KEY`; the existing seed then carries it to `secrets/` (`FJS-D1352`). Picked over provision-only, which covers no box set up by hand. The local file is the one copy off the box, which a restore needs. Basecamp's `.env.example` names the key, so `01b-env-check` refuses a box without one.
+- **Setup with no terminal — Against the recommendation**: `--auto-install` widens to *ask nothing*: it writes the Caddy routes as well as installing every missing dependency. Recommended was a `--yes` on `deploy:setup` with the routes question flipped to `(Y/n)`; the third option, writing routes whenever no terminal is attached, departed from the tty rule that nobody present means a refusal. Cost: the flag's name says less than it does, and its description says the rest.
+- **Admin password — Against the recommendation**: at a terminal it is asked hidden, and Enter or no terminal generates one, printed once. Recommended was always generate and print once (GitLab's generated root password); a 0600 file on the box (GitLab's `initial_root_password`) was the third. `--admin <email>` is what makes `fli provision` install without asking; the admin is made through Basecamp's own `POST /setup`, run over ssh against `localhost:<api port>` so no DNS is needed, with the body inside the script on ssh's stdin rather than in an argv.
+
+The nine, answered before the first edit: 1 origin — the key written once, locally, and the seed carries it · 2 concept — no new noun; `--admin` is the plan's target line · 3 complexity — the problem's (GitLab, Sentry's `--no-user-prompt`) · 4 predictability — `fli dev`'s env-preflight rule, one tier out · 5 derived — whether an app wants a key is read off `.env.example` · 6 owner — `env-preflight.js` for the key, `03-directories` for the seed, `POST /setup` for the admin · 7 boundary — `/setup` over ssh at the box's own port · 8 failure — a 409 is reported and the run goes on; no terminal and no `--admin` makes the box alone · 9 silence — a box with no key is refused by `01b-env-check`, and `test/env-preflight.test.js` pins `fillKey`.
+
+Adjudication: none in tension. Tier: Register here; Map in `packages/cli/CLAUDE.md` (`env-preflight.js`).
+
+*Lives in:* `packages/cli/core/env-preflight.js` (`fillKey`) · `packages/cli/commands/deploy/_steps-setup/03-directories.md` · `packages/cli/commands/deploy/_steps-setup/05-caddy.md` · `packages/cli/commands/provision/index.md` · `packages/basecamp/.env.example`.
+
+### <a id="fjs-d1380"></a>2026-10-21 · `FJS-D1380` — Q1 — Proxied or DNS-only for Basecamp's own hostname — DNS-only: step 3.4's script makes Basecamp's Domain row without naming `proxied`, so it takes the schema's `false` (`FJS-D563`, `Domain.proxied` in `packages/basecamp/db/schema.lite`); the A record points straight at the droplet and Caddy's HTTP-01 certificate is what the browser sees. The command's last step then verifies HTTPS answers at the hostname with a valid certificate, and at a terminal offers the flip to proxied — which sets the zone to Full (strict) first (step 2.4), since the origin now has the certificate strict mode needs.
+
+Asked in [`IDEAS/zero-to-live.md`](IDEAS/zero-to-live.md) § Open questions. **A** was picked over **B** (Proxied: the 3.4 script writes `proxied: true` for Basecamp's own row only, so the droplet's address stays behind Cloudflare and the console's traffic crosses Cloudflare's edge; an operator flips it per record either way).
+
+As recommended: owner: the certificate must be issued before the proxy sits in front — through it, Always Use HTTPS redirects the HTTP-01 challenge, Full (strict) needs an origin cert that does not exist yet, and TLS-ALPN-01 cannot pass; so DNS-only first, verify, then offer the flip.
 
 ### <a id="fjs-d1352"></a>2026-10-20 · `FJS-D1352` — Where a deployed API's ENCRYPTION_KEY lives, so `docker inspect` stops showing it — Its own file, `<path>/secrets/ENCRYPTION_KEY`, 0400 and owned by the image's uid. `deploy:setup`'s one-time seed puts it there instead of the env file. A deploy writes nothing: it mounts `secrets/` read-only at `/run/secrets` and passes `<KEY>_FILE` for each file there.
 

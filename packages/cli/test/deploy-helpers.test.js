@@ -46,12 +46,12 @@ async function loadModuleHelpers() {
   const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
   const fn = new AsyncFunction(`
     ${scriptMatch[1]}
-    return { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, sshHost, swapContainer, healthOrRestore, litestreamInstall, LITESTREAM_PIN, LITESTREAM_MIN }
+    return { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, sshHost, swapContainer, healthOrRestore, litestreamInstall, aptIdle, LITESTREAM_PIN, LITESTREAM_MIN }
   `)
   return fn()
 }
 
-const { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, swapContainer, healthOrRestore, litestreamInstall, LITESTREAM_PIN, LITESTREAM_MIN } = await loadModuleHelpers()
+const { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, swapContainer, healthOrRestore, litestreamInstall, aptIdle, LITESTREAM_PIN, LITESTREAM_MIN } = await loadModuleHelpers()
 
 // ─── loadFrontierConfig ───────────────────────────────────────────────────────
 
@@ -650,5 +650,49 @@ describe('litestreamInstall', () => {
     const r = Bun.spawnSync(['sh', '-c', litestreamInstall(dest)], { env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } })
     expect(r.exitCode).not.toBe(0)
     expect(Bun.spawnSync(['ls', dest]).stdout.toString().trim()).toBe('')
+  })
+})
+
+// ─── aptIdle ─────────────────────────────────────────────────────────────────
+// A fresh droplet answers ssh while its own apt holds the lock, and every apt
+// install deploy:setup started in those minutes failed. Driven against a fake
+// fuser, which is what the script polls.
+
+describe('aptIdle', () => {
+  // A fuser that reports a holder for its first `busy` calls, then none.
+  const fakeFuser = (busy) => {
+    const bin = resolve(TMP, 'bin')
+    mkdirSync(bin, { recursive: true })
+    writeFileSync(resolve(bin, 'fuser'),
+      `#!/bin/sh\nn=$(cat "${TMP}/calls" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "${TMP}/calls"; [ $n -le ${busy} ]\n`, { mode: 0o755 })
+    mkdirSync(resolve(TMP, 'conf'), { recursive: true })
+    return { PATH: `${bin}:${process.env.PATH}` }
+  }
+  const run = (script, env) => Bun.spawnSync(['sh', '-c', script], { env: { ...process.env, ...env } })
+
+  // 02-install-deps wraps the script in sudo sh -c '...'
+  test('the script carries no single quote', () => {
+    expect(aptIdle()).not.toContain("'")
+  })
+
+  test('waits while apt is held, says how long, then leaves the lock timeout', () => {
+    const r = run(aptIdle({ step: 1, confDir: resolve(TMP, 'conf') }), fakeFuser(1))
+    expect(r.exitCode).toBe(0)
+    expect(r.stdout.toString().trim()).toBe('1')
+    expect(readFileSync(resolve(TMP, 'calls'), 'utf8').trim()).toBe('2')
+    expect(readFileSync(resolve(TMP, 'conf/90frontier-lock-wait'), 'utf8')).toBe('DPkg::Lock::Timeout "600";\n')
+  })
+
+  test('prints nothing when apt was free', () => {
+    const r = run(aptIdle({ step: 0, confDir: resolve(TMP, 'conf') }), fakeFuser(0))
+    expect(r.exitCode).toBe(0)
+    expect(r.stdout.toString()).toBe('')
+  })
+
+  test('gives up past the limit and writes nothing', () => {
+    const r = run(aptIdle({ limit: 2, step: 1, confDir: resolve(TMP, 'conf') }), fakeFuser(99))
+    expect(r.exitCode).not.toBe(0)
+    expect(r.stderr.toString()).toContain('apt is still busy after 2s')
+    expect(Bun.spawnSync(['ls', resolve(TMP, 'conf')]).stdout.toString().trim()).toBe('')
   })
 })

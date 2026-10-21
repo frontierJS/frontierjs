@@ -1,5 +1,6 @@
 // core/env-preflight.js
-// "Does the API have its key?" — asked before a dev server starts.
+// "Does the API have its key?" — asked before a dev server starts, and before
+// `deploy:setup` seeds a fresh box (`fillKey`).
 //
 // The failure this exists for: a clone carries `.env.example` and never `.env`,
 // which is gitignored, so the first `fli dev` starts an API that refuses at
@@ -14,7 +15,8 @@
 // The app says it wants the key by naming it in `.env.example`, which every
 // `fli new` app does; an app whose example never mentions it is not asked.
 
-import { existsSync, readFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 export const KEY = 'ENCRYPTION_KEY'
@@ -45,6 +47,30 @@ export function envValue(text, name) {
   // line reads as a key whose value is `#`.
   const m = text.match(new RegExp(`^[ \\t]*${name}[ \\t]*=[ \\t]*([^\\s#]\\S*)?`, 'm'))
   return m?.[1] ?? ''
+}
+
+/**
+ * Give the env file at `file` a new key when the app at `root` names one in its
+ * example and the file has no value for it — `deploy:setup`'s first seed of a
+ * fresh box. A missing file starts from the example, as `fli dev` starts `.env`.
+ * Written here rather than only on the server, because this file is then the
+ * one copy of the key off the box: a database restored without it is a
+ * database whose Secrets nobody can read.
+ *
+ * @returns {'made'|'set'|'undeclared'}
+ */
+export function fillKey(root, file) {
+  const example = read(resolve(root, '.env.example'))
+  if (example == null || !declares(example, KEY)) return 'undeclared'
+  const had = read(file)
+  if (had != null && envValue(had, KEY)) return 'set'
+  const text = had ?? example
+  const line = `${KEY}=${randomBytes(32).toString('hex')}`
+  const at   = new RegExp(`^[ \\t]*${KEY}[ \\t]*=.*$`, 'm')
+  const next = at.test(text) ? text.replace(at, line) : `${text}${text.endsWith('\n') || !text ? '' : '\n'}${line}\n`
+  writeFileSync(file, next, { mode: 0o600 })
+  chmodSync(file, 0o600)
+  return 'made'
 }
 
 function declares(text, name) {

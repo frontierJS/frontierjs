@@ -1,10 +1,11 @@
 // ─── requires.js — what a namespace's `_module.md` says it cannot run without ─
 //
-// An entry is a key, or a key with the page where one is made:
+// An entry is a key, or a key with the page where one is made — and, after the
+// URL, what to pick on that page, because a vendor's form cannot be prefilled:
 //
 //   requires:
 //     - GITHUB_TOKEN
-//     - DIGITALOCEAN_TOKEN: https://cloud.digitalocean.com/account/api/tokens/new
+//     - DIGITALOCEAN_TOKEN: https://cloud.digitalocean.com/account/api/tokens/new  Pick Full Access
 //
 // The runtime, the doctor, `fli <ns> --verbose` and the gui all read the list
 // through `requiresOf`, so the second spelling cannot reach one and print as
@@ -20,15 +21,18 @@ import { createPrompts }                                   from './prompt.js'
 import { openUrl }                                         from './open-url.js'
 import { ensurePlaceholder, storeGlobal, esetHint, globalEnvPath } from './global-env.js'
 
-const isUrl = (v) => typeof v === 'string' && /^https?:\/\//.test(v)
+const page = (v) => {
+  const m = typeof v === 'string' && v.trim().match(/^(https?:\/\/\S+)\s*(.*)$/)
+  return m ? { url: m[1], note: m[2] || null } : { url: null, note: null }
+}
 
-/** `[{ key, url }]` off a module's meta, `url` null where the entry is a bare key. */
+/** `[{ key, url, note }]` off a module's meta, `url` and `note` null where the entry does not say. */
 export function requiresOf(meta) {
   const out = []
   for (const entry of meta?.requires ?? []) {
-    if (typeof entry === 'string') { out.push({ key: entry, url: null }); continue }
+    if (typeof entry === 'string') { out.push({ key: entry, url: null, note: null }); continue }
     if (entry && typeof entry === 'object')
-      for (const [key, v] of Object.entries(entry)) out.push({ key, url: isUrl(v) ? v : null })
+      for (const [key, v] of Object.entries(entry)) out.push({ key, ...page(v) })
   }
   return out
 }
@@ -55,6 +59,7 @@ export async function acquireMissing(ns, missing, {
     if (write && ensurePlaceholder(r.key, r.url, { home })) await say(`  Placeholder added to ${file}`)
     await say(`  Set with:  ${esetHint(r.key)}`)
     if (r.url) await say(`  Make one:  ${r.url}`)
+    if (r.note) await say(`             ${r.note}`)
   }
   if (!interactive) return missing
 

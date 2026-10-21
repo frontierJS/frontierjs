@@ -15,12 +15,16 @@ describe('requiresOf', () => {
   test('a bare key and a key with the page it is made on read the same way', () => {
     const meta = { requires: ['GITHUB_TOKEN', { DIGITALOCEAN_TOKEN: 'https://cloud.digitalocean.com/account/api/tokens/new' }] }
     expect(requiresOf(meta)).toEqual([
-      { key: 'GITHUB_TOKEN', url: null },
-      { key: 'DIGITALOCEAN_TOKEN', url: 'https://cloud.digitalocean.com/account/api/tokens/new' },
+      { key: 'GITHUB_TOKEN', url: null, note: null },
+      { key: 'DIGITALOCEAN_TOKEN', url: 'https://cloud.digitalocean.com/account/api/tokens/new', note: null },
     ])
   })
+  test('the words after the URL are what to pick on that page', () => {
+    expect(requiresOf({ requires: [{ T: 'https://x.test/new  Pick Full Access' }] }))
+      .toEqual([{ key: 'T', url: 'https://x.test/new', note: 'Pick Full Access' }])
+  })
   test('a value that is not a URL is not a link', () => {
-    expect(requiresOf({ requires: [{ X: 'see the docs' }] })).toEqual([{ key: 'X', url: null }])
+    expect(requiresOf({ requires: [{ X: 'see the docs' }] })).toEqual([{ key: 'X', url: null, note: null }])
     expect(requiresOf(undefined)).toEqual([])
   })
   test('an empty value is missing, because a placeholder line loads as empty', () => {

@@ -299,6 +299,24 @@ const litestreamInstall = (dir = '/usr/local/bin') => {
   ].join('; ')
 }
 
+// ─── aptIdle ──────────────────────────────────────────────────────────────────
+// A fresh droplet answers ssh while cloud-init and then unattended-upgrades are
+// still running apt, one after the other, so every apt install 02-install-deps
+// starts in those minutes dies on the dpkg lock — and get.docker.com's own
+// apt-get with it. Waiting out cloud-init is not enough: the second holder
+// starts after it. So this waits until nothing holds a lock, then leaves
+// DPkg::Lock::Timeout behind so an apt-get that loses a later race waits rather
+// than failing. Prints how long it waited, or nothing. No single quote, for the
+// same `sudo sh -c '…'` as litestreamInstall. Without fuser it only writes the
+// timeout.
+const aptIdle = ({ limit = 600, step = 3, confDir = '/etc/apt/apt.conf.d' } = {}) => [
+  'if command -v cloud-init >/dev/null 2>&1; then cloud-init status --wait >/dev/null 2>&1 || true; fi',
+  'w=0',
+  `while fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1; do [ $w -ge ${limit} ] && { echo "apt is still busy after ${limit}s: ps -C apt-get,dpkg,unattended-upgr names who holds it" >&2; exit 1; }; sleep ${step}; w=$((w+${step})); done`,
+  'if [ $w -gt 0 ]; then echo "$w"; fi',
+  `if [ -d ${confDir} ]; then echo "DPkg::Lock::Timeout \\"${limit}\\";" > ${confDir}/90frontier-lock-wait; fi`,
+].join('; ')
+
 // ─── distinctHosts ────────────────────────────────────────────────────────────
 // The machines a run touches, deduplicated by host AND path — the SSH check, the
 // deploy lock, the ship and the cleanup are per machine, not per side, and

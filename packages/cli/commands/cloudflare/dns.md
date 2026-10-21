@@ -6,6 +6,7 @@ examples:
   - fli cf:dns --zone example.com
   - fli cf:dns --zone example.com --type CNAME
   - fli cf:dns --zone example.com --add --type A --name @ --content 1.2.3.4
+  - fli cf:dns --add --type A --name ops.example.com --content 1.2.3.4
   - fli cf:dns --zone example.com --delete <record-id>
   - fli cf:dns --zone example.com --update <record-id> --content 5.6.7.8
   - fli cf:dns --zone example.com --dry
@@ -70,8 +71,21 @@ const NAME_PAD = 35
 Full CRUD for DNS records. Without `--add`, `--update`, or `--delete` it lists
 all records for the zone. Filter by type with `--type CNAME`.
 
+A full hostname as `--name` names its own zone: `--add --name ops.example.com`
+writes into the longest zone the token opens that the name ends with, whatever
+`--zone` or `CLOUDFLARE_DEFAULT_ZONE` says.
+
 ```js
-const zoneId = await resolveZone($, flag.zone)
+// A default zone set for one client would otherwise put a hostname of another
+// zone into it, where Cloudflare refuses it with a message about neither.
+const fqdn = flag.name.toLowerCase().replace(/\.$/, '')
+const owning = fqdn.includes('.')
+  ? (await cfApi($, 'GET', '/zones?per_page=50'))
+      .filter(z => fqdn === z.name || fqdn.endsWith(`.${z.name}`))
+      .sort((a, b) => b.name.length - a.name.length)[0]
+  : null
+if (owning) flag.zone = owning.name
+const zoneId = owning?.id ?? await resolveZone($, flag.zone)
 
 // ── DELETE ────────────────────────────────────────────────────────────────────
 if (flag.delete) {

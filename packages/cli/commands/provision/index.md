@@ -1,6 +1,6 @@
 ---
 title: provision:create
-description: Create a DigitalOcean droplet for Basecamp and print its IP and an ssh config block
+description: Create a DigitalOcean droplet for Basecamp, print its IP and add its ssh Host
 alias: provision
 effects: creates a droplet at DigitalOcean, billed to the token's account
 confirm: human
@@ -19,8 +19,8 @@ flags:
     defaultValue: nyc3
   name:
     type: string
-    description: The droplet's name, and the Host in the ssh block
-    defaultValue: basecamp
+    description: The droplet's name, and the Host in the ssh block (asked at a terminal, basecamp otherwise)
+    defaultValue: ''
   image:
     type: string
     description: DigitalOcean image slug
@@ -29,6 +29,10 @@ flags:
     type: string
     description: The SSH public key put on the box (default ~/.ssh/id_ed25519.pub, else id_rsa.pub)
     defaultValue: ''
+  admin:
+    type: string
+    description: Install Basecamp without asking, and make this email its first admin
+    defaultValue: ''
   json:
     char: j
     type: boolean
@@ -36,13 +40,30 @@ flags:
     defaultValue: false
 ---
 
-Creates one droplet with your SSH key on it, waits until it has an address,
-and prints the `Host` block for `~/.ssh/config`. Nothing is installed on it and
-nothing writes your ssh config: `fli deploy:setup --auto-install` installs over
-SSH, and `fli deploy` from `packages/basecamp` puts Basecamp on it.
+Asks the server's name first — Enter takes `basecamp`, `--name` skips the
+question, and a run with no terminal uses `basecamp`. Then creates one droplet
+with your SSH key on it, waits until it has an address,
+and adds a `Host` block for it to `~/.ssh/config` — asked first, yes unless you
+say no; a `Host` of that name already there is left alone and the block printed
+instead. Nothing is installed on it: `fli deploy:setup --auto-install` installs
+over SSH, and `fli deploy` from `packages/basecamp` puts Basecamp on it.
+
+`--admin <email>` installs without asking, which is how a run with no terminal
+gets past the bare box: `deploy:setup --auto-install` asks nothing, makes the
+`ENCRYPTION_KEY` into your local `.env.production` when there is none, and
+`fli deploy` follows. Basecamp's first admin is then made through its own
+`POST /setup`, over ssh on the box, so no DNS is needed yet. At a terminal the
+password is asked; Enter, or no terminal, generates one and prints it once.
+
+Once Basecamp is up the run prints the `fli provision:dns` line that points
+its `web.domain` at the box, in a record Basecamp's own edge reads as its own.
+That token is checked FIRST, before any question or purchase: one that opens no zone
+holding `web.domain` refuses the run, so nothing is spent on a box whose name
+cannot be pointed at it. With no `CLOUDFLARE_TOKEN` a terminal takes the paste,
+and a run with no terminal warns and goes on.
 
 A second run refuses while a box made by an earlier one is still at the
-account, so a retry never buys two. `fli provision:destroy <id>` removes it.
+account, so a retry never buys two. `fli provision:list` shows it and `fli provision:destroy <id>` removes it.
 
 ```js
 const { existsSync, readFileSync } = await import('node:fs')
@@ -64,19 +85,70 @@ if (!keyPath.endsWith('.pub')) {
   return
 }
 
-let install = false
+if (flag.admin && flag.json) {
+  log.error('--json prints the box and stops, so it never installs: drop one of --json and --admin')
+  process.exitCode = 1
+  return
+}
+
+// The DNS step this run ends by naming is checked before anything is asked or
+// bought: a token that opens no zone holding the hostname refuses here, not
+// after the questions, the droplet and the install. No token is not a refusal —
+// the record can come later.
+const domain = flag.json ? null : await webDomain()
+if (domain) {
+  if (await cloudflareToken({ interactive: !!process.stdin.isTTY, say: (t) => log.warn(t) })) {
+    const found = await hostRecord({ host: domain, check: true })
+    if (found.error) {
+      log.error(`Cloudflare: ${found.error.replace(/^Cloudflare:\s*/, '')}. Nothing was bought`)
+      process.exitCode = 1
+      return
+    }
+    log.info(`${domain} is in ${found.zone} at Cloudflare`)
+  }
+  else log.warn(`No CLOUDFLARE_TOKEN: fli provision:dns asks for one once the box is up`)
+}
+
+// Every question before the droplet is bought, so the minute it takes is one
+// the person can walk away from.
+let name = flag.name
+let admin = flag.admin
+let password = ''
+let install = !!admin
+let addHost = false
 if (process.stdin.isTTY && !flag.json) {
   const { createPrompts } = await import(resolve(global.fliRoot, 'core/prompt.js'))
   const p = createPrompts()
-  install = await p.confirm('Install Basecamp on it once it is up? (fli deploy:setup --auto-install, then fli deploy)', { default: false })
+  name ||= (await p.ask('Server name [basecamp] › ')) || 'basecamp'
+  addHost = await p.confirm(`Add Host ${name} to ~/.ssh/config once it has an address?`, { default: true })
+  install ||= await p.confirm('Install Basecamp on it once it is up? (fli deploy:setup --auto-install, then fli deploy)', { default: false })
+  if (install && !admin) admin = (await p.ask('Email for its first admin (Enter: make one at /setup in the browser) › ')).trim()
   p.close()
-  if (install && flag.key)
+  if (admin) password = await tty.secret(`Password for ${admin} (Enter generates one)`)
+  if (install && flag.key && !addHost)
     log.warn(`ssh offers your default identity, not ${keyPath}: if the install cannot connect, add the Host block it prints and run it from packages/basecamp`)
 }
 
-log.info(`Creating ${flag.name} (${flag.size}, ${flag.region}) — about a minute`)
+name ||= 'basecamp'
+if (admin && !/^[^\s@]+@[^\s@]+$/.test(admin)) {
+  log.error(`"${admin}" is not an email address`)
+  process.exitCode = 1
+  return
+}
+const generated = !!admin && !password
+if (generated) password = (await import('node:crypto')).randomBytes(18).toString('base64url')
+
+// The name is a hostname at DigitalOcean and a Host pattern in ~/.ssh/config: a
+// space or a `*` would buy the box and then write a Host line matching others.
+if (!/^[a-z0-9][a-z0-9.-]*$/i.test(name)) {
+  log.error(`"${name}" is not a hostname: letters, digits, dots and dashes`)
+  process.exitCode = 1
+  return
+}
+
+log.info(`Creating ${name} (${flag.size}, ${flag.region}) — about a minute`)
 const made = await runProvision({
-  action: 'create', name: flag.name, region: flag.region, image: flag.image, size: flag.size,
+  action: 'create', name, region: flag.region, image: flag.image, size: flag.size,
   publicKey: readFileSync(keyPath, 'utf8'),
 })
 
@@ -93,15 +165,37 @@ if (made.pending) {
 }
 
 const identity = keyPath.replace(/\.pub$/, '')
-echo`  ip       ${made.ip}
-
-  Add to ~/.ssh/config:
-
-  Host ${made.name}
-    HostName ${made.ip}
-    User root
-    IdentityFile ${identity.replace(home, '~')}
+const block = `Host ${made.name}
+  HostName ${made.ip}
+  User root
+  IdentityFile ${identity.replace(home, '~')}
 `
+echo`  ip       ${made.ip}
+`
+
+// A Host of the same name is somebody's existing machine: ssh takes the FIRST
+// match, so appending a second would be silently ignored, and replacing it would
+// point that alias at a stranger's box.
+const sshConfig = `${home}/.ssh/config`
+let added = false
+if (addHost) {
+  const { appendFileSync, mkdirSync, writeFileSync } = await import('node:fs')
+  const had = existsSync(sshConfig) ? readFileSync(sshConfig, 'utf8') : null
+  const taken = had != null && had.split('\n').some(line => {
+    const [word, ...patterns] = line.trim().split(/\s+/)
+    return word?.toLowerCase() === 'host' && patterns.includes(made.name)
+  })
+  if (taken) log.warn(`  ~/.ssh/config already has a Host ${made.name}: left alone`)
+  else {
+    if (had == null) { mkdirSync(`${home}/.ssh`, { recursive: true, mode: 0o700 }); writeFileSync(sshConfig, '', { mode: 0o600 }) }
+    appendFileSync(sshConfig, (had && !had.endsWith('\n') ? '\n' : '') + (had ? '\n' : '') + block)
+    added = true
+    log.success(`  Added Host ${made.name} to ~/.ssh/config — ssh ${made.name}`)
+  }
+}
+if (!added) echo`  Add to ~/.ssh/config:
+
+${block.replace(/^(?=.)/gm, '  ')}`
 
 if (!install) {
   echo`  Then, in packages/basecamp, set deploy.server to that Host and run:
@@ -129,4 +223,33 @@ for (const argv of [['deploy:setup', '--auto-install', '--server', dest], ['depl
   }
 }
 log.success(`Basecamp is on ${made.name} (${made.ip})`)
+
+const { default: conf } = await import(provisionScript().root + 'frontier.config.js')
+if (domain) echo`
+  Point ${domain} at it (DNS-only, so Caddy's certificate is what the browser sees):
+    fli provision:dns ${made.ip}
+`
+
+if (!admin) return
+
+// Basecamp's own first-run route, asked on the box itself: the hostname may not
+// resolve yet. The body travels inside the script on ssh's stdin, never in an
+// argv another process on either machine can read.
+const body = JSON.stringify({ workspace_name: made.name, name: admin.split('@')[0], email: admin, password })
+const { spawnSync } = await import('node:child_process')
+const setup = spawnSync('ssh', ['-o', 'BatchMode=yes', ...(existsSync(identity) ? ['-i', identity] : []), dest, 'sh -s'], {
+  encoding: 'utf8',
+  input: `curl -sS -w '\\n%{http_code}' -X POST -H 'content-type: application/json' --data-binary @- http://localhost:${conf.deploy.api.port}/setup <<'FLI_SETUP_EOF'\n${body}\nFLI_SETUP_EOF\n`,
+})
+const [code, ...rest] = (setup.stdout || '').trimEnd().split('\n').reverse()
+const said = (() => { try { return JSON.parse(rest.reverse().join('\n')).message } catch { return setup.stderr.trim() } })()
+if (code === '409') log.warn(`  ${made.name} already has an admin — ${admin} was not made`)
+else if (code !== '201') {
+  log.error(`POST /setup answered ${code || 'nothing'}${said ? `: ${said}` : ''}. Make the admin at /setup in the browser`)
+  process.exitCode = 1
+}
+else {
+  echo(`  admin    ${admin}`)
+  if (generated) echo(`  password ${password}   shown once — change it after you sign in`)
+}
 ```

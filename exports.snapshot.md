@@ -385,6 +385,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./inflect` | `src/inflect/inflect.js` | yes |
 | exports | `./json` | `src/json/json.js` | yes |
 | exports | `./jsonschema` | `src/jsonschema/jsonschema.js` | yes |
+| exports | `./keys` | `src/keys/keys.js` | yes |
 | exports | `./markdown` | `src/markdown/markdown.js` | yes |
 | exports | `./match` | `src/match/match.js` | yes |
 | exports | `./mailbox (types)` | `src/mailbox/mailbox.d.ts` | yes |

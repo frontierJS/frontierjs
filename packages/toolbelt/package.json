@@ -64,6 +64,7 @@
     "./inflect": "./src/inflect/inflect.js",
     "./json": "./src/json/json.js",
     "./jsonschema": "./src/jsonschema/jsonschema.js",
+    "./keys": "./src/keys/keys.js",
     "./markdown": "./src/markdown/markdown.js",
     "./match": "./src/match/match.js",
     "./mailbox": {

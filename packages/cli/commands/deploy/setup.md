@@ -17,7 +17,7 @@ flags:
     defaultValue: false
   auto-install:
     type: boolean
-    description: Install every missing dependency without asking
+    description: Ask nothing — install every missing dependency and write the Caddy routes
     defaultValue: false
 # Not the directory's index, so it declares its own steps folder rather than
 # inheriting `_steps/` — the runtime attaches a bare `_steps/` to index.md only

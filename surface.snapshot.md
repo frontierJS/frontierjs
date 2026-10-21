@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3752 source file(s) read
-229 entry point(s), 36 imported by nothing outside their package, 16 emitted
-1529 value export(s), 614 reached by nothing outside, 162 emitted
+26 package(s) · 3756 source file(s) read
+230 entry point(s), 37 imported by nothing outside their package, 16 emitted
+1533 value export(s), 616 reached by nothing outside, 163 emitted
 448 type export(s), 345 reached by nothing outside
 ```
 
@@ -41,7 +41,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `auth` | 6 | 1 | 51 | 36 | 3 | 15 | 13 |
 | `jetty` | 7 | 4 | 43 | 29 | 0 | 0 | 0 |
 | `ui` | 9 | 0 | 51 | 33 | 4 | 0 | 0 |
-| `toolbelt` | 55 | 0 | 240 | 27 | 9 | 0 | 0 |
+| `toolbelt` | 56 | 1 | 244 | 29 | 10 | 0 | 0 |
 | `conduit` | 4 | 2 | 26 | 15 | 1 | 59 | 44 |
 | `site-kit` | 9 | 4 | 30 | 12 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 8 | 0 | 36 | 21 |
@@ -301,13 +301,15 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/toolbelt`
 
-`packages/toolbelt` · 55 entry point(s) · 240 value, 0 type export(s)
+`packages/toolbelt` · 56 entry point(s) · 244 value, 0 type export(s)
+
+**Entries imported by nothing outside (1):** `./keys`
 
 **Entries not source (20, not graded):** `./bearer` `./cells` `./cron` `./datetime` `./devline` `./directives` `./fill` `./gate` `./geo` `./env` `./hooks` `./ids` `./mailbox` `./mime` `./query` `./rank` `./redact` `./sigv4` `./sse` `./trace`
 
-**Unreached values (27):** `assertValues` `baseUnit` `canonicalQuery` `canonicalRequest` `canonicalUri` `centroid` `CONTENT_TYPES` `DIGITS` `encodePairs` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `matchesFingerprint` `mergeKeys` `mergeRanges` `patchText` `resolveWall` `RUNNABLE_LANGS` `SECRET_KEY_NAMES` `sha256Hex` `TRANSFORM_NAMES`
+**Unreached values (29):** `assertValues` `baseUnit` `canonicalQuery` `canonicalRequest` `canonicalUri` `centroid` `CONTENT_TYPES` `DIGITS` `encodePairs` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `resolveWall` `RUNNABLE_LANGS` `SECRET_KEY_NAMES` `sha256Hex` `TRANSFORM_NAMES`
 
-**Emitted (9):** `CRON_FIELDS` `dayHeader` `fromWall` `inBoxes` `parseRow` `pointInPolygon` `polygonArea` `renderRow` `SIGNATURE_VERSION`
+**Emitted (10):** `CRON_FIELDS` `dayHeader` `formatChord` `fromWall` `inBoxes` `parseRow` `pointInPolygon` `polygonArea` `renderRow` `SIGNATURE_VERSION`
 
 ## `@frontierjs/ui`
 
