@@ -108,7 +108,23 @@ const shadowed = appliedKeys.filter(k => serverKeys.has(k))
 for (const key of shadowed)
   log.warn(`Env check: ${key} is set in ${envFile} and in deploy.configuration — the declared value wins`)
 
+// ─── A database the swap would not keep ───────────────────────────────────────
+// The file is read whole by the container, so an absolute DATABASE_URL or *_PATH
+// outside the mount is found today only by 07-health, after the image is built
+// and the container started, and then rolled back (FJS-3175).
+const { strayDatabasePaths } = await import(new URL('file://' + global.fliRoot + '/core/local-env.js'))
+const strays = strayDatabasePaths(serverEnv, CONTAINER_DB_DIR)
+if (strays.length) {
+  log.error(`Env check: ${envFile} on ${host} names a database outside ${CONTAINER_DB_DIR}, the one directory a swap keeps:`)
+  for (const { key, value } of strays) log.warn(`  ${key.padEnd(28)} ${value}`)
+  log.info(`Point each under ${CONTAINER_DB_DIR} (e.g. ${CONTAINER_DB_DIR}/app.db), then redeploy:`)
+  log.info(`  ssh ${host} nano ${envFile}`)
+  $.config.abort = true
+}
+
 const missing = requiredKeys.filter(k => !serverKeys.has(k))
+
+if (missing.length === 0 && strays.length) return
 
 if (missing.length === 0) {
   log.success(`Env check: all ${requiredKeys.length} required keys present on ${target}` + (declaredKeys.length ? ` (${declaredKeys.length} from deploy.secrets)` : ''))

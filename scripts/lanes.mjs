@@ -38,7 +38,8 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync,
          rmSync, symlinkSync, unlinkSync, writeFileSync, chmodSync }         from 'node:fs'
 import { basename, dirname, join }                                          from 'node:path'
 
-import { ROOT, LOG_DIR } from './headless.mjs'
+import { ROOT, LOG_DIR }  from './headless.mjs'
+import { fenceBunGlobal } from '../packages/cli/core/bun-fence.js'
 
 export const LANES_DIR = join(LOG_DIR, 'lanes')
 
@@ -50,6 +51,12 @@ export const LINKED = ['ISSUES.md', 'ISSUES_ARCHIVE.md', 'DECISIONS.md', 'IDEAS/
 const GENERATED = /(^|\/)[^/]*\.snapshot\.[a-z]+$|^codegraph\.html$/
 
 const EXCLUDE = LINKED.map(f => `:(exclude)${f}`)
+
+// Sierra's import-fresh sidecar: a copy a test writes beside a module and
+// removes once the import resolves. A snapshot taken while one exists would
+// carry it into the patch, and the harvest would write it into the main tree.
+const SCRATCH_PATHSPEC = ':(exclude,glob)**/.sierra-fresh-*'
+const SCRATCH = /(^|\/)\.sierra-fresh-[^/]*$/
 
 /** ports.js has five port blocks for linked worktrees. */
 export const MAX_LANES = 5
@@ -84,7 +91,18 @@ export function openLane(n) {
   mkdirSync(bin, { recursive: true })
   writeFileSync(join(bin, 'fli'), `#!/bin/sh\nexec bun ${JSON.stringify(join(dir, 'packages', 'cli', 'bin', 'fli.js'))} "$@"\n`)
   chmodSync(join(bin, 'fli'), 0o755)
-  return { n, dir, bin }
+  return { n, dir, bin, env: laneEnv(bin, join(LANES_DIR, `bun-${n}`)) }
+}
+
+/**
+ * What a lane's session runs under. `bun link` keeps one global link per name
+ * and the last tree to link wins, so a session that links from the lane
+ * re-points the machine's `fli` and every `@frontierjs/*` link into it; the
+ * fence gives the lane a global dir of its own (FJS-1364, FJS-3258).
+ */
+export function laneEnv(bin, fence, base = process.env) {
+  const { env } = fenceBunGlobal(base, fence)
+  return { BUN_INSTALL: env.BUN_INSTALL, BUN_INSTALL_CACHE_DIR: env.BUN_INSTALL_CACHE_DIR, PATH: `${bin}:${base.PATH}` }
 }
 
 /**
@@ -106,9 +124,8 @@ export function syncLane(lane, { linked = true } = {}) {
     const out = spawnSync('git', ['-C', dir, 'apply', '--whitespace=nowarn', '-'], { input: patch })
     if (out.status !== 0) throw new Error(`the main tree's uncommitted diff does not apply in ${dir}: ${out.stderr}`)
   }
-  for (const f of run('git', ['-C', ROOT, 'ls-files', '--others', '--exclude-standard', '-z'], ROOT).split('\0').filter(Boolean)) {
-    mkdirSync(dirname(join(dir, f)), { recursive: true })
-    copyFileSync(join(ROOT, f), join(dir, f))
+  for (const f of run('git', ['-C', ROOT, 'ls-files', '--others', '--exclude-standard', '-z'], ROOT).split('\0').filter(f => f && !SCRATCH.test(f))) {
+    copyIfPresent(join(ROOT, f), join(dir, f))
   }
 
   for (const f of LINKED) {
@@ -120,6 +137,23 @@ export function syncLane(lane, { linked = true } = {}) {
   // status then looks as the main tree's does.
   if (linked) git(dir, 'update-index', '--skip-worktree', ...LINKED)
   return snapshot(lane)
+}
+
+/**
+ * Copy `src` to `dest`, true when it was copied. A file the main tree lists as
+ * untracked can be another session's test scratch, deleted between the listing
+ * and the copy; a vanished source is no file to carry, and throwing on it
+ * means the row never starts.
+ */
+export function copyIfPresent(src, dest) {
+  try {
+    mkdirSync(dirname(dest), { recursive: true })
+    copyFileSync(src, dest)
+    return true
+  } catch (err) {
+    if (err?.code === 'ENOENT' && !existsSync(src)) return false
+    throw err
+  }
 }
 
 /** Lay a saved patch onto the lane; false when it no longer applies. */
@@ -185,7 +219,7 @@ function snapshot({ dir, linked = true }) {
   copyFileSync(git(dir, 'rev-parse', '--path-format=absolute', '--git-path', 'index'), index)
   try {
     const env = { ...process.env, GIT_INDEX_FILE: index }
-    for (const argv of [['add', '-A', '--', '.', ...(linked ? EXCLUDE : [])], ['write-tree']]) {
+    for (const argv of [['add', '-A', '--', '.', SCRATCH_PATHSPEC, ...(linked ? EXCLUDE : [])], ['write-tree']]) {
       const out = spawnSync('git', ['-C', dir, ...argv], { env, encoding: 'utf8', maxBuffer: 64 << 20 })
       if (out.status !== 0) throw new Error(`git ${argv[0]} in ${dir}: ${out.stderr}`)
       if (argv[0] === 'write-tree') return out.stdout.trim()

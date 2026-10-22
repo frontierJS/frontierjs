@@ -107,7 +107,12 @@ export const ACTORS = {
   subject:     { desc: 'who the thing exists for',                   may: ['read'] },
   observer:    { desc: 'who watches without acting',                 may: ['read'] },
   system:      { desc: 'a non-human actor: a schedule, an integration, the application itself', may: [] },
+  visitor:     { desc: 'a person with no account: a public booker, a guest', may: [] },
 }
+
+// Actors a link to User cannot name: neither is a signed-in person. A visitor
+// reaches a row through the entity's `public`, never through a column.
+export const UNLINKED_ACTORS = ['system', 'visitor']
 
 // ─── categories ───────────────────────────────────────────────────────────────
 

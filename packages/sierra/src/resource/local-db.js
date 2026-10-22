@@ -41,6 +41,10 @@ let _config = null
 let _client = null
 let _opening = null
 let _closing = null
+// Counts the clients `clearLocalDb` has closed. A call that began before one
+// and fails after it lost its client to the sign-out, which is not a device
+// that failed, so it warns of nothing.
+let _cleared = 0
 // The device schema the client was opened over: what says which columns of a
 // row the server answered are not the device's to write.
 let _schema = null
@@ -160,6 +164,7 @@ function accessorFor(db, model) {
  * succeeded, and a screen must not fail because a device could not write.
  */
 export async function writeThrough(model, rows, whole = null) {
+  const at = _cleared
   try {
     return await writeRows(model, rows, whole)
   } catch (err) {
@@ -167,7 +172,7 @@ export async function writeThrough(model, rows, whole = null) {
     // makes every one of them fail, so a warning per read is a console nobody
     // can use; but keyed once per document, the first model to fail hid every
     // other one, and a device that holds nothing is only discovered offline.
-    _warnOnce(`wrote nothing of ${model} to the device`, err)
+    _warnOnce(`wrote nothing of ${model} to the device`, err, at)
     return false
   }
 }
@@ -196,6 +201,7 @@ export async function writeThrough(model, rows, whole = null) {
 export async function writeRows(model, rows, whole = null) {
   if (!_config || !Array.isArray(rows)) return false
   if (rows.length === 0 && !whole) return false
+  const at = _cleared
   const db = await localDb()
   if (!db) return false
   const accessor = accessorFor(db, model)
@@ -206,7 +212,7 @@ export async function writeRows(model, rows, whole = null) {
     const shape = _shapeOf(model)
     await _land(table, shape ? rows.map(r => _writable(r, shape)) : rows, shape)
   }
-  if (whole) await _dropAbsent(model, table, rows, whole)
+  if (whole) await _dropAbsent(model, table, rows, whole, at)
   return true
 }
 
@@ -315,7 +321,7 @@ export function answeredWhole(res, directives) {
 // off is exactly what that read would otherwise have shown. A `where` the
 // device cannot evaluate — a relation that did not cross — takes nothing off,
 // and `readLocal` declines the same question, so nothing stale is shown either.
-async function _dropAbsent(model, table, rows, { where, idField }) {
+async function _dropAbsent(model, table, rows, { where, idField }, at) {
   // A `select` that left the key out names no row, and every held row would
   // read as one the answer did not name.
   // A `select` that left the key out names no row, and every held row would
@@ -331,7 +337,7 @@ async function _dropAbsent(model, table, rows, { where, idField }) {
   } catch (err) {
     // A delete gate of 9 refuses the system client as an update gate does, and
     // such a model's rows are never removed on the server either.
-    _warnOnce(`took nothing off ${model} that the server no longer answers`, err)
+    _warnOnce(`took nothing off ${model} that the server no longer answers`, err, at)
   }
 }
 
@@ -344,6 +350,7 @@ async function _dropAbsent(model, table, rows, { where, idField }) {
 export async function dropRows(model, idField, ids) {
   const keys = (ids ?? []).filter(id => id != null)
   if (!_config || !idField || !keys.length) return false
+  const at = _cleared
   try {
     const db = await localDb()
     if (!db) return false
@@ -352,14 +359,14 @@ export async function dropRows(model, idField, ids) {
     await db.asSystem()[accessor].deleteMany({ where: { [idField]: { in: keys } } })
     return true
   } catch (err) {
-    _warnOnce(`kept a row of ${model} the server removed`, err)
+    _warnOnce(`kept a row of ${model} the server removed`, err, at)
     return false
   }
 }
 
 const _warned = new Set()
-function _warnOnce(what, err) {
-  if (_warned.has(what)) return
+function _warnOnce(what, err, at) {
+  if (at !== _cleared || _warned.has(what)) return
   _warned.add(what)
   console.warn(`[Sierra] the local database ${what}: ${err?.message ?? err}`)
 }
@@ -385,6 +392,7 @@ function _warnOnce(what, err) {
  */
 export async function readLocal(model, query, directives) {
   if (!_config) return null
+  const at = _cleared
   try {
     const db = await localDb()
     if (!db) return null
@@ -407,7 +415,7 @@ export async function readLocal(model, query, directives) {
       : await table.findMany(args)
     return Array.isArray(rows) ? rows : null
   } catch (err) {
-    _warnOnce(`could not answer a read of ${model}`, err)
+    _warnOnce(`could not answer a read of ${model}`, err, at)
     // A filter the local schema cannot answer — a relation that did not cross,
     // a `$search` with no FTS table — is *cannot answer* rather than *no rows*,
     // and the caller falls back to the list cache underneath.
@@ -425,6 +433,7 @@ export async function clearLocalDb() {
   const db = _client
   _client = null
   if (!db) return
+  _cleared++
 
   _closing = (async () => {
     try {

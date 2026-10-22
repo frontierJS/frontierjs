@@ -1,4 +1,8 @@
 <script>
+  import { refuseCell } from './slot-guard.js'
+  const emailCell = $context.emailCell
+  refuseCell('Card', emailCell)
+  $context.emailCell = false   // this is a table, so rows below it are in one
   export let heading       = ''
   export let headingColor  = '#38993a'
   export let headingSize   = 18

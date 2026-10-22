@@ -152,7 +152,7 @@
 
   function handleKeydown(e) {
     if (!open) return
-    if (e.key === 'Escape') { e.preventDefault(); closeMenu(); return }
+    if (e.key === 'Escape') { if (!e.defaultPrevented) { e.preventDefault(); closeMenu() } return }
     if (e.key === 'Tab')    { closeMenu(); return }
     const typed = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key !== ' ' || ahead)
     if (!typed && !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return

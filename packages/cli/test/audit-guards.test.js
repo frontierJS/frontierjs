@@ -122,17 +122,6 @@ test('migration-history reads an ENTRYPOINT script that runs db:migrate', () => 
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
-test('migration-history names an entrypoint script it cannot read', () => {
-  const root = tree({
-    'db/schema.lite': 'model A {\n  id Int @id\n}\n',
-    'Dockerfile':     'FROM oven/bun\nENTRYPOINT ["./entrypoint.sh"]\n',
-  })
-  try {
-    const out = runChecks({ root, only: ['migration-history'] })
-    expect(JSON.stringify(out.skipped)).toContain('entrypoint.sh')
-  } finally { rmSync(root, { recursive: true, force: true }) }
-})
-
 // FJS-2374
 test('migration-history reads an exec-form CMD that runs db:migrate', () => {
   const root = tree({

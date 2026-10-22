@@ -269,6 +269,11 @@ export function verifyStripeSignature(opts: {
 }): { ok: true } | { ok: false; reason: string } {
   const { rawBody, header, secret, now, toleranceSeconds = TOLERANCE_SECONDS } = opts
 
+  // `skew > NaN` is false, so a tolerance read from an unset variable would
+  // verify a request of any age.
+  if (typeof toleranceSeconds !== 'number' || !Number.isFinite(toleranceSeconds) || toleranceSeconds < 0)
+    throw new TypeError('verifyStripeSignature: toleranceSeconds must be a finite number of seconds, zero or more')
+
   if (!secret) return { ok: false, reason: 'no webhook secret is configured on this side' }
   if (!header) return { ok: false, reason: 'no Stripe-Signature header' }
 

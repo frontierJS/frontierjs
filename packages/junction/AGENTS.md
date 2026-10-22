@@ -498,7 +498,7 @@ service source for the shapes above, by id:
 
 | Rule | Catches |
 |---|---|
-| `service-module-db` | a service reading the module client instead of `$.db` |
+| `service-module-db` | a service or job reading the module client instead of `$.db` / `ctx.app.withDb` |
 | `service-as-system` | `asSystem()` off the app client, which crosses tenants |
 | `service-model` | a service whose name resolves to no model |
 | `ctx-params` | `ctx.params` |

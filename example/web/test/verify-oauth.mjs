@@ -237,8 +237,8 @@ console.log('\nthe same provider account, a different address')
   // of this passed while nobody was signed in at all — which is exactly the
   // state a broken flow leaves behind.
   ok('a renamed provider account is the same person',
-     Boolean(first?.userId) && first?.userId === again?.userId,
-     `${first?.userId} vs ${again?.userId}`)
+     Boolean(first?.id) && first?.id === again?.id,
+     `${first?.id} vs ${again?.id}`)
 }
 
 // ── 3. the refusals ────────────────────────────────────────────────────────
@@ -367,7 +367,7 @@ console.log('\nan account with a second factor')
 
   const own = jar()
   await call(own, '/auth/register', { email, password: PW, name: 'Two Step' })
-  const userId = (await me(own))?.userId
+  const userId = (await me(own))?.id
   const admin  = jar()
   await call(admin, '/auth/login', { email: 'alex@shop.test', password: 'correct-horse-battery' })
   const marked = await call(admin, `/users/${userId}`, { emailVerified: true }, 'PATCH')

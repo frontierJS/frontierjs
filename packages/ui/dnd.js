@@ -510,7 +510,8 @@ function onDragKey(e) {
   if (!session || session.finalizing) return
   if (e.key === 'Escape') {
     // A pointer drag too: an unprevented Escape also closes the dialog the
-    // list sits in.
+    // list sits in. One a nested control already took is that control's.
+    if (e.defaultPrevented) return
     e.preventDefault()
     cancelToOrigin()
   } else if (session.keyboard) {

@@ -193,7 +193,7 @@ async function work(row, n, lane, tag) {
     const run = await runSession(`${prompt}\n\n${brief}${lane ? laneNote() : ''}`, {
       model, effort, permission, cap: model === 'opus' ? budget * 2 : budget,
       tag, where: `${row.id} [${n}/${rows}]`, phases: { orient: 0, fix: 0, prove: 0, close: 0 }, phaseOf,
-      ...(lane && { cwd: lane.dir, addDirs: trial ? [] : [ROOT], env: { PATH: `${lane.bin}:${process.env.PATH}` } }),
+      ...(lane && { cwd: lane.dir, addDirs: trial ? [] : [ROOT], env: lane.env }),
     })
     const status = /fix-next: \S+ (closed|blocked|ruling|corrected|busy|failed)\s*$/.exec(run.report)?.[1]
     outcome   = isClosed(row.id, root) ? 'closed' : isBlocked(row.id, root) ? 'blocked' : status === 'blocked' ? 'failed' : status ?? 'failed'

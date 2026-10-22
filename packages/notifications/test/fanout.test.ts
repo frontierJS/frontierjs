@@ -324,6 +324,61 @@ describe('transport drivers', () => {
     expect(delivered).toEqual([{ body: 'ping' }])
   })
 
+  // FJS-2102: what the vendor answered used to be dropped, so a delivery
+  // receipt had no message id to match.
+  test('a driver\'s answer comes back from notify() under its transport', async () => {
+    const sms = { transport: 'sms', send: async () => ({ id: 'msg_1', status: 'queued' }) }
+    const quiet = { transport: 'slack', send: async () => {} }
+    class Both extends Notification {
+      static type = 'Both'
+      via(): Transport[] { return ['sms', 'slack'] }
+      toSms() { return { body: 'ping' } }
+      toSlack() { return { text: 'ping' } }
+    }
+    const a = await makeApp({ transports: { sms, slack: quiet } })
+    const receipts = await a.app.notify({ id: 'u30', phone: '+100' }, new Both())
+
+    expect(receipts).toEqual({ sms: { id: 'msg_1', status: 'queued' } })
+  })
+
+  test('a partial failure still hands over the receipt of the transport that landed', async () => {
+    const sms = { transport: 'sms', send: async () => ({ id: 'msg_2' }) }
+    const slack = { transport: 'slack', send: async () => { throw new Error('slack down') } }
+    class Both extends Notification {
+      static type = 'Both2'
+      via(): Transport[] { return ['sms', 'slack'] }
+      toSms() { return { body: 'ping' } }
+      toSlack() { return { text: 'ping' } }
+    }
+    const a = await makeApp({ transports: { sms, slack } })
+    const err = await a.app.notify({ id: 'u31' }, new Both()).catch((e: Error) => e)
+
+    expect(err).toBeInstanceOf(NotificationDeliveryError)
+    expect((err as NotificationDeliveryError).receipts).toEqual({ sms: { id: 'msg_2' } })
+  })
+
+  // The thrown error already carries every failure; a caller that handles an
+  // expected refusal must not also get a stack trace per recipient on stderr.
+  test('a failed transport is not also written to stderr', async () => {
+    const sms = { transport: 'sms', send: async () => { throw new Error('landline') } }
+    class Text extends Notification {
+      static type = 'Text'
+      via(): Transport[] { return ['sms'] }
+      toSms() { return { body: 'ping' } }
+    }
+    const a = await makeApp({ transports: { sms } })
+    const logged: unknown[][] = []
+    const original = console.error
+    console.error = (...args: unknown[]) => { logged.push(args) }
+    try {
+      await a.app.notify({ phone: '+100' }, new Text()).catch(() => {})
+    } finally {
+      console.error = original
+    }
+
+    expect(logged).toEqual([])
+  })
+
   test('sms without a driver fails eagerly rather than at delivery', async () => {
     class Alert extends Notification {
       static type = 'Alert2'

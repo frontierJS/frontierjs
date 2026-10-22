@@ -4002,6 +4002,45 @@ describe('asyncDerived', () => {
     await tick()
     expect(val()).toBe('cities-of-CA')
   })
+
+  // FJS-3390: b = await g(a) re-runs only when a LANDS, so for a's whole
+  // flight b's own state said settled while its value was stale.
+  it('reports pending while an upstream await is in flight', async () => {
+    const [x, setX] = createSignal(1)
+    const [a, setA] = createSignal(null)
+    const [b, setB] = createSignal(null)
+    const aState = makeAsyncState()
+    const bState = makeAsyncState([aState])
+    asyncDerived(() => aState, async () => { await new Promise((r) => setTimeout(r, 20)); return x() * 10 }, [x], setA)
+    asyncDerived(() => bState, async () => `b${a()}`, [a], setB)
+    await new Promise((r) => setTimeout(r, 60))
+    expect(b()).toBe('b10')
+    expect(bState.pending).toBe(false)
+    expect(bState.status).toBe('success')
+
+    setX(2)
+    await tick()
+    expect(aState.pending).toBe(true)
+    expect(bState.pending).toBe(true)
+    expect(bState.status).toBe('pending')
+    expect(bState.loading).toBe(false)
+
+    await new Promise((r) => setTimeout(r, 60))
+    expect(b()).toBe('b20')
+    expect(bState.pending).toBe(false)
+    expect(bState.status).toBe('success')
+  })
+
+  it('an own error outranks an upstream pending status', () => {
+    const aState = makeAsyncState()
+    const bState = makeAsyncState([aState])
+    aState._update('done')
+    bState._update('error', new Error('boom'))
+    expect(bState.pending).toBe(false)
+    aState._update('start')
+    expect(bState.pending).toBe(true)
+    expect(bState.status).toBe('error')
+  })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────

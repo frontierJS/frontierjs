@@ -12,7 +12,9 @@
 // a build that does not say. The page is served from tauri://localhost, so a
 // same-origin default would send every call to the shell. `null` is the answer
 // for an app with no API. FRONTIER_PUBLIC_API_URL is the name every surface's build reads.
+import { pinApiOrigin } from '../../config/api-origin.js'
+
 export default {
   wraps: 'web',
-  api:   process.env.FRONTIER_PUBLIC_API_URL ?? 'http://localhost:8110',
+  api:   pinApiOrigin(process.env, process.env) ?? 'http://localhost:8110',
 }

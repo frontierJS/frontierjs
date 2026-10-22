@@ -84,6 +84,10 @@ export interface JobContext<T = unknown> extends Job<T> {
    * `app.service('orders').call(…)` — and the shape-matched version answers
    * `unknown` for that. The import is TYPE-ONLY and erases, so the runtime
    * independence the duck-typing exists for is untouched.
+   *
+   * It is also the only route to a db client scoped to this job's principal:
+   * `ctx.app.withDb((db) => …)`. The module client the app was created with is
+   * the unscoped root, so a handler importing it reads as STRANGER(0).
    */
   app?: JunctionApp
 
@@ -424,6 +428,16 @@ export interface CaravanOptions {
    * Default: 7 days. Set to 0 to disable cleanup.
    */
   cleanupAfter?: number
+  /**
+   * The clock the cron scheduler reads. Default: the wall clock. A function, so
+   * it is an option of `caravan()` and not a key of `junction.config.js`.
+   *
+   * It exists so an app can ask whether its own declared schedule fires once
+   * across a daylight boundary: the behavior that matters happens on two days a
+   * year and a real clock cannot be moved. Job timestamps (`run_at`, leases)
+   * stay on the real clock.
+   */
+  cronClock?: () => Date
   /**
    * Mount admin HTTP endpoints when used as a Junction plugin.
    * GET  /jobs, GET /jobs/{id}, POST /jobs/{id}/retry, POST /jobs/{id}/cancel,

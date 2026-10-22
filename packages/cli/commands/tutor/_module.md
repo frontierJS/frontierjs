@@ -194,8 +194,11 @@ const must = async ($, result, diagnosis = {}) => {
   // hand over its output.
   const shown = diagnosis.detail ? { ...r, detail: diagnosis.detail } : r
 
+  // A foreign port's own `likely` wins: the step's guess is about its own
+  // probe, and the probe is the one that saw another app answer.
   $.log.error(probe.formatFailure(shown, {
     ...diagnosis,
+    ...(r.likely ? { likely: r.likely } : {}),
     continues: diagnosis.continues ?? [
       `fli ${lesson}${where}`,
       step ? `fli ${lesson}${where} --step ${step}` : null,
@@ -434,12 +437,16 @@ const stopServer = ($, name) => {
 // A step run on its own — `--step 8` — has no servers, because the step that
 // starts them did not run. `needs()` covers a missing FACT and cannot cover a
 // missing PROCESS, so a step that talks to the API asks for it rather than
-// assuming: if something is already answering health it is used as it stands,
-// which is also what a person with the app open in another terminal wants.
+// assuming: if THIS lesson's app is already answering it is used as it stands,
+// which is what a person with the app open in another terminal wants. Another
+// app on the port is refused by name (`FJS-1061`): the lesson would otherwise
+// run against it and every failure would read as the framework's.
 const ensureApi = async ($) => {
   const port    = $.config.apiPort
-  const already = await probe.httpStatus({ url: `http://127.0.0.1:${port}/api/health`, name: 'the API is up' })
-  if (already.ok) return already
+  const already = await probe.apiIsApp({
+    url: `http://127.0.0.1:${port}/api/health`, app: $.config.app, name: `the API on ${port} is ${$.config.app}`,
+  })
+  if (already.ok || already.foreign) return already
 
   const api = await startServer($, {
     name:   'api',
@@ -457,8 +464,10 @@ const ensureApi = async ($) => {
 // file — so it is the process, not a fact, and `needs()` cannot cover it.
 const ensureWeb = async ($) => {
   const port    = $.config.webPort
-  const already = await probe.httpStatus({ url: `http://127.0.0.1:${port}/`, name: 'the web server is up' })
-  if (already.ok) return already
+  const already = await probe.pageIsApp({
+    url: `http://127.0.0.1:${port}/`, app: $.config.app, name: `the web server on ${port} is ${$.config.app}`,
+  })
+  if (already.ok || already.foreign) return already
 
   const web = await startServer($, {
     name:   'web',

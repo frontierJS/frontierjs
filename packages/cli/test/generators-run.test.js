@@ -109,6 +109,47 @@ describe('a generated page styles with the vocabulary, never a literal', () => {
   }
 })
 
+// FJS-1798 — admin:generate is the first screen a builder shows of the app, so
+// it styles with the vocabulary like everything else, and its gate level is the
+// one Sierra's session already holds rather than a stub fixed at 7 that nothing
+// wires.
+describe('admin:generate writes screens in the vocabulary and reads the real session', () => {
+  const WROTE = ['_module.mesa', 'index.mesa', 'leads/index.mesa', 'leads/[id].mesa']
+
+  test('no literal color or size in the layout or the dashboard', async () => {
+    const root = makeApp(LEAD_SERVICE)
+    try {
+      await run(root, 'make:resource', ['Lead'], {})
+      await run(root, 'admin:generate', [], {})
+      for (const f of ['_module.mesa', 'index.mesa']) {
+        const src = await Bun.file(join(root, 'web/src/routes/admin', f)).text()
+        const style = src.match(/<style[^>]*>([\s\S]*?)<\/style>/)?.[1] ?? ''
+        expect(style.match(RAW)?.[0] ?? null, f).toBeNull()
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 30000)
+
+  test('every page reads session from Sierra, and no _session.js stub is written', async () => {
+    const root = makeApp(LEAD_SERVICE)
+    try {
+      await run(root, 'make:resource', ['Lead'], {})
+      await run(root, 'admin:generate', [], {})
+      const admin = join(root, 'web/src/routes/admin')
+      expect(existsSync(join(admin, '_session.js'))).toBe(false)
+      for (const f of WROTE) {
+        const src = await Bun.file(join(admin, f)).text()
+        if (!/\bsession\b/.test(src)) continue
+        expect(src, f).toMatch(/import \{[^}]*\bsession\b[^}]*\} from '@frontierjs\/sierra\/resource'/)
+        expect(src, f).not.toMatch(/_session|session\.js/)
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 30000)
+})
+
 // Sierra's scanner serves a route directory's static segment lowercased, so a
 // two-word model's `searchIndexes/` is /searchindexes/ and every link a
 // generator wrote naming the directory as written was a 404 (`FJS-1821`).
@@ -191,6 +232,44 @@ describe('make:scaffold lists the model in the nav table fli new writes', () => 
   }, 30000)
 })
 
+// FJS-1826 — junction derives a service's name from its file with `deriveName`,
+// so `workspace-members.service.ts` and `workspaceMembers.service.ts` are one
+// name and boot refuses the pair. A generator asks which file already serves
+// the name, not whether its own spelling exists.
+describe('a generator finds a service by the name its file derives', () => {
+  const KEBAB    = 'api/src/services/workspace-members.service.ts'
+  const CAMEL    = 'api/src/services/workspaceMembers.service.ts'
+  const SCHEMA   = { 'db/schema.lite': 'model WorkspaceMember { id Int @id  name String }\n', [KEBAB]: 'export default {}\n' }
+  const CASES_1826 = [
+    ['make:scaffold', ['WorkspaceMember'], { 'skip-schema': true }],
+    ['make:model',    ['WorkspaceMember'], { service: true }],
+    ['make:service',  ['WorkspaceMember'], {}],
+  ]
+
+  test('make:service writes no kebab file beside the camelCase spelling', async () => {
+    const root = makeApp({ 'db/schema.lite': SCHEMA['db/schema.lite'], [CAMEL]: 'export default {}\n' })
+    try {
+      await run(root, 'make:service', ['WorkspaceMember'], {})
+      expect(existsSync(join(root, KEBAB))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 30000)
+
+  for (const [cmd, arg, flag] of CASES_1826) {
+    test(`${cmd} writes no second file beside the kebab spelling`, async () => {
+      const root = makeApp(SCHEMA)
+      try {
+        await run(root, cmd, arg, flag)
+        expect(existsSync(join(root, CAMEL))).toBe(false)
+        expect(existsSync(join(root, KEBAB))).toBe(true)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    }, 30000)
+  }
+})
+
 // FJS-2696 — the sign-in page is a form a password manager can read, and its
 // dev hint does not tell a visitor with an account that nobody has one.
 describe('the scaffold sign-in page', () => {
@@ -234,6 +313,27 @@ describe('a generated model stanza spells updatedAt as the reference does', () =
       }
     }, 30000)
   }
+})
+
+// FJS-1842 — every type `--help` lists for --fields lands as a spaced scalar
+// in the stanza: `x:text` is `x String`, never `xString`.
+describe('make:scaffold --fields writes each listed type as a spaced column', () => {
+  const TYPES = { string: 'String', text: 'String', int: 'Int', float: 'Float', boolean: 'Boolean', date: 'DateTime', json: 'Json' }
+  test('name:type pairs become `name Type` lines', async () => {
+    const root = makeApp({ 'db/schema.lite': 'model Lead { id Int @id  name String }\n' })
+    try {
+      const fields = Object.keys(TYPES).map(t => `f_${t}:${t}`).join(' ')
+      await run(root, 'make:scaffold', ['Probe'], { fields, 'skip-schema': false })
+      const schema = await Bun.file(join(root, 'db/schema.lite')).text()
+      for (const [t, scalar] of Object.entries(TYPES)) {
+        const line = schema.split('\n').find(l => l.trim().startsWith(`f_${t} `))
+        expect(line).toBeDefined()
+        expect(line.trim().split(/\s+/).slice(0, 2)).toEqual([`f_${t}`, scalar])
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 30000)
 })
 
 // FJS-1130: `db:schema` appended a Prisma model to `schema.prisma`, a file no

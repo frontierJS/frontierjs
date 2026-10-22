@@ -2832,8 +2832,8 @@ async function cmdMirrorExit(cfg) {
 //
 // CI's full-tier `mutate` phase runs it over each app in
 // scripts/mutate-baselines.json and fails a score below that app's floor
-// (FJS-D476); basecamp only under a `--kinds` subset, since its whole run is
-// past 25 minutes.
+// (FJS-D476); each app under a `--kinds` subset, since a mutant costs ~30s and
+// example's whole run is ~490 of them, basecamp's past 25 minutes.
 
 async function cmdMutate(cfg) {
   // `--json` is what the CI `mutate` phase reads (FJS-598): the score as data,

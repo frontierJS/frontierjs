@@ -5,12 +5,12 @@
     "spa.firstLoadCssBrotli": 0,
     "spa.firstLoadJsBrotli": 15624,
     "spa.firstLoadRequests": 2,
-    "spa.totalBrotli": 16168,
+    "spa.totalBrotli": 16177,
     "static.files": 7,
     "static.firstLoadCssBrotli": 0,
     "static.firstLoadJsBrotli": 0,
     "static.firstLoadRequests": 1,
-    "static.totalBrotli": 7792,
+    "static.totalBrotli": 7796,
     "widget.files": 1,
     "widget.totalBrotli": 6072
   }

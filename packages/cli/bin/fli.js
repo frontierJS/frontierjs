@@ -67,6 +67,8 @@ const { findProjectRoot, fliTmpRoot, sweepStaleTmp } = await import('../core/uti
 // so it also fires for commands that compile nothing — `fli list`, `fli help`.
 sweepStaleTmp(fliTmpRoot(global.fliRoot))
 
+const CREATES_PROJECT = new Set(['new', 'project:new'])
+
 const explicitProject = (() => {
   const argv = process.argv.slice(2)
   const i = argv.indexOf('--project')
@@ -90,6 +92,10 @@ if (explicitProject) {
     process.exit(1)
   }
   global.projectRoot = abs
+} else if (CREATES_PROJECT.has(process.argv[2])) {
+  // The enclosing app is not the project being made: walking up wrote <name>/
+  // beside its root and made `--here` count its files.
+  global.projectRoot = process.cwd()
 } else {
   global.projectRoot = findProjectRoot(process.cwd(), global.fliRoot)
 }

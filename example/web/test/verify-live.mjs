@@ -226,12 +226,14 @@ try {
   // Read the MOVES column by its header rather than every button in the row
   // minus a list of names: the Actions column grows (Delete, quick view) and an
   // exclusion list quietly stops being complete, which reads as a regrade that
-  // did not happen.
+  // did not happen. The header is the row's own table's: the Placed-between
+  // DatePicker renders a calendar table above it, whose seven day headers
+  // pushed a document-wide index past the last cell of the row (`FJS-2524`).
   t('watcher.movesRegraded', await evaluate(`
-    const col = [...document.querySelectorAll('thead th')]
-      .findIndex(th => th.textContent.trim() === 'Moves') + 1;
     const row = [...document.querySelectorAll('tbody tr')]
       .find(tr => tr.querySelector('td')?.textContent.trim() === '${REF}');
+    const col = [...row.closest('table').querySelectorAll('thead th')]
+      .findIndex(th => th.textContent.trim() === 'Moves') + 1;
     return { moves: [...row.querySelectorAll('td:nth-child(' + col + ') button')]
       .map(b => b.textContent.trim()) };
   `))

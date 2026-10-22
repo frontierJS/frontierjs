@@ -168,7 +168,7 @@ export default createService({
 //
 // What a generated Resource IS lives in `core/resource-template.js`, shared with
 // `fli make:resource` (Invariant 4).
-const { resourceFile, servicePlural } =
+const { resourceFile, servicePlural, existingServiceFile } =
   await import(resolve(global.fliRoot, 'core/resource-template.js'))
 
 // ─── Templates: routes ────────────────────────────────────────────────────────
@@ -293,9 +293,13 @@ if (flag['skip-schema']) {
 // ─── 2. Service ───────────────────────────────────────────────────────────────
 // Named for the service, not the model: the autoloader derives the registered
 // name from the filename, so leads.service.ts is what makes /api/leads exist.
+// A file already serving the name in another spelling is the one found, or boot
+// refuses two files claiming it.
+
+const servicesDir = resolve($.paths.api, 'src/services')
 
 write(
-  resolve($.paths.api, `src/services/${plural}.service.ts`),
+  existingServiceFile(servicesDir, plural) ?? resolve(servicesDir, `${plural}.service.ts`),
   makeServiceFile(modelName, plural),
   'service'
 )

@@ -2,6 +2,12 @@
 // One config is one target. Paths are relative to the Vite root — the widgets/
 // surface — since every widget command runs from here, never from the app root.
 
+import { pinApiOrigin } from '../../config/api-origin.js'
+
+// `sierra widgets` builds with configFile: false, so this file is the one thing
+// both it and `vite dev` load before the build reads FRONTIER_PUBLIC_API_URL.
+pinApiOrigin(process.env, process.env)
+
 export default {
   target: 'widget',
 

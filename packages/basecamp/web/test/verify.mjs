@@ -2838,7 +2838,8 @@ check('…naming the level it needs', await patHub.text(), t => t.includes('requ
 // Pat is a real second human with no standing anywhere. What each refusal
 // below is coming FROM matters:
 //
-//   POST /servers   the role hook AND @@gate(2.4.4.5) both refuse a viewer
+//   POST /servers   @@gate(2.4.4.5) refuses a viewer; the body must be one the
+//                   model declares, or validation answers 400 before the gate
 //   GET  /secrets   ONLY @@gate(5) refuses — the secrets service has no role
 //                   hook on find, so before this landed a viewer could list
 //                   every secret in the workspace

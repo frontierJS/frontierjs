@@ -123,6 +123,22 @@ function statusOf(error: ConduitError, status: number | undefined): number | und
   }
 }
 
+const REASON_MAX = 300
+
+/**
+ * The Provider's own words for a 4xx refusal, which is the half of the answer a
+ * caller can act on (a decline code, a plan limit). Other kinds carry a body
+ * that is the Provider's fault rather than the caller's input, and stay out.
+ */
+function reasonOf(error: ConduitError): string {
+  if (error.kind !== 'client_error' || error.raw === undefined || error.raw === null) return ''
+  let text: string | undefined
+  try { text = typeof error.raw === 'string' ? error.raw : JSON.stringify(error.raw) } catch { return '' }
+  text = text?.trim()
+  if (!text) return ''
+  return ` — ${text.length > REASON_MAX ? `${text.slice(0, REASON_MAX)}…` : text}`
+}
+
 function failure(message: string, status: number | undefined): Error {
   const err = new Error(message) as Error & { status?: number }
   if (status) err.status = status
@@ -176,7 +192,7 @@ export function createMirrors(send: (req: ConduitRequest) => Promise<ConduitResu
         && res.error.kind === 'client_error' && (res.meta.status === 404 || res.meta.status === 410)) return null
       if (res.error) {
         const open = res.error.indeterminate ? ' — it may have been applied there, and the sync will say' : ''
-        throw failure(`${at}.${verb}: ${provider} answered ${res.error.kind}${open}: ${res.error.message}`, statusOf(res.error, res.meta.status))
+        throw failure(`${at}.${verb}: ${provider} answered ${res.error.kind}${open}: ${res.error.message}${reasonOf(res.error)}`, statusOf(res.error, res.meta.status))
       }
       try { return spec.parse(res.data) } catch (err) {
         throw failure(`${at}.${verb}: ${provider} answered a ${model} the claim cannot read — ${(err as Error)?.message ?? String(err)}`, 502)

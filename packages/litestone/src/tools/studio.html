@@ -3449,10 +3449,10 @@ function erPin(name) {
     el.classList.toggle('er-pinned', !!name && el.dataset.model === name)
 }
 
-// Esc is the way out that needs no target. Clicking the canvas is the other,
-// and it is on the canvas rather than the wrap so a click on a card — which
-// bubbles — does not immediately unpin what it just pinned.
-addEventListener('keydown', e => { if (e.key === 'Escape' && _erPinned) erPin(null) })
+// Esc is the way out that needs no target (answered by `studioEscape`, which
+// unpins last of the layers). Clicking the canvas is the other, and it is on the
+// canvas rather than the wrap so a click on a card — which bubbles — does not
+// immediately unpin what it just pinned.
 
 function erFocus(name) {
   const canvas = document.getElementById('erCanvas')
@@ -3983,7 +3983,6 @@ function palKey(e) {
   if (e.key === 'ArrowDown') { e.preventDefault(); _palAt = Math.min(_palAt + 1, _palRows.length - 1); palRender() }
   else if (e.key === 'ArrowUp') { e.preventDefault(); _palAt = Math.max(_palAt - 1, 0); palRender() }
   else if (e.key === 'Enter')  { e.preventDefault(); palRun() }
-  else if (e.key === 'Escape') { e.preventDefault(); palClose() }
 }
 
 // ⌘K on a Mac and Ctrl+K everywhere else — the shortcut every tool with a
@@ -4000,9 +3999,7 @@ addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
     e.preventDefault()
     document.getElementById('palette').hidden ? palOpen() : palClose()
-    return
   }
-  if (e.key === 'Escape' && !document.getElementById('palette').hidden) palClose()
 })
 
 // ─── Compare — what this branch did ──────────────────────────────────────────
@@ -6664,11 +6661,33 @@ function download(name, content, type) {
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 
-document.addEventListener('keydown', e => {
+// Escape closes ONE layer, the topmost: palette, then row drawer, then the
+// pinned ER view, then the browse search. Each answering on its own closed all of
+// them at once. The cell editors and the REPL already own an Escape in their
+// own field, so it does not reach here from them. A field is left alone by the
+// drawer and the search, which Escape in a text box never closed.
+function studioEscape(e) {
+  const t = e.target
+  if (t.closest?.('.cell-editing, .repl-input-bar')) return
+  if (!document.getElementById('palette').hidden) { e.preventDefault(); palClose(); return }
+  if (_erPinned) { erPin(null); return }
+  const tag = t.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return
+  if (document.getElementById('rowDrawer').open) { closeRowDetail(); return }
+  const s = document.getElementById('browseSearch')
+  if (s.value) { s.value = ''; filterRows() }
+  s.blur()
+}
+
+// A key bound with no modifier: Ctrl+R is the browser's reload and Ctrl+I a
+// browser/OS shortcut, neither Studio's.
+function studioKey(e) {
+  if (e.key === 'Escape') return studioEscape(e)
   // Don't fire when typing in an input, textarea, or the REPL
   const tag = e.target.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA') return
   if (e.target.closest('.repl-input-bar')) return
+  if (e.ctrlKey || e.metaKey || (e.altKey && !e.key.startsWith('Arrow'))) return
 
   switch(e.key) {
     case 'r': case 'R':
@@ -6678,12 +6697,6 @@ document.addEventListener('keydown', e => {
       e.preventDefault()
       document.getElementById('browseSearch').focus()
       showTool('browse')
-      break
-    case 'Escape':
-      const s = document.getElementById('browseSearch')
-      if (document.getElementById('rowDrawer').open) { closeRowDetail(); return }
-      if (s.value) { s.value = ''; filterRows() }
-      s.blur()
       break
     case 'ArrowRight':
       if (e.altKey) nextPage()
@@ -6695,7 +6708,8 @@ document.addEventListener('keydown', e => {
       if (document.querySelector('#dataGrid tr.row-selected')) openRowDetail()
       break
   }
-})
+}
+document.addEventListener('keydown', studioKey)
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 

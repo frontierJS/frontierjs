@@ -93,7 +93,7 @@
   })
 </script>
 
-<mesa:window onkeydown={(e) => { if (e.key === 'Escape' && open) { e.preventDefault(); closePopover() } }} />
+<mesa:window onkeydown={(e) => { if (e.key === 'Escape' && open && !e.defaultPrevented) { e.preventDefault(); closePopover() } }} />
 
 <!-- Trigger wrapper -->
 <span

@@ -260,6 +260,15 @@ export async function run(t) {
   t.ok(!paint.first.shown || paint.first.top === paint.top,
     `the panel is not shown until it is placed (first ${paint.first.top}, placed ${paint.top})`)
 
+  // An Escape a nested control already took is not the menu's (`FJS-3405`).
+  await t.evaluate(`
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') e.preventDefault() }, { once: true });
+    return true;
+  `)
+  await t.press('Escape')
+  await t.evaluate(`await new Promise(r => setTimeout(r, 150)); return true;`)
+  t.is(await t.evaluate(`return document.querySelectorAll('[role=menu]').length;`), 1,
+    'an Escape already taken does not close the menu')
   await t.press('Escape')
   await t.eventually(`document.querySelectorAll('[role=menu]').length`, 0, 'and Escape closes it')
 

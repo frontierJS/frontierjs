@@ -11,8 +11,9 @@
 
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath }    from 'node:url'
-import { defineConfig }     from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import { createSierraViteConfig } from '@frontierjs/sierra/build'
+import { pinApiOrigin } from '../../config/api-origin.js'
 import sierraConfig from './sierra.config.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -21,7 +22,14 @@ const UI   = resolve(HERE, '../../../packages/ui')
 
 const base = createSierraViteConfig(sierraConfig)
 
-export default defineConfig({
+// Every build here runs in this process, so the variable pinned below reaches
+// the island bundle too.
+export default ({ mode }) => {
+  pinApiOrigin(loadEnv(mode, resolve(ROOT, '..'), 'FRONTIER_PUBLIC_'), process.env)
+  return config
+}
+
+const config = defineConfig({
   ...base,
   root: ROOT,
 

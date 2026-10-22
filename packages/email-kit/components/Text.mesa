@@ -1,4 +1,7 @@
 <script>
+  import { refuseCell } from './slot-guard.js'
+  const emailCell = $context.emailCell
+  refuseCell('Text', emailCell)
   export let color    = '#444444'
   export let size     = 16
   export let weight   = 400

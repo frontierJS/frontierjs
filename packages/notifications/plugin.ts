@@ -1,4 +1,4 @@
-import type { App, NotificationDriver, NotificationsPluginOptions, Recipient } from './types.ts'
+import type { App, NotificationDriver, NotificationsPluginOptions, NotificationReceipts, Recipient } from './types.ts'
 import type { Notification } from './notification.ts'
 import { setState } from './state.ts'
 import { notify } from './notify.ts'
@@ -94,7 +94,7 @@ export function notifications(opts: NotificationsPluginOptions) {
 
       // Set app.notify — closes over the app so the public signature stays
       // clean: app.notify(recipient, notification), no app arg at the call site
-      const notifyFn = (recipient: Recipient, notification: Notification): Promise<void> =>
+      const notifyFn = (recipient: Recipient, notification: Notification): Promise<NotificationReceipts> =>
         notify(recipient, notification, app)
 
       // own() refuses to overwrite an existing owner — two plugins owning

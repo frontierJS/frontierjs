@@ -10,7 +10,7 @@
 // in `IDEAS/oracle-reasoning.md` § Paste-ready block; a caller that wants it
 // sends it beside this text.
 
-import { ACTORS, CATEGORIES, ENTITIES, PATTERNS } from './catalog.js'
+import { ACTORS, CATEGORIES, ENTITIES, PATTERNS, UNLINKED_ACTORS } from './catalog.js'
 import { RULES, RUNGS, RISKS } from './answer.js'
 import { TYPES } from './types.js'
 
@@ -111,9 +111,11 @@ export function brief() {
   out.push('')
   out.push('| actor | is | may |')
   out.push('| --- | --- | --- |')
-  for (const [a, row] of Object.entries(ACTORS)) if (a !== 'system') out.push(`| \`${a}\` | ${row.desc} | ${row.may.join(', ')} |`)
+  for (const [a, row] of Object.entries(ACTORS)) if (!UNLINKED_ACTORS.includes(a)) out.push(`| \`${a}\` | ${row.desc} | ${row.may.join(', ')} |`)
   out.push('')
   out.push('A person reaches a row only through what the answer names: an actor link, `via`, a membership, `public` or `shared`. An op nobody holds is left to the application alone.')
+  out.push('')
+  out.push(`A person with no account is an actor of archetype \`visitor\` (${ACTORS.visitor.desc}) in \`actors\`. It takes no link, since a link to User is an account: what a visitor reaches is the entity's \`public\`, with a reason.`)
   out.push('')
 
   out.push('## What the builder refuses')

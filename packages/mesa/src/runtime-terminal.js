@@ -1382,6 +1382,19 @@ const DOM_KEY = {
   pageup: 'PageUp', pagedown: 'PageDown',
 }
 
+// What a browser's `e.code` calls the engine's key: the physical key, not the
+// character, so a handler written `e.code === 'KeyJ'` reads both targets
+// (`FJS-3407`). A named key's code is its `key`, bar the space bar.
+const DOM_CODE_PUNCT = {
+  '-': 'Minus', '=': 'Equal', '[': 'BracketLeft', ']': 'BracketRight', '\\': 'Backslash',
+  ';': 'Semicolon', "'": 'Quote', ',': 'Comma', '.': 'Period', '/': 'Slash', '`': 'Backquote',
+}
+const domCode = (name) =>
+  /^[a-z]$/i.test(name) ? `Key${name.toUpperCase()}`
+  : /^[0-9]$/.test(name) ? `Digit${name}`
+  : name === 'space' ? 'Space'
+  : DOM_CODE_PUNCT[name] ?? (DOM_KEY[name] !== undefined ? DOM_KEY[name] : name)
+
 // What a keydown carries for the engine's key `k`; exported for a host that
 // reads a key before the runtime dispatches it (sierra's terminal shell).
 // Without the kitty protocol a Ctrl letter is a control byte, so its sequence
@@ -1392,7 +1405,7 @@ const DOM_KEY = {
 // `metaKey`, every Alt chord was Alt+Cmd and no `<A-…>` binding matched.
 export const keyFields = (k) => k.name === 'linefeed' ? keyFields({ ...k, name: 'j', ctrl: true }) : ({
   key:      DOM_KEY[k.name] ?? (k.sequence?.length === 1 && k.sequence >= ' ' ? k.sequence : k.name),
-  code:     k.name,
+  code:     domCode(k.name),
   shiftKey: !!k.shift, ctrlKey: !!k.ctrl, altKey: !!(k.option || k.meta), metaKey: !!k.super,
   raw:      k,
 })

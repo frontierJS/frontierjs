@@ -30,7 +30,7 @@
 
 import { modelName, camel } from '@frontierjs/toolbelt/inflect'
 import { isKnownCurrency } from '@frontierjs/toolbelt/units'
-import { ACTORS, ENTITY, PATTERN } from './catalog.js'
+import { ACTORS, ENTITY, PATTERN, UNLINKED_ACTORS } from './catalog.js'
 import { TYPES } from './types.js'
 
 export const RUNGS = {
@@ -245,7 +245,7 @@ export function checkAnswer(answer) {
       if (!l || typeof l.name !== 'string' || !IDENT.test(l.name)) { refuse('link', lat, 'A link has a camelCase name.'); continue }
       if (l.to !== 'User' && !names.has(l.to)) { refuse('link', lat, `\`to: ${l.to}\` is not an entity in this answer, or User.`); continue }
       if (l.to === 'User') {
-        if (!ACTORS[l.actor] || l.actor === 'system') { refuse('link', lat, `A link to User names the actor reaching the row through it: ${Object.keys(ACTORS).filter(a => a !== 'system').join(', ')}.`); continue }
+        if (!ACTORS[l.actor] || UNLINKED_ACTORS.includes(l.actor)) { refuse('link', lat, `A link to User names the actor reaching the row through it: ${Object.keys(ACTORS).filter(a => !UNLINKED_ACTORS.includes(a)).join(', ')}.`); continue }
       } else if (l.actor != null) { refuse('link', lat, `Only a link to User names an actor; \`${l.name}\` reaches ${l.to}, whose own rows name theirs.`); continue }
       if (l.to === e.name && l.required) { refuse('link', lat, 'A required link to the entity itself can never be satisfied by the first row. Make it optional.'); continue }
       if (typeof l.why === 'string' && GUESS.test(l.why)) refuse('inferred', lat, 'This link\'s reason reads as a guess. Ask it in `open` instead.')

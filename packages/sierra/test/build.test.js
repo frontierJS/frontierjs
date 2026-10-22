@@ -329,13 +329,13 @@ describe('virtual:sierra, the entry (FJS-D1085)', () => {
     expect(() => plugin.transformIndexHtml('<script type="module" src="/src/main.js"></script>')).toThrow(/FJS-D1085/)
   })
 
-  test('a top-level await in main.js is refused, one inside a function is not', () => {
+  test('a top-level await in main.js is refused, one inside a function is not', async () => {
     const plugin = virtualSierraPlugin({})
     plugin.configResolved({ root: '/app', command: 'build' })
-    expect(() => plugin.transform("import './a.js'\nawait load()\n", '/app/src/main.js')).toThrow(/main\.js:2 awaits/)
-    expect(() => plugin.transform('for await (const x of xs) {}\n', '/app/src/main.js')).toThrow(/top level/)
-    expect(plugin.transform('async function f() { await load() }\nconst g = async () => await f()\n', '/app/src/main.js')).toBeNull()
-    expect(plugin.transform('await load()\n', '/app/src/other.js')).toBeNull()
+    await expect(plugin.transform("import './a.js'\nawait load()\n", '/app/src/main.js')).rejects.toThrow(/main\.js:2 awaits/)
+    await expect(plugin.transform('for await (const x of xs) {}\n', '/app/src/main.js')).rejects.toThrow(/top level/)
+    expect(await plugin.transform('async function f() { await load() }\nconst g = async () => await f()\n', '/app/src/main.js')).toBeNull()
+    expect(await plugin.transform('await load()\n', '/app/src/other.js')).toBeNull()
   })
 })
 

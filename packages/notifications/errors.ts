@@ -75,8 +75,10 @@ export class NotificationRecipientError extends Error {
 export class NotificationDeliveryError extends Error {
   readonly failures:         TransportError[]
   readonly notificationType: string
+  /** What the transports that DID deliver answered; a retry of the whole send repeats them. */
+  readonly receipts:         Record<string, unknown>
 
-  constructor(notificationType: string, failures: TransportError[]) {
+  constructor(notificationType: string, failures: TransportError[], receipts: Record<string, unknown> = {}) {
     const summary = failures
       .map(f => `  ${f.transport}: ${f.error instanceof Error ? f.error.message : String(f.error)}`)
       .join('\n')
@@ -87,6 +89,7 @@ export class NotificationDeliveryError extends Error {
     this.name             = 'NotificationDeliveryError'
     this.notificationType = notificationType
     this.failures         = failures
+    this.receipts         = receipts
   }
 }
 

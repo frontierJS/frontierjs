@@ -221,6 +221,7 @@ Shapes the parser accepts and something later refuses.
 | `check-without-an-operation-in-a-write-rule` | warn | a bare check() in a write rule asks the parent the same write |
 | `write-policy-reads-a-parent-without-post-update` | warn | a create or update policy reads a parent through a key the caller can move, with no post-update beside it |
 | `anonymous-create-auth-default` | warn | a public create on a model whose required column defaults to auth() |
+| `anonymous-beside-logged` | warn | an @@anonymous model in a schema where other models log their writes |
 | `create-reaches-unpickable-relation` | warn | a create policy reaches through a relation the picker cannot be narrowed by |
 | `read-allow-hides-tenant-members` | warn | a read @@allow written for a claim the tenant's members do not carry hides the model from them |
 | `allow-needs-bearer-claim-under-gate` | warn | an @@allow only a bearer can satisfy sits under a gate a bearer cannot pass |

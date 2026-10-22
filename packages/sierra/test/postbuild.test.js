@@ -629,6 +629,16 @@ describe('generateSitemap', () => {
     expect(content).toContain(`<lastmod>${today}</lastmod>`)
   })
 
+  test('SOURCE_DATE_EPOCH pins lastmod, so a build measured twice is the same bytes (FJS-3446)', async () => {
+    const outDir = await setup('sitemap-epoch')
+    const had = process.env.SOURCE_DATE_EPOCH
+    process.env.SOURCE_DATE_EPOCH = '1767225600'
+    try { await generateSitemap(['/'], outDir) }
+    finally { had === undefined ? delete process.env.SOURCE_DATE_EPOCH : process.env.SOURCE_DATE_EPOCH = had }
+    const content = await readFile(join(outDir, 'sitemap.xml'), 'utf8')
+    expect(content).toContain('<lastmod>2026-01-01</lastmod>')
+  })
+
   test('a slug with an & in it does not void the file (FJS-822)', async () => {
     // Asserted by PARSING, because every substring assertion above passes
     // against a sitemap.xml that is not XML. `tools-&-hardware` is not a

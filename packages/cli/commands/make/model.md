@@ -38,7 +38,7 @@ flags:
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { resolve } from 'path'
 
-const { servicePlural }     = await import(resolve(global.fliRoot, 'core/resource-template.js'))
+const { servicePlural, existingServiceFile } = await import(resolve(global.fliRoot, 'core/resource-template.js'))
 const { schemaApplyStep }   = await import(resolve(global.fliRoot, 'core/schema-apply.js'))
 
 // ─── The stanza ───────────────────────────────────────────────────────────────
@@ -166,7 +166,7 @@ if (declared) {
 
 if (flag.service) {
   const servicesDir = resolve($.paths.api, 'src/services')
-  const servicePath = resolve(servicesDir, `${plural}.service.ts`)
+  const servicePath = existingServiceFile(servicesDir, plural) ?? resolve(servicesDir, `${plural}.service.ts`)
 
   if (existsSync(servicePath)) {
     log.warn(`${servicePath} already exists — skipping`)

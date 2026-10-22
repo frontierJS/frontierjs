@@ -9017,7 +9017,8 @@ export function emitScript(ctx) {
       mod.code.push(xNode.raw(`const ${sigR} = $$runtime.track(undefined);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`))
       ctx.accessors[v.name] = `$$runtime.get(${sigR})`
       const stateVar = `$$async_${v.name}`
-      mod.code.push(xNode.raw(`const ${stateVar} = $$runtime.makeAsyncState();`))
+      const upstream = v.deps.filter((dep) => vars[dep]?.isAsync && dep !== v.name).map((dep) => `$$async_${dep}`)
+      mod.code.push(xNode.raw(`const ${stateVar} = $$runtime.makeAsyncState(${upstream.length ? `[${upstream.join(', ')}]` : ''});`))
       mod.code.push(xNode.raw(`$$async.${v.name} = ${stateVar};`))
       // Dep array: signal function references (strip trailing () to get the fn).
       const depFns = v.deps

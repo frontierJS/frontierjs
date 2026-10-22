@@ -19,7 +19,6 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { existsSync, readFileSync } from 'fs'
 import { routeTablePath } from '../scanner/generate-route-table.js'
-import { parseAst } from 'vite'
 
 // Absolute path to this sierra package's root — used to resolve sierra/* imports
 // from the virtual:sierra module (which has no file path context for Node resolution).
@@ -264,8 +263,11 @@ export function virtualSierraPlugin(config, sierraContext) {
     // A top-level await in main.js makes the bundler split what main.js
     // imports into chunks that run BEFORE the entry chunk's boot, so in a build
     // every resource it imports finds no Junction client. Dev runs in order.
-    transform(code, id) {
+    // `vite` is imported here: the terminal shell reaches RESOLVED_BOOT_ID
+    // through schema-plugin.js, and Haven's installed client has no vite.
+    async transform(code, id) {
       if (id !== resolve(root, 'src/main.js')) return null
+      const { parseAst } = await import('vite')
       const at = topLevelAwait(parseAst(code))
       if (at) {
         throw refusal(

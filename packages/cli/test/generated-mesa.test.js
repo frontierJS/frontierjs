@@ -59,11 +59,10 @@ const GENERATED = {
     basePath, imports, res: 'orders', only: ['reference', 'total'],
   }),
   // What `fli admin:generate` writes: the same page plus the gate notice, the
-  // per-row delete and the session import, none of which the scaffold emits.
+  // per-row delete, none of which the scaffold emits.
   'admin:generate — list page': listPage({
     title: 'Orders', heading: 'Orders', newLabel: 'New Order',
     basePath, imports, res: 'orders', gate: true, rowDelete: true,
-    sessionImport: "import { session } from '../../session.js'",
   }),
   'make:scaffold — create page': createPage({
     title: 'New Order', heading: 'New Order', submitLabel: 'Create Order',
@@ -73,12 +72,11 @@ const GENERATED = {
     title: 'Order', heading: 'Order', submitLabel: 'Save',
     backLabel: 'All orders', deleteLabel: 'Delete', basePath, imports, res: 'orders', form: 'Order',
   }),
-  // The admin's detail page: its own session module, the gate notice and the
-  // child links, none of which the scaffold's edit page carries.
+  // The admin's detail page: the gate notice and the child links, none of which the scaffold's edit page carries.
   'admin:generate — detail page': editPage({
     title: 'Order', heading: 'Order', submitLabel: 'Save',
     backLabel: 'All orders', deleteLabel: 'Delete', basePath, imports, res: 'orders', form: 'Order',
-    gate: true, sessionImport: "import { session } from '../../session.js'",
+    gate: true,
     childRoutesImport: "import { childRoutes } from '../_routes.js'",
   }),
   'make:resource — resource file': resourceFile('Order', 'orders'),

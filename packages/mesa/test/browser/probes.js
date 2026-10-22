@@ -49,7 +49,12 @@ export function installProbes(win = window) {
         }
       }
     }
-    for (const sheet of document.styleSheets) {
+    // Mesa injects through `adoptedStyleSheets`, which `document.styleSheets`
+    // does not list -- reading only the latter reports no rules at all.
+    const root = el.getRootNode()
+    const sheets = [...document.styleSheets, ...(document.adoptedStyleSheets || []),
+      ...(root !== document && root.adoptedStyleSheets ? root.adoptedStyleSheets : [])]
+    for (const sheet of sheets) {
       try { walk(sheet.cssRules) } catch {}
     }
     return out

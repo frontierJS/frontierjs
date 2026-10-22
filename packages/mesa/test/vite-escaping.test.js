@@ -180,12 +180,31 @@ function runInspector(root = '/app') {
     for (const fn of listeners.get('mousemove')) fn({ ...ev, type: 'mousemove' })
     for (const fn of listeners.get('click')) fn(ev)
   }
-  return { window, fetched, warned, swallowed, altClick }
+  // Alt+Z with focus on a located element; `answer` stands for a page handler
+  // that runs after the inspector's capture listener.
+  const altZ = async (loc, answer) => {
+    document.activeElement = element(loc)
+    const ev = { type: 'keydown', key: 'z', altKey: true, defaultPrevented: false, preventDefault: () => { ev.defaultPrevented = true } }
+    for (const fn of listeners.get('keydown')) fn(ev)
+    answer?.(ev)
+    await new Promise((r) => setTimeout(r, 0))
+  }
+  return { window, fetched, warned, swallowed, altClick, altZ }
 }
 
 const opened = (loc) => '/__open-in-editor?file=' + encodeURIComponent('/app/' + loc)
 
 describe('the inspector only ever asks the editor for a file under the root', () => {
+
+  // FJS-3408
+  test('Alt+Z opens the focused element, unless the page answered the key first', async () => {
+    const i = runInspector()
+    await i.altZ('src/pages/Home.mesa:12:3')
+    expect(i.fetched).toEqual([opened('src/pages/Home.mesa:12:3')])
+    const j = runInspector()
+    await j.altZ('src/pages/Home.mesa:12:3', (e) => e.preventDefault())
+    expect(j.fetched).toEqual([])
+  })
 
   test('a stamped location is joined onto the root', () => {
     const i = runInspector()

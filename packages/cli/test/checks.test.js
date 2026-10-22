@@ -316,11 +316,53 @@ describe('migration-history', () => {
     expect(only(root, 'migration-history').findings).toEqual([])
   })
 
-  test('an app with no Dockerfile is skipped, not passed', () => {
+  test('an app with no Dockerfile and no litestone to ask is skipped, not passed', () => {
     const root = tree('mh-nodocker', { 'db/schema.lite': SCHEMA })
     const { findings, skipped } = only(root, 'migration-history')
     expect(findings).toEqual([])
     expect(skipped).toHaveLength(1)
+    expect(JSON.stringify(skipped)).toContain('litestone')
+  })
+
+  // FJS-1640: the history is judged against the SCHEMA, by litestone, for every
+  // app and not only one with a Dockerfile -- a schema change that ships no
+  // migration is the defect, wherever the app deploys.
+  describe('against the schema, asked of litestone', () => {
+    const THING = 'model Thing {\n  id Int @id\n  name String\n}\n'
+    const BUILT = 'CREATE TABLE IF NOT EXISTS "thing" (\n  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,\n  "name" TEXT NOT NULL\n) STRICT;\n'
+    const withLitestone = (name, files) => {
+      const root = tree(name, files)
+      mkdirSync(join(root, 'node_modules', '@frontierjs'), { recursive: true })
+      symlinkSync(join(import.meta.dir, '..', '..', 'litestone'), join(root, 'node_modules', '@frontierjs', 'litestone'))
+      return root
+    }
+
+    test('a model added with no migration for it is an error naming the table, with no Dockerfile', () => {
+      const root = withLitestone('mh-gap', {
+        'db/schema.lite': THING + 'model Extra {\n  id Int @id\n}\n',
+        'db/migrations/20260101000000_init.sql': BUILT,
+      })
+      const { findings } = only(root, 'migration-history')
+      expect(findings).toHaveLength(1)
+      expect(findings[0].severity).toBe('error')
+      expect(findings[0].message).toContain('Extra')
+    })
+
+    test('a history that builds the schema passes, with no Dockerfile', () => {
+      const root = withLitestone('mh-built', {
+        'db/schema.lite': THING, 'db/migrations/20260101000000_init.sql': BUILT,
+      })
+      const res = only(root, 'migration-history')
+      expect(res.skipped).toHaveLength(0)
+      expect(res.findings).toEqual([])
+    })
+
+    test('an entrypoint that does not migrate is still judged', () => {
+      const root = withLitestone('mh-noboot-gap', {
+        'db/schema.lite': THING, 'deploy/Dockerfile': 'FROM oven/bun\nCMD ["bun","run","start"]\n',
+      })
+      expect(only(root, 'migration-history').findings).toHaveLength(1)
+    })
   })
 
   test('an entrypoint that does not migrate is skipped', () => {
@@ -427,6 +469,12 @@ describe('the clean app', () => {
     symlinkSync(join(import.meta.dir, '..', '..', 'sierra'), join(root, 'node_modules', '@frontierjs', 'sierra'))
     // And litestone, which `schema-runs` asks whether the schema opens.
     symlinkSync(join(import.meta.dir, '..', '..', 'litestone'), join(root, 'node_modules', '@frontierjs', 'litestone'))
+    // And the migration litestone writes for it: `migration-history` replays the
+    // files and diffs them against the schema, which a placeholder .sql does not build.
+    rmSync(join(root, 'db', 'migrations'), { recursive: true, force: true })
+    const created = spawnSync(process.execPath, [join(import.meta.dir, '..', '..', 'litestone', 'src', 'tools', 'cli.js'),
+      'migrate', 'create', 'init', '--schema', 'db/schema.lite'], { cwd: root, encoding: 'utf8' })
+    expect(created.status).toBe(0)
     // And typescript, the parser `command-resolves` reads with — a scaffolded
     // app installs it as a devDependency.
     symlinkSync(join(import.meta.dir, '..', '..', '..', 'node_modules', 'typescript'), join(root, 'node_modules', 'typescript'))
@@ -2346,6 +2394,46 @@ describe('threat-row', () => {
     expect(findings[0].message).toMatch(/cites no ASVS requirement/)
   })
 
+  // A fixed hole left under *Open* while its tests stay out of *Proved by*.
+  // Each failure is paired with the row that is still honestly open.
+  const issues = (...rows) => ({
+    'package.json': JSON.stringify({ name: 't', registers: { prefix: 'T' } }),
+    'ISSUES.md':    '## S2\n\n| Id | Title | Verified | Detail |\n| --- | --- | --- | --- |\n' +
+                    rows.map(r => `| ${r} |`).join('\n') + '\n\n## Closed\n\n| Id | Title | Closed | How |\n| --- | --- | --- | --- |\n' +
+                    '| T-1 | pkg — **fixed hole** | 2026-10-01 | fixed |\n',
+    'pkg/test/audit.test.js':   "test('closed', () => {})\n",
+    'pkg/test/hole.test.js':    "// T-2\ntest.failing('open', () => {})\n",
+  })
+
+  test('an Open cell whose every FJS-### is closed is an error, a still-open one is clean', () => {
+    const root = tree('threat-open-closed', {
+      ...table(
+        'B1 | anon | `pkg/test/a.test.js` | [T-1](ISSUES.md#t-1) and T-1 again',
+        'B2 | anon | `pkg/test/a.test.js` | T-1, T-2',
+        'B3 | anon | `pkg/test/a.test.js` | a limit held by design (T-D9)',
+      ),
+      ...issues('T-2 | pkg — **still open** | 2026-10-02 | x'),
+    })
+    const { findings } = only(root, 'threat-row', { scope: 'repo' })
+    expect(findings.map(f => f.message.match(/^row (\S+)/)[1])).toEqual(['B1'])
+    expect(findings[0].message).toMatch(/lists T-1 under \*Open\*, and every one is closed/)
+  })
+
+  test('a test named under Open without test.failing is an error, one with it is clean', () => {
+    const root = tree('threat-open-test', {
+      ...table(
+        'B1 | anon | `pkg/test/a.test.js` | `pkg/test/audit.test.js` asserts the fix',
+        'B2 | anon | `pkg/test/a.test.js` | `pkg/test/hole.test.js` asserts the hole',
+        'B3 | anon | `pkg/test/a.test.js` | `pkg/test/gone.test.js` asserts the hole',
+      ),
+      ...issues(),
+    })
+    const { findings } = only(root, 'threat-row', { scope: 'repo' })
+    expect(findings.map(f => f.message.match(/^row (\S+)/)[1])).toEqual(['B1', 'B3'])
+    expect(findings[0].message).toMatch(/carries no `test\.failing`/)
+    expect(findings[1].message).toMatch(/which is not in the tree/)
+  })
+
   test('a tree with no THREATS.md skips rather than passes', () => {
     const root = tree('threat-none', { 'README.md': '' })
     expect(only(root, 'threat-row', { scope: 'repo' }).skipped.map(s => s.id ?? s)).toHaveLength(1)
@@ -3235,6 +3323,34 @@ describe('service-module-db', () => {
         "import { createService } from '@frontierjs/junction'\n" +
         'export default createService({\n' +
         '  find: (ctx) => { const db = $.db; return db.lead.findMany({ where: {} }) },\n})\n',
+    })
+    expect(only(root, 'service-module-db').findings).toEqual([])
+  })
+})
+
+describe('service-module-db — in a job', () => {
+  const job = (body) => ({
+    ...CLEAN,
+    'api/src/jobs/sweep.job.ts':
+      "import { db } from '../core/db.ts'\nimport { defineJob } from '@frontierjs/caravan'\n" + body,
+  })
+
+  test('the module client inside a job is an error that names ctx.app.withDb', () => {
+    const root = tree('md-job', job('export default defineJob({\n' +
+      '  handle: async () => { await db.lead.deleteMany({ where: {} }) },\n})\n'))
+    const { findings } = only(root, 'service-module-db')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].file).toMatch(/sweep\.job\.ts$/)
+    expect(findings[0].message).toMatch(/ctx\.app\.withDb/)
+  })
+
+  test('a client handed out by ctx.app.withDb is the correct shape', () => {
+    const root = tree('md-job-scoped', {
+      ...CLEAN,
+      'api/src/jobs/sweep.job.ts':
+        "import { defineJob } from '@frontierjs/caravan'\n" +
+        'export default defineJob({\n' +
+        '  handle: (ctx) => ctx.app.withDb((db) => db.lead.deleteMany({ where: {} })),\n})\n',
     })
     expect(only(root, 'service-module-db').findings).toEqual([])
   })

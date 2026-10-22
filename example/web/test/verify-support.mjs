@@ -178,14 +178,14 @@ async function mailTo(email, until = n => n > 0, ms = 4000) {
 // nothing — which is why the acceptance is asserted first.
 
 {
-  const refusedByStaff = await startEpisode(staffToken, shopper.userId, 'ticket-1')
+  const refusedByStaff = await startEpisode(staffToken, shopper.id, 'ticket-1')
   check('a member of staff may not start one', refusedByStaff.status, 403)
 
-  const refusedAdminSubject = await startEpisode(adminToken, admin.userId, 'ticket-1')
+  const refusedAdminSubject = await startEpisode(adminToken, admin.id, 'ticket-1')
   check('nobody may act as an administrator — the ceiling would BE admin',
         refusedAdminSubject.status, s => s === 403 || s === 400)
 
-  const noReason = await startEpisode(adminToken, shopper.userId, '')
+  const noReason = await startEpisode(adminToken, shopper.id, '')
   check('a reason is required', noReason.status, 400)
 }
 
@@ -205,12 +205,19 @@ const asAdmin = await roster(adminToken)
 check('an admin reads the whole roster', asAdmin, n => n > 1)
 
 {
-  const started = await startEpisode(adminToken, shopper.userId, 'cannot reproduce the basket bug')
+  const started = await startEpisode(adminToken, shopper.id, 'cannot reproduce the basket bug')
   check('the episode starts', started.status, 200)
+  // Without an episode the token is still the operator's own, so the refusals
+  // below are ordinary calls and the password one CHANGES alex's password —
+  // every browser drive after this one then fails its first sign-in (`FJS-3224`).
+  if (started.status !== 200) {
+    console.error(`\nno episode (${started.status}: ${await started.text()}), so the rest would run as the operator`)
+    stopAll(); process.exit(1)
+  }
 
   const now = await me(adminToken)
   check('the same token answers as the SUBJECT', now.email, SHOPPER)
-  check('and the operator is still on the principal', now.support?.operatorId, admin.userId)
+  check('and the operator is still on the principal', now.support?.operatorId, admin.id)
   check('with the reason it was started for', now.support?.reason, 'cannot reproduce the basket bug')
 
   // The subject is the one person who could not otherwise find out. Once, and
@@ -233,7 +240,7 @@ check('an admin reads the whole roster', asAdmin, n => n > 1)
 
 {
   const RUN = Date.now().toString(36)
-  const res = await fetch(`${BASE}/users/${shopper.userId}`, {
+  const res = await fetch(`${BASE}/users/${shopper.id}`, {
     method: 'PATCH', headers: as(adminToken), body: JSON.stringify({ name: `Robin ${RUN}` }),
   })
   check('the operator may make the write the subject may make', res.status, 200)
@@ -242,15 +249,15 @@ check('an admin reads the whole roster', asAdmin, n => n > 1)
   const rows = await trailUntil(r => r.model === 'User' && r.actorType === 'support')
   const entry = rows[rows.length - 1]
 
-  check('the entry names the OPERATOR as the actor', entry?.actorId, admin.userId)
-  check('and the SUBJECT beside them, rather than instead of them', entry?.subjectId, shopper.userId)
+  check('the entry names the OPERATOR as the actor', entry?.actorId, admin.id)
+  check('and the SUBJECT beside them, rather than instead of them', entry?.subjectId, shopper.id)
   check('and says which episode it belongs to', entry?.episodeId, e => typeof e === 'string' && e.length > 0)
 
   // The pair, and the whole complaint in `FJS-142`: nothing about this write is
   // filed under the person it was done to.
   const underSubject = readFileSync(TRAIL, 'utf8').trim().split('\n')
     .map(l => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean)
-    .filter(r => r.actorId === shopper.userId && r.actorType === 'support')
+    .filter(r => r.actorId === shopper.id && r.actorType === 'support')
   check('and nothing is filed under the subject', underSubject.length, 0)
 }
 
@@ -291,7 +298,7 @@ check('an admin reads the whole roster', asAdmin, n => n > 1)
 // call end — the next resolution is simply the operator's own.
 
 {
-  await startEpisode(adminToken, shopper.userId, 'ticket-expiry', '1 second')
+  await startEpisode(adminToken, shopper.id, 'ticket-expiry', '1 second')
   check('the short episode applies', (await me(adminToken)).email, SHOPPER)
 
   await new Promise(r => setTimeout(r, 1400))
@@ -315,7 +322,7 @@ check('an admin reads the whole roster', asAdmin, n => n > 1)
 
   check('a socket is open before the episode', ws.readyState, 1)
 
-  await startEpisode(adminToken, shopper.userId, 'ticket-socket')
+  await startEpisode(adminToken, shopper.id, 'ticket-socket')
   await new Promise(r => setTimeout(r, 500))
 
   check('and the server closed it, rather than leaving it resolved as it was',

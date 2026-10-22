@@ -728,3 +728,60 @@ describe('renderStored: a body somebody stored, rendered in a channel', () => {
     await expect(run('x', 'fax')).rejects.toThrow(/channel/)
   })
 })
+
+// ─── a row component inside a Column says so (FJS-1665) ──────────────────
+//
+// Every component but Email, Section, Column and Link renders a <tr>. Column renders a
+// <td>, so a row handed to one is parsed out of the cell and everything after it
+// runs the client's full width. The server render has already moved the rows by
+// the time a string check could look, so the component says it while it still
+// knows its parent. A Section or Card inside the Column opens a table again, and
+// a row in THAT is fine.
+
+describe('a row component inside a Column (FJS-1665, FJS-3452)', () => {
+  const ROWS = {
+    Heading: 'text="Hi"', Text: '', KeyValue: 'label="K" value="V"', Image: 'src="https://x/i.png" alt="a"',
+    DataTable: 'columns={[{ key: "a", label: "A" }]} rows={[{ a: 1 }]}',
+    Card: 'heading="C"', Button: 'text="Go" href="https://x"', Divider: '', Spacer: '', Stars: '', Avatar: 'name="Ada"',
+    Review: 'name="Ada"', Header: '', Footer: '', TwoCol: '', Row: '', Address: '', Contact: 'name="Ada"',
+  }
+
+  const warnings = async (inner) => {
+    resetSlotGuard()
+    const seen = []
+    const real = console.warn
+    console.warn = (...a) => seen.push(a.join(' '))
+    try {
+      await renderEmail(
+        `<script>import Section from './Section.mesa'; import Card from './Card.mesa'; import Row from './Row.mesa'; import Column from './Column.mesa'; ` +
+        `import Heading from './Heading.mesa'; import Text from './Text.mesa'; import KeyValue from './KeyValue.mesa'; import Image from './Image.mesa'; import DataTable from './DataTable.mesa'; ` +
+        `import Button from './Button.mesa'; import Divider from './Divider.mesa'; import Spacer from './Spacer.mesa'; import Stars from './Stars.mesa'; import Avatar from './Avatar.mesa'; ` +
+        `import Review from './Review.mesa'; import Header from './Header.mesa'; import Footer from './Footer.mesa'; import TwoCol from './TwoCol.mesa'; import Address from './Address.mesa'; import Contact from './Contact.mesa'</script>` +
+        inner)
+    } finally { console.warn = real }
+    return seen.filter((w) => w.includes('[email-kit]'))
+  }
+
+  for (const [name, props] of Object.entries(ROWS)) {
+    it(`${name} in a Column names itself and where it belongs`, async () => {
+      const w = await warnings(`<Section><Row><Column><${name} ${props} /></Column></Row></Section>`)
+      expect(w.length).toBe(1)
+      expect(w[0]).toContain(`<${name}>`)
+      expect(w[0]).toContain('<Column>')
+      expect(w[0]).toMatch(/<Section>|<Card>/)
+    })
+
+    it(`${name} directly in a Section says nothing`, async () => {
+      expect(await warnings(`<Section><${name} ${props} /></Section>`)).toEqual([])
+    })
+
+    it(`${name} in a Section inside a Column says nothing`, async () => {
+      expect(await warnings(`<Section><Row><Column><Section><${name} ${props} /></Section></Column></Row></Section>`)).toEqual([])
+    })
+
+    if (name !== 'Card') it(`${name} in a Card inside a Column says nothing`, async () => {
+      const w = await warnings(`<Section><Row><Column><Section><Card heading="C"><${name} ${props} /></Card></Section></Column></Row></Section>`)
+      expect(w).toEqual([])
+    })
+  }
+})

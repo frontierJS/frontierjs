@@ -231,10 +231,13 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
 
   // Also reachable from the console, and from a keyboard: the focused element
   // is what a screen-reader user is on, and a hold-and-click has no equivalent.
+  // Capture runs before the page's own listeners, so the answer is read once
+  // dispatch is over: an app binding Alt+Z (basecamp's workbench zoom) calls
+  // preventDefault, and opening the editor as well makes one press do both.
   window.addEventListener('keydown', (e) => {
     if (!e[FLAG] || e.key !== 'z' && e.key !== 'Z') return
     const target = locatedFrom(document.activeElement)
-    if (target) { e.preventDefault(); open(target) }
+    if (target) setTimeout(() => { if (!e.defaultPrevented) open(target) })
   }, true)
 
   window.__fjsInspect = {

@@ -55,7 +55,7 @@
 
 import path          from 'path'
 import { createHash } from 'crypto'
-import { readFile, writeFile, mkdir } from 'fs/promises'
+import { readFile, writeFile, mkdir, realpath } from 'fs/promises'
 import { existsSync, unlinkSync, readdirSync, statSync } from 'fs'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { compileSource } from './compiler.js'
@@ -1051,8 +1051,17 @@ export async function renderComponent(source, options = {}) {
   // in compileTree rather than as "your tmpDir is wrong".
   // Only the inlining targets flatten scoped selectors — see compileTree.
   const _descope = target === 'email' || target === 'fragment'
-  const _tmpDir = tmpDir ?? await defaultTmpDir()
-  if (tmpDir) await mkdir(tmpDir, { recursive: true }).catch(() => {})
+  //
+  // Named by its real path: Bun lists a directory once and answers a later
+  // import of a new file in it from that listing, looked up under the link's
+  // TARGET — so a `node_modules` that is one symlink to another tree rendered
+  // its first page and failed every one after with "Cannot find module"
+  // for a file that was on disk (`FJS-3437`).
+  let _tmpDir = tmpDir ?? await defaultTmpDir()
+  if (tmpDir) {
+    await mkdir(tmpDir, { recursive: true }).catch(() => {})
+    _tmpDir = await realpath(tmpDir).catch(() => tmpDir)
+  }
   sweepStaleTemp(_tmpDir)
 
   // ── JS target — compile only, no rendering ────────────────────────────────

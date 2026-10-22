@@ -56,6 +56,14 @@ export async function run(t) {
   await t.evaluate(`document.querySelector('#word7').focus(); return true;`)
   t.ok(await t.evaluate(`return await waitVisible('body > .popover');`), 'focusing a trigger opens the card')
   t.is(await t.evaluate(`return ${body};`), 'card for word7', 'the focused trigger is the one the card is for')
+  // An Escape a nested control already took is not the card's (`FJS-3405`).
+  await t.evaluate(`
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') e.preventDefault() }, { once: true });
+    return true;
+  `)
+  await t.press('Escape')
+  await t.evaluate(`await new Promise(r => setTimeout(r, 150)); return true;`)
+  t.is(await t.evaluate(`return ${cards};`), 1, 'an Escape already taken does not close the card')
   await t.press('Escape')
   await t.eventually(cards, 0, 'Escape closes the card')
   t.ok(await t.evaluate(`return document.activeElement === document.querySelector('#word7');`),

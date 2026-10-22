@@ -167,6 +167,38 @@ const { issueInvoice, periodLines, startSubscription } = await import(join(ROOT,
 const TODAY = plainDateIn(Date.now(), 'UTC')
 const NEXT  = addToDate(TODAY, { months: 1 })
 const RUN = String(Date.now()).slice(-6)
+
+// Everything this drive mints, by prefix, so a run that threw halfway and left
+// rows behind is swept by the next one (`FJS-1708`). The documents go before the
+// subscriptions they name. A `Payment` is LOCKED on delete and a locked child
+// refuses its parent's cascade even to `asSystem()` (`FJS-D1281`), so the
+// payment goes by raw SQL, the bypass that says it is one. Each step stands
+// alone, since one refusal must not strand the rest.
+async function clearUp() {
+  const step = async (fn) => { try { await fn() } catch (e) { console.error(`\n!! could not clear up: ${e.message}`) } }
+  const subs = await sys.subscription.findMany({
+    where: { OR: ['SUB-ACC', 'SUB-OTH', 'SUB-MIN'].map(p => ({ reference: { startsWith: p } })) }, limit: 200,
+  })
+  const bills = await sys.invoice.findMany({
+    where: { OR: [
+      { number: { startsWith: 'INV-A' } }, { number: { startsWith: 'INV-Q' } },
+      ...subs.map(s => ({ subscriptionId: s.id })),
+    ] }, limit: 500,
+  })
+  for (const b of bills) await step(async () => {
+    await sys.creditNote.deleteMany({ where: { invoiceId: b.id } })
+    await sys.sql`DELETE FROM "payment" WHERE invoiceId = ${b.id}`
+    await sys.invoice.delete({ where: { id: b.id } })
+  })
+  for (const s of subs) await step(async () => {
+    await sys.subscriptionPeriod.deleteMany({ where: { subscriptionId: s.id } })
+    await sys.subscription.delete({ where: { id: s.id } })
+  })
+}
+// A throw anywhere below ends the run before the sweep at the bottom.
+for (const event of ['uncaughtException', 'unhandledRejection']) {
+  process.on(event, async (e) => { console.error(e); await clearUp(); process.exit(1) })
+}
 const OTHER_INV = `INV-A${RUN}`
 const someoneElse = await sys.customer.findFirst({ where: { email: { not: BUYER.email } } })
 // …and a standing order of this run's OWN, because the drive stops one renewing
@@ -590,27 +622,7 @@ const twoStepToken = await evaluate(`localStorage.getItem('shop_account_token')`
 check('…and only now is a session stored here', typeof twoStepToken, 'string')
 await twoStep.disable(twoStepToken)
 
-// The document this run issued to somebody else goes with the run. It exists to
-// be the negative control for *only their own*, and leaving one per run in the
-// shop's ledger is the litter the billing drives just learned not to leave.
-try {
-  await sys.invoice.delete({ where: { number: OTHER_INV } })
-  // Takes its payment with it. A `Payment` is `@@gate(5.8.9.9)` on delete —
-  // LOCKED, so `asSystem()` cannot remove one either — and the only way this
-  // row goes is the CASCADE from the invoice that owns it, which is the
-  // schema's answer rather than a trick.
-  await sys.invoice.delete({ where: { number: OWN_INV } })
-  await sys.subscriptionPeriod.deleteMany({ where: { subscription: { is: { reference: OWN_SUB } } } })
-  await sys.subscription.delete({ where: { reference: OWN_SUB } })
-  // The proration invoice staff's change issued goes before the subscription it
-  // names.
-  await sys.invoice.deleteMany({ where: { subscriptionId: otherSub.id } })
-  await sys.subscriptionPeriod.deleteMany({ where: { subscription: { is: { reference: OTHER_SUB } } } })
-  await sys.subscription.delete({ where: { reference: OTHER_SUB } })
-  await sys.invoice.deleteMany({ where: { subscriptionId: mineSub.id } })
-  await sys.subscriptionPeriod.deleteMany({ where: { subscription: { is: { reference: MINE_SUB } } } })
-  await sys.subscription.delete({ where: { reference: MINE_SUB } })
-} catch (e) { console.error(`\n!! could not clear up ${OTHER_INV} / ${OWN_SUB} / ${OTHER_SUB} / ${MINE_SUB}: ${e.message}`) }
+await clearUp()
 
 const noisy = pageErrors.filter(t => t && !/favicon|ERR_FILE_NOT_FOUND/.test(t))
 check('no console errors anywhere in it', noisy, [])

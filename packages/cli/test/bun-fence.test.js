@@ -12,6 +12,7 @@ import { tmpdir }                                    from 'node:os'
 import { join }                                      from 'node:path'
 
 import { fenceBunGlobal } from '../core/bun-fence.js'
+import { laneEnv }        from '../../../scripts/lanes.mjs'
 
 const NAME = '@frontierjs/zz-fence-probe'
 
@@ -50,5 +51,14 @@ describe('fenceBunGlobal', () => {
     expect(fenceBunGlobal({ HOME: '/h' }, '/f').env.BUN_INSTALL_CACHE_DIR).toBe('/h/.bun/install/cache')
     expect(fenceBunGlobal({ BUN_INSTALL: '/b' }, '/f').env.BUN_INSTALL_CACHE_DIR).toBe('/b/install/cache')
     expect(fenceBunGlobal({ BUN_INSTALL_CACHE_DIR: '/c' }, '/f').env.BUN_INSTALL_CACHE_DIR).toBe('/c')
+  })
+})
+
+describe('laneEnv', () => {
+  test('a lane session keeps bun\'s global dir to itself and its own fli first on PATH (FJS-3258)', () => {
+    const env = laneEnv('/lanes/bin-1', '/lanes/bun-1', { HOME: '/h', PATH: '/usr/bin' })
+    expect(env.BUN_INSTALL).toBe('/lanes/bun-1')
+    expect(env.BUN_INSTALL_CACHE_DIR).toBe('/h/.bun/install/cache')
+    expect(env.PATH).toBe('/lanes/bin-1:/usr/bin')
   })
 })

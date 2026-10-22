@@ -30,6 +30,16 @@ import { requireServers, PORTS } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
 import { watchReloads } from './lib/reload.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+
+// The drive reprices PRO and changes SUB-3001's seats, which opens a window and
+// issues an invoice on the seeded rows every run. Past fifty of either the
+// pages stop listing the one it waits for, so the seed that stood them up puts
+// them back (`FJS-1708`), on a pass and on a throw alike.
+const putSeedBack = () => execFileSync('bun', ['run', 'db/seed.ts'], {
+  cwd: fileURLToPath(new URL('../../', import.meta.url)), stdio: 'ignore',
+})
 
 const UI     = process.env.UI_URL  ?? `http://localhost:${PORTS.ui}`
 const API    = process.env.FRONTIER_API_URL ?? `http://localhost:${PORTS.api}`
@@ -523,6 +533,7 @@ try {
   // where that costs the most: it carries `autosave={1000}`, so nobody has to
   // press anything. The staff half is `customers.notesWithheldForStaff`.
   t('customers.notesEditableForAdmin', await evaluate(`
+    await waitFor(() => document.querySelector('tbody tr button[data-edit]'));
     document.querySelector('tbody tr button[data-edit]').click();
     await waitFor(() => document.querySelector('[name="notes"]'));
     const el = document.querySelector('[name="notes"]');
@@ -1333,6 +1344,7 @@ try {
   // `notes` key at all, so the control is locked and BADGED, because a disabled
   // empty box and an empty one are otherwise the same screen.
   t('customers.notesWithheldForStaff', await evaluate(`
+    await waitFor(() => document.querySelector('tbody tr button[data-edit]'));
     document.querySelector('tbody tr button[data-edit]').click();
     await waitFor(() => document.querySelector('[name="notes"]'));
     const el = document.querySelector('[name="notes"]');
@@ -1380,10 +1392,12 @@ try {
   console.error('collected so far:', JSON.stringify(got, null, 2))
   console.error('console errors:', consoleErrors)
   await browser.close()
+  putSeedBack()
   process.exit(1)
 }
 
 await browser.close()
+putSeedBack()
 
 // ─── assertions ───────────────────────────────────────────────────────────
 

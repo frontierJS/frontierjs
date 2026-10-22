@@ -188,7 +188,7 @@ document and the build in one.
 | --- | --- |
 | Oracle saying *the person signing up creates the organization and becomes its first member* | `FJS-2530`, open |
 | A scaffold that passes its own check | `FJS-2531`, open |
-| Oracle answering against an existing schema (a starter, then a live app) | Charter `RIGS.md` R2, unbuilt |
+| Oracle answering against an existing schema (a starter, then a live app) | Charter `RIGS.md` R2, unbuilt. **A rig model may delegate through its socket (`check(customer, 'update')`) only when that host policy admits nobody the rig should not**: delegating to a host model a non-staff party can edit (calendly's Booking allows update to `id == auth().bookingId`) hands that party the rig's rows, so host mode grades who the host policy admits, not just that one exists (R0-5) |
 | The rig installer | `overview.md` 3.2, idea |
 | The teams rig: organizations, memberships, invitations | `overview.md` 3.8, idea |
 | A charter file `fli new` replays | Not started |

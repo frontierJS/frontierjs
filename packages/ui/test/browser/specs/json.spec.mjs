@@ -573,6 +573,16 @@ export async function run(t) {
   await t.key('z', { modifiers: 2 })
   await t.eventually(`${uLast}`, '{"a":1,"b":2}', 'and Ctrl+Z walks the next one, from inside the tree')
 
+  // FJS-3406: inside the tree's own edit input the history key belongs to the
+  // field, whose text the browser undoes. Redo is ahead of us here, so a key
+  // that reaches the tree's handler walks the DOCUMENT forward.
+  await t.clickAt(`${uAt(['a'])} .fjs-json-edit`)
+  await t.key('y', { modifiers: 2 })
+  await t.evaluate(`return new Promise((r) => setTimeout(r, 100));`)
+  t.is(await t.evaluate(`return ${uLast};`), '{"a":1,"b":2}',
+    'Ctrl+Y inside an open edit input leaves the document alone')
+  await t.press('Escape')
+
   /* ── undo when the caller rebuilds the document ───────────────────────── */
 
   // The case the design turns on, and `example`'s /settings/ is the live one:

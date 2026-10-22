@@ -23,7 +23,7 @@ import { portFor } from '@frontierjs/cli/core/ports.js'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '..', 'dist', 'client')
 const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${await portFor(import.meta.url, 'be', { env: 'dev' })}`
-const PORT = Number(process.env.PREVIEW_PORT ?? 5311)
+const PORT = Number(process.env.PREVIEW_PORT ?? await portFor(import.meta.url, 'fe', { env: 'dev', service: 1 }))
 
 const TYPES = {
   '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
