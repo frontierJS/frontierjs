@@ -406,7 +406,7 @@ describe('terminal target', () => {
       "$$host.on($$el0, 'change', f);",
       "$$host.bind($$el0, 'value', () => $$runtime.get($$sig_v), $$set_v);",
     ].join('\n    '))
-    expect(result).toContain("$$host.bind($$el2, 'value', () => ($$runtime.get($$sig_d).name), ($$v) => { $$runtime.get($$sig_d).name = $$v; });")
+    expect(result).toContain("$$host.bind($$el2, 'value', () => ($$runtime.get($$sig_d).name), ($$v) => { $$runtime.get($$sig_d).name = $$v; $$runtime.set($$sig_d, $$runtime.get($$sig_d), true); });")
   })
 
   it('reports an element bind:value it cannot write in the same words on both targets, and wires nothing', async () => {

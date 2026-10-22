@@ -116,8 +116,17 @@ async function postWebhook(body) {
 // would need a session at level 5 and would put this drive on the limiter for
 // facts that are not about the transport.
 const { db } = await import(join(ROOT, 'api/src/core/db.ts'))
-const { chargeInvoice, issueInvoice, periodLines, startSubscription, RETRY_DAYS } = await import(join(ROOT, 'api/src/domain/billing'))
+const { chargeInvoice, issueInvoice, periodLines, startSubscription, declineKind, RETRY_DAYS } = await import(join(ROOT, 'api/src/domain/billing'))
+const { SYSTEM } = await import(join(ROOT, 'api/src/core/gate.ts'))
 const sys = db.asSystem()
+
+/** What `payments.record` answers for an event. The webhook's own answer is
+ *  conduit's (`{ received, outcome }`, `FJS-D899`), so the service's verdict
+ *  (`stale`) is read where the receiver reads it: by calling the method as
+ *  SYSTEM. The ledger dedupes on the event id, so the replay carries its own;
+ *  use it only for an event that is stale, where a replay writes nothing. */
+const recordAnswer = (body) =>
+  app.service('payments').call('record', null, { ...body, id: `${body.id}_replay` }, { user: SYSTEM })
 
 const RUN = String(Date.now()).slice(-6)
 const _DAY = 24 * 60 * 60 * 1000
@@ -305,8 +314,9 @@ let refB = null
 
   // OUT OF ORDER. A stale failure, delivered after the settlement — which is
   // the ordinary shape of a provider retrying an event it thinks it owes.
-  const stale = await postWebhook({ id: `evt_stale_${RUN}`, type: 'payment.failed',
-                                    data: { paymentRef: refB, reason: 'declined', declineCode: 'stolen_card' } })
+  const staleEvent = { id: `evt_stale_${RUN}`, type: 'payment.failed',
+                       data: { paymentRef: refB, reason: 'declined', declineCode: 'stolen_card' } }
+  const stale = await postWebhook(staleEvent)
   const after = await sys.invoice.findFirst({ where: { id: invB.id } })
   const subAfter = await sys.subscription.findFirst({ where: { id: subB.id } })
   t('outOfOrder.invoiceStaysPaid', stale.status === 200 && after.status === 'paid')
@@ -315,7 +325,7 @@ let refB = null
   // subscription's state — which is `active` in the stale case and the real one
   // alike. It is the INVOICE's state that separates them.
   t('outOfOrder.subscriptionNotLapsed', subAfter.status === 'active')
-  t('outOfOrder.saysItWasStale', stale.body?.status === 'stale')
+  t('outOfOrder.saysItWasStale', (await recordAnswer(staleEvent)).status === 'stale')
 }
 
 // ─── 4. A decline is an answer, and which answer is the code ──────────────
@@ -329,7 +339,8 @@ let refB = null
   const r = await postWebhook({ id: `evt_soft_${RUN}`, type: 'payment.failed',
     data: { paymentRef: pay.providerRef, reason: 'Insufficient funds', declineCode: 'insufficient_funds' } })
   const after = await sys.subscription.findFirst({ where: { id: sub.id } })
-  t('soft.recorded', r.status === 200 && r.body?.decline === 'soft')
+  t('soft.recorded', r.status === 200 && r.body?.outcome === 'applied' &&
+    declineKind('insufficient_funds') === 'soft')
   // Left to the clock. The invoice is not yet past its due date, so a soft
   // decline changes nothing about the subscription — dunning will grade it.
   t('soft.leavesTheSubscriptionAlone', after.status === 'active')
@@ -405,7 +416,8 @@ let refB = null
   const r = await postWebhook({ id: `evt_hard_${RUN}`, type: 'payment.failed',
     data: { paymentRef: pay.providerRef, reason: 'Card reported stolen', declineCode: 'stolen_card' } })
   const after = await sys.subscription.findFirst({ where: { id: sub.id } })
-  t('hard.recorded', r.status === 200 && r.body?.decline === 'hard')
+  t('hard.recorded', r.status === 200 && r.body?.outcome === 'applied' &&
+    declineKind('stolen_card') === 'hard')
   // The difference the code makes, and the only one: the grace is skipped.
   t('hard.lapsesAtOnce', after.status === 'pastDue')
   t('hard.invoiceStillOwed',
@@ -422,7 +434,8 @@ let refB = null
   } })
   const r = await postWebhook({ id: `evt_unk_${RUN}`, type: 'payment.failed',
     data: { paymentRef: pay.providerRef, reason: 'Something new', declineCode: 'a_code_from_2027' } })
-  t('unknown.isTreatedAsSoft', r.body?.decline === 'soft' &&
+  t('unknown.isTreatedAsSoft', r.body?.outcome === 'applied' &&
+    declineKind('a_code_from_2027') === 'soft' &&
     (await sys.subscription.findFirst({ where: { id: sub.id } })).status === 'active')
 }
 
@@ -594,13 +607,14 @@ async function settles(fn, ms = 20000) {
 
   // OUT OF ORDER, the third time in this file: a challenge delivered after the
   // payment settled must not move it back to *waiting for somebody*.
-  const stale = await postWebhook({
+  const staleEvent = {
     id: `evt_sca_stale_${RUN}`, type: 'payment.action_required',
     data: { paymentRef: pay.providerRef, actionUrl: 'http://example.test/nope' },
-  })
+  }
+  const stale = await postWebhook(staleEvent)
   const after = await sys.payment.findFirst({ where: { id: pay.id } })
   t('sca.aStaleChallengeIsIgnored',
-    stale.status === 200 && stale.body?.status === 'stale' &&
+    stale.status === 200 && (await recordAnswer(staleEvent)).status === 'stale' &&
     after.status === 'succeeded' && after.actionUrl === null)
 }
 

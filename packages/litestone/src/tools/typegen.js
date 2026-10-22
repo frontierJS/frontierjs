@@ -47,15 +47,23 @@ function serviceName(name) {
 // `model IncidentUpdate` declares `interface IncidentUpdate` twice. TypeScript
 // merges the two without a word and every `incident.update()` then wants the
 // timeline's required columns (`FJS-3118`). Refused here, naming both (`FJS-D1282`).
+// `declarationCollisions` is the list; the importers read it too, so they name a
+// collision when they emit one (`FJS-3408`).
 function refuseCollidingDeclarations(schema) {
+  const [first] = declarationCollisions(schema)
+  if (first) throw new Error(
+    `litestone types: ${first.what} collides with ${first.with} — both declare \`${first.name}\` in the generated types, ` +
+    `and TypeScript would merge them into one. Rename one of them (FJS-D1282).`
+  )
+}
+
+export function declarationCollisions(schema) {
+  const collisions = []
   const declared = new Map()
   const declare = (name, what) => {
     const first = declared.get(name)
-    if (first) throw new Error(
-      `litestone types: ${what} collides with ${first} — both declare \`${name}\` in the generated types, ` +
-      `and TypeScript would merge them into one. Rename one of them (FJS-D1282).`
-    )
-    declared.set(name, what)
+    if (first) collisions.push({ name, what, with: first })
+    else declared.set(name, what)
   }
   for (const en of schema.enums ?? []) declare(en.name, `enum \`${en.name}\``)
   for (const t of schema.types ?? []) declare(pascal(t.name), `type \`${t.name}\``)
@@ -67,6 +75,7 @@ function refuseCollidingDeclarations(schema) {
     for (const s of shapes) declare(pascal(m.name) + s, `\`${m.name}\`'s ${s} type`)
   }
   for (const v of schema.views ?? []) declare(pascal(v.name) + 'Where', `\`${v.name}\`'s Where type`)
+  return collisions
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────

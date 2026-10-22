@@ -173,9 +173,12 @@ describe('the build emits both write modes', () => {
     // columns wholesale — which is the one this exists to catch.
     const declared = (app) => {
       const names = new Set()
-      for (const m of parseFile(resolve(REPO_ROOT, app, 'db', 'schema.lite')).schema.models)
+      for (const m of parseFile(resolve(REPO_ROOT, app, 'db', 'schema.lite')).schema.models) {
         for (const f of m.fields)
           if (f.attributes.some(a => a.kind === 'immutable')) names.add(`${m.name}.${f.name}`)
+        // A @@transitions field is read-only in an update: a move changes it, a patch does not.
+        for (const t of m.attributes.filter(a => a.kind === 'transitions')) names.add(`${m.name}.${t.field}`)
+      }
       return names
     }
     const marked = async (app) => {

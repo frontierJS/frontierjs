@@ -7,8 +7,8 @@ class InAppBuilder {
   private _title?:       string
   private _body?:        string
   private _action?:      InAppAction
-  private _contextType?: string
-  private _contextId?:   number | string | null
+  private _subjectType?: string
+  private _subjectId?:   number | string | null
   private _data:         Record<string, unknown> = {}
 
   /**
@@ -37,14 +37,14 @@ class InAppBuilder {
 
   /**
    * Optional polymorphic context reference.
-   * Sets contextType + contextId on the DB record.
+   * Sets subjectType + subjectId on the DB record.
    * Lets the UI group notifications: "3 unread in Order #1042".
    *
    * Loose reference by design — survives record deletion without cascades.
    */
   context(type: string, id: number | string | null): this {
-    this._contextType = type
-    this._contextId   = id
+    this._subjectType = type
+    this._subjectId   = id
     return this
   }
 
@@ -70,8 +70,8 @@ class InAppBuilder {
       title:       this._title,
       body:        this._body,
       action:      this._action,
-      contextType: this._contextType,
-      contextId:   this._contextId ?? null,
+      subjectType: this._subjectType,
+      subjectId:   this._subjectId ?? null,
       data:        this._data,
     }
   }

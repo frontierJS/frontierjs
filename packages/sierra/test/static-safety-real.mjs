@@ -75,6 +75,7 @@ model Account {
   name  String
   token String? @guarded
   cards Card[]
+  @@gate(0.4.4.5)
 }
 
 model Card {
@@ -83,6 +84,7 @@ model Card {
   pan       String?  @encrypted
   accountId String?
   account   Account? @relation(fields: [accountId], references: [id])
+  @@gate(0.4.4.5)
 }
 `
 

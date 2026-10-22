@@ -166,21 +166,16 @@ export async function* readEvents(response) {
 
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
-  let rest = ''
-  let lastId = ''
+  let state
   try {
     for (;;) {
       const { value, done } = await reader.read()
       if (done) break
-      const out = parseEvents(rest + decoder.decode(value, { stream: true }), lastId)
-      rest = out.rest
-      lastId = out.lastId
+      const out = parseEvents(decoder.decode(value, { stream: true }), state)
+      state = out.state
       yield* out.events
     }
-    // parseEvents holds a final CR in case its LF is in the next chunk; there
-    // is none, so a stream whose last line break is a bare CR is read here.
-    rest += decoder.decode()
-    if (rest.endsWith('\r')) yield* parseEvents(rest + '\n', lastId).events
+    yield* parseEvents(decoder.decode(), state).events
   } finally {
     reader.cancel().catch(() => {})
   }

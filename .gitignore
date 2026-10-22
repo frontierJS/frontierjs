@@ -93,6 +93,9 @@ _tmp_slots_*/
 # sourcemap.test.js compiles into a scratch dir beside the package; a `git add`
 # racing a test run dies on a file deleted between scan and stat.
 _sm_*/
+# A suite that builds into packages/*/test/tmp-<name> deletes it afterward; left
+# unignored, treePaths lists it as a clone's file while another suite reads it.
+packages/*/test/tmp-*/
 # renderComponent writes a temp module beside the mesa package so the compiled
 # output's `import '@frontierjs/mesa/runtime.js'` resolves; it unlinks them in a
 # finally, so these only survive a hard-killed run. Nine reached a commit once.

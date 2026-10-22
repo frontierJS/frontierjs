@@ -278,10 +278,7 @@ export default createService({
     // credential auth issued, so editing them here would produce a row that
     // describes a key differently from the thing doing the authenticating —
     // rotate instead: revoke, and mint a new one.
-    const patch = narrowPatch($.data as Record<string, unknown>, [
-      'userId', 'credentialId', 'tokenHint', 'scopes', 'expiresAt',
-      'revokedAt', 'lastUsedAt', 'totalUses', 'usageDate', 'usesOnDate', 'createdBy',
-    ])
+    const patch = narrowPatch($.data as Record<string, unknown>)
 
     if (changesNothing(patch)) return present(existing)
     return present(await db().apiKey.update({ where: { id: existing.id }, data: patch }))
@@ -316,7 +313,7 @@ export default createService({
     return present(await db().apiKey.update({
       where:  { id: row.id },
       data:   { revokedAt: new Date().toISOString(), credentialId: null },
-      system: ['credentialId'],
+      system: ['credentialId', 'revokedAt'],
     }))
   },
 

@@ -12,13 +12,11 @@ import { formatEvent, parseEvents } from '../../src/sse/sse.js'
 // Every way `text` can arrive, one cut at a time, read incrementally.
 function readInChunks(text, cut) {
   const events = []
-  let rest = ''
-  let lastId = ''
+  let state
   for (const chunk of [text.slice(0, cut), text.slice(cut)]) {
-    const out = parseEvents(rest + chunk, lastId)
+    const out = parseEvents(chunk, state)
     events.push(...out.events)
-    rest = out.rest
-    lastId = out.lastId
+    state = out.state
   }
   return events
 }
@@ -31,8 +29,8 @@ test('sse: what formatEvent writes, parseEvents reads back', function () {
     { event: 'land', data: 'text', id: '7' },
     { event: 'done', data: null, retry: 3000 },
   ]
-  const { events, rest } = parseEvents(sent.map(formatEvent).join(''))
-  assert.equal(rest, '')
+  const { events, state } = parseEvents(sent.map(formatEvent).join(''))
+  assert.equal(state.held, 0)
   assert.deepEqual(events, [
     { event: 'message', data: { hits: [1, 2], q: 'line\nbreak' }, id: '' },
     { event: 'land', data: 'text', id: '7' },
@@ -77,25 +75,47 @@ test('sse: an empty data line dispatches an empty string; a block with no data d
 })
 
 test('sse: an id persists across events until another replaces it, and one holding NUL is ignored', function () {
-  const { events, lastId } = parseEvents('id: 1\ndata: a\n\ndata: b\n\nid: 2\u0000\ndata: c\n\nid\ndata: d\n\n')
+  const { events } = parseEvents('id: 1\ndata: a\n\ndata: b\n\nid: 2\u0000\ndata: c\n\nid\ndata: d\n\n')
   assert.deepEqual(events.map((e) => e.id), ['1', '1', '1', ''])
-  assert.equal(lastId, '')
 })
 
-test('sse: an unfinished event stays in rest and commits nothing', function () {
-  const out = parseEvents('data: 1\n\nid: 9\ndata: 2\n', 'prev')
-  assert.equal(out.events.length, 1)
-  assert.equal(out.events[0].id, 'prev')
-  assert.equal(out.rest, 'id: 9\ndata: 2\n')
-  assert.equal(out.lastId, 'prev', 'the id line of an unfinished event has not been read yet')
+test('sse: an unfinished event is held, open, and commits nothing until its blank line', function () {
+  const first = parseEvents('data: 1\n\nid: 9\ndata: 2\n')
+  assert.equal(first.events.length, 1)
+  assert.equal(first.events[0].id, '')
+  assert.equal(first.state.open, true)
+  assert.equal(first.state.held, 1)
+  const next = parseEvents('\n', first.state)
+  assert.deepEqual(next.events, [{ event: 'message', data: 2, id: '9' }])
+  assert.equal(next.state.open, false)
+  assert.equal(next.state.held, 0)
 })
 
-test('sse: a CR that ends the text is held, since the LF of its CRLF may be the next chunk', function () {
-  const out = parseEvents('data: a\r')
-  assert.equal(out.rest, 'data: a\r')
+test('sse: a CR that ends a chunk ends its line, and an LF opening the next is the same break', function () {
+  const first = parseEvents('data: a\r')
+  assert.equal(first.state.held, 1)
   // Read as two breaks, the LF would be a blank line and dispatch `a` alone.
-  const { events } = parseEvents(out.rest + '\ndata: b\r\n\r\n')
+  const { events } = parseEvents('\ndata: b\r\n\r\n', first.state)
   assert.deepEqual(events.map((e) => e.data), ['a\nb'], 'the CRLF is one line break, not two')
+})
+
+test('sse: a stream whose last break is a bare CR needs nothing at its end', function () {
+  const { events } = parseEvents('data: a\r\r')
+  assert.deepEqual(events.map((e) => e.data), ['a'])
+})
+
+test('sse: one event in many chunks costs time linear in the chunks', function () {
+  // Rescanning the whole pending event per chunk took 1.8 s at 4000 chunks.
+  const chunks = 20000
+  const started = Date.now()
+  let state
+  const first = parseEvents('data: a\n', state)
+  state = first.state
+  for (let k = 0; k < chunks; k++) state = parseEvents('data: xxxxxxxx\n', state).state
+  const out = parseEvents('\n', state)
+  assert.equal(out.events.length, 1)
+  assert.equal(out.events[0].data.split('\n').length, chunks + 1)
+  assert.ok(Date.now() - started < 1000, `${chunks} chunks took ${Date.now() - started} ms`)
 })
 
 test('sse: unknown fields and a field with no colon are ignored', function () {

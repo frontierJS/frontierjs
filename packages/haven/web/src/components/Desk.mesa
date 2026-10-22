@@ -411,11 +411,12 @@
   }
 
   const muted = (text) => [{ x: 0, text, color: TONES.muted }]
+  var DANGER = TONES.danger
 
   $: title = reply ? clip(`— the desk — ${reply.answer?.title || reply.question || reply.asking}${seen?.hidden ? ` · ${seen.hidden} snoozed` : ''} `, PANE.w - 2) : ''
   $: rows  = !reply ? []
     : reply.asking ? [muted(`"${clip(reply.asking, INNER - 40)}" -- reading Basecamp… ${Math.round((now - reply.at) / 1000)}s`)]
-    : reply.failed ? wrap(`the desk could not answer: ${reply.failed}`, INNER).map((t) => [{ x: 0, text: t, color: TONES.danger }])
+    : reply.failed ? wrap(`the desk could not answer: ${reply.failed}`, INNER).map((t) => [{ x: 0, text: t, color: DANGER }])
     : body.slice(offset, offset + ROOM)
   $: picked = filters.find((f) => f.key === filter)
   $: listed = answer?.blocks.reduce((n, b) => n + (b.kind === 'list' ? b.items.length : 0), 0) ?? 0

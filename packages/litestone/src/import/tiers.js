@@ -104,7 +104,8 @@ const NOTED = [
   'polymorphic-candidate',        // @@arc or the (type, id) pair — no schema can say which
   'sti-candidate',
   'model-name-not-singular',      // a plural or underscore-led model name — Invariant 2 derives the accessor from the singular
-  'json-in-string-candidate',     // String @default("{}") / ("[]") — a Json column the source had no word for
+  'generated-name-collision',     // a model named for another's generated type (ProjectUpdate beside Project) — typegen refuses it (FJS-D1282)
+  'json-in-string-candidate',    // String @default("{}") / ("[]") — a Json column the source had no word for
   'declared-polymorphic-open',
   'declared-polymorphic-closed',
   'composite-unique-over-nullable',  // handled: nullsDistinct: true (FJS-D130)

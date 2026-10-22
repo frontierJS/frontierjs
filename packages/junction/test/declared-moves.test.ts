@@ -322,3 +322,51 @@ describe('a write by id on a row the caller can read and not change', () => {
     expect(await send('staff', 'PATCH', 99999, { title: 'x' })).toBe(404)
   })
 })
+
+// `restore` un-deletes, which only a `@@softDelete` model has to un-delete; on
+// any other the call reached Litestone's refusal and answered 400 while the
+// manifest, OpenAPI and MCP offered the verb (`FJS-1916`). Paired with the
+// model that does declare it, so the cut is about the schema and nothing else.
+describe('restore is offered only where the model soft-deletes', () => {
+  const SOFT = `
+database main { path "./a.db" }
+model Color { id Int @id @default(autoincrement())  name String @default("c")  @@allow(all, true)  @@db(main) }
+model Note  { id Int @id @default(autoincrement())  deletedAt DateTime?  @@allow(all, true)  @@softDelete  @@db(main) }
+`
+  async function boot(defs: Array<Record<string, unknown>>) {
+    const sdb = await createClient({ databases: ':memory:', schema: SOFT })
+    const { createApp, defaultConfig } = await import('../index.ts')
+    const a = createApp({
+      db: sdb,
+      config: { port: 0, http: { ...defaultConfig.http, drainTimeout: 50 } },
+    } as never)
+    const built = defs.map(d => a.services.register(buildService(d as never)))
+    return { a, built }
+  }
+
+  test('a model with no @@softDelete lists no restore and answers it 405', async () => {
+    const { a, built: [colors] } = await boot([{ name: 'colors', model: 'Color' }])
+    expect(colors.describe().methods).not.toContain('restore')
+    expect(colors.describe().methods).toContain('remove')
+    await a.start()
+    const res = await a.http.fetch(new Request('http://localhost/colors/1', {
+      method: 'PUT', headers: { 'content-type': 'application/json', 'x-service-method': 'restore' }, body: '{}',
+    }))
+    await a.stop()
+    expect(res.status).toBe(405)
+  })
+
+  test('a model with @@softDelete, and a junction-side softDelete column, keep restore', async () => {
+    const { built: [notes, colors] } = await boot([
+      { name: 'notes', model: 'Note' },
+      { name: 'colors', model: 'Color', softDelete: 'deletedAt' },
+    ])
+    expect(notes.describe().methods).toContain('restore')
+    expect(colors.describe().methods).toContain('restore')
+  })
+
+  test('a methods allow-list naming restore over a hard-deleting model drops it', async () => {
+    const { built: [colors] } = await boot([{ name: 'colors', model: 'Color', methods: ['find', 'restore'] }])
+    expect(colors.describe().methods).toEqual(['find'])
+  })
+})

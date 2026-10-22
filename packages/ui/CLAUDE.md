@@ -106,7 +106,9 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   page names no sort shape of its own. **With no `onsort` the Table sorts its own
   rows** (`FJS-D672`, `comparatorFor` from `@frontierjs/toolbelt/query`); a Table
   over ONE PAGE of a server list states `onsort={list.sort}` or it sorts the
-  page and not the list.
+  page and not the list. **It holds no schema, so a column the model declares
+  `@collate(nocase)` sorts BINARY there unless the page passes
+  `collations={resource.collations}`** (`FJS-3402`).
 - **A `Table` column that holds row actions declares `hideLabel: true`.** Not an
   empty `label` — a `<th>` with no text announces nothing for a column that has
   a control in every row, and the app's own a11y pass only checks `scope`, so

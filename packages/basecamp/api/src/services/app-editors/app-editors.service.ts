@@ -49,7 +49,7 @@ export default createService({
 
   async patch() {
     await getScoped('appEditor', 'App editor')
-    const patch = narrowPatch($.data as Record<string, unknown>, ['appId', 'userId'])
+    const patch = narrowPatch($.data as Record<string, unknown>)
     if (changesNothing(patch)) return getScoped('appEditor', 'App editor')
     return db().appEditor.update({ where: { id: $.id as string }, data: patch })
   },

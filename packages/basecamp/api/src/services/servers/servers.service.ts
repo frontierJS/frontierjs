@@ -262,7 +262,7 @@ export default createService({
     // checked types, so $.data is a partial Server. narrowPatch drops the
     // rest — a client must not move a server between workspaces, rewrite its
     // slug, or set status behind the drain/reboot transitions.
-    const patch = narrowPatch($.data as Record<string, unknown>, ['slug', 'status'])
+    const patch = narrowPatch($.data as Record<string, unknown>)
 
     if (changesNothing(patch)) return getScoped('server', 'Server')
 

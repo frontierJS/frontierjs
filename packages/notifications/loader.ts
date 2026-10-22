@@ -1,31 +1,20 @@
 // loader.ts — where an app's notifications are, and what naming one costs.
 //
-// `notifications/` beside `createApp({ root })` (`FJS-D1080`). Never probed
-// from the entry: under a test runner or a drive the entry is the runner, and
-// every definition then threw unnamed on its first send.
+// Any `*.notification.ts` under `createApp({ root })` (`FJS-D1141`), so a
+// notification lives in its domain folder. The root is never probed from the
+// entry: under a test runner or a drive the entry is the runner, and every
+// definition then threw unnamed on its first send.
 //
 // The file name is the type. `OrderPaid.notification.ts` is `OrderPaid` —
 // verbatim, before the suffix, the same rule `<name>.job.ts` follows. A module
 // exporting no factory is a warning rather than a skip, because the shape it
 // is most likely to be is a notification somebody forgot to default-export.
 
-import { resolve, join, basename }  from 'node:path'
-import { existsSync, statSync }       from 'node:fs'
+import { resolve, basename, sep }    from 'node:path'
 import { isNotificationFactory, stampType } from './define.ts'
 import type { NotificationFactory }   from './define.ts'
 
 const SUFFIX = '.notification.ts'
-
-const isDir = (p: string): boolean => {
-  try { return existsSync(p) && statSync(p).isDirectory() } catch { return false }
-}
-
-/** `notifications/` under the app's root, or null when there is none. */
-export function notificationsDirOf(root: string | null | undefined): string | null {
-  if (!root) return null
-  const dir = join(root, 'notifications')
-  return isDir(dir) ? dir : null
-}
 
 /** Every notification this app declares, by type. Read-only at runtime and not
  *  only in the types: a writable registry is one an app can add a type to at
@@ -46,8 +35,8 @@ export function sealRegistry(m: Map<string, NotificationFactory<unknown>>): Noti
       value: () => {
         throw new Error(
           `[notifications] the registry is read-only — \`${method}\` is refused. ` +
-          'What this app can send is decided at boot by the files in its ' +
-          'notifications directory; adding a type at runtime makes the build ' +
+          'What this app can send is decided at boot by the notification files in its ' +
+          'app; adding a type at runtime makes the build ' +
           'disagree with its own snapshot and with every reader of it.'
         )
       },
@@ -59,19 +48,20 @@ export function sealRegistry(m: Map<string, NotificationFactory<unknown>>): Noti
 async function findFiles(dir: string): Promise<string[]> {
   const out: string[] = []
   try {
-    // scan() throws when the directory vanished after notificationsDirOf saw it.
+    // scan() throws when the directory is not there.
     const glob = new Bun.Glob(`**/*${SUFFIX}`)
-    for await (const f of glob.scan({ cwd: dir, absolute: false })) out.push(resolve(dir, f))
+    for await (const f of glob.scan({ cwd: dir, absolute: false }))
+      if (!f.split(sep).includes('node_modules')) out.push(resolve(dir, f))
   } catch {
     return []
   }
   return out.sort()
 }
 
-export async function loadNotifications(dir: string): Promise<NotificationRegistry> {
+export async function loadNotifications(root: string): Promise<NotificationRegistry> {
   const registry = new Map<string, NotificationFactory<unknown>>()
 
-  for (const file of await findFiles(dir)) {
+  for (const file of await findFiles(root)) {
     const type = basename(file, SUFFIX)
 
     let mod: Record<string, unknown>

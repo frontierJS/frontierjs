@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { buildRegistry, uniqueCommands, pruneCache } from '../core/registry.js'
-import { mkdirSync, writeFileSync, rmSync, mkdtempSync, readdirSync, utimesSync } from 'fs'
+import { mkdirSync, writeFileSync, rmSync, mkdtempSync, readdirSync, utimesSync, existsSync, readFileSync } from 'fs'
 import { resolve, dirname, join } from 'path'
 import { tmpdir } from 'os'
 import { fileURLToPath } from 'url'
@@ -63,6 +63,17 @@ describe('buildRegistry', () => {
       'utils:vpn',
     ]
     expect(personal.filter(name => registry.has(name))).toEqual([])
+  })
+
+  // FJS-3296: the legacy CapRover deploy (a bare `_steps/` on deploy's index,
+  // reached when no `deploy` block named a server) and `env:pull --from
+  // caprover` outlived the commands that fed them.
+  test('deploy ships no legacy CapRover steps and env:pull no CapRover source', () => {
+    const deployDir = resolve(ROOT, 'commands/deploy')
+    expect(existsSync(resolve(deployDir, '_steps'))).toBe(false)
+    expect(readFileSync(resolve(deployDir, 'index.md'), 'utf8')).not.toMatch(/caprover/i)
+    const pull = readFileSync(resolve(ROOT, 'commands/env/pull.md'), 'utf8')
+    expect(pull).not.toMatch(/caprover|captain/i)
   })
 
   test('every entry has a non-empty title', () => {

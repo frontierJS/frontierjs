@@ -35,7 +35,6 @@ import { db, shops, DEFAULT_SHOP, DEV_KEY, STORAGE_ROOT, TIME_ZONE_FLOOR } from 
 import { perShopAuth }                          from './core/auth.ts'
 import { shopGateLevel, SYSTEM }                from './core/gate.ts'
 import { joinChannels }                         from './core/channels.ts'
-import { commitmentHooks }                      from './core/commitments.ts'
 import { cartClaim, CART_HEADER }              from './domain/shop'
 import { IDP_URL }                              from './providers/idp/sink.ts'
 import { createConduitMailer, MAIL_TARGET }     from './providers/mail/mailer.ts'
@@ -497,11 +496,10 @@ app.configure(outbox({ intervalMs: 1_000 }))
 // as every other billing date here. Loaded rather than read with `configFor`,
 // because a sweep reaches a shop cold and `configFor` would answer the floor.
 //
-// A period closing is a renewal, and `hooks` is what that close owes — the next
-// period and its invoice, in the transaction that closed it (`FJS-D368`).
+// What a move owes is in `domain/billing/renewal.commitments.ts`, found by its
+// suffix (`FJS-D1141`).
 app.configure(commitments({
   timeZone: async (shop) => (shop ? await app.loadTenantConfig(shop) : app.configFor()).timeZone as string,
-  hooks:    commitmentHooks(() => app.jobs as never),
 }))
 
 // ─── Automations ──────────────────────────────────────────────────────────

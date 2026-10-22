@@ -24,25 +24,12 @@
 
 import { createService, BadRequest, NotFound, $ } from '@frontierjs/junction'
 import { requireSystemAdmin }         from '../../core/hooks.ts'
-import { db }                         from '../../core/resource.ts'
+import { db, narrowPatch }            from '../../core/resource.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 /** The primary key, which is a constant. `HubConfig.id` defaults to it, so this
  *  is the same string the schema writes and not a second opinion about it. */
 const HUB = 'hub'
-
-/**
- * The columns a caller may set. An allow-list rather than a strip: `id` would
- * let a caller mint a SECOND settings row, which is the one failure a singleton
- * has, and `updatedAt`/`version` are the boundary's.
- */
-const WRITABLE = [
-  'name', 'baseUrl', 'adminEmail',
-  'heartbeatTimeoutSeconds', 'sessionTtlHours',
-  'requireTwoFactorForOwners', 'allowApiKeyAuth', 'allowBotUsers',
-  'backupEnabled', 'backupCron', 'backupDestination',
-  'mailFromAddress', 'mailFromName',
-]
 
 export default createService({
   name:  'hub-config',
@@ -77,11 +64,10 @@ export default createService({
    * both be told to create.
    */
   async save() {
-    const data: Record<string, unknown> = {}
-    for (const key of WRITABLE) {
-      const value = ($.data as Record<string, unknown>)?.[key]
-      if (value !== undefined) data[key] = value
-    }
+    // `id` would let a caller mint a SECOND settings row, the one failure a
+    // singleton has; the schema withholds it with the stamps, and `version` is
+    // the precondition and not a column to write.
+    const { version, ...data } = narrowPatch($.data as Record<string, unknown>)
 
     const existing = await db().hubConfig.findFirst({ where: { id: HUB } })
     if (!existing) return await db().hubConfig.create({ data: { ...data, id: HUB } })
@@ -91,7 +77,6 @@ export default createService({
     // update MUST carry the revision it read, and litestone refuses one that
     // does not. Refused here instead, naming the field, because litestone's
     // own sentence explains the column and this one explains the call.
-    const version = ($.data as Record<string, unknown>)?.version
     if (version === undefined) throw new BadRequest(
       'Send `version` — the revision of the settings you are editing. It comes back ' +
       'with `current`, and it is what makes a second administrator saving over your ' +

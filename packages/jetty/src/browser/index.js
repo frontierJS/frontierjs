@@ -15,6 +15,7 @@
 
 import { auditCheck, requireSurface } from './permissions.js'
 import { idb }                        from './idb.js'
+import { isFreeUse }                  from '../audit/permission-catalog.js'
 
 // Dev mode detection: `__JETTY_DEV__` is replaced at build time by Vite's
 // `define` config (set in vite-config.js). Avoids any reference to
@@ -104,7 +105,11 @@ function makeSurface(surfaceKey, requiredPerm) {
   return new Proxy({}, {
     get(_, prop) {
       const native = getNative()
-      auditCheck(native?.runtime, surfaceKey, requiredPerm, IS_DEV)
+      // The audit's own list of members that need no permission, so the two
+      // never disagree about tabs.sendMessage.
+      if (!isFreeUse(surfaceKey, [prop])) {
+        auditCheck(native?.runtime, surfaceKey, requiredPerm, IS_DEV)
+      }
       const api = requireSurface(native?.[surfaceKey], surfaceKey, requiredPerm)
       const value = api[prop]
       // Bind methods so `browser.tabs.query(...)` works without losing `this`.

@@ -833,13 +833,13 @@ model Account {
 
 model Workspace {
   id        String        @id @default(uuid())
-  accountId String
+  accountId String @immutable
   account   Account       @relation(fields: [accountId], references: [id])
 
   name      String        @trim @length(1, 80)
   slug      String        @unique @trim @length(1, 64)
   type      WorkspaceType @default(team)
-  ownerId   String
+  ownerId   String @system
   settings  Json          @default("{}")
 
   // Suspension, which is NOT deletion. `deletedAt` means the tenant is gone
@@ -887,7 +887,7 @@ model Workspace {
 
 model WorkspaceMember {
   id          String        @id @default(uuid())
-  workspaceId String
+  workspaceId String @immutable
   workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   // @system: the person added is a User the caller cannot read, so addMember
   // names the key under `system:` once it has read them (FJS-1953).
@@ -1052,10 +1052,10 @@ model Secret {
   workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   name        String     @trim @length(1, 200)
-  kind        SecretKind @default(generic)
+  kind        SecretKind @default(generic) @immutable
   data        String     @default("{}") @encrypted
   isVerified  Boolean    @default(false)
-  createdBy   String?
+  createdBy   String? @immutable
 
   /// WHICH cloud a `provider_key` opens. Null for every other kind.
   ///
@@ -1068,7 +1068,7 @@ model Secret {
   /// It reuses `ProviderKind` rather than growing a second vendor vocabulary on
   /// `SecretKind`. Two enums listing clouds is two lists to keep in step, and
   /// the one that drifts is the one nothing reads.
-  providerKind ProviderKind?
+  providerKind ProviderKind? @immutable
 
   version     Int        @version
   createdAt   DateTime   @default(now())
@@ -1116,7 +1116,7 @@ model ApiKey {
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   // Whose permissions the key carries. A key is never more than its owner.
-  userId       String
+  userId       String @immutable
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // The auth Credential holding the HMAC. A bare id, no @relation — the same
@@ -1144,21 +1144,21 @@ model ApiKey {
   // field the caller was never meant to send (`FJS-095`).
   tokenHint    String    @system
 
-  scopes       String[]  @default([])
+  scopes       String[]  @default([]) @immutable
 
-  expiresAt    DateTime?
-  revokedAt    DateTime?
-  lastUsedAt   DateTime?
-  totalUses    Int       @default(0)
+  expiresAt    DateTime? @immutable
+  revokedAt    DateTime? @system
+  lastUsedAt   DateTime? @system
+  totalUses    Int       @default(0) @system
 
   // "Uses today" is the number the screen leads with, and it needs somewhere
   // to live: a counter plus the day it counts. Deriving it would mean a row
   // per call, which is an access log — a different thing, with a different
   // retention problem.
-  usageDate    String?
-  usesOnDate   Int       @default(0)
+  usageDate    String? @system
+  usesOnDate   Int       @default(0) @system
 
-  createdBy    String?
+  createdBy    String? @immutable
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @default(now()) @updatedAt
 
@@ -1183,7 +1183,7 @@ model Server {
   workspace        Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   name             String       @trim @length(1, 200)
-  slug             String       @trim
+  slug             String       @trim @immutable
   status           ServerStatus @default(pending)
   role             ServerRole   @default(general)
 
@@ -1495,10 +1495,10 @@ model Network {
   workspaceId String
 
   name        String   @trim
-  slug        String   @trim
+  slug        String   @trim @immutable
   type        String   @default("mesh")
   cidr        String   @default("10.0.0.0/16")
-  provider    String   @default("netbird")
+  provider    String   @default("netbird") @immutable
   config      Json     @default("{}")
 
   version     Int      @version
@@ -1538,7 +1538,7 @@ model Project {
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   name        String    @trim @length(1, 80)
-  slug        String    @trim @length(1, 64)
+  slug        String    @trim @length(1, 64) @immutable
   description String?
   status      String    @default("active")
   tags        Json      @default([])
@@ -1777,21 +1777,21 @@ model Variable {
 model Domain {
   id            String    @id @default(uuid())
   workspaceId   String
-  appId         String
+  appId         String @immutable
   app           App       @relation(fields: [appId], references: [id], onDelete: Cascade)
   routes        DomainRoute[]
 
-  hostname      String    @trim @length(1, 253)
+  hostname      String    @trim @length(1, 253) @immutable
   isPrimary     Boolean   @default(false)
   redirectTo    String?
   port          Int       @default(443)
   proxied       Boolean   @default(false)
   sslMode       String    @default("full_strict")
 
-  certSecretId  String?
-  certKind      String?
-  certIssuedAt  DateTime?
-  certExpiresAt DateTime?
+  certSecretId  String? @system
+  certKind      String? @system
+  certIssuedAt  DateTime? @system
+  certExpiresAt DateTime? @system
 
   version       Int       @version
   createdAt     DateTime  @default(now())
@@ -1813,7 +1813,7 @@ model Domain {
 model DomainRoute {
   id          String   @id @default(uuid())
   workspaceId String
-  domainId    String
+  domainId    String @immutable
   domain      Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
   appId       String
   app         App      @relation(fields: [appId], references: [id], onDelete: Cascade)
@@ -1950,27 +1950,27 @@ model AppNetwork {
 
 model Deployment {
   id                   String       @id @default(uuid())
-  appId                String
+  appId                String       @immutable
   app                  App          @relation(fields: [appId], references: [id], onDelete: Cascade)
-  environmentId        String?
+  environmentId        String?      @immutable
   environment          Environment? @relation(fields: [environmentId], references: [id])
   workspaceId          String
 
   status               DeployStatus @default(pending)
-  trigger              String       @default("manual")
-  fromImage            String?
-  toImage              String?
+  trigger              String       @default("manual") @immutable
+  fromImage            String?      @immutable
+  toImage              String?      @immutable
   commitSha            String?
-  commitMessage        String?
+  commitMessage        String?      @immutable
   branch               String?
-  author               String?
+  author               String?      @immutable
   builtImage           String?
-  previousDeploymentId String?
-  configSnapshot       Json         @default("{}")
-  triggeredBy          String?
+  previousDeploymentId String?      @immutable
+  configSnapshot       Json         @default("{}") @immutable
+  triggeredBy          String?      @immutable
   triggeredByUser      User?        @relation(fields: [triggeredBy], references: [id])
 
-  queuedAt             DateTime     @default(now())
+  queuedAt             DateTime     @default(now()) @immutable
   startedAt            DateTime?
   finishedAt           DateTime?
   durationMs           Int?
@@ -2152,7 +2152,7 @@ model Recipe {
   workspace      Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   name           String     @trim @length(1, 120)
-  slug           String     @trim
+  slug           String     @trim @immutable
   description    String?    @length(0, 500)
 
   // The script itself. Bounded so a paste cannot become a row nothing can
@@ -2166,10 +2166,10 @@ model Recipe {
   // Bookkeeping the list reads, written by the job. `runCount` is a counter
   // rather than a COUNT(*) because the runs it counts are pruned and the
   // number of times a script has been let loose on the fleet is not.
-  lastRunAt      DateTime?
-  runCount       Int        @default(0)
+  lastRunAt      DateTime? @system
+  runCount       Int        @default(0) @system
 
-  createdBy      String?
+  createdBy      String? @immutable
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @default(now()) @updatedAt
   deletedAt      DateTime?
@@ -2356,7 +2356,7 @@ model FeatureFlag {
 
   // The name an SDK asks for. Slug-shaped because it is an identifier in
   // somebody else's source code, not a title: `new-checkout-flow`.
-  key         String    @trim @slug @length(1, 120)
+  key         String    @trim @slug @length(1, 120) @immutable
   description String?
   type        FlagType  @default(boolean)
   tags        String[]  @default([])
@@ -2374,7 +2374,7 @@ model FeatureFlag {
   // to nobody is `isEnabled: false`, which is the state that already says it.
   rollout     Int       @default(100) @gte(0) @lte(100)
 
-  createdBy   String?
+  createdBy   String? @immutable
   version     Int       @version
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @default(now()) @updatedAt
@@ -2438,14 +2438,14 @@ model NotificationChannel {
   workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   name        String      @trim @length(1, 200)
-  kind        ChannelKind
+  kind        ChannelKind @immutable
   config      Json        @default("{}")
 
   // Bare id, no @relation — the same shape as Domain.certSecretId. Secret is
   // @@softDelete, so the row a channel points at is never actually removed,
   // and a channel whose secret was retired should say so rather than vanish
   // with it.
-  secretId    String?
+  secretId    String? @system
 
   // The plaintext credential, on the wire and nowhere else: the service lifts
   // it into a Secret row (@encrypted) and keeps `secretId`. @transient is what
@@ -2455,9 +2455,9 @@ model NotificationChannel {
   secret      String?     @transient @length(1, 4096) @label("Credential")
 
   isActive    Boolean     @default(true)
-  lastTestAt      DateTime?
-  lastDeliveryAt  DateTime?
-  createdBy   String?
+  lastTestAt      DateTime? @system
+  lastDeliveryAt  DateTime? @system
+  createdBy   String? @immutable
 
   version     Int         @version
   createdAt   DateTime    @default(now())
@@ -2725,7 +2725,7 @@ model Dashboard {
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   name        String    @trim @length(1, 120)
-  slug        String    @trim
+  slug        String    @trim @immutable
   description String?
 
   // An emoji, so it is stored as text with a length bound rather than as a
@@ -2737,7 +2737,7 @@ model Dashboard {
   // boolean here would be a shared switch that reads as a personal one.
   isPinned    Boolean   @default(false)
 
-  createdBy   String?
+  createdBy   String? @immutable
   version     Int       @version
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @default(now()) @updatedAt
@@ -3259,9 +3259,9 @@ model HubConfig {
 // there rather than discovered at the first send.
 //
 // Five deliberate deviations from the shipped shape, and three are one reason:
-// **every id in this app is a uuid**, so `id` and `contextId` are `String`
+// **every id in this app is a uuid**, so `id` and `subjectId` are `String`
 // where the package writes `Int`, and a relation back to this app's own `User`
-// is added. The fourth is `contextType`, which the package leaves unconstrained
+// is added. The fourth is `subjectType`, which the package leaves unconstrained
 // because it cannot know an app's subjects; this one can, so it is an enum and
 // the column carries a CHECK. The fifth is the update gate, below.
 //
@@ -3270,7 +3270,7 @@ model HubConfig {
 // below confines it to its recipient, which is a stronger confinement than a
 // tenant column and does not need one. What would change it is a bell menu that
 // shows only the workspace you are looking at: the subject is reachable through
-// `contextType`/`contextId` today, so that is a join rather than a column until
+// `subjectType`/`subjectId` today, so that is a join rather than a column until
 // somebody measures it.
 model Notification {
   id          String    @id @default(uuid())
@@ -3296,8 +3296,8 @@ model Notification {
   // dead links rather than cascading them away. The one column that CAN be
   // constrained is the type, and it is — `fli check`'s `polymorphic-subject`
   // asks exactly this of a pair like it.
-  contextType NotificationContext?
-  contextId   String?
+  subjectType NotificationContext?
+  subjectId   String?
 
   // What the definition's `key` answered, so a retried send finds the row its
   // first attempt wrote rather than writing a second (FJS-D872).

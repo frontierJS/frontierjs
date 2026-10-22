@@ -296,7 +296,13 @@ src/
                          **`orderBy` and `select` are translated by junction and
                          may not be spelled here** — SQLite throws on the wire's
                          `-id`, and the throw fell through to the cache, so the
-                         whole feature was off and green (`FJS-1179`)
+                         whole feature was off and green (`FJS-1179`).
+                         **A write lands the row the DEVICE can hold, not the
+                         one the server answered** (`FJS-2249`): `@from` and the
+                         other server-owned columns are left off, and a
+                         `select`ed slice is merged over the held row (one it
+                         does not hold is skipped); a slice with no key takes
+                         nothing off
     local-db-open.js     one line, its own module — `new Worker(new URL(…))` is
                          a STATIC signal, so written inline it put the whole
                          litestone client in every app. The build stubs this
@@ -891,7 +897,9 @@ bench/                   — `bun run bench`: brotli bytes per target, the last 
   the file already watches some other path on the same import, which says nothing
   about the component that watches nothing, and that is the component that
   shipped the bug. Measured free: 0 warnings over all 218 `.mesa` in this repo.
-  A deliberate one-time read says `var`. **A `static` build holds every hint
+  A deliberate one-time read says `var`. **`fli check`'s `mesa-compiles` compiles
+  `'strict'` too and fails a file on a hint** (`mesa-check.js`), so a hint the
+  dev server prints is a finding there (`FJS-3173`). **A `static` build holds every hint
   until the prune step** and prints the ones whose module a kept chunk carries
   (`FJS-D629`). The record is on the shared context because the island build is
   a second Vite build. A hint that vanishes from a static build is NOT a fixed
@@ -982,6 +990,7 @@ REAL build of one resource file for `build/mcp-build.js`, `test/mcp-relay.test.j
 the relay's tool table and the handshake against a stand-in parent window, and `example`'s `verify:mcp-view` runs a built view in ext-apps' reference host on a third origin. `test:widgets` builds the fixture and
 drives a plain host page in Chrome, which is the only place shadow isolation,
 custom element upgrade and a delegated click inside a shadow root are decidable.
+**`bun run test:connect-app` for `connectApp()` or a Resource built with `{ app }`** — a bundled page over a hosted app, and the socket at `url` + `/ws` through a forward that upgrades it; `test/connect-app.test.js` has no socket.
 **`bun run test:installable` for `postbuild/manifest.js`** — the grader restates
 Chrome's install rules, and only Chrome can say whether it still restates them.
 `docs/TESTING.md` has the full map.

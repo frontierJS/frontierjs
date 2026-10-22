@@ -349,6 +349,15 @@ describe('over this repo', () => {
     expect(packageDirs(REPO).some(p => p.name === 'sierra')).toBe(true)
   })
 
+  test('a report screen names verify:reports, and an example screen is not orion\'s (FJS-3396)', () => {
+    // Orion's row once named a bare `web/`, which every app's web/ matched.
+    const run = files => provesFor(REPO, { files, rows: runnables(REPO) }).flatMap(r => r.targets.map(t => `${t.dir}:${t.name}`))
+    const got = run(['example/web/src/routes/reports/index.mesa', 'example/web/test/verify-reports.mjs'])
+    expect(got.some(s => s.includes('verify:reports'))).toBe(true)
+    expect(got.some(s => s.includes('verify:automations'))).toBe(false)
+    expect(run(['packages/orion/web/src/App.mesa']).some(s => s.includes('verify:automations'))).toBe(true)
+  })
+
   test('strongest match first, so the top of the list is the thing to run', () => {
     const rows = provesFor(REPO, {
       files: ['packages/sierra/src/build/prerender.js', 'packages/junction/src/core/app.ts'],

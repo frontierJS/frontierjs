@@ -69,10 +69,8 @@ model AuditEvent {
   /// because it points at a different model per row and a foreign key names one
   /// table.
   ///
-  /// **This spelling is the catalog's preference for anything new.**
-  /// `Notification` in this tree spells the same idea
-  /// `contextType`/`contextId`, because its package chose first. Two spellings,
-  /// one concept, and neither is wrong — see references/README.md.
+  /// **This is the one spelling of the idea** — `Notification` in this tree
+  /// carries the same `subjectType`/`subjectId` pair (`FJS-D1361`).
   ///
   /// Required here where a notification's is optional: an audit row with no
   /// subject records that something happened to nothing.

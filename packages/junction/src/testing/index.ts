@@ -239,7 +239,11 @@ export interface TestResponse {
   // Parsed JSON, or null. `unknown` because it came off the wire and nothing
   // here knows its shape — an assertion on a field states the shape it expects.
   body:    unknown
-  text:    string           // raw body text
+  text:    string           // the bytes decoded as UTF-8
+  // The body exactly as sent. `text` is lossy for a file: a byte that is not
+  // valid UTF-8 comes back as U+FFFD, so a raw route that answers a file is
+  // asserted on this.
+  bytes:   Uint8Array
 }
 
 export interface TestRequest {
@@ -311,7 +315,8 @@ export function request(app: App): Pick<TestRequest, 'get' | 'post' | 'patch' | 
         )
       }
 
-      const rawText = await response.text()
+      const bytes = new Uint8Array(await response.arrayBuffer())
+      const rawText = new TextDecoder().decode(bytes)
       let parsed: unknown = null
       try {
         parsed = rawText ? JSON.parse(rawText) : null
@@ -327,6 +332,7 @@ export function request(app: App): Pick<TestRequest, 'get' | 'post' | 'patch' | 
         headers,
         body:    parsed,
         text:    rawText,
+        bytes,
       }
     }
 

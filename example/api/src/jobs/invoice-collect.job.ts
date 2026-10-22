@@ -6,7 +6,7 @@
 // and a renewal that rolled back because a card was declined would leave a
 // customer un-billed for a month they used.
 //
-// So the renewal commits — a period closing, `api/src/core/commitments.ts` —
+// So the renewal commits — a period closing, `domain/billing/renewal.commitments.ts` —
 // and this is dispatched after it. A provider outage
 // costs a retry here and nothing upstream.
 

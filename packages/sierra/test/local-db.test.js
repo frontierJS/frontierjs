@@ -792,3 +792,93 @@ describe('the warm against a device with real foreign keys', () => {
     expect(said.filter(l => l.includes('Plain')).length).toBe(1)
   })
 })
+
+// ─── a row the device cannot write as the server answered it (FJS-2249) ────────
+//
+// The write-through used to hand the server's answer to `upsertMany` as it came.
+// Litestone refuses two shapes of that answer by name and the whole batch with
+// them: a column that is `@from` another model, and a row missing a required
+// column (a `select`ed read). Both were one console warning and a device that
+// held nothing of the model.
+describe('a row the device cannot write as the server answered it', () => {
+  const DEVICE_SOURCE = `
+model Folder {
+  id        String @id
+  name      String
+  ownerId   String
+  itemCount Int    @from(Item, count: true)
+  items     Item[]
+  @@gate(0.0.0.0)
+  @@sync(server)
+}
+model Item { id String @id  title String  folderId String  folder Folder @relation(fields: [folderId], references: [id])  @@gate(0.0.0.0)  @@sync(server) }
+`
+  let deviceSchema
+
+  /** A device that refuses what litestone refuses: a `@from` key, and a row lacking a required column. */
+  function strictDevice() {
+    const held = new Map()
+    const table = {
+      upsertMany: ({ data }) => {
+        const bad = (r) => 'itemCount' in r
+          ? 'itemCount is @from(Item, count) — it is a subquery, not a column, so it cannot be written'
+          : (r.name == null || r.ownerId == null) ? 'ownerId is required' : null
+        const i = data.findIndex(bad)
+        if (i >= 0)
+          return Promise.reject(Object.assign(new Error(`Folder: data[${i}] of ${data.length} failed — nothing in the batch was written. ${bad(data[i])}`),
+            { name: 'ValidationError' }))
+        for (const r of data) held.set(r.id, r)
+        return Promise.resolve({ count: data.length })
+      },
+      findMany: ({ where } = {}) => {
+        const ids = where?.id?.in
+        return Promise.resolve([...held.values()].filter(r => !ids || ids.includes(r.id)))
+      },
+      deleteMany: ({ where }) => {
+        for (const k of where?.id?.in ?? []) held.delete(k)
+        return Promise.resolve({ count: 0 })
+      },
+    }
+    const client = { $models: ['folder'], $close: () => Promise.resolve(true), asSystem: () => ({ folder: table }) }
+    return { client, held }
+  }
+
+  beforeEach(async () => {
+    const dir  = mkdtempSync(join(tmpdir(), 'sierra-localdb-device-'))
+    const path = join(dir, 'schema.lite')
+    writeFileSync(path, DEVICE_SOURCE)
+    deviceSchema = (await generateSchemas(path, () => {}, SIERRA_ROOT)).device.parsed
+  })
+
+  test('a @from column is left off the row, and the rest of it lands', async () => {
+    const d = strictDevice()
+    useDevice(d, { deviceSchema })
+    expect(await writeThrough('Folder', [{ id: 'F1', name: 'a', ownerId: 'u', itemCount: 4 }])).toBe(true)
+    expect(d.held.get('F1')).toEqual({ id: 'F1', name: 'a', ownerId: 'u' })
+    expect(console.warn).not.toHaveBeenCalled()
+  })
+
+  test('a selected partial row updates the row the device holds, and skips one it does not', async () => {
+    const d = strictDevice()
+    useDevice(d, { deviceSchema })
+    await writeThrough('Folder', [{ id: 'F1', name: 'old', ownerId: 'u' }])
+
+    expect(await writeThrough('Folder', [
+      { id: 'F1', name: 'new' },
+      { id: 'F2', name: 'never held' },
+      { id: 'F3', name: 'whole', ownerId: 'v' },
+    ])).toBe(true)
+    expect(d.held.get('F1')).toEqual({ id: 'F1', name: 'new', ownerId: 'u' })
+    expect(d.held.has('F2')).toBe(false)
+    expect(d.held.get('F3')).toEqual({ id: 'F3', name: 'whole', ownerId: 'v' })
+    expect(console.warn).not.toHaveBeenCalled()
+  })
+
+  test('a whole answer whose select left out the key takes nothing off the device', async () => {
+    const d = strictDevice()
+    useDevice(d, { deviceSchema })
+    await writeThrough('Folder', [{ id: 'F1', name: 'a', ownerId: 'u' }])
+    await writeThrough('Folder', [{ name: 'a' }], { where: {}, idField: 'id' })
+    expect(d.held.has('F1')).toBe(true)
+  })
+})

@@ -6,7 +6,7 @@
   import WalkIn from '@/components/WalkIn.mesa'
   import Booth from '@/components/Booth.mesa'
 
-  const slug = String(page.query.room ?? '')
+  var slug = String(page.query.room ?? '')
   const mine = /^booth-\d+-\d+$/.test(slug)
 </script>
 

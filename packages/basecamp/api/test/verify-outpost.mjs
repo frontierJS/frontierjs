@@ -95,6 +95,23 @@ function startCaddy() {
       caddyConfig = { apps: { http: { servers: { ingress: data } } } }
       return answer(200)
     }
+    // Outpost reads the order back after every write and PATCHes the array to
+    // settle it, then sets the access log; a stand-in without these fails every
+    // /route at its last step, after the route landed, so no rebind is asked.
+    if (req.method === 'POST' && path === '/config/logging' && caddyConfig) {
+      caddyConfig.logging = data
+      return answer(200)
+    }
+    if (req.method === 'POST' && path === '/config/apps/http/servers/ingress/logs' && caddyConfig) {
+      caddyConfig.apps.http.servers.ingress.logs = data
+      return answer(200)
+    }
+    if (path === '/config/apps/http/servers/ingress/routes' && req.method === 'GET')
+      return caddyConfig ? answer(200, caddyRoutes()) : answer(400, { error: 'invalid traversal path at: config/apps/http/servers/ingress' })
+    if (path === '/config/apps/http/servers/ingress/routes' && req.method === 'PATCH') {
+      caddyConfig.apps.http.servers.ingress.routes = data
+      return answer(200)
+    }
     if (req.method === 'POST' && path === '/config/apps/http/servers/ingress/routes') {
       if (!caddyConfig) return answer(400, { error: 'invalid traversal path at: config/apps/http/servers/ingress' })
       caddyRoutes().push(data)

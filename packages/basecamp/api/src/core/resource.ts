@@ -10,8 +10,9 @@
 // so the ones with real behavior (servers' drain/heartbeat, deployments'
 // job handoff) read as themselves rather than as config for a base class.
 
-import { NotFound, $ } from '@frontierjs/junction'
+import { NotFound, $, findWindow, serviceAccessor, accessorCandidates } from '@frontierjs/junction'
 import type { ServiceContext } from '@frontierjs/junction'
+import { generateJsonSchema } from '@frontierjs/litestone'
 import { normalizeOrderBy, normalizeSelect, comparatorFor, type SortParam, type SelectParam } from '@frontierjs/toolbelt/query'
 
 // ─── Reading the call ────────────────────────────────────────────────────
@@ -62,22 +63,25 @@ export function slugify(s: string): string {
  * for every read, and a restated clause is the one that disagrees when the
  * declaration moves.
  *
- * `opts.orderBy` is the service's default, and the caller's `$orderBy` and
- * `$select` win over it: junction refuses a directive the method never read,
- * and this is where every list here reads them.
+ * `opts.orderBy` is the service's default, and the caller's `$orderBy`,
+ * `$select` and `$after` win over it: junction refuses a directive the method
+ * never read, and this is where every list here reads them. `$after` is read
+ * here and not passed in, so a caller of this cannot forget it and answer page
+ * one to every press of "load more" (`FJS-D145`); `findWindow` owns the
+ * cursor path and the `endCursor` every list carries.
  */
 export async function findScoped(
   accessor: string,
   opts:     { where?: Record<string, unknown>; limit: number; offset: number; orderBy?: Record<string, unknown> | Record<string, unknown>[] },
 ) {
-  const { rows, total } = await db()[accessor].findManyAndCount({
+  const { after } = ($.directives ?? {}) as { after?: string }
+  return findWindow(db()[accessor], {
     where:   opts.where ?? {},
     limit:   opts.limit,
     offset:  opts.offset,
     orderBy: callerOrder(opts.orderBy ?? { createdAt: 'desc' }),
     ...callerSelect(),
-  })
-  return { total, limit: opts.limit, offset: opts.offset, data: rows }
+  }, after || undefined, `The ${accessor} list`)
 }
 
 /**
@@ -158,18 +162,70 @@ export function deriveSlug(ctx: ServiceContext): void {
   if (typeof data.name === 'string' && !data.slug) data.slug = slugify(data.name)
 }
 
+// ─── Writes: what a patch may not name ───────────────────────────────────
+
+/**
+ * The columns a caller never names in a patch, per model, read off litestone's
+ * update schema: the row stamps, the tenant column, a set-once
+ * `@immutable` column and the field a `@@transitions` moves, and the key
+ * column(s), which the body carries. A client echoing
+ * back the row it fetched names all of them, so they are dropped.
+ *
+ * Three readOnly kinds are left to the Data boundary. `version` rides along as a
+ * precondition; a claimed mirror's column is the Provider verb's input; and a
+ * `@system` column is refused BY NAME there, which a drop here would turn into
+ * a 200 that wrote nothing.
+ */
+const KEPT = new Set(['version', 'mirror', 'system'])
+const unwritableCache = new WeakMap<object, Map<string, Set<string>>>()
+
+function unwritableFor(models: string[]): Set<string> {
+  const schema = db().$schema as object
+  let byModel = unwritableCache.get(schema)
+  if (!byModel) {
+    byModel = new Map()
+    const defs = (generateJsonSchema(schema as never, {
+      mode: 'update', includeTimestamps: true, includeDeletedAt: true,
+    }) as { $defs: Record<string, { properties?: Record<string, Record<string, unknown>> }> }).$defs
+    for (const [name, def] of Object.entries(defs))
+      byModel.set(name, new Set(Object.entries(def.properties ?? {})
+        .filter(([, p]) => p.readOnly === true &&
+          !KEPT.has(p['x-litestone-kind'] as string))
+        .map(([key]) => key)))
+    unwritableCache.set(schema, byModel)
+  }
+  for (const model of models) {
+    const dropped = byModel.get(model)
+    if (dropped) return new Set([...dropped, ...primaryKeyOf(model)])
+  }
+  return new Set()
+}
+
+/** The key column(s), asked of the client: a patch body carries the row's own id. */
+function primaryKeyOf(model: string): string[] {
+  const client = db() as { $primaryKey(accessor: string): string[] }
+  return client.$primaryKey(model[0]!.toLowerCase() + model.slice(1))
+}
+
+/** The model names the call's service is over: its declared `model:`, else its own name. */
+function callModels(): string[] {
+  const svc = ($.app as { services: { get(n: string): { model?: string | null } | undefined } }).services.get($.service)
+  const accessor = serviceAccessor({ name: $.service, model: svc?.model })
+  return accessor ? accessorCandidates(accessor) : []
+}
+
 /**
  * Narrow a validated patch payload to what a client may actually change.
  *
- * Key presence, not `??` — an explicit null must CLEAR a nullable column
+ * What it drops is the schema's, read off the model of the call in progress --
+ * a list here would be the policy stated a second time, in a second language.
+ *
+ * Key presence, not `??` -- an explicit null must CLEAR a nullable column
  * (Invariant 9). With `??`, `{ ipAddress: null }` would mean "leave it alone"
  * and a decommissioned server would keep its old address forever.
  */
-export function narrowPatch(
-  data:      Record<string, unknown>,
-  immutable: string[] = [],
-): Record<string, unknown> {
-  const blocked = new Set(['id', 'workspaceId', 'createdAt', 'updatedAt', 'deletedAt', ...immutable])
+export function narrowPatch(data: Record<string, unknown>): Record<string, unknown> {
+  const blocked = unwritableFor(callModels())
   const patch: Record<string, unknown> = {}
   for (const key of Object.keys(data ?? {}))
     if (!blocked.has(key)) patch[key] = typeof data[key] === 'string' && key === 'name'

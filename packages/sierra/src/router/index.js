@@ -453,15 +453,21 @@ export function initRouter(tree, components, loaders = {}, options = {}, layouts
  * transport spelling loose in application code and one more thing to get wrong
  * the day a directive is added.
  *
+ * Resolves `true` when a navigation committed (a redirect that landed counts)
+ * and `false` when none did: a guard cancelled, the route failed to load, a
+ * newer navigation overtook it. A refusal is reported where it happens and does
+ * not reject, so a create-then-redirect reads this to tell the two apart.
+ *
  * @param {string} path
  * @param {Record<string, unknown>} [queryParams={}]
  * @param {{ scroll?: boolean | string, replace?: boolean, directives?: object }} [options={}]
+ * @returns {Promise<boolean>}
  */
 export async function goto(path, queryParams = {}, options = {}) {
   const { scroll = true, replace = false, directives } = options
   const params = directives ? { ...queryParams, ...directiveParams(directives) } : queryParams
   const url = buildUrl(path, params, _options.trailingSlash ?? 'always')
-  await _navigate(url, { replace, scroll })
+  return _navigate(url, { replace, scroll })
 }
 
 /**
@@ -726,7 +732,7 @@ function _restoreHistory(index) {
  * Core navigation function. All navigation goes through here.
  */
 async function _navigate(url, { replace = false, scroll = true, isPopstate = false, _hmr = false, _hops = 0 } = {}) {
-  if (!_tree) return
+  if (!_tree) return false
 
   if (_hops > MAX_REDIRECTS) {
     _reportError('redirect', url, new Error(
@@ -735,7 +741,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
     ))
     _w().pending = null
     _navigating = false
-    return
+    return false
   }
 
   const seq = ++_navSeq
@@ -756,7 +762,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
 
   if (!match) {
     console.warn(`[Sierra] No route found for: ${normalized}${_nearMiss(normalized)}`)
-    return
+    return false
   }
 
   const _fromNode = page.route
@@ -837,7 +843,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
 
       if (result === false) {
         if (isPopstate) _restoreHistory(historyIndexBefore)
-        return  // cancelled
+        return false  // cancelled
       }
 
       if (typeof result === 'string') {
@@ -846,7 +852,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
             `A guard returned ${JSON.stringify(result)} — a redirect target must be a path ` +
             'on this origin.',
           ))
-          return
+          return false
         }
         // Redirect. On popstate the entry the browser moved to is the one being
         // replaced, which is what a guard redirect means: the reader pressed
@@ -857,7 +863,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   }
 
   // A newer navigation started while a guard was awaiting.
-  if (seq !== _navSeq) return
+  if (seq !== _navSeq) return false
 
   // Save current scroll position before navigating away
   if (!isPopstate && !_hmr && !_options.history) {
@@ -872,7 +878,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
         `redirect: ${JSON.stringify(toNode.meta.redirect)} — a redirect target must be a path ` +
         'on this origin.',
       ))
-      return
+      return false
     }
     return _navigate(toNode.meta.redirect, { replace: true, scroll, _hops: _hops + 1 })
   }
@@ -902,7 +908,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
       _reportError('component', toNode.file ?? toNode.id, err)
       _w().pending = null
       _navigating = false
-      return
+      return false
     }
   }
 
@@ -919,7 +925,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
     ))
     _w().pending = null
     _navigating = false
-    return
+    return false
   }
 
   // Chain must be complete before activeRoute is committed below, or
@@ -1007,7 +1013,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   // Superseded while load() was in flight. Everything below is irreversible —
   // the address bar, then the commit — and `pending` is left alone because the
   // navigation that overtook this one owns it now.
-  if (seq !== _navSeq) return
+  if (seq !== _navSeq) return false
 
   // Update history. Wrapped because pushState is the one call here a browser can
   // refuse: a target it reads as cross-origin throws SecurityError, and an
@@ -1032,7 +1038,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
     _reportError('navigation', normalized + search + hash, err)
     _w().pending = null
     _navigating = false
-    return
+    return false
   }
 
   // Commit all signals atomically
@@ -1099,6 +1105,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   for (const hook of [..._afterHooks]) {
     hook({ from: fromContext, to: toContext })
   }
+  return true
 }
 
 /**

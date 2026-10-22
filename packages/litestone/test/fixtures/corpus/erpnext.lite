@@ -17040,7 +17040,7 @@ model TaskType {
   idx Int?
 }
 
-model ProjectUpdate {
+model ProjectUpdateEntry {
   id String @id @map("name")
   namingSeries String? @map("naming_series")
   project String
@@ -17049,7 +17049,7 @@ model ProjectUpdate {
   date DateTime?
   time DateTime?
   amendedFrom String? @map("amended_from")
-  amendedFromRef ProjectUpdate? @relation(fields: [amendedFrom], references: [id])
+  amendedFromRef ProjectUpdateEntry? @relation(fields: [amendedFrom], references: [id])
   owner String?
   creation DateTime?
   modified DateTime?

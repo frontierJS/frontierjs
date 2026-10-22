@@ -36,7 +36,7 @@ await queue.dispatch('send-email', { to: 'alice@example.com' })
 ```ts
 import { caravan } from '@frontierjs/caravan'
 
-// *.job.ts files load from jobs/ beside createApp({ root }) (FJS-D1080).
+// *.job.ts files load from anywhere under createApp({ root }) (FJS-D1141).
 const queue = caravan()
 
 app.configure(queue)
@@ -65,13 +65,13 @@ export default defineJob<{ to: string }>({
 })
 ```
 
-**A job in `jobs/` is named by its file.** `send-email.job.ts` is
+**A job is named by its file.** `send-email.job.ts` is
 `send-email` and the declaration states no name. A name that cannot be a
 filename (`deployment:run`) is stated as `name:`, and one that disagrees with
 the file is refused at load, naming both — a handler answering to `send-emial`
 while every dispatch says `send-email` fails as a job that silently never runs,
 which is the worst way this package can break. Rename the file, or register the
-job by hand with `queue.handle()` from outside `jobs/`.
+job by hand with `queue.handle()` from outside the app root.
 
 **The default export is also the dispatch handle.** Import it and the name is
 stated nowhere else:

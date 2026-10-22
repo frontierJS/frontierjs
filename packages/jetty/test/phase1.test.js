@@ -318,6 +318,7 @@ group('browser shim')
     },
     tabs: {
       query: async () => [{ id: 1, url: 'about:blank' }],
+      sendMessage: async (id, msg) => ({ id, msg }),
     },
   }
   _resetPermissionsCache()
@@ -334,6 +335,12 @@ group('browser shim')
   } else {
     bad('false-positive audit warning', warnLog.join('\n'))
   }
+
+  // tabs.sendMessage needs no permission (the audit agrees) → no warning
+  warnLog = []
+  const sent = await browser2.tabs.sendMessage(1, 'hi')
+  if (sent.msg === 'hi' && warnLog.length === 0) ok('tabs.sendMessage works and warns nothing without tabs')
+  else bad('tabs.sendMessage graded as needing tabs', warnLog.join('|'))
 
   // tabs.query → audit warns (perm not declared)
   warnLog = []

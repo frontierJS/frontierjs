@@ -16,7 +16,7 @@
 // without one would collect rows forever with nothing to deliver them to.
 
 import type { App, Plugin }  from '../../core/app.ts'
-import { enqueueOutbox, deliverOutbox, sweepOutbox, outboxCounts, outboxPass, assertOutboxShape,
+import { enqueueOutbox, enqueueOutboxOn, deliverOutbox, sweepOutbox, outboxCounts, outboxPass, assertOutboxShape,
          heldOutbox, releaseOutbox, dropOutbox, hasOutboxModel, OUTBOX_MODEL, DEFAULT_MAX_ATTEMPTS,
          DEFAULT_RETRY_BACKOFF_MS } from './engine.ts'
 import type { OutboxApi, OutboxCounts, DeliverOptions, DeliverResult } from './engine.ts'
@@ -114,7 +114,8 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
 
     register(app: App): void {
       api = {
-        enqueue: enqueueOutbox,
+        enqueue:   enqueueOutbox,
+        enqueueOn: (db, job, data, o) => enqueueOutboxOn(app, db, job, data, o),
 
         async deliver(o: DeliverOptions = {}): Promise<DeliverResult> {
           const result = await deliverOutbox(app, { ...policy, ...o })
@@ -252,5 +253,5 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
 
 // The engine's public half, so `./outbox` is the one way in.
 export { outboxSchemaFragment }                                from './engine.ts'
-export type { OutboxApi, OutboxRow, OutboxCounts, EnqueueOptions, EnqueueRef,
+export type { OutboxApi, OutboxRow, OutboxCounts, EnqueueOptions, EnqueueOnOptions, EnqueueRef,
               DeliverOptions, DeliverResult }                 from './engine.ts'

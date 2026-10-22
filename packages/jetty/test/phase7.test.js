@@ -308,6 +308,79 @@ group('One bin')
   else bad('an unknown command was not refused with the list', unknown.stderr)
 }
 
+// --- FJS-3383: methods that need no permission, and the browser shim ---
+
+group('audit — free methods and the browser shim (FJS-3383)')
+{
+  const { scanSource } = await import('../src/audit/scan-source.js')
+  const { runAudit }   = await import('../src/audit/audit.js')
+
+  const audit = (files, permissions) => {
+    const tmp = mkdtempSync(join(tmpdir(), 'jetty-audit-'))
+    try {
+      for (const [name, src] of Object.entries(files)) writeFileSync(join(tmp, name), src)
+      return runAudit({ distDir: tmp, manifest: { permissions, web_accessible_resources: [] } })
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  }
+
+  // tabs.sendMessage needs no permission
+  {
+    const r = audit({ 'dock.js': `chrome.tabs.sendMessage(1, {})` }, [])
+    if (r.missing.length === 0 && r.ok) ok('tabs.sendMessage alone does not require tabs')
+    else bad('tabs.sendMessage graded as needing tabs', JSON.stringify(r.missing))
+
+    const u = audit({ 'dock.js': `chrome.tabs.sendMessage(1, {})` }, ['tabs'])
+    if (u.unused.includes('tabs')) ok('a declared tabs is unused when only sendMessage is called')
+    else bad('tabs not reported unused for sendMessage-only use')
+
+    const m = audit({ 'dock.js': `chrome.tabs.sendMessage(1, {}); chrome.tabs.query({})` }, [])
+    if (m.missing.some((x) => x.permission === 'tabs')) ok('tabs.query beside sendMessage still requires tabs')
+    else bad('tabs.query beside sendMessage lost its requirement')
+
+    const b = audit({ 'dock.js': `const t = chrome.tabs; t.query({})` }, [])
+    if (b.missing.some((x) => x.permission === 'tabs')) ok('a bare chrome.tabs reference still requires tabs')
+    else bad('bare chrome.tabs reference no longer requires tabs')
+  }
+
+  // the shim, as a bundler leaves it: the binding is renamed or destructured
+  {
+    const { namespaces } = scanSource(`browser$1.alarms.create('x'); browser2.contextMenus.create({})`)
+    if (namespaces.has('alarms') && namespaces.has('contextMenus')) ok('a bundler-renamed shim binding is scanned')
+    else bad('renamed shim binding missed', [...namespaces].join(','))
+
+    const d = scanSource(`const { alarms, contextMenus: menus } = browser; const { tabs: tabs2 } = browser$1`)
+    if (d.namespaces.has('alarms') && d.namespaces.has('contextMenus') && d.namespaces.has('tabs')) ok('a destructured shim is scanned')
+    else bad('destructured shim missed', [...d.namespaces].join(','))
+  }
+
+  // a real bundle of the shim: user calls are found, the shim's own surface table is not
+  {
+    const tmp = mkdtempSync(join(tmpdir(), 'jetty-audit-'))
+    try {
+      const shim = resolve('src/browser/index.js')
+      writeFileSync(join(tmp, 'entry.js'), `
+        import { browser } from ${JSON.stringify(shim)}
+        const browser2 = 1
+        browser.alarms.create('x', { delayInMinutes: 1 })
+        browser.tabs.sendMessage(1, {})
+        console.log(browser2)
+      `)
+      const built = spawnSync('bun', ['build', join(tmp, 'entry.js'), '--outfile', join(tmp, 'out', 'harbor.js')], { encoding: 'utf8' })
+      if (built.status !== 0) bad('bundling the shim failed', built.stderr)
+      else {
+        const r = runAudit({ distDir: join(tmp, 'out'), manifest: { permissions: [], web_accessible_resources: [] } })
+        const missing = r.missing.map((x) => x.permission).sort()
+        if (JSON.stringify(missing) === '["alarms"]') ok('a bundled shim: alarms required, tabs.sendMessage and the shim table are not')
+        else bad('bundled shim graded wrong', JSON.stringify(missing))
+      }
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  }
+}
+
 // --- summary ---
 
 console.log('')

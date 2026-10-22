@@ -62,9 +62,8 @@ describe('test fixtures', () => {
   test('deploy command and steps exist', () => {
     const base = resolve(ROOT, 'commands/deploy')
     expect(existsSync(resolve(base, 'index.md'))).toBe(true)
-    expect(existsSync(resolve(base, '_steps/01-api.md'))).toBe(true)
-    expect(existsSync(resolve(base, '_steps/02-web.md'))).toBe(true)
-    expect(existsSync(resolve(base, '_steps/03-finish.md'))).toBe(true)
+    expect(existsSync(resolve(base, '_steps-docker/01-preflight.md'))).toBe(true)
+    expect(existsSync(resolve(base, '_steps-docker/09-cleanup.md'))).toBe(true)
   })
 
   test('optional-steps fixture exists', () => {

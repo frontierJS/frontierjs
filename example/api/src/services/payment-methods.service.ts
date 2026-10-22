@@ -64,5 +64,8 @@ export default createService({
   // subscription whose only instrument has just gone — and a `remove` that
   // leaves a subscriber unbillable without saying so is worse than not
   // offering one.
-  methods: ['find', 'get', 'startSetup'],
+  //
+  // `startSetup` is declared a read: it writes no PaymentMethod row, so its
+  // `{ id, status, customer }` answer is not an announcement of one.
+  methods: ['find', 'get', { method: 'startSetup', read: true }],
 })

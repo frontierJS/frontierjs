@@ -223,6 +223,14 @@ export async function run(t) {
     return [...document.querySelectorAll('#reported tbody tr')].map(r => r.querySelector('td').textContent).join(',');
   `), 'ORD-1,ORD-2,ORD-3,ORD-4', 'a Table with onsort leaves the rows as given, whatever the arrow says')
 
+  // The Table holds no schema, so a column declared @collate(nocase) is told to
+  // it; unstated, a column is BINARY as it is in SQLite (FJS-3402).
+  const namesIn = (id) => t.evaluate(`
+    return [...document.querySelectorAll('#${id} tbody tr')].map(r => r.querySelector('td').textContent).join(',');
+  `)
+  t.is(await namesIn('nocase'), 'apple,Bing,BNI', 'a column stated nocase orders apple, Bing, BNI')
+  t.is(await namesIn('binary'), 'BNI,Bing,apple', 'and an unstated one is BINARY')
+
   /* ── a sortable header is a real control ──────────────────────────────── */
 
   // The component's own header records the earlier mistake: `onclick` on the

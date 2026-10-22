@@ -1171,8 +1171,8 @@ const openPauseJournal = async ($, flag, opts) => {
 ## Overview
 
 The `deploy:` commands deploy FrontierJS apps to a Linux server using SSH,
-Docker, and Caddy. Configuration lives in `frontier.config.js` — no CapRover,
-no external platform required.
+Docker, and Caddy. Configuration lives in `frontier.config.js` — no external
+platform required.
 
 The server is named by `deploy.server`, or per run by `--server`, which takes an
 alias from `~/.ssh/config` or `user@host` and replaces every configured server
@@ -1447,8 +1447,7 @@ fli deploy --stage            → stage (or if branch is 'stage'/'staging')
 fli deploy --production       → production
 ```
 
-Without a `deploy` block in `frontier.config.js`, `fli deploy` falls back to
-the legacy CapRover mode using `DEV_SERVER` / `PROD_SERVER` from `.env`.
+Without a `deploy` block in `frontier.config.js`, `fli deploy` refuses.
 
 ## Logs and one-off commands
 

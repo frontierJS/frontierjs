@@ -230,11 +230,24 @@ export function createTethered(resource, tetheredQuery, opts = {}) {
           return
         }
         if (stamp !== issued) return
-        const data = res?.data ?? []
+        let data = res?.data ?? []
         if (extent == null && typeof res?.limit === 'number') pageSize = res.limit
+        // The server clamps a limit to its page cap, so a window past it comes
+        // back one page long; the rest is walked by cursor. Rows are set once,
+        // at the end, so a screen never reads the first page of a window it is
+        // re-asking.
+        const first = res
+        while (extent != null && data.length < extent && res?.hasMore === true && typeof res.endCursor === 'string') {
+          res = await resource.find(query, { ...directives, limit: extent - data.length, after: res.endCursor })
+          if (stamp !== issued) return
+          if (!res?.data?.length) break
+          data = [...data, ...res.data]
+        }
         setRows(data)
-        setMore(res?.hasMore === true || (typeof res?.total === 'number' && res.total > data.length))
-        setTotal(typeof res?.total === 'number' ? res.total : null)
+        // A cursor page carries no total, so the count is the first read's.
+        const count = first?.total
+        setMore(res?.hasMore === true || (typeof count === 'number' && count > data.length))
+        setTotal(typeof count === 'number' ? count : null)
       } else {
         const loaded = await resource.load(query, currentDirectives())
         if (stamp !== issued) return

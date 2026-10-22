@@ -410,12 +410,12 @@ CREATE TABLE IF NOT EXISTS "notification" (
   "userId" TEXT NOT NULL,
   "type" TEXT NOT NULL,
   "data" TEXT NOT NULL,
-  "contextType" TEXT,
-  "contextId" TEXT,
+  "subjectType" TEXT,
+  "subjectId" TEXT,
   "deliveryKey" TEXT,
   "readAt" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("contextType" IN ('Deployment', 'AlertEvent', 'JobRun', 'Server', 'Workspace', 'Monitor')),
+  CHECK ("subjectType" IN ('Deployment', 'AlertEvent', 'JobRun', 'Server', 'Workspace', 'Monitor')),
   UNIQUE ("userId", "type", "deliveryKey"),
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;

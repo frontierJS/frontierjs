@@ -2,6 +2,7 @@
 title: deploy:all
 description: Deploy to server via SSH — auto-detects environment from git branch
 alias: deploy
+steps: _steps-docker
 examples:
   - fli deploy
   - fli deploy --production
@@ -48,11 +49,10 @@ Deploys via SSH. Environment resolved in order:
 2. Current git branch (`stage`/`staging` → stage, anything else → dev)
 3. Falls back to dev
 
-If `frontier.config.js` has a `deploy` block, uses Docker/SSH/Caddy deployment.
-Otherwise falls back to the legacy CapRover deploy.
+Needs a `deploy` block in `frontier.config.js` (Docker/SSH/Caddy); without one
+it refuses.
 
 ```js
-const env    = $.env
 const target    = resolveTarget(flag, $.git)
 const branch    = $.git.branch()
 const branchStr = branch ? ` (branch: ${branch})` : ''
@@ -60,8 +60,8 @@ const branchStr = branch ? ` (branch: ${branch})` : ''
 // ─── Detect deploy mode ───────────────────────────────────────────────────────
 const deployConf     = await deployConfFor($, flag, log)
 
-// A deploy block with no server is a refusal, never the CapRover path: the
-// placeholder lands here, and so does a block that names only per-target servers.
+// A deploy block with no server is a refusal: the placeholder lands here, and
+// so does a block that names only per-target servers.
 if (deployConf && !deployConf.server) {
   log.error(`deploy.server is not set. Set it, or pass --server <ssh alias>`)
   $.config.abort = true
@@ -129,11 +129,9 @@ if (deployConf?.server) {
   // Phase 1d, and the same document `fli deploy:plan` prints — one helper, two
   // entry points, because a plan is what somebody reads to decide.
   //
-  // `abort` rather than a bare return: the runner discovers steps AFTER the
-  // orchestrator runs, and falls back to `_steps/` when no stepsDir is set —
-  // which is the legacy CapRover list. Returning early would run it. Aborting
-  // leaves 09-cleanup as the only step that executes, and on abort it releases
-  // locks this run never took.
+  // `stop` rather than a bare return: a bare return runs every step. Stopping
+  // leaves 09-cleanup as the only step that executes, and it releases locks
+  // this run never took.
   if (flag.plan) {
     const plan = await deployPlan($, flag, { target, deployConf, doApi, doWeb })
     if (plan.error) log.error(plan.error)
@@ -149,35 +147,8 @@ if (deployConf?.server) {
   }
 
 } else {
-  // ── Legacy CapRover deploy (no frontier.config.js deploy block) ────────────
-  let server, serverPath
-
-  if (target === 'production') {
-    server     = env.PROD_SERVER
-    serverPath = env.PROD_SERVER_PATH
-  } else if (target === 'stage') {
-    server     = env.STAGE_SERVER
-    serverPath = env.STAGE_SERVER_PATH
-  } else {
-    server     = env.DEV_SERVER
-    serverPath = env.DEV_SERVER_PATH
-  }
-
-  if (!server) {
-    const key = target === 'production' ? 'PROD_SERVER' : target === 'stage' ? 'STAGE_SERVER' : 'DEV_SERVER'
-    log.error(`${key} is not set in .env`)
-    log.info('Add it to your project .env or add a deploy block to frontier.config.js')
-    $.config.abort = true
-    return
-  }
-
-  log.info(`Deploying to ${target} → ${server}${branchStr}`)
-  log.info('Mode: legacy CapRover')
-
-  $.config.stepsDir   = '_steps'
-  $.config.server     = server
-  $.config.serverPath = serverPath
-  $.config.target     = target
-  $.config.startTime  = Date.now()
+  log.error('frontier.config.js has no deploy block')
+  log.info('Add one (deploy.server + deploy.path), or run fli make:deploy')
+  $.config.abort = true
 }
 ```

@@ -11,7 +11,9 @@
 // ============================================================
 
 import { describe, it, expect, beforeEach } from 'bun:test'
-import { resolve } from 'node:path'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { autoloadJobs } from '../src/autoload.ts'
 import { caravan as caravanPlugin } from '../src/index.ts'
 import type { HandlerOptions, JobRegistrar } from '../src/types.ts'
@@ -82,6 +84,15 @@ describe('autoloadJobs against a directory with job files', () => {
     expect(loaded.sort()).toEqual(['cleanup', 'send-email'])
   })
 
+  it('does not descend into node_modules', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'fjs-autoload-'))
+    try {
+      mkdirSync(join(root, 'node_modules/x'), { recursive: true })
+      writeFileSync(join(root, 'node_modules/x/never.job.ts'), 'throw new Error("scanned node_modules")\n')
+      expect(await autoloadJobs(root, c.stub)).toEqual([])
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
   it('returns an empty list for a directory that does not exist', async () => {
     expect(await autoloadJobs(resolve(FIXTURES, 'nope'), c.stub)).toEqual([])
     expect(c.registered).toHaveLength(0)
@@ -115,7 +126,7 @@ describe('two files claiming one job name', () => {
   })
 })
 
-describe('jobs/ beside the app root, loaded at boot()', () => {
+describe('job files under the app root, loaded at boot()', () => {
   it('boot() autoloads handlers and they can process a dispatch', async () => {
     const caravan = caravanPlugin({
       db:           ':memory:',
@@ -123,7 +134,7 @@ describe('jobs/ beside the app root, loaded at boot()', () => {
       queues:       { default: { concurrency: 2 }, email: { concurrency: 1 } },
     })
 
-    await caravan.boot!({ root: resolve(FIXTURES, '..') })
+    await caravan.boot!({ root: resolve(FIXTURES, '../app') })
     await caravan.start()
 
     // The autoloaded 'send-email' handler declares queue 'email'; dispatch

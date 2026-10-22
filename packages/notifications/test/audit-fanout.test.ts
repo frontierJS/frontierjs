@@ -48,8 +48,8 @@ describe('audit 1.5 — a failed transport after a committed one', () => {
     } }))
     return seen
   }
-  const bobsRows = async (h: { rows: () => Promise<{ userId: unknown, contextId: unknown }[]> }) =>
-    (await h.rows()).filter(r => r.userId === 'u-bob' && r.contextId === '42').length
+  const bobsRows = async (h: { rows: () => Promise<{ userId: unknown, subjectId: unknown }[]> }) =>
+    (await h.rows()).filter(r => r.userId === 'u-bob' && r.subjectId === '42').length
 
   test('a retry after a failed email does not write a second in-app row', async () => {
     class KeyedInvoiceDue extends InvoiceDue {

@@ -28,6 +28,8 @@ import { convert as prisma } from './prisma.js'
 import { convert as rails }  from './rails.js'
 import { convert as sql }    from './sql.js'
 import { convert as frappe } from './frappe.js'
+import { parse }                from '../core/parser.js'
+import { declarationCollisions } from '../tools/typegen.js'
 
 export const READERS = { prisma, rails, sql, frappe }
 export const FORMATS = Object.keys(READERS)
@@ -89,7 +91,22 @@ export function convert({ source, format, label = 'schema' }) {
   const read = READERS[format]
   if (!read) throw new Error(`unknown format '${format}' — one of ${FORMATS.join(', ')}`)
   const { lite, gaps, models } = read(source, label)
+  noteGeneratedNameCollisions(lite, label, gaps)
   return { lite, gaps, models, format, summary: summarize(gaps) }
+}
+
+// `litestone types` refuses a model named for another's generated shape
+// (`FJS-D1282`), and no reader renames. Saying so here, once for all four, is
+// what keeps an author from finding it out one command later.
+function noteGeneratedNameCollisions(lite, label, gaps) {
+  const { schema } = parse(lite)
+  if (!schema) return
+  const gap = (kind, model, field, detail, emitted) =>
+    gaps.push({ source: label, kind, model, field, detail, emitted })
+  for (const c of declarationCollisions(schema))
+    gap('generated-name-collision', c.name, null,
+        `${c.what} collides with ${c.with} in the generated types`,
+        'as written; rename one before `litestone types`')
 }
 
 // ─── saying it in the file itself ────────────────────────────────────────────

@@ -63,6 +63,10 @@ const _CARRIED = [
   // mean sealed. A form with a record resolves readOnly off `record[field]`; a
   // create form has no record and must not, since a row being made is a draft.
   'x-litestone-seal',
+  // `@immutable(after: move)` -- the same answer for a column frozen from a
+  // named move rather than from the seal: the state column, and every state the
+  // move reaches. Without it the form offers a box the server refuses.
+  'x-litestone-frozen',
   // `@accept("image/png, …")` — the MIME list the Data boundary will admit. It
   // is carried so the picker can offer the same list the server enforces: the
   // refusal is real either way (`FileStorage` checks it before a byte is
@@ -2141,7 +2145,7 @@ function isOneLineSecret(rule) {
  * @param {object} [record] the row being edited
  */
 export function sealedFor(rule, record) {
-  const seal = rule?.['x-litestone-seal']
+  const seal = rule?.['x-litestone-seal'] ?? rule?.['x-litestone-frozen']
   if (!seal || !record) return false
   return seal.states.includes(record[seal.field])
 }

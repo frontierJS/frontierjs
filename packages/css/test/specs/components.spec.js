@@ -700,6 +700,35 @@ test('facts: .divided rules between pairs but not above the first', function () 
   );
 });
 
+test('facts: a narrow named container stacks the pairs, whatever the viewport', function () {
+  /*
+   * The viewport is wide here, so only the box can say it is narrow. An
+   * Aside is 20rem on a 1400px screen, and a media query never sees it.
+   */
+  var wide = el('<div style="container: fjs / inline-size; inline-size: 600px">' + FACTS + '</div>', '.facts');
+  assert.equal(style(wide, 'grid-template-columns').split(' ').length, 2, 'a wide box lost its two columns');
+
+  var narrow = el('<div style="container: fjs / inline-size; inline-size: 280px">' + FACTS + '</div>', '.facts');
+  assert.equal(style(narrow, 'grid-template-columns').split(' ').length, 1, 'a .facts in a narrow box stays two columns');
+
+  var divided = el(
+    '<div style="container: fjs / inline-size; inline-size: 280px">' +
+      FACTS.replace('class="facts"', 'class="facts divided"') +
+    '</div>',
+    '.facts'
+  );
+  assert.equal(
+    style(divided.querySelector('#v1'), 'border-top-style'),
+    'none',
+    'a stacked .divided still rules between a label and its own value'
+  );
+  assert.notEqual(
+    style(divided.querySelector('#k2'), 'border-top-style'),
+    'none',
+    'a stacked .divided lost the rule between pairs'
+  );
+});
+
 /* ── Kbd, Code, Divider ──────────────────────────────────────────────*/
 
 test('kbd: the bare element is styled, not only the class', function () {

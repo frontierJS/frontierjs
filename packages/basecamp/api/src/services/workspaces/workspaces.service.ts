@@ -191,7 +191,7 @@ export default createService({
     // accountId and ownerId are not a client's to change: one moves the
     // workspace between tenants, the other hands over ownership, and neither
     // belongs on a general PATCH.
-    const patch = narrowPatch(data, ['accountId', 'ownerId'])
+    const patch = narrowPatch(data)
     if (changesNothing(patch)) return ws
     return db().workspace.update({ where: { id: $.id as string }, data: patch })
   },
@@ -347,7 +347,7 @@ export default createService({
       // somebody outside the workspace, it names a person nobody can reach.
       const ws = await tx.workspace.findUnique({ where: { id: wsId } })
       if (heir && ws.ownerId === me)
-        await tx.workspace.update({ where: { id: wsId }, data: { ownerId: heir.userId, version: ws.version } })
+        await tx.workspace.update({ where: { id: wsId }, data: { ownerId: heir.userId, version: ws.version }, system: ['ownerId'] })
       return { workspace_id: wsId, user_id: me, left: true }
     })
   },
@@ -372,7 +372,7 @@ export default createService({
         where: { id: mine.id }, data: { role: 'admin', capabilities: grantsFor('admin') },
       })
       const ws = await tx.workspace.findUnique({ where: { id: wsId } })
-      await tx.workspace.update({ where: { id: wsId }, data: { ownerId: target, version: ws.version } })
+      await tx.workspace.update({ where: { id: wsId }, data: { ownerId: target, version: ws.version }, system: ['ownerId'] })
       return owner
     })
   },

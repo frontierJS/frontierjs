@@ -56,7 +56,7 @@
   }
 
   // The kitchen's: a task in an order's amber, a raised hand red, last words a plate's green.
-  const PICKS = [
+  var PICKS = [
     [/(?<=^\()(?:\[\d+\] )?\S+/g, BUBBLE.nick],
     [TASK, '#fbbf24'],
     [/\basks:/g, '#ef4444'],

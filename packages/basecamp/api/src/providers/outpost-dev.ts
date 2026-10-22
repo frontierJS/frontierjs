@@ -29,7 +29,7 @@
 //   BASECAMP_URL                         default: http://localhost:8120
 //
 // Ports 8180 (commands) and 8181 (the static origin) are the Outpost's own
-// (`packages/cli/core/ports.js`, project 8). A port that already answers is
+// (`packages/cli/core/ports.js`, project 8), plus a branch's offset. A port that already answers is
 // REFUSED rather than shared: the heartbeat would register whichever process
 // holds it, and every release would go to a machine this script did not start.
 
@@ -39,6 +39,7 @@ import { createConnection }                         from 'node:net'
 import { hostname }                                 from 'node:os'
 import { dirname, join }                            from 'node:path'
 import { fileURLToPath }                            from 'node:url'
+import { portFor }                                  from '@frontierjs/cli/core/ports.js'
 import { createJunctionClient }                     from '@frontierjs/junction/client'
 import { ensureCert }                               from '@frontierjs/outpost/cert'
 
@@ -46,8 +47,10 @@ const API          = (process.env.BASECAMP_URL ?? 'http://localhost:8120').repla
 const EMAIL        = process.env.BASECAMP_EMAIL    ?? 'sam@example.com'
 const PASSWORD     = process.env.BASECAMP_PASSWORD ?? 'hunter2hunter2'
 const WORKSPACE    = process.env.BASECAMP_WORKSPACE
-const PORT         = 8180
-const STATIC_PORT  = 8181
+// From the formula, not a literal: in a branch the offset moves both, and the
+// drive that reaches them asks the same function (`FJS-2497`).
+const PORT         = await portFor(import.meta.url, 'be', { env: 'dev', project: 'outpost' })
+const STATIC_PORT  = await portFor(import.meta.url, 'be', { env: 'dev', project: 'outpost', service: 1 })
 
 const APP_ROOT     = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const HOME         = join(APP_ROOT, '.outpost')

@@ -26,8 +26,8 @@ import type { App } from '@frontierjs/junction'
 import { caravan as caravanPlugin, CARAVAN_CONFIG_KEYS } from '../src/index.ts'
 import type { CaravanOptions, CaravanInstance, JobRecord } from '../src/types.ts'
 
-// An app root whose `jobs/` holds the job fixtures (`FJS-D1080`).
-const ROOT = resolve(import.meta.dir, 'fixtures')
+// An app root whose job lives in a domain folder, not in `jobs/` (`FJS-D1141`).
+const ROOT = resolve(import.meta.dir, 'fixtures/app')
 
 // `app.jobs` is fully typed here: Caravan augments Junction's AppJobs
 // interface, so CaravanInstance's members resolve without a cast. If that
@@ -237,7 +237,7 @@ describe('junction config caravan section', () => {
     for (const suffix of ['', '-wal', '-shm']) rmSync(`${path}${suffix}`, { force: true })
   }
 
-  it('loads jobs/ beside createApp({ root })', async () => {
+  it('finds a job file anywhere under createApp({ root }), skipping node_modules', async () => {
     const app = await createTestApp({ root: ROOT })
     app.configure(caravanPlugin(opts()))
     await app._startForTest()

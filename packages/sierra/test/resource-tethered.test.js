@@ -682,6 +682,35 @@ describe('composed: the rows carry what a push does not', () => {
     expect(last().get('$limit')).toBe(null)
   })
 
+  test('a window past the server\'s page cap is walked by cursor, not asked as one limit (FJS-2627)', async () => {
+    await boot('/invoices/')
+    // The mock answers `pageSize` rows whatever `$limit` says: a paginate.max.
+    pageSize = 3
+    many = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, number: `INV-${i + 1}`, status: 'open', total: 1 }))
+    const list = track(invoicesResource().tethered({ state: 'local', composed: true }))
+    await settle()
+    expect(list.rows).toHaveLength(3)
+
+    await list.more()
+    await settle()
+    expect(list.rows).toHaveLength(6)
+    expect(list.hasMore).toBe(true)
+
+    // A push re-reads the grown window, and it is still whole.
+    client.service('invoices').emit('patched', { id: 2, number: 'INV-2', status: 'paid', total: 1 })
+    await settle()
+    expect(list.rows).toHaveLength(6)
+
+    await list.more()
+    await settle()
+    expect(list.rows.map(r => r.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
+
+    await list.more()
+    await settle()
+    expect(list.rows).toHaveLength(10)
+    expect(list.hasMore).toBe(false)
+  })
+
   test('a reconnect re-reads; a list that is not composed leaves that to the tether', async () => {
     await boot('/invoices/')
     vi.spyOn(Math, 'random').mockReturnValue(0)

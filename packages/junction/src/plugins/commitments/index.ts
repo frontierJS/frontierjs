@@ -56,12 +56,11 @@
 // never did, and a moved row is never due again.
 
 import type { App, Plugin } from '../../core/app.ts'
-import type { ServiceContext } from '../../core/context.ts'
-import { callSlots, setCallDb } from '../../core/context.ts'
 import type { LitestoneWriteEvent } from '../../core/litestone.ts'
-import { forEachAppDatabase, enqueueOutbox } from '../outbox/engine.ts'
+import { forEachAppDatabase, enqueueOutboxOn } from '../outbox/engine.ts'
 import type { EnqueueRef, EnqueueOptions, OutboxApi } from '../outbox/engine.ts'
 import { startOfDay }         from '@frontierjs/toolbelt/datetime'
+import { gatherHooks }        from './files.ts'
 
 export interface CommitmentsPluginOptions {
   /**
@@ -245,6 +244,8 @@ export function commitments(opts: CommitmentsPluginOptions = {}): Plugin {
   let lastSweepAt: string | null = null
 
   let api: CommitmentsApi | null = null
+  // The files' hooks and the option's, one registry; read at boot.
+  let hooks: Record<string, CommitmentSpec> = opts.hooks ?? {}
   const untap: Array<() => void> = []
 
   return {
@@ -267,7 +268,9 @@ export function commitments(opts: CommitmentsPluginOptions = {}): Plugin {
       if (!jobs?.handle) throw new Error(
         `[Junction] commitments(): app.jobs has no handle() — configure caravan before commitments().`)
 
-      refuseUnknownHooks(app, opts.hooks, 'commitments()')
+      const found = await gatherHooks(app.root, opts.hooks, 'commitments()')
+      refuseUnknownHooks(app, found.hooks, 'commitments()', found.origin)
+      hooks = found.hooks
 
       await refuseUnprincipled(app)
 
@@ -374,7 +377,7 @@ export function commitments(opts: CommitmentsPluginOptions = {}): Plugin {
   /** One fire as Caravan runs it — the tenant and principal re-bound by the queue. */
   async function fire(app: App, job: FirePayload, tenant: string | null): Promise<void> {
     try {
-      if (await fireAsApp(app, job, tenant, opts.hooks) === 'fired') fired++
+      if (await fireAsApp(app, job, tenant, hooks) === 'fired') fired++
       else lapsed++
     } catch (err) {
       failed++
@@ -438,7 +441,8 @@ export interface FireDueResult {
  * lookahead, only what is due by now.
  */
 export async function fireDue(app: App, opts: FireDueOptions = {}): Promise<FireDueResult> {
-  refuseUnknownHooks(app, opts.hooks, 'fireDue()')
+  const found = await gatherHooks(app.root, opts.hooks, 'fireDue()')
+  refuseUnknownHooks(app, found.hooks, 'fireDue()', found.origin)
 
   // Collected first and fired after the walk: under a tenant registry the walk
   // holds each tenant's client, and a fire leases that tenant's client again.
@@ -457,7 +461,7 @@ export async function fireDue(app: App, opts: FireDueOptions = {}): Promise<Fire
 
   const out: FireDueResult = { due: owed.length, fired: 0, lapsed: 0 }
   for (const { job, tenant } of owed)
-    out[await app.runAs(null, { tenant }, () => fireAsApp(app, job, tenant, opts.hooks))]++
+    out[await app.runAs(null, { tenant }, () => fireAsApp(app, job, tenant, found.hooks))]++
   return out
 }
 
@@ -467,7 +471,9 @@ export async function fireDue(app: App, opts: FireDueOptions = {}): Promise<Fire
  * value that is not a spec is refused for the same reason: a bare function, or
  * a tier spelled `afer`, would be read as no tier at all.
  */
-function refuseUnknownHooks(app: App, hooks: Record<string, CommitmentSpec> | undefined, who: string): void {
+function refuseUnknownHooks(
+  app: App, hooks: Record<string, CommitmentSpec> | undefined, who: string, origin?: Map<string, string>,
+): void {
   const keys = Object.keys(hooks ?? {})
   if (!keys.length) return
   for (const k of keys) {
@@ -481,7 +487,7 @@ function refuseUnknownHooks(app: App, hooks: Record<string, CommitmentSpec> | un
   const declared = declaredKeys(app)
   const unknown  = keys.filter(k => !declared.has(k))
   if (unknown.length) throw new Error(
-    `[Junction] ${who}: hooks name ${unknown.map(k => `'${k}'`).join(', ')}, which no ` +
+    `[Junction] ${who}: hooks name ${unknown.map(k => `'${k}'${origin?.has(k) ? ` (${origin.get(k)})` : ''}`).join(', ')}, which no ` +
     `@@commitment declares — declared: ${[...declared].join(', ') || 'none'}.`)
 }
 
@@ -589,19 +595,16 @@ export async function fireCommitment(
         db: tx, record: from, model, commitment: job.transition, dueAt: row.dueAt,
         timeZone: job.timeZone ?? 'UTC', now: db.$now?.() ?? new Date(),
         afterCommit: (fn) => { later.push(fn) },
-        // enqueueOutbox reads four things off a call context; a fire is not a
-        // call, so it is handed exactly those, and its refusals name the key.
-        // The fire's tenant rides on `locals` as a call's does, so the row
-        // records it (`FJS-2508`): under `strategy row` the relay's sweep has
-        // nothing else to dispatch a missed kick into.
-        enqueue: (name, payload, o) => {
-          const call = {
-            locals: { tenantId: tenant }, service: 'commitments', method: `${model}.${job.transition}`,
-            app: { outbox }, auth: undefined,
-          } as unknown as ServiceContext
-          setCallDb(call, tx)
-          callSlots(call).outbox = rows
-          return enqueueOutbox(call, name, payload, { actor: null, ...o })
+        // A fire is not a call, so it writes through the outbox's own verb for a
+        // writer with none. The fire's tenant is stated so the row records it
+        // (`FJS-2508`): under `strategy row` the relay's sweep has nothing else
+        // to dispatch a missed kick into.
+        enqueue: async (name, payload, o) => {
+          const id = await enqueueOutboxOn({ outbox }, tx, name, payload, {
+            tenant, at: { service: 'commitments', method: `${model}.${job.transition}` }, ...o,
+          })
+          rows.push(id)
+          return id
         },
       }
       let moved = false

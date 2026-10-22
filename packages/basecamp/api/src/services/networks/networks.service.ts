@@ -88,7 +88,7 @@ export default createService({
     // slug is immutable: it is half of a @@unique and every join row already
     // points at this id. Renaming the display name is free; renaming the
     // handle is a migration.
-    const patch = narrowPatch(data, ['slug', 'provider'])
+    const patch = narrowPatch(data)
     if (changesNothing(patch)) return getScoped('network', 'Network')
     return db().network.update({ where: { id: $.id as string }, data: patch })
   },

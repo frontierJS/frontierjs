@@ -36,12 +36,12 @@ model Notification {
   userId      String              // String, not Int — auth issues uuid ids
   type        String              // the notification's stable name
   data        Json                // whatever its formatter built
-  contextType String?             // 'Note', 'Order' — a loose reference
-  contextId   Int?                //   with no foreign key, so a deleted row
+  subjectType String?             // 'Note', 'Order' — a loose reference
+  subjectId   Int?                //   with no foreign key, so a deleted row
   readAt      DateTime?           //   does not cascade into somebody's bell menu
   createdAt   DateTime  @default(now())
 
-  @@check("contextType IN ('Note')")
+  @@check("subjectType IN ('Note')")
   @@gate(0.8.4.8)
   @@allow(read,   userId == auth().id)
   @@allow(update, userId == auth().id)
@@ -54,8 +54,8 @@ is `8` rather than `9` on purpose. `9` is LOCKED, a wall `asSystem()` does not
 pass either, and the writer here IS `asSystem()`: a `9` in the create slot would
 stop the package from ever writing a row.
 
-The `@@check` is there because `fli check` asks for it by name. `contextType`
-says what `contextId` points at, and a pair like that has no foreign key by
+The `@@check` is there because `fli check` asks for it by name. `subjectType`
+says what `subjectId` points at, and a pair like that has no foreign key by
 design — so nothing refuses a value naming nothing, not a migration and not
 `asSystem()`. The one column that CAN be constrained is, and this app has one
 kind of $. An app whose set genuinely grows with every model baselines
@@ -104,7 +104,7 @@ $.config.appDir = dir
 // The model arrives with the scaffold — `fli new --with notifications` runs
 // `fli notifications:install`, which appends the file the package ships. What
 // this step adds is the one line the package cannot write for an app: which
-// models contextType may name. `fli check`'s `polymorphic-subject` asks for it
+// models subjectType may name. `fli check`'s `polymorphic-subject` asks for it
 // by name, and the answer is the app's because the set is.
 const schema = schemaFile($)
 
@@ -118,12 +118,12 @@ if (!await must($, probe.fileContains({
 })) return
 
 const text = readFileSync(schema, 'utf8')
-if (!/@@check\("contextType/.test(text)) {
+if (!/@@check\("subjectType/.test(text)) {
   writeFileSync(schema, text.replace(
     /(model Notification \{[\s\S]*?)\n\}/m,
     `$1\n\n  // This app's answer to \`polymorphic-subject\`: a pair like this has no\n` +
     `  // foreign key by design, so the one column that CAN be constrained is.\n` +
-    `  @@check("contextType IN ('Note')")\n}`,
+    `  @@check("subjectType IN ('Note')")\n}`,
   ), 'utf8')
 }
 

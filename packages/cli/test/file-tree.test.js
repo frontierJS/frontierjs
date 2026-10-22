@@ -210,3 +210,14 @@ describe('fli tree', () => {
     expect(run.stdout).toContain('1 folder, 2 files')
   })
 })
+
+// FJS-3145: a suite that builds into `test/tmp-*` is read as a clone's file by
+// treePaths while the suite deletes it, so every reader of the tree races it.
+describe('tmp- scratch dirs beside a test', () => {
+  test('are ignored, so treePaths never lists one', () => {
+    const REPO = resolve(import.meta.dir, '../../..')
+    const probe = 'packages/sierra/test/tmp-probe/src/blocks/Badge.mesa'
+    const run = spawnSync('git', ['check-ignore', '-q', probe], { cwd: REPO })
+    expect(run.status).toBe(0)
+  })
+})

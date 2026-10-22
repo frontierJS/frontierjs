@@ -117,8 +117,34 @@
  * unit rather than two rows.
  *
  * 640px is the sm breakpoint; see tokens.css for why these are literals.
+ *
+ * The viewport cannot see a narrow box on a wide screen: a Facts in a 20rem
+ * Aside is two cramped columns at 1400px. A box the app names
+ * `container: fjs / inline-size` stacks it under 30rem, the same opt-in and
+ * threshold as derived density. The two blocks are one rule written twice,
+ * because a media query and a container query cannot share a body.
  */
 @media (max-width: 639px) {
+  .facts {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .facts > dt {
+    padding-block-start: var(--space-md);
+  }
+  .facts > dd {
+    padding-block-end: var(--space-3xs);
+  }
+  .facts.divided > dd {
+    border-block-start: none;
+    padding-block-start: 0;
+  }
+  .facts.divided > :nth-child(2) {
+    padding-block-start: 0;
+  }
+}
+
+@container fjs (inline-size < 30rem) {
   .facts {
     grid-template-columns: 1fr;
     gap: 0;

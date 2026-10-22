@@ -24,7 +24,7 @@ import { occurrenceKey } from '@frontierjs/toolbelt/history'
 import { readFileSync } from 'node:fs'
 
 import type { ServiceContext, EnqueueRef, EnqueueOptions, OutboxRelay } from '../../core/context.ts'
-import { callDb, callSlots } from '../../core/context.ts'
+import { callDb, callSlots, setCallDb } from '../../core/context.ts'
 import type { App } from '../../core/app.ts'
 
 /** The model `packages/junction/db/outbox.lite` declares, and its accessor. */
@@ -152,6 +152,48 @@ export async function enqueueOutbox(
   // relay's to find on its next sweep regardless; this only buys the latency.
   callSlots(ctx).outbox.push(row.id)
   return row.id
+}
+
+/** What `enqueueOutboxOn` states beyond a call's `EnqueueOptions`. */
+export interface EnqueueOnOptions extends EnqueueOptions {
+  /**
+   * The tenant the row records. Default: the one in scope (`app.tenant()`),
+   * which a job started by `runAs` already has; state it where the writer
+   * holds a client the scope does not name.
+   */
+  tenant?: string | null
+  /** What a refusal names the writer as: `ctx.enqueue('x') in '<service>.<method>'`. */
+  at?:     { service: string; method: string }
+}
+
+/**
+ * Write an outbox row on a client the caller already holds, for a writer that
+ * is not a service call — a job, a receiver, a commitment's fire.
+ *
+ * `enqueueOutbox` reads a call's client, tenant and actor off a ServiceContext,
+ * and a job has none, so its only option inside `app.withDb(db =>
+ * db.$transaction(…))` was `afterCommit` — the effect a crash loses. The rule
+ * is the call's, unchanged: `db` must be the TRANSACTION's client, because a
+ * row written outside it is an intent recorded for a write that may roll back.
+ * The actor defaults to `null`, since this is the app's own work. No kick
+ * follows: nothing here knows when the transaction commits, so the caller
+ * runs `app.outbox.deliver({ db, tenant })` after it for the latency, and the
+ * relay's timer finds the row regardless.
+ */
+export function enqueueOutboxOn(
+  app:  { outbox?: unknown; tenant?: () => string | null },
+  db:   unknown,
+  job:  EnqueueRef,
+  data: unknown,
+  opts: EnqueueOnOptions = {}
+): Promise<string> {
+  const call = {
+    locals: { tenantId: opts.tenant }, service: 'outbox', method: 'enqueueOn',
+    ...opts.at, app, auth: undefined,
+  } as unknown as ServiceContext
+  setCallDb(call, db)
+  const { tenant: _t, at: _a, ...row } = opts
+  return enqueueOutbox(call, job, data, { actor: null, ...row })
 }
 
 // ─── The relay ────────────────────────────────────────────────────────────────
@@ -649,6 +691,12 @@ export interface OutboxApi extends OutboxRelay {
    * write through the slot rather than importing it.
    */
   enqueue(ctx: ServiceContext, job: EnqueueRef, data: unknown, opts?: EnqueueOptions): Promise<string>
+  /**
+   * The same row for a writer with no call — a job or receiver inside
+   * `app.withDb(db => db.$transaction(tx => …))`. `db` is the transaction's
+   * client; kick `deliver({ db, tenant })` after it commits for latency.
+   */
+  enqueueOn(db: unknown, job: EnqueueRef, data: unknown, opts?: EnqueueOnOptions): Promise<string>
   /** Run one delivery pass now. The relay's own timer calls this. */
   deliver(opts?: DeliverOptions): Promise<DeliverResult>
   /** Drop delivered rows past their retention. Answers how many went. */

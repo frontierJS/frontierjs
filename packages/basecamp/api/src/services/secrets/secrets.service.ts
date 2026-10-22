@@ -123,7 +123,7 @@ export default createService({
     // Rotating the value is allowed and is the point of patch here. What is
     // NOT allowed is kind and createdBy: a secret that changes what it IS
     // invalidates everything holding it, and who added it is a fact.
-    const patch = narrowPatch(data, ['kind', 'createdBy', 'providerKind'])
+    const patch = narrowPatch(data)
 
     // A rotated secret is unverified again until something proves otherwise.
     // The ref is `secret:<id>#token` and the id has not changed, so a rotated

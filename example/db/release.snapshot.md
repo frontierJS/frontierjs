@@ -605,13 +605,13 @@ table `notification` · db `main` · gate `0.8.4.8`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `contextId` | `String` | yes | — | — |
-| `contextType` | `NotificationContext` | yes | — | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `data` | `Json` | no | — | **required on write** |
 | `deliveryKey` | `String` | yes | — | — |
 | `id` | `Int` | no | — | id |
 | `readAt` | `DateTime` | yes | — | — |
+| `subjectId` | `String` | yes | — | — |
+| `subjectType` | `NotificationContext` | yes | — | — |
 | `type` | `String` | no | — | **required on write** |
 | `userId` | `String` | no | — | **required on write** |
 

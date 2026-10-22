@@ -187,7 +187,7 @@ describe('a release that fails pages the channel the flow names', () => {
         (r: any) => ['completed', 'failed'].includes(r?.status))
       expect(run?.status).toBe('completed')
       // Run as the flow's owner, in the workspace the release belongs to.
-      expect(run?.actorId).toBe(admin.userId)
+      expect(run?.actorId).toBe(admin.id)
       expect(run?.steps.find((s: any) => s.nodeId === 'page')?.output).toEqual({ channel: 'ops', sent: true })
       expect((await runsOf()).length).toBeGreaterThan(runsBefore)
 

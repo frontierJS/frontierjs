@@ -7,13 +7,13 @@
 // here is more than a listing: it is Claude Code with every permission, in that
 // folder, as the operator's own account.
 //
-//   GET  /workbench               pins        the pins, each with its git state and run status
-//   GET  /workbench               status      every pin's run status — the grid's poll, no git
-//   GET  /workbench/:id           transcript  { chat? } — one chat, the shown one by default, folded from its log, with the checkout's checks and review
-//   GET  /workbench/:id           diff        the checkout's working tree against HEAD, a branch's against its base
-//   GET  /workbench/:id           runnables   `fli dev` per app and every package.json script (`core/workbench-run.ts`)
-//   GET  /workbench/:id           output      { row } — the tail of what a started row wrote
-//   GET  /workbench/:id           plan        the shown plan — its path, the steps Go started with what each cost, and the file parsed now (null until written)
+//   POST /workbench               pins        the pins, each with its git state and run status
+//   POST /workbench               status      every pin's run status — the grid's poll, no git
+//   POST /workbench/:id           transcript  { chat? } — one chat, the shown one by default, folded from its log, with the checkout's checks and review
+//   POST /workbench/:id           diff        the checkout's working tree against HEAD, a branch's against its base
+//   POST /workbench/:id           runnables   `fli dev` per app and every package.json script (`core/workbench-run.ts`)
+//   POST /workbench/:id           output      { row } — the tail of what a started row wrote
+//   POST /workbench/:id           plan        the shown plan — its path, the steps Go started with what each cost, and the file parsed now (null until written)
 //   POST /workbench               pin         { path }
 //   POST /workbench/:id           send        { prompt, chat? } — queued behind a run in the same chat, refused while another chat runs
 //   POST /workbench/:id           check       the checkout's own `fli done`, now

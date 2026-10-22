@@ -25,7 +25,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
-import { permissionFor, isFreePermission } from './permission-catalog.js'
+import { permissionFor, isFreePermission, isFreeUse } from './permission-catalog.js'
 import { scanSource }                       from './scan-source.js'
 
 /**
@@ -36,6 +36,7 @@ import { scanSource }                       from './scan-source.js'
  */
 export function runAudit({ distDir, manifest }) {
   const namespaces       = new Map()  // ns → Set<file>
+  const membersByNs      = new Map()  // ns → Set<member> across every file
   const dynamicByFile    = new Map()
   const declaredPerms    = new Set(manifest.permissions ?? [])
 
@@ -44,13 +45,16 @@ export function runAudit({ distDir, manifest }) {
 
   for (const filePath of jsFiles) {
     const source = readFileSync(filePath, 'utf8')
-    const { namespaces: foundNs, dynamicAccessCount } = scanSource(source)
+    const { namespaces: foundNs, members, dynamicAccessCount } = scanSource(source)
     const relFile = relative(distDir, filePath)
 
     for (const ns of foundNs) {
       let set = namespaces.get(ns)
       if (!set) { set = new Set(); namespaces.set(ns, set) }
       set.add(relFile)
+      let seen = membersByNs.get(ns)
+      if (!seen) { seen = new Set(); membersByNs.set(ns, seen) }
+      for (const m of members.get(ns) ?? []) seen.add(m)
     }
     if (dynamicAccessCount > 0) {
       dynamicByFile.set(relFile, dynamicAccessCount)
@@ -68,6 +72,7 @@ export function runAudit({ distDir, manifest }) {
       continue
     }
     if (isFreePermission(perm)) continue
+    if (isFreeUse(ns, membersByNs.get(ns))) continue
 
     const perms = Array.isArray(perm) ? perm : [perm]
     // For arrays (any-of-these), require any one to be declared. We track

@@ -399,6 +399,7 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   **The three `capability-ladder` warnings from `fli check` are answered, not
   ignored**: the gates stay steep because the grant table is bounded by them, so
   the ladder still catches a grant mis-stamped by a bug or a migration.
+- **`narrowPatch(data)` takes no list: which columns a patch drops is the schema's** (`FJS-D1243`). It reads litestone's UPDATE schema for the call's model — `readOnly` for a `@@transitions` field, a row stamp, the tenant column and an `@immutable` one — plus the primary key. A column only a worker or the service writes is `@system` and the write names it: `system: ['col']` on the caller's client, or a `sys()` client. `@system` is NOT dropped, so a caller naming one is refused by name. A new set-once column is `@immutable` in `db/schema.lite` and nowhere else, and nothing in a service restates the set.
 - **Thirteen models declare `@version`, and a service-side write of a row must carry
   the version it read.** The rule for which is in `db/schema.lite`'s header:
   a row a PERSON edits, never one a machine also writes on its own schedule —

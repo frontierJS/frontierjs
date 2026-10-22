@@ -13,7 +13,7 @@
 
 import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
 import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, getScoped, changesNothing, ws, actor, callerOrder } from '../../core/resource.ts'
+import { db, getScoped, narrowPatch, changesNothing, ws, actor, callerOrder } from '../../core/resource.ts'
 import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
 import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow } from '../../core/release-record.ts'
@@ -264,13 +264,8 @@ export default createService({
     // No terminal-state guard here. `@@transitions(status, …)` on Deployment
     // is the one statement of what a release may do next, and it is enforced
     // at the Data boundary — so a status this row cannot reach is refused
-    // with a 409 that NAMES the moves it can make, which the list here never
-    // did. What is left is the field allow-list, which is a different rule:
-    // which columns a caller may write at all.
-    const data  = $.data as Record<string, unknown>
-    const ALLOWED = ['status', 'builtImage', 'startedAt', 'finishedAt', 'durationMs']
-    const patch: Record<string, unknown> = {}
-    for (const key of ALLOWED) if (key in data) patch[key] = data[key]
+    // with a 409 that NAMES the moves it can make.
+    const patch = narrowPatch($.data as Record<string, unknown>)
 
     if (changesNothing(patch)) return deployment
 

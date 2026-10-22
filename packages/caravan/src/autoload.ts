@@ -1,5 +1,7 @@
 // src/autoload.ts
 // Scans a directory for *.job.ts files and registers their default exports.
+// An app hands it its root: a job sits in its domain folder, found by its suffix
+// rather than by the folder it is in (`FJS-D1141`).
 // Mirrors Junction's autoloadServices pattern exactly.
 //
 // A job in `jobs/` is NAMED BY ITS FILE, and the loader stamps the name onto
@@ -71,7 +73,8 @@ export async function autoloadJobs(
     const glob = new Bun.Glob('**/*.job.{ts,js}')
     const { resolve } = await import('node:path')
     dir = resolve(process.cwd(), rawDir)
-    entries = await Array.fromAsync(glob.scan({ cwd: dir }))
+    entries = (await Array.fromAsync(glob.scan({ cwd: dir })))
+      .filter(e => !e.split('/').includes('node_modules'))
   } catch {
     // Directory doesn't exist or isn't readable — silent skip
     return loaded
@@ -103,7 +106,7 @@ export async function autoloadJobs(
     if (def.name !== expected && fileNameForJob(def.name) !== expected) {
       throw new Error(
         `[Caravan] ${entry}: defineJob({ name: '${def.name}' }) does not match the file name. ` +
-        `A job in jobs/ is named by its file, so this would register '${def.name}' ` +
+        `A job is named by its file, so this would register '${def.name}' ` +
         `while every dispatch naming '${expected}' waits for a handler that never arrives. ` +
         `Rename the file to '${fileNameForJob(def.name)}.job.ts', or the job to '${expected}'.`
       )

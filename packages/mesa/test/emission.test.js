@@ -581,26 +581,29 @@ describe('bind: to a member expression', () => {
     expect(result).toContain('bindInput')
   })
 
-  it('CURRENT BEHAVIOR: the mutation does not notify other readers', async () => {
-    // Documenting, not endorsing. The setter assigns into the object the signal
-    // holds; the signal itself is not replaced, so an effect reading
-    // `draft.name` does not re-run and a live preview stays stale. That follows
-    // from Mesa's plain-object rule (replacement is the reactive operation,
-    // RULE 43) but it is surprising for bind:, where the whole point is
-    // two-way. If this is ever changed, delete this test — do not adjust it.
+  it('notifies other readers of the object (FJS-1423)', async () => {
+    // A write into the object the signal holds does not notify by itself, so
+    // the setter follows it with the `obj = obj` the author has nowhere to put.
     const C = await build(
-      `<script>let draft = { name: 'start' }</script>
+      `<script>let draft = { name: 'start' }\n let pick = {}\n const id = 'a'</script>
 <input bind:value={draft.name} />
-<p>{draft.name}</p>`, 'NoNotify.mesa')
+<p>{draft.name}</p>
+<select bind:value={pick[id]}><option value="">-</option><option value="me">me</option></select>
+<button disabled={!pick[id]}>share</button>`, 'Notify.mesa')
 
     const c = mount(C)
     const input = c.querySelector('input')
     input.value = 'typed'
     input.dispatchEvent(new Event('input', { bubbles: true }))
     $rt.flushSync()
+    expect(c.querySelector('p').textContent).toBe('typed')
 
-    expect(input.value).toBe('typed')                        // the control is fine
-    expect(c.querySelector('p').textContent).toBe('start')   // the preview is not
+    const sel = c.querySelector('select')
+    expect(c.querySelector('button').disabled).toBe(true)
+    sel.value = 'me'
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+    $rt.flushSync()
+    expect(c.querySelector('button').disabled).toBe(false)
     c.remove()
   })
 })

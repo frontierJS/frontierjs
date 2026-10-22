@@ -10,6 +10,10 @@
  * applied: Mesa compiles an undefined name without complaint, so they change
  * no verdict here.
  *
+ * The compile is 'strict', as the plugin's is, and a reactivity hint fails the
+ * file: the dev server prints it and a read that renders once is no better for
+ * having been printed (`FJS-3173`).
+ *
  * A compile with no errors is not a module that loads (Invariant 15), so the
  * output is parsed too — with the acorn the resolved compiler depends on.
  * `{@const t = { w, h }}` compiled clean to a memo `vite build` stopped on,
@@ -40,8 +44,8 @@ export async function checkMesaFiles(files, { root = process.cwd() } = {}) {
     const content = prepareForCompile(readFileSync(file, 'utf8'), file)
     if (content === null) continue
     try {
-      const ctx = await compiler.compileSource(content, { filename: file })
-      const errors = ctx.analysis?.errors ?? []
+      const ctx = await compiler.compileSource(content, { filename: file, externalReactivityHints: 'strict' })
+      const errors = [...(ctx.analysis?.errors ?? []), ...(ctx.analysis?.reactivityHints ?? [])]
       if (errors.length) { failed.push({ file, errors: errors.map(String) }); continue }
       try {
         acorn.parse(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' })

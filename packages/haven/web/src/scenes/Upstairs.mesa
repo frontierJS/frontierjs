@@ -124,7 +124,7 @@ iiiiiiiii
   // and the band pins the box to the view's top while it is panned off.
   const LANES = { guitar: 'p', singer: 'c', drums: 'r', bass: 'e', keys: 'o' }
   const lane = (fill, label) => `${fill[0]} ${label.padEnd(6)} ${' '.repeat(STAGE.w - 11)} ${fill[0]}`
-  const scope = {
+  var scope = {
     ...piece('scope', [
       `.${'-'.repeat(STAGE.w - 2)}.`,
       ...PARTS.map((p) => lane('|', p)),

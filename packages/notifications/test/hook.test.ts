@@ -81,8 +81,8 @@ describe('ctx.app.notify from a service hook', () => {
     expect(row.type).toBe('Signed')                       // which class rendered it
     expect(row.readAt).toBeNull()                         // unread — what the bell counts
     expect(typeof row.createdAt).toBe('string')           // ISO-8601 TEXT, orderable
-    expect(row.contextType).toBe('Document')              // the loose reference
-    expect(row.contextId).toBe('1')
+    expect(row.subjectType).toBe('Document')              // the loose reference
+    expect(row.subjectId).toBe('1')
     expect(row.data.title).toBe('"Invoice" was created')
     expect(row.data.body).toBe('for owner-2')
     expect(row.data.action).toEqual({ label: 'Open', url: '/docs/1' })

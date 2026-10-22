@@ -23,8 +23,8 @@ export interface InAppMessage {
   title?:       string
   body?:        string
   action?:      InAppAction
-  contextType?: string
-  contextId?:   number | string | null
+  subjectType?: string
+  subjectId?:   number | string | null
   data?:        Record<string, unknown>
 }
 
@@ -74,8 +74,8 @@ export interface NotificationRecord {
   userId:      number | string
   type:        string
   data:        Record<string, unknown>
-  contextType: string | null
-  contextId:   string | null
+  subjectType: string | null
+  subjectId:   string | null
   /** The definition's `key`, absent on a copy of the model that has no column. */
   deliveryKey?: string | null
   readAt:     string | null

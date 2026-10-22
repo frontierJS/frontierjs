@@ -22,10 +22,18 @@ export interface ReadEvent {
  *  is not a whole number, and on data JSON cannot carry (a function, a symbol). */
 export function formatEvent(e?: SseEvent): string
 
-/** The complete events at the front of `text`, and the unread tail to prepend
- *  to the next chunk. */
-export function parseEvents(text: string, lastId?: string): {
+/** What a reader carries from one chunk to the next. Opaque but for `held` and
+ *  `open`; hand back the one the last call answered. */
+export interface ParseState {
+  /** Characters read and not yet dispatched. */
+  readonly held: number
+  /** A line of an event is read and its blank line has not come. */
+  readonly open: boolean
+}
+
+/** The complete events in the next decoded chunk of a stream, and the state to
+ *  read the chunk after it with. Only the new chunk is scanned. */
+export function parseEvents(chunk: string, state?: ParseState): {
   events: ReadEvent[]
-  rest:   string
-  lastId: string
+  state:  ParseState
 }

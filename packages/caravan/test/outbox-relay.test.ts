@@ -375,3 +375,33 @@ describe('what the relay refuses at startup', () => {
     await expect(app._startForTest()).rejects.toThrow(/caravan/)
   })
 })
+
+// FJS-2621 — a writer with no service call
+describe('app.outbox.enqueueOn — a job writing in withDb', () => {
+
+  it('writes the row on the transaction and the relay delivers it', async () => {
+    const { app, db, queue } = await bootApp()
+    let seen: unknown = null
+    queue.handle('mail.move', async (job: any) => { seen = job.data ?? job.payload ?? job })
+
+    await app.withDb((client: any) => client.$transaction(async (tx: any) => {
+      await tx.asSystem().post.create({ data: { title: 'filed' } })
+      await app.outbox.enqueueOn(tx, 'mail.move', { to: 'closed' })
+    }))
+
+    expect(await db.asSystem().outboxMessage.count()).toBe(1)
+    expect(await app.outbox.deliver()).toEqual({ delivered: 1, failed: 0 })
+    await until('the job to run', () => seen !== null)
+  })
+
+  it('a rolled-back transaction owes nothing', async () => {
+    const { app, db } = await bootApp()
+
+    await expect(app.withDb((client: any) => client.$transaction(async (tx: any) => {
+      await app.outbox.enqueueOn(tx, 'mail.move', {})
+      throw new Error('ingest failed')
+    }))).rejects.toThrow('ingest failed')
+
+    expect(await db.asSystem().outboxMessage.count()).toBe(0)
+  })
+})

@@ -47,58 +47,81 @@ export function formatEvent({ data, event, id, retry } = {}) {
 }
 
 /**
- * The complete events at the front of `text`, and what is left over.
+ * The complete events in the next chunk of a stream, and the state to read the
+ * chunk after it with.
  *
- * Incremental: append the next decoded chunk to `rest` and call again with the
- * `lastId` this call answered. An event is complete at its blank line; what
- * follows the last one is returned untouched, so a chunk boundary anywhere —
- * mid-line, mid-event, between the CR and LF of one line break — changes
- * nothing about what is read.
+ * Incremental: hand over each decoded chunk as it arrives and the `state` the
+ * previous call answered. Only the new chunk is scanned, so one event spread
+ * over k chunks costs O(k) rather than rescanning everything held so far. A
+ * chunk boundary anywhere — mid-line, mid-event, between the CR and LF of one
+ * line break — changes nothing about what is read.
  *
- * @param {string} text
- * @param {string} [lastId]  the id the previous call answered
- * @returns {{ events: Array<{ event: string, data: unknown, id: string }>, rest: string, lastId: string }}
+ * `state` is opaque but for `held` (characters read and not yet dispatched, for
+ * a caller capping an event's size) and `open` (a line of an event is read and
+ * its blank line has not come, so a stream that ends now ended inside one).
+ *
+ * @param {string} chunk
+ * @param {ParseState} [state]  the state the previous call answered
+ * @returns {{ events: Array<{ event: string, data: unknown, id: string }>, state: ParseState }}
  */
-export function parseEvents(text, lastId = '') {
+export function parseEvents(chunk, state = START) {
   const events = []
-  let data = []
-  let type = ''
-  let id = lastId
-  let consumed = 0
+  let { tail, data, type, id, skipLf, open } = state
+  const n = chunk.length
   let i = 0
-  const n = text.length
+
+  // A CR ended the last chunk, so its line is already read; an LF first here is
+  // the other half of that one break.
+  if (skipLf && n > 0) {
+    if (chunk[0] === '\n') i = 1
+    skipLf = false
+  }
 
   while (i < n) {
     let j = i
-    while (j < n && text[j] !== '\n' && text[j] !== '\r') j++
-    if (j === n) break
-    // A CR that ends the text may be the first half of a CRLF.
-    if (text[j] === '\r' && j + 1 === n) break
-    const line = text.slice(i, j)
-    i = text[j] === '\r' && text[j + 1] === '\n' ? j + 2 : j + 1
+    while (j < n && chunk[j] !== '\n' && chunk[j] !== '\r') j++
+    if (j === n) {
+      tail += chunk.slice(i)
+      break
+    }
+    const line = tail + chunk.slice(i, j)
+    tail = ''
+    if (chunk[j] === '\r') {
+      if (chunk[j + 1] === '\n') i = j + 2
+      else {
+        i = j + 1
+        skipLf = i === n
+      }
+    } else i = j + 1
 
     if (line === '') {
-      lastId = id
-      if (data.length) events.push({ event: type || 'message', data: decode(data.join('\n')), id })
-      data = []
+      if (data !== null) events.push({ event: type || 'message', data: decode(data), id })
+      data = null
       type = ''
-      consumed = i
+      open = false
       continue
     }
 
+    open = true
     const colon = line.indexOf(':')
     if (colon === 0) continue
     const field = colon < 0 ? line : line.slice(0, colon)
     let value = colon < 0 ? '' : line.slice(colon + 1)
     if (value[0] === ' ') value = value.slice(1)
 
-    if (field === 'data') data.push(value)
+    if (field === 'data') data = data === null ? value : data + '\n' + value
     else if (field === 'event') type = value
     else if (field === 'id' && !value.includes('\0')) id = value
   }
 
-  return { events, rest: text.slice(consumed), lastId }
+  const held = tail.length + (data === null ? 0 : data.length)
+  return { events, state: { tail, data, type, id, skipLf, open: open || tail !== '', held } }
 }
+
+/** @typedef {{ tail: string, data: string | null, type: string, id: string, skipLf: boolean, open: boolean, held: number }} ParseState */
+
+/** @type {ParseState} */
+const START = { tail: '', data: null, type: '', id: '', skipLf: false, open: false, held: 0 }
 
 function decode(text) {
   try {

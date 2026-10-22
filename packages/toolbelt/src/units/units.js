@@ -380,6 +380,45 @@ export function roundMinor(value, opts = {}) {
 }
 
 /**
+ * `roundMinor` for a quotient that does not fit a Number: a BigInt numerator
+ * over a BigInt divisor, rounded to a whole BigInt with the same two modes.
+ *
+ * A rate at `@scale(9)` times units at `@scale(6)` sits at 15 places, and a
+ * million calls is past 2^53 — so the float `roundMinor(units * rate * 100)`
+ * both overflows exact integers and lands an exact half-cent tie at …4999999
+ * (9,780 calls at $0.00025 bills $2.44, not $2.45). The caller multiplies in
+ * BigInt and hands the product and the power-of-ten divisor here.
+ *
+ * Both arguments must be bigints: a Number past 2^53 is already wrong by the
+ * time it arrives, and coercing it would hide that.
+ *
+ * @param {bigint} numerator
+ * @param {bigint} divisor  non-zero; may be negative
+ * @param {{ mode?: 'half-away' | 'half-even' }} [opts]
+ * @returns {bigint}
+ */
+export function divRound(numerator, divisor, opts = {}) {
+  const mode = opts.mode ?? 'half-away'
+  if (mode !== 'half-away' && mode !== 'half-even')
+    throw new Error(`divRound: unknown mode '${mode}' — 'half-away' or 'half-even'`)
+  if (typeof numerator !== 'bigint' || typeof divisor !== 'bigint')
+    throw new Error('divRound: numerator and divisor must both be bigint')
+  if (divisor === 0n) throw new Error('divRound: the divisor is zero')
+
+  const negative = (numerator < 0n) !== (divisor < 0n)
+  const num = numerator < 0n ? -numerator : numerator
+  const den = divisor < 0n ? -divisor : divisor
+
+  const low  = num / den
+  const twice = (num % den) * 2n
+  let mag = low
+  if (twice > den) mag = low + 1n
+  else if (twice === den && (mode === 'half-away' || low % 2n === 1n)) mag = low + 1n
+
+  return negative ? -mag : mag
+}
+
+/**
  * Split a whole amount across lines so the parts sum to it EXACTLY.
  *
  * The proration case: a third of a monthly price across three lines is

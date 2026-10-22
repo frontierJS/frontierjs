@@ -21,8 +21,8 @@ model Notification {              // PascalCase singular → accessor db.notific
                                   // (use Int only if your own User.id is an Int)
   type        String              // stable notification id, e.g. 'PaymentReceived'
   data        Json                // payload built by toInApp() — varies by type
-  contextType String?             // optional: 'Order', 'Project', 'Invoice'
-  contextId   String?             // optional: id of the related record (loose ref, no FK)
+  subjectType String?             // optional: 'Order', 'Project', 'Invoice'
+  subjectId   String?             // optional: id of the related record (loose ref, no FK)
   deliveryKey String?             // the definition's key: a retried send writes no second row
   readAt      DateTime?           // null = unread
   createdAt   DateTime  @default(now())
