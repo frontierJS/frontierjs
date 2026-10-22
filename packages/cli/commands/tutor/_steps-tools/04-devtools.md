@@ -1,9 +1,9 @@
 ---
 title: 04-devtools
-description: The API console — what happened to that call
+description: The app's live feed — what happened to that call
 ---
 
-## Junction's console — why did that call fail?
+## `:live` in `fli gui` — why did that call fail?
 
 This one is not a command, because it runs **inside your app**. One line in
 the `plugins:` block of `api/config/junction.config.js`:
@@ -12,11 +12,12 @@ the `plugins:` block of `api/config/junction.config.js`:
 devtools: true,
 ```
 
-and the app serves a second, separate console on {{devtoolsPort}} alongside
-whatever port it already answers on. It binds to loopback and refuses to bind
-anywhere else without an `auth` gate, so it is safe to leave configured.
+and the app reports what it is doing on {{devtoolsPort}}, beside whatever port
+it already answers on. It binds to loopback and refuses to bind anywhere else
+without an `auth` gate, so it is safe to leave configured. It serves no page:
+the `fli gui` from lesson 3 reads it, as its `:live` pane (`6`).
 
-**Open it when a call did something you did not expect.** The live feed carries
+**Look there when a call did something you did not expect.** The live feed carries
 every service call the app makes — over HTTP and over the socket alike — with
 the service, the method, the transport, who was calling, how long it took, and
 **what it answered**. That last one is the whole point: a request that comes
@@ -24,8 +25,8 @@ back 401 tells the browser almost nothing, and this tells you which service,
 which method, and the sentence the refusal used.
 
 Two calls are made below and they are a pair — one signed in and allowed, one
-anonymous and refused — because a console that reported everything as fine and
-a console that reported everything as broken look the same from one call.
+anonymous and refused — because a feed that reported everything as fine and
+a feed that reported everything as broken look the same from one call.
 
 ```js
 if (!await narrate($)) return
@@ -70,7 +71,7 @@ await restartApi($)
 if (!await must($, await probe.httpStatus({
   url:     `http://127.0.0.1:${$.config.devtoolsPort}/api/state`,
   retries: 20,
-  name:    'the console is listening',
+  name:    'devtools is listening',
 }), {
   likely:    `something already holds ${$.config.devtoolsPort}, or the app did not restart — see .tutor/api.log`,
   reproduce: `cd ${app} && bun run start`,
@@ -128,8 +129,18 @@ if (!await must($, await probe.httpJson({
   likely: 'a refusal recorded as ok means the telemetry event carried no error — see packages/junction/src/core/service.ts',
 })) return
 
+// The console lesson 3 started reads devtools through its own server; this is
+// that crossing, asked the way the :live pane asks it.
+if (!await must($, await probe.httpStatus({
+  url:     `http://127.0.0.1:${$.config.guiPort}/api/live/health`,
+  retries: 6,
+  name:    ':live in fli gui reaches it',
+}), {
+  likely: `fli gui was started without --devtools-port ${$.config.devtoolsPort}, so it looks elsewhere`,
+})) return
+
 log.info('')
-log.info(`  the console is at http://localhost:${$.config.devtoolsPort} — the feed has both calls in it`)
+log.info(`  the feed is :live at http://localhost:${$.config.guiPort}/console/ (press 6) — both calls are in it`)
 log.info('')
 
 remember($, '04-devtools', {})

@@ -2,10 +2,12 @@
   // Study.mesa — the study (`IDEAS/study.md` 1.3, 2.1, 2.3): Claude sessions in
   // tabs beside the scene, in Sierra's side pane (`--side`, Ctrl+\ shows it,
   // Ctrl+O crosses). A tab bar, the shown tab's status line, its newest rows
-  // that fit, and a line to type in; Enter sends it. PageUp and PageDown read
-  // back and forward, Ctrl+J and Ctrl+K show the next and the last tab, Ctrl+N opens
-  // one on the default model, and `/new [model]` and `/close` are the study's
-  // own words (`tabs.js`).
+  // that fit, and a line to type in; Enter sends it. Every other key is a
+  // `tabs.js` keymap run by mesa's `keys()` on the input, and `/new [model]`,
+  // `/close` and the rest are the study's own words (`WORDS`). `?` on an
+  // empty line draws both lists in a box over the rows (`helpOf`), read off
+  // the same tables; `?` or Esc puts it away, and any other key does too,
+  // doing what it does.
   //
   // A call the owner's settings do not allow waits on a panel over the input
   // (`askRows`): on an empty line `1` allows it, `2` allows it and keeps what
@@ -37,21 +39,46 @@
   // The status line names the bench the tab's workshop figure stands at
   // (study.md 3.2), off `#workers` each second, the figure's own source.
   //
+  // It reads as a chat, as the workbench's does (`rows.js`): the owner's lines
+  // on a band, `● Claude` over each reply, a run of calls folded to its last
+  // few. While a turn works, the row over the input spins as Claude Code's own
+  // spinner does, or holds `⚙` and names the call it waits on. A rail down the
+  // right edge marks each line sent and the share in sight, and Alt+↑ and
+  // Alt+↓ (or Ctrl) jump between those lines. A tab that finished or asked
+  // while not shown carries `•` in the bar until it is, and rings the
+  // kitchen's bells (`bell.js` through `#sound`): two soft strikes for one
+  // that asks, one for one that finished, never under `/music` off.
+  //
+  // `/fold [mode]` folds a side as the workbench's Collapse does (`rows.js`),
+  // `/go [plan]` sends the plan's first open box into the tab and `/next
+  // [plan]` into a new one with the last reply handed over (`plan.js`), the
+  // plan kept on the tab so a bare `/go` reads it again. Ctrl+Y copies the
+  // last reply. What the shown tab's session is doing is `#study`'s
+  // `setLive`, so its workshop figure spins and names its call as this pane
+  // does.
+  //
   // The terminal scrolls nothing but the page, so the pane windows its own
   // rows (`rows.js`) to the size of the box it was mounted in, and again on
   // that box's `resize`. Not Mesa's `sideOf`, which makes a side where there
   // is none. Blank rows under the newest keep the input on the bottom.
-  import { tint } from '#cell'
-  import { onOpen, studyCwd } from '#study'
+  import { at as place, copyText, tint } from '#cell'
+  import { stream } from '#sound'
+  import { onOpen, setLive, studyCwd } from '#study'
   import { readWorkers } from '#workers'
+  import { listening } from '@/lib/band/band.js'
+  import { createBells, RATE } from '@/lib/band/bell.js'
   import { TONES } from '@/lib/home/answer.js'
   import { clip } from '@/lib/scene/cells.js'
   import { keptOf, readStudy, writeStudy } from '@/lib/study/kept.js'
   import { startSession } from '@/lib/study/session.js'
   import { readAlong } from '@/lib/study/transcript.js'
+  import { planLine } from '@/lib/study/plan.js'
   import { clipboardImage, imagesOf, pastedTag } from '@/lib/study/images.js'
-  import { askRows, rowsOf, waitRows, windowOf, wrapped } from '@/lib/study/rows.js'
-  import { cycled, modelOf, studyLine, tabBar } from '@/lib/study/tabs.js'
+  import { GUTTER, CLAUDE, askRows, helpRows, inner, jumpOf, railOf, rowsOf, waitRows, windowOf, wrapped } from '@/lib/study/rows.js'
+  import { SPIN, TOOL } from '@/lib/working.js'
+  import { ASKED, FOLDS, HELP, HELPING, KEYS, cycled, helpOf, modelOf, studyLine, tabBar } from '@/lib/study/tabs.js'
+  import { keys } from '@frontierjs/mesa/keys'
+  import { bindings } from '@frontierjs/toolbelt/keys'
 
   const cwd = studyCwd()
 
@@ -59,8 +86,10 @@
   // `top` the first row shown while reading back, null following the newest;
   // `resume` the session id a kept tab reopens, until its process starts;
   // `reads` the session a read-along tails from `transcript`, and such a tab never resumes.
-  const tabOf = (model = null, resume = null) => ({ model, resume, transcript: null, reads: null, session: null, off: null, earlier: [], top: null, since: 0 })
-  const alongOf = (reads, transcript) => ({ ...tabOf(), reads, transcript })
+  // `was` the status last heard, so a turn ending in a tab not shown marks it `unread`.
+  // `fold` is `/fold`'s mode and `plan` the plan `/go` last read.
+  const tabOf = (model = null, resume = null, { fold = 'none', plan = null } = {}) => ({ model, resume, transcript: null, reads: null, session: null, off: null, earlier: [], top: null, since: 0, was: null, unread: false, fold, plan })
+  const alongOf = (reads, transcript, fold) => ({ ...tabOf(null, null, { fold }), reads, transcript })
   const kept = readStudy(cwd)
 
   let root
@@ -69,10 +98,12 @@
   let draft = ''
   // The clipboard's pictures the line's `[Image #n]` tags stand for, `n` from 1; and what could not be sent.
   let pasted = []
+  // `{ text, ink }`, the row over the input until the next key: what went wrong, or what a key did.
   let note  = null
+  const say = (text, ink = TONES.danger) => { note = { text, ink } }
   // A tab is held in place and `tabs` assigned again, since its session's
   // state arrives on the session's own subscription.
-  let tabs  = kept ? kept.tabs.map((t) => t.reads ? alongOf(t.reads, t.transcript) : tabOf(t.model, t.sessionId)) : [tabOf()]
+  let tabs  = kept ? kept.tabs.map((t) => t.reads ? alongOf(t.reads, t.transcript, t.fold) : tabOf(t.model, t.sessionId, t)) : [tabOf()]
   let at    = kept?.at ?? 0
   let now   = Date.now()
   // Written only when what is kept changed: a session's state arrives once an event.
@@ -85,10 +116,40 @@
     try { writeStudy(cwd, next) } catch {}
   }
   const changed = () => { tabs = [...tabs]; keep() }
+  const heard = (t) => (s) => {
+    if (t !== tabs[at] && t.was === 'working' && s.status !== 'working') {
+      t.unread = true
+      ring(s.status === 'needs-permission' || s.waiting ? 'chef' : 'order')
+    }
+    t.was = s.status
+    mirror(t, s)
+    changed()
+  }
+
+  // A read-along's state is read off `#workers` already, so only a session this study runs is mirrored.
+  function mirror(t, s) {
+    if (t.reads || !s.sessionId) return
+    const tool = s.messages.findLast((m) => m.kind === 'tool' && !m.done)
+    setLive(s.sessionId, s.status === 'idle' || s.exit ? null : { status: s.status, tool: tool?.line ?? null, since: t.since })
+  }
+  const unmirror = (t) => { const id = t.session?.state.sessionId; if (id && !t.reads) setLive(id, null) }
+
+  const bells = createBells()
+  let stopBells = null
+  function ring(kind) {
+    if (!listening.heard) return
+    stopBells ??= stream((from, n) => bells.samples(from, n), { rate: RATE, gain: () => listening.volume / 100 })
+    if (stopBells) bells.ring(kind)
+  }
+  function show(i) {
+    at = i
+    tabs[at].unread = false
+    keep()
+  }
 
   function listen(t) {
     t.session = readAlong({ session: t.reads, path: t.transcript, worker: () => readWorkers().find((w) => w.session === t.reads) ?? null })
-    t.off = t.session.subscribe(changed)
+    t.off = t.session.subscribe(heard(t))
     return t
   }
   for (const t of tabs) if (t.reads) listen(t)
@@ -96,9 +157,8 @@
   // Its own tab where there is one, so a prompt there is answered on its panel.
   $.onDestroy(onOpen((w) => {
     const i = tabs.findIndex((t) => (t.session?.state.sessionId ?? t.resume) === w.session)
-    if (i >= 0) at = i
-    else { tabs = [...tabs, listen(alongOf(w.session, w.transcript))]; at = tabs.length - 1 }
-    keep()
+    if (i >= 0) show(i)
+    else { tabs = [...tabs, listen(alongOf(w.session, w.transcript))]; show(tabs.length - 1) }
   }))
 
   var box = null
@@ -122,56 +182,75 @@
     if (JSON.stringify([...next]) !== JSON.stringify([...benches])) benches = next
   }, 1000)
   tick.unref?.()
+  // The spinner's frames, only while the shown tab works.
+  const spin = setInterval(() => { if (tabs[at]?.session?.state.status === 'working') now = Date.now() }, 250)
+  spin.unref?.()
   $.onDestroy(() => {
     clearInterval(tick)
-    for (const t of tabs) { t.off?.(); t.session?.end() }
+    clearInterval(spin)
+    stopBells?.()
+    for (const t of tabs) { t.off?.(); unmirror(t); t.session?.end() }
   })
 
-  const hint = (model, resume, reads, transcript) => wrapped(reads ? `Reading along ${transcript ?? reads}. Its own terminal answers it; /close leaves.` : `${resume ? `Session ${resume.slice(0, 8)} reopens at your next line. ` : ''}Claude in ${cwd}${model ? ` on ${model}` : ''}. Enter sends a line, Ctrl+V pastes an image, PageUp reads back, Ctrl+J and Ctrl+K the next and last tab, /new [model] opens one, /close ends this one, Ctrl+O is the scene.`, w - 1)
-    .map((text) => ({ text, ink: TONES.muted }))
+  const hint = (model, resume, reads, transcript) => wrapped(reads ? `Reading along ${transcript ?? reads}. Its own terminal answers it; /close leaves.` : `${resume ? `Session ${resume.slice(0, 8)} reopens at your next line. ` : ''}Claude in ${cwd}${model ? ` on ${model}` : ''}. Enter sends a line; ? on an empty line lists every key and word.`, inner(w))
+    .map((text) => ({ text: GUTTER + text, ink: TONES.muted }))
 
   // Each reads `tabs[at]` itself: a tab is the same object after a change,
   // so a value derived from a derived tab would be judged unchanged and stop.
   $: state = tabs[at].session?.state ?? null
   $: said  = [...tabs[at].earlier, ...(state?.messages ?? [])]
-  $: all   = said.length ? rowsOf(said, w - 1) : hint(tabs[at].model, tabs[at].resume, tabs[at].reads, tabs[at].transcript)
+  let helping = false
+  $: all   = helping ? helpRows(helpOf(), w) : said.length ? rowsOf(said, w, tabs[at].fold) : hint(tabs[at].model, tabs[at].resume, tabs[at].reads, tabs[at].transcript)
   $: asking = state?.asking ?? []
-  var DANGER = TONES.danger
-  $: noted = note ? wrapped(`! ${note}`, w - 1).map((text) => ({ text, ink: DANGER })) : []
-  $: panel = [...noted, ...(asking.length ? askRows(asking[0], asking.length - 1, w - 1, Math.max(3, h - 8))
-    : state?.waiting ? waitRows(state.waiting, w - 1) : [])]
-  $: room  = Math.max(1, h - 3 - panel.length)
-  $: shown = windowOf(all, room, tabs[at].top)
+  var RULE   = '#4b5563'
+  $: noted = note ? wrapped(note.ink === TONES.danger ? `! ${note.text}` : note.text, inner(w)).map((text) => ({ text, ink: note.ink })) : []
+  $: panel = [...noted, ...(asking.length ? askRows(asking[0], asking.length - 1, inner(w), Math.max(3, h - 10))
+    : state?.waiting ? waitRows(state.waiting, inner(w)) : [])]
+  $: live  = state?.status === 'working' ? [liveRow(state, tabs[at].since, now, w)] : []
+  // The bar, the status line, a blank row under it, the rule and the input.
+  $: room  = Math.max(1, h - 5 - panel.length - live.length)
+  $: shown = windowOf(all, room, helping ? 0 : tabs[at].top)
   $: pad   = Math.max(0, room - shown.rows.length)
-  $: bar   = clip(tabBar(tabs, at), w)
+  $: rail  = railOf(all, room, shown.start) ?? []
+  $: bar   = clip(' ' + tabBar(tabs, at), w)
+  $: rule  = '─'.repeat(Math.max(0, w))
   $: bench = benches.get(tabs[at].reads ?? state?.sessionId ?? tabs[at].resume) ?? null
-  $: head  = clip(' ' + [
+  $: head  = clip(GUTTER + [
     modelOf(tabs[at], state),
     state?.readOnly ? `read-only · ${state.waiting ? 'waiting on you' : state.exit ? 'no transcript' : state.status}`
       : state?.status === 'needs-permission' ? 'needs permission'
       : state?.status === 'working' ? `working ${Math.max(0, Math.round((now - tabs[at].since) / 1000))}s`
       : state?.exit ? 'ended' : 'idle',
     bench ? `at ${bench}` : null,
+    tabs[at].fold !== 'none' ? `fold ${tabs[at].fold}` : null,
     state && !state.readOnly ? `$${state.cost.toFixed(2)}` : null,
     shown.below ? `${shown.below} newer ↓` : null,
   ].filter(Boolean).join(' · '), w)
 
+  // The row over the input while a turn works: the call it waits on, else the spinner.
+  function liveRow(s, since, t, width) {
+    const tool = s.messages.findLast((m) => m.kind === 'tool' && !m.done)
+    const took = since ? ` · ${Math.max(0, Math.round((t - since) / 1000))}s` : ''
+    return tool
+      ? { text: clip(`${GUTTER}${TOOL} ${tool.line}`, width - 2 - took.length) + took, ink: TONES.warn }
+      : { text: clip(`${GUTTER}${SPIN[Math.floor(t / 250) % SPIN.length]} thinking${took}`, width - 2), ink: CLAUDE }
+  }
+
   function close() {
     const t = tabs[at]
     t.off?.()
+    unmirror(t)
     // A turn under way is stopped rather than left to finish, or to ask, where no tab shows it.
     if (t.session && t.session.state.status !== 'idle') t.session.kill()
     else t.session?.end()
     const rest = tabs.filter((x) => x !== t)
     tabs = rest.length ? rest : [tabOf()]
-    at = Math.min(at, tabs.length - 1)
-    keep()
+    show(Math.min(at, tabs.length - 1))
   }
 
   function open(model) {
     tabs = [...tabs, tabOf(model)]
-    at = tabs.length - 1
-    keep()
+    show(tabs.length - 1)
   }
 
   function send() {
@@ -181,83 +260,150 @@
     if ('new' in asked) { open(asked.new); draft = ''; return }
     if (asked.close) { close(); draft = ''; return }
     const t = tabs[at]
+    if ('fold' in asked) {
+      t.fold = asked.fold ?? FOLDS[(FOLDS.indexOf(t.fold) + 1) % FOLDS.length]
+      t.top = null
+      draft = ''
+      return changed()
+    }
+    if ('go' in asked || 'next' in asked) { draft = ''; return planned(t, asked) }
     if (t.reads) return
     let images
-    try { images = imagesOf(text, { cwd, pasted }) } catch (e) { note = e.message; return }
+    try { images = imagesOf(text, { cwd, pasted }) } catch (e) { return say(e.message) }
+    if (!deliver(t, text, images)) return
+    draft = ''
+    pasted = []
+  }
+
+  /** `text` into tab `t`, its session started or resumed first; `shown` is what its band says. */
+  function deliver(t, text, images = [], shown = text) {
     if (t.session?.state.asking.length) t.session.answer('deny')
     if (!t.session || t.session.state.exit) {
       const resume = t.session?.state.sessionId ?? t.resume ?? undefined
       if (t.session) t.earlier = [...t.earlier, ...t.session.state.messages]
       t.off?.()
       t.session = startSession({ cwd, resume, model: t.model ?? undefined })
-      t.off = t.session.subscribe(changed)
+      t.off = t.session.subscribe(heard(t))
     }
-    if (!t.session.send(text, images)) return changed()
-    draft = ''
-    pasted = []
-    t.top = null
     t.since = now = Date.now()
+    const ok = t.session.send(text, images, shown)
+    if (ok) t.top = null
     changed()
+    return ok
+  }
+
+  // A turn's reply: the words after the newest line sent that has any.
+  function replyOf(messages) {
+    const end = messages.findLastIndex((m) => m.kind === 'said')
+    const from = messages.findLastIndex((m, i) => i < end && m.kind === 'you')
+    return messages.slice(from + 1, end + 1).filter((m) => m.kind === 'said').map((m) => m.text.trim()).join('\n\n')
+  }
+
+  /** `/go` into `t`, or `/next` into a new tab on its model. A turn under way is refused, as the workbench's Go is: the step would land in its middle. */
+  async function planned(t, asked) {
+    const verb = 'go' in asked ? 'go' : 'next'
+    const path = asked[verb] ?? t.plan
+    if (t.reads && verb === 'go') return say('a read-along sends nothing; /next opens a tab of its own')
+    if (!path) return say(`/${verb} names a plan the first time: /${verb} IDEAS/<paper>.md`)
+    if (verb === 'go' && t.session && t.session.state.status !== 'idle' && !t.session.state.exit) return say(`a turn is working — /go once it is done`)
+    let r
+    try {
+      r = await planLine(cwd, path, { next: verb === 'next', lastResult: replyOf([...t.earlier, ...(t.session?.state.messages ?? [])]) })
+    } catch (e) { return say(e.message) }
+    if (r.refused) return say(r.refused)
+    t.plan = path
+    const shown = `/${verb} ${path} → ${r.step} ${r.title}`
+    if (verb === 'go') return deliver(t, r.prompt, [], shown)
+    open(t.model)
+    tabs[at].plan = path
+    deliver(tabs[at], r.prompt, [], shown)
+  }
+
+  function copyReply() {
+    const text = replyOf(said)
+    if (!text) return say('no reply to copy yet', TONES.muted)
+    copyText(root, text).then((ok) => say(ok ? `copied the last reply, ${text.length} characters` : 'nothing reached the clipboard', ok ? TONES.ok : TONES.danger))
   }
 
   const step = () => Math.max(1, room - 1)
-  const CHOICE = { 1: 'allow', 2: 'always', 3: 'deny' }
   function paste() {
-    if (tabs[at].reads) { note = 'a read-along sends nothing'; return }
+    if (tabs[at].reads) return say('a read-along sends nothing')
     // A line with no tag left holds none of what was pasted before, so the count starts again.
     if (!/\[Image #\d+\]/.test(draft)) pasted = []
-    try { pasted = [...pasted, clipboardImage()] } catch (e) { note = e.message; return }
+    try { pasted = [...pasted, clipboardImage()] } catch (e) { return say(e.message) }
     draft = `${draft}${draft && !draft.endsWith(' ') ? ' ' : ''}${pastedTag(pasted.length)} `
   }
 
-  function keydown(e) {
+  // ─── the keys ──────────────────────────────────────────────────────────────
+
+  function scrolled(to) {
+    tabs[at].top = to == null || to >= all.length - room ? null : Math.max(0, to)
+    changed()
+  }
+  function answer(choice) {
+    tabs[at].session.answer(choice)
+    changed()
+  }
+  // Each action is its line in the help, so the names are `tabs.js`'s.
+  const ACTIONS = {
+    'next tab':                              () => show(cycled(at, tabs.length, 1)),
+    'last tab':                              () => show(cycled(at, tabs.length, -1)),
+    // The draft stays in the field, where it can be sent from the new tab.
+    'new tab on the default model':          () => open(null),
+    'paste an image from the clipboard':     paste,
+    'copy the last reply':                   copyReply,
+    'jump to your line before':              () => scrolled(jumpOf(all, shown.start, -1)),
+    'jump to your line after':               () => scrolled(jumpOf(all, shown.start, 1)),
+    'read back':                             () => scrolled(shown.start - step()),
+    'read forward':                          () => scrolled(shown.start + step()),
+    'allow the waiting call':                () => answer('allow'),
+    'allow it, and what the CLI suggested':  () => answer('always'),
+    'deny it':                               () => answer('deny'),
+    'keys and words':                        () => { helping = !helping },
+  }
+  // A key renamed in `tabs.js` and not here would bind a key that throws, so it is refused at mount.
+  for (const b of bindings({ active: [KEYS, ASKED, HELP, HELPING], mac: false, text: false })) {
+    if (!ACTIONS[b.action]) throw new Error(`Study.mesa: ${b.keys} names '${b.action}', which ACTIONS lacks`)
+  }
+  // Read at each key. On the input itself, so a digit or `?` it takes is not
+  // typed; they are active only on an empty line, since a line may begin with one.
+  const keyed = () => ({
+    active: helping ? [HELPING] : [KEYS, ...(draft ? [] : [HELP, ...(asking.length ? [ASKED] : [])])],
+    on: (action) => { note = null; ACTIONS[action]() },
+  })
+
+  // A key no keymap took: what was said goes, and so does the help.
+  function keydown() {
     note = null
-    // `code`, the key's name: a legacy terminal's Ctrl+K is a control byte.
-    if (asking.length && !draft && !e.ctrlKey && !e.metaKey && !e.altKey && CHOICE[e.key]) {
-      // Before the field sees it, so the letter answers rather than starting a line.
-      e.preventDefault()
-      tabs[at].session.answer(CHOICE[e.key])
-      changed()
-    } else if (e.ctrlKey && (e.code === 'j' || e.code === 'k')) {
-      // Before the field sees it: an input submits on a line feed and deletes to its end on Ctrl+K.
-      e.preventDefault()
-      at = cycled(at, tabs.length, e.code === 'j' ? 1 : -1)
-      keep()
-    } else if (e.ctrlKey && e.code === 'n') {
-      // The draft stays in the field, where it can be sent from the new tab.
-      e.preventDefault()
-      open(null)
-    } else if (e.ctrlKey && e.code === 'v') {
-      e.preventDefault()
-      paste()
-    } else if (e.key === 'PageUp') {
-      e.preventDefault()
-      tabs[at].top = Math.max(0, shown.start - step())
-      changed()
-    } else if (e.key === 'PageDown') {
-      e.preventDefault()
-      const next = shown.start + step()
-      tabs[at].top = next >= all.length - room ? null : next
-      changed()
-    }
+    helping = false
   }
 </script>
 
 <div bind:this={root}>
   <pre class="line" {@attach tint(TONES.info)}>{bar}</pre>
   <pre class="line" {@attach tint(TONES.muted)}>{head}</pre>
-  {#each shown.rows as row, i (`${shown.start + i}:${row.ink}:${row.text}`)}
-    <pre class="line" {@attach tint(row.ink)}> {row.text}</pre>
+  <pre class="line">{' '}</pre>
+  {#each shown.rows as row, i (`${shown.start + i}:${row.ink}:${row.ground}:${row.text}`)}
+    <pre class="line" {@attach tint(row.ink, row.ground)}>{row.text || ' '}</pre>
   {/each}
   {#each { length: pad } as _, i (i)}
     <pre class="line">{' '}</pre>
   {/each}
-  {#each panel as row, i (`${i}:${row.ink}:${row.text}`)}
-    <pre class="line" {@attach tint(row.ink)}> {row.text}</pre>
+  {#each live as row (row.text)}
+    <pre class="line" {@attach tint(row.ink)}>{row.text}</pre>
   {/each}
+  {#each panel as row, i (`${i}:${row.ink}:${row.text}`)}
+    <pre class="line" {@attach tint(row.ink)}>{GUTTER + row.text}</pre>
+  {/each}
+  <pre class="line" {@attach tint(RULE)}>{rule}</pre>
   <form onsubmit|preventDefault={send}>
-    <input bind:value={draft} onkeydown={keydown} placeholder={tabs[at].reads ? 'read-only — its own terminal answers it' : asking.length ? '1, 2 or 3, or why and Enter to deny' : 'ask Claude, Enter sends'} />
+    <dd>
+      <input {@attach keys(keyed)} bind:value={draft} onkeydown={keydown} placeholder={tabs[at].reads ? 'read-only — its own terminal answers it' : asking.length ? '1, 2 or 3, or why and Enter to deny' : 'ask Claude, Enter sends · ? lists the keys'} />
+    </dd>
   </form>
+  {#each rail as r, k (`${k}:${r.glyph}:${r.ink}:${w}`)}
+    <pre class="line" {@attach place(w - 1, 3 + k, 20)} {@attach tint(r.ink)}>{r.glyph}</pre>
+  {/each}
 </div>
 
 <style>

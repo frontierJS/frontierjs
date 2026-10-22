@@ -14,7 +14,7 @@ import { pathToFileURL } from 'node:url'
 import { readSettings, writeSettingsModule } from '../config/content.js'
 import { siteKit } from '../config/vite.js'
 import { collection } from '../src/collection.js'
-import { LOCKED_KEYS, applyEdit, formOf, lockedKeysChanged, pathRefusal } from '../src/editable.js'
+import { LOCKED_KEYS, applyEdit, applyPhoto, arrangeCollection, collectionOf, formOf, lockedKeysChanged, pathRefusal, photoName, photoOf } from '../src/editable.js'
 import { changedBlocks, plainSwap } from '../src/editor/live.js'
 
 const failed = []
@@ -42,6 +42,127 @@ try {
     check('an item is its slug, front-matter and Body', items[1].frontmatter.rating === 4 && items[1].Body === Body)
     check('an item without front-matter has an empty object', JSON.stringify(items[0].frontmatter) === '{}')
     check('an empty glob is an empty list', collection({}).length === 0)
+    const placed = collection({
+      '/content/collections/reviews/1-annie.md': { default: Body },
+      '/content/collections/reviews/2-bo.md':    { frontmatter: { order: 2 }, default: Body },
+      '/content/collections/reviews/3-cy.md':    { frontmatter: { order: 1 }, default: Body },
+    })
+    check('an order: number places an item, and one without follows by name (FJS-D1403)',
+      placed.map((i) => i.slug).join() === '3-cy,2-bo,1-annie', placed.map((i) => i.slug).join())
+  }
+
+  // ─── an owner's lists: menu entries and collection items ──────────────────
+  {
+    const menu = [
+      '---',
+      'items:',
+      '-',
+      '  name: Logo',
+      '  type: image',
+      '-',
+      '  name: Services   # the hub',
+      '  link: /services/',
+      '  items:',
+      '  - name: Deep',
+      '    link: /deep/',
+      '  - name: Move',
+      '    link: /move/',
+      '- name: Contact',
+      '  link: /contact/',
+      '---',
+      '',
+    ].join('\n')
+    const read = (text) => JSON.stringify(formOf(text).entries.map((e) => [e.label, e.depth, e.index]))
+    check('a menu\'s entries are listed with their depth, place and words',
+      read(menu) === '[["Logo",0,0],["Services",0,1],["Deep",1,0],["Move",1,1],["Contact",0,2]]', read(menu))
+    const names = (r) => r.text ? JSON.stringify(formOf(r.text).entries.map((e) => e.label)) : r.refused
+    const at = (label) => formOf(menu).entries.find((e) => e.label === label).line
+    const up = applyEdit(menu, { entry: { line: at('Services') + 1, act: 'earlier' } })
+    check('Earlier swaps an entry with the one before it, its sub-entries and comment going with it',
+      names(up) === '["Services","Deep","Move","Logo","Contact"]' && up.text.includes('Services   # the hub'), names(up))
+    check('a line inside a sub-entry moves the sub-entry, not its parent',
+      names(applyEdit(menu, { entry: { line: at('Move'), act: 'earlier' } })) === '["Logo","Services","Move","Deep","Contact"]')
+    check('Copy repeats the entry below itself (FJS-D1404)',
+      names(applyEdit(menu, { entry: { line: at('Logo'), act: 'copy' } })) === '["Logo","Logo","Services","Deep","Move","Contact"]')
+    const gone = applyEdit(menu, { entry: { line: at('Contact'), act: 'remove' } })
+    check('Remove takes the entry out, any entry being the owner\'s (FJS-D1405)',
+      names(gone) === '["Logo","Services","Deep","Move"]' && gone.text.endsWith('---\n'), names(gone))
+    check('the first entry is not moved earlier', /already first/.test(applyEdit(menu, { entry: { line: at('Logo'), act: 'earlier' } }).refused ?? ''))
+    check('the last entry is not moved later', /already last/.test(applyEdit(menu, { entry: { line: at('Move'), act: 'later' } }).refused ?? ''))
+    const only = '---\nitems:\n- name: One\n  link: /\n---\n'
+    check('a list\'s only entry is not removed', /only entry/.test(applyEdit(only, { entry: { line: 3, act: 'remove' } }).refused ?? ''))
+    check('a line with no entry is refused', /no list entry/.test(applyEdit(menu, { entry: { line: 2, act: 'copy' } }).refused ?? ''))
+    check('an entry is changed on its own', /on its own/.test(applyEdit(menu, { body: 'x', entry: { line: 3, act: 'copy' } }).refused ?? ''))
+
+    check('a collection is a folder under content/collections',
+      collectionOf('content/collections/reviews/1-a.md') === 'content/collections/reviews' &&
+      collectionOf('content/routes/a.md') === null && collectionOf('content/collections/a.md') === null)
+    const dir = 'content/collections/reviews'
+    const files = [
+      { path: `${dir}/1-annie.md`, source: '---\nreviewer: Annie\n---\nGood.\n' },
+      { path: `${dir}/2-bo.md`,    source: '---\nreviewer: Bo # kept\n---\nFine.\n' },
+      { path: `${dir}/3-cy.md`,    source: 'Plain.\n' },
+    ]
+    const order = (plan) => {
+      const now = new Map(files.map((f) => [f.path, f.source]))
+      for (const w of plan.writes) w.text === null ? now.delete(w.path) : now.set(w.path, w.text)
+      return collection(Object.fromEntries([...now].map(([p, t]) => ['/' + p, { frontmatter: formOf(t).keys.reduce((o, k) => ({ ...o, [k.key]: k.value }), {}), default: null }])))
+        .map((i) => i.slug).join()
+    }
+    const later = arrangeCollection(files, { path: `${dir}/1-annie.md`, act: 'later' })
+    check('a move writes order: on each item whose place is new, front matter or none (FJS-D1403)',
+      order(later) === '2-bo,1-annie,3-cy' && later.writes.length === 3 &&
+      later.writes.find((w) => w.path.endsWith('2-bo.md')).text === '---\nreviewer: Bo # kept\norder: 1\n---\nFine.\n' &&
+      later.writes.find((w) => w.path.endsWith('3-cy.md')).text === '---\norder: 3\n---\nPlain.\n', JSON.stringify(later))
+    const placedFiles = files.map((f, k) => ({ ...f, source: f.source.replace(/^---\n|^/, `---\norder: ${k + 1}\n${f.source.startsWith('---') ? '' : '---\n'}`) }))
+    const again = arrangeCollection(placedFiles, { path: `${dir}/3-cy.md`, act: 'earlier' })
+    check('an item already at its number keeps its file', again.writes.length === 2 && !again.writes.some((w) => w.path.endsWith('1-annie.md')), JSON.stringify(again.writes.map((w) => w.path)))
+    const copy = arrangeCollection(files, { path: `${dir}/1-annie.md`, act: 'copy' })
+    check('Copy is the item\'s file whole, named beside it and placed after it (FJS-D1404)',
+      copy.path === `${dir}/1-annie-copy.md` && order(copy) === '1-annie,1-annie-copy,2-bo,3-cy' &&
+      copy.writes.find((w) => w.path === copy.path).text.includes('reviewer: Annie\norder: 2'), JSON.stringify(copy))
+    check('a second copy takes the next free name',
+      arrangeCollection([...files, { path: `${dir}/1-annie-copy.md`, source: 'x' }], { path: `${dir}/1-annie.md`, act: 'copy' }).path === `${dir}/1-annie-copy-2.md`)
+    const removed = arrangeCollection(files, { path: `${dir}/2-bo.md`, act: 'remove' })
+    check('Remove deletes the file and moves nothing', JSON.stringify(removed.writes) === JSON.stringify([{ path: `${dir}/2-bo.md`, text: null }]))
+    check('the only item is not removed', /only item/.test(arrangeCollection(files.slice(0, 1), { path: files[0].path, act: 'remove' }).refused ?? ''))
+    check('the first item is not moved earlier', /already first/.test(arrangeCollection(files, { path: files[0].path, act: 'earlier' }).refused ?? ''))
+    check('a file outside a collection is refused', /not an item/.test(arrangeCollection(files, { path: 'content/routes/a.md', act: 'later' }).refused ?? ''))
+  }
+
+  // ─── an owner's photos (FJS-D1406, FJS-D1407) ─────────────────────────────
+  {
+    const src = [
+      '---',
+      'title: About',
+      'hero_image: /media/images/owner.jpg?width=800&height=600 # the porch',
+      'logo: /media/images/logo.svg',
+      'background: /media/images/band.jpg',
+      'away: https://example.com/a.jpg',
+      '---',
+      'Words.',
+    ].join('\n')
+    const keys = Object.fromEntries(formOf(src).keys.map((k) => [k.key, k.photo]))
+    check('a front-matter path to a raster photo is a photo, with its file under content/public/',
+      keys.hero_image?.file === 'content/public/media/images/owner.jpg' && keys.hero_image.src === '/media/images/owner.jpg' && keys.hero_image.alt === '')
+    check('an SVG, a locked key, another site\'s photo and words are not photos',
+      !keys.logo && !keys.background && !keys.away && !keys.title)
+    check('?text= is the photo\'s words (FJS-D1406)', photoOf('/media/a%20b.png?text=The+porch').alt === 'The porch' && photoOf('/media/a%20b.png').file === 'content/public/media/a b.png')
+
+    const swapped = applyPhoto(src, { key: 'hero_image', alt: '  Our  front porch ', src: '/media/images/porch.jpg' })
+    const line = swapped.text?.split('\n')[2]
+    check('a swap writes the new address with the words as ?text=, keeps the sizing and the comment, and drops the old height',
+      line === 'hero_image: /media/images/porch.jpg?width=800&text=Our+front+porch # the porch', line ?? swapped.refused)
+    check('only that line changes', swapped.text?.split('\n').filter((l, i) => l !== src.split('\n')[i]).length === 1)
+    const worded = applyPhoto(src, { key: 'hero_image', alt: 'The porch' })
+    check('words alone keep the photo and its height', worded.text?.split('\n')[2] === 'hero_image: /media/images/owner.jpg?width=800&height=600&text=The+porch # the porch', worded.text?.split('\n')[2] ?? worded.refused)
+    check('a photo without words is refused', /what it shows/.test(applyPhoto(src, { key: 'hero_image', alt: ' ', src: '/media/images/porch.jpg' }).refused ?? ''))
+    check('a key that is not a photo is refused', /not one of the site's photos/.test(applyPhoto(src, { key: 'logo', alt: 'Logo' }).refused ?? ''))
+    check('a new address that is not a photo is refused', /not one of the site's photos/.test(applyPhoto(src, { key: 'hero_image', alt: 'x', src: '/media/x.svg' }).refused ?? ''))
+
+    const taken = new Set(['my-porch.jpg', 'my-porch-2.jpg'])
+    check('a new photo is named for the upload, past a name already taken',
+      photoName('My Porch!.HEIC', 'jpg', (n) => taken.has(n)) === 'my-porch-3.jpg' && photoName('...', 'png') === 'photo.png')
   }
 
   // ─── readSettings / writeSettingsModule ───────────────────────────────────

@@ -70,8 +70,8 @@ export const linked = (url, seen = () => {}, copied = () => {}) => (el) => {
   }
 }
 
-/** `url` copied as a right click on a link copies it, from any box drawn by `el`'s renderer. */
-export const copyLink = (el, url) => copy(el?.ctx, url).catch(() => false)
+/** `text` copied as a right click on a link copies it, from any box drawn by `el`'s renderer. */
+export const copyText = (el, text) => copy(el?.ctx, text).catch(() => false)
 
 const SEGMENTS = new Intl.Segmenter()
 

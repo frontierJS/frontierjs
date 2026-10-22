@@ -15,7 +15,7 @@ const provisionScript = () => {
   return { root }
 }
 
-// `host-record.ts` beside it is the Cloudflare half, for `provision:dns`.
+// `host-record.ts` beside it is the Cloudflare half, for `provision:dns` and `pointHost`.
 const runProvision = async (input, file = 'provision-host.ts', env = {}) => {
   const { spawnSync }  = await import('node:child_process')
   const { existsSync } = await import('node:fs')
@@ -32,7 +32,7 @@ const runProvision = async (input, file = 'provision-host.ts', env = {}) => {
   catch { return { error: `${file} answered no JSON (exit ${run.status})` } }
 }
 
-// Basecamp's own hostname, the one `provision:dns` points at the box.
+// Basecamp's own hostname, the one `pointHost` points at the box.
 const webDomain = async () =>
   (await import(provisionScript().root + 'frontier.config.js')).default.deploy.web?.domain
 
@@ -52,7 +52,87 @@ const cloudflareToken = async ({ interactive, write = true, say }) => {
 // pasted just now goes on the call itself.
 const hostRecord = (input) => runProvision(input, 'host-record.ts', { CLOUDFLARE_TOKEN: process.env.CLOUDFLARE_TOKEN })
 
-// One row of `provision:list`, and of the pick `provision:destroy` offers with no id.
+// Asked before the install, so a token that opens no zone holding the hostname
+// refuses before minutes of apt rather than after them. No token is not a
+// refusal — the record can come later. Answers the refusal, or null.
+const zoneRefusal = async ({ domain, log, echo, chalk }) => {
+  if (!await cloudflareToken({ interactive: !!process.stdin.isTTY, say: (t) => log.warn(t) })) {
+    log.warn(`No CLOUDFLARE_TOKEN: the install leaves ${domain} without a DNS record and prints the line that writes it`)
+    return null
+  }
+  const found = await hostRecord({ host: domain, check: true })
+  if (found.error) return `Cloudflare: ${found.error.replace(/^Cloudflare:\s*/, '')}`
+  echo(`  ${chalk.green('✓')} ${chalk.dim(`${found.zone} is at Cloudflare`)}\n`)
+  return null
+}
+
+// The box's IPv4 address. An ssh alias names none, so ssh's own reading of its
+// config is asked, then the resolver; null when neither gives one.
+const boxAddress = async (dest) => {
+  const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/
+  const host = dest.split('@').pop()
+  if (IPV4.test(host)) return host
+  const { spawnSync } = await import('node:child_process')
+  const named = (spawnSync('ssh', ['-G', dest], { encoding: 'utf8' }).stdout || '').match(/^hostname (\S+)$/m)?.[1] ?? host
+  if (IPV4.test(named)) return named
+  try { return (await (await import('node:dns')).promises.lookup(named, { family: 4 })).address }
+  catch { return null }
+}
+
+// Basecamp's own record, written once Basecamp answers on the box — the
+// `provision:dns` write, so the record carries the fleet's mark either way. Never
+// asks for a token: `zoneRefusal` already did, before the install. A record
+// already behind the proxy stays there. Answers the record, or null after
+// printing the line that finishes the job.
+const dnsLine = (host, ip, configured) => `fli provision:dns ${ip ?? '<ip>'}${host === configured ? '' : ` --host ${host}`}`
+const pointHost = async ({ host, ip, configured, log }) => {
+  const manual = dnsLine(host, ip, configured)
+  if (!ip) { log.warn(`  No address for the box, so ${host} has no DNS record. With its address: ${manual}`); return null }
+  if (!process.env.CLOUDFLARE_TOKEN) { log.warn(`  ${host} has no DNS record. Once you have a CLOUDFLARE_TOKEN: ${manual}`); return null }
+  const done = await hostRecord({ host, ip })
+  if (done.error) { log.error(`  ${done.error}. Then: ${manual}`); return null }
+  log.success(`${done.host} → ${done.ip} in ${done.zone}, ${done.proxied ? 'behind the proxy' : 'DNS-only'}`)
+  return done
+}
+
+// Does https://<host> answer on a certificate this machine trusts? Bun's fetch
+// refuses an invalid one, so any answer at all is the pass. DNS and Caddy's
+// certificate order both sit between the record and the first answer.
+const httpsAnswers = async (host, { tries = 18, everyMs = 10_000 } = {}) => {
+  for (let i = 0; i < tries; i++) {
+    try { await fetch(`https://${host}/`, { redirect: 'manual', signal: AbortSignal.timeout(8_000) }); return true }
+    catch {}
+    await new Promise(r => setTimeout(r, everyMs))
+  }
+  return false
+}
+
+// FJS-D1380's last step: the flip to proxied is offered only once the origin's
+// own certificate is proven, since the edge verifies it from then on (Full
+// (strict), for this host alone). No terminal, or a no, leaves it DNS-only.
+// Answers false only when a flip that was asked for failed.
+const offerProxy = async ({ record, configured, log, yes }) => {
+  if (record.proxied) return true
+  const { host, ip } = record
+  const later = `${dnsLine(host, ip, configured)} --proxied`
+  log.info(`Waiting for https://${host} to answer on Caddy's certificate — up to three minutes`)
+  if (!await httpsAnswers(host)) {
+    log.warn(`  https://${host} did not answer on a valid certificate: left DNS-only. Once it does: ${later}`)
+    return true
+  }
+  log.success(`https://${host} answers on a valid certificate`)
+  if (!yes) { log.info(`  Left DNS-only. To put it behind Cloudflare's proxy: ${later}`); return true }
+  if (!await yes(`Put ${host} behind Cloudflare's proxy? The edge then verifies this certificate (Full (strict), this host only)`, true)) {
+    log.info(`  Left DNS-only. Later: ${later}`)
+    return true
+  }
+  const done = await hostRecord({ host, ip, proxied: true })
+  if (done.error) { log.error(`  ${done.error}. Left DNS-only; then: ${later}`); return false }
+  log.success(`${host} is behind Cloudflare's proxy, Full (strict) for this host`)
+  return true
+}
+
+// One row of `provision:list`, and of the pick `provision:off` and `provision:destroy` offer with no id.
 const machineLine = (m) =>
   `${m.id}  ${m.status}  ${m.ip ?? 'no address yet'}  ${m.region ?? '-'}  `
   + (m.serverId ? `Basecamp server ${m.serverId} — destroy it in Basecamp` : 'unclaimed')
@@ -73,16 +153,39 @@ const runFli = async (argv) => {
 // ─── Basecamp on a box ────────────────────────────────────────────────────────
 // `fli provision` runs these on the box it just bought and `provision:install`
 // on one that already answers ssh, so the two cannot install differently.
-// Answers the first run that failed, or null.
-const ringZero = async (dest, domain) => {
-  for (const argv of [['deploy:setup', '--auto-install', '--server', dest, '--domain', domain], ['deploy', '--server', dest, '--domain', domain]]) {
-    const status = await runFli(argv)
-    if (status !== 0) return { argv, status }
+// Answers the first run that failed, or null. `say` hears each step as it
+// starts: deploy:setup is minutes of apt with nothing printed for long stretches.
+// The deploy runs `--no-outpost`: a fresh Basecamp has no workspace until
+// `/setup`, so its enrollment step finds nothing to enroll into. `joinFleet`
+// enrolls once the admin is made.
+const ringZero = async (dest, domain, say = () => {}) => {
+  const steps = [
+    { argv: ['deploy:setup', '--auto-install', '--server', dest, '--domain', domain], what: 'docker and caddy on the box — a few minutes on a fresh one' },
+    { argv: ['deploy', '--no-outpost', '--server', dest, '--domain', domain], what: 'build the image, ship it, start Basecamp' },
+  ]
+  for (const [i, step] of steps.entries()) {
+    say(step, i + 1, steps.length)
+    const status = await runFli(step.argv)
+    if (status !== 0) return { argv: step.argv, status }
   }
   return null
 }
 
+// Basecamp's box as a machine of its own fleet, so apps can run beside it
+// (`FJS-D1191`). After `makeAdmin`: enrollment files the box under the one
+// workspace `/setup` made, and with none yet `deploy:outpost` says so and exits 0.
+const OUTPOST_QUESTION = 'Make the box an Outpost too, so apps can run beside Basecamp on it?'
+const joinFleet = async (dest) => await runFli(['deploy:outpost', '--server', dest]) === 0
+
 const EMAIL = /^[^\s@]+@[^\s@]+$/
+
+// The first admin's email, asked with `ME` (global fli env) as what Enter takes.
+// Enter can then no longer mean no admin, so `-` does.
+const askAdmin = async (ask) => {
+  const me = EMAIL.test(process.env.ME ?? '') ? process.env.ME : ''
+  const said = await ask(`First admin's email`, me ? `Enter: ${me} · -: make one at /setup in the browser` : 'Enter: make one at /setup in the browser')
+  return said === '-' ? '' : said || me
+}
 
 // The hostname as `deploy.web.domain` would hold it, or null for one Caddy
 // cannot route by.
@@ -151,6 +254,7 @@ is up.
 - **For Basecamp too** — the same token as a cloud account in Basecamp (Secrets, kind `provider_key`) — add `account` read: Basecamp's Verify reads `/v2/account`, and a token without it fails Verify though it provisions
 - Store it: `fli eset DIGITALOCEAN_TOKEN <token> --global` — a run with none leaves a placeholder line there
 - The token is shown once; a project `.env` overrides it, for a client's own account
+- Optional: `fli eset ME you@example.com --global` — the first admin's email question then takes it on Enter, and `-` makes no admin
 
 ## What it makes
 
@@ -158,3 +262,5 @@ One droplet, tagged `basecamp`, carrying your SSH public key and nothing
 else. `fli provision:install <server> --domain <host>` then puts Basecamp on it
 from any directory — `fli deploy:setup --auto-install` and `fli deploy`, run
 in `packages/basecamp` — and works the same on a box you made some other way.
+Both ask whether the box is also an Outpost, and enroll it with `fli
+deploy:outpost` once the first admin is made.

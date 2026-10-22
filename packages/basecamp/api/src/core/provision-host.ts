@@ -4,6 +4,7 @@
 // the environment so it never sits in a process listing:
 //
 //   DIGITALOCEAN_TOKEN=… bun api/src/core/provision-host.ts '{"action":"create","size":"4gb",…}'
+//   DIGITALOCEAN_TOKEN=… bun api/src/core/provision-host.ts '{"action":"off","id":"123"}'
 //   DIGITALOCEAN_TOKEN=… bun api/src/core/provision-host.ts '{"action":"destroy","id":"123"}'
 //   DIGITALOCEAN_TOKEN=… bun api/src/core/provision-host.ts '{"action":"list"}'
 //
@@ -19,6 +20,7 @@
 // The last line of stdout is one JSON object, which is fli's whole contract:
 //   { id, name, ip, region, size, image, monthly }   created and up
 //   { id, name, pending: true, … }                    created, not up before the deadline
+//   { off: '<id>' }  { off: '<id>', pending: true }   powered off, or asked and not off yet
 //   { destroyed: '<id>' }
 //   { machines: [{ id, status, ip, region, serverId }] }   every fleet-tagged droplet
 //   { error: '<what>' }                               and the exit is non-zero
@@ -57,6 +59,7 @@ const BOOTING: Record<string, string> = {
 /** How long a droplet gets to come up. DO's own figure is under a minute; past
  *  this the id is answered as pending so the caller can still destroy it. */
 const READY_DEADLINE_MS = 180_000
+const OFF_DEADLINE_MS   = 60_000
 const POLL_MS           = 5_000
 
 const input = (() => {
@@ -121,7 +124,7 @@ async function create() {
   if (prior.length)
     fail(`a machine provisioned earlier is still at this account: `
       + prior.map(m => `${m.providerServerId} (${m.ipAddress ?? 'no address yet'})`).join(', ')
-      + ` — destroy it with fli provision:destroy <id>, or deploy to it`)
+      + ` — fli provision:off <id> then fli provision:destroy <id> removes it, or fli provision:install installs on it`)
 
   step('Putting your SSH public key on the account')
   const sshKey = await connector.sshKey(send, { name: keyName || `fli ${name}`, publicKey })
@@ -150,21 +153,43 @@ async function create() {
   answer({ ...made, pending: true })
 }
 
-async function destroy() {
+// Only a box this script made. The token reaches every droplet at the
+// account, and an action by a typed id is one digit from somebody else's.
+async function ownDroplet(doIt: string) {
   const id = input.id
-  if (!id) fail('destroy needs id')
-
-  // Only a box this script made. The token reaches every droplet at the
-  // account, and a destroy by a typed id is one digit from somebody else's.
+  if (!id) fail(`${input.action} needs id`)
   const ours = (await connector.marked(send, fleetMark())).find(m => m.providerServerId === id)
   if (!ours) fail(`${id} is not a droplet fli provision made (no fleet tag at this account)`)
-  if (ours!.serverId) fail(`${id} is a fleet machine Basecamp made (server ${ours!.serverId}): destroy it in Basecamp`)
+  if (ours!.serverId) fail(`${id} is a fleet machine Basecamp made (server ${ours!.serverId}): ${doIt} in Basecamp`)
+  return ours!
+}
+
+async function destroy() {
+  const ours = await ownDroplet('destroy it')
   // Powering it off first is the second hand on the destroy: a box still
   // serving cannot be removed by one mistyped id or one wrong pick.
-  if (ours!.status !== 'off') fail(`${id} is ${ours!.status}: power it off at DigitalOcean first, then destroy it`)
+  if (ours.status !== 'off') fail(`${ours.providerServerId} is ${ours.status}: fli provision:off ${ours.providerServerId} first, then destroy it`)
 
-  await connector.destroy(send, id)
-  answer({ destroyed: id })
+  await connector.destroy(send, ours.providerServerId)
+  answer({ destroyed: ours.providerServerId })
+}
+
+async function powerOff() {
+  const ours = await ownDroplet('power it off')
+  const id   = ours.providerServerId
+  if (ours.status === 'off') return answer({ off: id })
+  if (!await connector.powerOff(send, id)) fail(`${id} is no longer at DigitalOcean`)
+
+  const wait     = waitLine()
+  const deadline = Date.now() + OFF_DEADLINE_MS
+  while (Date.now() < deadline) {
+    const machine = await connector.machine(send, id)
+    if (machine?.status === 'off') { wait.end('Powered off'); return answer({ off: id }) }
+    wait.say(`DigitalOcean says ${machine?.status ?? 'nothing yet'}`)
+    await Bun.sleep(POLL_MS)
+  }
+  wait.end(`Still not off after ${OFF_DEADLINE_MS / 1000}s`)
+  answer({ off: id, pending: true })
 }
 
 // A droplet carrying a serverId is Basecamp's, and destroy refuses it — so the
@@ -179,6 +204,7 @@ async function list() {
 try {
   if (input.action === 'create')       await create()
   else if (input.action === 'destroy') await destroy()
+  else if (input.action === 'off')     await powerOff()
   else if (input.action === 'list')    await list()
   else fail(`unknown action '${input.action}'`)
   process.exit(0)

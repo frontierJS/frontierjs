@@ -39,11 +39,12 @@ bun run image        # build the container image from the WORKING TREE
 bun run image:up     # …and bring the stack up on 8020  · image:down stops it
 ```
 
-**The devtools console is opt-in and there is one of it.** `DEVTOOLS=1` puts
-junction's console on **5503** — the live call feed, `/metrics` with conduit's
-and caravan's own sections, readiness, and the job queue with its six queues,
+**Devtools is opt-in and there is one of it.** `DEVTOOLS=1` puts junction's
+devtools on **5503**, and `fli gui`'s `:live` draws it (`--devtools-port` when
+`DEVTOOLS_PORT` moved it) — the live call feed, `/metrics` with conduit's and
+caravan's own sections, readiness, and the job queue with its six queues,
 every handler's schedule, and retry / cancel / run-now. It is the only screen
-here that can see the queue at all: `/jobs` in the SPA is basecamp's own `Job`
+that can see the queue at all: `/jobs` in the SPA is basecamp's own `Job`
 model, which is a fleet noun and not the thing running it.
 
 The API banner states it either way (`devtools=…` / `devtools=disabled`), so
@@ -126,7 +127,24 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           site-kit's `editable` (`formOf`, `applyEdit`), never a list here.
           A save's `text` edit (a click on the preview) carries no blob: the
           words are found in the stamped block by toolbelt's `locateText`,
-          and the result still goes through `applyEdit`.
+          and the result still goes through `applyEdit`. `drafts.arrange` is
+          the lists (`FJS-D1403`–`FJS-D1405`): a `line` names a menu entry,
+          written by `applyEdit`'s `entry`; no line is the file as a
+          collection item, whose `arrangeCollection` writes may touch every
+          item, so `saveDraftFiles` commits them as ONE commit.
+          `drafts.photo` is a front-matter photo (`FJS-D1406`–`FJS-D1408`):
+          the upload is DECODED AND RE-ENCODED by core/site-photo.ts (what
+          does not decode is refused, EXIF is dropped) and committed beside
+          the old one with the key's line; `http.maxBodySize` is 10 MB in
+          app.ts for it, since the config file has no key for the bound.
+          `drafts.ask` is an owner's request to a model (`FJS-D1242`): the
+          `site:ask` job runs core/site-ask.ts, which writes the draft's
+          `content/**.md` to a temp folder, runs the cli's `runAsk` in EDIT
+          mode scoped to it, and hashes what moved into a TREE on the head it
+          read. NOTHING COMMITS. The key is `ANTHROPIC_API_KEY`, one for every
+          site (`FJS-D1424`), handed to that child only; the limit is the
+          argv's $2 a run (`FJS-D1425`). Each draft's last ask is a file beside
+          the clone, on `list` as its preview is.
           core/site-preview.ts is a draft's preview: it BUILDS NOTHING — the
           `site:preview` job sends `/site/preview` to the App's placement,
           where Outpost builds in throwaway containers (`FJS-D1251`), with

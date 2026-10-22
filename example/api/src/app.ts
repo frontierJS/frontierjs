@@ -369,23 +369,23 @@ app.configure(mcp({
   ui: process.env.SHOP_MCP_UI === '1' ? { root: new URL('../dist/mcp', import.meta.url).pathname } : undefined,
 }))
 
-// ── The devtools console ──────────────────────────────────────────────────
+// ── Devtools ──────────────────────────────────────────────────────────────
 //
-//   DEVTOOLS=1 bun run api        →  http://localhost:5503
+//   DEVTOOLS=1 bun run api        →  `fli gui`, then 6 for :live
 //
 // The live call feed, /metrics with every plugin's contributed section,
-// readiness, and the job queue — depth per queue, the stall age, every
-// handler's schedule, and retry / cancel / run-now. Caravan's own `admin:`
-// routes are mounted here too, but the console does not use them: it reads
-// `app.jobs` directly, so it works whether or not an app published that
-// surface.
+// readiness, and the job queue — depth per queue, every handler's schedule,
+// and retry / cancel / run-now. Caravan's own `admin:` routes are mounted
+// here too, but devtools does not use them: it reads `app.jobs` directly, so
+// :live works whether or not an app published that surface.
 //
-// `bun run api` sets DEVTOOLS=1, so the console is up for anyone running this
+// `bun run api` sets DEVTOOLS=1, so devtools is up for anyone running this
 // app. The flag stays rather than becoming unconditional because 5503 is a
 // GLOBAL tooling port (packages/cli/core/ports.js § the tooling block) — one
 // console at a time, so running this beside basecamp's is a collision rather
 // than two consoles, and a held port is fatal at boot rather than quiet
-// (`FJS-420`). DEVTOOLS_PORT moves it for the case where somebody wants both;
+// (`FJS-420`). DEVTOOLS_PORT moves it for the case where somebody wants both,
+// and `fli gui --devtools-port` is then how :live finds it;
 // a drive spawning `api/index.ts` directly inherits neither and binds nothing.
 //
 // Safe to leave wired: the plugin refuses to bind under NODE_ENV=production

@@ -16,7 +16,12 @@
 //   GET  /drafts  read   { appId, draft, path } — one file as a form, with the blob a save names
 //   POST /drafts  save   { appId, draft, path, blob, body?, values?, message? } — one commit, pushed
 //   POST /drafts  save   { appId, draft, path, text: { line, old, next } } — the words clicked on the preview, swapped
+//   POST /drafts  arrange { appId, draft, path, blob, act, line? } — a list entry on that line, or the
+//                         collection item `path` is, moved earlier or later, copied or removed
+//   POST /drafts  photo  { appId, draft, path, blob, key, alt, photo? } — a front-matter photo's words, and with
+//                         `photo` (a file) a new photo beside the old one, one commit
 //   POST /drafts  preview { appId, draft } — build its preview again
+//   POST /drafts  ask     { appId, draft, request } — a model's edit of the draft's content, run as a job
 //   POST /drafts  publish { appId, draft } — merge, build, deploy (the `publish` grant)
 //   GET  /drafts  history { appId } — the site's live releases, newest first, each with what it shipped
 //   POST /drafts  revert  { appId, release } — a draft undoing one publish
@@ -24,7 +29,9 @@
 //   POST /drafts  redeem  { appId, code, verifier } — that code, for a key reaching only drafts
 //
 // Opening a draft and every save that changes a file queue its preview
-// (`core/site-preview.ts`), and `list` answers each draft's last one.
+// (`core/site-preview.ts`), and `list` answers each draft's last one, and
+// its last ask (`core/site-ask.ts`): a model's run over a copy of the draft's
+// content, which leaves a tree and commits nothing.
 //
 // Publish writes a `Deployment` through asSystem() — the publisher may be a
 // member of nothing, so the release is the app's, confined by the grant read
@@ -39,6 +46,17 @@
 // edit still means what the owner saw (`@frontierjs/toolbelt/textedit`). A
 // stamp inside the front matter names a value a block drew (`FJS-D1231`), and
 // is site-kit's `field` edit of the value written on that line.
+//
+// Arrange is the lists (`FJS-D1403`–`FJS-D1405`): with a `line`, the entry of
+// a front-matter list written there (a menu's link); without one, the file
+// itself as an item of its collection, whose reorder writes `order:` on each
+// item it moves, all in one commit.
+//
+// A photo is a front-matter value naming one of the site's raster photos
+// (`FJS-D1407`), its words the path's `?text=` (`FJS-D1406`). An upload is
+// re-encoded here (`core/site-photo.ts`, `FJS-D1408`) and lands in the folder
+// of the photo it replaces, named for the upload; the old file stays, since
+// another page or a template may still name it.
 //
 // **A preview signs in through a handoff** (`FJS-D1357`). Its Edit button
 // sends the person to /sites/<id>/edit/, which calls `handoff` with the
@@ -55,16 +73,23 @@
 
 import { createService, BadRequest, Conflict, Forbidden, NotFound, Unauthorized, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
-import { applyEdit, formOf, pathRefusal } from '@frontierjs/site-kit/editable'
+import { ACTS, applyEdit, applyPhoto, arrangeCollection, collectionOf, formOf, pathRefusal, photoName } from '@frontierjs/site-kit/editable'
+import { byOrder } from '@frontierjs/site-kit/collection'
+import { parseFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 import { splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 import { locateText } from '@frontierjs/toolbelt/textedit'
 import { db } from '../../core/resource.ts'
 import { isGit } from '../../core/app-source.ts'
 import {
-  CheckoutError, StaleDraft, draftFiles, listDrafts, openDraft, readDraftFile, revertDraft, saveDraftFile, shipped, type GitSite,
+  CheckoutError, StaleDraft, draftFiles, listDrafts, openDraft, readDraftFile, readDraftFolder, revertDraft, saveDraftFile,
+  saveDraftFiles, shipped, type FileChange, type GitSite,
 } from '../../core/site-checkout.ts'
+import { PhotoRefused, reencodePhoto } from '../../core/site-photo.ts'
 import { isSitePreviewOrigin, markPreview, previewStatuses } from '../../core/site-preview.ts'
 import { dispatchPreview } from '../../jobs/site-preview.job.ts'
+import { dispatchAsk } from '../../jobs/site-ask.job.ts'
+import { ASK_MAX_REQUEST, NO_KEY, askBusy, askStatuses, queueAsk } from '../../core/site-ask.ts'
+import { env } from '../../core/env.ts'
 import { dispatchPublish } from '../../jobs/site-publish.job.ts'
 import { PUBLISH_STEPS, type PublishSnapshot } from '../../core/site-publish.ts'
 import { keyScope } from '../api-keys/scopes.ts'
@@ -157,7 +182,7 @@ function textEdit(data: { body?: unknown, values?: unknown, text?: unknown }): {
 
 function editablePath(): string {
   const path = arg('path')
-  const refused = pathRefusal(path) ?? (path.endsWith('.md') ? null : `${path} is a photo, and photos are not edited here yet`)
+  const refused = pathRefusal(path) ?? (path.endsWith('.md') ? null : `${path} is a photo, which changes through the page that shows it`)
   if (refused) throw new BadRequest(refused)
   return path
 }
@@ -175,7 +200,10 @@ export default createService({
     { method: 'read',  read: true, gate: LEVELS.VISITOR },
     { method: 'open',  gate: LEVELS.VISITOR },
     { method: 'save',  gate: LEVELS.VISITOR },
+    { method: 'arrange', gate: LEVELS.VISITOR },
+    { method: 'photo',   gate: LEVELS.VISITOR },
     { method: 'preview', gate: LEVELS.VISITOR },
+    { method: 'ask',     gate: LEVELS.VISITOR },
     { method: 'publish', gate: LEVELS.VISITOR },
     { method: 'history', read: true, gate: LEVELS.VISITOR },
     { method: 'revert',  gate: LEVELS.VISITOR },
@@ -200,8 +228,12 @@ export default createService({
   async list() {
     const site = await grantedSite()
     const previews = previewStatuses(site.id)
+    const asks     = askStatuses(site.id)
     const drafts = await checkout(() => listDrafts(site))
-    return { drafts: drafts.map(d => ({ ...d, preview: previews[d.name] ?? null })), published: await lastPublish(site.id) }
+    return {
+      drafts: drafts.map(d => ({ ...d, preview: previews[d.name] ?? null, ask: asks[d.name] ?? null })),
+      published: await lastPublish(site.id),
+    }
   },
 
   async publish() {
@@ -317,6 +349,21 @@ export default createService({
     return { draft: found.name, preview: previewStatuses(site.id)[found.name] ?? null }
   },
 
+  async ask() {
+    const site    = await grantedSite()
+    const draft   = arg('draft')
+    const request = String((($.data ?? {}) as { request?: unknown }).request ?? '').trim()
+    if (!request) throw new BadRequest('Say what to change')
+    if (request.length > ASK_MAX_REQUEST) throw new BadRequest(`An ask is at most ${ASK_MAX_REQUEST} characters`)
+    if (!env.ANTHROPIC_API_KEY) throw new BadRequest(NO_KEY)
+    const found = (await checkout(() => listDrafts(site))).find(d => d.name === draft)
+    if (!found) throw new NotFound(`no draft named ${draft} — it may have been published or deleted`)
+    if (askBusy(askStatuses(site.id)[found.name])) throw new Conflict('an ask is already running on this draft — wait for it to finish')
+    const ask = queueAsk(site.id, found.name, { request, by: me() ?? null, commit: found.head })
+    await dispatchAsk($.app, site.id, found.name)
+    return { draft: found.name, ask }
+  },
+
   async files() {
     const site  = await grantedSite()
     const draft = arg('draft')
@@ -329,8 +376,15 @@ export default createService({
     const draft = arg('draft')
     const path  = editablePath()
     const file  = await checkout(() => readDraftFile(site, draft, path))
+    const folder = collectionOf(path)
     try {
-      return { path, blob: file.blob, head: file.head, ...formOf(file.text) }
+      const form = formOf(file.text)
+      if (!folder) return { path, blob: file.blob, head: file.head, ...form }
+      const items = (await checkout(() => readDraftFolder(site, draft, folder)))
+        .map((f) => ({ path: f.path, frontmatter: parseFrontmatter(f.text).frontmatter }))
+        .sort(byOrder)
+      const collection = { folder, index: items.findIndex((f) => f.path === path), count: items.length }
+      return { path, blob: file.blob, head: file.head, ...form, collection }
     } catch (err) {
       throw new BadRequest(`${path} does not read, so a developer fixes it first: ${(err as Error).message}`)
     }
@@ -368,6 +422,99 @@ export default createService({
     const changed = saved.blob !== file.blob
     if (changed) await queuePreview(site.id, draft, saved.commit)
     return { path, ...saved, changed }
+  },
+
+  async arrange() {
+    const site  = await grantedSite()
+    const draft = arg('draft')
+    const path  = editablePath()
+    const data  = ($.data ?? {}) as { blob?: unknown, act?: unknown, line?: unknown }
+    if (typeof data.blob !== 'string' || !data.blob) throw new BadRequest('blob is required — the file as you read it')
+    if (typeof data.act !== 'string' || !ACTS.includes(data.act)) throw new BadRequest(`act is one of ${ACTS.join(', ')}`)
+    if (data.line !== undefined && !Number.isInteger(data.line)) throw new BadRequest('line is the file line of the list entry')
+    const act = data.act
+    const user = await sys().user.findFirst({ where: { id: me() } })
+    const author = { name: user?.name || user?.email, email: user?.email }
+    const verb = { earlier: 'Move', later: 'Move', copy: 'Copy', remove: 'Remove' }[act]
+    const where = act === 'earlier' ? ' earlier' : act === 'later' ? ' later' : ''
+
+    if (data.line !== undefined) {
+      const file = await checkout(() => readDraftFile(site, draft, path))
+      if (file.blob !== data.blob) throw new Conflict(`${path} changed on this draft since you opened it — open it again`)
+      const line = data.line as number
+      const entry = formOf(file.text).entries.filter((e) => e.line <= line && line <= e.end).pop()
+      const edit = applyEdit(file.text, { entry: { line, act } })
+      if ('refused' in edit) throw new BadRequest(edit.refused)
+      const saved = await checkout(() => saveDraftFile(site, draft,
+        { path, blob: file.blob, text: edit.text, message: `${verb} '${entry?.label ?? 'an entry'}'${where} in ${path}` }, author))
+      const changed = saved.blob !== file.blob
+      if (changed) await queuePreview(site.id, draft, saved.commit)
+      return { path, ...saved, changed }
+    }
+
+    const folder = collectionOf(path)
+    if (!folder) throw new BadRequest(`${path} is not an item of a collection, so it is arranged by its entries' lines`)
+    const files = await checkout(() => readDraftFolder(site, draft, folder))
+    const mine = files.find((f) => f.path === path)
+    if (!mine) throw new BadRequest(`${path} is not on the draft ${draft}`)
+    if (mine.blob !== data.blob) throw new Conflict(`${path} changed on this draft since you opened it — open it again`)
+    const plan = arrangeCollection(files.map((f) => ({ path: f.path, source: f.text })), { path, act })
+    if ('refused' in plan) throw new BadRequest(plan.refused)
+    for (const w of plan.writes) {
+      const refused = pathRefusal(w.path)
+      if (refused) throw new BadRequest(refused)
+    }
+    const blobOf = new Map(files.map((f) => [f.path, f.blob]))
+    const saved = await checkout(() => saveDraftFiles(site, draft, {
+      files: plan.writes.map((w) => ({ path: w.path, blob: blobOf.get(w.path) ?? null, text: w.text })),
+      message: `${verb} ${path.slice(folder.length + 1)}${where} in ${folder.slice(folder.lastIndexOf('/') + 1)}`,
+    }, author))
+    const changed = plan.writes.length > 0
+    if (changed) await queuePreview(site.id, draft, saved.commit)
+    return { path: plan.path ?? path, commit: saved.commit, changed, ...(plan.path ? { copy: plan.path } : {}) }
+  },
+
+  async photo() {
+    const site  = await grantedSite()
+    const draft = arg('draft')
+    const path  = editablePath()
+    const key   = arg('key')
+    const data  = ($.data ?? {}) as { blob?: unknown, alt?: unknown, photo?: unknown }
+    if (typeof data.blob !== 'string' || !data.blob) throw new BadRequest('blob is required — the file as you read it')
+    if (typeof data.alt !== 'string') throw new BadRequest('alt is the words saying what the photo shows')
+    if (data.photo !== undefined && !(data.photo instanceof Blob)) throw new BadRequest('photo is the file to upload')
+
+    const file = await checkout(() => readDraftFile(site, draft, path))
+    if (file.blob !== data.blob) throw new Conflict(`${path} changed on this draft since you opened it — open it again`)
+    const was = formOf(file.text).keys.find((k) => k.key === key)?.photo
+    if (!was) throw new BadRequest(`${key} is not one of the site's photos that this form writes`)
+
+    const writes: FileChange[] = []
+    let src: string | undefined
+    if (data.photo) {
+      const upload = data.photo as File
+      const shot = await reencodePhoto(new Uint8Array(await upload.arrayBuffer())).catch((err) => {
+        throw err instanceof PhotoRefused ? new BadRequest(err.message) : err
+      })
+      const folder = was.file.slice(0, was.file.lastIndexOf('/'))
+      const taken = new Set(await checkout(() => draftFiles(site, draft)))
+      const name = photoName(upload.name, shot.ext, (n) => taken.has(`${folder}/${n}`))
+      const refused = pathRefusal(`${folder}/${name}`)
+      if (refused) throw new BadRequest(refused)
+      src = was.src.slice(0, was.src.lastIndexOf('/') + 1) + name
+      writes.push({ path: `${folder}/${name}`, blob: null, text: shot.bytes })
+    }
+    const edit = applyPhoto(file.text, { key, alt: data.alt, src })
+    if ('refused' in edit) throw new BadRequest(edit.refused)
+    writes.push({ path, blob: file.blob, text: edit.text })
+
+    const user = await sys().user.findFirst({ where: { id: me() } })
+    const saved = await checkout(() => saveDraftFiles(site, draft, {
+      files: writes, message: src ? `Photo for ${key} in ${path}` : `Words for the photo ${key} in ${path}`,
+    }, { name: user?.name || user?.email, email: user?.email }))
+    const changed = saved.commit !== file.head
+    if (changed) await queuePreview(site.id, draft, saved.commit)
+    return { path, commit: saved.commit, changed, ...(src ? { photo: writes[0].path } : {}) }
   },
 
   hooks: {

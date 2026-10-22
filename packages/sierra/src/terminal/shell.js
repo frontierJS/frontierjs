@@ -485,6 +485,7 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
     keys:   shellKeys,
     into:   INTO,
     steps:  (fn) => { shellStep = fn },
+    kept:   () => tui.modeAt(renderer),
     help,
   } }))
   tui.followLinks(renderer, (href) => {

@@ -22,8 +22,14 @@ export const KEEP = 500
 /** How often the transcript and the worker are read again. */
 export const POLL_MS = 1000
 
-// A prompt's text without what the harness wrapped round it (`<system-reminder>`, an IDE's tags).
-const plain = (text) => String(text ?? '').replace(/<([\w-]+)[^>]*>[\s\S]*?<\/\1>/g, '').trim()
+// A prompt's text without what the harness wrapped round it (`<system-reminder>`, an IDE's tags);
+// a slash command is all tags, so it is read back as the line typed.
+const plain = (text) => {
+  const t = String(text ?? '')
+  const name = /<command-name>([\s\S]*?)<\/command-name>/.exec(t)?.[1].trim()
+  if (name) return [name, /<command-args>([\s\S]*?)<\/command-args>/.exec(t)?.[1].trim()].filter(Boolean).join(' ')
+  return t.replace(/<([\w-]+)[^>]*>[\s\S]*?<\/\1>/g, '').trim()
+}
 
 /** `state` after one transcript entry; `state` itself for one the tab does not draw. */
 export function foldEntry(state, entry) {
@@ -38,7 +44,8 @@ export function foldEntry(state, entry) {
     : Array.isArray(content) ? content.filter((b) => b.type === 'text').map((b) => plain(b.text)).filter(Boolean).join('\n') : ''
   const images = Array.isArray(content) ? content.filter((b) => b.type === 'image').length : 0
   const next = fold(state, { type: 'user', message: entry.message })
-  return text || images ? { ...next, messages: [...next.messages, { kind: 'you', text, ...(images ? { images } : {}) }] } : next
+  const at = Date.parse(entry.timestamp) || null
+  return text || images ? { ...next, messages: [...next.messages, { kind: 'you', text, ...(images ? { images } : {}), ...(at ? { at } : {}) }] } : next
 }
 
 /**

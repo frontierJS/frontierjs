@@ -154,7 +154,10 @@ src/
                          focus path, innermost first, then the shell's
                          (`setShellKeys`), before it makes the keydown; a key
                          one took makes NO keydown there (`FJS-D1401`), and
-                         `keymapsAt(r)` lists them for help. A key ending a
+                         `keymapsAt(r)` lists them for help. A getter
+                         may answer `mode`, which `modeAt(r)` reads off
+                         the innermost host for the shell to follow
+                         (`FJS-D1411`). A key ending a
                          pending sequence unfinished is swallowed on both
                          targets. On a phone it refuses `keydown` by name
 
@@ -209,7 +212,10 @@ scripts/
                          graded by test/portability.test.js, not by eye
   host-tree.js         — compileTree(): a .mesa file and its imports compiled
                          for a host target against this tree's src/. The two
-                         drives and `tui` share it. Each file's scoped rules
+                         drives and `tui` share it. A bare import resolves
+                         from the source's directory, since the output sits in
+                         a temp dir where `@frontierjs/toolbelt` names nothing;
+                         `@frontierjs/mesa/*` is left alone. Each file's scoped rules
                          come back on `styles`, since a Lynx bundle takes its
                          stylesheet at build time and has no addStyles
   tui.mjs              — bun run tui <file.mesa>: one file live in a real

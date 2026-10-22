@@ -37,6 +37,7 @@ export { Factory, defineFactory, Seeder, runSeeder,
 export { ValueSetExtendError }                   from './core/valuesets.js'
 export { generateLiteSchema }                    from './tools/introspect.js'
 export { findPrincipal, authModelOf }            from './tools/principal.js'
+export { modelToAccessor }                        from './core/ddl.js'
 export { ExternalRefPlugin }                       from './plugins/external-ref.js'
 
 // Batteries are reached by subpath, never from here (FJS-D635, test/edge.test.ts):

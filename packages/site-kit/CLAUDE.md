@@ -136,8 +136,9 @@ what they mean in any app.
   a wrong type stops the command.
 - `src/collection.js` — `collection(glob)`, exported as
   `@frontierjs/site-kit/collection`: an eager glob over a collection's `.md`
-  to `[{ slug, frontmatter, Body }]` in file-name order (code unit, as
-  ksite's sites are named). The glob stays a literal in the block, because
+  to `[{ slug, frontmatter, Body }]`, a numeric `order:` first and then
+  file-name order (code unit, as ksite's sites are named), through `byOrder`,
+  which the owner's reorder sorts by too (`FJS-D1403`). The glob stays a literal in the block, because
   Sierra's prerender expands one only in a `.mesa` or `.md` it compiles; a
   glob here would reach neither it nor a pre-bundled dependency.
 - `src/tel.js` — `telHref(phone)`, exported as `@frontierjs/site-kit/tel`:
@@ -157,8 +158,17 @@ what they mean in any app.
   link (`FJS-D1250`), because a build runs a body's script. `{ field: { line,
   old, next } }` is the other edit: the words of the one value written on that
   line, at any depth, refused when they are no longer `old` (`FJS-D1231`). A
-  value is graded for no code (`FJS-3416`). Basecamp's save and the grade of a
-  model's diff both call it.
+  value is graded for no code (`FJS-3416`). `{ entry: { line, act } }` moves,
+  copies or removes the list item written on that line, line spans cut and
+  pasted then read back (`FJS-D1404`, `FJS-D1405`), and `formOf` lists every
+  entry. `arrangeCollection(files, { path, act })` is the same four acts on a
+  file under `content/collections/<name>/`, answered as the files to write:
+  a move writes `order:` on each item whose place is new (`FJS-D1403`), a copy
+  is the file whole beside it. `photoOf(value)` is a front-matter value naming
+  one of the site's raster photos, `/x` being `content/public/x`;
+  `applyPhoto(source, { key, alt, src? })` writes its new address with the
+  words as `?text=` (`FJS-D1406`), and `photoName` names an upload. Basecamp's
+  save, arrange and photo and the grade of a model's diff all call it.
 - `src/editor/` + `config/editor.js` — the owner's Edit button on a draft's
   preview (`FJS-D1225`, `FJS-D1358`), built only by `build --preview` with
   `SITE_EDITOR` (basecamp's page for the draft, set by Outpost). Emitted as
@@ -176,7 +186,11 @@ what they mean in any app.
   A template's stamp offers the editable files. `live.js` shows what is typed
   on the page before the save, words only (`FJS-D1399`): a leaf showing the old
   words of a changed block or value takes the new ones, and new words with
-  markup wait for the rebuild. Everything the editor renders carries
+  markup wait for the rebuild. The form also arranges lists, its entries and
+  the file's place in its collection, through `drafts.arrange`, held still
+  while words are unsaved. A photo key is a picker and its words, not a text
+  box: `photo.js` shrinks the file to 2560 px before `drafts.photo`, which
+  re-encodes it anyway (`FJS-D1408`). Everything the editor renders carries
   `data-fjs-editor-ui`, which is how a click on it is not taken for a pick.
 - `src/block-look.js` — the one owner of what a look word may be and where its
   class lands, imported by both `Block.mesa` and `config/dividers.js`.
@@ -209,7 +223,8 @@ what they mean in any app.
   `@frontierjs/css` does not resolve.
 - `test/preset.mjs` — a named preset is loaded, or `siteKit()` refuses by name;
   dev serves its `public/` and steps aside for the site's.
-- `test/content.mjs` — `collection()`, the settings module and its refusals.
+- `test/content.mjs` — `collection()`, the settings module and its refusals,
+  and the owner's form, field, entry and collection edits.
   `test/content-build.mjs` is a real `site-kit build` that binds a setting
   bare, lists a collection and reads a nested menu, through the prerender,
   and ships a preset's `public/` beneath the site's, and serves

@@ -6,7 +6,7 @@ dated: 2026-10-17
 
 # Idea — owner editing: a site's owner changes their own words
 
-**Status: PROPOSED. 1.1–1.5 and 2.1–2.5 are built. Q1–Q19 are ruled (`FJS-D1225`–`FJS-D1231`, `FJS-D1242`, `FJS-D1246`–`FJS-D1252`, `FJS-D1339`, `FJS-D1357`, `FJS-D1358`, `FJS-D1399`).** Do not cite this file as describing
+**Status: PROPOSED. 1.1–1.5, 2.1–2.5, 3.1, 3.2 and 4.1 are built. Q1–Q27 are ruled (`FJS-D1225`–`FJS-D1231`, `FJS-D1242`, `FJS-D1246`–`FJS-D1252`, `FJS-D1339`, `FJS-D1357`, `FJS-D1358`, `FJS-D1399`, `FJS-D1403`–`FJS-D1408`, `FJS-D1424`, `FJS-D1425`).** Do not cite this file as describing
 behavior — see `VERIFYING.md`.
 
 A site's owner (a Kobami client, or whoever runs frontierjs.com) opens their
@@ -342,6 +342,157 @@ Basecamp itself lists drafts and history and holds the grants.
     editor and API stays small, because every save rebuilds the preview. B is
     the reopen path if previews start to outlive basecamp's releases.
 - ~~**Q19 — How a preview shows a change before it is saved (2.5).**~~ **Answered 2026-10-21 (`FJS-D1399`): D — words only, with no compiler in the page; a change that adds or removes markup waits for the rebuild.** A preset's Markdown passes are function values in its config, so neither the page nor basecamp could run the site's exact pipeline without a new preset key (A, recommended; B skipped the preset's passes; C compiled in basecamp). A is the reopen path.
+- ~~**Q20 — How a reorder of a collection is written (3.1).**~~ **Answered 2026-10-22 (`FJS-D1403`): B — an `order:` key in each item, `collection()` sorting by it then by name (Hugo's `weight`). Files keep their names, and the order is written in two places for a site that also numbers its files.** `collection()`
+  lists a collection's files in file-name order, and its own comment is the
+  rule: "an author orders a collection by naming its files" (`1-stacy.md`).
+  Prior art: Decap orders a folder collection only by a field
+  (`sortable_fields`, [config](https://decapcms.org/docs/configuration-options/#sortable_fields));
+  Hugo by a `weight` key ([byweight](https://gohugo.io/methods/pages/byweight/));
+  Webflow has no manual order and its users add a number field
+  ([forum](https://discourse.webflow.com/t/change-cms-items-order/219973));
+  Framer's CMS keeps a dragged order of its own
+  ([community](https://www.framer.com/community/posts/5xDY2fK6p7vkM6NeYmbyzD/)).
+  - **A** — rename the files. A move renumbers the prefixes, padded so
+    code-unit order holds (`01-` once there are ten), in one commit. The order
+    stays where it is written today, and a slug, which carries the prefix,
+    changes with it.
+  - **B** — an `order:` key in each item, `collection()` sorting by it then by
+    name (Hugo's `weight`). Files keep their names, and the order is written
+    in two places for a site that also numbers its files.
+  - **C** — one list file per collection naming its items in order.
+  - **Recommend A** (confidence 2) — the rule exists, so nothing new is
+    stated; B and C each add a second place the order lives. B is the reopen
+    path if a block starts building URLs from a slug.
+- ~~**Q21 — What Add makes (3.1).**~~ **Answered 2026-10-22 (`FJS-D1404`): A — a copy of the item it is added after, whole: the same keys and words, which the owner then changes. A collection item is a new file beside it; a menu entry is the entry repeated below.** CloudCannon's plain array clones the last
+  item and empties its data
+  ([array input](https://cloudcannon.com/documentation/articles/configure-an-array-input/)),
+  and its structures and Decap's `fields` are a template the developer writes.
+  - **A** — a copy of the item it is added after, whole: the same keys and
+    words, which the owner then changes. A collection item is a new file
+    beside it; a menu entry is the entry repeated below.
+  - **B** — the same copy with its words emptied (CloudCannon). A number or
+    yes/no is kept.
+  - **C** — a template the developer writes per collection and per menu.
+  - **Recommend A** (confidence 2) — every key stays a value the block already
+    renders, so the preview shows a real item at once; B shows an empty review
+    or a logo entry with no words until filled; C is a second statement of
+    what the items already show.
+- ~~**Q22 — Which menu entries an owner may move and remove (3.1).**~~ **Answered 2026-10-22 (`FJS-D1405`): A — every entry: the owner moves, removes and adds any of them, as `FJS-D1226` already treats every nested key as theirs.** A ksite
+  menu mixes links with entries that carry `type`, `design`, `setting` or
+  `classes` (the logo, the phone button). Q2 locks only top-level keys, so the
+  inline save already lets an owner change a nested `design:` word.
+  - **A** — every entry: the owner moves, removes and adds any of them, as
+    `FJS-D1226` already treats every nested key as theirs.
+  - **B** — only an entry whose keys are `name`, `link` and `items`; any other
+    entry is the developer's, shown locked and kept in its place.
+  - **Recommend A** (confidence 1) — it is Q2's ruling applied to lists, and B
+    is a new hand-written key list site-kit would have to know of a preset's
+    menu. Webflow locks the nav; B is the reopen path, and it would lock the
+    nested look keys too.
+- ~~**Q23 — Where a front-matter photo's alt text is written (3.2).**~~ **Answered 2026-10-22 (`FJS-D1406`): A — on the path, `?text=`: `hero_image: /media/images/porch.jpg?text=The%20front%20porch`. One value, read by the `Image.mesa` every ksite block already renders a photo through; no template changes. A template drawing a raw `<img src={…}>` (ksite's `Nav`) shows no alt and carries the query in `src`.** A photo
+  in front matter is a path (`hero_image: /media/images/owner.jpg`), and no
+  site writes alt text for one: Luminous Heart has 22 such photos and none
+  carries any. ksite's `Image.mesa` already reads a `?text=` query on the path
+  ahead of its `text` prop ("which is how ksite lets front-matter image paths
+  carry their own sizing"), but no file uses it. Prior art: Decap's image
+  widget saves only the path, and alt is a second field the developer declares
+  beside it ([image widget](https://decapcms.org/docs/widgets/image/),
+  [community](https://community.netlify.com/t/alt-text-and-title-text-for-featured-image/1681));
+  CloudCannon shows a featured image with its alt as a separate field
+  ([blog](https://cloudcannon.com/blog/how-you-can-optimize-your-cms-for-seo-success/));
+  ButterCMS stores alt with the media pick and answers it beside the URL
+  ([media field](https://buttercms.com/docs/core-concepts/field-types/media-field)).
+  - **A** — on the path, `?text=`: `hero_image: /media/images/porch.jpg?text=The%20front%20porch`.
+    One value, read by the `Image.mesa` every ksite block already renders a
+    photo through; no template changes. A template drawing a raw `<img
+    src={…}>` (ksite's `Nav`) shows no alt and carries the query in `src`.
+  - **B** — a sibling key, `<key>_alt` (Decap's shape). Every block that
+    renders the photo must read the new key, so until a developer changes
+    each one the alt is written and never shown.
+  - **C** — on the photo file: one alt per image in a sidecar, filled by
+    site-kit's image step into every `<img>` that names it (WordPress's media
+    library). One alt everywhere the photo appears, which a decorative use
+    then cannot opt out of.
+  - **Recommend A** (confidence 2) — the reader exists and every ksite photo
+    passes through it; B and C each add a place alt lives that nothing reads
+    yet. B is the reopen path once a second preset arrives.
+- ~~**Q24 — Which photos 3.2 swaps.**~~ **Answered 2026-10-22 (`FJS-D1407`): A — front-matter photos only. Prose `<Image>` tags wait for a step of their own, filed.** ksite's template has 2 front-matter
+  photos and 8 `<Image>` tags in prose (all SVG icons, the developer's);
+  Luminous Heart has 22 front-matter photos and 29 prose `<Image>` tags, 28 of
+  them with `text=`. A prose `<Image>` is a tag, and `FJS-D1250` refuses any
+  change to a tag in an owner's save.
+  - **A** — front-matter photos only. Prose `<Image>` tags wait for a step of
+    their own, filed.
+  - **B** — both: a tag whose only change is its `source` to a photo on the
+    draft and its `text` is let through. `source` and `text` are ksite's
+    names, so site-kit would learn them from the preset (a new preset key).
+  - **Recommend A** (confidence 2) — it meets the phase's "swaps a photo" on
+    both sites without touching `FJS-D1250`'s guard; B is a preset contract
+    worth its own question.
+- ~~**Q25 — What basecamp does with the bytes (3.2).**~~ **Answered 2026-10-22 (`FJS-D1408`): D — C and then A, as the owner answered: the page shrinks the photo to at most 2560 px in its own format so the body stays small, and basecamp still decodes and re-encodes it, so what reaches git is the server's promise. `http.maxBodySize` rises to 10 MB, `maxFrameBytes` pinned at 256 KB.** A phone photo is 3–8 MB
+  and carries EXIF, often GPS, which a site would then publish. Basecamp's
+  `http.maxBodySize` is junction's 256 KB default, global to every route.
+  Bun.Image, which site-kit's build already uses, decodes and re-encodes.
+  - **A** — re-encode every upload in basecamp with Bun.Image, in the format
+    it came in, longest side at most 2560 px: a file that does not decode is
+    refused, and the metadata is gone. `http.maxBodySize` rises to 15 MB, with
+    `maxFrameBytes` pinned at 256 KB so sockets do not grow with it.
+  - **B** — commit the bytes as sent, checked by their magic number, 5 MB at
+    most. GPS ships.
+  - **C** — the page shrinks the photo in a canvas before sending, and
+    basecamp checks it decodes. The body stays near 2 MB; a script on the
+    preview decides what reaches git.
+  - **D** — C and then A, as the owner answered: the page shrinks the photo
+    to at most 2560 px in its own format so the body stays small, and
+    basecamp still decodes and re-encodes it, so what reaches git is the
+    server's promise. `http.maxBodySize` rises to 10 MB, `maxFrameBytes`
+    pinned at 256 KB.
+  - **Recommend A** (confidence 2) — the server is the one place that can
+    promise the photo is a photo and carries no location. A per-method body
+    limit in junction is the cleaner bound, and is the reopen path.
+- ~~**Q26 — Where a site's Anthropic key lives (4.1).**~~ **Answered 2026-10-22 (`FJS-D1424`): B — one `ANTHROPIC_API_KEY` in basecamp's env for every site, billed to whoever runs basecamp. Not per site.** `FJS-D1242` rules "an
+  API key and a spend limit per site in basecamp". The run is `claude -p`
+  (`askArgv({ edit })`), which takes a key as `ANTHROPIC_API_KEY` in its
+  env. The sibling in this module is `cloudflareFor` (`core/site-preview.ts`):
+  a workspace Secret, `provider_key` with `providerKind: cloudflare`, picked by
+  the column that names it or by being the only one. Prior art meters AI per
+  account, not per site: Webflow pools AI credits per Workspace across its
+  sites ([AI credits](https://help.webflow.com/hc/en-us/articles/51060121155347)),
+  Sanity per organization ([quotas](https://www.sanity.io/docs/help/understanding-quotas.md)),
+  and an Anthropic Console workspace scopes its own keys and carries its own
+  monthly cap ([workspaces](https://platform.claude.com/docs/en/manage-claude/workspaces),
+  [announcement](https://anthropic.com/news/workspaces)).
+  - **A** — a workspace Secret, `provider_key` with `providerKind: anthropic`
+    (`ProviderKind` grows one value), and a new App column `askKeyId` naming
+    one. Unnamed, the workspace's only Anthropic key is used, as `cloudflareFor`
+    picks; two and none named is refused by name. Per site when named, pooled
+    when not.
+  - **B** — one `ANTHROPIC_API_KEY` in basecamp's env for every site, billed to
+    whoever runs basecamp. Not per site.
+  - **C** — whatever account `claude` is logged in as on the host, as the
+    workbench runs. Not per site, and an owner's ask spends the operator's plan.
+  - **Recommend A** (confidence 2) — it is `cloudflareFor`'s shape in the same
+    module, it meets the ruling's "per site" without making every site mint a
+    key, and one Console workspace per client puts Anthropic's own monthly cap
+    on that client's key.
+- ~~**Q27 — What the spend limit is (4.1).**~~ **Answered 2026-10-22 (`FJS-D1425`): A — per run only: the $2 `--max-budget-usd`, plus whatever monthly cap the key's Console workspace carries. Basecamp keeps no total.** `askArgv({ edit })` already caps
+  each run at `ASK_BUDGET_USD` ($2) with `--max-budget-usd`, and the stream's
+  `result` event carries the run's `total_cost_usd`. 4.3 needs a record of the
+  run anyway: the diff the owner reviews outlives a reload, and Undo names the
+  commit a save made.
+  - **A** — per run only: the $2 `--max-budget-usd`, plus whatever monthly
+    cap the key's Console workspace carries. Basecamp keeps no total.
+  - **B** — per run, plus a monthly dollar cap on the App (`askMonthlyUsd`,
+    null = no cap). Each run's cost goes in a status file beside
+    `<appId>.previews.json`; an ask is refused once this calendar month's (UTC)
+    total reaches the cap. Lost with the disk, so a cap can reset silently.
+  - **C** — as B, but each run is a row (`SiteAsk`: app, draft, who, request,
+    cost, state `running|ready|saved|discarded|refused`, the commit a save
+    made). The row is the cap's ledger and 4.3's record of the run in one.
+  - **Recommend C** (confidence 2) — Webflow and Sanity both hold a monthly
+    allowance in the product, not at the model vendor, and a ledger is not
+    derivable, so it belongs in the database rather than a cache file; the row
+    is also what 4.3 needs. A is the smaller reopen path if a row is too much.
 
 ## The plan
 
@@ -779,8 +930,79 @@ a grant sees the Edit button but has every save refused.
 Goal: CloudCannon's five kinds, minus `source`.
 Done when: an owner adds a review, reorders a menu and swaps a photo.
 
-- [ ] 3.1 Add, remove and reorder collection items and menu entries.
-- [ ] 3.2 Upload an image into `content/media`. Alt text is required.
+- [x] 3.1 Add, remove and reorder collection items and menu entries.
+  **Built 2026-10-22**, as Q20–Q22 ruled (`FJS-D1403`–`FJS-D1405`). The
+  form (`Field.mesa`) lists every entry of the file's front-matter lists,
+  sub-entries indented and the clicked one marked, and, on a file under
+  `content/collections/<name>/`, says the item's place ("Item 2 of 3 in
+  steps"). Each has Earlier, Later, Copy and Remove, one commit each through
+  the new `drafts.arrange`, held still while words are unsaved. An entry is
+  site-kit's `applyEdit` `entry` edit: its lines are cut and pasted, so every
+  other line keeps its spelling, and the result must read back as exactly
+  that change. A collection item is `arrangeCollection`: a move writes
+  `order:` on each item whose place is new, a copy is the file whole beside
+  it (`<name>-copy.md`), a removal deletes the file; basecamp commits all of
+  them as one commit through `saveDraftFiles`, which `saveDraftFile` now
+  calls. `collection()` sorts by `byOrder`, which the reorder reads too. The
+  first moved earlier, the last later and a list's only item removed are
+  refused.
+  - Proved by site-kit `test/content.mjs` § an owner's lists (a ksite-shaped
+    menu with sub-entries and a comment; a three-item collection with and
+    without front matter), basecamp `api/test/drafts.test.ts` § Lists over a
+    real remote (one commit per act, the messages, a stale blob, a stranger),
+    and a scratch browser drive, 14/14 (not committed), on 2.5's harness with
+    a three-step collection: a menu link opens its file with the entry
+    marked, Later/Copy/Remove each commit and the list follows, unsaved words
+    hold the list, a step's title opens its item, Earlier writes `order:` in
+    one commit with names kept, Copy lands after it, a rebuild of the draft
+    lists the steps in that order, Remove empties the form, and with the grant
+    deleted an arrange is refused with the branch unmoved. 2.5's drive 17/17
+    and 2.4's 18/18 on fresh fixtures.
+  - Left: an arrange shows on the page only after the rebuild. Copy names the
+    file `<name>-copy.md` whatever the owner then writes in it. A move writes
+    `order:` on every item of a collection that had none, so the first
+    reorder of a file-name-ordered collection touches each of its files.
+- [x] 3.2 Upload an image into `content/media`. Alt text is required.
+  **Built 2026-10-22**, as Q23–Q25 ruled (`FJS-D1406`–`FJS-D1408`). Read
+  against the sites, `content/media` is `content/public/`: a photo's address
+  `/media/images/x.jpg` is the file `content/public/media/images/x.jpg`, and
+  an upload lands in the folder of the photo it replaces, so no folder is
+  written down. site-kit's `photoOf` makes a top-level, unlocked front-matter
+  value a photo when it names one of the site's own raster files (an SVG or
+  another site's address is not one); `formOf` marks it and the form
+  (`Field.mesa`) shows a thumbnail, a file picker and "What the photo shows"
+  instead of a text box. A file chosen is shrunk in the page to 2560 px
+  (`src/editor/photo.js`), sent with its words to the new `drafts.photo`,
+  decoded and encoded again by Bun.Image in basecamp (`core/site-photo.ts`),
+  which refuses what does not decode and drops the EXIF, then committed beside
+  the old photo, named for the upload (`photoName`, `-2` past a taken name),
+  with the key's line rewritten by `applyPhoto` — new address, `?text=` the
+  words, the block's other query keys kept and the old photo's `height`
+  dropped — in one commit through `saveDraftFiles`, which now takes bytes.
+  Words alone rewrite only the line. Empty words, a key that is not a photo
+  and a stale blob are refused. Basecamp's `http.maxBodySize` is 10 MB in
+  `app.ts` (the config file has no key for it); socket frames stay 256 KB.
+  - Proved by site-kit `test/content.mjs` § an owner's photos, basecamp
+    `api/test/drafts.test.ts` § Photos over a real remote (a 3000×2000 JPEG
+    with a GPS marker in its EXIF commits as 2560×1707 without it, the old
+    file kept, a second upload named `-2`, a stranger and a stale blob
+    refused), and a scratch browser drive, 14/14 (not committed), on 3.1's
+    harness with a page whose layout reads `?text=` as ksite's `Image.mesa`
+    does: a click on the photo offers the page's file first, the form shows
+    the photo with no words and nothing to save, a file that is not a photo
+    is refused by basecamp with nothing committed, a 10.7 MB 4000×3000 photo
+    leaves the page at 2560×1920 and still past junction's 256 KB default,
+    blank words hold Save, the save is one commit holding the re-encoded
+    photo (no GPS) and the line, a rebuild of the draft renders it with
+    those words as `alt` and a `srcset`, words alone are one commit, and with
+    the grant deleted the save is refused with the branch unmoved. 3.1's
+    drive 14/14 (one earlier run missed once, reading the form before its
+    reload), 2.5's 17/17 and 2.4's 18/18 on fresh fixtures.
+  - Left: a prose `<Image>` tag (`FJS-3436`). The old photo stays in the
+    repository whether anything still names it. A template that draws a raw
+    `<img src={…}>` shows no alt and carries the query in its `src`
+    (`FJS-D1406`). A swap shows on the page only after the rebuild. Found on
+    the way: `FJS-3437`, a symlinked `node_modules` prerenders one route.
 
 ### Phase 4 — Ask a model (`FJS-D1242`)
 
@@ -789,9 +1011,33 @@ commit, through the ask panel's engine with the scope narrowed to Q2's set.
 Done when: an owner asks for the opening hours to change on every page that
 shows them, reviews the diff and saves it to their draft.
 
-- [ ] 4.1 Basecamp runs `ask-claude.js`'s edit argv on its checkout of the
+- [x] 4.1 Basecamp runs `ask-claude.js`'s edit argv on its checkout of the
   draft branch, scoped to `content/`, the way the workbench already imports
   it. The key and a spend limit are per site and held by basecamp.
+  **Built 2026-10-22**, as Q26–Q27 ruled (`FJS-D1424`, `FJS-D1425`): the key
+  is one `ANTHROPIC_API_KEY` for every site, the limit the argv's $2 a run.
+  Not per site, as this box first said.
+  - The clone is bare, so a run gets a folder: `exportDraftContent` writes the
+    draft's `content/**.md` (regular files only) to a temp directory, and
+    `askArgv({ edit })` allows Edit/Write in its `content/` and nothing else.
+    `treeFromExport` hashes what moved into the clone and writes a tree on the
+    head the run read. Nothing commits; 4.2 grades the tree and 4.3 commits it.
+  - `drafts.ask { appId, draft, request }` queues the `site:ask` job, which runs
+    `core/site-ask.ts`. Each draft's last ask is in `<SITES_DIR>/<appId>.asks.json`
+    and on `drafts.list`, as its preview is: state, reply, cost, files, tree.
+    One ask per draft at a time. A run that hits its cap fails and its edits
+    are dropped.
+  - The prompt is the cli's `contentPrompt`, beside `EDIT_RULES`, and names
+    site-kit's `LOCKED_KEYS` to leave alone. `runAsk` takes `env`, so the
+    key goes to that child only; `ANTHROPIC_API_KEY` is declared in env.ts,
+    so `childEnv` keeps it from every other child.
+  - Real run (scratch, host login through a wrapper, since no key is set
+    here): "9am → 8am on every page" on a three-file fixture changed all three
+    in 9.6 s for $0.03. On its own it left `tone` and a README outside
+    `content/` alone and said why. Test: `drafts.test.ts` § asking a model
+    for a change, with a stand-in `claude`.
+  - The model was told about the locked keys and still might change one. The
+    tree is not graded yet; that is 4.2.
 - [ ] 4.2 The run's diff is graded against Q2's editable set before anything
   commits, and refused whole if it touches a developer file or a look key.
 - [ ] 4.3 The owner sees the diff on the preview and saves or discards it.

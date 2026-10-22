@@ -16,13 +16,15 @@ flags:
 
 Every letter waiting for this machine's member, oldest first, with who sent
 it and how long ago (`IDEAS/pony-express.md` 1.4), a sealed one opened with
-this machine's sealing key (`FJS-D1402`). A sealed letter carries its sender's
-signature: the first one from a member pins their key, and one whose signature
-fails, or whose key is not the one pinned for that nick, is withheld and named
-(4.1). Reading deletes them at the post
-(`FJS-D1395`): the printed line is the only copy, so keep it if it matters —
-env values from `tell --env` most of all. The first read after the seal also
-publishes this machine's sealing key, so letters to it are sealed from then.
+this machine's sealing key (`FJS-D1402`). A sealed letter carries the
+signature of the sender's machine, which must be one in the sender's chain:
+the first letter from a member pins their chain, and one whose signature
+fails, or whose machine is in no chain the pin carries forward, is withheld
+and named (4.1, 4.3). Reading deletes them at the post (`FJS-D1395`): the
+printed line is the only copy, so keep it if it matters — env values from
+`tell --env` most of all. The first read on a newer fli also publishes this
+member's chain, which carries its sealing key, so letters to it are sealed
+from then.
 
 With `-f` it stays open on a signed WebSocket (2.1): the waiting letters come
 first, then each new one as it is sent. There a letter is deleted only once it
@@ -43,16 +45,27 @@ if (flag.dry) {
 }
 
 try {
-  const published = await publishSealKey(member.api, member.keys)
-  if (published) log.warn(`The post did not take this machine's sealing key (${published}) — letters to you go plain until it does.`)
+  const published = await publishChain(member.api, member.keys)
+  if (published) log.warn(`The post did not take this member's chain (${published}) — letters to you go plain until it does.`)
 } catch (e) { log.error(`${member.api} did not answer (${e.message}).`); process.exitCode = 1; return }
 
 const indent = (text) => text.replace(/\n$/, '').split('\n').map(line => `    ${line}`).join('\n')
+
+// A machine the sender's pinned chain holds costs no call; any other sends
+// for the chain, which must verify and carry the pin forward.
+const gradeSender = async (from, key) => {
+  if (Object.values(readPeers()).find(p => p?.nick === from)?.machines?.includes(key)) return {}
+  const met = await meetMember(member, from).catch(e => ({ failed: e.message }))
+  if (met.refused || met.failed) return { refused: met.refused ?? `the post did not serve ${from}'s chain (${met.failed})` }
+  if (!met.chain?.machines.includes(key)) return { refused: `it is signed by ${await fingerprint(key)}, which is no machine in ${from}'s chain` }
+  return { met: met.met }
+}
+
 // A letter that fails its signature or its pin is withheld and the run exits
 // 1: its words are whoever forged it, and the read already deleted it.
 const printLetter = async ({ from, text, sealed, created }) => {
   const opened = sealed ? await openLetter(member.keys, sealed) : { inside: { text } }
-  const pin = opened?.key ? await pinPeer({ nick: from, publicKey: opened.key }) : {}
+  const pin = opened?.key ? await gradeSender(from, opened.key) : {}
   const inside = opened?.inside
   const label = !sealed ? ' · plain' : inside?.env !== undefined ? ` · env from ${inside.source ?? 'a file'}` : ''
   echo(chalk`\n  {bold ${from}} {dim · ${relative(created * 1000, Date.now(), { style: 'short' })}${label}}`)
@@ -61,7 +74,7 @@ const printLetter = async ({ from, text, sealed, created }) => {
     process.exitCode = 1
     return echo(chalk`    {red withheld: ${opened.forged ? `it does not carry a signature that verifies for this machine, so ${from} may not have written it` : pin.refused}}`)
   }
-  if (pin.met) echo(chalk`    {dim first letter from ${from}: pinned their key ${pin.met}}`)
+  if (pin.met) echo(chalk`    {dim first letter from ${from}: pinned their chain ${pin.met}}`)
   echo(indent(inside.env ?? inside.text ?? ''))
 }
 

@@ -280,6 +280,46 @@ function resolveMod(c, mac) {
   return { ...rest, [mac ? 'meta' : 'ctrl']: true }
 }
 
+/**
+ * `table` with `changes` laid over it, as khat's `with_overrides`:
+ * `{ table, warnings }`, the table ready for `keymap`. A change rebinds a key
+ * or adds one, and `'nop'` unbinds it, a prefix with it, so `{ dd: 'nop' }`
+ * leaves `d` free to fire. A key is matched by its spelling, which is one per
+ * chord, so `<C-r>` over `<C-r>` replaces it and `<Mod-r>` is a key of its own.
+ *
+ * A change that cannot apply is skipped with a warning and never throws,
+ * since what it costs is one key that does not fire: a spelling the grammar
+ * refuses, an action `actions` does not list, where one is given (a function
+ * is always an action), and a row the table could not build with — a
+ * duplicate across Mod, a key under an await-char. The table it answers
+ * always builds. The host decides how a warning reaches a person.
+ */
+export function withOverrides(table, changes, { actions } = {}) {
+  for (const [name, t] of [['table', table], ['changes', changes ?? {}]]) {
+    if (!t || typeof t !== 'object' || Array.isArray(t)) refuse('withOverrides', t, `the ${name} is { keys: action }`)
+  }
+  const known = actions && new Set(actions)
+  const out = { ...table }
+  const warnings = []
+  for (const [keys, action] of Object.entries(changes ?? {})) {
+    try { parseKeys(keys) } catch (e) { warnings.push(e.message); continue }
+    if (action === 'nop') { delete out[keys]; continue }
+    if (known && typeof action === 'string' && !known.has(action)) {
+      warnings.push(`withOverrides(${JSON.stringify(keys)}): '${action}' is no action here; it knows ${[...known].join(', ')}`)
+      continue
+    }
+    const had = Object.hasOwn(out, keys)
+    const was = out[keys]
+    out[keys] = action
+    try { keymap(out) } catch (e) {
+      if (had) out[keys] = was
+      else delete out[keys]
+      warnings.push(e.message)
+    }
+  }
+  return { table: Object.freeze(out), warnings }
+}
+
 // ─── What a page never sees ──────────────────────────────────────────────
 
 // The chords a browser or the OS takes before a page's keydown, so

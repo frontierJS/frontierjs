@@ -6,19 +6,24 @@
 // file and wrangler bundles it, so it runs in workerd and may use nothing a
 // Worker lacks. It ships because `core/` is in the package's `files`.
 //
-// Every route but `join` is signed by a member's key (toolbelt's
-// `signRequest`), named in `x-tell-key`; a key no member holds is refused
-// before the signature is looked at. `join` is signed by the key it brings,
-// as Haven's login is. The owner is member one, seeded from the OWNER_KEY
-// and OWNER_NICK vars that `tell:setup` writes.
+// A member is a chain of machines (core/tell-chain.js, IDEAS/pony-express.md
+// 4.3): every route but `join` is signed by one of them (toolbelt's
+// `signRequest`), named in `x-tell-key`; a key that is no member's machine is
+// refused before the signature is looked at. `join` is signed by the machine
+// its root names, as Haven's login is. The owner is member one, seeded from
+// the OWNER_KEY and OWNER_NICK vars that `tell:setup` writes, with no chain
+// until its first verb publishes one — as is any member who joined before
+// chains. A chain is stored only once every link verifies and it carries the
+// stored one forward, so the post can neither write a link nor take one back.
 //
 // A member with a sealing key (FJS-D1400) is sent only sealed letters, and
 // a plain one to them is refused here rather than trusted to the sender
-// (FJS-D1402), so the post holds only ciphertext for them. A letter to a
-// member with none is plaintext, as V1's were (FJS-D1393). Reading deletes
-// either (FJS-D1395). The post hands out the keys, and a client pins them on
-// first contact and signs inside the seal (IDEAS/pony-express.md 4.1), so a
-// host swapping a key or writing a letter is caught there, not here.
+// (FJS-D1402), so the post holds only ciphertext for them. The sealing key is
+// the one the chain signed, and a member with no chain has none. A letter to
+// a member with none is plaintext, as V1's were (FJS-D1393). Reading deletes
+// either (FJS-D1395). A client verifies the chain and pins its root on first
+// contact, and signs inside the seal (4.1), so a host serving another chain
+// or writing a letter is caught there, not here.
 //
 // `GET /follow` is a WebSocket, signed like every other route at the upgrade.
 // The object pushes the waiting letters on accept and each new one as `send`
@@ -28,8 +33,25 @@
 //
 // `GET /waiting` counts a member's letters by sender and deletes nothing — the
 // background check behind the notice line every `fli` command prints.
+//
+// Linking (4.5, FJS-D1418) is four routes over one `asks` row. A new machine
+// asks (`POST /link/ask`, signed by itself, as a join is) and prints its ask
+// code as eight words; a linked machine typed them reads the ask
+// (`GET /link/ask?code=`) and offers a link it signed, with the member's
+// sealing key sealed to the asker (`POST /link/offer`); the asker, asking
+// again, is answered the offer and publishes the chain it countersigned
+// (`POST /link/accept`). The post carries the pieces and can sign none.
+//
+// A revoke (4.6, FJS-D1419) reaches the post as a longer chain on
+// `POST /chain`, with `rekeys`: the member's new sealing pair sealed to the
+// box key of each machine left, which each fetches once (`GET /rekey`). The
+// box keys are the machines' own signed claims (`POST /box`, `GET /boxes`);
+// the post stores them and the revoking machine verifies them. A revoked
+// machine is out of `machines` the moment the chain is stored, so it is
+// refused on its next request, and its open socket is closed.
 
-import { verifyRequest } from '@frontierjs/toolbelt/signature'
+import { verifyMessage, verifyRequest } from '@frontierjs/toolbelt/signature'
+import { askCode, extendsSeen, linkMessage, readChain, verifyBox } from './tell-chain.js'
 
 // ─── limits ────────────────────────────────────────────────────────────────
 
@@ -45,6 +67,14 @@ const BODY_MAX     = 4000
 const SEALED_MAX   = 32768
 /** `@frontierjs/toolbelt/seal`'s public key, 32 bytes of base64url. */
 const SEAL_KEY     = /^[A-Za-z0-9_-]{43}$/
+/** A chain as it travels, JSON: far past `tell-chain.js`'s 256 links of three keys and a signature each. */
+const CHAIN_MAX    = 131072
+/** Machines a member's rekeys are sealed to, at most — a chain's own bound. */
+const REKEYS_MAX   = 256
+/** A link ask waits ten minutes for a linked machine to type its words. */
+const ASK_SECONDS  = 600
+/** Asks open at once: anyone may ask, so the table is bounded rather than the askers. */
+const ASKS_MAX     = 64
 /** Haven's `Member.nick` rule, so a nick here is one Haven accepts in Phase 5. */
 const NICK         = /^[a-z0-9_-]{2,16}$/
 
@@ -86,17 +116,31 @@ export class TellPost {
       CREATE TABLE IF NOT EXISTS letters (id INTEGER PRIMARY KEY, fromNick TEXT NOT NULL, toNick TEXT NOT NULL, body TEXT NOT NULL, sealed INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS letters_to ON letters (toNick, id);
       CREATE TABLE IF NOT EXISTS nonces (id TEXT PRIMARY KEY, until INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS links (nick TEXT NOT NULL, seq INTEGER NOT NULL, link TEXT NOT NULL, PRIMARY KEY (nick, seq));
+      CREATE TABLE IF NOT EXISTS machines (publicKey TEXT PRIMARY KEY, nick TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS asks (code TEXT PRIMARY KEY, machine TEXT NOT NULL UNIQUE, sealKey TEXT NOT NULL, expires INTEGER NOT NULL, nick TEXT, link TEXT, sealed TEXT);
+      CREATE TABLE IF NOT EXISTS boxes (machine TEXT PRIMARY KEY, box TEXT NOT NULL, sig TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS rekeys (machine TEXT PRIMARY KEY, sealKey TEXT NOT NULL, sealed TEXT NOT NULL);
     `)
-    // A post deployed before the seal keeps its members (FJS-D1400 publishes
-    // their keys by a signed update), so its tables gain the two columns; a
-    // column already there throws and is left.
-    for (const [table, column] of [['members', 'sealKey TEXT'], ['letters', 'sealed INTEGER NOT NULL DEFAULT 0']]) {
+    // A post deployed before the seal or the chain keeps its members, so its
+    // tables gain the columns; a column already there throws and is left.
+    // `publicKey` stays the machine a member came in with, which a chain's
+    // root must name.
+    for (const [table, column] of [
+      ['members', 'sealKey TEXT'], ['letters', 'sealed INTEGER NOT NULL DEFAULT 0'],
+      ['members', 'root TEXT'], ['members', 'seq INTEGER'], ['members', 'head TEXT'],
+    ]) {
       try { this.sql.exec(`ALTER TABLE ${table} ADD COLUMN ${column}`) } catch {}
     }
     const owner = String(env.OWNER_NICK ?? '').trim().toLowerCase()
     if (env.OWNER_KEY && NICK.test(owner)) {
       this.sql.exec('INSERT OR IGNORE INTO members (nick, publicKey, joined) VALUES (?, ?, ?)', owner, env.OWNER_KEY, now())
     }
+    // A member with no chain is a chain of one not yet published: its one
+    // machine is the key it came in with, and a sealing key no chain signed
+    // is none.
+    this.sql.exec('INSERT OR IGNORE INTO machines (publicKey, nick) SELECT publicKey, nick FROM members WHERE root IS NULL')
+    this.sql.exec('UPDATE members SET sealKey = NULL WHERE root IS NULL AND sealKey IS NOT NULL')
   }
 
   async fetch(req) {
@@ -104,6 +148,8 @@ export class TellPost {
     const body = await req.text()
     const route = `${req.method} ${url.pathname}`
     if (route === 'POST /join') return this.join(req, url, body)
+    if (route === 'POST /link/ask') return this.ask(req, url, body)
+    if (route === 'POST /link/accept') return this.accept(req, url, body)
     if (route === 'GET /follow') return this.follow(req, await this.member(req, url, body))
 
     const handler = {
@@ -112,25 +158,31 @@ export class TellPost {
       'GET /waiting': this.waiting,
       'POST /invite': this.invite,
       'GET /members': this.members,
-      'POST /seal-key': this.sealKey,
+      'GET /chain':   this.chain,
+      'POST /chain':  this.extendChain,
+      'GET /link/ask':     this.readAsk,
+      'POST /link/offer':  this.offer,
+      'POST /box':    this.putBox,
+      'GET /boxes':   this.boxes,
+      'GET /rekey':   this.rekey,
     }[route]
     if (!handler) return refuse(404, `No route ${route}.`)
 
     const who = await this.member(req, url, body)
     if (who.refused) return refuse(who.status, who.refused)
-    return handler.call(this, who.nick, body)
+    return handler.call(this, who.nick, body, url, req.headers.get(KEY_HEADER))
   }
 
-  /** `{ nick }` for a signed request from a member, else `{ status, refused }`. */
+  /** `{ nick, machine }` for a signed request from a member's machine, else `{ status, refused }`. */
   async member(req, url, body) {
     const publicKey = req.headers.get(KEY_HEADER)
     if (!publicKey) return { status: 401, refused: `A request is signed and names its key in ${KEY_HEADER}.` }
-    const member = this.sql.exec('SELECT nick FROM members WHERE publicKey = ?', publicKey).toArray()[0]
-    if (!member) return { status: 403, refused: 'That key is no member here. `fli tell:join <code>` walks in with an invite.' }
+    const member = this.sql.exec('SELECT nick FROM machines WHERE publicKey = ?', publicKey).toArray()[0]
+    if (!member) return { status: 403, refused: 'That key is no member\'s machine here. `fli tell:join <code>` walks in with an invite.' }
 
     const verdict = await this.verify(req, url, body, publicKey)
     if (!verdict.ok) return { status: 401, refused: `The signature does not verify: ${verdict.reason}.` }
-    return { nick: member.nick }
+    return { nick: member.nick, machine: publicKey }
   }
 
   verify(req, url, body, publicKey) {
@@ -200,7 +252,7 @@ export class TellPost {
       server.accept()
       server.close(4000 + who.status, who.refused.slice(0, 100))
     } else {
-      this.state.acceptWebSocket(server, [who.nick])
+      this.state.acceptWebSocket(server, [who.nick, who.machine])
       for (const letter of this.sql.exec(`SELECT ${LETTER} FROM letters WHERE toNick = ? ORDER BY id`, who.nick).toArray()) {
         server.send(JSON.stringify(letterOut(letter)))
       }
@@ -230,43 +282,225 @@ export class TellPost {
   }
 
   members() {
-    return answer({ members: this.sql.exec('SELECT nick, publicKey, sealKey, joined FROM members ORDER BY joined, nick').toArray() })
+    return answer({ members: this.sql.exec('SELECT nick, publicKey, sealKey, root, seq, head, joined FROM members ORDER BY joined, nick').toArray() })
   }
 
-  // How a member publishes the key letters to them are sealed to: at setup
-  // for the owner, and on the first verb after the seal for anyone who joined
-  // before it. Signed by the member's signing key like every route, so only
-  // that member sets it. A new key replaces the old, and a letter sealed to
-  // the old one stays unopenable.
-  sealKey(nick, body) {
+  // A member's links as they were signed, for a client to verify itself:
+  // the post's word on a chain is worth nothing to the peer reading it. A
+  // member with no chain answers none, and a client that pinned one refuses
+  // that as a chain cut short.
+  chain(_, __, url) {
+    const nick = String(url.searchParams.get('nick') ?? '').trim().toLowerCase()
+    if (!this.sql.exec('SELECT 1 FROM members WHERE nick = ?', nick).toArray().length) return refuse(404, `No member is called '${nick}'.`)
+    return answer({ nick, links: this.links(nick) })
+  }
+
+  links(nick) {
+    return this.sql.exec('SELECT link FROM links WHERE nick = ? ORDER BY seq', nick).toArray().map(row => JSON.parse(row.link))
+  }
+
+  /** `{ chain }` for links that verify and may stand for `nick`, else `{ status, refused }`. */
+  async graded(nick, links) {
+    if (JSON.stringify(links ?? null).length > CHAIN_MAX) return { status: 413, refused: 'That chain is too long.' }
+    const chain = await readChain(links)
+    if (chain.refused) return { status: 400, refused: `The chain does not verify: ${chain.refused}.` }
+    if (!SEAL_KEY.test(chain.sealKey)) return { status: 400, refused: 'The chain\'s sealing key is not 32 bytes of base64url.' }
+    const held = chain.machines.map(key => this.sql.exec('SELECT nick FROM machines WHERE publicKey = ?', key).toArray()[0]).find(m => m && m.nick !== nick)
+    if (held) return { status: 409, refused: `A machine in that chain is already ${held.nick}'s.` }
+    return { chain }
+  }
+
+  /**
+   * The chain stored for `nick`, its links replaced from the first new one and
+   * its machines and sealing key the chain's; a machine the chain revoked
+   * loses its box, its rekey and its socket. Synchronous, so no request lands
+   * between the grading and the write.
+   */
+  storeChain(nick, links, chain, fromSeq) {
+    for (const link of links.slice(fromSeq)) {
+      this.sql.exec('INSERT OR REPLACE INTO links (nick, seq, link) VALUES (?, ?, ?)', nick, link.seq, JSON.stringify(link))
+    }
+    this.sql.exec('DELETE FROM machines WHERE nick = ?', nick)
+    for (const key of chain.machines) this.sql.exec('INSERT INTO machines (publicKey, nick) VALUES (?, ?)', key, nick)
+    this.sql.exec('UPDATE members SET sealKey = ?, root = ?, seq = ?, head = ? WHERE nick = ?', chain.sealKey, chain.root, chain.seq, chain.head, nick)
+    for (const { machine } of chain.revoked) {
+      this.sql.exec('DELETE FROM boxes WHERE machine = ?', machine)
+      this.sql.exec('DELETE FROM rekeys WHERE machine = ?', machine)
+      for (const ws of this.state.getWebSockets(machine)) {
+        try { ws.close(4403, 'This machine was revoked from its member.') } catch {}
+      }
+    }
+  }
+
+  // How a member's chain reaches the post: whole, every link checked again,
+  // and taken only when it carries the stored one forward. A member with no
+  // chain yet takes the root that names the machine it came in with, which is
+  // how a member from before chains, the owner included, becomes a chain of
+  // one. The same chain again is answered as stored. A chain that rotates the
+  // sealing key brings `rekeys`, the new pair sealed to each machine left,
+  // which the post holds without reading.
+  async extendChain(nick, body) {
+    const { links, rekeys = {} } = parse(body)
+    const graded = await this.graded(nick, links)
+    if (graded.refused) return refuse(graded.status, graded.refused)
+    const { chain } = graded
+    const sealedTo = Object.entries(rekeys && typeof rekeys === 'object' ? rekeys : {})
+    if (sealedTo.length > REKEYS_MAX || sealedTo.some(([machine, sealed]) => !chain.machines.includes(machine) || typeof sealed !== 'string' || !sealed.startsWith('v1.') || sealed.length > SEALED_MAX)) {
+      return refuse(400, 'A chain\'s rekeys are { machine: sealed } for machines in it.')
+    }
+    const stored = this.sql.exec('SELECT publicKey, root, seq, head FROM members WHERE nick = ?', nick).one()
+    if (stored.root) {
+      const behind = extendsSeen(stored, chain)
+      if (behind) return refuse(409, `That chain does not carry ${nick}'s forward: ${behind}.`)
+    } else if (links[0].machine !== stored.publicKey) {
+      return refuse(409, `A first chain for ${nick} is rooted at the machine they came in with, and this one is not.`)
+    }
+    if (stored.root && chain.seq === stored.seq) return answer({ nick, root: chain.root, seq: chain.seq, head: chain.head })
+    this.storeChain(nick, links, chain, stored.root ? stored.seq : 0)
+    for (const [machine, sealed] of sealedTo) {
+      this.sql.exec('INSERT OR REPLACE INTO rekeys (machine, sealKey, sealed) VALUES (?, ?, ?)', machine, chain.sealKey, sealed)
+    }
+    return answer({ nick, root: chain.root, seq: chain.seq, head: chain.head })
+  }
+
+  // ─── box keys and rekeys ─────────────────────────────────────────────────
+
+  // A machine's claim to its own box key, verified here only so the table
+  // holds nothing a machine did not sign; the machine that seals to it
+  // verifies it again.
+  async putBox(nick, body, _, machine) {
+    const claim = parse(body)
+    if (!SEAL_KEY.test(String(claim.box ?? '')) || !await verifyBox(machine, claim)) return refuse(400, 'A box is { box, sig }, signed by the machine it is for.')
+    this.sql.exec('INSERT OR REPLACE INTO boxes (machine, box, sig) VALUES (?, ?, ?)', machine, claim.box, claim.sig)
+    return answer({ box: claim.box }, 201)
+  }
+
+  boxes(nick) {
+    return answer({ boxes: this.sql.exec('SELECT b.machine, b.box, b.sig FROM boxes b JOIN machines m ON m.publicKey = b.machine WHERE m.nick = ?', nick).toArray() })
+  }
+
+  // The member's sealing pair as the last revoke sealed it to this machine,
+  // and only while it is still the member's.
+  rekey(nick, _, __, machine) {
+    const row = this.sql.exec('SELECT r.sealKey, r.sealed FROM rekeys r JOIN members m ON m.sealKey = r.sealKey WHERE r.machine = ? AND m.nick = ?', machine, nick).toArray()[0]
+    if (!row) return refuse(404, 'No sealing key was sealed to this machine since the last revoke.')
+    return answer(row)
+  }
+
+  // ─── linking ─────────────────────────────────────────────────────────────
+
+  /** The asking machine's request verified against the key it names, else a refusal. */
+  async asker(req, url, body) {
+    const machine = req.headers.get(KEY_HEADER)
+    if (!machine) return { refused: refuse(401, `A request is signed and names its key in ${KEY_HEADER}.`) }
+    const verdict = await this.verify(req, url, body, machine)
+    if (!verdict.ok) return { refused: refuse(401, `The signature does not verify: ${verdict.reason}.`) }
+    return { machine }
+  }
+
+  // Asked again until it is answered an offer: the same ask is kept, a new
+  // sealing key replaces it, and an ask runs out ten minutes after it was
+  // first made.
+  async ask(req, url, body) {
+    const { machine, refused } = await this.asker(req, url, body)
+    if (refused) return refused
     const { sealKey } = parse(body)
-    if (typeof sealKey !== 'string' || !SEAL_KEY.test(sealKey)) return refuse(400, 'A sealing key is { sealKey }, 32 bytes of base64url.')
-    this.sql.exec('UPDATE members SET sealKey = ? WHERE nick = ?', sealKey, nick)
-    return answer({ nick, sealKey })
+    if (!SEAL_KEY.test(String(sealKey ?? ''))) return refuse(400, 'An ask is { sealKey }, the key the member\'s sealing key is sealed to.')
+    const code = await askCode(machine, sealKey)
+
+    const t = now()
+    this.sql.exec('DELETE FROM asks WHERE expires <= ?', t)
+    if (this.sql.exec('SELECT 1 FROM machines WHERE publicKey = ?', machine).toArray().length) return refuse(409, 'That key is already a member\'s machine.')
+    const held = this.sql.exec('SELECT * FROM asks WHERE machine = ?', machine).toArray()[0]
+    if (held?.code === code) {
+      if (!held.link) return answer({ code, expires: held.expires }, 202)
+      return answer({ nick: held.nick, links: this.links(held.nick), link: JSON.parse(held.link), sealed: held.sealed })
+    }
+    if (held) this.sql.exec('DELETE FROM asks WHERE machine = ?', machine)
+    else if (this.sql.exec('SELECT COUNT(*) AS n FROM asks').one().n >= ASKS_MAX) return refuse(429, 'Too many machines are waiting to be linked. Try again in a few minutes.')
+    this.sql.exec('INSERT INTO asks (code, machine, sealKey, expires) VALUES (?, ?, ?, ?)', code, machine, sealKey, t + ASK_SECONDS)
+    return answer({ code, expires: t + ASK_SECONDS }, 202)
+  }
+
+  // The asking machine's keys for the member who typed its words — the
+  // keys, not the post's word on them: the typing side hashes them against
+  // the words.
+  readAsk(_, __, url) {
+    const row = this.sql.exec('SELECT machine, sealKey, link FROM asks WHERE code = ? AND expires > ?', String(url.searchParams.get('code') ?? ''), now()).toArray()[0]
+    if (!row) return refuse(404, 'No machine is waiting under those words. They run out after ten minutes; ask again on the new machine.')
+    if (row.link) return refuse(409, 'Another machine already offered a link to that ask.')
+    return answer({ machine: row.machine, sealKey: row.sealKey })
+  }
+
+  async offer(nick, body, _, by) {
+    const { code, link, sealed } = parse(body)
+    if (!link || typeof link !== 'object' || typeof sealed !== 'string' || !sealed.startsWith('v1.') || sealed.length > SEALED_MAX) return refuse(400, 'An offer is { code, link, sealed }.')
+    if (link.kind !== 'link' || link.by !== by) return refuse(400, 'An offer is a link signed by the machine that sends it.')
+    if (!await verifyMessage({ publicKey: by, signature: link.sig, message: linkMessage(link) })) return refuse(400, 'The link\'s signature does not verify.')
+
+    const stored = this.sql.exec('SELECT root, seq, head FROM members WHERE nick = ?', nick).one()
+    if (!stored.root) return refuse(409, `${nick} has published no chain yet, so there is nothing to link to. Any \`fli tell\` verb publishes it.`)
+    if (link.seq !== stored.seq + 1 || link.prev !== stored.head) return refuse(409, `That link does not follow ${nick}'s chain as the post holds it, link ${stored.seq}.`)
+    const row = this.sql.exec('SELECT machine, link FROM asks WHERE code = ? AND expires > ?', String(code ?? ''), now()).toArray()[0]
+    if (!row) return refuse(404, 'No machine is waiting under those words. They run out after ten minutes; ask again on the new machine.')
+    if (row.link) return refuse(409, 'Another machine already offered a link to that ask.')
+    if (link.machine !== row.machine) return refuse(400, 'That link names another machine than the one asking.')
+    this.sql.exec('UPDATE asks SET nick = ?, link = ?, sealed = ? WHERE code = ?', nick, JSON.stringify(link), sealed, code)
+    return answer({ code }, 201)
+  }
+
+  // The asker's chain, countersigned: taken only when it is the stored chain
+  // and the offered link with the asker's signature added, and nothing else.
+  async accept(req, url, body) {
+    const { machine, refused } = await this.asker(req, url, body)
+    if (refused) return refused
+    const { links } = parse(body)
+    const asked = this.sql.exec('SELECT nick FROM asks WHERE machine = ? AND link IS NOT NULL AND expires > ?', machine, now()).toArray()[0]
+    if (!asked) return refuse(404, 'This machine has no offer waiting. Ask again.')
+    const { nick } = asked
+    const graded = await this.graded(nick, links)
+    if (graded.refused) return refuse(graded.status, graded.refused)
+    const { chain } = graded
+
+    // Read again after the awaits: another request may have landed in them.
+    const row = this.sql.exec('SELECT link FROM asks WHERE machine = ? AND nick = ?', machine, nick).toArray()[0]
+    const offered = row && JSON.parse(row.link)
+    const last = links.at(-1)
+    if (!offered || linkMessage(last) !== linkMessage(offered) || last.sig !== offered.sig) return refuse(409, 'That chain does not end on the link offered to this machine.')
+    const stored = this.sql.exec('SELECT root, seq, head FROM members WHERE nick = ?', nick).one()
+    const behind = extendsSeen(stored, chain)
+    if (behind || chain.seq !== stored.seq + 1) return refuse(409, `${nick}'s chain moved since the offer${behind ? ` (${behind})` : ''}. Ask again.`)
+    this.storeChain(nick, links, chain, stored.seq)
+    this.sql.exec('DELETE FROM asks WHERE machine = ?', machine)
+    return answer({ nick, root: chain.root, seq: chain.seq, head: chain.head })
   }
 
   async join(req, url, body) {
-    const { code, nick: asked, publicKey, sealKey } = parse(body)
-    if (typeof publicKey !== 'string' || !publicKey) return refuse(400, 'A join is { code, nick, publicKey, sealKey }, signed with that key.')
-    if (typeof sealKey !== 'string' || !SEAL_KEY.test(sealKey)) return refuse(400, 'A join brings a sealing key, 32 bytes of base64url. A newer fli makes one.')
+    const { code, nick: asked, chain: links } = parse(body)
+    const machine = Array.isArray(links) ? links[0]?.machine : undefined
+    if (typeof machine !== 'string' || !machine) return refuse(400, 'A join is { code, nick, chain }, signed by the machine the chain\'s root names. A newer fli sends one.')
 
-    // The key in the body is the key that must have signed it, so a join
-    // naming somebody else's key verifies under nothing it holds.
-    const verdict = await this.verify(req, url, body, publicKey)
+    // The machine in the root is the key that must have signed the join, so
+    // a join naming somebody else's key verifies under nothing it holds.
+    const verdict = await this.verify(req, url, body, machine)
     if (!verdict.ok) return refuse(401, `The signature does not verify: ${verdict.reason}.`)
 
     const nick = typeof asked === 'string' ? asked.trim().toLowerCase() : ''
     if (!NICK.test(nick)) return refuse(400, 'A nick is 2 to 16 lower-case letters, digits, - and _.')
-    if (this.sql.exec('SELECT 1 FROM members WHERE publicKey = ?', publicKey).toArray().length) return refuse(409, 'That key is already a member.')
-    if (this.sql.exec('SELECT 1 FROM members WHERE nick = ?', nick).toArray().length) return refuse(409, `The nick '${nick}' is taken. Choose another.`)
+    if (links.length !== 1) return refuse(400, 'A join brings a chain of one, its root. A machine linked to a member is already in.')
+    const graded = await this.graded(nick, links)
+    if (graded.refused) return refuse(graded.status, graded.refused)
 
-    // Spent before the member is written, in one synchronous run: a Durable
-    // Object handles one request at a time between awaits, so two joins on one
-    // code cannot both see it.
+    // From here to the insert is one synchronous run: a Durable Object takes
+    // another request at an await, so two joins on one code or one nick must
+    // both be checked after the last of them.
+    if (this.sql.exec('SELECT 1 FROM machines WHERE publicKey = ?', machine).toArray().length) return refuse(409, 'That key is already a member.')
+    if (this.sql.exec('SELECT 1 FROM members WHERE nick = ?', nick).toArray().length) return refuse(409, `The nick '${nick}' is taken. Choose another.`)
     const spent = this.sql.exec('DELETE FROM invites WHERE code = ? AND expires > ? RETURNING byNick', String(code ?? ''), now()).toArray()[0]
     if (!spent) return refuse(403, 'That invite is spent, expired or unknown. Ask a member for a new one.')
-    this.sql.exec('INSERT INTO members (nick, publicKey, sealKey, joined) VALUES (?, ?, ?, ?)', nick, publicKey, sealKey, now())
-    return answer({ nick, invitedBy: spent.byNick, sealKey }, 201)
+    this.sql.exec('INSERT INTO members (nick, publicKey, joined) VALUES (?, ?, ?)', nick, machine, now())
+    this.storeChain(nick, links, graded.chain, 0)
+    return answer({ nick, invitedBy: spent.byNick, root: graded.chain.root }, 201)
   }
 }
 

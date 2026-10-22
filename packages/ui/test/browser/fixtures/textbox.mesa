@@ -1,0 +1,22 @@
+<script>
+  // textbox.mesa — the fixture for Textbox: one box with both its value and
+  // its mode bound, rows laid over each layer, and a log of what they did.
+  // `__box()` reads what the parent holds, `__set(text)` writes the value
+  // from outside, as a parent clearing a line after a send does.
+  import Textbox from '../../../components/forms/Textbox.mesa'
+
+  let value = ''
+  let mode  = 'insert'
+  let saved = 0
+
+  window.__box = () => ({ value, mode, saved })
+  window.__set = (text) => { value = text }
+</script>
+
+<Textbox
+  id="tb"
+  aria-label="Line"
+  bind:value
+  bind:mode
+  keys={{ normal: { U: 'redo', X: 'nop' }, insert: { '<C-s>': () => { saved++ } } }}
+/>

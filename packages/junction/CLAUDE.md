@@ -107,8 +107,11 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
 ```bash
 bun run test            # test:all adds the example
 bun run typecheck       # must be clean
-bun run test:browser    # the devtools console, in Chrome
 ```
+
+A change to the devtools plugin or `core/call-as.ts` also needs the cli's
+`bun run test:browser:console`: devtools serves no page, and `fli gui`'s
+`:live` and `:call` are what read it, in both targets.
 
 Then `example` `bun run verify` and `verify:jobs`, and `basecamp` `bun run verify`.
 A change to channels or `announce` also needs `example` `verify:live`, the only
@@ -222,6 +225,9 @@ so a fact one derives, the other must lift out of the frame by hand.
   so the browser client names them without pulling `node:async_hooks` into a
   bundle (`FJS-1181`). `methods.ts` is `CRUD_METHODS`, which `envelope.ts` reads
   to decide list against single (`FJS-D937`).
+- **`core/call-as.ts` is the one call made from outside the app** — `junction
+  call` in a booted copy, devtools' `POST /api/call` inside a running one,
+  refused outside development (`FJS-D1426`).
 - **`core/app-model.ts` is one walk over a built app**; the snapshot tools under
   `tools/` render it and hold no walk of their own.
 
@@ -285,7 +291,7 @@ src/
     entries.ts — one entry per row, keyed by model (FJS-D138)
   auth/ — types.ts (IAuth, SessionVerifier) · credentials.ts (signedRequest)
   plugins/
-    manifest/index.ts · openapi/index.ts · devtools/index.ts · devtools/admin.html
+    manifest/index.ts · openapi/index.ts · devtools/index.ts (read by `fli gui`'s `:live`; no page)
     webhooks/ — index.ts · payload.ts (what a subscriber may receive)
     declared.ts — the plugins junction.config.js may declare; the one plugins/ module core names (FJS-D256)
     outbox/ — index.ts · engine.ts (ctx.enqueue's row and the relay pass)

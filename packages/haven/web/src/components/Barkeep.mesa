@@ -47,7 +47,7 @@
 
   async function ask({ args }) {
     if (!args) return 'ask the barkeep about something — /ask row policies'
-    close ??= verbs.open({ name: 'barkeep', closed: () => { reply = null; close = null } })
+    close ??= verbs.open({ name: 'barkeep', pane: true, closed: () => { reply = null; close = null } })
     reply = { asking: args }
     try {
       const said = await getClient().service('barkeep').invoke('ask', null, { question: args })

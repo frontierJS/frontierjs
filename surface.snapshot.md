@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3797 source file(s) read
-233 entry point(s), 38 imported by nothing outside their package, 16 emitted
-1557 value export(s), 621 reached by nothing outside, 166 emitted
+26 package(s) · 3822 source file(s) read
+234 entry point(s), 37 imported by nothing outside their package, 15 emitted
+1570 value export(s), 620 reached by nothing outside, 166 emitted
 449 type export(s), 346 reached by nothing outside
 ```
 
@@ -36,14 +36,14 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `litestone` | 26 | 6 | 252 | 131 | 37 | 1 | 1 |
 | `junction` | 26 | 4 | 264 | 122 | 13 | 266 | 211 |
-| `mesa` | 18 | 4 | 285 | 100 | 70 | 0 | 0 |
+| `mesa` | 18 | 4 | 286 | 100 | 70 | 0 | 0 |
 | `sierra` | 25 | 6 | 196 | 82 | 21 | 0 | 0 |
 | `auth` | 6 | 1 | 51 | 36 | 3 | 15 | 13 |
 | `jetty` | 7 | 4 | 43 | 29 | 0 | 0 | 0 |
-| `toolbelt` | 58 | 2 | 258 | 31 | 11 | 0 | 0 |
 | `ui` | 9 | 0 | 51 | 33 | 4 | 0 | 0 |
+| `toolbelt` | 59 | 1 | 263 | 30 | 11 | 0 | 0 |
 | `conduit` | 4 | 2 | 26 | 15 | 1 | 59 | 44 |
-| `site-kit` | 9 | 4 | 30 | 12 | 1 | 0 | 0 |
+| `site-kit` | 9 | 4 | 37 | 12 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 8 | 0 | 36 | 21 |
 | `outpost` | 7 | 1 | 15 | 7 | 0 | 0 | 0 |
 | `notifications` | 2 | 0 | 11 | 5 | 0 | 24 | 19 |
@@ -203,7 +203,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/mesa`
 
-`packages/mesa` · 18 entry point(s) · 285 value, 0 type export(s)
+`packages/mesa` · 18 entry point(s) · 286 value, 0 type export(s)
 
 **Entries imported by nothing outside (4):** `./render` `./css-inliner` `./vite/client` `./vite/hmr`
 
@@ -277,15 +277,13 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/site-kit`
 
-`packages/site-kit` · 9 entry point(s) · 30 value, 0 type export(s)
+`packages/site-kit` · 9 entry point(s) · 37 value, 0 type export(s)
 
 **Entries imported by nothing outside (4):** `./tel` `./check` `./check/schema/*` `./layouts/*.mesa`
 
-**Entries emitted (1):** `./collection`
-
 **Entries not source (1, not graded):** `./package.json`
 
-**Unreached values (12):** `didYouMean` `frontMatter` `healthFindings` `levenshtein` `LOCKED_KEYS` `lockedKeysChanged` `makePage` `mergeRules` `proseLines` `redirectRules` `TRAILING_SLASH` `withSchema`
+**Unreached values (12):** `didYouMean` `frontMatter` `healthFindings` `levenshtein` `lockedKeysChanged` `makePage` `mergeRules` `photoOf` `proseLines` `redirectRules` `TRAILING_SLASH` `withSchema`
 
 **Emitted (1):** `telHref`
 
@@ -301,13 +299,13 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/toolbelt`
 
-`packages/toolbelt` · 58 entry point(s) · 258 value, 0 type export(s)
+`packages/toolbelt` · 59 entry point(s) · 263 value, 0 type export(s)
 
-**Entries imported by nothing outside (2):** `./seal` `./textbox`
+**Entries imported by nothing outside (1):** `./seal`
 
 **Entries not source (20, not graded):** `./bearer` `./cells` `./cron` `./datetime` `./devline` `./directives` `./fill` `./gate` `./geo` `./env` `./hooks` `./ids` `./mailbox` `./mime` `./query` `./rank` `./redact` `./sigv4` `./sse` `./trace`
 
-**Unreached values (31):** `assertValues` `baseUnit` `canonicalQuery` `canonicalRequest` `canonicalUri` `centroid` `CONTENT_TYPES` `DIGITS` `divRound` `encodePairs` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `generateSealingKeys` `getIn` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `resolveWall` `RUNNABLE_LANGS` `SECRET_KEY_NAMES` `sha256Hex` `TRANSFORM_NAMES`
+**Unreached values (30):** `assertValues` `baseUnit` `canonicalQuery` `canonicalRequest` `canonicalUri` `centroid` `CONTENT_TYPES` `DIGITS` `divRound` `encodePairs` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `generateSealingKeys` `getIn` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `resolveWall` `RUNNABLE_LANGS` `SECRET_KEY_NAMES` `TRANSFORM_NAMES`
 
 **Emitted (11):** `CRON_FIELDS` `dayHeader` `formatChord` `fromWall` `inBoxes` `OPERATORS` `parseRow` `pointInPolygon` `polygonArea` `renderRow` `SIGNATURE_VERSION`
 

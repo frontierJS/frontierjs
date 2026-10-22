@@ -203,6 +203,7 @@
         "@frontierjs/mesa": "workspace:*",
         "@frontierjs/sierra": "workspace:*",
         "@frontierjs/toolbelt": "workspace:*",
+        "@frontierjs/ui": "workspace:*",
         "@opentui/core": "0.5.17",
       },
       "devDependencies": {

@@ -1074,6 +1074,10 @@ export declare function generateJoinTableDDL(a: string, b: string): string
 
 /** The @@auth model, or the one called User. Every caller that needs the person reads this. */
 export declare function authModelOf<M extends { name: string; attributes?: { kind: string }[] }>(schema: { models: M[] }): M | null
+/** The person a console call runs as — `email`, `username`, `name`, then an all-digit id, or `Model:value`. `tried` names the columns read, so *no row* and *no model* read apart. */
+export declare function findPrincipal(sys: unknown, schema: unknown, spec: string): Promise<{ row: Record<string, unknown> | null; model: string | null; needle: string; tried: string[] }>
+/** The client accessor a model is reached by — `ServiceAgreement` → `db.serviceAgreement`. The one answer (Invariant 2); a caller never derives its own. */
+export declare function modelToAccessor(modelName: string): string
 
 // ─── Schema diffing ───────────────────────────────────────────────────────────
 

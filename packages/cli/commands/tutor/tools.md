@@ -46,7 +46,7 @@ flags:
     defaultValue: 5502
   devtools-port:
     type: number
-    description: Port for junction's API console
+    description: Port for junction's devtools, which :live reads
     defaultValue: 5503
 ---
 
@@ -91,7 +91,7 @@ memory. They never move with the app.
 | --- | --- | --- |
 | `fli gui` | 5500 | what is there, what is running, and does anything fail a check |
 | `fli db:studio` | 5502 | what is actually in the database |
-| junction's console | 5503 | what happened to that call |
+| `:live` in `fli gui` | 5500, reading devtools on 5503 | what happened to that call |
 | `:map` in `fli gui` | 5500 | what handles a request, and in what order |
 
 **Start at the GUI.** It is the only one that knows about the other three — it
@@ -107,5 +107,5 @@ a running process, a call refused with its status. That pairing is the only
 thing that separates a tool from a green light.
 
 Nothing in this lesson changes your app except one line, in one file — and that
-line is left in place, because the console it turns on binds to loopback and
+line is left in place, because the devtools it turns on binds to loopback and
 refuses to bind anywhere else without an auth gate.

@@ -1590,6 +1590,72 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1421"></a>2026-10-22 · `FJS-D1421` — Q19 — How a peer knows the post did not forge or hide a member's machines — Every link signed by a machine, so the post can write none; the post countersigns the chain's head into 6.4's member row, a peer refuses a chain shorter than one it has seen, and every sealed letter carries its sender's head (Keybase's sigchain; WhatsApp's in-chat device consistency).
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (A, plus a public append-only log of every chain (WhatsApp key transparency, iMessage Contact Key Verification, the did:plc audit log)), **C** (the post serves the list and is believed).
+
+The paper's recommendation, taken as written: (confidence 2) — B's log is a second service to run and audit for a network of invited members, and A's rollback refusal catches the hidden revoke B would; B is the reopen path.
+
+### <a id="fjs-d1420"></a>2026-10-22 · `FJS-D1420` — Q18 — Whether there is a paper key — Opt-in: a printed key that is one more machine in the chain, able to link and revoke, and nothing held by the post (Keybase's paper key).
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (none: a second machine is the only backup (Signal)), **C** (A, printed at every join).
+
+The paper's recommendation, taken as written: (confidence 2) — the post holds nothing, so it is not the recovery code `FJS-D1409` turned down; C makes every member keep a sheet.
+
+### <a id="fjs-d1419"></a>2026-10-22 · `FJS-D1419` — Q17 — How a lost or stolen machine is removed — Any linked machine signs a revoke into the chain and rotates the member's sealing key (Keybase device revocation and per-user key).
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (A, with machines ranked by link order and a higher one able to undo a lower one's revoke for 72 hours (did:plc rotation keys)), **C** (the machine list expires and is re-signed, and a lost machine falls off (WhatsApp's signed device list, 35 days)).
+
+The paper's recommendation, taken as written: (confidence 2) — the race B settles is a thief beating the owner to the revoke, rare among invited members; B is the reopen path.
+
+### <a id="fjs-d1418"></a>2026-10-22 · `FJS-D1418` — Q16 — How a link is approved — The new machine prints eight PGP words, they are typed on a machine already linked, and both sign the link (Keybase's `reverse_sig`, WhatsApp's account and device signatures).
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (a QR code the old machine scans (Signal's linked devices)), **C** (short words shown on both and confirmed as matching (Matrix SAS)).
+
+The paper's recommendation, taken as written: (confidence 2) — a terminal has no camera and SSH has no second channel; typing works in both, and two signatures mean neither machine is added without the other.
+
+### <a id="fjs-d1417"></a>2026-10-22 · `FJS-D1417` — Q15 — Which machines may link a new one — Any machine already in the member's chain (Keybase device provisioning, SSB fusion identity, Matrix's self-signing key).
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (the first machine only (Signal's and WhatsApp's primary device)).
+
+The paper's recommendation, taken as written: (confidence 3) — with the first machine lost, B leaves the backup unable to link the next one, which is the case `FJS-D1409` exists for.
+
+### <a id="fjs-d1416"></a>2026-10-22 · `FJS-D1416` — Q14 — What the fingerprint words cover once a member has several machines — The member's chain root: the hash of its first link, every later machine and the sealing key signed into the chain (Keybase's sigchain, Matrix's master key, iMessage Contact Key Verification).
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **C** was picked over **A** (one member key copied to every machine (Signal's linked devices, SSB fusion identity): 4.2 stands, but a stolen copy cannot be removed without new words for everyone), **B** (the set of device keys (WhatsApp's security code): any link or revoke changes the words and every peer checks again).
+
+The paper's recommendation, taken as written: (confidence 3) — words fixed across a device change, and only a reset or a forged chain warns; 4.2's digest is redone over the root.
+
+### <a id="fjs-d1415"></a>2026-10-22 · `FJS-D1415` — Q13 — Who may join the one post — By invite until a stated point, then anyone; the point is a question of its own.
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **C** was picked over **A** (by invite only, with 6.3's allowance), **B** (anyone: `tell:join` with no code).
+
+Against the recommendation (**A**): the owner wants the network to open eventually: invites keep the early numbers vouched-for and the door shut to spam while the network is small, and the point at which it opens is ruled on its own when it is near.
+
+### <a id="fjs-d1414"></a>2026-10-22 · `FJS-D1414` — Q12 — How many posts there are — One: the project's post, its origin built into `fli`; `tell:setup` becomes how the maintainers deploy it, and `tell:join` takes a bare code.
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (one by default, and `tell:setup` stays for anyone who wants a private post whose numbers count for nothing outside it), **C** (many, federated: posts relay to each other and a nick holds across them).
+
+The paper's recommendation, taken as written: one network is the ask, and a private post is two kinds of post to explain and test; B is the reopen path when somebody asks.
+
+### <a id="fjs-d1413"></a>2026-10-22 · `FJS-D1413` — Q9 — Where the numbers live — On the project's post: a number is the member row's number there, and a member of it is on no other post (1.3's one post per machine).
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (a registry apart from the mail: `fli tell:claim` signs with the tell key to a list the project runs, and mail stays on any post).
+
+The paper's recommendation, taken as written: (confidence 2) — one table and no new noun; the one-post rule bites only once private posts are common, and B is the reopen path.
+
+### <a id="fjs-d1410"></a>2026-10-22 · `FJS-D1410` — Q5 — A second machine — Linking: one machine signs another's key into the same member.
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (none: a new machine is a new member).
+
+Against the recommendation (**B**): ruled with Q10: a member number is tied to a key, so a second machine signed into the same member is also the backup for a lost key, and that makes it worth building before numbers go out rather than after somebody asks twice.
+
+### <a id="fjs-d1409"></a>2026-10-22 · `FJS-D1409` — Q10 — What a lost key does to a number — Linking (Q5's A) before numbers go out: a second machine signed into the same member is also the backup.
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (a recovery code printed at join, which the post trades once for a new key under the same number), **C** (nothing: a lost key is a lost number, and the member starts again).
+
+The paper's recommendation, taken as written: (confidence 2) — it answers Q5 too, and a recovery code is a password the member must keep somewhere, which the keys exist to avoid. This reverses Q5's *B for now*, since a number is what makes a second machine worth asking for.
+
 ### <a id="fjs-d1395"></a>2026-10-22 · `FJS-D1395` — Q3 — What reading does — Delete on open: a letter is read once.
 
 Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (a read flag: `inbox` shows history).
@@ -8048,6 +8114,20 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1426"></a>2026-10-22 · `FJS-D1426` — Where a call from `fli gui`'s `:call` runs — In the running app: devtools answers `POST /api/call`, refused outside development, and `junction call` shares its one call path.
+
+Asked in session while building [`IDEAS/one-console.md`](IDEAS/one-console.md) 3.2, where the plan disagreed with itself: its pane table said `:call` reads `app:call`'s path, and its Phase 3 done line asks that a call's announcement appear on `:live`. `junction call` boots a second copy of the app in a child process (`_startOnce()`, `FJS-D551`), whose bus has no socket and no devtools, so its announcement reaches neither `:live` nor an open tab. **A** (in the running app) was picked over **B** (spawn `junction call` per press, about a second of boot, working with no app up; the done line amended to *the row changed*, and an open tab left stale after a `:call` write).
+
+The recommendation, taken as written. Precedent: Phoenix's `iex -S mix phx.server` is a console inside the running node, so its PubSub broadcasts reach clients; a Rails console is a separate process, and under the in-process cable adapter its broadcasts go nowhere, which is B's gap.
+
+**Refused outside development** (`NODE_ENV` unset, `development` or `test`), even behind devtools' `auth`. Acting as somebody in production is auth's support mode (`startSupport`), which an app grades with `canStartSupport`; a devtools key would be a second answer to who may. § IV *ergonomics vs. strictness*: a mistake here writes as a real person.
+
+**One call path.** What `tools/call.ts` held (the method check, the hook-bypass refusal, positional arguments into the caller's signature, `$`-keys off the query as directives, `--as` through `findPrincipal`, `runAs` or `reenterAs(null)` for nobody, and the status from `toFrameworkError`) is one function both callers use; `tools/call.ts` keeps only argv and printing.
+
+The nine, answered before the code: 1 origin — none added; the call path moves into one function · 2 concept — no new noun · 3 complexity — the problem's: the announcement must fire on the bus the sockets are on · 4 predictability — a `:call` reaches open tabs and `:live` as a request does · 5 derived — methods from `svc.describe()`, the person from `findPrincipal` · 6 owner — the caller inside `app.runAs`, reached by devtools, the process-side owner its run-now already is · 7 boundary — an allow-listed POST through `core/live-view.js`, refused from a foreign origin · 8 failure — a refusal outside development, a 403 naming support mode · 9 silence — *a call from `:call` is graded as a request is*: the console drive calls as a member and sees it on `:live`, and calls as nobody and sees the refusal.
+
+*Lives in:* `packages/junction/src/plugins/devtools/`, `packages/junction/tools/call.ts`, `packages/cli/core/live-view.js`, `packages/cli/console/Call.mesa`.
+
 ### <a id="fjs-d1307"></a>2026-10-19 · `FJS-D1307` — What is the one name and the one id key of the principal on both contexts — `ctx.user` on both contexts (a service gets `ctx.user` where it reads `ctx.auth.user` now), key `id`. Keeps `FJS-D392`'s ruling and the route-side sites; only the service-side sites and the id key move. The word stays *user* for a caller that may not be one.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (`ctx.principal` on both contexts, key `id` only. `ctx.user` and `ctx.auth.user` are deleted (`ctx.auth` keeps what is not the person); auth's session shape moves `userId` to `id` and `toDataPrincipal`'s copy is deleted; `SessionContext`, `services.ts` and the 249 sites move in one change. *Principal* is the ARCHITECT word and stays true when the caller is a Machine or a Peer (`FJS-D1198`), where *user* does not), **C** (keep both homes, unify only the id key to `id`. Smallest change and it closes the `userId ?? id` read; the row's first complaint (two homes) stays, with the table in `CLAUDE.md` as its documentation).
@@ -12156,6 +12236,26 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d1423"></a>2026-10-22 · `FJS-D1423` — The terminal draws `@frontierjs/css`'s tones and surfaces: a tone is one of the terminal's own 16 colors from `@frontierjs/toolbelt/tty`, a surface is a bordered box unless its variant clears the border, `muted` is dim, and a text field is underlined.
+
+Asked in chat, after basecamp's `/login/` on a terminal read as unstyled text with an invisible password field. **Tones + structure** was picked over **structure only, no color** (border, underline and dim now, tones waiting for the table) and **basecamp only** (restyle one page with markup the terminal already draws). As recommended.
+
+The table is `FJS-D37` §1's, built: `@frontierjs/toolbelt/tty` maps each tone to an ANSI palette index (primary blue, secondary magenta, info cyan, success green, warning yellow, danger red) and `muted` to the dim bit. An index rather than an RGB value, so the terminal's own theme decides the shade and a light terminal stays legible — the shape Textual's design tokens (`$primary`, `$error`) and Charm's `huh` forms take. `runtime-terminal.js` reads it where `FJS-D979` already reads the surface lineage: a toned box inks its text and its border, the ink inherits down as CSS `color` does and stops at a box or button with a tone of its own, a box composite (`card`, `tile`, `alert`, `toast`, `popover`, `drawer`) draws a rounded border unless it carries a variant that sets `--_surface-border: transparent` (`raised`, `ghost`), and a text field underlines its width, since an empty field painted nothing but the cursor. **The bare `surface`, `lane` and `band` stay unbordered although a browser draws a hairline on them**: a terminal border is two rows and two columns, and Haven puts `surface` on every speech-bubble row and pane it places by cell for `FJS-D979`'s blanking alone.
+
+The nine: no second origin — the tone names and the border-clearing variants are copies held to `tones.css` and `surface.css` by `test/terminal-tags.test.js`, beside the surface list already held there; no new author-facing concept; the complexity is the terminal's (16 colors, no CSS); predictability improves, since a class now means the same box on both targets; the owner is the one `FJS-D37` named for the table and the one `FJS-D979` named for painting; the boundary is `TONES`/`toneOf` in toolbelt; a class the table does not name stays inert, as every other CSS class on a terminal is; what must stay true is that the copies match the stylesheet, and the test above is what fails when they stop. Tier: Register.
+
+### <a id="fjs-d1412"></a>2026-10-22 · `FJS-D1412` — Haven's study draws its own key help: `?` on an empty line shows every binding of its `tabs.js` keymaps and every study word in a box over its rows, and takes `?` there ahead of the shell's (`FJS-D1397`'s "a page can take `?` back").
+
+Asked in chat. **A** (the study's own box, its keys moved onto toolbelt keymaps through `keys()` so one table dispatches and lists them) was picked over **B** (the shell's `?` dialog grows a seam for a host's extra rows, and a study key opens it), as recommended; the key, `?` on an empty line, over F1, as recommended — Claude Code's own prompt answers `?` the same way. The shell's own keys are listed by its `?` from the scene. Lives in `packages/haven/web/src/lib/study/tabs.js` (`KEYS`, `ASKED`, `HELP`, `WORDS`, `helpOf`) and `Study.mesa`.
+
+### <a id="fjs-d1411"></a>2026-10-22 · `FJS-D1411` — Q11 — The box's NORMAL steps only while the line has words, and the shell follows a box's mode while one has focus, so one mode is on screen. Esc on a half-typed line edits it with `w b x dd u p`; an empty line is the scene's. Readline's vi mode is a NORMAL over one line ([manual](https://tiswww.case.edu/php/chet/readline/rluserman.html#Readline-vi-Mode)).
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (the line is INSERT only, as vim's command line is: Haven nops the box's `<Esc>` so the shell's Esc still leaves to the scene, and NORMAL is never reached. Haven gains `<CR>` and nothing else, which makes 4.3 a withdrawal), **C** (INSERT only, plus vim's command-line window: `<C-f>` opens the box's NORMAL over the line and Esc comes back ([`:help c_CTRL-F`](https://vimhelp.org/cmdline.txt.html#c_CTRL-F)). Needs the shell follow of A as well).
+
+The paper's recommendation, taken as written: it is the rule Haven already keeps for arrows, and the shell follow is needed by any app that puts a box on a terminal, Haven or not. Confidence 2.
+
+Where it lives: ui `Textbox`'s `idle` (no key, no mode, the control types; Haven passes `idle={!draft}`), a `keys()` getter's `mode` and the terminal runtime's `modeAt(r)` in mesa, and `Shell.mesa`'s `kept`, which the shell follows in place of its own `i a /`, Esc and letter guard. Proved by Haven's `verify:home-row`, which drives `0 w $ x u dd p` and Enter over the line in a pty.
+
 ### <a id="fjs-d1402"></a>2026-10-22 · `FJS-D1402` — Q11 — What the seal covers — Every letter: a `tell` to a member who has published a sealing key goes sealed, and `--env` is that path plus read-once; to a member with none, a plain letter goes as V1's plaintext with a printed note and `--env` is refused.
 
 Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (seal only `--env`, and reword Phase 3's done-when) and **C** (seal every letter and refuse any `tell` to a member with no sealing key).
@@ -14718,6 +14818,12 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1422"></a>2026-10-22 · `FJS-D1422` — Q3 — How the flip to proxied makes the edge strict for Basecamp's host — A per-host Configuration Rule, marked like a record, written before the record turns proxied; the zone setting is never touched. The token needs *Zone › Config Rules › Edit*.
+
+Asked in [`IDEAS/zero-to-live.md`](IDEAS/zero-to-live.md) § Open questions. **A** was picked over **B** (flip only when the zone is already Full (strict), and otherwise stay DNS-only and say why. Never changes the zone; needs *Zone Settings* read), **C** (set the zone to Full (strict), as `FJS-D1380` is written).
+
+The paper's recommendation, taken as written: strict for exactly the host whose certificate was just proven, and nothing else in the zone moves. Confidence 3.
+
 ### <a id="fjs-d1381"></a>2026-10-21 · `FJS-D1381` — A non-interactive first run of Basecamp (`zero-to-live.md` 3.3): where the key is made, how setup asks nothing, and what the first admin's password is — `deploy:setup` makes the key, `--auto-install` answers every setup question, and `fli provision --admin` asks the password at a terminal and generates one without.
 
 Asked through the question tool at step 3.3, three forks.
@@ -14733,6 +14839,7 @@ Adjudication: none in tension. Tier: Register here; Map in `packages/cli/CLAUDE.
 *Lives in:* `packages/cli/core/env-preflight.js` (`fillKey`) · `packages/cli/commands/deploy/_steps-setup/03-directories.md` · `packages/cli/commands/deploy/_steps-setup/05-caddy.md` · `packages/cli/commands/provision/index.md` · `packages/basecamp/.env.example`.
 
 ### <a id="fjs-d1380"></a>2026-10-21 · `FJS-D1380` — Q1 — Proxied or DNS-only for Basecamp's own hostname — DNS-only: step 3.4's script makes Basecamp's Domain row without naming `proxied`, so it takes the schema's `false` (`FJS-D563`, `Domain.proxied` in `packages/basecamp/db/schema.lite`); the A record points straight at the droplet and Caddy's HTTP-01 certificate is what the browser sees. The command's last step then verifies HTTPS answers at the hostname with a valid certificate, and at a terminal offers the flip to proxied — which sets the zone to Full (strict) first (step 2.4), since the origin now has the certificate strict mode needs.
+**Amended 2026-10-22 by [`FJS-D1422`](#fjs-d1422):** the flip sets Full (strict) for Basecamp's host alone, as a Configuration Rule, and never the zone.
 
 Asked in [`IDEAS/zero-to-live.md`](IDEAS/zero-to-live.md) § Open questions. **A** was picked over **B** (Proxied: the 3.4 script writes `proxied: true` for Basecamp's own row only, so the droplet's address stays behind Cloudflare and the console's traffic crosses Cloudflare's edge; an operator flips it per record either way).
 
@@ -17923,6 +18030,70 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d1425"></a>2026-10-22 · `FJS-D1425` — Q27 — What the spend limit is (4.1) — Per run only: the $2 `--max-budget-usd`, plus whatever monthly cap the key's Console workspace carries. Basecamp keeps no total.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (per run, plus a monthly dollar cap on the App (`askMonthlyUsd`, null = no cap). Each run's cost goes in a status file beside `<appId>.previews.json`; an ask is refused once this calendar month's (UTC) total reaches the cap. Lost with the disk, so a cap can reset silently), **C** (as B, but each run is a row (`SiteAsk`: app, draft, who, request, cost, state `running|ready|saved|discarded|refused`, the commit a save made). The row is the cap's ledger and 4.3's record of the run in one).
+
+Against the recommendation (**C**): the owner kept the limit to what the argv already holds: $2 a run, and a monthly cap set where the key was minted; basecamp keeps no total.
+
+### <a id="fjs-d1424"></a>2026-10-22 · `FJS-D1424` — Q26 — Where a site's Anthropic key lives (4.1) — One `ANTHROPIC_API_KEY` in basecamp's env for every site, billed to whoever runs basecamp. Not per site.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **B** was picked over **A** (a workspace Secret, `provider_key` with `providerKind: anthropic` (`ProviderKind` grows one value), and a new App column `askKeyId` naming one. Unnamed, the workspace's only Anthropic key is used, as `cloudflareFor` picks; two and none named is refused by name. Per site when named, pooled when not), **C** (whatever account `claude` is logged in as on the host, as the workbench runs. Not per site, and an owner's ask spends the operator's plan).
+
+Against the recommendation (**A**): the owner picked the one key basecamp's operator already holds: no schema, no picker, no per-site key to mint; per site is a reopen when a second payer appears.
+
+The nine for 4.1, which builds this ruling and `FJS-D1425`, answered before the code: 1 origin — the key is one declared env name, the cap is `ASK_BUDGET_USD` on the argv, the locked keys are site-kit's `LOCKED_KEYS` passed into the prompt · 2 concept — no new noun; an ask is the ask panel's, its result a git tree · 3 complexity — the problem's: a run edits files, so it gets a folder, the draft's `content/**.md` written out · 4 predictability — a job and a status file beside the clone, as a preview is · 5 derived — the scope path from the App's `source.path`, the changed files from the folder against the blobs it went out as · 6 owner — the argv, prompt and stream are `@frontierjs/cli/core/ask-claude.js` (`contentPrompt`, `runAsk` gaining `env`), the git is `core/site-checkout.ts` (`exportDraftContent`, `treeFromExport`), the run `core/site-ask.ts` · 7 boundary — the page sends the request; basecamp picks the head, the folder, the key and the effort · 8 failure — no key, an empty request, a missing draft and an ask already running are refused by name; a run that fails or hits its cap is a failed status in its words, its edits dropped · 9 must stay true: an ask commits nothing and its run reaches only the copy, and the key goes to that child and no other. What fails: `api/test/drafts.test.ts` § asking a model for a change (the argv's cap and scope, the key, the tree, the branch unmoved); the scope's denial is the cli's own measurement, and a real run is a scratch drive. § IV: *batteries vs. smallness* — the run is the existing `claude -p`, no SDK. Tier: Register.
+
+*Lives in:* `packages/basecamp/api/src/core/site-ask.ts`, `api/src/jobs/site-ask.job.ts`, `drafts.ask` in `api/src/services/drafts/drafts.service.ts`, `ANTHROPIC_API_KEY` in `api/src/core/env.ts`. *Enforced by:* `api/test/drafts.test.ts` § asking a model for a change.
+
+### <a id="fjs-d1408"></a>2026-10-22 · `FJS-D1408` — Q25 — What basecamp does with the bytes (3.2) — C and then A, as the owner answered: the page shrinks the photo to at most 2560 px in its own format so the body stays small, and basecamp still decodes and re-encodes it, so what reaches git is the server's promise. `http.maxBodySize` rises to 10 MB, `maxFrameBytes` pinned at 256 KB.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **D** was picked over **A** (re-encode every upload in basecamp with Bun.Image, in the format it came in, longest side at most 2560 px: a file that does not decode is refused, and the metadata is gone. `http.maxBodySize` rises to 15 MB, with `maxFrameBytes` pinned at 256 KB so sockets do not grow with it), **B** (commit the bytes as sent, checked by their magic number, 5 MB at most. GPS ships), **C** (the page shrinks the photo in a canvas before sending, and basecamp checks it decodes. The body stays near 2 MB; a script on the preview decides what reaches git).
+
+Against the recommendation (**A**): the owner answered 'C and then A': a small body from the page, and the server's re-encode as the promise about what reaches git.
+
+### <a id="fjs-d1407"></a>2026-10-22 · `FJS-D1407` — Q24 — Which photos 3.2 swaps — Front-matter photos only. Prose `<Image>` tags wait for a step of their own, filed.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (both: a tag whose only change is its `source` to a photo on the draft and its `text` is let through. `source` and `text` are ksite's names, so site-kit would learn them from the preset (a new preset key)).
+
+The paper's recommendation, taken as written: (confidence 2) — it meets the phase's "swaps a photo" on both sites without touching `FJS-D1250`'s guard; B is a preset contract worth its own question.
+
+### <a id="fjs-d1406"></a>2026-10-22 · `FJS-D1406` — Q23 — Where a front-matter photo's alt text is written (3.2) — On the path, `?text=`: `hero_image: /media/images/porch.jpg?text=The%20front%20porch`. One value, read by the `Image.mesa` every ksite block already renders a photo through; no template changes. A template drawing a raw `<img src={…}>` (ksite's `Nav`) shows no alt and carries the query in `src`.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (a sibling key, `<key>_alt` (Decap's shape). Every block that renders the photo must read the new key, so until a developer changes each one the alt is written and never shown), **C** (on the photo file: one alt per image in a sidecar, filled by site-kit's image step into every `<img>` that names it (WordPress's media library). One alt everywhere the photo appears, which a decorative use then cannot opt out of).
+
+The paper's recommendation, taken as written: (confidence 2) — the reader exists and every ksite photo passes through it; B and C each add a place alt lives that nothing reads yet. B is the reopen path once a second preset arrives.
+
+How it reads: the words are written as `URLSearchParams` spells them, a space as `+` (`porch.jpg?width=800&text=The+front+porch`), which `Image.mesa`'s own `URLSearchParams` reads back; the value's other query keys stay and a swapped photo drops the old one's `height`. A photo is a top-level, unlocked value naming a raster file under `content/public/`, so `background` (locked) and an SVG (`FJS-D1226`) are not.
+
+The nine for 3.2, which builds this ruling and `FJS-D1407`/`FJS-D1408`, answered before the code: 1 origin — a photo's words are its path's `?text=`, its bytes the file in git · 2 concept — no new noun; a photo is a front-matter value whose path names a raster file · 3 complexity — the problem's, plus the page's shrink `FJS-D1408` asked for · 4 predictability — a photo save is a save's grant, blob check and one pushed commit · 5 derived — that a value is a photo comes from its extension, and where a new one lands from the folder of the photo it replaces, so `content/media` is written down nowhere · 6 owner — the rule and the write are `src/editable.js`'s (`photoOf`, `photoName`, `applyPhoto`), the bytes basecamp's (`core/site-photo.ts`, `saveDraftFiles`), the shrink the editor's · 7 boundary — the editor sends path, blob, key, words and a file; basecamp decides the name, folder and encoding · 8 failure — empty words, a file that does not decode, a key that is not a photo and a stale blob are refused by name · 9 must stay true: a committed photo decodes, carries no EXIF, is at most 2560 px and has words. What fails: site-kit's `test/content.mjs` § an owner's photos and basecamp's `api/test/drafts.test.ts` § Photos; the page's shrink and the rebuilt `alt`, a scratch browser drive. § IV: *batteries vs. smallness* — the re-encode is Bun.Image, already the build's, no new dependency. Tier: Register.
+
+*Lives in:* `packages/site-kit/src/editable.js` (`photoOf`, `photoName`, `applyPhoto`), `packages/site-kit/src/editor/photo.js`, `packages/site-kit/src/editor/Field.mesa`; `packages/basecamp/api/src/services/drafts/drafts.service.ts` (`photo`), `packages/basecamp/api/src/core/site-photo.ts`, `packages/basecamp/api/src/core/site-checkout.ts` (`saveDraftFiles` takes bytes), `packages/basecamp/api/src/app.ts` (`http.maxBodySize`).
+
+### <a id="fjs-d1405"></a>2026-10-22 · `FJS-D1405` — Q22 — Which menu entries an owner may move and remove (3.1) — Every entry: the owner moves, removes and adds any of them, as `FJS-D1226` already treats every nested key as theirs.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (only an entry whose keys are `name`, `link` and `items`; any other entry is the developer's, shown locked and kept in its place).
+
+The paper's recommendation, taken as written: (confidence 1) — it is Q2's ruling applied to lists, and B is a new hand-written key list site-kit would have to know of a preset's menu. Webflow locks the nav; B is the reopen path, and it would lock the nested look keys too.
+
+### <a id="fjs-d1404"></a>2026-10-22 · `FJS-D1404` — Q21 — What Add makes (3.1) — A copy of the item it is added after, whole: the same keys and words, which the owner then changes. A collection item is a new file beside it; a menu entry is the entry repeated below.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (the same copy with its words emptied (CloudCannon). A number or yes/no is kept), **C** (a template the developer writes per collection and per menu).
+
+The paper's recommendation, taken as written: (confidence 2) — every key stays a value the block already renders, so the preview shows a real item at once; B shows an empty review or a logo entry with no words until filled; C is a second statement of what the items already show.
+
+### <a id="fjs-d1403"></a>2026-10-22 · `FJS-D1403` — Q20 — How a reorder of a collection is written (3.1) — An `order:` key in each item, `collection()` sorting by it then by name (Hugo's `weight`). Files keep their names, and the order is written in two places for a site that also numbers its files.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **B** was picked over **A** (rename the files. A move renumbers the prefixes, padded so code-unit order holds (`01-` once there are ten), in one commit. The order stays where it is written today, and a slug, which carries the prefix, changes with it), **C** (one list file per collection naming its items in order).
+
+Against the recommendation (**A**); the owner gave no reason beyond the pick, and B was the option that keeps file names stable.
+
+How it reads: `collection()` sorts an item with `order:` before one without, lower first, and a tie or an absent `order` by file name, so a site that never writes the key keeps its file-name order. A reorder writes `order:` 1 to n on every item of the collection whose value changes, in one commit; an item that already says it keeps its line, as `FJS-D1249` writes a key. Found after the ruling: legacy ksite clients already wrote an `order:` key on their deals blocks, so B is the lineage's own spelling.
+
+The nine for 3.1, which builds this ruling and `FJS-D1404`/`FJS-D1405`, considered before the code and written after it: 1 origin — a collection's order is each item's `order:`, its file name only where none says; a list's order is the list · 2 concept — no new noun; an act is one of four words · 3 complexity — the problem's · 4 predictability — an arrange is a save's grant, blob check and one pushed commit · 5 derived — what a collection is comes from its folder, `content/collections/<name>/`, which `collection()`'s glob already names · 6 owner — `byOrder` in `src/collection.js`, read by the reorder; the writes are `src/editable.js`'s; the several-file commit is `saveDraftFiles`, which `saveDraftFile` now calls · 7 boundary — the editor sends path, blob, act and a line; basecamp decides the rest · 8 failure — a result that reads back as anything but the one change is refused, and so are the first moved earlier, the last later and a list's only item removed · 9 must stay true: an arrange changes only the order and membership it names, and a build lists items in the order written. What fails: site-kit's `test/content.mjs` § an owner's lists and basecamp's `api/test/drafts.test.ts` § Lists; the rebuild's order, a scratch browser drive. § IV: none in tension. Tier: Register.
+
+*Lives in:* `packages/site-kit/src/collection.js` (`byOrder`), `packages/site-kit/src/editable.js` (`arrangeCollection`), `packages/site-kit/src/editor/Field.mesa`; `packages/basecamp/api/src/services/drafts/drafts.service.ts` (`arrange`), `packages/basecamp/api/src/core/site-checkout.ts` (`saveDraftFiles`, `readDraftFolder`).
 
 ### <a id="fjs-d1400"></a>2026-10-22 · `FJS-D1400` — Q2 — The sealing key — A second, X25519 pair beside the Ed25519 one, published signed.
 

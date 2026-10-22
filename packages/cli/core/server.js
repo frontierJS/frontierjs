@@ -32,6 +32,10 @@
 //   GET  /api/map/apps        → the apps here — `core/map-view.js`
 //   GET  /api/map?app=<dir>   → that app's `project:map --json`
 //   POST /api/map/secret      → one secret into its `.env` — `core/env-health.js`
+//   GET  /api/live/stream     → devtools' socket, a frame a line — `core/live-view.js`
+//   GET  /api/live/health · /api/live/metrics · /api/live/jobs · /api/live/call
+//   POST /api/live/jobs/<id>/retry · …/cancel · /api/live/jobs/run/<name>
+//   POST /api/live/call       → one method as somebody, inside the app (`:call`)
 //
 // And the console, the same reads drawn by `.mesa` screens — `core/console.js`:
 //   GET  /console/            → the page; its modules under /console/ and /@fjs/
@@ -158,6 +162,18 @@ function route(req, res) {
   }
   if (req.method === 'POST' && path === '/api/map/secret') {
     return handleMapSecret(req, res)
+  }
+
+  // GET /api/live/… · POST /api/live/… — `:live` and `:call`, devtools carried
+  if (req.method === 'GET' && path === '/api/live/stream') {
+    return import('./live-view.js').then(m => m.streamLive(res))
+  }
+  const liveMatch = path.match(/^\/api\/live\/(.+)$/)
+  if (req.method === 'GET' && liveMatch) {
+    return import('./live-view.js').then(m => m.readLive(liveMatch[1], url.searchParams)).then(out => json(res, out.status, out.body))
+  }
+  if (req.method === 'POST' && liveMatch) {
+    return handleLiveAct(req, res, liveMatch[1])
   }
 
   // GET /api/proves — which of them prove what you have changed
@@ -543,6 +559,22 @@ async function handleMapSecret(req, res) {
   try { body = await readBody(req) } catch { return json(res, 400, { error: 'Invalid JSON body' }) }
   const { fillMapSecret } = await import('./map-view.js')
   const out = fillMapSecret(global.projectRoot, String(body?.app ?? '.'), body?.key)
+  json(res, out.status, out.body)
+}
+
+// ─── /api/live ───────────────────────────────────────────────────────────────
+//
+// An act on the app (a call as somebody, or the queue) is a POST from this
+// origin only: devtools refuses a foreign one itself, and the relay must not
+// be the way round that.
+
+async function handleLiveAct(req, res, rest) {
+  const foreign = foreignOrigin(req)
+  if (foreign) return json(res, 403, { error: `the app is not acted on from ${foreign}` })
+  let body
+  try { body = await readBody(req) } catch { return json(res, 400, { error: 'Invalid JSON body' }) }
+  const { actLive } = await import('./live-view.js')
+  const out = await actLive(rest, body)
   json(res, out.status, out.body)
 }
 

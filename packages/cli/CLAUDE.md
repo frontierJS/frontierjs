@@ -180,7 +180,10 @@ core/
                 optional — for basecamp's workbench (`core/workbench.ts` there),
                 which reads this file's argv and event reader by import. Its
                 REVIEWER is the read-only default with `reviewPrompt`, a fresh
-                session rather than the builder's resumed one
+                session rather than the builder's resumed one. `contentPrompt`
+                is a site OWNER's ask, which basecamp runs with `runAsk` in
+                EDIT mode over a copy of a draft's `content/`, handing its own
+                `env` so its key reaches that child only
   tldr.js       `fli tldr` — a question answered as a tldr page: the prompt
                 and the renderer. The session is `runAsk` above, read-only
                 with the same budget; a reply that strays from the shape
@@ -440,6 +443,14 @@ core/
                 map as `project:map --json` spawned in it, and the secret fill.
                 An app is named by its directory and looked up in that list,
                 never joined onto a path
+  live-view.js  the console's `:live` and `:call` — junction's devtools
+                carried to the panes: four reads, the queue's three acts and a
+                call as somebody, which runs INSIDE the app so its announcement
+                reaches `:live` (`FJS-D1426`), each an allow-listed shape, and devtools' socket relayed a frame a line with `open`
+                and `closed` of its own, so a quiet app and an absent one differ.
+                The server reads devtools because a browser may not: it is
+                another origin that allows none. The port is `fli gui
+                --devtools-port`, default the reserved 5503
   env-health.js which secrets an app's `.env.example` names and which are
                 set, and `fillSecret`, the one write — through that same list,
                 so a key it does not name is refused. `project:map` reports it
@@ -711,9 +722,11 @@ core/
                 the name listed is the one an app imports. A name no export
                 carries falls to the declarations that hold it as a member
   outline.js    one file's shape as line ranges — `fli outline`, and the policy
-                of `.claude/hooks/outline-hint.mjs` (`wideRead`/`outlineHint`),
-                which hints it in front of a Read with no limit or a `sed -n`
-                window on a file of `HINT_AT` lines. Parser and names are
+                of `.claude/hooks/outline-hint.mjs` (`wideRead`/`readVerdict`),
+                which REFUSES a Read with no limit, a bare `cat` or a `sed -n`
+                window over `WINDOW_AT` on a file of `BLOCK_AT` lines, carrying
+                the outline in the refusal, and hints at `HINT_AT`. The user
+                settings register it again with `--global`, for every project. Parser and names are
                 `functions.js`'s, so a row and the codegraph's worst function
                 agree; a range starts at its attached comment. A `.lite` is
                 read by brace depth over toolbelt's `tokenize`, a `.mesa` by
@@ -756,17 +769,30 @@ core/
                 whose bytes are compared to `example/desktop/` and so cannot move
                 with the zlib a runtime carries
   tell.js       what `fli tell` keeps on a machine — the key, `config.json`'s
-                `tell`, signing a request — for the namespace and for the
+                `tell`, this member's `chain.json` once a machine is linked, the pins (by chain root), signing a request — for the namespace and for the
                 notice line `bootstrap.js` prints before every command at a
                 terminal while letters wait (`FJS-D1398`). On the startup path,
                 so builtins only at the top; the line comes from the LAST check,
                 and one over a minute old starts this file detached to ask
                 `GET /waiting` again, so no command waits on the network
+  pgp-words.js  the PGP word list, a word per byte, for `tell:who`'s eight
+                words. Both ends of a comparison read it, so a word moved here
+                reads as a mismatch to every older fli
+  tell-chain.js  what a member IS — a chain of links, each signed by one of
+                its machines, from a root link signing the first machine and the
+                sealing key (`FJS-D1416`); a `link` adds a machine, signed by one
+                already in and countersigned by the new one (`FJS-D1418`), and
+                `askCode` is the hash a new machine's eight words read. Read by the Worker AND the cli: the
+                post refuses a chain that does not verify or carry the stored
+                one forward, and a client verifies every chain the post serves,
+                since the post is what the chain checks. Nothing node-only
   tell-worker.js  the Cloudflare Worker `fli tell` speaks to — one Durable
-                Object, members, invites, letters, and the `/follow` socket
-                `inbox -f` holds (`IDEAS/pony-express.md`). A member with a
-                sealing key is sent only sealed letters; a plain one to them is
-                refused here (`FJS-D1402`).
+                Object, members and their chains, invites, letters, and the
+                `/follow` socket `inbox -f` holds (`IDEAS/pony-express.md`). A
+                member with a sealing key is sent only sealed letters; a plain
+                one to them is refused here (`FJS-D1402`). `tell:link` is four
+                routes over one `asks` row, and the post carries the pieces
+                without signing any.
                 Never imported: wrangler bundles it from a config `tell:setup`
                 writes, so it runs in workerd and imports toolbelt and nothing
                 Bun-only. `cloudflare:workers` is not imported either, since
@@ -784,7 +810,7 @@ cli/src/   the CLI's own source tree
 console/   the console's screens, `.mesa` — `Console.mesa` is the root both
            targets mount, the pane strip; then one file per pane (`Run`,
            `Check`, `Decide`, `Ship`, `ProjectMap` — not `Map`, which would
-           shadow the global a compiled component uses). `Flow` is one walked
+           shadow the global a compiled component uses — `Live` and `Call`). `Flow` is one walked
            flow, the release or the publish: it draws the steps the server's
            tables name and grades none of them — `Ship` does, from what it has
            read. `:map`'s parts are `MapChain`, `MapMachines`, `MapWarden` and
@@ -1662,6 +1688,8 @@ shape one layer up).
 
 **The console's screens have a drive of their own**: `bun run
 test:browser:console` starts `fli gui` under a pty and opens the same
-process's `/console/` in Chrome, then diffs the two frames row by row. A
-change to `console/`, `core/console.js` or `fli gui`'s terminal path is proved
-there; it needs Chrome and util-linux `script`.
+process's `/console/` in Chrome, then diffs the two frames row by row. For
+`:live` and `:call` it boots an app of its own with devtools on 7503. A change to
+`console/`, `core/console.js`, `core/live-view.js`, junction's devtools or
+`fli gui`'s terminal path is proved there; it needs Chrome and util-linux
+`script`.

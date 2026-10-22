@@ -2,7 +2,7 @@
 title: provision:create
 description: Create a DigitalOcean droplet for Basecamp, print its IP and add its ssh Host
 alias: provision
-effects: creates a droplet at DigitalOcean, billed to the token's account
+effects: creates a droplet at DigitalOcean, billed to the token's account; installing also writes its DNS record at Cloudflare
 confirm: human
 examples:
   - fli provision
@@ -38,6 +38,10 @@ flags:
     type: string
     description: Install Basecamp without asking, and make this email its first admin
     defaultValue: ''
+  outpost:
+    type: boolean
+    description: When installing, enroll the box in Basecamp's own fleet, so apps can run beside it (asked at a terminal)
+    defaultValue: true
   json:
     char: j
     type: boolean
@@ -48,7 +52,8 @@ flags:
 Asks Basecamp's hostname first — Enter takes `deploy.web.domain` from
 `packages/basecamp/frontier.config.js` (none when it is empty), `--domain` skips
 the question. Then the server's name — Enter takes `basecamp`, `--name` skips the
-question, and a run with no terminal uses `basecamp`. Then creates one droplet
+question, and a run with no terminal uses `basecamp`. At a terminal the answers
+are shown together and one last key buys the box or leaves it. Then creates one droplet
 with your SSH key on it, waits until it has an address,
 and adds a `Host` block for it to `~/.ssh/config` — asked first, yes unless you
 say no; a `Host` of that name already there is left alone and the block printed
@@ -61,26 +66,29 @@ gets past the bare box: `deploy:setup --auto-install` asks nothing, makes the
 `fli deploy` follows. Basecamp's first admin is then made through its own
 `POST /setup`, over ssh on the box, so no DNS is needed yet. At a terminal the
 password is asked; Enter, or no terminal, generates one and prints it once.
+An install also asks whether the box is an Outpost of Basecamp's own fleet —
+yes by default, `--no-outpost` to leave it out — and enrolls it with `fli
+deploy:outpost` after the admin, as `fli provision:install` does.
 
 The box and the hostname reach the install as `--server` and `--domain`, and
 every deploy line the run prints carries both, so nothing is written into
 `packages/basecamp/frontier.config.js`. Installing needs a hostname, and a run
 with none refuses before anything is bought.
 
-Once Basecamp is up the run prints the `fli provision:dns` line that points
-the hostname at the box, in a record Basecamp's own edge reads as its own.
-That token is checked right after the hostname, before any other question or
+Once Basecamp is up the run points the hostname at the box — `fli
+provision:dns`'s write, DNS-only, in a record Basecamp's own edge reads as its
+own. The token is checked right after the hostname, before any other question or
 purchase: one that opens no zone holding it refuses the run, so nothing is spent
 on a box whose name cannot be pointed at it. With no `CLOUDFLARE_TOKEN` a
-terminal takes the paste, and a run with no terminal warns and goes on.
+terminal takes the paste, and a run with no terminal warns, installs, and prints
+the `fli provision:dns` line instead of writing the record.
 
 A second run refuses while a box made by an earlier one is still at the
-account, so a retry never buys two. `fli provision:list` shows it and `fli provision:destroy <id>` removes it.
+account, so a retry never buys two. `fli provision:list` shows it, and `fli provision:off <id>` then `fli provision:destroy <id>` removes it.
 
 ```js
 const { existsSync, readFileSync } = await import('node:fs')
 const { homedir }                  = await import('node:os')
-const { resolve }                  = await import('node:path')
 
 const home = homedir()
 const expand = p => p.replace(/^~(?=\/|$)/, home)
@@ -103,18 +111,23 @@ if (flag.admin && flag.json) {
   return
 }
 
+const asking = process.stdin.isTTY && !flag.json
+const question = (q, hint) => `${chalk.cyan('?')} ${chalk.bold(q)}${hint ? chalk.dim(`  ${hint}`) : ''}`
+const ask = async (q, hint) => (await tty.line(`${question(q, hint)}\n  ${chalk.cyan('›')}`)).trim()
+const yes = async (q, fallback) =>
+  await tty.keys(question(q), fallback ? { y: 'yes', n: 'no' } : { n: 'no', y: 'yes' }) === 'y'
+const row = (label, value) => echo(`  ${chalk.dim(label.padEnd(9))} ${value}`)
+
+if (asking) echo(`\n  ${chalk.bold('fli provision')}  ${chalk.dim('a DigitalOcean droplet for Basecamp')}\n`)
+
 // The hostname is asked before anything else, and the DNS step this run ends by
 // naming is checked on it: a token that opens no zone holding the hostname
 // refuses here, not after the questions, the droplet and the install. No token
 // is not a refusal — the record can come later.
 const configured = (await webDomain()) || ''
 let domain = flag.json ? '' : flag.domain || configured
-if (process.stdin.isTTY && !flag.json && !flag.domain) {
-  const { createPrompts } = await import(resolve(global.fliRoot, 'core/prompt.js'))
-  const p = createPrompts()
-  domain = (await p.ask(`Basecamp's hostname${configured ? ` [${configured}]` : ', e.g. basecamp.frontierjs.dev (Enter: none yet)'} › `)).trim() || configured
-  p.close()
-}
+if (asking && !flag.domain)
+  domain = await ask(`Basecamp's hostname`, configured ? `Enter: ${configured}` : 'e.g. basecamp.frontierjs.dev — Enter: none yet') || configured
 if (domain) {
   const named = await hostnameOf(domain)
   if (!named) {
@@ -125,17 +138,14 @@ if (domain) {
   domain = named
 }
 if (domain) {
-  if (await cloudflareToken({ interactive: !!process.stdin.isTTY, say: (t) => log.warn(t) })) {
-    const found = await hostRecord({ host: domain, check: true })
-    if (found.error) {
-      log.error(`Cloudflare: ${found.error.replace(/^Cloudflare:\s*/, '')}. Nothing was bought`)
-      process.exitCode = 1
-      return
-    }
-    log.info(`${domain} is in ${found.zone} at Cloudflare`)
+  const refused = await zoneRefusal({ domain, log, echo, chalk })
+  if (refused) {
+    log.error(`${refused}. Nothing was bought`)
+    process.exitCode = 1
+    return
   }
-  else log.warn(`No CLOUDFLARE_TOKEN: fli provision:dns asks for one once the box is up`)
 }
+else if (asking) echo('')
 
 // Every question before the droplet is bought, so the minute it takes is one
 // the person can walk away from.
@@ -143,16 +153,15 @@ let name = flag.name
 let admin = flag.admin
 let password = ''
 let install = !!admin
+let outpost = flag.outpost
 let addHost = false
-if (process.stdin.isTTY && !flag.json) {
-  const { createPrompts } = await import(resolve(global.fliRoot, 'core/prompt.js'))
-  const p = createPrompts()
-  name ||= (await p.ask('Server name [basecamp] › ')) || 'basecamp'
-  addHost = await p.confirm(`Add Host ${name} to ~/.ssh/config once it has an address?`, { default: true })
-  install ||= await p.confirm('Install Basecamp on it once it is up? (fli deploy:setup --auto-install, then fli deploy)', { default: false })
-  if (install && !admin) admin = (await p.ask('Email for its first admin (Enter: make one at /setup in the browser) › ')).trim()
-  p.close()
-  if (admin) password = await tty.secret(`Password for ${admin} (Enter generates one)`)
+if (asking) {
+  name ||= await ask('Server name', 'Enter: basecamp') || 'basecamp'
+  addHost = await yes(`Add Host ${name} to ~/.ssh/config once it has an address?`, true)
+  install ||= await yes('Install Basecamp on it once it is up?', false)
+  if (install && !admin) admin = await askAdmin(ask)
+  if (install && outpost) outpost = await yes(OUTPOST_QUESTION, true)
+  if (admin) password = await tty.secret(`${question(`Password for ${admin}`, 'Enter generates one')}\n  ${chalk.cyan('›')}`)
   if (install && flag.key && !addHost)
     log.warn(`ssh offers your default identity, not ${keyPath}: if the install cannot connect, add the Host block it prints and run it from packages/basecamp`)
 }
@@ -177,6 +186,21 @@ if (!/^[a-z0-9][a-z0-9.-]*$/i.test(name)) {
   return
 }
 
+// The last stop before money is spent, so it shows what the answers add up to.
+if (asking) {
+  echo('')
+  row('hostname', domain || chalk.dim('none yet'))
+  row('server', `${chalk.bold(name)} ${chalk.dim(`· ${flag.size} · ${flag.region} · ${flag.image}`)}`)
+  row('key', keyPath.replace(home, '~'))
+  row('ssh', addHost ? `Host ${name} in ~/.ssh/config` : chalk.dim('print the Host block'))
+  row('install', install ? `yes ${chalk.dim('— deploy:setup --auto-install, then deploy')}` : chalk.dim('no — fli provision:install later'))
+  if (admin) row('admin', `${admin} ${chalk.dim(password ? '' : '— password generated')}`)
+  if (install) row('outpost', outpost ? `yes ${chalk.dim('— fli deploy:outpost once the admin is made')}` : chalk.dim('no'))
+  echo('')
+  if (!await yes('Create the droplet?', true)) { log.info('Nothing was bought'); return }
+  echo('')
+}
+
 log.info(`Creating ${name} (${flag.size}, ${flag.region}) — about a minute`)
 const made = await runProvision({
   action: 'create', name, region: flag.region, image: flag.image, size: flag.size,
@@ -188,7 +212,7 @@ if (flag.json)  { echo(JSON.stringify(made, null, 2)); return }
 
 const monthly = made.monthly == null ? '' : ` · ${(made.monthly / 100).toFixed(2)} ${made.currency}/mo`
 echo('')
-echo(`  droplet  ${made.name}  ${made.id}  (${made.size} · ${made.region} · ${made.image}${monthly})`)
+row('droplet', `${chalk.bold(made.name)}  ${made.id}  ${chalk.dim(`${made.size} · ${made.region} · ${made.image}${monthly}`)}`)
 
 if (made.pending) {
   log.warn(`  It has no address yet. Read it later in the DigitalOcean console, or destroy it: fli provision:destroy ${made.id}`)
@@ -201,8 +225,8 @@ const block = `Host ${made.name}
   User root
   IdentityFile ${identity.replace(home, '~')}
 `
-echo`  ip       ${made.ip}
-`
+row('ip', chalk.bold(made.ip))
+echo('')
 
 // A Host of the same name is somebody's existing machine: ssh takes the FIRST
 // match, so appending a second would be silently ignored, and replacing it would
@@ -237,8 +261,9 @@ const named = domain && domain !== configured ? ` --domain ${domain}` : ''
 const later = ` --server ${box}${named}`
 const installLine = `fli provision:install ${box}${named}`
 if (!install) {
-  echo`  Then, from anywhere in this checkout:
-    ${installLine}
+  echo`
+  ${chalk.dim('Then, from anywhere in this checkout:')}
+    ${chalk.cyan(installLine)}
 `
   return
 }
@@ -260,13 +285,13 @@ if (failed) {
 }
 log.success(`Basecamp is on ${made.name} (${made.ip})`)
 
+const record = await pointHost({ host: domain, ip: made.ip, configured, log })
+if (!record || !await offerProxy({ record, configured, log, yes: asking && yes })) process.exitCode = 1
 echo`
-  Point ${domain} at it (DNS-only, so Caddy's certificate is what the browser sees):
-    fli provision:dns ${made.ip}${domain === configured ? '' : ` --host ${domain}`}
-`
-echo`  A later deploy, from packages/basecamp:
+  A later deploy, from packages/basecamp:
     fli deploy${later}
 `
 
 if (admin && !await makeAdmin({ dest, identity, workspace: made.name, admin, password, log, echo })) process.exitCode = 1
+if (outpost && !await joinFleet(dest)) process.exitCode = 1
 ```

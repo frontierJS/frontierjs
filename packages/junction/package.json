@@ -59,7 +59,6 @@
     "typecheck": "node ../../scripts/typecheck.mjs",
     "test:example": "bun test ./example/test.ts",
     "test:all": "bun test test/ ./example/test.ts",
-    "test:browser": "node test/browser/verify-devtools.mjs",
     "repl": "bun run tools/repl.ts",
     "verify:otlp": "bun test/verify-otlp.mjs"
   },

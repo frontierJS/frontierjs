@@ -18,8 +18,9 @@
  * both modes, as the box is the editable with its own keymap (`FJS-D1386`);
  * under `text: true` Esc would be the control's and never leave INSERT. A
  * printable no INSERT row takes is the control's to type: a `<textarea>`
- * types it and the host mirrors the result, and a host with no control of
- * its own calls `edit(state, 'type', key)`.
+ * types it and the host hands back what the control then holds with
+ * `edit(state, 'sync', { text, cursor, anchor })`, and a host with no control
+ * of its own calls `edit(state, 'type', key)`.
  *
  * Usage:
  *   let s = textbox('hello', { mode: 'normal', cursor: 0 })
@@ -74,24 +75,31 @@ export function textbox(text = '', { cursor, anchor, mode = 'insert' } = {}) {
 }
 
 /**
- * `action` applied to the box: a name from `NORMAL` or `INSERT`, or `type`
- * with the text as `arg`. A name the box does not know is refused, since the
- * key bound to it would do nothing.
+ * `action` applied to the box: a name from `NORMAL` or `INSERT`, `type` with
+ * the text as `arg`, or `sync` with `{ text, cursor, anchor }`, what a control
+ * the person typed or clicked in now holds. A name the box does not know is
+ * refused, since the key bound to it would do nothing.
  *
  * In NORMAL a change is one undo step, and so is everything typed between
- * entering INSERT and leaving it.
+ * entering INSERT and leaving it. A `sync` that only moves the cursor is no
+ * change, so a click keeps what `redo` would bring back.
  */
 export function edit(state, action, arg) {
   if (!state || typeof state.text !== 'string' || !state.undo) refuse('edit', state, 'a textbox() state is required')
   const fn = Object.hasOwn(ACTIONS, action) ? ACTIONS[action] : null
   if (!fn) refuse('edit', action, `the box has no such action; it knows ${Object.keys(ACTIONS).join(', ')}`)
   if (action === 'type' && typeof arg !== 'string') refuse('edit', arg, "'type' takes the text it types")
+  if (action === 'sync' && (typeof arg?.text !== 'string' || !Number.isInteger(arg.cursor) || !(arg.anchor === undefined || Number.isInteger(arg.anchor)))) {
+    refuse('edit', arg, "'sync' takes { text, cursor, anchor? }, what the control holds")
+  }
 
   let s = state
-  if (s.mode === 'normal' && (CHANGES.has(action) || ENTERS.has(action))) s = checkpoint(s)
+  const changes = CHANGES.has(action) || (action === 'sync' && lf(arg.text) !== s.text)
+  if (s.mode === 'normal' && (changes || ENTERS.has(action))) s = checkpoint(s)
   const out = fn(s, arg)
   // A selection lasts until the cursor moves; whatever moves it collapses it.
-  const next = { ...s, ...out, anchor: 'cursor' in out ? out.cursor : s.anchor }
+  const anchor = 'anchor' in out ? out.anchor : 'cursor' in out ? out.cursor : s.anchor
+  const next = { ...s, ...out, anchor }
   if (ENTERS.has(action)) next.mode = 'insert'
   return Object.freeze(next.mode === 'normal' ? rest(next) : next)
 }
@@ -312,6 +320,10 @@ const ACTIONS = {
   redo: (s) => travel(s, 'future', 'past'),
 
   type: (s, text) => replace(s, text),
+  sync: (s, { text, cursor, anchor = cursor }) => {
+    text = lf(text)
+    return { text, cursor: clamp(cursor, text), anchor: clamp(anchor, text) }
+  },
   newline: (s) => replace(s, '\n'),
   backspace: (s) => {
     const [from, to] = selection(s)

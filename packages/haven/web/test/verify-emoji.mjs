@@ -216,7 +216,7 @@ check(await until(() => at(bea.x, bea.y) === 'B'), "Sam's screen draws Bea where
 
 const beforeBea = termRow(bea.y - 2)
 await browser.cmd('Input.insertText', { text: BEAS })
-check(await browser.evaluate('return document.querySelector("input").value') === BEAS, "an emoji picker's text is Bea's line, whole", await browser.evaluate('return document.querySelector("input").value'))
+check(await browser.evaluate('return document.querySelector("form textarea").value') === BEAS, "an emoji picker's text is Bea's line, whole", await browser.evaluate('return document.querySelector("form textarea").value'))
 await browser.press('Enter')
 const bBubble = `(${BEAS})`
 check(await until(() => cellsAt(termRow(bea.y - 2), bBubble)?.col === bea.x - square.view.x),
@@ -234,9 +234,10 @@ await until(() => term.screen().includes('-- INSERT --'))
 term.write(SAMS)
 check(await until(() => term.screen().includes(SAMS)), 'Sam types his line, written as one chunk, and his input line holds it whole', term.screen())
 term.write('\x7f')
-const lessFlag = SAMS.slice(0, -'🇯🇵'.length)
-// The input line is the row over the mode line; the shell draws a scrollbar down its right edge.
-const inputLine = () => { const l = term.screen().split('\n'); return l[l.findIndex((r) => r.includes('-- INSERT --')) - 1] ?? '' }
+// Trimmed: a screen row loses its trailing space, which the flag sat after.
+const lessFlag = SAMS.slice(0, -'🇯🇵'.length).trimEnd()
+// The input line is the row that starts with it; ui's Textbox paints its mode on the row under it.
+const inputLine = () => term.screen().split('\n').find((r) => r.startsWith(lessFlag)) ?? ''
 check(await until(() => inputLine().startsWith(lessFlag) && !inputLine().includes('🇯')),
   'Backspace takes the flag off the end whole, not half of it', inputLine())
 term.write('🇯🇵\r')
@@ -250,8 +251,8 @@ check(await until(() => cellsAt(termRow(samAt.y - 2), sBubble)?.col === samAt.x 
 // Bea in her field: Backspace over a ZWJ sequence.
 await browser.cmd('Input.insertText', { text: 'x👩‍💻' })
 await browser.press('Backspace')
-check(await browser.evaluate('return document.querySelector("input").value') === 'x', "Backspace in the tab's field takes the ZWJ sequence whole",
-  await browser.evaluate('return document.querySelector("input").value'))
+check(await browser.evaluate('return document.querySelector("form textarea").value') === 'x', "Backspace in the tab's field takes the ZWJ sequence whole",
+  await browser.evaluate('return document.querySelector("form textarea").value'))
 await browser.press('Backspace')
 
 // ─── the history ──────────────────────────────────────────────────────

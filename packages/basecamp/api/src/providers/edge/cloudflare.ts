@@ -261,4 +261,49 @@ export const cloudflare: EdgeConnector = {
     await batch(send, zoneId, { deletes: [...gone.keys()].map(id => ({ id })), patches: [], posts: [] })
     return [...gone.values()]
   },
+
+  // A Configuration Rule in the zone's `http_config_settings` entrypoint (FJS-D1422), its
+  // description the mark. The zone's SSL setting is never written: it covers
+  // every host in the zone, and one whose origin has no valid certificate
+  // answers 526 the moment it turns strict. A later rule overrides an earlier
+  // one for the same setting, so ours is kept last.
+  async strictOrigin(send, zoneId, name, mark) {
+    const zone  = `/zones/${encodeURIComponent(zoneId)}`
+    const entry = `${zone}/rulesets/phases/${CONFIG_PHASE}/entrypoint`
+    const want  = {
+      expression: `http.host eq "${host(name)}"`, description: spell(mark),
+      action: 'set_config', action_parameters: { ssl: 'strict' }, enabled: true,
+    }
+    const rulesOf = (r: unknown) => Array.isArray((r as Row)?.rules) ? (r as Row).rules as Row[] : []
+    const ours    = (rules: Row[]) => rules.filter(r => r.expression === want.expression && r.description === want.description).pop()
+
+    const got = await send({ method: 'GET', path: entry })
+    if (got.status === 404) {
+      const { result } = configRules(await send({ method: 'PUT', path: entry, body: { rules: [want] } }))
+      return { rule: str(ours(rulesOf(result))?.id), changed: true }
+    }
+    const { result: set } = configRules(got)
+    const rules = rulesOf(set)
+    const have  = ours(rules)
+    const last  = rules[rules.length - 1]
+    const right = have && have.enabled !== false && (have.action_parameters as Row | undefined)?.ssl === 'strict'
+    if (right && have === last) return { rule: str(have.id), changed: false }
+
+    const rulesPath = `${zone}/rulesets/${encodeURIComponent(str((set as Row).id))}/rules`
+    const { result } = have
+      ? configRules(await send({ method: 'PATCH', path: `${rulesPath}/${encodeURIComponent(str(have.id))}`,
+          body: { ...want, ...(have === last ? {} : { position: { after: str(last.id) } }) } }))
+      : configRules(await send({ method: 'POST', path: rulesPath, body: want }))
+    return { rule: str(ours(rulesOf(result))?.id), changed: true }
+  },
+}
+
+const CONFIG_PHASE = 'http_config_settings'
+
+/** `unwrap`, with the permission named: a token minted for DNS alone answers
+ *  403 here, and *Authentication error* does not say which grant is missing. */
+function configRules(res: Awaited<ReturnType<AccountSend>>) {
+  if (res.status === 403)
+    throw new Error('Cloudflare: this token cannot write Configuration Rules — give it Zone › Config Rules › Edit on that zone')
+  return unwrap(res)
 }

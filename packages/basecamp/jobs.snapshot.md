@@ -39,11 +39,12 @@ it re-resolved when it runs. Survives a restart.
 | `server-reachability` | `default` | `* * * * *` | — | 3 | default | **none** |
 | `server:destroy` | `fleet` | on dispatch | — | 3 | 10000, 60000 | **none** |
 | `server:provision` | `fleet` | on dispatch | — | 1 | default | **none** |
+| `site:ask` | `default` | on dispatch | — | 1 | default | 720000ms |
 | `site:preview` | `default` | on dispatch | — | 1 | default | 5490000ms |
 | `site:publish` | `deployments` | on dispatch | — | 1 | default | 2130000ms |
 | `weekly-digest` | `default` | `0 9 * * 1` | — | 3 | default | **none** |
 
-18 handler(s), 7 of them on a clock.
+19 handler(s), 7 of them on a clock.
 
 **13 with no timeout.** Absent means no bound, honestly — but a
 handler that never settles holds its slot for the life of the process, and on a

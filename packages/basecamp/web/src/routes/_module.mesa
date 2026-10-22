@@ -8,7 +8,6 @@ siteName: Basecamp
 
   import Badge          from '@frontierjs/ui/components/display/Badge.mesa'
   import Button         from '@frontierjs/ui/components/forms/Button.mesa'
-  import Pill           from '@frontierjs/ui/components/display/Pill.mesa'
   import Select         from '@frontierjs/ui/components/forms/Select.mesa'
   import CommandPalette from '@frontierjs/ui/components/overlay/CommandPalette.mesa'
   import Drawer         from '@frontierjs/ui/components/overlay/Drawer.mesa'
@@ -366,14 +365,6 @@ siteName: Basecamp
         </span>
       {/if}
 
-      <!-- The live WebSocket as a tone, not a hand-mixed green. It opens only
-           once a token is stored, so 'offline' before sign-in is correct. -->
-      <span class="hide-sm">
-        <Pill tone={status.connected ? 'success' : 'muted'}>
-          {status.connected ? 'live' : 'offline'}
-        </Pill>
-      </span>
-
       {#if session.user}
         <Button treatment="ghost" id="palette-open" onclick={() => commandPalette.show()}>
           Search <kbd class="kbd hide-sm">⌘K</kbd>
@@ -423,6 +414,15 @@ siteName: Basecamp
           </DropdownGroup>
         </DropdownMenu>
       {/if}
+
+      <!-- The live WebSocket as a dot, last in the row: a word that changes
+           width between 'live' and 'offline' shifted every control after it.
+           It opens only once a token is stored, so offline before sign-in is
+           correct. -->
+      <span class="status-dot hide-sm {status.connected ? 'success' : 'muted'}"
+            role="status"
+            title={status.connected ? 'Live' : 'Offline'}
+            aria-label={status.connected ? 'Live' : 'Offline'}></span>
     </span>
   </header>
   {/if}
@@ -535,6 +535,14 @@ siteName: Basecamp
     transition:          transform var(--motion-fast);
   }
   .nav-group[open] .nav-chevron { transform: none; }
+
+  .status-dot {
+    inline-size:   0.5rem;
+    block-size:    0.5rem;
+    border-radius: 9999px;
+    background:    var(--bg-mix, var(--color-muted));
+    flex-shrink:   0;
+  }
 
   /* The topbar below 767px is the drawer button, the name, search, the bell
      and the account menu. The rest is in the drawer or one search away. */

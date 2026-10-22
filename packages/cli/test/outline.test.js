@@ -13,7 +13,7 @@ import { join, resolve }           from 'node:path'
 import { typeScriptAt }            from '../core/functions.js'
 import {
   outlineCode, outlineMarkdown, outlineLite, outlineMesa, renderOutline, findRows, renderBody, pathOf, typeScriptFor,
-  wideRead, outlineHint, HINT_AT,
+  wideRead, readVerdict, readRefusal, outlineHint, BLOCK_AT, WINDOW_AT, HINT_AT, SHOWN,
 } from '../core/outline.js'
 
 const REPO = resolve(import.meta.dir, '../../..')
@@ -290,24 +290,44 @@ describe('findRows', () => {
   })
 })
 
-describe('the hint in front of a wide read', () => {
-  test('a Read with no limit, and a guessed sed window, are wide reads', () => {
-    expect(wideRead({ tool_name: 'Read', tool_input: { file_path: 'a/b.ts' } })).toBe('a/b.ts')
-    expect(wideRead({ tool_name: 'Read', tool_input: { file_path: 'a/b.ts', offset: 3000 } })).toBe('a/b.ts')
-    expect(wideRead({ tool_name: 'Bash', tool_input: { command: 'sed -n 3801,4060p a/b.ts' } })).toBe('a/b.ts')
-    expect(wideRead({ tool_name: 'Bash', tool_input: { command: "sed -n '10,20p' 'DECISIONS.md' | head" } })).toBe('DECISIONS.md')
+describe('the gate in front of a wide read', () => {
+  test('a Read with no limit and a bare cat are whole reads; a sed window carries its width', () => {
+    expect(wideRead({ tool_name: 'Read', tool_input: { file_path: 'a/b.ts' } })).toEqual({ path: 'a/b.ts', window: null })
+    expect(wideRead({ tool_name: 'Read', tool_input: { file_path: 'a/b.ts', offset: 3000 } })).toEqual({ path: 'a/b.ts', window: null })
+    expect(wideRead({ tool_name: 'Bash', tool_input: { command: 'sed -n 3801,4060p a/b.ts' } })).toEqual({ path: 'a/b.ts', window: 260 })
+    expect(wideRead({ tool_name: 'Bash', tool_input: { command: "sed -n '10,20p' 'DECISIONS.md' | head" } })).toEqual({ path: 'DECISIONS.md', window: 11 })
+    expect(wideRead({ tool_name: 'Bash', tool_input: { command: 'cat PLAN.md' } })).toEqual({ path: 'PLAN.md', window: null })
+    expect(wideRead({ tool_name: 'Bash', tool_input: { command: "cd x && cat -n 'a/b.ts'" } })).toEqual({ path: 'a/b.ts', window: null })
   })
 
-  test('a limited Read, a file with no outline, and any other tool are not', () => {
+  test('a limited Read, a filtered cat, a file with no outline, and any other tool are not', () => {
     expect(wideRead({ tool_name: 'Read', tool_input: { file_path: 'a/b.ts', limit: 80 } })).toBe(null)
     expect(wideRead({ tool_name: 'Read', tool_input: { file_path: 'a/b.json' } })).toBe(null)
     expect(wideRead({ tool_name: 'Bash', tool_input: { command: 'sed -i s/a/b/ a/b.ts' } })).toBe(null)
+    expect(wideRead({ tool_name: 'Bash', tool_input: { command: 'cat PLAN.md | rg Phase' } })).toBe(null)
+    expect(wideRead({ tool_name: 'Bash', tool_input: { command: 'cat > PLAN.md <<EOF' } })).toBe(null)
+    expect(wideRead({ tool_name: 'Bash', tool_input: { command: 'cat a.json' } })).toBe(null)
     expect(wideRead({ tool_name: 'Edit', tool_input: { file_path: 'a/b.ts' } })).toBe(null)
   })
 
-  test('the hint names the file and both spellings, and only at HINT_AT lines', () => {
-    expect(outlineHint('a.ts', HINT_AT - 1)).toBe(null)
+  test('a whole or wide read is refused at BLOCK_AT; a narrow one is hinted at HINT_AT', () => {
+    const whole = { window: null }
+    expect(readVerdict(whole, BLOCK_AT - 1)).toBe(null)
+    expect(readVerdict(whole, BLOCK_AT)).toBe('deny')
+    expect(readVerdict({ window: WINDOW_AT + 1 }, BLOCK_AT)).toBe('deny')
+    expect(readVerdict({ window: WINDOW_AT }, BLOCK_AT)).toBe(null)
+    expect(readVerdict({ window: WINDOW_AT }, HINT_AT)).toBe('hint')
     expect(outlineHint('a.ts', HINT_AT)).toContain('fli outline a.ts <name|a.b|line>')
+  })
+
+  test('the refusal carries SHOWN rows of the outline and names the way to the rest', () => {
+    const rows = Array.from({ length: SHOWN + 5 }, (_, i) => `row ${i}`)
+    const text = readRefusal('a.ts', 4000, rows)
+    expect(text).toContain(`row ${SHOWN - 1}`)
+    expect(text).not.toContain(`row ${SHOWN}\n`)
+    expect(text).toContain('5 more rows: `fli outline a.ts`')
+    expect(text).toContain('A Read with a limit is never refused')
+    expect(readRefusal('a.ts', 700, ['row 0'])).not.toContain('more rows')
   })
 })
 

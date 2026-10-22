@@ -94,14 +94,15 @@ describe('terminal target', () => {
     expect(result).toContain("$$host.set_attribute($$el0, 'class', __prev.a = __a);")
   })
 
-  it('paints no style:, as it paints no static style or scoped CSS', async () => {
+  it('sends a style: only for a stack\'s gap, as it paints no static style or scoped CSS', async () => {
     const { result } = await terminal(`<script>
   let w = 3
 </script>
 <p style:gap="1rem" style:display={w ? 'none' : null}>t</p>
 `)
     expect(result).toContain("const $$el0 = $$host.element('p');")
-    expect(result).not.toMatch(/gap|display|none/)
+    expect(result).toContain("$$host.set_style($$el0, 'gap'")
+    expect(result).not.toMatch(/display|none/)
   })
 
   describe('refuses by name, with the line', () => {

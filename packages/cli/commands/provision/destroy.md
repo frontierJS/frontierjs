@@ -15,8 +15,8 @@ args:
 Refuses any droplet `fli provision` did not make: the token reaches every
 droplet at the account, and a fleet machine Basecamp made is destroyed in
 Basecamp, which also retires its row. Refuses one that is not powered off,
-too — turn it off at DigitalOcean first, so a box still serving is never one
-mistyped id away from gone.
+too — `fli provision:off` first, so a box still serving is never one mistyped
+id away from gone.
 
 With no id it lists the unclaimed ones that are off and asks which. The pick
 still goes through the same refusal, so a list read a moment ago cannot widen
@@ -32,7 +32,7 @@ if (!id) {
   const ours = unclaimed.filter(m => m.status === 'off')
   if (!unclaimed.length) { echo('No unclaimed droplet fli provision made is at this account'); return }
   if (!ours.length) {
-    echo('None is powered off. Power one off at DigitalOcean first:')
+    echo('None is powered off. fli provision:off <id> first:')
     echo.lines(unclaimed.map(machineLine), { indent: 2 })
     return
   }

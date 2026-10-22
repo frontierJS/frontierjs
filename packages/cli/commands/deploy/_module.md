@@ -84,6 +84,97 @@ const machineFor = ($, host, path = null, transport = null) => createMachine({
   transport: transport ?? $.config?.deployConf?.transport ?? null,
 })
 
+// ─── enrollOutpost ────────────────────────────────────────────────────────────
+// The API's box joined to the app's own fleet (`FJS-D1191`), for a deploy block
+// saying `outpost: true`. Two callers: `08b-outpost` after a release, and
+// `deploy:outpost` alone, which `fli provision:install` runs once `/setup` has
+// made the workspace — the deploy step meets an empty database on a fresh box
+// and answers `skip`.
+//
+// The app's `api/src/core/enroll-host.ts`, run in the serving container, finds or
+// makes the host's Server row and mints its token; the install command it
+// answers runs on the host. Then, installed now or enrolled before, the box's
+// `outpost.env` names the database directory, the env file and the
+// ENCRYPTION_KEY this deploy mounts, which `hub.db-mode` and `hub.env-mode`
+// grade (`FJS-D1241`). An enrolled box never reruns `install.sh`, so this is the
+// one place they are written, and the Outpost restarts only when a line changed.
+//
+// Every failure warns: a release is live by now. Answers
+// `{ outcome: 'installed' | 'enrolled' | 'skip' | 'failed', reason? }`.
+const enrollOutpost = (machine, { appId, deployConf, path, host, log }) => {
+  // A root login on a box with no sudo installed runs the same scripts through a
+  // function of that name.
+  const SUDO = 'command -v sudo >/dev/null 2>&1 || sudo() { "$@"; }'
+
+  // The script's last stdout line is its whole answer. A failed exec carries it
+  // in the error's stdout, and an image older than the script answers nothing.
+  const lastJson = (out) => {
+    try { return JSON.parse(String(out ?? '').trim().split('\n').pop()) } catch { return null }
+  }
+
+  let answer
+  try {
+    answer = lastJson(machine.capture(`docker exec ${apiContainer(appId, deployConf)} bun api/src/core/enroll-host.ts`))
+  } catch (err) {
+    answer = lastJson(err.stdout) ?? { error: err.message.split('\n')[0] }
+  }
+
+  let result
+  if (!answer) {
+    log.warn('Outpost not enrolled: api/src/core/enroll-host.ts answered nothing — pass --no-outpost to stop trying')
+    return { outcome: 'failed', reason: 'enroll-host.ts answered nothing' }
+  }
+  if (answer.error) { log.warn(`Outpost not enrolled: ${answer.error}`); return { outcome: 'failed', reason: answer.error } }
+  if (answer.skip)  { log.info(`Outpost not enrolled: ${answer.skip}`);  return { outcome: 'skip', reason: answer.skip } }
+  if (answer.enrolled) {
+    log.info('Outpost: this box is in the fleet already')
+    result = { outcome: 'enrolled' }
+  } else {
+    // The command is written for a person with sudo.
+    try {
+      machine.run(`${SUDO}\n${answer.command}`)
+      log.success('Outpost installed — the box joins the fleet at its first heartbeat')
+      result = { outcome: 'installed' }
+    } catch (err) {
+      // The attributed message quotes the script, and the script holds a live
+      // single-use token; the journal records what is logged here.
+      const said = String(err.stdout ?? '').trim().split('\n').slice(-3).join(' · ')
+      log.warn(`Outpost install failed on ${host}${said ? `: ${said}` : ''} — the Servers page issues a fresh command`)
+      return { outcome: 'failed', reason: said || 'the install command failed' }
+    }
+  }
+
+  const files = apiFiles(deployConf, path)
+  const sq    = (v) => `'${String(v).replace(/'/g, `'\\''`)}'`
+  const lines = [
+    `OUTPOST_HOST_DB_PATH=${files.dbDir}`,
+    `OUTPOST_HOST_ENV_PATH=${files.envFile}`,
+    `OUTPOST_HOST_KEY_PATH=${files.secretsDir}/ENCRYPTION_KEY`,
+  ]
+  // Prints `unchanged`, `written` or `no-env`; the lines are always written
+  // in this order, so the grep is compared as one string.
+  const script = [
+    SUDO,
+    'F=/etc/basecamp/outpost.env',
+    'sudo test -f "$F" || { echo no-env; exit 0; }',
+    `WANT=$(printf '%s\\n' ${lines.map(sq).join(' ')})`,
+    `HAVE=$(sudo grep -E '^OUTPOST_HOST_(DB|ENV|KEY)_PATH=' "$F" || true)`,
+    '[ "$WANT" = "$HAVE" ] && { echo unchanged; exit 0; }',
+    `sudo sed -i -E '/^OUTPOST_HOST_(DB|ENV|KEY)_PATH=/d' "$F"`,
+    `printf '%s\\n' ${lines.map(sq).join(' ')} | sudo tee -a "$F" >/dev/null`,
+    'sudo systemctl restart outpost.service',
+    'echo written',
+  ].join('\n')
+  try {
+    const said = String(machine.capture(script) ?? '').trim().split('\n').pop()
+    if (said === 'written')     log.info('Outpost: told where the database and env file are, and restarted')
+    else if (said === 'no-env') log.warn('Outpost: no /etc/basecamp/outpost.env on this box — /hub/security/ cannot grade its database or env file')
+  } catch (err) {
+    log.warn(`Outpost: the database and env file paths were not written — ${err.message.split('\n')[0]}`)
+  }
+  return result
+}
+
 // ─── vendorApp ────────────────────────────────────────────────────────────────
 // Write the build context the Dockerfile installs from: deploy/generated/, with
 // a manifest and — for an app depending on the framework by `link:` or

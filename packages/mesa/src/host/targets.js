@@ -19,11 +19,12 @@ export const TARGETS = {
     isInline:  terminal.isInline,
     inputKind: terminal.inputKind,
     // A terminal paints no CSS, so a `class:` reaches it only when it names
-    // a surface, a see-through variant or glass, as the `class` attribute does
-    // (`opaque`, `frosted`).
-    paintsClass: (name) => terminal.SURFACES.includes(name) || terminal.SEE_THROUGH.includes(name) || name === terminal.GLASS,
-    // No stylesheet: `style`, `style:` and the scoped rules are inert.
+    // a class the runtime reads off the `class` attribute too.
+    paintsClass: terminal.paintsClass,
+    // No stylesheet: `style` and the scoped rules are inert, and a `style:`
+    // reaches it only for a property the runtime reads (a stack's gap).
     paintsCss:   false,
+    paintsStyle: terminal.paintsStyle,
     cssOffense:  () => null,
   },
   native: {
@@ -35,6 +36,7 @@ export const TARGETS = {
     inputKind:   native.inputKind,
     paintsClass: () => true,
     paintsCss:   true,
+    paintsStyle: () => true,
     cssOffense,
     // Every element is a `view` or `text`, so a scoped rule's type selector
     // is written as the class the runtime gives that tag.

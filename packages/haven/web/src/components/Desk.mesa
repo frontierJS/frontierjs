@@ -26,7 +26,7 @@
   // It answers only in the home this machine's board names (`HomeBoard.mesa`'s
   // rule), so a visitor's `/ask` runs nothing, and the answer is drawn on this
   // screen only and never sent. A route places it, never the scene file.
-  import { at, copyLink, linked, tint } from '#cell'
+  import { at, copyText, linked, tint } from '#cell'
   import { askDesk, deskReport, homeBoard, openLink, peekItem, readSnoozes, setSnooze } from '#errand'
   import { spotsOf } from '@/pieces/index.js'
   import { clip } from '@/lib/scene/cells.js'
@@ -156,7 +156,7 @@
     if (e.key === 'x') mark(item)
     if (e.key === ' ') peekAt(item)
     if (e.key === 'o') openLink(item.url).then((ok) => tell(ok ? `opened: ${clip(item.text, 48)}` : 'nothing on this machine opens a browser'))
-    if (e.key === 'y') copyLink(pane, item.url).then(copiedLink)
+    if (e.key === 'y') copyText(pane, item.url).then(copiedLink)
     if (e.key === 'b') brief(item)
     return true
   }
@@ -173,6 +173,7 @@
   function open() {
     close ??= verbs.open({
       name: 'desk',
+      pane: true,
       keys: {
         ArrowUp:   move(-1),
         ArrowDown: move(1),

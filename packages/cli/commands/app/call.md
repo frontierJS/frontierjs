@@ -126,4 +126,9 @@ and a `$` key the directive table does not name is refused by name. The
 hook-bypass twins (`_find`, `_patch`) are refused: a call from outside that
 skips the pipeline is the `sqlite3` this replaces.
 
+**In a running app, `fli gui`'s `:call` is the same call made inside it**, through
+devtools (`FJS-D1426`), so its announcement reaches the app's sockets and `:live`.
+This command boots a copy of the app whose bus nobody is listening on: what it
+writes lands in the database, and an open tab hears nothing of it.
+
 **Needs bun.** Junction is Bun-only, and this runs the app's own `junction call`, resolved the way its imports resolve it.

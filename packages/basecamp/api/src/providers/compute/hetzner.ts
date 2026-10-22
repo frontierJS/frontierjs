@@ -331,6 +331,15 @@ export const hetzner: ComputeConnector = {
     return true
   },
 
+  async powerOff(send, providerServerId): Promise<boolean> {
+    const res = await send({
+      method: 'POST', path: `/v1/servers/${encodeURIComponent(providerServerId)}/actions/poweroff`,
+    })
+    if (res.status === 404) return false
+    if (res.error) throw new Error(said(res))
+    return true
+  },
+
   async marked(send, mark): Promise<ComputeMachine[]> {
     const res = await send({
       method: 'GET',

@@ -28,7 +28,7 @@
   $: { if (open) askNicks(rows().map((l) => l.memberId)) }
 
   function show() {
-    close = verbs.open({ name: 'history', closed: () => { open = false; close = null } })
+    close = verbs.open({ name: 'history', pane: true, closed: () => { open = false; close = null } })
     open = true
     back = 0
   }

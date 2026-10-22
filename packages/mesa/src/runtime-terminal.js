@@ -65,9 +65,10 @@
  *   A mount goes into the renderer's document (`documentOf`), a box the size
  *   of the screen that scrolls what is in it, as a browser's page does.
  */
-import { createRoot, createEffect, createSignal, onCleanup, eachItems, setRenderEnvironment, captureContext } from './runtime.js'
+import { createRoot, createEffect, createSignal, onCleanup, eachItems, setRenderEnvironment, captureContext, flushSync } from './runtime.js'
 import { missingPeer } from './optional-peer.js'
-import { TERMINAL_TAGS, TERMINAL_EVENTS, WIDGET_ROLES, isInline, inputKind, pickerHidden, opaque, frosted } from './terminal/tags.js'
+import { TERMINAL_TAGS, TERMINAL_EVENTS, WIDGET_ROLES, isInline, inputKind, pickerHidden, opaque, frosted, bordered, stackRows, MUTED_TEXT } from './terminal/tags.js'
+import { TONES, toneOf } from '@frontierjs/toolbelt/tty'
 import { htmlEntitiesToText } from './entities.js'
 
 // A terminal is a running client with no DOM: `$.onMount` runs and a watch is
@@ -88,6 +89,11 @@ const { BoxRenderable, TextRenderable, InputRenderable, TextareaRenderable, Scro
  * here fires at the edit, from the two places a person edits: a key and a
  * paste. Enter types a new line and emits no `enter`, so the field never
  * submits its form.
+ *
+ * Its selection is the DOM's, `selectionStart`, `selectionEnd` and
+ * `setSelectionRange`, counted in UTF-16 units as a browser's is. The engine
+ * counts display columns, so `'b🇳🇴c'` is four of its offsets and six of the
+ * DOM's, and a host mirroring the selection would land inside the flag.
  */
 class FieldArea extends TextareaRenderable {
   __committed = ''
@@ -95,7 +101,34 @@ class FieldArea extends TextareaRenderable {
   set value(v) {
     if (v === this.plainText) return
     this.setText(v)
-    this.cursorOffset = v.length
+    this.cursorOffset = this.#column(v.length)
+  }
+  get selectionStart() { return this.#units(this.getSelection()?.start ?? this.cursorOffset) }
+  get selectionEnd() { return this.#units(this.getSelection()?.end ?? this.cursorOffset) }
+  setSelectionRange(start, end = start, direction = 'none') {
+    const a = this.#column(Math.min(start, end))
+    const b = this.#column(Math.max(start, end))
+    this.cursorOffset = direction === 'backward' ? a : b
+    if (a !== b) this.setSelection(a, b)
+  }
+  #units(column) { return this.getTextRange(0, column).length }
+  // The column before the character holding unit `i`, so an offset inside a
+  // character lands before it, as the DOM's does. The text up to a column
+  // grows with it and takes a character it reaches into, which is why the
+  // search is for the first column past `i` and not for `i` itself.
+  #column(i) {
+    const n = this.plainText.length
+    const first = (ok) => {
+      let lo = 0
+      let hi = 2 * n + 1
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1
+        if (ok(this.getTextRange(0, mid).length)) hi = mid
+        else lo = mid + 1
+      }
+      return lo
+    }
+    return i >= n ? first((len) => len >= n) : first((len) => len > Math.max(0, i)) - 1
   }
   handleKeyPress(key) { return this.#edited(() => super.handleKeyPress(key)) }
   handlePaste(event) { this.#edited(() => super.handlePaste(event)) }
@@ -190,12 +223,19 @@ class Field extends InputRenderable {
   insertText(text) { joined(this, text, (s) => super.insertText(s)) }
   renderSelf(buffer) {
     super.renderSelf(buffer)
+    const { char, attributes } = buffer.buffers
+    const at = this.screenY * buffer.width + this.screenX
+    // A field's empty cells paint nothing, so an empty one was only a cursor
+    // when focused and invisible otherwise: its width is underlined, as a
+    // browser draws a field's box (FJS-D1423).
+    if (this.screenY >= 0 && this.screenY < buffer.height) {
+      const end = Math.min(this.width, buffer.width - this.screenX)
+      for (let i = Math.max(0, -this.screenX); i < end; i++) attributes[at + i] |= TextAttributes.UNDERLINE
+    }
     if (!this.__mask) return
     const text = this.plainText
     if (!text) return
     const cells = Math.min(this.width, stringWidth(text) - this.editorView.getViewport().offsetX)
-    const { char } = buffer.buffers
-    const at = this.screenY * buffer.width + this.screenX
     for (let i = 0; i < cells; i++) char[at + i] = 0x2022
   }
 }
@@ -616,6 +656,7 @@ function attach(parent, node, before = null) {
   }
   node.__fragment = null
   inherit(node, parent.__bits)
+  if ((parent.__ink ?? null) !== (node.__ink ?? null)) ink(node, parent.__ink ?? null)
   const anchor = before ?? parent.__tail ?? null
   anchor ? parent.insertBefore(node, anchor) : parent.add(node)
   if (parent.__announce) announce(parent)
@@ -769,6 +810,9 @@ export function element(tag, attrs = {}) {
   node.__tag = tag
   node.__bits = bits
   node.__attrs = {}
+  // A control sets its own color, so a toned card does not ink its buttons,
+  // as `color` set on a browser's button does not inherit from the card.
+  if (spec.role === 'button' || spec.role === 'select') { node.__inkStop = true; node.__ownInk = null }
   const field = node instanceof TextareaRenderable
   node.__canFocus = spec.role === 'button' || spec.role === 'select' || field || node instanceof CheckBox
   // A handler written for the DOM reads `e.target.name`, and the engine has
@@ -945,7 +989,7 @@ export function set_attribute(node, name, value) {
     if (!present && node.__home) leaveTopLayer(node)
     return
   }
-  if (name === 'class') { paintOpaque(node); return }
+  if (name === 'class') { paintClass(node); return }
   if (name === 'href' && node.__tag === 'a') { link(node, present); return }
   if (name === 'tabindex') tabStop(node)
   if (ANNOUNCED.has(name)) announce(node)
@@ -960,22 +1004,71 @@ export function set_attribute(node, name, value) {
 
 /**
  * `class:name={on}` on a terminal node. It paints nothing, as the `class`
- * attribute paints nothing, except a name `opaque` or `frosted` reads, which are the only
- * ones the emitter sends here.
+ * attribute paints nothing, except a name `paintsClass` in tags.js admits,
+ * which are the only ones the emitter sends here.
  */
 export function toggle_class(node, name, on) {
   (node.__toggled ??= new Set())[on ? 'add' : 'delete'](name)
-  paintOpaque(node)
+  paintClass(node)
 }
 
-/** Blank `node`, frost it or stop, from its `class` and its `class:` names together. */
-function paintOpaque(node) {
-  if (!(node instanceof BoxRenderable)) return
+/** `style:name={value}` on a terminal node, for a name `paintsStyle` in
+ *  tags.js admits: a stack's `gap`. */
+export function set_style(node, name, value) {
+  (node.__style ??= {})[name] = value
+  paintClass(node)
+}
+
+/** What `@frontierjs/css` says through `node`'s `class` and `class:` names
+ *  together: blank, frost, border, a stack's rows, a tone's ink and the dim
+ *  of muted text (FJS-D979, FJS-D1423). */
+function paintClass(node) {
   const cls = [node.__attrs.class ?? '', ...(node.__toggled ?? [])].join(' ')
-  node.__opaque = opaque(cls)
-  node.__glass  = frosted(cls)
-  if (node instanceof DialogBox) node.borderStyle = node.__glass ? 'rounded' : 'single'
-  else node.renderBefore = node.__glass ? frost : node.__opaque ? blank : undefined
+  const tone = toneOf(cls)
+  if (TONES[tone]?.dim || cls.split(/\s+/).includes(MUTED_TEXT)) inherit(node, TextAttributes.DIM)
+  let framed = false
+  if (node instanceof BoxRenderable) {
+    // The engine ignores an undefined gap, so a stack that stops being one is
+    // set back to 0.
+    const gap = stackRows(cls, node.__style?.gap)
+    if (gap !== (node.__gap ?? 0)) node.rowGap = node.__gap = gap
+    node.__opaque = opaque(cls)
+    node.__glass  = frosted(cls)
+    if (node instanceof DialogBox) node.borderStyle = node.__glass ? 'rounded' : 'single'
+    else {
+      node.renderBefore = node.__glass ? frost : node.__opaque ? blank : undefined
+      const edge = bordered(cls)
+      if (edge !== !!node.__edge) {
+        node.__edge = edge
+        node.border = edge
+        if (edge) node.borderStyle = 'rounded'
+        node.paddingLeft = node.paddingRight = edge ? 1 : 0
+        framed = true
+      }
+    }
+  }
+  const own = TONES[tone]?.color ?? (node.__inkStop ? null : undefined)
+  if (own !== node.__ownInk || framed) {
+    node.__ownInk = own
+    ink(node, node.parent?.__ink ?? null)
+  }
+}
+
+/** Ink a subtree in the palette index `inherited`, as CSS `color` inherits:
+ *  a node with a tone of its own, or a control that sets its own color,
+ *  takes its own instead. A text's index rides into its run (`words`). */
+function ink(node, inherited) {
+  if (!node || node.__marker) return
+  const index = node.__ownInk !== undefined ? node.__ownInk : inherited
+  if (node instanceof TextRenderable) {
+    if (node.__proxy || node.__ink === index) return
+    node.__ink = index
+    node.fg = index == null ? undefined : RGBA.fromIndex(index)
+    return
+  }
+  node.__ink = index
+  if (node.__edge || node instanceof DialogBox) node.borderColor = index == null ? RGBA.defaultForeground() : RGBA.fromIndex(index)
+  if (typeof node.getChildren === 'function') for (const c of node.getChildren()) ink(c, index)
 }
 
 /**
@@ -1112,13 +1205,13 @@ const laidOut = (n) => !n.__marker && !n.__proxy && (n.visible !== false || n.__
 const WS = /[ \t\n\r\f]+/g
 const LEADING_WS = /^[ \t\n\r\f]+/
 
-/** The run's text as engine chunks, each with its cell attributes. Outside a
+/** The run's text as engine chunks, each with its cell attributes and ink. Outside a
  *  `<pre>` a run of white space is one space, across tag edges too. */
 function words(n, out, pre) {
   if (n instanceof TextRenderable) {
     let text = pre || n.__laid ? n.plainText : n.plainText.replace(WS, ' ')
     if (!pre && out.at(-1)?.text.endsWith(' ') && text.startsWith(' ')) text = text.slice(1)
-    if (text) out.push({ __isChunk: true, text, attributes: n.attributes, from: n })
+    if (text) out.push({ __isChunk: true, text, attributes: n.attributes, ...(n.__ink != null && { fg: RGBA.fromIndex(n.__ink), ink: n.__ink }), from: n })
     return out
   }
   for (const c of n.getChildren()) if (laidOut(c)) words(c, out, pre)
@@ -1169,7 +1262,7 @@ function flow(box) {
     next.set(only, t)
     const now = box.getChildren()
     if (now[now.indexOf(only) - 1] !== t) box.insertBefore(t, only)
-    const sig = chunks.map((c) => `${c.attributes}\u0001${c.text}`).join('\u0000')
+    const sig = chunks.map((c) => `${c.attributes}\u0001${c.ink ?? ''}\u0001${c.text}`).join('\u0000')
     if (sig !== t.__sig) { t.__sig = sig; t.content = new StyledText(chunks) }
   })
   for (const t of box.__runs.values()) t.destroyRecursively()
@@ -1294,11 +1387,13 @@ const DOM_KEY = {
 // Without the kitty protocol a Ctrl letter is a control byte, so its sequence
 // is no letter: `e.key` is the name, as a browser's is `k` for Ctrl+K. Ctrl+J
 // is 0x0A, which the engine names `linefeed`; read as a sequence it was a
-// typed newline, and a handler for Ctrl+J never matched.
+// typed newline, and a handler for Ctrl+J never matched. The engine's `meta`
+// is Alt, as a terminal's Meta always was, and Cmd is `super`: read as
+// `metaKey`, every Alt chord was Alt+Cmd and no `<A-…>` binding matched.
 export const keyFields = (k) => k.name === 'linefeed' ? keyFields({ ...k, name: 'j', ctrl: true }) : ({
   key:      DOM_KEY[k.name] ?? (k.sequence?.length === 1 && k.sequence >= ' ' ? k.sequence : k.name),
   code:     k.name,
-  shiftKey: !!k.shift, ctrlKey: !!k.ctrl, altKey: !!(k.option || k.meta), metaKey: !!k.meta,
+  shiftKey: !!k.shift, ctrlKey: !!k.ctrl, altKey: !!(k.option || k.meta), metaKey: !!k.super,
   raw:      k,
 })
 
@@ -1420,6 +1515,18 @@ export function keymapsAt(r, node = r.currentFocusedRenderable) {
 }
 
 /**
+ * The mode the innermost `keys()` host on the focus path keeps, or
+ * `undefined` when none states one. Read by the shell at each key, after the
+ * hosts have stepped it, so a mode a key changed is shown with that key.
+ */
+export function modeAt(r, node = r.currentFocusedRenderable) {
+  for (let n = node; n; n = up(n)) for (const host of n.__keymaps ?? []) {
+    const mode = host.mode?.()
+    if (mode !== undefined) return mode
+  }
+}
+
+/**
  * The keymaps a key meets before its keydown, the way Emacs reads its active
  * maps and CodeMirror its keymaps: each `keys()` host from the focused node
  * out, then the shell's. One event goes through all of them, so a key an inner
@@ -1505,8 +1612,11 @@ const keyed = new WeakMap()
 function keys(r) {
   let held = keyed.get(r)
   if (!held) {
-    const listener = (k) => onKey(r, k)
-    const pasted = (p) => onPaste(r, p)
+    // One read of stdin is every key in it, in one task, where a browser
+    // runs a microtask checkpoint between two key events. Without the flush
+    // the Enter after a burst of letters met the line as it was before them.
+    const listener = (k) => { flushSync(); onKey(r, k) }
+    const pasted = (p) => { flushSync(); onPaste(r, p) }
     r.keyInput.on('keypress', listener)
     r.keyInput.on('paste', pasted)
     keyed.set(r, held = { count: 0, listener, pasted })

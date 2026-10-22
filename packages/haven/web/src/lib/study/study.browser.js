@@ -6,3 +6,5 @@ export function openSession() {}
 export function onOpen() { return () => {} }
 export function studyCwd() { return null }
 export function studyTabs() { return new Map() }
+export function studyLive() { return null }
+export function setLive() {}

@@ -153,14 +153,22 @@ function makeT(rows, tmp) {
       return need().setup.captureSpans().cursor
     },
     /** The cell attributes (`TextAttributes` bits) of the first cell of `text`. */
-    attributesAt: async (text) => {
+    attributesAt: async (text, dx = 0) => (await t.spanAt(text, dx))?.attributes ?? 0,
+    /** The palette index the first cell of `text` is inked in, or null for the
+     *  terminal's default color. `dx` reads a cell that many columns along. */
+    inkAt: async (text, dx = 0) => {
+      const fg = (await t.spanAt(text, dx))?.fg
+      return fg?.intent === 'indexed' ? fg.slot : null
+    },
+    /** The captured span holding the first cell of `text`, `dx` cells along. */
+    spanAt: async (text, dx = 0) => {
       const { x, y } = await t.at(text)
       let col = 0
       for (const span of need().setup.captureSpans().lines[y].spans) {
-        if (x < col + span.width) return span.attributes
+        if (x + dx < col + span.width) return span
         col += span.width
       }
-      return 0
+      return null
     },
     /** Where `text` first appears in the frame, as cell coordinates. */
     at: async (text) => {

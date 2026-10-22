@@ -22,7 +22,9 @@ export const KEY_FILE     = join(TELL_DIR, 'key.json')
 export const CONFIG_FILE  = join(homedir(), '.fli', 'config.json')
 /** What the last check found — `{ checked, waiting: [{ from, count }] }`. */
 export const WAITING_FILE = join(TELL_DIR, 'waiting.json')
-/** Every correspondent met, `{ [signingKey]: { nick, sealKey, since } }` (IDEAS/pony-express.md 4.1). */
+/** This member's chain as this machine last saw it — absent on a machine that is a chain of one, whose root is made from `key.json` (IDEAS/pony-express.md 4.5). */
+export const CHAIN_FILE   = join(TELL_DIR, 'chain.json')
+/** Every correspondent met, `{ [root]: { nick, seq, head, machines, sealKey, since } }` — the chain as last seen (IDEAS/pony-express.md 4.3). */
 export const PEERS_FILE   = join(TELL_DIR, 'peers.json')
 /** The header the Worker reads a member's key from (core/tell-worker.js). */
 const KEY_HEADER          = 'x-tell-key'
@@ -38,13 +40,14 @@ export const readConfig = () => {
   catch (e) { throw new Error(`${CONFIG_FILE} is not JSON (${e.message}) — fix it by hand; fli will not overwrite it`) }
 }
 
-/** The headers that sign one request with `keys` and name its public key — fetched or a socket's upgrade alike. */
+/** The headers that sign one request with `keys` and name its public key — fetched or a socket's upgrade alike. A query in `path` is signed apart, as the Worker verifies it. */
 export const tellSign = async (keys, method, path, text = '') => {
   const { signRequest } = await import('@frontierjs/toolbelt/signature')
+  const [pathname, query = ''] = path.split('?')
   return {
     [KEY_HEADER]: keys.publicKey,
     ...await signRequest({
-      privateKey: keys.privateKey, method, path, body: text,
+      privateKey: keys.privateKey, method, path: pathname, query, body: text,
       timestamp: now(), nonce: crypto.randomUUID(),
     }),
   }
@@ -64,10 +67,39 @@ export const tellFetch = async (api, keys, method, path, body, { signal } = {}) 
 
 // ─── pins ────────────────────────────────────────────────────────────────────
 
-/** A key as two people compare it: the first 64 bits of its SHA-256, in four groups. */
+/** A machine's key as two people compare it: the first 64 bits of its SHA-256, in four groups. */
 export const fingerprint = async (key) => {
   const { sha256Hex } = await import('@frontierjs/toolbelt/signature')
   return (await sha256Hex(String(key))).slice(0, 16).match(/.{4}/g).join(' ')
+}
+
+/** A member's root (core/tell-chain.js) as a fingerprint: the same 64 bits `safetyWords` reads, in four groups. */
+export const rootPrint = (root) => String(root).slice(0, 16).match(/.{4}/g).join(' ')
+
+/**
+ * A member as two people read them aloud (IDEAS/pony-express.md 4.2, 4.4):
+ * the first 64 bits of the member's root as eight PGP words. The root is the
+ * hash of a link that signs the first machine and the sealing key together,
+ * and every later machine is signed into the chain under it, so a linked
+ * machine reads the same words and a sealing key the host swapped is a chain
+ * that does not verify.
+ */
+export const safetyWords = async (root) => {
+  const { EVEN, ODD } = await import('./pgp-words.js')
+  return String(root).slice(0, 16).match(/../g).map((byte, i) => (i % 2 ? ODD : EVEN)[parseInt(byte, 16)]).join(' ')
+}
+
+/**
+ * `safetyWords` read back: the hex eight PGP words spell, or null for
+ * anything else. A word from the list for the other position is refused
+ * rather than forgiven — it is a word dropped or two swapped.
+ */
+export const wordsHex = async (text) => {
+  const { EVEN, ODD } = await import('./pgp-words.js')
+  const words = String(text).trim().toLowerCase().split(/[\s,]+/).filter(Boolean)
+  if (words.length !== 8) return null
+  const bytes = words.map((word, i) => (i % 2 ? ODD : EVEN).indexOf(word))
+  return bytes.includes(-1) ? null : bytes.map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 /** The pins whole, or {} before the first. A file that is not JSON is refused, never overwritten: it is the only record of who was met. */
@@ -85,30 +117,35 @@ const writePeers = (peers) => {
 }
 
 /**
- * A correspondent as the post or a letter names them, graded against the pins.
- * The first sight of a signing key pins it and answers `{ met }`; a
- * disagreement answers `{ refused }` naming both fingerprints and writes
- * nothing. Pinned by key with the nick only shown, so a nick answering with
- * another key is a mismatch, and so is a pinned key under another nick.
- * `sealKey` is graded only when the caller saw one — the roster names it, a
- * letter does not — and a pinned one the post stops naming is a mismatch too,
- * or withholding it would turn every letter plain.
+ * A member's chain as the post served it — a `readChain` answer, or null for a
+ * member who has published none — graded against the pins. The first sight of
+ * a root pins the chain and answers `{ met }`; a longer chain that carries the
+ * pin forward moves it. A disagreement answers `{ refused }` and writes
+ * nothing: a nick answering with another root, a pinned root under another
+ * nick, and a chain shorter than the one pinned or forked from it — the post
+ * hiding a link, a revoke most of all (FJS-D1421). Pinned by root with the
+ * nick only shown.
  */
-export const pinPeer = async ({ nick, publicKey, sealKey }) => {
+export const pinPeer = async (nick, chain) => {
+  const { extendsSeen } = await import('./tell-chain.js')
   const peers = readPeers()
-  const pin = peers[publicKey]
-  const fix = `If that is really them, compare fingerprints with them away from the post, then delete the entry from ${PEERS_FILE}.`
-  const holder = Object.keys(peers).find(key => key !== publicKey && peers[key]?.nick === nick)
-  if (holder) return { refused: `${nick} was pinned at ${await fingerprint(holder)}, and this key is ${await fingerprint(publicKey)}. ${fix}` }
-  if (pin && pin.nick !== nick) return { refused: `${await fingerprint(publicKey)} was pinned as ${pin.nick} and now answers as ${nick}. ${fix}` }
-  if (pin && sealKey !== undefined && pin.sealKey && sealKey !== pin.sealKey) {
-    const now = sealKey ? `answers ${await fingerprint(sealKey)}` : 'names none'
-    return { refused: `${nick}'s sealing key was pinned at ${await fingerprint(pin.sealKey)}, and the post ${now}. ${fix}` }
+  const fix = `If that is really them, compare \`fli tell:who ${nick}\` with them away from the post, then delete the entry from ${PEERS_FILE}.`
+  const holder = Object.keys(peers).find(root => root !== chain?.root && peers[root]?.nick === nick)
+  if (holder) {
+    const now = chain ? `the post's chain for them is rooted at ${rootPrint(chain.root)}` : 'the post now serves no chain for them'
+    return { refused: `${nick} was pinned at ${rootPrint(holder)}, and ${now}. ${fix}` }
   }
-  if (pin && (pin.sealKey || !sealKey)) return {}
-  peers[publicKey] = { nick, sealKey: sealKey ?? pin?.sealKey ?? null, since: pin?.since ?? now() }
+  if (!chain) return {}
+  const pin = peers[chain.root]
+  if (pin && pin.nick !== nick) return { refused: `${rootPrint(chain.root)} was pinned as ${pin.nick} and now answers as ${nick}. ${fix}` }
+  if (pin) {
+    const behind = extendsSeen({ root: chain.root, ...pin }, chain)
+    if (behind) return { refused: `The post's chain for ${nick} does not carry the one pinned here forward — ${behind}. ${fix}` }
+    if (chain.seq === pin.seq) return {}
+  }
+  peers[chain.root] = { nick, seq: chain.seq, head: chain.head, machines: chain.machines, sealKey: chain.sealKey, since: pin?.since ?? now() }
   writePeers(peers)
-  return pin ? {} : { met: await fingerprint(publicKey) }
+  return pin ? {} : { met: rootPrint(chain.root) }
 }
 
 // ─── the notice line ─────────────────────────────────────────────────────────

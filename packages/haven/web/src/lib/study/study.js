@@ -22,6 +22,21 @@ export function studyTabs() {
   return out
 }
 
+// What each tab's session is doing as the pane draws it, by session id, so
+// the workshop's figure says it alike (study.md 3.2): the hook's file lags a
+// turn's start and never names a thought from a write. Written by the
+// mounted study, read by `Workers.mesa` in the same process.
+const live = new Map()
+
+/** The study's own read of session `id`: `{ status, tool, since }`, or null for a session it does not run. */
+export const studyLive = (id) => live.get(id) ?? null
+
+/** Set what session `id` is doing, null when the study no longer runs it. */
+export function setLive(id, now) {
+  if (now) live.set(id, now)
+  else live.delete(id)
+}
+
 // The study mounts the first time it shows, so a session handed in before
 // then waits here for it.
 const waiting = []

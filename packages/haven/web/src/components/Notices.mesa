@@ -73,6 +73,7 @@
     open = true
     close = verbs.open({
       name: 'board',
+      pane: true,
       keys: {
         PageUp:   (e) => { e.preventDefault?.(); back = Math.min(back + ROWS, Math.max(0, pins.length - ROWS)) },
         PageDown: (e) => { e.preventDefault?.(); back = Math.max(0, back - ROWS) },

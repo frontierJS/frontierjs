@@ -122,8 +122,8 @@ export function resolvePackagesDir(appRoot, names) {
 }
 
 // ─── namesIn ──────────────────────────────────────────────────────────────────
-// Every publishable package in a directory of packages: a readable manifest, a
-// name, and not `private`.
+// Every named package in a directory of packages, `private` ones flagged: a
+// private package is packed only when the app links it by name.
 
 function namesIn(dir) {
   const out = []
@@ -134,8 +134,8 @@ function namesIn(dir) {
     if (!existsSync(manifestPath)) continue
     let manifest
     try { manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) } catch { continue }
-    if (manifest.private || !manifest.name) continue
-    out.push({ name: manifest.name, dir: join(dir, entry) })
+    if (!manifest.name) continue
+    out.push({ name: manifest.name, dir: join(dir, entry), private: !!manifest.private })
   }
   return out
 }
@@ -208,7 +208,10 @@ export function vendorWorkspacePackages({ appRoot, include = [], packagesDir: gi
   // and quietly mixes a published sierra into a local mesa. Packing the rest
   // costs a second and proves each still packs at all.
   const scopes  = new Set(names.map(scopeOf).filter(Boolean))
-  const targets = namesIn(packagesDir).filter(p => names.includes(p.name) || scopes.has(scopeOf(p.name)))
+  const targets = namesIn(packagesDir).filter(p => names.includes(p.name) || (!p.private && scopes.has(scopeOf(p.name))))
+  const unfound = names.filter(n => !targets.some(t => t.name === n))
+  if (unfound.length)
+    throw new Error(`no package named ${unfound.join(', ')} in ${packagesDir} — the image would install it from nowhere`)
 
   for (const { name, dir } of targets) {
     const r = spawnSync('bun', ['pm', 'pack', '--destination', vendor], {

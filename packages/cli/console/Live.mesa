@@ -1,0 +1,335 @@
+<script>
+  // Live.mesa — what the running app is doing: the console's `:live` pane
+  // (`IDEAS/one-console.md` 3.1). The calls as they finish, the events on its
+  // bus, its queue, whether it is ready, and the sockets open on it.
+  //
+  // Devtools, inside the app, owns every reading; `server.js` carries them
+  // (`core/live-view.js`), so this pane reads its own `api` and nothing else.
+  // Two lifetimes, as devtools keeps them: the feed is a stream, held while
+  // the pane is up and followed again when it drops; the queue and readiness
+  // are reads, polled while the stream is open. A readiness check runs a
+  // real probe, which is why it is not a field on the stream.
+  //
+  // An app that is not running is said in words, with where it was looked
+  // for, never drawn as empty lists: an app with no calls and no app at all
+  // must not look the same.
+
+  import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let api   = ''
+  export let shown = () => true   // (...fields) => does the console's filter keep this row
+  export let keyed = null         // (rows) => the keys this pane binds, for the console
+
+  const POLL_MS  = 2000
+  const RETRY_MS = 2000
+  const KEEP     = 200   // devtools' own ring is this long
+  const SHOWN    = 10
+
+  // A job that may run again, and one that may be stopped.
+  const RETRYABLE = new Set(['failed', 'dead', 'cancelled'])
+  const STOPPABLE = new Set(['pending', 'running'])
+  const JOB_TONE  = { done: 'success', running: 'info', pending: '', failed: 'danger', dead: 'danger', cancelled: 'warning' }
+  // What `collectMetrics` always answers; any other key is a plugin's section.
+  const CORE_METRICS = new Set(['app', 'version', 'uptime', 'ts', 'process', 'http', 'services', 'cache'])
+
+  let up       = null   // null until the relay first answers
+  let at       = ''
+  let reason   = ''
+  let app      = null
+  let services = []
+  let calls    = []
+  let events   = []
+  let logs     = []
+  let sockets  = []
+  let jobs     = null   // devtools' /api/jobs, or { none } when the app has no queue
+  let health   = null
+  let metrics  = null
+  let open     = null   // the job whose payload is shown
+  let pending  = {}
+  let note     = ''
+  let all      = {}
+
+  const clock = (ts) => ts ? new Date(ts).toLocaleTimeString('en', { hour12: false }) : ''
+  const keep  = (list, item) => [item, ...list].slice(0, KEEP)
+
+  function frame(f) {
+    if (f.type === 'open') { at = f.at; return }
+    if (f.type === 'closed') { up = false; at = f.at; reason = f.reason; return }
+    if (f.type === 'state') {
+      up       = true
+      reason   = ''
+      app      = f.data.app
+      services = f.data.services ?? []
+      calls    = [...(f.data.requests ?? [])].reverse()
+      events   = [...(f.data.events ?? [])].reverse()
+      logs     = [...(f.data.logs ?? [])].reverse()
+      sockets  = f.data.connections ?? []
+      poll()
+      return
+    }
+    if (f.type === 'request')    calls   = keep(calls, f.data)
+    if (f.type === 'event')      events  = keep(events, f.data)
+    if (f.type === 'log')        logs    = keep(logs, f.data)
+    if (f.type === 'connection') sockets = [...sockets.filter(s => s.id !== f.data.id), f.data]
+    if (f.type === 'disconnect') sockets = sockets.filter(s => s.id !== f.data.id)
+  }
+
+  // The relay's answer is one frame a line. A stream that ends is an app that
+  // went away, so it is followed again rather than left closed.
+  var ctl = null
+  var retry = null
+  async function follow() {
+    clearTimeout(retry)
+    ctl?.abort()
+    const mine = ctl = new AbortController()
+    try {
+      const res    = await fetch(`${api}/api/live/stream`, { signal: mine.signal })
+      const reader = res.body.getReader()
+      const text   = new TextDecoder()
+      let buf = ''
+      for (;;) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buf += text.decode(value, { stream: true })
+        for (let nl = buf.indexOf('\n'); nl >= 0; nl = buf.indexOf('\n')) {
+          const line = buf.slice(0, nl)
+          buf = buf.slice(nl + 1)
+          if (line) frame(JSON.parse(line))
+        }
+      }
+    } catch (e) {
+      if (mine.signal.aborted) return
+      up = false
+      reason = `the console's server did not answer: ${e.message}`
+    }
+    if (mine !== ctl) return
+    up = false
+    retry = setTimeout(follow, RETRY_MS)
+  }
+
+  const read = async (path, init) => {
+    const res  = await fetch(`${api}${path}`, init)
+    const body = await res.json()
+    if (!res.ok) throw Object.assign(new Error(body.error ?? `${path} answered ${res.status}`), { status: res.status })
+    return body
+  }
+
+  async function poll() {
+    if (!up) return
+    const [j, h, m] = await Promise.allSettled([read('/api/live/jobs?limit=100'), read('/api/live/health'), read('/api/live/metrics')])
+    if (j.status === 'fulfilled') jobs = j.value
+    else if (j.reason.status === 501) jobs = { none: j.reason.message }
+    if (h.status === 'fulfilled') health = h.value
+    if (m.status === 'fulfilled') metrics = m.value
+  }
+
+  async function act(key, path, body) {
+    pending = { ...pending, [key]: true }
+    try {
+      await read(`/api/live/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) })
+      note = ''
+    } catch (e) {
+      note = e.message
+    }
+    const { [key]: _done, ...rest } = pending
+    pending = rest
+    await poll()
+  }
+
+  const retryJob  = (j) => act(j.id, `jobs/${encodeURIComponent(j.id)}/retry`)
+  const cancelJob = (j) => act(j.id, `jobs/${encodeURIComponent(j.id)}/cancel`)
+  const runJob    = (name) => act(`run:${name}`, `jobs/run/${encodeURIComponent(name)}`)
+
+  function clear() {
+    calls  = []
+    events = []
+    logs   = []
+  }
+
+  // Each takes what it reads as an argument: a template call to a local
+  // function does not subscribe to what it reads.
+  const callLine = (c) => [c.transport === 'websocket' ? 'ws' : c.transport, c.user ?? 'guest', `${c.durationMs}ms`, clock(c.ts)].join(' · ')
+  const jobLine  = (j) => [j.queue, `${j.attempts}/${j.max_attempts}`, clock(j.created_at), j.error].filter(Boolean).join(' · ')
+  const payload  = (j) => { try { return JSON.stringify(JSON.parse(j.data), null, 2) } catch { return String(j.data ?? '{}') } }
+  const queueLine = (name, q) => [name, ...Object.entries(q).filter(([k, v]) => typeof v === 'number' && !k.endsWith('Ms')).map(([k, v]) => `${k} ${v}`),
+    q.oldestRunningMs != null ? `oldest running ${Math.round(q.oldestRunningMs / 1000)}s` : ''].filter(Boolean).join(' · ')
+  const value = (v) => v && typeof v === 'object' ? JSON.stringify(v) : String(v)
+  const counted = (seen, total) => seen === total ? `${total}` : `${seen} of ${total}`
+  const cut = (list, id, all) => all[id] ? list : list.slice(0, SHOWN)
+
+  $: seenCalls   = calls.filter(c => shown(c.service, c.method, c.user, c.status, c.errorMsg, c.transport))
+  $: seenEvents  = events.filter(e => shown(e.name, e.brief))
+  $: seenLogs    = logs.filter(l => shown(l.level, l.message, l.ns))
+  $: seenSockets = sockets.filter(s => shown(s.user, s.ip, s.id))
+  $: jobRows     = jobs?.jobs ?? []
+  $: seenJobs    = jobRows.filter(j => shown(j.name, j.status, j.queue, j.error))
+  $: nextRun     = Object.fromEntries((jobs?.nextRuns ?? []).map(n => [n.name, n.nextRun]))
+  $: handlers    = (jobs?.registrations ?? []).filter(r => shown(r.name, r.queue, r.cron))
+  $: checks      = Object.entries(health?.checks ?? {})
+  $: sections    = Object.entries(metrics ?? {}).filter(([k, v]) => !CORE_METRICS.has(k) && v && typeof v === 'object')
+  $: httpTotal   = metrics?.http?.requests?.total ?? 0
+
+  $: keyed?.([
+    { keys: 'r', label: 'read again', run: () => { follow(); poll() } },
+    { keys: 'c', label: 'clear the feed', run: clear },
+  ])
+
+  var timer = null
+  $.onMount(() => {
+    follow()
+    timer = setInterval(poll, POLL_MS)
+  })
+  $.onDestroy(() => {
+    clearInterval(timer)
+    clearTimeout(retry)
+    ctl?.abort()
+    ctl = null
+  })
+</script>
+
+<header class="bar">
+  <strong>What the app is doing</strong>
+  <span class="cluster gap-2xs">
+    {#if up === null}
+      <span class="text-xs text-muted">reading…</span>
+    {:else if up}
+      <Badge tone="success" size="xs" data-live="up">{app?.name ?? 'app'} live</Badge>
+      <span class="text-xs text-muted">{services.length} services · {httpTotal} http requests · devtools {at}</span>
+    {:else}
+      <Badge size="xs" data-live="down">not running</Badge>
+    {/if}
+  </span>
+</header>
+
+{#if up === false}
+  <p class="text-sm text-muted" data-down>{reason}. Devtools runs inside an app, as app.configure(devtools()); this pane follows it again once the app is up.</p>
+{/if}
+{#if note}
+  <p class="text-sm text-danger" role="status">{note}</p>
+{/if}
+
+{#if up}
+  <section class="surface stack" data-part="calls">
+    <div class="bar dense">
+      <strong class="text-sm">calls</strong>
+      <span class="text-xs text-muted">{counted(seenCalls.length, calls.length)}</span>
+    </div>
+    {#each cut(seenCalls, 'calls', all) as c (c.id)}
+      <div class="cluster gap-sm" data-call={c.status}>
+        <Badge tone={c.status === 'ok' ? 'success' : 'danger'} size="xs">{c.status === 'ok' ? 'ok' : c.errorCode ?? 'error'}</Badge>
+        <code>{c.service}.{c.method}</code>
+        <span class="text-xs text-muted">{callLine(c)}</span>
+        {#if c.errorMsg}<span class="text-xs text-danger">{c.errorMsg}</span>{/if}
+      </div>
+    {/each}
+    {#if !all.calls && seenCalls.length > SHOWN}
+      <Button treatment="ghost" size="xs" onclick={() => all = { ...all, calls: true }}>show the other {seenCalls.length - SHOWN}</Button>
+    {/if}
+  </section>
+
+  <section class="surface stack" data-part="events">
+    <div class="bar dense">
+      <strong class="text-sm">events</strong>
+      <span class="text-xs text-muted">{counted(seenEvents.length, events.length)}</span>
+    </div>
+    {#each cut(seenEvents, 'events', all) as e, i (i)}
+      <div class="cluster gap-sm" data-event={e.name}>
+        <code>{e.name}</code>
+        <span class="text-xs text-muted">{clock(e.ts)} · {e.brief}</span>
+      </div>
+    {/each}
+    {#if !all.events && seenEvents.length > SHOWN}
+      <Button treatment="ghost" size="xs" onclick={() => all = { ...all, events: true }}>show the other {seenEvents.length - SHOWN}</Button>
+    {/if}
+  </section>
+
+  <section class="surface stack" data-part="jobs">
+    <div class="bar dense">
+      <strong class="text-sm">jobs</strong>
+      <span class="text-xs text-muted">{jobs?.none ? 'no queue' : jobs ? counted(seenJobs.length, jobRows.length) : '…'}</span>
+    </div>
+    {#if jobs?.none}
+      <div class="text-xs text-muted">{jobs.none}: an app has one with app.configure(caravan(…))</div>
+    {:else if jobs}
+      {#each Object.entries(jobs.stats?.queues ?? {}) as [name, q] (name)}
+        <div class="text-xs" data-queue={name}>{queueLine(name, q)}</div>
+      {/each}
+      {#each handlers as h (h.name)}
+        <div class="cluster gap-sm" data-handler={h.name}>
+          <code>{h.name}</code>
+          <span class="text-xs text-muted">{[h.queue, h.cron, nextRun[h.name] ? `next ${clock(nextRun[h.name])}` : ''].filter(Boolean).join(' · ')}</span>
+          <Button treatment="ghost" size="xs" loading={!!pending[`run:${h.name}`]} onclick={() => runJob(h.name)}>run now</Button>
+        </div>
+      {/each}
+      {#each cut(seenJobs, 'jobs', all) as j (j.id)}
+        <div class="stack gap-3xs" data-job={j.id}>
+          <div class="cluster gap-sm">
+            <Badge tone={JOB_TONE[j.status] ?? ''} size="xs">{j.status}</Badge>
+            <button class="btn ghost text-xs" aria-expanded={open === j.id} onclick={() => open = open === j.id ? null : j.id}>{j.name}</button>
+            <span class={`text-xs ${j.error ? 'text-danger' : 'text-muted'}`}>{jobLine(j)}</span>
+            {#if RETRYABLE.has(j.status)}
+              <Button treatment="ghost" size="xs" loading={!!pending[j.id]} onclick={() => retryJob(j)}>retry</Button>
+            {/if}
+            {#if STOPPABLE.has(j.status)}
+              <Button treatment="ghost" size="xs" loading={!!pending[j.id]} onclick={() => cancelJob(j)}>cancel</Button>
+            {/if}
+          </div>
+          {#if open === j.id}
+            <pre class="text-xs" data-payload>{payload(j)}</pre>
+          {/if}
+        </div>
+      {/each}
+      {#if !all.jobs && seenJobs.length > SHOWN}
+        <Button treatment="ghost" size="xs" onclick={() => all = { ...all, jobs: true }}>show the other {seenJobs.length - SHOWN}</Button>
+      {/if}
+    {/if}
+  </section>
+
+  <section class="surface stack" data-part="health">
+    <div class="bar dense">
+      <strong class="text-sm">health</strong>
+      <span class="text-xs text-muted">{health?.status ?? '…'}</span>
+    </div>
+    {#if health && !checks.length}
+      <div class="text-xs text-muted">no checks: a plugin declares one with app.registerReadiness(name, fn), an app with health({ checks })</div>
+    {/if}
+    {#each checks as [name, c] (name)}
+      <div class="cluster gap-sm" data-check={name}>
+        <Badge tone={c.status === 'ok' ? 'success' : 'danger'} size="xs">{c.status}</Badge>
+        <code>{name}</code>
+        <span class="text-xs text-muted">{c.latencyMs ?? 0}ms</span>
+        {#if c.error}<span class="text-xs text-danger">{c.error}</span>{/if}
+      </div>
+    {/each}
+    {#if metrics}
+      <div class="text-xs text-muted" data-metrics="app">up {metrics.uptime}s · rss {metrics.process?.memoryMb}MB · heap {metrics.process?.heapUsedMb}/{metrics.process?.heapTotalMb}MB · pid {metrics.process?.pid} · cache {metrics.cache?.hitRate ?? 'n/a'}</div>
+      {#each sections as [key, section] (key)}
+        <div class="text-xs" data-metrics={key}>{key}: {Object.entries(section).map(([k, v]) => `${k} ${value(v)}`).join(' · ')}</div>
+      {/each}
+    {/if}
+  </section>
+
+  <section class="surface stack" data-part="sockets">
+    <div class="bar dense">
+      <strong class="text-sm">sockets</strong>
+      <span class="text-xs text-muted">{counted(seenSockets.length, sockets.length)}</span>
+    </div>
+    {#each seenSockets as s (s.id)}
+      <div class="text-xs" data-socket={s.id}>{s.user ?? 'guest'} · {s.ip || 'no ip'} · since {clock(s.connectedAt)}</div>
+    {/each}
+  </section>
+
+  <section class="surface stack" data-part="logs">
+    <div class="bar dense">
+      <strong class="text-sm">logs</strong>
+      <span class="text-xs text-muted">{counted(seenLogs.length, logs.length)}</span>
+    </div>
+    {#if !logs.length}
+      <div class="text-xs text-muted">none: an app's logger sends them here with devtools' writer in its writers</div>
+    {/if}
+    {#each cut(seenLogs, 'logs', all) as l, i (i)}
+      <div class={`text-xs ${l.level === 'error' ? 'text-danger' : ''}`} data-log={l.level}>{clock(l.ts)} · {l.level} · {l.ns ? `${l.ns} · ` : ''}{l.message}</div>
+    {/each}
+  </section>
+{/if}

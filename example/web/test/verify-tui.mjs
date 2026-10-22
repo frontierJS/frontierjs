@@ -79,9 +79,10 @@ const param = spawnSync('bun', [TUI, '--frame', '/plans/7/', '--api', API], { cw
 check(param.status === 0 && /^Plans\s*$/m.test(param.stdout), '--frame opens a route by a path that fills its param', param.stdout + param.stderr)
 
 // The app's theme block reaches the terminal: six themes offered, the default
-// checked, and the footer naming it (FJS-2565).
+// checked, and the footer naming it (FJS-2565). Each is a tile, so a border
+// stands between two (FJS-D1423).
 const settings = spawnSync('bun', [TUI, '--frame', '/settings/', '--api', API], { cwd: WEB, encoding: 'utf8' })
-check(/\(•\) default\s+\( \) dark\s+\( \) forest\s+\( \) midnight\s+\( \) sunset\s+\( \) elite/.test(settings.stdout),
+check(/\(•\) default[\s│]+\( \) dark[\s│]+\( \) forest[\s│]+\( \) midnight[\s│]+\( \) sunset[\s│]+\( \) elite/.test(settings.stdout),
   "/settings/ offers the app's six themes with its default checked", settings.stdout + settings.stderr)
 check(settings.stdout.includes('theme theme-default ·'), 'and its footer names the resolved theme', settings.stdout)
 
@@ -176,11 +177,12 @@ for (let i = 0; i < 60 && !seen('[ 28 ]'); i++) {
 }
 check(await until(() => seen('[ 28 ]'), 2000), 'Tab past the bottom edge brings the control it reaches on screen', screen(out))
 // The DatePicker's month is a table, so a week is a row and a day sits under
-// its weekday (FJS-2488). The 14th is in a full week in every month.
+// its weekday (FJS-2488). The 14th is in a full week in every month. The
+// picker sits in a card, whose border opens each line (FJS-D1423).
 {
   const lines = screen(out).split('\n')
   const week = lines.find((l) => l.includes('[ 14 ]')) ?? ''
-  const head = lines.find((l) => /^Su\s+Mo\s+Tu\s+We\s+Th\s+Fr\s+Sa\b/.test(l.trim())) ?? ''
+  const head = lines.find((l) => /^│?\s*Su\s+Mo\s+Tu\s+We\s+Th\s+Fr\s+Sa\b/.test(l.trim())) ?? ''
   const at = (l, re) => [...l.matchAll(re)].map((m) => m.index)
   const days = at(week, /\[ \d+ \]/g)
   check(days.length === 7 && String(days) === String(at(head, /\b(Su|Mo|Tu|We|Th|Fr|Sa)\b/g)),

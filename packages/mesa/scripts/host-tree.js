@@ -13,11 +13,16 @@
  *   `node_modules/.bun/`, a stale snapshot of this tree.
  * - Every other relative import becomes an absolute file URL: the compiled
  *   module is written under `outDir`, where `../../utils.js` names nothing.
+ *   So does a bare one, resolved from the source's directory, or a kit
+ *   component importing `@frontierjs/toolbelt/keys` finds no package from
+ *   the temp directory. `@frontierjs/mesa/*` past the runtime is left alone:
+ *   resolved, it would be the stale copy.
  * - Each output is acorn-parsed before it is written (Invariant 15).
  */
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join, dirname, resolve, basename } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { createRequire } from 'node:module'
 import * as acorn from 'acorn'
 import { compile } from '../src/compiler.js'
 
@@ -47,6 +52,11 @@ export async function compileTree(entry, outDir, { target, styles = [] }, done =
     const abs = resolve(dirname(path), m[1])
     const to = abs.endsWith('.mesa') ? await compileTree(abs, outDir, { target, styles }, done) : pathToFileURL(abs).href
     code = code.replace(m[0], `from ${JSON.stringify(to)}`)
+  }
+  const require = createRequire(path)
+  for (const m of [...code.matchAll(/from '((?:@[^/']+\/)?[^.'/:][^':]*)'/g)]) {
+    if (m[1].startsWith('@frontierjs/mesa')) continue
+    code = code.replace(m[0], `from ${JSON.stringify(pathToFileURL(require.resolve(m[1])).href)}`)
   }
   acorn.parse(code, { ecmaVersion: 'latest', sourceType: 'module' })
   const out = join(outDir, `${basename(path, '.mesa')}.${done.size}.${Date.now()}.mjs`)

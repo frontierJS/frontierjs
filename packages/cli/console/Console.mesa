@@ -39,12 +39,14 @@
   import Decide   from './Decide.mesa'
   import Ship     from './Ship.mesa'
   import ProjectMap from './ProjectMap.mesa'
+  import Live     from './Live.mesa'
+  import Call     from './Call.mesa'
 
   export let api      = ''
   export let pane     = 'run'
   export let legendAt = null   // (read) => void, read: () => { rows, status }
 
-  const PANES = ['run', 'check', 'decide', 'ship', 'map']
+  const PANES = ['run', 'check', 'decide', 'ship', 'map', 'live', 'call']
 
   // No `<Mod-…>` is bound anywhere here, so `mac` changes no row.
   const CONSOLE = keymap({
@@ -171,12 +173,16 @@
       <Tab id="decide">:decide</Tab>
       <Tab id="ship">:ship</Tab>
       <Tab id="map">:map</Tab>
+      <Tab id="live">:live</Tab>
+      <Tab id="call">:call</Tab>
     </TabList>
     <TabPanel id="run" unmount><Run {api} {shown} keyed={keyedFor('run')} /></TabPanel>
     <TabPanel id="check" unmount><Check {api} {shown} keyed={keyedFor('check')} /></TabPanel>
     <TabPanel id="decide" unmount><Decide {api} {shown} keyed={keyedFor('decide')} /></TabPanel>
     <TabPanel id="ship" unmount><Ship {api} {shown} keyed={keyedFor('ship')} /></TabPanel>
     <TabPanel id="map" unmount><ProjectMap {api} {shown} keyed={keyedFor('map')} /></TabPanel>
+    <TabPanel id="live" unmount><Live {api} {shown} keyed={keyedFor('live')} /></TabPanel>
+    <TabPanel id="call" unmount><Call {api} {shown} keyed={keyedFor('call')} /></TabPanel>
   </Tabs>
 
   {#if !legendAt}

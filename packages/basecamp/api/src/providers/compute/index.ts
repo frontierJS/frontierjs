@@ -145,7 +145,7 @@ export interface MachineSpec {
  *  test. An edge connector takes the same one: an account is an account
  *  whichever realm of the vendor's it opens (`providers/edge/index.ts`). */
 export type AccountSend = (req: {
-  method: 'GET' | 'POST' | 'DELETE'
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   path:   string
   body?:  unknown
 }) => Promise<{
@@ -205,6 +205,14 @@ export interface ComputeConnector {
    * retried to completion is worse than one that is idempotent.
    */
   destroy(send: AccountSend, providerServerId: string): Promise<boolean>
+
+  /**
+   * Cut a machine's power — a hard stop, not a shutdown asked of the OS.
+   * Answers whether the vendor accepted it; the machine reads `off` a few
+   * seconds later. One the vendor has never heard of answers false, since a
+   * gone machine is not a powered-off one.
+   */
+  powerOff(send: AccountSend, providerServerId: string): Promise<boolean>
 
   /**
    * Every machine at this account carrying this mark.

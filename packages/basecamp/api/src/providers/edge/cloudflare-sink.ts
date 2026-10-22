@@ -140,6 +140,7 @@ function fail(code: number, message: string, status: number) {
 
 export function startCfSink(port = PORT) {
   const zoneRecords: Record<string, Rec[]> = structuredClone(RECORDS)
+  const configSets:  Record<string, Rec>   = {}
   let made = 0
   const nextId = () => `rec-${++made}-${Math.random().toString(36).slice(2, 8)}`
 
@@ -184,6 +185,43 @@ export function startCfSink(port = PORT) {
         if ('error' in applied) return fail(applied.error[0], applied.error[1], 400)
         zoneRecords[id] = applied.records
         return json({ success: true, errors: [], messages: [], result: applied.result })
+      }
+
+      // A zone's Configuration Rules: the entrypoint is absent (404) until a PUT
+      // makes it, as at Cloudflare, and a PATCH honors `position.after`.
+      const rs = path.match(/^\/zones\/([^/]+)\/rulesets\/(?:phases\/http_config_settings\/entrypoint|([^/]+)\/rules(?:\/([^/]+))?)$/)
+      if (rs) {
+        const id = decodeURIComponent(rs[1])
+        if (!zones.some(z => z.id === id)) return fail(7003, 'Could not route to /zones/' + id, 404)
+        const set  = configSets[id]
+        const done = () => json({ success: true, errors: [], messages: [], result: configSets[id] })
+        const body = req.method === 'GET' ? null : await req.json().catch(() => null) as Rec | null
+        if (req.method !== 'GET' && !body) return fail(9207, 'Request body is invalid JSON', 400)
+        const stamp = (r: Rec) => ({ ...r, id: (r.id as string) ?? nextId().replace('rec', 'rule') })
+
+        if (!rs[2]) {
+          if (req.method === 'GET') return set ? done() : fail(10003, 'could not find entrypoint ruleset in the http_config_settings phase', 404)
+          if (req.method !== 'PUT') return fail(10405, 'Method not allowed', 405)
+          configSets[id] = { id: `rs-${id}`, phase: 'http_config_settings', rules: ((body!.rules as Rec[]) ?? []).map(stamp) }
+          return done()
+        }
+        if (!set || set.id !== decodeURIComponent(rs[2])) return fail(10003, 'ruleset not found', 404)
+        const rules = set.rules as Rec[]
+        if (!rs[3]) {
+          if (req.method !== 'POST') return fail(10405, 'Method not allowed', 405)
+          rules.push(stamp(body!))
+          return done()
+        }
+        if (req.method !== 'PATCH') return fail(10405, 'Method not allowed', 405)
+        const i = rules.findIndex(r => r.id === decodeURIComponent(rs[3]))
+        if (i < 0) return fail(10003, 'rule not found', 404)
+        const { position, ...fields } = body! as Rec & { position?: { after?: string } }
+        const [rule] = rules.splice(i, 1)
+        const merged = { ...rule, ...fields, id: rule.id }
+        const after  = position?.after ? rules.findIndex(r => r.id === position.after) : -1
+        if (after >= 0) rules.splice(after + 1, 0, merged)
+        else rules.splice(i, 0, merged)
+        return done()
       }
 
       return fail(7000, `No route for that URI: ${url.pathname}`, 404)

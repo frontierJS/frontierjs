@@ -24,6 +24,7 @@ if (machine.reach()) {
 // ─── Dependency checks ────────────────────────────────────────────────────────
 // No single quote anywhere in an install line: 02-install-deps runs it as
 // sudo sh -c '<line>'.
+const CADDY_AUTOSAVE = '/var/lib/caddy/.config/caddy/autosave.json'
 const CADDY_INSTALL = [
   'apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl gnupg',
   'curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg',
@@ -31,6 +32,10 @@ const CADDY_INSTALL = [
   'apt-get update',
   'apt-get install -y caddy',
   'systemctl disable --now caddy.service',
+  // The package starts caddy.service from its default Caddyfile, which autosaves
+  // a server on :80 that --resume loads back, and every route write then fails on
+  // a repeated listener. Never enabled means the autosave is that Caddyfile's.
+  `{ systemctl is-enabled --quiet caddy-api.service || rm -f ${CADDY_AUTOSAVE}; }`,
   'systemctl enable --now caddy-api.service',
 ].join(' && ')
 

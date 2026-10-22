@@ -23,7 +23,7 @@
   var close = null
 
   function show() {
-    close = verbs.open({ name: 'map', closed: () => { open = false; close = null } })
+    close = verbs.open({ name: 'map', pane: true, closed: () => { open = false; close = null } })
     open = true
     recall().then((snaps) => { kept = snaps })
     return ''

@@ -391,11 +391,10 @@ export function buildHost(ctx, t) {
       line(ind + 1, `if (__prev.a !== __a) $$host.set_attribute(${el}, ${q1(a.name)}, __prev.a = __a);`)
       line(ind, '}, { a: undefined });')
     }
-    // A target that paints no CSS drops a `style:` as it does the `style`
-    // attribute and the scoped rules; its `class:` reaches it only for a name
-    // it paints, which for the terminal is a surface or a see-through variant,
-    // as for the `class` attribute (`opaque`).
-    if (t.paintsCss) for (const st of n.styles) {
+    // A target that paints no CSS gets a `style:` or a `class:` only for a
+    // name its runtime reads, as for the `class` attribute (`opaque`).
+    for (const st of n.styles) {
+      if (!t.paintsStyle(st.prop)) continue
       dep(st.expr)
       line(ind, '$$runtime.render((__prev) => {')
       line(ind + 1, `var __s; try { __s = (${st.expr.code}); } catch (e) { __s = $$runtime.contain(e, __prev.s); }`)

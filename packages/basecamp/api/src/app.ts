@@ -186,10 +186,14 @@ export async function buildBasecampApp(
 
   const config = {
     ...loadedConfig,
-    // A draft's preview is an origin learned at run time, so the list becomes a
-    // question (`FJS-D1357`). Credentials stay on for the SPA: the session
-    // cookie is SameSite=Lax, so a workers.dev page never sends it.
-    http: { ...loadedConfig.http, cors: { ...loadedConfig.http?.cors,
+    // An owner's photo arrives as one call, shrunk in the page to at most 2560
+    // px (`FJS-D1408`), which junction's 256 KB default refuses. A socket
+    // frame carries no file, so it stays at that default rather than following.
+    http: { ...loadedConfig.http, maxBodySize: 10 * 1024 * 1024, ws: { ...loadedConfig.http?.ws, maxFrameBytes: 256 * 1024 },
+      // A draft's preview is an origin learned at run time, so the list becomes a
+      // question (`FJS-D1357`). Credentials stay on for the SPA: the session
+      // cookie is SameSite=Lax, so a workers.dev page never sends it.
+      cors: { ...loadedConfig.http?.cors,
       // A '*' stays a list, so junction still refuses it beside credentials.
       origins: listed.includes('*') ? listed : (origin: string) => listed.includes(origin) || isPreviewOrigin(origin) } },
     // env wins over the config file for the host. env.ts declared HOST and
@@ -457,8 +461,8 @@ export async function buildBasecampApp(
   // and nobody is offered the workbench, which agentGuard refuses.
   app.configure(mcp({ name: 'basecamp', version: '1.0.0', keepAliveMs: 5_000, narrow: narrowForAgent }))
 
-  // ── Devtools console ──────────────────────────────────────────────────
-  // AFTER health and the queue: the console reads what plugins contributed, so
+  // ── Devtools ──────────────────────────────────────────────────────────
+  // AFTER health and the queue: devtools reads what plugins contributed, so
   // configuring it first would open on an app that has not claimed its sections
   // yet. Nothing is registered on this app's own router — it runs its own
   // server on its own port.

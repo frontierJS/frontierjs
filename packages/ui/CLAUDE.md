@@ -18,7 +18,11 @@ components/
   forms/      Form · Field · Fieldset · Label · Input · Textarea · Select ·
               Checkbox · RadioGroup · Switch · Slider · Thresholds · SignaturePad · NumberInput · Combobox ·
               MultiSelect · DatePicker · DateTimeInput · JsonInput · CodeInput ·
-              FileUpload · FileField · GeoField · MoneyInput · Button
+              FileUpload · FileField · GeoField · MoneyInput · Button ·
+              Textbox (a <textarea> on vim's keys, toolbelt /textbox under
+              mesa keys(); one .mesa for a tab and a terminal; its keys()
+              answers its mode, which the terminal shell follows, and
+              `idle` takes no key and keeps none — FJS-D1411)
   display/    Table · Badge · Pill · Tag · Stat · StatCard · Steps · Pagination ·
               Breadcrumbs · Callout · EmptyState · Avatar(+Group) · Sparkline ·
               Json · Markdown · HtmlFrame · TemplatePreview · SignatureView · BulkBar ·

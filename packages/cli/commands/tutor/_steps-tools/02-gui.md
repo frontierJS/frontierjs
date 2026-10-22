@@ -47,7 +47,7 @@ if (!await must($, api, {
 
 const gui = await startServer($, {
   name: 'gui',
-  argv: fliArgv('fli:gui', '--port', String($.config.guiPort)),
+  argv: fliArgv('fli:gui', '--port', String($.config.guiPort), '--devtools-port', String($.config.devtoolsPort)),
   cwd:  app,
   port: $.config.guiPort,
   // Not /api/health — the GUI does not answer that path, and a readiness probe

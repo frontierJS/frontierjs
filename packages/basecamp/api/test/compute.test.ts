@@ -583,6 +583,7 @@ describe('a machine claims its own credential', () => {
     const script = installScript()
     expect(script).toContain('apt-get install -yqq caddy')
     expect(script).toContain('systemctl disable --now caddy.service')
+    expect(script).toContain('rm -f /var/lib/caddy/.config/caddy/autosave.json')
     expect(script).toContain('systemctl enable --now caddy-api.service')
   })
 
@@ -710,6 +711,14 @@ describe('a machine claims its own credential', () => {
     expect(script).toContain(`bash -s "bun-v${BUN_VERSION}"`)
     expect(script).toContain(`bunx --bun @frontierjs/outpost@${OUTPOST_VERSION}`)
     expect(BUN_VERSION).toMatch(/^\d+\.\d+\.\d+$/)
+  })
+
+  // Basecamp's own box already holds the Caddy keyring from `fli deploy:setup`,
+  // and gpg asks before overwriting it on a tty the install has none of.
+  test('the install overwrites a keyring without asking', async () => {
+    const { installScript } = await import('../src/providers/compute/enrollment.ts')
+    for (const line of installScript().split('\n').filter(l => l.includes('gpg --dearmor')))
+      expect(line).toContain('--batch --yes')
   })
 
   // The pin is a value Basecamp holds, so it must move with the package it

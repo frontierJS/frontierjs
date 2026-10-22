@@ -77,7 +77,11 @@ src/
                          mesa's `setShellKeys` step: AFTER every keymap the
                          page declares and before the keydown, so a page's
                          pending `f` takes the `a` after it (`IDEAS/keys.md`
-                         3.5); NORMAL is `text()` false there
+                         3.5); NORMAL is `text()` false there. A focused
+                         control whose `keys()` answers a mode (ui's
+                         Textbox) is followed (`kept`, mesa's `modeAt`), and
+                         `i a /`, Esc and the letter guard are its own
+                         (`FJS-D1411`)
     Mode.mesa            the mode line, mounted in mesa's `footerOf` so a page
                          taller than the screen does not scroll it away
 

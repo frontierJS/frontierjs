@@ -20,10 +20,9 @@ flags:
 The invite names the post, so there is nothing to configure
 (`IDEAS/pony-express.md` 1.3). This machine's key is made at
 `~/.fli/tell/key.json` if there is none, the join is signed with it, and the
-post spends the code and writes the key in as a member — the key IS the
-member, so a second machine is a second member with its own invite. The join
-carries this machine's sealing key too, so letters to it are sealed from the
-first (`FJS-D1400`).
+post spends the code and writes the member in as a chain of one: a root link
+signing this machine's key and its sealing key together, so letters to it are
+sealed from the first (`FJS-D1400`, `IDEAS/pony-express.md` 4.3).
 
 One post per machine: a machine already at another post is refused rather
 than moved, since its `tell.api` is how every other verb finds its mail.
@@ -64,7 +63,7 @@ const { keys, made } = await tellKeys()
 if (made) log.info(`This machine's key is ${KEY_FILE} — it is who you are at the post, so keep it.`)
 
 let answer
-try { answer = await tellFetch(api, keys, 'POST', '/join', { code, nick, publicKey: keys.publicKey, sealKey: keys.sealing.publicKey }) }
+try { answer = await tellFetch(api, keys, 'POST', '/join', { code, nick, chain: await ownChain(keys) }) }
 catch (e) { log.error(`${api} did not answer (${e.message}).`); process.exitCode = 1; return }
 
 if (answer.status === 409 && saved.api === api) {
@@ -80,8 +79,8 @@ if (answer.status !== 201) {
   return
 }
 
-// Cached only as the post echoes it: an older post ignores the key, and the next verb publishes it.
-writeTellConfig({ api, nick: answer.json.nick, sealKey: answer.json.sealKey ?? null })
+// Cached only as the post echoes it, so a post that did not store the chain gets it on the next verb.
+writeTellConfig({ api, nick: answer.json.nick, root: answer.json.root ?? null })
 log.success(`You are ${answer.json.nick} at ${api}, invited by ${answer.json.invitedBy}.`)
 echo(`  saved as tell.api in ${CONFIG_FILE}`)
 ```

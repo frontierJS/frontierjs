@@ -27,6 +27,7 @@ import { glow } from '@frontierjs/toolbelt/glow'
 | `/seal` | a value only one key can open — HPKE base mode over X25519, in WebCrypto | shipping |
 | `/search` | ranking a corpus nobody indexed | shipping |
 | `/signature` | what a signed machine-to-machine request is, and a short signed token for an address | shipping |
+| `/tty` | `@frontierjs/css`'s tones as a terminal's own 16 colors | shipping |
 | `/units` | a magnitude with a unit, as a person reads it | shipping |
 
 The whole package holds to one rule:

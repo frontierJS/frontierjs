@@ -397,8 +397,63 @@ Goal: the running app is visible and callable from the same process.
 Done when: a drive calls a method as a member, sees its announcement on `:live`,
 and sees a guest refused on `:data`.
 
-- [ ] 3.1 `:live` over devtools' stream; `admin.html` is deleted.
-- [ ] 3.2 `:call`, as somebody.
+- [x] 3.1 `:live` over devtools' stream; `admin.html` is deleted.
+
+**3.1, how it is built** (2026-10-22). `console/Live.mesa` is the sixth pane
+(`6`). Devtools still owns every reading and now serves no page: its root
+answers 404 naming `:live`, and its socket and JSON reads stay for this pane
+and Sierra's toolbar. The console cannot read devtools from a browser, which
+is another origin that allows none, so `server.js` carries it
+(`core/live-view.js`): `/api/live/stream` is devtools' socket relayed a frame
+a line, with an `open` and a `closed` of the relay's own so a quiet app and an
+absent one differ, and `/api/live/health`, `metrics` and `jobs` are reads,
+with retry, cancel and run now as POSTs refused from a foreign origin. Each is
+an allow-listed shape, never a path joined onto the target. The pane follows
+the stream while it is up and again when it drops, and polls the queue and
+readiness only while it is open. Not running is a sentence naming where it
+looked, never empty lists. `fli gui --devtools-port` names a devtools off the
+reserved 5503, since the tutor runs it on 7503 and the drive must not grade a
+dev's own app (decision-rules answered in the session; it matches
+`tutor:tools`' own flag). The 1.3 drive now boots a Caravan app with devtools
+on 7503, presses `6` in both frames and compares the call and job counts, then
+in Chrome opens a payload, retries a dead job through to done, runs a handler
+by hand and sees a new call arrive: green. Junction's `verify-devtools.mjs`
+and its `test:browser` went with the page they drove; their assertions are
+those. Tutor lesson 4 points at `:live` and asks that `fli gui` reaches
+devtools: the CI tutor phase is green. Found on the way: Caravan reports a
+failed job as `dead`, which the old page never offered retry on. Not carried
+over: the feed's pause, the per-call expand, and the status pills (`/` filters
+every list instead).
+- [x] 3.2 `:call`, as somebody.
+
+**3.2, how it is built** (2026-10-22). `console/Call.mesa` is the seventh
+pane (`7`). The call runs inside the running app, not through `app:call` as
+the pane table above said: `junction call` boots a copy whose bus nobody is
+on, so its announcement would never reach `:live` or an open tab, which this
+phase's done line asks for (`FJS-D1426`, ruled in session). Devtools answers
+`GET /api/call` (each service's methods, the hook-bypass twins left out) and
+`POST /api/call`, which is refused outside development: acting as somebody
+in production is auth's support mode. What `tools/call.ts` held (the method
+check, positional arguments, `$`-keys as directives, `--as` through
+`findPrincipal`, nobody as `reenterAs(null)`, the status from
+`toFrameworkError`) is now `junction/src/core/call-as.ts`, which both callers
+run, so `junction call` is argv and printing. `core/live-view.js` carries it
+as `/api/live/call`, a POST refused from a foreign origin. The pane lists the
+methods per service as buttons and takes three fields: as whom (empty is
+nobody, never the app), the arguments as comma-separated JSON in the method's
+own order (`12, {"note":"late"}`), and a tenant. Each answer keeps its
+standing and its status, and the newest shows its result. Keys: `r` reads
+again, `x` makes the call once a method is picked, and `/` filters the
+methods and answers. Litestone's `index.d.ts` now declares `findPrincipal`,
+which it already exported. The drive's app now has a `User` and a `Note` only
+a person may write. The drive presses `7` in both frames and compares the
+method count (15). Then, in Chrome, it creates a note as `ann@x.test` (ok,
+standing `User 1`, the row back) and as nobody (403). It presses `6` and sees
+both calls in the feed, as user 1 and as a guest, plus `notes:created` on the
+bus: green. With nobody run as the app (no `reenterAs(null)`), the nobody
+check and its feed row go red. Seen: `:ship`'s release count read 15 in the
+terminal against 16 in the browser in 2 of 4 runs, and nothing in this step
+touches it.
 - [ ] 3.3 `:data`, viewed as a principal.
 
 ### Phase 4 — Studio

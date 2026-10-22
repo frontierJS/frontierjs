@@ -7,6 +7,7 @@ examples:
   - fli gui --test
   - fli gui --port 8080
   - fli gui --open
+  - fli gui --devtools-port 7503
 flags:
   port:
     char: p
@@ -17,6 +18,10 @@ flags:
     type: boolean
     description: The project's prod tooling port (9500 for project 0) rather than dev
     defaultValue: false
+  devtools-port:
+    type: number
+    description: Where the app's devtools listens, for the :live pane — an app that configures devtools({ port }) names it here
+    defaultValue: 5503
   open:
     char: o
     type: boolean
@@ -62,8 +67,9 @@ const port     = typed ? flag.port : guiPort(inApp ? $.paths.root : null, { env 
 const url      = `http://localhost:${port}`
 const terminal = !flag.open && !!process.stdin.isTTY && !!process.stdout.isTTY
 
-// Set port via env so server.js picks it up
+// Set via env so server.js picks them up
 process.env.FLI_PORT = String(port)
+process.env.FLI_DEVTOOLS_PORT = String(flag['devtools-port'])
 
 log.info(`Starting FLI Web GUI on ${url}`)
 log.info(`Project: ${$.paths.root}`)

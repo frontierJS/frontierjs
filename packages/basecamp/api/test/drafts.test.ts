@@ -30,6 +30,7 @@ import { buildBasecampApp }       from '../src/app.ts'
 import { grantsFor }              from '../src/core/capabilities.ts'
 import { env as appEnv }          from '../src/core/env.ts'
 import { cloudflareFor, markPreview, previewStatuses } from '../src/core/site-preview.ts'
+import { NO_KEY, askStatuses }   from '../src/core/site-ask.ts'
 import { MergeConflict, advanceBase, mergeDraft, revertDraft, saveDraftFile, openDraft, readDraftFile } from '../src/core/site-checkout.ts'
 import { registerAccount }        from '../src/providers/compute/accounts.ts'
 import { startCfSink, SINK_ACCOUNT } from '../src/providers/edge/cloudflare-sink.ts'
@@ -96,6 +97,16 @@ const sink = startCfSink(0)
 afterAll(() => { sink.stop(); rmSync(tmp, { recursive: true, force: true }) })
 
 const drafts = (who: any) => env.as(who).service('drafts')
+
+/** A `w`×`h` 24-bit BMP of a gradient, the smallest image Bun.Image reads that needs no fixture file. */
+function bmp(w: number, h: number): Uint8Array {
+  const row = Math.ceil(w * 3 / 4) * 4, size = 54 + row * h
+  const b = Buffer.alloc(size)
+  b.write('BM', 0); b.writeUInt32LE(size, 2); b.writeUInt32LE(54, 10); b.writeUInt32LE(40, 14)
+  b.writeInt32LE(w, 18); b.writeInt32LE(h, 22); b.writeUInt16LE(1, 26); b.writeUInt16LE(24, 28)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) b.set([x * 8, y * 12, 128], 54 + y * row + x * 3)
+  return new Uint8Array(b)
+}
 const refusal = (p: Promise<unknown>) => p.then(() => null, (e: any) => e)
 
 describe('drafts', () => {
@@ -190,6 +201,122 @@ describe('drafts', () => {
     expect((await refusal(call({ text: { line: line('tone'), old: 'muted', next: 'danger' } }))).message).toMatch(/tone decides/)
     expect(git(remote, 'rev-parse', 'draft/spring-hours')).toBe(head)
   })
+
+  // ─── Lists (3.1, FJS-D1403–FJS-D1405) ──────────────────────────────────
+  test('a menu entry and a collection item are moved, copied and removed, one commit each', async () => {
+    // A developer pushes a draft holding a menu and a collection.
+    const work = join(tmp, 'lists')
+    git(tmp, 'clone', '--quiet', remote, work)
+    git(work, 'checkout', '--quiet', '-b', 'draft/lists')
+    mkdirSync(join(work, 'site/content/menus'), { recursive: true })
+    mkdirSync(join(work, 'site/content/collections/reviews'), { recursive: true })
+    writeFileSync(join(work, 'site/content/menus/main.md'),
+      '---\nitems:\n-\n  name: Home\n  link: /\n-\n  name: Hours\n  link: /hours/\n---\n')
+    for (const [f, who] of [['1-ann', 'Ann'], ['2-bo', 'Bo'], ['3-cy', 'Cy']])
+      writeFileSync(join(work, `site/content/collections/reviews/${f}.md`), `---\nreviewer: ${who}\n---\nGood.\n`)
+    git(work, 'add', '.')
+    git(work, '-c', 'user.name=Dev', '-c', 'user.email=dev@x.co', 'commit', '--quiet', '-m', 'Lists')
+    git(work, 'push', '--quiet', 'origin', 'draft/lists')
+
+    const args = { appId: site.id, draft: 'lists' }
+    const read = (path: string) => drafts(editor).call('read', undefined, { ...args, path })
+    const arrange = (path: string, extra: Record<string, unknown>) => drafts(editor).call('arrange', undefined, { ...args, path, ...extra })
+    const show = (path: string) => git(remote, 'show', `draft/lists:site/${path}`)
+    const head = () => git(remote, 'rev-parse', 'draft/lists')
+
+    const menu = await read('content/menus/main.md')
+    expect(menu.entries.map((e: any) => e.label)).toEqual(['Home', 'Hours'])
+    const moved = await arrange('content/menus/main.md', { blob: menu.blob, line: menu.entries[1].line + 1, act: 'earlier' })
+    expect(moved.changed).toBe(true)
+    expect(show('content/menus/main.md')).toBe('---\nitems:\n-\n  name: Hours\n  link: /hours/\n-\n  name: Home\n  link: /\n---')
+    expect(git(remote, 'log', '-1', '--format=%an|%s', 'draft/lists')).toBe("Owner|Move 'Hours' earlier in content/menus/main.md")
+    expect((await refusal(arrange('content/menus/main.md', { blob: menu.blob, line: 3, act: 'copy' }))).code).toBe(409)
+
+    const item = await read('content/collections/reviews/1-ann.md')
+    expect(item.collection).toEqual({ folder: 'content/collections/reviews', index: 0, count: 3 })
+    const before = head()
+    await arrange('content/collections/reviews/1-ann.md', { blob: item.blob, act: 'later' })
+    expect(git(remote, 'rev-list', '--count', `${before}..draft/lists`)).toBe('1')
+    expect(show('content/collections/reviews/1-ann.md')).toBe('---\nreviewer: Ann\norder: 2\n---\nGood.')
+    expect(show('content/collections/reviews/2-bo.md')).toBe('---\nreviewer: Bo\norder: 1\n---\nGood.')
+    expect((await read('content/collections/reviews/1-ann.md')).collection.index).toBe(1)
+
+    const bo = await read('content/collections/reviews/2-bo.md')
+    const copied = await arrange('content/collections/reviews/2-bo.md', { blob: bo.blob, act: 'copy' })
+    expect(copied.copy).toBe('content/collections/reviews/2-bo-copy.md')
+    expect(show(copied.copy)).toBe('---\nreviewer: Bo\norder: 2\n---\nGood.')
+    expect((await read(copied.copy)).collection).toEqual({ folder: 'content/collections/reviews', index: 1, count: 4 })
+
+    const copy = await read(copied.copy)
+    await arrange(copied.copy, { blob: copy.blob, act: 'remove' })
+    expect(git(remote, 'ls-tree', '--name-only', 'draft/lists', 'site/content/collections/reviews/')).not.toContain('copy')
+    expect(git(remote, 'log', '-1', '--format=%an|%s', 'draft/lists')).toBe('Owner|Remove 2-bo-copy.md in reviews')
+
+    const last = head()
+    const cy = await read('content/collections/reviews/3-cy.md')
+    expect((await refusal(arrange('content/collections/reviews/3-cy.md', { blob: cy.blob, act: 'later' }))).message).toMatch(/already last/)
+    expect((await refusal(arrange('content/routes/index.md', { blob: cy.blob, act: 'later' }))).message).toMatch(/not an item of a collection/)
+    expect((await refusal(arrange('content/collections/reviews/3-cy.md', { blob: cy.blob, act: 'shuffle' }))).code).toBe(400)
+    expect((await refusal(drafts(stranger).call('arrange', undefined, { ...args, path: 'content/collections/reviews/3-cy.md', blob: cy.blob, act: 'earlier' }))).code).toBe(404)
+    expect(head()).toBe(last)
+  })
+
+  // ─── Photos (3.2, FJS-D1406–FJS-D1408) ─────────────────────────────────
+  test('a photo is swapped re-encoded, beside the old one, with its words, in one commit', async () => {
+    const work = join(tmp, 'photos')
+    git(tmp, 'clone', '--quiet', remote, work)
+    git(work, 'checkout', '--quiet', '-b', 'draft/photos')
+    mkdirSync(join(work, 'site/content/public/media/images'), { recursive: true })
+    writeFileSync(join(work, 'site/content/public/media/images/owner.jpg'), 'old bytes')
+    writeFileSync(join(work, 'site/content/routes/about.md'),
+      '---\ntitle: About\nhero_image: /media/images/owner.jpg?width=800&height=600\n---\nHi.\n')
+    git(work, 'add', '.')
+    git(work, '-c', 'user.name=Dev', '-c', 'user.email=dev@x.co', 'commit', '--quiet', '-m', 'Photos')
+    git(work, 'push', '--quiet', 'origin', 'draft/photos')
+
+    const args = { appId: site.id, draft: 'photos', path: 'content/routes/about.md' }
+    const read = () => drafts(editor).call('read', undefined, args)
+    const photo = (extra: Record<string, unknown>) => drafts(editor).call('photo', undefined, { ...args, ...extra })
+    const show = (path: string) => git(remote, 'show', `draft/photos:site/${path}`)
+
+    // A 3000×2000 phone photo carrying an EXIF block with a marker in it.
+    const plain = await new (Bun as any).Image(bmp(30, 20)).resize(3000, 2000).jpeg({ quality: 80 }).bytes()
+    const exif = new TextEncoder().encode('Exif\0\0MM\0*\0\0\0\x08\0\0GPS-PORCH-30.26N')
+    const seg = new Uint8Array([0xff, 0xe1, (exif.length + 2) >> 8, (exif.length + 2) & 255, ...exif])
+    const shot = new Uint8Array([...plain.slice(0, 2), ...seg, ...plain.slice(2)])
+    expect(Buffer.from(shot).includes('GPS-PORCH')).toBe(true)
+
+    const form = await read()
+    expect(form.keys.find((k: any) => k.key === 'hero_image').photo).toEqual({ src: '/media/images/owner.jpg', alt: '', file: 'content/public/media/images/owner.jpg' })
+    expect((await refusal(photo({ blob: form.blob, key: 'hero_image', alt: ' ', photo: new File([shot], 'Porch.JPG', { type: 'image/jpeg' }) }))).message).toMatch(/what it shows/)
+    expect((await refusal(photo({ blob: form.blob, key: 'hero_image', alt: 'Porch', photo: new File(['<html>'], 'x.jpg') }))).message).toMatch(/not a photo/)
+    expect((await refusal(photo({ blob: form.blob, key: 'title', alt: 'Porch' }))).message).toMatch(/not one of the site's photos/)
+
+    const before = git(remote, 'rev-parse', 'draft/photos')
+    const done = await photo({ blob: form.blob, key: 'hero_image', alt: 'The front porch', photo: new File([shot], 'Porch.JPG', { type: 'image/jpeg' }) })
+    expect(done).toMatchObject({ changed: true, photo: 'content/public/media/images/porch.jpg' })
+    expect(git(remote, 'rev-list', '--count', `${before}..draft/photos`)).toBe('1')
+    expect(git(remote, 'log', '-1', '--format=%an|%s', 'draft/photos')).toBe('Owner|Photo for hero_image in content/routes/about.md')
+    expect(show('content/routes/about.md')).toBe('---\ntitle: About\nhero_image: /media/images/porch.jpg?width=800&text=The+front+porch\n---\nHi.')
+    expect(show('content/public/media/images/owner.jpg')).toBe('old bytes')
+    const kept = execFileSync('git', ['-C', remote, 'show', 'draft/photos:site/content/public/media/images/porch.jpg'])
+    expect(Buffer.from(kept).includes('GPS-PORCH')).toBe(false)
+    expect(await new (Bun as any).Image(new Uint8Array(kept)).metadata()).toEqual({ width: 2560, height: 1707, format: 'jpeg' })
+
+    // Words alone, and a second upload of the same name lands beside the first.
+    const again = await read()
+    await photo({ blob: again.blob, key: 'hero_image', alt: 'Our porch at dusk' })
+    expect(show('content/routes/about.md')).toContain('hero_image: /media/images/porch.jpg?width=800&text=Our+porch+at+dusk')
+    expect(git(remote, 'log', '-1', '--format=%s', 'draft/photos')).toBe('Words for the photo hero_image in content/routes/about.md')
+    const third = await read()
+    const second = await photo({ blob: third.blob, key: 'hero_image', alt: 'Porch', photo: new File([shot], 'porch.jpg', { type: 'image/jpeg' }) })
+    expect(second.photo).toBe('content/public/media/images/porch-2.jpg')
+
+    const last = git(remote, 'rev-parse', 'draft/photos')
+    expect((await refusal(photo({ blob: form.blob, key: 'hero_image', alt: 'Stale' }))).code).toBe(409)
+    expect((await refusal(drafts(stranger).call('photo', undefined, { ...args, blob: third.blob, key: 'hero_image', alt: 'x' }))).code).toBe(404)
+    expect(git(remote, 'rev-parse', 'draft/photos')).toBe(last)
+  })
 })
 
 // ─── The preview (1.3, FJS-D1251, FJS-D1252) ─────────────────────────────
@@ -245,6 +372,95 @@ describe('a draft\'s preview', () => {
     expect((await refusal(drafts(admin).call('preview', undefined, { appId: site.id, draft: 'no-account' }))).code).toBe(404)
     const again = await drafts(editor).call('preview', undefined, { appId: site.id, draft: 'no-account' })
     expect(again.preview.state).toMatch(/queued|building|failed/)
+  })
+})
+
+// An ask (4.1, FJS-D1242): `claude` is a stand-in that records what it was
+// handed and edits the copy it was run in, as the real one would through Edit
+// and Write. The argv's scope is the cli's, measured in its own suite; what is
+// claimed here is the copy, the key, the cap on the argv, and that a run's
+// edits come back as a tree with nothing committed.
+describe('asking a model for a change', () => {
+  let fake: string, seen: string
+  const settled = async (draft: string) => {
+    for (let i = 0; i < 400; i++) {
+      const s = askStatuses(site.id)[draft]
+      if (s && (s.state === 'failed' || s.state === 'ready')) return s
+      await Bun.sleep(25)
+    }
+    throw new Error(`the ask on ${draft} never settled: ${JSON.stringify(askStatuses(site.id)[draft])}`)
+  }
+  const clone = () => join(tmp, 'sites', `${site.id}.git`)
+
+  beforeAll(() => {
+    seen = join(tmp, 'seen')
+    mkdirSync(seen)
+    fake = join(tmp, 'fake-claude')
+    writeFileSync(fake, [
+      '#!/bin/sh',
+      `printf '%s\\n' "$@" > ${seen}/argv`,
+      `printf '%s' "$ANTHROPIC_API_KEY" > ${seen}/key`,
+      `cat > ${seen}/prompt`,
+      `pwd > ${seen}/cwd`,
+      `if grep -q 'every page' ${seen}/prompt; then`,
+      `  sed -i 's/nine/eight/' content/routes/index.md`,
+      `  mkdir -p content/faq && printf 'Open at eight.\\n' > content/faq/hours.md`,
+      `  printf 'not content\\n' > notes.md`,
+      `  echo '{"type":"assistant","message":{"content":[{"type":"text","text":"The hours now say eight."}]}}'`,
+      `  echo '{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.04,"num_turns":3}'`,
+      'else',
+      `  sed -i 's/nine/seven/' content/routes/index.md`,
+      `  echo '{"type":"result","subtype":"error_max_budget_usd","is_error":true,"total_cost_usd":2.01,"num_turns":9}'`,
+      'fi',
+    ].join('\n') + '\n', { mode: 0o755 })
+  })
+  afterAll(() => {
+    delete (appEnv as Record<string, unknown>).ANTHROPIC_API_KEY
+    ;(appEnv as Record<string, unknown>).CLAUDE_BIN = 'claude'
+  })
+
+  test('with no key on this basecamp, an ask is refused by name and nothing is queued', async () => {
+    const draft = (await drafts(editor).call('open', undefined, { appId: site.id, name: 'Asked' })).name
+    const err = await refusal(drafts(editor).call('ask', undefined, { appId: site.id, draft, request: 'Change the hours' }))
+    expect([err.code, err.message]).toEqual([400, NO_KEY])
+    expect(askStatuses(site.id)[draft]).toBeUndefined()
+  })
+
+  test('a run edits a copy of the draft\'s content, and comes back as a tree with nothing committed', async () => {
+    ;(appEnv as Record<string, unknown>).ANTHROPIC_API_KEY = 'sk-ant-test'
+    ;(appEnv as Record<string, unknown>).CLAUDE_BIN = fake
+    expect((await refusal(drafts(admin).call('ask', undefined, { appId: site.id, draft: 'asked', request: 'x' }))).code).toBe(404)
+    expect((await refusal(drafts(editor).call('ask', undefined, { appId: site.id, draft: 'asked', request: '  ' }))).code).toBe(400)
+
+    const head = git(remote, 'rev-parse', 'draft/asked')
+    const queued = await drafts(editor).call('ask', undefined, { appId: site.id, draft: 'asked', request: 'Change the hours on every page' })
+    expect(queued.ask).toMatchObject({ state: 'queued', commit: head })
+    const status = await settled('asked')
+
+    expect(status).toMatchObject({ state: 'ready', commit: head, reply: 'The hours now say eight.', cost: 0.04, error: null })
+    const was = git(remote, 'rev-parse', `${head}:site/content/routes/index.md`)
+    expect(status.files.map(f => [f.path, f.was])).toEqual([['content/faq/hours.md', null], ['content/routes/index.md', was]])
+    expect(git(clone(), 'show', `${status.tree}:site/content/routes/index.md`)).toBe(PAGE.replace('nine', 'eight').trimEnd())
+    expect(git(clone(), 'show', `${status.tree}:site/content/settings/site.js`)).toBe('export default {}')
+    expect(git(remote, 'rev-parse', 'draft/asked')).toBe(head)
+
+    const argv = readFileSync(join(seen, 'argv'), 'utf8').split('\n')
+    const cwd  = readFileSync(join(seen, 'cwd'), 'utf8').trim()
+    expect(argv[argv.indexOf('--max-budget-usd') + 1]).toBe('2')
+    expect(argv).toContain(`Edit(/${cwd}/content)`)
+    expect(argv[argv.indexOf('--setting-sources') + 1]).toBe('')
+    expect(readFileSync(join(seen, 'key'), 'utf8')).toBe('sk-ant-test')
+    expect(readFileSync(join(seen, 'prompt'), 'utf8')).toContain('Leave these front-matter keys exactly as they are wherever a file has them at the top level: layout, name,')
+    expect(cwd.startsWith(tmpdir())).toBe(true)
+
+    const listed = await drafts(editor).call('list', undefined, { appId: site.id })
+    expect(listed.drafts.find((d: any) => d.name === 'asked').ask.state).toBe('ready')
+  })
+
+  test('a run stopped at its spending limit is a failed ask, and its edits are dropped', async () => {
+    await drafts(editor).call('ask', undefined, { appId: site.id, draft: 'asked', request: 'Make it friendlier' })
+    const status = await settled('asked')
+    expect(status).toMatchObject({ state: 'failed', tree: null, files: [], cost: 2.01, error: 'the ask reached its spending limit before it finished' })
   })
 })
 

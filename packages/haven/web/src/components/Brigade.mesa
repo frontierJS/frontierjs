@@ -147,6 +147,9 @@
   // ─── the menu ──────────────────────────────────────────────────────────────
 
   var verbs = $context.commands
+  // A pane open over the room hides the bubbles (`commands.js`'s `pane`).
+  let paned = !!verbs.mode?.pane
+  $.onDestroy(verbs.subscribe(() => { paned = !!verbs.mode?.pane }))
   const root = checkout()
   // How near a fitting a verb reaches, and how far apart along it; the reaches meet.
   const REACH = 3
@@ -372,7 +375,7 @@
   }
 
   /** Everything drawn, in stage cells, then cut to the view. */
-  function placed(ws, v, me, now, rung, menu, list) {
+  function placed(ws, v, me, now, rung, menu, list, paned) {
     const out = []
     if (rung) out.push({ key: 'bell', x: BELL.x - 1, y: BELL.y, text: '\\ô/', color: rung.kind === 'chef' ? INK.chef[0] : INK.order, layer: 11 })
     const cooking = cooks(ws)
@@ -455,7 +458,7 @@
     // ─── what the chef reads ────────────────────────────────
     // A bubble each, as a member's line is, stacked under the chef, or over
     // them where the view has no room below; kept inside the view whole.
-    if (!me) return drawn
+    if (!me || paned) return drawn
     const atLine = atStation(line, me)
     const atPass = inFront(plates, me)
     const read = atLine ? atLine.cooks.slice(0, SEATS) : atPass ? [atPass.w] : []
@@ -476,7 +479,7 @@
   }
 </script>
 
-{#each placed(workers, view, me, now, rung, menu, list) as o (o.key)}
+{#each placed(workers, view, me, now, rung, menu, list, paned) as o (o.key)}
   {#if o.surface}
     <pre class="surface" {@attach at(o.x, o.y, o.layer)} {@attach tint(o.color, o.ground)}>{o.text}</pre>
   {:else}

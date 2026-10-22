@@ -286,6 +286,16 @@ export const digitalOcean: ComputeConnector = {
     return true
   },
 
+  async powerOff(send, providerServerId): Promise<boolean> {
+    const res = await send({
+      method: 'POST', path: `/v2/droplets/${encodeURIComponent(providerServerId)}/actions`,
+      body:   { type: 'power_off' },
+    })
+    if (res.status === 404) return false
+    if (res.error) throw new Error(`DigitalOcean: ${said(res)}`)
+    return true
+  },
+
   async marked(send, mark): Promise<ComputeMachine[]> {
     const res = await send({
       method: 'GET',

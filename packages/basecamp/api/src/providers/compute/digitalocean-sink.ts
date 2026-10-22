@@ -12,8 +12,9 @@
 // really decrypted.
 //
 // It does NOT pretend to be DigitalOcean's semantics. There is no billing, no
-// rate limit and no droplet lifecycle. It answers the four reads this app makes
-// and the one refusal worth testing, which is a token it does not recognize.
+// rate limit and no droplet lifecycle beyond a power-off landing at once. It
+// answers the four reads this app makes and the one refusal worth testing,
+// which is a token it does not recognize.
 //
 //   bun api/src/providers/compute/digitalocean-sink.ts
 //
@@ -199,6 +200,16 @@ export function startDoSink(port = PORT) {
         return json({ droplets: tag
           ? all.filter(d => (d.tags as string[] | undefined)?.includes(tag))
           : all })
+      }
+
+      const action = url.pathname.match(/^\/v2\/droplets\/([^/]+)\/actions$/)
+      if (action && req.method === 'POST') {
+        const row  = DROPLETS.get(decodeURIComponent(action[1]))
+        if (!row) return json({ id: 'not_found', message: 'The resource you requested could not be found.' }, 404)
+        const type = String(((await req.json().catch(() => null)) as Record<string, unknown> | null)?.type ?? '')
+        if (type !== 'power_off') return json({ id: 'unprocessable_entity', message: `action ${type} is not in this sink` }, 422)
+        row.status = 'off'
+        return json({ action: { id: 3, type, status: 'in-progress' } }, 201)
       }
 
       const droplet = url.pathname.match(/^\/v2\/droplets\/([^/]+)$/)

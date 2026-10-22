@@ -1,8 +1,10 @@
 // junction/devtools/index.ts
 //
-// A lightweight API admin console that runs on a separate port.
-// Subscribes to app.telemetry for service call data, streams live
-// to connected admin clients over WebSocket.
+// The running app's telemetry on a separate port, for a console to read.
+// Subscribes to app.telemetry for service call data and streams it live to
+// connected readers over WebSocket, beside a few JSON reads (state, health,
+// the job queue). It serves no page: `fli gui`'s `:live` pane is the console
+// that draws it, and Sierra's toolbar reads the same socket.
 //
 // Usage:
 //   import { devtools } from './devtools/index.ts'
@@ -13,14 +15,11 @@
 //   app.configure(devtools({
 //     auth: (req) => req.headers.get('x-admin-key') === process.env.ADMIN_KEY
 //   }))
-//
-// Then open http://localhost:5503
 
-import { join, dirname } from 'path'
-import { fileURLToPath } from 'url'
 import { isListResult } from '../../core/envelope.ts'
 import { collectHealth, collectMetrics } from '../../transport/health.ts'
 import { isDevelopmentEnv } from '../../core/errors.ts'
+import { callAs, callable, readable, rowsAs, type CallRequest } from '../../core/call-as.ts'
 
 export interface DevtoolsOptions {
   /**
@@ -370,8 +369,6 @@ export function devtools(opts: DevtoolsOptions = {}) {
         return
       }
 
-      const htmlPath = join(dirname(fileURLToPath(import.meta.url)), 'admin.html')
-
       // A held port is the failure this must not be quiet about. `ready()` errors
       // are caught and logged by the start phase, so an EADDRINUSE here left the
       // app running with the console reporting `disabled` — which is a lie: it
@@ -445,6 +442,62 @@ export function devtools(opts: DevtoolsOptions = {}) {
           if (url.pathname === '/api/health')
             return Response.json(await collectHealth(app, startedAt))
 
+          // ── A call, as somebody ─────────────────────────────────────
+          // Inside this process, so its announcement reaches the app's
+          // sockets and this console's feed, which a booted copy's never
+          // does (`FJS-D1426`). Outside development, acting as somebody is
+          // auth's support mode, graded by the app's `canStartSupport`; an
+          // admin key here would be a second answer to who may.
+          if (url.pathname === '/api/call') {
+            if (req.method === 'GET') return Response.json({ services: callable(app) })
+            if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+            if (isProd) {
+              return Response.json({
+                ok: false, status: 403,
+                message: 'devtools calls as somebody only in development; in production that is auth support mode (startSupport)',
+              }, { status: 403 })
+            }
+            const body = await req.json().catch(() => null) as CallRequest | null
+            if (!body || typeof body.method !== 'string' || (body.args !== undefined && !Array.isArray(body.args)))
+              return Response.json({ ok: false, status: 400, message: 'POST { method, args?, as?, tenant? }' }, { status: 400 })
+            const out = await callAs(app, {
+              method: body.method,
+              args:   body.args,
+              as:     typeof body.as === 'string' ? body.as : undefined,
+              tenant: typeof body.tenant === 'string' ? body.tenant : undefined,
+            })
+            return Response.json(out, { status: out.ok ? 200 : out.status })
+          }
+
+          // ── Rows, as somebody ───────────────────────────────────────
+          // The console's `:data`: through the app's own client in the
+          // principal's scope, so the gate and the row policies answer as
+          // they do for a request. Refused outside development for the
+          // reason a call is: reading as a person there is support mode.
+          if (url.pathname === '/api/data' || url.pathname.startsWith('/api/data/')) {
+            if (req.method !== 'GET') return new Response('Method not allowed', { status: 405 })
+            const p      = url.searchParams
+            const tenant = p.get('tenant') || undefined
+            if (url.pathname === '/api/data') {
+              const out = await readable(app, tenant)
+              return 'models' in out ? Response.json(out) : Response.json({ ok: false, ...out }, { status: out.status })
+            }
+            if (isProd) {
+              return Response.json({
+                ok: false, status: 403,
+                message: 'devtools reads as somebody only in development; in production that is auth support mode (startSupport)',
+              }, { status: 403 })
+            }
+            const out = await rowsAs(app, {
+              model:  decodeURIComponent(url.pathname.slice('/api/data/'.length)),
+              as:     p.get('as') || undefined,
+              tenant,
+              limit:  p.get('limit')  ? Number(p.get('limit'))  : undefined,
+              offset: p.get('offset') ? Number(p.get('offset')) : undefined,
+            })
+            return Response.json(out, { status: out.ok ? 200 : out.status })
+          }
+
           // ── Jobs ────────────────────────────────────────────────────
           // Read straight off `app.jobs` rather than through Caravan's own
           // admin routes: those are opt-in (`admin: true`), live on the app's
@@ -506,24 +559,11 @@ export function devtools(opts: DevtoolsOptions = {}) {
             return new Response('Not found', { status: 404 })
           }
 
-          // Serve admin.html
-          try {
-            const file = Bun.file(htmlPath)
-            return new Response(file, {
-              headers: {
-                'Content-Type': 'text/html; charset=utf-8',
-                // No validators and no directive means heuristic caching, and
-                // this page is the one place that is actively misleading: it is
-                // served BY the socket's own server, so a cached copy loads
-                // perfectly while the server is down and the only symptom is
-                // the badge reading `disconnected` — which reads as a broken
-                // console rather than an app that is not running (`FJS-421`).
-                'Cache-Control': 'no-store',
-              },
-            })
-          } catch {
-            return new Response('Admin UI not found', { status: 404 })
-          }
+          // No page: the console that draws this is `fli gui`'s `:live`, which
+          // reads these same paths through its own server.
+          return new Response("devtools serves no page; run `fli gui` and open its :live pane\n", {
+            status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          })
         },
 
         websocket: {

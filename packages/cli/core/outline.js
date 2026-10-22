@@ -331,33 +331,70 @@ export function renderBody(lines, row) {
 
 export const pathOf = row => row.path.join('.')
 
-// ─── the hint in front of a wide read ────────────────────────────────────────
+// ─── the gate in front of a wide read ────────────────────────────────────────
+//
+// A session is billed as its context times its turns, and a read stays in the
+// context for every turn after it. A long file read whole is paid again on each
+// of them; its outline and the one range it points at cost one more turn, and
+// the refusal carries the outline so that turn is the range read itself.
 
-/** A file this long is not read whole, or in a guessed window. */
+/** A file this long is refused whole, or in a window wider than `WINDOW_AT`. */
+export const BLOCK_AT = 600
+
+/** A `sed` window this wide is a guess at where something is. */
+export const WINDOW_AT = 250
+
+/** A file this long earns the hint even in front of a narrow window. */
 export const HINT_AT = 1000
 
-const SED_WINDOW = /\bsed\s+-n\s+['"]?\d+,\d+p['"]?\s+(['"]?)([^\s'"|;&]+)\1/
+/** The outline rows a refusal carries; past them it names the command. */
+export const SHOWN = 60
+
+const SED_WINDOW = /\bsed\s+-n\s+['"]?(\d+),(\d+)p['"]?\s+(['"]?)([^\s'"|;&]+)\3/
+// A `cat` whose output reaches the context: not piped, redirected or a heredoc.
+const BARE_CAT = /(?:^|&&|;)\s*cat(?:\s+-\w+)*\s+(['"]?)([^\s'"|;&<>]+)\1\s*(?=$|&&|;)/
 
 /**
- * The file a tool call is about to read wide — a Read with no `limit`, or a
- * `sed -n 'a,bp'` window — or null. What the PreToolUse hook asks, so the hook
- * holds no policy of its own.
+ * The read a tool call is about to make, `{ path, window }` — `window` the
+ * line count of a `sed -n 'a,bp'`, null for a whole read (a Read with no
+ * `limit`, or a bare `cat`) — or null. What the PreToolUse hook asks, so the
+ * hook holds no policy of its own.
  */
 export function wideRead({ tool_name, tool_input } = {}) {
   if (tool_name === 'Read') {
     const path = tool_input?.file_path
-    return path && tool_input.limit == null && outlinable(path) ? path : null
+    return path && tool_input.limit == null && outlinable(path) ? { path, window: null } : null
   }
   if (tool_name === 'Bash') {
-    const path = String(tool_input?.command ?? '').match(SED_WINDOW)?.[2]
-    return path && outlinable(path) ? path : null
+    const command = String(tool_input?.command ?? '')
+    const sed = command.match(SED_WINDOW)
+    if (sed) return outlinable(sed[4]) ? { path: sed[4], window: Math.abs(sed[2] - sed[1]) + 1 } : null
+    const cat = command.match(BARE_CAT)
+    if (cat && outlinable(cat[2])) return { path: cat[2], window: null }
   }
   return null
 }
 
-/** The hint for a wide read of a file `lines` long, or null under `HINT_AT`. */
+/** What a read of a file `lines` long gets: `'deny'`, `'hint'` or null. */
+export function readVerdict({ window }, lines) {
+  if (lines >= BLOCK_AT && (window == null || window > WINDOW_AT)) return 'deny'
+  return lines >= HINT_AT ? 'hint' : null
+}
+
+/** The hint in front of a narrow read of a long file. */
 export function outlineHint(path, lines) {
-  if (lines < HINT_AT) return null
   return `${path} is ${lines} lines. \`fli outline ${path}\` lists what is in it, each with its line range; ` +
     `\`fli outline ${path} <name|a.b|line>\` prints just that one.`
+}
+
+/** The refusal of a wide read, carrying `outline` — `renderOutline`'s lines. */
+export function readRefusal(path, lines, outline) {
+  const more = outline.length - SHOWN
+  return [
+    `${path} is ${lines} lines, too long to read whole or in a window over ${WINDOW_AT} lines. Its outline:`,
+    ...outline.slice(0, SHOWN),
+    ...(more > 0 ? [`… ${more} more rows: \`fli outline ${path}\` lists them all.`] : []),
+    `Read the range you need: \`fli outline ${path} <name|a.b|line>\` prints one row (a line number picks the row holding it), ` +
+      'or Read with offset and limit. A Read with a limit is never refused, so ask for the whole file that way when you mean to.',
+  ].join('\n')
 }

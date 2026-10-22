@@ -200,6 +200,27 @@ export const EDIT_KINDS = {
   data:     { says: 'what it shows: which fields, records, order or filter. Reach the data through the resource the page already reads.', guides: ['sierra', 'junction', 'litestone'], effort: 'high' },
 }
 
+// A site owner's ask (`IDEAS/owner-editing.md` Phase 4, `FJS-D1242`): basecamp
+// runs `askArgv({ edit })` scoped to a copy of the draft's `content/`, so the
+// tools hold the scope and these sentences only say why. The owner reads the
+// reply, not a developer. `locked` is site-kit's `LOCKED_KEYS`, passed in, since
+// this package does not depend on site-kit; the grade after the run refuses
+// what these words fail to stop.
+export const CONTENT_RULES = [
+  'I own this website and asked for a change to its words. Its content is the markdown under content/: each file is a page, a block of a page or an item of a collection, with its front matter between the --- lines and its prose after them.',
+  'Make the change with the Edit tool. Use Write only to add a new file beside ones like it, such as a new item in a collection. You may change files under content/ and nowhere else.',
+  'Where I asked for something everywhere, look through every file before deciding there are no more. Make the smallest change that does what I asked, in the style of the file you are in.',
+  'Reply in two or three short lines a person who does not code can read: what you changed, and on which pages.',
+].join('\n\n')
+
+/** An owner's ask: the rules, the front-matter keys to leave alone, the request. */
+export function contentPrompt({ request, locked = [] } = {}) {
+  const keep = locked.length
+    ? `Leave these front-matter keys exactly as they are wherever a file has them at the top level: ${locked.join(', ')}. They decide how the site looks, and a change to one is refused whole.`
+    : null
+  return [CONTENT_RULES, keep, `The change: ${String(request ?? '').trim().slice(0, 4000)}`].filter(Boolean).join('\n\n')
+}
+
 export const EDIT_SCOPES = {
   every:     'every item its loop draws. Edit the loop body once, not one item.',
   component: 'the whole component or section the element belongs to.',
@@ -484,14 +505,14 @@ export function readAskEvent(event) {
  * `{ child, done }` where `done` resolves to the exit code. Detached, so a stop
  * signals the group and takes a running `rg` with it.
  */
-export function runAsk({ root, prompt, session = null, edit = null, reads = [], images = [], effort = ASK_EFFORT, model = null, bin = 'claude', onEvent }) {
+export function runAsk({ root, prompt, session = null, edit = null, reads = [], images = [], effort = ASK_EFFORT, model = null, bin = 'claude', env = process.env, onEvent }) {
   if (session && !SESSION_ID.test(String(session)))
     return { error: `not a session id: ${JSON.stringify(String(session).slice(0, 40))}` }
   if (!EFFORTS.includes(effort))
     return { error: `no such effort: ${JSON.stringify(String(effort).slice(0, 40))} — one of ${EFFORTS.join(', ')}` }
 
   const child = spawn(bin, askArgv({ session, edit, reads, effort, model, images: images.length > 0 }), {
-    cwd: root, detached: true,
+    cwd: root, detached: true, env,
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   child.stdin.on('error', () => {})

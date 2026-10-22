@@ -30,6 +30,7 @@
   export let into           // NORMAL's ways into INSERT on a field: `insert`, `append`, `slash`
   export let steps = null   // (step) => shell.js hands `step` each key after the page's keymaps
   export let help = null    // () => [{ keys, action }], what `?` lists
+  export let kept = null    // () => the mode the focused control keeps, or undefined (mesa's `modeAt`)
 
   let path = ''
   const go = () => { if (path.trim()) onopen?.(path.trim()) }
@@ -43,7 +44,10 @@
   // typed, so a line that begins with a slash is one keystroke away. h j k l reach this as the arrows (shell.js).
   // `i a /` are stepped after the page's keymaps (`step`), so a page's pending
   // `f` takes the `a` after it. Esc out of INSERT stops here, so a dialog or
-  // the shell's back hears only a second one.
+  // the shell's back hears only a second one. A control that keeps its own
+  // mode (ui's Textbox) is followed instead, so one mode is on screen: its
+  // keys are stepped before this, and `i a /`, Esc and the letter guard here
+  // are its own (`FJS-D1411`).
   const NOT_TEXT = new Set(['checkbox', 'radio', 'file', 'button', 'submit', 'reset'])
   const types = (el) => el?.tagName === 'TEXTAREA' || (el?.tagName === 'INPUT' && !NOT_TEXT.has(el.type))
 
@@ -52,15 +56,17 @@
   const set = (m) => { mode = m; onmode?.({ mode, field }) }
   const focusin = (e) => {
     field = types(e.target)
-    set(e.target === jumpField ? 'insert' : 'normal')
+    set(e.target === jumpField ? 'insert' : kept?.() ?? 'normal')
   }
   // In INSERT a field types `?` and Ctrl+P still jumps.
   const actionOf = (e, active, text) => step(null, chordOf(e), { active, mac: false, text }, 0).outcome?.action
   const keyStep = (e) => {
+    const own = kept?.()
+    if (own !== undefined && own !== mode) set(own)
     if (e.defaultPrevented) return
     const typing = types(e.target)
     const normal = mode === 'normal'
-    const action = actionOf(e, [keys, ...(normal && typing ? [into] : [])], !normal && typing)
+    const action = actionOf(e, [keys, ...(normal && typing && own === undefined ? [into] : [])], !normal && typing)
     if (!action) return
     if (action === 'jump') { e.preventDefault(); openJump(); return }
     if (action === 'help') { e.preventDefault(); toggleHelp(); return }
@@ -70,7 +76,7 @@
   }
   steps?.(keyStep)
   const keydown = (e) => {
-    if (e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return
+    if (e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey || kept?.() !== undefined) return
     const typing = types(e.target)
     if (mode === 'insert' && typing) {
       if (e.key !== 'Escape') return

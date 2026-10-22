@@ -67,6 +67,8 @@
  * out instead (`hostDropped`).
  */
 
+import { TONES } from '@frontierjs/toolbelt/tty'
+
 export const TERMINAL_TAGS = {
   div:      { role: 'box' },
   section:  { role: 'box' },
@@ -212,6 +214,55 @@ export const opaque = (cls) => {
  */
 export const GLASS = 'glass'
 export const frosted = (cls) => typeof cls === 'string' && cls.split(/\s+/).includes(GLASS)
+
+/**
+ * The surfaces a terminal draws a border round, and the variants that clear
+ * `surface.css`'s border (`--_surface-border: transparent`). Only the box
+ * composites: a terminal border is two rows and two columns, and Haven puts
+ * a bare `surface` on every bubble row it places by cell (FJS-D1423).
+ * `dialog` draws its own. `test/terminal-tags.test.js` holds BORDERLESS to
+ * `surface.css`.
+ */
+export const BORDERED   = ['card', 'tile', 'alert', 'toast', 'popover', 'drawer']
+export const BORDERLESS = ['raised', 'ghost']
+
+/** Whether a box of class `cls` draws a border. */
+export const bordered = (cls) => {
+  if (typeof cls !== 'string') return false
+  const names = cls.split(/\s+/)
+  return names.some((n) => BORDERED.includes(n)) && !names.some((n) => BORDERLESS.includes(n))
+}
+
+/** `@frontierjs/css`'s muted text utility; the `muted` tone is dim too. */
+export const MUTED_TEXT = 'text-muted'
+
+/**
+ * `@frontierjs/css`'s vertical rhythm: a browser sets a `.stack`'s children
+ * apart by `--space-2xl` (1rem), a terminal by one blank row. Without it a
+ * `<Form>`, which is a stack, drew label, field, label, field with nothing
+ * between. A `style:gap` under 1rem is a stack drawn tight — the kit's
+ * Checkbox holds its control over its hint at 0.25rem — and a terminal has
+ * no row smaller than one, so it leaves none.
+ */
+export const STACK = 'stack'
+
+/** The rows a box of class `cls` leaves between its children, given its
+ *  `style:gap`. A gap this cannot read in rem is the stack's own. */
+export const stackRows = (cls, gap) => {
+  if (typeof cls !== 'string' || !cls.split(/\s+/).includes(STACK)) return 0
+  const m = /^\s*(\d*\.?\d+)(rem|em|px)?\s*$/.exec(gap == null ? '' : String(gap))
+  if (!m) return 1
+  const rem = m[2] === 'px' ? m[1] / 16 : Number(m[1])
+  return rem < 1 ? 0 : 1
+}
+
+/** The `style:` properties a terminal reads; every other is inert. */
+export const paintsStyle = (prop) => prop === 'gap'
+
+/** Whether a class name paints anything on a terminal: every other is inert. */
+export const paintsClass = (name) =>
+  SURFACES.includes(name) || SEE_THROUGH.includes(name) || name === GLASS ||
+  BORDERLESS.includes(name) || name === MUTED_TEXT || name === STACK || Object.hasOwn(TONES, name)
 
 /**
  * The roles a browser lays out inside a line, beside text, rather than as a

@@ -1,6 +1,6 @@
 // api/src/core/enroll-host.ts — the box this container runs on, enrolled as a fleet machine.
 //
-// `fli deploy` runs it in the API container over the operator's SSH, for an app
+// `fli deploy` and `fli deploy:outpost` run it in the API container over the operator's SSH, for an app
 // whose deploy block says `outpost: true` (FJS-D1191):
 //
 //   docker exec <api container> bun api/src/core/enroll-host.ts
@@ -32,7 +32,7 @@ try {
   if (!workspaceId) {
     const workspaces = await sys.workspace.findMany({ select: { id: true, slug: true } })
     if (!workspaces.length) {
-      answer({ skip: 'no workspace yet: finish /setup, then deploy again' })
+      answer({ skip: 'no workspace yet: finish /setup, then run fli deploy:outpost' })
       process.exit(0)
     }
     if (workspaces.length > 1) {

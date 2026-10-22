@@ -8,6 +8,7 @@
 
 import { frontmatterPositions, frontmatterValue, parseFrontmatter, parseFrontmatterBlock, splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 import { AXES } from './block-look.js'
+import { byOrder } from './collection.js'
 
 // `name` keys a block's own stylesheet rules, and the look keys are Block's six;
 // a change to any of them is a layout change a developer ends up repairing.
@@ -68,6 +69,13 @@ export function formOf(source) {
       line: lines.has(key) ? lines.get(key).line + 2 : null,
       locked: LOCKED_KEYS.includes(key),
       field: !LOCKED_KEYS.includes(key) && lines.has(key) && isScalar(value),
+      // A field naming one of the site's photos is swapped with an upload, never typed.
+      photo: !LOCKED_KEYS.includes(key) && lines.has(key) ? photoOf(value) : null,
+    })),
+    // Every entry of a front-matter list, a menu's links and their sub-links,
+    // which the owner moves, copies and removes (FJS-D1405) by `line`.
+    entries: entriesOf(source).map(({ path, line, end, label, index, count }) => ({
+      line, end, label, index, count, depth: path.filter((k) => typeof k === 'number').length - 1,
     })),
   }
 }
@@ -85,14 +93,18 @@ export function formOf(source) {
  * (`FJS-D1231`) — a menu entry's `name`, a setting. `old` is the words the page
  * showed, so a line another save has moved is refused rather than written.
  *
+ * `entry` is a list's: the item of a front-matter list written on that line,
+ * the innermost when lists nest, moved `earlier` or `later`, copied below
+ * itself or removed (`FJS-D1404`, `FJS-D1405`).
+ *
  * @param {string} source
- * @param {{ body?: string, values?: Record<string, unknown>, field?: { line: number, old: string, next: string } }} [edit]
+ * @param {{ body?: string, values?: Record<string, unknown>, field?: { line: number, old: string, next: string }, entry?: { line: number, act: string } }} [edit]
  * @returns {{ text: string } | { refused: string }}
  */
-export function applyEdit(source, { body, values = {}, field } = {}) {
-  if (field !== undefined) {
-    if (body !== undefined || Object.keys(values).length) return { refused: 'a field is changed on its own, not with the form' }
-    return applyField(source, field)
+export function applyEdit(source, { body, values = {}, field, entry } = {}) {
+  if (field !== undefined || entry !== undefined) {
+    if (body !== undefined || Object.keys(values).length || (field && entry)) return { refused: 'a field or an entry is changed on its own, not with the form' }
+    return field ? applyField(source, field) : applyEntry(source, entry)
   }
   const { block, body: oldBody } = splitFrontmatter(source)
   let before
@@ -180,6 +192,270 @@ function applyField(source, { line, old, next }) {
     return { refused: `the edit would also change something beside ${name}` }
   }
   return { text: out }
+}
+
+// ─── lists (FJS-D1404, FJS-D1405) ────────────────────────────────────────
+
+/** What an owner does to one item of a list: a menu entry, or a collection's file. */
+export const ACTS = Object.freeze(['earlier', 'later', 'copy', 'remove'])
+
+const DASH = /^(\s*)-(?:[ \t]|$)/
+
+/**
+ * Each item of every block-style list in the front matter, innermost last: its
+ * path, the file lines it spans (the `-` line to its last line, from 1), its
+ * place in its list and a label, the first words written directly on it.
+ */
+function entriesOf(source) {
+  const { block } = splitFrontmatter(source)
+  if (block === null) return []
+  const positions = frontmatterPositions(source)
+  const lines = source.split('\n').map((l) => l.replace(/\r$/, ''))
+  const fence = block.split('\n').length + 2 // the closing `---`, from 1
+  const blank = (l) => /^\s*(?:#.*)?$/.test(l)
+  const indent = (l) => /^\s*/.exec(l)[0].length
+  const { frontmatter } = parseFrontmatter(source)
+
+  const firsts = new Map()
+  for (const p of positions) {
+    p.path.forEach((k, i) => {
+      if (typeof k !== 'number') return
+      const id = JSON.stringify(p.path.slice(0, i + 1))
+      const at = firsts.get(id)
+      if (!at || p.line < at.line) firsts.set(id, { path: p.path.slice(0, i + 1), line: p.line })
+    })
+  }
+  const out = []
+  for (const { path, line: first } of firsts.values()) {
+    let dash = first
+    while (dash > 1 && !DASH.test(lines[dash - 1])) dash--
+    const m = DASH.exec(lines[dash - 1] ?? '')
+    if (!m || (dash < first && indent(lines[first - 1]) <= m[1].length)) continue
+    let end = dash
+    for (let j = dash + 1; j < fence; j++) {
+      const l = lines[j - 1]
+      if (blank(l)) continue
+      if (indent(l) <= m[1].length) break
+      end = j
+    }
+    let list = frontmatter
+    for (const k of path.slice(0, -1)) list = list?.[k]
+    const item = list[path[path.length - 1]]
+    const label = isScalar(item) ? item : Object.values(item ?? {}).find((v) => typeof v === 'string')
+    out.push({ path, line: dash, end, index: path[path.length - 1], count: list.length, label: label == null ? '' : String(label) })
+  }
+  return out.sort((a, b) => a.line - b.line)
+}
+
+// One list item moved, copied or removed by its lines, so every line the
+// owner did not touch keeps its spelling, then read back: the result must be
+// the list with exactly that change, or it is refused.
+function applyEntry(source, { line, act } = {}) {
+  if (!Number.isInteger(line) || !ACTS.includes(act)) return { refused: `an entry is { line, act } with act one of ${ACTS.join(', ')}` }
+  let before, entries
+  try {
+    before = parseFrontmatter(source).frontmatter
+    entries = entriesOf(source)
+  } catch (err) {
+    return { refused: `the front matter does not read, so a developer fixes it first: ${err.message}` }
+  }
+  const at = entries.filter((e) => e.line <= line && line <= e.end).pop()
+  if (!at) return { refused: 'no list entry is written on that line any more' }
+  if (LOCKED_KEYS.includes(at.path[0])) return { refused: `${at.path[0]} decides what the block is, so it is the developer's` }
+  const name = at.label ? `'${at.label}'` : 'that entry'
+  if (act === 'remove' && at.count === 1) return { refused: `${name} is the list's only entry, and an empty list is a layout change` }
+  if (act === 'earlier' && at.index === 0) return { refused: `${name} is already first` }
+  if (act === 'later' && at.index === at.count - 1) return { refused: `${name} is already last` }
+
+  const lines = source.split('\n')
+  const span = (e) => lines.slice(e.line - 1, e.end)
+  const sibling = (i) => entries.find((e) => same(e.path, [...at.path.slice(0, -1), i]))
+  let out
+  if (act === 'remove') out = [...lines.slice(0, at.line - 1), ...lines.slice(at.end)]
+  else if (act === 'copy') out = [...lines.slice(0, at.end), ...span(at), ...lines.slice(at.end)]
+  else {
+    const [a, b] = act === 'earlier' ? [sibling(at.index - 1), at] : [at, sibling(at.index + 1)]
+    if (!a || !b) return { refused: `${name} is not beside another entry it could swap with` }
+    out = [...lines.slice(0, a.line - 1), ...span(b), ...lines.slice(a.end, b.line - 1), ...span(a), ...lines.slice(b.end)]
+  }
+  const text = out.join('\n')
+
+  const expected = structuredClone(before)
+  let list = expected
+  for (const k of at.path.slice(0, -1)) list = list[k]
+  const i = at.index
+  if (act === 'remove') list.splice(i, 1)
+  else if (act === 'copy') list.splice(i + 1, 0, structuredClone(list[i]))
+  else {
+    const j = act === 'earlier' ? i - 1 : i + 1
+    ;[list[i], list[j]] = [list[j], list[i]]
+  }
+  let after
+  try {
+    after = parseFrontmatter(text).frontmatter
+  } catch (err) {
+    return { refused: `the front matter would no longer read: ${err.message}` }
+  }
+  if (!same(expected, after) || splitFrontmatter(text).body !== splitFrontmatter(source).body) {
+    return { refused: `moving ${name} would also change something beside it, so a developer rewrites this list` }
+  }
+  return { text }
+}
+
+const COLLECTION = /^content\/collections\/[^/]+\/[^/]+\.md$/
+
+/** The folder of the collection `path` is an item of, or null when it is no collection's. */
+export function collectionOf(path) {
+  return COLLECTION.test(String(path)) ? path.slice(0, path.lastIndexOf('/')) : null
+}
+
+/**
+ * One item of a collection moved, copied or removed (FJS-D1403, FJS-D1404), as
+ * the files to write: `{ writes: [{ path, text }] }`, a null `text` deleting
+ * that file, or `{ refused }`. `files` is every `.md` of the collection's
+ * folder with its source. A move writes `order:` 1 to n on each item whose
+ * number is not already its place; a copy is the item's file whole, named
+ * beside it and placed after it; a removal deletes the file and moves nothing.
+ *
+ * @param {Array<{ path: string, source: string }>} files
+ * @param {{ path: string, act: string }} what
+ * @returns {{ writes: Array<{ path: string, text: string | null }>, path?: string } | { refused: string }}
+ */
+export function arrangeCollection(files, { path, act } = {}) {
+  if (!ACTS.includes(act)) return { refused: `act is one of ${ACTS.join(', ')}` }
+  const dir = collectionOf(path)
+  if (!dir) return { refused: `${path} is not an item of a collection` }
+  let items
+  try {
+    items = files.filter((f) => collectionOf(f.path) === dir)
+      .map((f) => ({ ...f, frontmatter: parseFrontmatter(f.source).frontmatter }))
+      .sort(byOrder)
+  } catch (err) {
+    return { refused: `an item of ${dir} does not read, so a developer fixes it first: ${err.message}` }
+  }
+  const i = items.findIndex((f) => f.path === path)
+  if (i === -1) return { refused: `${path} is not in ${dir}` }
+  const name = path.slice(dir.length + 1)
+  if (act === 'remove') {
+    if (items.length === 1) return { refused: `${name} is the collection's only item, and an empty list is a layout change` }
+    return { writes: [{ path, text: null }] }
+  }
+  if (act === 'earlier' && i === 0) return { refused: `${name} is already first` }
+  if (act === 'later' && i === items.length - 1) return { refused: `${name} is already last` }
+
+  const want = [...items]
+  let added
+  if (act === 'copy') {
+    const stem = path.slice(0, -'.md'.length)
+    let n = 1, next = `${stem}-copy.md`
+    while (files.some((f) => f.path === next)) next = `${stem}-copy-${++n}.md`
+    added = { ...items[i], path: next }
+    want.splice(i + 1, 0, added)
+  } else {
+    const j = act === 'earlier' ? i - 1 : i + 1
+    ;[want[i], want[j]] = [want[j], want[i]]
+  }
+
+  const writes = added ? [{ path: added.path, text: added.source }] : []
+  const sorted = [...want].sort(byOrder)
+  if (sorted.some((f, k) => f !== want[k])) {
+    for (const [k, f] of want.entries()) {
+      if (f.frontmatter.order === k + 1) continue
+      const text = withOrder(f.source, k + 1)
+      if (typeof text !== 'string') return { refused: `${f.path.slice(dir.length + 1)}: ${text.refused}` }
+      const w = writes.find((x) => x.path === f.path)
+      if (w) w.text = text
+      else writes.push({ path: f.path, text })
+    }
+  }
+  return added ? { writes, path: added.path } : { writes }
+}
+
+// `order: n` written into one file's front matter, on the key's own line when
+// it has one and as the block's last line when it has none.
+function withOrder(source, n) {
+  const { block } = splitFrontmatter(source)
+  if (block === null) return `---\norder: ${n}\n---\n${source}`
+  const before = parseFrontmatterBlock(block)
+  if (Object.hasOwn(before, 'order')) {
+    const edit = applyEdit(source, { values: { order: n } })
+    return 'refused' in edit ? edit : edit.text
+  }
+  // The block stops short of the newline before the closing fence.
+  const close = source.indexOf('\n') + 1 + block.length
+  const text = block === '' && source.startsWith('---', close)
+    ? source.slice(0, close) + `order: ${n}\n` + source.slice(close)
+    : source.slice(0, close) + `\norder: ${n}` + source.slice(close)
+  const after = parseFrontmatter(text)
+  if (!same({ ...before, order: n }, after.frontmatter) || after.body !== splitFrontmatter(source).body) {
+    return { refused: 'order could not be written without changing something else' }
+  }
+  return text
+}
+
+// ─── photos (FJS-D1406, FJS-D1407) ───────────────────────────────────────
+
+// A site's address `/x` is the file `content/public/x`, which Vite serves and copies.
+const PUBLIC = 'content/public'
+
+/**
+ * A front-matter value naming one of the site's own raster photos, as
+ * `{ src, alt, file }`: its address without the query, the words its `?text=`
+ * says it shows (FJS-D1406), and the file under `content/public/` holding it.
+ * Null for anything else, an SVG or another site's photo included.
+ */
+export function photoOf(value) {
+  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//')) return null
+  const q = value.indexOf('?')
+  const src = q === -1 ? value : value.slice(0, q)
+  if (!IMAGE.test(src)) return null
+  let file
+  try { file = PUBLIC + decodeURI(src) } catch { return null }
+  if (pathRefusal(file)) return null
+  return { src, alt: new URLSearchParams(q === -1 ? '' : value.slice(q + 1)).get('text') ?? '', file }
+}
+
+/**
+ * The file name a new photo is saved under in `folder`: the uploaded name's
+ * words as a slug, with `ext`, and `-2`, `-3`… past a name `taken(name)` says
+ * is already there.
+ * @param {string} uploaded
+ * @param {string} ext
+ * @param {(name: string) => boolean} [taken]
+ */
+export function photoName(uploaded, ext, taken = () => false) {
+  const stem = String(uploaded ?? '').replace(/\.[^.]*$/, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'photo'
+  let n = 1, name = `${stem}.${ext}`
+  while (taken(name)) name = `${stem}-${++n}.${ext}`
+  return name
+}
+
+/**
+ * `source` with the photo at front-matter `key` given new words and, with
+ * `src`, a new address: `{ text }` or `{ refused }`. The words are required.
+ * The value's other query keys stay, the block's sizing, except `height`,
+ * which was the old photo's own shape.
+ */
+export function applyPhoto(source, { key, alt, src } = {}) {
+  let form
+  try {
+    form = formOf(source)
+  } catch (err) {
+    return { refused: `the front matter does not read, so a developer fixes it first: ${err.message}` }
+  }
+  const k = form.keys.find((x) => x.key === key)
+  if (!k) return { refused: `${key} is not in this file` }
+  const was = k.field ? photoOf(k.value) : null
+  if (!was) return { refused: `${key} is not one of the site's photos that this form writes` }
+  const words = String(alt ?? '').replace(/\s+/g, ' ').trim()
+  if (!words) return { refused: 'a photo needs a few words saying what it shows, for anyone who cannot see it' }
+  if (src !== undefined && !photoOf(src)) return { refused: `${src} is not one of the site's photos` }
+  const q = k.value.indexOf('?')
+  const params = new URLSearchParams(q === -1 ? '' : k.value.slice(q + 1))
+  if (src !== undefined && src !== was.src) params.delete('height')
+  params.set('text', words)
+  return applyEdit(source, { values: { [key]: `${src ?? was.src}?${params}` } })
 }
 
 // ─── the body's code (FJS-D1250) ──────────────────────────────────────────

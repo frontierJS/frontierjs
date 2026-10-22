@@ -3,7 +3,13 @@
  * pty, asked whether they show the same rows (`IDEAS/one-console.md` 1.3).
  * Then the keys (2.3): the legend, a `/` filter, each pane after `:run`
  * reached by its digit, and `:` back — asked of both frames the same way.
- * `:map` (2.4) is the last digit, and its issues are counted in both.
+ * `:map` (2.4) is counted by its issues in both. `:live` (3.1) reads a real
+ * app this drive boots, with devtools and a Caravan queue holding one job that
+ * failed on purpose: both frames count its calls and jobs, then Chrome presses
+ * what acts on the queue — the payload, retry run through to done, run now.
+ * `:call` (3.2) calls the same app: both frames count its methods, then Chrome
+ * creates a note as a member, sees the call and its announcement on `:live`,
+ * and sees the same create as nobody refused.
  *
  * `Console.mesa` is one file compiled for two targets, and the claim the console
  * rests on is that a person at either sees the same thing. Nothing else asks
@@ -23,10 +29,14 @@
  *   wrong about. The diff is asked again after a poll before it fails.
  * - Both frames are empty when either read fails, and two empty frames agree.
  *   So the row count is held to `/api/runnables`' before any diff is trusted.
+ * - The app's devtools is on the test tier's slot, never 5503, so a dev's own
+ *   app is not what `:live` grades; `fli gui --devtools-port` points it there.
  */
 import { spawn } from 'node:child_process'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { openChrome } from '../../../mesa/src/drive.js'
 
 const HERE = fileURLToPath(new URL('.', import.meta.url))
@@ -39,6 +49,8 @@ const FLI  = resolve(CLI, 'bin/fli.js')
 const PORT   = Number(process.env.FLI_CONSOLE_TEST_PORT ?? 7501)
 const origin = `http://localhost:${PORT}`
 const ROWS = 400, COLS = 160
+const DEVTOOLS = Number(process.env.FLI_CONSOLE_DEVTOOLS_PORT ?? 7503)
+const APP_PORT = Number(process.env.FLI_CONSOLE_APP_PORT ?? 7961)
 
 let failed = 0
 const check = (ok, label, evidence = '') => {
@@ -53,10 +65,65 @@ const until = async (pred, ms = 20000) => {
 }
 const answers = () => fetch(`${origin}/api/state`).then(() => true, () => false)
 
-if (await answers()) {
-  console.error(`${origin} already answers — this drive starts the console it tests; FLI_CONSOLE_TEST_PORT picks another`)
-  process.exit(2)
+const held = (port) => fetch(`http://127.0.0.1:${port}/`).then(() => true, () => false)
+for (const [port, what, knob] of [[PORT, 'the console', 'FLI_CONSOLE_TEST_PORT'], [DEVTOOLS, "the app's devtools", 'FLI_CONSOLE_DEVTOOLS_PORT'], [APP_PORT, 'the app', 'FLI_CONSOLE_APP_PORT']]) {
+  if (await held(port)) {
+    console.error(`:${port} already answers — this drive starts ${what} it tests; ${knob} picks another`)
+    process.exit(2)
+  }
 }
+
+// ─── the app `:live` reads ────────────────────────────────────────────
+//
+// A separate process: devtools binds its own server, held for the app's life.
+// The job fails its first attempt and succeeds on the next, so a retry pressed
+// in the pane has an outcome to see; one that always threw would re-fail
+// inside a poll and the button would look like it did nothing.
+
+const appDir = mkdtempSync(join(tmpdir(), 'fjs-console-live-'))
+const PKG = resolve(CLI, '..')
+writeFileSync(join(appDir, 'app.ts'), `
+import { createClient } from '${PKG}/litestone/src/index.js'
+import { createApp, createService, createStubAuth, health, defaultConfig } from '${PKG}/junction/index.ts'
+import { devtools } from '${PKG}/junction/src/plugins/devtools/index.ts'
+import { caravan, defineJob } from '${PKG}/caravan/src/index.ts'
+let runs = 0
+const flaky = defineJob({ name: 'flaky-job', maxAttempts: 1, timeout: 5000, handler: async () => {
+  if (runs++ === 0) throw new Error('handler exploded')
+  return 1
+} })
+const sweep = defineJob({ name: 'nightly-sweep', cron: '0 3 * * *', handler: async () => 1 })
+// A person to call as, and a model only a person may write, for the call pane.
+const db = await createClient({ db: ':memory:', schema: \`
+  model User { id Int @id @default(autoincrement())  email String  @@auth }
+  model Note { id Int @id @default(autoincrement())  body String  @@allow(all, auth() != null) }\` })
+await db.asSystem().user.create({ data: { email: 'ann@x.test' } })
+const app = createApp({
+  db,
+  auth:   createStubAuth({ users: [{ id: '1', role: 'member' }] }),
+  system: { id: 'app', role: 'system' },
+  config: { port: ${APP_PORT}, http: { ...defaultConfig.http, drainTimeout: 200 } },
+})
+const queue = caravan({ db: '${join(appDir, 'jobs.db')}', pollInterval: 50 })
+queue.handle(flaky); queue.handle(sweep)
+app.configure(queue)
+app.configure(health())
+app.configure(devtools({ port: ${DEVTOOLS} }))
+app.services.register(createService({ name: 'things', async find() { return [] } }))
+app.services.register(createService({ name: 'notes', model: 'Note' }))
+await app.start()
+await queue.dispatch(flaky, { orderId: 'ord_42' })
+console.log('READY')
+`)
+const appProc = spawn('bun', ['run', join(appDir, 'app.ts')], { stdio: ['ignore', 'pipe', 'pipe'] })
+const appReady = await new Promise((done) => {
+  const timer = setTimeout(() => done(false), 20000)
+  appProc.stdout.on('data', (d) => { if (String(d).includes('READY')) { clearTimeout(timer); done(true) } })
+  appProc.stderr.on('data', (d) => process.env.VERBOSE && process.stderr.write(d))
+})
+if (!appReady) { console.error('the app :live reads never said READY'); appProc.kill(); process.exit(2) }
+// Two calls before either frame opens, so the feed each one is handed holds them.
+for (let i = 0; i < 2; i++) await fetch(`http://127.0.0.1:${APP_PORT}/things`)
 
 /** The grid a person would see after `stream`, as `verify-tui.mjs` replays it. */
 function screen(stream, rows = ROWS, cols = COLS) {
@@ -165,6 +232,8 @@ const PANES = [
   ['decide', '3', ['decisions']],
   ['ship',   '4', ['release', 'publish']],
   ['map',    '5', ['issues']],
+  ['live',   '6', ['calls', 'jobs']],
+  ['call',   '7', ['methods']],
 ]
 
 // The legend is the footer's last line in the terminal and `[data-legend]` in
@@ -189,7 +258,7 @@ async function press(k) {
 
 // ─── the terminal frame: `fli gui` under a pty ────────────────────────
 
-const pty = spawn('script', ['-qfec', `stty rows ${ROWS} cols ${COLS}; bun ${FLI} gui --port ${PORT}`, '/dev/null'], {
+const pty = spawn('script', ['-qfec', `stty rows ${ROWS} cols ${COLS}; bun ${FLI} gui --port ${PORT} --devtools-port ${DEVTOOLS}`, '/dev/null'], {
   cwd: REPO, stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, TERM: 'xterm-256color' },
 })
 let out = ''
@@ -265,6 +334,50 @@ try {
     await legendsAgree(`:${pane}`, ['1 :run', pane === 'check' ? 'r check again' : 'r read again'])
   }
 
+  // ─── :call, as a member and as nobody (Chrome) ────────────────────
+
+  const field = (label, value) => browser.evaluate(`const i = document.querySelector('input[aria-label="${label}"]'); i.value = ${JSON.stringify(value)}; i.dispatchEvent(new Event('input', { bubbles: true })); return true`)
+  const answer = (kind) => `document.querySelector('[data-answer]')?.dataset.answer === '${kind}' && document.querySelector('[data-answer]')`
+  check(await browser.evaluate(`const b = document.querySelector('[data-method="notes.create"]'); b?.click(); return !!b`), ':call — notes.create is offered, read off the service')
+  check(!(await browser.evaluate(`return !!document.querySelector('[data-method="notes._create"]')`)), ':call — no hook-bypass twin is offered')
+  await field('as', 'ann@x.test')
+  await field('arguments', '{"body":"from :call"}')
+  await browser.evaluate(`document.querySelector('[data-call-go]').click(); return true`)
+  check(await until(() => browser.evaluate(`return !!(${answer('ok')})?.textContent?.includes('ann@x.test (User 1)')`), 8000), ':call — a member\'s create answers ok, with the standing it ran as',
+    await browser.evaluate(`return document.querySelector('[data-part="answers"]')?.textContent`))
+  check(await browser.evaluate(`return !!document.querySelector('[data-result]')?.textContent.includes('from :call')`), ':call — the answer is the row it wrote')
+  await field('as', '')
+  await browser.evaluate(`document.querySelector('[data-call-go]').click(); return true`)
+  check(await until(() => browser.evaluate(`return !!(${answer('refused')})?.textContent?.includes('403')`), 8000), ':call — the same create as nobody is refused, 403',
+    await browser.evaluate(`return document.querySelector('[data-part="answers"]')?.textContent`))
+
+  // The call ran in the app, so the feed the app's devtools keeps has it.
+  await press('6')
+  const fed = `[...document.querySelectorAll('[data-call]')].filter(r => r.textContent.includes('notes.create'))`
+  check(await until(() => browser.evaluate(`return ${fed}.some(r => r.dataset.call === 'ok' && r.textContent.includes('internal · 1 '))`), 8000), ':live — the member\'s call is in the feed, as user 1',
+    await browser.evaluate(`return ${fed}.map(r => r.textContent).join('\\n')`))
+  check(await browser.evaluate(`return ${fed}.some(r => r.dataset.call === 'error' && r.textContent.includes('guest'))`), ':live — the refused call is in the feed, as a guest')
+  check(await until(() => browser.evaluate(`return !!document.querySelector('[data-event="notes:created"]')`), 5000), ':live — the create announced notes:created on the bus')
+
+  // ─── :live acts on the queue (Chrome) ─────────────────────────────
+
+  const job   = (status, text = '') => `[...document.querySelectorAll('[data-job]')].find(r => r.querySelector('.badge')?.textContent.trim() === '${status}' && r.textContent.includes('${text}'))`
+  const press$ = (row, word) => browser.evaluate(`const b = [...(${row})?.querySelectorAll('button') ?? []].find(b => b.textContent.trim() === '${word}'); b?.click(); return !!b`)
+  check(await until(() => browser.evaluate(`return !!${job('dead', 'handler exploded')}`), 10000), ':live — the failed job is a row, dead, with its error')
+  await press$(job('dead', 'flaky-job'), 'flaky-job')
+  check(await until(() => browser.evaluate(`return !!document.querySelector('[data-payload]')?.textContent.includes('ord_42')`), 5000), ':live — its name opens the payload')
+  check(await press$(job('dead', 'flaky-job'), 'retry'), ':live — a dead job offers retry')
+  check(await until(() => browser.evaluate(`return !!${job('done', 'flaky-job')}`), 8000), ':live — retry runs the job again, through to done')
+  check(await press$(`document.querySelector('[data-handler="nightly-sweep"]')`, 'run now'), ':live — a registered handler offers run now')
+  check(await until(() => browser.evaluate(`return [...document.querySelectorAll('[data-job]')].some(r => r.textContent.includes('nightly-sweep'))`), 8000), ':live — running it by hand puts it in the list')
+  check(await until(() => browser.evaluate(`return document.querySelector('[data-check="jobs"]')?.textContent.includes('ok')`), 8000), ':live — health names the queue check, ok')
+  check(await until(() => browser.evaluate(`return !!document.querySelector('[data-metrics="jobs"]')`), 8000), ":live — the queue's own metrics section is drawn")
+  const before = await browser.evaluate(`return document.querySelectorAll('[data-call]').length`)
+  await fetch(`http://127.0.0.1:${APP_PORT}/things`)
+  check(await until(() => browser.evaluate(`return document.querySelectorAll('[data-call]').length > ${before}`), 5000), ':live — a call made now arrives on the stream')
+  const page = await fetch(`http://127.0.0.1:${DEVTOOLS}/`).then((r) => r.status === 404 && r.text())
+  check(String(page).includes(':live'), 'devtools serves no page of its own, and says where its console is', String(page))
+
   // `:` and a unique prefix, back to the first pane.
   for (const k of [':', 'r', 'u', 'Enter']) await press(k)
   check(await until(painted, 20000), ':ru goes back to :run in the terminal', screen(out).slice(0, 3).join('\n') + `\nlegend: ${termLegend()}`)
@@ -275,6 +388,7 @@ try {
   check(false, 'the drive ran to the end', e.stack ?? String(e))
 } finally {
   await browser?.close()
+  appProc.kill()
 }
 
 // ─── Ctrl+C stops both ────────────────────────────────────────────────

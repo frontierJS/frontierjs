@@ -556,7 +556,7 @@ reach the servers as `FRONTIER_PORT_FE`, `FRONTIER_PORT_BE`, `FRONTIER_PORT_SITE
 `FRONTIER_PORT_WIDGET` and `FRONTIER_PORT_DESKTOP`, which the scaffolded configs read; an
 app whose configs ignore them stays on slot 0. `fli ps` lists the slots. Global
 fli tooling has no project and so no env, and takes a 5 where the env digit
-goes — **5500–5509**, of which **5500 is the GUI, 5502 db studio and 5503 junction's devtools console**. No project port in
+goes — **5500–5509**, of which **5500 is the GUI, 5502 db studio and 5503 junction's devtools, which the GUI's `:live` reads**. No project port in
 any env can land there.
 
 ---

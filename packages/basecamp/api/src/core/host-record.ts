@@ -13,11 +13,14 @@
 // mark, so Basecamp's own edge reads it as its own: a run that finds one moves
 // it, and a record somebody made by hand at that name is refused, never
 // overwritten (FJS-D560). DNS-only, which is the schema's default for a
-// Domain (FJS-D1380). Interim for step 3.4 of IDEAS/zero-to-live.md, whose
+// Domain (FJS-D1380); `"proxied":true` is the flip that ruling offers, and makes
+// the edge verify Caddy's certificate for this host alone BEFORE the record turns
+// proxied, so no request is ever proxied to an origin the edge does not check.
+// Interim for step 3.4 of IDEAS/zero-to-live.md, whose
 // ruled writer is a script in the container (FJS-D1254; Q2 there).
 //
 // The last line of stdout is one JSON object, which is fli's whole contract:
-//   { host, ip, zone, record }
+//   { host, ip, zone, record, proxied }
 //   { host, zone }                      under check
 //   { error: '<what>' }                 and the exit is non-zero
 
@@ -52,8 +55,14 @@ try {
   if (!zone) fail(`no zone this token opens holds ${host}: give it Zone Read and DNS Edit on that zone`)
   if (input.check) { answer({ host, zone: zone.name }); process.exit(0) }
 
-  const [record] = await cloudflare.setRecords(send, zone.id, { fleet: FLEET }, [{ type: 'A', name: host, content: ip }])
-  answer({ host, ip, zone: zone.name, record: record?.id ?? null })
+  // Unstated keeps what the record holds, so a reinstall does not take a host
+  // back off the proxy somebody put it behind.
+  const proxied = typeof input.proxied === 'boolean'
+    ? input.proxied
+    : (await cloudflare.records(send, zone.id)).some(r => r.type === 'A' && r.name === host && r.mark && r.proxied)
+  if (input.proxied === true) await cloudflare.strictOrigin(send, zone.id, host, { fleet: FLEET })
+  const [record] = await cloudflare.setRecords(send, zone.id, { fleet: FLEET }, [{ type: 'A', name: host, content: ip, proxied }])
+  answer({ host, ip, zone: zone.name, record: record?.id ?? null, proxied })
   process.exit(0)
 } catch (e) {
   fail((e as Error).message)

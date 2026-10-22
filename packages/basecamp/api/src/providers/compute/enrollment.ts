@@ -319,12 +319,15 @@ apt-get install -yqq docker-ce docker-ce-cli containerd.io
 # commands/deploy/_steps-setup/01-check-deps.md), so a change here goes there.
 apt-get install -yqq debian-keyring debian-archive-keyring apt-transport-https gnupg
 curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key \\
-  | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  | gpg --dearmor --batch --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt \\
   > /etc/apt/sources.list.d/caddy-stable.list
 apt-get update -qq
 apt-get install -yqq caddy
 systemctl disable --now caddy.service
+# That unit ran the package's default Caddyfile and autosaved its :80 server,
+# which --resume would load back beside every route the Outpost writes.
+systemctl is-enabled --quiet caddy-api.service || rm -f /var/lib/caddy/.config/caddy/autosave.json
 systemctl enable --now caddy-api.service
 
 # Bun, which the Outpost is written for, at the version Basecamp holds.

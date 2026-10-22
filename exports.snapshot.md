@@ -412,6 +412,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./textedit` | `src/textedit/textedit.js` | yes |
 | exports | `./trace (types)` | `src/trace/trace.d.ts` | yes |
 | exports | `./trace (default)` | `src/trace/trace.js` | yes |
+| exports | `./tty` | `src/tty/tty.js` | yes |
 | exports | `./units` | `src/units/units.js` | yes |
 
 ## `@frontierjs/ui`
@@ -428,7 +429,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./rowlist` | `rowlist.js` | yes |
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 89 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 90 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

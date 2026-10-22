@@ -341,7 +341,9 @@ export function createTty({
     /**
      * One typed line with nothing echoed, resolved without its newline.
      * Backspace and Ctrl-U edit it, Ctrl-C interrupts. `yes` answers '', since
-     * a secret has no default to take.
+     * a secret has no default to take. Ask what comes before it with line():
+     * after a prompt.js readline has closed on this stdin, Bun's raw mode does
+     * not take, so the secret echoes and its Enter never arrives.
      */
     secret(question) {
       if (yes) return Promise.resolve('')

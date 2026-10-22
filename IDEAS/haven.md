@@ -2000,7 +2000,7 @@ the top stay as posted and the title says how many are hidden.
 - [x] 20.7 Open and copy (owner, 2026-10-19: ideas 1–4 of the desk's list).
   `o` opens the cursor's item in the desktop's browser (`#errand`'s
   `openLink`, `xdg-open` or `open`) and `y` copies its URL (`#cell`'s
-  `copyLink`, the right click's copy). Not Enter: Enter is the line's, and
+  `copyText`, the right click's copy). Not Enter: Enter is the line's, and
   the desk cannot see whether the line holds words.
 - [x] 20.8 When. `S` then one key: `t` tomorrow, `f` Friday, `m` Monday,
   `w` a week, `2`–`9` that many days, the foot naming each day; Esc lets it

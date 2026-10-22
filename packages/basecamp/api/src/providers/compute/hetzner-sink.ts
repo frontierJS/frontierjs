@@ -240,6 +240,14 @@ export function startHzSink(port = PORT) {
           : all })
       }
 
+      const poweroff = url.pathname.match(/^\/v1\/servers\/([^/]+)\/actions\/poweroff$/)
+      if (poweroff && req.method === 'POST') {
+        const row = SERVERS.get(decodeURIComponent(poweroff[1]))
+        if (!row) return fail('not_found', 'server not found', 404)
+        row.status = 'off'
+        return json({ action: { id: 3, command: 'stop_server', status: 'running' } }, 201)
+      }
+
       const one = url.pathname.match(/^\/v1\/servers\/([^/]+)$/)
       if (one) {
         const id  = decodeURIComponent(one[1])

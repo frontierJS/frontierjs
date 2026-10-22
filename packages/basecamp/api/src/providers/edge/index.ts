@@ -124,6 +124,11 @@ export interface EdgeConnector {
   setRecords(send: AccountSend, zoneId: string, mark: RecordMark, records: EdgeRecordInput[]): Promise<EdgeRecord[]>
   /** Remove the records these refs match. Answers what was removed. */
   deleteRecords(send: AccountSend, zoneId: string, refs: EdgeRecordRef[]): Promise<EdgeRecord[]>
+
+  /** Make the edge verify this hostname's origin certificate (Full (strict)) —
+   *  for that host alone, since the zone's own mode covers every other host in
+   *  it. Asked before a record turns proxied. Answers whether anything changed. */
+  strictOrigin(send: AccountSend, zoneId: string, host: string, mark: RecordMark): Promise<{ rule: string; changed: boolean }>
 }
 
 const CONNECTORS: Partial<Record<ProviderKind, EdgeConnector>> = {

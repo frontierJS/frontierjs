@@ -15,6 +15,7 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { createApp } from '../src/core/app.ts'
 import { devtools }  from '../src/plugins/devtools/index.ts'
+import { createService } from '../src/core/service.ts'
 
 const running: Array<{ stop: () => Promise<void> }> = []
 afterEach(async () => { for (const a of running.splice(0)) await a.stop().catch(() => {}) })
@@ -133,5 +134,61 @@ describe('job actions are POST-only (FJS-D461)', () => {
 
     for (const path of paths) expect((await fetch(base + path, { method: 'POST' })).status).toBe(200)
     expect(acted).toEqual(['retry j1', 'cancel j1', 'run send-invoices'])
+  })
+})
+
+// FJS-D1426: a call as somebody runs inside the app, so it lands in the feed a
+// request lands in; and only in development, because acting as somebody in
+// production is auth's support mode, whatever devtools' `auth` admits.
+describe('a call, as somebody (FJS-D1426)', () => {
+
+  async function withService(env: string | undefined) {
+    const was = process.env.NODE_ENV
+    if (env === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = env
+    try {
+      const app: any = createApp({ logLevel: 'silent', config: { port: 0 } })
+      app.services.register(createService({
+        name: 'notes',
+        async find() { return [] },
+        async whoami(ctx: any) { return { id: ctx.user?.id ?? null } },
+      }))
+      app.configure(devtools({ port: 0, auth: () => true }))
+      await app.start()
+      running.push(app)
+      return { app, base: app._devtools.url.replace('localhost', '127.0.0.1') }
+    } finally {
+      if (was === undefined) delete process.env.NODE_ENV
+      else process.env.NODE_ENV = was
+    }
+  }
+  const post = (base: string, body: unknown) =>
+    fetch(`${base}/api/call`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+  test('in development it runs in this process, as nobody when nobody is named, and the feed has it', async () => {
+    const { base } = await withService('development')
+    const listed = await (await fetch(`${base}/api/call`)).json()
+    expect(listed.services.find((s: any) => s.name === 'notes').methods).toEqual(expect.arrayContaining(['find', 'whoami']))
+
+    const res = await post(base, { method: 'notes.whoami' })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, result: { id: null } })
+
+    const state = await (await fetch(`${base}/api/state`)).json()
+    expect(state.requests.some((r: any) => r.service === 'notes' && r.method === 'whoami')).toBe(true)
+  })
+
+  test('a hook-bypass twin is refused by name and never runs', async () => {
+    const { base } = await withService('development')
+    const res = await post(base, { method: 'notes._find' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).message).toContain('Call find')
+  })
+
+  test('in production it is 403 naming support mode, with auth admitting the caller', async () => {
+    const { base } = await withService('production')
+    const res = await post(base, { method: 'notes.whoami' })
+    expect(res.status).toBe(403)
+    expect((await res.json()).message).toContain('startSupport')
   })
 })

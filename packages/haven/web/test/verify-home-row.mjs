@@ -7,7 +7,8 @@
  * `f` and `a` walks Sam up beside her, one step a tick, and the same keys
  * from farther off are stopped by Esc partway; `d` and a way is a bolt, and a
  * second inside the cooldown says so; and in INSERT the same letters go into
- * the line and move nobody.
+ * the line and move nobody. A half-typed line is ui's vim box (`FJS-D1411`):
+ * Esc, `0 w $ x u dd p` and Enter over it, and an emptied line walks again.
  *
  * Trap: a terminal in NORMAL reaches the scene as a prevented key, so a drive
  * that types `i` first has switched the home row off, and that is the point of
@@ -44,21 +45,23 @@ for (const [slug, name] of [['square', 'The square'], ['tavern', 'The tavern'], 
 const API = `http://localhost:${env.port}`
 const { x: sx, y: sy } = square.spawn
 const RIGHT = '\x1b[C'
+// Tall enough that the line sits on screen under a note.
+const ROWS = 45
 
 async function terminal(nick) {
   const { token } = await signIn(env.port, nick)
-  const p = spawn('script', ['-qfec', `stty rows 30 cols 100; bun ${TUI} --api ${API}`, '/dev/null'], {
+  const p = spawn('script', ['-qfec', `stty rows ${ROWS} cols 100; bun ${TUI} --api ${API}`, '/dev/null'], {
     cwd: WEB, stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, HAVEN_TOKEN: token },
   })
   let out = ''
   p.stdout.on('data', (d) => { out += d })
-  await until(() => screen(out).includes('j/k moves, Enter opens'))
+  await until(() => screen(out, ROWS).includes('j/k moves, Enter opens'))
   p.stdin.write('\r')
-  await until(() => cellOf(screen(out), sx, sy, 1, square) === '@' && screen(out).includes('here'))
+  await until(() => cellOf(screen(out, ROWS), sx, sy, 1, square) === '@' && screen(out, ROWS).includes('here'))
   const t = {
     p,
-    screen: () => screen(out),
-    at:     (x, y, width = 1) => cellOf(screen(out), x, y, width, square),
+    screen: () => screen(out, ROWS),
+    at:     (x, y, width = 1) => cellOf(screen(out, ROWS), x, y, width, square),
     send:   (s) => p.stdin.write(s),
     /** The column of this screen's own `@` in the spawn's row, or null. */
     where() { for (let x = sx - 2; x <= sx + 20; x++) if (t.at(x, sy) === '@') return x; return null },
@@ -111,6 +114,32 @@ const before = sam.where()
 sam.send('i'); await sleep(150)
 sam.send('fa'); await sleep(600)
 check(sam.where() === before && !sam.screen().includes('arrows walk, type'), 'in INSERT `fa` is typed into the line and walks nobody', sam.screen())
+
+// ─── the line's own NORMAL (FJS-D1411) ─────────────────────────────────────
+// A line with words is ui's vim box: Esc gives it NORMAL, and emptying it
+// gives the keys back to the scene.
+const PLACEHOLDER = 'arrows walk, type'
+const keys = async (...ks) => { for (const k of ks) { sam.send(k); await sleep(120) } }
+const line = (want, gone) => until(() => sam.screen().includes(want) && !(gone && sam.screen().includes(gone)))
+await keys('\x7f', '\x7f', 'hello there world', '\x1b')
+check(await until(() => sam.screen().includes('-- NORMAL --') && sam.screen().includes('hello there world')), 'Esc on a half-typed line is NORMAL over the line', sam.screen())
+await keys('0', 'x')
+check(await line('ello there world', 'hello'), '`0` and `x` delete its first letter', sam.screen())
+await keys('w', 'x')
+check(await line('ello here world', 'there'), '`w` and `x` delete the next word\'s first letter', sam.screen())
+await keys('$', 'x')
+check(await line('ello here worl', 'here world'), '`$` and `x` delete its last letter', sam.screen())
+await keys('u')
+check(await line('ello here world'), '`u` undoes it', sam.screen())
+check(sam.where() === before, 'and nobody walked while the line was edited', sam.screen())
+await keys('dd')
+check(await line(PLACEHOLDER, 'ello here world'), '`dd` empties the line', sam.screen())
+await keys('l')
+check(await until(() => sam.where() !== before), 'and an empty line is the scene\'s again: `l` walks', sam.screen())
+await keys('i', 'ab', '\x1b', 'p')
+check(await line('ello here world', PLACEHOLDER), '`i`, Esc and `p` put the deleted line back', sam.screen())
+await keys('\r')
+check(await until(() => sam.screen().includes(PLACEHOLDER) && sam.screen().includes('ello here world')), 'Enter in NORMAL says it', sam.screen())
 
 for (const t of [sam, ana]) { t.send('\x03'); await until(() => t.p.exitCode !== null, 3000); t.p.kill() }
 await env.cleanup?.()

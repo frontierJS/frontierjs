@@ -37,11 +37,13 @@ A letter waits at the post until its member runs `fli inbox`, which prints
 and deletes it (`IDEAS/pony-express.md` 1.4, `FJS-D1395`). To a member who has
 published a sealing key it is sealed to that key, so the post holds only
 ciphertext (`FJS-D1402`); to one who has not, it goes as plaintext and says so.
-A sealed letter is signed too, so the recipient knows who wrote it. The post
-hands out the keys, so the first letter to a member pins theirs in
-`~/.fli/tell/peers.json`, and a later answer naming another key, another
-sealing key or none is refused with both fingerprints (`IDEAS/pony-express.md`
-4.1). Five letters in ten seconds from one sender.
+A sealed letter is signed too, so the recipient knows who wrote it. The
+sealing key comes from the member's chain, which their machines signed and
+this one verifies, so the post cannot swap it; the first letter to a member
+pins the chain's root in `~/.fli/tell/peers.json`, and a later chain under
+another root, or shorter than the pinned one, is refused
+(`IDEAS/pony-express.md` 4.1, 4.3). Five letters in ten seconds from one
+sender.
 
 `--env` picks keys the way `fli env:send` does (`--file`, `-g`) and sends
 their lines, read once and gone like any letter — only sealed, never plain.
@@ -93,27 +95,24 @@ const refused = (answer) => {
 
 let answer, sealed = false
 try {
-  const published = await publishSealKey(member.api, member.keys)
-  if (published) log.warn(`The post did not take this machine's sealing key (${published}) — letters to you go plain until it does.`)
+  const published = await publishChain(member.api, member.keys)
+  if (published) log.warn(`The post did not take this member's chain (${published}) — letters to you go plain until it does.`)
 
-  const roll = await tellFetch(member.api, member.keys, 'GET', '/members')
-  if (roll.status !== 200) return refused(roll)
-  const recipient = roll.json.members?.find(m => m.nick === to)
-  if (!recipient) { log.error(`No member is called '${to}'.`); process.exitCode = 1; return }
+  const met = await meetMember(member, to)
+  if (met.missing) { log.error(`No member is called '${to}'.`); process.exitCode = 1; return }
+  if (met.failed) { log.error(`The post refused (${met.failed})`); process.exitCode = 1; return }
+  if (met.refused) { log.error(`Not sent: ${met.refused}`); process.exitCode = 1; return }
+  if (met.met) log.info(`First letter to ${to}: pinned their chain ${met.met}.`)
 
-  const pin = await pinPeer({ nick: to, publicKey: recipient.publicKey, sealKey: recipient.sealKey ?? null })
-  if (pin.refused) { log.error(`Not sent: the post's key for ${to} is not the one pinned here. ${pin.refused}`); process.exitCode = 1; return }
-  if (pin.met) log.info(`First letter to ${to}: pinned their key ${pin.met}.`)
-
-  if (recipient.sealKey) {
+  if (met.chain) {
     sealed = true
-    answer = await tellFetch(member.api, member.keys, 'POST', '/send', { to, sealed: await sealLetter(member.keys, recipient, payload) })
+    answer = await tellFetch(member.api, member.keys, 'POST', '/send', { to, sealed: await sealLetter(member.keys, met.chain, payload) })
   } else if (flag.env) {
-    log.error(`${to} has no sealing key yet, and env values go only sealed. Any \`fli tell\` verb on a newer fli publishes theirs.`)
+    log.error(`${to} has published no chain yet, so no sealing key, and env values go only sealed. Any \`fli tell\` verb on a newer fli publishes theirs.`)
     process.exitCode = 1
     return
   } else {
-    log.warn(`${to} has no sealing key yet, so this goes as plaintext the host can read.`)
+    log.warn(`${to} has published no chain yet, so no sealing key: this goes as plaintext the host can read.`)
     answer = await tellFetch(member.api, member.keys, 'POST', '/send', { to, text: payload.text })
   }
 } catch (e) { log.error(`${member.api} did not answer (${e.message}).`); process.exitCode = 1; return }

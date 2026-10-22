@@ -28,6 +28,7 @@
   import FileUpload    from '../../../components/forms/FileUpload.mesa'
   import FileField     from '../../../components/forms/FileField.mesa'
   import GeoField      from '../../../components/forms/GeoField.mesa'
+  import Textbox       from '../../../components/forms/Textbox.mesa'
 
   let SERVER_ERRORS = {}
   window.kitFailWith = (map) => { SERVER_ERRORS = map }
@@ -71,6 +72,7 @@
   let body     = ''
   let doc      = null
   let site     = { lat: 1, lng: 2 }
+  let line     = 'ab'
 </script>
 
 <div id="host">
@@ -95,6 +97,7 @@
     <div data-ctl="FileUpload"><FileUpload name="files" /></div>
     <div data-ctl="FileField"><FileField name="photo" /></div>
     <div data-ctl="GeoField"><GeoField name="site" value={site} onvalue={(v) => site = v} /></div>
+    <div data-ctl="Textbox"><Textbox name="line" bind:value={line} /></div>
   </Form>
 </div>
 

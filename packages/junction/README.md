@@ -124,7 +124,7 @@ packages/junction/
 │   ├── manifest/         ← manifest — schema + migration state at /manifest
 │   ├── openapi/          ← openapi() plugin, generateOpenAPI() — 3.1 from the registry
 │   ├── webhooks/         ← at-least-once delivery, IWebhookStore, SQLite adapter
-│   ├── devtools/         ← devtools plugin + admin UI
+│   ├── devtools/         ← devtools plugin — what `fli gui`'s `:live` reads and `:call` calls through
 │   └── outbox/, backfill/, commitments/, export/, metrics/  ← each holds its engine.ts
 │
 ├── src/auth/
@@ -1052,7 +1052,7 @@ Three rules worth knowing:
 
 ```typescript
 interface SessionContext {
-  userId:       string                           // always present
+  id:           string                           // always present; the session row is sessionId
   userType:     string                           // the kind, never a role: 'user' | 'bot' | 'peer' | 'service'
   authMethod:   'session' | 'apiKey' | 'oauth'  // how they authenticated
                 | 'created' | 'verified'
@@ -1104,7 +1104,7 @@ model's own `@@gate`.
 
 ```typescript
 createApp({
-  system: { userId: 'system', userType: 'service', role: 'system', authMethod: 'created' },
+  system: { id: 'system', userType: 'service', role: 'system', authMethod: 'created' },
 })
 ```
 

@@ -46,7 +46,7 @@ in, whatever the row policies say, because the Data boundary never sees who
 asked. Each row below is either meant — a read-shaped method, a scoped write —
 or wants `methods: [{ method, gate }]`.
 
-### Nothing in front of the body but the floor (4)
+### Nothing in front of the body but the floor (3)
 
 The list to read first: only the method body stands between a signed-in caller
 and what it does.
@@ -54,11 +54,10 @@ and what it does.
 | Method | Who may call it |
 | --- | --- |
 | `blueprints.categories` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `flowCredentials.restore` | **any signed-in caller** — floor, read gate 5; standing not graded |
 | `notification-preferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (91)
+### A service hook runs in front of the body (88)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -66,7 +65,6 @@ name, and is as unread as the body.
 
 | Method | Who may call it | Hooks in front |
 | --- | --- | --- |
-| `alerts.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `alerts.events` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `alerts.unsnooze` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `alerts.acknowledge` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
@@ -74,7 +72,6 @@ name, and is as unread as the body.
 | `alerts.attachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `alerts.detachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `alerts.snooze` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `api-keys.restore` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
 | `api-keys.revoke` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
 | `api-keys.scopes` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
 | `apps.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
@@ -94,7 +91,6 @@ name, and is as unread as the body.
 | `dashboards.updateWidget` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `dashboards.removeWidget` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `dashboards.reorder` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `deployments.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `deployments.rebind` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `deployments.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
@@ -218,13 +214,12 @@ name when it declares none.
 
 ### `alerts` · model `AlertRule`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `unsnooze`, `acknowledge`, `resolve`, `attachChannel`, `detachChannel`, `snooze`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `events`, `unsnooze`, `acknowledge`, `resolve`, `attachChannel`, `detachChannel`, `snooze`
 - **custom methods** — `events`, `unsnooze`, `acknowledge`, `resolve`, `attachChannel`, `detachChannel`, `snooze`
 - **input** — `attachChannel` takes `AlertChannelRef`
 - **input** — `detachChannel` takes `AlertChannelRef`
 - **input** — `snooze` takes `AlertSnooze`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `events` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `unsnooze` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `acknowledge` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
@@ -250,10 +245,9 @@ name when it declares none.
 
 ### `api-keys` · model `ApiKey`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `revoke`, `scopes`, `owners`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `revoke`, `scopes`, `owners`
 - **custom methods** — `revoke`, `scopes`, `owners`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey`
   - `revoke` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey`
   - `scopes` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey`
   - `owners` — standing 5 or above — declared `gate: 5`; body writes as the app
@@ -520,10 +514,9 @@ name when it declares none.
 
 ### `deployments` · model `Deployment`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `cancel`, `rollback`, `rebind`, `startRun`, `stepStatus`, `finishRun`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `cancel`, `rollback`, `rebind`, `startRun`, `stepStatus`, `finishRun`
 - **custom methods** — `cancel`, `rollback`, `rebind`, `startRun`, `stepStatus`, `finishRun`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `cancel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`; no body, a derived move
   - `rollback` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `rebind` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
@@ -588,8 +581,8 @@ name when it declares none.
 
 ### `drafts` · model `drafts`
 
-- **methods** — `sites`, `list`, `files`, `read`, `open`, `save`, `preview`, `publish`, `history`, `revert`, `handoff`, `redeem`
-- **custom methods** — `sites`, `list`, `files`, `read`, `open`, `save`, `preview`, `publish`, `history`, `revert`, `handoff`, `redeem`
+- **methods** — `sites`, `list`, `files`, `read`, `open`, `save`, `arrange`, `photo`, `preview`, `ask`, `publish`, `history`, `revert`, `handoff`, `redeem`
+- **custom methods** — `sites`, `list`, `files`, `read`, `open`, `save`, `arrange`, `photo`, `preview`, `ask`, `publish`, `history`, `revert`, `handoff`, `redeem`
 - **who may call** —
   - `sites` — standing 1 or above — declared `gate: 1`
   - `list` — standing 1 or above — declared `gate: 1`
@@ -597,7 +590,10 @@ name when it declares none.
   - `read` — standing 1 or above — declared `gate: 1`
   - `open` — standing 1 or above — declared `gate: 1`
   - `save` — standing 1 or above — declared `gate: 1`
+  - `arrange` — standing 1 or above — declared `gate: 1`
+  - `photo` — standing 1 or above — declared `gate: 1`
   - `preview` — standing 1 or above — declared `gate: 1`
+  - `ask` — standing 1 or above — declared `gate: 1`
   - `publish` — standing 1 or above — declared `gate: 1`
   - `history` — standing 1 or above — declared `gate: 1`
   - `revert` — standing 1 or above — declared `gate: 1`
@@ -698,9 +694,7 @@ name when it declares none.
 
 ### `flowCredentials` · model `FlowCredential`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
-- **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 5; standing not graded
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

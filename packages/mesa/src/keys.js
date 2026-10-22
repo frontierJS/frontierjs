@@ -42,6 +42,11 @@
  * (`<Mod-w>`, `<C-Tab>`, toolbelt's `browserOwned`) throws: at the attach for
  * the keymaps active then, and at the first key for one that arrives later.
  * A terminal delivers those chords, so it reads none of them.
+ *
+ * A getter may also answer `mode`, the mode the element keeps (a vim box's
+ * 'normal' or 'insert'). A terminal shell shows it and follows it while the
+ * element has focus (`modeAt`, `FJS-D1411`), so the screen shows one mode;
+ * `undefined` leaves the mode to the shell.
  */
 import { step, flush, browserOwned, chordOf } from '@frontierjs/toolbelt/keys'
 import { isBrowserClient } from './runtime.js'
@@ -94,7 +99,7 @@ export function keys(options) {
     }
 
     const off = typeof el.__hostKeys === 'function'
-      ? el.__hostKeys({ keydown, active: () => options().active })
+      ? el.__hostKeys({ keydown, active: () => options().active, mode: () => options().mode })
       : (el.addEventListener('keydown', keydown), () => el.removeEventListener('keydown', keydown))
     return () => {
       off()

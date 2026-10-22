@@ -155,6 +155,27 @@ describe('an app depending on workspace sources', () => {
     expect(result.packed).not.toContain('@fixture/private-one')
   })
 
+  // site-kit is private until its first release and basecamp links it: left
+  // unpacked, its workspace:* spec reached the image and bun install refused.
+  test('a private package the app links is packed', () => {
+    const app = makeWorkspace()
+    const manifest = JSON.parse(readFileSync(join(app, 'package.json'), 'utf8'))
+    manifest.dependencies['@fixture/private-one'] = 'workspace:*'
+    writeJson(join(app, 'package.json'), manifest)
+    const result = vendorWorkspacePackages({ appRoot: app })
+    expect(result.vendored).toContain('@fixture/private-one')
+    const written = JSON.parse(readFileSync(result.manifestPath, 'utf8'))
+    expect(written.dependencies['@fixture/private-one']).toStartWith('file:./')
+  })
+
+  test('a linked name with no package behind it is refused', () => {
+    const app = makeWorkspace()
+    const manifest = JSON.parse(readFileSync(join(app, 'package.json'), 'utf8'))
+    manifest.dependencies['@fixture/missing'] = 'workspace:*'
+    writeJson(join(app, 'package.json'), manifest)
+    expect(() => vendorWorkspacePackages({ appRoot: app })).toThrow('@fixture/missing')
+  })
+
   test('link: resolves the same way workspace: does', () => {
     const app    = makeWorkspace({ appSpec: 'link:@fixture/alpha' })
     const result = vendorWorkspacePackages({ appRoot: app })

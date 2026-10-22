@@ -50,7 +50,7 @@ export const linked = (url, seen = () => {}) => (el) => {
 }
 
 // A page's clipboard, for the twin of the terminal's copy.
-export const copyLink = (el, url) => navigator.clipboard?.writeText(url).then(() => true, () => false) ?? Promise.resolve(false)
+export const copyText = (el, text) => navigator.clipboard?.writeText(text).then(() => true, () => false) ?? Promise.resolve(false)
 
 // A page has no NORMAL, so Shift+Y is typed into the line and nothing asks
 // this; the browser's own screenshot is the page's.

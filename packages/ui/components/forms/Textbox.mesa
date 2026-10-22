@@ -1,0 +1,164 @@
+<script>
+  // Textbox.mesa
+  // A <textarea> edited by vim's keys, L1 (IDEAS/keys.md Phase 4, FJS-D1387).
+  // toolbelt's /textbox is the box and mesa's keys() steps its tables on the
+  // control itself, so on a terminal the box answers a key before a page's
+  // keymap or the shell's h j k l does.
+  //
+  //   <Textbox bind:value bind:mode keys={{ insert: { '<CR>': () => send() } }} />
+  //
+  // In INSERT the control types what no row binds, natively, so IME, paste
+  // and autocorrect stay the platform's, and the box reads back what the
+  // control then holds (`sync`). In NORMAL a key no row binds types nothing.
+  //
+  // `keys` lays rows over the box's own as `{ normal, insert }`, each
+  // `{ keys: action }`: a name the box knows or a function, and 'nop' unbinds
+  // a key (khat's overrides). A row that cannot apply warns and is skipped,
+  // since what it costs is one key that does not fire.
+  //
+  // While `idle` the box takes no key and keeps no mode: the control types
+  // as a plain <textarea>, a page's keymap and a terminal shell's mode answer
+  // every key, and the box opens again in INSERT. Haven's line is idle while
+  // it is empty, so an empty line is the scene's (`FJS-D1411`).
+  //
+  // Inside a <Form>, typing reaches it as a named `input` that bubbles; an
+  // edit a key made writes the value from code, which fires nothing, so the
+  // box tells the form itself (`FJS-D903`).
+  //
+  // bind:this exposes: focus(), blur()
+
+  import { keys as keyed } from '@frontierjs/mesa/keys'
+  import { keymap, withOverrides } from '@frontierjs/toolbelt/keys'
+  import { textbox, edit, NORMAL, INSERT } from '@frontierjs/toolbelt/textbox'
+
+  export let value       = ''
+  export let mode        = 'insert'   // 'normal' | 'insert'
+  export let keys        = undefined  // { normal?, insert? }
+  export let placeholder = ''
+  export let rows        = 1
+  export let name        = ''
+  export let idle        = false
+
+  const LAYERS = { normal: NORMAL, insert: INSERT }
+  const ACTIONS = [...new Set([...Object.values(NORMAL), ...Object.values(INSERT)])]
+
+  function tablesOf(over = {}) {
+    for (const name of Object.keys(over)) {
+      if (!Object.hasOwn(LAYERS, name)) console.warn(`[Textbox] keys: no layer '${name}'; it has normal and insert`)
+    }
+    const out = {}
+    for (const [name, base] of Object.entries(LAYERS)) {
+      const { table, warnings } = withOverrides(base, over[name] ?? {}, { actions: ACTIONS })
+      for (const w of warnings) console.warn(`[Textbox] keys.${name}: ${w}`)
+      out[name] = keymap(table)
+    }
+    return out
+  }
+  const maps = tablesOf(keys)
+
+  const form = $context.form
+
+  var initial = value ?? ''
+  let box = textbox(initial, { mode: idle ? 'insert' : mode })
+  let el
+
+  // A focus() asked through bind:this can arrive before the attachment has
+  // run, which focuses nothing; it is kept and taken at the mount.
+  let focusWanted = false
+  export function focus() {
+    if (el) return $.focus(el)
+    focusWanted = true
+  }
+  export function blur() { el?.blur() }
+
+  // What the control holds now: what it typed, and where a click left the
+  // selection. A terminal's <textarea> has no direction, so it reads forward.
+  function sync(s) {
+    if (!el) return s
+    const back = el.selectionDirection === 'backward'
+    return edit(s, 'sync', {
+      text: el.value,
+      cursor: back ? el.selectionStart : el.selectionEnd,
+      anchor: back ? el.selectionEnd : el.selectionStart,
+    })
+  }
+
+  function write() {
+    value = box.text
+    mode = box.mode
+    if (!el) return
+    if (el.value !== box.text) el.value = box.text
+    const { anchor, cursor } = box
+    el.setSelectionRange(Math.min(anchor, cursor), Math.max(anchor, cursor), cursor < anchor ? 'backward' : 'forward')
+  }
+
+  function run(action, arg) {
+    const read = sync(box)
+    box = edit(read, action, arg)
+    write()
+    if (box.text !== read.text) form?.changed?.(name)
+  }
+
+  // In NORMAL a key no row took would be typed by the control. Heard after
+  // keys(), which is why it is a listener of this attachment's and not an
+  // onkeydown, which would be bound first and answer ahead of the box.
+  function inert(e) {
+    if (idle || box.mode !== 'normal' || e.defaultPrevented || e.isComposing) return
+    if (e.ctrlKey || e.metaKey || e.altKey) return
+    if (Array.from(e.key).length === 1 || e.key === 'Enter') e.preventDefault()
+  }
+
+  function vim(node) {
+    el = node
+    const off = keyed(() => idle
+      ? { active: [] }
+      : { active: [maps[box.mode]], on: run, mode: box.mode })(node)
+    node.addEventListener('keydown', inert)
+    write()
+    if (focusWanted) { focusWanted = false; $.focus(node) }
+    return () => {
+      off()
+      node.removeEventListener('keydown', inert)
+      el = undefined
+    }
+  }
+
+  function input() {
+    box = sync(box)
+    value = box.text
+  }
+
+  $: value, () => {
+    if (value === box.text) return
+    const text = value ?? ''
+    box = edit(box, 'sync', { text, cursor: text.length })
+    write()
+  }
+  $: idle, () => {
+    if (idle && box.mode !== 'insert') { box = edit(box, 'insert'); mode = box.mode }
+  }
+  $: mode, () => {
+    if (mode === box.mode) return
+    if (mode !== 'normal' && mode !== 'insert') throw new TypeError(`<Textbox mode=${JSON.stringify(mode)}>: the mode is 'normal' or 'insert'`)
+    run(mode)
+  }
+</script>
+
+<div class="fjs-textbox" {class}>
+  <textarea
+    class="field"
+    name={name || undefined}
+    rows={rows}
+    placeholder={placeholder}
+    {@attach vim}
+    oninput={input}
+    {...$attributes}
+    value={initial}
+  >{initial}</textarea>
+  {#if !idle}<span class="badge fjs-textbox-mode" aria-live="polite">{box.mode === 'normal' ? 'NORMAL' : 'INSERT'}</span>{/if}
+</div>
+
+<style>
+  .fjs-textbox { display: flex; align-items: flex-start; gap: var(--space-sm); }
+  .fjs-textbox > textarea { flex: 1; }
+</style>

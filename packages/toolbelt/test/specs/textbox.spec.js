@@ -218,3 +218,32 @@ test('textbox: the tables are keymaps — i, Esc, w, 0, $, x, dd, u, p stepped a
   assert.equal(s.mode, 'normal')
   assert.deepEqual(s.register, { text: ' ', linewise: false })
 })
+
+test('textbox: sync — what the control typed in INSERT is the one undo step entering it began', function () {
+  let s = edit(nm('ab', 1), 'append')
+  s = edit(s, 'sync', { text: 'abXYc', cursor: 4 })
+  s = edit(s, 'sync', { text: 'abXYZc', cursor: 5 })
+  assert.equal(s.cursor, 5)
+  s = run(s, 'normal', 'undo')
+  assert.equal(s.text, 'ab')
+})
+
+test('textbox: sync — in NORMAL a changed text is a step of its own, a moved cursor is none', function () {
+  let s = run(nm('one two', 0), 'deleteWord', 'undo')
+  // A click: no change, so redo still brings `dw` back.
+  s = edit(s, 'sync', { text: 'one two', cursor: 6 })
+  assert.equal(s.cursor, 6)
+  assert.equal(run(s, 'redo').text, 'two')
+  // A paste from the menu: one step, undone alone.
+  s = edit(s, 'sync', { text: 'one twoXX', cursor: 9 })
+  assert.equal(s.cursor, 8)
+  assert.equal(run(s, 'undo').text, 'one two')
+})
+
+test('textbox: sync — a selection the control holds is kept in INSERT and typed over', function () {
+  let s = edit(textbox('hello world'), 'sync', { text: 'hello world', cursor: 11, anchor: 6 })
+  assert.deepEqual([s.anchor, s.cursor], [6, 11])
+  assert.equal(edit(s, 'type', 'there').text, 'hello there')
+  assert.throws(() => edit(s, 'sync', { text: 'x' }), /'sync' takes/)
+  assert.throws(() => edit(s, 'sync', { text: 'x', cursor: 0, anchor: '1' }), /'sync' takes/)
+})

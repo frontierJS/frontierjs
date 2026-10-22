@@ -27,7 +27,7 @@
 // than a request that waits forever for a password.
 
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { childEnv } from '@frontierjs/junction'
@@ -60,7 +60,7 @@ export function sitesDir(): string {
   return env.SITES_DIR || join(homedir(), '.config', 'basecamp', 'sites')
 }
 
-function git(dir: string, argv: string[], opts: { input?: string, env?: Record<string, string> } = {}): Promise<string> {
+function git(dir: string, argv: string[], opts: { input?: string | Uint8Array, env?: Record<string, string> } = {}): Promise<string> {
   return gitRun(dir, argv, opts).then(({ code, stdout, stderr }) => {
     if (code !== 0) throw new CheckoutError(String(stderr || `git ${argv[0]} exited ${code}`).trim())
     return stdout
@@ -68,7 +68,7 @@ function git(dir: string, argv: string[], opts: { input?: string, env?: Record<s
 }
 
 /** git, answering its exit code rather than refusing on one — `merge-file` counts conflicts in it. */
-function gitRun(dir: string, argv: string[], { input, env: extra = {} }: { input?: string, env?: Record<string, string> } = {}):
+function gitRun(dir: string, argv: string[], { input, env: extra = {} }: { input?: string | Uint8Array, env?: Record<string, string> } = {}):
   Promise<{ code: number, stdout: string, stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = execFile('git', [
@@ -212,24 +212,51 @@ async function blobAt(dir: string, commit: string, path: string): Promise<{ id: 
  * caller read: a file someone changed since is refused by name, and a push
  * that loses the race to another save is refused the same way.
  */
-export function saveDraftFile(site: GitSite, draft: string, change: { path: string, blob: string, text: string, message: string },
+export async function saveDraftFile(site: GitSite, draft: string, change: { path: string, blob: string, text: string, message: string },
   author: Author, root = sitesDir()): Promise<{ commit: string, blob: string }> {
+  const { commit, blobs } = await saveDraftFiles(site, draft, { files: [change], message: change.message }, author, root)
+  return { commit, blob: blobs[0] as string }
+}
+
+/** One file of a several-file save: a null `blob` is a file that must not exist yet, a null `text` deletes it, and bytes are a photo. */
+export interface FileChange { path: string, blob: string | null, text: string | Uint8Array | null }
+
+/**
+ * Several files on the draft as one commit pushed, the way a collection's
+ * reorder writes each item's place. Each change's `blob` is checked as
+ * `saveDraftFile` checks its one; nothing changed is no commit.
+ */
+export function saveDraftFiles(site: GitSite, draft: string, change: { files: FileChange[], message: string },
+  author: Author, root = sitesDir()): Promise<{ commit: string, blobs: (string | null)[] }> {
   return serial(site.id, async () => {
     const dir = await synced(site, root)
     const { branch, head } = await draftHead(site, dir, draft)
-    const path = repoPath(site, change.path)
-    const now = await blobAt(dir, head, path)
-    if (!now) throw new CheckoutError(`${change.path} is not on the draft ${draft}`)
-    if (now.id !== change.blob) throw new StaleDraft(`${change.path} changed on this draft since you opened it — open it again`)
-
-    const blob = (await git(dir, ['hash-object', '-w', '--stdin'], { input: change.text })).trim()
-    if (blob === now.id) return { commit: head, blob }
+    // `update-index --index-info` rows: a zero mode removes the path, and
+    // needs no work tree, which this bare clone does not have.
+    const rows: string[] = []
+    const blobs: (string | null)[] = []
+    for (const f of change.files) {
+      const path = repoPath(site, f.path)
+      const now = await blobAt(dir, head, path)
+      if (f.blob === null && now) throw new StaleDraft(`${f.path} is already on the draft ${draft} — open it again`)
+      if (f.blob !== null && !now) throw new CheckoutError(`${f.path} is not on the draft ${draft}`)
+      if (f.blob !== null && now!.id !== f.blob) throw new StaleDraft(`${f.path} changed on this draft since you opened it — open it again`)
+      if (f.text === null) {
+        rows.push(`0 ${'0'.repeat(40)}\t${path}`)
+        blobs.push(null)
+        continue
+      }
+      const blob = (await git(dir, ['hash-object', '-w', '--stdin'], { input: f.text })).trim()
+      blobs.push(blob)
+      if (blob !== now?.id) rows.push(`${now?.mode ?? '100644'} ${blob}\t${path}`)
+    }
+    if (!rows.length) return { commit: head, blobs }
 
     const tmp = mkdtempSync(join(tmpdir(), 'basecamp-draft-'))
     try {
       const index = { GIT_INDEX_FILE: join(tmp, 'index') }
       await git(dir, ['read-tree', head], { env: index })
-      await git(dir, ['update-index', '--cacheinfo', `${now.mode},${blob},${path}`], { env: index })
+      await git(dir, ['update-index', '--index-info'], { env: index, input: rows.join('\n') + '\n' })
       const tree = (await git(dir, ['write-tree'], { env: index })).trim()
       const who = {
         GIT_AUTHOR_NAME: author.name, GIT_AUTHOR_EMAIL: author.email,
@@ -242,11 +269,99 @@ export function saveDraftFile(site: GitSite, draft: string, change: { path: stri
         throw new CheckoutError(`could not push ${branch}: ${err.message}`)
       })
       await git(dir, ['update-ref', `refs/remotes/origin/${branch}`, commit])
-      return { commit, blob }
+      return { commit, blobs }
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
   })
+}
+
+/** Every `.md` directly in `folder` on a draft, each with its text and blob — a collection's items. */
+export function readDraftFolder(site: GitSite, draft: string, folder: string, root = sitesDir()):
+  Promise<Array<{ path: string, text: string, blob: string }>> {
+  return serial(site.id, async () => {
+    const dir = await synced(site, root)
+    const { head } = await draftHead(site, dir, draft)
+    const prefix = repoPath(site, '')
+    const out = await git(dir, ['ls-tree', '-z', head, '--', repoPath(site, folder) + '/'])
+    const files = []
+    for (const row of out.split('\0').filter(Boolean)) {
+      const m = /^\d+ blob ([0-9a-f]+)\t(.+)$/.exec(row)
+      if (!m || !m[2].endsWith('.md')) continue
+      files.push({ path: m[2].slice(prefix.length), blob: m[1], text: await git(dir, ['cat-file', 'blob', m[1]]) })
+    }
+    return files
+  })
+}
+
+// ─── An ask's copy ───────────────────────────────────────────────────────
+// A model's run edits files, so it gets a folder: the draft's markdown written
+// out under `into/content/`, and back as a tree once it ends (`FJS-D1242`).
+// Only `.md` regular files go out, so a symlink in the repository cannot hand
+// the run a path outside the folder, and a photo's bytes never cross a string.
+
+/** A file the run may have changed: its path from the site root, and its blob before (null for one it added). */
+export interface Asked { path: string, was: string | null, blob: string }
+
+/** The draft's `content/**.md` under `into`, and the commit and blobs it was read at. */
+export function exportDraftContent(site: GitSite, draft: string, into: string, root = sitesDir()):
+  Promise<{ head: string, blobs: Map<string, string> }> {
+  return serial(site.id, async () => {
+    const dir = await synced(site, root)
+    const { head } = await draftHead(site, dir, draft)
+    const prefix = repoPath(site, '')
+    const out = await git(dir, ['ls-tree', '-r', '-z', head, '--', repoPath(site, 'content')])
+    const blobs = new Map<string, string>()
+    for (const row of out.split('\0').filter(Boolean)) {
+      const m = /^100(?:644|755) blob ([0-9a-f]+)\t(.+)$/.exec(row)
+      if (!m || !m[2].endsWith('.md')) continue
+      const path = m[2].slice(prefix.length)
+      const file = join(into, path)
+      mkdirSync(join(file, '..'), { recursive: true })
+      writeFileSync(file, await git(dir, ['cat-file', 'blob', m[1]]))
+      blobs.set(path, m[1])
+    }
+    return { head, blobs }
+  })
+}
+
+/**
+ * What a run left under `into`, as a tree on `head`: each file whose bytes
+ * differ from the blob it went out as, or that went out as nothing. A file the
+ * run made outside `content/` is not read, since only that folder went out and
+ * the run's tools reach no further. Nothing is committed; the tree is what a
+ * later save commits.
+ */
+export function treeFromExport(site: GitSite, head: string, into: string, blobs: Map<string, string>, root = sitesDir()):
+  Promise<{ tree: string, files: Asked[] }> {
+  return serial(site.id, async () => {
+    const dir = await synced(site, root)
+    const files: Asked[] = []
+    for (const path of filesUnder(join(into, 'content'), 'content')) {
+      const blob = (await git(dir, ['hash-object', '-w', '--stdin'], { input: readFileSync(join(into, path)) })).trim()
+      const was = blobs.get(path) ?? null
+      if (blob !== was) files.push({ path, was, blob })
+    }
+    const rows = files.map(f => `100644 ${f.blob}\t${repoPath(site, f.path)}`)
+    if (!rows.length) return { tree: (await git(dir, ['rev-parse', `${head}^{tree}`])).trim(), files }
+    const tmp = mkdtempSync(join(tmpdir(), 'basecamp-ask-'))
+    try {
+      const index = { GIT_INDEX_FILE: join(tmp, 'index') }
+      await git(dir, ['read-tree', head], { env: index })
+      await git(dir, ['update-index', '--index-info'], { env: index, input: rows.join('\n') + '\n' })
+      return { tree: (await git(dir, ['write-tree'], { env: index })).trim(), files }
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+}
+
+/** Regular files under `dir`, sorted, as `/`-joined paths starting with `rel`; a symlink is not followed. */
+function filesUnder(dir: string, rel: string): string[] {
+  if (!existsSync(dir)) return []
+  return readdirSync(dir, { withFileTypes: true }).sort((x, y) => x.name < y.name ? -1 : 1).flatMap((e) =>
+    e.isDirectory() ? filesUnder(join(dir, e.name), `${rel}/${e.name}`)
+      : e.isFile() ? [`${rel}/${e.name}`] : [])
 }
 
 // ─── Publish ─────────────────────────────────────────────────────────────

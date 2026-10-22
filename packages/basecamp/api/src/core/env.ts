@@ -172,6 +172,12 @@ export const env = defineEnv({
   // draft save is pushed, so losing it costs a clone and no work.
   SITES_DIR: {},
 
+  // The key an owner's ask runs `claude -p` with (`core/site-ask.ts`), one for
+  // every site and billed to whoever runs basecamp (`FJS-D1424`). Unset, asking
+  // a model is off. Declared, so `childEnv` keeps it from every other child —
+  // a workbench run stays on the host's own `claude` login.
+  ANTHROPIC_API_KEY: {},
+
   // `1` says this Basecamp runs on its operator's own machine, so it may read
   // that machine: the Host aliases in ~/.ssh/config (`core/local-ssh.ts`) and
   // the git repositories under a folder (`core/local-git.ts`). Refused under

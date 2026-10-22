@@ -1,0 +1,190 @@
+<script>
+  // Call.mesa — one service method as somebody, in the running app: the
+  // console's `:call` pane (`IDEAS/one-console.md` 3.2).
+  //
+  // The call runs INSIDE the app, through devtools' `POST /api/call`
+  // (`FJS-D1426`), so its announcement reaches the app's sockets and `:live`
+  // as a request's does; `junction call` boots a copy whose bus nobody is on.
+  // The methods are devtools' list, which is `svc.describe()` with the
+  // hook-bypass twins left out, so no method is written here.
+  //
+  // Arguments are typed as the method takes them, JSON values separated by
+  // commas: `12, {"note":"late"}` is patch's id and data. Nobody named is
+  // nobody, STRANGER(0), never the app itself.
+
+  import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
+
+  export let api   = ''
+  export let shown = () => true   // (...fields) => does the console's filter keep this row
+  export let keyed = null         // (rows) => the keys this pane binds, for the console
+
+  const SHOWN   = 8
+  const ANSWERS = 10
+  const LINES   = 40
+
+  let up       = null   // null until devtools first answers
+  let down     = ''
+  let services = []
+  let method   = ''
+  let args     = ''
+  let as       = ''
+  let tenant   = ''
+  let calling  = false
+  let answers  = []     // newest first
+  let all      = false
+  let whole    = false
+
+  async function read() {
+    try {
+      const res  = await fetch(`${api}/api/live/call`)
+      const body = await res.json()
+      if (!res.ok) { up = false; down = body.error ?? `devtools answered ${res.status}`; return }
+      up = true
+      down = ''
+      services = body.services ?? []
+    } catch (e) {
+      up = false
+      down = `the console's server did not answer: ${e.message}`
+    }
+  }
+
+  // `[` and `]` round what was typed, so each comma-separated JSON value is
+  // one argument in the method's own order.
+  function parsed(text) {
+    if (!text.trim()) return { args: [] }
+    try { return { args: JSON.parse(`[${text}]`) } } catch (e) { return { error: `arguments are JSON values, comma-separated: ${e.message}` } }
+  }
+
+  async function call() {
+    if (!method || calling) return
+    const p = parsed(args)
+    const sent = { method, args: args.trim(), as: as.trim(), tenant: tenant.trim() }
+    if (p.error) { answers = [{ ...sent, ok: false, message: p.error }, ...answers].slice(0, ANSWERS); return }
+    calling = true
+    let out
+    try {
+      const res = await fetch(`${api}/api/live/call`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ method, args: p.args, as: sent.as || undefined, tenant: sent.tenant || undefined }),
+      })
+      out = await res.json()
+      if (out.down) { up = false; down = out.error }
+    } catch (e) {
+      out = { ok: false, message: `the console's server did not answer: ${e.message}` }
+    }
+    calling = false
+    whole   = false
+    answers = [{ ...sent, ...out }, ...answers].slice(0, ANSWERS)
+  }
+
+  const pick = (s, m) => { method = `${s}.${m}` }
+
+  const json = (v) => JSON.stringify(v, null, 2) ?? String(v)
+  const body = (a, whole) => {
+    const lines = json(a.ok ? a.result : a.data ?? null).split('\n')
+    return whole || lines.length <= LINES ? lines.join('\n') : [...lines.slice(0, LINES), `… ${lines.length - LINES} more lines`].join('\n')
+  }
+  const longer = (a) => json(a.ok ? a.result : a.data ?? null).split('\n').length > LINES
+  const asked  = (a) => [a.args ? `(${a.args})` : '()', a.tenant ? `tenant ${a.tenant}` : ''].filter(Boolean).join(' · ')
+  const counted = (seen, total) => seen === total ? `${total}` : `${seen} of ${total}`
+
+  $: seenServices = services
+    .map(s => ({ ...s, methods: shown(s.name) ? s.methods : s.methods.filter(m => shown(m, `${s.name}.${m}`)) }))
+    .filter(s => s.methods.length)
+  $: methodCount = services.reduce((n, s) => n + s.methods.length, 0)
+  $: seenCount   = seenServices.reduce((n, s) => n + s.methods.length, 0)
+  $: seenAnswers = answers.filter(a => shown(a.method, a.standing, a.message, a.as))
+
+  $: keyed?.([
+    { keys: 'r', label: 'read again', run: read },
+    ...(method ? [{ keys: 'x', label: `call ${method}`, run: call }] : []),
+  ])
+
+  $.onMount(read)
+</script>
+
+<header class="bar">
+  <strong>Call a method, as somebody</strong>
+  <span class="cluster gap-2xs">
+    {#if up === null}
+      <span class="text-xs text-muted">reading…</span>
+    {:else if up}
+      <span class="text-xs text-muted" data-methods={methodCount}>{counted(seenCount, methodCount)} methods · {services.length} services</span>
+    {:else}
+      <Badge size="xs" data-live="down">not running</Badge>
+    {/if}
+  </span>
+</header>
+
+{#if up === false}
+  <p class="text-sm text-muted" data-down>{down}. A call runs inside the app, through devtools; r reads again once the app is up.</p>
+{/if}
+
+{#if up}
+  <section class="surface stack" data-part="call">
+    <div class="bar dense">
+      <strong class="text-sm">{method || 'pick a method below'}</strong>
+      <span class="text-xs text-muted">{as.trim() ? `as ${as.trim()}` : 'as nobody'}</span>
+    </div>
+    <Input label="" aria-label="as" value={as} placeholder="as: an email, username, name or id, or Model:value; empty is nobody" oninput={(e) => as = e.target.value} />
+    <Input label="" aria-label="arguments" value={args} placeholder={'arguments, JSON, comma-separated: 12, {"note":"late"}'} oninput={(e) => args = e.target.value} />
+    <Input label="" aria-label="tenant" value={tenant} placeholder="tenant, under tenancy strategy database" oninput={(e) => tenant = e.target.value} />
+    <div class="cluster gap-sm">
+      <Button size="xs" disabled={!method} loading={calling} data-call-go onclick={call}>call</Button>
+    </div>
+  </section>
+
+  <section class="surface stack" data-part="answers">
+    <div class="bar dense">
+      <strong class="text-sm">answers</strong>
+      <span class="text-xs text-muted">{counted(seenAnswers.length, answers.length)}</span>
+    </div>
+    {#each seenAnswers as a, i (i)}
+      <div class="stack gap-3xs" data-answer={a.ok ? 'ok' : 'refused'}>
+        <div class="cluster gap-sm">
+          <Badge tone={a.ok ? 'success' : 'danger'} size="xs">{a.ok ? 'ok' : a.status ?? 'refused'}</Badge>
+          <code>{a.method}</code>
+          <span class="text-xs text-muted">{asked(a)}</span>
+        </div>
+        {#if a.standing}<span class="text-xs text-muted" data-standing>standing: {a.standing}</span>{/if}
+        {#if !a.ok}<span class="text-xs text-danger">{a.name ? `${a.name}: ` : ''}{a.message}</span>{/if}
+        {#if i === 0 && (a.ok || a.data)}
+          <pre class="text-xs" data-result>{body(a, whole)}</pre>
+          {#if !whole && longer(a)}
+            <Button treatment="ghost" size="xs" onclick={() => whole = true}>show all of it</Button>
+          {/if}
+        {/if}
+      </div>
+    {/each}
+    {#if !answers.length}
+      <div class="text-xs text-muted">none yet: pick a method, then call, or x</div>
+    {/if}
+  </section>
+
+  <section class="surface stack" data-part="methods">
+    <div class="bar dense">
+      <strong class="text-sm">methods</strong>
+      <span class="text-xs text-muted">{counted(seenCount, methodCount)}</span>
+    </div>
+    {#each (all ? seenServices : seenServices.slice(0, SHOWN)) as s (s.name)}
+      <div class="cluster gap-2xs" data-service={s.name}>
+        <code class="text-sm">{s.name}</code>
+        {#each s.methods as m (m)}
+          <Button
+            treatment={method === `${s.name}.${m}` ? 'outlined' : 'ghost'}
+            size="xs"
+            aria-pressed={method === `${s.name}.${m}`}
+            data-method={`${s.name}.${m}`}
+            onclick={() => pick(s.name, m)}
+          >{m}</Button>
+        {/each}
+      </div>
+    {/each}
+    {#if !all && seenServices.length > SHOWN}
+      <Button treatment="ghost" size="xs" onclick={() => all = true}>show the other {seenServices.length - SHOWN} services</Button>
+    {/if}
+  </section>
+{/if}

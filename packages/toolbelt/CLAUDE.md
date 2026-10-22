@@ -9,7 +9,7 @@ dependency graph on the strength of it, so breaking purity costs the standing.
 
 **One kit per subpath.** `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/docfences`, `/env`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
 `/fill`, `/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/keys`, `/mailbox`, `/markdown`, `/match`, `/mime`,
-`/predicate`, `/query`, `/rank`, `/redact`, `/seal`, `/search`, `/signature`, `/sigv4`, `/sse`, `/textbox`, `/textedit`, `/trace`, `/transforms` and `/units` today; a caller
+`/predicate`, `/query`, `/rank`, `/redact`, `/seal`, `/search`, `/signature`, `/sigv4`, `/sse`, `/textbox`, `/textedit`, `/trace`, `/transforms`, `/tty` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
 `bun run test` — `test/run.js` is the whole harness, no dependencies, runs
@@ -323,7 +323,10 @@ src/keys/            a key sequence read against a keymap — vim's chord
                      tab never receives — `BROWSER_OWNS`, read from Chromium's
                      and Firefox's reserved keys and the OS defaults — on BOTH
                      platforms, so a refusal is the same on every machine; a
-                     key a page may cancel (`<Mod-s>`) is not on it
+                     key a page may cancel (`<Mod-s>`) is not on it.
+                     `withOverrides(table, changes, { actions })` is khat's:
+                     `nop` unbinds, a row that cannot apply is a warning and
+                     never a throw, and the table it answers always builds
 src/textbox/         a text control edited by vim's keys — `textbox()` state,
                      `edit(state, action)`, and `NORMAL`/`INSERT`, the
                      tables a host hands to `/keys`'s `keymap()` and steps
@@ -331,7 +334,10 @@ src/textbox/         a text control edited by vim's keys — `textbox()` state,
                      is the control's (`FJS-D1386`). khat's `input.rs` cut to
                      L1 (`IDEAS/keys.md` 4.1): flat rows, no operator grammar,
                      no `j`/`k`. Offsets are UTF-16, a `<textarea>`'s unit;
-                     `h l x` step a grapheme. Caller: the `<Textbox>` of 4.2
+                     `h l x` step a grapheme. `edit(s, 'sync', { text,
+                     cursor, anchor })` takes back what the control typed or
+                     where a click left it; a sync that only moves the cursor
+                     keeps `redo`. Caller: ui's `<Textbox>`
 src/textedit/        `locateText` — an element's words swapped where its
                      `.mesa` or `.md` source wrote them, or `{ why }` when that
                      takes a guess (interpolated, split by markup, written
@@ -342,6 +348,12 @@ src/textedit/        `locateText` — an element's words swapped where its
                      edit a dev server's disk does. Callers: fli's ask panel
                      (`/text` in `core/vite-ask.js`) and basecamp's
                      `drafts.save` (an owner's click on a draft's preview)
+src/tty/             `@frontierjs/css`'s tones as a terminal says them — each an
+                     ANSI palette INDEX, so the terminal's theme picks the shade,
+                     and `muted` the dim bit (`FJS-D37` §1, `FJS-D1423`).
+                     `toneOf(cls)` reads one off a class attribute. Mesa's
+                     terminal runtime is the caller; its `terminal-tags.test.js`
+                     holds the names to `tones.css`
 docs/glow/           the Svelte editor and SCSS theme glow arrived with.
                      Reference only — not shipped, not FrontierJS code
 src/datetime/        an instant read as a place's wall clock, and written back —

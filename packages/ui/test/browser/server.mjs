@@ -100,6 +100,7 @@ const TYPES = {
 const IMPORT_MAP = {
   imports: {
     '@frontierjs/mesa/runtime':         '/@mesa/src/runtime.js',
+    '@frontierjs/mesa/keys':            '/@mesa/src/keys.js',
     '@frontierjs/ui/':                  '/kit/',
     '@frontierjs/ui/controls':          '/kit/controls.js',
     '@frontierjs/ui/utils':             '/kit/utils.js',

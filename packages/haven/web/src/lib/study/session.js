@@ -32,7 +32,7 @@ export function studyArgv({ resume, model, permissionMode = 'auto' } = {}) {
 // ─── the fold ─────────────────────────────────────────────────────────────────
 //
 // A message is one of
-//   { kind: 'you', text, images }                 a line sent, `images` how many it carried
+//   { kind: 'you', text, images, at }             a line sent, `images` how many it carried, `at` when
 //   { kind: 'said', text } / { kind: 'thought', text }
 //   { kind: 'tool', id, name, line, done, failed } a call, marked by its result
 //   { kind: 'turn', ms, cost, error }             a turn's end
@@ -98,8 +98,8 @@ export function fold(state, ev) {
   return state
 }
 
-/** `state` after a line is sent, carrying `images` pictures. */
-export const sent = (state, text, images = 0) => add(statused({ ...state, busy: true }), { kind: 'you', text, ...(images ? { images } : {}) })
+/** `state` after a line is sent at `at`, carrying `images` pictures. */
+export const sent = (state, text, images = 0, at = null) => add(statused({ ...state, busy: true }), { kind: 'you', text, ...(images ? { images } : {}), ...(at ? { at } : {}) })
 
 /** `state` once prompt `id` is answered or withdrawn. */
 export const answered = (state, id) => state.asking.some((a) => a.id === id) ? statused({ ...state, asking: state.asking.filter((a) => a.id !== id) }) : state
@@ -121,8 +121,9 @@ export function reply(ask, choice) {
 // ─── the process ──────────────────────────────────────────────────────────────
 
 /**
- * Start a session in `cwd`. `send(text, images)` is a line, `images` the
- * image blocks it carries (`images.js`); `answer(choice)`
+ * Start a session in `cwd`. `send(text, images, shown)` is a line, `images`
+ * the image blocks it carries (`images.js`) and `shown` what the pane draws
+ * for it where that is not the line itself (`/go`'s prompt); `answer(choice)`
  * answers the oldest permission prompt; `end()` closes stdin and
  * the child exits on its own; `kill()` does not wait. The child is killed with
  * the process, so a tab never outlives Haven. `subscribe(fn)` hears every
@@ -178,11 +179,11 @@ export function startSession({ cwd = process.cwd(), resume, model, bin = process
   return {
     get state() { return state },
     subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn) },
-    send(text, images = []) {
+    send(text, images = [], shown = text) {
       if (!child || state.exit || !child.stdin.writable) return false
       const content = images.length ? [...images, { type: 'text', text }] : text
       child.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n')
-      set(sent(state, text, images.length))
+      set(sent(state, shown, images.length, Date.now()))
       return true
     },
     /** Answer the oldest prompt: `allow`, `always` or `deny`. */

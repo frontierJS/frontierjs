@@ -17,7 +17,9 @@
 // the figure does; Esc is the mode's close unless it names Esc itself. A mode
 // with a `take` is handed every other key, Esc included, and answers whether
 // it took it; a key it lets go walks, or reaches a verb. Opening one closes
-// the one before it.
+// the one before it. A mode that draws a pane says `pane: true`, and the
+// room's bubbles step aside while it is open: a pane is narrower than the
+// view, and a bubble under it shows its last column past the pane's edge.
 //
 // Only the command word completes. Once a space is typed the line is on its
 // arguments, and a Tab there would rewrite a nick.
@@ -47,7 +49,10 @@ export const reaches = (verb, at) => !verb.reach || (!!at && away(verb.reach, at
 export function createCommands() {
   const verbs = new Set()
   const added = new Set()
+  const heard = new Set()
   let mode = null
+
+  const changed = () => { for (const fn of heard) fn() }
 
   const nearest = (list, at) => list
     .map((verb, i) => ({ verb, i, d: verb.reach ? away(verb.reach, at) : Infinity, f: verb.reach && faced(at, verb.reach) ? 0 : 1 }))
@@ -58,6 +63,7 @@ export function createCommands() {
     const done = mode
     mode = null
     done.closed?.()
+    changed()
   }
 
   const words = (at) => {
@@ -141,14 +147,22 @@ export function createCommands() {
       const was = mode
       mode = next
       was?.closed?.()
+      changed()
       return () => {
         if (mode !== next) return
         mode = null
         next.closed?.()
+        changed()
       }
     },
 
     get mode() { return mode },
+
+    /** Calls `fn` each time a mode opens or closes; returns what stops it. */
+    subscribe(fn) {
+      heard.add(fn)
+      return () => heard.delete(fn)
+    },
 
     /** Closes the open mode if it is the one named; true when it was. */
     close(name) {

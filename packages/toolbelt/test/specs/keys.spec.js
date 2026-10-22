@@ -7,7 +7,7 @@
  * parse as letters and bind a key nobody meant.
  */
 
-import { parseChord, parseKeys, formatChord, chordOf, keymap, step, flush, bindings, browserOwned } from '../../src/keys/keys.js'
+import { parseChord, parseKeys, formatChord, chordOf, keymap, step, flush, bindings, browserOwned, withOverrides } from '../../src/keys/keys.js'
 
 const ctx = (active, over = {}) => ({ active, mac: false, text: false, ...over })
 
@@ -414,4 +414,36 @@ test('keys: bindings refuses the context step refuses', function () {
   assert.throws(() => bindings({ active: [km], text: false }), /bindings\(.*context.mac is required/)
   assert.throws(() => bindings({ active: [km], mac: false }), /context.text is required/)
   assert.throws(() => bindings(km), /a list of keymap\(table\) results/)
+})
+
+test('keys: overrides_rebind_and_unbind — a change rebinds or adds a key, nop unbinds, the rest survive', function () {
+  const { table, warnings } = withOverrides({ j: 'down', k: 'up', '<Space>': 'page' }, { '<C-j>': 'next', '<Space>': 'nop', j: 'nop', J: 'down' })
+  assert.deepEqual(warnings, [])
+  const km = keymap(table)
+  const one = (keys) => run(ctx([km]), keys).outcomes
+  assert.deepEqual(one('<C-j>'), [{ action: 'next' }])
+  assert.deepEqual(one('<Space>'), [null])
+  assert.deepEqual(one('j'), [null])
+  assert.deepEqual(one('J'), [{ action: 'down' }])
+  assert.deepEqual(one('k'), [{ action: 'up' }])
+})
+
+test('keys: nop_removes_prefix — dd unbound leaves d no longer pending', function () {
+  const { table } = withOverrides({ dd: 'deleteLine', dw: 'deleteWord' }, { dd: 'nop', dw: 'nop' })
+  assert.deepEqual(run(ctx([keymap(table)]), 'dd').outcomes, [null, null])
+})
+
+test('keys: overrides_warnings — a bad row warns and is skipped, the good ones in its table apply', function () {
+  const { table, warnings } = withOverrides({ q: 'quit', '<C-r>': 'redo' }, {
+    '<Bogus>': 'quit', x: 'doesNotExist', Q: 'quit', '<Mod-r>': 'redo', f: { await: 'find' }, fa: 'never',
+  }, { actions: ['quit', 'redo', 'find', 'never'] })
+  assert.equal(warnings.length, 4, warnings.join('\n'))
+  for (const said of ['<Bogus>', 'doesNotExist', '<Mod-r>', "'fa'"]) assert.ok(warnings.some((w) => w.includes(said)), said)
+  assert.deepEqual(Object.keys(table), ['q', '<C-r>', 'Q', 'f'])
+  assert.deepEqual(run(ctx([keymap(table)]), 'Q').outcomes, [{ action: 'quit' }])
+})
+
+test('keys: override_into_empty_keymap — a sequence added to nothing is pending then fires', function () {
+  const { table } = withOverrides({}, { zz: 'redraw' })
+  assert.deepEqual(run(ctx([keymap(table)]), 'zz').outcomes, [{ pending: 'z' }, { action: 'redraw' }])
 })

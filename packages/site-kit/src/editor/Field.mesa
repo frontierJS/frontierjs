@@ -11,8 +11,19 @@
   // What is typed shows on the page before the save, words only: a block or a
   // value whose new words are plain text changes where the page shows the old
   // ones, and the rest are counted as waiting for the rebuild (`FJS-D1399`).
+  //
+  // A list is arranged here (`FJS-D1403`–`FJS-D1405`): each entry of the
+  // file's front-matter lists, and the file itself when it is one item of a
+  // collection, moves earlier or later, is copied below itself or removed, one
+  // commit each through `drafts.arrange`. That waits for the rebuild, and so
+  // does not mix with unsaved words.
+  //
+  // A photo is swapped with an upload and its words are required
+  // (`FJS-D1406`–`FJS-D1408`): shrunk here, re-encoded by basecamp, and saved
+  // with its key's line as one commit through `drafts.photo`.
   import { clientFor } from './handoff.js'
   import { changedBlocks, liveWords, plainSwap, words } from './live.js'
+  import { shrink } from './photo.js'
   import { blockAt } from './pick.js'
 
   export let site
@@ -29,10 +40,14 @@
   let notice  = null
   let busy    = false
   let waiting = 0
+  let photos  = {}
   let text
 
   const live = liveWords()
-  $.onDestroy(() => live.restore())
+  $.onDestroy(() => {
+    live.restore()
+    for (const p of Object.values(photos)) if (p.url) URL.revokeObjectURL(p.url)
+  })
 
   const drafts = () => clientFor(site, key).service('drafts')
   const args   = () => ({ appId: site.appId, draft: site.draft, path })
@@ -72,6 +87,65 @@
 
   $: changedKeys = form ? form.keys.filter((k) => k.field && k.key in values && values[k.key] !== k.value).map((k) => k.key) : []
   $: dirty = !!form && (body !== form.body || changedKeys.length > 0)
+  // The innermost entry the clicked line falls in, which the list marks.
+  $: here = form && line != null ? form.entries.filter((e) => e.line <= line && line <= e.end).pop() : null
+
+  const ACTS = [['earlier', 'Earlier'], ['later', 'Later'], ['copy', 'Copy'], ['remove', 'Remove']]
+  const can = (act, index, count) => !(act === 'earlier' && index === 0) && !(act === 'later' && index === count - 1) && !(act === 'remove' && count === 1)
+
+  async function arrange(act, entry = null) {
+    busy = true; error = null; notice = null
+    try {
+      const sent = { ...args(), blob: form.blob, act }
+      if (entry) sent.line = entry.line
+      const done = await drafts().invoke('arrange', null, sent)
+      const what = entry ? `'${entry.label}'` : 'This item'
+      notice = !done.changed ? 'Nothing had changed'
+        : act === 'remove' && !entry ? `Removed ${path} from ${site.draft}. The preview rebuilds without it shortly.`
+        : done.copy ? `Copied as ${done.copy} on ${site.draft}. The preview rebuilds with it shortly.`
+        : `${act === 'copy' ? `Copied ${what}` : act === 'remove' ? `Removed ${what}` : `Moved ${what} ${act}`} on ${site.draft}. The preview rebuilds with it shortly.`
+      if (act === 'remove' && !entry) form = null
+      else await load(false)
+    } catch (err) {
+      error = err.message
+    }
+    busy = false
+  }
+
+  const photoOf = (k) => photos[k.key] ?? { alt: k.photo.alt, file: null, url: null }
+
+  function setPhoto(k, change) {
+    const was = photoOf(k)
+    if (was.url && 'url' in change) URL.revokeObjectURL(was.url)
+    photos = { ...photos, [k.key]: { ...was, ...change } }
+  }
+
+  async function choose(k, input) {
+    const picked = input.files?.[0]
+    if (!picked) return
+    const file = await shrink(picked)
+    setPhoto(k, { file, url: URL.createObjectURL(file) })
+  }
+
+  async function sendPhoto(k) {
+    const p = photoOf(k)
+    busy = true; error = null; notice = null
+    try {
+      const sent = { ...args(), blob: form.blob, key: k.key, alt: p.alt }
+      if (p.file) sent.photo = p.file
+      const done = await drafts().invoke('photo', null, sent)
+      notice = !done.changed ? 'Nothing had changed'
+        : done.photo ? `Saved ${done.photo} as ${k.key} on ${site.draft}. The preview rebuilds with it shortly.`
+        : `Saved the words for ${k.key} on ${site.draft}. The preview rebuilds with them shortly.`
+      if (p.url) URL.revokeObjectURL(p.url)
+      const { [k.key]: _, ...rest } = photos
+      photos = rest
+      await load(false)
+    } catch (err) {
+      error = err.message
+    }
+    busy = false
+  }
 
   async function save() {
     busy = true; error = null; notice = null
@@ -111,6 +185,19 @@
                    onchange={(e) => setValue(k.key, e.target.checked)} />
             {k.key}
           </label>
+        {:else if k.photo}
+          <div class="field-group fjs-photo" data-key={k.key}>
+            <label for={`fjs-photo-${k.key}`}>{k.key}</label>
+            <img src={photoOf(k).url ?? k.photo.src} alt="" />
+            <input id={`fjs-photo-${k.key}`} type="file" accept="image/*" disabled={busy}
+                   onchange={(e) => choose(k, e.target)} />
+            <label for={`fjs-alt-${k.key}`}>What the photo shows</label>
+            <input id={`fjs-alt-${k.key}`} type="text" value={photoOf(k).alt} required
+                   oninput={(e) => setPhoto(k, { alt: e.target.value })} />
+            <button class="btn ghost" data-act="photo"
+                    disabled={busy || !photoOf(k).alt.trim() || (!photoOf(k).file && photoOf(k).alt === k.photo.alt)}
+                    onclick={() => sendPhoto(k)}>{photoOf(k).file ? 'Save photo' : 'Save words'}</button>
+          </div>
         {:else if k.field}
           <div class="field-group">
             <label for={`fjs-key-${k.key}`}>{k.key}</label>
@@ -120,6 +207,28 @@
           </div>
         {/if}
       {/each}
+      {#if form.collection}
+        <div class="fjs-arrange" id="fjs-item" role="group" aria-label="This item">
+          <span>Item {form.collection.index + 1} of {form.collection.count} in {form.collection.folder.slice(form.collection.folder.lastIndexOf('/') + 1)}</span>
+          {#each ACTS as [act, label]}
+            <button class="btn ghost" data-act={act} disabled={busy || dirty || !can(act, form.collection.index, form.collection.count)}
+                    onclick={() => arrange(act)}>{label}</button>
+          {/each}
+        </div>
+      {/if}
+      {#if form.entries.length}
+        <ul class="fjs-entries dense" id="fjs-entries" aria-label="Entries">
+          {#each form.entries as e (e.line)}
+            <li class="fjs-arrange" data-line={e.line} aria-current={here === e ? 'true' : null} style={`padding-inline-start: ${e.depth * 1.25}rem`}>
+              <span>{e.label || '(no words)'}</span>
+              {#each ACTS as [act, label]}
+                <button class="btn ghost" data-act={act} disabled={busy || dirty || !can(act, e.index, e.count)}
+                        onclick={() => arrange(act, e)}>{label}</button>
+              {/each}
+            </li>
+          {/each}
+        </ul>
+      {/if}
       <div class="field-group">
         <label for="fjs-body">Text</label>
         <textarea id="fjs-body" rows="14" bind:this={text} value={body} oninput={(e) => { body = e.target.value; shown() }}></textarea>
@@ -155,6 +264,27 @@
     gap: 0.5rem;
     align-items: center;
     justify-content: space-between;
+  }
+  .fjs-arrange {
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+  }
+  .fjs-arrange > span {
+    flex: 1;
+  }
+  .fjs-photo img {
+    max-height: 8rem;
+    max-width: 100%;
+    object-fit: contain;
+  }
+  .fjs-entries {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .fjs-entries [aria-current] {
+    outline: 2px solid currentColor;
   }
   textarea {
     width: 100%;

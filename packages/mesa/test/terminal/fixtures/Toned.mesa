@@ -1,0 +1,17 @@
+<script>
+  let tone = 'danger'
+  const flip = () => { tone = tone === 'danger' ? 'success' : 'danger' }
+</script>
+<section class="card">
+  <h2>Plain card</h2>
+  <p class="text-muted">quiet words</p>
+  <input value="typed" />
+</section>
+<div class={`alert ${tone}`}>
+  <p>Alert body</p>
+  <button onclick={flip}>Flip</button>
+  <button class="btn primary">Go</button>
+</div>
+<div class="card raised"><p>Lifted</p></div>
+<div class="surface"><p>Bare</p></div>
+<p>a <span class:danger={tone === 'danger'}>live</span> word</p>
