@@ -234,6 +234,7 @@ src/
     args.js — what a verb may be passed: argument names, where/orderBy/aggregate keys, @guarded on the way in
     databases.js — the database registry, and the handles over a connection: statement cache, @big, @map
     transaction.js — $transaction: nesting by async context, read routing while one is open
+    locks.js — $lock / $locks: the advisory-lock primitive over the _locks table
     stamps.js — what a write fills in: generated defaults, @createdBy/@updatedBy, @sequence
     computed.js — @computed: load, normalize, apply to a read row
     field-policy.js — field @allow(read) applied to read rows
