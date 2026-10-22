@@ -15,6 +15,7 @@ import { readSettings, writeSettingsModule } from '../config/content.js'
 import { siteKit } from '../config/vite.js'
 import { collection } from '../src/collection.js'
 import { LOCKED_KEYS, applyEdit, formOf, lockedKeysChanged, pathRefusal } from '../src/editable.js'
+import { changedBlocks, plainSwap } from '../src/editor/live.js'
 
 const failed = []
 const check = (label, ok, detail = '') => {
@@ -154,6 +155,10 @@ try {
       ['title', 'stars', 'open', 'hours'].every((k) => field(k).field)
         && ['layout', 'tone', 'intro', 'menu'].every((k) => !field(k).field)
         && field('tone').locked && !field('intro').locked)
+    // A preview's stamp names a file line, and the editor finds it in the body by this.
+    check('the form says which file line the body starts on',
+      form.bodyLine === file.split('\n').indexOf('Body text.') + 1 && formOf('# Bare\n').bodyLine === 1,
+      `${form.bodyLine}`)
 
     const edited = applyEdit(file, { body: 'New body.\n', values: { title: 'Hello: there', stars: 4, open: false, hours: '10 # 6' } })
     const lines = edited.text?.split('\n') ?? []
@@ -200,6 +205,42 @@ try {
     codeRefused('a reference link to javascript: is refused', coded + '[tap]\n\n[tap]: javascript:alert(1)\n', /javascript:/)
     check('prose with no code reads as none, and an autolink is not a tag',
       applyEdit('Plain.\n', { body: 'See <https://example.com> for 2 < 3.\n' }).text !== undefined)
+
+    // FJS-D1231: a value a preview stamped is written by its line, at any depth.
+    check("the form gives each one-line key its file line, the preview stamp's number",
+      field('title').line === 4 && field('hours').line === 7 && field('menu').line === null, `${field('title').line} ${field('menu').line}`)
+    const set = (line, old, next) => applyEdit(file, { field: { line, old, next } })
+    const entry = set(12, 'Home', 'Start: here')
+    check("a menu entry's words change on their own line, quoted where YAML needs it",
+      entry.text === file.replace('  - name: Home', '  - name: "Start: here"'), entry.refused ?? entry.text)
+    check('a top-level value keeps its trailing comment',
+      set(4, 'Welcome', 'Hi there').text?.split('\n')[3] === 'title: Hi there   # the hero line')
+    const fieldRefused = (label, out, pattern) => check(label, pattern.test(out.refused ?? ''), out.refused ?? out.text)
+    fieldRefused('words the line no longer holds are refused', set(12, 'House', 'Start'), /menu\.0\.name has changed/)
+    fieldRefused('a line with no value is refused', set(11, 'Home', 'Start'), /no value is written on that line/)
+    fieldRefused('a locked key is refused', set(3, 'muted', 'danger'), /tone decides/)
+    fieldRefused('a number is not words', set(5, '5', 'five'), /stars is a number, not words/)
+    fieldRefused('a folded value is not changed in place', set(8, 'two lines folded', 'one'), /spans several lines/)
+    fieldRefused('empty words are refused', set(12, 'Home', '  '), /empty/)
+    fieldRefused('a field edit is made alone', applyEdit(file, { body: 'x', field: { line: 12, old: 'Home', next: 'S' } }), /on its own/)
+  }
+
+  // ─── what a preview shows before a save (FJS-D1399) ───────────────────────
+  {
+    const body = 'Intro line\nwraps here\n\nSecond\n\nThird\n'
+    const one = changedBlocks(body, 'Intro line\nwraps here\n\nSecond, changed\n\nThird\n')
+    check('one changed block is found at its own line',
+      one.unplaced === 0 && one.changes.length === 1 && one.changes[0].index === 3 && one.changes[0].next === 'Second, changed', JSON.stringify(one))
+    check('a block\'s lines come back joined', changedBlocks(body, 'Intro\nwraps\n\nSecond\n\nThird\n').changes[0].old === 'Intro line\nwraps here')
+    check('an added block is one the page cannot place', changedBlocks(body, body + '\nFourth\n').unplaced === 1)
+    check('an unchanged body changes nothing', JSON.stringify(changedBlocks(body, body)) === '{"changes":[],"unplaced":0}')
+
+    check('plain words swap', plainSwap('Open daily', 'Open every day, 9 to 5'))
+    for (const next of ['Open *daily*', 'See [us](/x)', '# Open', '- Open', '1. Open', 'Open {x}', 'Open <b>now</b>', 'Call (512) 555-0134', 'Open ==now==', 'Visit www.acme.com']) {
+      check(`"${next}" waits for the rebuild`, !plainSwap('Open daily', next))
+    }
+    check('words that become a kicker wait', !plainSwap('Welcome in', 'WELCOME IN'))
+    check('a kicker that stays one swaps', plainSwap('WELCOME', 'HELLO THERE'))
   }
 
   // ─── a content/ with no content/routes (FJS-2546) ─────────────────────────

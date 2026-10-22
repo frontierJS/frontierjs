@@ -1,0 +1,521 @@
+<script>
+  // Ship.mesa — taking this tree out: the console's `:ship` pane
+  // (`IDEAS/one-console.md` § 3). Two walked flows, the release of an app and
+  // the publish of the workspace's packages, each a table of steps the server
+  // owns (`/api/release/steps`, `/api/publish`) and runs one at a time
+  // through `/api/release/step`, which looks a step up by key and never
+  // builds argv from what this pane sends.
+  //
+  // What loads with the pane reads the tree: the pivot verdict per app
+  // (`/api/release`), the members and what changed since each tag
+  // (`/api/publish`), the working tree (`/api/status`) and the CI log. What
+  // reaches a machine waits for a press — the target over ssh, npm's
+  // registry — so a pane that is merely open never talks to a server.
+  //
+  // A step's status is one of three answers: a gate reading something this
+  // pane holds, the last run of it from here, or `not run`. Never a guessed
+  // pass. The runs are kept in this browser's storage where there is one,
+  // and for as long as the pane is mounted where there is not.
+
+  import Badge    from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import Checkbox from '@frontierjs/ui/components/forms/Checkbox.mesa'
+  import Input    from '@frontierjs/ui/components/forms/Input.mesa'
+  import Select   from '@frontierjs/ui/components/forms/Select.mesa'
+  import Flow     from './Flow.mesa'
+
+  export let api = ''
+
+  const SHOWN           = 8
+  const MAX_LINES       = 2000
+  const CI_POLL_LIVE_MS = 2000
+  const CI_POLL_IDLE_MS = 20000
+  const RESULTS_KEY     = 'fli-flow-steps'
+
+  const TARGETS = [
+    { value: 'default',    label: 'default (branch)' },
+    { value: 'production', label: 'production' },
+    { value: 'stage',      label: 'stage' },
+  ]
+  const BUMPS = ['patch', 'minor', 'major', 'prerelease']
+
+  // The stages before the irreversible step. `next` is the first of their
+  // steps that is not green; after them the steps are things to read.
+  const BEFORE = { deploy: ['finish', 'green', 'know'], publish: ['ready', 'choose'] }
+
+  const VERDICT_WORD = {
+    expand:      'N-1 keeps working — reversible',
+    unchanged:   'nothing moved',
+    contract:    'N-1 cannot serve this — the pivot',
+    unknown:     'not decidable from the text — counts as contract',
+    unavailable: 'no verdict',
+  }
+  const CI_TONE = { ok: 'success', passed: 'success', warn: 'warning', fail: 'danger', failed: 'danger', running: 'info' }
+
+  let failed   = null
+  let tree     = null
+  let ci       = null
+  let release  = null
+  let deploy   = null
+  let pub      = null
+  let registry = null
+  let target   = 'default'
+  let app      = null
+  let serving  = null
+  let reaching = false
+  let opened   = {}
+
+  let bump     = 'patch'
+  let tag      = 'latest'
+  let otp      = ''
+  let push     = true
+  let all      = false
+  let picked   = {}
+  let touched  = false
+  let allPkgs  = false
+
+  let running  = null
+  let outputs  = { deploy: {}, publish: {} }
+  let results  = load()
+
+  function load() {
+    try { return JSON.parse(globalThis.localStorage?.getItem(RESULTS_KEY) ?? '{}') } catch { return {} }
+  }
+  function keep(next) {
+    results = next
+    try { globalThis.localStorage?.setItem(RESULTS_KEY, JSON.stringify(next)) } catch {}
+  }
+
+  const read = async (path, init) => {
+    const res  = await fetch(`${api}${path}`, init)
+    const body = await res.json()
+    if (!res.ok || body.error) throw new Error(body.error ?? `${path} answered ${res.status}`)
+    return body
+  }
+  const post = (path, body) => read(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) })
+
+  const plain  = (text) => String(text ?? '').replace(/\*\*|`/g, '')
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+  const ago = (now, at) => {
+    const s = Math.max(0, Math.round((now - new Date(at)) / 1000))
+    return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`
+  }
+  const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+
+  // ─── the reads ─────────────────────────────────────────────────────────
+
+  async function readTree() {
+    try { tree = await read('/api/status') } catch (e) { failed = e.message }
+  }
+
+  async function readRelease() {
+    try {
+      release = await read('/api/release')
+      if (!release.apps.some(a => a.label === app)) app = release.apps[0]?.label ?? null
+    } catch (e) {
+      failed = e.message
+    }
+  }
+
+  async function readPublish() {
+    try { pub = await read('/api/publish') } catch (e) { failed = e.message }
+  }
+
+  var ciTimer = null
+  async function readCi() {
+    clearTimeout(ciTimer)
+    try { ci = await read('/api/ci') } catch (e) { failed = e.message }
+    ciTimer = setTimeout(readCi, ci?.active ? CI_POLL_LIVE_MS : CI_POLL_IDLE_MS)
+  }
+
+  async function readRegistry() {
+    try { registry = await post('/api/publish/registry', { tag: tag.trim() || 'latest' }) } catch (e) { failed = `could not read the registry: ${e.message}` }
+  }
+
+  // Two commands over ssh, the second slow, so the button says it is working.
+  async function readTarget() {
+    reaching = true
+    try {
+      const res = await fetch(`${api}/api/release/target`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target, app }),
+      })
+      serving = await res.json()
+    } catch (e) {
+      serving = { ok: false, error: e.message }
+    }
+    reaching = false
+    record('deploy', deploy.steps.find(s => s.id === 'serving'), serving.ok ? 0 : 1)
+  }
+
+  // ─── the verdict ───────────────────────────────────────────────────────
+
+  // The worst verdict heads the pane: one contract in a workspace of four
+  // decides whether this deploy can be taken back.
+  $: worst = !release ? null
+    : release.apps.some(a => a.verdict === 'contract') ? 'contract'
+    : release.apps.some(a => a.verdict === 'unknown') ? 'unknown'
+    : release.apps.length ? 'expand' : 'nothing'
+  $: worstNote = {
+    nothing:  'no app in this tree declares a schema',
+    contract: 'a deploy of this tree crosses the pivot — after it, only forward',
+    unknown:  'something moved and nothing here can say which way — counts as contract',
+    expand:   'reversible — N-1 keeps working',
+  }[worst] ?? ''
+
+  // `bound` is a count, never a verdict: the app decides at startup, where
+  // the defaults and field specs are in scope.
+  const attachWord = (r) => r.bound > 0 && r.bound < r.keys.length ? ['danger', 'bound halfway — always a refusal']
+    : r.bound === r.keys.length ? ['success', 'this shell carries every key']
+    : r.optional ? ['', 'nothing bound — forgiven, it is optional']
+    : ['warning', 'nothing bound']
+
+  // ─── what goes out ─────────────────────────────────────────────────────
+
+  // An untouched selection sends no `--filter`, so the pane never narrows a
+  // publish by accident of having drawn a list; ticked back to what ws:pub
+  // would pick anyway is no narrowing either.
+  const publishable = (pub) => (pub?.packages ?? []).filter(p => !p.private)
+  const defaults    = (pub, all) => publishable(pub).filter(p => p.affected || all).map(p => p.name)
+  const isPicked    = (picked, touched, pub, all, name) => touched ? !!picked[name] : defaults(pub, all).includes(name)
+  function narrowed(picked, touched, pub, all) {
+    if (!touched) return false
+    const d = defaults(pub, all)
+    const p = Object.keys(picked).filter(n => picked[n])
+    return d.length !== p.length || d.some(n => !picked[n])
+  }
+  $: goingOut = publishable(pub).filter(p => isPicked(picked, touched, pub, all, p.name) && (all || p.affected))
+  $: summary  = `${plural(goingOut.length, 'package')} · ${bump} · ${tag || 'latest'}${push ? '' : ' · not pushed'}${narrowed(picked, touched, pub, all) ? ' · narrowed by hand' : ''}`
+  $: regBy    = Object.fromEntries((registry?.packages ?? []).map(p => [p.name, p]))
+
+  function nextVersion(v, bump) {
+    const m = /^(\d+)\.(\d+)\.(\d+)/.exec(v ?? '')
+    if (!m || bump === 'prerelease') return null
+    const [maj, min, pat] = m.slice(1).map(Number)
+    return bump === 'major' ? `${maj + 1}.0.0` : bump === 'minor' ? `${maj}.${min + 1}.0` : `${maj}.${min}.${pat + 1}`
+  }
+
+  // A dry run answered the options it ran with.
+  function changed(apply) {
+    apply()
+    const { ['publish:plan']: _gone, ...rest } = results
+    keep(rest)
+  }
+  function pick(name, on) {
+    const base = touched ? picked : Object.fromEntries(defaults(pub, all).map(n => [n, true]))
+    changed(() => { touched = true; picked = { ...base, [name]: on } })
+  }
+
+  function publishOpts() {
+    return {
+      bump, tag: tag.trim() || 'latest', otp: otp.trim(), push, all,
+      packages: narrowed(picked, touched, pub, all) ? Object.keys(picked).filter(n => picked[n]) : [],
+    }
+  }
+
+  // ─── the steps ─────────────────────────────────────────────────────────
+
+  // An app step's last run is per app and per target, or *passed* for
+  // basecamp would read as passed for example.
+  const keyOf = (flow, s, app, target) => flow === 'deploy' && s.scope === 'app'
+    ? `${flow}:${s.id}|${app ?? '.'}|${s.targetless ? '' : target}` : `${flow}:${s.id}`
+
+  function registryStatus(s, registry, pub, results) {
+    if (!registry) return ['', 'not read', 'reads npm when you press it']
+    const rows  = registry.packages.filter(p => publishable(pub).some(m => m.name === p.name))
+    const count = st => rows.filter(p => p.status === st).length
+    const when  = `read ${ago(Date.now(), registry.at)}`
+    if (s.id === 'verify') {
+      const ran = results['publish:publish']
+      if (!ran || ran.code !== 0) return ['', 'after publishing', '']
+      if (registry.at < ran.at) return ['warning', 'read again', 'the reading is from before the publish']
+      const behind = rows.filter(p => p.status !== 'level')
+      return behind.length
+        ? ['warning', `${behind.length} not level`, `${behind.map(p => `${p.name} ${p.status}`).join(' · ')} · ${when}`]
+        : ['success', 'level', `every package matches npm · ${when}`]
+    }
+    return ['success', 'read', `${count('level')} level · ${count('ahead')} unreleased · ${count('behind')} behind · ${count('unpublished')} never published · ${when}`]
+  }
+
+  // [tone, word, note] for one step, from its gate or else its last run here.
+  function statusOf(flow, s, st) {
+    if (st.running?.flow === flow && st.running.id === s.id) return ['info', 'running', 'output below']
+    if (s.gate === 'tree') {
+      if (!st.tree) return ['', '…', '']
+      const files = st.tree.total?.files ?? 0
+      return files
+        ? ['warning', 'uncommitted', `${plural(files, 'file')} not in a commit on ${st.tree.branch}`]
+        : ['success', 'clean', `everything is committed on ${st.tree.branch}`]
+    }
+    if (s.gate === 'ci') {
+      if (!st.ci) return ['', '…', '']
+      if (st.ci.active) return ['info', 'running', `phase ${st.ci.active.done + 1}/${st.ci.active.planned.length}`]
+      const f = st.ci.lastFull
+      if (!f) return ['warning', 'never', 'no full run is logged — a narrowed or fast run does not count']
+      return [CI_TONE[f.status] ?? '', f.status, `${ago(st.ci.now, f.at)} on ${f.commit ?? '?'}${f.dirty ? ' with uncommitted changes' : ''}`]
+    }
+    if (s.gate === 'note') return ['', 'if needed', '']
+    if (s.gate === 'registry') return registryStatus(s, st.registry, st.pub, st.results)
+
+    const last = st.results[keyOf(flow, s, st.app, st.target)]
+    const note = flow === 'deploy' && s.id === 'classify' ? st.worstNote
+      : flow === 'publish' && s.id === 'plan' && !last ? 'changing an option above clears this — the plan is for the options it ran with'
+      : ''
+    if (!last) {
+      // The verdict this pane already read stands in until somebody runs it.
+      if (flow === 'deploy' && s.id === 'classify' && st.worst && st.worst !== 'nothing')
+        return [st.worst === 'contract' ? 'danger' : st.worst === 'unknown' ? 'warning' : 'success', st.worst === 'expand' ? 'reversible' : st.worst, note]
+      return ['', 'not run', note]
+    }
+    const when = ago(Date.now(), last.at)
+    if (last.code === 0) return ['success', 'passed', [note, `ran ${when}`].filter(Boolean).join(' · ')]
+    if (last.code == null) return ['', 'stopped', `stopped ${when}`]
+    return ['danger', 'failed', [`exit ${last.code} ${when}`, note].filter(Boolean).join(' · ')]
+  }
+
+  // No ci script, no ci step: a gate nobody can pass is not a step.
+  function grade(flow, table, st) {
+    if (!table) return { rows: [], progress: '' }
+    let next = null, ok = 0, counted = 0
+    const rows = table.steps.filter(s => s.gate !== 'ci' || st.ci?.available).map(step => {
+      const [tone, word, note] = statusOf(flow, step, st)
+      const before = BEFORE[flow].includes(step.stage)
+      if (before) { counted++; if (tone === 'success') ok++ }
+      if (before && !next && tone !== 'success') next = step.id
+      return { step, tone, word, note }
+    })
+    for (const r of rows) r.next = r.step.id === next
+    const done = flow === 'deploy' ? 'ship it' : 'publish it'
+    return { rows, progress: `${ok} of ${counted} ready${next ? ` · next: ${rows.find(r => r.next).step.title}` : ` — ${done}`}` }
+  }
+
+  $: deployFlow  = grade('deploy',  deploy, { running, tree, ci, results, registry, pub, worst, worstNote, app, target })
+  $: publishFlow = grade('publish', pub,    { running, tree, ci, results, registry, pub, worst, worstNote, app, target })
+
+  function record(flow, step, code) {
+    if (step) keep({ ...results, [keyOf(flow, step, app, target)]: { code, at: Date.now() } })
+  }
+
+  function write(flow, id, line) {
+    const was   = outputs[flow][id] ?? { lines: [] }
+    const lines = [...was.lines, ...stripAnsi(line).trimEnd().split('\n')].slice(-MAX_LINES)
+    outputs = { ...outputs, [flow]: { ...outputs[flow], [id]: { lines } } }
+  }
+
+  // One at a time across both flows, as the server holds it: a deploy and a
+  // publish both end in a push.
+  async function runStep(flow, step, { fix, approved }) {
+    if (running) return
+    running = { flow, id: step.id }
+    outputs = { ...outputs, [flow]: { ...outputs[flow], [step.id]: { lines: [] } } }
+    const body = flow === 'deploy' ? { app, target } : { flow: 'publish', opts: publishOpts() }
+    let code = null
+    try {
+      const res = await fetch(`${api}/api/release/step`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ step: step.id, fix, approved, ...body }),
+      })
+      if (!res.ok) {
+        write(flow, step.id, (await res.json()).error)
+        running = null
+        return
+      }
+      const reader  = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop()
+        for (const l of lines) {
+          if (!l.startsWith('data: ')) continue
+          let e
+          try { e = JSON.parse(l.slice(6)) } catch { continue }
+          if (e.type === 'output' || e.type === 'log') write(flow, step.id, e.text)
+          else if (e.type === 'done') code = e.code
+        }
+      }
+      write(flow, step.id, code === 0 ? 'passed' : code == null ? 'stopped' : `failed — exit ${code}`)
+    } catch (e) {
+      write(flow, step.id, `connection error: ${e.message}`)
+    }
+    running = null
+    record(flow, step, code)
+    if (flow === 'deploy') {
+      if (['done', 'snapshots', 'classify'].includes(step.id)) readTree()
+      if (step.id === 'classify') readRelease()
+    } else {
+      if (['snapshots', 'publish', 'push'].includes(step.id)) readTree()
+      if (step.id === 'publish') { readPublish(); readRegistry() }
+    }
+  }
+
+  async function stopStep() {
+    try { await post('/api/release/step/stop') } catch (e) { failed = e.message }
+  }
+
+  async function gate(step) {
+    if (step.gate === 'registry') return readRegistry()
+    if (step.gate === 'ci') {
+      try { await post('/api/ci/run', {}) } catch (e) { failed = e.message }
+      readCi()
+    }
+  }
+
+  $.onMount(async () => {
+    readTree()
+    readCi()
+    readPublish()
+    try { deploy = await read('/api/release/steps') } catch (e) { failed = `could not read the release steps: ${e.message}` }
+    readRelease()
+  })
+  $.onDestroy(() => clearTimeout(ciTimer))
+</script>
+
+<header class="bar">
+  <strong>Take it out</strong>
+  <span class="text-xs text-muted">{worst ? worstNote : 'classifying…'}</span>
+  <Button treatment="ghost" size="xs" onclick={() => { readRelease(); readPublish(); readTree() }}>read again</Button>
+</header>
+
+{#if failed}
+  <p class="text-sm text-danger" data-failed>{failed}</p>
+{/if}
+
+<section class="surface stack" data-part="release">
+  <div class="bar dense">
+    <strong class="text-sm">release</strong>
+    <span class="text-xs text-muted">{deploy ? `${deployFlow.rows.length} steps · ${deployFlow.progress}` : '…'}</span>
+  </div>
+  <div class="cluster gap-sm">
+    <Select label="" aria-label="app" placeholder="" options={(release?.apps ?? []).map(a => a.label)} value={app} onchange={(e) => app = e.target.value} />
+    <Select label="" aria-label="target" placeholder="" options={TARGETS} value={target} onchange={(e) => target = e.target.value} />
+  </div>
+  {#if deploy}
+    <Flow
+      name="deploy"
+      stages={deploy.stages}
+      rows={deployFlow.rows}
+      busy={!!running}
+      running={running?.flow === 'deploy' ? running.id : null}
+      where={(s) => s.scope === 'app' ? ` — ${app ?? 'the app'} · ${target}` : ''}
+      outputs={outputs.deploy}
+      onrun={(s, o) => runStep('deploy', s, o)}
+      onstop={stopStep}
+      ongate={gate}
+    >
+      {#snippet extra(s)}
+        {#if s.id === 'classify' && release}
+          <div class="stack gap-2xs" data-part="verdict">
+            {#each release.apps as a (a.label)}
+              <div class="stack gap-3xs" data-app={a.label}>
+                <div class="cluster gap-sm">
+                  <Badge tone={a.tone} size="xs">{a.verdict}</Badge>
+                  <code class="text-xs">{a.label}</code>
+                  {#if a.baseline}<span class="text-xs text-muted">vs {plain(a.baseline)}</span>{/if}
+                  {#if a.findings.length}
+                    <Button treatment="ghost" size="xs" onclick={() => opened = { ...opened, [a.label]: !opened[a.label] }}>{opened[a.label] ? 'hide' : `${a.findings.length} finding(s)`}</Button>
+                  {/if}
+                </div>
+                <span class="text-xs text-muted">{a.note ?? VERDICT_WORD[a.verdict] ?? ''}</span>
+                {#if opened[a.label]}
+                  {#each a.findings as f, i (i)}
+                    <div class="cluster gap-sm">
+                      <Badge tone={f.severity === 'contract' ? 'danger' : f.severity === 'unknown' ? 'warning' : 'success'} size="xs">{f.severity}</Badge>
+                      <code class="text-xs">{f.subject}</code>
+                      {#if f.needsBackfill}<Badge tone="info" size="xs">backfill</Badge>{/if}
+                      <span class="text-xs text-muted">{f.detail}</span>
+                    </div>
+                  {/each}
+                {/if}
+              </div>
+            {/each}
+            {#each release.attachments as r, i (i)}
+              <div class="cluster gap-sm" data-attachment={r.service}>
+                <Badge tone={attachWord(r)[0]} size="xs">{r.bound}/{r.keys.length}</Badge>
+                <code class="text-xs">{r.app} · {r.service}</code>
+                <span class="text-xs text-muted">{attachWord(r)[1]} — {r.keys.join(', ')}</span>
+              </div>
+            {/each}
+          </div>
+        {/if}
+        {#if s.id === 'serving'}
+          <div class="stack gap-2xs" data-part="serving">
+            <div class="cluster gap-sm">
+              <Button treatment="ghost" size="xs" loading={reaching} disabled={!app} onclick={readTarget}>read the target</Button>
+              <span class="text-xs text-muted">{reaching ? 'reaching the machine…' : serving?.ok ? `${serving.app} · ${serving.target}` : 'reaches the machine over ssh — nothing is read until you press it'}</span>
+            </div>
+            {#if serving && !serving.ok}
+              <span class="text-xs text-danger">{serving.error ?? 'no reason given'}</span>
+            {/if}
+            {#if serving?.ok}
+              {#each serving.transitions as t, i (i)}
+                <div class="cluster gap-sm">
+                  <Badge tone={t.status === 'succeeded' ? 'success' : t.status === 'failed' ? 'danger' : 'warning'} size="xs">{t.status}</Badge>
+                  <code class="text-xs">{t.releaseId ?? '—'}</code>
+                  <span class="text-xs text-muted">{t.kind ?? ''} {t.startedAt ?? ''}</span>
+                  {#if t.serving}<Badge tone="info" size="xs">serving</Badge>{/if}
+                  {#if t.crossesPivot}<Badge tone="danger" size="xs">crossed the pivot</Badge>{/if}
+                </div>
+              {/each}
+              {#if !serving.transitions.length}
+                <span class="text-xs text-muted">nothing recorded — no deploy has run against this target since the journal existed</span>
+              {/if}
+              <strong class="text-xs text-muted">can it come back?</strong>
+              <pre class="text-xs">{serving.plan?.text || 'the revert plan said nothing'}</pre>
+            {/if}
+          </div>
+        {/if}
+      {/snippet}
+    </Flow>
+  {/if}
+</section>
+
+{#if pub?.available}
+  <section class="surface stack" data-part="publish">
+    <div class="bar dense">
+      <strong class="text-sm">publish</strong>
+      <span class="text-xs text-muted">{plural(publishable(pub).length, 'package')} · {publishable(pub).filter(p => p.affected).length} with commits since their tag · {publishFlow.progress}</span>
+    </div>
+    <div class="cluster gap-sm">
+      <Select label="" aria-label="bump" placeholder="" options={BUMPS} value={bump} onchange={(e) => changed(() => bump = e.target.value)} />
+      <Input label="" aria-label="dist-tag" value={tag} oninput={(e) => changed(() => tag = e.target.value)} />
+      <Input label="" aria-label="2FA code" value={otp} placeholder="2FA code (optional)" autocomplete="one-time-code" oninput={(e) => otp = e.target.value} />
+      <Checkbox label="push when done" checked={push} onchange={(on) => changed(() => push = on)} />
+      <Checkbox label="include unchanged" checked={all} onchange={(on) => changed(() => all = on)} />
+    </div>
+    <span class="text-xs" data-summary>{summary}</span>
+    {#each (allPkgs ? pub.packages : pub.packages.slice(0, SHOWN)) as p (p.name)}
+      <div class="cluster gap-sm" data-pkg={p.name}>
+        <Checkbox
+          label={p.name}
+          checked={isPicked(picked, touched, pub, all, p.name)}
+          disabled={p.private || (!p.affected && !all)}
+          onchange={(on) => pick(p.name, on)}
+        />
+        <code class="text-xs">{p.version ?? '?'}{goingOut.includes(p) ? (nextVersion(p.version, bump) ? ` → ${nextVersion(p.version, bump)}` : ' → prerelease') : ''}</code>
+        {#if p.private}<Badge size="xs">private</Badge>
+        {:else if p.affected}<Badge tone="info" size="xs">{plural(p.commits ?? 0, 'commit')} since {p.lastTag || 'never released'}</Badge>
+        {:else}<Badge size="xs">unchanged</Badge>{/if}
+        {#if p.dirty}<Badge tone="danger" size="xs">uncommitted</Badge>{/if}
+        {#if regBy[p.name]}<span class="text-xs text-muted">npm {regBy[p.name].remote ?? '—'} · {regBy[p.name].status}</span>{/if}
+      </div>
+    {/each}
+    {#if !allPkgs && pub.packages.length > SHOWN}
+      <Button treatment="ghost" size="xs" onclick={() => allPkgs = true}>show the other {pub.packages.length - SHOWN}</Button>
+    {/if}
+    <Flow
+      name="publish"
+      stages={pub.stages}
+      rows={publishFlow.rows}
+      busy={!!running}
+      running={running?.flow === 'publish' ? running.id : null}
+      where={(s) => s.run === 'pub' ? ` — ${summary}` : ''}
+      outputs={outputs.publish}
+      onrun={(s, o) => runStep('publish', s, o)}
+      onstop={stopStep}
+      ongate={gate}
+    />
+  </section>
+{/if}

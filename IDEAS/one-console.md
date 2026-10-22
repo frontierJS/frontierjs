@@ -33,8 +33,8 @@ the same daemon and shell with the machine left out.
 
 | Console | Serves | Port | What it does | Written as |
 | --- | --- | --- | --- | --- |
-| `fli gui` | `packages/cli/core/server.js` | 5500 | what can run, what is up, start and stop, `proves`, `check`, decisions, CI, release, publish (`overview.md` 5.24) | `cli/web/index.html`, 4,249 lines |
-| the viewer | the same server | 5500 | reads a document | `cli/web/viewer/index.html`, 2,064 lines |
+| `fli gui` | `packages/cli/core/server.js` | 5500 | what can run, what is up, start and stop, `proves`, `check`, decisions, CI, release, publish (`overview.md` 5.24) | `cli/web/index.html`, 4,247 lines |
+| the viewer | `project:map --as=serve` (`commands/project/_module.md`) | 5501 | the chain of responsibility and 18 project tabs | `cli/web/viewer/index.html`, 2,064 lines |
 | Litestone Studio | `litestone/src/tools/studio.js` | 5502 | browse and edit rows | `studio.html`, 7,946 lines |
 | devtools | `junction/src/plugins/devtools/` | 5503 | service calls, live, health and metrics | `admin.html`, 650 lines |
 
@@ -110,7 +110,7 @@ written in handlers.
 | `:call`: a service method, as somebody | `app:call`'s path | `fli app:call` |
 | `:live`: announcements, sockets, jobs | devtools' telemetry stream, `app.jobs` | devtools |
 | `:ship`: release steps, deploy, revert | `core/release-view.js` | `fli gui` |
-| `:ask`: an agent over the same app | `mcp` | none |
+| `:ask`: an agent over the same app | `mcp` | `fli gui`'s ask-claude drawer, which reads console output, never the app |
 
 **Every pane but `:ask` exists in some form.** The new work is the key model, the
 move to `.mesa`, and the terminal target taking the screens.
@@ -122,24 +122,158 @@ move to `.mesa`, and the terminal target taking the screens.
 ### Phase 0 — Measure
 
 Goal: know what lowers and what each console reads before anything moves.
-Done when: Q1–Q3 are ruled and the inventory in 0.1 is in this file.
+Done when: Q1 and Q2 are ruled and the inventory in 0.1 is in this file.
 
-- [ ] 0.1 Inventory the four consoles: each screen, the endpoint it reads, the
-  components it would need from `@frontierjs/ui`.
-- [ ] 0.2 Run `bun run corpus -- --portability terminal` over the `ui` components
+- [x] 0.1 Inventory the three consoles Phases 1–3 move (`fli gui`, the viewer,
+  devtools): each screen, the endpoint it reads, the components it would need
+  from `@frontierjs/ui`.
+- [x] 0.2 Run `bun run corpus -- --portability terminal` over the `ui` components
   that inventory names, and list the blockers.
-- [ ] 0.3 Price the key model (`:` / `/` / one key per action) against the
+- [x] 0.3 Price the key model (`:` / `/` / one key per action) against the
   terminal runtime's one-listener-per-renderer `onKey`.
+
+**0.1, the inventory** (read off the tree 2026-10-21). *Kit* names
+`@frontierjs/ui` components; **gap** is a screen part the kit has no component
+for.
+
+`fli gui` — 38 routes in `server.js`, every one read by the page.
+
+| Screen | Reads | Kit | Gap |
+| --- | --- | --- | --- |
+| home tiles (9, each opens its panel) | each panel's own read | `StatCard`, `Badge` | — |
+| `run`: what can run, start/stop, health, last output | `/api/runnables`, `/api/state` (polled), `/api/health/:id`, `/api/start/:id`, `/api/stop/:id`, `/api/output/:id` | `Table`, `Button`, `Badge`, `Dot`, `Popover`, `Transcript` | ANSI in output |
+| `tree`: what you have changed | `/api/status` | `Accordion`, `Badge` | — |
+| `proves`: drives a change needs | `/api/proves` | `Table`, `Badge` | — |
+| `ci`: run, history, failures, fixes | `/api/ci`, `/api/ci/run`, `/api/ci/stop`, `/api/ci/fix` | `Table`, `Accordion`, `Button`, `Transcript` | ANSI in output |
+| `checks`: `fli check` + doctor | `/api/check`, `/api/doctor` | `Table`, `Badge`, `EmptyState` | — |
+| `next`: what to work on | `/api/next` | `Table` | — |
+| `decisions`: rule an open question | `/api/decisions`, `/api/decide` | `RadioGroup`, `Select`, `Button` | — |
+| `release`: steps, target, run/stop | `/api/release`, `/api/release/target`, `/api/release/steps`, `/api/release/step`, `/api/release/step/stop` | `Table`, `Select`, `Button`, `Transcript` | ANSI in output |
+| `publish`: packages, bump, registry | `/api/publish`, `/api/publish/registry` | `Table`, `Checkbox`, `Select` | — |
+| command runner: sidebar, form from frontmatter, streamed output, source | `/api/commands`, `/api/commands/:title`, `/api/meta`, `/api/run/:title` (stream) | `Form`, `Input`, `Checkbox`, `Select`, `Code`, `Accordion`, `Transcript` | ANSI in output; a filterable tree |
+| make-command form | `/api/run/:title` | `Form`, `Input`, `Select` | — |
+| palette | `/api/commands` | `CommandPalette` | — |
+| ask claude drawer | `/api/ask-claude` (GET, POST, `/stop`) | `Drawer`, `Textarea`, `Select`, `Transcript` | — |
+| ports drawer | `/api/ports`, `/api/ports/schema`, `/api/ports/clean` | `Drawer`, `Table` | — |
+| env drawer | `/api/env` (GET, POST) | `Drawer`, `Textarea` | — |
+| docs drawer, 6 tabs of static prose | none | `Drawer`, `Tabs`, `Table`, `Code` | — |
+
+The viewer — three routes, its own server.
+
+| Screen | Reads | Kit | Gap |
+| --- | --- | --- | --- |
+| the chain | `/data` | — | a node-and-edge diagram (SVG) |
+| 18 tabs: issues, schema, machines, warden, services, routes, plugins, resources, channels, relations, jobs, notifications, principal, migrations, env, workflows, error paths, session | `/data` | `Tabs`, `Table`, `Accordion`, `Select`, `Badge` | `machines` draws each `@@transitions` as SVG |
+| is the app up | `/state` | `Badge` | — |
+| fix a secret | `/fix/secret` | `Button` | — |
+
+devtools — its own server in the app's process.
+
+| Screen | Reads | Kit | Gap |
+| --- | --- | --- | --- |
+| feed, connections, events | WebSocket `/ws` | `Table`, `Tabs`, `Badge`, `Transcript` | — |
+| services | `/api/state` | `Table` | — |
+| jobs: list, one, run now | `/api/jobs`, `/api/jobs/:id`, `/api/jobs/run/:name` | `Table`, `Button`, `Json` | — |
+| metrics | `/api/health` | `Stat`, `Sparkline` | — |
+
+**What the inventory says.** Every screen is a list, a form or a log, and the
+kit covers all three: a log is `Transcript`, whose follow-the-bottom rule takes
+any children, not only `<Message>`s. Three gaps remain. **ANSI in output**: four
+screens show command output that carries color codes, and the page today strips
+them (`stripAnsi`). **A diagram**: the viewer's chain and its state machines are
+hand-built SVG, and on the terminal an `<svg>` paints only its `aria-label`
+(slice 28). **A filterable tree** for the command sidebar. The terminal blockers
+for the named components are 0.2's job.
+
+**0.2, the terminal blockers** (`bun run corpus -- --portability terminal`,
+2026-10-21). **None.** All 26 kit components the inventory names lower, and so
+do the 5 more they call (31 files). The one offense in that tree is the
+report's own: `FormField.mesa:227` mounts `<Control>`, a component it picks at
+runtime from the control registry, and the report cannot follow a call it
+cannot resolve. The compiler lowers it: `/customers/`, `/orders/create/` and
+`/products/create/` mount `Form` and lower (`fli dev:tui --list` in `example/`,
+32 of 36 routes). So the terminal cost of the move sits in the three gaps above,
+not in the kit.
+
+**0.3, the key model** (priced against `runtime-terminal.js` `onKey` and
+`@frontierjs/mesa/keys`). **No engine work.** The keys plan (`IDEAS/keys.md`
+Phases 1–2, `FJS-D1382`–`FJS-D1388`) built the engine this needs, on both
+targets: vim's spelling, sequences, the 720ms timeout, and `bindings()` for the
+legend. The console takes it as:
+
+- **One `keys()` on the console's root**, with the active pane's table ahead of
+  the console's own (`:`, `/`, `?`, the pane switches). The terminal hands the
+  focused node `keydown` before it does anything with Tab, a dialog's Esc or
+  PageUp/PageDown, so the keymap answers first and leaves what it does not
+  bind to the runtime. The table binds none of those.
+- **The root holds focus.** With nothing focused, a key goes to the window on
+  the terminal and to `<body>` in a browser, and an element's keymap hears
+  neither. So the console focuses its first pane on mount and gets focus back
+  when a dialog closes, the way slice 20's dialogs return it.
+- **`:` and `/` open a text field**, and from then on the field keeps every
+  unmodified key (`FJS-D1386`). It closes itself on Enter and Esc. Nothing in
+  the keymap has to step aside for it.
+- **The always-visible legend (2.3) is `bindings()`** for the active context.
+  Phase 3.4 of the keys plan builds the same for the terminal shell's `?`, so
+  one of the two builds it and the other reuses it.
 
 ### Phase 1 — One screen, both targets
 
 Goal: `fli gui`'s front page (what can run, what is up) is a `.mesa` screen.
 Done when: a drive opens it in Chrome and in a pty and asserts the same rows.
 
-- [ ] 1.1 Build the front page as a `.mesa` screen in `packages/cli`, served by
+- [x] 1.1 Build the front page as a `.mesa` screen in `packages/cli`, served by
   `server.js` beside the old page.
-- [ ] 1.2 The same screen through the terminal target, started by the Q1 command.
-- [ ] 1.3 One drive, two frames: Chrome over CDP and a pty, same rows.
+
+**1.1, how it is built** (2026-10-21). `packages/cli/console/Run.mesa` at
+`/console/`, the old page still at `/`. **No build step**: `core/console.js`
+compiles a `.mesa` per request, the shape `mesa` and `ui` already use for their
+browser drives, and serves Mesa, the kit and toolbelt from the copies this
+`fli` holds through an import map read off each package's `exports`. Sierra's
+build was the other road and is not taken: it brings Vite, a `dist/` and an
+app layout to a tool that has none of them. `@frontierjs/ui` is now a
+dependency of the cli. The screen reads `/api/runnables` once and polls
+`/api/state`, grouped by kind in a kit `Table` with `Badge` and `Button`; it
+takes an `api` origin prop, which the browser leaves empty and the terminal
+target will fill. Checked by hand in Chrome against this workspace: 237 rows,
+the per-kind counts equal `/api/runnables`', live state badges, no page
+errors. The same file compiles for the terminal with no refusal (`bun
+scripts/tui.mjs ../cli/console/Run.mesa --frame` from `packages/mesa`); its
+fetch fails there for want of an origin, which is 1.2's to supply. Health,
+the last-run badge, output and a drive's *needs* are not on it yet; they
+come with the panes that read them.
+- [x] 1.2 The same screen through the terminal target, started by the Q1 command.
+
+**1.2, how it is built** (2026-10-21). `fli gui` at a terminal without
+`--open` starts the server quiet and mounts `Run.mesa` in the same process,
+`api` naming that server; `--open`, or no TTY on stdin and stdout, is the
+browser as before. The terminal half is in `core/console.js`
+(`runTerminalConsole`): a Bun loader compiles each `.mesa` with `target:
+'terminal'` from the same mesa root, and rewrites the browser import map's
+names to files, since Bun never hands a plugin-loaded module's package
+imports to the plugin. A row's `open` is a link, handed to the browser.
+Ctrl+C and a signal take one exit, `shutdown` in `server.js`, which stops
+what the screen started. Checked by hand in tmux against this workspace:
+rows and per-kind counts paint, state polls, Tab moves focus, Enter on
+`gui :8501`'s start brought it up (200) and its stop took it down, and
+Ctrl+C with that child running freed both ports and exited 0. Found: a
+pressed button unmounts (start becomes stop) and focus goes to nothing,
+which 0.3's *the root holds focus* answers in 2.3; and the header's two
+spans paint with no gap between them.
+- [x] 1.3 One drive, two frames: Chrome over CDP and a pty, same rows.
+
+**1.3, how it is built** (2026-10-21). `bun run test:browser:console` in
+`packages/cli` (`test/browser/console.mjs`). It starts `fli gui --port 7501`
+under util-linux `script`, 400 rows tall so every row is on the screen, then
+opens that same process's `/console/` in Chrome, so both frames read one
+server. The terminal frame is the stream replayed onto a grid, as `example`'s
+`verify:tui` does, and parsed by the table header's column starts; the browser
+frame is the same cells read off the DOM. Diffed per row: group and count,
+name, state word, command, actions. Green against this workspace (237 rows),
+and red with one browser state altered. Found on the way: a cell wider than
+its terminal column wraps onto a line of its own, so the parse folds a line
+with a blank name into the row above; and the badge's uppercase is CSS, so
+the browser is read by `textContent`, not `innerText`.
 
 ### Phase 2 — `fli gui` whole
 
@@ -147,8 +281,51 @@ Goal: `cli/web/index.html` is deleted.
 Done when: every `server.js` endpoint has a `.mesa` consumer, and the old page is
 gone.
 
-- [ ] 2.1 `:check` and `:decide`.
-- [ ] 2.2 `:ship`: release and publish.
+- [x] 2.1 `:check` and `:decide`.
+
+**2.1, how it is built** (2026-10-21). `console/Console.mesa` is now the
+root both targets mount: a kit `Tabs` strip, `:run · :check · :decide`, each
+pane a `TabPanel` that unmounts when another is shown, so `:check`'s scopes
+run only while it is in view. `Check.mesa` reads `/api/check` and
+`/api/doctor` as one findings list (the machine first when it is not ok),
+`/api/proves`, and `/api/ci` polled 2s live and 20s idle, with run fast,
+run full, stop, rerun a phase and a failure's fix. `Decide.mesa` reads
+`/api/next`'s head with its terms and `/api/decisions`, and rules through
+`/api/decide` with a reason required against the recommendation. Lists show
+eight and count the rest on the button. The 1.3 drive now also switches
+panes in both frames (ArrowRight on the strip in the terminal) and compares
+the findings count (317) and the decisions count (275): green. Not pressed
+by any drive: *rule*, which writes `DECISIONS.md`, and the CI buttons, which
+start a run. Left out: a CI phase's suites unfolded and a failure's output,
+owed before Phase 2 deletes the old page; and *ask claude* on a failure,
+which is `:ask` (Phase 5). `TIER_WORD`, the CI tones, the machine row and
+the phase merge are copied from `web/index.html`, a second copy until that
+deletion. Seen again: the terminal paints no flex gap, so a bar's title and
+count touch (`findings317`).
+- [x] 2.2 `:ship`: release and publish.
+
+**2.2, how it is built** (2026-10-21). `console/Ship.mesa` holds the two
+walked flows the old page had, the release of one app and the publish of the
+workspace's packages, and `console/Flow.mesa` draws one of them: stage by
+stage, a status badge per step, run, fix and stop, and the output of the last
+run under its step. The steps are still the server's tables
+(`/api/release/steps`, `/api/publish`), run one at a time through
+`/api/release/step`, so the pane sends a step's key and nothing that becomes
+argv. `Ship` grades each step the way the old page did, from a gate (the
+tree, CI, the registry), from its last run, or `not run`. The verdict per app
+sits under *classify* and the target read under *serving*. What reaches a
+machine or npm still waits for a press. A step that `confirm`s takes a second
+press on a line that says what it does to what, since a browser dialog does
+not exist on the terminal. The step results stay in `localStorage` under the
+old page's key where there is one, and only while the pane is mounted where
+there is not (the terminal). The drive now opens `:ship` in both frames and
+compares the release step count (16) and the package count (21): green.
+Checked by hand in Chrome: deploy's confirm appears and cancels, and
+`release:mint` for `example` ran, streaming its refusal (*no deploy block*)
+into the step as `failed`. Not pressed by any drive: every step runs a real
+command. Seen: a kit `Select` or `Input` inside a `cluster` takes the whole
+row in the browser, so the pickers stack, and the terminal does not show that
+(`:decide`'s pickers do the same).
 - [ ] 2.3 The key model across panes, plus the always-visible key legend.
 - [ ] 2.4 The viewer.
 
@@ -167,6 +344,10 @@ and sees a guest refused on `:data`.
 Goal: `studio.html` is deleted.
 Done when: litestone's five `verify:studio:*` drives pass against the `.mesa`
 screens.
+
+Studio stays out until here, by the owner on 2026-10-21: `studio.html` remains
+hand-written in litestone while Phases 1–3 run, and Q3 is asked when this phase
+opens.
 
 - [ ] 4.1 Port Studio's screens. At 7,946 lines it is the largest console, so it
   goes last, after the panes it shares components with exist.
@@ -204,8 +385,8 @@ standing.
 8. **Failure.** A screen that does not lower is refused by name, as
    `fli dev:tui --list` does today. An app that is not running shows each app
    pane as *not running*, never as empty.
-9. **Silence.** *The two targets show the same rows*: Phase 1.3's drive, which
-   does not exist yet. *A deleted page left no reader behind*: the
+9. **Silence.** *The two targets show the same rows*: Phase 1.3's drive,
+   `test:browser:console`. *A deleted page left no reader behind*: the
    `server.js` endpoint list against its consumers, which is `none` until
    Phase 2's done line is a check.
 
@@ -220,7 +401,7 @@ interface). Moving them onto the paved road is the ruling's direction.
 
 ## Open questions
 
-- **Q1 — What starts it?**
+- ~~**Q1 — What starts it?**~~ **Answered 2026-10-22 (`FJS-D1389`): B — `fli gui`, which picks the terminal target when it is started in a terminal without `--open`, and the web target otherwise.**
   - **A** — `fli runtime`, as the owner first said it. It collides with "the FLI
     runtime" (`server.js`'s own header) and with Mesa's runtime.
   - **B** — `fli gui`, which picks the terminal target when it is started in a
@@ -228,21 +409,21 @@ interface). Moving them onto the paved road is the ruling's direction.
   - **C** — a new `fli console` command beside `fli gui`.
   - **Recommend B** — one command and one noun for one console. A and C put two
     names on the same screens.
-- **Q2 — Does `FJS-D810`'s line reach this?** `FJS-D810` admits the terminal
+- ~~**Q2 — Does `FJS-D810`'s line reach this?**~~ **Answered 2026-10-22 (`FJS-D1390`): A — yes: tool screens count as the stressor, so the work starts now.** `FJS-D810` admits the terminal
   shell as a stressor, with shipping a terminal app to users deferred past
   alpha. A developer tool is used daily but is not a user's app.
   - **A** — yes: tool screens count as the stressor, so the work starts now.
   - **B** — no: wait until core leaves alpha (`FJS-D14`).
   - **Recommend A** — the tool screens are a second corpus for the IR, written by
     the same people who maintain it.
-- **Q3 — Where do Studio's screens live?**
+- **Q3 — Where do Studio's screens live?** Deferred to Phase 4 (owner, 2026-10-21).
   - **A** — in `packages/cli`, with the other three. Studio stays reachable from
     an app without the CLI only through its endpoints.
   - **B** — in `packages/litestone`, compiled ahead of time so Litestone ships
     built output and takes no Mesa dependency.
   - **Recommend A** — one owner for tool screens. B keeps a second console app
     alive inside the spine.
-- **Q4 — Who decides what `:ask` may do?**
+- ~~**Q4 — Who decides what `:ask` may do?**~~ **Answered 2026-10-22 (`FJS-D1391`): A — the agent calls through `mcp` at a declared standing, like any caller.**
   - **A** — the agent calls through `mcp` at a declared standing, like any
     caller.
   - **B** — the agent inherits the developer's standing.

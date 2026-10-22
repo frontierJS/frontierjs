@@ -141,14 +141,14 @@ one the terminal shell runs, which is this paper.
 parseChord('<Mod-k>')          // → { key: 'k', mod: true }   vim's spelling, FJS-D1383
 parseKeys('gg')                // → [chord, chord]; 'g g' and 'mod+k' refuse by name
 keymap({ gg: 'top', d: { await: 'bolt' } })   // a trie; a duplicate key refuses by name
-step(state, chord, active, now)   // → { state, outcome }
+step(state, chord, { active, mac, text }, now)   // → { state, outcome }
 //   outcome: { action, arg? } | { pending: 'g' } | { typed: 'x' } | null
-flush(state, active, now)          // the ambiguity after 720ms, FJS-D1385
-bindings(keymap)                   // [{ keys: 'gg', action: 'top' }] for help and hints
+flush(state, { active, mac, text }, now)          // the ambiguity at state.due, 720ms on, FJS-D1385
+bindings({ active, mac, text })    // [{ keys: 'gg', action: 'top' }], only what can fire there
 
 // mesa runtime — the one host binding, both targets (Q7)
 keys(() => ({ active: [sceneMap, shellMap], on: (action, arg) => … }))   // an {@attach}
-// browser-kit's hotkey(chord, fn, { scope, when }) is one binding in the scope's keymap
+// browser-kit's hotkey(chord, fn, { scope, when }) is one keymap in its root's keys(), newest first
 ```
 
 The mode stays the caller's, as `FJS-D987` ruled for the shell: the engine
@@ -170,7 +170,7 @@ the shell's.
 4. **Predictability** — one spelling of a chord across three targets; a key a
    consumer binds behaves the same in a terminal and a tab.
 5. **Derived** — hints, help and the duplicate check are derived from the
-   table; the browser allowlist is one list, refused at bind time.
+   table; the chords a browser owns are one list, refused at bind time.
 6. **Owner** — the engine in toolbelt, the binding in mesa's runtime, the mode
    in sierra's shell (`FJS-D987`); `hotkey()` becomes a caller, not a peer.
 7. **Boundary** — `step()` is typed and pure; a host passes `now`, and the
@@ -210,28 +210,29 @@ Done when: toolbelt's suite is green and `exports.snapshot.md` carries the kit.
 
 - [x] 1.1 `parseChord` / `parseKeys` / `formatChord` in vim's spelling (`FJS-D1383`): vim's names to DOM key names and back, `<Mod-…>`, a literal space or a `mod+k` shape refused by name — `test/specs/keys.spec.js`, 11 rows; one spelling per chord, what `formatChord` writes (`<cr>`, `<Enter>`, `<C-K>` refused naming it); Shift lives in the printable character (`<S-g>`, `<S-1>` refused), beside a modifier a letter is lowercase with `S-` explicit
 - [x] 1.2 `keymap(table)`: the trie, the prefix set, a duplicate refused by name — one trie per platform, `<Mod-k>` resolved at build as ProseMirror and CodeMirror do, both built because the kit may not probe; the duplicate one spelling leaves is `<Mod-k>` beside `<C-k>` or `<D-k>`, refused naming both, as are a binding under an await-char and `<Esc>` after the first key; 6 rows. khat's four override cases (`nop`, a bad key warns) wait for the first consumer with a keys config — the reopen path is 2.2, where `hotkey()` adds to a scope's table
-- [ ] 1.3 `step()` and `flush()`: exact, pending, ambiguity after the one 720ms timeout, await-char, `typed` for an unbound printable in a text context, `null` otherwise
-- [ ] 1.4 `bindings()` for help and hints
-- [ ] 1.5 khat's cases ported: a digit is a key, `0` is a binding, Esc clears pending, the timeout fires the exact match
+- [x] 1.3 `step()` and `flush()`: exact, pending, ambiguity after the one 720ms timeout, await-char, `typed` for an unbound printable in a text context, `null` otherwise — the platform rides in the context beside `text`, khat's `KeyContext`, and both are required booleans since either left out is a binding silently dead or live while someone types; `state.due` carries the timeout so a host schedules `flush` without the number; a key the spelling cannot name (a lone Shift) leaves the state, so `fG` survives it; in a text control a sequence a modified chord began takes the next key; 11 rows
+- [x] 1.4 `bindings()` for help and hints — takes `step`'s context and lists only the rows that can fire in it: a key an earlier keymap binds or begins, a sequence under an earlier exact that is no prefix, and in a text control an unmodified first chord are left out; rows in the order they answer, active keymaps then table order, so a hint is the first row for its action with no rank; graded against `step` itself over both platforms and both text states; 3 rows
+- [x] 1.5 khat's cases ported: a digit is a key, `0` is a binding — Esc clearing pending and the timeout firing the exact landed with 1.3; `digits_are_pane_jumps_not_counts` passed on the engine as 1.3 left it, so no code moved: `6j`, `6gg` and `10` accumulate nothing, `0` fires only where a keymap binds it, a digit types in a text control; 1 row
 
 ### Phase 2 — The host binding
 
 Goal: one attachment in mesa's runtime that both targets run.
 Done when: a browser spec in `test/browser/` and a terminal spec in `test/terminal/specs/` each drive `gg`, a pending timeout, and typing in a field.
 
-- [ ] 2.1 `keys()` attachment, matching `e.key` only (`FJS-3407`): `preventDefault` on a taken key, `isComposing` bypassed, the text predicate per Q5, the timeout on the host's clock
-- [ ] 2.2 `hotkey()` as one binding in the scope's keymap — browser-kit 2.2 lands here, its parser is 1.1
-- [ ] 2.3 The browser allowlist: a chord the browser or the OS owns refuses at bind time by name
+- [x] 2.1 `keys()` attachment, matching `e.key` only (`FJS-3407`): `preventDefault` on a taken key, `isComposing` bypassed, the text predicate per Q5, the timeout on the host's clock — `@frontierjs/mesa/keys`, its own subpath since `/browser` throws on a terminal and `runtime.js` would carry toolbelt into every app; terminal nodes gained `addEventListener`/`removeEventListener` over `on()`, as native's have. A key already prevented clears the pending state unread, so a nested keymap answers first; the text predicate reads `tagName`/`type`, which both targets carry, and the attachment's own element is exempt (Q5's editable keymap); `<Mod-…>` is Ctrl on a terminal whatever the OS. The exit specs landed here: runtime drive `keys` (12 rows) and terminal `keymap` (7), each `gg`, the timeout, an await-char, a field typing and a Ctrl chord firing in it, and a later listener reading `defaultPrevented`; native refuses `Keymap` at compile on that listener's `onkeydown`
+- [x] 2.2 `hotkey()` as one binding in the scope's keymap — browser-kit 2.2 lands here, its parser is 1.1 — `src/browser/hotkey.js`: each call is a one-row keymap in its root's one `keys()`, newest first, as `active` already orders a scene ahead of the shell — so two open overlays' `<Esc>` close the top one, where one merged table would refuse the second; `when` false parks it and the key falls through; the root is `delegationRootOf(scope)` read at the call, or `document`; a refused spelling throws at the call. Kit drive `hotkey` (18 rows); a mutation to newest-last and one ignoring `when` each go red. khat's override cases still wait for a consumer with a keys config
+- [x] 2.3 The chords a browser owns: one that the browser or the OS takes before the page refuses at bind time by name — toolbelt `browserOwned(km)` over `BROWSER_OWNS`, the rows read from Chromium's `kReservedCommandIds`, Firefox's `reserved="true"` keys and tab switching, and the fixed macOS, Windows and GNOME defaults; both platforms read whichever this is, as `keymap` builds both, so `<C-t>` refuses on a Mac too, and Cmd off a Mac is the Windows key. A key a page may cancel (`<Mod-s>`, `<Mod-k>`, `<Mod-1>`) is not on it; Safari's Cmd+digit and Cmd+` stay off until a live check. `hotkey()` refuses at the call, `keys()` in a browser at the attach and at the first key for a later keymap, a terminal never. An app window and a fullscreen Keyboard Lock get these back — the reopen path is a consumer that runs in one. Toolbelt 3 rows, kit drive `hotkey` 4 rows; dropping the Windows-key rule and the `hotkey()` check each go red
 
 ### Phase 3 — The consumers
 
 Goal: the three copies gone, each drive green.
 Done when: `verify-tui`, `verify-explore` and `verify-home-row` pass and `rg` finds one chord parser.
 
-- [ ] 3.1 sierra's shell: `VIM` and `FOCUS` become the shell's keymap; the mode stays the shell's
-- [ ] 3.2 Haven: `commands.press`, the waiting operator (400ms becomes 720ms) and the find-walk on await-char and pending; the scene's table ahead of the shell's, which is `FJS-3279`'s fix by construction
-- [ ] 3.3 `rowlist.js` on the kit; browser-kit 2.3's fifteen sites run on it from there
-- [ ] 3.4 `?` in the terminal shell listing the active bindings, read from 1.4
+- [x] 3.1 sierra's shell: `VIM` and `FOCUS` become the shell's keymap; the mode stays the shell's — `shell.js`'s `VIM` is a `keymap` of `h j k l` to the arrow each is renamed to, stepped on the raw keypress before the runtime makes a keydown of it, so a route still reads arrows; `text: false`, since NORMAL is the shell's call and not the field's. The event-to-chord crossing is toolbelt's `chordOf(e)` now, read by mesa's `keys()` and by the shell over the runtime's exported `keyFields(k)`. `verify:tui` green but for `FJS-2931`'s row (open ruling `FJS-D1312`); `J` for `j` in the table reds 5 rows. Toolbelt 1 row
+- [x] 3.2 Haven: the waiting operator (400ms becomes 720ms) and the find-walk on await-char and pending — `home-row.js` is a `keymap` of `d`, `dh`…`dl`, `dd` and the await-chars `f s a`, stepped with `text: false` (the shell owns NORMAL) and flushed at `state.due`, which `HomeRow.mesa` times off `dueAt`; after an operator an arrow still reads back as its letter, since the shell's rename runs first. `commands.press` stays a dispatch by reach, which no keymap states. The ordering half moved to 3.5 by the owner's ruling (option C of three); `FJS-3279` stays fixed by the refocus. Haven 685 passing, `verify:home-row` 10/10, `verify:bolt` green; `g` for `f` in the table reds 2 rows
+- [x] 3.3 `rowlist.js` on the kit; browser-kit 2.3's fifteen sites run on it from there — three toolbelt keymaps, the moves (`j k <Down> <Up> <Home> <End>`), open (`<CR>`) and select (`<Space> x`), stepped with no state since every binding is one key; open and select are active on the row itself alone, so Enter on a button inside a row stays the button's, and a field inside a row is the engine's text context, so `j` types. Not mesa's `keys()`: the active tables turn on the event's target, which its getter does not see. No table binds a modified key, so Shift+Enter and Shift+Space no longer open or select. The fifteen `document` keydowns are `hotkey()`'s, browser-kit 2.3's to move. Kit drive `rowlist` 21/21; the text context off reds 3 rows, `j` bound to `prev` reds 5
+- [x] 3.4 `?` in the terminal shell listing the active bindings, read from 1.4 — the shell's keys are keymaps (`FJS-D1396`): `VIM`, the side's `SIDE`, `CROSS` and `RESIZE` (Ctrl+O only with the side open, Alt+=/- only with both panes drawn), Shell.mesa's `<C-p>` jump and `?` help ahead of the page, `BACK`'s `<Esc>` after it — each stepped where its key was taken before, and `?` is `bindings()` over those active now, in that order, in a `<dialog>` that `?` or Esc closes. Haven Desk's ask-about-item moves from `?` to `b` (`FJS-D1397`). A page's `keys()` hosts join the list with 3.5's walk. `verify:tui` 9 new rows green (the `FJS-2931` row red as before); the side keys proved by a scratch pty probe only, no drive covers them; `verify:home-row` 10/10, `verify:explore` green, Haven 685
+- [x] 3.5 The scene's table ahead of the shell's — `FJS-3279`'s fix by construction: mesa's terminal runtime steps every `keys()` host on the focus path, innermost first, then a table the shell hands it (VIM, `i a /`), before it makes the keydown, with the shell's NORMAL as `text: false`; while a page's sequence is pending the next key is never renamed, as vim maps nothing after `f`. Emacs's `current-active-maps` and CodeMirror's keymap precedence are the one-dispatcher precedent — `stepKeys` in `runtime-terminal.js`: a terminal node hosts `keys()` through `__hostKeys` rather than a keydown listener, and `setShellKeys(r, { text, step })` is the shell's place after them, `text()` false in NORMAL (read by `keys()` as `e.typing`); `keymapsAt(r)` is what `?` now lists ahead of the shell's own. A key a keymap took makes no keydown on a terminal (Q10, `FJS-D1401`), and in both targets a key ending a pending sequence unfinished is swallowed, as khat answers Unhandled. Shell.mesa's `<C-p>`, `?` and `INTO` (`i a /`) and shell.js's `VIM` rename moved into the step; Haven's `HOME_ROW` is a `keys()` host on the line's form, its operator mode, timer and arrow readback gone. Terminal `keymap` 8/8 (a swallowed Esc row; dropping the swallow reds it), runtime `keys` 12/12, kit `hotkey` 22/22, mesa terminal 451, sierra 2387, `verify:tui` green but the `FJS-2931` row, `verify:home-row` 10/10, `verify:bolt` (one timing red on the first run, then 2 green), `verify:explore` and `verify:browser` green, Haven 684. `keymapsAt` feeding `?` has no drive, a scratch probe only
 
 ### Phase 4 — The modal text box (L1)
 
@@ -282,3 +283,19 @@ Done when: a consumer that edits more than a line asks, and names the rows it ne
   - **A** — one `keys()` attachment in mesa's runtime, since both targets deliver DOM-shaped keydown; `hotkey()` is sugar over it.
   - **B** — a browser attachment and a terminal listener in sierra's shell.
   - **Recommend A** — `FJS-D809` made the terminal a target of `web/`, and one binding is what makes Phase 4's box one `.mesa`. Confidence 2.
+- ~~**Q8**~~ **Answered 2026-10-22 (`FJS-D1396`): A — The shell's own keys become keymaps — Ctrl+P, `?`, Ctrl+\\, Ctrl+O, Alt+=/-, Esc back and `h j k l` — each stepped where it is taken today, so one table both dispatches a key and lists it; a page's `keys()` hosts wait for 3.5's walk of the focus path.** — What `?` in the terminal shell lists (3.4). It reads `bindings()`, so only a key in a keymap can be listed, and no route in the tree runs `keys()` in a terminal yet.
+  - **A** — The shell's own keys become keymaps — Ctrl+P, `?`, Ctrl+\\, Ctrl+O, Alt+=/-, Esc back and `h j k l` — each stepped where it is taken today, so one table both dispatches a key and lists it; a page's `keys()` hosts wait for 3.5's walk of the focus path.
+  - **B** — A `keymapsAt(node)` seam in mesa, the `keys()` hosts on the focus path, listed beside `VIM`; in practice `h j k l` alone today.
+  - **C** — Both.
+  - **D** — Hold 3.4 behind 3.5.
+  - **Recommend A** — Emacs's `C-h b` and lazygit's `?` list the active maps in precedence order; A lists every key the shell takes and states each once. Confidence 2.
+- ~~**Q9**~~ **Answered 2026-10-22 (`FJS-D1397`): A — `?` is the shell's in NORMAL, ahead of the page as Ctrl+P is; Desk's key moves to `b`, the word its hint already used.** — The shell's `?` and Haven's Desk `?` (ask the model about the item under the cursor, `IDEAS/haven.md` 20.10). Shell.mesa's keydown runs before any route's, and Desk reads only a key the shell already prevented.
+  - **A** — `?` is the shell's in NORMAL, ahead of the page as Ctrl+P is; Desk's key moves to `b`, the word its hint already used.
+  - **B** — The page first: the help opens only when no route took `?`, so never from a field in NORMAL, which is never in a Haven scene.
+  - **C** — Hold 3.4 until 3.5 orders the tables.
+  - **Recommend A** — a help key works everywhere or is not learned; after 3.5 the shell's table goes behind a page's declared one, so a page can take `?` back. Confidence 2.
+- ~~**Q10**~~ **Answered 2026-10-22 (`FJS-D1401`): A — split by target: a terminal makes no keydown of a key a keymap took, a browser's later listener reads it prevented.** — What a listener around a keymap hears of a key it took (3.5). Asked after the build: dispatched prevented, Haven read it as a NORMAL letter and `f a`'s `a` closed the walk it opened.
+  - **A** — split by target: the terminal consumes it before any keydown, as Emacs and khat do; the browser has no step before dispatch.
+  - **B** — the browser's `keys()` also stops propagation, so neither target's later listener hears it.
+  - **C** — dispatch it prevented on both, and Haven stops reading `defaultPrevented` as NORMAL.
+  - **Recommend A** — moves the fewest callers; the terminal is the one target with a step before dispatch. Confidence 2.

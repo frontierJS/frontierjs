@@ -1,0 +1,163 @@
+<script>
+  // Field.mesa — one file of the draft as a form, opened from the preview when
+  // the clicked words cannot be changed in place (`why` says so), or by name.
+  // The clicked block is selected in the text, or the clicked value's key, so
+  // the owner starts at the words they pointed at. A save is basecamp's `drafts.save`: it reads the
+  // grant on every call and refuses a file somebody changed since it was read.
+  //
+  // The preview is the draft as of its last build, so a line the stamp names
+  // may have moved since; the selection is a starting point, never the write.
+  //
+  // What is typed shows on the page before the save, words only: a block or a
+  // value whose new words are plain text changes where the page shows the old
+  // ones, and the rest are counted as waiting for the rebuild (`FJS-D1399`).
+  import { clientFor } from './handoff.js'
+  import { changedBlocks, liveWords, plainSwap, words } from './live.js'
+  import { blockAt } from './pick.js'
+
+  export let site
+  export let key
+  export let path
+  export let line = null
+  export let why = null
+  export let onclose
+
+  let form    = null
+  let body    = ''
+  let values  = {}
+  let error   = null
+  let notice  = null
+  let busy    = false
+  let waiting = 0
+  let text
+
+  const live = liveWords()
+  $.onDestroy(() => live.restore())
+
+  const drafts = () => clientFor(site, key).service('drafts')
+  const args   = () => ({ appId: site.appId, draft: site.draft, path })
+
+  // A load is the file as basecamp has it, so the page goes back to what it
+  // showed; a save keeps its words shown first.
+  async function load(select = true) {
+    error = null
+    live.restore()
+    waiting = 0
+    try {
+      form = await drafts().invoke('read', null, args())
+      body = form.body
+      values = {}
+      await $.tick()
+      const at = select && line != null ? blockAt(form.body, line - form.bodyLine) : null
+      // A stamp above the body names a value: its key's input, when the form has one.
+      const key = select && !at ? form.keys.find((k) => k.field && k.line === line) : null
+      if (at && text) { text.focus(); text.setSelectionRange(at.start, at.end) }
+      else if (key) document.getElementById(`fjs-key-${key.key}`)?.select?.()
+    } catch (err) {
+      error = err.message
+    }
+  }
+
+  function setValue(k, v) { values = { ...values, [k]: v }; shown() }
+
+  function shown() {
+    if (!form) return
+    const { changes, unplaced } = changedBlocks(form.body, body)
+    const prose = changes.map((c) => ({ path, line: form.bodyLine + c.index, old: words(c.old), next: words(c.next), plain: plainSwap(c.old, c.next) }))
+    const keyed = form.keys
+      .filter((k) => k.field && k.key in values && values[k.key] !== k.value)
+      .map((k) => ({ path, line: k.line, old: words(k.value), next: words(values[k.key]), plain: typeof k.value === 'string' && k.line != null }))
+    waiting = unplaced + live.show([...prose, ...keyed])
+  }
+
+  $: changedKeys = form ? form.keys.filter((k) => k.field && k.key in values && values[k.key] !== k.value).map((k) => k.key) : []
+  $: dirty = !!form && (body !== form.body || changedKeys.length > 0)
+
+  async function save() {
+    busy = true; error = null; notice = null
+    try {
+      const sent = { ...args(), blob: form.blob }
+      if (body !== form.body) sent.body = body
+      if (changedKeys.length) sent.values = Object.fromEntries(changedKeys.map((k) => [k, values[k]]))
+      const saved = await drafts().invoke('save', null, sent)
+      live.keep()
+      await load(false)
+      notice = saved.changed ? `Saved to ${site.draft}. The preview rebuilds with it shortly.` : 'Nothing had changed'
+    } catch (err) {
+      error = err.message
+    }
+    busy = false
+  }
+
+  load()
+  $: path, line, () => load()
+</script>
+
+<article class="card fjs-editor-field" data-fjs-editor-ui aria-label={`Editing ${path}`}>
+  <div class="surface-header">
+    <strong>{path}</strong>
+    <button class="btn ghost" aria-label="Close" onclick={() => onclose?.()}>Close</button>
+  </div>
+  <div class="surface-body stack">
+    {#if why}<p role="status" id="fjs-why">{why}</p>{/if}
+    {#if error}<p class="text-danger" role="alert">{error}</p>{/if}
+    {#if notice}<p role="status">{notice}</p>{/if}
+    {#if waiting}<p role="status" id="fjs-waiting">{waiting === 1 ? 'One change shows' : `${waiting} changes show`} on the page once the preview rebuilds after you save.</p>{/if}
+    {#if form}
+      {#each form.keys as k (k.key)}
+        {#if k.field && typeof k.value === 'boolean'}
+          <label class="field-check">
+            <input type="checkbox" id={`fjs-key-${k.key}`} checked={k.key in values ? values[k.key] : k.value}
+                   onchange={(e) => setValue(k.key, e.target.checked)} />
+            {k.key}
+          </label>
+        {:else if k.field}
+          <div class="field-group">
+            <label for={`fjs-key-${k.key}`}>{k.key}</label>
+            <input id={`fjs-key-${k.key}`} type={typeof k.value === 'number' ? 'number' : 'text'}
+                   value={k.key in values ? values[k.key] : (k.value ?? '')}
+                   oninput={(e) => setValue(k.key, typeof k.value === 'number' ? Number(e.target.value) : e.target.value)} />
+          </div>
+        {/if}
+      {/each}
+      <div class="field-group">
+        <label for="fjs-body">Text</label>
+        <textarea id="fjs-body" rows="14" bind:this={text} value={body} oninput={(e) => { body = e.target.value; shown() }}></textarea>
+      </div>
+    {/if}
+  </div>
+  <div class="surface-footer">
+    <button class="btn primary" id="fjs-save" disabled={!dirty || busy} onclick={save}>
+      {busy ? 'Saving…' : `Save to ${site.draft}`}
+    </button>
+    {#if dirty}<button class="btn ghost" onclick={() => load(false)}>Discard</button>{/if}
+  </div>
+</article>
+
+<style>
+  .fjs-editor-field {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    bottom: 5rem;
+    z-index: 2147483000;
+    width: min(32rem, calc(100vw - 2rem));
+    display: flex;
+    flex-direction: column;
+  }
+  .fjs-editor-field .surface-body {
+    flex: 1;
+    overflow: auto;
+  }
+  .fjs-editor-field .surface-header,
+  .fjs-editor-field .surface-footer {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    justify-content: space-between;
+  }
+  textarea {
+    width: 100%;
+    font-family: var(--font-mono, monospace);
+  }
+</style>

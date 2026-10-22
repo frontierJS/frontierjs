@@ -26,10 +26,13 @@
  * by the row now at its place. A row that is `[hidden]` or
  * `[aria-disabled="true"]` is stepped over.
  *
- * Only the ROW's own key presses are the list's. A letter typed into a field
- * inside a row is a letter, and Enter or Space on a button inside a row is that
- * button's click — so `j` in a row's text box does not move the cursor, and a
- * modified key (⌘K, Ctrl+J) is never taken. The roles are the host's to state:
+ * The keys are toolbelt's `/keys` tables (`IDEAS/keys.md` 3.3). Only the
+ * ROW's own key presses are the list's. A letter typed into a field inside a
+ * row is a letter, by the engine's text rule, and Enter or Space on a button
+ * inside a row is that button's click, since the open and select tables are
+ * active on the row itself alone — so `j` in a row's text box does not move
+ * the cursor. No table binds a modified key, so ⌘K, Ctrl+J, Shift+↓ and
+ * Shift+Enter are never taken. The roles are the host's to state:
  * a list that opens on Enter is `list`/`listitem`, not `listbox`, so none is
  * written here. The cursor does not wrap, since the ends of an inbox are
  * ends.
@@ -39,9 +42,15 @@
  * not rebuilt when that state changes.
  */
 
+import { keymap, step, chordOf } from '@frontierjs/toolbelt/keys'
+
 const SKIP = '[hidden],[aria-disabled="true"]'
 const FOCUSABLE = 'a[href],button,input,select,textarea,summary,[tabindex]'
 const FIELD ='input,textarea,select,[contenteditable=""],[contenteditable="true"]'
+
+const MOVES  = keymap({ j: 'next', '<Down>': 'next', k: 'prev', '<Up>': 'prev', '<Home>': 'first', '<End>': 'last' })
+const OPEN   = keymap({ '<CR>': 'open' })
+const SELECT = keymap({ '<Space>': 'select', x: 'select' })
 
 /**
  * @param {() => {
@@ -103,39 +112,23 @@ export function rowlist(options) {
     }
 
     function keydown(e) {
-      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.defaultPrevented) return
       const row = rowOf(e.target)
       if (!row || !el.contains(row)) return
       const own = e.target === row
-      // A field inside a row keeps every key it has. Past that, the row's own
-      // keys are only the row's: Enter or Space on an inner control is its click.
-      if (!own && e.target.closest?.(FIELD)) return
-
+      const o = options()
+      const active = own ? [MOVES, o.onopen && OPEN, o.onselect && SELECT].filter(Boolean) : [MOVES]
+      // Every binding is one key, so no state is held between presses; none
+      // is `<Mod-…>`, so either platform's trie answers alike.
+      const text = !own && !!e.target.closest?.(FIELD)
+      const { action } = step(null, chordOf(e), { active, mac: false, text }, 0).outcome ?? {}
+      if (action === undefined) return
+      e.preventDefault()
+      if (action === 'open') return o.onopen(row, e)
+      if (action === 'select') return o.onselect(row, e)
       const all = rows()
       const at = all.indexOf(row)
-      const o = options()
-      let next
-
-      switch (e.key) {
-        case 'ArrowDown': case 'j': next = all[at + 1] ?? row; break
-        case 'ArrowUp':   case 'k': next = all[at - 1] ?? row; break
-        case 'Home': next = all[0]; break
-        case 'End':  next = all[all.length - 1]; break
-        case 'Enter':
-          if (!own || !o.onopen) return
-          e.preventDefault()
-          o.onopen(row, e)
-          return
-        case ' ': case 'x':
-          if (!own || !o.onselect) return
-          e.preventDefault()
-          o.onselect(row, e)
-          return
-        default: return
-      }
-      if (e.shiftKey) return
-      e.preventDefault()
-      go(next)
+      go({ next: all[at + 1] ?? row, prev: all[at - 1] ?? row, first: all[0], last: all.at(-1) }[action])
     }
 
     function focusin(e) {

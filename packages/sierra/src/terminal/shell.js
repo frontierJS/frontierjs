@@ -66,22 +66,38 @@ import {
 import { matchRoute, normalizePath } from '../router/match.js'
 import { remountKey } from '../router/internals.js'
 import { createSignal, flushSync } from '@frontierjs/mesa/runtime'
+import { keymap, step, chordOf, bindings } from '@frontierjs/toolbelt/keys'
 import { installTerminalLoader } from './loader.js'
 
 const SHELL = new URL('./Shell.mesa', import.meta.url).pathname
-// Ctrl+\ is a split in VS Code, and o is tmux's next pane.
-const TOGGLE_SIDE = '\\'
-const OTHER_PANE  = 'o'
+// The shell's keys are keymaps, each stepped where its key is taken, so `?`
+// lists them with `bindings()` as they dispatch. Ctrl+\ is a split in VS
+// Code, and o is tmux's next pane.
+const SIDE  = keymap({ '<C-\\>': 'side' })
+const CROSS = keymap({ '<C-o>': 'pane' })
 // A page narrower than PAGE_COLUMNS clips a scene, so where the side would
 // leave it fewer, an open side shows one pane at a time.
 const SIDE_SHARE   = 0.3
 const PAGE_COLUMNS = 120
 // Alt+= and Alt+- move the split's edge, by RESIZE_STEP columns, as far as
 // leaves each pane EDGE_COLUMNS. opentui's fields bind Alt+arrows to words.
-const WIDER  = { '=': 1, '+': 1, '-': -1, '_': -1 }
+const RESIZE = keymap({ '<A-=>': 'wider', '<A-+>': 'wider', '<A-->': 'narrower', '<A-_>': 'narrower' })
 const RESIZE_STEP  = 5
 const EDGE_COLUMNS = 20
 const MODE  = new URL('./Mode.mesa', import.meta.url).pathname
+// NORMAL's keymap. Each action is the arrow a keypress is renamed to, as the
+// engine names it and the sequence it sends; a j or k a page leaves alone
+// moves focus by FOCUS.
+const VIM = keymap({ h: 'left', j: 'down', k: 'up', l: 'right' })
+// NORMAL's ways into INSERT, on a field: `a` one character right, and `/` typed.
+const INTO = keymap({ i: 'insert', a: 'append', '/': 'slash' })
+// Taken once every mount has had the key, as a page's own Esc closes its panel.
+const BACK = keymap({ '<Esc>': 'back' })
+const ARROW = { left: '\x1b[D', down: '\x1b[B', up: '\x1b[A', right: '\x1b[C' }
+const FOCUS = { down: 1, up: -1 }
+// Every binding is one chord, so a key is stepped alone; a terminal's
+// `<Mod-…>` is Ctrl.
+const actionOf = (chord, active, text = false) => step(null, chord, { active, mac: false, text }, 0).outcome?.action
 const NO_LOWERING = / has no terminal lowering$/
 
 /** Every node of the route tree that renders a page, in table order. */
@@ -150,11 +166,11 @@ const screenKey = (node, params) =>
   `${node.id} ${remountKey({ meta: node.meta, ownParams: node.params }, params) ?? ''}`
 
 /**
- * The side pane's two keys, on `renderer` ahead of every mount. The pane is
+ * The side pane's keys, on `renderer` ahead of every mount. The pane is
  * hidden until the first Ctrl+\, which mounts `file` there. Where the
  * page would keep fewer than `PAGE_COLUMNS`, an open side is ZOOMED, as tmux's prefix z: the pane holding
  * focus is drawn full width and Ctrl+O swaps. `setZoom` hears whether the
- * page is drawn over a side that is open.
+ * page is drawn over a side that is open. Answers the keymaps active now.
  */
 function paneKeys(tui, renderer, file, setMode, setZoom, say) {
   const box = tui.sideOf(renderer, { width: `${SIDE_SHARE * 100}%` })
@@ -214,24 +230,25 @@ function paneKeys(tui, renderer, file, setMode, setZoom, say) {
   // unmarked; the kitty protocol names it '=' with meta.
   // biome-ignore lint/suspicious/noControlCharactersInRegex: ESC is the prefix a legacy terminal's Alt key sends
   const altOf = (k) => k.ctrl ? null : k.meta ? k.name : /^\x1b(.)$/.exec(k.sequence ?? '')?.[1]
+  // Ctrl+O crosses only to a side that is open, and zoomed, one pane takes
+  // the row and there is no edge to move.
+  const active = () => [SIDE, ...(open ? [CROSS] : []), ...(box.visible && page.visible ? [RESIZE] : [])]
   renderer.keyInput.on('keypress', (k) => {
-    const wider = WIDER[altOf(k)]
-    // Zoomed, one pane takes the row and there is no edge to move.
-    if (wider && box.visible && page.visible) {
-      k.preventDefault()
-      columns = fit((columns ?? box.width) + wider * RESIZE_STEP)
-      lay()
-      return
-    }
-    if (!k.ctrl || k.meta || k.option) return
-    if (k.name === TOGGLE_SIDE) { k.preventDefault(); toggle() }
-    else if (k.name === OTHER_PANE && open) {
-      k.preventDefault()
+    const alt = altOf(k)
+    const action = actionOf(alt ? { key: alt, alt: true } : chordOf(tui.keyFields(k)), active())
+    if (!action) return
+    k.preventDefault()
+    if (action === 'side') toggle()
+    else if (action === 'pane') {
       const to = tui.paneOf(renderer) === 'side' ? 'page' : 'side'
       show(to)
       into(to)
+    } else {
+      columns = fit((columns ?? box.width) + (action === 'wider' ? RESIZE_STEP : -RESIZE_STEP))
+      lay()
     }
   })
+  return active
 }
 
 /**
@@ -334,30 +351,45 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
     })
   }
 
-  // In NORMAL, h j k l are the arrows, so a route that walks or scrolls on
-  // them takes vim's keys without knowing the mode. The key is renamed before
-  // the runtime makes a keydown of it, which is why this listener goes on
-  // before the first mount takes the renderer's keys; added after, a route
-  // would read a letter. A j or k the page leaves alone moves focus, below.
   const [mode, setPageMode] = createSignal({ mode: 'normal', field: false })
   const setMode = (m) => setPageMode(tui.paneOf(renderer) === 'side' ? { mode: 'side', field: m.field } : m)
-  const VIM = { h: ['left', '\x1b[D'], j: ['down', '\x1b[B'], k: ['up', '\x1b[A'], l: ['right', '\x1b[C'] }
-  const FOCUS = { j: 1, k: -1 }
   let focusStep = 0
+  let adopted = false
+  // Before the first mount takes the renderer's keys, so the key lands on
+  // the control taken here.
   renderer.keyInput.on('keypress', (k) => {
     focusStep = 0
     // A route whose controls paint after its mount (a list once its load
     // lands) had nothing to focus when it opened. The first key that is not
     // a way out takes the first control, so Enter presses it without a Tab.
-    const adopted = shown && !renderer.currentFocusedRenderable && !k.ctrl && !k.meta && !k.option
+    adopted = shown && !renderer.currentFocusedRenderable && !k.ctrl && !k.meta && !k.option
       && k.name !== 'tab' && k.name !== 'escape' && tui.focusNext()
-    const arrow = VIM[k.name]
-    if (!arrow || mode().mode !== 'normal' || k.ctrl || k.meta || k.option || k.shift) return
-    focusStep = adopted ? 0 : FOCUS[k.name] ?? 0
-    ;[k.name, k.sequence] = arrow
+  })
+  // The shell's keys come after every keymap the page declares and before
+  // the keydown (`setShellKeys`), so a page's pending `f` takes the next key
+  // before Shell.mesa's `a` enters INSERT or `l` becomes an arrow. In NORMAL
+  // no field is a text context, since the mode is the shell's. h j k l are
+  // the arrows there, so a route that walks or scrolls on them takes vim's
+  // keys without knowing the mode; a j or k the page leaves alone moves
+  // focus, below. In the side, its keys are its own.
+  let shellStep = null
+  const vim = (e) => {
+    const action = actionOf(chordOf(e), [VIM])
+    if (!action) return
+    focusStep = adopted ? 0 : FOCUS[action] ?? 0
+    e.raw.name = action
+    e.raw.sequence = ARROW[action]
+  }
+  tui.setShellKeys(renderer, {
+    text: () => mode().mode === 'normal' ? false : undefined,
+    step: (e) => {
+      if (mode().mode === 'side') return
+      shellStep?.(e)
+      if (!e.defaultPrevented && mode().mode === 'normal') vim(e)
+    },
   })
   const [zoom, setZoom] = createSignal(false)
-  if (side) paneKeys(tui, renderer, side, setMode, setZoom, (note) => set({ note }))
+  const paneMaps = side ? paneKeys(tui, renderer, side, setMode, setZoom, (note) => set({ note })) : () => []
 
   const listed = {
     routes:   open.filter((r) => !r.params.length),
@@ -366,7 +398,7 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
   }
   const [state, write] = createSignal({ app, note: '', ...listed })
   const set = (fields) => write({ ...state(), ...fields })
-  const where = () => `${page.pathname}${page.search} · Esc goes back${jumps ? ' · Ctrl+P jumps' : ''}`
+  const where = () => `${page.pathname}${page.search} · Esc goes back${jumps ? ' · Ctrl+P jumps' : ''} · ? keys`
 
   let screen = null
   let shown = null      // the screenKey of the route on screen, null on the list
@@ -425,6 +457,23 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
     else goto(path)
   }
 
+  // Shell.mesa steps these and `INTO` after the page's keymaps.
+  const shellKeys = keymap({ ...(jumps && { '<C-p>': 'jump' }), '?': 'help' })
+  const backs = () => shown && tui.paneOf(renderer) !== 'side'
+  // What `?` lists: each keymap a key is stepped against, in the order it
+  // meets them — the side's keys, the page's, then the shell's.
+  const help = () => {
+    const normal = mode().mode === 'normal'
+    return bindings({
+      active: [
+        ...paneMaps(), ...tui.keymapsAt(renderer),
+        shellKeys, ...(normal && mode().field ? [INTO] : []), ...(normal ? [VIM] : []),
+        ...(backs() ? [BACK] : []),
+      ],
+      mac: false, text: false,
+    })
+  }
+
   roots.push(tui.mount(Mode, { renderer, parent: tui.footerOf(renderer), props: { mode, zoom } }))
   roots.push(tui.mount(Shell, { renderer, props: {
     state,
@@ -433,6 +482,10 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
     onjump: jump,
     onmove: (step) => step > 0 ? tui.focusNext() : tui.focusPrev(),
     onmode: setMode,
+    keys:   shellKeys,
+    into:   INTO,
+    steps:  (fn) => { shellStep = fn },
+    help,
   } }))
   tui.followLinks(renderer, (href) => {
     if (!followLink(href) && shown) set({ note: `${href} is not a route here` })
@@ -447,7 +500,7 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
   // An Escape the page prevented was the page's: a confirm panel closing
   // must not also leave the route.
   renderer.keyInput.on('keypress', (k) => {
-    if (k.name !== 'escape' || !shown || k.defaultPrevented || tui.paneOf(renderer) === 'side') return
+    if (k.defaultPrevented || !backs() || actionOf(chordOf(tui.keyFields(k)), [BACK]) !== 'back') return
     if ((history?.state?.index ?? 0) > 0) back()
     else showList()
   })

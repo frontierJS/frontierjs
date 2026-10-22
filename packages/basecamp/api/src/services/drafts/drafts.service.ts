@@ -15,6 +15,7 @@
 //   GET  /drafts  files  { appId, draft } — the markdown an owner may edit on it
 //   GET  /drafts  read   { appId, draft, path } — one file as a form, with the blob a save names
 //   POST /drafts  save   { appId, draft, path, blob, body?, values?, message? } — one commit, pushed
+//   POST /drafts  save   { appId, draft, path, text: { line, old, next } } — the words clicked on the preview, swapped
 //   POST /drafts  preview { appId, draft } — build its preview again
 //   POST /drafts  publish { appId, draft } — merge, build, deploy (the `publish` grant)
 //   GET  /drafts  history { appId } — the site's live releases, newest first, each with what it shipped
@@ -33,6 +34,12 @@
 // What an owner may write is site-kit's rule (`FJS-D1226`), asked here by
 // path and again of the file the edit produces.
 //
+// A text edit carries no blob: the preview was built from some earlier head,
+// and the old words found in the block its stamp names are the check that the
+// edit still means what the owner saw (`@frontierjs/toolbelt/textedit`). A
+// stamp inside the front matter names a value a block drew (`FJS-D1231`), and
+// is site-kit's `field` edit of the value written on that line.
+//
 // **A preview signs in through a handoff** (`FJS-D1357`). Its Edit button
 // sends the person to /sites/<id>/edit/, which calls `handoff` with the
 // preview's address and a PKCE challenge; the address must be one this site's
@@ -49,6 +56,8 @@
 import { createService, BadRequest, Conflict, Forbidden, NotFound, Unauthorized, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { applyEdit, formOf, pathRefusal } from '@frontierjs/site-kit/editable'
+import { splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
+import { locateText } from '@frontierjs/toolbelt/textedit'
 import { db } from '../../core/resource.ts'
 import { isGit } from '../../core/app-source.ts'
 import {
@@ -134,6 +143,16 @@ async function lastPublish(appId: string) {
     author: row.author, at: row.finishedAt ?? row.startedAt ?? row.queuedAt,
     steps: steps.map((s: { name: string, status: string, output: string | null }) => ({ name: s.name, status: s.status, output: s.output })),
   }
+}
+
+/** A save's `text`, the words a click on the preview changed, or null when the save is a form's. */
+function textEdit(data: { body?: unknown, values?: unknown, text?: unknown }): { line: number, old: string, next: string } | null {
+  if (data.text === undefined) return null
+  const t = data.text as { line?: unknown, old?: unknown, next?: unknown } | null
+  if (typeof t !== 'object' || t === null || !Number.isInteger(t.line) || typeof t.old !== 'string' || typeof t.next !== 'string')
+    throw new BadRequest('text is { line, old, next } — the stamp\'s line, the words the page showed, and the new words')
+  if (data.body !== undefined || data.values !== undefined) throw new BadRequest('a save is a text edit or a form, not both')
+  return { line: t.line as number, old: t.old, next: t.next }
 }
 
 function editablePath(): string {
@@ -321,15 +340,25 @@ export default createService({
     const site  = await grantedSite()
     const draft = arg('draft')
     const path  = editablePath()
-    const data  = ($.data ?? {}) as { blob?: unknown, body?: unknown, values?: unknown, message?: unknown }
-    if (typeof data.blob !== 'string' || !data.blob) throw new BadRequest('blob is required — the file as you read it')
+    const data  = ($.data ?? {}) as { blob?: unknown, body?: unknown, values?: unknown, text?: unknown, message?: unknown }
+    const swap  = textEdit(data)
+    if (!swap && (typeof data.blob !== 'string' || !data.blob)) throw new BadRequest('blob is required — the file as you read it')
     if (data.body !== undefined && typeof data.body !== 'string') throw new BadRequest('body is the file\'s text below its front matter')
     if (data.values !== undefined && (typeof data.values !== 'object' || data.values === null || Array.isArray(data.values)))
       throw new BadRequest('values maps a front-matter key to its new value')
 
     const file = await checkout(() => readDraftFile(site, draft, path))
-    if (file.blob !== data.blob) throw new Conflict(`${path} changed on this draft since you opened it — open it again`)
-    const edit = applyEdit(file.text, { body: data.body as string | undefined, values: data.values as Record<string, unknown> | undefined })
+    if (!swap && file.blob !== data.blob) throw new Conflict(`${path} changed on this draft since you opened it — open it again`)
+    let body = data.body as string | undefined
+    const { body: was } = splitFrontmatter(file.text)
+    const off = file.text.length - was.length
+    const field = swap && swap.line < file.text.slice(0, off).split('\n').length ? swap : undefined
+    if (swap && !field) {
+      const at = locateText(file.text, { ext: 'md', ...swap })
+      if (at.why !== undefined) throw new BadRequest(`Those words cannot be changed on their own here: ${at.why}`)
+      body = was.slice(0, at.start - off) + at.text + was.slice(at.end - off)
+    }
+    const edit = applyEdit(file.text, { body, values: data.values as Record<string, unknown> | undefined, field })
     if ('refused' in edit) throw new BadRequest(edit.refused)
 
     const user = await sys().user.findFirst({ where: { id: me() } })

@@ -42,6 +42,9 @@
       "types": "./src/browser/browser.d.ts",
       "import": "./src/browser/index.js"
     },
+    "./keys": {
+      "import": "./src/keys.js"
+    },
     "./vite": {
       "import": "./mesa-vite/index.js"
     },

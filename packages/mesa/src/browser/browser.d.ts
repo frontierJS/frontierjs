@@ -92,3 +92,21 @@ export const tab: {
   readonly visible: boolean
   readonly focused: boolean
 }
+
+/**
+ * One key binding, in vim's spelling (`FJS-D1383`): `'<Mod-k>'`, `'<Esc>'`,
+ * `'gd'`. `<Mod-…>` is Cmd on Apple platforms and Ctrl elsewhere. With
+ * `scope` it listens on the nearest delegation root above that element, read
+ * at the call; without, on `document`. Two bindings of one key on one root:
+ * the newest answers until it is disposed. `when` is read at each key and
+ * false parks the binding. In a text field a key with no Ctrl, Alt or Cmd
+ * types instead. A chord the spelling refuses throws, as does one a browser
+ * or the OS takes first on either platform (`<Mod-w>`, `<C-Tab>`). Server render: nothing
+ * bound, the dispose a no-op. Throws on a terminal or a phone —
+ * `@frontierjs/mesa/keys` is the binding there.
+ */
+export function hotkey(
+  chord: string,
+  fn: (e?: KeyboardEvent) => void,
+  options?: { scope?: Element, when?: () => boolean },
+): () => void

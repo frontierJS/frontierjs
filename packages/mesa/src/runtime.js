@@ -1363,6 +1363,49 @@ export function bindText(el, fn) {
   })
 }
 
+// ─── Provenance (FJS-D1231) ───────────────────────────────────────────────────
+
+// A symbol property and not a WeakMap: a block that copies an entry to change
+// one key (`{ ...item, link }`) keeps the rest of its lines, since spread copies
+// an enumerable symbol, and two copies of this module agree on `Symbol.for`.
+// JSON, `Object.keys` and `for…in` never see it.
+const PROVENANCE = Symbol.for('mesa.provenance')
+
+/**
+ * `value` with each listed field marked with the file line that wrote it, for
+ * the stamp below. `at` is `[path, loc]` pairs from the top of `value`. A `.md`
+ * module's `frontmatter` is recorded this way when the build stamps.
+ */
+export function recorded(value, at) {
+  for (const [path, loc] of at) {
+    let box = value
+    for (let k = 0; k < path.length - 1 && box && typeof box === 'object'; k++) box = box[path[k]]
+    if (!box || typeof box !== 'object') continue
+    const key = path[path.length - 1]
+    if (!Object.hasOwn(box, PROVENANCE)) box[PROVENANCE] = {}
+    box[PROVENANCE][key] = [loc, box[key]]
+  }
+  return value
+}
+
+/**
+ * Stamp `el` with the line of the field it shows, when `read()` answers
+ * `[object, key]` for a recorded field still holding the value that line
+ * wrote. Anything else keeps the template's stamp: a copy that changed the key
+ * is not that line's value any more.
+ */
+export function stampFrom(el, read) {
+  createEffect(() => {
+    let at
+    try {
+      const [box, key] = read()
+      const p = box?.[PROVENANCE]?.[key]
+      if (p && p[1] === box[key]) at = p[0]
+    } catch {}
+    if (at) el.setAttribute('data-fjs-loc', at)
+  })
+}
+
 // DOM properties that should be set directly on the element rather than via
 // setAttribute. Setting these as attributes either doesn't work or coerces
 // the value to a string in ways that break boolean semantics.

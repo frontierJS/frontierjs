@@ -98,6 +98,22 @@ function textRuns(src, from, to) {
   return out
 }
 
+// The `.md` block a line opens: from that line to the next blank one. Null for
+// a line before `bodyStart` (the frontmatter) or past the end.
+function blockSpan(src, line, bodyStart) {
+  if (!(line >= 1)) return null
+  let at = 0
+  for (let n = 1; n < line; n++) {
+    at = src.indexOf('\n', at) + 1
+    if (!at) return null
+  }
+  if (at < bodyStart || at >= src.length) return null
+  const blank = /\n[ \t]*\r?\n/g
+  blank.lastIndex = at
+  const m = blank.exec(src)
+  return { from: at, to: m ? m.index : src.length }
+}
+
 const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 // The page shows a character the source may have written as an entity:
 // `Before &amp; after` reads `Before & after`.
@@ -119,13 +135,22 @@ const encode = { mesa: t => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').repla
  * the source writes it — or `{ why }` when it cannot
  * be done without guessing. `line`/`col` is the element's `data-fjs-loc` and
  * `tag` its name; a `.mesa` element is searched between its own open and close
- * tags. In a `.md` file the whole body is searched and never the frontmatter,
- * so the same words twice anywhere in the body are refused. Whitespace in `old`
- * matches any run of it, since the page collapsed what the source wrapped.
+ * tags. In a `.md` file the block `line` opens is searched, up to the next
+ * blank line, and the whole body (never the frontmatter) when that block no
+ * longer holds the words: a save above it since the page was built moves its
+ * line, and the same words twice in the body are then refused. Whitespace in
+ * `old` matches any run of it, since the page collapsed what the source
+ * wrapped, and the new text is one line for the same reason.
+ *
+ * @param {string} src
+ * @param {{ ext: string, line: number, col?: number, tag?: string, old: string, next: string }} at — `col` and `tag` are read in a `.mesa` file only
+ * @returns {{ start: number, end: number, from: number, to: number, text: string, why?: undefined } | { why: string }}
  */
 export function locateText(src, { ext, line, col, tag, old, next }) {
   const words = String(old ?? '').trim().split(/\s+/).filter(Boolean)
   if (!words.length) return { why: 'the element has no text of its own' }
+  next = String(next ?? '').replace(/\s+/g, ' ').trim()
+  if (!next) return { why: 'the new text is empty' }
   if (MARKUP[ext]?.test(next)) return { why: 'the new text holds markup characters' }
 
   let from = 0, to = src.length
@@ -149,9 +174,17 @@ export function locateText(src, { ext, line, col, tag, old, next }) {
   // inside `Items`.
   const edge = (w, side) => /\w/.test(side === 'start' ? w[0] : w.at(-1)) ? (side === 'start' ? '(?<!\\w)' : '(?!\\w)') : ''
   const re = new RegExp(edge(words[0], 'start') + words.map(w => [...w].map(charRe).join('')).join('\\s+') + edge(words.at(-1), 'end'), 'g')
-  const hits = []
-  for (const [a, b] of textRuns(src, from, to))
-    for (const m of src.slice(a, b).matchAll(re)) hits.push({ start: a + m.index, end: a + m.index + m[0].length })
+  const find = (a0, b0) => {
+    const out = []
+    for (const [a, b] of textRuns(src, a0, b0))
+      for (const m of src.slice(a, b).matchAll(re)) out.push({ start: a + m.index, end: a + m.index + m[0].length })
+    return out
+  }
+  let hits = []
+  const block = ext === 'md' ? blockSpan(src, line, from) : null
+  if (block) hits = find(block.from, block.to)
+  if (hits.length) ({ from, to } = block)
+  else hits = find(from, to)
   if (!hits.length) return { why: 'the text is not written in the source — it is interpolated, or split by markup' }
   if (hits.length > 1) return { why: `the text occurs ${hits.length} times where the element was written` }
   return { start: hits[0].start, end: hits[0].end, from, to, text: encode[ext](next) }

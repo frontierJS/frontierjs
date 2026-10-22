@@ -772,8 +772,9 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
       if (existing) return existing.id
     }
 
-    // A STATED id is a claim of idempotency for all time — the id is the
-    // primary key, so the work is already queued or already done. Checked
+    // A STATED id is a claim of idempotency until the cleanup sweep deletes
+    // the finished row — the id is the primary key, so the work is already
+    // queued or already done. Checked
     // first because that is the cheap answer; the insert below is what
     // settles a race, since two processes can both read nothing here.
     if (dispatchOpts.id && stmts.getById.get({ id })) return id

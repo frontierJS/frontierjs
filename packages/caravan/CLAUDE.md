@@ -177,8 +177,10 @@ bin/
   built from a row id is not idempotent either — SQLite reuses ids, so
   `courier-book:4` names two different orders months apart.
 - **`dispatch({ id })` IS the idempotency key, and it is the primary key.** A
-  stated id makes the dispatch a no-op for all time: the work is already queued
-  or already done. For a caller holding a durable id and retrying a handoff it
+  stated id makes the dispatch a no-op while its row exists: the work is already
+  queued or already done. The row lasts until the cleanup sweep deletes it,
+  `cleanupAfter` (7 days by default) after it finished, so that is the replay
+  window an id protects. For a caller holding a durable id and retrying a handoff it
   cannot confirm — junction's outbox relay crosses two SQLite files, so the
   queue insert and the delivery mark cannot be one transaction, and it dispatches
   under the outbox row's id so the replay costs nothing (`FJS-D35`). Only state

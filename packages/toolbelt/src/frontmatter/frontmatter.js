@@ -65,6 +65,35 @@ export function parseFrontmatterBlock(text) {
 }
 
 /**
+ * Where each value of a file's frontmatter is written: its path from the top
+ * (`['items', 0, 'name']`), and the file's line and column it starts on, both
+ * from 1. A text, number, yes/no or null written on one line also carries
+ * `start`/`end`, its offsets in `source` with its quotes and without a trailing
+ * comment, so a writer can swap exactly that value. A list, a map and a value
+ * inside `[ ]` or `{ }` are not listed. A preview build
+ * stamps an element with the line of the value it shows (`FJS-D1231`), and an
+ * owner's edit of that element writes back here.
+ *
+ * @param {string} source
+ * @returns {Array<{ path: Array<string|number>, line: number, column: number, start?: number, end?: number }>}
+ * @throws {Error} as `parseFrontmatter`
+ */
+export function frontmatterPositions(source) {
+  const { block } = splitFrontmatter(source)
+  if (block === null) return []
+  const blockAt = source.indexOf('\n') + 1
+  const starts = [blockAt]
+  for (let k = block.indexOf('\n'); k !== -1; k = block.indexOf('\n', k + 1)) starts.push(blockAt + k + 1)
+  const out = []
+  read(block, 1, (path, line, from, to) => {
+    const at = { path, line: line + 2, column: from + 1 }
+    if (to !== undefined) Object.assign(at, { start: starts[line] + from, end: starts[line] + to })
+    out.push(at)
+  })
+  return out
+}
+
+/**
  * The text to write after `key: ` so this reader reads back exactly `value`.
  * A scaffold interpolating a person's words into a block wrote `description:
  * Fix: the login` and got a refusal, or `alias: a # b` and got `a`.
@@ -122,10 +151,14 @@ function put(obj, key, value) {
 
 // ─── the reader ──────────────────────────────────────────────────────────────
 
-function read(text, offset) {
+// `found(path, line, from, to)` hears each scalar as it is read; `line` is
+// 0-based in `text` and `from`/`to` are offsets in that line, `to` only for a
+// value written on one line.
+function read(text, offset, found = null) {
   const lines = text.split(/\r?\n/)
   let i = 0
   let depth = 0
+  const path = []
 
   const fail = (message, at = i) => {
     const err = new Error(`line ${at + 1 + offset}: ${message}`)
@@ -219,7 +252,9 @@ function read(text, offset) {
       if (!entry) fail('expected `key: value`')
       if (Object.hasOwn(out, entry.key)) fail(`\`${entry.key}\` is declared twice`)
       const line = i++
+      path.push(entry.key)
       put(out, entry.key, value(entry.rest, n, line, false))
+      path.pop()
     }
   }
 
@@ -235,6 +270,7 @@ function read(text, offset) {
       let col = n + 1
       while (s[col] === ' ') col++
       const rest = s.slice(col)
+      path.push(out.length)
       if (rest === '' || rest[0] === '#') {
         i++
         out.push(nested(n, true))
@@ -247,6 +283,7 @@ function read(text, offset) {
         const line = i++
         out.push(value(rest, n, line, true))
       }
+      path.pop()
     }
   }
 
@@ -265,10 +302,17 @@ function read(text, offset) {
     const c = rest[0]
     if (refusals[c]) fail(refusals[c], line)
     if (isItem(rest, 0)) fail('a list starts on the line after its key', line)
-    if (c === '|' || c === '>') return blockScalar(rest, n, line)
     if (c === '[' || c === '{') return flow(rest, line)
-    if (c === '"' || c === "'") return quoted(rest, line)
-    return plain(rest, n, line)
+    const block = c === '|' || c === '>'
+    const v = block ? blockScalar(rest, n, line) : c === '"' || c === "'" ? quoted(rest, line) : plain(rest, n, line)
+    if (found) {
+      const from = lines[line].length - rest.length
+      const width = block || i !== line + 1 ? undefined
+        : c === '"' || c === "'" ? closingQuote(rest, 1, c) + 1
+        : cutComment(rest).text.length
+      found([...path], line, from, width === undefined ? undefined : from + width)
+    }
+    return v
   }
 
   // ─── plain ───

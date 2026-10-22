@@ -15,6 +15,7 @@ import { loadConfig } from './config.js'
 import { setVerbose } from './verbosity.js'
 import { flagSpelling, flagConstraint, withModuleFlags } from './flags.js'
 import { APPROVED } from './effects.js'
+import { tellNotice } from './tell.js'
 
 // ─── .fli.json + .env — load both from project root ──────────────────────────
 loadConfig()
@@ -603,6 +604,15 @@ export async function run(process) {
   // too, for the clean-error path, and still reaches the command: it is a
   // DEFAULT_FLAGS entry, and `fli dev` carries it on to the servers it starts.
   const { help: _help, h: _h, project: _project, ...cmdFlag } = flag
+
+  // One line while letters wait at the post (FJS-D1398). Only at a terminal:
+  // completion runs on every Tab press and would print into the prompt, and
+  // `inbox` is about to print the letters themselves.
+  const title = entry.meta.title ?? ''
+  if (process.stderr.isTTY && title !== 'tell:inbox' && !title.startsWith('completion:')) {
+    const notice = tellNotice()
+    if (notice) process.stderr.write(chalk.yellow(`✉ ${notice}`) + '\n')
+  }
   const { Command } = await import('./runtime.js')
   const command = await Command({ file: entry.filePath, arg: rawArgs, flag: cmdFlag })
   return command()

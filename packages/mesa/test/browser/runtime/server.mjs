@@ -61,6 +61,7 @@ const IMPORT_MAP = {
   imports: {
     '@frontierjs/mesa/runtime':    '/mesa/src/runtime.js',
     '@frontierjs/mesa/browser':    '/mesa/src/browser/index.js',
+    '@frontierjs/mesa/keys':       '/mesa/src/keys.js',
     ...toolbeltImports,
   },
 }

@@ -59,7 +59,7 @@ export default {
     },
 
     web: {
-      domain: 'basecamp.maverickmade.tech',
+      domain: '',
       keep_releases: 3
       // ssl: {
       //   cert: '/etc/ssl/certs/basecamp.pem',
@@ -72,7 +72,7 @@ export default {
       // the Dockerfile's DATABASE_URL points. A database anywhere else is lost
       // on the next swap, and the health step puts the old container back.
       path: '/data',
-      file: 'basecamp.db',
+      file: 'production.db',
       keep_backups: 5
     }
   }

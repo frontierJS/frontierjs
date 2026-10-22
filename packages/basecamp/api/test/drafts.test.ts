@@ -153,6 +153,43 @@ describe('drafts', () => {
     expect((await save({ body: 'Open Sundays.\n' })).code).toBe(409)
     expect(git(remote, 'show', 'draft/spring-hours:site/content/routes/index.md')).toMatch(/Closed Mondays\.$/)
   })
+
+  test('a text edit swaps the words in the block its line opens, and words it cannot place alone are refused', async () => {
+    const path = 'content/routes/index.md'
+    const call = (extra: Record<string, unknown>) => drafts(editor).call('save', undefined, { appId: site.id, draft: 'spring-hours', path, ...extra })
+    const form = await drafts(editor).call('read', undefined, { appId: site.id, draft: 'spring-hours', path })
+    await call({ blob: form.blob, body: 'Call us today.\n\nOpen late.\nCall us today.\n' })
+    const second = form.bodyLine + 2
+
+    const saved = await call({ text: { line: second, old: 'Call us today.', next: 'Ring us now.' } })
+    expect(saved.changed).toBe(true)
+    expect(git(remote, 'show', 'draft/spring-hours:site/content/routes/index.md'))
+      .toBe(PAGE.replace('Welcome', 'Hello').replace('We open at nine.\n', 'Call us today.\n\nOpen late.\nRing us now.'))
+    expect(git(remote, 'log', '-1', '--format=%an|%s', 'draft/spring-hours')).toBe(`Owner|Edit ${path}`)
+
+    const head = git(remote, 'rev-parse', 'draft/spring-hours')
+    expect((await refusal(call({ text: { line: second, old: 'Open late, Sundays.', next: 'x' } }))).message).toMatch(/cannot be changed on their own/)
+    expect((await refusal(call({ text: { line: second, old: 'Open late.', next: '*late*' } }))).message).toMatch(/markup/)
+    expect((await refusal(call({ text: { line: second, old: 'Open late.', next: 'x' }, body: 'y' }))).message).toMatch(/not both/)
+    expect((await refusal(call({ text: { line: 'two', old: 'Open late.', next: 'x' } }))).code).toBe(400)
+    expect(git(remote, 'rev-parse', 'draft/spring-hours')).toBe(head)
+  })
+
+  test('a text edit on a front-matter line writes the value written there (FJS-D1231)', async () => {
+    const path = 'content/routes/index.md'
+    const call = (extra: Record<string, unknown>) => drafts(editor).call('save', undefined, { appId: site.id, draft: 'spring-hours', path, ...extra })
+    const form = await drafts(editor).call('read', undefined, { appId: site.id, draft: 'spring-hours', path })
+    const line = (k: string) => form.keys.find((e: any) => e.key === k).line
+    const before = git(remote, 'show', 'draft/spring-hours:site/content/routes/index.md')
+
+    expect((await call({ text: { line: line('title'), old: 'Hello', next: 'Spring: open' } })).changed).toBe(true)
+    expect(git(remote, 'show', 'draft/spring-hours:site/content/routes/index.md')).toBe(before.replace('title: Hello', 'title: "Spring: open"'))
+
+    const head = git(remote, 'rev-parse', 'draft/spring-hours')
+    expect((await refusal(call({ text: { line: line('title'), old: 'Hello', next: 'x' } }))).message).toMatch(/title has changed/)
+    expect((await refusal(call({ text: { line: line('tone'), old: 'muted', next: 'danger' } }))).message).toMatch(/tone decides/)
+    expect(git(remote, 'rev-parse', 'draft/spring-hours')).toBe(head)
+  })
 })
 
 // ─── The preview (1.3, FJS-D1251, FJS-D1252) ─────────────────────────────

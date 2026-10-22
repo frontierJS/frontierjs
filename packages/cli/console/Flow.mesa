@@ -1,0 +1,95 @@
+<script>
+  // Flow.mesa — one walked flow, stage by stage: the release or the publish
+  // in `Ship.mesa`. It draws and asks; it never decides a status. `rows` comes
+  // in with each step's `[tone, word, note]` already graded by the pane, which
+  // holds every reading a gate looks at.
+  //
+  // A step that `confirm`s is pressed twice: once to show what it does to
+  // what, once to run it. A browser dialog is not on the terminal, and a
+  // deploy one keypress away from Enter is the case the second press is for.
+  //
+  // `extra` is a snippet called with each step, for the block that answers
+  // it — the release verdict under *classify*, the target under *serving*.
+
+  import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let name     = ''
+  export let stages   = []
+  export let rows     = []          // { step, tone, word, note, next }[]
+  export let busy     = false       // a step of either flow is running
+  export let running  = null        // the id of this flow's running step
+  export let where    = undefined   // (step) => what it runs against, for the confirm line
+  export let outputs  = {}          // step id → { lines, code }
+  export let onrun    = undefined   // (step, { fix, approved }) => void
+  export let onstop   = undefined
+  export let ongate   = undefined   // (step) => void — a gate's own action
+  export let extra    = null
+
+  const TAIL = 12
+
+  const plain = (text) => String(text ?? '').replace(/\*\*|`/g, '')
+
+  let confirming = null
+  let whole      = {}
+
+  $: numbered = rows.map((r, i) => ({ ...r, n: i + 1 }))
+
+  function press(step, fix) {
+    if (step.confirm && !fix) { confirming = step.id; return }
+    onrun?.(step, { fix, approved: false })
+  }
+  function approve(step) {
+    confirming = null
+    onrun?.(step, { fix: false, approved: true })
+  }
+
+  const GATE_ACTION = { ci: 'run full', registry: 'read the registry' }
+  const tail = (lines, all) => all || lines.length <= TAIL ? lines : lines.slice(-TAIL)
+</script>
+
+{#each stages as stage (stage.id)}
+  <div class="stack gap-2xs" data-stage={stage.id}>
+    <strong class="text-xs text-muted">{stage.title}</strong>
+    {#each numbered.filter(r => r.step.stage === stage.id) as r (r.step.id)}
+      <div class="stack gap-3xs" data-step={r.step.id} data-flow={name}>
+        <div class="cluster gap-sm">
+          <span class="text-xs text-muted">{r.n}</span>
+          <Badge tone={r.tone} size="xs">{r.word}</Badge>
+          <strong class="text-sm">{r.step.title}</strong>
+          {#if r.step.remote}<Badge size="xs">remote</Badge>{/if}
+          {#if r.next}<Badge tone="info" size="xs">next</Badge>{/if}
+          {#if r.step.command}<code class="text-xs">{r.step.command}</code>{/if}
+          {#if GATE_ACTION[r.step.gate]}
+            <Button treatment="ghost" size="xs" disabled={busy} onclick={() => ongate?.(r.step)}>{GATE_ACTION[r.step.gate]}</Button>
+          {:else if !r.step.gate}
+            {#if running === r.step.id}
+              <Button treatment="ghost" size="xs" onclick={() => onstop?.()}>stop</Button>
+            {:else}
+              <Button treatment={r.step.confirm ? 'outlined' : 'ghost'} size="xs" disabled={busy} onclick={() => press(r.step, false)}>{r.step.confirm ? r.step.button ?? r.step.title : 'run'}</Button>
+              {#if r.step.fixCommand}
+                <Button treatment="ghost" size="xs" disabled={busy} onclick={() => press(r.step, true)}>fix</Button>
+              {/if}
+            {/if}
+          {/if}
+        </div>
+        <span class="text-xs text-muted">{plain(r.step.why)}</span>
+        {#if r.note}<span class="text-xs">{r.note}</span>{/if}
+        {#if confirming === r.step.id}
+          <div class="cluster gap-sm" role="alert" data-confirm={r.step.id}>
+            <span class="text-sm text-danger">{r.step.title}{where?.(r.step) ?? ''}: this {r.step.confirm}.</span>
+            <Button tone="danger" size="xs" disabled={busy} onclick={() => approve(r.step)}>yes, {r.step.button ?? r.step.title}</Button>
+            <Button treatment="ghost" size="xs" onclick={() => confirming = null}>cancel</Button>
+          </div>
+        {/if}
+        {#if outputs[r.step.id]}
+          <pre class="text-xs" data-output={r.step.id}>{tail(outputs[r.step.id].lines, whole[r.step.id]).join('\n')}</pre>
+          {#if !whole[r.step.id] && outputs[r.step.id].lines.length > TAIL}
+            <Button treatment="ghost" size="xs" onclick={() => whole = { ...whole, [r.step.id]: true }}>show the other {outputs[r.step.id].lines.length - TAIL} line(s)</Button>
+          {/if}
+        {/if}
+        {@render extra?.(r.step)}
+      </div>
+    {/each}
+  </div>
+{/each}

@@ -1,0 +1,36 @@
+<script>
+  // Console.mesa — the console's root: one strip of panes, one pane drawn at a
+  // time (`IDEAS/one-console.md` § 3). Both targets mount this file, so a pane
+  // added here is on the terminal and in the browser with no second edit.
+  //
+  // A pane is UNMOUNTED when another is shown, not hidden. `:check` runs every
+  // `fli check` scope and `:decide` reads the whole register, so a hidden pane
+  // would pay both on load and keep polling behind the one in view.
+  //
+  // `api` is the origin every pane reads; see `Run.mesa`.
+
+  import Tabs     from '@frontierjs/ui/components/layout/Tabs.mesa'
+  import TabList  from '@frontierjs/ui/components/layout/TabList.mesa'
+  import Tab      from '@frontierjs/ui/components/layout/Tab.mesa'
+  import TabPanel from '@frontierjs/ui/components/layout/TabPanel.mesa'
+  import Run      from './Run.mesa'
+  import Check    from './Check.mesa'
+  import Decide   from './Decide.mesa'
+  import Ship     from './Ship.mesa'
+
+  export let api  = ''
+  export let pane = 'run'
+</script>
+
+<Tabs bind:activeId={pane}>
+  <TabList label="panes">
+    <Tab id="run">:run</Tab>
+    <Tab id="check">:check</Tab>
+    <Tab id="decide">:decide</Tab>
+    <Tab id="ship">:ship</Tab>
+  </TabList>
+  <TabPanel id="run" unmount><Run {api} /></TabPanel>
+  <TabPanel id="check" unmount><Check {api} /></TabPanel>
+  <TabPanel id="decide" unmount><Decide {api} /></TabPanel>
+  <TabPanel id="ship" unmount><Ship {api} /></TabPanel>
+</Tabs>

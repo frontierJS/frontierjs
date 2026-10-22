@@ -1,0 +1,15 @@
+<script>
+  import { hotkey } from '@frontierjs/mesa/browser'
+  import { keys } from '@frontierjs/mesa/keys'
+  import { keymap } from '@frontierjs/toolbelt/keys'
+
+  window.kitHotkey = hotkey
+  window.kitKeys = (table) => keys(() => ({ active: [keymap(table)], on: () => {} }))
+  window.kitLog = []
+  window.addEventListener('keydown', (e) => window.kitLast = e.defaultPrevented ? 'taken' : 'free')
+  let value = ''
+</script>
+
+<button id="inside">Inside</button>
+<input id="field" bind:value={value}>
+<p id="value">{value}</p>

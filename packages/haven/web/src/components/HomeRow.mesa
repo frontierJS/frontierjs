@@ -1,16 +1,14 @@
 <script>
-  // HomeRow.mesa — the left hand's keys (`IDEAS/haven.md` 9.4) as verbs on
-  // `$context.commands`: `a s d f`, read only where the terminal shell took the
-  // letter as NORMAL. The shell prevents a printable key it will not type, so a
-  // key that arrives prevented is a home-row key, and one that arrives free is
-  // a letter going into the line (INSERT, or a browser, which has no NORMAL);
-  // a verb answering false lets it through.
+  // HomeRow.mesa — the left hand's keys (`IDEAS/haven.md` 9.4): `a s d f`, the
+  // `HOME_ROW` keymap (`home-row.js`) that `keyed` hands the scene, which runs
+  // it through mesa's `keys()` on the line. The terminal runtime steps it
+  // ahead of the shell's keys, with the line no text context in NORMAL, so in
+  // INSERT, or in a browser, which has no NORMAL, the letters are typed. It is
+  // active while no line is being typed and no mode but a walk is open.
   //
-  // An operator waits for the key after it (`home-row.js`), and while it waits
-  // it is the registry's mode, handed every key first: the map cannot open
-  // under a half-typed `d`, and a key the operator cannot use is swallowed as
-  // vim swallows one after `d`. A lone `d` fires the way faced once
-  // `PENDING_MS` passes, on its own timer, since no key may come.
+  // An operator waits for the key after it, and the key is its own: `f a`
+  // finds Ana, where the shell would read the `a` as INSERT (`FJS-3279`). A
+  // lone `d` fires the way faced once the engine's timeout passes.
   //
   // `f` and a letter walks to the nearest member in the light whose nick
   // starts with it, a step a `WALK_MS`, re-planned toward where they stand now.
@@ -22,7 +20,7 @@
   // the server's answer (`rooms.bolt`); `Scene.mesa` draws the room's `bolt`
   // event. Draws nothing.
   import { rooms } from '@/resources/Room.mesa'
-  import { createHomeRow, PENDING_MS } from '@/lib/home/home-row.js'
+  import { HOME_ROW, homeAction } from '@/lib/home/home-row.js'
   import { findByNick, pathBeside, WALK_MS } from '@/lib/scene/paths.js'
   import { cellOf } from '@/lib/scene/crowd.js'
   import { SHAPE_MS } from '../../../api/src/shape.ts'
@@ -40,19 +38,18 @@
   // when an emoji's second cell would not be floor.
   export let shapeTo
   export let tell
+  // (getter) => the scene's `keys()` reads `{ active, on }` through it; null when this goes.
+  export let keyed
 
   var verbs = $context.commands
   var room  = $context.room
   // Handles, not state a template reads: `var`, so none is derived.
-  var row = createHomeRow()
-  var dueTimer   = null
   var shapeTimer = null
   var walking    = null
-  var waiting    = null   // the operator's mode's close
   const WALK = 'walk'
+  const IDLE = []
 
   $.onDestroy(() => {
-    clearTimeout(dueTimer)
     clearTimeout(shapeTimer)
     clearInterval(walking)
   })
@@ -101,7 +98,7 @@
   // ─── the operator ──────────────────────────────────────────────────────────
 
   function act(a) {
-    if (a === true || !a?.act) return
+    if (!a) return
     verbs.close(WALK)
     if (a.act === 'bolt')   fire(false, a.facing)
     if (a.act === 'volley') fire(true)
@@ -110,36 +107,10 @@
     if (a.act === 'chalk')  tell('chalk is not drawn yet')
   }
 
-  /** Keeps the operator's mode open while one waits, and a lone `d` on its clock. */
-  function settle() {
-    clearTimeout(dueTimer)
-    if (!row.pending) { waiting?.(); return }
-    if (!waiting) waiting = verbs.open({ name: 'operator', take, closed: () => { waiting = null; row.cancel(); clearTimeout(dueTimer) } })
-    if (row.pending === 'd') dueTimer = setTimeout(() => { act(row.due()); settle() }, PENDING_MS + 10)
-  }
-
-  /** A key after an operator; a late `d`'s bolt runs, and the key that outran it is asked again. */
-  function take(e) {
-    // A Ctrl letter reads as its letter, so `d` then Ctrl+K would fire upward.
-    const r = e.ctrlKey || e.altKey || e.metaKey ? null : row.key(e.key)
-    if (r === null) { settle(); return false }
-    e.preventDefault?.()
-    act(r)
-    if (r.after === null) { settle(); return false }
-    act(r.after)
-    settle()
-    return true
-  }
-
-  for (const key of ['a', 's', 'd', 'f']) {
-    $.onDestroy(verbs.add({
-      key,
-      run: ({ event }) => {
-        if (draft || verbs.mode || !event?.defaultPrevented) return false
-        if (row.key(key) === null) return false
-        settle()
-        return true
-      },
-    }))
-  }
+  // A walk is the one mode the home row reads over: `f` again re-aims it.
+  keyed(() => ({
+    active: draft || (verbs.mode && verbs.mode.name !== WALK) ? IDLE : [HOME_ROW],
+    on: (action, arg) => act(homeAction(action, arg)),
+  }))
+  $.onDestroy(() => keyed(null))
 </script>

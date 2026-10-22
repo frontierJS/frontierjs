@@ -1,0 +1,156 @@
+<script>
+  // Decide.mesa — what to work on, and what is waiting on the owner: the
+  // console's `:decide` pane (`IDEAS/one-console.md` § 3).
+  //
+  // `/api/next` is `fli next`'s ranking, head only, every row with the terms
+  // that scored it — a ranking with its reasons hidden is one nobody can
+  // disagree with. `/api/decisions` is every open question with lettered
+  // options, and a pick goes to `/api/decide`, which is `fli register:decide`'s
+  // own writer: it files the ruling, strikes the question and puts both back
+  // when `register:check` disagrees. This pane never edits a register.
+  //
+  // A pick against the recommendation needs a reason; the recommendation is
+  // the one pick the paper has already argued for.
+
+  import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
+  import Select from '@frontierjs/ui/components/forms/Select.mesa'
+
+  export let api = ''
+
+  const SHOWN = 8
+  const SEVERITY_TONE = { S1: 'danger', S2: 'warning', S3: 'info', decision: 'info' }
+
+  let next      = null
+  let decidable = null
+  let open      = 0
+  let sections  = []
+  let failed    = null
+  let all       = false
+  // Held per question id, so a re-read after one ruling keeps what was
+  // typed into the others.
+  let picks   = {}
+  let why     = {}
+  let section = {}
+  let result  = {}
+  let ruling  = null
+
+  const read = async (path, init) => {
+    const res  = await fetch(`${api}${path}`, init)
+    const body = await res.json()
+    if (!res.ok || body.error) throw new Error(body.error ?? body.reason ?? `${path} answered ${res.status}`)
+    return body
+  }
+
+  async function readNext() {
+    try { next = await read('/api/next') } catch (e) { failed = e.message }
+  }
+
+  async function readDecisions() {
+    try {
+      const body = await read('/api/decisions')
+      decidable = body.decidable
+      open      = body.open.length
+      sections  = body.sections
+    } catch (e) {
+      failed = e.message
+    }
+  }
+
+  // Each takes the maps as arguments: a template call to a local function does
+  // not subscribe to what it reads.
+  const pickOf    = (picks, q) => picks[q.id] ?? q.recommend?.letter ?? null
+  const against   = (picks, q) => { const p = pickOf(picks, q); return !!p && q.recommend?.letter !== p }
+  const sectionOf = (section, q) => section[q.id] ?? sections[0] ?? ''
+
+  async function rule(q) {
+    ruling = q.id
+    const body = { id: q.id, pick: pickOf(picks, q), why: why[q.id] ?? '', section: sectionOf(section, q) }
+    const res  = await fetch(`${api}/api/decide`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    })
+    const out = await res.json().catch(e => ({ ok: false, reason: e.message }))
+    ruling = null
+    if (!out.ok) { result = { ...result, [q.id]: `✗ ${out.reason}` }; return }
+    const { [q.id]: _p, ...p } = picks
+    const { [q.id]: _w, ...w } = why
+    picks = p
+    why   = w
+    result = { ...result, last: `${out.ruling} filed under ${body.section}` }
+    await readDecisions()
+  }
+
+  $.onMount(() => { readNext(); readDecisions() })
+</script>
+
+<header class="bar">
+  <strong>What to work on, and what waits on you</strong>
+  {#if result.last}<span class="text-xs text-success" role="status">{result.last}</span>{/if}
+</header>
+
+{#if failed}
+  <p class="text-sm text-danger" data-failed>{failed}</p>
+{/if}
+
+<section class="surface stack" data-part="next">
+  <div class="bar dense">
+    <strong class="text-sm">next</strong>
+    <span class="text-xs text-muted">{next ? `${next.ready.length} of ${next.readyCount} ready · ${next.blocked.length} blocked` : '…'}</span>
+  </div>
+  {#each (next?.ready ?? []) as r (r.id)}
+    <div class="stack gap-3xs" data-next={r.id}>
+      <div class="cluster gap-sm">
+        <Badge tone={SEVERITY_TONE[r.severity] ?? ''} size="xs">{r.severity}</Badge>
+        <strong class="text-sm">{r.id}</strong>
+        <span class="text-xs text-muted">{r.pkg.join(', ')} · {r.score}</span>
+      </div>
+      <span class="text-sm">{r.title}</span>
+      <span class="text-xs text-muted">{r.terms.map(t => `${t.term} +${t.value} (${t.note})`).join(' · ')}</span>
+    </div>
+  {/each}
+</section>
+
+<section class="surface stack" data-part="decisions">
+  <div class="bar dense">
+    <strong class="text-sm">decisions</strong>
+    <span class="text-xs text-muted">{decidable ? `${decidable.length} to pick · ${open} still need options written` : '…'}</span>
+  </div>
+  {#each (decidable ? (all ? decidable : decidable.slice(0, SHOWN)) : []) as q (q.id)}
+    <div class="stack gap-2xs" data-decision={q.id}>
+      <span class="text-sm">{q.question}</span>
+      <span class="text-xs text-muted">{q.file}:{q.line}{q.recommend?.why ? ` · why ${q.recommend.letter}: ${q.recommend.why}` : ''}</span>
+      {#each q.options as o (o.letter)}
+        <Button
+          treatment={pickOf(picks, q) === o.letter ? 'outlined' : 'ghost'}
+          size="xs"
+          aria-pressed={pickOf(picks, q) === o.letter}
+          data-option={o.letter}
+          onclick={() => picks = { ...picks, [q.id]: o.letter }}
+        >{o.letter}{q.recommend?.letter === o.letter ? ' (recommended)' : ''} — {o.text}</Button>
+      {/each}
+      <div class="cluster gap-2xs">
+        <Input
+          label=""
+          aria-label="why"
+          value={why[q.id] ?? ''}
+          placeholder={against(picks, q) ? 'why — required, this is not the recommendation' : 'why (optional — the recommendation is the reason)'}
+          oninput={(e) => why = { ...why, [q.id]: e.target.value }}
+        />
+        <Select
+          label=""
+          aria-label="DECISIONS.md section"
+          placeholder=""
+          options={sections}
+          value={sectionOf(section, q)}
+          onchange={(e) => section = { ...section, [q.id]: e.target.value }}
+        />
+        <Button size="xs" disabled={!pickOf(picks, q)} loading={ruling === q.id} onclick={() => rule(q)}>rule</Button>
+      </div>
+      {#if result[q.id]}<span class="text-xs text-danger" role="status">{result[q.id]}</span>{/if}
+    </div>
+  {/each}
+  {#if decidable && !all && decidable.length > SHOWN}
+    <Button treatment="ghost" size="xs" onclick={() => all = true}>show the other {decidable.length - SHOWN}</Button>
+  {/if}
+</section>

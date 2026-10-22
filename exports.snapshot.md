@@ -56,7 +56,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/cli`
 
-`packages/cli` · ships `LICENSE` `README.md` `bin/` `commands/` `core/` `db/` `package.json` `web/`
+`packages/cli` · ships `LICENSE` `README.md` `bin/` `commands/` `console/` `core/` `db/` `package.json` `web/`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -244,6 +244,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./drive (import)` | `src/drive.js` | yes |
 | exports | `./browser (types)` | `src/browser/browser.d.ts` | yes |
 | exports | `./browser (import)` | `src/browser/index.js` | yes |
+| exports | `./keys (import)` | `src/keys.js` | yes |
 | exports | `./vite (import)` | `mesa-vite/index.js` | yes |
 | exports | `./vite/client (import)` | `mesa-vite/client.js` | yes |
 | exports | `./vite/swap (import)` | `mesa-vite/swap.js` | yes |

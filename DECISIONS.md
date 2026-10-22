@@ -35,6 +35,12 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1389"></a>2026-10-22 · `FJS-D1389` — Q1 — What starts it — `fli gui`, which picks the terminal target when it is started in a terminal without `--open`, and the web target otherwise.
+
+Asked in [`IDEAS/one-console.md`](IDEAS/one-console.md) § Open questions. **B** was picked over **A** (`fli runtime`, as the owner first said it. It collides with "the FLI runtime" (`server.js`'s own header) and with Mesa's runtime), **C** (a new `fli console` command beside `fli gui`).
+
+The paper's recommendation, taken as written: one command and one noun for one console. A and C put two names on the same screens.
+
 ### <a id="fjs-d1361"></a>2026-10-21 · `FJS-D1361` — Is the polymorphic pointer spelt `subjectType`/`subjectId` or `contextType`/`contextId` — A, now.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked as the recommendation qualifies it (*A, now*) over **B** (settled as `context*`; AuditEvent and the README move to it), **C** (leave both and have `fli check` grade only the enum-on-the-type-column half).
@@ -1583,6 +1589,30 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d1395"></a>2026-10-22 · `FJS-D1395` — Q3 — What reading does — Delete on open: a letter is read once.
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (a read flag: `inbox` shows history).
+
+The paper's recommendation, taken as written: the host keeps nothing it does not need, and 3.3's env values must be read once anyway; a member who wants a copy keeps the printed line.
+
+### <a id="fjs-d1394"></a>2026-10-22 · `FJS-D1394` — Q8 — How a person joins — An invite code: `fli tell:invite` mints a one-use code, `fli tell:join <code>` spends it, and the server keeps a members table.
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **B** was picked over **A** (the owner adds their key: `fli tell:key` prints it, the owner pastes it into the Worker's member list and redeploys).
+
+Against the recommendation (**A**): the owner wants joining to be one command a person runs, not a key pasted and a redeploy.
+
+### <a id="fjs-d1393"></a>2026-10-22 · `FJS-D1393` — Q7 — Whether V1 seals — Plaintext V1: requests signed so no sender is faked, text readable on the owner's account; the seal is Phase 3 and changes no route.
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (sealed from the first letter: a second key per member and the seal kit before anything sends).
+
+The paper's recommendation, taken as written: four friends on the owner's own account, and `--env`, the one case that needs it, waits for Phase 3.
+
+### <a id="fjs-d1391"></a>2026-10-22 · `FJS-D1391` — Q4 — Who decides what `:ask` may do — The agent calls through `mcp` at a declared standing, like any caller.
+
+Asked in [`IDEAS/one-console.md`](IDEAS/one-console.md) § Open questions. **A** was picked over **B** (the agent inherits the developer's standing).
+
+The paper's recommendation, taken as written: `FJS-D258` already made the gate the agent's permission model. B gives the agent a standing nobody declared.
 
 ### <a id="fjs-d1101"></a>2026-10-21 · `FJS-D1101` — In an untrusted schema, does `@secret` refuse, or does the host hand the client an audit sink it owns — Refuse: `untrustedSchemaOffenses` adds `@secret` by name ("`@secret` logs to a trail database, which a row cannot declare — spell it `@encrypted @guarded`"). Zero new option; `packages/litestone/docs/encryption.md` § @secret says `@secret` is app-written only. Transit's landing schemas already spell it out.
 
@@ -4399,6 +4429,8 @@ Asked in [`IDEAS/conduit-37signals.md`](IDEAS/conduit-37signals.md) Q4, through 
 The nine, answered LATE (written with the ruling, after the owner's pick): 1 origin — the models live in the app's schema as `@@mirror`; the claim only binds verbs to them (`FJS-D1125`) · 2 concept — no new noun; Basecamp's person, if claimed, is `Profile`, never `User` (`FJS-D1152`) · 3 complexity — a claim is what listing four nouns costs; rule 1 is why it is earned · 4 predictability — Mattermost's claim is the shape · 5 derived — the models are hand-written, as `FJS-D1130` rules · 6 owner — junction's default service forwards through the claim; no hand-written custom method beside it · 7 boundary — the app writes rows, the claim sends · 8 failure — a `404` on re-read is `gone` *to this principal* (hidden, trashed or deleted look alike), so no row is dropped without a complete read of its scope (`FJS-D1180`) · 9 must stay true: no row is dropped off a `404` alone. What fails when it stops: the claim's drive — **`none`** until it exists. § IV: *doctrine vs. discovery* — rule 1 holds only while the listing app is real; if 5.1 names none, this ruling is reopened. Tier: Assessment.
 
 **Amended 2026-10-16, by 0.4: the feed is not the whole sync.** The feed's type catalog names no `project.*` type and, for no noun, a trash, archive, delete or uncomplete. So *the feed is what its sync reads* holds for `Todo`, `Message` and `Comment` only as the fast path. `Project` is kept by a re-walk of `projects.json`, and a scheduled walk of each claimed scope is the floor for the rest (`IDEAS/conduit-37signals.md` 6.2). The claim and its four nouns stand. What fails when a reopened to-do stays `completed`: the Phase 6 drive row — **`none`** until it exists.
+
+**Amended 2026-10-21, by 5.1: three nouns, not four.** 5.1 names Intake (`fjs-prototypes/intake`, PLAN Phase 3, triage) as the lister. It lists `Todo` (the queue), `Project` (the client picker) and `Message` (the question kind's destination, read back in review), and nothing in its plan lists `Comment`. Rule 1 (`FJS-D1124`) gives `Comment` no claim until a surface lists it, so the claim is `Project`, `Todo`, `Message`. The way back is a lister for comments, such as the triage card showing a to-do's thread. Asked through the question tool. **A** (claim three) was picked over **B** (add a comment lister to Intake's plan) and **C** (defer to 6.1). As recommended. Tier: Assessment.
 
 ### <a id="fjs-d1180"></a>2026-10-16 · `FJS-D1180` — Does `@@mirror` take `absent:`, the drop-out rule `FJS-D843` held back for a second caller — No, withdrawn. Which rows are absent is decided by a COMPLETE read of a scope, and the scope is the sync's code; litestone keeps `missingSince` as the column a sync stamps and no word declares when.
 
@@ -12124,6 +12156,30 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d1401"></a>2026-10-22 · `FJS-D1401` — Q10 — A key a keymap took is the keymap's, split by target: on a terminal the runtime steps the keymaps before it makes the keydown and makes none of a taken key; in a browser, which has no step before dispatch, a later listener reads it prevented.
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions, after 3.5 was built — answered late, so this is a hearing on built code (§ IV *doctrine vs. discovery*), not a decision ahead of it. **A** was picked over **B** (browser `keys()` also stops propagation, so no later listener hears it on either target) and **C** (dispatch it prevented on both, and Haven stops reading `defaultPrevented` as NORMAL).
+
+It overrides § V's fourth question (predictability): a listener around a keymap hears a prevented keydown in a tab and nothing on a terminal. The forcing case was Haven: a key a keymap took and dispatched prevented read as a NORMAL letter, so `f a` opened the walk and the same `a` closed it. Emacs and khat consume a bound key the same way, and the terminal is the one target with a step before dispatch to do it in. Pinned by the terminal `keymap` spec (`last -` after a taken key) and the browser `keys` spec (a later listener reads it prevented). Confidence 2.
+
+### <a id="fjs-d1397"></a>2026-10-22 · `FJS-D1397` — Q9 — `?` is the shell's in NORMAL, ahead of the page as Ctrl+P is; Desk's key moves to `b`, the word its hint already used.
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (The page first: the help opens only when no route took `?`, so never from a field in NORMAL, which is never in a Haven scene), **C** (Hold 3.4 until 3.5 orders the tables).
+
+The paper's recommendation, taken as written: a help key works everywhere or is not learned; after 3.5 the shell's table goes behind a page's declared one, so a page can take `?` back. Confidence 2.
+
+### <a id="fjs-d1396"></a>2026-10-22 · `FJS-D1396` — Q8 — The shell's own keys become keymaps — Ctrl+P, `?`, Ctrl+\\, Ctrl+O, Alt+=/-, Esc back and `h j k l` — each stepped where it is taken today, so one table both dispatches a key and lists it; a page's `keys()` hosts wait for 3.5's walk of the focus path.
+
+Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (A `keymapsAt(node)` seam in mesa, the `keys()` hosts on the focus path, listed beside `VIM`; in practice `h j k l` alone today), **C** (Both), **D** (Hold 3.4 behind 3.5).
+
+The paper's recommendation, taken as written: Emacs's `C-h b` and lazygit's `?` list the active maps in precedence order; A lists every key the shell takes and states each once. Confidence 2.
+
+### <a id="fjs-d1390"></a>2026-10-22 · `FJS-D1390` — Q2 — Does `FJS-D810`'s line reach this — Yes: tool screens count as the stressor, so the work starts now.
+
+Asked in [`IDEAS/one-console.md`](IDEAS/one-console.md) § Open questions. **A** was picked over **B** (no: wait until core leaves alpha (`FJS-D14`)).
+
+The paper's recommendation, taken as written: the tool screens are a second corpus for the IR, written by the same people who maintain it.
+
 ### <a id="fjs-d1388"></a>2026-10-21 · `FJS-D1388` — Q7 — One `keys()` attachment in mesa's runtime, since both targets deliver DOM-shaped keydown; `hotkey()` is sugar over it.
 
 Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions. **A** was picked over **B** (a browser attachment and a terminal listener in sierra's shell).
@@ -17862,6 +17918,34 @@ the file puts the judgement where judgement lives.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d1400"></a>2026-10-22 · `FJS-D1400` — Q2 — The sealing key — A second, X25519 pair beside the Ed25519 one, published signed.
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (derive X25519 from the Ed25519 key, as age does).
+
+The paper's recommendation, taken as written: WebCrypto does it with no dependency, and a browser member's IndexedDB key cannot be converted.
+
+### <a id="fjs-d1399"></a>2026-10-21 · `FJS-D1399` — Q19 — How a preview shows a change before it is saved (2.5) — Words only, with no compiler in the page. As the owner types, inline or in the form, each element whose words are a plain block or value changes to the new words; a change that adds or removes markup, or whose element the page cannot find, waits for the preview to rebuild and is counted as waiting.
+
+Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **D** was picked over **A** (a lazy preview-only chunk runs Mesa's `compileMd` in the page with site-kit's dialect and a browser-safe module the preset names for its own passes, about 190 KB gzipped; one new optional preset key), **B** (the same chunk with site-kit's dialect only, so a preset's classes are missing until the rebuild and nothing says so) and **C** (basecamp compiles, which has no installed preset and hits the same passes problem). Prior art put to the owner: Decap's preview pane and CloudCannon's Bookshop both re-render in the browser with a renderer the developer supplies as browser code.
+
+Against the recommendation (A), confidence 2. It meets Phase 2's done-when for a paragraph with no compiler, no new preset key and no bundle; A is the reopen path when markup shown before the save is asked for.
+
+The nine, answered before the edit: 1 origin — what the dialect turns plain text into (a kicker, a phone or an email link) is `packages/site-kit/config/prose.js`'s, exported and read by the editor rather than restated; Markdown's own syntax characters are listed once, in the editor · 2 concept — no new noun · 3 complexity — the problem's, cut one level · 4 predictability — 2.3's after-save swap, moved before the save and given to the form too · 5 derived — an element is changed only when it already shows the old words · 6 owner — `src/editor/live.js`, which 2.3's swap folds into · 7 boundary — the page only; nothing is sent until Save · 8 failure — a change it cannot show is shown as waiting, never guessed · 9 must stay true: a word shown before the save is what the rebuild renders. What fails when it stops: **`none`** committed, under the no-new-test-files rule; a scratch browser drive. § IV: *batteries vs. smallness*, smallness. Tier: Register.
+
+*Lives in:* `packages/site-kit/src/editor/live.js`, `Inline.mesa`, `Field.mesa`; `packages/site-kit/config/prose.js` (what plain text becomes).
+
+### <a id="fjs-d1398"></a>2026-10-22 · `FJS-D1398` — Q4 — The notice line's reach — Every `fli` command checks on an interval.
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (only `fli tell:*` commands and a shell prompt hook a member opts into).
+
+The paper's recommendation, taken as written: the point is mail you notice without asking; the interval bounds the cost, and it stays silent with no key.
+
+### <a id="fjs-d1392"></a>2026-10-22 · `FJS-D1392` — Q6 — Where V1's server runs — One Cloudflare Worker and one Durable Object: SQLite and the live sockets in one object, the free plan, deployed with wrangler.
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (Val Town: one file edited in the browser, SQLite built in, no deploy step; live delivery likely a poll), **C** (Haven's API: identity and a host already there, but V1 waits on Haven being hosted).
+
+The paper's recommendation, taken as written: the only one with live delivery and no wait; B is the reopen path if wrangler is the friction.
+
 ### <a id="fjs-d1358"></a>2026-10-20 · `FJS-D1358` — Q18 — Where the preview's editor code comes from (2.1) — Site-kit carries the editor and gains `@frontierjs/junction` as a dependency, which pulls in only toolbelt. Under `--preview` with an editor URL, the build emits `_fjs/editor.js` and adds its tag to each page through Sierra's `document.bodyEnd`.
 
 Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (basecamp serves the editor from its own web build, and the preview build adds only `<script type="module" src="<basecamp>/editor.js">`. Sites install nothing new, and the editor always matches the API it calls. The cost: a cross-origin module script needs CORS on basecamp's static files and a fixed-name second entry in its web build, in dev and in the deploy's proxy).
@@ -18062,7 +18146,7 @@ Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions, Q
 
 The paper's recommendation, taken as written. 0.1 measured 35–63% of on-page text rendering through about 20 shared template lines, and 53–66% of front-matter values sharing their text with another value, so B is wrong about half the time and cannot say so. A is derived from YAML key positions and adds no attribute: `data-fjs-loc` keeps its one meaning, the source line that wrote this. C is what A falls back to. Adjudication: *batteries vs. smallness*. The provenance exists only in a preview build, and Mesa stays a leaf, because site-kit writes to a seam that Mesa exports.
 
-*Lives in:* not built (site-kit's loader, and Mesa's preview codegen). *Enforced by:* `none` until `IDEAS/owner-editing.md` 2.4 has a drive.
+*Lives in:* `packages/mesa/src/compiler-md.js` (the `frontmatter` export, recorded), `packages/mesa/src/runtime.js` (`recorded`, `stampFrom`), `packages/mesa/src/compiler.js` (`fieldRead`), `packages/toolbelt/src/frontmatter/frontmatter.js` (`frontmatterPositions`), `packages/site-kit/src/editable.js` (`applyEdit`'s `field`). The recorder is Mesa's `compileMd`, not a site-kit loader: every value a block reads off a loaded file comes through a `.md` module it emits, so a site-kit seam would have been a second writer of the same export; Mesa still imports no framework package. *Enforced by:* `packages/site-kit/test/content-build.mjs` (a preview's menu, collection and copied-entry stamps).
 
 ### <a id="fjs-d1214"></a>2026-10-17 · `FJS-D1214` — An app drives a headless browser through `@frontierjs/print-kit` for a document and `@frontierjs/mesa/drive` for anything else, and through nothing beside them. A Playwright or Puppeteer runtime dependency is named by `fli check` as off the road rather than read as a third kind of Chrome.
 

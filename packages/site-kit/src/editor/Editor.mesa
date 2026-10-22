@@ -7,7 +7,15 @@
   // Signed in, it names who is editing and checks the key still reaches the
   // draft: a key outliving its grant, or revoked from the workspace's API keys,
   // is forgotten with the reason shown.
+  //
+  // Signed in, the page is picked rather than browsed: a pointer outlines the
+  // element whose stamp it is over, and a click changes its words in place, or
+  // opens the file when they cannot be changed alone, instead of following a
+  // link. Browse hands clicks back to the page.
+  import Field from './Field.mesa'
+  import Inline from './Inline.mesa'
   import { arrive, begin, clientFor, forget, held } from './handoff.js'
+  import { LOC, fieldFor, parseLoc, stampedFrom } from './pick.js'
 
   export let site
 
@@ -15,6 +23,11 @@
   let error = null
   let busy  = false
   let files = null
+  let picking = true
+  let over    = null
+  let box     = null
+  let opened  = null
+  let notice  = null
 
   async function check() {
     if (!who) return
@@ -40,19 +53,89 @@
   }
 
   function signOut() {
-    forget(); who = null; files = null
+    forget(); who = null; files = null; opened = null; over = null
   }
+
+  const live = () => !!(who && files && picking)
+
+  function hover(e) {
+    const el = live() ? stampedFrom(e.target) : null
+    if (el === over) return
+    over = el
+    const r = el?.getBoundingClientRect()
+    box = r ? { x: r.left, y: r.top, w: r.width, h: r.height, editable: files.includes(parseLoc(el.getAttribute(LOC))?.path) } : null
+  }
+
+  // Capture, so a link on the page never navigates away from a pick.
+  function pick(e) {
+    if (!live()) return
+    const el = stampedFrom(e.target)
+    if (!el) return
+    e.preventDefault()
+    e.stopPropagation()
+    const field = fieldFor(el.getAttribute(LOC), files, location.pathname)
+    notice = null
+    opened = field?.path ? { ...field, inline: el } : field
+  }
+
+  function inlineClosed(result) {
+    if (result?.saved) notice = `Saved to ${site.draft}. The preview rebuilds with it shortly.`
+    opened = null
+  }
+
+  function toForm(why, typed) {
+    opened = { path: opened.path, line: opened.line, why: why && (typed ? `${why}. Your words: “${typed}”` : why) }
+  }
+
+  function leave() { over = null; box = null }
+
+  document.addEventListener('pointermove', hover, { capture: true, passive: true })
+  document.addEventListener('click', pick, { capture: true })
+  addEventListener('scroll', leave, { passive: true })
+  $.onDestroy(() => {
+    document.removeEventListener('pointermove', hover, { capture: true })
+    document.removeEventListener('click', pick, { capture: true })
+    removeEventListener('scroll', leave)
+  })
 </script>
 
-<article class="card fjs-editor" data-fjs-editor-bar>
+<mesa:window onkeydown={(e) => { if (e.key === 'Escape' && opened) opened = null }} />
+
+{#if box && picking && who}
+  <div class="fjs-editor-outline" class:editable={box.editable} aria-hidden="true"
+       style:left="{box.x}px" style:top="{box.y}px" style:width="{box.w}px" style:height="{box.h}px"></div>
+{/if}
+
+{#if opened?.inline}
+  <Inline {site} key={who.key} path={opened.path} line={opened.line} el={opened.inline}
+          onclose={inlineClosed} onform={toForm} />
+{:else if opened?.path}
+  <Field {site} key={who.key} path={opened.path} line={opened.line} why={opened.why} onclose={() => opened = null} />
+{:else if opened?.template}
+  <article class="card fjs-editor-field" data-fjs-editor-ui aria-label="Pick a file">
+    <div class="surface-header">
+      <span>Drawn by <code>{opened.template}</code>, a developer's file. Its words are in one of these:</span>
+      <button class="btn ghost" onclick={() => opened = null}>Close</button>
+    </div>
+    <ul class="surface-body stack" id="fjs-files">
+      {#each opened.files as f (f)}
+        <li><button class="btn ghost" onclick={() => opened = { path: f, line: null }}>{f}</button></li>
+      {/each}
+    </ul>
+  </article>
+{/if}
+
+<article class="card fjs-editor" data-fjs-editor-ui data-fjs-editor-bar>
   {#if who}
     <span>Editing <strong>{site.draft}</strong> as <strong>{who.editor?.name}</strong>
       {#if files} · {files.length} {files.length === 1 ? 'page' : 'pages'}{/if}</span>
+    <button class="btn ghost" aria-pressed={picking} onclick={() => { picking = !picking; leave() }}>{picking ? 'Browse' : 'Pick'}</button>
     <a class="btn ghost" href={site.page}>Open in basecamp</a>
     <button class="btn ghost" onclick={signOut}>Sign out</button>
   {:else}
     <button class="btn primary" disabled={busy} onclick={edit}>Edit</button>
   {/if}
+  {#if notice}<span role="status">{notice}</span>{/if}
   {#if error}<span class="text-danger" role="alert">{error}</span>{/if}
 </article>
 
@@ -67,5 +150,24 @@
     align-items: center;
     max-width: calc(100vw - 2rem);
     flex-wrap: wrap;
+  }
+  .fjs-editor-outline {
+    position: fixed;
+    z-index: 2147482999;
+    pointer-events: none;
+    outline: 2px dashed var(--color-muted);
+    outline-offset: 2px;
+  }
+  .fjs-editor-outline.editable {
+    outline: 2px solid var(--color-primary);
+  }
+  .fjs-editor-field {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 2147483000;
+    width: min(32rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 6rem);
+    overflow: auto;
   }
 </style>

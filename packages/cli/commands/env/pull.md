@@ -8,12 +8,15 @@ examples:
   - fli epull --from gist --gist-id abc123
   - fli epull --from ssh --server prod --path /srv/app/.env
   - fli epull --from caprover --app my-api --to .env.production
+  - fli epull --from vaultwarden
+  - fli epull --from vaultwarden --path .env.vault --to .env.production
+  - fli epull --from send --url 'https://warden.example.com/#/send/<id>/<key>'
   - fli epull --dry
 flags:
   from:
     char: f
     type: string
-    choices: [caprover, url, gist, ssh, file]
+    choices: [caprover, url, gist, ssh, file, vaultwarden, send]
     description: Where the variables come from
     defaultValue: caprover
   to:
@@ -34,12 +37,16 @@ flags:
   path:
     char: p
     type: string
-    description: Remote path to the .env file (for ssh source)
+    description: 'The file read — ssh: the remote .env · file: the local source · vaultwarden: the refs (default .env.example)'
     defaultValue: ''
   url:
     char: u
     type: string
-    description: URL to fetch env content from (for url source)
+    description: 'URL to fetch env content from (url source) · the Send link (send source)'
+    defaultValue: ''
+  password:
+    type: string
+    description: The Send's password, when it has one (for send source)
     defaultValue: ''
   gist-id:
     type: string
@@ -151,6 +158,42 @@ const pullFromCaprover = async (env, appName) => {
   const vars = data?.data?.appDefinition?.envVars || []
   return vars.map(({ key, value }) => `${key}=${value}`).join('\n') + '\n'
 }
+
+// The vault user is the operator's, not the app's, so its keys usually sit in
+// the global env (`fli eset VW_PASSWORD …`) rather than in the file being written.
+// Only `KEY=vw://Item/field` lines are pulled: a plain value in the refs file is
+// an example, and merging it would overwrite the local value it stands for.
+const VW_REF = /^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(['"]?)vw:\/\/(.+)\2\s*$/
+
+const pullFromVaultwarden = async (env, refsPath) => {
+  if (!existsSync(refsPath)) throw new Error(`no refs file at ${refsPath} — lines like STRIPE_KEY=vw://Stripe/password`)
+  const refs = readFileSync(refsPath, 'utf8').split('\n').map(l => l.trim().match(VW_REF)).filter(Boolean)
+  if (!refs.length) throw new Error(`${refsPath} holds no KEY=vw://Item/field line`)
+  const { openVault, dotenvLine } = await import(resolve(global.fliRoot, 'core/vaultwarden.js'))
+  const vault = await openVault({
+    url: env.VW_URL, clientId: env.VW_CLIENT_ID, clientSecret: env.VW_CLIENT_SECRET,
+    email: env.VW_EMAIL, password: env.VW_PASSWORD,
+  })
+  const lines = []
+  const missing = []
+  const skipped = []
+  for (const [, key, , ref] of refs) {
+    const value = vault.get(ref)
+    if (value === null) { missing.push(`${key} (vw://${ref})`); continue }
+    const line = dotenvLine(key, value)
+    if (line) lines.push(line)
+    else skipped.push(key)
+  }
+  // A partial pull reads as a complete one in the file it writes.
+  if (missing.length) throw new Error(`${vault.email} finds no value for ${missing.join(', ')}`)
+  return { content: lines.join('\n') + '\n', skipped }
+}
+
+const pullFromSend = async (link, password) => {
+  const { receiveSend } = await import(resolve(global.fliRoot, 'core/vaultwarden.js'))
+  const { text } = await receiveSend(link, { password: password || null })
+  return text.endsWith('\n') ? text : text + '\n'
+}
 </script>
 
 Pull environment variables from a remote source and merge them into a local `.env` file.
@@ -161,6 +204,8 @@ Supported sources:
 - **`gist`** — fetches the first `.env` file from a GitHub Gist
 - **`ssh`** — SSHes into a server and cats the remote `.env` file
 - **`file`** — copies a local file (useful for syncing between env files)
+- **`vaultwarden`** — resolves each `KEY=vw://Item/field` line in `.env.example` (or `--path`) against a Vaultwarden/Bitwarden vault, decrypted in-process; other lines are ignored. `vw://Stripe` is the login's password, `vw://Stripe/username` a standard field, `vw://Stripe/STRIPE_KEY` a custom one, and an item name two items share is named by id. Logs in as `VW_URL` + `VW_CLIENT_ID`/`VW_CLIENT_SECRET` (or `VW_EMAIL`) + `VW_PASSWORD` — a dedicated vault user, read-only on what the app needs. A ref with no value refuses the whole pull; a value no `.env` spelling reads back the same under both fli and Bun (one holding `$`) is skipped and named, never written altered
+- **`send`** — reads a Vaultwarden/Bitwarden text Send (`--url`, the link `fli env:send` prints), decrypted in-process with the key in the link's fragment; no vault login. **Every pull is one access, `--dry` included** — a Send capped at one read is spent by the first, whatever happens to the text after
 
 By default, remote values win on conflicts and local-only keys are preserved (`--merge`).
 
@@ -173,26 +218,45 @@ log.info(`Pulling env from: ${flag.from}`)
 let remoteContent
 try {
   if (flag.from === 'url') {
-    if (!flag.url) { log.error('--url is required for url source'); return }
+    if (!flag.url) { log.error('--url is required for url source'); process.exitCode = 1; return }
     remoteContent = await pullFromUrl(flag.url)
   } else if (flag.from === 'gist') {
-    if (!flag['gist-id']) { log.error('--gist-id is required for gist source'); return }
+    if (!flag['gist-id']) { log.error('--gist-id is required for gist source'); process.exitCode = 1; return }
     remoteContent = await pullFromGist(flag['gist-id'])
   } else if (flag.from === 'ssh') {
     remoteContent = pullFromSsh($.env, flag.server, flag.path)
   } else if (flag.from === 'caprover') {
     remoteContent = await pullFromCaprover($.env, flag.app)
+  } else if (flag.from === 'vaultwarden') {
+    const { loginNeeds }               = await import(resolve(global.fliRoot, 'core/vaultwarden.js'))
+    const { acquireMissing, ttyPrompts } = await import(resolve(global.fliRoot, 'core/requires.js'))
+    const needs = loginNeeds($.env)
+    if (needs.length) {
+      const left = await acquireMissing('env:pull --from vaultwarden', needs, {
+        interactive: tty.interactive, write: !flag.dry, env: $.env,
+        say: (t, level = 'error') => log[level](t), ...ttyPrompts(tty),
+      })
+      if (left.length) { process.exitCode = 1; return }
+    }
+    const pulled = await pullFromVaultwarden($.env, resolve($.paths.root, flag.path || '.env.example'))
+    remoteContent = pulled.content
+    if (pulled.skipped.length) log.warn(`Skipped, set by hand: ${pulled.skipped.join(', ')} — a value holding $ (or ' beside " or \\) has no .env spelling fli and Bun both read back unchanged`)
+  } else if (flag.from === 'send') {
+    if (!flag.url) { log.error('--url is required for send source'); process.exitCode = 1; return }
+    remoteContent = await pullFromSend(flag.url, flag.password)
   } else if (flag.from === 'file') {
-    if (!flag.path) { log.error('--path is required for file source'); return }
+    if (!flag.path) { log.error('--path is required for file source'); process.exitCode = 1; return }
     const srcPath = resolve($.paths.root, flag.path)
-    if (!existsSync(srcPath)) { log.error(`File not found: ${srcPath}`); return }
+    if (!existsSync(srcPath)) { log.error(`File not found: ${srcPath}`); process.exitCode = 1; return }
     remoteContent = readFileSync(srcPath, 'utf8')
   } else {
-    log.error(`Unknown source: ${flag.from}. Use: caprover | url | gist | ssh | file`)
+    log.error(`Unknown source: ${flag.from}. Use: caprover | url | gist | ssh | file | vaultwarden | send`)
+    process.exitCode = 1
     return
   }
 } catch (err) {
   log.error(`Failed to pull from ${flag.from}: ${err.message}`)
+  process.exitCode = 1
   return
 }
 

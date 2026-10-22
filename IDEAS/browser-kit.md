@@ -433,7 +433,7 @@ Goal: #4 and #5, and the kit components that stop binding `document` themselves.
 Done when: `$$virtualEach`, sierra's islands loader, prefetch and the mcp panel read `visible()` / `size()`; CommandPalette, Popover and Dialog read `hotkey()`; the chord spec in toolbelt parses every chord the kit binds.
 
 - [ ] 2.1 `visible()` and `size()` as attachments, one observer per option set
-- [ ] 2.2 Chord parser in toolbelt (`/keys`, `FJS-D1382`), `hotkey()` scoped to the delegation root — lands as `keys.md` 1.1 and 2.2, one engine the terminal shell also runs
+- [x] 2.2 Chord parser in toolbelt (`/keys`, `FJS-D1382`), `hotkey()` scoped to the delegation root — lands as `keys.md` 1.1 and 2.2, one engine the terminal shell also runs — kit drive `hotkey` (18 rows); the SSR half owed to the phase's vitest
 - [ ] 2.3 Replace the four private observer copies and the fifteen keydown bindings
 
 ### Phase 3 — Out and in

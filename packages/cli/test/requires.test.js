@@ -72,7 +72,7 @@ describe('acquireMissing', () => {
     try {
       const left = await acquireMissing('prov', missing, { interactive: false, home: h.dir, say: t => said.push(t), env: {} })
       expect(left).toEqual(missing)
-      expect(said[0]).toBe('prov namespace requires: T')
+      expect(said[0]).toBe('prov requires: T')
       expect(said.some(l => l.includes('fli eset T <value> --global'))).toBe(true)
       expect(said.some(l => l.includes('https://x.test/new'))).toBe(true)
       expect(readFileSync(h.file, 'utf8')).toContain('T=')

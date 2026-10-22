@@ -8,7 +8,7 @@ license, not its style: `FJS-D26` admits toolbelt as substrate *below* the
 dependency graph on the strength of it, so breaking purity costs the standing.
 
 **One kit per subpath.** `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/docfences`, `/env`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
-`/fill`, `/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/mailbox`, `/markdown`, `/match`, `/mime`,
+`/fill`, `/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/keys`, `/mailbox`, `/markdown`, `/match`, `/mime`,
 `/predicate`, `/query`, `/rank`, `/redact`, `/search`, `/signature`, `/sigv4`, `/sse`, `/textedit`, `/trace`, `/transforms` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
@@ -121,7 +121,10 @@ src/frontmatter/     what a `---` block MEANS — a declared YAML subset
                      sierra's scanner, mesa's `.md` compiler and fli's command
                      files — two readers answered two objects for one ksite
                      menu (`FJS-1541`). `frontmatterValue` is the writer's
-                     half: plain where plain reads back, otherwise quoted
+                     half: plain where plain reads back, otherwise quoted.
+                     `frontmatterPositions` is where each value is written
+                     (path, line, and a one-line value's offsets): Mesa
+                     stamps a preview with it and site-kit writes one back
 src/cells/           one cell of a file somebody else wrote, read as the type
                      its column declares or a reason it cannot be — never a
                      guess, and a reason never quotes the cell, since the text
@@ -293,13 +296,27 @@ src/markdown/        Markdown somebody else wrote → HTML with no tag the text
                      a link is http, https, mailto or relative; an image is a
                      link to it. The same function at prerender and in the
                      browser (`FJS-D821`). Caller: ui's Markdown component
+src/keys/            a key sequence read against a keymap — vim's chord
+                     spelling (`FJS-D1383`), the trie built once per platform,
+                     and `step`/`flush`, pure over a `now` and a text flag the
+                     host passes (`IDEAS/keys.md`). `chordOf(e)` is the one
+                     crossing from an event. Mesa's `keys()` and `hotkey()`
+                     are the hosts, ui's `rowlist`, and sierra's terminal shell, which steps
+                     a keypress before the runtime makes a keydown of it. `browserOwned` lists the rows a
+                     tab never receives — `BROWSER_OWNS`, read from Chromium's
+                     and Firefox's reserved keys and the OS defaults — on BOTH
+                     platforms, so a refusal is the same on every machine; a
+                     key a page may cancel (`<Mod-s>`) is not on it
 src/textedit/        `locateText` — an element's words swapped where its
                      `.mesa` or `.md` source wrote them, or `{ why }` when that
                      takes a guess (interpolated, split by markup, written
-                     twice, or new words carrying markup). Pure over the
-                     source text, so a caller holding a git blob makes the
-                     edit a dev server's disk does. Caller: fli's ask panel
-                     (`/text` in `core/vite-ask.js`)
+                     twice, or new words carrying markup). A `.md` is
+                     searched in the block the stamp's line opens, then the
+                     whole body when a save has moved that line. Pure over
+                     the source text, so a caller holding a git blob makes the
+                     edit a dev server's disk does. Callers: fli's ask panel
+                     (`/text` in `core/vite-ask.js`) and basecamp's
+                     `drafts.save` (an owner's click on a draft's preview)
 docs/glow/           the Svelte editor and SCSS theme glow arrived with.
                      Reference only — not shipped, not FrontierJS code
 src/datetime/        an instant read as a place's wall clock, and written back —

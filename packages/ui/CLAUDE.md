@@ -37,7 +37,7 @@ drag.js       drag — one pointer drag, press to release or cancel, an {@attach
 nav.js        the `src/lib/nav.js` contract (typedefs) and sectionFor · visible ·
               paletteItems; never decides CURRENT, which is Sierra's isActive
 rowlist.js    rowlist — the keys of a list of rows (cursor, one tab stop, open,
-              select), an {@attach} (FJS-2009)
+              select), an {@attach} over toolbelt `/keys` tables (FJS-2009)
 selection.js  createSelection — the ticked KEYS of a list, signal-backed; the
               screen composes it with Checkbox `indeterminate` and BulkBar,
               and Table stays out of it (FJS-D671)

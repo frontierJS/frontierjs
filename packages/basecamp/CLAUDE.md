@@ -124,6 +124,9 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           takes no workspace: the caller's own `AppEditor` row is read first and
           the App through asSystem() after it; what may be written is
           site-kit's `editable` (`formOf`, `applyEdit`), never a list here.
+          A save's `text` edit (a click on the preview) carries no blob: the
+          words are found in the stamped block by toolbelt's `locateText`,
+          and the result still goes through `applyEdit`.
           core/site-preview.ts is a draft's preview: it BUILDS NOTHING — the
           `site:preview` job sends `/site/preview` to the App's placement,
           where Outpost builds in throwaway containers (`FJS-D1251`), with

@@ -79,3 +79,19 @@ test('textedit: Markdown — the body is searched, never the frontmatter, and em
   assert.match(locateText(MD, { ext: 'md', line: 1, col: 1, tag: 'h1', old: 'The heading', next: '*bold*' }).why, /markup/)
   assert.match(locateText(MD, { ext: 'md', line: 1, col: 1, tag: 'h1', old: 'The heading', next: 'a <b>' }).why, /markup/)
 })
+
+test('textedit: Markdown — the block the stamp\'s line opens is searched first, so words written twice land on the clicked one', function () {
+  const MD = '---\ntitle: x\n---\n\nCall us today.\n\nOpen late.\nCall us today.\n\nEnd.\n'
+  const r = locateText(MD, { ext: 'md', line: 7, col: 1, tag: 'p', old: 'Call us today.', next: 'Ring us now.' })
+  assert.equal(r.text, 'Ring us now.')
+  assert.equal(swap(MD, r, r.text), '---\ntitle: x\n---\n\nCall us today.\n\nOpen late.\nRing us now.\n\nEnd.\n')
+  assert.deepEqual([MD.slice(r.from, r.to)], ['Open late.\nCall us today.'])
+  // A line moved by a save since the build: the block there lacks the words,
+  // so the body is searched, and twice there is refused.
+  assert.match(locateText(MD, { ext: 'md', line: 10, col: 1, tag: 'p', old: 'Call us today.', next: 'x' }).why, /2 times/)
+  const moved = locateText(MD, { ext: 'md', line: 5, col: 1, tag: 'p', old: 'Open late.', next: 'Open later.' })
+  assert.equal(swap(MD, moved, moved.text), MD.replace('Open late.', 'Open later.'))
+  // The page shows one line, whatever the textarea held.
+  assert.equal(locateText(MD, { ext: 'md', line: 10, col: 1, tag: 'p', old: 'End.', next: '  The\n\nend. ' }).text, 'The end.')
+  assert.match(locateText(MD, { ext: 'md', line: 10, col: 1, tag: 'p', old: 'End.', next: ' \n ' }).why, /empty/)
+})

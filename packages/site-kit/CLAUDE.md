@@ -149,12 +149,16 @@ what they mean in any app.
   write (`FJS-D1226`): `content/**/*.md` and raster photos under `content/`,
   every top-level front-matter key but `LOCKED_KEYS` (`layout`, `name`, Block's
   six look keys, read off `block-look.js`). `formOf(source)` is a file as an
-  owner's form; `applyEdit(source, { body, values })` writes one, replacing
+  owner's form, with `bodyLine` the file line its body starts on and each
+  key's `line`; `applyEdit(source, { body, values })` writes one, replacing
   only the named keys' lines and refusing a result that reads back with any
   other key changed (`FJS-D1249`), or a body holding more code than the old
   one — a `<script>`, a `{…}`, a tag with its attributes — or a `javascript:`
-  link (`FJS-D1250`), because a build runs a body's script. Basecamp's save
-  and the grade of a model's diff both call it.
+  link (`FJS-D1250`), because a build runs a body's script. `{ field: { line,
+  old, next } }` is the other edit: the words of the one value written on that
+  line, at any depth, refused when they are no longer `old` (`FJS-D1231`). A
+  value is graded for no code (`FJS-3416`). Basecamp's save and the grade of a
+  model's diff both call it.
 - `src/editor/` + `config/editor.js` — the owner's Edit button on a draft's
   preview (`FJS-D1225`, `FJS-D1358`), built only by `build --preview` with
   `SITE_EDITOR` (basecamp's page for the draft, set by Outpost). Emitted as
@@ -162,6 +166,18 @@ what they mean in any app.
   under `assets/`, and with `build.minify` stated, since Sierra skips minifying
   a bundle it expects no page to reach. Each page loads it through
   `document.bodyEnd`. `handoff.js` is the PKCE sign-in (`FJS-D1357`).
+  Signed in, a click on the page is a pick: `pick.js` turns the clicked
+  element's `data-fjs-loc` into a field. On a `.md` the draft lists,
+  `Inline.mesa` lays a textarea over the element and saves its words as
+  `drafts.save`'s `text` edit (line, old words, new). A value a block reads off
+  a loaded `.md` is stamped with its own line (Mesa records it), so it lands
+  the same way and saves as `applyEdit`'s `field`; words basecamp cannot
+  place alone open `Field.mesa`, Phase 1's form, at that line with the reason.
+  A template's stamp offers the editable files. `live.js` shows what is typed
+  on the page before the save, words only (`FJS-D1399`): a leaf showing the old
+  words of a changed block or value takes the new ones, and new words with
+  markup wait for the rebuild. Everything the editor renders carries
+  `data-fjs-editor-ui`, which is how a click on it is not taken for a pick.
 - `src/block-look.js` — the one owner of what a look word may be and where its
   class lands, imported by both `Block.mesa` and `config/dividers.js`.
 - `config/shell.js` — `siteShell({ html, entry })`, the kit's own pair or a

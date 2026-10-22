@@ -15,6 +15,7 @@ export const REFUSED = {
   Files:    'type="file" on <input>',
   Haven:    'onkeydown',
   Image:    '<svg>',
+  Keymap:   'onkeydown',
   Keys:     'onkeypress',
   Kinds:    'type="checkbox" on <input>',
   Multi:    '<select>',

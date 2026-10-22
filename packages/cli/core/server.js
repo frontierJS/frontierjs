@@ -30,6 +30,9 @@
 //   POST /api/publish/registry → what npm holds, `ws:npm --json` — a press, it asks the registry
 //   POST /api/start/:id · POST /api/stop/:id · GET /api/output/:id
 //
+// And the console, the same reads drawn by `.mesa` screens — `core/console.js`:
+//   GET  /console/            → the page; its modules under /console/ and /@fjs/
+//
 // SSE event shapes sent to client:
 //   data: {"type":"output","text":"Hello, World!\n"}
 //   data: {"type":"log","level":"success","text":"Done"}
@@ -54,6 +57,7 @@ import { extractSegments, splitFrontmatter } from './compiler.js'
 
 import { GLOBAL } from './ports.js'
 import { ownStyleBundle, glowSource, CDN_STYLESHEET } from './assets.js'
+import { isConsolePath, handleConsole } from './console.js'
 const PORT = parseInt(process.env.FLI_PORT, 10) || GLOBAL.gui
 
 // ─── Registry cache ───────────────────────────────────────────────────────────
@@ -104,6 +108,11 @@ function route(req, res) {
   const pageMatch = path.match(/^\/api\/page\/(.+)$/)
   if (req.method === 'GET' && pageMatch) {
     return handlePage(req, res, decodeURIComponent(pageMatch[1]))
+  }
+
+  // GET /console/ — the `.mesa` screens, beside the page below until they replace it
+  if (req.method === 'GET' && isConsolePath(path)) {
+    return handleConsole(res, path)
   }
 
   // GET / and any non-API path — serve the Web GUI (client handles routing)
@@ -1300,24 +1309,31 @@ function readBody(req) {
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
-export function startServer() {
+// Anything the page started dies with this process. Registered in
+// `startServer` rather than at import in `children.js`, because a module that
+// installs a process listener the moment it is required is one a test cannot
+// import without inheriting it. `exit` cannot await, which is why the kill is a
+// signal.
+const reap = async () => {
+  try { (await import('./children.js')).killAll() } catch {}
+}
+
+/** What a signal does, and what the terminal console's Ctrl+C does: stop
+ *  everything the page started, then this process. */
+export const shutdown = (code = 0) => reap().finally(() => process.exit(code))
+
+/** `quiet` prints nothing, for a caller that has given the terminal to a
+ *  renderer, where a line written past it lands inside the screen. */
+export function startServer({ quiet = false } = {}) {
   const server = createServer(route)
   server.listen(PORT, () => {
+    if (quiet) return
     console.log(`FLI server running on http://localhost:${PORT}`)
     console.log(`  GET  http://localhost:${PORT}/api/commands`)
     console.log(`  POST http://localhost:${PORT}/api/run/:name`)
   })
 
-  // Anything the page started dies with this process. Registered here rather
-  // than at import in `children.js`, because a module that installs a process
-  // listener the moment it is required is one a test cannot import without
-  // inheriting it. `exit` cannot await, which is why the kill is a signal.
-  const reap = async () => {
-    try { (await import('./children.js')).killAll() } catch {}
-  }
-  for (const sig of ['SIGINT', 'SIGTERM']) {
-    process.once(sig, () => { reap().finally(() => process.exit(0)) })
-  }
+  for (const sig of ['SIGINT', 'SIGTERM']) process.once(sig, () => shutdown())
   server.once('close', reap)
 
   return server

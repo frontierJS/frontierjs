@@ -137,9 +137,26 @@ src/
                          tab.visible. media.js is #3, one MediaQueryList
                          per query; every signal wrapper is a CALL held in a
                          const, since a template read of an imported name is
-                         static (`FJS-060`, `FJS-3096`). result.js is the
+                         static (`FJS-060`, `FJS-3096`). hotkey.js is #5, a
+                         keymap in its root's one keys() attachment, newest
+                         first, so of two `<Esc>` the newest answers until
+                         disposed; a chord a browser takes first (toolbelt's
+                         `browserOwned`) throws there and at keys()'s attach.
+                         result.js is the
                          one { ok, via, reason } an action returns;
                          browser.d.ts states each server answer
+  keys.js              — @frontierjs/mesa/keys: `keys(() => ({ active, on }))`,
+                         toolbelt /keys read on an element's keydown — the one
+                         attachment a tab and a terminal both run (`FJS-D1388`),
+                         so not in browser/, which throws on a terminal. On a
+                         terminal node it is hosted through `__hostKeys`, and
+                         the runtime's `stepKeys` steps every host on the
+                         focus path, innermost first, then the shell's
+                         (`setShellKeys`), before it makes the keydown; a key
+                         one took makes NO keydown there (`FJS-D1401`), and
+                         `keymapsAt(r)` lists them for help. A key ending a
+                         pending sequence unfinished is swallowed on both
+                         targets. On a phone it refuses `keydown` by name
 
 mesa-vite/
   index.js             — the Vite plugin, exported as @frontierjs/mesa/vite
@@ -283,7 +300,10 @@ literal has to compile with `loc: false`, not merely with `dev: true`. `loc`
 defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
 The same switch sets `__fjsPlaced` on each component's anchor comment, the
 line that placed it — the inspector's only way from a package layout's own
-chrome back to the app file (`FJS-3332`).
+chrome back to the app file (`FJS-3332`). It also records a `.md` module's
+`frontmatter` (runtime `recorded`), and an element whose whole text is one field
+read (`{item.name}`) is restamped at runtime with that value's content line
+(`stampFrom`, `FJS-D1231`); a copy that changed the key keeps the template's.
 
 - **An instance `<script>` has exactly two export forms** — `export let` (a
   prop) and `export function` (a method on what `bind:this` hands the parent,

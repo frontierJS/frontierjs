@@ -6,7 +6,7 @@ dated: 2026-10-17
 
 # Idea — owner editing: a site's owner changes their own words
 
-**Status: PROPOSED. 1.1–1.5 and 2.1 are built. Q1–Q18 are ruled (`FJS-D1225`–`FJS-D1231`, `FJS-D1242`, `FJS-D1246`–`FJS-D1252`, `FJS-D1339`, `FJS-D1357`, `FJS-D1358`).** Do not cite this file as describing
+**Status: PROPOSED. 1.1–1.5 and 2.1–2.5 are built. Q1–Q19 are ruled (`FJS-D1225`–`FJS-D1231`, `FJS-D1242`, `FJS-D1246`–`FJS-D1252`, `FJS-D1339`, `FJS-D1357`, `FJS-D1358`, `FJS-D1399`).** Do not cite this file as describing
 behavior — see `VERIFYING.md`.
 
 A site's owner (a Kobami client, or whoever runs frontierjs.com) opens their
@@ -341,6 +341,7 @@ Basecamp itself lists drafts and history and holds the grants.
     panel built into the site, and adds no deploy plumbing. Skew between
     editor and API stays small, because every save rebuilds the preview. B is
     the reopen path if previews start to outlive basecamp's releases.
+- ~~**Q19 — How a preview shows a change before it is saved (2.5).**~~ **Answered 2026-10-21 (`FJS-D1399`): D — words only, with no compiler in the page; a change that adds or removes markup waits for the rebuild.** A preset's Markdown passes are function values in its config, so neither the page nor basecamp could run the site's exact pipeline without a new preset key (A, recommended; B skipped the preset's passes; C compiled in basecamp). A is the reopen path.
 
 ## The plan
 
@@ -646,15 +647,132 @@ a grant sees the Edit button but has every save refused.
     every site the person may edit, not just this one; the grant still decides
     each call. Sign out forgets the key in the tab, and the key itself lapses
     after 8 hours.
-- [ ] 2.2 The editor outlines stamped elements and turns a click's `loc` into
+- [x] 2.2 The editor outlines stamped elements and turns a click's `loc` into
   a field. It ships only under `preview: true`.
-- [ ] 2.3 Edit a prose element inline. The save writes that `.md` line
+  **Built 2026-10-21.** Signed in, the preview is picked rather than browsed:
+  a pointer outlines the nearest stamped element (solid on a file the draft
+  lists, dashed on a template), and a click, caught in the capture phase so a
+  link never navigates, opens the stamp's file. A `.md` the draft lists opens
+  as `Field.mesa`, Phase 1's form (the unlocked one-line keys and the body)
+  with the clicked block selected, and saves through `drafts.save`. A
+  template's stamp is `FJS-D1231` C: it names the template and lists the
+  editable files, this page's route first. Browse hands clicks back to the
+  page; Escape closes the field. `formOf` gained `bodyLine`, the file line the
+  body starts on. `src/editor/pick.js` is the stamp-to-field half.
+  - Found on the way: `FJS-3412`. Prose stamps named a line four past their
+    own on any page that reads a setting, because Sierra synthesizes an import
+    block and the prerender had no line map. Fixed in mesa and Sierra.
+  - Proved by site-kit `test/content-build.mjs` (a preview's prose names its
+    own `.md` line past an auto-import), `test/content.mjs` (`bodyLine`) and a scratch browser drive, 17/17
+    (not committed), on a temp-db basecamp over a bare git remote with a
+    `draft/spring` branch: the outline is editable on prose and not on a
+    template, a click on a link in prose stays on the page and selects that
+    block (a two-line paragraph whole), the keys show and a locked one does
+    not, Save commits only that change to the draft, a template click offers
+    the page's file first and opens a picked one, Browse picks nothing, and
+    with the grant deleted mid-edit the save is refused and the branch does
+    not move.
+  - Left: the selection is the stamp's line on the build the preview came
+    from, so after a save it can sit on a moved line until the preview
+    rebuilds (2.3's `locateText` is the fix for writing). A component placed
+    in prose (`<Button text>`) stamps its own file and gets the template
+    list, not its placing line. The editor's own elements carry stamps naming
+    where site-kit sits on the build machine.
+- [x] 2.3 Edit a prose element inline. The save writes that `.md` line
   through `@frontierjs/toolbelt/textedit`'s `locateText`, the ask panel's text
   edit. In a `.md` it searches the whole body, so the same words twice anywhere
   on the page are refused; narrowing the search to the block the loc names is
   this step's.
-- [ ] 2.4 A front-matter value lands on its field by provenance at the read (`FJS-D1231`).
-- [ ] 2.5 Re-render a markdown route live on the page before saving (0.2).
+  **Built 2026-10-21.** A click on a `.md` the draft lists lays a textarea
+  over the element (`Inline.mesa`), the ask panel's Edit text shape: Enter
+  saves, Escape and a click away cancel, and Edit the file opens 2.2's form.
+  The save is `drafts.save` with `text: { line, old, next }` and no blob,
+  since the old words found in the stamped block are the staleness check; the
+  swapped body still goes through `applyEdit`. `locateText` searches a `.md`
+  in the block the line opens (to the next blank line) and the whole body
+  when that block lacks the words, so a line a save moved still lands while
+  the same words twice are refused; the new words are collapsed to one line.
+  A refusal opens the form at that line with the reason and the typed words.
+  A leaf shows its new words at once; text with markup inside waits for the
+  rebuild. `decision-rules` ran before the code.
+  - Proved by toolbelt `test/specs/textedit.spec.js` (the clicked block of
+    two equal ones, a moved line, one line, empty refused), basecamp
+    `api/test/drafts.test.ts` § a text edit, cli's `vite-ask.test.js` and
+    website's `verify:ask` unchanged, and a scratch browser drive, 17/17 (not
+    committed), on 2.2's harness: a link's words change inside its brackets
+    without following it, the second of two equal paragraphs is the one
+    saved, words around a link open the form saying why with that paragraph
+    selected, a two-line paragraph saves as one line, a stamp that save moved
+    still lands, Escape saves nothing, a template still offers files, Browse
+    picks nothing, and with the grant deleted the save is refused and the
+    branch does not move.
+  - Left: a block that lost the words falls back to the whole body, so
+    words a link splits in the clicked block but written plain once elsewhere
+    would change the other place; it is a draft, seen on the next preview. A
+    two-line paragraph is rewritten as one line. The form's selection still
+    uses the build's line (2.2's Left).
+- [x] 2.4 A front-matter value lands on its field by provenance at the read (`FJS-D1231`).
+  **Built 2026-10-21.** In a stamping build, Mesa's `compileMd` records its
+  `frontmatter` export: each value is marked with its file line, taken from
+  toolbelt's `frontmatterPositions`, through runtime `recorded()`. The loader
+  is Mesa's and not site-kit's, because every `@content/x.md` import and
+  collection glob is a module `compileMd` emits; `collection()` passes the
+  object through. An element whose whole text is one field read
+  (`{item.name}`, `{hours[day]}`) gets a `stampFrom` bind, which stamps the
+  content line when the object carries it and still holds the value that line
+  wrote. The mark is an enumerable symbol, so a copy (`{ ...item, link }`)
+  keeps the lines of the keys it kept, and a key it changed keeps the
+  template's stamp. A click on one lands inline like prose. `drafts.save`
+  routes a `text` edit whose line is above the body to site-kit's new
+  `applyEdit` `field` edit, which swaps exactly that value, quoted where YAML
+  needs it, and refuses a locked key, a number, a value over several lines,
+  and words the line no longer holds. A refusal opens the form with the
+  reason and that key's field selected (`formOf` keys gained `line`). Every
+  leaf on the page with the same stamp shows the new words at once.
+  `decision-rules` ran late, after the code; it passed, with the loader's
+  owner reconciled in the ruling's *Lives in* line.
+  - Proved by site-kit `test/content-build.mjs` (a real `--preview` build: a
+    menu link and a sub-entry name their menu lines, a collection field its
+    item's file, a copy keeps a kept key's line and the template for a changed
+    one), `test/content.mjs` (the field edit and its refusals),
+    toolbelt `frontmatter.spec.js` (positions, CRLF included), basecamp
+    `api/test/drafts.test.ts` § a text edit on a front-matter line, and a
+    scratch browser drive, 18/18 (not committed), on 2.3's harness with a
+    menu, a setting and a number. A collection title, a menu link (header and
+    copied footer both update) and a setting with a colon each save to their
+    own file; a number opens the form at its key; words a block worked out
+    still offer files; a stale value and a dropped grant are refused with the
+    branch unmoved. 2.3's drive is 17/17 with its template step now landing
+    inline.
+  - Found on the way: `FJS-3416`. A front-matter value is graded for no
+    code, and ksite's hero renders `title` through `{@html}`.
+  - Left: a setting bound bare in prose (`{company_name}`, through
+    `.sierra/settings.js`) is not recorded and keeps the prose stamp. Text
+    beside a value (`© {year} {settings.company_name}`) keeps the template's
+    stamp. A prop passed in whole (the hero's keys) is `FJS-D1231` C. A nested
+    value the inline save refuses has no field in the form, which lists only
+    top-level keys (Phase 3).
+- [x] 2.5 Re-render a markdown route live on the page before saving (0.2).
+  **Built 2026-10-21, as Q19 ruled it (`FJS-D1399`): words only, no
+  compiler.** As the owner types, inline or in the form, each leaf that shows
+  the old words of a changed block or value shows the new ones, at its stamp
+  or, when a save moved the line, as the file's one leaf with those words.
+  New words carrying markup (Markdown syntax, `{…}`, what the dialect turns
+  into a mark, a phone or email link, or a kicker) wait for the rebuild, as do
+  a block added, removed or split and a number; the form counts what waits.
+  Escape, Discard and closing put the page back; a save keeps the words.
+  `src/editor/live.js` is the owner, and 2.3's after-save swap folded into it;
+  `config/prose.js` exports `isKickerText`/`marksText` so the editor reads the
+  dialect rather than restating it.
+  - Proved by site-kit `test/content.mjs` (the block diff and what waits) and
+    a scratch browser drive, 17/17 (not committed), on 2.4's harness: a typed
+    paragraph and both copies of a menu link show before any commit and come
+    back on Escape, one of two equal paragraphs changes alone, markup waits,
+    the form shows a plain block, counts a block with a link and an added
+    block, Discard restores, a save keeps, and a setting shows while a number
+    waits. 2.4's drive 18/18 and 2.3's 17/17 unchanged.
+  - Left: anything with markup shows only after the rebuild (`FJS-D1399`'s A
+    is the reopen path).
 
 ### Phase 3 — Lists and media
 
@@ -707,7 +825,8 @@ shows them, reviews the diff and saves it to their draft.
 9. **Silence** — *stays true:* production never carries the editor or a stamp.
    *What fails:* step 5's deploy check, which refuses a stamped dist, would also
    catch the editor if it lives in the stamped build. That an owner's edit
-   writes the line they clicked is `none` until 2.3 has a drive.
+   writes the block they clicked is toolbelt's `textedit.spec.js` and
+   basecamp's `drafts.test.ts` § a text edit; in a browser, a scratch drive.
 
 Adjudications: *batteries vs. smallness* (owner editing is a basecamp module
 and the site carries only the preview's editor) and *paved road vs. the

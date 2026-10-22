@@ -8,6 +8,7 @@ examples:
   - fli provision
   - fli provision --size 8gb --region sfo3
   - fli provision --name ops --key ~/.ssh/id_rsa.pub
+  - fli provision --domain ops.example.com
 flags:
   size:
     type: string
@@ -20,6 +21,10 @@ flags:
   name:
     type: string
     description: The droplet's name, and the Host in the ssh block (asked at a terminal, basecamp otherwise)
+    defaultValue: ''
+  domain:
+    type: string
+    description: Basecamp's hostname (asked at a terminal; default the web.domain in packages/basecamp/frontier.config.js)
     defaultValue: ''
   image:
     type: string
@@ -40,7 +45,9 @@ flags:
     defaultValue: false
 ---
 
-Asks the server's name first — Enter takes `basecamp`, `--name` skips the
+Asks Basecamp's hostname first — Enter takes `deploy.web.domain` from
+`packages/basecamp/frontier.config.js` (none when it is empty), `--domain` skips
+the question. Then the server's name — Enter takes `basecamp`, `--name` skips the
 question, and a run with no terminal uses `basecamp`. Then creates one droplet
 with your SSH key on it, waits until it has an address,
 and adds a `Host` block for it to `~/.ssh/config` — asked first, yes unless you
@@ -55,12 +62,17 @@ gets past the bare box: `deploy:setup --auto-install` asks nothing, makes the
 `POST /setup`, over ssh on the box, so no DNS is needed yet. At a terminal the
 password is asked; Enter, or no terminal, generates one and prints it once.
 
+The box and the hostname reach the install as `--server` and `--domain`, and
+every deploy line the run prints carries both, so nothing is written into
+`packages/basecamp/frontier.config.js`. Installing needs a hostname, and a run
+with none refuses before anything is bought.
+
 Once Basecamp is up the run prints the `fli provision:dns` line that points
-its `web.domain` at the box, in a record Basecamp's own edge reads as its own.
-That token is checked FIRST, before any question or purchase: one that opens no zone
-holding `web.domain` refuses the run, so nothing is spent on a box whose name
-cannot be pointed at it. With no `CLOUDFLARE_TOKEN` a terminal takes the paste,
-and a run with no terminal warns and goes on.
+the hostname at the box, in a record Basecamp's own edge reads as its own.
+That token is checked right after the hostname, before any other question or
+purchase: one that opens no zone holding it refuses the run, so nothing is spent
+on a box whose name cannot be pointed at it. With no `CLOUDFLARE_TOKEN` a
+terminal takes the paste, and a run with no terminal warns and goes on.
 
 A second run refuses while a box made by an earlier one is still at the
 account, so a retry never buys two. `fli provision:list` shows it and `fli provision:destroy <id>` removes it.
@@ -91,11 +103,28 @@ if (flag.admin && flag.json) {
   return
 }
 
-// The DNS step this run ends by naming is checked before anything is asked or
-// bought: a token that opens no zone holding the hostname refuses here, not
-// after the questions, the droplet and the install. No token is not a refusal —
-// the record can come later.
-const domain = flag.json ? null : await webDomain()
+// The hostname is asked before anything else, and the DNS step this run ends by
+// naming is checked on it: a token that opens no zone holding the hostname
+// refuses here, not after the questions, the droplet and the install. No token
+// is not a refusal — the record can come later.
+const configured = (await webDomain()) || ''
+let domain = flag.json ? '' : flag.domain || configured
+if (process.stdin.isTTY && !flag.json && !flag.domain) {
+  const { createPrompts } = await import(resolve(global.fliRoot, 'core/prompt.js'))
+  const p = createPrompts()
+  domain = (await p.ask(`Basecamp's hostname${configured ? ` [${configured}]` : ', e.g. basecamp.frontierjs.dev (Enter: none yet)'} › `)).trim() || configured
+  p.close()
+}
+if (domain) {
+  const { edgeNames, EdgeError } = await import(resolve(global.fliRoot, 'core/edge.js'))
+  try { domain = edgeNames({ web: { domain } }).web.domain }
+  catch (e) {
+    if (!(e instanceof EdgeError)) throw e
+    log.error(`"${domain}" is not a hostname: letters, digits, dots and dashes`)
+    process.exitCode = 1
+    return
+  }
+}
 if (domain) {
   if (await cloudflareToken({ interactive: !!process.stdin.isTTY, say: (t) => log.warn(t) })) {
     const found = await hostRecord({ host: domain, check: true })
@@ -130,6 +159,11 @@ if (process.stdin.isTTY && !flag.json) {
 }
 
 name ||= 'basecamp'
+if (install && !domain) {
+  log.error(`Installing needs Basecamp's hostname: Caddy routes by it and fetches its certificate. Pass --domain, or answer the hostname question`)
+  process.exitCode = 1
+  return
+}
 if (admin && !/^[^\s@]+@[^\s@]+$/.test(admin)) {
   log.error(`"${admin}" is not an email address`)
   process.exitCode = 1
@@ -197,9 +231,14 @@ if (!added) echo`  Add to ~/.ssh/config:
 
 ${block.replace(/^(?=.)/gm, '  ')}`
 
+// Basecamp's frontier.config.js leaves `deploy.server` empty on purpose, so the
+// box travels as `--server` on every line this run prints, never as an edit to
+// that file. The Host alias when this run wrote it, the address otherwise.
+const dest = `root@${made.ip}`
+const later = ` --server ${added ? made.name : dest}${domain && domain !== configured ? ` --domain ${domain}` : ''}`
 if (!install) {
-  echo`  Then, in packages/basecamp, set deploy.server to that Host and run:
-    fli deploy:setup --auto-install && fli deploy
+  echo`  Then, in packages/basecamp:
+    fli deploy:setup --auto-install${later} && fli deploy${later}
 `
   return
 }
@@ -207,14 +246,13 @@ if (!install) {
 // Ring 0 on the box it just made, named as `root@ip` so nothing has to be in
 // ~/.ssh/config yet. Each command runs on this terminal: what it asks, it asks
 // the person, and what fails, fails with its own words.
-const dest = `root@${made.ip}`
 log.info(`Waiting for ssh on ${dest} — a fresh droplet answers in about a minute`)
 if (!await waitForSsh(dest, { identity })) {
-  log.error(`${dest} did not answer ssh in four minutes. When it does, in packages/basecamp: fli deploy:setup --auto-install --server ${dest} && fli deploy --server ${dest}`)
+  log.error(`${dest} did not answer ssh in four minutes. When it does, in packages/basecamp: fli deploy:setup --auto-install${later} && fli deploy${later}`)
   process.exitCode = 1
   return
 }
-for (const argv of [['deploy:setup', '--auto-install', '--server', dest], ['deploy', '--server', dest]]) {
+for (const argv of [['deploy:setup', '--auto-install', '--server', dest, '--domain', domain], ['deploy', '--server', dest, '--domain', domain]]) {
   const status = await runFli(argv)
   if (status !== 0) {
     log.error(`fli ${argv.join(' ')} exited ${status}. Fix what it said and run it again from packages/basecamp`)
@@ -225,9 +263,12 @@ for (const argv of [['deploy:setup', '--auto-install', '--server', dest], ['depl
 log.success(`Basecamp is on ${made.name} (${made.ip})`)
 
 const { default: conf } = await import(provisionScript().root + 'frontier.config.js')
-if (domain) echo`
+echo`
   Point ${domain} at it (DNS-only, so Caddy's certificate is what the browser sees):
-    fli provision:dns ${made.ip}
+    fli provision:dns ${made.ip}${domain === configured ? '' : ` --host ${domain}`}
+`
+echo`  A later deploy, from packages/basecamp:
+    fli deploy${later}
 `
 
 if (!admin) return

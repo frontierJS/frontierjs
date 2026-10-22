@@ -454,6 +454,33 @@ class FlowBox extends BoxRenderable {
 }
 
 /**
+ * A table row, whose cells take equal shares of it. The engine splits a width
+ * the cells do not divide into fractions of a column, and rounds a text's far
+ * edge up where it rounds a box's to the nearest, so a text in a fractional
+ * cell is measured at one width and painted at the next one up: the lines it
+ * paints are not the lines it was laid out with, and the block after it is
+ * drawn over its last one, or a blank row is left (`FJS-3413`). Each frame,
+ * before layout, the row hands its cells whole columns of the width it was
+ * last laid out at, the odd ones to the first cells. `flexGrow` holds the
+ * share for the first frame and the one a resize lands on, which redraws.
+ */
+class RowBox extends BoxRenderable {
+  onLifecyclePass = () => share(this)
+}
+
+function share(row) {
+  const cells = row.getChildren().filter((c) => TERMINAL_TAGS[c.__tag]?.cell && laidOut(c))
+  if (!cells.length || !row.width) return
+  const each = Math.floor(row.width / cells.length)
+  const odd = row.width % cells.length
+  cells.forEach((c, i) => {
+    const basis = each + (i < odd ? 1 : 0)
+    // The engine asks for a frame on every write, so only a change is written.
+    if (c.__basis !== basis) { c.__basis = basis; c.flexBasis = basis }
+  })
+}
+
+/**
  * `<details>`: its `<summary>` always shows and the rest only while `open`.
  * The rest goes into a body box of its own (`attach`), which is shown and
  * hidden whole, so a run's own hiding of its members never shows content a
@@ -639,11 +666,12 @@ export function element(tag, attrs = {}) {
   let node
   switch (spec.role) {
     case 'box':
-      node = new (spec.row || spec.hidden ? BoxRenderable : FlowBox)(r, {
+      node = new (spec.row ? RowBox : spec.hidden ? BoxRenderable : FlowBox)(r, {
         flexDirection: spec.row || spec.inline ? 'row' : 'column',
         ...(spec.indent && { paddingLeft: spec.indent }),
         // flexBasis 0 is what makes the share equal: an auto basis starts each
-        // cell at its content's width, and the columns drift row to row.
+        // cell at its content's width, and the columns drift row to row. The
+        // row then makes each share a whole number of columns (`RowBox`).
         ...(spec.cell && { flexGrow: 1, flexBasis: 0, paddingRight: 1 }),
         ...(spec.hidden && { visible: false }),
       })
@@ -754,6 +782,25 @@ export function element(tag, attrs = {}) {
   // as the DOM's is, and through `up`, so a lifted dialog is still inside the
   // component that wrote it.
   node.contains = (other) => { for (let n = other; n; n = up(n)) if (n === node) return true; return false }
+  // What an attachment written for the DOM calls on its element, through
+  // `on()`, so an event a terminal does not send throws by name.
+  node.addEventListener = (type, fn, opts = false) => {
+    const { capture = false, once = false } = typeof opts === 'boolean' ? { capture: opts } : opts
+    on(node, type, fn, { capture, once })
+  }
+  node.removeEventListener = (type, fn, opts = false) => {
+    const capture = typeof opts === 'boolean' ? opts : !!opts.capture
+    const list = node.__listeners?.[type]
+    const at = list ? list.findIndex((l) => l.fn === fn && l.capture === capture) : -1
+    if (at >= 0) list.splice(at, 1)
+  }
+  // Where `@frontierjs/mesa/keys` puts a keymap on a terminal node: stepped
+  // by `onKey` before the keydown is made, rather than heard in it.
+  node.__hostKeys = (host) => {
+    const set = (node.__keymaps ??= new Set())
+    set.add(host)
+    return () => set.delete(host)
+  }
   if (node instanceof FilePath) fileSource(node)
   else if (field) inputSource(node)
   if (spec.role === 'button' || spec.role === 'summary' || node instanceof CheckBox) activatable(node)
@@ -1242,11 +1289,13 @@ const DOM_KEY = {
   pageup: 'PageUp', pagedown: 'PageDown',
 }
 
+// What a keydown carries for the engine's key `k`; exported for a host that
+// reads a key before the runtime dispatches it (sierra's terminal shell).
 // Without the kitty protocol a Ctrl letter is a control byte, so its sequence
 // is no letter: `e.key` is the name, as a browser's is `k` for Ctrl+K. Ctrl+J
 // is 0x0A, which the engine names `linefeed`; read as a sequence it was a
 // typed newline, and a handler for Ctrl+J never matched.
-const keyFields = (k) => k.name === 'linefeed' ? keyFields({ ...k, name: 'j', ctrl: true }) : ({
+export const keyFields = (k) => k.name === 'linefeed' ? keyFields({ ...k, name: 'j', ctrl: true }) : ({
   key:      DOM_KEY[k.name] ?? (k.sequence?.length === 1 && k.sequence >= ' ' ? k.sequence : k.name),
   code:     k.name,
   shiftKey: !!k.shift, ctrlKey: !!k.ctrl, altKey: !!(k.option || k.meta), metaKey: !!k.meta,
@@ -1349,15 +1398,59 @@ function focusSource(node) {
   })
 }
 
+// ─── the keymaps ──────────────────────────────────────────────────────
+
+const shells = new WeakMap()
+
+/**
+ * The keys the renderer's host takes after every keymap on the focus path and
+ * before the keydown is made (sierra's terminal shell: Ctrl+P, `?`, the ways
+ * into INSERT, and h j k l renamed to the arrows). `text()` answers false where
+ * no field is a text context — the shell's NORMAL — and `step(e)` may prevent
+ * the key or rename it by writing `e.raw.name` and `e.raw.sequence`, which the
+ * keydown is then made from.
+ */
+export function setShellKeys(r, { text, step }) { shells.set(r, { text, step }) }
+
+/** The keymaps active on the focus path, innermost first, as `?` lists them. */
+export function keymapsAt(r, node = r.currentFocusedRenderable) {
+  const out = []
+  for (let n = node; n; n = up(n)) for (const host of n.__keymaps ?? []) out.push(...host.active())
+  return out
+}
+
+/**
+ * The keymaps a key meets before its keydown, the way Emacs reads its active
+ * maps and CodeMirror its keymaps: each `keys()` host from the focused node
+ * out, then the shell's. One event goes through all of them, so a key an inner
+ * keymap took reaches an outer one prevented and clears what it had pending.
+ * Answers whether the key was taken.
+ */
+function stepKeys(r, target, k, fields) {
+  const shell = shells.get(r)
+  const e = {
+    ...fields, target, isComposing: false, defaultPrevented: false,
+    typing: shell?.text() ?? true,
+    composedPath: () => [target],
+    preventDefault() { this.defaultPrevented = true },
+  }
+  for (let n = target; n && !n.__window; n = up(n)) for (const host of n.__keymaps ?? []) host.keydown(e)
+  shell?.step(e)
+  return e.defaultPrevented
+}
+
 /**
  * A key, as a browser delivers one: `keydown` at the focused node, or at the
  * window when nothing holds focus, then `keypress` for a key that types a
- * character, or Enter, with no Ctrl, Alt or Meta held. A prevented one is
- * withheld from the engine, so a field never types it. Then the key's
- * default: Tab moves focus, Escape asks the top modal dialog to close, a
- * control's own keys (`__keyAction`) act, and Enter or Space activates.
- * Escape taken by a dialog is stopped there, so no listener after this one —
- * the shell going back a screen — hears it.
+ * character, or Enter, with no Ctrl, Alt or Meta held. The keymaps are
+ * stepped first (`stepKeys`), and a key one of them took is theirs, as a key
+ * an Emacs keymap binds runs no other command: no keydown is made of it, so
+ * a listener reading `defaultPrevented` as somebody else's NORMAL does not
+ * act on it too. A prevented one is withheld from the engine, so a field
+ * never types it. Then the key's default: Tab moves focus, Escape asks the
+ * top modal dialog to close, a control's own keys (`__keyAction`) act, and
+ * Enter or Space activates. Escape taken by a dialog is stopped there, so no
+ * listener after this one — the shell going back a screen — hears it.
  */
 function onKey(r, k) {
   // Taken by a listener the host put on before the first mount: a shell's key
@@ -1365,6 +1458,7 @@ function onKey(r, k) {
   if (k.defaultPrevented) return
   const focused = r.currentFocusedRenderable
   const target = focused?.__focusSource && !focused.isDestroyed ? focused : windowOf(r)
+  if (stepKeys(r, target, k, keyFields(k))) { k.preventDefault(); return }
   const fields = keyFields(k)
   if (dispatch(target, 'keydown', fields).defaultPrevented) { k.preventDefault(); return }
   if (types(fields) && dispatch(target, 'keypress', fields).defaultPrevented) { k.preventDefault(); return }

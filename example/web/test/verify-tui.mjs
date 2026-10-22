@@ -134,6 +134,19 @@ const until = async (pred, ms = 15000) => {
 }
 
 check(await until(() => plain(out).includes('/reports/')), 'the shell lists the route', plain(out).slice(-500))
+// `?` lists the keys the shell takes here, read from its keymaps: on the list
+// there is nothing to go back from, so Esc is not one of them.
+const keyRow = (keys, action) => new RegExp(`(^|\\s)${keys.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+${action}(\\s|$)`, 'm')
+shell.stdin.write('?')
+check(await until(() => seen('Keys here') && keyRow('j', 'down').test(screen(out)) && keyRow('<C-p>', 'jump').test(screen(out))),
+  '? lists the keys, each read from a keymap', screen(out))
+check(keyRow('?', 'help').test(screen(out)) && !keyRow('<Esc>', 'back').test(screen(out)), 'and on the list, no back', screen(out))
+shell.stdin.write('?')
+check(await until(() => !seen('Keys here')), 'a second ? closes it', screen(out))
+shell.stdin.write('\x10')
+check(await until(() => seen('Jump to a route')), 'Ctrl+P opens the jump', screen(out))
+shell.stdin.write('\x1b')
+check(await until(() => !seen('Jump to a route') && seen('j/k moves, Enter opens')), 'and Esc closes it on the list', screen(out))
 let mark = out.length
 // The shell has a button per route `--list` marks that takes no param, in its
 // order, with the first focused, and the path field after them; a move paints
@@ -141,6 +154,11 @@ let mark = out.length
 const buttons = rows.filter((l) => l.startsWith('✓ ') && !l.includes(':')).map((l) => l.slice(2).trim())
 shell.stdin.write('j'.repeat(Math.max(0, buttons.indexOf('/reports/')) + 1) + 'k\r')
 check(await until(() => seen('administrator-only')), 'Enter opens it', screen(out))
+shell.stdin.write('?')
+check(await until(() => seen('Keys here') && keyRow('<Esc>', 'back').test(screen(out))), 'on a route ? lists Esc going back', screen(out))
+shell.stdin.write('\x1b')
+check(await until(() => !seen('Keys here')), 'and Esc closes the list', screen(out))
+check(seen('administrator-only') && seen('/reports/ · Esc goes back'), 'without leaving the route', screen(out))
 mark = out.length
 // The heading's Orders link is the route's first focus. /orders/ holds the
 // kit's DatePicker, whose days listen to mouseenter.

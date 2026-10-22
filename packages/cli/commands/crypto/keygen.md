@@ -51,7 +51,6 @@ flags:
 import { randomBytes } from 'crypto'
 import { existsSync, readFileSync, writeFileSync, appendFileSync } from 'fs'
 import { resolve } from 'path'
-import { execSync } from 'child_process'
 
 // ─── Key generators ───────────────────────────────────────────────────────────
 
@@ -101,30 +100,6 @@ const writeToEnv = (envPath, name, value, dry, log) => {
     if (dry) return log.dry(`Would create ${envPath} with ${name}`)
     writeFileSync(envPath, `${line}\n`)
     log.success(`Created ${envPath} with ${name}`)
-  }
-}
-
-// ─── Clipboard ────────────────────────────────────────────────────────────────
-
-// `log` is a parameter: this is module scope, which sees nothing run() destructures.
-const copyToClipboard = (value, log) => {
-  // Detect platform clipboard command
-  const cmds = {
-    darwin: 'pbcopy',
-    linux:  'xclip -selection clipboard 2>/dev/null || xsel --clipboard --input 2>/dev/null',
-    win32:  'clip',
-  }
-  const cmd = cmds[process.platform]
-  if (!cmd) {
-    log.warn(`Clipboard not supported on platform: ${process.platform}`)
-    return false
-  }
-  try {
-    execSync(cmd, { input: value, stdio: ['pipe', 'ignore', 'ignore'] })
-    return true
-  } catch {
-    log.warn('Could not copy to clipboard — is xclip or xsel installed?')
-    return false
   }
 }
 </script>
@@ -205,8 +180,9 @@ if (flag.copy) {
   if (flag.dry) {
     log.dry('Would copy key to clipboard')
   } else {
-    const ok = copyToClipboard(key, log)
-    if (ok) log.success('Copied to clipboard')
+    const { copyToClipboard, clipboardTools } = await import(resolve(global.fliRoot, 'core/clipboard.js'))
+    if (copyToClipboard(key)) log.success('Copied to clipboard')
+    else log.warn(`Could not copy to clipboard — is ${clipboardTools() ?? 'a clipboard tool'} installed?`)
   }
 }
 ```

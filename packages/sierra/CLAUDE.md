@@ -68,7 +68,16 @@ src/
                          command shows it through mesa's `sideToggle()` (`true` only shows),
                          which the shell fills. Both keys are
                          taken before any mount, since a field binds most Ctrl
-                         letters, and in the side Esc and h/j/k/l are its own
+                         letters, and in the side Esc and h/j/k/l are its own.
+                         Every key the shell takes is a toolbelt keymap stepped
+                         where it is taken (`FJS-D1396`), and `?` in NORMAL is
+                         a `<dialog>` of `bindings()` over the ones active now,
+                         the page's `keys()` hosts first (`keymapsAt`).
+                         `<C-p>`, `?`, `i a /` and the h/j/k/l rename are
+                         mesa's `setShellKeys` step: AFTER every keymap the
+                         page declares and before the keydown, so a page's
+                         pending `f` takes the `a` after it (`IDEAS/keys.md`
+                         3.5); NORMAL is `text()` false there
     Mode.mesa            the mode line, mounted in mesa's `footerOf` so a page
                          taller than the screen does not scroll it away
 

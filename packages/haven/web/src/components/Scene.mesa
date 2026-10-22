@@ -43,7 +43,7 @@
   // the terminal shell's NORMAL mode h j k l arrive as the arrows, and a step
   // is prevented so the shell does not also move focus for a j or a k; `y u b n`
   // walk the diagonals there, as a roguelike's, read only when the shell
-  // prevented the letter (`HomeRow`'s rule), so INSERT and a browser type them. A step
+  // prevented the letter, so INSERT and a browser type them. A step
   // onto a door is a navigation carrying where it was stepped through
   // (`from`, `x`, `y` in the query), the next route's walk-in cycles the
   // socket into that room, and its scene stands the figure beside the door
@@ -63,8 +63,9 @@
   // typed into the line, as in the workshop. Walking into a room keeps its
   // picture for the map (`#seen`).
   //
-  // `a s d f` are the left hand's (`IDEAS/haven.md` 9.4), verbs `HomeRow`
-  // adds. Facing is the way this figure last turned, one more presence key
+  // `a s d f` are the left hand's (`IDEAS/haven.md` 9.4), `HomeRow`'s keymap,
+  // which mesa's `keys()` runs on the line's form ahead of the shell's keys
+  // and of this file's keydown. Facing is the way this figure last turned, one more presence key
   // beside `{ x, y }`, which an arrow into a wall also sets, and a key is
   // pressed with it, so a verb the figure faces is asked first.
   //
@@ -122,6 +123,7 @@
   import Work            from '@/components/Work.mesa'
   import { at, copyBox, tint } from '#cell'
   import { paint }       from '#paint'
+  import { keys }        from '@frontierjs/mesa/keys'
 
   export let slug
   export let palette
@@ -269,9 +271,11 @@
   // The shell focuses a route's first control when it mounts it, and this
   // scene mounts later, once the room's row is read. Every focus is NORMAL in
   // the shell, so a command refocuses the line to leave INSERT (`say`), and so
-  // does a key a verb or a mode took: the shell reads `a` and `i` as INSERT
-  // before the scene sees them, so `f a` would find Ana and start a line.
+  // does a key a verb or a mode took, so the key after it is read in NORMAL.
   var input = null
+  // The home row's `{ active, on }`, read by the line's `keys()` at each key.
+  var homeKeys = null
+  const NO_KEYS = { active: [] }
   const focus = (el) => { input = el; el.focus() }
   const normal = () => { input?.blur(); input?.focus() }
 
@@ -513,7 +517,7 @@
     <WorldMap {stage} route={page.pathname} {x} {y} box={PANE} />
     <History {room} {nicks} box={PANE} {askNicks} {roomLines} />
     <Sitting {stage} {here} {x} {y} {spawn} tell={(text) => { note = text }} />
-    <HomeRow {stage} {here} {spawn} {nicks} {draft} {where} {moveTo} {shapeTo} tell={(text) => { note = text }} />
+    <HomeRow {stage} {here} {spawn} {nicks} {draft} {where} {moveTo} {shapeTo} tell={(text) => { note = text }} keyed={(k) => { homeKeys = k }} />
     <Stops {stage} {view} {draft} {where} {stepTo} box={PANE} tell={(text) => { note = text }} />
     <Whisper {room} {here} />
     <Dice {room} />
@@ -531,7 +535,7 @@
   <p>{room.name} · {here.get().count} here{#each here.get().others as m (m.connectionId)} · {nicks[m.userId] ?? '…'}{/each}</p>
   {#if note}<p>{note}</p>{/if}
   {#if hints.length && partial(draft) !== null}<p>{hints.map((c) => `/${c}`).join('  ')} · {hints.length === 1 ? 'Tab completes, Enter runs' : 'Tab completes'}</p>{/if}
-  <form onsubmit|preventDefault={say}>
+  <form {@attach keys(() => homeKeys?.() ?? NO_KEYS)} onsubmit|preventDefault={say}>
     <input {@attach focus} bind:value={draft} placeholder="arrows walk, type and Enter says, PageUp reads back" />
   </form>
   <Profile {here} {nicks} {stage} {room} {facing} {x} {y} route={page.pathname} glyph={shape ?? '@'} />

@@ -112,6 +112,7 @@
         "@frontierjs/css": "workspace:*",
         "@frontierjs/mesa": "workspace:*",
         "@frontierjs/toolbelt": "workspace:*",
+        "@frontierjs/ui": "workspace:*",
       },
     },
     "packages/conduit": {

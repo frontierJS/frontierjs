@@ -1,0 +1,155 @@
+<script>
+  // Run.mesa — what can run here and which of it is up: the console's `:run`
+  // pane, and the front page of `fli gui` (`IDEAS/one-console.md` Phase 1).
+  //
+  // Two reads with two lifetimes, kept apart as the server keeps them.
+  // `/api/runnables` is a tree walk, read once; `/api/state` is a probe, polled
+  // while the screen is up. A stale inventory shows a renamed row; a stale state
+  // shows a server that is down as up, so only the state is polled, and the
+  // time of the last answer is on screen — a reading with no time on it cannot
+  // be told from a live one.
+  //
+  // `api` is the origin the reads go to. A browser served by `fli gui` leaves it
+  // empty; a target with no origin of its own names one.
+
+  import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Table  from '@frontierjs/ui/components/display/Table.mesa'
+
+  export let api = ''
+
+  const POLL_MS = 3000
+
+  const KIND_TITLE = {
+    surface:  'surfaces',
+    tool:     'tools',
+    drive:    'drives',
+    suite:    'suites',
+    task:     'tasks',
+    snapshot: 'snapshots',
+    page:     'pages',
+  }
+
+  // `unknown` is a row with no port. Nothing here can tell whether it runs,
+  // which is a different sentence from `not running`, so it says nothing.
+  const STATE_TONE = { up: 'success', down: '', 'claimed-dead': 'warning', unknown: '' }
+  const STATE_WORD = { up: 'answering', down: 'not running', 'claimed-dead': 'claimed, not answering', unknown: '' }
+
+  const columns = [
+    { name: 'name',    label: 'Name' },
+    { name: 'state',   label: 'State' },
+    { name: 'start',   label: 'Command' },
+    { name: 'actions', label: 'Actions', hideLabel: true },
+  ]
+
+  let rows    = []
+  let kinds   = []
+  let state   = {}
+  let at      = null
+  let failed  = null
+  let pending = {}
+
+  $: groups = kinds
+    .map(kind => ({ kind, rows: rows.filter(r => r.kind === kind) }))
+    .filter(g => g.rows.length)
+
+  const read = async (path, init) => {
+    const res  = await fetch(`${api}${path}`, init)
+    const body = await res.json()
+    if (!res.ok) throw new Error(body.error ?? `${path} answered ${res.status}`)
+    return body
+  }
+
+  async function poll() {
+    try {
+      const body = await read('/api/state')
+      state = body.state
+      at    = body.at
+    } catch (e) {
+      failed = e.message
+    }
+  }
+
+  // A row this server started and that has not exited is `running here` even
+  // where its port cannot be probed. Each takes `state` as an argument: a
+  // template call to a local function does not subscribe to what it reads.
+  const alive   = (state, id) => !!(state[id]?.pid && !state[id]?.exit)
+  const stateOf = (state, id) => state[id]?.state ?? 'unknown'
+  const word    = (state, id) => alive(state, id) && stateOf(state, id) === 'unknown' ? 'running here' : STATE_WORD[stateOf(state, id)]
+
+  async function press(verb, id) {
+    pending = { ...pending, [id]: verb }
+    try {
+      await read(`/api/${verb}/${encodeURIComponent(id)}`, { method: 'POST' })
+      failed = null
+    } catch (e) {
+      failed = e.message
+    }
+    await poll()
+    const { [id]: _done, ...rest } = pending
+    pending = rest
+  }
+
+  var timer = null
+  $.onMount(async () => {
+    try {
+      const body = await read('/api/runnables')
+      rows  = body.rows
+      kinds = body.kinds ?? Object.keys(KIND_TITLE)
+    } catch (e) {
+      failed = e.message
+    }
+    await poll()
+    timer = setInterval(poll, POLL_MS)
+  })
+  $.onDestroy(() => clearInterval(timer))
+</script>
+
+<header class="bar">
+  <strong>What can run here</strong>
+  <span class="text-xs text-muted" data-at>{at ? `state at ${new Date(at).toLocaleTimeString()}` : 'reading…'}</span>
+</header>
+
+{#if failed}
+  <p class="text-sm text-danger" data-failed>{failed}</p>
+{/if}
+
+{#each groups as g (g.kind)}
+  <section class="surface" data-kind={g.kind}>
+    <div class="bar dense">
+      <strong class="text-sm">{KIND_TITLE[g.kind] ?? g.kind}</strong>
+      <span class="text-xs text-muted">{g.rows.length}</span>
+    </div>
+    <Table {columns} rows={g.rows} compact>
+      {#snippet row(r)}
+        <tr data-id={r.id} data-state={stateOf(state, r.id)}>
+          <td>
+            {r.name}
+            {#if r.port}<span class="text-xs text-muted">:{r.port}</span>{/if}
+          </td>
+          <td>
+            {#if word(state, r.id)}<Badge tone={STATE_TONE[stateOf(state, r.id)]} size="xs">{word(state, r.id)}</Badge>{/if}
+          </td>
+          <td>
+            {#if r.start}
+              <code>{r.dir === '.' ? '' : `${r.dir} · `}{r.start}</code>
+            {:else}
+              <span class="text-xs text-muted">nothing here starts it</span>
+            {/if}
+          </td>
+          <td>
+            {#if r.start && !alive(state, r.id)}
+              <Button treatment="ghost" size="xs" loading={pending[r.id] === 'start'} onclick={() => press('start', r.id)}>start</Button>
+            {/if}
+            {#if alive(state, r.id)}
+              <Button treatment="ghost" size="xs" loading={pending[r.id] === 'stop'} onclick={() => press('stop', r.id)}>stop</Button>
+            {/if}
+            {#if r.open && stateOf(state, r.id) === 'up'}
+              <Button treatment="ghost" size="xs" href={r.open}>open</Button>
+            {/if}
+          </td>
+        </tr>
+      {/snippet}
+    </Table>
+  </section>
+{/each}

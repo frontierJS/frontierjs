@@ -7,6 +7,10 @@ defaults:
       type: string
       description: "An ssh destination for this run: an alias from ~/.ssh/config, or user@host. Replaces every configured server and user"
       defaultValue: ''
+    domain:
+      type: string
+      description: "The web hostname for this run. Replaces deploy.web.domain"
+      defaultValue: ''
 ---
 
 <script>
@@ -124,8 +128,8 @@ const resolveTarget = (flag, git) => {
 
 // ─── deployConfFor ────────────────────────────────────────────────────────────
 // The deploy block as this run sees it: `frontier.config.js` § deploy, with
-// `--server` applied. Every deploy command reads the block through here, so the
-// override cannot reach one command and miss the next.
+// `--server` and `--domain` applied. Every deploy command reads the block
+// through here, so an override cannot reach one command and miss the next.
 //
 // `--server` is a WHOLE ssh destination — an alias, or `user@host` — and so it
 // replaces every server and user the block names, per target and per side. A
@@ -138,8 +142,9 @@ const PLACEHOLDER_SERVER = 'your-server.com'
 const ADDRESS_KEYS = ['server', 'user']
 
 const deployConfFor = async ($, flag, log) => {
-  const deployConf = (await loadFrontierConfig($.paths.root))?.deploy
-  if (!deployConf) return null
+  const loaded = (await loadFrontierConfig($.paths.root))?.deploy
+  if (!loaded) return null
+  const deployConf = flag?.domain ? { ...loaded, web: { ...(loaded.web || {}), domain: flag.domain } } : loaded
   if (flag?.server) return withServer(deployConf, flag.server)
   if (deployConf.server === PLACEHOLDER_SERVER) {
     log?.error(`deploy.server is still the placeholder '${PLACEHOLDER_SERVER}'. Set it, or pass --server <ssh alias>`)
@@ -1195,7 +1200,8 @@ no external platform required.
 The server is named by `deploy.server`, or per run by `--server`, which takes an
 alias from `~/.ssh/config` or `user@host` and replaces every configured server
 and user. With no `user`, ssh is handed the bare name, so the alias's own User,
-Port and IdentityFile apply.
+Port and IdentityFile apply. `--domain` is the same for `deploy.web.domain`: one
+run's hostname, the config left as it is.
 
 Caddy is the edge, run as the `caddy-api` unit and configured through its admin
 API — the same front door a fleet machine has (`FJS-D564`), so the box that

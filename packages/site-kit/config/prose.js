@@ -34,8 +34,14 @@ function isKicker(node) {
     .map((c) => (c.type === 'text' ? c.value : isElement(c) && INLINE.has(c.tagName) ? c.children.map((g) => g.value ?? '').join('') : ''))
     .join('')
     .trim()
-  return /\p{Lu}/u.test(text) && text === text.toUpperCase()
+  return isKickerText(text)
 }
+
+/** Whether a paragraph of these words is a Kicker. */
+export const isKickerText = (text) => /\p{Lu}/u.test(text) && text === text.toUpperCase()
+
+/** Whether the dialect turns any of these plain words into an element: a mark, an email or a phone link. */
+export const marksText = (text) => [ACCENT, EMAIL, PHONE].some((re) => text.search(re) !== -1)
 
 /** Split a text node on `re`, each match becoming `make(match)`; null when nothing matched. */
 function splitText(node, re, make) {

@@ -15,7 +15,7 @@
 
 import { resolve, isAbsolute, relative } from 'path'
 import { readdir, rm } from 'fs/promises'
-import { mesaPlugin, prepareForCompile, inspectOn } from './mesa-plugin.js'
+import { mesaPlugin, prepareForCompile, inspectOn, locLines } from './mesa-plugin.js'
 import { devtoolsPlugin } from '../devtools/plugin.js'
 import { scannerPlugin, scanRoutes } from './scanner-plugin.js'
 import { schemaPlugin }  from './schema-plugin.js'
@@ -546,9 +546,12 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
           // render reads from disk, with the options it compiles under — or a
           // page that works in dev fails here (`FJS-1491`).
           // And the one thing Vite does that the render cannot: an eager
-          // `import.meta.glob` becomes the static imports it stands for.
-          transformSource: (source, file) =>
-            expandGlobs(prepareForCompile(source, file, sierraContext.autoImportMap) ?? '', file, root),
+          // `import.meta.glob` becomes the static imports it stands for. Both
+          // move lines, so the stamps a preview carries are mapped back.
+          transformSource: (source, file) => {
+            const code = expandGlobs(prepareForCompile(source, file, sierraContext.autoImportMap) ?? '', file, root)
+            return { code, locLines: locLines(source, code) }
+          },
           // The prerender compiles outside the plugin, so it is told where a
           // stamped path is relative to; left out, a page names the builder's
           // home directory where the island beside it names `content/…`.

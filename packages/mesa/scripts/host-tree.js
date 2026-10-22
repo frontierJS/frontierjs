@@ -26,6 +26,7 @@ const RUNTIME = {
   "'@frontierjs/mesa/runtime'":          pathToFileURL(join(SRC, 'runtime.js')).href,
   "'@frontierjs/mesa/runtime/terminal'": pathToFileURL(join(SRC, 'runtime-terminal.js')).href,
   "'@frontierjs/mesa/runtime/native'":   pathToFileURL(join(SRC, 'runtime-native.js')).href,
+  "'@frontierjs/mesa/keys'":             pathToFileURL(join(SRC, 'keys.js')).href,
 }
 
 /** Compile `entry` and its relative `.mesa` imports for `target`, children

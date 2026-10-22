@@ -1,0 +1,120 @@
+<script>
+  // Inline.mesa — the clicked words, changed where they stand. A textarea is
+  // laid over the element, which is never made editable itself, so nothing the
+  // page does with a contenteditable (pasted formatting, a layout that shifts)
+  // can happen; the ask panel's Edit text is the same shape.
+  //
+  // The save sends the stamp's line, the words the page showed and the new
+  // ones, and basecamp finds them in that block of the draft's file, or as the
+  // front-matter value written on that line. Words it
+  // cannot place alone (a link inside them, emphasis, the same words twice)
+  // come back refused, and `onform` opens the file at that line with the reason.
+  //
+  // The page shows the words as they are typed, wherever the same stamp drew
+  // the same words (a menu link in the header and the footer); words with
+  // markup wait for the preview to rebuild (`FJS-D1399`).
+  import { clientFor } from './handoff.js'
+  import { liveWords, plainSwap, words } from './live.js'
+  import { LOC } from './pick.js'
+
+  export let site
+  export let key
+  export let path
+  export let line
+  export let el
+  export let onclose
+  export let onform
+
+  const old  = words(el.textContent)
+  const loc  = el.getAttribute(LOC)
+  const r    = el.getBoundingClientRect()
+  const live = liveWords()
+  let box
+  let busy = false
+  let over = false
+
+  $.onMount(() => {
+    const cs = getComputedStyle(el)
+    for (const k of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'letterSpacing', 'textAlign', 'color']) box.style[k] = cs[k]
+    box.value = old
+    grow()
+    box.focus()
+    box.select()
+  })
+
+  function grow() { box.style.height = Math.max(r.height, box.scrollHeight) + 'px' }
+
+  function typed() {
+    grow()
+    const next = words(box.value)
+    live.show(next && next !== old ? [{ loc, old, next, plain: plainSwap(old, next) }] : [])
+  }
+
+  function done(result) {
+    if (over) return
+    over = true
+    if (result?.saved) live.keep()
+    else live.restore()
+    onclose?.(result)
+  }
+
+  async function save() {
+    const next = words(box.value)
+    if (!next || next === old) return done(null)
+    busy = true
+    try {
+      await clientFor(site, key).service('drafts').invoke('save', null, {
+        appId: site.appId, draft: site.draft, path, text: { line, old, next },
+      })
+      done({ saved: next })
+    } catch (err) {
+      over = true
+      live.restore()
+      onform?.(err.message, next)
+    }
+  }
+
+  function keydown(e) {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null) }
+    else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save() }
+  }
+</script>
+
+<div class="fjs-editor-inline" data-fjs-editor-ui
+     style:left="{r.left + scrollX}px" style:top="{r.top + scrollY}px" style:width="{Math.max(r.width, 160)}px">
+  <textarea bind:this={box} id="fjs-inline" aria-label={`Change these words in ${path}`} disabled={busy}
+            oninput={typed} onkeydown={keydown} onblur={() => { if (!busy) done(null) }}></textarea>
+  <div class="card fjs-editor-inline-bar">
+    <span>{busy ? 'Saving…' : `Enter saves to ${site.draft} · Esc cancels`}</span>
+    <button class="btn ghost" id="fjs-inline-file" onmousedown={(e) => e.preventDefault()}
+            onclick={() => { over = true; live.restore(); onform?.(null, null) }}>Edit the file</button>
+  </div>
+</div>
+
+<style>
+  .fjs-editor-inline {
+    position: absolute;
+    z-index: 2147483000;
+  }
+  textarea {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0;
+    padding: 2px 4px;
+    resize: none;
+    outline: 2px solid var(--color-primary);
+    border: 0;
+    background: var(--field-bg);
+  }
+  .fjs-editor-inline-bar {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+    box-shadow: var(--shadow-md);
+  }
+</style>

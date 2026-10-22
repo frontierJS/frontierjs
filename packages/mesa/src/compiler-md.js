@@ -15,8 +15,9 @@
  */
 
 import { glow }        from '@frontierjs/toolbelt/glow'
-import { parseFrontmatter, splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
-import { compile, parseText } from './compiler.js'
+import { frontmatterPositions, parseFrontmatter, splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
+import { compile, locFileOf, parseText } from './compiler.js'
+import { TARGETS } from './host/targets.js'
 import { missingPeer } from './optional-peer.js'
 
 const MD = 'Compiling a .md file'
@@ -203,7 +204,7 @@ function slugHeadings() {
  *   - a function (the plugin itself)
  *   - [plugin, options]  (plugin with options)
  */
-function buildProcessor(remarkPlugins = [], rehypePlugins = [], lineBase = null) {
+function buildProcessor(remarkPlugins = [], rehypePlugins = [], fileLine = null) {
   let p = unified()
     .use(remarkParse)
     .use(remarkGfm)
@@ -222,7 +223,7 @@ function buildProcessor(remarkPlugins = [], rehypePlugins = [], lineBase = null)
   }
 
   // Last, so it stamps what the user's plugins left standing.
-  if (lineBase !== null) p = p.use(() => (tree) => stampLoc(tree, lineBase))
+  if (fileLine) p = p.use(() => (tree) => stampLoc(tree, fileLine))
 
   return p.use(rehypeStringify, { allowDangerousHtml: true })
 }
@@ -231,14 +232,14 @@ function buildProcessor(remarkPlugins = [], rehypePlugins = [], lineBase = null)
 // to, which is not a line of the file, so alt-click on prose opened the wrong
 // one (FJS-1711). The line of the file is only known here, from the hast
 // positions; the compiler makes the `line:column` file-relative.
-function stampLoc(node, lineBase) {
+function stampLoc(node, fileLine) {
   if (node.type === 'element' && node.position) {
     const { line, column } = node.position.start
-    node.properties = { ...node.properties, [LOC_ATTR_PROP]: `${line + lineBase}:${column}` }
+    node.properties = { ...node.properties, [LOC_ATTR_PROP]: `${fileLine(line)}:${column}` }
   } else if (node.type === 'raw' && node.position) {
-    node.value = stampRawTags(node.value, node.position.start, lineBase)
+    node.value = stampRawTags(node.value, node.position.start, fileLine)
   }
-  for (const child of node.children ?? []) stampLoc(child, lineBase)
+  for (const child of node.children ?? []) stampLoc(child, fileLine)
 }
 
 // Raw HTML in prose reaches the Mesa compiler as text, so its tags get the
@@ -246,7 +247,7 @@ function stampLoc(node, lineBase) {
 // stamped with its own place in the raw text; a component tag makes no element
 // to stamp, and a `>` inside a quoted value or a `{}` expression does not end
 // a tag.
-function stampRawTags(value, start, lineBase) {
+function stampRawTags(value, start, fileLine) {
   let out = ''
   let i = 0
   while (i < value.length) {
@@ -279,7 +280,7 @@ function stampRawTags(value, start, lineBase) {
     } else {
       const before = value.slice(0, i)
       const nl = before.lastIndexOf('\n')
-      const line = start.line + lineBase + (before.split('\n').length - 1)
+      const line = fileLine(start.line + (before.split('\n').length - 1))
       const column = nl < 0 ? start.column + i : i - nl
       out += `${name} ${LOC_ATTR_PROP_NAME}="${line}:${column}"${value.slice(i + name.length, j)}`
     }
@@ -290,10 +291,10 @@ function stampRawTags(value, start, lineBase) {
 const LOC_ATTR_PROP_NAME = 'data-fjs-loc'
 const LOC_ATTR_PROP = 'dataFjsLoc'
 
-async function markdownToHTML(src, { remarkPlugins, rehypePlugins, path, lineBase = null } = {}) {
+async function markdownToHTML(src, { remarkPlugins, rehypePlugins, path, fileLine = null } = {}) {
   const hasPlugins = (remarkPlugins?.length ?? 0) + (rehypePlugins?.length ?? 0) > 0
-  const processor = hasPlugins || lineBase !== null
-    ? buildProcessor(remarkPlugins, rehypePlugins, lineBase)
+  const processor = hasPlugins || fileLine
+    ? buildProcessor(remarkPlugins, rehypePlugins, fileLine)
     : _defaultProcessor
   // A bare string leaves `file.path` undefined, and a plugin cannot key on the
   // file it is compiling.
@@ -319,6 +320,15 @@ function frontmatterToExports(fm, innerScript) {
     .filter((k) => !declared.has(k))
     .map((k) => `  export const ${k} = ${JSON.stringify(fm[k])}`)
     .join('\n')
+}
+
+// `[path, 'content/x.md:7:9']` for each text, number or yes/no the
+// frontmatter holds, through `locLines` when the caller rewrote the file first.
+function writtenAt(source, config) {
+  const file = locFileOf(config)
+  if (!file) return []
+  return frontmatterPositions(source).map(({ path, line, column }) =>
+    [path, `${file}:${config.locLines?.[line - 1] ?? line}:${column}`])
 }
 
 // ─── Fenced-code decoding ─────────────────────────────────────────────────────
@@ -439,14 +449,16 @@ export async function compileMd(source, config = {}) {
   // 2. Script block
   const { script: scriptBlock, body: mdBody, errors: scriptErrors, bodyStart } = extractScript(afterFm)
 
-  // Lines of the file ahead of the Markdown body, so a hast position becomes a
-  // line of the file. Null when `loc` is off: the stamp is dev-only, and a
+  // A hast position as a line of the file: past the lines ahead of the
+  // Markdown body, then back through `locLines` when the caller rewrote the
+  // file first. Sierra synthesizes a four-line script block for an
+  // auto-import, and without the map every prose stamp below it named a line
+  // four past its own. Null when `loc` is off: the stamp is dev-only, and a
   // custom processor is not worth building for nothing.
   const locOn = config.loc ?? !!config.dev
   const fmEnd = source.endsWith(afterFm) ? source.length - afterFm.length : Math.max(0, source.indexOf(afterFm))
-  const lineBase = locOn
-    ? source.slice(0, fmEnd + bodyStart).split('\n').length - 1
-    : null
+  const lineBase = source.slice(0, fmEnd + bodyStart).split('\n').length - 1
+  const fileLine = locOn ? (line) => config.locLines?.[line + lineBase - 1] ?? line + lineBase : null
   const innerScript = scriptBlock
     ? fixUninitialized(
         scriptBlock
@@ -466,7 +478,7 @@ export async function compileMd(source, config = {}) {
     remarkPlugins: config.remarkPlugins,
     rehypePlugins: config.rehypePlugins,
     path: config.filename ?? config.path,
-    lineBase,
+    fileLine,
   })
 
   // 5. Restore
@@ -515,7 +527,15 @@ export async function compileMd(source, config = {}) {
   // reviewer, no rating, nothing to sort by. mdsvex's `metadata`. A `.md` file
   // has no `<script module>` of its own (a second script is refused), so this
   // one cannot collide.
-  const moduleScript = `<script module>\n  export const frontmatter = ${JSON.stringify(frontmatter)}\n</script>`
+  //
+  // A stamping build records where each value was written, so an element a
+  // block draws from one (`{item.name}`) names that line and not the block's
+  // (`FJS-D1231`). A host target's runtime has no stamps to give it.
+  const written = locOn && !TARGETS[config.target] && !frontmatterError ? writtenAt(source, config) : []
+  const moduleScript = written.length
+    ? `<script module>\n  import { recorded as __mesaRecorded } from '@frontierjs/mesa/runtime'\n` +
+      `  export const frontmatter = __mesaRecorded(${JSON.stringify(frontmatter)}, ${JSON.stringify(written)})\n</script>`
+    : `<script module>\n  export const frontmatter = ${JSON.stringify(frontmatter)}\n</script>`
 
   const mesaSource = [
     moduleScript,
@@ -526,8 +546,9 @@ export async function compileMd(source, config = {}) {
     .join('\n\n')
 
   // 7. Compile as Mesa. In prose `{…}` is a bare path and nothing else
-  //     (FJS-D213); `.mesa` is unchanged.
-  const ctx = await compile(mesaSource, { ...config, pathInterpolation: true })
+  //     (FJS-D213); `.mesa` is unchanged. `locLines` maps the file handed
+  //     over, and this template is not that file.
+  const ctx = await compile(mesaSource, { ...config, locLines: null, pathInterpolation: true })
 
   // 8. Attach metadata
   ctx.frontmatter  = frontmatter

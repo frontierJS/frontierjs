@@ -8,7 +8,7 @@
  * mesa answered a wrong object without a word (`FJS-1541`).
  */
 
-import { parseFrontmatter, parseFrontmatterBlock as read, splitFrontmatter, frontmatterValue } from '../../src/frontmatter/frontmatter.js'
+import { parseFrontmatter, parseFrontmatterBlock as read, splitFrontmatter, frontmatterValue, frontmatterPositions } from '../../src/frontmatter/frontmatter.js'
 
 const doc = (...lines) => lines.join('\n')
 
@@ -237,4 +237,33 @@ test('frontmatter: a written value reads back as the string it was', function ()
   assert.equal(frontmatterValue('Fetch a URL'), 'Fetch a URL')
   assert.equal(frontmatterValue('hello:greet'), 'hello:greet')
   assert.equal(frontmatterValue('Fix: login'), '"Fix: login"')
+})
+
+test('frontmatter: each value\'s line, and the span a one-line value is written in', function () {
+  const src = doc(
+    '---',
+    'title: "Hi there" # c',
+    'items:',
+    '  - name: About Us',
+    '    items:',
+    '      - Sub',
+    'tags: [a, b]',
+    'text: |',
+    '  two',
+    'long: one',
+    '  two',
+    'n: 12',
+    '---',
+    'body',
+  )
+  const at = frontmatterPositions(src)
+  assert.deepEqual(at.map((p) => [p.path.join('.'), p.line, p.column]), [
+    ['title', 2, 8], ['items.0.name', 4, 11], ['items.0.items.0', 6, 9], ['text', 8, 7], ['long', 10, 7], ['n', 12, 4],
+  ])
+  const span = (p) => (p.start === undefined ? null : src.slice(p.start, p.end))
+  assert.deepEqual(at.map(span), ['"Hi there"', 'About Us', 'Sub', null, null, '12'])
+  // A CRLF file's offsets are into the file as written.
+  const crlf = src.replace(/\n/g, '\r\n')
+  assert.deepEqual(frontmatterPositions(crlf).map((p) => (p.start === undefined ? null : crlf.slice(p.start, p.end))), ['"Hi there"', 'About Us', 'Sub', null, null, '12'])
+  assert.deepEqual(frontmatterPositions('no fence'), [])
 })

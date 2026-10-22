@@ -125,7 +125,7 @@
   // `S` and the key after it: each a word `untilOf` reads.
   const PICKS  = { t: 'tomorrow', f: 'friday', m: 'monday', w: '1w' }
   const pickOf = (key) => PICKS[key] ?? (/^[2-9]$/.test(key) ? `${key}d` : null)
-  const KEYS   = new Set(['s', 'S', 'u', 'z', 'o', 'y', '?', ' ', 'x'])
+  const KEYS   = new Set(['s', 'S', 'u', 'z', 'o', 'y', 'b', ' ', 'x'])
 
   // The letters are read only where the shell prevented them (NORMAL), so an
   // `/ask` typed while the pane is open keeps its s's and u's; Enter is the
@@ -157,7 +157,7 @@
     if (e.key === ' ') peekAt(item)
     if (e.key === 'o') openLink(item.url).then((ok) => tell(ok ? `opened: ${clip(item.text, 48)}` : 'nothing on this machine opens a browser'))
     if (e.key === 'y') copyLink(pane, item.url).then(copiedLink)
-    if (e.key === '?') brief(item)
+    if (e.key === 'b') brief(item)
     return true
   }
 
@@ -423,7 +423,7 @@
   $: many  = Object.keys(marked).length
   $: picks = !links.length ? null
     : many ? `${many} marked · ${reply?.asleep ? 'u wakes them' : 's/S snooze them'} · x unmarks`
-    : `␣ peek · x mark · ${reply?.asleep ? 'u wakes' : 's/S snooze'} · o open · y copy · ? brief`
+    : `␣ peek · x mark · ${reply?.asleep ? 'u wakes' : 's/S snooze'} · o open · y copy · b brief`
   $: when  = picking ? `snooze until? ${Object.entries(PICKS).map(([k, w]) => `${k} ${dayLabel(untilOf(w))}`).join(' · ')} · 2-9 days · Esc` : ''
   $: span  = `${offset + 1}–${Math.min(body.length, offset + ROOM)}`
   // The time and the cost are let go first when the keys need the width.

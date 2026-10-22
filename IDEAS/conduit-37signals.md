@@ -88,7 +88,7 @@ a hook per project.
 | `listPosts` paged by id | in 177 | `walk(send, path)` follows `Link rel="next"` and never builds a page URL | the docs forbid building one; sizes are geared (15, 30, 50, 100); `projects.json` sends `rel="next"` past its last page (0.3) |
 | receive: outgoing webhook + slash command | 195 | Phase 3: `pollEvents` over the feed | webhooks are legacy, unsigned and per project |
 | socket, `authentication_challenge` | 139 | Phase 3.4: the stream ticket minted per dial (`FJS-D1355`), ActionCable framing, a frame dispatched as its event's job | the frame carries nothing durable, and the poll serves it 30 s later under the same job id |
-| mirror claim, eight models | 261 | Phase 6: `Project`, `Todo`, `Message`, `Comment` (`FJS-D1184`) | four nouns, for the Kobami app 5.1 names as their lister |
+| mirror claim, eight models | 261 | Phase 6: `Project`, `Todo`, `Message` (`FJS-D1184`, amended) | three nouns, for Intake's triage, which 5.1 names as their lister |
 | sink / drive | 458 / 560 | sink / drive, sized to the halves built | — |
 
 ---
@@ -109,7 +109,7 @@ a hook per project.
   - **B** — A plus the live stream as a wake-up.
   - **C** — legacy per-project webhooks.
   - **Recommend A, then B** — one cursor for the whole account; B only cuts latency and A stays the source of truth either way. C is refused: unsigned, a hook per project to install and reconcile, and the docs call it legacy.
-- ~~**Q4 — A mirror claim?**~~ **Answered 2026-10-16 (`FJS-D1184`): B — claim `Project`, `Todo`, `Message`, `Comment`, because a Kobami app will list them (rule 1 holds); 5.1 names that app, and if it names none the ruling reopens.**
+- ~~**Q4 — A mirror claim?**~~ **Answered 2026-10-16 (`FJS-D1184`): B — claim `Project`, `Todo`, `Message`, `Comment`, because a Kobami app will list them (rule 1 holds); 5.1 names that app, and if it names none the ruling reopens.** **Amended 2026-10-21: 5.1 named Intake, which lists no comments, so the claim is `Project`, `Todo`, `Message`.**
   - **A** — none: send plus the feed, and the app stores what it chooses.
   - **B** — claim `Project`, `Todo`, `Message`, `Comment` (`FJS-D1125`).
   - **Recommend A** — `mirror-apps.md` rule 1: a mirror is earned by a surface that LISTS the noun, and no app does yet. B is Mattermost's 261 lines without a reader.
@@ -234,7 +234,7 @@ Done when: the drive proves resume from `position`, `409` re-entry by `since`, `
 - [x] 3.2 **Done 2026-10-20, a reading step (`FJS-D1354`, amends `FJS-D1183`): a page does not enter through `receive()`. The poll job dispatches each event as `dispatch({ id: '37signals:event:<id>' })`, then stores `position`.** What it changed:
   - **`receive()` takes only what is pushed.** Its two ingresses are a route (`accept()` over a `Delivery`) and a held socket (`acceptFrame()` over a broker frame). A page is a batch, and `FJS-D899` keeps batches out until a second app asks. Neither existing puller asks: ELA's Service Autopilot syncs are caravan jobs over `send()`, and conduit-gmail's history pull is the app's own sync code, with only the push going through `receive()`
   - **`position` advances once the page is queued, not once it is applied.** Caravan's primary key on the job id is the dedupe by event id the Done-when names, the same shape as the outbox relay (`FJS-D35`) and a broker handler (`FJS-D235`). A permanently failing event goes dead in caravan, where it can be re-run, and does not stall the account's cursor
-  - **Dedupe lasts for caravan's `cleanupAfter`** (7 days by default), not for all time. That is enough: a replay only follows a crash between the dispatches and the store, and 3.3 lands current state, so an older replay is harmless. Caravan's `CLAUDE.md` and the root Packages row say *for all time*, and `src/index.ts`'s cleanup sweep deletes terminal jobs, so those two lines overstate it
+  - **Dedupe lasts for caravan's `cleanupAfter`** (7 days by default), not for all time. That is enough: a replay only follows a crash between the dispatches and the store, and 3.3 lands current state, so an older replay is harmless. Caravan's `CLAUDE.md` and the root Packages row said *for all time*, though `src/index.ts`'s cleanup sweep deletes terminal jobs; both now name `cleanupAfter` as the window (`FJS-3410`)
   - Was: check whether `app.conduit.receive()` takes one (ELA polls Service Autopilot); otherwise the feed is a read and the app's caravan job runs apply and then persists `position`
 - [x] 3.3 **Done 2026-10-20, sink only: `reread(send, event)` → `{ row }` or `{ error }`, `eventJobId(event)`, and 5 drive rows (63 in all), green. Each of five breaks tried turns a row red: a job id that is not the event's alone, every event read through the envelope, every event read as a to-do, an event's `kind` taken for its type, and a typed `404` tried again through the envelope.** What it changed:
   - **The apply job applies what `reread` answers, never the event.** An event can be minutes old when its job runs, so the job applies the recording as it is now. An echo of the app's own write then lands the state the app already holds
@@ -258,21 +258,41 @@ Done when: the drive proves resume from `position`, `409` re-entry by `since`, `
 Goal: a verb authored as a person other than Jordan, spending that person's token.
 Done when: a `per_caller` send spends the caller's token, refreshed by 2.6's mint.
 
-- [ ] 4.1 A `per_caller` `api` target over 2.6's refresh, one token per caller as `FJS-D1126` rules
+- [x] 4.1 **Done 2026-10-21, sink only: `basecampTargets()`'s `person` (`provider:37signals:person`, `api` again with bearer `BASECAMP_PERSON_TOKEN` and `per_caller: true`), `basecampTokenResolver`'s `grantsFor(who)`, the sink's `people` and `revoke`, and 4 drive rows (72 in all), green. Each of seven breaks tried turns a row red: a `getFor` that ignores `who`, `person` without `per_caller`, the no-store refusal dropped, a caller's `invalid_grant` told to the app's store, and three in the sink (a create, the profile, a revoke not the bearer's).** What it changed:
+  - **A store per caller, not a `who` argument on `grants`.** `grantsFor(who)` answers the same `GrantStore` 2.6 reads, for one person's row (`FJS-D1126`), and is what gives the resolver its `getFor`. A `who` argument on `grants` could not be checked: a store that ignored it would answer one person's grant as everyone, and conduit would still see a `getFor`. This mirrors conduit's own `get`/`getFor`, a second method rather than a second argument (`FJS-D848`). One mint body serves both, and one `withCache` keys a caller's token on the caller
+  - **`person` is spread from `api`**, so the account, the origin and the `User-Agent` are written once. The noun is Basecamp's own (`Person`), and the shape is Mattermost's second, `per_caller` target (`FJS-D1182`'s C)
+  - **A verb is the caller's own.** The sink makes a person's token answer their id on `my/profile.json` and makes them the creator of what it creates, so `findCreated` under one person finds that person's create and not another's
+  - **Unmeasured, and not built:** a second person's grant. That person has to consent through an OAuth client of the app's own (an authorization-code exchange, not built), and nothing has refreshed against `app.basecamp.com` yet (2.6). Whether Basecamp rotates refresh tokens decides whether the CLI's client can be shared: if it rotates, a refresh through the CLI's client logs the CLI out
+  - The nine, answered BEFORE the code: 1 origin — each refresh token stays on its person's row, and the connector holds none · 2 concept — no new noun · 4 predictability — Mattermost's shape and conduit's `get`/`getFor` · 5 derived — `person` is spread from `api` · 6 owner — the per-caller cache key is `withCache`'s, and a per-caller forget is conduit's `invalidateFor` · 7 boundary — the caller names only `who`, and under junction nothing · 8 failure — a send with no caller is `auth_failed` with no request, a resolver with no `grantsFor` is refused at `put()`, and no store at all is a `TypeError` · 9 silence — *A's send never carries B's token* and *A's lost grant is A's alone* fail drive rows, while *`grantsFor` reads the caller's row* is the app's and has no artefact (`none`). No adjudication is in tension. Tier: Map for the package docs, Assessment for this plan
+  - Was: A `per_caller` `api` target over 2.6's refresh, one token per caller as `FJS-D1126` rules
 
 ### Phase 5 — The first caller
 
 Goal: one Kobami flow off the CLI and onto the connector.
 Done when: that flow runs end to end against the real account, and the CLI still serves the Claude sessions.
 
-- [ ] 5.1 Pick the flow with the owner, and name the Kobami app that lists `Project`, `Todo`, `Message` and `Comment` (`FJS-D1184`); wire the flow through `app.conduit.send()` and run it against the account
+- [x] 5.1 **Picked 2026-10-21 (owner: "you choose"): Intake's triage (`fjs-prototypes/intake`, PLAN Phase 3), which is also the app that lists the nouns.** `web/src/lib/basecamp.js` there is the Trigger's case exactly. It is an app at runtime that shells out to `basecamp api get` and builds `?page=N` URLs, which the docs forbid and `walk()` exists to avoid. The daily check, the analytics check, support and the marketing request stay on the CLI because they are Claude sessions, the use the CLI is for. Intake lists `Todo` (3.4, the queue), `Project` (3.7, the `c` client picker over buckets) and `Message` (3.8, where the question kind goes, read back in 3.12's review). **`Comment` has no lister in Intake's plan**, so `FJS-D1184` was amended to claim three nouns. `Comment` returns when a surface lists it.
+  - The nine, answered late, after the box was written:
+    - 1 origin: the inbox ids stay in `flow/inbox.json`. Intake's refresh token is its own grant, never a copy of the CLI's.
+    - 2 concept: no new noun.
+    - 3 complexity: the change removes a process spawn and hand-built page URLs.
+    - 4 predictability: triage becomes one more conduit caller.
+    - 5 derived: paging is read from `Link` and never counted.
+    - 6 owner: the send is `app.conduit.send()`'s and the refresh is 2.6's mint.
+    - 7 boundary: triage names only a path.
+    - 8 failure: a lost grant is a typed `auth_failed`, not an exit code.
+    - 9 silence: *the CLI still answers after Intake refreshes* is checked by 5.4's live run and has no artefact (`none`). *Every claimed noun has a lister* has none either, which is why the `Comment` gap is written here.
+  - No adjudication is in tension. Tier: Assessment
+- [ ] 5.2 A grant of Intake's own: one authorization-code exchange through the 37signals OAuth app the owner made for n8n (1.8.1) seeds Jordan's refresh token in Intake's grant store. The CLI's grant is never refreshed from here, so a rotating refresh token cannot log the CLI out (4.1's open fact). This is the owner's step: the consent click and the client secret
+- [ ] 5.3 Triage's reads through `app.conduit.send()`: `basecamp.js`'s `get`/`getAll` become `api` sends and `walk()`, with the first live refresh against `app.basecamp.com` (2.6). Record whether the refresh token rotated
+- [ ] 5.4 Intake's 3.8 commit routes are sent through the connector and run live against the Intake list. Done when one item is triaged end to end and `basecamp` still answers the daily check
 
 ### Phase 6 — The mirror claim
 
-Goal: the four nouns mirrored in the app 5.1 named, kept current by the feed where the catalog covers them and by a scope walk where it does not (0.4).
+Goal: the three nouns mirrored in Intake, the app 5.1 named, kept current by the feed where the catalog covers them and by a scope walk where it does not (0.4).
 Done when: the drive proves a claimed write forwards and its row returns, a feed event updates a row after a re-read, a `404` alone deletes nothing, and a to-do reopened with no event is corrected by the next scope walk.
 
-- [ ] 6.1 The claim: `Project`, `Todo`, `Message`, `Comment` with `create`/`update`/`delete` to a `ConduitRequest` and `parse` to a row (`FJS-D1125`), the models hand-written in the app (`FJS-D1130`); Basecamp's person, if claimed, is `Profile` (`FJS-D1152`)
+- [ ] 6.1 The claim: `Project`, `Todo`, `Message` (`FJS-D1184`, amended) with `create`/`update`/`delete` to a `ConduitRequest` and `parse` to a row (`FJS-D1125`), the models hand-written in the app (`FJS-D1130`); Basecamp's person, if claimed, is `Profile` (`FJS-D1152`)
 - [ ] 6.2 The sync rides Phase 3: an event re-reads its recording and applies the row; a `404` is `gone` to this principal and drops a row only under a complete read of its scope (`FJS-D1180`). The feed is not the whole sync (0.4). `Project` has no event type, so its rows come from a re-walk of `projects.json`. No noun has an event for uncomplete or trash, so a scheduled walk of each claimed scope is the floor, and its cadence is the longest a row can stay stale. The connector's README limits paragraph says so, so that a reader of the mirror does not take a quiet feed to mean nothing changed
 
 ---

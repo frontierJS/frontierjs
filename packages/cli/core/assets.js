@@ -68,7 +68,7 @@ function treeDirs(pkg, root) {
 // `bun install` resolves a `workspace:*` dependency to a COPY under
 // `node_modules/`, so a nearer install would beat the checkout it was copied
 // from and style the page with whatever was true at the last install.
-function ownDirs(pkg) {
+function ownRoots(pkg) {
   const up = []
 
   let dir = __dir
@@ -80,13 +80,25 @@ function ownDirs(pkg) {
     dir = dirname(dir)
   }
 
-  const dirs = [
-    ...up.map(d => join(d, 'packages', pkg, 'src')),
-    ...up.map(d => join(d, 'node_modules', '@frontierjs', pkg, 'src')),
+  const roots = [
+    ...up.map(d => join(d, 'packages', pkg)),
+    ...up.map(d => join(d, 'node_modules', '@frontierjs', pkg)),
   ]
 
-  try { dirs.push(join(dirname(require.resolve(`@frontierjs/${pkg}/package.json`)), 'src')) } catch {}
-  return dirs
+  try { roots.push(dirname(require.resolve(`@frontierjs/${pkg}/package.json`))) } catch {}
+  return roots
+}
+
+const ownDirs = (pkg) => ownRoots(pkg).map(r => join(r, 'src'))
+
+/** The root of the `@frontierjs/<pkg>` THIS `fli` holds, in `ownRoots`' order —
+ *  the first whose manifest names it. `null` when none does. */
+export function ownPackageRoot(pkg) {
+  for (const root of ownRoots(pkg)) {
+    const manifest = read(join(root, 'package.json'))
+    if (manifest && JSON.parse(manifest).name === `@frontierjs/${pkg}`) return root
+  }
+  return null
 }
 
 /** The styling language as the tree at `root` holds it. `null` where that tree

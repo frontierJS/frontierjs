@@ -75,12 +75,16 @@ core/
                 surface that exits or stays silent past `settleMs` releases it
   open-url.js   a URL in the person's browser — argv, detached; `fli dev`'s `o`,
                 `fli gui --open`, `project:map --as=serve`
+  clipboard.js  text onto the clipboard over stdin, never a shell string —
+                `env:send`'s link, `crypto:keygen --copy`
   requires.js   what a namespace's `_module.md` says it cannot run without —
                 `- KEY` or `- KEY: <url where one is made> <what to pick there>`, read by the
                 runtime, the doctor, `--verbose` and the gui through one
                 `requiresOf`. At a terminal a missing key is ACQUIRED: the page
                 offered, the paste stored, the run goes on; with no person
-                present it is the refusal, plus a placeholder in the global env
+                present it is the refusal, plus a placeholder in the global env.
+                A command may call `acquireMissing` itself (`env:send`'s `VW_*`)
+                with `ttyPrompts(tty)`; a `secret` entry is read without echo
   global-env.js `~/.config/fli/.env` — the one spelling of the path, the line
                 writer `fli eset` uses, the placeholder and the header. `~/.fli/`
                 is machine state (locks, caches, a walk's defaults), never a key
@@ -416,6 +420,19 @@ core/
                 output. The health probe is HERE and not in the page: 5500
                 fetching 8110 is cross-origin, and a CORS failure reads exactly
                 like the app being down
+  console.js    the console's `.mesa` screens, compiled per request with no
+                build (`IDEAS/one-console.md`), for both targets: served to a
+                browser at `/console/`, and mounted in this terminal by
+                `runTerminalConsole` — `fli gui` at a TTY without `--open`.
+                Mesa, the kit and toolbelt come from the copies THIS `fli`
+                holds (`ownPackageRoot` in `assets.js`) through one import map
+                read off each package's `exports` — URLs for the browser, files
+                for the terminal's Bun loader, which rewrites them into the
+                compiled text because Bun never asks a plugin about a loaded
+                module's package imports. The compiler and the runtime come
+                from one mesa root, or a screen compiles against one copy and
+                runs on another. A compile error is served as a module that
+                throws naming the file
   check-worker.js  one scope of `/api/check` on its own thread, so the scopes
                 overlap (wall time is the repo scope, not the sum) and the server
                 stays answerable; `handleCheck` shares one run among overlapping
@@ -599,6 +616,13 @@ core/
                 Minting writes nothing: the id is a pure function of the tree and
                 the configuration, which is what makes a digest promotable
   vendor.js     pack the workspace into an app's build context
+  vaultwarden.js  a Vaultwarden/Bitwarden vault read in-process — login, sync,
+                decrypt, `get('Item/field')` — behind `env:pull --from
+                vaultwarden`, which resolves `KEY=vw://…` refs. Its one write is
+                `createSend` (`env:send`); `receiveSend` (`env:pull --from send`)
+                needs no login, and every call spends one of the Send's reads. `dotenvLine` writes
+                only a spelling `loadEnv` and Bun's own loader read back alike,
+                and answers null for the rest (`FJS-3415`)
   health-target.js  where an app answers health and whether anything serves it —
                 the plugin call in the API source, `plugins: { health: true }` in
                 junction.config.js, or a route literal graded against the
@@ -718,6 +742,20 @@ core/
   png.js        RGBA → PNG with no dependency. `stored` is the desktop icon's,
                 whose bytes are compared to `example/desktop/` and so cannot move
                 with the zlib a runtime carries
+  tell.js       what `fli tell` keeps on a machine — the key, `config.json`'s
+                `tell`, signing a request — for the namespace and for the
+                notice line `bootstrap.js` prints before every command at a
+                terminal while letters wait (`FJS-D1398`). On the startup path,
+                so builtins only at the top; the line comes from the LAST check,
+                and one over a minute old starts this file detached to ask
+                `GET /waiting` again, so no command waits on the network
+  tell-worker.js  the Cloudflare Worker `fli tell` speaks to — one Durable
+                Object, members, invites, letters, and the `/follow` socket
+                `inbox -f` holds (`IDEAS/pony-express.md`).
+                Never imported: wrangler bundles it from a config `tell:setup`
+                writes, so it runs in workerd and imports toolbelt and nothing
+                Bun-only. `cloudflare:workers` is not imported either, since
+                it does not resolve outside workerd
   config.js · bootstrap.js · ports.js · utils.js · server.js
 commands/  one directory per namespace — `fli list` prints them all
 db/        deploy.lite + ddl.snapshot.sql — the deploy journal's models, and the
@@ -728,6 +766,14 @@ db/        deploy.lite + ddl.snapshot.sql — the deploy journal's models, and t
            target, so it declares no `database` block and `@@db(main)` in it
            does not parse
 cli/src/   the CLI's own source tree
+console/   the console's screens, `.mesa` — `Console.mesa` is the root both
+           targets mount, the pane strip; then one file per pane (`Run`,
+           `Check`, `Decide`, `Ship`). `Flow` is one walked flow, the release
+           or the publish: it draws the steps the server's tables name and
+           grades none of them — `Ship` does, from what it has read. A pane unmounts when another is shown, so
+           `:check`'s tree walk runs only while it is in view.
+           A screen reads `server.js`'s endpoints through its `api` prop and
+           nothing else, so the browser and the terminal draw one copy
 web/       the browser-facing side
 test/     one file per module under core/, plus the deploy pipeline's own
            layer: plan (the rows a transition would write), journal (the rows
@@ -1585,3 +1631,9 @@ the page is built from strings, so every class in it is a claim about a
 stylesheet nobody linked at author time, and a missing one renders as unstyled
 markup that a test asking what the page SAYS reports as passing (`FJS-545`'s
 shape one layer up).
+
+**The console's screens have a drive of their own**: `bun run
+test:browser:console` starts `fli gui` under a pty and opens the same
+process's `/console/` in Chrome, then diffs the two frames row by row. A
+change to `console/`, `core/console.js` or `fli gui`'s terminal path is proved
+there; it needs Chrome and util-linux `script`.

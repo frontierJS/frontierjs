@@ -34,6 +34,16 @@ describe('data-fjs-loc on Markdown', () => {
     expect(locs(ctx)).toEqual(['h1 y.md:1:1', 'p y.md:3:1'])
   })
 
+  // Sierra synthesizes a script block for an auto-import, so the source handed
+  // over is four lines longer than the file; every prose stamp was four past its own.
+  it('maps each line back through locLines when the caller rewrote the file', async () => {
+    const file = '---\ntitle: T\n---\n\n# Head\n\nHi {name}.\n'
+    const prepared = "---\ntitle: T\n---\n<script>\nimport { name } from '/s.js'\n</script>\n\n\n# Head\n\nHi {name}.\n"
+    const locLines = [1, 2, 3, 3, 3, 3, 3, 4, 5, 6, 7, 8]
+    const ctx = await compileMd(prepared, { filename: '/r/x.md', locRoot: '/r', loc: true, locLines })
+    expect(locs(ctx)).toEqual(['h1 x.md:5:1', 'p x.md:7:1'])
+  })
+
   it('stamps nothing when loc is off', async () => {
     const ctx = await compileMd(SRC, { filename: '/r/x.md', locRoot: '/r', loc: false })
     expect(ctx.result).not.toContain('data-fjs-loc')

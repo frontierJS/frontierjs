@@ -16,6 +16,11 @@
 // have put it, so the command then runs. With no person present — a pipe, CI,
 // `fli gui` — nothing is asked and the refusal is what it always was, with a
 // placeholder left in the global env naming how to set it.
+//
+// An entry marked `secret` is read through the caller's `secret` reader, which
+// echoes nothing; with no reader it is left missing rather than asked in the
+// clear. A command passes `ttyPrompts(tty)` for both readers, because a
+// readline open on stdin beside `tty.secret`'s raw mode echoes the secret.
 
 import { createPrompts }                                   from './prompt.js'
 import { openUrl }                                         from './open-url.js'
@@ -51,10 +56,10 @@ export const missingRequires = (meta, env = process.env) =>
  */
 export async function acquireMissing(ns, missing, {
   interactive = false, write = true, say = console.error,
-  env = process.env, home, open = openUrl, prompts = null,
+  env = process.env, home, open = openUrl, prompts = null, secret = null,
 } = {}) {
   const file = globalEnvPath(home).replace(home ?? process.env.HOME ?? '', '~')
-  await say(`${ns} namespace requires: ${missing.map(r => r.key).join(', ')}`)
+  await say(`${ns} requires: ${missing.map(r => r.key).join(', ')}`)
   for (const r of missing) {
     if (write && ensurePlaceholder(r.key, r.url, { home })) await say(`  Placeholder added to ${file}`)
     await say(`  Set with:  ${esetHint(r.key)}`)
@@ -68,7 +73,9 @@ export async function acquireMissing(ns, missing, {
   try {
     for (const r of missing) {
       if (r.url && await p.confirm(`  Open ${r.url} in your browser?`, { default: true })) open(r.url)
-      const value = await p.ask(`  Paste ${r.key} (Enter to skip) › `)
+      if (r.secret && !secret) { left.push(r); continue }
+      const q = `  ${r.secret ? 'Type' : 'Paste'} ${r.key} (Enter to skip) ›`
+      const value = r.secret ? await secret(q) : await p.ask(`${q} `)
       if (!value) { left.push(r); continue }
       env[r.key] = value
       if (write) { storeGlobal(r.key, value, { home }); await say(`  Saved ${r.key} to ${file}`, 'success') }
@@ -76,3 +83,16 @@ export async function acquireMissing(ns, missing, {
   } finally { p.close() }
   return left
 }
+
+/** `acquireMissing`'s two readers over a command's `tty`, so one owner holds stdin. */
+export const ttyPrompts = (tty) => ({
+  prompts: {
+    ask:     async (q) => (await tty.line(q.trimEnd())) || null,
+    confirm: async (q, { default: fallback = false } = {}) => {
+      const a = (await tty.line(`${q} ${fallback ? '(Y/n)' : '(y/n)'}`)).toLowerCase()
+      return a === '' ? fallback : a === 'y' || a === 'yes'
+    },
+    close: () => {},
+  },
+  secret: async (q) => (await tty.secret(q)) || null,
+})

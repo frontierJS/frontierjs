@@ -14,7 +14,11 @@
   // Ctrl+P, from the list or from inside a route, opens the jump: a modal
   // over the screen with a field and the routes that match it, best first.
   // No `paths` (the app set `terminal: { jump: false }`) and Ctrl+P is the app's.
+  //
+  // `?` in NORMAL lists every key the shell takes here, read from the
+  // keymaps that dispatch them (`help`, shell.js); `?` again or Esc closes it.
   import { rank } from '@frontierjs/toolbelt/search'
+  import { step, chordOf } from '@frontierjs/toolbelt/keys'
 
   export let state  // () => { app, note, routes, patterns, refused }
   export let paths = []     // every route the list offers, for the jump
@@ -22,6 +26,10 @@
   export let onjump = null  // (path) => the route on screen goes there
   export let onmove = null  // (step) => focus the control `step` away
   export let onmode = null  // ({ mode, field }) => the line Mode.mesa paints
+  export let keys           // the shell's keymap after the page's: `jump`, `help`
+  export let into           // NORMAL's ways into INSERT on a field: `insert`, `append`, `slash`
+  export let steps = null   // (step) => shell.js hands `step` each key after the page's keymaps
+  export let help = null    // () => [{ keys, action }], what `?` lists
 
   let path = ''
   const go = () => { if (path.trim()) onopen?.(path.trim()) }
@@ -33,7 +41,9 @@
   // the h j k l it walks on. Every focus is NORMAL, so Tab to the next field
   // is too. In NORMAL a letter types nothing, and `/` enters INSERT and is
   // typed, so a line that begins with a slash is one keystroke away. h j k l reach this as the arrows (shell.js).
-  // Esc out of INSERT stops here, so a dialog or the shell's back hears only a second one.
+  // `i a /` are stepped after the page's keymaps (`step`), so a page's pending
+  // `f` takes the `a` after it. Esc out of INSERT stops here, so a dialog or
+  // the shell's back hears only a second one.
   const NOT_TEXT = new Set(['checkbox', 'radio', 'file', 'button', 'submit', 'reset'])
   const types = (el) => el?.tagName === 'TEXTAREA' || (el?.tagName === 'INPUT' && !NOT_TEXT.has(el.type))
 
@@ -44,11 +54,23 @@
     field = types(e.target)
     set(e.target === jumpField ? 'insert' : 'normal')
   }
-  const keydown = (e) => {
+  // In INSERT a field types `?` and Ctrl+P still jumps.
+  const actionOf = (e, active, text) => step(null, chordOf(e), { active, mac: false, text }, 0).outcome?.action
+  const keyStep = (e) => {
     if (e.defaultPrevented) return
-    // `key` is the control character the terminal sent; `code` is the letter.
-    if (e.ctrlKey && e.code === 'p') { e.preventDefault(); openJump(); return }
-    if (e.ctrlKey || e.altKey || e.metaKey) return
+    const typing = types(e.target)
+    const normal = mode === 'normal'
+    const action = actionOf(e, [keys, ...(normal && typing ? [into] : [])], !normal && typing)
+    if (!action) return
+    if (action === 'jump') { e.preventDefault(); openJump(); return }
+    if (action === 'help') { e.preventDefault(); toggleHelp(); return }
+    set('insert')
+    if (action === 'append' && e.target.getTextRange(e.target.cursorOffset, e.target.cursorOffset + 1) !== '\n') e.target.moveCursorRight()
+    if (action !== 'slash') e.preventDefault()
+  }
+  steps?.(keyStep)
+  const keydown = (e) => {
+    if (e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return
     const typing = types(e.target)
     if (mode === 'insert' && typing) {
       if (e.key !== 'Escape') return
@@ -57,11 +79,7 @@
       set('normal')
       return
     }
-    if (!typing) return
-    if (e.key === 'i' || e.key === 'a' || e.key === '/') set('insert')
-    if (e.key === 'a' && e.target.getTextRange(e.target.cursorOffset, e.target.cursorOffset + 1) !== '\n') e.target.moveCursorRight()
-    if (e.key === '/') return
-    if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete') e.preventDefault()
+    if (typing && (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete')) e.preventDefault()
   }
 
   // The arrows move between the list's own buttons only: a route reads them.
@@ -114,6 +132,20 @@
     onjump?.(to)
   }
   const typed = (e) => { query = e.target.value; pick = 0 }
+
+  // ─── the keys ──────────────────────────────────────────────────────
+  // Its keys stop at it, as the jump's do, so a scene behind it does not walk;
+  // `?` closing it is the shell's step.
+  let helper
+  let rows = []
+  let width = 0
+  function toggleHelp() {
+    if (helper.open) { helper.close(); return }
+    rows = help?.() ?? []
+    width = Math.max(0, ...rows.map((r) => r.keys.length))
+    helper.showModal()
+  }
+  const helpKey = (e) => e.stopPropagation()
 </script>
 
 <mesa:window onkeydown={keydown} onfocusin={focusin} />
@@ -122,7 +154,7 @@
   <p>{state().note}</p>
 {/if}
 {#if state().routes}
-  <p>Tab or j/k moves, Enter opens{paths.length ? ', Ctrl+P jumps' : ''}, Esc goes back, Ctrl+C quits</p>
+  <p>Tab or j/k moves, Enter opens{paths.length ? ', Ctrl+P jumps' : ''}, ? lists the keys, Esc goes back, Ctrl+C quits</p>
   {#each state().routes as r (r.path)}
     <button onclick={() => onopen?.(r.path)} onkeydown={arrow}>{r.path}</button>
   {:else}
@@ -149,4 +181,11 @@
   {#if matches(query, paths).length > ROWS}
     <p>  … {matches(query, paths).length - ROWS} more — type to narrow</p>
   {/if}
+</dialog>
+<dialog class="glass" bind:this={helper} onkeydown={helpKey}>
+  <p>Keys here · ? or Esc closes</p>
+  {#each rows as r (r.keys)}
+    <p>{r.keys.padEnd(width)}  {r.action}</p>
+  {/each}
+  <button onclick={() => helper.close()}>Close</button>
 </dialog>

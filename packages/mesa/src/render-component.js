@@ -398,7 +398,15 @@ function fileKey(canonical, source, { compileOptions, descope, transformSource }
 }
 
 async function compileFile(canonical, source, opts) {
-  if (opts.transformSource) source = await opts.transformSource(source, canonical)
+  // A transform that moves lines says where each one came from, as a Vite
+  // transform hands back a map with its code, or every stamp below an inserted
+  // line names a line past its own.
+  let locLines = null
+  if (opts.transformSource) {
+    const out = await opts.transformSource(source, canonical)
+    if (typeof out === 'string') source = out
+    else ({ code: source, locLines = null } = out)
+  }
   let ctx
   try {
     ctx = await compileSource(source, {
@@ -407,6 +415,7 @@ async function compileFile(canonical, source, opts) {
       debug:    false,
       dev:      false,
       warning:  () => {},
+      ...(locLines ? { locLines } : {}),
       ...opts.compileOptions,
     })
   } catch (err) {
@@ -972,6 +981,9 @@ async function generateUnoCSS(html, unoConfig) {
  *                                             already using so both resolvers
  *                                             agree. Longest prefix wins.
  * @param {Function} [options.transformSource] — `(source, filename) => string`,
+ *                                             or `{ code, locLines }` when it
+ *                                             moved lines (the compiler's
+ *                                             `locLines` option),
  *                                             applied to every file the tree
  *                                             reads from disk before it is
  *                                             compiled. A caller whose bundler

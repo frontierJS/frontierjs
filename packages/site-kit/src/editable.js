@@ -6,7 +6,7 @@
 // key but the ones that make a block what it is. Code, styles and the files the
 // host reads are the developer's.
 
-import { frontmatterValue, parseFrontmatter, parseFrontmatterBlock, splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
+import { frontmatterPositions, frontmatterValue, parseFrontmatter, parseFrontmatterBlock, splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 import { AXES } from './block-look.js'
 
 // `name` keys a block's own stylesheet rules, and the look keys are Block's six;
@@ -58,9 +58,14 @@ export function formOf(source) {
   const lines = block === null ? new Map() : keyLines(block, frontmatter)
   return {
     body,
+    // The file's line number for the body's first line, so a preview's stamp
+    // (`content/routes/x.md:12:1`) finds its place in the body.
+    bodyLine: source.slice(0, source.length - body.length).split('\n').length,
     keys: Object.entries(frontmatter).map(([key, value]) => ({
       key,
       value,
+      // The file line the key is written on, which a preview's stamp names.
+      line: lines.has(key) ? lines.get(key).line + 2 : null,
       locked: LOCKED_KEYS.includes(key),
       field: !LOCKED_KEYS.includes(key) && lines.has(key) && isScalar(value),
     })),
@@ -75,11 +80,20 @@ export function formOf(source) {
  * would reach another key, or a body that opens a front-matter block of its
  * own, never lands.
  *
+ * `field` is the other edit: the words of one front-matter value, at any depth,
+ * found by the file line a preview stamped on the element showing it
+ * (`FJS-D1231`) — a menu entry's `name`, a setting. `old` is the words the page
+ * showed, so a line another save has moved is refused rather than written.
+ *
  * @param {string} source
- * @param {{ body?: string, values?: Record<string, unknown> }} [edit]
+ * @param {{ body?: string, values?: Record<string, unknown>, field?: { line: number, old: string, next: string } }} [edit]
  * @returns {{ text: string } | { refused: string }}
  */
-export function applyEdit(source, { body, values = {} } = {}) {
+export function applyEdit(source, { body, values = {}, field } = {}) {
+  if (field !== undefined) {
+    if (body !== undefined || Object.keys(values).length) return { refused: 'a field is changed on its own, not with the form' }
+    return applyField(source, field)
+  }
   const { block, body: oldBody } = splitFrontmatter(source)
   let before
   try {
@@ -128,6 +142,44 @@ export function applyEdit(source, { body, values = {} } = {}) {
   const moved = [...new Set([...Object.keys(expected), ...Object.keys(after)])].filter((k) => !same(expected[k], after[k]))
   if (moved.length) return { refused: `the edit would also change ${moved.join(', ')}` }
   return { text }
+}
+
+// One value's words, swapped where the file writes them and read back.
+function applyField(source, { line, old, next }) {
+  let before, at
+  try {
+    before = parseFrontmatter(source).frontmatter
+    at = frontmatterPositions(source).find((p) => p.line === line)
+  } catch (err) {
+    return { refused: `the front matter does not read, so a developer fixes it first: ${err.message}` }
+  }
+  if (!at) return { refused: 'no value is written on that line any more' }
+  const name = at.path.join('.')
+  if (LOCKED_KEYS.includes(at.path[0])) return { refused: `${at.path[0]} decides what the block is, so it is the developer's` }
+  if (at.start === undefined) return { refused: `${name} spans several lines, so it is not changed in place` }
+  let was = before
+  for (const k of at.path) was = was[k]
+  if (typeof was !== 'string') return { refused: `${name} is ${kindOf(was)}, not words` }
+  const words = (t) => String(t ?? '').replace(/\s+/g, ' ').trim()
+  if (words(was) !== words(old)) return { refused: `${name} has changed since the page was built` }
+  const text = words(next)
+  if (!text) return { refused: 'the new text is empty' }
+
+  const out = source.slice(0, at.start) + frontmatterValue(text) + source.slice(at.end)
+  let after
+  try {
+    after = parseFrontmatter(out).frontmatter
+  } catch (err) {
+    return { refused: `the front matter would no longer read: ${err.message}` }
+  }
+  const expected = structuredClone(before)
+  let box = expected
+  for (const k of at.path.slice(0, -1)) box = box[k]
+  Object.defineProperty(box, at.path[at.path.length - 1], { value: text, writable: true, enumerable: true, configurable: true })
+  if (!same(expected, after) || splitFrontmatter(out).body !== splitFrontmatter(source).body) {
+    return { refused: `the edit would also change something beside ${name}` }
+  }
+  return { text: out }
 }
 
 // ─── the body's code (FJS-D1250) ──────────────────────────────────────────

@@ -110,12 +110,51 @@ const MESA_DYNAMIC_TAG = 'mesa-dynamic-element'
 export const LOC_ATTR = 'data-fjs-loc'
 
 /**
+ * The file a stamp names, relative to the app's root so the DOM carries
+ * `src/pages/Home.mesa:12:3` rather than an absolute path; the client puts the
+ * root back on before it asks the dev server to open anything.
+ */
+export function locFileOf(config) {
+  const file = config.filename ?? config.path ?? ''
+  const root = (config.locRoot ?? '').replace(/[\\/]+$/, '')
+  if (root && file.startsWith(root)) return file.slice(root.length).replace(/^[\\/]+/, '')
+  return file
+}
+
+/**
  * The property a dev build sets on a component's anchor comment, holding where
  * the component was PLACED, in `LOC_ATTR`'s format. A package component's own
  * markup carries only the package's file, so this is the inspector's way back
  * to the app line that put it on the page (`FJS-3332`).
  */
 export const PLACED_PROP = '__fjsPlaced'
+
+/**
+ * The `{ box, key }` expressions an element's whole text reads when that text
+ * is one field off an object (`{item.name}`, `{hours[day]}`), else null. Text
+ * beside the value, a call or a bare name is not one field.
+ */
+function fieldRead(n, ctx) {
+  const kids = (n.body ?? []).filter((c) => !(c.type === 'text' && !c.value.trim()))
+  if (kids.length !== 1 || kids[0].type !== 'text') return null
+  const raw = kids[0].value.trim()
+  if (raw[0] !== '{' || raw[raw.length - 1] !== '}') return null
+  let exp, ast
+  try {
+    exp = parseText(raw).binding
+    if (!exp) return null
+    ast = acorn.parseExpressionAt(exp, 0, { ecmaVersion: 'latest' })
+  } catch {
+    return null
+  }
+  if (ast.end !== exp.length) return null
+  if (ast.type === 'ChainExpression') ast = ast.expression
+  if (ast.type !== 'MemberExpression' || ast.object.type === 'Super' || ast.property.type === 'PrivateIdentifier') return null
+  const box = exp.slice(ast.object.start, ast.object.end)
+  const key = ast.computed ? exp.slice(ast.property.start, ast.property.end) : JSON.stringify(ast.property.name)
+  const rw = (e) => (ctx.accessors ? rewriteExpr(e, ctx.accessors) : e)
+  return { box: rw(box), key: rw(key) }
+}
 
 /**
  * A static attribute value on its way into the template string, which is parsed
@@ -5637,6 +5676,17 @@ export function buildBlock(data, option = {}) {
         } else {
           const _loc = ctx.locOf(n.start)
           if (_loc) el.attributes.push({ name: LOC_ATTR, value: _loc })
+          // An element showing one field of a loaded file takes that file's
+          // line when the value was recorded (`FJS-D1231`): a template line is
+          // shared by every entry it draws.
+          const _read = _loc && !TARGETS[ctx.config.target] ? fieldRead(n, ctx) : null
+          if (_read) {
+            binds.push(
+              xNode('stampFrom', { el: el.bindName(), ..._read }, (w, nd) => {
+                w.writeLine(`$$runtime.stampFrom(${nd.el}, () => [${nd.box}, ${nd.key}]);`)
+              })
+            )
+          }
         }
         el.voidTag = n.voidTag
         if (!n.closedTag) {
@@ -10082,15 +10132,7 @@ export async function compile(source, config = {}) {
 
   const _locate = config.loc ? makeLocator(source) : null
   let _diagLocate = null
-  // Relative to the app's root so the DOM carries `src/pages/Home.mesa:12:3`
-  // rather than an absolute path; the client puts the root back on before it
-  // asks the dev server to open anything.
-  const _locFile = (() => {
-    const file = config.filename ?? config.path ?? ''
-    const root = (config.locRoot ?? '').replace(/[\\/]+$/, '')
-    if (root && file.startsWith(root)) return file.slice(root.length).replace(/^[\\/]+/, '')
-    return file
-  })()
+  const _locFile = locFileOf(config)
 
   const ctx = {
     config,

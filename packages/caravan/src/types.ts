@@ -333,10 +333,11 @@ export interface DispatchOptions {
   /**
    * The row id to queue this job under. Default: a fresh uuid.
    *
-   * Stating one makes the dispatch IDEMPOTENT for all time: the id is the
-   * jobs table's primary key, so a second dispatch under the same id queues
-   * nothing and returns that id. This is what `unique` is not — `unique` is a
-   * lock on work in flight and frees itself the moment the job is terminal.
+   * Stating one makes the dispatch IDEMPOTENT until the cleanup sweep removes
+   * the finished job (`cleanupAfter`, 7 days by default): the id is the jobs
+   * table's primary key, so a second dispatch under the same id queues nothing
+   * and returns that id. This is what `unique` is not — `unique` is a lock on
+   * work in flight and frees itself the moment the job is terminal.
    *
    * For a caller that already holds a durable id for the work and is retrying
    * a handoff it cannot confirm: junction's outbox relay dispatches under the

@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3756 source file(s) read
-230 entry point(s), 37 imported by nothing outside their package, 16 emitted
-1533 value export(s), 616 reached by nothing outside, 163 emitted
+26 package(s) · 3782 source file(s) read
+231 entry point(s), 36 imported by nothing outside their package, 16 emitted
+1547 value export(s), 617 reached by nothing outside, 166 emitted
 448 type export(s), 345 reached by nothing outside
 ```
 
@@ -36,12 +36,12 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `litestone` | 26 | 6 | 251 | 130 | 37 | 1 | 1 |
 | `junction` | 26 | 4 | 263 | 121 | 13 | 265 | 210 |
-| `mesa` | 17 | 4 | 277 | 99 | 68 | 0 | 0 |
+| `mesa` | 18 | 4 | 285 | 100 | 70 | 0 | 0 |
 | `sierra` | 25 | 6 | 196 | 82 | 21 | 0 | 0 |
 | `auth` | 6 | 1 | 51 | 36 | 3 | 15 | 13 |
 | `jetty` | 7 | 4 | 43 | 29 | 0 | 0 | 0 |
 | `ui` | 9 | 0 | 51 | 33 | 4 | 0 | 0 |
-| `toolbelt` | 56 | 1 | 244 | 29 | 10 | 0 | 0 |
+| `toolbelt` | 56 | 0 | 250 | 29 | 11 | 0 | 0 |
 | `conduit` | 4 | 2 | 26 | 15 | 1 | 59 | 44 |
 | `site-kit` | 9 | 4 | 30 | 12 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 8 | 0 | 36 | 21 |
@@ -203,7 +203,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/mesa`
 
-`packages/mesa` · 17 entry point(s) · 277 value, 0 type export(s)
+`packages/mesa` · 18 entry point(s) · 285 value, 0 type export(s)
 
 **Entries imported by nothing outside (4):** `./render` `./css-inliner` `./vite/client` `./vite/hmr`
 
@@ -211,9 +211,9 @@ Every entry is imported and every name reached.
 
 **Entries not source (2, not graded):** `./drive` `./browser`
 
-**Unreached values (99):** `_registerDelegateRoot` `_registerStyleRoot` `addBlock` `analyzeScript` `applyAttachments` `applyEventModifiers` `attachBlock` `bindClassExp` `bindSetter` `blockSlotTarget` `buildBlock` `buildHead` `buildRuntime` `captureContext` `checkRootName` `classSource` `componentAttributes` `constDeclaration` `constScope` `cssHash` `declareSlotProps` `delegationRootOf` `detectExpressionType` `detectStatic` `EACH_LIFT` `eachFrame` `eachItems` `eachLiftFrame` `elementBindTarget` `emitScript` `emitTransforms` `eventAttribute` `extractKeywords` `extractStyles` `ifBlockReadOnly` `inlineCSS` `insertAfter` `insertBlock` `inspectProp` `isClient` `isSimpleName` `iterNodes` `LISTENER_OPTIONS` `localWatchProxy` `lowerSlots` `makeAwaitBlock` `makeBlockBound` `makeCallState` `makeEachBlock` `makeExternalProperty` `makeifBlock` `makeKeyBlock` `makeRenderTag` `makeSnippet` `makeVirtualEachBlock` `mergeAllEvents` `mesaDevtools` `mesaRollup` `mesaVite` `parseAttributes` `parseBinding` `parseEachHeader` `parseJS` `parseModifiers` `parseRenderTag` `PRESERVE_WHITESPACE` `processCSS` `provideContext` `readSourceMarks` `refer` `removeElements` `renderFailure` `replaceKeyword` `resetAttributeWarnings` `resetContentWarnings` `resetDerivedWriteWarnings` `resetDestructureWarnings` `resetRenderer` `resolveCSSVars` `resolveDependencies` `REST_PROPS` `rewriteTextResult` `routeSlots` `scopeCSS` `slotProp` `snippetParam` `spliceEdits` `stripSourceMarks` `styleSource` `svgElements` `templateSource` `trimEmptyNodes` `unproxy` `unspliceOffset` `unwrapExp` `use_context` `useContext` `xBuild` `xNode`
+**Unreached values (100):** `_registerDelegateRoot` `_registerStyleRoot` `addBlock` `analyzeScript` `applyAttachments` `applyEventModifiers` `attachBlock` `bindClassExp` `bindSetter` `blockSlotTarget` `buildBlock` `buildHead` `buildRuntime` `captureContext` `checkRootName` `classSource` `componentAttributes` `constDeclaration` `constScope` `cssHash` `declareSlotProps` `delegationRootOf` `detectExpressionType` `detectStatic` `EACH_LIFT` `eachFrame` `eachItems` `eachLiftFrame` `elementBindTarget` `emitScript` `emitTransforms` `eventAttribute` `extractKeywords` `extractStyles` `ifBlockReadOnly` `inlineCSS` `insertAfter` `insertBlock` `inspectProp` `isClient` `isSimpleName` `iterNodes` `LISTENER_OPTIONS` `localWatchProxy` `locFileOf` `lowerSlots` `makeAwaitBlock` `makeBlockBound` `makeCallState` `makeEachBlock` `makeExternalProperty` `makeifBlock` `makeKeyBlock` `makeRenderTag` `makeSnippet` `makeVirtualEachBlock` `mergeAllEvents` `mesaDevtools` `mesaRollup` `mesaVite` `parseAttributes` `parseBinding` `parseEachHeader` `parseJS` `parseModifiers` `parseRenderTag` `PRESERVE_WHITESPACE` `processCSS` `provideContext` `readSourceMarks` `refer` `removeElements` `renderFailure` `replaceKeyword` `resetAttributeWarnings` `resetContentWarnings` `resetDerivedWriteWarnings` `resetDestructureWarnings` `resetRenderer` `resolveCSSVars` `resolveDependencies` `REST_PROPS` `rewriteTextResult` `routeSlots` `scopeCSS` `slotProp` `snippetParam` `spliceEdits` `stripSourceMarks` `styleSource` `svgElements` `templateSource` `trimEmptyNodes` `unproxy` `unspliceOffset` `unwrapExp` `use_context` `useContext` `xBuild` `xNode`
 
-**Emitted (68):** `__dev` `$$eachBlock` `$$virtualEach` `addEvent` `addGlobalEvent` `addHeadStyle` `addToHead` `ANCHOR_DATA` `awaitBlock` `bindAttribute` `bindClass` `bindClassPassthrough` `bindGroup` `bindInput` `bindMask` `bindProp` `bindStyle` `bindText` `bindWindow` `boundaryBlock` `componentApi` `contentFallback` `contextProvide` `contextRead` `createKeyedEquals` `createWritableSignal` `dynamicElement` `eachBlock` `eachDefaultKey` `get_context` `htmlToFragment` `htmlToFragmentClean` `ifBlock` `initRenderer` `keyBlock` `LOC_ATTR` `makeAsyncState` `makeBlock` `makeEmitter` `makeRootEvent` `markupText` `mergeEvents` `mountedBlock` `mountStatic` `onMounted` `onWindow` `orderedGroup` `PLACED_PROP` `propDefault` `push_component` `pushProps` `reducedMotion` `registerComponentAnchor` `registerExports` `renderAll` `renderToHTML` `restProps` `rewriteAssignments` `rewriteExpr` `set_style` `set_text` `setInnerHTML` `spreadAttributes` `svgToFragment` `toggle_class` `trackDerived` `unclaimedContent` `warnDestructuredAccessors`
+**Emitted (70):** `__dev` `$$eachBlock` `$$virtualEach` `addEvent` `addGlobalEvent` `addHeadStyle` `addToHead` `ANCHOR_DATA` `awaitBlock` `bindAttribute` `bindClass` `bindClassPassthrough` `bindGroup` `bindInput` `bindMask` `bindProp` `bindStyle` `bindText` `bindWindow` `boundaryBlock` `componentApi` `contentFallback` `contextProvide` `contextRead` `createKeyedEquals` `createWritableSignal` `dynamicElement` `eachBlock` `eachDefaultKey` `get_context` `hotkey` `htmlToFragment` `htmlToFragmentClean` `ifBlock` `initRenderer` `keyBlock` `LOC_ATTR` `makeAsyncState` `makeBlock` `makeEmitter` `makeRootEvent` `markupText` `mergeEvents` `mountedBlock` `mountStatic` `onMounted` `onWindow` `orderedGroup` `PLACED_PROP` `propDefault` `push_component` `pushProps` `reducedMotion` `registerComponentAnchor` `registerExports` `renderAll` `renderToHTML` `restProps` `rewriteAssignments` `rewriteExpr` `set_style` `set_text` `setInnerHTML` `spreadAttributes` `stampFrom` `svgToFragment` `toggle_class` `trackDerived` `unclaimedContent` `warnDestructuredAccessors`
 
 ## `@frontierjs/notifications`
 
@@ -301,15 +301,13 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/toolbelt`
 
-`packages/toolbelt` · 56 entry point(s) · 244 value, 0 type export(s)
-
-**Entries imported by nothing outside (1):** `./keys`
+`packages/toolbelt` · 56 entry point(s) · 250 value, 0 type export(s)
 
 **Entries not source (20, not graded):** `./bearer` `./cells` `./cron` `./datetime` `./devline` `./directives` `./fill` `./gate` `./geo` `./env` `./hooks` `./ids` `./mailbox` `./mime` `./query` `./rank` `./redact` `./sigv4` `./sse` `./trace`
 
 **Unreached values (29):** `assertValues` `baseUnit` `canonicalQuery` `canonicalRequest` `canonicalUri` `centroid` `CONTENT_TYPES` `DIGITS` `encodePairs` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `resolveWall` `RUNNABLE_LANGS` `SECRET_KEY_NAMES` `sha256Hex` `TRANSFORM_NAMES`
 
-**Emitted (10):** `CRON_FIELDS` `dayHeader` `formatChord` `fromWall` `inBoxes` `parseRow` `pointInPolygon` `polygonArea` `renderRow` `SIGNATURE_VERSION`
+**Emitted (11):** `CRON_FIELDS` `dayHeader` `formatChord` `fromWall` `inBoxes` `OPERATORS` `parseRow` `pointInPolygon` `polygonArea` `renderRow` `SIGNATURE_VERSION`
 
 ## `@frontierjs/ui`
 

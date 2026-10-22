@@ -50,16 +50,17 @@ const send      = bearerSend(connector.address, token!)
 
 /** `4gb` is the cheapest size with that much memory sold in the region; a
  *  vendor slug is taken as itself. The catalog is read, never a table here
- *  (`docs/PROVISIONING.md` § D3). */
+ *  (`docs/PROVISIONING.md` § D3). DigitalOcean still sells legacy sizes whose
+ *  slug IS `4gb` at twice the price, so a memory size is never matched as a slug. */
 function pickSize(sizes: ComputeSize[], wanted: string, region: string): ComputeSize {
-  const exact = sizes.find(s => s.slug === wanted)
+  const gb = /^(\d+)\s*gb$/i.exec(wanted)?.[1]
+  const exact = gb ? undefined : sizes.find(s => s.slug === wanted)
   if (exact) {
     if (priceIn(exact, region) === null)
       fail(`${exact.slug} is not sold in ${region}: ${sizeRegions(exact).join(', ')}`)
     return exact
   }
 
-  const gb = /^(\d+)\s*gb$/i.exec(wanted)?.[1]
   if (!gb) fail(`--size takes a memory size like 4gb or a DigitalOcean slug like s-2vcpu-4gb, not '${wanted}'`)
 
   const memoryMb = Number(gb) * 1024

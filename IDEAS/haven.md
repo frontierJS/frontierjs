@@ -2007,7 +2007,7 @@ the top stay as posted and the title says how many are hidden.
   go. `s` stays tomorrow.
 - [x] 20.9 Undo. `z` puts back the last snooze or wake, whichever it was; the
   foot says `z undoes` while it can.
-- [x] 20.10 About this one. `?` asks the desk's model about the cursor's item
+- [x] 20.10 About this one. `b` (`?` until `FJS-D1397`) asks the desk's model about the cursor's item
   alone — what it is, who waits on whom since when, the next step — handed
   that item as what is on the screen. Esc goes back to the report where the
   cursor was, and a follow-up `/ask` resumes the brief's thread. No test
@@ -2239,8 +2239,11 @@ One mechanism each:
 
 These need server state:
 
-- **The post office.** A mailbox per member. A whisper sent while its member is
-  offline waits there until they sign in — 7.1's `toId` row with a read flag.
+- **The pony express.** A mailbox per member. A whisper sent while its member is
+  offline waits there until they sign in. Grown into its own plan,
+  `IDEAS/pony-express.md`: a letter from any shell (`fli tell`, `fli inbox`),
+  standing alone on a Cloudflare Worker first and carried by Haven in its
+  Phase 5.
 - **The ferry's timetable.** The ferry and the island it runs to are built
   (`Docks.mesa`, `Island.mesa`, `pieces/ferry.js`), always docked at both
   ends. Left: it sails on a timetable, and its door is there only while it is

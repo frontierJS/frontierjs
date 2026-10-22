@@ -64,6 +64,7 @@ try {
     '    <a href={item.link}>{item.name}</a>',
     '    {#each item.items as sub}<a href={sub.link}>{sub.name}</a>{/each}',
     '  {/each}',
+    "  {#each menu.items.map((i) => ({ ...i, name: i.name + '!' })) as loud}<i>{loud.name}</i><s>{loud.link}</s>{/each}",
     '</nav>',
     '<slot />',
     '<ol>',
@@ -143,6 +144,21 @@ try {
     const page = read('index.html') ?? ''
     check("a preview's page loads the editor, naming basecamp's page for the draft",
       page.includes(`<script type="module" src="/assets/fjs-editor.js" data-fjs-editor="${EDITOR.replace(/&/g, '&amp;')}"></script>`), page.slice(-400))
+    // {company_name} is auto-imported through a script block Sierra writes into
+    // the body, four lines the file does not have; the stamp still names line 6.
+    check("a preview's prose names its own line of the .md, past an auto-import",
+      /<p data-fjs-loc="content\/routes\/index\.md:6:1">Welcome/.test(page), page.match(/<p [^>]*>Welcome/)?.[0])
+    // A value a block draws from a loaded file names that file's line, not the
+    // block's (FJS-D1231), through a copy too; a copy that changed it does not.
+    const stamp = (tag, text) => page.match(new RegExp(`<${tag}[^>]*data-fjs-loc="([^"]+)"[^>]*>${text}</${tag}>`))?.[1]
+    check("a preview's menu link names its entry's line of the menu",
+      stamp('a', 'Services') === 'content/menus/main.md:4:9' && stamp('a', 'Deep Cleaning') === 'content/menus/main.md:8:11',
+      `${stamp('a', 'Services')} ${stamp('a', 'Deep Cleaning')}`)
+    check("a preview's collection field names its item's own file",
+      stamp('b', 'Call') === 'content/collections/steps/1-call.md:2:8', stamp('b', 'Call'))
+    check('a copied entry keeps the line of a key it kept, and the template of one it changed',
+      stamp('s', '/services/') === 'content/menus/main.md:5:9' && stamp('i', 'Services!')?.startsWith('content/layouts/Steps.mesa:'),
+      `${stamp('s', '/services/')} ${stamp('i', 'Services!')}`)
     const editor = read('assets/fjs-editor.js') ?? ''
     const missing = [...editor.matchAll(/from\s*"\.\/([^"]+)"/g)].map((m) => m[1]).filter((f) => read(`assets/${f}`) === null)
     check('the editor ships with every chunk it imports', !!editor && missing.length === 0, missing.join(', ') || 'no editor')

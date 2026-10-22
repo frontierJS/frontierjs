@@ -1,0 +1,21 @@
+<script>
+  import { keymap } from '../../../../toolbelt/src/keys/keys.js'
+  import { keys } from '@frontierjs/mesa/keys'
+
+  const map = keymap({ gg: 'top', g: 'go', G: 'bottom', f: { await: 'find' }, '<C-k>': 'palette' })
+  let n = 0
+  let fired = '-'
+  let value = ''
+  let last = '-'
+  const on = (action, arg) => { n++; fired = arg ? `${n} ${action} ${arg}` : `${n} ${action}` }
+</script>
+
+<div onkeydown={(e) => last = e.defaultPrevented ? 'taken' : 'free'}>
+  <div {@attach keys(() => ({ active: [map], on }))}>
+    <p>fired {fired}</p>
+    <button>Here</button>
+    <input bind:value={value}>
+    <p>value {value}</p>
+    <p>last {last}</p>
+  </div>
+</div>

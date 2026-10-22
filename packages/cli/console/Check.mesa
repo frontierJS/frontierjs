@@ -1,0 +1,279 @@
+<script>
+  // Check.mesa — is this tree in a state to commit: the console's `:check`
+  // pane (`IDEAS/one-console.md` § 3). Three readings, three lifetimes.
+  //
+  // - Findings: `/api/check` (every app scope, then the workspace's own) and
+  //   `/api/doctor` (this machine). Read on mount and on a press, never polled:
+  //   the repo scope alone is seconds of tree walk.
+  // - Proves: `/api/proves`, which drives the change in the tree needs. Read
+  //   with the findings, for the same reason.
+  // - CI: `/api/ci`, the run log `scripts/ci.mjs` writes whoever started it.
+  //   Polled fast while a run is going and slowly otherwise, so a run started
+  //   from a terminal shows here too.
+  //
+  // A list is cut to its head with the rest COUNTED on the button: a pane
+  // that quietly shows eight of three hundred reads as *these are the eight*.
+
+  import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let api = ''
+
+  const SHOWN           = 8
+  const CI_POLL_LIVE_MS = 2000
+  const CI_POLL_IDLE_MS = 20000
+
+  // The tier travels from the server, so a weak match reads as one.
+  const TIER_WORD = {
+    path:    'names the file',
+    area:    'names the area',
+    symbol:  'names a symbol in the diff',
+    package: 'names the package',
+  }
+  const CI_TONE = { ok: 'success', passed: 'success', warn: 'warning', fail: 'danger', failed: 'danger', running: 'info' }
+
+  let findings = null
+  let summary  = ''
+  let proves   = null
+  let changed  = 0
+  let ci       = null
+  let failed   = null
+  let reading  = false
+  let note     = ''
+  let allFindings = false
+  let allProves   = false
+  let fixing      = null
+
+  const read = async (path, init) => {
+    const res  = await fetch(`${api}${path}`, init)
+    const body = await res.json()
+    if (!res.ok || body.error) throw new Error(body.error ?? `${path} answered ${res.status}`)
+    return body
+  }
+
+  // `blocked` is system and config only: a missing token blocks one namespace,
+  // and grading that as an error would make almost every machine read broken.
+  function machineRow(m) {
+    const bad = [...m.system, ...m.config, ...m.namespaces].filter(c => !c.ok)
+    return {
+      scope: 'this machine', rule: m.blocked ? 'fli cannot run here' : 'setup',
+      severity: m.blocked ? 'error' : 'warn', file: null, line: null,
+      message: bad.map(c => `${c.name ?? c.label ?? c.key} — ${c.hint ?? c.fix}`).join(' · '),
+    }
+  }
+
+  async function readTree() {
+    reading = true
+    failed  = null
+    try {
+      const [checks, machine, prov] = await Promise.all([read('/api/check'), read('/api/doctor'), read('/api/proves')])
+      const rows = checks.scopes
+        .flatMap(sc => sc.findings.map(f => ({ ...f, scope: sc.label })))
+        .sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'error' ? -1 : 1))
+      // The machine goes first: nothing below matters if fli cannot run here.
+      if (!machine.ok) rows.unshift(machineRow(machine))
+      const ran = checks.scopes.reduce((n, sc) => n + sc.ran, 0)
+      findings = rows
+      summary  = checks.errors || checks.warns
+        ? `${checks.errors} error(s) · ${checks.warns} warning(s) over ${ran} rule run(s)${machine.ok ? ' · machine ok' : ''}`
+        : `${ran} rule run(s), nothing to report${machine.ok ? ' · machine ok' : ''}`
+      proves  = prov.rows
+      changed = prov.files.length
+    } catch (e) {
+      failed = e.message
+    }
+    reading = false
+  }
+
+  var ciTimer = null
+  async function readCi() {
+    clearTimeout(ciTimer)
+    try {
+      ci = await read('/api/ci')
+    } catch (e) {
+      failed = e.message
+    }
+    ciTimer = setTimeout(readCi, ci?.active ? CI_POLL_LIVE_MS : CI_POLL_IDLE_MS)
+  }
+
+  async function startCi(opts) {
+    note = 'starting…'
+    try {
+      const out = await read('/api/ci/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(opts) })
+      note = `started · ${out.argv.join(' ') || 'full'}`
+    } catch (e) {
+      note = e.message
+    }
+    readCi()
+  }
+
+  async function stopCi() {
+    try {
+      const out = await read('/api/ci/stop', { method: 'POST' })
+      note = out.group ? 'stopped' : 'stopped ci.mjs — it was started from a terminal, so the suite it was in finishes on its own'
+    } catch (e) {
+      note = e.message
+    }
+    readCi()
+  }
+
+  // A fix is named by KIND in the run log and turned into argv by the server,
+  // so the pane sends back what the log said and nothing it composed. Only a
+  // rerun of the phase says the phase is green, so an exit of 0 is reported
+  // as regenerated, never as passing.
+  async function runFix(fix) {
+    fixing = `${fix.kind}:${fix.file ?? ''}`
+    let code = null
+    try {
+      const res  = await fetch(`${api}/api/ci/fix`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fix) })
+      const text = await res.text()
+      if (!res.ok) throw new Error(JSON.parse(text).error)
+      const done = text.split('\n').filter(l => l.startsWith('data: ')).map(l => JSON.parse(l.slice(6))).find(e => e.type === 'done')
+      code = done?.code ?? null
+      note = code === 0 ? `regenerated ${fix.file ?? fix.kind} — read the diff, then rerun the phase` : `fix failed${code != null ? ` — exit ${code}` : ''}`
+    } catch (e) {
+      note = e.message
+    }
+    fixing = null
+  }
+
+  const duration = (ms) => ms == null ? '' : ms < 1000 ? `${ms}ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s`
+  const ago = (now, at) => {
+    const s = Math.max(0, Math.round((now - at) / 1000))
+    return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`
+  }
+
+  // Every phase a full run plans, then any only a narrowed run has touched;
+  // the run going now answers ahead of history.
+  $: phases = !ci?.available ? [] : (() => {
+    const item = Object.fromEntries(ci.latest.filter(i => i.kind === 'phase').map(i => [i.key, i]))
+    const live = Object.fromEntries((ci.active ? ci.selected?.phases ?? [] : []).map(p => [p.name, p]))
+    const names = [...ci.phases, ...Object.keys(item).filter(n => !ci.phases.includes(n))]
+    return names.map(name => {
+      const was = item[name], now = live[name]
+      const running = !!ci.active && ci.active.phase === name && now?.ms == null
+      const queued  = !!ci.active && !now && ci.active.planned.includes(name)
+      let status = was?.status ?? null, ms = was?.ms ?? null
+      if (running) { status = 'running'; ms = ci.now - now.at }
+      else if (now?.ms != null) { status = now.ok ? 'ok' : 'fail'; ms = now.ms }
+      const failures = now ? now.steps.filter(s => s.status === 'fail' && !s.key)
+        : status === 'fail' ? was?.failures ?? [] : []
+      return {
+        name, status: status ?? (queued ? 'queued' : 'never run'), ms, usual: ci.usual[name],
+        from: running ? '' : now?.ms != null ? 'this run' : was ? `${ago(ci.now, was.at)} · ${was.commit ?? '?'}${was.dirty ? '*' : ''}` : '',
+        narrowed: !!was?.narrowed, failures,
+      }
+    })
+  })()
+  $: head = ci?.available ? ci.active ?? ci.runs[0] ?? null : null
+
+  $.onMount(() => { readTree(); readCi() })
+  $.onDestroy(() => clearTimeout(ciTimer))
+</script>
+
+<header class="bar">
+  <strong>Is this tree ready</strong>
+  <span class="text-xs text-muted">{reading ? 'reading…' : summary}</span>
+  <Button treatment="ghost" size="xs" loading={reading} onclick={readTree}>check again</Button>
+</header>
+
+{#if failed}
+  <p class="text-sm text-danger" data-failed>{failed}</p>
+{/if}
+
+<section class="surface stack" data-part="findings">
+  <div class="bar dense">
+    <strong class="text-sm">findings</strong>
+    <span class="text-xs text-muted">{findings ? findings.length : '…'}</span>
+  </div>
+  {#if findings}
+    {#each (allFindings ? findings : findings.slice(0, SHOWN)) as f, i (i)}
+      <div class="stack gap-3xs" data-finding={f.severity}>
+        <div class="cluster gap-sm">
+          <Badge tone={f.severity === 'error' ? 'danger' : 'warning'} size="xs">{f.rule ?? f.severity}</Badge>
+          <code>{f.file ? `${f.file}${f.line ? `:${f.line}` : ''}` : f.scope}</code>
+        </div>
+        <span class="text-xs text-muted">{f.message}</span>
+      </div>
+    {/each}
+    {#if !allFindings && findings.length > SHOWN}
+      <Button treatment="ghost" size="xs" onclick={() => allFindings = true}>show the other {findings.length - SHOWN}</Button>
+    {/if}
+  {/if}
+</section>
+
+<section class="surface stack" data-part="proves">
+  <div class="bar dense">
+    <strong class="text-sm">proves</strong>
+    <span class="text-xs text-muted">{proves ? `${changed} file(s) changed · ${proves.length} drive row(s)` : '…'}</span>
+  </div>
+  {#if proves && changed && !proves.length}
+    <span class="text-xs text-muted">no row of the proof table covers the change</span>
+  {/if}
+  {#if proves}
+    {#each (allProves ? proves : proves.slice(0, SHOWN)) as r, i (i)}
+      <div class="stack gap-3xs" data-proof={r.match.tier}>
+        <span class="text-sm">{r.changed}</span>
+        <span class="text-xs text-muted">{TIER_WORD[r.match.tier] ?? r.match.tier}{(r.match.on ?? []).length ? ` — ${r.match.on.slice(0, 3).join(', ')}` : ''}</span>
+        <div class="cluster gap-2xs">
+          {#each r.targets as t, j (j)}
+            {#if t.kind === 'unknown'}
+              <Badge tone="danger" size="xs">gone: {t.name}</Badge>
+            {:else if t.kind === 'file'}
+              <code class="text-xs">read {t.dir ?? t.where}/{t.name}</code>
+            {:else}
+              <code class="text-xs">{t.dir ?? t.where} · {t.command ?? t.name}</code>
+            {/if}
+          {/each}
+        </div>
+      </div>
+    {/each}
+    {#if !allProves && proves.length > SHOWN}
+      <Button treatment="ghost" size="xs" onclick={() => allProves = true}>show the other {proves.length - SHOWN}</Button>
+    {/if}
+  {/if}
+</section>
+
+<section class="surface stack" data-part="ci">
+  <div class="bar dense">
+    <strong class="text-sm">ci</strong>
+    {#if head}<Badge tone={CI_TONE[head.status] ?? ''} size="xs">{head.status}</Badge>{/if}
+    <span class="text-xs text-muted">
+      {#if !ci}reading…
+      {:else if !ci.available}no run log here
+      {:else if head}{ci.active ? 'started' : 'last run'} {ago(ci.now, head.at)} · {head.argv.join(' ') || 'full'}{head.ms != null ? ` · ${duration(head.ms)}` : ''} · last full run: {ci.lastFull ? `${ci.lastFull.status} ${ago(ci.now, ci.lastFull.at)}` : 'never'}
+      {:else}no run logged yet{/if}
+    </span>
+    {#if ci?.available}
+      {#if ci.active}
+        <Button treatment="ghost" size="xs" onclick={stopCi}>stop</Button>
+      {:else}
+        <Button treatment="ghost" size="xs" onclick={() => startCi({ tier: 'fast' })}>run fast</Button>
+        <Button treatment="ghost" size="xs" onclick={() => startCi({})}>run full</Button>
+      {/if}
+    {/if}
+  </div>
+  {#if note}<span class="text-xs" role="status">{note}</span>{/if}
+  {#each phases as p (p.name)}
+    <div class="stack gap-3xs" data-ci-phase={p.name}>
+      <div class="cluster gap-sm">
+        <Badge tone={CI_TONE[p.status] ?? ''} size="xs">{p.status}</Badge>
+        <strong class="text-sm">{p.name}</strong>
+        <span class="text-xs text-muted">{duration(p.ms)}{p.usual ? ` · usually ${duration(p.usual)}` : ''}{p.from ? ` · ${p.from}` : ''}{p.narrowed ? ' · narrowed' : ''}</span>
+        <Button treatment="ghost" size="xs" disabled={!!ci.active} onclick={() => startCi({ phases: [p.name] })}>rerun</Button>
+      </div>
+      {#each p.failures as f, i (i)}
+        <div class="cluster gap-sm">
+          <span class="text-xs text-danger">{f.label}</span>
+          {#if f.fix}
+            <Button treatment="outlined" size="xs" disabled={!!ci.active || !!fixing} loading={fixing === `${f.fix.kind}:${f.fix.file ?? ''}`} onclick={() => runFix(f.fix)}>fix</Button>
+          {/if}
+        </div>
+        {#if f.detail}<span class="text-xs text-muted">{f.detail}</span>{/if}
+      {/each}
+    </div>
+  {/each}
+  {#each (ci?.selected?.notes ?? []) as n, i (i)}
+    <span class="text-xs text-muted">note: {n}</span>
+  {/each}
+</section>
