@@ -42,12 +42,13 @@
   import Live     from './Live.mesa'
   import Call     from './Call.mesa'
   import Data     from './Data.mesa'
+  import Ask      from './Ask.mesa'
 
   export let api      = ''
   export let pane     = 'run'
   export let legendAt = null   // (read) => void, read: () => { rows, status }
 
-  const PANES = ['run', 'check', 'decide', 'ship', 'map', 'live', 'call', 'data']
+  const PANES = ['run', 'check', 'decide', 'ship', 'map', 'live', 'call', 'data', 'ask']
 
   // No `<Mod-…>` is bound anywhere here, so `mac` changes no row.
   const CONSOLE = keymap({
@@ -188,6 +189,7 @@
       <Tab id="live">:live</Tab>
       <Tab id="call">:call</Tab>
       <Tab id="data">:data</Tab>
+      <Tab id="ask">:ask</Tab>
     </TabList>
     <TabPanel id="run" unmount><Run {api} {shown} keyed={keyedFor('run')} /></TabPanel>
     <TabPanel id="check" unmount><Check {api} {shown} keyed={keyedFor('check')} /></TabPanel>
@@ -197,6 +199,7 @@
     <TabPanel id="live" unmount><Live {api} {shown} keyed={keyedFor('live')} /></TabPanel>
     <TabPanel id="call" unmount><Call {api} {shown} keyed={keyedFor('call')} /></TabPanel>
     <TabPanel id="data" unmount><Data {api} {shown} keyed={keyedFor('data')} /></TabPanel>
+    <TabPanel id="ask" unmount><Ask {api} {shown} keyed={keyedFor('ask')} /></TabPanel>
   </Tabs>
 
   {#if !legendAt}

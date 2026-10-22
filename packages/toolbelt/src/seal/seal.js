@@ -30,6 +30,8 @@
  * as a tampered one does.
  */
 
+import { seededPair } from '../signature/seeded.js'
+
 const ENCODER = new TextEncoder()
 const X25519  = { name: 'X25519' }
 const VERSION = 'v1.'
@@ -117,11 +119,14 @@ async function aeadKey(secret) {
 
 /**
  * A key pair for `seal` and `open`, both halves base64url. Kept beside the
- * Ed25519 signing pair, never derived from it (`FJS-D1400`).
+ * Ed25519 signing pair, never derived from it (`FJS-D1400`). Given `seed`, 32
+ * bytes, the pair is the seed's and nothing is drawn.
  *
+ * @param {{ seed?: Uint8Array }} [opts]
  * @returns {Promise<{ publicKey: string, privateKey: string }>}
  */
-export async function generateSealingKeys() {
+export async function generateSealingKeys({ seed } = {}) {
+  if (seed) return seededPair('X25519', seed)
   const pair = await crypto.subtle.generateKey(X25519, true, ['deriveBits'])
   return {
     publicKey:  toBase64url(await crypto.subtle.exportKey('raw', pair.publicKey)),

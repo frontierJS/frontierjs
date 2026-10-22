@@ -84,20 +84,23 @@ export const rootPrint = (root) => String(root).slice(0, 16).match(/.{4}/g).join
  * machine reads the same words and a sealing key the host swapped is a chain
  * that does not verify.
  */
-export const safetyWords = async (root) => {
+export const safetyWords = (root) => hexWords(String(root).slice(0, 16))
+
+/** Hex as PGP words, a word a byte — `safetyWords`, and `tell:paper`'s key. */
+export const hexWords = async (hex) => {
   const { EVEN, ODD } = await import('./pgp-words.js')
-  return String(root).slice(0, 16).match(/../g).map((byte, i) => (i % 2 ? ODD : EVEN)[parseInt(byte, 16)]).join(' ')
+  return hex.match(/../g).map((byte, i) => (i % 2 ? ODD : EVEN)[parseInt(byte, 16)]).join(' ')
 }
 
 /**
- * `safetyWords` read back: the hex eight PGP words spell, or null for
+ * `hexWords` read back: the hex `count` PGP words spell, or null for
  * anything else. A word from the list for the other position is refused
  * rather than forgiven — it is a word dropped or two swapped.
  */
-export const wordsHex = async (text) => {
+export const wordsHex = async (text, count = 8) => {
   const { EVEN, ODD } = await import('./pgp-words.js')
   const words = String(text).trim().toLowerCase().split(/[\s,]+/).filter(Boolean)
-  if (words.length !== 8) return null
+  if (words.length !== count) return null
   const bytes = words.map((word, i) => (i % 2 ? ODD : EVEN).indexOf(word))
   return bytes.includes(-1) ? null : bytes.map(b => b.toString(16).padStart(2, '0')).join('')
 }

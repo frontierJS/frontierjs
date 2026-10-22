@@ -49,6 +49,11 @@
 // the post stores them and the revoking machine verifies them. A revoked
 // machine is out of `machines` the moment the chain is stored, so it is
 // refused on its next request, and its open socket is closed.
+//
+// A paper key (4.7, FJS-D1420) is one more machine in the chain, its link
+// published on `POST /chain` with the sealing pair sealed to its box key in
+// `rekeys`; typed on a new machine, it signs that machine's link the same way.
+// The post holds its public keys and that sealed pair, nothing it can open.
 
 import { verifyMessage, verifyRequest } from '@frontierjs/toolbelt/signature'
 import { askCode, extendsSeen, linkMessage, readChain, verifyBox } from './tell-chain.js'
@@ -288,9 +293,10 @@ export class TellPost {
   // A member's links as they were signed, for a client to verify itself:
   // the post's word on a chain is worth nothing to the peer reading it. A
   // member with no chain answers none, and a client that pinned one refuses
-  // that as a chain cut short.
-  chain(_, __, url) {
-    const nick = String(url.searchParams.get('nick') ?? '').trim().toLowerCase()
+  // that as a chain cut short. No nick is the caller's own, which is how a
+  // paper key typed on a new machine learns whose it is.
+  chain(own, __, url) {
+    const nick = String(url.searchParams.get('nick') ?? own).trim().toLowerCase()
     if (!this.sql.exec('SELECT 1 FROM members WHERE nick = ?', nick).toArray().length) return refuse(404, `No member is called '${nick}'.`)
     return answer({ nick, links: this.links(nick) })
   }

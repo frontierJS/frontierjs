@@ -232,6 +232,7 @@ The commands that speak to the post (`IDEAS/pony-express.md`):
 - `tell:link <origin>` on a new machine, `tell:link <eight words>` on a linked one — the new machine signed into this member, with its sealing key.
 - `tell:who [nick]` — a member's root as eight words, their chain pinned if new, to read aloud and compare away from the post; this member's own with no nick, and its machines.
 - `tell:revoke <machine>` — a lost or stolen machine taken out of this member, the sealing key rotated.
+- `tell:paper` on a linked machine, `tell:paper <origin>` on a new one — a key printed as sixteen words, one more machine in this member, and how a new machine walks back in with it.
 
 What a machine keeps:
 

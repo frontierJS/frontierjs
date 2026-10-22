@@ -1,0 +1,212 @@
+<script>
+  // Ask.mesa — an agent over the running app, as somebody: the console's
+  // `:ask` pane (`IDEAS/one-console.md` Phase 5).
+  //
+  // The agent is `claude -p` with one MCP server, the app's own `mcp()`
+  // reached through devtools as the principal named here (`FJS-D1391`,
+  // `FJS-D1428`), and no other tool. So what it may do is that standing's:
+  // its tool list is the projection's for that level, and every call is
+  // graded by the app. Never the developer's standing, which nobody declared.
+  //
+  // The tools shown are the list the agent is handed, read the same way. A
+  // refusal is drawn as the app answered it, beside the call that met it.
+
+  import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
+
+  export let api   = ''
+  export let shown = () => true   // (...fields) => does the console's filter keep this row
+  export let keyed = null         // (rows) => the keys this pane binds, for the console
+
+  const SHOWN = 12
+
+  let up       = null   // null until devtools first answers
+  let down     = ''
+  let tools    = []
+  let readAs   = ''     // the standing `tools` was read as
+  let as       = ''
+  let tenant   = ''
+  let question = ''
+  let asking   = false
+  let session  = null
+  let lines    = []     // { kind: 'you'|'tool'|'refused'|'text'|'status'|'error'|'result', text }
+  let all      = false
+
+  const who = () => {
+    const q = new URLSearchParams()
+    if (as.trim())     q.set('as', as.trim())
+    if (tenant.trim()) q.set('tenant', tenant.trim())
+    return q.size ? `?${q}` : ''
+  }
+
+  async function read() {
+    try {
+      const res  = await fetch(`${api}/api/live/ask${who()}`)
+      const body = await res.json()
+      readAs = as.trim()
+      if (body.down) { up = false; down = body.error; return }
+      up = true
+      down = ''
+      if (!res.ok) { tools = []; lines = [...lines, { kind: 'error', text: body.message ?? body.error ?? `answered ${res.status}` }]; return }
+      tools = body.tools ?? []
+    } catch (e) {
+      up = false
+      down = `the console's server did not answer: ${e.message}`
+    }
+  }
+
+  // The stream's events, as `ask-claude.js` reads them; a delta is the reply
+  // so far and the text after it replaces it.
+  function take(e) {
+    const last = lines.at(-1)
+    if (e.type === 'session') session = e.id
+    else if (e.type === 'delta') lines = last?.kind === 'text' && last.open
+      ? [...lines.slice(0, -1), { ...last, text: last.text + e.text }]
+      : [...lines, { kind: 'text', text: e.text, open: true }]
+    else if (e.type === 'text') lines = last?.kind === 'text' && last.open
+      ? [...lines.slice(0, -1), { kind: 'text', text: e.text }]
+      : [...lines, { kind: 'text', text: e.text }]
+    else if (e.type === 'tool')    lines = [...lines, { kind: 'tool', text: e.text.replace(/^mcp__app__/, '') }]
+    else if (e.type === 'refused') lines = [...lines, { kind: 'refused', text: e.text || 'refused' }]
+    else if (e.type === 'error')   lines = [...lines, { kind: 'error', text: e.text }]
+    else if (e.type === 'result')  lines = [...lines, { kind: 'result', text: `${e.ok ? 'done' : e.stop ?? 'stopped'}${e.turns != null ? ` · ${e.turns} turns` : ''}${e.cost != null ? ` · $${e.cost.toFixed(2)}` : ''}` }]
+  }
+
+  async function ask() {
+    if (asking || !question.trim()) return
+    asking = true
+    lines  = [...lines, { kind: 'you', text: `${question.trim()} — ${as.trim() ? `as ${as.trim()}` : 'as nobody'}` }]
+    try {
+      const res = await fetch(`${api}/api/live/ask`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ question, as: as.trim() || undefined, tenant: tenant.trim() || undefined, session }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        take({ type: 'error', text: body.error ?? `answered ${res.status}` })
+      } else {
+        const reader = res.body.getReader()
+        const text   = new TextDecoder()
+        let buf = ''
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buf += text.decode(value, { stream: true })
+          const frames = buf.split('\n\n')
+          buf = frames.pop()
+          for (const f of frames) {
+            if (!f.startsWith('data: ')) continue
+            try { take(JSON.parse(f.slice(6))) } catch {}
+          }
+        }
+      }
+    } catch (e) {
+      take({ type: 'error', text: `the console's server did not answer: ${e.message}` })
+    }
+    asking   = false
+    question = ''
+  }
+
+  async function stop() {
+    if (asking) await fetch(`${api}/api/ask-claude/stop`, { method: 'POST' }).catch(() => {})
+  }
+
+  // A new standing is a new conversation: a resumed session would carry what
+  // the last one was shown into this one's answer.
+  function fresh() {
+    session = null
+    lines   = []
+    read()
+  }
+
+  const counted = (seen, total) => seen === total ? `${total}` : `${seen} of ${total}`
+
+  $: seenTools = tools.filter(t => shown(t.name, t.description))
+  $: seenLines = lines.filter(l => shown(l.text))
+
+  $: keyed?.([
+    { keys: 'r', label: 'read again', run: read },
+    { keys: 'n', label: 'new conversation', run: fresh },
+    ...(question.trim() && !asking ? [{ keys: 'x', label: 'ask', run: ask }] : []),
+    ...(asking ? [{ keys: 's', label: 'stop', run: stop }] : []),
+  ])
+
+  $.onMount(read)
+</script>
+
+<header class="bar">
+  <strong>Ask an agent, as somebody</strong>
+  <span class="cluster gap-2xs">
+    {#if up === null}
+      <span class="text-xs text-muted">reading…</span>
+    {:else if up}
+      <span class="text-xs text-muted" data-tools={tools.length}>{tools.length} tools · {readAs ? `as ${readAs}` : 'as nobody'}</span>
+    {:else}
+      <Badge size="xs" data-live="down">not running</Badge>
+    {/if}
+  </span>
+</header>
+
+{#if up === false}
+  <p class="text-sm text-muted" data-down>{down}. The agent speaks to the app through devtools; r reads again once the app is up.</p>
+{/if}
+
+{#if up}
+  <section class="surface stack" data-part="ask">
+    <div class="bar dense">
+      <strong class="text-sm">{session ? 'follow-up' : 'question'}</strong>
+      <span class="text-xs text-muted">{as.trim() ? `as ${as.trim()}` : 'as nobody'}</span>
+    </div>
+    <Input label="" aria-label="as" value={as} placeholder="as: an email, username, name or id, or Model:value; empty is nobody" oninput={(e) => as = e.target.value} />
+    <Input label="" aria-label="tenant" value={tenant} placeholder="tenant, under tenancy strategy database" oninput={(e) => tenant = e.target.value} />
+    <Input label="" aria-label="question" value={question} placeholder="what should the agent do in the app?" oninput={(e) => question = e.target.value} />
+    <div class="cluster gap-sm">
+      <Button size="xs" disabled={!question.trim()} loading={asking} data-ask-go onclick={ask}>ask</Button>
+      {#if asking}<Button treatment="ghost" size="xs" onclick={stop}>stop</Button>{/if}
+      <Button treatment="ghost" size="xs" data-ask-fresh onclick={fresh}>new, as this standing</Button>
+    </div>
+  </section>
+
+  <section class="surface stack" data-part="reply">
+    <div class="bar dense">
+      <strong class="text-sm">conversation</strong>
+      <span class="text-xs text-muted">{counted(seenLines.length, lines.length)}</span>
+    </div>
+    {#each seenLines as l, i (i)}
+      {#if l.kind === 'you'}
+        <strong class="text-sm" data-line="you">{l.text}</strong>
+      {:else if l.kind === 'tool'}
+        <code class="text-xs" data-line="tool">→ {l.text}</code>
+      {:else if l.kind === 'refused'}
+        <span class="text-xs text-danger" data-line="refused">refused: {l.text}</span>
+      {:else if l.kind === 'error'}
+        <span class="text-xs text-danger" data-line="error">{l.text}</span>
+      {:else if l.kind === 'result'}
+        <span class="text-xs text-muted" data-line="result">{l.text}</span>
+      {:else}
+        <p class="text-sm" data-line="text">{l.text}</p>
+      {/if}
+    {/each}
+    {#if !lines.length}
+      <div class="text-xs text-muted">none yet: name a standing, ask, or x</div>
+    {/if}
+  </section>
+
+  <section class="surface stack" data-part="tools">
+    <div class="bar dense">
+      <strong class="text-sm">tools</strong>
+      <span class="text-xs text-muted">{counted(seenTools.length, tools.length)} · {readAs ? `as ${readAs}` : 'as nobody'}</span>
+    </div>
+    {#each (all ? seenTools : seenTools.slice(0, SHOWN)) as t (t.name)}
+      <div class="cluster gap-sm" data-tool={t.name}>
+        <code class="text-sm">{t.name}</code>
+        <span class="text-xs text-muted">{t.description.split('\n')[0]}</span>
+      </div>
+    {/each}
+    {#if !all && seenTools.length > SHOWN}
+      <Button treatment="ghost" size="xs" onclick={() => all = true}>show the other {seenTools.length - SHOWN} tools</Button>
+    {/if}
+  </section>
+{/if}

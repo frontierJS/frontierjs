@@ -44,6 +44,13 @@ import { AWAIT_META, JOBS_META, awaitJobs, describeOutcome, type JobsReader } fr
 import { BREADCRUMBS_META, answersOneRow, breadcrumbsFor, describeBreadcrumbs } from './breadcrumbs.ts'
 
 import { projectTools, schemaViews, CRUD } from './projection.ts'
+
+declare module '@frontierjs/junction' {
+  interface AppMcp {
+    /** One MCP request answered as `user` — what the route does with the session's. */
+    answer(request: Request, user: unknown): Promise<Response>
+  }
+}
 import type { Projection, SchemaViews, ServiceShape, Tool } from './projection.ts'
 
 export interface McpOptions {
@@ -112,8 +119,19 @@ export function mcp(opts: McpOptions = {}): Plugin {
     register(app: App) {
       const handler = async (ctx: RouteCtx<typeof app>) => {
         if (!views) return ctx.json({ error: 'The MCP surface is not ready yet.' }, 503)
-        return answer(app, ctx, views, shapes, opts, trail, documents)
+        return answer(app, (ctx.$raw as { $req: Request }).$req, ctx.rawBody, ctx.user ?? null, views, shapes, opts, trail, documents)
       }
+
+      // Devtools' `/api/mcp` (the console's `:ask`) answers one request as a
+      // declared principal (`FJS-D1428`). It holds no route ctx, so the body
+      // is read off a clone and the transport reads the original.
+      if (typeof app.own === 'function') app.own('mcp', {
+        async answer(request: Request, user: unknown): Promise<Response> {
+          if (!views) return Response.json({ error: 'The MCP surface is not ready yet.' }, { status: 503 })
+          const rawBody = await request.clone().text()
+          return answer(app, request, rawBody, user, views, shapes, opts, trail, documents)
+        },
+      })
 
       // No `app.all`, so the verbs are listed. DELETE is the client ending a
       // session; in stateless mode the transport answers it without state to
@@ -207,21 +225,22 @@ function describeAll(app: App): ServiceShape[] {
 // ─── one request ──────────────────────────────────────────────────────────────
 
 async function answer(
-  app:    App,
-  ctx:    RouteCtx<App>,
+  app:     App,
+  request: Request,
+  rawBody: string | undefined,
+  user:    unknown,
   views:  SchemaViews,
   shapes: ServiceShape[],
   opts:   McpOptions,
   trail:  string | null,
   documents: Map<string, string> | null,
 ): Promise<Response> {
-  const user  = ctx.user ?? null
   const level = await standingOf(app, user)
   // Read HERE, in the route, where the request scope is certainly the one the
   // tool call's service calls run in — it is what Caravan stamped on every job
   // they dispatched, and what `--await` looks the jobs up by (`FJS-D406`).
   const correlationId = (app as { correlationId?: () => string | null }).correlationId?.() ?? null
-  const { awaiting, renders } = readRequest(ctx)
+  const { awaiting, renders } = readRequest(rawBody)
 
   // A key's scopes withhold what the call would refuse, from junction's own
   // reading of them (`FJS-D916`); `narrow` is for a rule the app holds beyond it.
@@ -257,7 +276,7 @@ async function answer(
   })
   await server.connect(transport)
 
-  return transport.handleRequest((ctx.$raw as { $req: Request }).$req)
+  return transport.handleRequest(request)
 }
 
 /**
@@ -467,9 +486,9 @@ interface CallScope {
  * older era. A host that declares its capabilities and names no view, or no
  * mime type this server emits, is read as asked.
  */
-function readRequest(ctx: RouteCtx<App>): { awaiting: boolean; renders: boolean } {
+function readRequest(rawBody: string | undefined): { awaiting: boolean; renders: boolean } {
   try {
-    const body = JSON.parse(ctx.rawBody ?? '') as { method?: string; params?: { _meta?: Record<string, unknown> } }
+    const body = JSON.parse(rawBody ?? '') as { method?: string; params?: { _meta?: Record<string, unknown> } }
     const meta = body.params?._meta
     const declared = meta?.[CLIENT_CAPABILITIES_META_KEY] as Parameters<typeof getUiCapability>[0] | undefined
     const ui = declared === undefined ? undefined : getUiCapability(declared)

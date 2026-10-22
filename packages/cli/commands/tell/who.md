@@ -28,7 +28,7 @@ chain is graded against the pins exactly as `tell` grades it: met for the
 first time it is pinned, and another root, or a chain shorter than the pinned
 one, is refused. When the post does not answer, the pin is read instead.
 With no nick it also lists this member's machines by fingerprint, the names
-`fli tell:revoke` takes.
+`fli tell:revoke` takes, a paper key (`fli tell:paper`) among them.
 
 ```js
 const nick = String(arg.nick ?? '').trim().toLowerCase()
@@ -51,7 +51,8 @@ if (!nick || nick === member.nick) {
   await show(`${member.nick ?? 'you'} (this member)`, root, chain.machines?.length ?? 1)
   // The names `fli tell:revoke` takes.
   for (const machine of chain.machines ?? [member.keys.publicKey]) {
-    echo(chalk`    {dim machine} ${await fingerprint(machine)}${machine === member.keys.publicKey ? chalk` {dim (this machine)}` : ''}`)
+    const which = machine === member.keys.publicKey ? ' (this machine)' : chain.papers?.includes(machine) ? ' (paper)' : ''
+    echo(chalk`    {dim machine} ${await fingerprint(machine)}{dim ${which}}`)
   }
   echo('')
   if (readConfig().tell?.root !== root) {

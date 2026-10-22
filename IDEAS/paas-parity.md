@@ -227,8 +227,89 @@ service with a disk for the same reason. Keep it that way, and say so in Outpost
 - **Prefix stripping is on by default** wherever it exists (Kamal, Dokploy). FJS's `/api`
   has to reach the API unstripped.
 
+## From Pando
+
+[Pando](https://github.com/trypando/pando) is a self-hosted platform for a company's
+internal apps. It builds a repo or runs an image, scans it, runs it on its own network and
+puts it behind the company's SSO. Go, Postgres, a React console, one binary; AGPL-3.0 with
+a commercial license and a CLA; alpha (0.12.0, 2026-10-20). **Read 2026-10-20 at commit
+`b2a100b`**: its docs, `docs/reference.md` and the code. Nothing was run. A Pando path
+below is relative to that repo, and an `R-###` is a requirement in its
+`docs/requirements.md`. Where a row above or another file already owns the idea, the row
+points there and adds only what Pando showed.
+
+1. **The build leaves the app host.** Outpost's `/deploy` builds a git source on the
+   machine that will run it (`packages/outpost/src/server.js` § `/deploy`, "V1's answer").
+   Pando builds with BuildKit on the control host and ships the image to the app hosts
+   through a registry. Its build container mounts no container-runtime socket, and an
+   integration test asserting the build's mounts is what keeps that true (R-112,
+   `docs/design/07-sequences.md` § B). The plan here is already `deploy-plane.md` row
+   **b**, and how the bytes travel is ruled (`FJS-D814`: `docker save | docker load`, then
+   a registry once one artefact goes to many machines). Pando is evidence for that
+   trigger: its `docker-hosts` runtime requires a registry for every app it builds
+   (`docs/reference.md` § Running apps on several Docker hosts). Take the mount test when
+   **b** is built, and run `/site/preview`'s throwaway build containers under it too.
+   Its trivy scan between build and run is `deploy-posture.md` 4.1.
+2. **A sign-in gate in front of a deployed app.** This is Pando's whole product. The proxy
+   decides who may reach an app (a grant per app, from the company's identity provider),
+   strips every inbound `X-Pando-*` header, and hands the app `X-Pando-Assertion`: an
+   Ed25519 JWT with a stable `sub`, `email`, `groups`, `aud` set to the app's id, and a
+   120 s life, verified against `/.well-known/jwks.json` (`docs/reference.md` § What an
+   app receives; R-053, R-054). It never sends its own `pando_*` cookies to an app, and it
+   passes every other `Authorization` header through (R-173). Basecamp hosts internal
+   tools and paste-box prototypes, and nothing decides who may open their hostnames. This
+   extends row 4 above (basic auth, an IP allowlist and a rate limit): add a fourth policy,
+   *members of this workspace*, as Caddy `forward_auth` against Basecamp, the shape
+   `preview-branch.md` § 6 already recommends for the hosted dev panel. The app half
+   is an `IAuth` in `@frontierjs/auth` that trusts a signed assertion. With it, an FJS
+   app behind the gate needs no sign-in screen of its own. Strip the header at the edge
+   unconditionally, as Pando does, or any visitor can send their own.
+3. **What someone asked for, kept apart from what is running.** Pando keeps
+   `apps.desired_state` (`running` | `stopped`, what a person asked for) apart from
+   `apps.state` (what is observed). A reconciler loop restores a workload that went
+   missing and backs off on one whose health fails (`degraded`). `failed` is terminal
+   because the reconciler has no code path that touches it, not because of a flag (R-151,
+   `docs/design/05-reconciler-and-lifecycle.md` § 1). Outpost starts containers with
+   `--restart unless-stopped`, so Docker restarts a crashed one. But the heartbeat
+   reports no containers (`packages/outpost/src/report.js`), and no code path was found
+   that notices a container removed between releases. Its loss shows only when a monitor
+   probes the URL (`FJS-1557`). If Basecamp grows that loop, take both rules: two fields
+   instead of one, and `failed` as the absence of code.
+4. **No app port published on any host.** On every app host Pando runs `pando-agent`. It
+   listens on one mTLS port (7443), and only Pando's certificate is accepted. The
+   protocol is one line, `PANDO-AGENT/1 <container> <port>`, answered `OK` or `NO
+   <reason>`, and then bytes in both directions, so HTTP, WebSockets and SSE pass
+   unchanged. The agent refuses any target name that does not match `^pando-…` before it
+   resolves it, and reaches the container by name on Docker's network
+   (`internal/hostagent/agent.go`). Outpost publishes each app's port and then needs two
+   rulings to fence it: `FJS-D565` (loopback once a hostname is named) and `FJS-D930`
+   (the nftables `exposed` set). If Caddy reached containers by name on a Docker network,
+   both rulings would have nothing left to fence. Its cost is that Caddy, a systemd unit
+   on the host today, joins that network. Price it against the two rulings before
+   proposing it.
+5. **An egress gateway.** An app marked restricted gets `HTTP_PROXY` and `HTTPS_PROXY`
+   pointing at Pando's forward proxy on 3128, which lets traffic out only where the app's
+   rules allow (R-185–R-187, `internal/egress/`). No egress control was found in Outpost.
+   It matters once a fleet machine runs server code nobody here wrote. A blueprint from
+   a catalog is the first case.
+6. **What happens when a host is lost, stated as requirements.** A host that stops
+   answering makes its apps *unreachable*, not *failed*. They are not started elsewhere,
+   and a redeploy of one is refused until the host answers. A new app goes to the host
+   with the most free memory that fits it and never moves after that. Volumes outlive the
+   app (`ON DELETE RESTRICT`, R-204). A delete through the CLI, API or MCP takes a backup
+   unless `--force` (R-205). Check each against `AppServer`'s placement and `FJS-1782`'s
+   backups before replicas (row 8) are built, because replicas are where these answers
+   change.
+7. **A runtime as an adapter.** Docker, several Docker hosts, Kubernetes, and Incus with
+   one VM per app so no two apps share a kernel (`docs/reference.md` § Running apps on
+   Incus). Not owed now. A VM per app is the answer on record if Basecamp ever runs code
+   whose author it does not trust.
+
 ## Not taken
 
+- **Pando's append-only audit log by database grant** (no `UPDATE` or `DELETE` granted on
+  `audit_events`, and startup refuses to run otherwise). It is a Postgres mechanism.
+  Litestone's audit trail answers the same need its own way.
 - **SST's serverless model** (Live Lambda, `sst dev` proxying to the cloud, Pulumi state).
   Junction runs only on Bun and keeps its database on a local disk, so it has no
   Lambda shape to target.

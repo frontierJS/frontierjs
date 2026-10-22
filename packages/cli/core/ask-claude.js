@@ -163,6 +163,26 @@ export const ASK_RULES = [
   'The answer renders in a narrow console: keep it short and plain.',
 ].join('\n\n')
 
+// `:ask` (`IDEAS/one-console.md` Phase 5): an agent over the running app, its
+// only tools the app's MCP tools at the standing the pane declared
+// (`FJS-D1391`). The standing is in the URL the agent is handed, so no
+// sentence here can widen it.
+export const AGENT_SERVER = 'app'
+
+export const AGENT_RULES = [
+  'I asked from the :ask pane of the fli console, the FrontierJS control surface. You act on the running app through its MCP tools and nothing else.',
+  'The tools are what the standing I declared is offered, and the app grades every call as it grades that person\'s. A refusal is the app answering: report it as it came back, never work around it.',
+  'The answer renders in a narrow console: keep it short and plain.',
+].join('\n\n')
+
+/** One `:ask` question: the rules on a first question, the standing, the question. */
+export function agentPrompt({ question, as = '', tenant = '', followUp = false } = {}) {
+  const who = String(as).trim() ? `as ${String(as).trim()}` : 'as nobody, the guest standing'
+  const where = String(tenant).trim() ? `, in tenant ${String(tenant).trim()}` : ''
+  return [followUp ? null : AGENT_RULES, `Standing: ${who}${where}.`, `Question: ${String(question ?? '').trim().slice(0, 4000)}`]
+    .filter(Boolean).join('\n\n')
+}
+
 // A pasted essay is still a question, but not one a $2 budget should spend
 // its tokens re-reading on every turn.
 export const ASK_MAX_RULES = 4000
@@ -269,15 +289,34 @@ export function editEffort(kind, asked = null) {
 // which is what lets `claude --resume` from a workbench branch's folder find it;
 // a plain resume from there answers but stays filed under the old directory.
 // No `effort` leaves it to the account, which is what the workbench passes.
-export function askArgv({ session = null, edit = null, reads = [], work = null, fork = false, images = false, effort = null, model = null } = {}) {
-  const argv = askFlags({ session, edit, reads, work, fork })
+export function askArgv({ session = null, edit = null, reads = [], work = null, agent = null, fork = false, images = false, effort = null, model = null } = {}) {
+  const argv = askFlags({ session, edit, reads, work, agent, fork })
   if (effort) argv.push('--effort', effort)
   if (model)  argv.push('--model', model)
   if (images) argv.push('--input-format', 'stream-json')
   return argv
 }
 
-function askFlags({ session, edit, reads, work, fork }) {
+function askFlags({ session, edit, reads, work, agent, fork }) {
+  // AGENT is `:ask`: no built-in tool, one MCP server and every tool on it.
+  // `dontAsk` denies anything else rather than prompting, as in EDIT.
+  if (agent) {
+    const argv = [
+      '-p',
+      '--output-format',   'stream-json',
+      '--verbose',
+      '--settings',        JSON.stringify({ disableAllHooks: true }),
+      '--setting-sources', '',
+      '--permission-mode', 'dontAsk',
+      '--strict-mcp-config',
+      '--mcp-config',      JSON.stringify({ mcpServers: { [AGENT_SERVER]: { type: 'http', url: String(agent.url) } } }),
+      '--tools',           '',
+      '--allowedTools',    `mcp__${AGENT_SERVER}`,
+      '--max-budget-usd',  String(ASK_BUDGET_USD),
+    ]
+    if (session) argv.push('--resume', session)
+    return argv
+  }
   if (work) {
     const argv = [
       '-p',
@@ -428,7 +467,8 @@ export function editPrompt({ instruction, picks = [], page = null, followUp = fa
 // A tool call in one line: the part of its input a person would recognize.
 function toolLine(part) {
   const i = part.input ?? {}
-  const what = i.command ?? i.file_path ?? i.pattern ?? i.path ?? ''
+  // An app tool's input is the whole of what it was asked to do.
+  const what = i.command ?? i.file_path ?? i.pattern ?? i.path ?? (String(part.name).startsWith('mcp__') ? JSON.stringify(i) : '')
   return `${part.name}${what ? ` ${String(what).split('\n')[0].slice(0, 160)}` : ''}`
 }
 
@@ -487,7 +527,7 @@ export function readAskEvent(event) {
   }
   if (event.type === 'user') return (event.message?.content ?? [])
     .filter(part => part?.type === 'tool_result')
-    .map(part => part.is_error ? { type: 'refused', id: part.tool_use_id }
+    .map(part => part.is_error ? { type: 'refused', id: part.tool_use_id, text: resultText(part).slice(0, 400) }
       : { type: 'landed', id: part.tool_use_id, ...(CREATED.test(resultText(part)) ? { created: true } : {}) })
   if (event.type === 'result') return [{
     type:   'result',
@@ -505,13 +545,13 @@ export function readAskEvent(event) {
  * `{ child, done }` where `done` resolves to the exit code. Detached, so a stop
  * signals the group and takes a running `rg` with it.
  */
-export function runAsk({ root, prompt, session = null, edit = null, reads = [], images = [], effort = ASK_EFFORT, model = null, bin = 'claude', env = process.env, onEvent }) {
+export function runAsk({ root, prompt, session = null, edit = null, reads = [], agent = null, images = [], effort = ASK_EFFORT, model = null, bin = 'claude', env = process.env, onEvent }) {
   if (session && !SESSION_ID.test(String(session)))
     return { error: `not a session id: ${JSON.stringify(String(session).slice(0, 40))}` }
   if (!EFFORTS.includes(effort))
     return { error: `no such effort: ${JSON.stringify(String(effort).slice(0, 40))} — one of ${EFFORTS.join(', ')}` }
 
-  const child = spawn(bin, askArgv({ session, edit, reads, effort, model, images: images.length > 0 }), {
+  const child = spawn(bin, askArgv({ session, edit, reads, agent, effort, model, images: images.length > 0 }), {
     cwd: root, detached: true, env,
     stdio: ['pipe', 'pipe', 'pipe'],
   })

@@ -54,6 +54,8 @@
  * `('a','bc')` and `('ab','c')` must not produce one string.
  */
 
+import { seededPair } from './seeded.js'
+
 const ENCODER = new TextEncoder()
 
 /** Lower-case hex, the spelling every header in this repo uses. */
@@ -407,17 +409,22 @@ function fromBase64url(text) {
 /**
  * A key pair for `signRequest({ privateKey })`, both halves base64url. The one
  * export here that is not pure: it draws randomness, as `/ids` does, and reads
- * no clock.
+ * no clock. Given `seed`, 32 bytes, it draws none and the pair is the seed's
+ * (RFC 8032's private key), so a key written down as words is the same key
+ * when typed back.
  *
+ * @param {{ seed?: Uint8Array }} [opts]
  * @returns {Promise<{ publicKey: string, privateKey: string }>}
  */
-export async function generateSigningKeys() {
+export async function generateSigningKeys({ seed } = {}) {
+  if (seed) return seededPair('Ed25519', seed)
   const pair = await crypto.subtle.generateKey(ED25519, true, ['sign', 'verify'])
   return {
     publicKey:  toBase64url(await crypto.subtle.exportKey('raw', pair.publicKey)),
     privateKey: toBase64url(await crypto.subtle.exportKey('pkcs8', pair.privateKey)),
   }
 }
+
 
 async function ed25519Sign(privateKey, message) {
   const key = await crypto.subtle.importKey('pkcs8', fromBase64url(privateKey), ED25519, false, ['sign'])

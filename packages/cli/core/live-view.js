@@ -1,4 +1,4 @@
-// ─── live-view.js — the console's `:live`: the running app, through devtools ─
+// ─── live-view.js — the console's app panes: the running app, through devtools ─
 //
 // Devtools (junction's plugin) runs inside the app's process on the reserved
 // tooling slot and owns every reading: the call feed, the event bus, the
@@ -46,10 +46,36 @@ const carried = (search, keys) => {
   return q.size ? `?${q}` : ''
 }
 
+// ─── :ask ─────────────────────────────────────────────────────────────────
+//
+// The agent speaks MCP to devtools' `/api/mcp`, which the app's own `mcp()`
+// answers as the principal `?as=` names (`FJS-D1428`). The agent is a process
+// of this server's, not a page, so it is handed this URL directly; the pane
+// reads the same URL here for the tools that standing is offered.
+
+/** Where `:ask`'s agent is pointed, as `as` in `tenant`. */
+export const agentUrl = (search) => `http://${HOST}/api/mcp${carried(search, ['as', 'tenant'])}`
+
+async function offered(search) {
+  let res
+  try {
+    res = await fetch(agentUrl(search), {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+      body:    JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+    })
+  } catch (err) { return notRunning(err) }
+  const body = await res.json().catch(() => null)
+  if (!res.ok) return { status: res.status, body: body ?? { error: `/api/mcp answered ${res.status} with no JSON` } }
+  if (!body?.result) return { status: 502, body: { error: body?.error?.message ?? 'tools/list answered no result' } }
+  return { status: 200, body: { tools: (body.result.tools ?? []).map(t => ({ name: t.name, description: t.description ?? '' })) } }
+}
+
 /** One read: `health`, `metrics` (the metrics half of devtools' state),
- *  `call` (what `:call` may name, per service), `jobs`, or `data` (the
- *  schema's models) and `data/<Model>` (a page of its rows as somebody,
- *  for `:data`), whose query is carried by name. `{ status, body }`. */
+ *  `call` (what `:call` may name, per service), `ask` (the tools `:ask`'s
+ *  agent is offered as somebody), `jobs`, or `data` (the schema's models)
+ *  and `data/<Model>` (a page of its rows as somebody, for `:data`), whose
+ *  query is carried by name. `{ status, body }`. */
 export async function readLive(what, search = new URLSearchParams()) {
   if (what === 'health') return ask('/api/health')
   if (what === 'call')   return ask('/api/call')
@@ -57,6 +83,7 @@ export async function readLive(what, search = new URLSearchParams()) {
     const out = await ask('/api/state')
     return out.status === 200 ? { status: 200, body: out.body.metrics ?? {} } : out
   }
+  if (what === 'ask')  return offered(search)
   if (what === 'jobs') return ask(`/api/jobs${carried(search, JOB_QUERY)}`)
   if (what === 'data') return ask(`/api/data${carried(search, ['tenant'])}`)
   const rows = /^data\/([^/]+)$/.exec(what)

@@ -37,6 +37,8 @@
 //   GET  /api/live/data · /api/live/data/<Model>?as=&tenant= → rows as somebody (`:data`)
 //   POST /api/live/jobs/<id>/retry · …/cancel · /api/live/jobs/run/<name>
 //   POST /api/live/call       → one method as somebody, inside the app (`:call`)
+//   GET  /api/live/ask?as=&tenant= → the tools `:ask`'s agent is offered at that standing
+//   POST /api/live/ask        → one question to an agent over the app's MCP, as somebody (`:ask`)
 //
 // And the console, the same reads drawn by `.mesa` screens — `core/console.js`:
 //   GET  /console/            → the page; its modules under /console/ and /@fjs/
@@ -166,6 +168,9 @@ function route(req, res) {
   }
 
   // GET /api/live/… · POST /api/live/… — `:live`, `:call` and `:data`, devtools carried
+  if (req.method === 'POST' && path === '/api/live/ask') {
+    return handleLiveAsk(req, res)
+  }
   if (req.method === 'GET' && path === '/api/live/stream') {
     return import('./live-view.js').then(m => m.streamLive(res))
   }
@@ -1290,6 +1295,36 @@ async function handleAskClaude(req, res) {
 
   const emit = (event) => res.write(`data: ${JSON.stringify(event)}\n\n`)
   const out  = runAsk({ root: global.projectRoot, prompt, session, effort: body?.effort || undefined, onEvent: emit })
+  if (out.error) return json(res, 400, { error: out.error })
+
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })
+  asking = out.child
+  const code = await out.done
+  asking = null
+  emit({ type: 'done', code })
+  res.end()
+}
+
+// `:ask`: the same one-at-a-time Claude, pointed at the app instead of the
+// tree. Body: { question, as, tenant, session }.
+async function handleLiveAsk(req, res) {
+  const foreign = foreignOrigin(req)
+  if (foreign) return json(res, 403, { error: `the app's agent is not asked from ${foreign}` })
+  let body
+  try { body = await readBody(req) } catch { return json(res, 400, { error: 'Invalid JSON body' }) }
+  if (asking) return json(res, 409, { error: 'Claude is still answering' })
+  if (!String(body?.question ?? '').trim()) return json(res, 400, { error: 'ask a question' })
+
+  const { agentPrompt, runAsk } = await import('./ask-claude.js')
+  const { agentUrl }            = await import('./live-view.js')
+  const session = body?.session ? String(body.session) : null
+  const who     = new URLSearchParams()
+  if (typeof body?.as === 'string' && body.as.trim())         who.set('as', body.as.trim())
+  if (typeof body?.tenant === 'string' && body.tenant.trim()) who.set('tenant', body.tenant.trim())
+  const prompt = agentPrompt({ question: body.question, as: who.get('as') ?? '', tenant: who.get('tenant') ?? '', followUp: !!session })
+
+  const emit = (event) => res.write(`data: ${JSON.stringify(event)}\n\n`)
+  const out  = runAsk({ root: global.projectRoot, prompt, session, agent: { url: agentUrl(who) }, effort: 'low', onEvent: emit })
   if (out.error) return json(res, 400, { error: out.error })
 
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })

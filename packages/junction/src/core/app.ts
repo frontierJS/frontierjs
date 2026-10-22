@@ -223,6 +223,13 @@ export interface AppJobs {}
 export interface AppNotify {}
 
 /**
+ * The shape of `app.mcp`: the agent surface's one request, answered as a
+ * principal the caller names. Empty here so Junction keeps no dependency on
+ * @frontierjs/mcp; devtools' `/api/mcp` is its reader (`FJS-D1428`).
+ */
+export interface AppMcp {}
+
+/**
  * The slots of the batteries junction ships itself (`FJS-D639`, `FJS-D640`).
  *
  * The AppJobs contract, for the same reason: each battery augments its own slot
@@ -332,6 +339,9 @@ export interface App {
   // Job queue is provided by @frontierjs/caravan. Same augmentable-interface
   // rule as `conduit` above — never redeclare this property in the plugin.
   jobs:      AppJobs
+
+  // The agent surface, from @frontierjs/mcp. Same augmentable-interface rule.
+  mcp:       AppMcp
 
   // The outbox relay. `ctx.enqueue` refuses when it is absent — a row nothing
   // delivers is worse than a refusal.
@@ -936,6 +946,7 @@ const APP_SLOTS = {
   ai:              "app.configure(ai({ registry })) from '@frontierjs/junction/ai'",
   conduit:         "app.configure(conduit()) from '@frontierjs/conduit'",
   jobs:            "app.configure(caravan()) from '@frontierjs/caravan'",
+  mcp:             "app.configure(mcp()) from '@frontierjs/mcp'",
   outbox:          'app.configure(outbox())',
   commitments:     'app.configure(commitments())',
   notify:          "app.configure(notifications(...)) from '@frontierjs/notifications'",

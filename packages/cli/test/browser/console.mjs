@@ -11,7 +11,10 @@
  * creates a note as a member, sees the call and its announcement on `:live`,
  * and sees the same create as nobody refused. `:data` (3.3) reads the same
  * app: both frames count its models, then Chrome reads a gated model as
- * nobody (refused) and as a member (the row).
+ * nobody (refused) and as a member (the row). `:ask` (5.1) points an agent
+ * at the same app as somebody: both frames count its tools, then Chrome
+ * sees a guest offered fewer, its create refused by the app, and a member's
+ * land. The agent is a stand-in `claude` that makes the MCP call it is asked.
  *
  * `Console.mesa` is one file compiled for two targets, and the claim the console
  * rests on is that a person at either sees the same thing. Nothing else asks
@@ -75,6 +78,41 @@ for (const [port, what, knob] of [[PORT, 'the console', 'FLI_CONSOLE_TEST_PORT']
   }
 }
 
+// ─── the agent `:ask` starts ──────────────────────────────────────────
+//
+// A `claude` first on the console's PATH, since the real one costs money and
+// a login. It is handed what the real one is — the argv, the prompt on stdin
+// — and makes the call the question names over the MCP config it was given,
+// so the standing the call is graded at is the URL's and nothing this drive
+// says. It answers in Claude Code's stream-json.
+
+const binDir = mkdtempSync(join(tmpdir(), 'fjs-console-claude-'))
+writeFileSync(join(binDir, 'claude'), `#!/usr/bin/env bun
+const argv   = process.argv.slice(2)
+const server = Object.values(JSON.parse(argv[argv.indexOf('--mcp-config') + 1]).mcpServers)[0]
+const out    = (e) => process.stdout.write(JSON.stringify(e) + '\\n')
+const say    = (text) => out({ type: 'assistant', message: { content: [{ type: 'text', text }] } })
+const rpc    = (method, params) => fetch(server.url, {
+  method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+  body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+}).then(r => r.json())
+const prompt = await Bun.stdin.text()
+out({ type: 'system', subtype: 'init', session_id: '5acea7bb-3850-44cf-81dc-97688510acda' })
+const bare = argv[argv.indexOf('--tools') + 1] === '' && argv.includes('--strict-mcp-config') && argv[argv.indexOf('--allowedTools') + 1] === 'mcp__app'
+if (!bare) say('argv: more than the app is reachable')
+const [, name, input] = /^Question: call (\\S+) (.*)$/m.exec(prompt) ?? []
+const listed = (await rpc('tools/list', {})).result?.tools ?? []
+if (!listed.some(t => t.name === name)) say(name + ' is not offered at this standing')
+else {
+  const args = JSON.parse(input)
+  out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'mcp__app__' + name, input: args }] } })
+  const r = (await rpc('tools/call', { name, arguments: args })).result ?? {}
+  out({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: !!r.isError, content: r.content ?? [] }] } })
+  say(r.isError ? 'the app refused it' : 'done')
+}
+out({ type: 'result', subtype: 'success', is_error: false, num_turns: 2, total_cost_usd: 0 })
+`, { mode: 0o755 })
+
 // ─── the app `:live` reads ────────────────────────────────────────────
 //
 // A separate process: devtools binds its own server, held for the app's life.
@@ -88,6 +126,7 @@ writeFileSync(join(appDir, 'app.ts'), `
 import { createClient } from '${PKG}/litestone/src/index.js'
 import { createApp, createService, createStubAuth, health, defaultConfig } from '${PKG}/junction/index.ts'
 import { devtools } from '${PKG}/junction/src/plugins/devtools/index.ts'
+import { mcp } from '${PKG}/mcp/index.ts'
 import { caravan, defineJob } from '${PKG}/caravan/src/index.ts'
 let runs = 0
 const flaky = defineJob({ name: 'flaky-job', maxAttempts: 1, timeout: 5000, handler: async () => {
@@ -114,8 +153,10 @@ queue.handle(flaky); queue.handle(sweep)
 app.configure(queue)
 app.configure(health())
 app.configure(devtools({ port: ${DEVTOOLS} }))
+app.configure(mcp())
 app.services.register(createService({ name: 'things', async find() { return [] } }))
 app.services.register(createService({ name: 'notes', model: 'Note' }))
+app.services.register(createService({ name: 'memos', model: 'Memo' }))
 await app.start()
 await queue.dispatch(flaky, { orderId: 'ord_42' })
 console.log('READY')
@@ -240,6 +281,7 @@ const PANES = [
   ['live',   '6', ['calls', 'jobs']],
   ['call',   '7', ['methods']],
   ['data',   '8', ['models']],
+  ['ask',    '9', ['tools']],
 ]
 
 // The legend is the footer's last line in the terminal and `[data-legend]` in
@@ -265,7 +307,7 @@ async function press(k) {
 // ─── the terminal frame: `fli gui` under a pty ────────────────────────
 
 const pty = spawn('script', ['-qfec', `stty rows ${ROWS} cols ${COLS}; bun ${FLI} gui --port ${PORT} --devtools-port ${DEVTOOLS}`, '/dev/null'], {
-  cwd: REPO, stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, TERM: 'xterm-256color' },
+  cwd: REPO, stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, TERM: 'xterm-256color', PATH: `${binDir}:${process.env.PATH}` },
 })
 let out = ''
 pty.stdout.on('data', (d) => { out += d })
@@ -307,7 +349,7 @@ try {
 
   // ─── the keys: the legend, then a filter typed into both ───────────
 
-  await legendsAgree(':run', ['1–8 the panes', ': go to a pane', '/ filter', 'r read again'])
+  await legendsAgree(':run', ['1–9 the panes', ': go to a pane', '/ filter', 'r read again'])
 
   const TERM = 'drive'
   for (const k of ['/', ...TERM, 'Enter']) await press(k)
@@ -337,7 +379,7 @@ try {
       const term = squash(line()?.slice(part.length) ?? '')
       check(firstNumber(term) !== null && firstNumber(term) === firstNumber(web), `:${pane} — both frames count the same ${part} (${firstNumber(web)})`, `terminal ${JSON.stringify(term)} ≠ browser ${JSON.stringify(web)}`)
     }
-    await legendsAgree(`:${pane}`, ['1–8 the panes', pane === 'check' ? 'r check again' : 'r read again'])
+    await legendsAgree(`:${pane}`, ['1–9 the panes', pane === 'check' ? 'r check again' : 'r read again'])
   }
 
   // ─── :call, as a member and as nobody (Chrome) ────────────────────
@@ -412,6 +454,45 @@ try {
   check(seen?.answer === 'ok' && seen.total === '0', ':data — a guest reading Note is answered and shown no row, by the policy', JSON.stringify(seen))
   seen = await rowsFor('Note', 'ann@x.test')
   check(seen?.answer === 'ok' && seen.text.includes('from :call'), ':data — a member reading Note sees the note :call wrote', JSON.stringify(seen))
+
+  // ─── :ask, as nobody and as a member (Chrome) ─────────────────────
+  //
+  // The agent is graded at the standing the pane names: a guest is offered
+  // fewer tools, is refused a write the policy keeps for a person, and is
+  // never offered the gated model's; a member's same write lands.
+
+  await press('9')
+  const tools  = () => browser.evaluate(`return [...document.querySelectorAll('[data-tool]')].map(t => t.dataset.tool)`)
+  const offeredAs = async (as) => {
+    await field('as', as)
+    await browser.evaluate(`document.querySelector('[data-ask-fresh]').click(); return true`)
+    const label = as ? `as ${as}` : 'as nobody'
+    await until(() => browser.evaluate(`return document.querySelector('[data-part="tools"] .bar span')?.textContent.includes('${label}')`), 8000)
+    return tools()
+  }
+  const guest = await offeredAs('')
+  const member = await offeredAs('ann@x.test')
+  const create = guest.find((t) => t.includes('notes') && t.includes('create'))
+  const memos  = member.find((t) => t.includes('memos') && t.includes('find'))
+  check(!!create && !!memos && !guest.includes(memos) && member.length > guest.length,
+    `:ask — the tools are the standing's: a member is offered ${memos}, a guest is not (${guest.length} < ${member.length})`, JSON.stringify({ guest, member }))
+  const asked = async (as, question) => {
+    await field('as', as)
+    await browser.evaluate(`document.querySelector('[data-ask-fresh]').click(); return true`)
+    await field('question', question)
+    await browser.evaluate(`document.querySelector('[data-ask-go]').click(); return true`)
+    await until(() => browser.evaluate(`return !!document.querySelector('[data-line="result"]')`), 15000)
+    return browser.evaluate(`return Object.fromEntries(['you', 'tool', 'refused', 'text', 'error', 'result'].map(k => [k, [...document.querySelectorAll('[data-line="' + k + '"]')].map(l => l.textContent)]))`)
+  }
+  let talk = await asked('', `call ${create} {"body":"from :ask"}`)
+  check(talk.tool.length === 1 && talk.refused.length === 1 && !talk.error.length && !talk.text.some((t) => t.startsWith('argv')),
+    ':ask — a guest agent\'s create is made through the app\'s MCP and refused by the app', JSON.stringify(talk))
+  talk = await asked('', `call ${memos} {}`)
+  check(!talk.tool.length && talk.text.some((t) => t.includes('not offered')), ':ask — a guest agent is not offered the gated model at all', JSON.stringify(talk))
+  talk = await asked('ann@x.test', `call ${create} {"body":"from :ask"}`)
+  check(talk.tool.length === 1 && !talk.refused.length && talk.text.includes('done'), ':ask — the same create as a member lands', JSON.stringify(talk))
+  check(await until(async () => (await (await fetch(`http://127.0.0.1:${DEVTOOLS}/api/data/Note?as=ann%40x.test`)).json()).rows?.some((r) => r.body === 'from :ask'), 5000),
+    ':ask — the member agent\'s note is in the app')
 
   // `:` and a unique prefix, back to the first pane.
   for (const k of [':', 'r', 'u', 'Enter']) await press(k)

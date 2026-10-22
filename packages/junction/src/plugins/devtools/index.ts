@@ -19,7 +19,7 @@
 import { isListResult } from '../../core/envelope.ts'
 import { collectHealth, collectMetrics } from '../../transport/health.ts'
 import { isDevelopmentEnv } from '../../core/errors.ts'
-import { callAs, callable, readable, rowsAs, type CallRequest } from '../../core/call-as.ts'
+import { actAs, callAs, callable, readable, rowsAs, type CallRequest } from '../../core/call-as.ts'
 
 export interface DevtoolsOptions {
   /**
@@ -467,6 +467,32 @@ export function devtools(opts: DevtoolsOptions = {}) {
               tenant: typeof body.tenant === 'string' ? body.tenant : undefined,
             })
             return Response.json(out, { status: out.ok ? 200 : out.status })
+          }
+
+          // ── The agent surface, as somebody ──────────────────────────
+          // The console's `:ask`: an MCP client pointed here is answered by
+          // the app's own `mcp()` as the principal `?as=` names, so its tool
+          // list and every call are graded at that declared standing and
+          // never at the developer's (`FJS-D1391`, `FJS-D1428`). Refused
+          // outside development for the reason a call is.
+          if (url.pathname === '/api/mcp') {
+            if (!('mcp' in app)) {
+              return Response.json({
+                ok: false, status: 404, message: "this app serves no agent surface — add app.configure(mcp()) from '@frontierjs/mcp'",
+              }, { status: 404 })
+            }
+            if (isProd) {
+              return Response.json({
+                ok: false, status: 403,
+                message: 'devtools answers an agent as somebody only in development; in production an agent signs in like any caller',
+              }, { status: 403 })
+            }
+            // Typed by @frontierjs/mcp's augmentation, which junction never loads.
+            const agent = app.mcp as unknown as { answer(req: Request, user: unknown): Promise<Response> }
+            const p     = url.searchParams
+            const out   = await actAs(app, { as: p.get('as') || undefined, tenant: p.get('tenant') || undefined },
+              user => agent.answer(req, user))
+            return out.ok ? out.result : Response.json(out, { status: out.status })
           }
 
           // ── Rows, as somebody ───────────────────────────────────────

@@ -172,6 +172,23 @@ const asWhom = <T>(app: App, who: Standing, fn: () => Promise<T>): Promise<T> =>
   ? app.runAs(who.userId, who.scope, fn)
   : app.runAs(null, who.scope, () => reenterAs(null, fn))
 
+// ─── anything else, as somebody ─────────────────────────────────────────
+//
+// The console's `:ask`: one MCP request answered as a declared principal
+// (`FJS-D1428`). `fn` is handed the principal in scope, which the mcp plugin
+// grades its tool list and its calls by, as it grades a session's.
+
+export type AsOutcome<T> =
+  | { ok: true;  standing: string; result: T }
+  | { ok: false; status: number; message: string }
+
+/** Run `fn` as somebody. Throws only what `fn` throws. */
+export async function actAs<T>(app: App, req: { as?: string; tenant?: string }, fn: (user: unknown) => Promise<T>): Promise<AsOutcome<T>> {
+  const who = await standingOf(app, req)
+  if ('status' in who) return { ok: false, status: who.status, message: who.message }
+  return { ok: true, standing: who.standing, result: await asWhom(app, who, () => fn(app.principal())) }
+}
+
 // ─── rows, as somebody ───────────────────────────────────────────────────
 //
 // The console's `:data`: a model's rows through the app's own client, in the

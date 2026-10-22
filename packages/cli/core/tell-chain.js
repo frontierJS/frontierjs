@@ -12,11 +12,14 @@
 // `root`, signed by the machine it names; its sealing key is the member's.
 // A `link` adds `machine`, signed by a machine already in the chain and
 // countersigned (`rsig`) by the one it adds, so neither machine is added
-// without the other (FJS-D1418). A `revoke` takes `machine` out, signed by
-// any machine in the chain, and carries the member's new sealing key, since
-// the machine taken out holds the old one (FJS-D1419). `seq` counts from 1
-// and `prev` is the hash of the link before, so a chain cut short or forked
-// shows against the head a client pinned.
+// without the other (FJS-D1418). A `paper` is a `link` whose machine is a
+// key printed as words (FJS-D1420), marked so the member can tell it from a
+// machine; it links and revokes as any machine does. A `revoke` takes
+// `machine` out, signed by any machine in the chain, and carries the member's
+// new sealing key, since the machine taken out holds the old one
+// (FJS-D1419). `seq` counts from 1 and `prev` is the hash of the link
+// before, so a chain cut short or forked shows against the head a client
+// pinned.
 //
 // A machine's box key is its own X25519 pair, never copied off it: when a
 // revoke rotates the sealing key, the new pair is sealed to the box key of
@@ -51,7 +54,7 @@ export const rootLink = async (keys) => {
 
 /**
  * The link after the chain `links` ends on, signed by this machine: a `link`
- * adding `machine`, which the new machine countersigns with `countersign`
+ * or a `paper` adding `machine`, which the new machine countersigns with `countersign`
  * before the chain is published and which verifies nowhere until then, or a
  * `revoke` taking it out with the member's new `sealKey`.
  */
@@ -84,8 +87,9 @@ export const verifyBox = (machine, claim) =>
 
 /**
  * What a chain says, once every link verifies: `{ root, seq, head, hashes,
- * machines, revoked, sealKey }`, `hashes[i]` the hash of link `i + 1`,
- * `machines` the signing keys that speak for the member now and `revoked`
+ * machines, papers, revoked, sealKey }`, `hashes[i]` the hash of link `i + 1`,
+ * `machines` the signing keys that speak for the member now, `papers` those of
+ * them that are paper keys, and `revoked`
  * `{ machine, seq }` for each taken out. `{ refused }` naming the
  * first link that fails, for anything else — a chain arrives from somebody
  * else, so nothing in it is trusted before it verifies.
@@ -95,6 +99,7 @@ export async function readChain(links) {
   if (links.length > LINKS_MAX) return { refused: `a chain is at most ${LINKS_MAX} links` }
   const hashes = []
   let machines = []
+  let papers = []
   let revoked = []
   let sealKey = null
   for (const [i, link] of links.entries()) {
@@ -111,18 +116,20 @@ export async function readChain(links) {
       if (typeof link.sealKey !== 'string' || !link.sealKey) return { refused: 'the root carries no sealing key' }
       machines = [link.machine]
       sealKey = link.sealKey
-    } else if (link.kind === 'link') {
+    } else if (link.kind === 'link' || link.kind === 'paper') {
       if (typeof link.machine !== 'string' || !link.machine) return { refused: `${at} names no machine` }
       if (machines.includes(link.machine)) return { refused: `${at} links a machine already in the chain` }
       if (revoked.some(r => r.machine === link.machine)) return { refused: `${at} links a machine revoked from the chain, whose key is not to be trusted again` }
       if (link.sealKey) return { refused: `${at} carries a sealing key, which a link does not change` }
       if (!await verifyMessage({ publicKey: link.machine, signature: link.rsig, message: linkMessage(link) })) return { refused: `${at} is not countersigned by the machine it links` }
       machines = [...machines, link.machine]
+      if (link.kind === 'paper') papers = [...papers, link.machine]
     } else if (link.kind === 'revoke') {
       if (!machines.includes(link.machine)) return { refused: `${at} revokes a machine not in the chain` }
       if (machines.length === 1) return { refused: `${at} revokes the chain's last machine` }
       if (typeof link.sealKey !== 'string' || !link.sealKey || link.sealKey === sealKey) return { refused: `${at} does not rotate the sealing key, which the revoked machine holds` }
       machines = machines.filter(m => m !== link.machine)
+      papers = papers.filter(m => m !== link.machine)
       revoked = [...revoked, { machine: link.machine, seq: link.seq }]
       sealKey = link.sealKey
     } else {
@@ -130,7 +137,7 @@ export async function readChain(links) {
     }
     hashes.push(await linkHash(link))
   }
-  return { root: hashes[0], seq: links.length, head: hashes.at(-1), hashes, machines, revoked, sealKey }
+  return { root: hashes[0], seq: links.length, head: hashes.at(-1), hashes, machines, papers, revoked, sealKey }
 }
 
 /**
