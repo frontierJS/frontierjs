@@ -235,6 +235,7 @@ src/
     databases.js — the database registry, and the handles over a connection: statement cache, @big, @map
     transaction.js — $transaction: nesting by async context, read routing while one is open
     locks.js — $lock / $locks: the advisory-lock primitive over the _locks table
+    introspect.js — the `$`-introspection surface: $checkWhere … $claimsFor, built once over the root ctx and handed to every flavor
     stamps.js — what a write fills in: generated defaults, @createdBy/@updatedBy, @sequence
     computed.js — @computed: load, normalize, apply to a read row
     field-policy.js — field @allow(read) applied to read rows
