@@ -400,12 +400,14 @@ export class SlackDriver implements NotificationDriver {
 
   constructor(private opts: { webhookUrl: string }) {}
 
-  async send(recipient: Recipient, message: unknown, app: App): Promise<void> {
-    await fetch(this.opts.webhookUrl, {
+  async send(recipient: Recipient, message: unknown, app: App): Promise<unknown> {
+    const res = await fetch(this.opts.webhookUrl, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(message),
     })
+    if (!res.ok) throw new Error(`slack answered ${res.status}`)
+    return { ts: (await res.json()).ts }
   }
 
   /** Optional — awaited once on app shutdown. */
@@ -430,6 +432,8 @@ export default defineNotification<Order>({
   slack: (order) => ({ text: `New order #${order.id} received.` }),
 })
 ```
+
+**What `send()` answers, `notify()` answers back.** `await app.notify(…)` resolves to `{ [transport]: answer }` for every registered driver that answered something — the vendor's message id, which a later delivery receipt names. A refusal throws; a driver that must say whether the send may still have gone out throws an error class of its own, and the caller finds it in `NotificationDeliveryError.failures[].error`. The error also carries `receipts` for the transports that did land. `notify()` writes nothing to stderr on a failure: the error holds every one, so a caller that handles an expected refusal prints nothing.
 
 ### Web Push
 
@@ -464,7 +468,7 @@ The UI half is a resource file whose data half is `<script module>`, per Invaria
 
 - `notifications` — `createResource('notifications', { model: 'Notification' })`; `.tethered({ state: 'local' })` is the live list, `.service` the client
 - `isUnread(n)` — what the bell counts and the list styles
-- `markRead(id)` — `service.patch(id, { readAt })`
+- `markRead(id)` — `notifications.mutate(id, { readAt }, run)`, `run` being `service.patch(id, { readAt })`. **A write goes through `mutate`, never `service` alone**: the tether moves only on pushed frames and a patch pushes none to a per-person channel, so a bare service call leaves the row unread in every list that holds it and the bell's count holds until a reload.
 
 Real-time needs no code, given two things on the server: the `channels()` plugin, and a connection joined to `notifications:user:<id>`. The inApp driver pushes `notifications created` there, and the client routes a frame to a tether only as `<service> <verb>` — which is why the app mounts the list as the `notifications` service.
 

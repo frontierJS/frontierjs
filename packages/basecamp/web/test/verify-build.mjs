@@ -47,8 +47,19 @@ const PKG  = join(HERE, '../..')
 const DIST = join(PKG, 'web/dist/client')
 
 const API_PORT = await portFor(import.meta.url, 'be', { env: 'dev' })
-const PORT     = Number(process.env.PREVIEW_PORT ?? 5311)
+const PORT     = Number(process.env.PREVIEW_PORT ?? await portFor(import.meta.url, 'fe', { env: 'dev', service: 1 }))
 const UI       = `http://localhost:${PORT}`
+
+// A port that answers is not evidence the right process holds it: a preview
+// left from another checkout would serve ITS build to these assertions.
+for (const [port, what] of [[API_PORT, 'the API'], [PORT, 'the preview server']]) {
+  let busy = false
+  try { await fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(500) }); busy = true } catch {}
+  if (busy) {
+    console.error(`\n  port ${port} already answers — refusing to test whatever holds it instead of ${what}.\n`)
+    process.exit(1)
+  }
+}
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const children = []

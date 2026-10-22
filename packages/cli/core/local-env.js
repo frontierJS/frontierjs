@@ -38,3 +38,25 @@ export function containerEnvOverrides(text, mountDir) {
   }
   return out
 }
+
+const SQLITE_FILE = /\.(db|sqlite3?)$/
+
+/**
+ * The variables of a deploy env file that name a database outside the volume the
+ * container keeps across a swap. The main database and the audit trail are named
+ * by their variables; any other `*_PATH` is one only when it points at a SQLite
+ * file, since `UPLOAD_PATH` is not a database. A relative value is not graded: it
+ * is re-rooted by the image, not written by the operator.
+ *
+ * @returns {{ key: string, value: string }[]}
+ */
+export function strayDatabasePaths(text, mountDir) {
+  const dir = mountDir.replace(/\/$/, '')
+  const out = []
+  for (const [key, value] of Object.entries(parseEnvText(String(text ?? '')))) {
+    if (!value.startsWith('/') || value === dir || value.startsWith(dir + '/')) continue
+    const named = key === 'DATABASE_URL' || key === 'AUDIT_PATH'
+    if (named || (key.endsWith('_PATH') && SQLITE_FILE.test(value))) out.push({ key, value })
+  }
+  return out
+}

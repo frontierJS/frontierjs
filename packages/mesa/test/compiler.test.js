@@ -687,6 +687,11 @@ describe('compile() output shape', () => {
       const out = await cx(`<script>let q = ''; const results = await search(q);</script><p>{results}</p>`)
       expect(out).toContain('search($$runtime.get($$sig_q))')
     })
+    it('async derived reads the pending of an awaited const it depends on (FJS-3390)', async () => {
+      const out = await cx(`<script>let x = 1; const a = await f(x); const b = await g(a);</script><p>{$async.b.pending}{b}</p>`)
+      expect(out).toContain('const $$async_b = $$runtime.makeAsyncState([$$async_a]);')
+      expect(out).toContain('const $$async_a = $$runtime.makeAsyncState();')
+    })
     it('async derived result is a signal', async () => {
       const out = await cx(`<script>let q = ''; const results = await search(q);</script><p>{results}</p>`)
       expect(out).toContain('$$sig_results')

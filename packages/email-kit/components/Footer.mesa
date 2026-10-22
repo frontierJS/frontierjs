@@ -1,4 +1,7 @@
 <script>
+  import { refuseCell } from './slot-guard.js'
+  const emailCell = $context.emailCell
+  refuseCell('Footer', emailCell)
   export let company      = ''
   export let address      = ''
   export let unsubscribe  = ''    // unsubscribe URL

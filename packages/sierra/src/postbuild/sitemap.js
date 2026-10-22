@@ -59,7 +59,12 @@ function encodePath(path) {
  * @returns {Promise<string>}
  */
 export async function generateSitemap(indexed, outDir, siteUrl = '', routeMeta = {}) {
-  const today = new Date().toISOString().split('T')[0]
+  // SOURCE_DATE_EPOCH (reproducible-builds.org) pins the date: today's digits
+  // compress differently from yesterday's, so an unpinned sitemap moves a byte
+  // count that gates a build.
+  const epoch = Number(process.env.SOURCE_DATE_EPOCH)
+  const today = (Number.isFinite(epoch) && process.env.SOURCE_DATE_EPOCH ? new Date(epoch * 1000) : new Date())
+    .toISOString().split('T')[0]
   const base = siteUrl.replace(/\/$/, '')
 
   const urls = indexed.map(path => {

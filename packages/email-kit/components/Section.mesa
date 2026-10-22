@@ -1,4 +1,5 @@
 <script>
+  $context.emailCell = false    // this is a table, so rows below it are in one
   export let bgcolor  = undefined   // background color for the section
   // Spacer rows go INSIDE the section table. Emitted as siblings of it they
   // have no table ancestor, so every client discards them and the padding

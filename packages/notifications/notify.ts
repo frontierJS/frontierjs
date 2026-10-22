@@ -1,5 +1,7 @@
 import { BUILT_IN_TRANSPORTS } from './types.ts'
-import type { App, InAppMessage, MailMessage, Recipient, TransportError } from './types.ts'
+import type {
+  App, InAppMessage, MailMessage, NotificationReceipts, Recipient, TransportError,
+} from './types.ts'
 import type { Notification } from './notification.ts'
 import { stateOf, type NotificationsState } from './state.ts'
 import {
@@ -73,7 +75,8 @@ async function materialize(message: unknown): Promise<unknown> {
  *      - the recipient cannot be addressed on it (NotificationRecipientError)
  *   3. Deliver inApp first; if it fails, send nothing else. Then the rest in
  *      parallel via Promise.allSettled — a failed email does not block the record
- *   4. Collect failures, throw NotificationDeliveryError if any failed
+ *   4. Answer each driver's receipt by transport; if any transport failed, throw
+ *      NotificationDeliveryError carrying the failures and the receipts that landed
  *
  * The formatted message is carried from step 2 into step 3. It used to be
  * built twice — once to check the method existed, once to deliver — so a
@@ -84,7 +87,7 @@ export async function notify(
   recipient:    Recipient,
   notification: Notification,
   app:          App
-): Promise<void> {
+): Promise<NotificationReceipts> {
   const state            = stateOf(app)
   const transports       = notification.via(recipient)
   const notificationType = notification.notificationType
@@ -133,14 +136,18 @@ export async function notify(
   // else leaves, and its failure holds the rest back. The other direction
   // stays isolated -- a failed email never blocks the record.
   const failures: TransportError[] = []
+  const receipts: NotificationReceipts = {}
   const record = transports.includes('inApp') ? 'inApp' : undefined
   const deliver = (transport: string) =>
     deliverTransport(transport, recipient, notification, messages.get(transport), key, app, state)
+  const keep = (transport: string, receipt: unknown) => {
+    if (receipt !== undefined) receipts[transport] = receipt
+  }
 
   let held = false
   if (record) {
     try {
-      await deliver(record)
+      keep(record, await deliver(record))
     } catch (error) {
       failures.push({ transport: record, error })
       held = true
@@ -156,21 +163,17 @@ export async function notify(
       const result = results[i]
       if (result.status === 'rejected') {
         failures.push({ transport: rest[i], error: result.reason })
+      } else {
+        keep(rest[i], result.value)
       }
     }
   }
 
-  if (failures.length > 0) {
-    // Log each failed transport with full detail before throwing
-    for (const failure of failures) {
-      console.error(
-        `[notifications] transport "${failure.transport}" failed for ` +
-        `${notificationType} → recipient ${recipient.id ?? recipient.email ?? '(unaddressed)'}:`,
-        failure.error
-      )
-    }
-    throw new NotificationDeliveryError(notificationType, failures)
-  }
+  // Not logged here: the error carries every failure, and a caller that handles
+  // an expected refusal (a landline, an account with no number) would print a
+  // stack trace per recipient for an answer it already has.
+  if (failures.length > 0) throw new NotificationDeliveryError(notificationType, failures, receipts)
+  return receipts
 }
 
 // ─── Addressability ──────────────────────────────────────────────────────────
@@ -228,7 +231,7 @@ async function deliverTransport(
   key:          string | undefined,
   app:          App,
   state:        NotificationsState,
-): Promise<void> {
+): Promise<unknown> {
   // A registered driver always wins, including for a built-in transport name.
   // Previously the switch ran first, so a custom `inApp` driver was accepted by
   // the plugin, stored in the registry, and then never consulted — the built-in
@@ -236,8 +239,7 @@ async function deliverTransport(
   // should not lose to a default.
   const driver = state.drivers.get(transport)
   if (driver) {
-    await driver.send(recipient, message, app)
-    return
+    return driver.send(recipient, message, app)
   }
 
   switch (transport) {

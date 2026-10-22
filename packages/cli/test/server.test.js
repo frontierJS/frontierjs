@@ -9,6 +9,11 @@ const __dir = dirname(fileURLToPath(import.meta.url))
 global.fliRoot     = resolve(__dir, '..')
 global.projectRoot = resolve(__dir, '..')
 
+// The user command source reads XDG_CONFIG_HOME, and a developer's own
+// commands there would show up as `_source: 'user'` in every list assertion.
+const XDG = mkdtempSync(join(tmpdir(), 'fli-xdg-'))
+process.env.XDG_CONFIG_HOME = XDG
+
 // Use a port that won't clash with a running dev server
 process.env.FLI_PORT = '13141'
 const PORT = 13141
@@ -41,6 +46,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   server?.close()
+  rmSync(XDG, { recursive: true, force: true })
 })
 
 // ─── Helper: collect all SSE events from a streaming response ─────────────────

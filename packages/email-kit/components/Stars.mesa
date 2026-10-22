@@ -1,5 +1,7 @@
 <script>
-  import { refuseChildren } from './slot-guard.js'
+  import { refuseChildren, refuseCell } from './slot-guard.js'
+  const emailCell = $context.emailCell
+  refuseCell('Stars', emailCell)
   refuseChildren('Stars', $.slots, "Pass `count`, and `total` if the scale is not five.")
   export let count  = 5     // number of filled stars (0–5)
   export let total  = 5     // total stars shown

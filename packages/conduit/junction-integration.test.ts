@@ -810,6 +810,8 @@ describe('a claimed mirror model forwards its generated writes', () => {
       await app._startForTest()
       const refused = await request(app).post('/posts').auth('test-token-u1').send({ channelExternalId: 'c1', message: 'refuse me' })
       expect(refused.status).toBe(422)
+      // FJS-3411: the Provider's own reason is the half a caller can act on.
+      expect((refused.body as { message: string }).message).toContain('text is not allowed')
       const unbuilt = await request(app).post('/posts').auth('test-token-u1').send({ channelExternalId: 'c1', message: '' })
       expect(unbuilt.status).toBe(400)
       expect((unbuilt.body as { message: string }).message).toContain('message is required')

@@ -7,7 +7,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { readFileSync } from 'fs'
-import { parseEnvText, containerEnvOverrides } from '../core/local-env.js'
+import { parseEnvText, containerEnvOverrides, strayDatabasePaths } from '../core/local-env.js'
 
 const LOCAL = readFileSync(new URL('../commands/deploy/local.md', import.meta.url), 'utf8')
 
@@ -36,5 +36,40 @@ describe('the shipped command applies them', () => {
     const run = LOCAL.slice(LOCAL.indexOf('const runCmd = ['), LOCAL.indexOf('$.exec({ command: runCmd })'))
     expect(run).toContain('overrideArgs')
     expect(run.indexOf('overrideArgs')).toBeGreaterThan(run.indexOf('envArg'))
+  })
+})
+
+// FJS-3438. The server's env file is the operator's and the container reads it
+// whole, so a database path outside the mount is the container's own layer.
+describe('strayDatabasePaths', () => {
+  test('DATABASE_URL and AUDIT_PATH naming an absolute path outside the mount are stray', () => {
+    const text = 'DATABASE_URL=/data/app.db\nAUDIT_PATH="/data/audit.db"\n'
+    expect(strayDatabasePaths(text, '/db')).toEqual([
+      { key: 'DATABASE_URL', value: '/data/app.db' },
+      { key: 'AUDIT_PATH', value: '/data/audit.db' },
+    ])
+  })
+
+  test('a path under the mount, a relative one and a non-path are not', () => {
+    const text = 'DATABASE_URL=/db/app.db\nAUDIT_PATH=/db/audit/\nX_PATH=db/x.db\nDATABASE_URL_2=postgres://h/x\nNAME=/data/app.db\n'
+    expect(strayDatabasePaths(text, '/db')).toEqual([])
+  })
+
+  test('another *_PATH is stray only when it names a SQLite file', () => {
+    const text = 'JOBS_PATH=/data/jobs.sqlite3\nUPLOAD_PATH=/data/uploads\nPATH=/usr/bin\n'
+    expect(strayDatabasePaths(text, '/db')).toEqual([{ key: 'JOBS_PATH', value: '/data/jobs.sqlite3' }])
+  })
+})
+
+describe('the shipped steps grade the server env file', () => {
+  test('01b-env-check asks strayDatabasePaths before it can pass', () => {
+    const step = readFileSync(new URL('../commands/deploy/_steps-docker/01b-env-check.md', import.meta.url), 'utf8')
+    expect(step).toContain('strayDatabasePaths(serverEnv, CONTAINER_DB_DIR)')
+    expect(step.indexOf('strayDatabasePaths')).toBeLessThan(step.indexOf('log.success(`Env check: all'))
+  })
+
+  test('03-directories names the local file before it seeds from it', () => {
+    const step = readFileSync(new URL('../commands/deploy/_steps-setup/03-directories.md', import.meta.url), 'utf8')
+    expect(step).toContain('strayDatabasePaths(')
   })
 })

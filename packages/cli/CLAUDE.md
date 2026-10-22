@@ -104,7 +104,8 @@ core/
   bun-fence.js  a temp `BUN_INSTALL` for a run that scaffolds `--source local`,
                 whose `bun link` otherwise re-points the machine's global `fli`
                 at this tree. `scripts/ci.mjs` and `scaffold-build.mjs` fence
-                themselves at start (`FJS-1364`)
+                themselves at start (`FJS-1364`), and a fix-loop lane's session
+                runs under one for its whole length (`laneEnv`, `FJS-3258`)
   runnables.js  what this project can START — surfaces, tools, drives, suites,
                 tasks, snapshots, pages, each a row with an id, a command and a port.
                 A PAGE is an HTML file a command declares in its frontmatter
@@ -859,14 +860,17 @@ test/     one file per module under core/, plus the deploy pipeline's own
 
 ## What bites here
 
-- **Assigning `process.env.X` does not reach a child.** `fli` runs under bun
-  (`FJS-D593`), and bun's `child_process` hands a child the environment the
-  process STARTED with, where node passes the mutation on. So the assignment
-  compiles, reads as a fix and does nothing — measured with
-  `bun -e "process.env.FOO='x'; execSync('printenv FOO')"`, which prints nothing.
-  Pass `env:` on the `context.exec` call instead. This is what made `fli new
-  --auth` unable to finish (`FJS-343`), and the assignment that failed had been
-  written specifically to fix that symptom.
+- **Assigning `process.env.X` reaches a `node:child_process` child but not a
+  `Bun.spawn` / `Bun.spawnSync` one.** `fli` runs under bun (`FJS-D593`), and
+  at bun 1.4.2 `execSync`, `spawnSync` and `spawn` (so `context.exec`) pass the
+  mutation on, where `Bun.spawn(['printenv','FOO'])` and `Bun.spawnSync` hand
+  the child the environment the process STARTED with — the assignment compiles,
+  reads as a fix and does nothing. Measured with `bun -e "process.env.FOO='x';
+  Bun.spawnSync(['printenv','FOO'])"`, which prints nothing. Pass `env:` on any
+  spawn that must not depend on it (`env: process.env` is enough for `Bun.*`),
+  and on `context.exec` when the value is the call's own. `FJS-343` (`fli new
+  --auth` unable to finish) was measured on an older bun, where `execSync` did
+  drop it.
 - **`context.exec` refuses an option it does not have, and reading the child's
   output is `stdio`.** It takes `command`, `dry`, `describe` and `allowFailure`,
   plus what `execSync` understands, and anything else throws by name — an

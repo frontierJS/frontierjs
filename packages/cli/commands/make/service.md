@@ -34,12 +34,12 @@ flags:
 
 <script>
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { resolve } from 'path'
+import { resolve, basename } from 'path'
 import { kebab } from '@frontierjs/toolbelt/inflect'
 
 // The service's name is `make:resource`'s (`servicePlural`), so the two
 // generators cannot disagree about which service a model is served by.
-const { servicePlural } =
+const { servicePlural, existingServiceFile } =
   await import(resolve(global.fliRoot, 'core/resource-template.js'))
 
 // The shape junction's autoloader documents: `<plural>.service.ts` default-
@@ -49,7 +49,8 @@ const { servicePlural } =
 const serviceOf = (model, servicesDir) => {
   const serviceName = servicePlural(model)
   const file        = `${kebab(serviceName)}.service.ts`
-  return { serviceName, file, servicePath: resolve(servicesDir, file) }
+  const servicePath = existingServiceFile(servicesDir, serviceName) ?? resolve(servicesDir, file)
+  return { serviceName, file: basename(servicePath), servicePath }
 }
 
 const makeServiceFile = (model, serviceName) => `import { createService } from '@frontierjs/junction'

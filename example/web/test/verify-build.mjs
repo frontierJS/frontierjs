@@ -19,6 +19,14 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PREVIEW_PORT ?? String(await portFor(import.meta.url, 'fe', { env: 'dev', service: 1 }))
 const UI   = `http://localhost:${PORT}`
 
+// A preview left from another checkout would serve ITS build to verify.mjs (FJS-740).
+let busy = false
+try { await fetch(UI, { signal: AbortSignal.timeout(500) }); busy = true } catch {}
+if (busy) {
+  console.error(`port ${PORT} already answers — refusing to test whatever holds it instead of this build`)
+  process.exit(1)
+}
+
 const preview = spawn(process.execPath, [join(HERE, 'preview.mjs')], {
   stdio: ['ignore', 'inherit', 'inherit'],
   env: { ...process.env, PREVIEW_PORT: PORT },

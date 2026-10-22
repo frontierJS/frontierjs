@@ -1,4 +1,7 @@
 <script>
+  import { refuseCell } from './slot-guard.js'
+  const emailCell = $context.emailCell
+  refuseCell('DataTable', emailCell)
   export let columns  = []   // [{ key, label, align }]
   export let rows     = []   // array of objects
   export let heading  = ''

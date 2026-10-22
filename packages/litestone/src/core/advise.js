@@ -1175,6 +1175,34 @@ export const RULES = [
   },
 
   {
+    id:       'anonymous-beside-logged',
+    severity: 'warn',
+    title:    'an @@anonymous model in a schema where other models log their writes',
+    blurb:    'An anonymous row has no writer, and a log on ANOTHER model can give it one back: the ' +
+              'logged write carries the actor and a millisecond clock, and the two tables line up in ' +
+              'order (FJS-D349). The client refuses the pairing inside one transaction; nothing ' +
+              'refuses a roster logged in a separate one. Ask whether any model named here is written ' +
+              'when someone answers.',
+    run(schema) {
+      const models = schema.models ?? []
+      const logsWrites = m =>
+        (m.attributes ?? []).some(a => a.kind === 'trail' && a.writes) ||
+        (m.fields ?? []).some(f => (f.attributes ?? []).some(a => a.kind === 'trail' && a.writes))
+      const logged = models.filter(m => !m.attributes?.some(a => a.kind === 'anonymous') && logsWrites(m))
+      if (!logged.length) return []
+
+      return models.filter(m => m.attributes?.some(a => a.kind === 'anonymous')).map(m => ({
+        model: m.name,
+        message: `${m.name}: @@anonymous, while ${logged.map(l => l.name).join(', ')} log${logged.length === 1 ? 's' : ''} ` +
+          `writes with the actor and a millisecond clock. A model written in the same request as a ${m.name} ` +
+          `row (a roster flipped when someone answers) re-attributes it by order, so the client refuses the ` +
+          `pair inside one transaction and cannot see a separate one. Drop the log from any such model, or ` +
+          `confirm none is written when a ${m.name} is.`,
+      }))
+    },
+  },
+
+  {
     id:       'create-reaches-unpickable-relation',
     severity: 'warn',
     title:    'a create policy reaches through a relation the picker cannot be narrowed by',

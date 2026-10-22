@@ -9,7 +9,7 @@
  */
 
 import { test, expect, afterAll } from 'bun:test'
-import { mkdtempSync, readFileSync, readdirSync, existsSync, rmSync } from 'fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from 'fs'
 import { Database } from 'bun:sqlite'
 import { join }   from 'path'
 import { tmpdir } from 'os'
@@ -134,6 +134,15 @@ test('--full wires the commitments plugin, the system principal and the notifica
   // After caravan, which commitments() requires.
   expect(appTs.indexOf('app.configure(caravan())')).toBeLessThan(appTs.indexOf('app.configure(commitments())'))
   expect(readFileSync(join(app, 'api/src/core/gate.ts'), 'utf8')).toMatch(/export const SYSTEM\s*=/)
+  expect(existsSync(join(app, 'api/src/notifications'))).toBe(true)
+}, 60_000)
+
+// FJS-1843 — the same wiring has to follow the packages named, whatever flag named them.
+test('--with caravan,notifications wires both plugins into app.ts', () => {
+  const app = scaffold('with-both', '--with', 'caravan,notifications')
+  const appTs = readFileSync(join(app, 'api/src/app.ts'), 'utf8')
+  expect(appTs).toMatch(/^app\.configure\(caravan\(\)\)$/m)
+  expect(appTs).toMatch(/^app\.configure\(notifications\(\{ db \}\)\)$/m)
   expect(existsSync(join(app, 'api/src/notifications'))).toBe(true)
 }, 60_000)
 
@@ -331,4 +340,45 @@ test('a scaffold README starts the app with fli dev and names no fixed port', ()
   expect(readme).not.toMatch(/bun run dev/)
   expect(readme).not.toMatch(/\b8[0-9]00\b/)
   expect(readme).not.toContain('env*1000')
+}, 60_000)
+
+// FJS-1773 — `new` makes the project, so the app enclosing the working
+// directory is not its project. It wrote <name>/ beside that app's root and
+// `--here` counted the enclosing app's files.
+test('fli new inside an existing app scaffolds in the working directory', () => {
+  const host = mkdtempSync(join(tmpdir(), 'fjs-new-nested-'))
+  roots.push(host)
+  mkdirSync(join(host, 'db'))
+  writeFileSync(join(host, 'db/schema.lite'), 'model Host {\n  id Int @id\n}\n')
+  writeFileSync(join(host, 'package.json'), '{"name":"host"}\n')
+  mkdirSync(join(host, 'apps'))
+  const fli = join(import.meta.dir, '../bin/fli.js')
+  const flags = ['--template', 'web-only', '--yes', '--no-install', '--no-git', '--source', 'local']
+
+  const named = spawnSync(process.execPath, [fli, 'new', 'probe', ...flags], { cwd: join(host, 'apps'), encoding: 'utf8' })
+  expect(named.status).toBe(0)
+  expect(existsSync(join(host, 'apps/probe/package.json'))).toBe(true)
+  expect(existsSync(join(host, 'probe'))).toBe(false)
+
+  mkdirSync(join(host, 'apps/here'))
+  const here = spawnSync(process.execPath, [fli, 'new', '--here', ...flags], { cwd: join(host, 'apps/here'), encoding: 'utf8' })
+  expect(here.status).toBe(0)
+  expect(existsSync(join(host, 'apps/here/package.json'))).toBe(true)
+}, 60_000)
+
+// FJS-1636 — `fli new transit --here` in a folder called transit-next named the
+// app after the folder and said nothing about the argument it dropped.
+test('fli new <name> --here names the app <name>, not the folder', () => {
+  const host = mkdtempSync(join(tmpdir(), 'fjs-new-here-'))
+  roots.push(host)
+  const dir = join(host, 'transit-next')
+  mkdirSync(dir)
+  const fli = join(import.meta.dir, '../bin/fli.js')
+  const flags = ['--template', 'web-only', '--yes', '--no-install', '--no-git', '--source', 'local']
+
+  const run = spawnSync(process.execPath, [fli, 'new', 'transit', '--here', ...flags], { cwd: dir, encoding: 'utf8' })
+  expect(run.status).toBe(0)
+  const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+  expect(pkg.name).toMatch(/\/transit$/)
+  expect(readFileSync(join(dir, '.fli.json'), 'utf8')).not.toContain('transit-next')
 }, 60_000)

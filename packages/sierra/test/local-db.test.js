@@ -40,7 +40,7 @@ const { registerSchemas } = await import('../src/resource/schema-registry.js')
 const { createResource, tetherOf }  = await import('../src/resource/resource.js')
 const { _resetListCache, listCache, listKey } = await import('../src/resource/list-cache.js')
 const { warmOffline, _resetOffline } = await import('../src/resource/offline.js')
-const { writeThrough, readLocal, localDbConfigured, _resetLocalDb, _useLocalDbClient } =
+const { writeThrough, readLocal, clearLocalDb, localDbConfigured, _resetLocalDb, _useLocalDbClient } =
   await import('../src/resource/local-db.js')
 const { createJunctionClient } = await import('../../junction/src/client/index.ts')
 
@@ -880,5 +880,61 @@ model Item { id String @id  title String  folderId String  folder Folder @relati
     await writeThrough('Folder', [{ id: 'F1', name: 'a', ownerId: 'u' }])
     await writeThrough('Folder', [{ name: 'a' }], { where: {}, idField: 'id' })
     expect(d.held.has('F1')).toBe(true)
+  })
+})
+
+// ─── sign-out closes the client under a write in flight ───────────────────────
+//
+// FJS-3184: `signOut` clears and closes the device while a load's write-through
+// is still waiting on it, and litestone's closed client rejects that call. The
+// rejection is the sign-out, not a device that failed, so nothing is warned.
+describe('an identity change that closes the client under a call in flight', () => {
+  const GONE = '[Litestone] this browser client is closed — the page it belonged to went away.'
+
+  function closableDevice() {
+    let closed = false
+    let release
+    const gate = new Promise(r => { release = r })
+    const call = async () => { await gate; if (closed) throw new Error(GONE); return [] }
+    const table = { upsertMany: call, findMany: call, deleteMany: async () => ({ count: 0 }) }
+    const client = {
+      $models: ['sheet'],
+      $close: async () => { closed = true },
+      asSystem: () => ({ sheet: table }),
+    }
+    return { client, release }
+  }
+
+  test('a write-through that loses the client to a sign-out warns of nothing', async () => {
+    const d = closableDevice()
+    useDevice(d)
+    const writing = writeThrough('Sheet', [{ id: 'S1', name: 'a' }])
+    await new Promise(r => setTimeout(r, 0))
+    await clearLocalDb()
+    d.release()
+    expect(await writing).toBe(false)
+    expect(console.warn).not.toHaveBeenCalled()
+  })
+
+  test('a read that loses the client to a sign-out warns of nothing', async () => {
+    const d = closableDevice()
+    useDevice(d)
+    const reading = readLocal('Sheet', {}, {})
+    await new Promise(r => setTimeout(r, 0))
+    await clearLocalDb()
+    d.release()
+    expect(await reading).toBe(null)
+    expect(console.warn).not.toHaveBeenCalled()
+  })
+
+  test('a closed client with no sign-out behind it still warns', async () => {
+    const d = closableDevice()
+    useDevice(d)
+    const writing = writeThrough('Sheet', [{ id: 'S1', name: 'a' }])
+    await new Promise(r => setTimeout(r, 0))
+    await d.client.$close()
+    d.release()
+    await writing
+    expect(console.warn).toHaveBeenCalledTimes(1)
   })
 })

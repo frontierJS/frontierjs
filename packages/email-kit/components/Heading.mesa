@@ -1,4 +1,7 @@
 <script>
+  import { refuseCell } from './slot-guard.js'
+  const emailCell = $context.emailCell
+  refuseCell('Heading', emailCell)
   export let text     = ''
   export let color    = '#38993a'
   export let bgcolor  = undefined

@@ -86,7 +86,13 @@ export interface NotificationRecord {
 
 export interface NotificationDriver {
   transport: string
-  send(recipient: Recipient, message: unknown, app: App): Promise<void>
+  /**
+   * What the vendor answered -- a message id a delivery receipt will name
+   * later. `notify()` hands it back under this driver's transport; answering
+   * nothing is fine. A refusal THROWS, and an error class the driver defines
+   * is how it says whether the send may still have gone out.
+   */
+  send(recipient: Recipient, message: unknown, app: App): Promise<unknown>
   /**
    * Release whatever the driver holds open — a socket, a client, a timer.
    * Awaited once, on app shutdown, and a throw is logged rather than rethrown:
@@ -94,6 +100,13 @@ export interface NotificationDriver {
    */
   shutdown?(): void | Promise<void>
 }
+
+/**
+ * What `notify()` answers: each registered driver's `send()` answer, by
+ * transport. A transport whose driver answered nothing, and the built-in
+ * `inApp` and `email`, have no key.
+ */
+export type NotificationReceipts = Record<string, unknown>
 
 // ─── Who a notification is addressed to ──────────────────────────────────────
 
@@ -161,7 +174,7 @@ export interface App {
   channel?: (name: string) => { send(event: string, payload: unknown): void } | undefined
   /** `createApp({ root })` — definitions load from `notifications/` beside it (`FJS-D1080`). */
   root?:    string | null
-  notify?:  (recipient: Recipient, notification: Notification) => Promise<void>
+  notify?:  (recipient: Recipient, notification: Notification) => Promise<NotificationReceipts>
   /**
    * Junction's guarded namespace owner. Used when present so a second plugin
    * owning `app.notify` fails loudly instead of silently winning; falls back

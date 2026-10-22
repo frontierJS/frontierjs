@@ -83,7 +83,9 @@ bin/
 - **`nextRuns()` is the wall clock's own answer and is a day out on the spring
   boundary**, for a schedule `_tickFixed` will run just after the gap. Reporting,
   not firing. Deliberately not a second implementation of the walk.
-- **`CronScheduler` takes `now`.** The behavior above happens on two days a
+- **`CronScheduler` takes `now`, and `caravan({ cronClock })` reaches it** (`FJS-3077`)
+  — an option of the function, not a `junction.config.js` key; job timestamps stay on
+  the real clock. The behavior above happens on two days a
   year, and a suite that cannot move the clock can only assert the parser — which
   is exactly what this suite asserted while `FJS-525` sat in the firing path
   under four green `timeZone` tests.
@@ -245,6 +247,11 @@ bin/
   one case a handler tests for.
 - `db.asSystem()` is still the wrong fix for any of this — a job carries its own
   `ctx.user`, and reaching past it means a write with no principal attributed.
+  **The right route to the db is `ctx.app.withDb((db) => …)`** (`FJS-3089`): the
+  module client the app was created with is the unscoped root, so a handler that
+  imports it writes as STRANGER(0) and fails `Model.read requires level N, user
+  has level 0` on every fire. `withDb` hands a client scoped to the principal in
+  scope — the app's system principal on a cron fire.
 - **`GET /jobs` pages at 50, newest first.** The queue accumulates every job every
   drive has ever run, so an unbounded scan stops before the row you are asking
   about and reads as "there is no such job". Pass `?limit=500`.

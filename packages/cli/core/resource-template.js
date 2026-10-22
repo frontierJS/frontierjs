@@ -13,7 +13,9 @@
 // read back off the schema at runtime as `fields`, `relations` and `gate`, so a
 // column added to `schema.lite` appears with no edit to the generated file.
 
-import { pluralize } from '@frontierjs/toolbelt/inflect'
+import { readdirSync }  from 'node:fs'
+import { join }         from 'node:path'
+import { pluralize }    from '@frontierjs/toolbelt/inflect'
 
 /**
  * The whole file.
@@ -109,4 +111,22 @@ const resource = ${service}
  */
 export function servicePlural(model) {
   return pluralize(model.charAt(0).toLowerCase() + model.slice(1))
+}
+
+/**
+ * The file in a services directory that already answers to `serviceName`, in
+ * whatever spelling it is written. Junction names a service from its filename
+ * with kebab and snake folded to camelCase, so `workspace-members.service.ts`
+ * and `workspaceMembers.service.ts` are one name and boot refuses the pair
+ * (`FJS-1826`). A generator asks this rather than whether its own spelling
+ * exists. Null where no file claims the name.
+ */
+export function existingServiceFile(servicesDir, serviceName) {
+  let names
+  try { names = readdirSync(servicesDir) } catch { return null }
+  const found = names.sort().find(file => {
+    const stem = file.match(/^(.+)\.service\.(ts|js|mts|mjs)$/)?.[1]
+    return stem && stem.replace(/[-_]+([a-zA-Z0-9])/g, (_, c) => c.toUpperCase()) === serviceName
+  })
+  return found ? join(servicesDir, found) : null
 }

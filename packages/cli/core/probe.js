@@ -148,6 +148,44 @@ export async function httpText({ url, method, body, headers, tls, needle, descri
   return fail(label, want, 'the body did not match', last.text.slice(0, 400))
 }
 
+// ─── whose server is this ─────────────────────────────────────────────────────
+//
+// A port answering is not evidence the right process is on it (`FJS-740`). A
+// lesson that adopts whatever answers health runs against the app somebody
+// scaffolded an hour ago on the same dev slot, and every symptom then points
+// at the lesson. `foreign` separates that from a port nothing answers on,
+// which is the caller's cue to start its own.
+
+const servedBy = async ({ url, app, read, what, name, retries = 1, everyMs = 500 }) => {
+  const label = name ?? `${url} is ${app}`
+  const asked = `${what} naming ${app}`
+  let last
+  for (let i = 0; i < retries; i++) {
+    last = await attempt(url)
+    if (last.res?.ok && read(last.text) === app) return ok(label, asked, app)
+    if (last.res?.ok) break
+    if (i < retries - 1) await wait(everyMs)
+  }
+  if (!last.res) return fail(label, asked, last.error)
+  if (!last.res.ok) return fail(label, asked, `status ${last.res.status}`, last.text.slice(0, 400))
+
+  const port = new URL(url).port
+  const said = read(last.text)
+  return {
+    ...fail(label, asked, said ? `an app named ${said}` : `an answer that names no app`, last.text.slice(0, 400)),
+    foreign: true,
+    likely:  `another process is already on port ${port} -- stop it, or move this lesson with --api-port and --web-port`,
+  }
+}
+
+const readHealthApp = (text) => { try { return JSON.parse(text)?.app ?? null } catch { return null } }
+const readPageTitle = (text) => text.match(/<title>([^<]*)<\/title>/i)?.[1]?.trim() ?? null
+
+export const apiIsApp  = ({ url, app, ...rest }) =>
+  servedBy({ url, app, read: readHealthApp, what: 'a health answer', ...rest })
+export const pageIsApp = ({ url, app, ...rest }) =>
+  servedBy({ url, app, read: readPageTitle, what: 'a page titled', ...rest })
+
 export async function header({ url, name: hdr, expect, label }) {
   const shown = label ?? `${hdr} on ${url}`
   const got   = await attempt(url)

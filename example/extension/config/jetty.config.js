@@ -9,6 +9,8 @@
 // browser profile rather than served, its permissions live in a manifest, and
 // it ships to two web stores on a review cadence that is nobody else's.
 
+import { pinApiOrigin } from '../../config/api-origin.js'
+
 // Where the API is: FRONTIER_PUBLIC_API_URL, the name every surface's build reads, or this
 // app's dev API. Read once, because it lands in TWO places — the connection and
 // the host permission the manifest declares for it — and a permission naming a
@@ -17,7 +19,10 @@
 // This file is read in two runtimes. jetty imports it in Node to write the
 // manifest, and the harbor bundles it into the service worker, where there is
 // no `process` — so Vite's inlined value is asked first and `process` only
-// where it exists.
+// where it exists. Pinned in Node, before Vite reads the environment, so the
+// worker's inlined value is the manifest's.
+if (typeof process !== 'undefined') pinApiOrigin(process.env, process.env)
+
 const fromEnv = name =>
   import.meta.env?.[name] ??
   (typeof process !== 'undefined' ? process.env[name] : undefined)

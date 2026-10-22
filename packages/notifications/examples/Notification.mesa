@@ -29,8 +29,16 @@
   /**
    * Mark one read. `readAt` is a real column and the model's
    * `@@allow(update, userId == auth().id)` is what stops it being anybody
-   * else's — the service narrows `patch` to this one field.
+   * else's.
+   *
+   * It goes through `mutate`, never `service.patch` alone: the tether moves
+   * only on pushed frames and a patch announces none to a per-person channel,
+   * so a bare service call leaves the row unread in every list that holds it
+   * and the bell's count does not drop until a reload. `mutate` shows the
+   * intent on the row's entry now and settles it with the server's answer.
    */
-  export const markRead = (id) =>
-    notifications.service.patch(id, { readAt: new Date().toISOString() })
+  export const markRead = (id) => {
+    const readAt = new Date().toISOString()
+    return notifications.mutate(id, { readAt }, () => notifications.service.patch(id, { readAt }))
+  }
 </script>

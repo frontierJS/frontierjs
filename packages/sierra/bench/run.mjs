@@ -35,6 +35,10 @@ import { measureSurface, gatedMetrics, ratchet, readBaseline, writeBaseline, kb 
 const HERE = fileURLToPath(new URL('.', import.meta.url))
 const WORK = join(HERE, 'dist')
 
+// sitemap.xml names its build date and brotli sizes the digits differently
+// day to day, so the same tree measured on two days is two numbers.
+process.env.SOURCE_DATE_EPOCH = '1767225600'
+
 const argv = process.argv.slice(2)
 const flag = (f) => argv.includes(f)
 

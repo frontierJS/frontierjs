@@ -2210,12 +2210,16 @@ export class JunctionClient extends EventEmitter {
         reread = setTimeout(() => { reread = null; void fetch() }, Math.random() * 2000)
       })
 
-      const fetch = async (): Promise<T | null> => {
+      // `shared` is the cold first read only. A refresh asks for newer than
+      // anything in flight, so it never joins one.
+      const read = async (shared: boolean): Promise<T | null> => {
         if (composed) return readComposed()
         const wasGone = gone
         try {
           const row = ropts.load
             ? await ropts.load()
+            : shared
+            ? await coldRead(entry, () => svc.get(id as string | number))
             : await svc.get(id as string | number)
           if (row != null) registry.write(model, row, key)
           failure = null
@@ -2231,12 +2235,13 @@ export class JunctionClient extends EventEmitter {
           return null
         }
       }
+      const fetch = (): Promise<T | null> => read(false)
 
       return {
         id,
         // A composed read always runs: an entry another view filled holds the row
         // alone, which is not what this view answers.
-        ready:     !composed && entry.get() != null ? Promise.resolve(entry.get()) : fetch(),
+        ready:     !composed && entry.get() != null ? Promise.resolve(entry.get()) : read(true),
         get:       value,
         error:     () => failure,
         subscribe: (fn) => {
@@ -3363,6 +3368,21 @@ export interface RecordResult<T extends Record<string, unknown> = Record<string,
 // Mesa component usage — nothing special needed:
 //   userService.create({ name: 'Jordan', avatar: loadedFile })
 //   // loadedFile is a native browser File from a file input — just pass it.
+
+// ─── one cold read per entry ─────────────────────────────────────────────────
+// Two `record(id)` views of one row in one tick both find the entry cold, and
+// the warm-entry skip only helps after the first read lands. The in-flight
+// promise is held per entry so the second view waits on it; each view still
+// writes the entry and records its own failure from what the promise settles.
+const _coldReads = new WeakMap<object, Promise<unknown>>()
+
+function coldRead<R>(entry: object, load: () => Promise<R>): Promise<R> {
+  const held = _coldReads.get(entry)
+  if (held) return held as Promise<R>
+  const p = load().finally(() => { _coldReads.delete(entry) })
+  _coldReads.set(entry, p)
+  return p
+}
 
 function _hasFiles(body: unknown): boolean {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return false

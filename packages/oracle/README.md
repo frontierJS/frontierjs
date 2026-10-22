@@ -22,7 +22,7 @@ A container only the application creates (`system`) and members enter is gated a
 | | Count | Where |
 | --- | --- | --- |
 | Canonical entities, 10 categories over a core/domain tier | 32 | `ENTITIES` — typed fields, usual links, named lifecycle moves |
-| Actors, each with what a link to `User` through it grants | 7 | `ACTORS` |
+| Actors, each with what a link to `User` through it grants | 8 | `ACTORS` |
 | Patterns, on a trigger × verb-home grid | 18 | `PATTERNS` |
 | Modifiers | 5 | `MODIFIERS` |
 | Field types an answer may name | 23 | `TYPES` — each with the column it becomes |

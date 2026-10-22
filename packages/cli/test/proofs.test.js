@@ -358,6 +358,14 @@ describe('over this repo', () => {
     expect(run(['packages/orion/web/src/App.mesa']).some(s => s.includes('verify:automations'))).toBe(true)
   })
 
+  test('a lesson step under commands/tutor/ names the tutor row by path (FJS-1377)', () => {
+    const rows = provesFor(REPO, {
+      files: ['packages/cli/commands/tutor/_steps-access/06-policy.md'],
+      rows:  runnables(REPO),
+    })
+    expect(rows.some(r => r.match.tier === 'path' && r.match.on.includes('commands/tutor/'))).toBe(true)
+  })
+
   test('strongest match first, so the top of the list is the thing to run', () => {
     const rows = provesFor(REPO, {
       files: ['packages/sierra/src/build/prerender.js', 'packages/junction/src/core/app.ts'],

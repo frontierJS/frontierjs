@@ -6,7 +6,7 @@ export { notifications }   from './plugin.ts'
 
 import type { Notification as NotificationBase } from './notification.ts'
 import type { SendableNotification } from './define.ts'
-import type { Recipient } from './types.ts'
+import type { NotificationReceipts, Recipient } from './types.ts'
 
 // Contribute the real call signature of `app.notify` to Junction's augmentable
 // slot. Junction declares `AppNotify` as an EMPTY interface and documents that
@@ -23,7 +23,7 @@ declare module '@frontierjs/junction' {
     // Either shape. `notify()` reads three members and never asks which one it
     // was handed, so the type says the same: a class instance, or the value a
     // `defineNotification` factory answers.
-    (recipient: Recipient, notification: NotificationBase | SendableNotification): Promise<void>
+    (recipient: Recipient, notification: NotificationBase | SendableNotification): Promise<NotificationReceipts>
   }
 
   interface App {
@@ -75,6 +75,7 @@ export type {
   MailLine,
   NotificationRecord,
   NotificationDriver,
+  NotificationReceipts,
   NotificationsPluginOptions,
   OutgoingMail,
   TransportError,

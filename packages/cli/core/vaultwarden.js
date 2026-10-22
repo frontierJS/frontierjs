@@ -278,14 +278,17 @@ export async function receiveSend(link, { password = null } = {}) {
 
 /**
  * One `KEY=value` line both fli's `loadEnv` and Bun's own .env loader read
- * back as `value`, or null when no spelling does. Bun expands `$` inside
- * either quote and takes `\$` as its escape, which fli keeps verbatim; fli
- * ends a double-quoted value at `\"`, which Bun keeps — so a value with `$`,
- * or with `'` beside `"` or `\`, has no line the two agree on.
+ * back as `value`, or null when no spelling does. Both expand `$` in either
+ * quote and read `\$` as a literal one, and both let a backslash skip the
+ * quote after it, so a value holding `\r`, or a `\` beside a `$`, a `'` or the
+ * end of the line, has no line they agree on.
  */
 export function dotenvLine(key, value) {
-  if (/[\r$]/.test(value)) return null
-  if (!/['\n]/.test(value)) return `${key}='${value}'`
-  if (!/["\\]/.test(value)) return `${key}="${value.replace(/\n/g, '\\n')}"`
+  if (value.includes('\r')) return null
+  const dollars = (v) => v.replace(/\$/g, '\\$')
+  if (!/['\n]/.test(value) && !value.endsWith('\\') && !(value.includes('$') && value.includes('\\'))) {
+    return `${key}='${dollars(value)}'`
+  }
+  if (!/["\\]/.test(value)) return `${key}="${dollars(value).replace(/\n/g, '\\n')}"`
   return null
 }

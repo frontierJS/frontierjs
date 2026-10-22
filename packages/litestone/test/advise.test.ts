@@ -1219,3 +1219,32 @@ describe('rule: deny-reads-nullable-column', () => {
     expect(rule(model(`@@allow(update, lastCheckOk == false)`))).toEqual([])
   })
 })
+
+// FJS-1386
+describe('anonymous-beside-logged', () => {
+  const rule  = 'anonymous-beside-logged'
+  const TRAIL = 'database audit { path "./audit/" driver trail }\n'
+  const BALLOT = `model Ballot { id Int @id  rating Int  @@anonymous }\n`
+
+  test('fires once on the anonymous model, naming every model that logs writes', () => {
+    const f = findings(`${TRAIL}${BALLOT}
+      model Roster { id Int @id  person String  answered Boolean @default(false)  @@trail(audit) }
+      model Vault  { id Int @id  pin String @secret }
+      model Note   { id Int @id  text String }`, rule)
+    expect(f.length).toBe(1)
+    expect(f[0].model).toBe('Ballot')
+    expect(f[0].message).toContain('Roster')
+    expect(f[0].message).toContain('Vault')
+    expect(f[0].message).not.toContain('Note')
+  })
+
+  test('a read-only log does not pair', () => {
+    expect(findings(`${TRAIL}${BALLOT}
+      model Roster { id Int @id  person String @trail(audit, writes: false) }`, rule)).toEqual([])
+  })
+
+  test('stays quiet with no logged model, or with no anonymous one', () => {
+    expect(findings(`${BALLOT}model Note { id Int @id  text String }`, rule)).toEqual([])
+    expect(findings(`${TRAIL}model Roster { id Int @id  person String  @@trail(audit) }`, rule)).toEqual([])
+  })
+})

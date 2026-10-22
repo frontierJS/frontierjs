@@ -594,67 +594,72 @@ const TRIGGER_HEAD = /^CREATE\s+(TEMP(ORARY)?\s+)?TRIGGER\b/i
 export function splitStatements(sql) {
   const stmts = []
   let   cur   = ''
+  let   run   = 0   // start of the characters not yet appended to `cur`; copied as one slice, never per character
   let   depth = 0   // nesting level inside a CREATE TRIGGER's BEGIN...END body
+  const n     = sql.length
+  const isWord = (c) => (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || c === 95 || (c >= 97 && c <= 122)
 
-  for (let i = 0; i < sql.length; i++) {
-    const ch = sql[i]
+  for (let i = 0; i < n; i++) {
+    const c = sql.charCodeAt(i)
 
-    // Skip line comments
-    if (ch === '-' && sql[i+1] === '-') {
-      while (i < sql.length && sql[i] !== '\n') i++
+    // Skip line comments (the newline goes with them)
+    if (c === 45 && sql.charCodeAt(i+1) === 45) {
+      cur += sql.slice(run, i)
+      while (i < n && sql.charCodeAt(i) !== 10) i++
+      run = i + 1
       continue
     }
 
     // Skip block comments
-    if (ch === '/' && sql[i+1] === '*') {
+    if (c === 47 && sql.charCodeAt(i+1) === 42) {
+      cur += sql.slice(run, i)
       i += 2
-      while (i < sql.length && !(sql[i] === '*' && sql[i+1] === '/')) i++
+      while (i < n && !(sql.charCodeAt(i) === 42 && sql.charCodeAt(i+1) === 47)) i++
       i++
+      run = i + 1
       continue
     }
 
-    // Skip strings
-    if (ch === "'" || ch === '"' || ch === '`') {
-      const q = ch
-      cur += ch
+    // Skip strings: they stay in the pending run, closing quote included
+    if (c === 39 || c === 34 || c === 96) {
       i++
-      while (i < sql.length && sql[i] !== q) {
-        if (sql[i] === '\\') { cur += sql[i++] }
-        cur += sql[i++]
+      while (i < n && sql.charCodeAt(i) !== c) {
+        if (sql.charCodeAt(i) === 92) i++
+        i++
       }
-      cur += sql[i] ?? ''
       continue
     }
 
-    // Track BEGIN/END depth for trigger bodies
-    // Look for word boundaries to avoid matching "UNBOUNDED" etc.
-    const word5 = sql.slice(i, i+5).toUpperCase()
-    const word4 = sql.slice(i, i+4).toUpperCase()
-    const word3 = sql.slice(i, i+3).toUpperCase()
-    const prevIsWord = i > 0 && /\w/.test(sql[i-1])
-    const nextIsWordAt = (n) => /\w/.test(sql[i+n] ?? '')
-
-    if (!prevIsWord && word5 === 'BEGIN' && !nextIsWordAt(5)) {
-      // Body depth only when this statement is a CREATE TRIGGER; a
-      // transaction BEGIN stays an ordinary statement.
-      if (TRIGGER_HEAD.test(cur.trimStart())) depth++
-    } else if (!prevIsWord && word4 === 'CASE' && !nextIsWordAt(4)) {
-      // CASE...END inside a trigger body — count it so its END doesn't
-      // close the trigger body early. Outside a body, CASE is not ours
-      // to track.
-      if (depth > 0) depth++
-    } else if (!prevIsWord && word3 === 'END' && !nextIsWordAt(3)) {
-      if (depth > 0) depth--
+    // Track BEGIN/END depth for trigger bodies — only a word starting b, c or e
+    // can be one, so every other character pays one comparison and no slice.
+    const lower = c | 32
+    if ((lower === 98 || lower === 99 || lower === 101) && !(i > 0 && isWord(sql.charCodeAt(i-1)))) {
+      const nextIsWordAt = (k) => isWord(sql.charCodeAt(i+k))
+      if (lower === 98 && sql.slice(i, i+5).toUpperCase() === 'BEGIN' && !nextIsWordAt(5)) {
+        // Body depth only when this statement is a CREATE TRIGGER; a
+        // transaction BEGIN stays an ordinary statement.
+        cur += sql.slice(run, i)
+        run = i
+        if (TRIGGER_HEAD.test(cur.trimStart())) depth++
+      } else if (lower === 99 && sql.slice(i, i+4).toUpperCase() === 'CASE' && !nextIsWordAt(4)) {
+        // CASE...END inside a trigger body — count it so its END doesn't
+        // close the trigger body early. Outside a body, CASE is not ours
+        // to track.
+        if (depth > 0) depth++
+      } else if (lower === 101 && sql.slice(i, i+3).toUpperCase() === 'END' && !nextIsWordAt(3)) {
+        if (depth > 0) depth--
+      }
     }
 
-    if (ch === ';' && depth === 0) {
+    if (c === 59 && depth === 0) {
+      cur += sql.slice(run, i)
       const s = cur.trim()
       if (s) stmts.push(s)
       cur = ''
-    } else {
-      cur += ch
+      run = i + 1
     }
   }
+  cur += sql.slice(run, n)
   const s = cur.trim()
   if (s) stmts.push(s)
   return stmts

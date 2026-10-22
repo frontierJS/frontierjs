@@ -1,4 +1,7 @@
 <script>
+  import { refuseCell } from './slot-guard.js'
+  const emailCell = $context.emailCell
+  refuseCell('Header', emailCell)
   export let logo    = ''        // image URL
   export let logoAlt = ''
   export let logoWidth = 160

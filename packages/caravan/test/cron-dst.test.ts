@@ -286,3 +286,27 @@ describe('two instances over one jobs.db', () => {
     expect(await instancesOver('30 1 * * *', NY, '2026-11-01T04:00:00Z', 25 * 60, 2, 'epoch', OVER_THE_FIRE)).toBe(2)
   })
 })
+
+// ─── The plugin's own clock ───────────────────────────────────────────────────
+//
+// FJS-3077: `caravan()` built its scheduler with no clock, so an app could not
+// ask whether ITS declared schedule fires once across a boundary without
+// importing `src/cron.ts` by path. `cronClock` is the same `now` the scheduler
+// takes, reached through the public surface.
+
+describe('cronClock', () => {
+  it('moves the clock the declared schedule is graded on', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'caravan-clock-'))
+    dirs.push(dir)
+    // 01:30 EDT on the autumn Sunday. The real clock is never here.
+    const at = new Date('2026-11-01T05:30:00Z')
+    const q  = caravan({ db: join(dir, 'jobs.db'), pollInterval: 20, cronClock: () => at })
+    queues.push(q)
+    q.handle('nightly', async () => {}, { cron: '30 1 * * *', timeZone: NY })
+    await q.start()
+    await Bun.sleep(50)
+
+    const rows = q.list({ limit: 100 })
+    expect(rows.map(r => r.id)).toEqual([occurrenceKey('cron', 'nightly', Date.UTC(2026, 10, 1, 1, 30) / 60_000)])
+  })
+})

@@ -45,8 +45,8 @@ const appSchema = (root) => `
 database main   { path "${join(root, 'db', 'main.db')}" }
 database second { path "${join(root, 'db', 'second.db')}" }
 
-model Thing { id String @id @default(uuid())  name String  @@db(main) }
-model Note  { id String @id @default(uuid())  body String  @@db(second) }
+model Thing { id String @id @default(uuid())  name String  @@db(main)   @@gate(0) }
+model Note  { id String @id @default(uuid())  body String  @@db(second) @@gate(0) }
 `
 
 describe('the fragment', () => {

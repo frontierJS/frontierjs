@@ -303,6 +303,9 @@ model SurveyResponse {
   (`@updatedAt`, `@default(now())`).
 - **At runtime**, a transaction that writes an `@@anonymous` row and a row of a
   model that logs writes is refused, whichever comes first, and both roll back.
+- **In `litestone advise`** (and so `fli check`), `anonymous-beside-logged` names
+  every model that logs writes beside an `@@anonymous` one, because the pair in
+  a *separate* transaction is the one the runtime cannot see.
 
 **What it does not do.** It closes the join by refusing the logged end. It does
 not hide insertion order: raw SQL against the file still reads the rowids, and

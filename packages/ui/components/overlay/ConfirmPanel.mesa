@@ -79,7 +79,7 @@
   // Escape is taken, so nothing after this listener — a terminal shell going
   // back a screen — answers it too.
   function onKeydown(e) {
-    if (e.key !== 'Escape') return
+    if (e.key !== 'Escape' || e.defaultPrevented) return
     e.preventDefault()
     oncancel?.()
   }

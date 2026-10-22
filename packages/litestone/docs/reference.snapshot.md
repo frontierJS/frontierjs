@@ -2320,6 +2320,10 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 
 *warn*. A required column with @default(auth().id) is filled from the signed-in principal. With create at level 0 a visitor has none, so the runtime refuses the create (401, naming the field) unless the visitor states the column — and a visitor naming a user it cannot read is refused too. Raise the create level, or make the column optional.
 
+### `anonymous-beside-logged` — an @@anonymous model in a schema where other models log their writes
+
+*warn*. An anonymous row has no writer, and a log on ANOTHER model can give it one back: the logged write carries the actor and a millisecond clock, and the two tables line up in order (FJS-D349). The client refuses the pairing inside one transaction; nothing refuses a roster logged in a separate one. Ask whether any model named here is written when someone answers.
+
 ### `create-reaches-unpickable-relation` — a create policy reaches through a relation the picker cannot be narrowed by
 
 *warn*. A create @@allow that reads a related row (schedule.hostId == auth().id) accepts only some of that model, and a generated picker offers every row the caller can READ. Litestone derives the narrowing for a top-level rel.col == auth().claim conjunct (x-pick-where); any other shape — an ||, an in, a computed value — it cannot state, so the picker offers rows the write refuses unless the related model's own read policy already narrows them.

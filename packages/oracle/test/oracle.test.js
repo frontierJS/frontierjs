@@ -789,3 +789,39 @@ describe('brief', () => {
     expect(text).toContain(ENTITY.Document.lifecycles.invoice.moves[0].name)
   })
 })
+
+// FJS-2551: a person without an account has an archetype of their own, so an
+// answer does not file a public booker under one that reads as signed in.
+describe('the visitor actor', () => {
+  const BOOKER = () => ({
+    actors: [{ name: 'Booker', archetype: 'visitor', who: 'someone booking from the public page' }],
+    entities: [{
+      name: 'YogaClass', rung: 'novel', why: 'a class on the timetable',
+      fields: [{ name: 'title', type: 'text', required: true }],
+      links: [{ name: 'instructor', to: 'User', actor: 'coordinator', required: true }],
+      access: { public: ['read'], why: 'the public page lists classes' },
+    }],
+  })
+
+  test('an actor may be a visitor and the plan carries it', () => {
+    const r = checkAnswer(BOOKER())
+    expect(r.refusals).toEqual([])
+    expect(r.plan.actors[0].archetype).toBe('visitor')
+  })
+
+  test('a visitor holds no op, since the entity\'s public is what admits one', () => {
+    expect(ACTORS.visitor.may).toEqual([])
+  })
+
+  test('a link to User cannot be a visitor: a link is an account', () => {
+    const a = BOOKER()
+    a.entities[0].links.push({ name: 'booker', to: 'User', actor: 'visitor' })
+    expect(checkAnswer(a).refusals.map(r => r.rule)).toContain('link')
+  })
+
+  test('the brief names the visitor apart from the actors a link takes', () => {
+    const text = brief()
+    expect(text).toContain('`visitor`')
+    expect(text).not.toContain('| `visitor` |')
+  })
+})

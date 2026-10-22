@@ -104,6 +104,11 @@ await sendgrid.send({
 | `Column`  | `<td>` cell |
 | `Spacer`  | Vertical whitespace row |
 
+`Heading`, `Text`, `KeyValue`, `Image` and `DataTable` render a `<tr>`, so they go
+directly in a `Section` or a `Card`. Inside a `Column` (a `<td>`) the parser moves
+the row out of the cell and the layout runs full width; the kit warns once when it
+sees that. Wrap them in a `Card` there, as the example above does.
+
 ### Content
 
 | Component  | Description |

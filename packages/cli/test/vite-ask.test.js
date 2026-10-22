@@ -240,8 +240,10 @@ describe('readAskEvent — edits', () => {
       { type: 'tool_use', id: 't1', name: 'Edit', input: { file_path: '/app/a.mesa', old_string: 'a', new_string: 'b' } },
     ] } })
     expect(call).toContainEqual({ type: 'edit', id: 't1', file: '/app/a.mesa', old: 'a', new: 'b', all: false })
+    expect(readAskEvent({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: 'File is outside the app' }] } }))
+      .toEqual([{ type: 'refused', id: 't1', text: 'File is outside the app' }])
     expect(readAskEvent({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true }] } }))
-      .toEqual([{ type: 'refused', id: 't1' }])
+      .toEqual([{ type: 'refused', id: 't1', text: '' }])
     expect(readAskEvent({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't2' }] } }))
       .toEqual([{ type: 'landed', id: 't2' }])
   })

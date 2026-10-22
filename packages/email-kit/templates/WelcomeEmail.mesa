@@ -63,16 +63,12 @@
   <!-- Plan card -->
   <Section>
     <Spacer height={24} />
-    <Row>
-      <Column>
-        <Card heading="Your Plan">
-          <KeyValue label="Plan"         value="{planName}" />
-          <KeyValue label="Amount"       value="{amount}"   bold={true} />
-          <KeyValue label="Next billing" value="{nextBilling}" />
-          <KeyValue label="Status"       value="Active ✓"  bold={true} />
-        </Card>
-      </Column>
-    </Row>
+    <Card heading="Your Plan">
+      <KeyValue label="Plan"         value="{planName}" />
+      <KeyValue label="Amount"       value="{amount}"   bold={true} />
+      <KeyValue label="Next billing" value="{nextBilling}" />
+      <KeyValue label="Status"       value="Active ✓"  bold={true} />
+    </Card>
   </Section>
 
   <!-- Two-column features -->

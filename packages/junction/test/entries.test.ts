@@ -200,6 +200,31 @@ describe('resource().record(id)', () => {
     m.restore()
   })
 
+  it('two cold views of one row in one tick send one request (FJS-3389)', async () => {
+    const c = client()
+    const m = mockRow({ id: 1, status: 'pending' })
+    const r = c.resource('orders', { model: 'Order' })
+    const [a, b] = [r.record(1), r.record('1')]
+    expect(await Promise.all([a.ready, b.ready])).toEqual([
+      { id: 1, status: 'pending' }, { id: 1, status: 'pending' },
+    ])
+    expect(m.calls()).toBe(1)
+    expect(b.get()).toEqual({ id: 1, status: 'pending' })
+    m.restore()
+  })
+
+  it('a refused shared read is every waiting view\'s own failure (FJS-3389)', async () => {
+    const c = client()
+    const m = mockRow({ message: 'no' }, 403)
+    const r = c.resource('orders', { model: 'Order' })
+    const [a, b] = [r.record(1), r.record(1)]
+    expect(await Promise.all([a.ready, b.ready])).toEqual([null, null])
+    expect(m.calls()).toBe(1)
+    expect(a.error()?.status).toBe(403)
+    expect(b.error()?.status).toBe(403)
+    m.restore()
+  })
+
   it('does NOT fetch when a list has already read the row', async () => {
     const c = client()
     const list = mockList([{ id: 1, status: 'pending' }], { limit: 20, offset: 0, total: 1 })

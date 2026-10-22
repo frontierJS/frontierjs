@@ -38,7 +38,6 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'fs'
 import { resolve, dirname, join, extname } from 'path'
 import { fileURLToPath } from 'url'
-import { minifySync } from 'vite'
 
 /** Where the two artefacts live, relative to the app's own origin. */
 export const WASM_DIR   = 'fjs-sqlite'
@@ -108,8 +107,13 @@ export function findWasmDist(root) {
  * precaches every byte the build emits (`FJS-2323`). It finds its `.wasm` by
  * `import.meta.url`, which minification keeps; the license block stays, since
  * the package's terms require it to travel with the code.
+ *
+ * `vite` is imported here rather than at the top: the terminal shell reaches
+ * this file through `schema-plugin.js`, and Haven's installed client has no
+ * vite (`FJS-3439`).
  */
-function minifyLoader(file) {
+async function minifyLoader(file) {
+  const { minifySync } = await import('vite')
   const { code, errors } = minifySync(file, readFileSync(file, 'utf8'), {
     module: true,
     codegen: { legalComments: 'inline' },
@@ -198,14 +202,14 @@ export function localDbPlugin(config, sierraContext) {
     // rather than emitted as assets, because `emitFile` content-addresses a
     // name and the module fetches its `.wasm` sibling by the name it was
     // published under.
-    writeBundle(options) {
+    async writeBundle(options) {
       if (!wantsLocalDb(config) || !dist) return
       const outDir = options.dir ?? resolve(root, 'dist')
 
       const target = join(outDir, WASM_DIR)
       mkdirSync(target, { recursive: true })
       for (const [from, to] of WASM_FILES) {
-        if (extname(to) === '.js') writeFileSync(join(target, to), minifyLoader(join(dist, from)))
+        if (extname(to) === '.js') writeFileSync(join(target, to), await minifyLoader(join(dist, from)))
         else copyFileSync(join(dist, from), join(target, to))
       }
     },

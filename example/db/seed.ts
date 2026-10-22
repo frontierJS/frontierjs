@@ -32,7 +32,7 @@ import { fromPath }            from '@frontierjs/litestone/storage'
 import { sys, db, DEV_KEY, shops, DEFAULT_SHOP, TIME_ZONE_FLOOR } from '../api/src/core/db.ts'
 import { move }                from '../api/src/domain/shop'
 import { priceBasket, BASE }   from '../api/src/domain/shop'
-import { issueInvoice, periodLines, settleInvoice, advancePeriod, startSubscription } from '../api/src/domain/billing'
+import { issueInvoice, periodLines, settleInvoice, advancePeriod, startSubscription, recoverIfClear } from '../api/src/domain/billing'
 import { plainDateIn, addToDate, startOfDay } from '@frontierjs/toolbelt/datetime'
 
 // ─── The unit, and why this file is not written in it ─────────────────────
@@ -438,6 +438,24 @@ async function seedCatalog() {
 }
 
 
+// A demo person whose password a drive changed stays changed through every
+// reseed, because the create below skips a person who exists — and every
+// browser drive after it fails at its first sign-in with "Invalid credentials",
+// before an assertion is printed (`FJS-3224`). Put back through auth's own
+// reset, so the hash is written by the one thing that knows its shape, and only
+// when the demo password no longer matches: a reset revokes the person's sessions.
+const resets = new Map<string, (token: string) => void>()
+
+async function restorePassword(auth: ReturnType<typeof createLitestoneAuth>, who: { email: string, password: string }) {
+  const user = await sys.user.findFirst({ where: { email: who.email } })
+  const cred = user && await sys.credential.findFirst({ where: { userId: user.id, type: 'password' } })
+  if (cred && await Bun.password.verify(who.password, cred.value)) return
+  const token = new Promise<string>(resolve => resets.set(who.email, resolve))
+  await auth.requestPasswordReset(who.email)
+  await auth.confirmPasswordReset(await token, who.password)
+  resets.delete(who.email)
+}
+
 async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
   // Guarded PER TABLE, not once on products.
   //
@@ -559,6 +577,7 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
   // before the server ever listens.
   for (const who of [DEMO.user, DEMO.admin, DEMO.ops]) {
     if (!await sys.user.findFirst({ where: { email: who.email } })) await auth.createUser(who)
+    await restorePassword(auth, who)
 
     // Stamped on every run and not only on creation, which is not tidiness: a
     // database seeded before `isStaff` existed has both of these rows already,
@@ -806,6 +825,34 @@ async function seedBilling() {
   // a blank and nobody notices.
   else if (issued && !issued.paidAt)
     await sys.invoice.update({ where: { id: issued.id }, data: { paidAt }, system: ['paidAt'] })
+
+  // ─── What `verify` leaves on it ───────────────────────────────────────
+  //
+  // A mid-cycle seat change issues an invoice on the seeded subscription and a
+  // reprice opens another PRO window, every `verify` run. Past fifty of either
+  // the pages stop listing the row a drive waits for, and the unpaid invoices
+  // lapse the subscription through dunning (`FJS-1708`). `verify` runs this file
+  // when it ends. A version a subscription is still sold at stays.
+  if (sub) {
+    const litter = await sys.invoice.findMany({
+      where: { subscriptionId: sub.id, number: { not: INV } },
+    })
+    for (const b of litter) {
+      await sys.creditNote.deleteMany({ where: { invoiceId: b.id } })
+      await sys.invoice.delete({ where: { id: b.id } })
+    }
+    if (litter.length) await recoverIfClear(sys, sub.id)
+    if (sub.cancelAtPeriodEnd) await sys.subscription.update({ where: { id: sub.id }, data: { cancelAtPeriodEnd: false } })
+
+    const windows = versions.slice(2).reverse()
+    for (const v of windows) {
+      if (await sys.subscription.count({ where: { planVersionId: v.id } }) === 0)
+        await sys.planVersion.delete({ where: { id: v.id } })
+    }
+    const open = versions[1]
+    if (open?.effectiveTo && await sys.planVersion.count({ where: { planId: open.planId, effectiveTo: null } }) === 0)
+      await sys.planVersion.update({ where: { id: open.id }, data: { effectiveTo: null } })
+  }
 }
 
 // ─── The payroll ──────────────────────────────────────────────────────────
@@ -1012,6 +1059,7 @@ async function orderLinesFor(items: Array<{ sku: string, quantity: number }>) {
 
 const auth = createLitestoneAuth(db, {
   encryptionKey: process.env.ENCRYPTION_KEY ?? DEV_KEY,
+  onPasswordResetRequested: ({ email, token }) => resets.get(email)?.(token),
 })
 
 await seed(auth)

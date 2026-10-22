@@ -3134,6 +3134,31 @@ describe('a service over no model is graded by the level it declares (FJS-D408)'
     expect(JSON.stringify(hub.body)).toMatch(/requires level 7/)
   })
 
+  // The wire half of verify.mjs's gate-ladder section (`FJS-3098`): a viewer's
+  // refused POST must be a 403, not a 400 that a validation pass answers first.
+  test('over HTTP a viewer is refused a server create with 403 and a secrets read by its level', async () => {
+    const sys   = env.system as any
+    const email = `lad-${Math.random().toString(36).slice(2, 8)}@x.co`
+    const made  = await (env as any).app.auth.createUser({ email, password: 'hunter2hunter2', name: 'Ladder' })
+    const uid   = made.id ?? made.userId
+    await sys.user.update({ where: { id: uid }, data: { accountId: ws.accountId, status: 'active' } })
+    await sys.workspaceMember.create({ data: {
+      workspaceId: ws.id, userId: uid, role: 'viewer',
+      capabilities: grantsFor('viewer'), acceptedAt: new Date().toISOString(),
+    } })
+    const login = await (env as any).app.auth.login(email, 'hunter2hunter2')
+    const token = login.token ?? login.accessToken
+
+    const post = await env.http.post('/servers').set('Authorization', `Bearer ${token}`)
+      .set('X-Workspace-Id', ws.id).send({ name: 'nope', slug: 'nope' })
+    expect(post.status, JSON.stringify(post.body)).toBe(403)
+
+    const secrets = await env.http.get('/secrets').set('Authorization', `Bearer ${token}`)
+      .set('X-Workspace-Id', ws.id)
+    expect(secrets.status).toBe(403)
+    expect(JSON.stringify(secrets.body)).toMatch(/role in this workspace to read/)
+  })
+
   test('the portal and infra read at READER: a viewer reads, a signed-in stranger to the workspace does not', async () => {
     expect((await env.as(viewer).service('portal').find()).data.length).toBeGreaterThan(0)
     await expect(env.as(viewer).service('infra').call('graph')).resolves.toBeDefined()

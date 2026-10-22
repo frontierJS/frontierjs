@@ -16,7 +16,7 @@ emitted schema with litestone and runs one emitted app on a real client.
 
 ```
 src/catalog.js   THE ORIGIN. 32 entities with typed fields, usual links and
-                 named lifecycles; 7 actors and what each may do; 18 patterns;
+                 named lifecycles; 8 actors and what each may do; 18 patterns;
                  5 modifiers. Lifted from mockup/oracle.jsx, where the same
                  collapses were stated as data and again in prompt text
 src/types.js     the words an answer types a field with, and the column each

@@ -25,7 +25,7 @@ args:
 flags:
   here:
     type: boolean
-    description: Use current directory instead of creating <name>/
+    description: Scaffold into the current directory instead of creating <name>/ (the app is still named <name>; without one, the folder names it)
     defaultValue: false
   force:
     type: boolean
@@ -2460,7 +2460,8 @@ if (name && !isValidProjectName(name)) {
 // ─── 2. Resolve target directory ──────────────────────────────────────────────
 
 const targetDir = useHere ? $.paths.root : resolve($.paths.root, name)
-const appName   = useHere ? basename($.paths.root) : name
+// Under --here a stated name still names the app; only its absence falls back to the folder.
+const appName   = name ?? basename($.paths.root)
 
 if (!useHere && existsSync(targetDir)) {
   log.error(`Directory ${name}/ already exists. Use --here if you meant to scaffold into it, or pick a different name.`)

@@ -57,6 +57,11 @@ else if (existsSync(localEnv)) {
   const { readFileSync, writeFileSync, mkdtempSync, rmSync } = await import('fs')
   const { tmpdir } = await import('os')
   const lines   = readFileSync(localEnv, 'utf8').split('\n')
+  // The seed carries the file as written, so a copy older than the mount at
+  // CONTAINER_DB_DIR is named here rather than found after a build (FJS-3438).
+  const { strayDatabasePaths } = await import(new URL('file://' + global.fliRoot + '/core/local-env.js'))
+  for (const { key, value } of strayDatabasePaths(lines.join('\n'), CONTAINER_DB_DIR))
+    log.warn(`  ${localEnv}: ${key}=${value} is outside ${CONTAINER_DB_DIR}, which a swap does not keep — the first deploy will refuse it; fix it before or after the seed`)
   const keyAt   = lines.findIndex(l => /^ENCRYPTION_KEY=./.test(l.trim()))
   const tmp     = mkdtempSync(resolve(tmpdir(), 'fli-setup-'))
   try {

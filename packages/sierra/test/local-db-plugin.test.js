@@ -33,17 +33,17 @@ function appWith(loader) {
   return root
 }
 
-function build(root) {
+async function build(root) {
   const plugin = localDbPlugin({ offline: { db: true } }, {})
   plugin.configResolved({ root })
   const out = join(root, 'dist')
-  plugin.writeBundle({ dir: out })
+  await plugin.writeBundle({ dir: out })
   return join(out, WASM_DIR)
 }
 
 describe('the device database copy', () => {
-  test('the loader is minified and still finds its wasm by import.meta.url', () => {
-    const dir = build(appWith(LOADER))
+  test('the loader is minified and still finds its wasm by import.meta.url', async () => {
+    const dir = await build(appWith(LOADER))
     const copied = readFileSync(join(dir, 'index.js'), 'utf8')
 
     expect(copied.length).toBeLessThan(LOADER.length / 2)
@@ -53,10 +53,29 @@ describe('the device database copy', () => {
     expect(readdirSync(dir).sort()).toEqual(['index.js', 'sqlite3.wasm'])
   })
 
-  test('the wasm travels byte for byte', () => {
+  test('the wasm travels byte for byte', async () => {
     const root = appWith(LOADER)
-    const dir = build(root)
+    const dir = await build(root)
     expect(readFileSync(join(dir, 'sqlite3.wasm')))
       .toEqual(readFileSync(join(root, 'node_modules', '@sqlite.org', 'sqlite-wasm', 'dist', 'sqlite3.wasm')))
+  })
+})
+
+// FJS-3439 — Haven's installed client has no vite; the terminal shell reaches
+// this file through schema-plugin.js, so importing it must not need vite.
+describe('a machine with no vite', () => {
+  test('the plugin module imports, and the minify is the build that needs vite', async () => {
+    const { spawnSync } = await import('child_process')
+    const { pathToFileURL } = await import('url')
+    const hooks = 'data:text/javascript,' + encodeURIComponent(
+      `export async function resolve(s, c, next) {` +
+      ` if (s === 'vite') throw new Error('Cannot find package vite'); return next(s, c) }`)
+    const boot = 'data:text/javascript,' + encodeURIComponent(
+      `import { register } from 'node:module'; register(${JSON.stringify(hooks)})`)
+    const file = pathToFileURL(join(import.meta.dirname, '../src/build/schema-plugin.js')).href
+    const r = spawnSync(process.execPath, ['--import', boot, '-e', `await import(${JSON.stringify(file)})`],
+      { encoding: 'utf8', timeout: 30000 })
+    expect(r.stderr).not.toContain('Cannot find package vite')
+    expect(r.status).toBe(0)
   })
 })

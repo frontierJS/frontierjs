@@ -138,7 +138,7 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
 
   const handlers = new Map<string, RegisteredHandler>()
   const pool     = new WorkerPool()
-  const cron     = new CronScheduler()
+  const cron     = new CronScheduler({ now: opts.cronClock })
   let   started  = false
   let   telemetry: CaravanTelemetry | null = null
   let   ownerTimer: ReturnType<typeof setInterval> | null = null

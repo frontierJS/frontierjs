@@ -39,6 +39,7 @@ import { join, relative, basename, extname, resolve, dirname } from 'path'
 import { singularize, pluralize, modelName, camel } from '@frontierjs/toolbelt/inflect'
 import { parseFrontmatter }                from '@frontierjs/toolbelt/frontmatter'
 import { docFences, isRunnable }           from '@frontierjs/toolbelt/docfences'
+import { readRegisters }                   from './registers.js'
 
 // ─── the rule table ───────────────────────────────────────────────────────────
 //
@@ -126,7 +127,7 @@ export const RULES = [
   { id: 'widget-entry-name',    scope: 'app',  severity: 'error', invariant: 19,
     title: 'a widget is a PascalCase file, or a directory holding index.mesa' },
   { id: 'migration-history',    scope: 'app',  severity: 'error', invariant: null,
-    title: 'an app whose container migrates on boot has a migration history to replay' },
+    title: 'the migration history builds db/schema.lite' },
   { id: 'raw-route-param',      scope: 'app',  severity: 'error', invariant: null,
     hazard: 'api: Raw routes',
     title: 'a raw route names a capture {id}, never :id' },
@@ -163,7 +164,7 @@ export const RULES = [
     hazard: 'ui: `find()` answers the list envelope',
     title: 'a service answer is read in the one shape the server gives it' },
   { id: 'service-module-db',    scope: 'app',  severity: 'error', invariant: null,
-    title: 'a service reads the request-scoped client, not the module one' },
+    title: 'a service reads the request-scoped client, a job the one ctx.app.withDb hands out, never the module one' },
   { id: 'service-as-system',    scope: 'app',  severity: 'warn',  invariant: 6,
     title: 'asSystem() off the app client crosses tenants; with no row tenancy, any asSystem() in a service crosses users' },
   { id: 'scheduler-dispatch',   scope: 'app',  severity: 'error', invariant: null,
@@ -1500,62 +1501,72 @@ const CHECKS = {
   // An app that genuinely wants the defaults writes a config file saying so in
   // one line, which costs nothing and is the difference between a decision and
   // an accident.
-  // An app whose entrypoint replays migrations must have some to replay.
+  // The migration history must build the schema.
   //
-  // `fli db:push` writes tables and no file; the container runs `migrate
-  // apply`, which runs files. An app that has only ever pushed therefore
-  // deploys, starts, answers /health and 500s on the first write — measured on
-  // this repo's own `example`, which had no `db/migrations/` at all
-  // (`FJS-345`, `FJS-388`).
+  // `fli db:push` writes tables and no file; a deploy replays files. An app
+  // that has only ever pushed deploys, starts, answers /health and 500s on the
+  // first write — measured on this repo's own `example`, which had no
+  // `db/migrations/` at all (`FJS-345`, `FJS-388`). A model added to the schema
+  // with no migration is the same fault one table at a time, and `bun run
+  // check` passed over it (`FJS-1640`).
   //
-  // This is the STRUCTURAL half and deliberately only that: whether the history
-  // actually BUILDS the declared schema is a semantic question that needs
-  // litestone to run, and `fli` is on node where `bun:sqlite` cannot be
-  // imported. `litestone migrate check` answers it, and three things call it —
-  // `fli deploy:doctor` before the image is built, `migrate apply` at container
-  // start, and CI's deploy phase. A rule here that shelled out would be a
-  // fourth implementation of a question that already has one owner
-  // (`FJS-D123`).
-  //
-  // Only for an app that migrates on BOOT. basecamp runs its migrations inside
-  // app.ts and has no `db:migrate` script, on purpose (`FJS-417`), and an app
-  // with no Dockerfile is not deploying this way at all.
+  // Two halves. A Dockerfile whose entrypoint replays migrations over a
+  // `db/migrations/` holding no `.sql` is answered here without litestone, so
+  // it holds on a tree with nothing installed. Every other app is asked of
+  // `litestone migrate check`, which replays the files into memory and diffs
+  // them against the schema; it is the same question `fli deploy:doctor` and
+  // `migrate apply` ask, so there is one implementation of it (`FJS-D123`).
+  // An app that migrates inside its own boot (basecamp, `FJS-417`) has the
+  // semantic half and not the structural one.
   'migration-history': ({ root }) => {
-    if (!existsSync(join(root, 'db', 'schema.lite'))) return { skipped: 'no db/schema.lite' }
+    const schema = schemaFile(root)
+    if (!schema) return { skipped: 'no db/schema.lite' }
+
+    const dir   = join(root, 'db', 'migrations')
+    const files = existsSync(dir) ? walkSql(dir) : []
 
     const dockerfile = ['Dockerfile', join('deploy', 'Dockerfile')]
       .map(p => join(root, p)).find(p => existsSync(p))
-    if (!dockerfile) return { skipped: 'no Dockerfile — not deployed this way' }
-    // Exec form and shell form are `dockerfileScripts`'s to read; a script an
-    // ENTRYPOINT/CMD hands off to is read here, since the Dockerfile alone
-    // cannot say what it runs.
-    const text = readFileSync(dockerfile, 'utf8')
-    let replays = dockerfileScripts(text).includes('db:migrate')
-    const unread = []
-    if (!replays) {
-      for (const line of text.split('\n')) {
-        if (!/^\s*(CMD|ENTRYPOINT)\b/.test(line)) continue
-        for (const m of line.matchAll(/[\w./-]+\.(?:sh|bash)\b/g)) {
-          const script = [join(root, m[0]), join(dirname(dockerfile), m[0])].find(p => existsSync(p))
-          if (!script) { unread.push(m[0]); continue }
-          if (/\bbun\s+run\s+db:migrate\b/.test(readFileSync(script, 'utf8'))) replays = true
+    if (dockerfile && !files.length) {
+      // Exec form and shell form are `dockerfileScripts`'s to read; a script an
+      // ENTRYPOINT/CMD hands off to is read here, since the Dockerfile alone
+      // cannot say what it runs.
+      const text = readFileSync(dockerfile, 'utf8')
+      let replays = dockerfileScripts(text).includes('db:migrate')
+      if (!replays) {
+        for (const line of text.split('\n')) {
+          if (!/^\s*(CMD|ENTRYPOINT)\b/.test(line)) continue
+          for (const m of line.matchAll(/[\w./-]+\.(?:sh|bash)\b/g)) {
+            const script = [join(root, m[0]), join(dirname(dockerfile), m[0])].find(p => existsSync(p))
+            if (script && /\bbun\s+run\s+db:migrate\b/.test(readFileSync(script, 'utf8'))) replays = true
+          }
         }
       }
-    }
-    if (!replays) {
-      return { skipped: unread.length
-        ? `the entrypoint runs ${unread.join(', ')}, which is not in the tree to read`
-        : 'the entrypoint does not replay migrations' }
+      if (replays) return { findings: [{
+        file: 'db/migrations/',
+        message: 'the container runs `bun run db:migrate` and there is no migration to replay, so it will '
+               + 'start over an empty database and fail on the first write. Write one: `fli db:migrate`',
+      }] }
     }
 
-    const dir = join(root, 'db', 'migrations')
-    const files = existsSync(dir) ? walkSql(dir) : []
-    if (files.length) return { findings: [] }
+    const command = binCommand('litestone', root)
+    if (!command) return { skipped: '@frontierjs/litestone is not installed where the app can reach it to replay the history' }
 
+    const run = spawnSync(`${command} migrate check --schema ${JSON.stringify(schema.path)}`, {
+      cwd: root, shell: true, encoding: 'utf8', timeout: 120_000,
+    })
+    if (run.status === 0) return { findings: [] }
+
+    // The gap is the indented block between the verdict line and the advice;
+    // the rest is the CLI's own decoration.
+    const lines = `${run.stdout ?? ''}${run.stderr ?? ''}`.replace(/\x1b\[[0-9;]*m/g, '').split('\n')
+    const from  = lines.findIndex(l => /does not build the schema/.test(l))
+    const gap   = (from < 0 ? lines : lines.slice(from + 1))
+      .map(l => l.trim()).filter(l => l && !/^(A deploy replays|and the container refuses|Write it)/.test(l)).join('; ')
     return { findings: [{
       file: 'db/migrations/',
-      message: 'the container runs `bun run db:migrate` and there is no migration to replay, so it will '
-             + 'start over an empty database and fail on the first write. Write one: `fli db:migrate`',
+      message: `the migration history does not build db/schema.lite: ${gap || `litestone migrate check exited ${run.status}`}. `
+             + 'A deploy replays files and `fli db:push` writes none. Write the migration: `fli db:migrate`',
     }] }
   },
 
@@ -2694,8 +2705,8 @@ const CHECKS = {
   },
 
   'service-module-db': ({ root }) => {
-    const files = scripts(root, 'api').filter(p => /\.service\.[cm]?[jt]s$/.test(basename(p)))
-    if (!files.length) return { skipped: 'no *.service.* under api/' }
+    const files = scripts(root, 'api').filter(p => /\.(service|job)\.[cm]?[jt]s$/.test(basename(p)))
+    if (!files.length) return { skipped: 'no *.service.* or *.job.* under api/' }
 
     // Only where `db` is an IMPORT. `const db = $.db` is the correct
     // shape and cannot coexist with an imported binding of that name — that is
@@ -2714,10 +2725,14 @@ const CHECKS = {
         const line = lineOf(code, m.index)
         if (seen.has(line)) continue
         seen.add(line)
+        const scoped = /\.job\./.test(basename(path))
+          ? '`ctx.app.withDb((db) => …)`: a job has no request, and the module client reads as ' +
+            'STRANGER(0), so every fire fails on the first gated model (FJS-3089)'
+          : '`$.db`'
         findings.push({
           file: path, line,
-          message: `${m[0]}… reads the module client, which carries no principal. The request-scoped one ` +
-                   `is ${'`$.db`'}: through this one auth() is null, so every row policy ` +
+          message: `${m[0]}… reads the module client, which carries no principal. The scoped one ` +
+                   `is ${scoped}: through the module one auth() is null, so every row policy ` +
                    `matches nothing — an empty list with a 200 — and a write belongs to nobody in the ` +
                    `audit trail. asSystem() is the deliberate bypass and is not this.`,
         })
@@ -6434,6 +6449,12 @@ function seamListed({ root }) {
 // what the table is graded against, and a bare chapter (`V8`) matches no line
 // of the gap sheet.
 //
+// *Open* is graded the other way round: the page's rule (a test asserting an
+// open hole belongs in *Open*) has a converse, and a fixed hole stayed there as
+// prose while the tests proving the fix stayed out of *Proved by*. An *Open*
+// cell whose every `FJS-###` is a closed row is an error (a ruling cited
+// there is a limit held by design, and stays), and so is a test named there that carries no `test.failing`.
+//
 // A dead path in *Enforced at* is `doc-cites-dead`'s. Whether the named test
 // really holds the promise, or the ID really names it, no rule decides.
 
@@ -6444,13 +6465,18 @@ function threatRow({ root }) {
   if (!existsSync(file)) return { skipped: `no ${THREATS_FILE}` }
 
   const findings = []
-  let col = -1, asvs = -1, rows = 0
+  const reg     = readRegisters(root)
+  const settled = new Set(reg.issues.filter(r => r.closed)
+    .flatMap(r => [r.id, ...(r.aliases ?? [])]).map(id => id.toLowerCase()))
+  const citeRe  = reg.prefix ? new RegExp(`\\b${reg.prefix}-D?\\d+\\b`, 'gi') : null
+  let col = -1, asvs = -1, open = -1, rows = 0
   readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
     if (!line.startsWith('|')) { col = -1; return }
     const cells = line.split('|').slice(1, -1).map(c => c.trim())
     if (col === -1) {
       col  = cells.findIndex(c => /^proved by$/i.test(c))
       asvs = cells.findIndex(c => /^asvs$/i.test(c))
+      open = cells.findIndex(c => /^open$/i.test(c))
       return
     }
     if (cells.every(c => /^:?-+:?$/.test(c))) return
@@ -6461,6 +6487,22 @@ function threatRow({ root }) {
       findings.push({ ...at,
         message: `row ${label} cites no ASVS requirement in *ASVS*. Name the ASVS 5.0 requirement ` +
                  `(\`V8.2.1\`) the promise answers to; docs/ASVS.md lists each one in scope.` })
+    }
+    if (open !== -1) {
+      const cell  = cells[open] ?? ''
+      const cited = citeRe ? [...new Set([...cell.matchAll(citeRe)].map(m => m[0].toUpperCase()))] : []
+      if (cited.length && cited.every(id => settled.has(id.toLowerCase()))) findings.push({ ...at,
+        message: `row ${label} lists ${cited.join(', ')} under *Open*, and every one is closed. A ` +
+                 `fixed hole is not open: move the test that proves the fix to *Proved by* and ` +
+                 `write \`—\` here.` })
+      for (const [, p] of cell.matchAll(/`([^`\s]+\/[^`\s]+)`/g)) {
+        if (kindOf(p) !== 'test') continue
+        if (!existsSync(join(root, p))) findings.push({ ...at,
+          message: `row ${label} names \`${p}\` in *Open*, which is not in the tree.` })
+        else if (!/\b(?:test|it)\.failing\b/.test(readFileSync(join(root, p), 'utf8'))) findings.push({ ...at,
+          message: `row ${label} names \`${p}\` in *Open*, and it carries no \`test.failing\`. A ` +
+                   `test that passes proves the promise: move it to *Proved by*.` })
+      }
     }
     const paths = [...(cells[col] ?? '').matchAll(/`([^`\s]+\/[^`\s]+)`/g)].map(m => m[1])
     if (!paths.some(p => kindOf(p) === 'test')) {

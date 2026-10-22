@@ -23,7 +23,7 @@ import { Database }                         from 'bun:sqlite'
 import {
   httpStatus, httpJson, httpText, header, portAnswering, portFree,
   fileExists, fileContains, sqliteRow, sqliteExec, eventually, dockerRunning, dockerImageOf,
-  commandExists, formatFailure, scaffoldVerificationToken,
+  commandExists, formatFailure, scaffoldVerificationToken, apiIsApp, pageIsApp,
 } from '../core/probe.js'
 
 // ─── a real server on an ephemeral port ──────────────────────────────────────
@@ -407,5 +407,60 @@ describe('scaffoldVerificationToken', () => {
   test('an address that is a prefix of another is not that other one', () => {
     expect(scaffoldVerificationToken(printed('ann@x.test', 't'), 'an@x.test')).toBeNull()
     expect(scaffoldVerificationToken('', 'a@x.test')).toBeNull()
+  })
+})
+
+// FJS-1061: a port answering is not the app on it. The lesson scaffolded
+// `tutor-app`; somebody's own app is on the same dev slot.
+describe('apiIsApp / pageIsApp', () => {
+  let other, otherBase
+  beforeAll(async () => {
+    other = createServer((req, res) => {
+      if (req.url === '/api/health') {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ status: 'ok', app: 'my-own-app' }))
+      } else if (req.url === '/bare') {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ status: 'ok' }))
+      } else {
+        res.writeHead(200, { 'content-type': 'text/html' })
+        res.end('<html><head><title>my-own-app</title></head></html>')
+      }
+    })
+    await new Promise((r) => other.listen(0, '127.0.0.1', r))
+    otherBase = `http://127.0.0.1:${other.address().port}`
+  })
+  afterAll(() => other.close())
+
+  test('the right app is adopted', async () => {
+    expect((await apiIsApp({ url: `${otherBase}/api/health`, app: 'my-own-app' })).ok).toBe(true)
+    expect((await pageIsApp({ url: `${otherBase}/`, app: 'my-own-app' })).ok).toBe(true)
+  })
+
+  test('a different app answering health is refused by name, and is foreign', async () => {
+    const r = await apiIsApp({ url: `${otherBase}/api/health`, app: 'tutor-app' })
+    expect(r.ok).toBe(false)
+    expect(r.foreign).toBe(true)
+    expect(r.got).toContain('my-own-app')
+    expect(r.likely).toContain('--api-port')
+  })
+
+  test('a health answer that names no app is foreign too', async () => {
+    const r = await apiIsApp({ url: `${otherBase}/bare`, app: 'tutor-app' })
+    expect(r.foreign).toBe(true)
+    expect(r.got).toContain('names no app')
+  })
+
+  test('a different page title is foreign', async () => {
+    const r = await pageIsApp({ url: `${otherBase}/`, app: 'tutor-app' })
+    expect(r.ok).toBe(false)
+    expect(r.foreign).toBe(true)
+    expect(r.got).toContain('my-own-app')
+  })
+
+  test('nothing listening is NOT foreign -- that port is the lesson\'s to start on', async () => {
+    const r = await apiIsApp({ url: 'http://127.0.0.1:1/api/health', app: 'tutor-app' })
+    expect(r.ok).toBe(false)
+    expect(r.foreign).toBeUndefined()
   })
 })

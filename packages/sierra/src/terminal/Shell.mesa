@@ -122,7 +122,7 @@
   const STEP = { ArrowDown: 1, ArrowUp: -1 }
   const jumpKey = (e) => {
     e.stopPropagation()
-    const step = STEP[e.key] ?? (e.ctrlKey && e.code === 'n' ? 1 : e.ctrlKey && e.code === 'p' ? -1 : 0)
+    const step = STEP[e.key] ?? (e.ctrlKey && e.code === 'KeyN' ? 1 : e.ctrlKey && e.code === 'KeyP' ? -1 : 0)
     const shown = hits(query, paths)
     if (step) {
       e.preventDefault()

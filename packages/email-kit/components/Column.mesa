@@ -1,4 +1,5 @@
 <script>
+  $context.emailCell = true     // a row component below this is inside a <td>
   export let width    = undefined   // e.g. '50%', '200px', or undefined (auto)
   export let bgcolor  = undefined
   export let padding  = '0 16px'

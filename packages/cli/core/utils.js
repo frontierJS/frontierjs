@@ -114,17 +114,76 @@ export const logger = (msg, level = 'log') => {
 }
 
 // ─── loadEnv — native .env parser (no dotenv dependency) ─────────────────────
+// Reads a value the way Bun's own loader does, because `bun run` reads the same
+// file when fli is not in front and a secret must be one string under both.
 // Handles: KEY=value, KEY="quoted value", KEY='quoted', # comments, blank lines,
-// KEY=value with inline # comment, multi-word unquoted values.
+// KEY=value with inline # comment (an unquoted value ends at the first `#`),
+// multi-word unquoted values.
 //
 // Quoted values:
-//   - Double quotes interpret \n \r \t \\ \" escape sequences (dotenv-compatible).
-//   - Single quotes are literal — no escape interpretation.
+//   - A backslash skips the next character when looking for the closing quote,
+//     in either kind, and stays in the value: `"a\"b"` is `a\"b`.
+//   - Double quotes turn `\n` and `\r` into a newline and a carriage return, and nothing else.
 //   - Both kinds of quotes support multi-line values: a value that opens with a
 //     quote but doesn't close on the same line continues until a matching quote
 //     is found on a later line.
 //
+// `$NAME` and `${NAME}` expand in every kind of value, `${NAME:-default}` when
+// NAME is unset; the shell wins over the file, and a name defined later in the
+// file still counts. `\$` is a literal `$`.
+//
 // An existing env var is never changed; see loadFliEnv for the order.
+
+// Index of the first `quote` in `s` that no backslash skips, or -1.
+function closingQuote(s, quote) {
+  for (let i = 1; i < s.length; i++) {
+    if (s[i] === '\\') i++
+    else if (s[i] === quote) return i
+  }
+  return -1
+}
+
+// `\$` → `$`, `\n` → newline (double quotes only), `$NAME`/`${NAME[:-d]}` → `lookup`.
+function expandEnvValue(val, dq, lookup) {
+  let out = ''
+  for (let i = 0; i < val.length; i++) {
+    const ch = val[i]
+    if (ch === '\\' && val[i + 1] === '$') {
+      out += '$'
+      i++
+    } else if (ch === '\\' && dq && (val[i + 1] === 'n' || val[i + 1] === 'r')) {
+      out += val[i + 1] === 'n' ? '\n' : '\r'
+      i++
+    } else if (ch === '\\') {
+      // Any other pair stays whole, so a `\\` cannot turn the `n` after it into
+      // a newline; but `\\$` is still a backslash and then an escaped `$`.
+      if (val[i + 1] === '\\' && val[i + 2] === '$') {
+        out += ch
+      } else {
+        out += ch + (val[i + 1] ?? '')
+        i++
+      }
+    } else if (ch === '$' && val[i + 1] === '{') {
+      const end = val.indexOf('}', i)
+      const m = end === -1 ? null : /^(\w+)(?::-(.*))?$/s.exec(val.slice(i + 2, end))
+      if (!m) {
+        out += ch
+        continue
+      }
+      const got = lookup(m[1])
+      out += got !== undefined ? got : m[2] === undefined ? '' : expandEnvValue(m[2], false, lookup)
+      i = end
+    } else if (ch === '$' && /\w/.test(val[i + 1] ?? '')) {
+      const m = /^\w+/.exec(val.slice(i + 1))
+      out += lookup(m[0]) ?? ''
+      i += m[0].length
+    } else {
+      out += ch
+    }
+  }
+  return out
+}
+
 export function loadEnv(filePath) {
   let content
   try {
@@ -134,6 +193,7 @@ export function loadEnv(filePath) {
   }
 
   const lines = content.split('\n')
+  const entries = new Map()
 
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i]
@@ -156,15 +216,15 @@ export function loadEnv(filePath) {
     if (dq || sq) {
       const quote = dq ? '"' : "'"
       // Look for closing quote on the same line first
-      let close = val.indexOf(quote, 1)
+      const close = closingQuote(val, quote)
       if (close === -1) {
         // Multi-line quoted value — keep reading until matching quote
         const buf = [val.slice(1)]
         let found = false
         while (++i < lines.length) {
           const next = lines[i]
-          const closeIdx = next.indexOf(quote)
-          if (closeIdx === -1) {
+          const closeIdx = closingQuote(quote + next, quote) - 1
+          if (closeIdx < 0) {
             buf.push(next)
           } else {
             buf.push(next.slice(0, closeIdx))
@@ -177,30 +237,32 @@ export function loadEnv(filePath) {
       } else {
         val = val.slice(1, close)
       }
-
-      // Interpret escapes inside double quotes (dotenv convention)
-      if (dq) {
-        val = val.replace(/\\(.)/g, (_, ch) => {
-          switch (ch) {
-            case 'n': return '\n'
-            case 'r': return '\r'
-            case 't': return '\t'
-            case '\\': return '\\'
-            case '"': return '"'
-            default: return '\\' + ch
-          }
-        })
-      }
     } else {
-      // Unquoted — strip inline comments and trim
-      const commentIdx = val.indexOf(' #')
+      // Unquoted — Bun ends the value at any `#`, so `a#b` is `a` under both
+      const commentIdx = val.indexOf('#')
       if (commentIdx !== -1) val = val.slice(0, commentIdx)
       val = val.trim()
     }
 
-    if (process.env[key] === undefined) {
-      process.env[key] = val
+    entries.set(key, { raw: val, dq })
+  }
+
+  const done = new Map()
+  const visiting = new Set()
+  const lookup = (name) => {
+    if (process.env[name] !== undefined) return process.env[name]
+    const entry = entries.get(name)
+    if (!entry || visiting.has(name)) return undefined
+    if (!done.has(name)) {
+      visiting.add(name)
+      done.set(name, expandEnvValue(entry.raw, entry.dq, lookup))
+      visiting.delete(name)
     }
+    return done.get(name)
+  }
+
+  for (const key of entries.keys()) {
+    if (process.env[key] === undefined) process.env[key] = lookup(key)
   }
 }
 

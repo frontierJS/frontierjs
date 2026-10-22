@@ -5100,23 +5100,33 @@ function _localTrie(signalMap) {
 
 // ─── ASYNC STATE ──────────────────────────────────────────────────────────────
 
-export function makeAsyncState() {
+// `upstream` is the states of the awaited consts this one reads. Its own run
+// starts only when one LANDS, so for that one's whole flight the value here is
+// stale; reading pending through them says so. Their own upstream is read
+// through theirs, so a chain is pending end to end.
+export function makeAsyncState(upstream = []) {
   const [loading, setLoading] = createSignal(true)
   const [pending, setPending] = createSignal(true)
   const [error, setError] = createSignal(null)
   const [status, setStatus] = createSignal('pending')
+  const upstreamPending = () => {
+    let any = false
+    for (const u of upstream) if (u.pending) any = true
+    return any
+  }
   return {
     get loading() {
       return loading()
     },
     get pending() {
-      return pending()
+      return pending() || upstreamPending()
     },
     get error() {
       return error()
     },
     get status() {
-      return status()
+      const s = status()
+      return s === 'success' && upstreamPending() ? 'pending' : s
     },
     _update(phase, err = null) {
       if (phase === 'start') {

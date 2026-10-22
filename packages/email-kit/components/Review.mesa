@@ -1,6 +1,10 @@
 <script>
   import Avatar from './Avatar.mesa'
   import Stars from './Stars.mesa'
+  import { refuseCell } from './slot-guard.js'
+  const emailCell = $context.emailCell
+  refuseCell('Review', emailCell)
+  $context.emailCell = false    // this is a table, so the Avatar and Stars rows below it are in one
 
   export let name       = ''
   export let rating     = 5

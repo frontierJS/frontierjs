@@ -1,4 +1,7 @@
 <script>
+  import { refuseCell } from './slot-guard.js'
+  const emailCell = $context.emailCell
+  refuseCell('Row', emailCell)
   export let bgcolor  = undefined
   export let align    = undefined
   export let valign   = 'top'

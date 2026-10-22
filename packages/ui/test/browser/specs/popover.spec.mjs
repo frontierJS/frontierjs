@@ -104,6 +104,17 @@ export async function run(t) {
   t.ok(top.roomAbove > top.height,
     `the premise: the panel fits above (${top.roomAbove}px for ${top.height}px)`)
   t.ok(top.above, 'placement="top-start" opens the panel above its trigger')
+
+  // An Escape a nested control already took (a Combobox closing its list) is
+  // that control's, not the panel's (`FJS-3405`).
+  await t.evaluate(`
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') e.preventDefault() }, { once: true });
+    return true;
+  `)
+  await t.press('Escape')
+  await t.evaluate(`await new Promise(r => setTimeout(r, 150)); return true;`)
+  t.is(await t.evaluate(`return document.querySelectorAll('body > .popover').length;`), 1,
+    'an Escape already taken does not close the popover')
   await t.press('Escape')
 
   /* ── ConfirmationPopover ─────────────────────────────────────────────── */
@@ -149,6 +160,14 @@ export async function run(t) {
 
   await t.clickAt('#stage #confirm-trigger')
   await t.evaluate(`return await waitVisible('body > .popover');`)
+  await t.evaluate(`
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') e.preventDefault() }, { once: true });
+    return true;
+  `)
+  await t.press('Escape')
+  await t.evaluate(`await new Promise(r => setTimeout(r, 150)); return true;`)
+  t.is(await t.evaluate(`return document.querySelector('#cancels').textContent;`), '2',
+    'an Escape already taken does not cancel the confirmation (`FJS-3405`)')
   await t.evaluate(`
     window.__escTaken = null;
     window.addEventListener('keydown', (e) => { window.__escTaken = e.defaultPrevented }, { once: true });
