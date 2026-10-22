@@ -143,7 +143,10 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           mode scoped to it, grades every file it added, changed or removed
           with site-kit's `changeRefusal` (`gradeAsk`; one refusal drops the
           run whole), and hashes what passed into a TREE on the head it read.
-          NOTHING COMMITS. The key is `ANTHROPIC_API_KEY`, one for every
+          Nothing commits until the owner's `drafts.keep` (one commit on
+          the head the run read, refused if the draft moved); `discard`
+          forgets it and `undo` reverts the kept commit on the draft.
+          The key is `ANTHROPIC_API_KEY`, one for every
           site (`FJS-D1424`), handed to that child only; the limit is the
           argv's $2 a run (`FJS-D1425`). Each draft's last ask is a file beside
           the clone, on `list` as its preview is.

@@ -12,7 +12,7 @@
 
 import type { MiddlewareFn, RouteOptions, TransportContext } from './types.ts'
 import type { App }                            from '../core/app.ts'
-import { Forbidden, toFrameworkError }          from '../core/errors.ts'
+import { Forbidden, isDevelopmentEnv, toFrameworkError } from '../core/errors.ts'
 import { clientIp, inboundCorrelationId, mintCorrelationId, PROTOCOL_CALL_HEADERS, PROTOCOL_HTTP_ONLY_HEADERS } from '../core/context.ts'
 import {
   createRateLimiter,
@@ -229,7 +229,6 @@ function patchRouterWithMiddleware(app: App, mw: MiddlewareFn): void {
 // ─── Helmet (security headers) ────────────────────────────────────────────
 
 export interface HelmetOptions {
-  xss?:          boolean   // X-XSS-Protection
   noSniff?:      boolean   // X-Content-Type-Options
   frame?:        'deny' | 'sameorigin' | false   // X-Frame-Options
   hsts?:         boolean | { maxAge: number; includeSubDomains?: boolean }
@@ -241,10 +240,12 @@ export interface HelmetOptions {
 export function helmet(opts: HelmetOptions = {}) {
 
   const {
-    xss     = true,
     noSniff = true,
     frame   = 'deny',
-    hsts    = false,
+    // On in production with no scheme check: a browser ignores it over plain
+    // http (RFC 6797 §8.1). Off in development, where https://localhost would
+    // be pinned for a year
+    hsts    = !isDevelopmentEnv(),
     referrer = 'no-referrer',
     csp,
     poweredBy,
@@ -252,7 +253,8 @@ export function helmet(opts: HelmetOptions = {}) {
 
   const securityHeaders: Record<string, string> = {}
 
-  if (xss)     securityHeaders['x-xss-protection']        = '1; mode=block'
+  // '0' and not absent: an older browser runs its XSS auditor by default, and the auditor itself leaks page content
+  securityHeaders['x-xss-protection'] = '0'
   if (noSniff) securityHeaders['x-content-type-options']  = 'nosniff'
   if (frame)   securityHeaders['x-frame-options']         = frame.toUpperCase()
   if (referrer) securityHeaders['referrer-policy']        = referrer

@@ -271,7 +271,11 @@ export function inlineScriptHashes(html) {
 // `strict-origin-when-cross-origin`, not helmet's `no-referrer`: under
 // `no-referrer` a browser sends `Origin: null` on a POST, which fails CORS to
 // a split API origin and the csrf check in cookie mode.
+//
+// HSTS without `includeSubDomains`: on a bare domain it would pin every other
+// site the client runs under it to https.
 const documentHeaders = (scripts = []) => ({
+  'Strict-Transport-Security': ['max-age=31536000'],
   'X-Content-Type-Options':  ['nosniff'],
   'Referrer-Policy':         ['strict-origin-when-cross-origin'],
   'X-Frame-Options':         ['DENY'],

@@ -132,6 +132,10 @@ of thing is it?** The top fork is the oldest one in ontology — BFO's
 *continuant* against *occurrent*, a thing that persists against a thing that
 happens — and every leaf below terminates in a construct `.lite` already has.
 
+The tree drawn out — fork, schema.org kind, shape, intent, model, with Oracle's
+32 entities and the rig catalog's 24 candidates placed as leaves — is the
+private artifact <https://claude.ai/artifact/WkMG1WbqX84waD82bZmwmT>.
+
 ```
 does it PERSIST, or does it HAPPEN?
 │

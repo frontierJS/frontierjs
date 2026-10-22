@@ -22,6 +22,10 @@
 //                         `photo` (a file) a new photo beside the old one, one commit
 //   POST /drafts  preview { appId, draft } — build its preview again
 //   POST /drafts  ask     { appId, draft, request } — a model's edit of the draft's content, run as a job
+//   GET  /drafts  asked   { appId, draft } — the draft's last ask, and while it waits, the lines it changes
+//   POST /drafts  keep    { appId, draft } — that ask's changes as one commit on the draft
+//   POST /drafts  discard { appId, draft } — that ask's changes dropped
+//   POST /drafts  undo    { appId, draft } — the kept ask's commit reverted on the draft
 //   POST /drafts  publish { appId, draft } — merge, build, deploy (the `publish` grant)
 //   GET  /drafts  history { appId } — the site's live releases, newest first, each with what it shipped
 //   POST /drafts  revert  { appId, release } — a draft undoing one publish
@@ -31,7 +35,7 @@
 // Opening a draft and every save that changes a file queue its preview
 // (`core/site-preview.ts`), and `list` answers each draft's last one, and
 // its last ask (`core/site-ask.ts`): a model's run over a copy of the draft's
-// content, which leaves a tree and commits nothing.
+// content, which leaves a tree and commits nothing until the owner keeps it.
 //
 // Publish writes a `Deployment` through asSystem() — the publisher may be a
 // member of nothing, so the release is the app's, confined by the grant read
@@ -81,14 +85,14 @@ import { locateText } from '@frontierjs/toolbelt/textedit'
 import { db } from '../../core/resource.ts'
 import { isGit } from '../../core/app-source.ts'
 import {
-  CheckoutError, StaleDraft, draftFiles, listDrafts, openDraft, readDraftFile, readDraftFolder, revertDraft, saveDraftFile,
-  saveDraftFiles, shipped, type FileChange, type GitSite,
+  CheckoutError, StaleDraft, commitTree, diffTree, draftFiles, listDrafts, openDraft, readDraftFile, readDraftFolder,
+  revertDraft, revertOnDraft, saveDraftFile, saveDraftFiles, shipped, type Author, type FileChange, type GitSite,
 } from '../../core/site-checkout.ts'
 import { PhotoRefused, reencodePhoto } from '../../core/site-photo.ts'
 import { isSitePreviewOrigin, markPreview, previewStatuses } from '../../core/site-preview.ts'
 import { dispatchPreview } from '../../jobs/site-preview.job.ts'
 import { dispatchAsk } from '../../jobs/site-ask.job.ts'
-import { ASK_MAX_REQUEST, NO_KEY, askBusy, askStatuses, queueAsk } from '../../core/site-ask.ts'
+import { ASK_MAX_REQUEST, NO_KEY, askBusy, askStatuses, dropAsk, markAsk, queueAsk, type AskStatus } from '../../core/site-ask.ts'
 import { env } from '../../core/env.ts'
 import { dispatchPublish } from '../../jobs/site-publish.job.ts'
 import { PUBLISH_STEPS, type PublishSnapshot } from '../../core/site-publish.ts'
@@ -170,6 +174,33 @@ async function lastPublish(appId: string) {
   }
 }
 
+/** The caller as a commit names them. */
+async function author(): Promise<Author> {
+  const user = await sys().user.findFirst({ where: { id: me() } })
+  return { name: user?.name || user?.email, email: user?.email }
+}
+
+const ASK_STATE: Record<AskStatus['state'], string> = {
+  queued: 'is still running', running: 'is still running', ready: 'is waiting to be kept or discarded',
+  failed: 'kept nothing', kept: 'is kept', undone: 'was kept and undone',
+}
+
+/** The draft's last ask, in one of `states`, or a refusal saying what it is instead. */
+function askIn(appId: string, states: AskStatus['state'][]): { draft: string, ask: AskStatus } {
+  const draft = arg('draft')
+  const ask = askStatuses(appId)[draft]
+  if (!ask) throw new NotFound(`there is no ask on ${draft}`)
+  if (!states.includes(ask.state)) throw new Conflict(`the ask on ${draft} ${ASK_STATE[ask.state]}`)
+  return { draft, ask }
+}
+
+/** A kept ask's commit message: the owner's words, the first line as its subject. */
+function askMessage(request: string): string {
+  const first = request.split('\n')[0].trim()
+  const subject = `Asked: ${first.length > 60 ? first.slice(0, 59) + '…' : first}`
+  return subject.slice(7) === request ? subject : `${subject}\n\n${request}`
+}
+
 /** A save's `text`, the words a click on the preview changed, or null when the save is a form's. */
 function textEdit(data: { body?: unknown, values?: unknown, text?: unknown }): { line: number, old: string, next: string } | null {
   if (data.text === undefined) return null
@@ -204,6 +235,10 @@ export default createService({
     { method: 'photo',   gate: LEVELS.VISITOR },
     { method: 'preview', gate: LEVELS.VISITOR },
     { method: 'ask',     gate: LEVELS.VISITOR },
+    { method: 'asked',   read: true, gate: LEVELS.VISITOR },
+    { method: 'keep',    gate: LEVELS.VISITOR },
+    { method: 'discard', gate: LEVELS.VISITOR },
+    { method: 'undo',    gate: LEVELS.VISITOR },
     { method: 'publish', gate: LEVELS.VISITOR },
     { method: 'history', read: true, gate: LEVELS.VISITOR },
     { method: 'revert',  gate: LEVELS.VISITOR },
@@ -286,9 +321,8 @@ export default createService({
     if (!row || row.status !== 'success' || !row.commitSha) throw new NotFound(`no release '${id}' of this site went live`)
     if (row.trigger !== 'publish') throw new BadRequest('that release was a developer\'s deploy, and its files are theirs — Revert undoes a publish')
     const draft = (row.configSnapshot as PublishSnapshot).draft
-    const user  = await sys().user.findFirst({ where: { id: me() } })
-    const opened = await checkout(() => revertDraft(site, row.commitSha, `revert ${draft}`,
-      { name: user?.name || user?.email, email: user?.email }, `Revert ${draft}`, pathRefusal))
+    const by    = await author()
+    const opened = await checkout(() => revertDraft(site, row.commitSha, `revert ${draft}`, by, `Revert ${draft}`, pathRefusal))
     await queuePreview(site.id, opened.name, opened.head)
     return opened
   },
@@ -364,6 +398,41 @@ export default createService({
     return { draft: found.name, ask }
   },
 
+  async asked() {
+    const site = await grantedSite()
+    const { draft, ask } = askIn(site.id, Object.keys(ASK_STATE) as AskStatus['state'][])
+    if (ask.state !== 'ready') return { draft, ask, diff: null }
+    return { draft, ask, diff: await checkout(() => diffTree(site, ask.commit!, ask.tree!)) }
+  },
+
+  async keep() {
+    const site = await grantedSite()
+    const { draft, ask } = askIn(site.id, ['ready'])
+    if (!ask.files.length) throw new BadRequest('that ask changed nothing, so there is nothing to keep')
+    const by = await author()
+    const saved = await checkout(() => commitTree(site, draft, { tree: ask.tree!, head: ask.commit!, message: askMessage(ask.request) }, by))
+    markAsk(site.id, draft, { state: 'kept', kept: saved.commit })
+    await queuePreview(site.id, draft, saved.commit)
+    return { draft, commit: saved.commit, files: ask.files.map(f => f.path) }
+  },
+
+  async discard() {
+    const site = await grantedSite()
+    const { draft } = askIn(site.id, ['ready', 'failed', 'undone'])
+    dropAsk(site.id, draft)
+    return { draft }
+  },
+
+  async undo() {
+    const site = await grantedSite()
+    const { draft, ask } = askIn(site.id, ['kept'])
+    const by = await author()
+    const saved = await checkout(() => revertOnDraft(site, draft, ask.kept!, by, `Undo ${askMessage(ask.request).split('\n')[0]}`, pathRefusal))
+    markAsk(site.id, draft, { state: 'undone' })
+    await queuePreview(site.id, draft, saved.commit)
+    return { draft, commit: saved.commit }
+  },
+
   async files() {
     const site  = await grantedSite()
     const draft = arg('draft')
@@ -415,10 +484,9 @@ export default createService({
     const edit = applyEdit(file.text, { body, values: data.values as Record<string, unknown> | undefined, field })
     if ('refused' in edit) throw new BadRequest(edit.refused)
 
-    const user = await sys().user.findFirst({ where: { id: me() } })
     const message = typeof data.message === 'string' && data.message.trim() ? data.message.trim() : `Edit ${path}`
-    const saved = await checkout(() => saveDraftFile(site, draft, { path, blob: file.blob, text: edit.text, message },
-      { name: user?.name || user?.email, email: user?.email }))
+    const by = await author()
+    const saved = await checkout(() => saveDraftFile(site, draft, { path, blob: file.blob, text: edit.text, message }, by))
     const changed = saved.blob !== file.blob
     if (changed) await queuePreview(site.id, draft, saved.commit)
     return { path, ...saved, changed }
@@ -433,8 +501,7 @@ export default createService({
     if (typeof data.act !== 'string' || !ACTS.includes(data.act)) throw new BadRequest(`act is one of ${ACTS.join(', ')}`)
     if (data.line !== undefined && !Number.isInteger(data.line)) throw new BadRequest('line is the file line of the list entry')
     const act = data.act
-    const user = await sys().user.findFirst({ where: { id: me() } })
-    const author = { name: user?.name || user?.email, email: user?.email }
+    const by = await author()
     const verb = { earlier: 'Move', later: 'Move', copy: 'Copy', remove: 'Remove' }[act]
     const where = act === 'earlier' ? ' earlier' : act === 'later' ? ' later' : ''
 
@@ -446,7 +513,7 @@ export default createService({
       const edit = applyEdit(file.text, { entry: { line, act } })
       if ('refused' in edit) throw new BadRequest(edit.refused)
       const saved = await checkout(() => saveDraftFile(site, draft,
-        { path, blob: file.blob, text: edit.text, message: `${verb} '${entry?.label ?? 'an entry'}'${where} in ${path}` }, author))
+        { path, blob: file.blob, text: edit.text, message: `${verb} '${entry?.label ?? 'an entry'}'${where} in ${path}` }, by))
       const changed = saved.blob !== file.blob
       if (changed) await queuePreview(site.id, draft, saved.commit)
       return { path, ...saved, changed }
@@ -468,7 +535,7 @@ export default createService({
     const saved = await checkout(() => saveDraftFiles(site, draft, {
       files: plan.writes.map((w) => ({ path: w.path, blob: blobOf.get(w.path) ?? null, text: w.text })),
       message: `${verb} ${path.slice(folder.length + 1)}${where} in ${folder.slice(folder.lastIndexOf('/') + 1)}`,
-    }, author))
+    }, by))
     const changed = plan.writes.length > 0
     if (changed) await queuePreview(site.id, draft, saved.commit)
     return { path: plan.path ?? path, commit: saved.commit, changed, ...(plan.path ? { copy: plan.path } : {}) }
@@ -508,10 +575,10 @@ export default createService({
     if ('refused' in edit) throw new BadRequest(edit.refused)
     writes.push({ path, blob: file.blob, text: edit.text })
 
-    const user = await sys().user.findFirst({ where: { id: me() } })
+    const by = await author()
     const saved = await checkout(() => saveDraftFiles(site, draft, {
       files: writes, message: src ? `Photo for ${key} in ${path}` : `Words for the photo ${key} in ${path}`,
-    }, { name: user?.name || user?.email, email: user?.email }))
+    }, by))
     const changed = saved.commit !== file.head
     if (changed) await queuePreview(site.id, draft, saved.commit)
     return { path, commit: saved.commit, changed, ...(src ? { photo: writes[0].path } : {}) }

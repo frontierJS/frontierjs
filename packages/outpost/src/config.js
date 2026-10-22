@@ -10,6 +10,8 @@
  * would take commands in the clear.
  */
 
+import { version as PKG_VERSION } from '../package.json' with { type: 'json' }
+
 /** Ports are derived, not chosen: `packages/cli/core/ports.js`, project id 8,
  *  category `be`. dev 8180, test 7180. */
 const DEFAULT_PORT = 8180
@@ -54,7 +56,10 @@ export function readConfig(env = process.env) {
      *  change by an upgrade or an operator, so Basecamp's *check now* is the
      *  fast path and this is the floor. */
     postureMs:   Number(env.OUTPOST_POSTURE_MS ?? 21_600_000),
-    version:     env.OUTPOST_VERSION ?? '0.1.0',
+    /** Read from the package that is running rather than from the env: the
+     *  install pins the package and sets no variable, so an env value is a
+     *  second answer that went stale on every box (`FJS-3442`). */
+    version:     PKG_VERSION,
     /** The URL Basecamp should send commands to. Stated rather than derived:
      *  this process cannot see the address the world reaches it at. */
     publicUrl:   env.OUTPOST_PUBLIC_URL ?? `https://localhost:${env.OUTPOST_PORT ?? DEFAULT_PORT}`,

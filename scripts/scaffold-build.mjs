@@ -60,7 +60,7 @@ import { randomBytes }                                 from 'node:crypto'
 import { vendorWorkspacePackages }                     from '../packages/cli/core/vendor.js'
 import { pickWorkBase, daemonCanRead, workBaseCandidates } from '../packages/cli/core/docker-context.js'
 import { apiContainerName }                            from '../packages/cli/core/ports.js'
-import { pointAtLocalServer }                          from '../packages/cli/core/tutor.js'
+import { pointAtLocalServer, makeContainerDir, removeContainerWritten } from '../packages/cli/core/tutor.js'
 import { DEFAULT_PAGE, guardProbeScript, queueScript, queueVerdict, queueStateLine, jobsVolumeVerdict } from '../packages/cli/core/pause.js'
 import { edgeRoutes, applyEdge, readConfigScript, parseConfigRead, writeConfigScript, parseConfigWrite, INGRESS_SERVER } from '../packages/cli/core/edge.js'
 import { reapTempDirs }                                from '../packages/litestone/src/tmp-dirs.js'
@@ -198,20 +198,12 @@ function workDir(prefix, base) {
   return d
 }
 
-/** Remove a work directory a container has written into. A bind mount leaves
- *  the files owned by the container's user — root in `oven/bun` — so on a host
- *  where the daemon is rootful and this process is not (every GitHub runner) the
- *  plain rm is EACCES. Ownership is handed back from inside a container, then
- *  the rm is retried. Never throws: it runs in a `finally`, where a throw
- *  replaces the phase's verdict with a stack trace after every assertion passed. */
+/** Remove a work directory a container has written into — `core/tutor.js`'s
+ *  `removeContainerWritten`, which the tutor's teardown runs too. */
 function removeWork(work, log = () => {}) {
   active.delete(work)
-  try { rmSync(work, { recursive: true, force: true }); return } catch {}
-  const owner = `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`
-  spawnSync('docker', ['run', '--rm', '-v', `${work}:/w`, 'oven/bun:1-slim', 'chown', '-R', owner, '/w'],
-            { stdio: 'ignore' })
-  try { rmSync(work, { recursive: true, force: true }) }
-  catch (e) { log(`  · could not remove ${work} (${e.code ?? e.message}) — the next run's reap will retry`) }
+  if (!removeContainerWritten(work))
+    log(`  · could not remove ${work} — the next run's reap will retry`)
 }
 
 
@@ -742,7 +734,9 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
     git(app, ['add', '-A'])
     git(app, ['commit', '-qm', 'scaffold'])
 
-    mkdirSync(join(srv, 'db'), { recursive: true })
+    // What `deploy:setup` would have done, which this cycle does not run.
+    if (!makeContainerDir(join(srv, 'db')))
+      return fail(`could not hand ${join(srv, 'db')} to the image's user — docker run refused`)
     copyFileSync(join(app, '.env'), join(srv, '.env.production'))
     // `01b-env-check` compares this file against the app's own `.env.example`,
     // and the check stays on: a deploy that skips it is not this pipeline. What

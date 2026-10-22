@@ -35,6 +35,36 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1451"></a>2026-10-22 · `FJS-D1451` — Q6 — Whether a nick can change — Never. The nick is the name, and the number never changes either.
+
+Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (renamable, with the old nick held back for a period).
+
+The paper's recommendation, taken as written: (confidence 2) — pins are by chain root, so B is safe cryptographically, but every letter, lineage row and Haven nameplate would then need to follow a rename. B reopens when someone asks for it.
+
+### <a id="fjs-d1450"></a>2026-10-22 · `FJS-D1450` — Q5 — Nick uniqueness and reserved names — Unique on the post, first-come behind an invite, plus a reserved list and the squatting line.
+
+Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (the handle is a domain), **C** (a non-unique alias).
+
+The paper's recommendation, taken as written: (confidence 3) — see § Rejected for B and C.
+
+### <a id="fjs-d1448"></a>2026-10-22 · `FJS-D1448` — Q3 — Whether a network member is the Frontier Cloud account — Not yet: ruled when Cloud has a first customer, with nothing here shut that would close A.
+
+Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **C** was picked over **A** (yes: one account, and the nick is the subdomain (pico.sh)), **B** (no: Cloud has accounts of its own).
+
+The paper's recommendation, taken as written: (confidence 2) — no Cloud product exists (`IDEAS/frontier-cloud.md`) to take a precedent from, and C moves no callers.
+
+### <a id="fjs-d1447"></a>2026-10-22 · `FJS-D1447` — Q2 — The namespace — `frontier:`, matching the product name.
+
+Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (a short one, `me:` or `id:`), **C** (top-level verbs: `fli stake`, `fli who`).
+
+The paper's recommendation, taken as written: (confidence 2) — it groups seven verbs where C scatters them. The repetition (`fli` already means frontier) is the price, the same as `gh auth`.
+
+### <a id="fjs-d1446"></a>2026-10-22 · `FJS-D1446` — Q1 — The verb for the first door — `stake`: "stake a claim" is the frontier idiom, and the word is free in `VOCABULARY.md`.
+
+Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (`claim`: the colloquial word. But *Claim* is blessed as a fact a principal carries for one call (`auth().<claim>`, `bearerClaim`), and Invariant 5 already turned it down once for that reason), **C** (`join`: today's spelling, but it reads as joining a group rather than taking a name).
+
+The paper's recommendation, taken as written: (confidence 3) — B gives one word two meanings, and C loses the nick from the verb.
+
 ### <a id="fjs-d1389"></a>2026-10-22 · `FJS-D1389` — Q1 — What starts it — `fli gui`, which picks the terminal target when it is started in a terminal without `--open`, and the web target otherwise.
 
 Asked in [`IDEAS/one-console.md`](IDEAS/one-console.md) § Open questions. **B** was picked over **A** (`fli runtime`, as the owner first said it. It collides with "the FLI runtime" (`server.js`'s own header) and with Mesa's runtime), **C** (a new `fli console` command beside `fli gui`).
@@ -1589,6 +1619,24 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d1449"></a>2026-10-22 · `FJS-D1449` — Q4 — What a bad invitee costs the inviter — Nothing: the tree is public, and that alone is the accountability.
+
+Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (the inviter's unspent allowance is withdrawn), **C** (the Lobsters rule: the inviter can lose access).
+
+The paper's recommendation, taken as written: (confidence 2) — at three to four members there is no moderation load to answer, and B reopens as the stricter path.
+
+### <a id="fjs-d1445"></a>2026-10-22 · `FJS-D1445` — Q7 — How fresh a member row must be — The post stamps the row with when it was signed, and a reader refuses a row older than a set age. A member's machine fetches a fresh row before it goes stale, so a revoke reaches every reader within that age. *Memory:* OCSP stapling (the holder brings a fresh signed proof) and short-lived certificates.
+
+Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (the reader asks the post at every login. A revoke is immediate, and the post becomes a dependency of every surface staying up), **C** (as built: no age, and a reader catches a revoke only once it has seen a later head).
+
+The paper's recommendation, taken as written: (confidence 2) — it keeps 6.4's no-call-to-the-post reading, and the age is a cost dial: a stolen key's reach is bounded by it (*strictness follows cost*). B is the reopen path once a surface holds something a day's window would lose.
+
+### <a id="fjs-d1444"></a>2026-10-22 · `FJS-D1444` — Q8 — Whether the network is an identity layer of its own — One layer, owned: the chain is the one identity, and 0.4 and Q7 are written before any surface with strangers reads it (Phase 3).
+
+Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (a layer per surface: each keeps its own key and nick, and a member links them only by choice. A stolen key reaches one surface, and every concern above is answered once per surface), **C** (borrow the root: the identity is held elsewhere (GitHub's published SSH keys, or OIDC), and the post maps a nick to it. Recovery, second factors and abuse become the other party's, and the first door goes through it).
+
+The paper's recommendation, taken as written: (confidence 2) — B does not remove the concerns, it doubles them: Haven's first-come nick (`FJS-D981`) already carries impersonation, squatting and recovery of its own. C is the reopen path if the post's operator load outgrows one owner.
 
 ### <a id="fjs-d1421"></a>2026-10-22 · `FJS-D1421` — Q19 — How a peer knows the post did not forge or hide a member's machines — Every link signed by a machine, so the post can write none; the post countersigns the chain's head into 6.4's member row, a peer refuses a chain shorter than one it has seen, and every sealed letter carries its sender's head (Keybase's sigchain; WhatsApp's in-chat device consistency).
 
@@ -18131,6 +18179,12 @@ Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A
 
 The paper's recommendation, taken as written: the point is mail you notice without asking; the interval bounds the cost, and it stays silent with no key.
 
+### <a id="fjs-d1392"></a>2026-10-22 · `FJS-D1392` — Q6 — Where V1's server runs — One Cloudflare Worker and one Durable Object: SQLite and the live sockets in one object, the free plan, deployed with wrangler.
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (Val Town: one file edited in the browser, SQLite built in, no deploy step; live delivery likely a poll), **C** (Haven's API: identity and a host already there, but V1 waits on Haven being hosted).
+
+The paper's recommendation, taken as written: the only one with live delivery and no wait; B is the reopen path if wrangler is the friction.
+
 ### <a id="fjs-d1399"></a>2026-10-21 · `FJS-D1399` — Q19 — How a preview shows a change before it is saved (2.5) — Words only, with no compiler in the page. As the owner types, inline or in the form, each element whose words are a plain block or value changes to the new words; a change that adds or removes markup, or whose element the page cannot find, waits for the preview to rebuild and is counted as waiting.
 
 Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **D** was picked over **A** (a lazy preview-only chunk runs Mesa's `compileMd` in the page with site-kit's dialect and a browser-safe module the preset names for its own passes, about 190 KB gzipped; one new optional preset key), **B** (the same chunk with site-kit's dialect only, so a preset's classes are missing until the rebuild and nothing says so) and **C** (basecamp compiles, which has no installed preset and hits the same passes problem). Prior art put to the owner: Decap's preview pane and CloudCannon's Bookshop both re-render in the browser with a renderer the developer supplies as browser code.
@@ -18140,12 +18194,6 @@ Against the recommendation (A), confidence 2. It meets Phase 2's done-when for a
 The nine, answered before the edit: 1 origin — what the dialect turns plain text into (a kicker, a phone or an email link) is `packages/site-kit/config/prose.js`'s, exported and read by the editor rather than restated; Markdown's own syntax characters are listed once, in the editor · 2 concept — no new noun · 3 complexity — the problem's, cut one level · 4 predictability — 2.3's after-save swap, moved before the save and given to the form too · 5 derived — an element is changed only when it already shows the old words · 6 owner — `src/editor/live.js`, which 2.3's swap folds into · 7 boundary — the page only; nothing is sent until Save · 8 failure — a change it cannot show is shown as waiting, never guessed · 9 must stay true: a word shown before the save is what the rebuild renders. What fails when it stops: **`none`** committed, under the no-new-test-files rule; a scratch browser drive. § IV: *batteries vs. smallness*, smallness. Tier: Register.
 
 *Lives in:* `packages/site-kit/src/editor/live.js`, `Inline.mesa`, `Field.mesa`; `packages/site-kit/config/prose.js` (what plain text becomes).
-
-### <a id="fjs-d1392"></a>2026-10-22 · `FJS-D1392` — Q6 — Where V1's server runs — One Cloudflare Worker and one Durable Object: SQLite and the live sockets in one object, the free plan, deployed with wrangler.
-
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (Val Town: one file edited in the browser, SQLite built in, no deploy step; live delivery likely a poll), **C** (Haven's API: identity and a host already there, but V1 waits on Haven being hosted).
-
-The paper's recommendation, taken as written: the only one with live delivery and no wait; B is the reopen path if wrangler is the friction.
 
 ### <a id="fjs-d1358"></a>2026-10-20 · `FJS-D1358` — Q18 — Where the preview's editor code comes from (2.1) — Site-kit carries the editor and gains `@frontierjs/junction` as a dependency, which pulls in only toolbelt. Under `--preview` with an editor URL, the build emits `_fjs/editor.js` and adds its tag to each page through Sierra's `document.bodyEnd`.
 

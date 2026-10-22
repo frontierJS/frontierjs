@@ -191,7 +191,9 @@ what they mean in any app.
   the file's place in its collection, through `drafts.arrange`, held still
   while words are unsaved. A photo key is a picker and its words, not a text
   box: `photo.js` shrinks the file to 2560 px before `drafts.photo`, which
-  re-encodes it anyway (`FJS-D1408`). Everything the editor renders carries
+  re-encodes it anyway (`FJS-D1408`). `Ask.mesa` is a change across the draft
+  in the owner's words (`FJS-D1242`): `drafts.ask`, then the run's lines per
+  file, then Keep (one commit), Discard, or Undo after a keep. Everything the editor renders carries
   `data-fjs-editor-ui`, which is how a click on it is not taken for a pick.
 - `src/block-look.js` — the one owner of what a look word may be and where its
   class lands, imported by both `Block.mesa` and `config/dividers.js`.

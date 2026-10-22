@@ -300,6 +300,11 @@ describe('the document the web route serves', () => {
     expect(h['Content-Security-Policy'][0]).toContain("frame-ancestors 'none'")
   })
 
+  test('pins the origin to https for a year, and no subdomain with it', () => {
+    const [r] = routesFor({ web: { domain: 'shop.example' } })
+    expect(headersOf(r)['Strict-Transport-Security']).toEqual(['max-age=31536000'])
+  })
+
   test('allows its own scripts and the inline ones it was built with, by hash', () => {
     const names = edgeNames({ web: { domain: 'shop.example' } })
     const [r] = edgeRoutes({ appId: 'shop', serverPath: '/apps/shop', apiPort: 3000, ...names, scripts: inlineScriptHashes(html) })

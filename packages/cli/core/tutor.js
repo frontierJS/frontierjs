@@ -34,6 +34,8 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs'
 import { join, resolve, basename }  from 'node:path'
 import { tmpdir }                   from 'node:os'
+import { spawnSync }                from 'node:child_process'
+import { IMAGE_USER }               from './deploy-image.js'
 
 export const TUTOR_FORMAT   = 1
 export const JOURNAL_NAME   = '.fli-tutor.json'
@@ -288,12 +290,41 @@ export function pointAtLocalServer(source, { serverDir, port }) {
   return { text: next, ok: next.includes(serverDir) }
 }
 
+// ─── the directory a container writes ─────────────────────────────────────────
+// `deploy:setup` hands a server's db directory to the image's user (`FJS-D1120`).
+// The lesson and the CI cycle make that directory themselves, as whoever runs
+// them — uid 1000 on most laptops, which is the image's and hides the step, and
+// 1001 on a GitHub runner, where migrate cannot create /db/app.db and the swap
+// rolls back. This process may not chown to another uid and a rootful daemon
+// may, so both directions go through a container. `false` is a daemon that
+// refused, and the caller names it rather than failing at health later.
+
+const chownInContainer = (dir, owner) =>
+  spawnSync('docker', ['run', '--rm', '-v', `${dir}:/d`, 'oven/bun:1-slim', 'chown', '-R', owner, '/d'],
+            { stdio: 'ignore' }).status === 0
+
+export function makeContainerDir(dir) {
+  mkdirSync(dir, { recursive: true })
+  if (process.getuid?.() === IMAGE_USER.uid) return true
+  return chownInContainer(dir, `${IMAGE_USER.uid}:${IMAGE_USER.gid}`)
+}
+
+/** Remove a directory a container has written into: its files belong to the
+ *  image's user, so where that is not this process the plain rm is EACCES.
+ *  Ownership is handed back from inside a container and the rm retried. Never
+ *  throws — both callers run it in teardown, where a throw replaces a verdict
+ *  with a stack trace. */
+export function removeContainerWritten(dir) {
+  try { rmSync(dir, { recursive: true, force: true }); return true } catch {}
+  chownInContainer(dir, `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`)
+  try { rmSync(dir, { recursive: true, force: true }); return true } catch { return false }
+}
+
 // ─── teardown ─────────────────────────────────────────────────────────────────
 // A temp workspace is removed unless the run asked to keep it. A named one
 // never is: it is the thing the person came away with.
 
 export function sweepWorkspace({ dir, kind }, { keep = false } = {}) {
   if (kind !== 'temp' || keep) return false
-  rmSync(dir, { recursive: true, force: true })
-  return true
+  return removeContainerWritten(dir)
 }

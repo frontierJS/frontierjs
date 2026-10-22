@@ -581,8 +581,8 @@ name when it declares none.
 
 ### `drafts` · model `drafts`
 
-- **methods** — `sites`, `list`, `files`, `read`, `open`, `save`, `arrange`, `photo`, `preview`, `ask`, `publish`, `history`, `revert`, `handoff`, `redeem`
-- **custom methods** — `sites`, `list`, `files`, `read`, `open`, `save`, `arrange`, `photo`, `preview`, `ask`, `publish`, `history`, `revert`, `handoff`, `redeem`
+- **methods** — `sites`, `list`, `files`, `read`, `open`, `save`, `arrange`, `photo`, `preview`, `ask`, `asked`, `keep`, `discard`, `undo`, `publish`, `history`, `revert`, `handoff`, `redeem`
+- **custom methods** — `sites`, `list`, `files`, `read`, `open`, `save`, `arrange`, `photo`, `preview`, `ask`, `asked`, `keep`, `discard`, `undo`, `publish`, `history`, `revert`, `handoff`, `redeem`
 - **who may call** —
   - `sites` — standing 1 or above — declared `gate: 1`
   - `list` — standing 1 or above — declared `gate: 1`
@@ -594,6 +594,10 @@ name when it declares none.
   - `photo` — standing 1 or above — declared `gate: 1`
   - `preview` — standing 1 or above — declared `gate: 1`
   - `ask` — standing 1 or above — declared `gate: 1`
+  - `asked` — standing 1 or above — declared `gate: 1`
+  - `keep` — standing 1 or above — declared `gate: 1`
+  - `discard` — standing 1 or above — declared `gate: 1`
+  - `undo` — standing 1 or above — declared `gate: 1`
   - `publish` — standing 1 or above — declared `gate: 1`
   - `history` — standing 1 or above — declared `gate: 1`
   - `revert` — standing 1 or above — declared `gate: 1`

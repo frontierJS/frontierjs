@@ -36,7 +36,7 @@ in, whatever the row policies say, because the Data boundary never sees who
 asked. Each row below is either meant — a read-shaped method, a scoped write —
 or wants `methods: [{ method, gate }]`.
 
-### Nothing in front of the body but the floor (8)
+### Nothing in front of the body but the floor (5)
 
 The list to read first: only the method body stands between a signed-in caller
 and what it does.
@@ -45,9 +45,6 @@ and what it does.
 | --- | --- |
 | `customers.restore` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `customers.segment` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `customFields.restore` | **any signed-in caller** — floor, read gate 5; standing not graded |
-| `discounts.restore` | **any signed-in caller** — floor, read gate 5; standing not graded |
-| `flowCredentials.restore` | **any signed-in caller** — floor, read gate 5; standing not graded |
 | `invoices.settle` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `invoices.void` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `paymentMethods.startSetup` | **any signed-in caller** — floor, read gate 1; standing not graded |
@@ -184,9 +181,7 @@ name when it declares none.
 
 ### `colors` · model `Color`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
-- **who may call** —
-  - `restore` — anyone, a stranger included — floor, the model's read gate is 0
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
 - **broadcasts on** — `colors`
 
 | Phase | Method | Chain |
@@ -249,10 +244,8 @@ name when it declares none.
 
 ### `customFields` · model `CustomField`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
 - **also answers to** — `custom-fields`
-- **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 5; standing not graded
 - **broadcasts on** — `customFields`
 
 | Phase | Method | Chain |
@@ -267,9 +260,7 @@ name when it declares none.
 
 ### `discounts` · model `Discount`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
-- **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 5; standing not graded
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
 - **broadcasts on** — `discounts`
 
 | Phase | Method | Chain |
@@ -308,9 +299,7 @@ name when it declares none.
 
 ### `flowCredentials` · model `FlowCredential`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
-- **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 5; standing not graded
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -660,10 +649,8 @@ name when it declares none.
 
 ### `pickupPoints` · model `PickupPoint`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
 - **also answers to** — `pickup-points`
-- **who may call** —
-  - `restore` — anyone, a stranger included — floor, the model's read gate is 0
 - **broadcasts on** — `pickup-points`
 
 | Phase | Method | Chain |
@@ -699,10 +686,8 @@ name when it declares none.
 
 ### `planVersions` · model `PlanVersion`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
 - **also answers to** — `plan-versions`
-- **who may call** —
-  - `restore` — anyone, a stranger included — floor, the model's read gate is 0
 - **broadcasts on** — `plan-versions`
 
 | Phase | Method | Chain |
@@ -820,10 +805,8 @@ name when it declares none.
 
 ### `shippingMethods` · model `ShippingMethod`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
 - **also answers to** — `shipping-methods`
-- **who may call** —
-  - `restore` — anyone, a stranger included — floor, the model's read gate is 0
 - **broadcasts on** — `shipping-methods`
 
 | Phase | Method | Chain |
@@ -913,10 +896,8 @@ name when it declares none.
 
 ### `taxRates` · model `TaxRate`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
 - **also answers to** — `tax-rates`
-- **who may call** —
-  - `restore` — anyone, a stranger included — floor, the model's read gate is 0
 - **broadcasts on** — `tax-rates`
 
 | Phase | Method | Chain |

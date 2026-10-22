@@ -70,7 +70,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V3.3.2 | 2 | covered | `packages/auth/plugin.ts:748`, `packages/auth/test/routes.test.ts:309` | Session Lax, login challenge Strict, OAuth state Lax (callback is cross-site) |
 | V3.3.3 | 2 | none | `packages/auth/plugin.ts:748` | Cookies named `session`, `login_challenge`, `fjs_oauth_state`; no `__Host-` |
 | V3.3.4 | 2 | partial | `packages/auth/plugin.ts:735`, `packages/junction/test/auth-cookie.test.ts` | Cookie mode is HttpOnly and strips the token from the body; scaffold default is bearer in the body |
-| V3.4.1 | 1 | partial | `packages/junction/src/transport/middleware.ts:248` | Already in pen-testing § 1. HSTS off by default; option takes 1y and includeSubDomains |
+| V3.4.1 | 1 | covered | `packages/junction/src/transport/middleware.ts:248`, `packages/cli/core/edge.js:278`, `packages/junction/test/index.test.ts`, `packages/cli/test/edge.test.js` | 1y on every response outside development, and on the SPA document. No `includeSubDomains` (L2 asks for it): a bare domain would pin a client's other sites |
 | V3.4.2 | 1 | covered | `packages/junction/src/transport/middleware.ts:130`, `packages/junction/test/index.test.ts` | Allowlist; `*` with credentials refused at construction (FJS-689). Scaffold `*` is credential-less |
 | V3.4.3 | 2 | partial | `packages/junction/src/transport/middleware.ts:259` | Already in pen-testing § 1. `csp` is a free string option; no default policy |
 | V3.4.4 | 2 | partial | `packages/junction/test/index.test.ts:4763`, `packages/cli/core/edge.js:230` | API routes, static and the SPA document (Caddy) set nosniff. An unrouted 404/405 does not · [FJS-3231](../ISSUES.md#fjs-3231) |
@@ -278,7 +278,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V12.1.1 | 1 | covered | `packages/cli/core/edge.js:44` | Caddy defaults (TLS 1.2 min, 1.3 preferred), no tls policy override; no repo test |
 | V12.1.2 | 2 | covered | `packages/cli/core/edge.js:44` | Caddy default suites are ECDHE AEAD only |
 | V12.1.3 | 2 | n.a. | — | no mTLS client-certificate authentication |
-| V12.2.1 | 1 | covered | `packages/cli/core/edge.js:46`, `packages/cli/commands/deploy/_module.md:537`, `packages/cli/test/edge.test.js` | Caddy auto-HTTPS plus redirect; API container bound to loopback; HSTS off (known) |
+| V12.2.1 | 1 | covered | `packages/cli/core/edge.js:46`, `packages/cli/commands/deploy/_module.md:537`, `packages/cli/test/edge.test.js` | Caddy auto-HTTPS plus redirect; API container bound to loopback; HSTS 1y on the document and the API |
 | V12.2.2 | 1 | covered | `packages/cli/core/edge.js:87`, `packages/cli/test/edge.test.js:51` | Caddy ACME certificates; a stated ssl key is refused |
 | V12.3.1 | 2 | partial | `packages/junction/src/mail/smtp.ts:382`, `packages/junction/src/core/public-url.ts:171` | request-addressed and webhook URLs https-only; SMTP STARTTLS opportunistic; fixed targets, OIDC endpoints may be http · [FJS-3195](../ISSUES.md#fjs-3195), [FJS-3202](../ISSUES.md#fjs-3202) |
 | V12.3.2 | 2 | covered | `packages/conduit/src/transports/http.ts:170` | Bun default certificate validation; no `rejectUnauthorized: false` in framework src |

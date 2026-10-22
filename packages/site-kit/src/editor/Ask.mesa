@@ -1,0 +1,129 @@
+<script>
+  // Ask.mesa — the owner asks a model for a change across the draft
+  // (`FJS-D1242`). Basecamp runs it over a copy of the draft's content and
+  // grades what it changed; nothing reaches the draft until Keep, which is one
+  // commit, and Undo is that commit's revert. The change may reach pages this
+  // one does not draw, so it is shown as lines per file rather than on the page.
+  import { clientFor } from './handoff.js'
+
+  export let site
+  export let key
+  export let onclose
+
+  const drafts = clientFor(site, key).service('drafts')
+  const call   = (method, data) => drafts.invoke(method, null, { appId: site.appId, draft: site.draft, ...data })
+  const RUNNING = ['queued', 'running']
+
+  let request = ''
+  let ask     = null
+  let diff    = null
+  let error   = null
+  let busy    = false
+  let timer   = null
+
+  async function look() {
+    clearTimeout(timer)
+    try {
+      const got = await call('asked')
+      ask = got.ask; diff = got.diff
+    } catch (err) {
+      ask = null; diff = null
+      if (err.code !== 404) error = err.message
+    }
+    if (RUNNING.includes(ask?.state)) timer = setTimeout(look, 2000)
+  }
+
+  async function act(method, data) {
+    busy = true; error = null
+    try {
+      await call(method, data)
+      if (method === 'ask') request = ''
+    } catch (err) {
+      error = err.message
+    }
+    await look()
+    busy = false
+  }
+
+  const kind = (l) => l.startsWith('+') ? 'text-success' : l.startsWith('-') ? 'text-danger' : l.startsWith('@@') ? 'text-muted' : ''
+  const shown = (l) => l.startsWith('@@') ? '…' : l
+
+  look()
+  $.onDestroy(() => clearTimeout(timer))
+</script>
+
+<article class="card fjs-editor-ask" data-fjs-editor-ui aria-label="Ask for a change">
+  <div class="surface-header">
+    <strong>Ask for a change</strong>
+    <button class="btn ghost" aria-label="Close" onclick={() => onclose?.()}>Close</button>
+  </div>
+  <div class="surface-body stack">
+    {#if error}<p class="text-danger" role="alert">{error}</p>{/if}
+    {#if RUNNING.includes(ask?.state)}
+      <p role="status" id="fjs-ask-running">Working on “{ask.request}”…</p>
+    {:else if ask?.state === 'ready'}
+      <p>“{ask.request}”</p>
+      {#if ask.reply}<p id="fjs-ask-reply">{ask.reply}</p>{/if}
+      {#each diff ?? [] as f (f.path)}
+        <section class="fjs-ask-file" data-path={f.path}>
+          <strong>{f.path}</strong>
+          <pre>{#each f.hunks.split('\n') as l}<span class={kind(l)}>{shown(l)}</span>{/each}</pre>
+        </section>
+      {/each}
+    {:else}
+      {#if ask?.state === 'kept'}<p role="status" id="fjs-ask-kept">Kept on {site.draft} as one change. The preview rebuilds with it shortly.</p>{/if}
+      {#if ask?.state === 'undone'}<p role="status">Undone. The preview rebuilds without it shortly.</p>{/if}
+      {#if ask?.state === 'failed'}<p class="text-danger" role="alert" id="fjs-ask-failed">{ask.error}</p>{/if}
+      <div class="field-group">
+        <label for="fjs-ask">What should change?</label>
+        <textarea id="fjs-ask" rows="4" value={request} oninput={(e) => request = e.target.value}
+                  placeholder="Change the opening hours to 8am on every page"></textarea>
+      </div>
+    {/if}
+  </div>
+  <div class="surface-footer">
+    {#if ask?.state === 'ready'}
+      <button class="btn primary" id="fjs-ask-keep" disabled={busy} onclick={() => act('keep')}>Keep on {site.draft}</button>
+      <button class="btn ghost" id="fjs-ask-discard" disabled={busy} onclick={() => act('discard')}>Discard</button>
+    {:else if !RUNNING.includes(ask?.state)}
+      <button class="btn primary" id="fjs-ask-send" disabled={busy || !request.trim()} onclick={() => act('ask', { request: request.trim() })}>Ask</button>
+      {#if ask?.state === 'kept'}<button class="btn ghost" id="fjs-ask-undo" disabled={busy} onclick={() => act('undo')}>Undo</button>{/if}
+    {/if}
+  </div>
+</article>
+
+<style>
+  .fjs-editor-ask {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    max-height: calc(100vh - 6rem);
+    z-index: 2147483000;
+    width: min(36rem, calc(100vw - 2rem));
+    display: flex;
+    flex-direction: column;
+  }
+  .fjs-editor-ask .surface-body {
+    flex: 1;
+    overflow: auto;
+  }
+  .fjs-editor-ask .surface-header,
+  .fjs-editor-ask .surface-footer {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .fjs-ask-file pre {
+    margin: 0.25rem 0 0;
+    overflow-x: auto;
+    white-space: pre;
+    font-size: 0.85em;
+  }
+  .fjs-ask-file pre span {
+    display: block;
+  }
+  textarea {
+    width: 100%;
+  }
+</style>

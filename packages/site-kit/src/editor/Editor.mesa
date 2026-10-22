@@ -11,7 +11,9 @@
   // Signed in, the page is picked rather than browsed: a pointer outlines the
   // element whose stamp it is over, and a click changes its words in place, or
   // opens the file when they cannot be changed alone, instead of following a
-  // link. Browse hands clicks back to the page.
+  // link. Browse hands clicks back to the page. Ask is a change across the
+  // draft in the owner's words, shown as lines before it is kept.
+  import Ask from './Ask.mesa'
   import Field from './Field.mesa'
   import Inline from './Inline.mesa'
   import { arrive, begin, clientFor, forget, held } from './handoff.js'
@@ -28,6 +30,7 @@
   let box     = null
   let opened  = null
   let notice  = null
+  let asking  = false
 
   async function check() {
     if (!who) return
@@ -53,7 +56,7 @@
   }
 
   function signOut() {
-    forget(); who = null; files = null; opened = null; over = null
+    forget(); who = null; files = null; opened = null; over = null; asking = false
   }
 
   const live = () => !!(who && files && picking)
@@ -75,6 +78,7 @@
     e.stopPropagation()
     const field = fieldFor(el.getAttribute(LOC), files, location.pathname)
     notice = null
+    asking = false
     opened = field?.path ? { ...field, inline: el } : field
   }
 
@@ -99,14 +103,16 @@
   })
 </script>
 
-<mesa:window onkeydown={(e) => { if (e.key === 'Escape' && opened) opened = null }} />
+<mesa:window onkeydown={(e) => { if (e.key === 'Escape') { opened = null; asking = false } }} />
 
 {#if box && picking && who}
   <div class="fjs-editor-outline" class:editable={box.editable} aria-hidden="true"
        style:left="{box.x}px" style:top="{box.y}px" style:width="{box.w}px" style:height="{box.h}px"></div>
 {/if}
 
-{#if opened?.inline}
+{#if asking}
+  <Ask {site} key={who.key} onclose={() => asking = false} />
+{:else if opened?.inline}
   <Inline {site} key={who.key} path={opened.path} line={opened.line} el={opened.inline}
           onclose={inlineClosed} onform={toForm} />
 {:else if opened?.path}
@@ -129,6 +135,7 @@
   {#if who}
     <span>Editing <strong>{site.draft}</strong> as <strong>{who.editor?.name}</strong>
       {#if files} · {files.length} {files.length === 1 ? 'page' : 'pages'}{/if}</span>
+    {#if files}<button class="btn ghost" id="fjs-ask-open" aria-pressed={asking} onclick={() => { asking = !asking; opened = null }}>Ask</button>{/if}
     <button class="btn ghost" aria-pressed={picking} onclick={() => { picking = !picking; leave() }}>{picking ? 'Browse' : 'Pick'}</button>
     <a class="btn ghost" href={site.page}>Open in basecamp</a>
     <button class="btn ghost" onclick={signOut}>Sign out</button>

@@ -511,7 +511,60 @@ describe('asking a model for a change', () => {
   test('a run stopped at its spending limit is a failed ask, and its edits are dropped', async () => {
     await drafts(editor).call('ask', undefined, { appId: site.id, draft: 'asked', request: 'Make it friendlier' })
     const status = await settled('asked')
-    expect(status).toMatchObject({ state: 'failed', tree: null, files: [], cost: 2.01, error: 'the ask reached its spending limit before it finished' })
+    expect(status).toMatchObject({ state: 'failed', tree: null, files: [], cost: 2.01, error: 'the ask reached its spending limit before it finished'})
+  })
+
+  // 4.3: the owner sees the lines, then keeps them as one commit or drops them.
+  test('a waiting ask shows its lines; Keep is one commit on the draft, and Undo reverts it', async () => {
+    const head = git(remote, 'rev-parse', 'draft/asked')
+    await drafts(editor).call('ask', undefined, { appId: site.id, draft: 'asked', request: 'Change the hours on every page' })
+    await settled('asked')
+
+    const shown = await drafts(editor).call('asked', undefined, { appId: site.id, draft: 'asked' })
+    expect(shown.ask.state).toBe('ready')
+    expect(shown.diff.map((f: any) => f.path)).toEqual(['content/faq/hours.md', 'content/routes/index.md'])
+    expect(shown.diff[0].hunks).toContain('+Open at eight.')
+    expect(shown.diff[1].hunks).toMatch(/^-.*nine.*\n\+.*eight/m)
+    expect((await refusal(drafts(admin).call('keep', undefined, { appId: site.id, draft: 'asked' }))).code).toBe(404)
+    expect((await refusal(drafts(editor).call('undo', undefined, { appId: site.id, draft: 'asked' }))).message)
+      .toBe('the ask on asked is waiting to be kept or discarded')
+
+    const kept = await drafts(editor).call('keep', undefined, { appId: site.id, draft: 'asked' })
+    expect(git(remote, 'rev-parse', 'draft/asked')).toBe(kept.commit)
+    expect(git(remote, 'rev-parse', `${kept.commit}^`)).toBe(head)
+    expect(git(remote, 'log', '-1', '--format=%an|%s', kept.commit)).toBe('Owner|Asked: Change the hours on every page')
+    expect(git(remote, 'show', `${kept.commit}:site/content/faq/hours.md`)).toBe('Open at eight.')
+    expect(askStatuses(site.id).asked).toMatchObject({ state: 'kept', kept: kept.commit })
+    expect((await refusal(drafts(editor).call('keep', undefined, { appId: site.id, draft: 'asked' }))).code).toBe(409)
+    expect((await refusal(drafts(editor).call('discard', undefined, { appId: site.id, draft: 'asked' }))).message)
+      .toBe('the ask on asked is kept')
+
+    const undone = await drafts(editor).call('undo', undefined, { appId: site.id, draft: 'asked' })
+    expect(git(remote, 'rev-parse', `${undone.commit}^`)).toBe(kept.commit)
+    expect(git(remote, 'rev-parse', `${undone.commit}^{tree}`)).toBe(git(remote, 'rev-parse', `${head}^{tree}`))
+    expect(git(remote, 'log', '-1', '--format=%s', undone.commit)).toBe('Undo Asked: Change the hours on every page')
+    expect(askStatuses(site.id).asked.state).toBe('undone')
+    await drafts(editor).call('discard', undefined, { appId: site.id, draft: 'asked' })
+    expect(askStatuses(site.id).asked).toBeUndefined()
+    expect((await refusal(drafts(editor).call('asked', undefined, { appId: site.id, draft: 'asked' }))).code).toBe(404)
+  })
+
+  test('an ask is kept only on the head it read, and Discard commits nothing', async () => {
+    await drafts(editor).call('ask', undefined, { appId: site.id, draft: 'asked', request: 'Change the hours on every page' })
+    await settled('asked')
+    const work = join(tmp, 'moved')
+    git(tmp, 'clone', '--quiet', '--branch', 'draft/asked', remote, work)
+    writeFileSync(join(work, 'site/content/settings/site.js'), 'export default { moved: true }')
+    git(work, '-c', 'user.name=Dev', '-c', 'user.email=dev@x.co', 'commit', '--quiet', '-am', 'Moved')
+    git(work, 'push', '--quiet', 'origin', 'draft/asked')
+    const moved = git(remote, 'rev-parse', 'draft/asked')
+
+    const err = await refusal(drafts(editor).call('keep', undefined, { appId: site.id, draft: 'asked' }))
+    expect([err.code, err.message]).toEqual([409, 'asked has changed since the ask read it — ask again'])
+    expect(git(remote, 'rev-parse', 'draft/asked')).toBe(moved)
+    await drafts(editor).call('discard', undefined, { appId: site.id, draft: 'asked' })
+    expect(askStatuses(site.id).asked).toBeUndefined()
+    expect(git(remote, 'rev-parse', 'draft/asked')).toBe(moved)
   })
 })
 

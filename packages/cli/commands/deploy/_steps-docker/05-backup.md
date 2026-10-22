@@ -50,8 +50,9 @@ if (!running) {
   return
 }
 
-machine.run(`mkdir -p ${backupDir}`)
-
+// No mkdir on the host: `litestone backup` makes its own destination inside the
+// container, and one made here belongs to the login rather than the image's
+// user, which the container then cannot write into.
 log.info(`Backing up every declared database → ${destHost}`)
 try {
   // --schema also fixes the migrations dir (litestone resolves it as a sibling),

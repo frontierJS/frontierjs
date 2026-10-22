@@ -13,7 +13,9 @@
 // commit is pushed to the draft first, built and deployed from there, and
 // only then is the site's branch moved to it, so a failed build leaves the
 // branch where the last release left it (`FJS-D1229`). Revert is the same
-// merge run backwards onto the site's branch, landing as a new draft.
+// merge run backwards onto the site's branch, landing as a new draft. An
+// ask's tree is committed only on the head it was made from, and its Undo is
+// that commit run backwards on the draft itself.
 //
 // A save never touches a working tree. The commit is built from the draft's
 // tree through a temporary index, so nothing a repository carries runs here:
@@ -258,22 +260,30 @@ export function saveDraftFiles(site: GitSite, draft: string, change: { files: Fi
       await git(dir, ['read-tree', head], { env: index })
       await git(dir, ['update-index', '--index-info'], { env: index, input: rows.join('\n') + '\n' })
       const tree = (await git(dir, ['write-tree'], { env: index })).trim()
-      const who = {
-        GIT_AUTHOR_NAME: author.name, GIT_AUTHOR_EMAIL: author.email,
-        GIT_COMMITTER_NAME: author.name, GIT_COMMITTER_EMAIL: author.email,
-      }
-      const commit = (await git(dir, ['commit-tree', tree, '-p', head, '-F', '-'], { input: change.message + '\n', env: who })).trim()
-      await git(dir, ['push', '--quiet', 'origin', `${commit}:refs/heads/${branch}`]).catch((err) => {
-        if (/non-fast-forward|fetch first|rejected/.test(err.message))
-          throw new StaleDraft(`someone else saved to ${draft} first — open the file again`)
-        throw new CheckoutError(`could not push ${branch}: ${err.message}`)
-      })
-      await git(dir, ['update-ref', `refs/remotes/origin/${branch}`, commit])
-      return { commit, blobs }
+      return { commit: await pushOnDraft(dir, draft, branch, { tree, head, message: change.message }, author), blobs }
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
   })
+}
+
+const authorEnv = (author: Author) => ({
+  GIT_AUTHOR_NAME: author.name, GIT_AUTHOR_EMAIL: author.email,
+  GIT_COMMITTER_NAME: author.name, GIT_COMMITTER_EMAIL: author.email,
+})
+
+/** `tree` committed on `head` and pushed as the draft's next commit; losing the race to another save is refused by name. */
+async function pushOnDraft(dir: string, draft: string, branch: string, change: { tree: string, head: string, message: string },
+  author: Author): Promise<string> {
+  const commit = (await git(dir, ['commit-tree', change.tree, '-p', change.head, '-F', '-'],
+    { input: change.message + '\n', env: authorEnv(author) })).trim()
+  await git(dir, ['push', '--quiet', 'origin', `${commit}:refs/heads/${branch}`]).catch((err) => {
+    if (/non-fast-forward|fetch first|rejected/.test(err.message))
+      throw new StaleDraft(`someone else saved to ${draft} first — open the file again`)
+    throw new CheckoutError(`could not push ${branch}: ${err.message}`)
+  })
+  await git(dir, ['update-ref', `refs/remotes/origin/${branch}`, commit])
+  return commit
 }
 
 /** Every `.md` directly in `folder` on a draft, each with its text and blob — a collection's items. */
@@ -357,6 +367,36 @@ export function treeFromExport(site: GitSite, head: string, into: string, blobs:
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
+  })
+}
+
+export interface TreeDiff { path: string, hunks: string }
+
+/** What `tree` changes under the site's `content/` against `head`, file by file, as `git diff`'s hunks. */
+export function diffTree(site: GitSite, head: string, tree: string, root = sitesDir()): Promise<TreeDiff[]> {
+  return serial(site.id, async () => {
+    const dir = await synced(site, root)
+    const prefix = repoPath(site, '')
+    const out = await git(dir, ['diff', '--no-color', '--no-ext-diff', '--no-renames', '-U2', head, tree, '--', repoPath(site, 'content')])
+    return out.split(/^diff --git .*$/m).filter(s => s.trim()).map((part) => {
+      const named = /^\+\+\+ b\/(.+)$/m.exec(part) ?? /^--- a\/(.+)$/m.exec(part)
+      const at = part.search(/^@@/m)
+      return { path: (named?.[1] ?? '').slice(prefix.length), hunks: at < 0 ? '' : part.slice(at).trimEnd() }
+    })
+  })
+}
+
+/**
+ * `tree` as one commit on the draft, made on `head`: a draft that moved since
+ * the tree was made is refused, since the tree would undo what moved it.
+ */
+export function commitTree(site: GitSite, draft: string, change: { tree: string, head: string, message: string },
+  author: Author, root = sitesDir()): Promise<{ commit: string }> {
+  return serial(site.id, async () => {
+    const dir = await synced(site, root)
+    const { branch, head } = await draftHead(site, dir, draft)
+    if (head !== change.head) throw new StaleDraft(`${draft} has changed since the ask read it — ask again`)
+    return { commit: await pushOnDraft(dir, draft, branch, change, author) }
   })
 }
 
@@ -544,43 +584,60 @@ export function revertDraft(site: GitSite, commit: string, name: string, author:
     const base     = await baseBranch(site, dir)
     const baseHead = await headOf(dir, base)
     if (!baseHead) throw new CheckoutError(`${site.source.repo} has no branch ${base}`)
-    if ((await gitRun(dir, ['merge-base', '--is-ancestor', commit, baseHead])).code !== 0)
-      throw new CheckoutError(`${commit.slice(0, 7)} is not on ${base} any more, so there is nothing of it to undo`)
-    const parent = (await git(dir, ['rev-parse', '--verify', `${commit}^1`])).trim()
-
-    const prefix = repoPath(site, '')
-    const paths  = (await git(dir, ['diff', '--name-only', '-z', parent, commit])).split('\0').filter(Boolean)
-    for (const p of paths) {
-      const why = p.startsWith(prefix) ? refusal(p.slice(prefix.length)) : `${p} is outside the site`
-      if (why) throw new CheckoutError(`undoing ${commit.slice(0, 7)} would change ${p.slice(prefix.length)}: ${why}`)
-    }
-
-    const tmp = mkdtempSync(join(tmpdir(), 'basecamp-revert-'))
-    try {
-      const index = { GIT_INDEX_FILE: join(tmp, 'index') }
-      await git(dir, ['read-tree', '-m', '-i', '--aggressive', commit, baseHead, parent], { env: index })
-      const conflicted = await resolveBoth(dir, tmp, index)
-      if (conflicted.length)
-        throw new MergeConflict(`${conflicted.map(p => p.slice(prefix.length)).join(', ')} changed again since ${commit.slice(0, 7)} — a developer undoes it`, conflicted)
-      const tree = (await git(dir, ['write-tree'], { env: index })).trim()
-      if (tree === (await git(dir, ['rev-parse', `${baseHead}^{tree}`])).trim())
-        throw new CheckoutError(`${base} already holds none of ${commit.slice(0, 7)}`)
-      const who = {
-        GIT_AUTHOR_NAME: author.name, GIT_AUTHOR_EMAIL: author.email,
-        GIT_COMMITTER_NAME: author.name, GIT_COMMITTER_EMAIL: author.email,
-      }
-      const made = (await git(dir, ['commit-tree', tree, '-p', baseHead, '-F', '-'],
-        { input: `${message}\n\nThis reverts ${commit}.\n`, env: who })).trim()
-      await git(dir, ['push', '--quiet', 'origin', `${made}:refs/heads/${named.branch}`]).catch((err) => {
-        throw new CheckoutError(`could not push ${named.branch}: ${err.message}`)
-      })
-      await git(dir, ['update-ref', `refs/remotes/origin/${named.branch}`, made])
-      const at = (await git(dir, ['log', '-1', '--format=%cI', made])).trim()
-      return { name: named.slug, branch: named.branch, head: made, at: new Date(at).toISOString(), author: author.name, subject: message }
-    } finally {
-      rmSync(tmp, { recursive: true, force: true })
-    }
+    const tree = await undoneTree(site, dir, commit, { onto: baseHead, name: base }, refusal)
+    const made = (await git(dir, ['commit-tree', tree, '-p', baseHead, '-F', '-'],
+      { input: `${message}\n\nThis reverts ${commit}.\n`, env: authorEnv(author) })).trim()
+    await git(dir, ['push', '--quiet', 'origin', `${made}:refs/heads/${named.branch}`]).catch((err) => {
+      throw new CheckoutError(`could not push ${named.branch}: ${err.message}`)
+    })
+    await git(dir, ['update-ref', `refs/remotes/origin/${named.branch}`, made])
+    const at = (await git(dir, ['log', '-1', '--format=%cI', made])).trim()
+    return { name: named.slug, branch: named.branch, head: made, at: new Date(at).toISOString(), author: author.name, subject: message }
   })
+}
+
+/**
+ * One commit of the draft undone on it, as a new commit: three-way, so a
+ * later save to other lines stays, and a line changed again since is refused.
+ */
+export function revertOnDraft(site: GitSite, draft: string, commit: string, author: Author, message: string,
+  refusal: (path: string) => string | null, root = sitesDir()): Promise<{ commit: string }> {
+  return serial(site.id, async () => {
+    const dir = await synced(site, root)
+    const { branch, head } = await draftHead(site, dir, draft)
+    const tree = await undoneTree(site, dir, commit, { onto: head, name: draft }, refusal)
+    return { commit: await pushOnDraft(dir, draft, branch, { tree, head, message: `${message}\n\nThis reverts ${commit}.` }, author) }
+  })
+}
+
+/** `commit`'s change taken back out of `onto`, as a tree, or why it cannot be: a path `refusal` names, or a line changed again since. */
+async function undoneTree(site: GitSite, dir: string, commit: string, { onto, name }: { onto: string, name: string },
+  refusal: (path: string) => string | null): Promise<string> {
+  if ((await gitRun(dir, ['merge-base', '--is-ancestor', commit, onto])).code !== 0)
+    throw new CheckoutError(`${commit.slice(0, 7)} is not on ${name} any more, so there is nothing of it to undo`)
+  const parent = (await git(dir, ['rev-parse', '--verify', `${commit}^1`])).trim()
+
+  const prefix = repoPath(site, '')
+  const paths  = (await git(dir, ['diff', '--name-only', '-z', parent, commit])).split('\0').filter(Boolean)
+  for (const p of paths) {
+    const why = p.startsWith(prefix) ? refusal(p.slice(prefix.length)) : `${p} is outside the site`
+    if (why) throw new CheckoutError(`undoing ${commit.slice(0, 7)} would change ${p.slice(prefix.length)}: ${why}`)
+  }
+
+  const tmp = mkdtempSync(join(tmpdir(), 'basecamp-revert-'))
+  try {
+    const index = { GIT_INDEX_FILE: join(tmp, 'index') }
+    await git(dir, ['read-tree', '-m', '-i', '--aggressive', commit, onto, parent], { env: index })
+    const conflicted = await resolveBoth(dir, tmp, index)
+    if (conflicted.length)
+      throw new MergeConflict(`${conflicted.map(p => p.slice(prefix.length)).join(', ')} changed again since ${commit.slice(0, 7)} — a developer undoes it`, conflicted)
+    const tree = (await git(dir, ['write-tree'], { env: index })).trim()
+    if (tree === (await git(dir, ['rev-parse', `${onto}^{tree}`])).trim())
+      throw new CheckoutError(`${name} already holds none of ${commit.slice(0, 7)}`)
+    return tree
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
 }
 
 /** The site's branch for a release a developer starts, which drafts also start from. */

@@ -460,16 +460,28 @@ const ensureWeb = async ($) => {
   const already = await probe.httpStatus({ url: `http://127.0.0.1:${port}/`, name: 'the web server is up' })
   if (already.ok) return already
 
-  const web = await startServer($, {
-    name:   'web',
-    script: 'web',
-    cwd:    $.config.appDir,
-    env:    { WEB_PORT: String(port), FRONTIER_PORT_BE: String($.config.apiPort) },
-    port,
-    path:   '/',
-  })
+  const web = await startWeb($)
   return web.up
 }
+
+// Bound to the address every probe here asks. Left to itself vite binds
+// `localhost`, which a GitHub runner resolves to ::1 first: vite prints ready
+// and every request to 127.0.0.1 is refused. The proxy target is named for the
+// same reason — the API binds IPv4 alone and the scaffold's default target is
+// `localhost`. Without FRONTIER_PORT_BE as well, a person reproducing this by
+// hand proxies to 8100 whatever --api-port said, and gets a 502 from a page
+// that loaded.
+const startWeb = ($) => startServer($, {
+  name:   'web',
+  script: 'web',
+  argv:   ['bun', 'run', 'web', '--host', '127.0.0.1'],
+  cwd:    $.config.appDir,
+  env:    { WEB_PORT:         String($.config.webPort),
+            FRONTIER_PORT_BE: String($.config.apiPort),
+            FRONTIER_API_URL: `http://127.0.0.1:${$.config.apiPort}` },
+  port:   $.config.webPort,
+  path:   '/',
+})
 
 // The API reads db/schema.lite once, at boot. A step that changes the schema
 // has to put the process through it again or the app goes on serving the shape

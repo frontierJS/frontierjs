@@ -25,7 +25,7 @@ Each row's requirements are `THREATS.md`'s *ASVS* column. A signed request (B8�
 
 **Holes found while probing:**
 
-- **`helmet()` sends `X-XSS-Protection: 1; mode=block`** (`packages/junction/src/transport/middleware.ts:247`). OWASP's current advice is `0` or omit it, because the retired XSS auditor could itself leak data. **No CSP by default and HSTS is off by default.**
+- **No CSP by default** (`packages/junction/src/transport/middleware.ts`, `helmet()`).
 - **`rateLimitHook` counts in a process `Map`** (`packages/junction/src/core/rate-limit.ts:56`). A restart resets the login throttle, and N processes allow N× the attempts. `auth.lite` already moved TOTP and login-challenge attempts into rows for this reason. The rate limiters have not followed.
 
 **Not probed yet:** session id rotation on login and privilege change, how Mesa escapes interpolated text and attributes, upload type/size checks on `attachments`, OAuth `state`/PKCE, TOTP replay inside one window.
@@ -65,8 +65,10 @@ Done when: `fli check` passes with the new rows.
 Goal: a fresh `fli new` app passes a ZAP baseline with no header warnings.
 Done when: Phase 4's scan reports no header findings.
 
-- [ ] 2.1 `X-XSS-Protection: 0`, or drop the header
-- [ ] 2.2 HSTS on whenever the app is served over https in production
+- [x] 2.1 `X-XSS-Protection: 0`, or drop the header
+  - `helmet()` always sends `0` and the `xss` option is gone: nobody should turn the auditor back on. `0` rather than absent, as helmet.js does, because an older browser runs the auditor by default. Pinned in `packages/junction/test/index.test.ts`.
+- [x] 2.2 HSTS on whenever the app is served over https in production
+  - `helmet()` sends `max-age=31536000` outside development, with no scheme check: a browser ignores the header over plain http (RFC 6797 §8.1), so trusting `X-Forwarded-Proto` would buy nothing. Off in development, where `https://localhost` would be pinned for a year. `fli deploy`'s SPA document carries the same value from `edge.js`. No `includeSubDomains`, because on a bare domain it pins every other site under it. Pinned in `packages/junction/test/index.test.ts` and `packages/cli/test/edge.test.js`.
 - [ ] 2.3 A default CSP (Q1)
 - [ ] 2.4 Document that rate limits are per process and reset on restart, in junction's docs and in B14's *Open* cell (`FJS-D1193`)
 - [x] 2.5 Security headers on the SPA document `fli deploy` serves, which helmet never reaches (`FJS-3190`)

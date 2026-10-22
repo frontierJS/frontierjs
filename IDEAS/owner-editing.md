@@ -1050,8 +1050,25 @@ shows them, reviews the diff and saves it to their draft.
   - Test: `drafts.test.ts` § asking a model (a look key, a file outside
     `content/`, an item removed, a page removed) and site-kit's
     `test/content.mjs`.
-- [ ] 4.3 The owner sees the diff on the preview and saves or discards it.
+- [x] 4.3 The owner sees the diff on the preview and saves or discards it.
   A save is one commit on the draft, and Undo is that commit's revert.
+  **Built 2026-10-22.** The preview's bar has Ask (site-kit `Ask.mesa`): the
+  owner's words go to `drafts.ask`, the card polls `drafts.asked`, and a ready
+  ask shows each file as `git diff`'s lines (`diffTree`, the run's tree
+  against the head it read), red and green, with the model's reply. Keep is
+  `drafts.keep`, the tree as one commit on that head, authored by the keeper
+  and named `Asked: <their words>` (`commitTree`); a draft that moved since is
+  refused, `ask again`, rather than merged, since the tree would undo the move.
+  Discard (`drafts.discard`) forgets the ask and commits nothing. Undo
+  (`drafts.undo`) is `revertOnDraft`, the kept commit run backwards on the
+  draft three-way, so a later save to other lines stays; it shares
+  `undoneTree` with 1.5's Revert. The method is `keep`, not `save`, because
+  `save` is already the one-file write.
+  - Test: `drafts.test.ts` § asking a model (the lines, keep's one commit and
+    its author, a second keep and a discard of a kept ask refused, undo's
+    revert, a moved draft refused, discard). A scratch browser drive, 12/12
+    (not committed): Lee asks on the preview, sees the red and green lines,
+    discards, asks again, keeps, and undoes, each checked on the remote.
 
 ## The nine (`decision-rules`, answered before any edit)
 

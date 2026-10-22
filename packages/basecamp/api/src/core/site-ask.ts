@@ -19,9 +19,11 @@
 // (`FJS-D1226`, `changeRefusal`), and one refusal drops the run whole
 // (`FJS-D1242`): the prompt asks the model to leave the look keys alone, and
 // this is what holds it to that. What passes is hashed into the clone as a tree
-// on the head the run read, which 4.3 commits. A run's state is a file beside the clone,
-// `<SITES_DIR>/<appId>.asks.json`, keyed by draft, as a preview's is: one ask
-// per draft at a time, and losing the file loses an ask nobody saved.
+// on the head the run read. The owner keeps it as one commit on the draft, or
+// discards it, and a kept ask's Undo is that commit's revert. A run's state is
+// a file beside the clone, `<SITES_DIR>/<appId>.asks.json`, keyed by draft, as
+// a preview's is: one ask per draft at a time, and losing the file loses an
+// ask nobody kept.
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -34,8 +36,8 @@ import { isGit } from './app-source.ts'
 import { env } from './env.ts'
 
 export interface AskStatus {
-  /** `queued` and `running` are on their way; `ready` left a tree, `failed` says why it did not. */
-  state:   'queued' | 'running' | 'ready' | 'failed'
+  /** `queued` and `running` are on their way; `ready` left a tree, `failed` says why it did not; `kept` and `undone` are the owner's. */
+  state:   'queued' | 'running' | 'ready' | 'failed' | 'kept' | 'undone'
   request: string
   by:      string | null
   /** The draft's head the run read, which a save must still find there. */
@@ -46,6 +48,8 @@ export interface AskStatus {
   reply:   string | null
   cost:    number | null
   error:   string | null
+  /** The commit a keep made on the draft, which Undo reverts. */
+  kept?:   string | null
 }
 
 /** Longest an ask runs before it is stopped; a stale `running` past twice this is no longer in the way. */
@@ -85,13 +89,15 @@ export function askBusy(status: AskStatus | undefined, now = Date.now()): boolea
   return now - Date.parse(status.at) < 2 * ASK_TIMEOUT_MS
 }
 
-function write(appId: string, draft: string, next: AskStatus, root: string): AskStatus {
-  const all = askStatuses(appId, root)
-  all[draft] = next
+function writeAll(appId: string, all: Record<string, AskStatus>, root: string): void {
   mkdirSync(root, { recursive: true })
   const file = fileOf(appId, root)
   writeFileSync(`${file}.tmp`, JSON.stringify(all, null, 2))
   renameSync(`${file}.tmp`, file)
+}
+
+function write(appId: string, draft: string, next: AskStatus, root: string): AskStatus {
+  writeAll(appId, { ...askStatuses(appId, root), [draft]: next }, root)
   return next
 }
 
@@ -103,10 +109,18 @@ export function queueAsk(appId: string, draft: string, ask: { request: string, b
   }, root)
 }
 
-function markAsk(appId: string, draft: string, patch: Partial<AskStatus> & { state: AskStatus['state'] }, root: string): AskStatus | null {
+export function markAsk(appId: string, draft: string, patch: Partial<AskStatus> & { state: AskStatus['state'] }, root = sitesDir()): AskStatus | null {
   const prev = askStatuses(appId, root)[draft]
   if (!prev) return null
   return write(appId, draft, { ...prev, ...patch, at: new Date().toISOString(), error: patch.error ?? null }, root)
+}
+
+/** A discarded ask: its tree is left for git to collect, and the draft has no ask. */
+export function dropAsk(appId: string, draft: string, root = sitesDir()): void {
+  const all = askStatuses(appId, root)
+  if (!(draft in all)) return
+  delete all[draft]
+  writeAll(appId, all, root)
 }
 
 /**

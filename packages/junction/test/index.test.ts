@@ -4843,11 +4843,33 @@ describe('helmet — security headers applied by default', () => {
     expect(res.headers['x-content-type-options']).toBe('nosniff')
   })
 
-  it('x-xss-protection header set', async () => {
+  it('x-xss-protection turns the browser auditor off', async () => {
     const app = await createTestApp()
     app.services.register(buildService({ name: 'items', find: async () => [] }))
     const res = await request(app).get('/items')
-    expect(res.headers['x-xss-protection']).toBeDefined()
+    expect(res.headers['x-xss-protection']).toBe('0')
+  })
+
+  it('strict-transport-security in production, for a year and no subdomains', async () => {
+    const was = process.env.NODE_ENV
+    process.env.NODE_ENV = 'production'
+    try {
+      const app = await createTestApp()
+      app.services.register(buildService({ name: 'items', find: async () => [] }))
+      const res = await request(app).get('/items')
+      expect(res.headers['strict-transport-security']).toBe('max-age=31536000')
+    } finally {
+      if (was === undefined) delete process.env.NODE_ENV
+      else process.env.NODE_ENV = was
+    }
+  })
+
+  // https://localhost pinned for a year outlives the dev server that sent it
+  it('no strict-transport-security in development', async () => {
+    const app = await createTestApp()
+    app.services.register(buildService({ name: 'items', find: async () => [] }))
+    const res = await request(app).get('/items')
+    expect(res.headers['strict-transport-security']).toBeUndefined()
   })
 
   it('referrer-policy header set', async () => {

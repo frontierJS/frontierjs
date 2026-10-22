@@ -40,21 +40,11 @@ if (!await must($, api.up, {
   detail:    serverLog(api),
 })) return
 
-// The web server proxies to the API, so it is told where that is. Without
-// FRONTIER_PORT_BE it proxies to 8100 whatever --api-port said, and the browser gets
-// a 502 from a page that loaded perfectly.
-const web = await startServer($, {
-  name:   'web',
-  script: 'web',
-  cwd:    $.config.appDir,
-  env:    { WEB_PORT: String($.config.webPort), FRONTIER_PORT_BE: String($.config.apiPort) },
-  port:   $.config.webPort,
-  path:   '/',
-})
+const web = await startWeb($)
 
 if (!await must($, web.up, {
   likely:    'vite exited, or refused the port — it is strictPort, so it does not move',
-  reproduce: `cd ${$.config.appDir} && WEB_PORT=${$.config.webPort} bun run web`,
+  reproduce: `cd ${$.config.appDir} && WEB_PORT=${$.config.webPort} FRONTIER_PORT_BE=${$.config.apiPort} bun run web --host 127.0.0.1`,
   detail:    serverLog(web),
 })) return
 

@@ -22,6 +22,7 @@ import { createStatic }           from '../src/static.js'
 import { createStaticServer }     from '../src/serve.js'
 import { readConfig }             from '../src/config.js'
 import { ensureCert }             from '../src/cert.js'
+import pkg                        from '../package.json' with { type: 'json' }
 import { existsSync, mkdtempSync, statSync, writeFileSync, mkdirSync, symlinkSync, realpathSync } from 'node:fs'
 import { tmpdir }                 from 'node:os'
 import { join }                   from 'node:path'
@@ -1819,6 +1820,11 @@ describe('it refuses to start half-configured', () => {
     // The trailing slash goes, or every path is built with a double one.
     expect(config.basecampUrl).toBe('https://bc.test')
     expect(config.publicUrl).toBe('https://localhost:7180')
+  })
+
+  // Basecamp's Servers page shows this, and a box running 0.1.3 reported 0.1.0.
+  test('the version is the running package, and the env cannot override it', () => {
+    expect(readConfig({ ...required, OUTPOST_VERSION: '9.9.9' }).version).toBe(pkg.version)
   })
 
   // Basecamp registers no target for a plain-http URL, so this machine would

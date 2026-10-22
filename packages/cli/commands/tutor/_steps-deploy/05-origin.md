@@ -40,9 +40,18 @@ if (!await must($, {
   likely: 'the app has no commits — git commit found nothing to record',
 })) return
 
-if (existsSync(srv)) rmSync(srv, { recursive: true, force: true })
+if (existsSync(srv)) T.removeContainerWritten(srv)
 
-mkdirSync(join(srv, 'db'), { recursive: true })
+// What `fli deploy:setup` does on a real host: the container writes /db as the
+// image's user, so the directory is that user's and not whoever ran the lesson.
+if (!await must($, {
+  ok:    T.makeContainerDir(join(srv, 'db')),
+  name:  'the database directory belongs to the container\'s user',
+  asked: `${join(srv, 'db')} owned by the image's user`,
+  got:   'docker run could not change its owner',
+}, {
+  likely: 'the Docker daemon refused a bind mount of this directory',
+})) return
 // The container's environment, not the app's — `02-app` writes it beside the
 // workspace so a course does not lose its own `.env` to a deploy.
 copyFileSync($.config.deployEnv, join(srv, '.env.production'))
