@@ -171,6 +171,8 @@ export function assertEnrollsOverTls(basecampUrl: string): void {
 export function installScript(): string {
   return `#!/bin/bash
 set -euo pipefail
+# set -e exits without a word, and over ssh only this line says where.
+trap 'echo "install stopped at line $LINENO: $BASH_COMMAND" >&2' ERR
 
 : "$BASECAMP_URL"   # where this machine reports to
 : "$SERVER_ID"      # which row it is
@@ -351,12 +353,25 @@ ENROLL=$(curl -fsSL -X POST "$BASECAMP_URL/servers/$SERVER_ID/enroll" \\
   -H 'content-type: application/json' \\
   -d "{\\"token\\":\\"$ENROLL_TOKEN\\",\\"cert\\":\\"$CERT\\"}")
 
-OUTPOST_SECRET=$(echo "$ENROLL" | grep -o '"secret":"[^"]*"' | cut -d'"' -f4)
-OUTPOST_PUBLIC_URL=$(echo "$ENROLL" | grep -o '"publicUrl":"[^"]*"' | cut -d'"' -f4)
+OUTPOST_SECRET=$(echo "$ENROLL" | grep -o '"secret":"[^"]*"' | cut -d'"' -f4 || true)
+OUTPOST_PUBLIC_URL=$(echo "$ENROLL" | grep -o '"publicUrl":"[^"]*"' | cut -d'"' -f4 || true)
 
 if [ -z "$OUTPOST_SECRET" ]; then
   echo "enrollment did not return a secret" >&2
   exit 1
+fi
+
+# publicUrl is null for a row Basecamp holds no address for — its own box,
+# enrolled by fli deploy or the Use this Basecamp server button. This box
+# answers on its default route's source address, and a Basecamp running on it
+# reaches it there.
+if [ -z "$OUTPOST_PUBLIC_URL" ]; then
+  SELF_IP=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit } }' || true)
+  if [ -z "$SELF_IP" ]; then
+    echo "enrollment named no address for this machine, and it has no default route to take one from" >&2
+    exit 1
+  fi
+  OUTPOST_PUBLIC_URL="https://$SELF_IP:$OUTPOST_PORT"
 fi
 
 cat > /etc/basecamp/outpost.env <<ENVEOF

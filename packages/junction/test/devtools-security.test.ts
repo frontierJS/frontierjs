@@ -212,7 +212,7 @@ describe('rows, as somebody (fli gui :data)', () => {
       const app: any = createApp({
         db, logLevel: 'silent', config: { port: 0 },
         auth: createStubAuth({ users: [{ id: '1', role: 'member' }] }),
-        system: { id: 'app', role: 'system' },
+        system: { id: 'app', role: 'system', userType: 'system', authMethod: 'system' },
       })
       app.configure(devtools({ port: 0, auth: () => true }))
       await app.start()

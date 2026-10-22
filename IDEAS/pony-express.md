@@ -6,7 +6,7 @@ dated: 2026-10-21
 
 # Idea — The pony express: a line from any shell to anyone with `fli`
 
-**Status: PROPOSED.** Dated 2026-10-21. Phases 0 to 3 and steps 4.1 to 4.5 are built; the rest is not. Do not cite
+**Status: PROPOSED.** Dated 2026-10-21. Phases 0 to 3 and steps 4.1 to 4.6 are built; the rest is not. Do not cite
 this file as behavior — see `VERIFYING.md`. Claims about the tree were read on
 the date above, not run. It grows `IDEAS/haven.md` § Ideas past the plan, *The
 pony express*, into a plan of its own.
@@ -410,9 +410,39 @@ Done when: a test Worker answering a different key for a pinned nick makes `fli 
   the client refusing a swapped asker, a swapped sealing pair, a swapped link
   and its own chain cut short, keeping nothing. Not run against the real
   account.
-- [ ] 4.6 `fli tell:revoke <machine>`: any linked machine signs the revoke and
+- [x] 4.6 `fli tell:revoke <machine>`: any linked machine signs the revoke and
   rotates the sealing key (`FJS-D1419`); a sealed letter carries its sender's
   head, so a hidden revoke shows (`FJS-D1421`).
+  Built: a `revoke` kind in `core/tell-chain.js`, `{ by, machine, sealKey }`
+  signed by any machine in the chain, taking `machine` out and naming the
+  member's new sealing key; `readChain` refuses one that keeps the old key,
+  takes out the last machine or one not in the chain, and a `link` naming a
+  machine once revoked. The new pair reaches the machines left through each
+  one's box key — its own X25519 pair in `key.json`, never copied off it, held
+  at the post as a claim the machine signed (`POST /box`, `GET /boxes`) and
+  published on any verb, a join and a link (Keybase's per-device encryption
+  key under its per-user key). `tell:revoke <fingerprint>` verifies each claim
+  against its machine, seals the pair to it, and publishes the chain with
+  `rekeys`; `syncChain` on any other machine fetches its copy (`GET /rekey`),
+  checks it is the key the chain signed and keeps the old pair as `retired`,
+  for letters sealed to it. The post drops the revoked machine, its box and
+  rekey, and closes its socket. `tell:who` lists the machines by fingerprint.
+  A sealed letter is now `letter v3`, signing the sender's seq and head;
+  `inbox` reads a head past the pin against the post's chain, and withholds a
+  letter written at a link the post does not serve, one off a fork, and one
+  signed by a machine revoked since. A machine whose box the post does not hold
+  is named at the revoke and cannot open what is sealed after it.
+  Driven under `wrangler dev` (4.151) behind a wrapper that lies on request,
+  six scratch `HOME`s, 49 checks: three machines with their box claims, ada3
+  revoked by ada2 (not the root), its open `inbox -f` closed and every request
+  after refused; the root picking up the rotated key, and refusing a pair the
+  post sealed to its box itself; a letter sealed to the old key opened with
+  the retired pair; a peer's pin moved to the revoke, and ada3's earlier letter
+  withheld as revoked; the revoke hidden from a new peer and shown by the next
+  letter's head; a fourth machine linked after the revoke; a box claim the post
+  swapped left unsealed-to and named; the post refusing rekeys for a machine
+  out of the chain, a box claim signed by another machine; `readChain`'s five
+  revoke refusals; `--dry`. Not run against the real account.
 - [ ] 4.7 `fli tell:paper`: an opt-in printed key that is one more machine in
   the chain, the post holding nothing (`FJS-D1420`).
 

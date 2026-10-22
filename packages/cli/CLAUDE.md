@@ -781,8 +781,12 @@ core/
   tell-chain.js  what a member IS — a chain of links, each signed by one of
                 its machines, from a root link signing the first machine and the
                 sealing key (`FJS-D1416`); a `link` adds a machine, signed by one
-                already in and countersigned by the new one (`FJS-D1418`), and
-                `askCode` is the hash a new machine's eight words read. Read by the Worker AND the cli: the
+                already in and countersigned by the new one (`FJS-D1418`), a
+                `revoke` takes one out and carries a new sealing key
+                (`FJS-D1419`), and `askCode` is the hash a new machine's eight
+                words read. A machine's box key is its own pair, claimed by its
+                signature outside the chain; a revoke seals the new sealing key
+                to each one left. Read by the Worker AND the cli: the
                 post refuses a chain that does not verify or carry the stored
                 one forward, and a client verifies every chain the post serves,
                 since the post is what the chain checks. Nothing node-only
@@ -792,7 +796,9 @@ core/
                 member with a sealing key is sent only sealed letters; a plain
                 one to them is refused here (`FJS-D1402`). `tell:link` is four
                 routes over one `asks` row, and the post carries the pieces
-                without signing any.
+                without signing any; a revoke is a longer chain on `POST /chain`
+                with the rotated key sealed to each machine left (`rekeys`), and
+                storing it drops the revoked machine and closes its socket.
                 Never imported: wrangler bundles it from a config `tell:setup`
                 writes, so it runs in workerd and imports toolbelt and nothing
                 Bun-only. `cloudflare:workers` is not imported either, since

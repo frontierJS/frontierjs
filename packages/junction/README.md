@@ -124,7 +124,7 @@ packages/junction/
 │   ├── manifest/         ← manifest — schema + migration state at /manifest
 │   ├── openapi/          ← openapi() plugin, generateOpenAPI() — 3.1 from the registry
 │   ├── webhooks/         ← at-least-once delivery, IWebhookStore, SQLite adapter
-│   ├── devtools/         ← devtools plugin — what `fli gui`'s `:live` reads and `:call` calls through
+│   ├── devtools/         ← devtools plugin — what `fli gui`'s `:live` reads, `:call` calls through and `:data` reads rows through
 │   └── outbox/, backfill/, commitments/, export/, metrics/  ← each holds its engine.ts
 │
 ├── src/auth/

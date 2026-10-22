@@ -111,7 +111,7 @@ bun run typecheck       # must be clean
 
 A change to the devtools plugin or `core/call-as.ts` also needs the cli's
 `bun run test:browser:console`: devtools serves no page, and `fli gui`'s
-`:live` and `:call` are what read it, in both targets.
+`:live`, `:call` and `:data` are what read it, in both targets.
 
 Then `example` `bun run verify` and `verify:jobs`, and `basecamp` `bun run verify`.
 A change to channels or `announce` also needs `example` `verify:live`, the only
@@ -227,7 +227,9 @@ so a fact one derives, the other must lift out of the frame by hand.
   to decide list against single (`FJS-D937`).
 - **`core/call-as.ts` is the one call made from outside the app** — `junction
   call` in a booted copy, devtools' `POST /api/call` inside a running one,
-  refused outside development (`FJS-D1426`).
+  refused outside development (`FJS-D1426`). `rowsAs` beside it is devtools'
+  `GET /api/data/<Model>`, a page of rows through `app.withDb` under the same
+  principal lookup (`FJS-D1427`).
 - **`core/app-model.ts` is one walk over a built app**; the snapshot tools under
   `tools/` render it and hold no walk of their own.
 
