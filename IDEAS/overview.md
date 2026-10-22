@@ -779,6 +779,8 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `conversion-sstime.md` — Converting SSTime, ELA's time clock, onto FrontierJS
 - `corpus-synthesis.md` — the corpus read as one document
 - `iii-borrowings.md` — Five things worth taking from iii
+- `pico-borrowings.md` — Six things worth taking from pico: ssh as the front door, dry run until `--write`, redirects as files, a public service's tables, runbooks, a tunnel
+- `bubbletea-borrowings.md` — Four things worth taking from bubbletea, read beside pico: a refusable quit, the tty handed to an editor, terminal state as view fields, international keyboards; six confirmations
 - `intent-recognizer-examples.md` — synthetic support requests for the intent recognizer
 - `prompt-to-app.md` — Prompt-to-app: what the Base44 space is, and what it would take here
 - `rebuilt-in-the-stressors.md` — what the stressors rebuilt that the framework should own

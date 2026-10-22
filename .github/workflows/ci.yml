@@ -86,3 +86,12 @@ jobs:
           # is a failure here, not a skip that passes a shipping advisory.
           FJS_CI_REQUIRE_AUDIT: '1'
         run: node scripts/ci.mjs
+
+      # The step log stops at the notes, so a red phase's output is only here.
+      - name: Upload the CI report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-last
+          path: .cache/ci-last.txt
+          if-no-files-found: ignore
