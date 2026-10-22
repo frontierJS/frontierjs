@@ -109,6 +109,7 @@ export async function buildExtension({ root, browser = 'chrome', verbose = false
         extRoot:     root,
         islandId:    island.id,
         islandEntry: autoGenPaths.islands[island.id].path,
+        islandPath:  island.path,
         outDir:      distDir,
         dev,
       }))

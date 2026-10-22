@@ -25,7 +25,10 @@
 # for a scaffolded app; this one is for the app whose whole purpose is to
 # exercise the tree.
 
-FROM oven/bun:1 AS build
+# Both FROM lines name BUN_VERSION (api/src/providers/compute/enrollment.ts), the
+# Bun every Outpost in the fleet runs; a moving tag ran 1.4.4 beside 1.4.2
+# (FJS-3443). compute.test.ts holds them together.
+FROM oven/bun:1.4.2 AS build
 WORKDIR /app
 
 # Dependencies first, so a source edit does not re-resolve the tree. The
@@ -64,7 +67,7 @@ COPY app.snapshot.md ./
 RUN bun run build:web
 
 # ─── runtime ─────────────────────────────────────────────────────────────────
-FROM oven/bun:1-slim
+FROM oven/bun:1.4.2-slim
 WORKDIR /app
 
 COPY --from=build /app /app

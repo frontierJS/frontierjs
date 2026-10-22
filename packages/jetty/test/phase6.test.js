@@ -148,6 +148,30 @@ group('buildManifest dispatch')
   }
 }
 
+// --- commands: a keyboard shortcut is declared in the manifest (FJS-3385) ---
+
+group('manifest — commands')
+{
+  const { buildManifest } = await import('../src/build/manifest.js')
+  const commands = {
+    'pick-element': {
+      suggested_key: { default: 'Ctrl+Shift+E', mac: 'Command+Shift+E' },
+      description:   'Start the element picker',
+    },
+  }
+  const found = { harbor: { path: '/x' }, dock: null, options: null, piers: [], islands: [] }
+
+  for (const browser of ['chrome', 'firefox']) {
+    const m = buildManifest({ config: { name: 'X', version: '1', commands }, found, browser })
+    if (JSON.stringify(m.commands) === JSON.stringify(commands)) ok(`${browser}: config.commands → manifest.commands`)
+    else bad(`${browser}: commands not carried`, JSON.stringify(m.commands))
+
+    const none = buildManifest({ config: { name: 'X', version: '1' }, found, browser })
+    if (!('commands' in none)) ok(`${browser}: no commands key when none declared`)
+    else bad(`${browser}: empty commands key emitted`)
+  }
+}
+
 // --- buildExtension end-to-end (Firefox) ---
 
 group('buildExtension — firefox')

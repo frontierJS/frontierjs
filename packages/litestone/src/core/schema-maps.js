@@ -1686,35 +1686,50 @@ export function buildEffectiveMap(schema) {
 // handled by the existing FK injection at processHasManyNested time.
 
 export function buildCoFkMap(schema, relationMap) {
-  const map = {}
-  for (const parentModel of schema.models) {
-    const parentRels = relationMap[parentModel.name] ?? {}
-    // Collect parent's belongsTo FKs: { columnName: { target, references } }
-    const parentBT = {}
-    for (const rel of Object.values(parentRels)) {
+  // Index every belongsTo by its FK column list once, so a parent reads only the
+  // children that name the same columns instead of walking every model per parent.
+  const byColumns = new Map()
+  const belongsTo = schema.models.map((model, index) => {
+    const list = []
+    let ord = 0
+    for (const rel of Object.values(relationMap[model.name] ?? {})) {
       if (rel.kind !== 'belongsTo') continue
-      parentBT[rel.foreignKeys.join(',')] = { target: rel.targetModel, references: rel.referencedKeys.join(',') }
+      const entry = { index, ord: ord++, key: rel.foreignKeys.join(','), target: rel.targetModel, references: rel.referencedKeys.join(','), foreignKeys: rel.foreignKeys }
+      list.push(entry)
+      let bucket = byColumns.get(entry.key)
+      if (!bucket) byColumns.set(entry.key, bucket = [])
+      bucket.push(entry)
     }
-    if (!Object.keys(parentBT).length) continue
+    return list
+  })
 
-    // Walk every other model — anyone whose belongsTo overlaps with parent's
-    // belongsTo on column name AND target IS a co-FK candidate.
-    for (const childModel of schema.models) {
-      if (childModel.name === parentModel.name) continue
-      const childRels = relationMap[childModel.name] ?? {}
+  const map = {}
+  for (let p = 0; p < schema.models.length; p++) {
+    // Parent's belongsTo FKs: { columnName: { target, references } }
+    const parentBT = {}
+    for (const rel of belongsTo[p]) parentBT[rel.key] = { target: rel.target, references: rel.references }
+    const keys = Object.keys(parentBT)
+    if (!keys.length) continue
+
+    // A child whose belongsTo overlaps the parent's on column name AND target IS a co-FK candidate.
+    const hits = new Map()
+    for (const key of keys) {
+      const parent = parentBT[key]
+      for (const rel of byColumns.get(key)) {
+        if (rel.index === p || rel.target !== parent.target || rel.references !== parent.references) continue
+        let list = hits.get(rel.index)
+        if (!list) hits.set(rel.index, list = [])
+        list.push(rel)
+      }
+    }
+    if (!hits.size) continue
+
+    const parentName = schema.models[p].name
+    map[parentName] = {}
+    for (const index of [...hits.keys()].sort((a, b) => a - b)) {
       const overlaps = []
-      for (const rel of Object.values(childRels)) {
-        if (rel.kind !== 'belongsTo') continue
-        const p = parentBT[rel.foreignKeys.join(',')]
-        if (!p) continue
-        if (p.target !== rel.targetModel) continue
-        if (p.references !== rel.referencedKeys.join(',')) continue
-        overlaps.push(...rel.foreignKeys)
-      }
-      if (overlaps.length) {
-        if (!map[parentModel.name]) map[parentModel.name] = {}
-        map[parentModel.name][childModel.name] = overlaps
-      }
+      for (const rel of hits.get(index).sort((a, b) => a.ord - b.ord)) overlaps.push(...rel.foreignKeys)
+      map[parentName][schema.models[index].name] = overlaps
     }
   }
   return map

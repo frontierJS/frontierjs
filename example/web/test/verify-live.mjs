@@ -403,7 +403,7 @@ try {
     anon.ws.close(); staff.ws.close()
 
     // The gate, over the same transport, as the control for the frame count.
-    const anonHttp = await fetch(`${API}/api/orders`)
+    const anonHttp = await fetch(`${API}/api/orders`, { signal: AbortSignal.timeout(5000) })
 
     t('leak.anonymous', {
       httpStatus: anonHttp.status,
@@ -422,7 +422,7 @@ try {
 } finally {
   for (const id of [orderId, detailId, leakId]) {
     if (id && auth) await fetch(`${API}/api/orders/${id}`, {
-      method: 'DELETE', headers: auth,
+      method: 'DELETE', headers: auth, signal: AbortSignal.timeout(5000),
     }).catch(() => {})
   }
   await browser.close()

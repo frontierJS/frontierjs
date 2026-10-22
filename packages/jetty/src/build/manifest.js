@@ -16,8 +16,8 @@
 //   3. minimum_chrome_version vs strict_min_version — Chrome version field is
 //      top-level; Firefox version is under browser_specific_settings.gecko.
 //
-//   4. host_permissions / web_accessible_resources / options_ui — same shape
-//      in both browsers; emitted identically.
+//   4. host_permissions / web_accessible_resources / options_ui / commands —
+//      same shape in both browsers; emitted identically.
 
 export function buildManifest({ config, found, browser }) {
   if (browser === 'chrome')  return chromeManifest({ config, found })
@@ -55,6 +55,13 @@ function baseManifest({ config, found }) {
       page:        'options.html',
       open_in_tab: true,
     }
+  }
+
+  // Commands — keyboard shortcuts, emitted as written. Harbor receives them
+  // through chrome.commands.onCommand; the manifest is the only place a
+  // suggested_key can be declared.
+  if (config.commands && Object.keys(config.commands).length > 0) {
+    m.commands = config.commands
   }
 
   // Permissions — declared list. Audit pass is Phase 7.

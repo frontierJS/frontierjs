@@ -1178,7 +1178,10 @@ export default createService({
       conduit.register({ ...known, last_seen_at: Date.now() }).catch(() => {})
     }
 
-    return updated
+    // The system client's row carries every column, @guarded ones included;
+    // the wire drops them with a warning, so leave them out here.
+    const hidden = sys.$protectedFields('server') as Record<string, string>
+    return Object.fromEntries(Object.entries(updated).filter(([k]) => !(k in hidden)))
   },
 
 

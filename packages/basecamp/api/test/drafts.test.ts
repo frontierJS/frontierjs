@@ -759,7 +759,7 @@ describe('the merge a publish ships', () => {
 describe('the deployed image', () => {
   test('the runtime stage installs git and an ssh client', () => {
     const dockerfile = readFileSync(join(import.meta.dir, '../../deploy/Dockerfile'), 'utf8')
-    const runtime = dockerfile.slice(dockerfile.lastIndexOf('FROM oven/bun:1-slim'))
+    const runtime = dockerfile.slice(dockerfile.lastIndexOf('FROM oven/bun:'))
     expect(runtime).toMatch(/apt-get install[^\n]*(\\\n[^\n]*)*\bgit\b/)
     expect(runtime).toMatch(/apt-get install[^\n]*(\\\n[^\n]*)*openssh-client/)
   })

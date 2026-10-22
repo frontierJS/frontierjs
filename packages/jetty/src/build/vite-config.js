@@ -16,6 +16,8 @@
 //   isEntry checks. Auto-gen knows exactly which file is which surface,
 //   so injection there is trivial and correct.
 
+import { readFileSync }    from 'node:fs'
+import { fileURLToPath }   from 'node:url'
 import { mesaPlugin }      from './mesa-plugin.js'
 import { devClientPlugin } from '../dev/dev-plugin.js'
 import { loadUnoCSSPlugins } from './uno-plugin.js'
@@ -51,6 +53,58 @@ function envPrefix() {
       throw err
     })
   return _envPrefix
+}
+
+// An island that mounts nothing is a content script on every page its matches
+// name, and `runIsland` reaches the Mesa runtime through `mount()` whether or
+// not an `app` exists: 170 kB inlined into a bundle that only runs `main()`.
+// The island file is read for a `defineIsland({...})` whose object has no `app`;
+// anything the read cannot prove (a spread, a computed key, a config held in a
+// variable, a parse failure) keeps the real `mount`, so a wrong guess costs
+// bytes and never a UI.
+const MOUNT_MODULE = fileURLToPath(new URL('../runtime/mount.js', import.meta.url))
+const MOUNT_STUB   = `export async function mount() {
+  throw new Error('[jetty] mount() is not bundled: this island declares no app')
+}
+`
+
+function declaresNoApp(ast) {
+  const calls = []
+  const walk = (node) => {
+    if (!node || typeof node.type !== 'string') return
+    if (node.type === 'CallExpression' && node.callee.type === 'Identifier' &&
+        node.callee.name === 'defineIsland') calls.push(node)
+    for (const key of Object.keys(node)) {
+      const child = node[key]
+      if (Array.isArray(child)) child.forEach(walk)
+      else if (child && typeof child.type === 'string') walk(child)
+    }
+  }
+  walk(ast)
+  if (calls.length !== 1) return false
+  const arg = calls[0].arguments[0]
+  if (arg?.type !== 'ObjectExpression') return false
+  return arg.properties.every((p) => {
+    if (p.type !== 'Property' || p.computed) return false
+    const name = p.key.type === 'Identifier' ? p.key.name : p.key.value
+    return name !== 'app'
+  })
+}
+
+function codeOnlyIslandPlugin(islandPath) {
+  let codeOnly = null
+  return {
+    name: 'jetty:code-only-island',
+    enforce: 'pre',
+    load(id) {
+      if (id !== MOUNT_MODULE || !islandPath) return null
+      if (codeOnly === null) {
+        try { codeOnly = declaresNoApp(this.parse(readFileSync(islandPath, 'utf8'))) }
+        catch { codeOnly = false }
+      }
+      return codeOnly ? MOUNT_STUB : null
+    },
+  }
 }
 
 function harborPlugins({ dev, islandMatches, extRoot } = {}) {
@@ -94,7 +148,7 @@ export async function harborViteConfig({ extRoot, harborEntry, outDir, dev = nul
   }
 }
 
-export async function islandsViteConfig({ extRoot, islandId, islandEntry, outDir, dev = null }) {
+export async function islandsViteConfig({ extRoot, islandId, islandEntry, islandPath = null, outDir, dev = null }) {
   return {
     root: extRoot,
     envPrefix: await envPrefix(),
@@ -163,7 +217,7 @@ export async function islandsViteConfig({ extRoot, islandId, islandEntry, outDir
     },
     // No dev-client plugin — the auto-gen island entry already imports +
     // invokes startDevClient when dev mode is on.
-    plugins: [mesaPlugin({ extRoot, dev: !!dev?.port }), ...await resourcePlugins()],
+    plugins: [codeOnlyIslandPlugin(islandPath), mesaPlugin({ extRoot, dev: !!dev?.port }), ...await resourcePlugins()],
     define: {
       'import.meta.env.JETTY_DEV_WS': dev?.port ? String(dev.port) : 'undefined',
       'import.meta.env.JETTY_DEV':    dev ? 'true' : 'false',

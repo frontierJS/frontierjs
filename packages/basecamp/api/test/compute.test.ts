@@ -729,6 +729,15 @@ describe('a machine claims its own credential', () => {
     expect(OUTPOST_VERSION).toBe(pkg.version)
   })
 
+  // FJS-3443: the image is the other half of one fleet, and a moving tag
+  // (oven/bun:1) ran 1.4.4 beside an Outpost on 1.4.2.
+  test('the image runs the Bun the Outpost is pinned to', async () => {
+    const { BUN_VERSION } = await import('../src/providers/compute/enrollment.ts')
+    const dockerfile = await Bun.file(new URL('../../deploy/Dockerfile', import.meta.url)).text()
+    const tags = [...dockerfile.matchAll(/^FROM oven\/bun:(\S+)/gm)].map(m => m[1])
+    expect(tags).toEqual([BUN_VERSION, `${BUN_VERSION}-slim`])
+  })
+
   // The enrollment answer is the machine's key. Over plain http to anything
   // but loopback it crosses the network readable (FJS-1603), so neither way a
   // machine is handed the install will point it there.

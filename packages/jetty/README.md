@@ -136,6 +136,7 @@ automatically per `--browser` flag:
 | `host_permissions`             | identical                | identical                                |
 | `web_accessible_resources`     | identical                | identical                                |
 | `permissions` / `options_ui`   | identical                | identical                                |
+| `commands` (keyboard shortcuts) | identical               | identical                                |
 
 Firefox-specific settings live under `firefox: {...}` in `jetty.config.js`:
 ```js
@@ -143,6 +144,17 @@ firefox: {
   geckoId:          'my-extension@example.com',
   strictMinVersion: 121,
   // background: { useScripts: true }, // optional: classic scripts[] form
+}
+```
+
+A keyboard shortcut is a `commands` entry in `jetty.config.js`, written as the
+manifest spells it and received in Harbor through `chrome.commands.onCommand`:
+```js
+commands: {
+  'pick-element': {
+    suggested_key: { default: 'Ctrl+Shift+E', mac: 'Command+Shift+E' },
+    description:   'Start the element picker',
+  },
 }
 ```
 

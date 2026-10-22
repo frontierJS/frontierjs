@@ -1,7 +1,7 @@
 # jetty — package map
 
 **A browser-extension app container.** Mesa UI in the extension surfaces, a
-service worker relaying to Junction. `bun run test` runs the eleven phase files
+service worker relaying to Junction. `bun run test` runs the twelve phase files
 in order under **plain node** — not vitest — except phase 3, which runs under bun
 because it boots a real Junction app.
 
@@ -33,7 +33,7 @@ src/
   peer.js        loadPeer — vite and ws are the APP's, not jetty's
 bin/             jetty.js (the one bin; dispatches to) build-ext · dev-ext ·
                  info · audit · manifest
-test/            phase0 … phase9 (11 files, incl. phase2.5)
+test/            phase0 … phase10 (12 files, incl. phase2.5)
 ```
 
 **`packages/cli/core/ports.js` owns the whole-repo port scheme**;

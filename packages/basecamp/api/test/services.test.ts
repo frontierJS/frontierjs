@@ -837,6 +837,30 @@ describe('an outpost endpoint takes a signature or nothing', () => {
     expect(after.outpostVersion).toBe('0.4.1')
   })
 
+  // FJS-3444. The method answers the row it updated through asSystem(), which
+  // carries @guarded `enrollTokenHash`; the reply layer strips it and warns.
+  test('heartbeat answers the row without its protected columns, and no warning (FJS-3444)', async () => {
+    const sys = env.system as any
+    await sys.server.update({ where: { id: machine.id }, data: { enrollTokenHash: 'sha256:leftover' } })
+
+    const warned: string[] = []
+    const realWarn = console.warn
+    console.warn = (...args: unknown[]) => { warned.push(args.map(String).join(' ')) }
+    try {
+      const body = { outpost_version: '0.4.4', health: { cpu: 1, memory: 2 } }
+      const path = `/servers/${machine.id}`
+      const req  = env.http.post(path).set('x-service-method', 'heartbeat')
+      for (const [k, v] of Object.entries(await signed(path, body))) req.set(k, v)
+      const res = await req.send(body)
+      expect(res.status).toBe(200)
+      expect(JSON.stringify(res.body)).not.toContain('enrollTokenHash')
+    } finally {
+      console.warn = realWarn
+      await sys.server.update({ where: { id: machine.id }, data: { enrollTokenHash: null } })
+    }
+    expect(warned.filter(w => w.includes('enrollTokenHash'))).toEqual([])
+  })
+
   test('a signature does not move to another endpoint', async () => {
     // The one that matters: /health-check is harmless and /exec runs a shell
     // command, so a signature bound to the path is what stops the first
