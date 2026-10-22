@@ -14,9 +14,12 @@
 // `--max-budget-usd`. A run that hits it is a failed ask, and its half-made
 // edits are dropped with the folder.
 //
-// **What a run leaves is a tree, not a commit.** The files whose bytes moved are
-// hashed into the clone and written as a tree on the head the run read; 4.2
-// grades it and 4.3 commits it. A run's state is a file beside the clone,
+// **What a run leaves is graded, then a tree, not a commit.** Every file it
+// added, changed or removed is held to the rule an owner's own save is
+// (`FJS-D1226`, `changeRefusal`), and one refusal drops the run whole
+// (`FJS-D1242`): the prompt asks the model to leave the look keys alone, and
+// this is what holds it to that. What passes is hashed into the clone as a tree
+// on the head the run read, which 4.3 commits. A run's state is a file beside the clone,
 // `<SITES_DIR>/<appId>.asks.json`, keyed by draft, as a preview's is: one ask
 // per draft at a time, and losing the file loses an ask nobody saved.
 
@@ -25,8 +28,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { childEnv } from '@frontierjs/junction'
 import type { App } from '@frontierjs/junction'
-import { LOCKED_KEYS } from '@frontierjs/site-kit/editable'
-import { exportDraftContent, sitesDir, treeFromExport, type Asked, type GitSite } from './site-checkout.ts'
+import { LOCKED_KEYS, changeRefusal } from '@frontierjs/site-kit/editable'
+import { exportDraftContent, filesUnder, sitesDir, treeFromExport, type Asked, type GitSite } from './site-checkout.ts'
 import { isGit } from './app-source.ts'
 import { env } from './env.ts'
 
@@ -107,6 +110,26 @@ function markAsk(appId: string, draft: string, patch: Partial<AskStatus> & { sta
 }
 
 /**
+ * Why the run's changes cannot be kept, one reason a file, or none when every
+ * one is the owner's. `before` is each file as it went out; anything else under
+ * `dir` the run wrote. A run reaches only `content/`, so a file outside it means
+ * that limit failed, and it is refused like any developer file.
+ */
+export function gradeAsk(dir: string, before: Map<string, string>): string[] {
+  const after = new Set(filesUnder(dir))
+  const reasons: string[] = []
+  for (const path of [...new Set([...before.keys(), ...after])].sort()) {
+    const was = before.get(path) ?? null
+    const now = after.has(path) ? readFileSync(join(dir, path), 'utf8') : null
+    if (was === now) continue
+    const why = changeRefusal(path, was, now)
+      ?? (path.endsWith('.md') ? null : `${path} is a photo, which changes through the page that shows it`)
+    if (why) reasons.push(why)
+  }
+  return reasons
+}
+
+/**
  * Run the draft's queued ask. Every failure is written to the status in the
  * words that refused it; none throws, because a retry would spend again.
  */
@@ -124,6 +147,7 @@ export async function askDraft(app: App, appId: string, draft: string,
   const dir = mkdtempSync(join(tmpdir(), 'basecamp-ask-'))
   try {
     const { head, blobs } = await exportDraftContent(site, draft, dir, root)
+    const before = new Map([...blobs.keys()].map(path => [path, readFileSync(join(dir, path), 'utf8')]))
     markAsk(appId, draft, { state: 'running', commit: head }, root)
 
     const { runAsk, contentPrompt, editEffort } = await loadAskClaude()
@@ -153,6 +177,9 @@ export async function askDraft(app: App, appId: string, draft: string,
         : errors.at(-1) ?? (r ? `the run ended without finishing (${r.stop})` : 'the run ended without an answer')
       return markAsk(appId, draft, { state: 'failed', cost, reply: texts.at(-1) ?? null, error: why }, root)
     }
+    const refused = gradeAsk(dir, before)
+    if (refused.length)
+      return markAsk(appId, draft, { state: 'failed', cost, reply: texts.at(-1) ?? null, error: `nothing was kept: ${refused.join('; ')}` }, root)
     const { tree, files } = await treeFromExport(site, head, dir, blobs, root)
     return markAsk(appId, draft, { state: 'ready', tree, files, cost, reply: texts.at(-1) ?? null }, root)
   } catch (err) {

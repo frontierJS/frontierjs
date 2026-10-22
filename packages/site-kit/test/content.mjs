@@ -14,7 +14,7 @@ import { pathToFileURL } from 'node:url'
 import { readSettings, writeSettingsModule } from '../config/content.js'
 import { siteKit } from '../config/vite.js'
 import { collection } from '../src/collection.js'
-import { LOCKED_KEYS, applyEdit, applyPhoto, arrangeCollection, collectionOf, formOf, lockedKeysChanged, pathRefusal, photoName, photoOf } from '../src/editable.js'
+import { LOCKED_KEYS, applyEdit, applyPhoto, arrangeCollection, changeRefusal, collectionOf, formOf, lockedKeysChanged, pathRefusal, photoName, photoOf } from '../src/editable.js'
 import { changedBlocks, plainSwap } from '../src/editor/live.js'
 
 const failed = []
@@ -247,6 +247,25 @@ try {
     check('a changed, added or removed locked key is named',
       lockedKeysChanged(block, { ...block, tone: 'danger', template: 'split', name: undefined }).join() === 'name,template,tone'
         && lockedKeysChanged(block, { title: 'Welcome' }).join() === 'layout,name,tone')
+
+    const page = '---\nlayout: Block\ntone: muted\ntitle: Welcome\n---\nWe open at nine.\n'
+    const item = '---\ntitle: Hours\n---\nOpen at nine.\n'
+    check('a change of words, or an item added or removed, is the owner\'s',
+      changeRefusal('content/routes/index.md', page, page.replace('nine', 'eight')) === null
+        && changeRefusal('content/collections/faq/hours.md', null, item) === null
+        && changeRefusal('content/collections/faq/hours.md', item, null) === null)
+    check('a moved look key is refused, naming the file and the key',
+      changeRefusal('content/routes/index.md', page, page.replace('muted', 'danger')) === 'content/routes/index.md changes tone, which is the developer\'s',
+      changeRefusal('content/routes/index.md', page, page.replace('muted', 'danger')))
+    check('a page added or removed moves its layout',
+      /changes layout, tone, which are the developer's/.test(changeRefusal('content/routes/new.md', null, page) ?? '')
+        && /changes layout, tone/.test(changeRefusal('content/routes/index.md', page, null) ?? ''))
+    check('a front matter that no longer reads is refused',
+      /front matter no longer reads/.test(changeRefusal('content/routes/index.md', page, '---\nlayout: [Block\n---\n') ?? ''),
+      changeRefusal('content/routes/index.md', page, '---\nlayout: [Block\n---\n'))
+    check('a developer file is refused by its path before its text is read',
+      changeRefusal('content/settings/site.js', 'a', 'b') === pathRefusal('content/settings/site.js')
+        && changeRefusal('notes.md', null, 'x') === pathRefusal('notes.md'))
   }
 
   // ─── the owner's form: a field per key, written line by line ──────────────

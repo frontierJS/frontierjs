@@ -180,7 +180,10 @@ core/
                 optional — for basecamp's workbench (`core/workbench.ts` there),
                 which reads this file's argv and event reader by import. Its
                 REVIEWER is the read-only default with `reviewPrompt`, a fresh
-                session rather than the builder's resumed one. `contentPrompt`
+                session rather than the builder's resumed one. AGENT mode is
+                `:ask`: no built-in tool, one MCP server (`--mcp-config`, the
+                app at a declared standing) and `mcp__app` allowed, measured
+                on 2.1.308 as an init with `tools: []`. `contentPrompt`
                 is a site OWNER's ask, which basecamp runs with `runAsk` in
                 EDIT mode over a copy of a draft's `content/`, handing its own
                 `env` so its key reaches that child only
@@ -443,11 +446,13 @@ core/
                 map as `project:map --json` spawned in it, and the secret fill.
                 An app is named by its directory and looked up in that list,
                 never joined onto a path
-  live-view.js  the console's `:live`, `:call` and `:data` — junction's devtools
+  live-view.js  the console's `:live`, `:call`, `:data` and `:ask` — junction's devtools
                 carried to the panes: the reads (rows as somebody among them,
                 `FJS-D1427`), the queue's three acts and a call as somebody, which runs INSIDE the app so its announcement
                 reaches `:live` (`FJS-D1426`), each an allow-listed shape, and devtools' socket relayed a frame a line with `open`
                 and `closed` of its own, so a quiet app and an absent one differ.
+                `agentUrl` is devtools' `/api/mcp` as somebody, the one MCP
+                server `:ask`'s agent is handed (`FJS-D1428`).
                 The server reads devtools because a browser may not: it is
                 another origin that allows none. The port is `fli gui
                 --devtools-port`, default the reserved 5503
@@ -783,8 +788,9 @@ core/
                 sealing key (`FJS-D1416`); a `link` adds a machine, signed by one
                 already in and countersigned by the new one (`FJS-D1418`), a
                 `revoke` takes one out and carries a new sealing key
-                (`FJS-D1419`), and `askCode` is the hash a new machine's eight
-                words read. A machine's box key is its own pair, claimed by its
+                (`FJS-D1419`), a `paper` is a `link` marked as a key printed
+                as words (`FJS-D1420`), and `askCode` is the hash a new
+                machine's eight words read. A machine's box key is its own pair, claimed by its
                 signature outside the chain; a revoke seals the new sealing key
                 to each one left. Read by the Worker AND the cli: the
                 post refuses a chain that does not verify or carry the stored
@@ -799,6 +805,10 @@ core/
                 without signing any; a revoke is a longer chain on `POST /chain`
                 with the rotated key sealed to each machine left (`rekeys`), and
                 storing it drops the revoked machine and closes its socket.
+                A paper key is a machine like any other here: its link and
+                sealed copy arrive on `POST /chain`, and `GET /chain` with no
+                nick answers the caller's own, which is how typed words learn
+                their member.
                 Never imported: wrangler bundles it from a config `tell:setup`
                 writes, so it runs in workerd and imports toolbelt and nothing
                 Bun-only. `cloudflare:workers` is not imported either, since
@@ -816,7 +826,7 @@ cli/src/   the CLI's own source tree
 console/   the console's screens, `.mesa` — `Console.mesa` is the root both
            targets mount, the pane strip; then one file per pane (`Run`,
            `Check`, `Decide`, `Ship`, `ProjectMap` — not `Map`, which would
-           shadow the global a compiled component uses — `Live`, `Call` and `Data`). `Flow` is one walked
+           shadow the global a compiled component uses — `Live`, `Call`, `Data` and `Ask`). `Flow` is one walked
            flow, the release or the publish: it draws the steps the server's
            tables name and grades none of them — `Ship` does, from what it has
            read. `:map`'s parts are `MapChain`, `MapMachines`, `MapWarden` and
@@ -1695,7 +1705,8 @@ shape one layer up).
 **The console's screens have a drive of their own**: `bun run
 test:browser:console` starts `fli gui` under a pty and opens the same
 process's `/console/` in Chrome, then diffs the two frames row by row. For
-`:live`, `:call` and `:data` it boots an app of its own with devtools on 7503. A change to
+`:live`, `:call`, `:data` and `:ask` it boots an app of its own with devtools on 7503,
+and puts a stand-in `claude` first on the PATH for `:ask`. A change to
 `console/`, `core/console.js`, `core/live-view.js`, junction's devtools or
 `fli gui`'s terminal path is proved there; it needs Chrome and util-linux
 `script`.

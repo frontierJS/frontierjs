@@ -12,7 +12,8 @@ spoken to an agent.
 ```
 index.ts                     the public surface — projectTools, resolveModel, the types
 src/projection.ts            which tools a standing sees, and what decided each
-src/plugin.ts                mcp — the endpoint mounted inside the running API
+src/plugin.ts                mcp — the endpoint mounted inside the running API, and `app.mcp.answer(request, user)`,
+                               the same request answered as a named principal (devtools' `/api/mcp`, `FJS-D1428`)
 src/await.ts                 hold an awaited call until the jobs its correlation id names are terminal (FJS-D406)
 src/breadcrumbs.ts           what a one-row answer offers next — the caller's own tools, narrowed by the row (FJS-D398)
 src/client/                  `@frontierjs/mcp/client` — the terminal client's half,
@@ -138,6 +139,8 @@ is not must never be added to make a list look complete.
 ## Which drive proves a change
 
 `bun run test`, then `example`: `verify:mcp`. They are not the same question.
+A change to `app.mcp.answer` also needs the cli's `bun run
+test:browser:console`, whose `:ask` reaches it through devtools as somebody.
 `test/plugin.test.ts` proves the PROTOCOL and the crossings — what junction did
 to the request body before the handler saw it, and whether the level a route
 reads is the level the boundary grades with — against a Junction app on a real

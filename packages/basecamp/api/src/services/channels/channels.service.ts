@@ -33,7 +33,7 @@
 import { createService, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, ws, actor }
+import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, actor }
   from '../../core/resource.ts'
 import { KINDS, deliverToChannel, testMessage } from '../../core/delivery.ts'
 import { keyScope } from '../api-keys/scopes.ts'

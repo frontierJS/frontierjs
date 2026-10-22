@@ -113,7 +113,7 @@ export async function callAs(
 
   const who = await standingOf(app, req)
   if ('status' in who) return refuse(who.status, who.message)
-  const { userId, standing, scope } = who
+  const { standing } = who
 
   const invoke = () => {
     const caller = app.service(serviceName) as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>

@@ -206,7 +206,7 @@
       </div>
     {/each}
     {#if !all && seenTools.length > SHOWN}
-      <Button treatment="ghost" size="xs" onclick={() => all = true}>show the other {seenTools.length - SHOWN} tools</Button>
+      <Button treatment="ghost" size="xs" data-tools-all onclick={() => all = true}>show the other {seenTools.length - SHOWN} tools</Button>
     {/if}
   </section>
 {/if}

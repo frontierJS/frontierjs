@@ -9,8 +9,6 @@
 import { resolve, sep } from 'node:path'
 import type { CommitmentSpec }    from './index.ts'
 
-const SUFFIX = /\.commitments\.(ts|js)$/
-
 export interface FoundHooks {
   hooks:  Record<string, CommitmentSpec>
   /** key → the file that declared it, for a message that names where to look. */

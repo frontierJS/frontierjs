@@ -58,7 +58,6 @@ import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync } from 
 import { basename } from 'path'
 import { resolve, dirname, relative } from 'path'
 import { fileURLToPath } from 'url'
-import { homedir } from 'os'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
 import { buildRegistry, uniqueCommands, getModule } from './registry.js'

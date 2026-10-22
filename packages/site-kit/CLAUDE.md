@@ -145,8 +145,9 @@ what they mean in any app.
   the one owner of a number as an E.164 `tel:` href, used by the prose pass
   and by a preset's blocks that link `company_phone`. The check's
   `tel-format` rule flags any other spelling on every page.
-- `src/editable.js` — `pathRefusal(path)` and `lockedKeysChanged(before,
-  after)`, exported as `@frontierjs/site-kit/editable`: what a site's owner may
+- `src/editable.js` — `pathRefusal(path)`, `lockedKeysChanged(before,
+  after)` and `changeRefusal(path, beforeText, afterText)`, the two together
+  over a file's texts (null for absent), exported as `@frontierjs/site-kit/editable`: what a site's owner may
   write (`FJS-D1226`): `content/**/*.md` and raster photos under `content/`,
   every top-level front-matter key but `LOCKED_KEYS` (`layout`, `name`, Block's
   six look keys, read off `block-look.js`). `formOf(source)` is a file as an

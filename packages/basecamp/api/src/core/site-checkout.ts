@@ -300,8 +300,8 @@ export function readDraftFolder(site: GitSite, draft: string, folder: string, ro
 // Only `.md` regular files go out, so a symlink in the repository cannot hand
 // the run a path outside the folder, and a photo's bytes never cross a string.
 
-/** A file the run may have changed: its path from the site root, and its blob before (null for one it added). */
-export interface Asked { path: string, was: string | null, blob: string }
+/** A file the run changed: its path from the site root, and its blob before (null for one it added) and after (null for one it removed). */
+export interface Asked { path: string, was: string | null, blob: string | null }
 
 /** The draft's `content/**.md` under `into`, and the commit and blobs it was read at. */
 export function exportDraftContent(site: GitSite, draft: string, into: string, root = sitesDir()):
@@ -327,22 +327,26 @@ export function exportDraftContent(site: GitSite, draft: string, into: string, r
 
 /**
  * What a run left under `into`, as a tree on `head`: each file whose bytes
- * differ from the blob it went out as, or that went out as nothing. A file the
- * run made outside `content/` is not read, since only that folder went out and
- * the run's tools reach no further. Nothing is committed; the tree is what a
- * later save commits.
+ * differ from the blob it went out as, that went out as nothing, or that went
+ * out and is gone. Only `content/` is read; `gradeAsk` has refused a run that
+ * wrote anywhere else. Nothing is committed; the tree is what a later save
+ * commits.
  */
 export function treeFromExport(site: GitSite, head: string, into: string, blobs: Map<string, string>, root = sitesDir()):
   Promise<{ tree: string, files: Asked[] }> {
   return serial(site.id, async () => {
     const dir = await synced(site, root)
     const files: Asked[] = []
-    for (const path of filesUnder(join(into, 'content'), 'content')) {
+    const left = filesUnder(join(into, 'content'), 'content')
+    for (const path of left) {
       const blob = (await git(dir, ['hash-object', '-w', '--stdin'], { input: readFileSync(join(into, path)) })).trim()
       const was = blobs.get(path) ?? null
       if (blob !== was) files.push({ path, was, blob })
     }
-    const rows = files.map(f => `100644 ${f.blob}\t${repoPath(site, f.path)}`)
+    for (const [path, was] of blobs) if (!left.includes(path)) files.push({ path, was, blob: null })
+    files.sort((x, y) => x.path < y.path ? -1 : 1)
+    // A zero mode removes the path, as in `saveDraftFiles`.
+    const rows = files.map(f => f.blob ? `100644 ${f.blob}\t${repoPath(site, f.path)}` : `0 ${'0'.repeat(40)}\t${repoPath(site, f.path)}`)
     if (!rows.length) return { tree: (await git(dir, ['rev-parse', `${head}^{tree}`])).trim(), files }
     const tmp = mkdtempSync(join(tmpdir(), 'basecamp-ask-'))
     try {
@@ -356,12 +360,13 @@ export function treeFromExport(site: GitSite, head: string, into: string, blobs:
   })
 }
 
-/** Regular files under `dir`, sorted, as `/`-joined paths starting with `rel`; a symlink is not followed. */
-function filesUnder(dir: string, rel: string): string[] {
+/** Regular files under `dir`, sorted, as `/`-joined paths starting with `rel` (none for `''`); a symlink is not followed. */
+export function filesUnder(dir: string, rel = ''): string[] {
   if (!existsSync(dir)) return []
-  return readdirSync(dir, { withFileTypes: true }).sort((x, y) => x.name < y.name ? -1 : 1).flatMap((e) =>
-    e.isDirectory() ? filesUnder(join(dir, e.name), `${rel}/${e.name}`)
-      : e.isFile() ? [`${rel}/${e.name}`] : [])
+  return readdirSync(dir, { withFileTypes: true }).sort((x, y) => x.name < y.name ? -1 : 1).flatMap((e) => {
+    const path = rel ? `${rel}/${e.name}` : e.name
+    return e.isDirectory() ? filesUnder(join(dir, e.name), path) : e.isFile() ? [path] : []
+  })
 }
 
 // ─── Publish ─────────────────────────────────────────────────────────────

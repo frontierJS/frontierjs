@@ -187,8 +187,25 @@ case "$BASECAMP_URL" in
 esac
 
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -yqq curl ca-certificates openssl chrony nftables unattended-upgrades
+
+# apt-daily and unattended-upgrades take apt's locks on their own clock, and a
+# box that has been up a while is often mid-run. A run in progress is waited
+# out first, bounded: under cloud-init a queued apt-daily can be waiting on this
+# very script. DPkg::Lock::Timeout then covers dpkg's lock and nothing else: an
+# update meeting the lists lock fails at once, so it is tried again.
+timeout 600 systemd-run --quiet --wait --property=After=apt-daily.service --property=After=apt-daily-upgrade.service true || true
+apt_update() {
+  for attempt in 1 2 3 4 5 6; do
+    apt-get -o DPkg::Lock::Timeout=300 update -qq && return 0
+    echo "apt-get update failed (attempt $attempt of 6) — trying again in 20s" >&2
+    sleep 20
+  done
+  return 1
+}
+apt_install() { apt-get -o DPkg::Lock::Timeout=300 install -yqq "$@"; }
+
+apt_update
+apt_install curl ca-certificates openssl chrony nftables unattended-upgrades
 
 # Every signed command is refused past 300 seconds of clock skew, so this
 # machine's clock is part of whether it takes commands. chrony replaces
@@ -309,8 +326,8 @@ curl -fsSL https://download.docker.com/linux/$ID/gpg -o /etc/apt/keyrings/docker
 chmod a+r /etc/apt/keyrings/docker.asc
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/$ID $VERSION_CODENAME stable" \\
   > /etc/apt/sources.list.d/docker.list
-apt-get update -qq
-apt-get install -yqq docker-ce docker-ce-cli containerd.io
+apt_update
+apt_install docker-ce docker-ce-cli containerd.io
 
 # Caddy, the machine's ingress (FJS-D564). The Outpost is the only thing that
 # configures it, through the admin API on localhost:2019, so it runs as the
@@ -319,13 +336,13 @@ apt-get install -yqq docker-ce docker-ce-cli containerd.io
 # Caddy restarts on its own; the Outpost keeps no copy to replay. fli deploy
 # installs the same unit on the box Basecamp itself runs on (cli
 # commands/deploy/_steps-setup/01-check-deps.md), so a change here goes there.
-apt-get install -yqq debian-keyring debian-archive-keyring apt-transport-https gnupg
+apt_install debian-keyring debian-archive-keyring apt-transport-https gnupg
 curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key \\
   | gpg --dearmor --batch --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt \\
   > /etc/apt/sources.list.d/caddy-stable.list
-apt-get update -qq
-apt-get install -yqq caddy
+apt_update
+apt_install caddy
 systemctl disable --now caddy.service
 # That unit ran the package's default Caddyfile and autosaved its :80 server,
 # which --resume would load back beside every route the Outpost writes.

@@ -44,6 +44,29 @@ export function lockedKeysChanged(before = {}, after = {}) {
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 
+/**
+ * Null when an owner may turn `before` into `after` at `path`, otherwise why
+ * not: the path rule, then a front matter that no longer reads, then each
+ * locked key that moved. Either text is null for a file that is not there, so
+ * adding or removing a page is a change to its `layout`. A photo's bytes have
+ * no keys, so only its path is read.
+ */
+export function changeRefusal(path, before, after) {
+  const refused = pathRefusal(path)
+  if (refused || !String(path).endsWith('.md')) return refused
+  const keysOf = (text) => text === null ? {} : parseFrontmatter(text).frontmatter
+  let was, now
+  try {
+    was = keysOf(before)
+    now = keysOf(after)
+  } catch (err) {
+    return `${path}'s front matter no longer reads: ${err.message}`
+  }
+  const locked = lockedKeysChanged(was, now)
+  if (!locked.length) return null
+  return `${path} changes ${locked.join(', ')}, which ${locked.length > 1 ? 'are' : 'is'} the developer's`
+}
+
 // ─── the form ─────────────────────────────────────────────────────────────
 
 /**

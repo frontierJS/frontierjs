@@ -443,8 +443,36 @@ Done when: a test Worker answering a different key for a pinned nick makes `fli 
   swapped left unsealed-to and named; the post refusing rekeys for a machine
   out of the chain, a box claim signed by another machine; `readChain`'s five
   revoke refusals; `--dry`. Not run against the real account.
-- [ ] 4.7 `fli tell:paper`: an opt-in printed key that is one more machine in
+- [x] 4.7 `fli tell:paper`: an opt-in printed key that is one more machine in
   the chain, the post holding nothing (`FJS-D1420`).
+  Built: a `paper` kind in `core/tell-chain.js`, a `link` in every rule and
+  marked, so `readChain` answers `papers` and `tell:who` lists it as
+  `(paper)`. `fli tell:paper` on a linked machine draws 16 random bytes and
+  prints them once as sixteen PGP words; HKDF of them under two labels makes
+  the paper's signing pair and box pair (toolbelt's `generateSigningKeys` and
+  `generateSealingKeys` take a 32-byte `seed`). The machine signs the link,
+  the paper countersigns, and one `POST /chain` carries it with the member's
+  sealing pair sealed to the paper's box in `rekeys`; the paper then signs its
+  own box claim, so every later revoke reaches it. The post holds the paper's
+  public keys and that sealed pair, nothing it can open — Keybase's paper key,
+  whose per-user key is boxed for it the same way. `fli tell:paper <origin>`
+  on a new machine reads the words (hidden at a terminal, else stdin; never an
+  argument), asks `GET /chain` with no nick as the paper — now the caller's
+  own — verifies the chain holds it as a paper, opens the sealing pair and
+  holds it to the chain's, and publishes a `link` the paper signs and this
+  machine countersigns. The paper stays good; the lost machines are revoked
+  from the new one. Driven under `wrangler dev` (4.151) behind a wrapper that
+  lies on request, seven scratch `HOME`s, 32 checks: the paper made, its link
+  and box at the post, `(paper)` in `who` with the words unchanged; the
+  root's machine lost and ada2 walking in with the words, opening a letter
+  sealed before; ada2 revoking ada with the paper reached, and ada3 walking in
+  with the same words holding the rotated key and opening a letter sealed
+  after, the words typed at a pty and not echoed; a sealed copy the post
+  dropped linked with a warning; the paper revoked and its words refused;
+  fifteen words, two swapped, no origin, an origin on a linked machine, a
+  sealing pair the post sealed to the paper itself refused with nothing kept;
+  a paper link without the countersign refused, and a paper signing a revoke;
+  `--dry` on both sides. Not run against the real account.
 
 ### Phase 5 — Haven carries it
 

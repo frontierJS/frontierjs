@@ -10,26 +10,16 @@
 //   3. An island's shadow root is closed by default, so the host page cannot
 //      read what the island renders or click what it renders (FJS-2335).
 //
-// Runs under plain node like the phase files. A check marked `failing(...)`
-// asserts the behavior the package should have and fails today; it counts as a
-// pass here until the fix lands, and then as a failure, which is the signal to
-// turn it into ok().
+// Runs under plain node like the phase files.
 //
 
 import { JSDOM } from 'jsdom'
 
 let pass = 0
 let fail = 0
-let knownFailing = 0
 function ok(msg)        { pass++; console.log('  ✓', msg) }
 function bad(msg, info) { fail++; console.log('  ✗', msg); if (info) console.log('     →', info) }
 function group(name)    { console.log(`\n[${name}]`) }
-// The fixed behavior, stated; today it does not hold.
-function failing(msg, holds) {
-  if (holds) { bad(`${msg} — now holds; drop the failing() wrapper`) ; return }
-  knownFailing++
-  console.log('  ~', msg, '(fails today, expected)')
-}
 
 function mockPort(name, sender) {
   const messages = []
@@ -176,5 +166,5 @@ group('runIsland — what the host page can reach inside an island')
   openHandle.destroy()
 }
 
-console.log(`\n${pass} passed, ${fail} failed, ${knownFailing} failing-as-expected`)
+console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail > 0 ? 1 : 0)

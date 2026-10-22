@@ -2300,7 +2300,7 @@ export function fromFor(rule, record, childRules = {}) {
     if (from.op === 'count')  return kept.length
     if (from.op === 'exists') return kept.length > 0
     const vals = kept.map(row => row[from.field]).filter(v => v != null)
-      .map(v => typeof v === 'string' && v.trim() !== '' && !isNaN(v) ? Number(v) : v)
+      .map(v => typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v)) ? Number(v) : v)
     if (from.op === 'sum') return vals.reduce((a, v) => a + (typeof v === 'number' ? v : 0), 0)
     if (!vals.length)      return null
     if (from.op === 'avg') return vals.reduce((a, v) => a + (typeof v === 'number' ? v : 0), 0) / vals.length

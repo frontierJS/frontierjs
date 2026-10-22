@@ -402,12 +402,25 @@ describe('asking a model for a change', () => {
       `printf '%s' "$ANTHROPIC_API_KEY" > ${seen}/key`,
       `cat > ${seen}/prompt`,
       `pwd > ${seen}/cwd`,
+      `ok() { echo '{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.04,"num_turns":3}'; }`,
       `if grep -q 'every page' ${seen}/prompt; then`,
       `  sed -i 's/nine/eight/' content/routes/index.md`,
       `  mkdir -p content/faq && printf 'Open at eight.\\n' > content/faq/hours.md`,
-      `  printf 'not content\\n' > notes.md`,
       `  echo '{"type":"assistant","message":{"content":[{"type":"text","text":"The hours now say eight."}]}}'`,
-      `  echo '{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.04,"num_turns":3}'`,
+      '  ok',
+      `elif grep -q 'louder' ${seen}/prompt; then`,
+      `  sed -i 's/nine/eight/; s/tone: muted/tone: danger/' content/routes/index.md`,
+      '  ok',
+      `elif grep -q 'readme' ${seen}/prompt; then`,
+      `  sed -i 's/nine/eight/' content/routes/index.md`,
+      `  printf 'not content\\n' > notes.md`,
+      '  ok',
+      `elif grep -q 'drop the review' ${seen}/prompt; then`,
+      '  rm content/collections/reviews/9-zed.md',
+      '  ok',
+      `elif grep -q 'drop the home page' ${seen}/prompt; then`,
+      '  rm content/routes/index.md',
+      '  ok',
       'else',
       `  sed -i 's/nine/seven/' content/routes/index.md`,
       `  echo '{"type":"result","subtype":"error_max_budget_usd","is_error":true,"total_cost_usd":2.01,"num_turns":9}'`,
@@ -455,6 +468,44 @@ describe('asking a model for a change', () => {
 
     const listed = await drafts(editor).call('list', undefined, { appId: site.id })
     expect(listed.drafts.find((d: any) => d.name === 'asked').ask.state).toBe('ready')
+  })
+
+  // The grade (4.2): the prompt asks the model to leave these alone, and
+  // nothing but this holds it to that.
+  test('a run that moves a look key is refused whole, naming the file and the key', async () => {
+    await drafts(editor).call('ask', undefined, { appId: site.id, draft: 'asked', request: 'Make the welcome louder' })
+    const status = await settled('asked')
+    expect(status).toMatchObject({ state: 'failed', tree: null, files: [], cost: 0.04,
+      error: 'nothing was kept: content/routes/index.md changes tone, which is the developer\'s' })
+  })
+
+  test('a run that writes outside content/ is refused whole, though its content edit was fine', async () => {
+    await drafts(editor).call('ask', undefined, { appId: site.id, draft: 'asked', request: 'Change the hours and the readme' })
+    const status = await settled('asked')
+    expect(status).toMatchObject({ state: 'failed', tree: null, files: [],
+      error: 'nothing was kept: notes.md is outside content/, so it is the developer\'s' })
+  })
+
+  test('a removed file is graded as any other change: an item goes, a page is its layout', async () => {
+    const work = join(tmp, 'trim')
+    git(tmp, 'clone', '--quiet', remote, work)
+    git(work, 'checkout', '--quiet', '-b', 'draft/trim')
+    mkdirSync(join(work, 'site/content/collections/reviews'), { recursive: true })
+    writeFileSync(join(work, 'site/content/collections/reviews/9-zed.md'), '---\nreviewer: Zed\n---\nFine.\n')
+    git(work, 'add', '.')
+    git(work, '-c', 'user.name=Dev', '-c', 'user.email=dev@x.co', 'commit', '--quiet', '-m', 'A review')
+    git(work, 'push', '--quiet', 'origin', 'draft/trim')
+    const was = git(remote, 'rev-parse', 'draft/trim:site/content/collections/reviews/9-zed.md')
+
+    await drafts(editor).call('ask', undefined, { appId: site.id, draft: 'trim', request: 'Please drop the review from Zed' })
+    const status = await settled('trim')
+    expect(status).toMatchObject({ state: 'ready', files: [{ path: 'content/collections/reviews/9-zed.md', was, blob: null }] })
+    expect(git(clone(), 'ls-tree', '-r', '--name-only', status.tree!)).not.toContain('9-zed.md')
+    expect(git(clone(), 'show', `${status.tree}:site/content/routes/index.md`)).toBe(PAGE.trimEnd())
+
+    await drafts(editor).call('ask', undefined, { appId: site.id, draft: 'trim', request: 'Please drop the home page' })
+    expect(await settled('trim')).toMatchObject({ state: 'failed', tree: null,
+      error: 'nothing was kept: content/routes/index.md changes layout, tone, which are the developer\'s' })
   })
 
   test('a run stopped at its spending limit is a failed ask, and its edits are dropped', async () => {

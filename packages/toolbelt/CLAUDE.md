@@ -190,6 +190,9 @@ src/seal/            a value only one key can open — `seal(publicKey, data)`,
                      function; any HPKE library opens it under `info`
                      `frontierjs/seal v1`. A second X25519 pair beside the
                      Ed25519 one, never converted from it (`FJS-D1400`).
+                     Both generators take a 32-byte `seed` and draw nothing,
+                     through `signature/seeded.js` (not an entry), so a key
+                     written down as words is the same key typed back
                      `open` answers null for what does not open and throws
                      only for a private key that does not parse. Pony
                      Express's letters are the caller (`IDEAS/pony-express.md`

@@ -6,7 +6,7 @@ dated: 2026-10-17
 
 # Idea — owner editing: a site's owner changes their own words
 
-**Status: PROPOSED. 1.1–1.5, 2.1–2.5, 3.1, 3.2 and 4.1 are built. Q1–Q27 are ruled (`FJS-D1225`–`FJS-D1231`, `FJS-D1242`, `FJS-D1246`–`FJS-D1252`, `FJS-D1339`, `FJS-D1357`, `FJS-D1358`, `FJS-D1399`, `FJS-D1403`–`FJS-D1408`, `FJS-D1424`, `FJS-D1425`).** Do not cite this file as describing
+**Status: PROPOSED. 1.1–1.5, 2.1–2.5, 3.1, 3.2, 4.1 and 4.2 are built. Q1–Q27 are ruled (`FJS-D1225`–`FJS-D1231`, `FJS-D1242`, `FJS-D1246`–`FJS-D1252`, `FJS-D1339`, `FJS-D1357`, `FJS-D1358`, `FJS-D1399`, `FJS-D1403`–`FJS-D1408`, `FJS-D1424`, `FJS-D1425`).** Do not cite this file as describing
 behavior — see `VERIFYING.md`.
 
 A site's owner (a Kobami client, or whoever runs frontierjs.com) opens their
@@ -1036,10 +1036,20 @@ shows them, reviews the diff and saves it to their draft.
     in 9.6 s for $0.03. On its own it left `tone` and a README outside
     `content/` alone and said why. Test: `drafts.test.ts` § asking a model
     for a change, with a stand-in `claude`.
-  - The model was told about the locked keys and still might change one. The
-    tree is not graded yet; that is 4.2.
-- [ ] 4.2 The run's diff is graded against Q2's editable set before anything
+- [x] 4.2 The run's diff is graded against Q2's editable set before anything
   commits, and refused whole if it touches a developer file or a look key.
+  **Built 2026-10-22.** site-kit's `changeRefusal(path, before, after)` is the
+  path rule and `lockedKeysChanged` over a file's two texts, null for a file
+  that is not there, so a page added or removed moves its `layout` and a
+  collection item does not. Basecamp's `gradeAsk` runs it on every file under
+  the run's folder that differs from what went out, so a file written outside
+  `content/` is refused too, and a photo is refused as the save refuses one. A
+  refusal is a `failed` ask, `nothing was kept: <each reason>`, with no tree.
+  - `treeFromExport` now carries a removed file (`blob: null`); 4.1 dropped
+    removals without saying so.
+  - Test: `drafts.test.ts` § asking a model (a look key, a file outside
+    `content/`, an item removed, a page removed) and site-kit's
+    `test/content.mjs`.
 - [ ] 4.3 The owner sees the diff on the preview and saves or discards it.
   A save is one commit on the draft, and Undo is that commit's revert.
 

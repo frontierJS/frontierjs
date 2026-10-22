@@ -501,7 +501,36 @@ Goal: an agent pane over `mcp`, graded like any caller.
 Done when: Q4 is ruled and a drive shows a call refused below the agent's
 standing.
 
-- [ ] 5.1 `:ask`
+- [x] 5.1 `:ask`
+
+**5.1, how it is built** (2026-10-22). `console/Ask.mesa` is the ninth pane
+(`9`). The agent is `claude -p` in a fourth mode of `core/ask-claude.js`,
+AGENT: no built-in tool (`--tools ''`), one MCP server in `--mcp-config` and
+`mcp__app` allowed, `dontAsk`, hooks off. Measured on 2.1.308: the init reads
+`tools: []` and one dynamic server. The server it is handed is devtools'
+`/api/mcp?as=&tenant=` (`FJS-D1428`, ruled in session): devtools runs
+`actAs` in `junction/src/core/call-as.ts`, which is `:call`'s principal lookup
+and `asWhom`, and hands the request to `app.mcp.answer(request, user)`, which
+`mcp()` now owns beside its route, so the tool list and every call are
+graded at the declared standing and never at the developer's. Refused
+outside development, as a call is. `AppMcp` is the slot's augmentable
+interface. `core/live-view.js` gives the agent URL and reads `tools/list`
+there for the pane; `server.js` answers `POST /api/live/ask` as the drawer
+answers its ask, one at a time and streamed, with `effort: 'low'`. The pane
+takes as whom (empty is nobody), a tenant and a question, lists the tools
+that standing is offered, and draws the conversation: each tool call, a
+refusal as the app worded it, the reply. A new standing starts a new
+conversation. Keys: `r` reads again, `n` new, `x` asks, `s` stops. The drive
+puts a stand-in `claude` first on the console's PATH that makes the MCP call
+the question names over the config it was handed, and the app now has a
+`memos` service over the gated `Memo`. It presses `9` in both frames and
+compares the tool count (15), then in Chrome: a guest is offered 15 tools
+and a member 22, `memos_find` among them; a guest agent's `notes_create` is
+called and refused by the app; a guest asking for `memos_find` is told it is
+not offered; a member's create lands and is in the app: green. With nobody
+run as the app in `actAs`, the three guest checks go red. One real run on
+Haiku against a scratch app: the guest's create came back `Create denied by
+@@allow policy on "Note"` and the member's landed ($0.002).
 
 ---
 

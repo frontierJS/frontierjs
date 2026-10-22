@@ -140,8 +140,10 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           `drafts.ask` is an owner's request to a model (`FJS-D1242`): the
           `site:ask` job runs core/site-ask.ts, which writes the draft's
           `content/**.md` to a temp folder, runs the cli's `runAsk` in EDIT
-          mode scoped to it, and hashes what moved into a TREE on the head it
-          read. NOTHING COMMITS. The key is `ANTHROPIC_API_KEY`, one for every
+          mode scoped to it, grades every file it added, changed or removed
+          with site-kit's `changeRefusal` (`gradeAsk`; one refusal drops the
+          run whole), and hashes what passed into a TREE on the head it read.
+          NOTHING COMMITS. The key is `ANTHROPIC_API_KEY`, one for every
           site (`FJS-D1424`), handed to that child only; the limit is the
           argv's $2 a run (`FJS-D1425`). Each draft's last ask is a file beside
           the clone, on `list` as its preview is.

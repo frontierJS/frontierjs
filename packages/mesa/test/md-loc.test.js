@@ -37,7 +37,6 @@ describe('data-fjs-loc on Markdown', () => {
   // Sierra synthesizes a script block for an auto-import, so the source handed
   // over is four lines longer than the file; every prose stamp was four past its own.
   it('maps each line back through locLines when the caller rewrote the file', async () => {
-    const file = '---\ntitle: T\n---\n\n# Head\n\nHi {name}.\n'
     const prepared = "---\ntitle: T\n---\n<script>\nimport { name } from '/s.js'\n</script>\n\n\n# Head\n\nHi {name}.\n"
     const locLines = [1, 2, 3, 3, 3, 3, 3, 4, 5, 6, 7, 8]
     const ctx = await compileMd(prepared, { filename: '/r/x.md', locRoot: '/r', loc: true, locLines })

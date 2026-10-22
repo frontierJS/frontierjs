@@ -468,6 +468,8 @@ try {
     await browser.evaluate(`document.querySelector('[data-ask-fresh]').click(); return true`)
     const label = as ? `as ${as}` : 'as nobody'
     await until(() => browser.evaluate(`return document.querySelector('[data-part="tools"] .bar span')?.textContent.includes('${label}')`), 8000)
+    await browser.evaluate(`document.querySelector('[data-tools-all]')?.click(); return true`)
+    await until(async () => (await tools()).length === Number(await browser.evaluate(`return document.querySelector('[data-tools]')?.dataset.tools`)), 5000)
     return tools()
   }
   const guest = await offeredAs('')

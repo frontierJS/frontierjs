@@ -581,7 +581,7 @@ describe('a machine claims its own credential', () => {
   test('the install runs Caddy as the resuming admin-API unit', async () => {
     const { installScript } = await import('../src/providers/compute/enrollment.ts')
     const script = installScript()
-    expect(script).toContain('apt-get install -yqq caddy')
+    expect(script).toContain('apt_install caddy')
     expect(script).toContain('systemctl disable --now caddy.service')
     expect(script).toContain('rm -f /var/lib/caddy/.config/caddy/autosave.json')
     expect(script).toContain('systemctl enable --now caddy-api.service')
@@ -594,7 +594,7 @@ describe('a machine claims its own credential', () => {
   test('the install puts a time-sync daemon on the machine and enables it', async () => {
     const { installScript } = await import('../src/providers/compute/enrollment.ts')
     const script = installScript()
-    expect(script).toMatch(/apt-get install -yqq [^\n]*\bchrony\b/)
+    expect(script).toMatch(/apt_install [^\n]*\bchrony\b/)
     expect(script).toContain('systemctl enable --now chrony.service')
   })
 
@@ -615,7 +615,7 @@ describe('a machine claims its own credential', () => {
   test('the install turns on security updates, closes password ssh and drops unasked inbound traffic', async () => {
     const { installScript } = await import('../src/providers/compute/enrollment.ts')
     const script = installScript()
-    expect(script).toMatch(/apt-get install -yqq [^\n]*\bunattended-upgrades\b/)
+    expect(script).toMatch(/apt_install [^\n]*\bunattended-upgrades\b/)
     expect(script).toContain('APT::Periodic::Unattended-Upgrade "1";')
     expect(script).toContain('Unattended-Upgrade::Automatic-Reboot "false";')
     expect(script).toContain('codename=${distro_codename}-security')

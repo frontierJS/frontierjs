@@ -68,6 +68,7 @@
   import { listening } from '@/lib/band/band.js'
   import { createBells, RATE } from '@/lib/band/bell.js'
   import { TONES } from '@/lib/home/answer.js'
+  var DANGER = TONES.danger
   import { clip } from '@/lib/scene/cells.js'
   import { keptOf, readStudy, writeStudy } from '@/lib/study/kept.js'
   import { startSession } from '@/lib/study/session.js'
@@ -203,7 +204,7 @@
   $: all   = helping ? helpRows(helpOf(), w) : said.length ? rowsOf(said, w, tabs[at].fold) : hint(tabs[at].model, tabs[at].resume, tabs[at].reads, tabs[at].transcript)
   $: asking = state?.asking ?? []
   var RULE   = '#4b5563'
-  $: noted = note ? wrapped(note.ink === TONES.danger ? `! ${note.text}` : note.text, inner(w)).map((text) => ({ text, ink: note.ink })) : []
+  $: noted = note ? wrapped(note.ink === DANGER ? `! ${note.text}` : note.text, inner(w)).map((text) => ({ text, ink: note.ink })) : []
   $: panel = [...noted, ...(asking.length ? askRows(asking[0], asking.length - 1, inner(w), Math.max(3, h - 10))
     : state?.waiting ? waitRows(state.waiting, inner(w)) : [])]
   $: live  = state?.status === 'working' ? [liveRow(state, tabs[at].since, now, w)] : []

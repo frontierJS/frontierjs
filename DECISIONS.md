@@ -8114,6 +8114,18 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1428"></a>2026-10-22 · `FJS-D1428` — How `:ask`'s declared standing reaches the app's `/mcp` — Devtools relays as whom: `/api/mcp?as=&tenant=` runs `actAs` (`:call`'s principal lookup) and hands the request to `app.mcp.answer(request, user)`, which `mcp()` owns beside its route; refused outside development.
+
+Asked in session while building [`IDEAS/one-console.md`](IDEAS/one-console.md) 5.1, after `FJS-D1391` ruled that the agent calls through `mcp` at a declared standing. **A** (devtools relays as whom) was picked over **B** (mint a real session or API key for the declared principal and point the agent at the app's own `/mcp`: a key row written into the dev database with an expiry to clean up, and no `:ask` on an app without auth) and **C** (the developer pastes a key: no mechanism, and dead on an app with no api-keys service).
+
+As recommended. Precedent: `FJS-D1426` and `FJS-D1427` put `:call` and `:data` inside the running app through devtools as somebody, so the three app panes share one "as whom" and one refusal outside development.
+
+**Nobody is STRANGER(0), never the app**, through the same `asWhom`. The agent is `claude -p` with no built-in tool and the one MCP server, so the URL is the whole of its standing and no sentence in the prompt can widen it. `AppMcp` is the slot's augmentable interface; junction names no mcp type.
+
+The nine, answered late (after the code, before this ruling): 1 origin — none added; `actAs` is `standingOf` and `asWhom` · 2 concept — no new noun · 3 complexity — one seam, one devtools branch, one argv mode · 4 predictability — `:ask` takes as whom as `:call` and `:data` do · 5 derived — the tools are the projection's own `tools/list` · 6 owner — `mcp()` answers; devtools only sets the principal · 7 boundary — the agent is handed a URL and nothing else · 8 failure — 403 in production, 404 naming `app.configure(mcp())` when absent, 404 for a person not found · 9 silence — what must stay true: *the agent is graded at the declared standing, never the developer's or the app's*; what fails when it stops: the console drive's `:ask` guest checks, red three times with nobody run as the app in `actAs`. § IV: *ergonomics vs. strictness*, as `FJS-D1426` named it, for the production refusal. Tier: Register.
+
+*Lives in:* `packages/junction/src/core/call-as.ts` (`actAs`), `packages/junction/src/plugins/devtools/`, `packages/mcp/src/plugin.ts`, `packages/cli/core/ask-claude.js`, `packages/cli/core/live-view.js`, `packages/cli/console/Ask.mesa`.
+
 ### <a id="fjs-d1427"></a>2026-10-22 · `FJS-D1427` — Where `fli gui`'s `:data` reads rows as a principal — In the running app, at the Data boundary: devtools answers `GET /api/data` and `GET /api/data/<Model>` through `app.withDb` under the call's principal lookup, rows refused outside development.
 
 Asked in session while building [`IDEAS/one-console.md`](IDEAS/one-console.md) 3.3, where the pane table said `:data` reads Studio's endpoints and `FJS-D1426` had put the app half inside the running app. **A** (devtools, the app's own client) was picked over **B** (relay Litestone Studio on 5502: a second process to start, graded by toolbelt's default `gradeStanding` unless started with `--gate` (`FJS-977`), and no principal there is `asSystem()`, against `:call`'s *empty is nobody*) and **C** (`:call`'s `find` drawn as a table: hooks run, but a model with no service has no rows to show).
@@ -18113,6 +18125,12 @@ Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A
 
 The paper's recommendation, taken as written: WebCrypto does it with no dependency, and a browser member's IndexedDB key cannot be converted.
 
+### <a id="fjs-d1398"></a>2026-10-22 · `FJS-D1398` — Q4 — The notice line's reach — Every `fli` command checks on an interval.
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (only `fli tell:*` commands and a shell prompt hook a member opts into).
+
+The paper's recommendation, taken as written: the point is mail you notice without asking; the interval bounds the cost, and it stays silent with no key.
+
 ### <a id="fjs-d1399"></a>2026-10-21 · `FJS-D1399` — Q19 — How a preview shows a change before it is saved (2.5) — Words only, with no compiler in the page. As the owner types, inline or in the form, each element whose words are a plain block or value changes to the new words; a change that adds or removes markup, or whose element the page cannot find, waits for the preview to rebuild and is counted as waiting.
 
 Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **D** was picked over **A** (a lazy preview-only chunk runs Mesa's `compileMd` in the page with site-kit's dialect and a browser-safe module the preset names for its own passes, about 190 KB gzipped; one new optional preset key), **B** (the same chunk with site-kit's dialect only, so a preset's classes are missing until the rebuild and nothing says so) and **C** (basecamp compiles, which has no installed preset and hits the same passes problem). Prior art put to the owner: Decap's preview pane and CloudCannon's Bookshop both re-render in the browser with a renderer the developer supplies as browser code.
@@ -18122,12 +18140,6 @@ Against the recommendation (A), confidence 2. It meets Phase 2's done-when for a
 The nine, answered before the edit: 1 origin — what the dialect turns plain text into (a kicker, a phone or an email link) is `packages/site-kit/config/prose.js`'s, exported and read by the editor rather than restated; Markdown's own syntax characters are listed once, in the editor · 2 concept — no new noun · 3 complexity — the problem's, cut one level · 4 predictability — 2.3's after-save swap, moved before the save and given to the form too · 5 derived — an element is changed only when it already shows the old words · 6 owner — `src/editor/live.js`, which 2.3's swap folds into · 7 boundary — the page only; nothing is sent until Save · 8 failure — a change it cannot show is shown as waiting, never guessed · 9 must stay true: a word shown before the save is what the rebuild renders. What fails when it stops: **`none`** committed, under the no-new-test-files rule; a scratch browser drive. § IV: *batteries vs. smallness*, smallness. Tier: Register.
 
 *Lives in:* `packages/site-kit/src/editor/live.js`, `Inline.mesa`, `Field.mesa`; `packages/site-kit/config/prose.js` (what plain text becomes).
-
-### <a id="fjs-d1398"></a>2026-10-22 · `FJS-D1398` — Q4 — The notice line's reach — Every `fli` command checks on an interval.
-
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (only `fli tell:*` commands and a shell prompt hook a member opts into).
-
-The paper's recommendation, taken as written: the point is mail you notice without asking; the interval bounds the cost, and it stays silent with no key.
 
 ### <a id="fjs-d1392"></a>2026-10-22 · `FJS-D1392` — Q6 — Where V1's server runs — One Cloudflare Worker and one Durable Object: SQLite and the live sockets in one object, the free plan, deployed with wrangler.
 

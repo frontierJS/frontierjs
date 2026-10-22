@@ -26,16 +26,16 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3822 source file(s) read
+26 package(s) · 3825 source file(s) read
 234 entry point(s), 37 imported by nothing outside their package, 15 emitted
-1570 value export(s), 620 reached by nothing outside, 166 emitted
-449 type export(s), 346 reached by nothing outside
+1571 value export(s), 620 reached by nothing outside, 166 emitted
+450 type export(s), 346 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `litestone` | 26 | 6 | 252 | 131 | 37 | 1 | 1 |
-| `junction` | 26 | 4 | 264 | 122 | 13 | 266 | 211 |
+| `junction` | 26 | 4 | 264 | 122 | 13 | 267 | 211 |
 | `mesa` | 18 | 4 | 286 | 100 | 70 | 0 | 0 |
 | `sierra` | 25 | 6 | 196 | 82 | 21 | 0 | 0 |
 | `auth` | 6 | 1 | 51 | 36 | 3 | 15 | 13 |
@@ -43,7 +43,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `ui` | 9 | 0 | 51 | 33 | 4 | 0 | 0 |
 | `toolbelt` | 59 | 1 | 263 | 30 | 11 | 0 | 0 |
 | `conduit` | 4 | 2 | 26 | 15 | 1 | 59 | 44 |
-| `site-kit` | 9 | 4 | 37 | 12 | 1 | 0 | 0 |
+| `site-kit` | 9 | 4 | 38 | 12 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 8 | 0 | 36 | 21 |
 | `outpost` | 7 | 1 | 15 | 7 | 0 | 0 | 0 |
 | `notifications` | 2 | 0 | 11 | 5 | 0 | 24 | 19 |
@@ -165,7 +165,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/junction`
 
-`packages/junction` · 26 entry point(s) · 264 value, 266 type export(s)
+`packages/junction` · 26 entry point(s) · 264 value, 267 type export(s)
 
 **Entries imported by nothing outside (4):** `./cache` `./openapi` `./otlp` `./webhooks`
 
@@ -277,7 +277,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/site-kit`
 
-`packages/site-kit` · 9 entry point(s) · 37 value, 0 type export(s)
+`packages/site-kit` · 9 entry point(s) · 38 value, 0 type export(s)
 
 **Entries imported by nothing outside (4):** `./tel` `./check` `./check/schema/*` `./layouts/*.mesa`
 
