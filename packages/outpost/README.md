@@ -135,9 +135,10 @@ The pages are written by whoever can edit an app, so anything they reach as
 same-origin is theirs — and a port is an origin, so sharing one with the signed
 command protocol would put the fleet inside every prototype. Nothing on that
 port is signed or authenticated: it is a web server for public files, and the
-only reads it can perform are inside one release directory. An app is reached by
-the first label of the Host (`shop.fleet.example.com`) or, where there is no DNS,
-by the first path segment (`/shop/`).
+only reads it can perform are inside one release directory. It binds loopback
+and Caddy fronts it by hostname (`FJS-D1459`), so an inline app with no hostname
+is reached from the machine alone. An app is reached by the first label of the
+Host (`shop.fleet.example.com`) or by the first path segment (`/shop/`).
 
 ## Testing
 

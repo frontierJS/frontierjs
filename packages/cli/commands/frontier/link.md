@@ -1,10 +1,10 @@
 ---
-title: tell:link
+title: frontier:link
 description: Sign a new machine into your member — it prints eight words, a linked machine types them
-effects: on a new machine, makes ~/.fli/tell/key.json if absent, asks at the post and waits, then writes the member's sealing key into key.json, ~/.fli/tell/chain.json and tell.api, tell.nick and tell.root; on a linked machine, offers the link at the post and writes chain.json once it is taken
+effects: on a new machine, makes ~/.fli/frontier/key.json if absent, asks at the post and waits, then writes the member's sealing key into key.json, ~/.fli/frontier/chain.json and frontier.api, frontier.nick and frontier.root; on a linked machine, offers the link at the post and writes chain.json once it is taken
 examples:
-  - fli tell:link https://fli-tell.sam.workers.dev
-  - fli tell:link absurd cannonball crusade graduate nightbird pegasus spindle unravel
+  - fli frontier:link https://fli-tell.sam.workers.dev
+  - fli frontier:link absurd cannonball crusade graduate nightbird pegasus spindle unravel
 args:
   -
     name: words
@@ -14,29 +14,29 @@ args:
 
 A member is a chain of machines (`IDEAS/pony-express.md` 4.3), and this is how
 one more is signed into it (4.5, `FJS-D1410`). On the new machine, run it with
-the post's origin — `tell.api` on a machine already linked. It prints eight
+the post's origin — `frontier.api` on a machine already linked. It prints eight
 words and waits. On any machine already linked (`FJS-D1417`), run it with the
 eight words. The linked machine signs a link naming the new one and seals the
 member's sealing key to it; the new machine countersigns the link and
 publishes the chain, so neither is added without the other (`FJS-D1418`).
-Your own words from `fli tell:who` do not change, and your correspondents'
+Your own words from `fli frontier:who` do not change, and your correspondents'
 pins carry forward.
 
 The words are a hash of the new machine's keys, so a post that handed the
 linked machine other keys is caught there and nothing is offered. On the new
 machine the member's words are printed at the end: read them against
-`fli tell:who` on the machine that linked it.
+`fli frontier:who` on the machine that linked it.
 
 It is also how a lost machine is replaced (`FJS-D1409`): link the new one from
 any machine you still have. An ask runs out after ten minutes.
 
 ```js
-const { askCode, nextLink, countersign } = await import(new URL('file://' + global.fliRoot + '/core/tell-chain.js'))
+const { askCode, nextLink, countersign } = await import(new URL('file://' + global.fliRoot + '/core/frontier-chain.js'))
 const { wordsHex } = await import(new URL('file://' + global.fliRoot + '/core/tell.js'))
 
 const text = String(arg.words ?? '').trim()
 let saved
-try { saved = readConfig().tell ?? {} }
+try { saved = readConfig().frontier ?? {} }
 catch (e) { log.error(e.message); process.exitCode = 1; return }
 
 const poll = (ms) => new Promise(r => setTimeout(r, ms))
@@ -50,7 +50,7 @@ if (!saved.api) {
     if (/^https?:$/.test(url.protocol)) api = url.origin
   } catch {}
   if (!api) {
-    log.error(`'${text}' is no post — on the new machine, \`fli tell:link <origin>\` names the post, tell.api on a machine already linked.`)
+    log.error(`'${text}' is no post — on the new machine, \`fli frontier:link <origin>\` names the post, frontier.api on a machine already linked.`)
     process.exitCode = 1
     return
   }
@@ -59,7 +59,7 @@ if (!saved.api) {
     return
   }
 
-  const { keys, made } = await tellKeys()
+  const { keys, made } = await machineKeys()
   if (made) log.info(`This machine's key is ${KEY_FILE} — it is this machine in your member, so keep it.`)
   // The sealing pair key.json has now is only what the member's is sealed to on the way here.
   const ask = keys.sealing
@@ -78,7 +78,7 @@ if (!saved.api) {
     }
     if (!shown) {
       shown = true
-      echo(chalk`\n  Type these on a machine already linked:\n\n    {cyan fli tell:link ${words}}\n`)
+      echo(chalk`\n  Type these on a machine already linked:\n\n    {cyan fli frontier:link ${words}}\n`)
       log.info('Waiting for it — ten minutes, Ctrl-C to stop.')
     }
     if (answer.json.expires <= Math.floor(Date.now() / 1000)) { log.error('The ask ran out. Run this again for new words.'); process.exitCode = 1; return }
@@ -110,14 +110,14 @@ if (!saved.api) {
 
   writeKeys({ ...keys, sealing })
   writeOwnChain(links)
-  writeTellConfig({ api, nick: offer.nick, root: chain.root })
+  writeMemberConfig({ api, nick: offer.nick, root: chain.root })
   // A revoke seals the next sealing key to this machine's box key, so the post holds the claim from the start.
   const boxed = await publishOwn(api, { ...keys, sealing }).catch(e => e.message)
   if (boxed) log.warn(`The post did not take ${boxed} — the next \`fli tell\` verb tries again.`)
   log.success(`This machine is ${offer.nick} at ${api} — ${plural(chain.machines.length, 'machine')} now.`)
   echo(chalk`\n  {bold ${offer.nick}} {dim · ${rootPrint(chain.root)}}`)
   echo(chalk`    {cyan ${await safetyWords(chain.root)}}\n`)
-  log.info('These match `fli tell:who` on the machine that linked this one, or this is not your member.')
+  log.info('These match `fli frontier:who` on the machine that linked this one, or this is not your member.')
   return
 }
 
@@ -126,14 +126,14 @@ if (!saved.api) {
 const code = await wordsHex(text)
 if (!code) {
   log.error(text
-    ? `'${text}' is not the eight words \`fli tell:link\` prints on the new machine. This machine is already at ${saved.api}.`
-    : `On the new machine run \`fli tell:link ${saved.api}\`, then type the eight words it prints here.`)
+    ? `'${text}' is not the eight words \`fli frontier:link\` prints on the new machine. This machine is already at ${saved.api}.`
+    : `On the new machine run \`fli frontier:link ${saved.api}\`, then type the eight words it prints here.`)
   process.exitCode = 1
   return
 }
 
 let member
-try { member = await tellMember() }
+try { member = await currentMember() }
 catch (e) { log.error(e.message); process.exitCode = 1; return }
 
 if (flag.dry) {
@@ -182,5 +182,5 @@ for (let i = 0; i < 40; i++) {
   }
   if (now?.refused) { log.error(`The post's chain moved wrong: ${now.refused}.`); process.exitCode = 1; return }
 }
-log.warn('The new machine has not taken the link yet. It finishes on its own while its ask lasts; `fli tell:who` counts the machines.')
+log.warn('The new machine has not taken the link yet. It finishes on its own while its ask lasts; `fli frontier:who` counts the machines.')
 ```

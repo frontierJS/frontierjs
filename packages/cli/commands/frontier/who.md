@@ -1,10 +1,10 @@
 ---
-title: tell:who
+title: frontier:who
 description: A member's chain root as eight words, to read aloud and compare away from the post
 effects: pins the member's chain the first time it meets it
 examples:
-  - fli tell:who
-  - fli tell:who sam
+  - fli frontier:who
+  - fli frontier:who sam
 args:
   -
     name: nick
@@ -12,8 +12,8 @@ args:
 ---
 
 The post hands out every member's chain, so a host that lies could hand you
-one of its own (`IDEAS/pony-express.md` 4.2). `fli tell:who sam` prints the
-root of sam's chain as eight words; sam runs `fli tell:who` and reads theirs.
+one of its own (`IDEAS/pony-express.md` 4.2). `fli frontier:who sam` prints the
+root of sam's chain as eight words; sam runs `fli frontier:who` and reads theirs.
 Do it somewhere the post cannot reach — a call, a room — and one word
 different means the chain you hold for sam is not sam's. It is Signal's
 safety number at terminal size, in the PGP word list, which alternates two-
@@ -28,13 +28,13 @@ chain is graded against the pins exactly as `tell` grades it: met for the
 first time it is pinned, and another root, or a chain shorter than the pinned
 one, is refused. When the post does not answer, the pin is read instead.
 With no nick it also lists this member's machines by fingerprint, the names
-`fli tell:revoke` takes, a paper key (`fli tell:paper`) among them.
+`fli frontier:revoke` takes, a paper key (`fli frontier:paper`) among them.
 
 ```js
 const nick = String(arg.nick ?? '').trim().toLowerCase()
 
 let member
-try { member = await tellMember() }
+try { member = await currentMember() }
 catch (e) { log.error(e.message); process.exitCode = 1; return }
 
 const show = async (label, root, machines) => {
@@ -49,16 +49,16 @@ if (!nick || nick === member.nick) {
   const chain = synced?.chain ?? await readChain(await ownChain(member.keys))
   const root = await ownRoot(member.keys)
   await show(`${member.nick ?? 'you'} (this member)`, root, chain.machines?.length ?? 1)
-  // The names `fli tell:revoke` takes.
+  // The names `fli frontier:revoke` takes.
   for (const machine of chain.machines ?? [member.keys.publicKey]) {
     const which = machine === member.keys.publicKey ? ' (this machine)' : chain.papers?.includes(machine) ? ' (paper)' : ''
     echo(chalk`    {dim machine} ${await fingerprint(machine)}{dim ${which}}`)
   }
   echo('')
-  if (readConfig().tell?.root !== root) {
+  if (readConfig().frontier?.root !== root) {
     log.warn('The post may not hold this chain yet, so others read other words until any `fli tell` verb publishes it.')
   }
-  log.info('Read these to whoever runs `fli tell:who` with your nick.')
+  log.info('Read these to whoever runs `fli frontier:who` with your nick.')
   return
 }
 
@@ -82,5 +82,5 @@ if (met.refused) { log.error(`No words: ${met.refused}`); process.exitCode = 1; 
 if (!met.chain) { log.error(`${nick} has published no chain yet, so there is no root to read. Any \`fli tell\` verb on their newer fli publishes it.`); process.exitCode = 1; return }
 if (met.met) log.info(`First sight of ${nick}: pinned their chain ${met.met}.`)
 await show(nick, met.chain.root, met.chain.machines.length)
-log.info(`${nick} runs \`fli tell:who\` and reads theirs. A word that differs means this is not their chain: send nothing, and delete their entry from ${PEERS_FILE}.`)
+log.info(`${nick} runs \`fli frontier:who\` and reads theirs. A word that differs means this is not their chain: send nothing, and delete their entry from ${PEERS_FILE}.`)
 ```

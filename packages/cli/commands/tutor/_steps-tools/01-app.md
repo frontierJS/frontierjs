@@ -7,12 +7,14 @@ description: An app to look at, reused or built
 
 These tools are about a running app, so this lesson needs one. If an earlier
 lesson left an app in this workspace it is reused; otherwise it is built here,
-with the same three commands lesson 1 walks through:
+with lesson 1's commands — except that the model goes in as a **migration**
+rather than a push, because step 2 asks `fli check` whether anything fails and
+a model the migration history does not build is a finding:
 
 ```console
 fli new <app> --auth
 fli scaffold Note --fields "title:string body:text done:boolean"
-fli db:push
+fli db:migrate add_note
 ```
 
 Nothing below depends on which of those two happened. That is the point of a
@@ -39,7 +41,7 @@ if (!existsSync(join(dir, 'db', 'schema.lite'))) {
     command: `${$.fli} scaffold Note --fields "title:string body:text done:boolean"`,
     cwd:     dir,
   })
-  $.exec({ command: `${$.fli} db:push`, cwd: dir })
+  $.exec({ command: `${$.fli} db:migrate add_note`, cwd: dir })
 } else {
   log.info(`reusing the app at ${dir}`)
 }

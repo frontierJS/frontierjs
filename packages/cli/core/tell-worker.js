@@ -6,7 +6,7 @@
 // file and wrangler bundles it, so it runs in workerd and may use nothing a
 // Worker lacks. It ships because `core/` is in the package's `files`.
 //
-// A member is a chain of machines (core/tell-chain.js, IDEAS/pony-express.md
+// A member is a chain of machines (core/frontier-chain.js, IDEAS/pony-express.md
 // 4.3): every route but `join` is signed by one of them (toolbelt's
 // `signRequest`), named in `x-tell-key`; a key that is no member's machine is
 // refused before the signature is looked at. `join` is signed by the machine
@@ -56,7 +56,7 @@
 // The post holds its public keys and that sealed pair, nothing it can open.
 
 import { verifyMessage, verifyRequest } from '@frontierjs/toolbelt/signature'
-import { askCode, extendsSeen, linkMessage, readChain, verifyBox } from './tell-chain.js'
+import { askCode, extendsSeen, linkMessage, readChain, verifyBox } from './frontier-chain.js'
 
 // ─── limits ────────────────────────────────────────────────────────────────
 
@@ -72,7 +72,7 @@ const BODY_MAX     = 4000
 const SEALED_MAX   = 32768
 /** `@frontierjs/toolbelt/seal`'s public key, 32 bytes of base64url. */
 const SEAL_KEY     = /^[A-Za-z0-9_-]{43}$/
-/** A chain as it travels, JSON: far past `tell-chain.js`'s 256 links of three keys and a signature each. */
+/** A chain as it travels, JSON: far past `frontier-chain.js`'s 256 links of three keys and a signature each. */
 const CHAIN_MAX    = 131072
 /** Machines a member's rekeys are sealed to, at most — a chain's own bound. */
 const REKEYS_MAX   = 256
@@ -183,7 +183,7 @@ export class TellPost {
     const publicKey = req.headers.get(KEY_HEADER)
     if (!publicKey) return { status: 401, refused: `A request is signed and names its key in ${KEY_HEADER}.` }
     const member = this.sql.exec('SELECT nick FROM machines WHERE publicKey = ?', publicKey).toArray()[0]
-    if (!member) return { status: 403, refused: 'That key is no member\'s machine here. `fli tell:join <code>` walks in with an invite.' }
+    if (!member) return { status: 403, refused: 'That key is no member\'s machine here. `fli frontier:stake <nick> <code>` walks in with an invite.' }
 
     const verdict = await this.verify(req, url, body, publicKey)
     if (!verdict.ok) return { status: 401, refused: `The signature does not verify: ${verdict.reason}.` }

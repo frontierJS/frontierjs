@@ -1,7 +1,7 @@
 ---
 title: tell:setup
 description: Stand up the post — deploy the tell Worker to your Cloudflare account, as its first member
-effects: deploys a Worker and Durable Object to your Cloudflare account with wrangler, and writes ~/.fli/tell/ and ~/.fli/config.json
+effects: deploys a Worker and Durable Object to your Cloudflare account with wrangler, and writes ~/.fli/frontier/ and ~/.fli/config.json
 examples:
   - fli tell:setup --nick sam
   - fli tell:setup --nick sam --account 0123456789abcdef0123456789abcdef
@@ -10,7 +10,7 @@ flags:
   nick:
     char: n
     type: string
-    description: The owner's nick — tell.nick in ~/.fli/config.json, else this machine's user name. 2 to 16 of a-z, 0-9, - and _
+    description: The owner's nick — frontier.nick in ~/.fli/config.json, else this machine's user name. 2 to 16 of a-z, 0-9, - and _
     defaultValue: ''
   name:
     type: string
@@ -23,16 +23,16 @@ flags:
 ---
 
 The owner runs this once (`IDEAS/pony-express.md` 1.2). It makes this
-machine's key at `~/.fli/tell/key.json`, deploys `core/tell-worker.js` to the
+machine's key at `~/.fli/frontier/key.json`, deploys `core/tell-worker.js` to the
 owner's Cloudflare account with `bunx wrangler@4` — logged in the way wrangler
 is, `wrangler login` or `CLOUDFLARE_API_TOKEN` — and writes the Worker's
-origin to `~/.fli/config.json` as `tell.api`. Then it asks the Worker who its
+origin to `~/.fli/config.json` as `frontier.api`. Then it asks the Worker who its
 members are, signed, and the owner must be the answer.
 
 The owner is member one because the deploy says so: the public key goes in as
 the `OWNER_KEY` var and the nick as `OWNER_NICK`, and the Durable Object seeds
 them. A public key is not a secret, so both are plain vars in
-`~/.fli/tell/wrangler.jsonc`, where wrangler's own state lands beside them.
+`~/.fli/frontier/wrangler.jsonc`, where wrangler's own state lands beside them.
 
 Last it publishes the owner's chain, whose root signs the sealing key, so
 letters to the owner are sealed (`FJS-D1400`, `IDEAS/pony-express.md` 4.3).
@@ -45,10 +45,10 @@ refused by the post, since the nick is already the old key's.
 const { spawn } = await import('node:child_process')
 
 const worker = resolve(global.fliRoot, 'core', 'tell-worker.js')
-const wranglerConfig = join(TELL_DIR, 'wrangler.jsonc')
+const wranglerConfig = join(FRONTIER_DIR, 'wrangler.jsonc')
 
 let nick
-try { nick = tellNick(flag.nick, readConfig().tell ?? {}) }
+try { nick = pickNick(flag.nick, readConfig().frontier ?? {}) }
 catch (e) { log.error(e.message); process.exitCode = 1; return }
 if (!/^[a-z0-9-]{1,63}$/.test(flag.name)) {
   log.error(`'${flag.name}' is no Worker name — lower-case letters, digits and -.`)
@@ -58,11 +58,11 @@ if (!/^[a-z0-9-]{1,63}$/.test(flag.name)) {
 const account = flag.account || process.env.CLOUDFLARE_ACCOUNT_ID || ''
 
 if (flag.dry) {
-  log.dry(`Would make ${KEY_FILE} if absent, write ${wranglerConfig}, deploy ${worker} as ${flag.name} with bunx wrangler@4, save its origin as tell.api in ${CONFIG_FILE}, and check ${nick} is member one`)
+  log.dry(`Would make ${KEY_FILE} if absent, write ${wranglerConfig}, deploy ${worker} as ${flag.name} with bunx wrangler@4, save its origin as frontier.api in ${CONFIG_FILE}, and check ${nick} is member one`)
   return
 }
 
-const { keys, made } = await tellKeys()
+const { keys, made } = await machineKeys()
 if (made) log.info(`This machine's key is ${KEY_FILE} — it is who you are at the post, so keep it.`)
 
 writeFileSync(wranglerConfig, JSON.stringify({
@@ -81,7 +81,7 @@ writeFileSync(wranglerConfig, JSON.stringify({
 log.info(`Deploying ${flag.name} with wrangler…`)
 let printed = ''
 const code = await new Promise((done) => {
-  const child = spawn('bunx', ['wrangler@4', 'deploy', '--config', wranglerConfig], { cwd: TELL_DIR, stdio: ['inherit', 'pipe', 'inherit'] })
+  const child = spawn('bunx', ['wrangler@4', 'deploy', '--config', wranglerConfig], { cwd: FRONTIER_DIR, stdio: ['inherit', 'pipe', 'inherit'] })
   child.stdout.on('data', (chunk) => { printed += chunk; process.stdout.write(chunk) })
   child.on('error', (e) => { log.error(`bunx did not start (${e.message})`); done(1) })
   child.on('close', done)
@@ -97,7 +97,7 @@ if (!api) {
   process.exitCode = 1
   return
 }
-writeTellConfig({ api, nick })
+writeMemberConfig({ api, nick })
 
 // A first workers.dev deploy can take a few seconds to resolve.
 let answer
@@ -126,9 +126,9 @@ if (!me) {
   return
 }
 if (me.nick !== nick) log.warn(`This key is ${me.nick} at the post, not ${nick} — a nick is set by the first deploy.`)
-if (me.root !== await ownRoot(keys)) writeTellConfig({ root: null })
+if (me.root !== await ownRoot(keys)) writeMemberConfig({ root: null })
 const published = await publishOwn(api, keys).catch(e => e.message)
 if (published) log.warn(`The post did not take ${published} — the next \`fli tell\` verb tries again.`)
 log.success(`The post is up at ${api}, and ${me.nick} is ${members.length === 1 ? 'its one member' : `one of ${members.length} members`}.`)
-echo(`  saved as tell.api in ${CONFIG_FILE}`)
+echo(`  saved as frontier.api in ${CONFIG_FILE}`)
 ```

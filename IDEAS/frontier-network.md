@@ -108,23 +108,25 @@ Answered before the first edit, for the proposal as a whole.
 8. **Failure** — a taken or reserved nick is refused at `stake` and names why.
    The cost is a retry, and nothing is written.
 9. **Silence** — what must stay true: one person is one chain across every
-   `fli` surface. What fails when it stops: none today. 3.2 adds Haven's
-   refusal of a login whose key is in no chain.
+   `fli` surface, and a revoke reaches every reader within the row's age.
+   What fails when it stops: none today. 3.2 adds Haven's refusal of a login
+   whose key is in no chain, and 3.1 its refusal of a row older than the age.
 
-**Tier:** Assessment, until Q1–Q7 are ruled into `DECISIONS.md`.
+**Tier:** Assessment. Every question is ruled (`FJS-D1444`–`FJS-D1451`); 0.4 and
+2.4 block Phase 3.
 
 ## Plan
 
 ### Phase 0 — Groundwork
 
 Goal: the questions ruled, and the callers of both key directories known.
-Done when: Q1–Q7 are rulings, 0.4 is written, and every reader of
+Done when: Q1–Q8 are rulings, 0.4 is written, and every reader of
 `~/.fli/tell` and `~/.fli/haven` is listed under 0.1.
 
 - [ ] 0.1 List every reader of `~/.fli/tell/` and `~/.fli/haven/key.json`
   with `rg`, including the prototypes `fli ws:surface --also ../fjs-prototypes`
   reaches.
-- [x] 0.2 Rule Q1–Q7.
+- [x] 0.2 Rule Q1–Q8.
 - [ ] 0.3 Move `IDEAS/pony-express.md` Phase 6 here verbatim as Phase 2,
   leaving a one-line pointer under its heading. Its step numbers become 2.x,
   and pony-express keeps mail (Phases 1–3 send and inbox, Phase 5 Haven
@@ -143,30 +145,43 @@ Goal: identity lives under `frontier:` and mail under `tell`.
 Done when: pony-express's 4.7 drive passes with every verb respelled, and
 `fli tell:join` is an unknown command.
 
-- [ ] 1.1 `tell:{join,invite,link,revoke,paper,who}` become `frontier:*`, and
+- [x] 1.1 `tell:{join,invite,link,revoke,paper,who}` become `frontier:*`, and
   `tell-chain.js` becomes `frontier-chain.js`. `tell` keeps `send` and
   `inbox`. A rename is a rename: no alias.
-- [ ] 1.2 `~/.fli/tell/` becomes `~/.fli/frontier/`. The live members' keys
+  Built: `commands/frontier/`, and the member helpers that sat in
+  `commands/tell/_module.md` moved to `core/frontier-member.js` so both
+  namespaces import one copy. The wire (`x-tell-key`, `tellFetch`, the
+  Worker's routes and signed labels) keeps its spelling, so a deployed post
+  needs no change to serve the new verbs.
+- [x] 1.2 `~/.fli/tell/` becomes `~/.fli/frontier/`. The live members' keys
   move by hand with `mv`, and no code reads the old path.
-- [ ] 1.3 `frontier:stake <nick> <code>` replaces `tell:join`.
+  Built: `config.json`'s `tell` key became `frontier` with it. The owner's
+  machine moved by hand on 2026-10-22.
+- [x] 1.3 `frontier:stake <nick> <code>` replaces `tell:join`.
   `tell:setup` leaves the user surface as pony-express 6.1 already plans.
+  Built: the nick is the first argument, not `--nick`. Driven under `wrangler
+  dev` with two scratch `HOME`s, 10 checks: an invite minted, `ada` staked,
+  a spent code refused, a letter each way, reading deleted it, and
+  `tell:join` an unknown command. Not run against the deployed post.
 
 ### Phase 2 — Member numbers
 
-Goal and steps: pony-express Phase 6, moved here by 0.3.
+Goal and steps: pony-express Phase 6, moved here by 0.3. Its 6.4 carries
+Q7's age (`FJS-D1445`), so 2.4 is the step Phase 3 waits on.
 
 ### Phase 3 — Haven reads the chain
 
 Goal: a Haven member is a network member.
-Starts when: 0.4 is written. Haven is the first surface with strangers on it,
+Starts when: 0.4 is written and 2.4 is built (`FJS-D1444`). Haven is the first surface with strangers on it,
 so this is where the chain becomes an identity provider rather than mail's
 address book.
 Done when: a scratch `HOME` that staked `ada` walks into a local Haven as
 `ada` with no `~/.fli/haven/`, and a key in no chain is refused.
 
 - [ ] 3.1 `POST /haven/login` takes a login signed by a machine in the chain
-  plus the signed member row, and the nick comes from the row. The first-come
-  nick of `FJS-D981` goes.
+  plus the signed member row, and the nick comes from the row. A row signed
+  longer ago than the age is refused, naming its age (`FJS-D1445`). The
+  first-come nick of `FJS-D981` goes.
 - [ ] 3.2 Refuse a login whose key is in no chain. `~/.fli/haven/key.json`
   goes.
 
@@ -178,14 +193,15 @@ prints the squatting line.
 
 - [ ] 4.1 A reserved list held by the Worker beside `OWNER_NICK` (Q5).
 - [ ] 4.2 The oath (pony-express 6.9) carries an npm-style squatting line.
-- [ ] 4.3 What a bad invitee costs the inviter, as Q4 rules.
+- [x] 4.3 What a bad invitee costs the inviter — nothing to build: Q4 ruled
+  that the public tree (2.6) is the whole of it (`FJS-D1449`).
 
 ### Phase 5 — Later
 
 - [ ] 5.1 An optional domain proof, NIP-05 shaped, shown by `frontier:who`
   beside the row and never in place of the nick.
-- [ ] 5.2 The nick as a subdomain, if Q3 rules the member to be the Frontier
-  Cloud account.
+- [ ] 5.2 The nick as a subdomain. Waits on Q3, which is ruled again when
+  Frontier Cloud has a first customer (`FJS-D1448`).
 
 ---
 
@@ -233,7 +249,8 @@ prints the squatting line.
   - **Recommend A** (confidence 2) — pins are by chain root, so B is safe
     cryptographically, but every letter, lineage row and Haven nameplate would
     then need to follow a rename. B reopens when someone asks for it.
-- ~~**Q7 — How fresh a member row must be.**~~ **Answered 2026-10-22 (`FJS-D1445`): A — the post stamps the row with when it was signed, and a reader refuses a row older than a set age. A member's machine fetches a fresh row before it goes stale, so a revoke reaches every reader within that age. *Memory:* OCSP stapling (the holder brings a fresh signed proof) and short-lived certificates.** The row is signed again as the
+- ~~**Q7 — How fresh a member row must be.**~~ **Answered 2026-10-22 (`FJS-D1445`): A — the post stamps the row with when it was signed, and a reader refuses a row older than a set age. A member's machine fetches a fresh row before it goes stale, so a revoke reaches every reader within that age. *Memory:* OCSP stapling (the holder brings a fresh signed proof) and short-lived certificates.**
+  The row is signed again as the
   head moves (pony-express 6.4), and a peer refuses a chain shorter than one it
   has seen (`FJS-D1421`). A reader that has never seen the newer head has
   nothing to refuse, so a thief holding a revoked machine and the row from
@@ -252,7 +269,8 @@ prints the squatting line.
     reading, and the age is a cost dial: a stolen key's reach is bounded by
     it (*strictness follows cost*). B is the reopen path once a surface holds
     something a day's window would lose.
-- ~~**Q8 — Whether the network is an identity layer of its own.**~~ **Answered 2026-10-22 (`FJS-D1444`): A — one layer, owned: the chain is the one identity, and 0.4 and Q7 are written before any surface with strangers reads it (Phase 3).** Once mail,
+- ~~**Q8 — Whether the network is an identity layer of its own.**~~ **Answered 2026-10-22 (`FJS-D1444`): A — one layer, owned: the chain is the one identity, and 0.4 and Q7 are written before any surface with strangers reads it (Phase 3).**
+  Once mail,
   Haven, peering and Cloud read one chain, the post is an identity provider
   and owes what one owes: revocation that reaches every reader, a threat model,
   linkability, erasure, recovery and a dispute policy.

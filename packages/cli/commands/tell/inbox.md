@@ -36,7 +36,7 @@ had not printed yet. A dropped socket is opened again, waiting longer each try.
 const { relative } = await import('@frontierjs/toolbelt/datetime')
 
 let member
-try { member = await tellMember() }
+try { member = await currentMember() }
 catch (e) { log.error(e.message); process.exitCode = 1; return }
 
 if (flag.dry) {

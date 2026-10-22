@@ -1,14 +1,14 @@
 ---
-title: tell:revoke
+title: frontier:revoke
 description: Take a lost or stolen machine out of your member — the sealing key is rotated so it reads nothing new
-effects: signs a revoke into this member's chain at the post with a new sealing key sealed to each machine left, and writes ~/.fli/tell/chain.json and the new sealing key into key.json
+effects: signs a revoke into this member's chain at the post with a new sealing key sealed to each machine left, and writes ~/.fli/frontier/chain.json and the new sealing key into key.json
 examples:
-  - fli tell:revoke 3f2a
-  - fli tell:revoke "3f2a 91c0"
+  - fli frontier:revoke 3f2a
+  - fli frontier:revoke "3f2a 91c0"
 args:
   -
     name: machine
-    description: The machine to take out — the start of its fingerprint as `fli tell:who` lists it, at least four characters
+    description: The machine to take out — the start of its fingerprint as `fli frontier:who` lists it, at least four characters
     variadic: true
 ---
 
@@ -24,23 +24,23 @@ box key, its own pair that never leaves it, and each picks it up on its next
 named: it cannot open what is sealed from then. Letters already sealed to the
 old key still open on the machines left, which keep it as retired.
 
-Your words from `fli tell:who` do not change. Your correspondents' pins move
+Your words from `fli frontier:who` do not change. Your correspondents' pins move
 on their next letter to or from you, and a letter of yours carries your
 chain's head, so a post that hides the revoke from them is caught there
 (`FJS-D1421`). Revoking a machine never lets it back: link a new key instead.
 
 ```js
-const { nextLink, verifyBox } = await import(new URL('file://' + global.fliRoot + '/core/tell-chain.js'))
+const { nextLink, verifyBox } = await import(new URL('file://' + global.fliRoot + '/core/frontier-chain.js'))
 
 const wanted = String(arg.machine ?? '').replace(/\s+/g, '').toLowerCase()
 if (!/^[0-9a-f]{4,16}$/.test(wanted)) {
-  log.error('Name the machine by the start of its fingerprint, at least four of its hex characters — `fli tell:who` lists them.')
+  log.error('Name the machine by the start of its fingerprint, at least four of its hex characters — `fli frontier:who` lists them.')
   process.exitCode = 1
   return
 }
 
 let member
-try { member = await tellMember() }
+try { member = await currentMember() }
 catch (e) { log.error(e.message); process.exitCode = 1; return }
 
 if (flag.dry) {

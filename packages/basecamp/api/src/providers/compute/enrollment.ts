@@ -29,14 +29,13 @@
 
 import { randomBytes, createHash, timingSafeEqual, X509Certificate } from 'node:crypto'
 import { OPENSSL_CERT_ARGS } from '@frontierjs/outpost/cert'
-import { OUTPOST_STATIC_PORT } from '../../core/posture.ts'
 
 /** What the install runs on a machine, held here so two machines provisioned a
  *  week apart run the same thing. The Outpost is pinned to the version this
  *  workspace carries (a test holds the two together); Docker and Caddy come
  *  from signed apt repositories. */
 export const BUN_VERSION     = '1.4.4'
-export const OUTPOST_VERSION = '0.1.3'
+export const OUTPOST_VERSION = '0.1.4'
 
 /** How long a machine has to enroll. A cloud-init run is seconds; fifteen
  *  minutes is room for a slow image pull and nothing like room for a leaked
@@ -286,7 +285,7 @@ table inet basecamp {
     iif lo accept
     meta l4proto { icmp, ipv6-icmp } accept
     udp dport { 68, 546 } accept
-    tcp dport { $SSH_PORTS, 80, 443, $OUTPOST_PORT, ${OUTPOST_STATIC_PORT} } accept
+    tcp dport { $SSH_PORTS, 80, 443, $OUTPOST_PORT } accept
     udp dport 443 accept
   }
   chain forward {
@@ -407,6 +406,10 @@ chmod 0600 /etc/basecamp/outpost.env
 # from gaining privilege. It is root still, because Docker access is
 # root-equivalent and a non-root User= would buy nothing. The /exec route leaves
 # the unit through systemd-run (FJS-D602), so a recipe is not confined by it.
+# posture() grades this unit's own systemd-analyze score against 7, so a
+# directive dropped here fails outpost.sandbox on every box. AF_NETLINK stays:
+# posture reads ss and nft over it. No MemoryDenyWriteExecute: bun's JIT
+# needs writable executable pages.
 # StateDirectory creates /var/lib/outpost before the namespace is built: a
 # ReadWritePaths entry that does not exist yet fails the start on a fresh box.
 # ExecStart is bun x, never bunx: bun's installer writes the bun binary alone,
@@ -434,6 +437,14 @@ ProtectKernelTunables=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+PrivateDevices=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
 [Install]
 WantedBy=multi-user.target

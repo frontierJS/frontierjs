@@ -75,7 +75,6 @@ export interface Declared {
 export const POSTURE_INTERVAL_MS = 6 * 60 * 60_000
 
 const OUTPOST_COMMAND_PORT = 8180
-export const OUTPOST_STATIC_PORT = 8181
 const CADDY_ADMIN_PORT     = 2019
 
 // ─── declared ─────────────────────────────────────────────────────────────
@@ -83,10 +82,11 @@ const CADDY_ADMIN_PORT     = 2019
 /**
  * The expected set, derived and never typed in.
  *
- * 8181 is the static origin, which only an inline app needs; everything else on
- * a public address is an app that declared `exposesPort` (`FJS-D930`). An app
- * with no hostname that does not declare it is an unexpected listener, because
- * until every published port binds loopback that is what it is.
+ * The static origin on 8181 binds loopback and Caddy fronts it (`FJS-D1459`),
+ * so it is never expected; everything else on a public address is an app that
+ * declared `exposesPort` (`FJS-D930`). An app with no hostname that does not
+ * declare it is an unexpected listener, because until every published port
+ * binds loopback that is what it is.
  */
 export function declaredFor(input: {
   sshPort:   number | null | undefined
@@ -97,7 +97,6 @@ export function declaredFor(input: {
     .filter(a => a.exposesPort && typeof a.port === 'number')
     .map(a => a.port as number)
   const expected = new Set([input.sshPort || 22, 80, 443, OUTPOST_COMMAND_PORT, ...exposed])
-  if (input.apps.some(a => a.type === 'static')) expected.add(OUTPOST_STATIC_PORT)
 
   return {
     expectedPorts: [...expected].sort((a, b) => a - b),

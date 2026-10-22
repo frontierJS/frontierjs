@@ -17,15 +17,15 @@ import { join }                                                   from 'node:pat
 import { fileURLToPath }                                          from 'node:url'
 import { plural }                                                 from './text.js'
 
-export const TELL_DIR     = join(homedir(), '.fli', 'tell')
-export const KEY_FILE     = join(TELL_DIR, 'key.json')
+export const FRONTIER_DIR = join(homedir(), '.fli', 'frontier')
+export const KEY_FILE     = join(FRONTIER_DIR, 'key.json')
 export const CONFIG_FILE  = join(homedir(), '.fli', 'config.json')
 /** What the last check found — `{ checked, waiting: [{ from, count }] }`. */
-export const WAITING_FILE = join(TELL_DIR, 'waiting.json')
+export const WAITING_FILE = join(FRONTIER_DIR, 'waiting.json')
 /** This member's chain as this machine last saw it — absent on a machine that is a chain of one, whose root is made from `key.json` (IDEAS/pony-express.md 4.5). */
-export const CHAIN_FILE   = join(TELL_DIR, 'chain.json')
+export const CHAIN_FILE   = join(FRONTIER_DIR, 'chain.json')
 /** Every correspondent met, `{ [root]: { nick, seq, head, machines, sealKey, since } }` — the chain as last seen (IDEAS/pony-express.md 4.3). */
-export const PEERS_FILE   = join(TELL_DIR, 'peers.json')
+export const PEERS_FILE   = join(FRONTIER_DIR, 'peers.json')
 /** The header the Worker reads a member's key from (core/tell-worker.js). */
 const KEY_HEADER          = 'x-tell-key'
 /** bash's MAILCHECK default. */
@@ -73,7 +73,7 @@ export const fingerprint = async (key) => {
   return (await sha256Hex(String(key))).slice(0, 16).match(/.{4}/g).join(' ')
 }
 
-/** A member's root (core/tell-chain.js) as a fingerprint: the same 64 bits `safetyWords` reads, in four groups. */
+/** A member's root (core/frontier-chain.js) as a fingerprint: the same 64 bits `safetyWords` reads, in four groups. */
 export const rootPrint = (root) => String(root).slice(0, 16).match(/.{4}/g).join(' ')
 
 /**
@@ -86,7 +86,7 @@ export const rootPrint = (root) => String(root).slice(0, 16).match(/.{4}/g).join
  */
 export const safetyWords = (root) => hexWords(String(root).slice(0, 16))
 
-/** Hex as PGP words, a word a byte — `safetyWords`, and `tell:paper`'s key. */
+/** Hex as PGP words, a word a byte — `safetyWords`, and `frontier:paper`'s key. */
 export const hexWords = async (hex) => {
   const { EVEN, ODD } = await import('./pgp-words.js')
   return hex.match(/../g).map((byte, i) => (i % 2 ? ODD : EVEN)[parseInt(byte, 16)]).join(' ')
@@ -113,7 +113,7 @@ export const readPeers = () => {
 }
 
 const writePeers = (peers) => {
-  mkdirSync(TELL_DIR, { recursive: true, mode: 0o700 })
+  mkdirSync(FRONTIER_DIR, { recursive: true, mode: 0o700 })
   const tmp = `${PEERS_FILE}.${process.pid}`
   writeFileSync(tmp, JSON.stringify(peers, null, 2) + '\n')
   renameSync(tmp, PEERS_FILE)
@@ -130,9 +130,9 @@ const writePeers = (peers) => {
  * nick only shown.
  */
 export const pinPeer = async (nick, chain) => {
-  const { extendsSeen } = await import('./tell-chain.js')
+  const { extendsSeen } = await import('./frontier-chain.js')
   const peers = readPeers()
-  const fix = `If that is really them, compare \`fli tell:who ${nick}\` with them away from the post, then delete the entry from ${PEERS_FILE}.`
+  const fix = `If that is really them, compare \`fli frontier:who ${nick}\` with them away from the post, then delete the entry from ${PEERS_FILE}.`
   const holder = Object.keys(peers).find(root => root !== chain?.root && peers[root]?.nick === nick)
   if (holder) {
     const now = chain ? `the post's chain for them is rooted at ${rootPrint(chain.root)}` : 'the post now serves no chain for them'
@@ -155,7 +155,7 @@ export const pinPeer = async (nick, chain) => {
 
 /** Written whole by rename, so a command reading it mid-check never sees half a file. */
 export const writeWaiting = (waiting, checked = now()) => {
-  mkdirSync(TELL_DIR, { recursive: true, mode: 0o700 })
+  mkdirSync(FRONTIER_DIR, { recursive: true, mode: 0o700 })
   const tmp = `${WAITING_FILE}.${process.pid}`
   writeFileSync(tmp, JSON.stringify({ checked, waiting }) + '\n')
   renameSync(tmp, WAITING_FILE)
@@ -200,7 +200,7 @@ export const tellNotice = () => {
 
 if (import.meta.main) {
   try {
-    const api  = readConfig().tell?.api
+    const api  = readConfig().frontier?.api
     const keys = JSON.parse(readFileSync(KEY_FILE, 'utf8'))
     if (api && keys?.publicKey && keys?.privateKey) {
       const { status, json } = await tellFetch(api, keys, 'GET', '/waiting', undefined, { signal: AbortSignal.timeout(10_000) })

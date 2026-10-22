@@ -1,21 +1,21 @@
 ---
-title: tell:invite
-description: Mint a one-use invite to the post — the next person walks in with fli tell:join
+title: frontier:invite
+description: Mint a one-use invite to the post — the next person walks in with fli frontier:stake
 effects: mints an invite at the post, spent by its first join or gone in a day
 examples:
-  - fli tell:invite
+  - fli frontier:invite
 ---
 
 Any member may invite (`IDEAS/pony-express.md` 1.3). The code carries the
 post's origin, `<origin>#<code>`, so the person joining configures nothing —
-hand them the line and they run `fli tell:join` with it.
+hand them the line and they run `fli frontier:stake` with it.
 
 An invite is a password for one use: whoever holds it first walks in. The
 first join spends it, and an unspent one expires in a day (`FJS-D1394`).
 
 ```js
 let member
-try { member = await tellMember() }
+try { member = await currentMember() }
 catch (e) { log.error(e.message); process.exitCode = 1; return }
 
 if (flag.dry) {
@@ -34,5 +34,5 @@ if (answer.status !== 201) {
 
 const hours = Math.round((answer.json.expires - Date.now() / 1000) / 3600)
 log.success(`An invite, good for one join within ${hours} hours. Hand this to the next person:`)
-echo(`\n  fli tell:join ${member.api}#${answer.json.code}\n`)
+echo(`\n  fli frontier:stake ${member.api}#${answer.json.code}\n`)
 ```

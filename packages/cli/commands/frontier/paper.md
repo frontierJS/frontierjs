@@ -1,10 +1,10 @@
 ---
-title: tell:paper
+title: frontier:paper
 description: A key you print and keep, one more machine in your member — for when every machine is lost
-effects: on a linked machine, signs a paper key into this member's chain at the post with the sealing key sealed to it, and writes ~/.fli/tell/chain.json; on a new machine, makes ~/.fli/tell/key.json if absent, links it with the paper key, and writes the member's sealing key into key.json, chain.json and tell.api, tell.nick and tell.root
+effects: on a linked machine, signs a paper key into this member's chain at the post with the sealing key sealed to it, and writes ~/.fli/frontier/chain.json; on a new machine, makes ~/.fli/frontier/key.json if absent, links it with the paper key, and writes the member's sealing key into key.json, chain.json and frontier.api, frontier.nick and frontier.root
 examples:
-  - fli tell:paper
-  - fli tell:paper https://fli-tell.sam.workers.dev
+  - fli frontier:paper
+  - fli frontier:paper https://fli-tell.sam.workers.dev
 args:
   -
     name: origin
@@ -20,20 +20,20 @@ key sealed to it (Keybase's paper key).
 
 On a linked machine, run it with nothing. It prints the sixteen words once:
 write them down and keep them somewhere no one else can read them, since
-anyone holding them is your member. `fli tell:who` lists it as `(paper)`, and
+anyone holding them is your member. `fli frontier:who` lists it as `(paper)`, and
 a revoke seals each new sealing key to it as to any machine.
 
 On a new machine, run it with the post's origin and type the words when
 asked, or pipe them in. The paper key signs this machine into your member and
 hands it the sealing key. The paper key stays good; revoke the machines you
-lost from this one with `fli tell:revoke`. A paper key you lost is revoked the
+lost from this one with `fli frontier:revoke`. A paper key you lost is revoked the
 same way.
 
 ```js
-const { nextLink, countersign, boxClaim } = await import(new URL('file://' + global.fliRoot + '/core/tell-chain.js'))
+const { nextLink, countersign, boxClaim } = await import(new URL('file://' + global.fliRoot + '/core/frontier-chain.js'))
 const { hexWords, wordsHex } = await import(new URL('file://' + global.fliRoot + '/core/tell.js'))
 
-/** Sixteen bytes, as sixteen words — 128 bits, which `tell:who`'s 64 are not. */
+/** Sixteen bytes, as sixteen words — 128 bits, which `frontier:who`'s 64 are not. */
 const PAPER_BYTES = 16
 const PAPER = 'frontierjs/tell paper v1'
 
@@ -52,7 +52,7 @@ const paperKeys = async (hex) => {
 const refused = (what, answer) => `${what} (${answer.status}): ${answer.json?.message ?? 'no reason given'}`
 
 let saved
-try { saved = readConfig().tell ?? {} }
+try { saved = readConfig().frontier ?? {} }
 catch (e) { log.error(e.message); process.exitCode = 1; return }
 const text = String(arg.origin ?? '').trim()
 
@@ -66,8 +66,8 @@ if (!saved.api) {
   } catch {}
   if (!api) {
     log.error(text
-      ? `'${text}' is no post — on a new machine, \`fli tell:paper <origin>\` names the post the paper key is a member at.`
-      : 'No post is set up here. On a new machine, `fli tell:paper <origin>` names the post your paper key is a member at.')
+      ? `'${text}' is no post — on a new machine, \`fli frontier:paper <origin>\` names the post the paper key is a member at.`
+      : 'No post is set up here. On a new machine, `fli frontier:paper <origin>` names the post your paper key is a member at.')
     process.exitCode = 1
     return
   }
@@ -80,7 +80,7 @@ if (!saved.api) {
   const typed = process.stdin.isTTY ? await tty.secret('The paper key\'s sixteen words:') : await Bun.stdin.text()
   const hex = await wordsHex(typed, PAPER_BYTES)
   if (!hex) {
-    log.error('That is not the sixteen words `fli tell:paper` printed — each in its place, none dropped or swapped.')
+    log.error('That is not the sixteen words `fli frontier:paper` printed — each in its place, none dropped or swapped.')
     process.exitCode = 1
     return
   }
@@ -111,7 +111,7 @@ if (!saved.api) {
     }
   }
 
-  const { keys, made } = await tellKeys()
+  const { keys, made } = await machineKeys()
   if (made) log.info(`This machine's key is ${KEY_FILE} — it is this machine in your member, so keep it.`)
   const next = [...links, await countersign(keys, await nextLink(paper, links, 'link', keys.publicKey))]
   const linked = await readChain(next)
@@ -124,27 +124,27 @@ if (!saved.api) {
   const kept = sealing ? { ...keys, sealing } : keys
   writeKeys(kept)
   writeOwnChain(next)
-  writeTellConfig({ api, nick, root: linked.root })
+  writeMemberConfig({ api, nick, root: linked.root })
   const boxed = await publishOwn(api, kept).catch(e => e.message)
   if (boxed) log.warn(`The post did not take ${boxed} — the next \`fli tell\` verb tries again.`)
   log.success(`The paper key signed this machine into ${nick} at ${api} — ${plural(linked.machines.length, 'machine')} now.`)
   echo(chalk`\n  {bold ${nick}} {dim · ${rootPrint(linked.root)}}`)
   echo(chalk`    {cyan ${await safetyWords(linked.root)}}\n`)
-  if (!sealing) log.warn('A revoke since the paper key was made did not reach it, so this machine has no sealing key and opens no sealed letter. `fli tell:revoke` of any machine you lost makes a new one here.')
-  log.info('Revoke the machines you lost with `fli tell:revoke` — `fli tell:who` lists them.')
+  if (!sealing) log.warn('A revoke since the paper key was made did not reach it, so this machine has no sealing key and opens no sealed letter. `fli frontier:revoke` of any machine you lost makes a new one here.')
+  log.info('Revoke the machines you lost with `fli frontier:revoke` — `fli frontier:who` lists them.')
   return
 }
 
 // ─── a machine already linked, making one ────────────────────────────────────
 
 if (text) {
-  log.error(`This machine is already at ${saved.api}. Run \`fli tell:paper\` with nothing to make a paper key, or name the origin on a new machine.`)
+  log.error(`This machine is already at ${saved.api}. Run \`fli frontier:paper\` with nothing to make a paper key, or name the origin on a new machine.`)
   process.exitCode = 1
   return
 }
 
 let member
-try { member = await tellMember() }
+try { member = await currentMember() }
 catch (e) { log.error(e.message); process.exitCode = 1; return }
 
 if (flag.dry) {
@@ -177,7 +177,7 @@ writeOwnChain(next)
 
 const print = await fingerprint(paper.publicKey)
 if (boxed?.status !== 201) {
-  log.error(`${refused('The post took the paper key but not its box key', boxed ?? { status: 'no answer' })}. A revoke could not reach it, so revoke it — \`fli tell:revoke ${print.replace(/\s+/g, '')}\` — and make another.`)
+  log.error(`${refused('The post took the paper key but not its box key', boxed ?? { status: 'no answer' })}. A revoke could not reach it, so revoke it — \`fli frontier:revoke ${print.replace(/\s+/g, '')}\` — and make another.`)
   process.exitCode = 1
   return
 }
@@ -188,5 +188,5 @@ const words = (await hexWords(hex)).split(' ')
 echo(chalk`    {cyan ${words.slice(0, 8).join(' ')}}`)
 echo(chalk`    {cyan ${words.slice(8).join(' ')}}\n`)
 log.warn('Write these down now — they are not kept anywhere, and are not shown again. Anyone holding them is your member.')
-log.info(`On a new machine, \`fli tell:paper ${member.api}\` asks for them. Lost the paper? \`fli tell:revoke ${print.replace(/\s+/g, '').slice(0, 8)}\`.`)
+log.info(`On a new machine, \`fli frontier:paper ${member.api}\` asks for them. Lost the paper? \`fli frontier:revoke ${print.replace(/\s+/g, '').slice(0, 8)}\`.`)
 ```

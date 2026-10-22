@@ -82,7 +82,9 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   is theirs. A port is an origin: one listener carrying both would put the
   signed fleet protocol inside every prototype, and Basecamp's session inside
   it one hop later. Same process, because it holds no state beyond the
-  filesystem the command half writes. `OUTPOST_STATIC_PORT=0` turns it off.
+  filesystem the command half writes. It binds `127.0.0.1` and the install's
+  firewall does not open it: Caddy is the way in (`FJS-D1459`).
+  `OUTPOST_STATIC_PORT=0` turns it off.
 - **A publish writes the bytes; `activate` makes them live.** Two calls, because
   a publish interrupted by a dropped connection or a full disk would otherwise
   be halfway to being the thing the world sees. Files land in a staging

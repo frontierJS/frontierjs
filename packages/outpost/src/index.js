@@ -35,10 +35,11 @@ function serveMachine(config) {
   // files anybody may read, and the pages it serves are written by whoever can
   // edit an app. Same process, because it holds no state beyond the filesystem
   // the command half writes — and a second process would need the same directory
-  // and its own supervision to gain nothing.
+  // and its own supervision to gain nothing. Loopback, because Caddy dials it
+  // by host and a raw public port answers plain HTTP around Caddy's TLS (FJS-D1459).
   const statics      = createStaticServer({ staticDir: config.staticDir })
   const staticServer = config.staticPort
-    ? Bun.serve({ port: config.staticPort, fetch: req => statics.handle(req) })
+    ? Bun.serve({ hostname: '127.0.0.1', port: config.staticPort, fetch: req => statics.handle(req) })
     : null
 
   const stopTimers = reporter.start()

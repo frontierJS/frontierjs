@@ -11,7 +11,7 @@ examples:
 args:
   -
     name: nick
-    description: Who it is for — a member's nick, as `fli tell:join` gave it
+    description: Who it is for — a member's nick, as `fli frontier:stake` gave it
   -
     name: words
     description: The letter, at most 4000 characters — with --env, the keys to send (the whole file when none)
@@ -40,7 +40,7 @@ ciphertext (`FJS-D1402`); to one who has not, it goes as plaintext and says so.
 A sealed letter is signed too, so the recipient knows who wrote it. The
 sealing key comes from the member's chain, which their machines signed and
 this one verifies, so the post cannot swap it; the first letter to a member
-pins the chain's root in `~/.fli/tell/peers.json`, and a later chain under
+pins the chain's root in `~/.fli/frontier/peers.json`, and a later chain under
 another root, or shorter than the pinned one, is refused
 (`IDEAS/pony-express.md` 4.1, 4.3). Five letters in ten seconds from one
 sender.
@@ -80,7 +80,7 @@ if (length > 4000) {
 const what = flag.env ? `${payload.count} var(s) from ${payload.source}` : `${length} characters`
 
 let member
-try { member = await tellMember() }
+try { member = await currentMember() }
 catch (e) { log.error(e.message); process.exitCode = 1; return }
 
 if (flag.dry) {

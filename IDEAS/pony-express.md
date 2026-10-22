@@ -510,11 +510,15 @@ Nothing here is handed out until 4.3–4.5 are built (`FJS-D1409`).
   somebody vouched for it, and numbers cannot be farmed. `invite` is
   unbounded today (1.3).
 - [ ] 6.4 The signed member row: at join the post signs `{ number, nick,
-  root, head, joined, invitedBy, fliVersion }` with a key of its own,
+  root, head, joined, invitedBy, fliVersion, signed }` with a key of its own,
   countersigning the chain's head (`FJS-D1421`) and signed again as the head
   moves, and `join` writes it to `~/.fli/tell/member.json`. It proves the number with no
   call to the server, which is what Haven reads in 6.8. `fliVersion` makes
   *joined before 1.0* a fact read off the row rather than a badge handed out.
+  A reader refuses a row whose `signed` is more than a day old, one value held
+  beside the row's verifier, and a member's machine fetches a fresh row
+  before its copy is that old, so a revoke reaches every reader within a day
+  (`FJS-D1445`).
 - [ ] 6.5 4.2's `fli tell:who` takes a nick or a number and prints the signed
   row beside the fingerprint words: `#0042 sam · joined 2026-10-21 · pre-1.0
   · via #0007`. One verb for *who is this*, not two.

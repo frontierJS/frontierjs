@@ -1,4 +1,4 @@
-// core/tell-chain.js — what a member IS at the post: a chain of links, each
+// core/frontier-chain.js — what a member IS at the post: a chain of links, each
 // signed by one of the member's machines, from a first link whose hash is the
 // member's root (IDEAS/pony-express.md 4.3, FJS-D1416, FJS-D1421).
 //

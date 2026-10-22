@@ -774,17 +774,21 @@ core/
   png.js        RGBA → PNG with no dependency. `stored` is the desktop icon's,
                 whose bytes are compared to `example/desktop/` and so cannot move
                 with the zlib a runtime carries
-  tell.js       what `fli tell` keeps on a machine — the key, `config.json`'s
-                `tell`, this member's `chain.json` once a machine is linked, the pins (by chain root), signing a request — for the namespace and for the
+  tell.js       what a Frontier network member keeps on a machine — the key, `config.json`'s
+                `frontier`, this member's `chain.json` once a machine is linked, the pins (by chain root), signing a request — for the namespace and for the
                 notice line `bootstrap.js` prints before every command at a
                 terminal while letters wait (`FJS-D1398`). On the startup path,
                 so builtins only at the top; the line comes from the LAST check,
                 and one over a minute old starts this file detached to ask
                 `GET /waiting` again, so no command waits on the network
-  pgp-words.js  the PGP word list, a word per byte, for `tell:who`'s eight
+  frontier-member.js  this machine as a member — its keys, its chain as it and
+                the post hold it, the nick it speaks as. Imported by both the
+                `frontier:` verbs, which are the identity, and `tell:send` and
+                `tell:inbox`, which read it, so a member is written once
+  pgp-words.js  the PGP word list, a word per byte, for `frontier:who`'s eight
                 words. Both ends of a comparison read it, so a word moved here
                 reads as a mismatch to every older fli
-  tell-chain.js  what a member IS — a chain of links, each signed by one of
+  frontier-chain.js  what a member IS — a chain of links, each signed by one of
                 its machines, from a root link signing the first machine and the
                 sealing key (`FJS-D1416`); a `link` adds a machine, signed by one
                 already in and countersigned by the new one (`FJS-D1418`), a
@@ -801,7 +805,7 @@ core/
                 Object, members and their chains, invites, letters, and the
                 `/follow` socket `inbox -f` holds (`IDEAS/pony-express.md`). A
                 member with a sealing key is sent only sealed letters; a plain
-                one to them is refused here (`FJS-D1402`). `tell:link` is four
+                one to them is refused here (`FJS-D1402`). `frontier:link` is four
                 routes over one `asks` row, and the post carries the pieces
                 without signing any; a revoke is a longer chain on `POST /chain`
                 with the rotated key sealed to each machine left (`rekeys`), and

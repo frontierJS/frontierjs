@@ -644,7 +644,7 @@ describe('a machine claims its own credential', () => {
     expect(ruleset).toMatch(/^\s*ct status dnat drop$/m)
 
     // The ruleset loads in a real nft, in a network namespace of its own.
-    const filled = ruleset.replaceAll('$SSH_PORTS', '22').replaceAll('${OUTPOST_STATIC_PORT}', '8181').replaceAll('$OUTPOST_PORT', '8180')
+    const filled = ruleset.replaceAll('$SSH_PORTS', '22').replaceAll('$OUTPOST_PORT', '8180')
     const probe  = Bun.spawnSync(['unshare', '-rn', 'nft', '-c', '-f', '-'], { stdin: new TextEncoder().encode(filled) })
     if (probe.exitCode === null || /not found|Operation not permitted|unshare failed/i.test(probe.stderr.toString())) return
     expect(probe.stderr.toString()).toBe('')
