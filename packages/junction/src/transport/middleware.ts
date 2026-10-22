@@ -233,8 +233,21 @@ export interface HelmetOptions {
   frame?:        'deny' | 'sameorigin' | false   // X-Frame-Options
   hsts?:         boolean | { maxAge: number; includeSubDomains?: boolean }
   referrer?:     string    // Referrer-Policy
-  csp?:          string    // Content-Security-Policy
+  csp?:          string | false   // Content-Security-Policy
   poweredBy?:    false     // remove X-Powered-By
+}
+
+// FJS-D1192. On in development too, so a page that breaks under it breaks
+// where it is written. `base-uri`, `form-action` and `frame-ancestors` never
+// fall back to `default-src`, so leaving them out leaves them open.
+function defaultCsp(frame: HelmetOptions['frame'] = 'deny'): string {
+  return [
+    "default-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    ...(frame ? [`frame-ancestors ${frame === 'deny' ? "'none'" : "'self'"}`] : []),
+  ].join('; ')
 }
 
 export function helmet(opts: HelmetOptions = {}) {
@@ -247,7 +260,7 @@ export function helmet(opts: HelmetOptions = {}) {
     // be pinned for a year
     hsts    = !isDevelopmentEnv(),
     referrer = 'no-referrer',
-    csp,
+    csp     = defaultCsp(frame),
     poweredBy,
   } = opts
 

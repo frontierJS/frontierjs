@@ -59,7 +59,9 @@ const makeDockerfile = (appId, needs = {}) => `# FrontierJS API — ${appId}
 # before they build. A bare \`docker build\` from a clean tree has none of it —
 # run \`fli deploy:vendor\` first.
 
-FROM oven/bun:1 AS base
+# Bun is the version fli ran under when this file was written, so the image
+# runs what the app was developed on. Move both FROM lines together.
+FROM oven/bun:${Bun.version} AS base
 WORKDIR /app
 
 # Dependencies first, so a source edit does not re-resolve the tree. The manifest
@@ -97,7 +99,7 @@ ${needs.webSrc ? `
 COPY web/src ./web/src
 ` : ''}
 # Runtime image
-FROM oven/bun:1-slim
+FROM oven/bun:${Bun.version}-slim
 WORKDIR /app
 ${needs.chrome ? `
 # ${needs.chrome} drives a headless Chrome, and its first launch fails

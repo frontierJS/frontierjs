@@ -25,7 +25,7 @@
 # for a scaffolded app; this one is for the app whose whole purpose is to
 # exercise the tree.
 
-FROM oven/bun:1 AS build
+FROM oven/bun:1.4.4 AS build
 WORKDIR /app
 
 # Dependencies first, so a source edit does not re-resolve the tree. The
@@ -64,7 +64,7 @@ COPY app.snapshot.md ./
 RUN bun run build:web
 
 # ─── runtime ─────────────────────────────────────────────────────────────────
-FROM oven/bun:1-slim
+FROM oven/bun:1.4.4-slim
 WORKDIR /app
 
 COPY --from=build /app /app

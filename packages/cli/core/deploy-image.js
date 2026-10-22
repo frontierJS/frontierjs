@@ -1,6 +1,6 @@
 // ─── deploy-image.js — what an API image needs beyond api/ and db/ ────────────
 //
-// The image `fli make:deploy` writes copies api/ and db/ onto oven/bun:1-slim,
+// The image `fli make:deploy` writes copies api/ and db/ onto oven/bun's slim image,
 // and two kinds of app need more than that at runtime. Each was found as a
 // release that would not start rather than at any step before it (`FJS-2269`):
 //

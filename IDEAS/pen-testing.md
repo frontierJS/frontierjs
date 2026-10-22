@@ -25,7 +25,6 @@ Each row's requirements are `THREATS.md`'s *ASVS* column. A signed request (B8�
 
 **Holes found while probing:**
 
-- **No CSP by default** (`packages/junction/src/transport/middleware.ts`, `helmet()`).
 - **`rateLimitHook` counts in a process `Map`** (`packages/junction/src/core/rate-limit.ts:56`). A restart resets the login throttle, and N processes allow N× the attempts. `auth.lite` already moved TOTP and login-challenge attempts into rows for this reason. The rate limiters have not followed.
 
 **Not probed yet:** session id rotation on login and privilege change, how Mesa escapes interpolated text and attributes, upload type/size checks on `attachments`, OAuth `state`/PKCE, TOTP replay inside one window.
@@ -69,9 +68,11 @@ Done when: Phase 4's scan reports no header findings.
   - `helmet()` always sends `0` and the `xss` option is gone: nobody should turn the auditor back on. `0` rather than absent, as helmet.js does, because an older browser runs the auditor by default. Pinned in `packages/junction/test/index.test.ts`.
 - [x] 2.2 HSTS on whenever the app is served over https in production
   - `helmet()` sends `max-age=31536000` outside development, with no scheme check: a browser ignores the header over plain http (RFC 6797 §8.1), so trusting `X-Forwarded-Proto` would buy nothing. Off in development, where `https://localhost` would be pinned for a year. `fli deploy`'s SPA document carries the same value from `edge.js`. No `includeSubDomains`, because on a bare domain it pins every other site under it. Pinned in `packages/junction/test/index.test.ts` and `packages/cli/test/edge.test.js`.
-- [ ] 2.3 A default CSP (Q1)
+- [x] 2.3 A default CSP (Q1)
+  - `helmet()` sends `default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`, in development too, so a page breaks where it is written. The last three never fall back to `default-src`. `frame-ancestors` follows `frame`. `http.helmet` takes the options object, so an app widens it with `{ csp }` or drops it with `csp: false`. A header the handler set on its own Response stands, as `Cache-Control` already did, so one page loosens only itself. Measured first: junction serves no SPA document (Vite in development, Caddy under `fli deploy`), and every HTML page an app serves through it carried an inline script or style. That covers charter's token handoff (`core/host.ts`, `core/viewas.ts`), transit's send page, example's mail sink and openapi's Scalar docs. Driven in Chrome, the docs page went blank under the default and renders under its own CSP: the CDN, the inline call by hash, inline styles, and `fonts.scalar.com`. Scalar's fetches to `api.scalar.com` stay refused. Pinned in `packages/junction/test/index.test.ts` and `test/openapi-round-trip.test.ts`.
 - [ ] 2.4 Document that rate limits are per process and reset on restart, in junction's docs and in B14's *Open* cell (`FJS-D1193`)
 - [x] 2.5 Security headers on the SPA document `fli deploy` serves, which helmet never reaches (`FJS-3190`)
+- [ ] 2.6 Drive a built Mesa page in Chrome under `default-src 'self'` and count what `style=` attributes it refuses, then widen `edge.js`'s scripts-only CSP to match junction's
 
 ### Phase 3 — Probe what is unmeasured
 

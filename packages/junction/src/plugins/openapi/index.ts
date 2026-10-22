@@ -27,6 +27,7 @@
 //   // Option B: generate the spec object directly
 //   const spec = generateOpenAPI(app, { title: 'My API', version: '1.0.0' })
 
+import { createHash }            from 'node:crypto'
 import type { App, Plugin }      from '../../core/app.ts'
 import type { CompiledSchema, Schema, FieldDef } from '../../core/schema.ts'
 import { isMethodAllowed } from '../../core/service.ts'
@@ -61,6 +62,23 @@ export interface ScalarOptions {
 // is the global this page calls, so a bump is checked against that name.
 const SCALAR_VERSION = '1.67.0'
 const SCALAR_SRC     = `https://cdn.jsdelivr.net/npm/@scalar/api-reference@${SCALAR_VERSION}`
+
+// The page's own CSP, which the app's stands aside for (FJS-D1192): the pinned
+// CDN script, the one inline call by hash, and the styles and fonts Scalar
+// loads. Scalar's own fetches to api.scalar.com stay refused; the page renders without them
+function docsCsp(boot: string): string {
+  const hash = createHash('sha256').update(boot, 'utf8').digest('base64')
+  return [
+    "default-src 'self'",
+    `script-src 'self' ${new URL(SCALAR_SRC).origin} 'sha256-${hash}'`,
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self' https://fonts.scalar.com",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ')
+}
 
 function escapeHtml(v: string): string {
   return String(v).replace(/[&<>"']/g, c =>
@@ -735,6 +753,7 @@ export function openapi(opts: OpenAPIOptions): Plugin {
             },
             url: endpoint,
           })
+          const boot = `Scalar.createApiReference('#scalar-app', ${escapeForScript(scalarConfig)})`
           const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -745,12 +764,10 @@ export function openapi(opts: OpenAPIOptions): Plugin {
 <body>
   <div id="scalar-app"></div>
   <script src="${SCALAR_SRC}" crossorigin="anonymous"></script>
-  <script>
-    Scalar.createApiReference('#scalar-app', ${escapeForScript(scalarConfig)})
-  </script>
+  <script>${boot}</script>
 </body>
 </html>`
-          return new Response(html, { headers: { 'content-type': 'text/html' } })
+          return new Response(html, { headers: { 'content-type': 'text/html', 'content-security-policy': docsCsp(boot) } })
         })
       }
     }

@@ -262,14 +262,16 @@ export function widgetDockerfile({ servePort = 8300 } = {}) {
 # are ready, which is not when the API is, and a static origin is a different
 # thing to run from an application server.
 
-FROM oven/bun:1 AS build
+# Bun is the version fli ran under when this file was written, so the image
+# runs what the app was developed on. Move both FROM lines together.
+FROM oven/bun:${Bun.version} AS build
 WORKDIR /app
 COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile || bun install
 COPY . .
 RUN cd widgets && bunx sierra widgets --config config/sierra.config.js
 
-FROM oven/bun:1-slim
+FROM oven/bun:${Bun.version}-slim
 WORKDIR /app
 COPY --from=build /app/widgets/dist/embeds ./widgets/dist/embeds
 COPY --from=build /app/widgets/deploy ./widgets/deploy

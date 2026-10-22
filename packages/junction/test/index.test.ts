@@ -4899,6 +4899,43 @@ describe('helmet — security headers applied by default', () => {
     expect(res.headers['x-frame-options']).toBe('DENY')
   })
 
+  // FJS-D1192 — and in development too, where a page that breaks under it is written
+  it('content-security-policy: default-src self, plus the directives with no fallback', async () => {
+    const app = await createTestApp()
+    app.services.register(buildService({ name: 'items', find: async () => [] }))
+    const res = await request(app).get('/items')
+    expect(res.headers['content-security-policy'])
+      .toBe("default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+  })
+
+  it('frame-ancestors follows the frame option, from config', async () => {
+    const app = await createTestApp({ config: { http: { helmet: { frame: 'sameorigin' } } } })
+    const res = await request(app).get('/no/such/deep/path')
+    expect(res.headers['x-frame-options']).toBe('SAMEORIGIN')
+    expect(res.headers['content-security-policy']).toContain("frame-ancestors 'self'")
+  })
+
+  it('an app widens the CSP in config, or turns it off', async () => {
+    const wide = await createTestApp({ config: { http: { helmet: { csp: "default-src 'self' https://cdn.test" } } } })
+    expect((await request(wide).get('/no/such/deep/path')).headers['content-security-policy'])
+      .toBe("default-src 'self' https://cdn.test")
+    const off = await createTestApp({ config: { http: { helmet: { csp: false } } } })
+    const res = await request(off).get('/no/such/deep/path')
+    expect(res.headers['content-security-policy']).toBeUndefined()
+    expect(res.headers['x-frame-options']).toBe('DENY')
+  })
+
+  // One page with an inline script must not cost the whole app its policy
+  it('a header the handler set stands over helmet\'s', async () => {
+    const app = await createTestApp()
+    app.get('/x/page', () => new Response('<p>hi</p>', {
+      headers: { 'content-type': 'text/html', 'content-security-policy': "script-src 'sha256-abc'" },
+    }))
+    const res = await request(app).get('/x/page')
+    expect(res.headers['content-security-policy']).toBe("script-src 'sha256-abc'")
+    expect(res.headers['x-frame-options']).toBe('DENY')
+  })
+
   it('helmet: false leaves the 404 bare too', async () => {
     const app = await createTestApp({ config: { http: { helmet: false } } })
     const res = await request(app).get('/no/such/deep/path')

@@ -38,8 +38,9 @@ function uploadErrors(said) {
   return out.join(' · ') || lines.filter(Boolean).slice(-3).join(' ')
 }
 
-// What a site preview builds in: bun, and the `node` wrangler is run under.
-const PREVIEW_IMAGE = 'oven/bun:1.4.2'
+// What a site preview builds in: the Bun this Outpost runs, and the `node`
+// wrangler is run under.
+const PREVIEW_IMAGE = `oven/bun:${Bun.version}`
 
 // The most lines `POST /logs` will read off a container in one answer. A cap
 // rather than a default, because the caller is on another machine and the cost

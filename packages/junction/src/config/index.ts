@@ -107,11 +107,9 @@ export interface AppConfig {
      * of (`FJS-D617`). A declared value wins over it.
      */
     trustProxy?:  TrustProxy
-    // Security headers. On unless declared false — the opt-out an app writes
-    // as `http: { helmet: false }`, which app.ts has always read and this
-    // shape did not declare, so the typed form of the documented opt-out was
-    // the one spelling that did not compile.
-    helmet?:      boolean
+    // Security headers. On unless declared false; an object loosens one of
+    // them — `{ csp: "..." }` is how an app widens the default CSP (`FJS-D1192`).
+    helmet?:      boolean | import('../transport/middleware.ts').HelmetOptions
     // The rest of the middleware an app declares rather than constructs.
     // `junction.config.js`'s `middleware:` section normalizes onto these, so
     // there is one shape the runtime reads and one place a phase looks. A key
@@ -309,7 +307,7 @@ export interface JunctionMiddlewareConfig {
    * let through on a socket frame — lands on `http.callHeaders` (`FJS-1226`).
    */
   callHeaders?:   string[]
-  helmet?:        boolean
+  helmet?:        boolean | import('../transport/middleware.ts').HelmetOptions
   requestLogger?: boolean | { level?: 'info' | 'debug'; format?: 'common' | 'json' }
   correlationId?: boolean | { header?: string }
   rateLimit?:     { max: number; window: string | number; message?: string }

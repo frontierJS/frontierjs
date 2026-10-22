@@ -729,6 +729,16 @@ describe('a machine claims its own credential', () => {
     expect(OUTPOST_VERSION).toBe(pkg.version)
   })
 
+  // A moving `oven/bun:1` tag put the control plane on 1.4.4 while every
+  // Outpost ran 1.4.2 (FJS-3443).
+  test('the image runs the Bun every Outpost is installed with', async () => {
+    const { BUN_VERSION } = await import('../src/providers/compute/enrollment.ts')
+    const dockerfile = await Bun.file(new URL('../../deploy/Dockerfile', import.meta.url)).text()
+    const tags = [...dockerfile.matchAll(/^FROM oven\/bun:(\S+)/gm)].map(m => m[1])
+    expect(tags.length).toBeGreaterThan(0)
+    for (const tag of tags) expect(tag.replace(/-slim$/, '')).toBe(BUN_VERSION)
+  })
+
   // The enrollment answer is the machine's key. Over plain http to anything
   // but loopback it crosses the network readable (FJS-1603), so neither way a
   // machine is handed the install will point it there.

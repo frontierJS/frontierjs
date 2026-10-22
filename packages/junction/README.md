@@ -738,6 +738,8 @@ app.configure(csrf({ origins: ['https://myapp.com'] }))
 
 > **One id per request.** A request's correlation id is the trace id of the `traceparent` it states, else its `X-Request-ID`, else 32 hex junction mints, and the log line, the audit row, a job's row and conduit's outbound call all carry it. An inbound id that is malformed (a `traceparent` that does not parse, an `X-Request-ID` outside 1–128 characters of `[A-Za-z0-9_.:@-]`) is replaced, not refused (`FJS-D660`).
 
+> **Helmet sends a strict CSP by default** — `default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`, in development too (`FJS-D1192`). An inline `<script>`, a `style=` attribute and a CDN asset are refused. An app widens it with `http: { helmet: { csp: '…' } }` or drops it with `csp: false`; one page loosens only itself by setting its own `Content-Security-Policy` on the Response it returns, which helmet leaves alone, as `openapi({ ui: true })`'s docs page does.
+
 > **Rate limiting is per-process.** Counters live in memory and are not shared across workers or machines. For single-process deployments this is not an issue. For multi-process deployments, apply rate limiting at the load balancer layer (nginx `limit_req`, Cloudflare, Fly.io, etc.) in addition to or instead of this middleware.
 
 ---

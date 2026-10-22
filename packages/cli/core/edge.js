@@ -264,7 +264,7 @@ export function inlineScriptHashes(html) {
 // The CSP is scripts only. Mesa's runtime adopts a constructed sheet per
 // component, which `style-src` does not gate (FJS-3232), but `default-src 'self'`
 // (FJS-D1192) would still refuse any `style=` attribute and `<style>` element an
-// app or a prerendered page carries; pen-testing 2.3 measures that first.
+// app or a prerendered page carries; pen-testing 2.6 measures that first.
 // `'wasm-unsafe-eval'` is Litestone's SQLite in a worker, whose script is
 // served under this same policy; it compiles wasm and never evaluates a string.
 //

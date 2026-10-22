@@ -206,7 +206,7 @@ describe('what the machine is asked to do', () => {
       expect(body).toEqual({ commit_sha: 'c0ffee', url: 'https://spring-harbor.kobami.workers.dev',
         version_url: 'https://0a1b2c3d-harbor.kobami.workers.dev' })
       const runs = argv().filter(c => c.startsWith('docker run --rm'))
-      expect(runs.map(c => c.split(' oven/bun:1.4.2 ')[1])).toEqual([
+      expect(runs.map(c => c.split(` oven/bun:${Bun.version} `)[1])).toEqual([
         'bun install --frozen-lockfile', 'bun x site-kit build . --preview', 'bun x site-kit deploy . --preview spring',
       ])
       expect(runs[0]).toContain('-w /src ')
@@ -311,7 +311,7 @@ describe('what the machine is asked to do', () => {
       expect(res.status).toBe(200)
       expect(await res.json()).toEqual({ commit_sha: COMMIT, url: 'https://harbor.kobami.workers.dev' })
       const runs = argv().filter(c => c.startsWith('docker run --rm'))
-      expect(runs.map(c => c.split(' oven/bun:1.4.2 ')[1])).toEqual([
+      expect(runs.map(c => c.split(` oven/bun:${Bun.version} `)[1])).toEqual([
         'bun install --frozen-lockfile', 'bun x site-kit build .', 'bun x site-kit deploy .',
       ])
       expect(runs.every(c => c.includes(`--mount type=bind,source=${workDir}/app-1.release,target=/src`))).toBe(true)
