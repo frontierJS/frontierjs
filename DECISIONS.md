@@ -8114,6 +8114,18 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1427"></a>2026-10-22 · `FJS-D1427` — Where `fli gui`'s `:data` reads rows as a principal — In the running app, at the Data boundary: devtools answers `GET /api/data` and `GET /api/data/<Model>` through `app.withDb` under the call's principal lookup, rows refused outside development.
+
+Asked in session while building [`IDEAS/one-console.md`](IDEAS/one-console.md) 3.3, where the pane table said `:data` reads Studio's endpoints and `FJS-D1426` had put the app half inside the running app. **A** (devtools, the app's own client) was picked over **B** (relay Litestone Studio on 5502: a second process to start, graded by toolbelt's default `gradeStanding` unless started with `--gate` (`FJS-977`), and no principal there is `asSystem()`, against `:call`'s *empty is nobody*) and **C** (`:call`'s `find` drawn as a table: hooks run, but a model with no service has no rows to show).
+
+The recommendation, taken as written. Precedent: Supabase Studio's role impersonation runs its table view at the database as `anon` or a chosen user, so row-level security answers rather than the API.
+
+**Nobody is STRANGER(0), never the app**, by the same `reenterAs(null)` `:call` uses: `runAs(null)` alone is the system principal, and a guest's read would see every row. **Reads only**: editing a row stays Studio's. The model list is read in production too; the rows are refused there for `FJS-D1426`'s reason. `modelToAccessor` is now exported from litestone's main entry, so junction asks the one answer Invariant 2 needs rather than spelling a fourth.
+
+The nine, answered late (after the code, before the drive's make-it-fail run): 1 origin — none added; the principal lookup `callAs` held is one function both use · 2 concept — no new noun · 3 complexity — one read beside the call · 4 predictability — a read here is graded as a request's read is · 5 derived — models from the client's `$schema`, the person from `findPrincipal` · 6 owner — `core/call-as.ts` (`rowsAs`), reached by devtools · 7 boundary — an allow-listed GET through `core/live-view.js` · 8 failure — a gate refusal is its 403 with its sentence; a row policy is no rows, which the pane says · 9 silence — what must stay true: *a guest is refused on `:data`, and nobody is never the app*; what fails when it stops: the console drive (a gated model as nobody, 403; as a member, the row) and `test/devtools-security.test.ts` § rows, as somebody, both red with nobody run as the app. § IV: *ergonomics vs. strictness*, as `FJS-D1426` named it, for the production refusal. Tier: Register.
+
+*Lives in:* `packages/junction/src/core/call-as.ts`, `packages/junction/src/plugins/devtools/`, `packages/cli/core/live-view.js`, `packages/cli/console/Data.mesa`.
+
 ### <a id="fjs-d1426"></a>2026-10-22 · `FJS-D1426` — Where a call from `fli gui`'s `:call` runs — In the running app: devtools answers `POST /api/call`, refused outside development, and `junction call` shares its one call path.
 
 Asked in session while building [`IDEAS/one-console.md`](IDEAS/one-console.md) 3.2, where the plan disagreed with itself: its pane table said `:call` reads `app:call`'s path, and its Phase 3 done line asks that a call's announcement appear on `:live`. `junction call` boots a second copy of the app in a child process (`_startOnce()`, `FJS-D551`), whose bus has no socket and no devtools, so its announcement reaches neither `:live` nor an open tab. **A** (in the running app) was picked over **B** (spawn `junction call` per press, about a second of boot, working with no app up; the done line amended to *the row changed*, and an open tab left stale after a `:call` write).

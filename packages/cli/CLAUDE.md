@@ -443,9 +443,9 @@ core/
                 map as `project:map --json` spawned in it, and the secret fill.
                 An app is named by its directory and looked up in that list,
                 never joined onto a path
-  live-view.js  the console's `:live` and `:call` — junction's devtools
-                carried to the panes: four reads, the queue's three acts and a
-                call as somebody, which runs INSIDE the app so its announcement
+  live-view.js  the console's `:live`, `:call` and `:data` — junction's devtools
+                carried to the panes: the reads (rows as somebody among them,
+                `FJS-D1427`), the queue's three acts and a call as somebody, which runs INSIDE the app so its announcement
                 reaches `:live` (`FJS-D1426`), each an allow-listed shape, and devtools' socket relayed a frame a line with `open`
                 and `closed` of its own, so a quiet app and an absent one differ.
                 The server reads devtools because a browser may not: it is
@@ -816,7 +816,7 @@ cli/src/   the CLI's own source tree
 console/   the console's screens, `.mesa` — `Console.mesa` is the root both
            targets mount, the pane strip; then one file per pane (`Run`,
            `Check`, `Decide`, `Ship`, `ProjectMap` — not `Map`, which would
-           shadow the global a compiled component uses — `Live` and `Call`). `Flow` is one walked
+           shadow the global a compiled component uses — `Live`, `Call` and `Data`). `Flow` is one walked
            flow, the release or the publish: it draws the steps the server's
            tables name and grades none of them — `Ship` does, from what it has
            read. `:map`'s parts are `MapChain`, `MapMachines`, `MapWarden` and
@@ -1695,7 +1695,7 @@ shape one layer up).
 **The console's screens have a drive of their own**: `bun run
 test:browser:console` starts `fli gui` under a pty and opens the same
 process's `/console/` in Chrome, then diffs the two frames row by row. For
-`:live` and `:call` it boots an app of its own with devtools on 7503. A change to
+`:live`, `:call` and `:data` it boots an app of its own with devtools on 7503. A change to
 `console/`, `core/console.js`, `core/live-view.js`, junction's devtools or
 `fli gui`'s terminal path is proved there; it needs Chrome and util-linux
 `script`.

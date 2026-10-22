@@ -9,7 +9,7 @@
   // written here. Nobody named is nobody, STRANGER(0), never the app itself:
   // a pane that read as the app would show every row to every guess.
   //
-  // Reads only. Editing a row is Studio's until Phase 4 moves it.
+  // Reads only. Editing a row is Studio's.
 
   import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
   import Table  from '@frontierjs/ui/components/display/Table.mesa'

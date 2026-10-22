@@ -92,11 +92,19 @@ const keyOf = (line) => {
   return idx === -1 ? null : t.slice(0, idx).replace(/^export\s+/, '').trim()
 }
 
+// `*` is the only wildcard, so a `.` or `$` in a name stays literal.
+const keyMatcher = (key) => {
+  if (!key.includes('*')) return (k) => k === key
+  const re = new RegExp('^' + key.split('*').map(s => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$')
+  return (k) => re.test(k)
+}
+
 /**
  * The env text a send carries — `env:send` and `tell --env` — read from the
  * global env under `global`, else `file` under `root`; only the `keys` lines
- * when any are named. `{ body, count, source }`, and a throw naming the file
- * or the keys it lacks.
+ * when any are named, a `*` in one matching any run of characters
+ * (`'*_TOKEN'`). `{ body, count, source }`, and a throw naming the file or
+ * the keys and patterns that matched nothing.
  */
 export function pickEnv({ root, file = '.env', global = false, keys = [], home } = {}) {
   const path   = global ? globalEnvPath(home) : resolve(root, file)
@@ -104,8 +112,9 @@ export function pickEnv({ root, file = '.env', global = false, keys = [], home }
   if (!existsSync(path)) throw new Error(`No env file at ${path}`)
   let body = readFileSync(path, 'utf8')
   if (keys.length) {
-    const lines   = body.split('\n').filter(l => keys.includes(keyOf(l)))
-    const missing = keys.filter(k => !lines.some(l => keyOf(l) === k))
+    const matchers = keys.map(keyMatcher)
+    const lines    = body.split('\n').filter(l => { const k = keyOf(l); return k && matchers.some(m => m(k)) })
+    const missing  = keys.filter((_, i) => !lines.some(l => matchers[i](keyOf(l))))
     if (missing.length) throw new Error(`${source} has no ${missing.join(', ')}`)
     body = lines.join('\n') + '\n'
   }

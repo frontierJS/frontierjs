@@ -8,10 +8,11 @@ examples:
   - fli esend --file .env.production --max-access 2 --days 3
   - fli esend --password hunter2
   - fli esend -g DIGITALOCEAN_TOKEN CLOUDFLARE_TOKEN
+  - fli esend -g '*_TOKEN'
 args:
   -
     name: keys
-    description: Only these keys (the whole file when none)
+    description: Only these keys, a * matching any characters — quote it, or the shell may expand it (the whole file when none)
     variadic: true
 flags:
   file:

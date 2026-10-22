@@ -454,17 +454,43 @@ bus: green. With nobody run as the app (no `reenterAs(null)`), the nobody
 check and its feed row go red. Seen: `:ship`'s release count read 15 in the
 terminal against 16 in the browser in 2 of 4 runs, and nothing in this step
 touches it.
-- [ ] 3.3 `:data`, viewed as a principal.
+- [x] 3.3 `:data`, viewed as a principal.
 
-### Phase 4 — Studio
+**3.3, how it is built** (2026-10-22). `console/Data.mesa` is the eighth
+pane (`8`). It reads inside the running app, not Studio's endpoints as the
+pane table above said (`FJS-D1427`, ruled in session): Studio is a second
+process, grades by toolbelt's default unless started with `--gate`, and runs
+no principal as `asSystem()`. Devtools answers `GET /api/data` (the models
+and views off the app client's `$schema`) and `GET /api/data/<Model>?as=&tenant=&limit=&offset=`,
+which `rowsAs` in `junction/src/core/call-as.ts` reads through `app.withDb`
+inside `app.runAs`, so the gate, the row policies and redaction answer as
+for a request. The principal lookup `callAs` held is now `standingOf`, and
+nobody is `reenterAs(null)` for both through one `asWhom`. Rows are refused
+outside development, as a call is; the model list is not. `modelToAccessor`
+is now on litestone's main entry, so junction asks Invariant 2's one answer.
+`core/live-view.js` carries both as `/api/live/data…`. The pane lists the
+models as buttons, takes as whom (empty is nobody) and a tenant, and shows a
+page of 50 with its standing, a cell cut at 60 characters; `r` reads again,
+`n`/`p` page, `/` filters models and rows. Reads only: editing stays
+Studio's. The legend's eight pane digits are now one row,
+`1–8 the panes`: the eighth wrapped it past the drive's 160 cells, and the
+wrapped `/drive` parsed as a row. The drive's app now has a `@@gate(3)`
+`Memo`. It presses `8` in both frames and compares the model count (3),
+then in Chrome reads `Memo` as nobody (403, `requires level 3, user has
+level 0`) and as `ann@x.test` (the row), and `Note` as nobody (no rows, the
+policy) and as ann (the note `:call` wrote): green. With nobody run as the
+app, the `:call` and `:data` nobody checks go red (4).
+
+### Phase 4 — Studio — DEFERRED
 
 Goal: `studio.html` is deleted.
 Done when: litestone's five `verify:studio:*` drives pass against the `.mesa`
 screens.
 
-Studio stays out until here, by the owner on 2026-10-21: `studio.html` remains
-hand-written in litestone while Phases 1–3 run, and Q3 is asked when this phase
-opens.
+Deferred by the owner, 2026-10-22: `studio.html` stays a hand-written page in
+litestone, and Phase 5 goes next. Nothing reopens this phase but the owner, and
+Q3 is asked only then. `:data` (3.3) already covers reading rows as a principal;
+editing rows stays Studio's.
 
 - [ ] 4.1 Port Studio's screens. At 7,946 lines it is the largest console, so it
   goes last, after the panes it shares components with exist.
@@ -533,7 +559,7 @@ interface). Moving them onto the paved road is the ruling's direction.
   - **B** — no: wait until core leaves alpha (`FJS-D14`).
   - **Recommend A** — the tool screens are a second corpus for the IR, written by
     the same people who maintain it.
-- **Q3 — Where do Studio's screens live?** Deferred to Phase 4 (owner, 2026-10-21).
+- **Q3 — Where do Studio's screens live?** Deferred with Phase 4 (owner, 2026-10-22).
   - **A** — in `packages/cli`, with the other three. Studio stays reachable from
     an app without the CLI only through its endpoints.
   - **B** — in `packages/litestone`, compiled ahead of time so Litestone ships

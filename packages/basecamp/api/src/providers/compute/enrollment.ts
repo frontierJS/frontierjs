@@ -392,6 +392,8 @@ chmod 0600 /etc/basecamp/outpost.env
 # the unit through systemd-run (FJS-D602), so a recipe is not confined by it.
 # StateDirectory creates /var/lib/outpost before the namespace is built: a
 # ReadWritePaths entry that does not exist yet fails the start on a fresh box.
+# ExecStart is bun x, never bunx: bun's installer writes the bun binary alone,
+# and a unit naming a file that is not there exits 203/EXEC on every restart.
 # posture: outpost.sandbox
 cat > /etc/systemd/system/outpost.service <<UNITEOF
 [Unit]
@@ -401,7 +403,7 @@ Wants=network-online.target
 
 [Service]
 EnvironmentFile=/etc/basecamp/outpost.env
-ExecStart=$BUN_INSTALL/bin/bunx --bun @frontierjs/outpost@${OUTPOST_VERSION}
+ExecStart=$BUN_INSTALL/bin/bun x --bun @frontierjs/outpost@${OUTPOST_VERSION}
 Restart=always
 RestartSec=5
 NoNewPrivileges=yes
@@ -470,9 +472,9 @@ done
 
 UNIT=/etc/systemd/system/outpost.service
 # Where the install put bun, read off the unit before the unit goes.
-BUNX=$(awk -F= '$1 == "ExecStart" { split($2, w, " "); print w[1] }' $UNIT 2>/dev/null || true)
+BUN_BIN=$(awk -F= '$1 == "ExecStart" { split($2, w, " "); print w[1] }' $UNIT 2>/dev/null || true)
 BUN_DIR=
-[ -n "$BUNX" ] && BUN_DIR=$(dirname "$(dirname "$BUNX")")
+[ -n "$BUN_BIN" ] && BUN_DIR=$(dirname "$(dirname "$BUN_BIN")")
 
 if [ $PURGE = 1 ] && [ $YES = 0 ]; then
   HELD=$(docker ps -a --format '{{.Names}}' 2>/dev/null | paste -sd' ' - || true)

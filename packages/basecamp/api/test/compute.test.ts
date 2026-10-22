@@ -709,7 +709,7 @@ describe('a machine claims its own credential', () => {
     expect(script).toContain('download.docker.com/linux/$ID/gpg')
     expect(script).toContain('signed-by=/etc/apt/keyrings/docker.asc')
     expect(script).toContain(`bash -s "bun-v${BUN_VERSION}"`)
-    expect(script).toContain(`bunx --bun @frontierjs/outpost@${OUTPOST_VERSION}`)
+    expect(script).toContain(`/bin/bun x --bun @frontierjs/outpost@${OUTPOST_VERSION}`)
     expect(BUN_VERSION).toMatch(/^\d+\.\d+\.\d+$/)
   })
 
