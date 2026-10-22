@@ -26,10 +26,10 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3826 source file(s) read
+26 package(s) · 3837 source file(s) read
 234 entry point(s), 37 imported by nothing outside their package, 15 emitted
 1571 value export(s), 620 reached by nothing outside, 166 emitted
-450 type export(s), 346 reached by nothing outside
+451 type export(s), 347 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
@@ -46,7 +46,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `site-kit` | 9 | 4 | 38 | 12 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 8 | 0 | 36 | 21 |
 | `outpost` | 7 | 1 | 15 | 7 | 0 | 0 | 0 |
-| `notifications` | 2 | 0 | 11 | 5 | 0 | 24 | 19 |
+| `notifications` | 2 | 0 | 11 | 5 | 0 | 25 | 20 |
 | `email-kit` | 3 | 0 | 10 | 4 | 1 | 0 | 0 |
 | `oracle` | 1 | 0 | 19 | 3 | 2 | 0 | 0 |
 | `print-kit` | 4 | 1 | 6 | 1 | 1 | 0 | 0 |
@@ -217,13 +217,13 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/notifications`
 
-`packages/notifications` · 2 entry point(s) · 11 value, 24 type export(s)
+`packages/notifications` · 2 entry point(s) · 11 value, 25 type export(s)
 
 **Entries not source (1, not graded):** `./schema.lite`
 
 **Unreached values (5):** `generateVapidKeys` `NotificationDeliveryError` `NotificationDriverNotFoundError` `NotificationRecipientError` `webPush`
 
-**Unreached types (19):** `BuiltInTransport` `Formatter` `InAppAction` `InAppMessage` `MailLine` `NotificationDefinition` `NotificationDriver` `NotificationFactory` `NotificationRecord` `NotificationsPluginOptions` `OutgoingMail` `PushMessage` `PushRequest` `PushSubscription` `PushSubscriptions` `SendableNotification` `TransportError` `VapidKeys` `WebPushOptions`
+**Unreached types (20):** `BuiltInTransport` `Formatter` `InAppAction` `InAppMessage` `MailLine` `NotificationDefinition` `NotificationDriver` `NotificationFactory` `NotificationReceipts` `NotificationRecord` `NotificationsPluginOptions` `OutgoingMail` `PushMessage` `PushRequest` `PushSubscription` `PushSubscriptions` `SendableNotification` `TransportError` `VapidKeys` `WebPushOptions`
 
 ## `@frontierjs/oracle`
 
