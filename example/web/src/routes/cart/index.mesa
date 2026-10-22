@@ -84,7 +84,7 @@ title: Basket
   // Ahead of `refresh()`, because a shopper arriving with a handoff wants THAT
   // basket and not whatever this browser was holding last week.
   let handoffError = null
-  const code = handoffCodeFromHash(page.hash)
+  var code = handoffCodeFromHash(page.hash)
 
   if (code) {
     goto(page.pathname + page.search, {}, { replace: true })

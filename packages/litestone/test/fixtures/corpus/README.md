@@ -203,6 +203,12 @@ re-boots in 470ms, zero drift. It arrives as a tarball of one JSON per doctype
 rather than a file, so `fetch.mjs` extracts it and hands the reader parsed
 documents; `tar` has to be on PATH.
 
+**The committed fixture is not the reader's raw output in one place**: doctype
+`Project Update` reads as `ProjectUpdate`, which `litestone types` refuses
+beside `Project` (`FJS-D1282`), so the fixture says `ProjectUpdateEntry`. The
+reader names the collision as `generated-name-collision` and renames nothing; a
+re-fetch needs the same hand rename before the corpus test passes.
+
 **It is the only source in this corpus where the schema says whether a
 polymorphic target set is CLOSED.** A Frappe `Dynamic Link` names the field
 holding its target doctype, and that controlling field answers the question

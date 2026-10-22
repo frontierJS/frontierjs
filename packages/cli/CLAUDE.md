@@ -1070,9 +1070,8 @@ test/     one file per module under core/, plus the deploy pipeline's own
   `deployPlan` in `_module.md`.** Two implementations of a plan is the failure
   the whole Release design is arranged against: a plan is what somebody reads to
   decide. `--plan` sets `context.config.stop` rather than returning — the
-  runner discovers steps AFTER the orchestrator and falls back to `_steps/` when
-  no `stepsDir` is set, which is the legacy CapRover list, so an early return
-  would run it.
+  runner discovers steps AFTER the orchestrator (`steps: _steps-docker` in
+  `index.md`'s frontmatter), so an early return would run them.
 - **A step stops the pipeline two ways and they are different verdicts**
   (`FJS-589`). `context.config.abort` is a REFUSAL: every later step self-skips
   and the command exits NON-ZERO, even though nothing threw. `context.config.stop`

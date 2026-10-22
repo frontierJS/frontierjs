@@ -15,3 +15,9 @@ test('outpost-dev builds no service call by hand', () => {
   expect(src).toContain("from '@frontierjs/junction/client'")
   expect(src).not.toMatch(/x-service-method|x-workspace-id|Bearer |\$limit/i)
 })
+
+// FJS-2497: a literal 8180 is the parent's port in a branch, while the drive asks portFor.
+test('outpost-dev takes its ports from portFor, never a literal', () => {
+  expect(src).toContain("from '@frontierjs/cli/core/ports.js'")
+  expect(src).not.toMatch(/\b(PORT|STATIC_PORT)\s*=\s*81\d\d\b/)
+})

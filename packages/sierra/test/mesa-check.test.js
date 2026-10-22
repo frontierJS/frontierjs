@@ -49,3 +49,28 @@ describe('checkMesaFiles', () => {
     expect(await checkMesaFiles([file], { root })).toEqual([])
   })
 })
+
+describe('checkMesaFiles — reactivity hints', () => {
+  // The dev server compiles 'strict' and prints these; the gate must say the same (FJS-3173).
+  const write = (name, src) => {
+    const dir = mkdtempSync(join(tmpdir(), 'sierra-mesa-hints-'))
+    const file = join(dir, name)
+    writeFileSync(file, src)
+    return file
+  }
+
+  test('an uncovered member read on an imported object fails the file', async () => {
+    const file = write('Hint.mesa',
+      "<script>\n  import { page } from 'sierra/router'\n  const id = page.params.id\n</script>\n\n<p>{id}</p>\n")
+    const failed = await checkMesaFiles([file])
+    expect(failed).toHaveLength(1)
+    expect(failed[0].file).toBe(file)
+    expect(failed[0].errors[0]).toMatch(/page\.params\.id/)
+  })
+
+  test('the same read as a var, the stated snapshot, passes', async () => {
+    const file = write('Snapshot.mesa',
+      "<script>\n  import { page } from 'sierra/router'\n  var id = page.params.id\n</script>\n\n<p>{id}</p>\n")
+    expect(await checkMesaFiles([file])).toEqual([])
+  })
+})

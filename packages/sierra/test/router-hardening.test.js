@@ -709,3 +709,50 @@ describe('the scroll map is bounded (FJS-820)', () => {
     })
   })
 })
+
+// ─── FJS-1026 — goto answers whether it committed ────────────────────────────
+
+describe('goto answers whether the navigation committed (FJS-1026)', () => {
+  test('true on a commit, and again through a redirect that lands', async () => {
+    await boot('/')
+    expect(await goto('/leads/')).toBe(true)
+
+    guard(({ to }) => (to.pathname.startsWith('/admin/') ? '/login/' : true))
+    expect(await goto('/admin/')).toBe(true)
+    expect(page.route?.id).toBe('login')
+  })
+
+  test('false when a guard cancels', async () => {
+    await boot('/')
+    guard(() => false)
+    expect(await goto('/leads/')).toBe(false)
+    expect(page.route?.id).toBe('root')
+  })
+
+  test('false when the route module fails to load', async () => {
+    const tree = makeTree()
+    const comps = makeComponents(tree)
+    comps.admin = () => Promise.reject(new Error('import failed'))
+    await boot('/', { components: comps })
+    expect(await goto('/admin/')).toBe(false)
+    expect(page.route?.id).toBe('root')
+  })
+
+  test('false when a redirect loop is stopped', async () => {
+    await boot('/')
+    guard(({ to }) => (to.pathname.startsWith('/admin/') ? '/login/' : to.pathname.startsWith('/login/') ? '/admin/' : true))
+    expect(await goto('/admin/')).toBe(false)
+  })
+
+  test('false when a newer navigation overtook it', async () => {
+    let release
+    const slow = new Promise(r => { release = r })
+    await boot('/', { loaders: { leads: async () => ({ load: () => slow }) } })
+    const first = goto('/leads/')
+    await tick(5)
+    expect(await goto('/admin/')).toBe(true)
+    release('late')
+    expect(await first).toBe(false)
+    expect(page.route?.id).toBe('admin')
+  })
+})

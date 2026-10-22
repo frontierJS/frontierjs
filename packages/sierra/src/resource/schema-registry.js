@@ -387,6 +387,23 @@ export function createSchemaRegistry() {
   }
 
   /**
+   * A `type` declaration by its exact name, or null.
+   *
+   * The shape a custom method's `input` is validated against on the server, so
+   * a screen that fills it in reads it here. Exact name only: a type has no
+   * service to be a plural of, and indexing spellings would let a service named
+   * `assignShifts` resolve to one by accident. Never a model and never an enum.
+   *
+   * @param   {string} name
+   * @returns {object|null}
+   */
+  function typeFor(name) {
+    if (!name || _models[name]) return null
+    const def = _defs[name]
+    return _looksLikeModel(def) ? def : null
+  }
+
+  /**
    * Resolve any spelling to the MODEL NAME as declared in the .lite file.
    *
    * `schemaFor` answers "what is the shape"; this answers "what is it called".
@@ -442,7 +459,7 @@ export function createSchemaRegistry() {
 
   return {
     register: registerSchemas,
-    schemaFor, updateSchemaFor, readSchemaFor, modelNameFor, resolveRef,
+    schemaFor, updateSchemaFor, readSchemaFor, modelNameFor, typeFor, resolveRef,
     suggestModel, allSchemas, allDefs, hasSchemas,
   }
 }
@@ -455,6 +472,7 @@ export const schemaFor       = defaultRegistry.schemaFor
 export const updateSchemaFor = defaultRegistry.updateSchemaFor
 export const readSchemaFor   = defaultRegistry.readSchemaFor
 export const modelNameFor    = defaultRegistry.modelNameFor
+export const typeFor         = defaultRegistry.typeFor
 export const resolveRef      = defaultRegistry.resolveRef
 export const suggestModel    = defaultRegistry.suggestModel
 export const allSchemas      = defaultRegistry.allSchemas

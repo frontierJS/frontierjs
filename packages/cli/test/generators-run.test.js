@@ -264,6 +264,22 @@ describe('the scaffold verification link lands on a page fli new writes', () => 
     }
   })
 
+  // FJS-3345 — `/auth/*` is the API's POST routes; a link a person clicks is a GET
+  // on the web app, so the docs that tell an app what to mail name a page.
+  test('no documented mail link points at an /auth/ route', async () => {
+    const PKGS = resolve(CLI, '..')
+    const files = [
+      join(PKGS, 'auth/README.md'),
+      join(PKGS, 'auth/types.ts'),
+      join(CLI, 'commands/auth/install.md'),
+    ]
+    const hits = []
+    for (const f of files) {
+      for (const m of (await Bun.file(f).text()).matchAll(/\/auth\/[a-z/-]+#token=/g)) hits.push(`${f}: ${m[0]}`)
+    }
+    expect(hits).toEqual([])
+  })
+
   // FJS-3205 / FJS-D1311 — a token in the query string is read by the analytics
   // tag from location.href; a fragment never leaves the browser.
   test('no link carries the token in the query, and both token pages read the fragment', async () => {

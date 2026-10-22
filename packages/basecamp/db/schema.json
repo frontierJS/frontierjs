@@ -6279,7 +6279,7 @@
           "x-aggregatable": "json",
           "x-sortable": "json"
         },
-        "contextType": {
+        "subjectType": {
           "anyOf": [
             {
               "$ref": "#/$defs/NotificationContext"
@@ -6289,7 +6289,7 @@
             }
           ]
         },
-        "contextId": {
+        "subjectId": {
           "type": [
             "string",
             "null"

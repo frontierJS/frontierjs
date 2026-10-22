@@ -89,6 +89,7 @@
       "types": "./src/redact/redact.d.ts",
       "default": "./src/redact/redact.js"
     },
+    "./seal": "./src/seal/seal.js",
     "./search": "./src/search/search.js",
     "./signature": "./src/signature/signature.js",
     "./sigv4": {

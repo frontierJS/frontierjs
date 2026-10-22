@@ -15,6 +15,7 @@ title: DNS & edge
   // it, and a zeroed figure reads as an outage rather than an absence.
   import { session } from '../../session.js'
   import Domain, { domains } from '../../resources/Domain.mesa'
+  import DomainRoute, { domainRoutes } from '../../resources/DomainRoute.mesa'
   import { apps } from '../../resources/App.mesa'
   import { portal } from '../../resources/Portal.mesa'
   import { edge } from '../../resources/Edge.mesa'
@@ -53,10 +54,11 @@ title: DNS & edge
   const list    = domains.tethered({ state: 'local', all: true })
   // Composed: the apps service includes each app's environment and domains.
   const appList = apps.tethered({ state: 'local', composed: true, directives: { limit: 100 } })
+  const routeList = domainRoutes.tethered({ state: 'local', all: true })
   $: { rows = list.rows }
   $: { appById = new Map(appList.rows.map(a => [a.id, a])) }
   $: {
-    const failed = list.error ?? appList.error
+    const failed = list.error ?? appList.error ?? routeList.error
     if (failed) error = failed.message
   }
 
@@ -93,7 +95,7 @@ title: DNS & edge
   }
 
   load()
-  $: session.workspaceId, () => { picked = null; zone = null; list.reload(); appList.reload(); load() }
+  $: session.workspaceId, () => { picked = null; zone = null; list.reload(); appList.reload(); routeList.reload(); load() }
 
   // The service decorates every row with cert_status — one definition, in
   // api/src/services/domains/domains.service.ts, so this screen and the notice
@@ -126,10 +128,9 @@ title: DNS & edge
   $: expiring = rows.filter(r => r.cert_status === 'expiring_soon').length
   $: expired  = rows.filter(r => r.cert_status === 'expired').length
 
-  // How a hostname is served. `appId` and the hostname move by delete-and-create and the
+  // The edit form's `only=` is how a hostname is served. `appId` and the hostname move by delete-and-create and the
   // certificate columns by `uploadCert`, so neither is offered; the primary flag
   // is the app screen's Make primary, which demotes the sibling.
-  const SERVED = ['redirectTo', 'port', 'proxied', 'sslMode']
   let editing = null
 
   function saved() {
@@ -138,6 +139,43 @@ title: DNS & edge
     list.reload()
     load()
   }
+
+  // A prefix of a hostname that ANOTHER app answers (FJS-D1040) — `/api` to the
+  // API app while the hostname's own app serves the rest. The hostname is fixed
+  // once a route exists, so moving one is a remove and an add, and the service
+  // refuses a prefix whose app is the hostname's own.
+  let routing      = null     // {} to add, a route to edit
+  let routeError   = null
+  let removingId   = null
+  $: routeRows = routeList.rows
+  $: routable  = rows.filter(d => !d.redirectTo)
+
+  function routeSaved() {
+    routing = null
+    toasts.success('Path route saved')
+    routeList.reload()
+    load()
+  }
+
+  async function removeRoute(r) {
+    routeError = null; removingId = r.id
+    try {
+      await domainRoutes.service.remove(r.id)
+      routeList.reload()
+      load()
+    } catch (e) {
+      routeError = e.message
+    } finally {
+      removingId = null
+    }
+  }
+
+  const ROUTE_COLUMNS = [
+    { name: 'hostname', label: 'Hostname' },
+    { name: 'prefix',   label: 'Path prefix' },
+    { name: 'app',      label: 'Answered by' },
+    { name: 'actions',  label: 'Actions', hideLabel: true },
+  ]
 
   // A certificate is uploaded on the app screen, which holds the one form for
   // it; this links straight to that form for the hostname in question.
@@ -232,6 +270,52 @@ title: DNS & edge
                   </Button>
                 {/if}
                 <Button treatment="ghost" aria-label={`Edit ${d.hostname}`} onclick={() => editing = d}>Edit</Button>
+              </span>
+            </td>
+          </tr>
+        {/snippet}
+      </Table>
+    {/if}
+  </Card>
+
+  <Card>
+    <div class="section-header">
+      <h2 class="h4">Path routes</h2>
+      <Button treatment="outlined" id="route-add" disabled={routable.length === 0} onclick={() => routing = {}}>Add route</Button>
+    </div>
+    <p class="text-sm text-muted">
+      A prefix of a hostname that another app answers — <code>/api</code> to the API app while the
+      hostname's own app serves the rest, so the two share an origin. Both apps must run on the
+      machine the zone points at.
+    </p>
+    {#if routeError}
+      <article class="alert danger" id="route-error">
+        <div class="alert-content">{routeError}</div>
+      </article>
+    {/if}
+    {#if routeRows.length === 0}
+      <p class="text-sm text-muted" id="route-empty">No hostname sends a prefix to a second app.</p>
+    {:else}
+      <Table id="route-rows" columns={ROUTE_COLUMNS} rows={routeRows} striped>
+        {#snippet row(r)}
+          <tr>
+            <td><code>{hostnameOf(r.domainId) ?? r.domainId}</code></td>
+            <td><code>{r.pathPrefix}</code></td>
+            <td>
+              {#if appById.get(r.appId)}
+                <a href={`/apps/${r.appId}/`}>{appById.get(r.appId).name}</a>
+              {:else}
+                <span class="text-muted">—</span>
+              {/if}
+            </td>
+            <td>
+              <span class="cluster">
+                <Button treatment="ghost" aria-label={`Edit ${r.pathPrefix}`} onclick={() => routing = r}>Edit</Button>
+                <Button treatment="ghost" disabled={removingId === r.id}
+                        aria-label={`Delete ${r.pathPrefix}`}
+                        data-confirm={`${r.pathPrefix} on ${hostnameOf(r.domainId) ?? 'that hostname'} goes back to the hostname's own app.`}
+                        data-confirm-title="Delete this route?" data-confirm-label="Delete"
+                        onclick={() => removeRoute(r)}>Delete</Button>
               </span>
             </td>
           </tr>
@@ -357,8 +441,14 @@ title: DNS & edge
   </Card>
 {/if}
 
-<Drawer open={!!editing} title={editing ? `Edit ${editing.hostname}` : ''} onclose={() => editing = null}>
+<Drawer open={!!routing} title={routing?.id ? `Edit ${routing.pathPrefix}` : 'Add a path route'} onclose={() => routing = null}>
+  {#if routing}
+    <DomainRoute record={routing.id ? routing : undefined} oncancel={() => routing = null} ondone={routeSaved} submitId="route-save" />
+  {/if}
+</Drawer>
+
+<Drawer open={!!editing}title={editing ? `Edit ${editing.hostname}` : ''} onclose={() => editing = null}>
   {#if editing}
-    <Domain record={editing} only={SERVED} oncancel={() => editing = null} ondone={saved} submitId="domain-edit-save" />
+    <Domain record={editing} only={['redirectTo', 'port', 'proxied', 'sslMode']} oncancel={() => editing = null} ondone={saved} submitId="domain-edit-save" />
   {/if}
 </Drawer>

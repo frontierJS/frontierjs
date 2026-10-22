@@ -39,7 +39,7 @@ export default defineNotification<Order>({
     .title('Order paid')
     .body(`${order.reference} — ${money(order.total)}`)
     .action('View order', `/orders/${order.id}/`)
-    // contextType/contextId are a loose reference with no foreign key, so a
+    // subjectType/subjectId are a loose reference with no foreign key, so a
     // deleted order leaves its notifications intact rather than cascading them
     // away. The UI treats a missing target as a dead link, not an error.
     .context('Order', order.id)

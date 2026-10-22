@@ -26,7 +26,7 @@
   // below places them.
   const PIER  = { x: 46, w: 8, rows: 13 }
   const BOAT  = { x: 56, y: 12 }
-  const PLANK = { x: PIER.x + PIER.w, y: BOAT.y + GANGWAY.dy, w: BOAT.x + GANGWAY.dx - PIER.x - PIER.w }
+  var PLANK = { x: PIER.x + PIER.w, y: BOAT.y + GANGWAY.dy, w: BOAT.x + GANGWAY.dx - PIER.x - PIER.w }
   const aboard = (x, y) => x >= BOAT.x && x < BOAT.x + FERRY.w && y >= BOAT.y && y < BOAT.y + FERRY.h && hull(x - BOAT.x, y - BOAT.y)
   const dry = (x, y) => (y < 9 + PIER.rows && x >= PIER.x && x < PIER.x + PIER.w)
     || (y === PLANK.y && x >= PLANK.x && x < PLANK.x + PLANK.w)

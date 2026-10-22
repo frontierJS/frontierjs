@@ -123,7 +123,6 @@ packages/junction/
 ├── src/plugins/
 │   ├── manifest/         ← manifest — schema + migration state at /manifest
 │   ├── openapi/          ← openapi() plugin, generateOpenAPI() — 3.1 from the registry
-│   ├── email/            ← mailer plugin, system + campaign senders
 │   ├── webhooks/         ← at-least-once delivery, IWebhookStore, SQLite adapter
 │   ├── devtools/         ← devtools plugin + admin UI
 │   └── outbox/, backfill/, commitments/, export/, metrics/  ← each holds its engine.ts
@@ -1527,6 +1526,11 @@ so the API says so rather than letting the first crash say it.
   worse than an error. The transaction test asks the client
   (`db.$inTransaction`), not the `transactional:` declaration, because a hook
   can run against a method that declaration does not name.
+- **A job or receiver has no call, so it writes with `app.outbox.enqueueOn(tx,
+  job, payload, { tenant })`** inside `app.withDb(db => db.$transaction(tx => …))`.
+  `tx` must be the transaction's client; the actor is `null`. Nothing there
+  knows when the commit lands, so kick `app.outbox.deliver({ db, tenant })`
+  after it for latency — the timer finds the row regardless.
 - **Delivery is at-least-once and no version of it is not.** The queue is a
   separate SQLite file, so the insert there and the delivery mark here cannot be
   one transaction. The relay dispatches under the outbox row's own id and
@@ -1589,8 +1593,11 @@ does.
   cancels now. The move announces through the Litestone tap under the
   transition's name either way.
 - **What a move owes beyond itself is a hook, run in the move's transaction**
-  (`FJS-D368`). `hooks: { 'SubscriptionPeriod.close': defineCommitment({ after: renewPeriod }) }`
-  — keyed `<Model>.<commitment>` — runs inside one `$transaction` on the
+  (`FJS-D368`). Any `*.commitments.ts` under `createApp({ root })` default-exports
+  `{ 'SubscriptionPeriod.close': defineCommitment({ after: renewPeriod }) }`
+  — keyed `<Model>.<commitment>` (`FJS-D1141`); the `hooks` option takes the same
+  map for a caller with no app tree, and a key claimed twice, by two files or by a
+  file and the option, is refused naming both. The hook runs inside one `$transaction` on the
   fire's client, so a closed period and the invoice and next period it owes
   commit together or not at all; a throw rolls both back and fails the fire.
   **The tiers are the service pipeline's, in its order** (`FJS-D1022`):
@@ -1637,7 +1644,7 @@ does.
 | `lookaheadMs` | 5 min | how far ahead a sweep dispatches; must exceed the sweep's interval |
 | `queue` | caravan's default | the queue both jobs run on |
 | `timeZone` | `'UTC'` | whose calendar a day-kind `on:` is read in — a zone, or `(tenant) => zone`, which may be async since a sweep reaches a tenant cold. The fire's delay is to the day's start THERE |
-| `hooks` | none | what a move owes beyond itself, keyed `<Model>.<commitment>` — **Hook tier**: runs in the move's transaction and a throw halts it. Handed `{ db, record, model, commitment, dueAt, timeZone, now, afterCommit, enqueue }` |
+| `hooks` | none | what a move owes beyond itself, beside any `*.commitments.ts` under the app root, keyed `<Model>.<commitment>` — **Hook tier**: runs in the move's transaction and a throw halts it. Handed `{ db, record, model, commitment, dueAt, timeZone, now, afterCommit, enqueue }` |
 
 ---
 
@@ -2298,7 +2305,7 @@ await app.jobs.dispatch('provision-account', { userId: '123' }, {
 
 // Register handlers
 app.jobs.handle('send-email', async (ctx) => {
-  await mailer.send(ctx.data)
+  await ctx.app.mail.send(ctx.data)
 }, { queue: 'email', maxAttempts: 5, retryDelay: [60_000, 300_000, 1_800_000] })
 ```
 
@@ -2328,7 +2335,7 @@ import { defineJob } from '@frontierjs/caravan'
 
 export default defineJob({
   queue: 'email', maxAttempts: 5,
-  handler: async (ctx) => { await mailer.send(ctx.data) },
+  handler: async (ctx) => { await ctx.app.mail.send(ctx.data) },
 })
 ```
 

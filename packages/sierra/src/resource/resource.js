@@ -558,6 +558,12 @@ function refuseOtherShapes(serviceName, opts, extra) {
  * It also labels `ctx.model` in hooks and `resource.context.model`, so naming it
  * is what makes those read as the model rather than as the service.
  *
+ * It may name a `type` block instead (`model: 'AssignShift'`) — the shape a
+ * custom method's `input` is validated against — and the fields, `make()` and
+ * `validate()` come from it. Give `<Form>` an `onsubmit`, since `save()` still
+ * writes through the service's create and patch. A stated name is the only one
+ * tried; one that resolves to nothing warns rather than taking the service's.
+ *
  * ── The payload pipeline: coerce → blankToNull → validate ──────────────────
  *
  * All three are ON by default. They were opt-in until 2026-08-06; every one of
@@ -698,12 +704,22 @@ export function createResource(serviceName, opts = {}, ...extra) {
     // 'statuses' — the service name wearing the label of the model name, which
     // is what this field is documented to be. It also normalizes an accessor
     // spelling ({ model: 'person' }) to the declared 'Person'.
-    const resolvedName = registry.modelNameFor(model, serviceName, singular)
+    //
+    // A `model:` that is stated is the only candidate: falling through to the
+    // service name rendered `Shift`'s form for `{ model: 'AssignShift' }` and a
+    // typo'd name rendered the service's model, both with nothing said.
+    const stated       = typeof opts.model === 'string'
+    const resolvedName = stated
+      ? registry.modelNameFor(model)
+      : registry.modelNameFor(model, serviceName, singular)
     if (resolvedName) {
       schema      = registry.schemaFor(resolvedName)
       updateModel = registry.updateSchemaFor(resolvedName)
       readModel   = registry.readSchemaFor(resolvedName)
       model       = resolvedName
+    } else if (stated && registry.typeFor(model)) {
+      // A `type` has one shape: it is not written in modes.
+      schema = registry.typeFor(model)
     }
 
     if (!schema && registry.hasSchemas() && !modelless) {
@@ -848,6 +864,11 @@ export function createResource(serviceName, opts = {}, ...extra) {
   // its `source` so a caller can say the answer was guessed.
   const labelInfo = labelFieldInfo(fields, idField, modelDef?.['x-label-field'])
 
+  // Column -> its `@collate`. The order a pushed row is placed in, and what a
+  // `<Table>` that sorts its own rows is handed, since neither holds a schema.
+  const collations = Object.fromEntries(
+    Object.entries(fields).filter(([, rule]) => rule?.['x-collate']).map(([name, rule]) => [name, rule['x-collate']]))
+
   // Junction resource — wires WS push events → tether automatically, scoped to
   // the query the tether's last load() ran with. `fields` is what turns a wire
   // operand back into the value the column holds, so the matcher is built here
@@ -866,8 +887,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
       ? { until: (record, params) => leavesAt(modelDef['x-effective'], record, params) }
       : {}),
     // A pushed row is placed in the order the column sorts in, not BINARY.
-    collations: Object.fromEntries(
-      Object.entries(fields).filter(([, rule]) => rule?.['x-collate']).map(([name, rule]) => [name, rule['x-collate']])),
+    collations,
     // Which MODEL these rows are. Junction holds no schema and cannot derive it
     // from the service name, so two services over one model would otherwise be
     // two rows — the thing entries exist to stop (`FJS-D138`).
@@ -2179,7 +2199,11 @@ export function createResource(serviceName, opts = {}, ...extra) {
       // all (`@system`, `@generated`, `@computed`, `@from`, a tenancy stamp) is
       // not reported here: those are not frozen for this row, they are the
       // server's on every row, and a form never offered a box for them.
-      if (rule?.readOnly && !fields[name]?.readOnly) { out.push(name); continue }
+      // A @@transitions field is read-only in an update for another reason: a
+      // move changes it, and it is no more frozen on one row than on another.
+      if (rule?.readOnly && !fields[name]?.readOnly && rule['x-litestone-kind'] !== 'transition') {
+        out.push(name); continue
+      }
 
       // Frozen because the row has REACHED the state that seals it — the
       // answer no schema can carry, which is why it is asked of the record.
@@ -3156,7 +3180,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
      * because the call could not arrive.
      */
     cachedAt: () => _cachedAt,
-    fields, relations, gate, can, transitions, commitments, validate, normalize, coerce,
+    fields, collations, relations, gate, can, transitions, commitments, validate, normalize, coerce,
     version, versionField: versionOf, templateField, conflict,
     formFields, columns, declaredFields, summary, children, filters, options, sealedFields, requiredFields, preview, declined,
     withheld: withheldFor,
@@ -3200,6 +3224,7 @@ function _emptyResource(name) {
     save:    noop,
     move:    noop,
     fields:    {},
+    collations: {},
     relations: {},
     formFields: () => [],
     columns:    () => ({ columns: [], omitted: [] }),

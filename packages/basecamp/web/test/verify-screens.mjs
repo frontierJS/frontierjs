@@ -1619,6 +1619,29 @@ try {
   await click('#domain-edit-save')
   const domEdited = await eventually(async () => (await apiGet(`/domains/${dnsRow?.id}`)).body, d => d?.port === 8443)
   check('a hostname is edited from DNS', domEdited?.port === 8443, JSON.stringify(domEdited?.port))
+
+  // A path route is made and removed from the same screen (`FJS-3323`), not
+  // only through /domain-routes. It needs an app other than the hostname's own.
+  const routeApp = (await apiGet('/apps')).body?.data?.find(a => a.id !== dnsApp?.id)
+  await goto('/dns/')
+  await until(`!!document.getElementById('route-add')`, v => v, 'the DNS screen offers no way to add a path route')
+  await click('#route-add')
+  await until(`!!document.querySelector('#route-save')`, v => v, 'the route drawer never opened')
+  await pickIn('dialog[open] [name=domainId]', dnsRow?.id)
+  await pickIn('dialog[open] [name=appId]', routeApp?.id)
+  await typeIn('dialog[open] [name=pathPrefix]', '/api')
+  await click('#route-save')
+  const madeRoute = await eventually(async () => (await apiGet(`/domain-routes?domainId=${dnsRow?.id}`)).body?.data?.[0], r => !!r)
+  check('a path route is made from DNS', madeRoute?.pathPrefix === '/api' && madeRoute?.appId === routeApp?.id,
+    JSON.stringify(madeRoute))
+  await until(`document.querySelectorAll('#route-rows tbody tr').length`, n => n > 0, 'the new route never listed')
+  const routeText = await text('#route-rows')
+  check('and listed with its hostname, prefix and the app that answers it',
+    routeText.includes('dns-drive.example.test') && routeText.includes('/api') && routeText.includes(routeApp?.name), routeText.slice(0, 160))
+  await byLabel('Delete /api')
+  await confirmIt()
+  const routesLeft = await eventually(async () => (await apiGet(`/domain-routes?domainId=${dnsRow?.id}`)).body?.data, rs => rs?.length === 0)
+  check('and removed from DNS', routesLeft?.length === 0, JSON.stringify(routesLeft))
   await goto('/dns/')
   await until(`!!document.querySelector('[aria-label="Upload a certificate for dns-drive.example.test"]')`, v => v,
     'a hostname with no certificate offers none')

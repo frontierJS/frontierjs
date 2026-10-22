@@ -651,7 +651,7 @@ describe('sync', () => {
     const via = new Proxy(app, { get: (t, k) => k === 'conduit' ? conduit : typeof t[k] === 'function' ? t[k].bind(t) : t[k] })
 
     const settings = { serverId: online1.id } as any
-    const thaw = (appId: string) => app.runAs(admin.userId, { tenant: site.id }, () => thawPreview(via, settings, { appId } as any))
+    const thaw = (appId: string) => app.runAs(admin.id,{ tenant: site.id }, () => thawPreview(via, settings, { appId } as any))
     const out = await thaw(prev.id)
     expect(out.ok).toBe(true)
     expect(sent.map(s => s.path)).toEqual(['/route'])

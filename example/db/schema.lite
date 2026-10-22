@@ -2171,7 +2171,7 @@ model Invoice {
   /// Three days before `dueOn`, while it is still owed. A literal rather than a
   /// stamped column: the lead time is the shop's habit, not a term the customer
   /// was given, so moving it may move reminders not yet sent. The email is an
-  /// outbox row written with the move (`api/src/core/commitments.ts`), so the
+  /// outbox row written with the move (`domain/billing/renewal.commitments.ts`), so the
   /// column cannot say it went when it did not.
   @@transitions(reminded, remind: false -> true @system)
   @@commitment(remind, on: dueOn - 3d, while: status == 'issued')
@@ -3506,8 +3506,8 @@ model Notification {
   userId       String
   type         String
   data         Json
-  contextType  NotificationContext?
-  contextId    String?
+  subjectType  NotificationContext?
+  subjectId    String?
   deliveryKey  String?
   readAt       DateTime?
   createdAt    DateTime   @default(now())

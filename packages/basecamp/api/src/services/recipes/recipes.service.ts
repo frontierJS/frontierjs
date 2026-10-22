@@ -151,7 +151,7 @@ export default createService({
 
     // The counters belong to the job: a client that could set `runCount`
     // could say a script had never been run.
-    const patch = narrowPatch(data, ['slug', 'createdBy', 'runCount', 'lastRunAt'])
+    const patch = narrowPatch(data)
     if (typeof patch.name === 'string' && patch.name !== recipe.name) {
       patch.slug = slugify(patch.name as string)
     }

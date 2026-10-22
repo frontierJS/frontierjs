@@ -478,3 +478,50 @@ const k = 5`)
     expect(await errorsOf(script)).toBe('')
   })
 })
+
+// ─── a call to a function declaration ────────────────────────────────────────
+
+// `const tree = walk(folders.rows)` over `function walk` was a plain const —
+// evaluated once, before the list answered — while the same call to
+// `const walk = () =>` was derived, because only a `const` was in `vars`
+// (FJS-1439). A declaration is a binding this script holds like any other.
+describe('a call to a function declaration (FJS-1439)', () => {
+  const body = (decl) => `<script>
+  import { r } from './r.js'
+  const folders = r.tethered()
+  ${decl}
+  const tree = walk(folders.rows)
+</script>
+<p>{tree.length}</p>`
+
+  it('derives the const as it does for an arrow', async () => {
+    const arrow = await cx(body('const walk = (rows) => rows.slice()'))
+    const decl = await cx(body('function walk(rows) { return rows.slice() }'))
+    expect(arrow).toMatch(/trackDerived/)
+    expect(decl).toMatch(/trackDerived/)
+  })
+
+  it('derives it for an exported declaration too', async () => {
+    const out = await cx(body('export function walk(rows) { return rows.slice() }'))
+    expect(out).toMatch(/trackDerived/)
+  })
+
+  it('moves when the signal the function reads moves', async () => {
+    const c = await mount(`<script>
+  export let n = 1
+  function double() { return n * 2 }
+  const out = double()
+</script>
+<p>{out}</p>`, {}, { n: 1 })
+    expect(c.text()).toBe('2')
+  })
+
+  it('leaves a call to an imported function eager', async () => {
+    const out = await cx(`<script>
+  import { subscribe } from './x.js'
+  const handle = subscribe(1)
+</script>
+<p>{handle}</p>`)
+    expect(out).not.toMatch(/trackDerived/)
+  })
+})

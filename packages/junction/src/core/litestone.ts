@@ -681,6 +681,20 @@ export function declaredTransitionMethods(
   return out
 }
 
+/**
+ * Does the schema name this accessor's model and leave `@@softDelete` off it?
+ * `restore` un-deletes, so on such a model it can only answer 400 from
+ * Litestone; the service leaves it out of its method table instead. A schema
+ * that does not name the model answers false, which keeps the verb.
+ */
+export function declaresNoSoftDelete(schema: unknown, accessor: string): boolean {
+  const resolved = accessorIfModel({ $schema: schema }, accessor)
+  if (!resolved) return false
+  const model = (schema as { models: ParsedModel[] }).models
+    .find(m => m.name.charAt(0).toLowerCase() + m.name.slice(1) === resolved)
+  return !!model && !(model.attributes ?? []).some(a => a.kind === 'softDelete')
+}
+
 function transitionMethod(accessor: string, modelName: string, move: string, serviceName: string, idField: string) {
   return markDeclaredTransition(async function declaredTransition(ctx: ServiceContext): Promise<unknown> {
     if (ctx.id == null || ctx.id === '')

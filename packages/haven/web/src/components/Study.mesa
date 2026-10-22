@@ -136,7 +136,8 @@
   $: said  = [...tabs[at].earlier, ...(state?.messages ?? [])]
   $: all   = said.length ? rowsOf(said, w - 1) : hint(tabs[at].model, tabs[at].resume, tabs[at].reads, tabs[at].transcript)
   $: asking = state?.asking ?? []
-  $: noted = note ? wrapped(`! ${note}`, w - 1).map((text) => ({ text, ink: TONES.danger })) : []
+  var DANGER = TONES.danger
+  $: noted = note ? wrapped(`! ${note}`, w - 1).map((text) => ({ text, ink: DANGER })) : []
   $: panel = [...noted, ...(asking.length ? askRows(asking[0], asking.length - 1, w - 1, Math.max(3, h - 8))
     : state?.waiting ? waitRows(state.waiting, w - 1) : [])]
   $: room  = Math.max(1, h - 3 - panel.length)

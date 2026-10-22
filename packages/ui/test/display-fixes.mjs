@@ -81,5 +81,29 @@ const PAGINATION = 'components/display/Pagination.mesa'
   check(/^var\(--data-accent,\s*var\(--bg-mix,/.test(accent), `--slider-accent reads --data-accent before the tone: ${accent}`)
 }
 
+// FJS-3402: a Table that sorts its own rows holds no schema, so a column the
+// schema declares nocase is told to it; unstated, a column is BINARY.
+{
+  const host = (attrs) => `<script>
+  import Table from './display/Table.mesa'
+  const columns = [{ name: 'name', label: 'Name', sortable: true }]
+  const rows = [{ name: 'BNI' }, { name: 'Bing' }, { name: 'apple' }]
+</script>
+<Table {columns} {rows} orderBy="name" ${attrs}>
+  {#snippet row(r)}<tr><td class="n">{r.name}</td></tr>{/snippet}
+</Table>`
+  const names = async (attrs) => {
+    const out = await renderComponent(host(attrs), {
+      data: {}, cwd: ROOT, filename: 'components/Host.mesa', styleTag: false,
+      tmpDir: join(ROOT, 'components', '.mesa-tmp'),
+    })
+    return [...out.html.matchAll(/<td class="n[^"]*">([^<]*)</g)].map(m => m[1]).join(',')
+  }
+  const nocase = await names(`collations={{ name: 'nocase' }}`)
+  check(nocase === 'apple,Bing,BNI', `a column stated nocase sorts apple, Bing, BNI: ${nocase}`)
+  const binary = await names('')
+  check(binary === 'BNI,Bing,apple', `an unstated column stays BINARY: ${binary}`)
+}
+
 console.log(failed ? `${failed} display-fixes case(s) failed` : 'display-fixes cases hold')
 if (failed) process.exit(1)

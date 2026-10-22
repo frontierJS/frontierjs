@@ -53,9 +53,8 @@ Large commands break into numbered step files sharing `$.config`:
 
 ```
 commands/deploy/
-  index.md            ← orchestrator: sets $.config.stepsDir based on frontier.config.js
-  _steps/             ← legacy CapRover deploy
-  _steps-docker/      ← Docker/SSH/nginx deploy (default for new apps)
+  index.md            ← orchestrator: resolves the deploy block, then runs _steps-docker
+  _steps-docker/      ← Docker/SSH/nginx deploy
   _steps-rollback/    ← rollback flow
   _steps-setup/       ← first-time server setup
 ```
@@ -168,5 +167,5 @@ Compiled command shims live at `<fliRoot>/.fli-tmp/<pid>/c_*.mjs`. Created lazil
 - **Testing**: `bun test`, plus `bun run test:browser` (mesa's CDP harness) for the GUI
 - **Visualization**: FJSChain — plain HTML/JS in `@frontierjs/css`, served with no network
 - **Port management**: `core/ports.js` with lock manager at `~/.fli/sessions.lock`
-- **Deploy infrastructure**: SSH + Docker + nginx, no external platform required (CapRover is legacy fallback only)
+- **Deploy infrastructure**: SSH + Docker + nginx, no external platform required
 - **Monorepo scope**: `@frontierjs`

@@ -227,7 +227,7 @@ Done when: `inbox -f` prints a letter sent from another `HOME` within a second, 
 Goal: the host stores only what it cannot read.
 Done when: a unit spec in toolbelt opens what it sealed and refuses a tampered or a mis-addressed one, and the Durable Object holds only ciphertext after a `tell`.
 
-- [ ] 3.1 `@frontierjs/toolbelt/seal`: `seal(publicKey, bytes)` and
+- [x] 3.1 `@frontierjs/toolbelt/seal`: `seal(publicKey, bytes)` and
   `open(privateKey, sealed)`, an ephemeral X25519 key, HKDF over both public
   keys, AES-256-GCM — HPKE's base mode in WebCrypto, zero dependencies, so a
   terminal and a browser run one function. `mailbox` is already toolbelt's
@@ -236,9 +236,16 @@ Done when: a unit spec in toolbelt opens what it sealed and refuses a tampered o
   AES-GCM sealed to a browser's P-256 key; its curve and `info` strings are
   fixed by the protocol, so it shares no code, but its HKDF is the second
   copy to look at when this lands.
+  Built: `seal`, `open` (null for anything that does not open) and
+  `generateSealingKeys`, sealed value `v1.` + base64url(enc ‖ ciphertext),
+  `info` `frontierjs/seal v1`. `test/specs/seal.spec.js` covers the round
+  trip, a flipped byte, another member's key, a cut and a foreign version,
+  under bun and node; `@hpke/core` opened what it sealed and it opened
+  `@hpke/core`'s, both runtimes, from a scratch check not committed. The
+  webpush HKDF stays its own: node's `hkdfSync` there, RFC 8291's labels.
 - [ ] 3.2 A sealing key beside the signing key: `key.json` gains an X25519
   pair, published on the member row at join, or by a signed update for a
-  member who joined before it. **Needs Q2.**
+  member who joined before it. Q2 ruled a second pair (`FJS-D1400`).
 - [ ] 3.3 `fli tell <nick> --env KEY...`: env values sealed to a person, read
   once, gone. `env:send`'s key picking (`--file`, `-g`) is reused rather than
   copied. Prints why when the recipient has no sealing key yet.

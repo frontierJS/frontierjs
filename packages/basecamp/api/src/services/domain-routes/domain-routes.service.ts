@@ -73,7 +73,7 @@ export default createService({
   async patch() {
     const route = await getScoped('domainRoute', 'Domain route')
     // The Domain is fixed: moving a prefix to another host is a delete and a create.
-    const patch = narrowPatch($.data as Record<string, unknown>, ['domainId'])
+    const patch = narrowPatch($.data as Record<string, unknown>)
     if ('pathPrefix' in patch) patch.pathPrefix = normalizePrefix(patch.pathPrefix)
     if (changesNothing(patch)) return route
     const domain = await guard(route.domainId, (patch.appId as string | undefined) ?? route.appId)

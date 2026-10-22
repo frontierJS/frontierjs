@@ -790,6 +790,24 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       delete fieldSchema['x-litestone-seal']
     }
 
+    // What the UPDATE schema withholds from every caller by what the column IS
+    // rather than by an attribute on it: the three row stamps, the tenant
+    // column, and the field a @@transitions names -- a caller moves that one by
+    // a MOVE and never by naming it (`FJS-D1243`). The key is not in the set: a
+    // client sends the row's id in its patch body, so `db.$primaryKey` is what
+    // names it.
+    if (mode === 'update' && !fieldSchema.readOnly) {
+      const moved = model.attributes?.some(a => a.kind === 'transitions' && a.field === field.name)
+      const kind = moved ? 'transition'
+        : field.name === 'workspaceId' ? 'tenancy'
+        : ['createdAt', 'updatedAt', 'deletedAt'].includes(field.name) ? 'stamp'
+        : null
+      if (kind) {
+        fieldSchema.readOnly = true
+        fieldSchema['x-litestone-kind'] = kind
+      }
+    }
+
     // @transient — accepted on the wire, stored nowhere. The write-mode-only
     // half is decided above; this is what says so to a consumer, which is how a
     // generated form knows to offer a control for a value no read answers.

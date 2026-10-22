@@ -239,8 +239,9 @@ export function buildUrl(path, params = {}, trailingSlash = 'always') {
   const normalized = normalizePath(path, trailingSlash)
   // A cleared control is absent from the URL. The encoder sends `[]` and `{}`
   // as filters, so a multi-select with nothing picked is dropped here or it
-  // reads back as an `in` list that matches no row.
-  const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '' && !isEmptyContainer(v))
+  // reads back as an `in` list that matches no row. `null` stays: it is IS NULL
+  // (the rows with no collection), and dropping it navigated to every row.
+  const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== '' && !isEmptyContainer(v))
   const hash = _hashOf(path)
 
   // `params` REPLACES the query — it does not merge with one the path carries.

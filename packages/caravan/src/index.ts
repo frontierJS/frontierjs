@@ -15,7 +15,6 @@
 // the job — see JobContext in types.ts.
 
 import { timingSafeEqual } from 'node:crypto'
-import { join }            from 'node:path'
 import { occurrenceKey } from '@frontierjs/toolbelt/history'
 import { jsonLoss, jsonLossAdvice } from '@frontierjs/toolbelt/json'
 import { REDACTED } from '@frontierjs/toolbelt/redact'
@@ -1223,7 +1222,7 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
       // admin routes this mounts are registered in time to be served.
       applyJunctionConfig(app)
       mountAdminRoutes(app)
-      if (app.root) jobsDir = join(app.root, 'jobs')
+      if (app.root) jobsDir = app.root
       await loadJobFiles()
     },
 

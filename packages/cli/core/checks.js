@@ -294,6 +294,15 @@ function safeRunnables(root) {
   try { return runnables(root) } catch { return [] }
 }
 
+/** Whether a `../` proof target's sibling checkout is on disk and has no such script or file. */
+function siblingLacks(t, root) {
+  const dir = resolve(root, t.where)
+  if (!existsSync(dir)) return false
+  if (t.command === null) return !existsSync(join(dir, t.name))
+  const script = t.name.replace(/^bun run /, '').split(/\s+/)[0]
+  try { return !JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).scripts?.[script] } catch { return true }
+}
+
 // Migration files, one directory deep — a schema declaring `database` blocks
 // keeps them under db/migrations/<name>/.
 function walkSql(dir) {
@@ -1638,8 +1647,8 @@ const CHECKS = {
       for (const { file, errors } of verdict.failed) {
         findings.push({
           file,
-          message: `does not compile — ${errors.length} Mesa error(s), which \`vite build\` ` +
-                   `would stop on:\n` + errors.map(e => `    ${e}`).join('\n'),
+          message: `does not compile clean — ${errors.length} Mesa error(s) or reactivity hint(s), ` +
+                   `which \`vite build\` stops on or \`bun run dev\` prints:\n` + errors.map(e => `    ${e}`).join('\n'),
         })
       }
     }
@@ -3260,10 +3269,19 @@ const CHECKS = {
         continue
       }
       for (const t of targets) {
-        if (t.kind !== 'unknown') continue
         // A sibling checkout (`../fjs-prototypes/chat`) is graded where it is
-        // present; CI checks out this repository alone (FJS-D1179).
-        if (t.where.startsWith('../') && t.dir === null) continue
+        // present; CI checks out this repository alone (FJS-D1179). The probe is
+        // here and not in `resolveRun`, whose answer the committed report reads.
+        if (t.kind === 'outside' && siblingLacks(t, root)) {
+          findings.push({
+            file: join(root, DRIVES_FILE), line: p.line,
+            message: `the proof table sends a change in "${p.changed}" to \`${t.where}\`: ` +
+                     `\`${t.name}\`, and ${t.dir} declares no such script or file. ` +
+                     'A row that names a drive which has been renamed is advice that fails when it is taken.',
+          })
+          continue
+        }
+        if (t.kind !== 'unknown') continue
         findings.push({
           file: join(root, DRIVES_FILE), line: p.line,
           message: `the proof table sends a change in "${p.changed}" to \`${t.where}\`: ` +

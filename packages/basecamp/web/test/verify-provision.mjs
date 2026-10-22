@@ -126,8 +126,9 @@ writeFileSync(join(ALPHA, 'web', 'index.html'), '<h1>alpha</h1>\n<script type="m
 writeFileSync(join(ALPHA, 'web', 'main.js'), 'document.body.dataset.api = import.meta.env.FRONTIER_PUBLIC_API_URL\n')
 // …and reads FRONTIER_PORT_FE the way a scaffolded config does: `fli dev` leaves an
 // app that ignores it at slot 0 and refuses when 8000 is held, so Start app put
-// no port on the card on any machine with a dev server up.
-writeFileSync(join(ALPHA, 'web', 'config', 'vite.config.js'), 'export default { server: { port: Number(process.env.FRONTIER_PORT_FE ?? 8000) } }\n')
+// no port on the card on any machine with a dev server up. envPrefix is sierra's
+// own: without it vite leaves FRONTIER_PUBLIC_API_URL out of the bundle.
+writeFileSync(join(ALPHA, 'web', 'config', 'vite.config.js'), 'export default { envPrefix: [\'VITE_\', \'FRONTIER_PUBLIC_\'], server: { port: Number(process.env.FRONTIER_PORT_FE ?? 8000) } }\n')
 mkdirSync(join(ALPHA, 'db'), { recursive: true })
 writeFileSync(join(ALPHA, 'db', 'schema.lite'), 'model Lead { id Int @id }\n')
 // A stand-in for the checkout's own `fli done`, which the workbench runs after
@@ -1481,7 +1482,7 @@ try {
   check('a step whose session ticked its box offers no manual tick',
     !await evaluate(`!!${delta}.querySelector('[data-step="0.2"] .workbench-step-open')`))
   // The strip of chat tabs is drawn from a second chat on; the pin is the count.
-  const deltaChats = async () => (await call('GET', '/workbench', 'pins')).body?.pins?.find(x => x.id === deltaPin?.id)?.chats?.length
+  const deltaChats = async () => (await call('POST', '/workbench', 'pins')).body?.pins?.find(x => x.id === deltaPin?.id)?.chats?.length
   const chatsBefore = await deltaChats()
   check('Next is held while the plan has an open question, and says which',
     await evaluate(`${button(delta, 'Next')}.disabled`) && /Which mail provider\?/.test(await evaluate(`${button(delta, 'Next')}.title`)))
@@ -1699,7 +1700,7 @@ try {
   const registered = await heartbeat(credential, { outpost_url: `https://localhost:${MACHINE_PORT}` })
   check('the machine reports its command port', registered.status === 200, `${registered.status}`)
 
-  const alphaPin = (await call('GET', '/workbench', 'pins')).body?.pins?.find(p => !p.from)
+  const alphaPin = (await call('POST', '/workbench', 'pins')).body?.pins?.find(p => !p.from)
   const projectId = (await call('GET', '/projects')).body?.data?.[0]?.id
   const settings = { projectId, app: '.', domain: 'preview.example.test', apiUrl: 'https://api.example.test', serverId }
 

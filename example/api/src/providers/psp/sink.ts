@@ -60,8 +60,11 @@ const OUTBOUND_KEY = process.env.SHOP_PSP_WEBHOOK_SECRET ?? 'dev-psp-webhook-sec
 
 /** Where the shop listens. `apiPrefix` is `/api`, and this is the provider's
  *  configuration rather than something it discovers — a real one is told the
- *  URL in a dashboard. */
-const HOOK_URL = process.env.PSP_HOOK_URL ?? 'http://localhost:8110/api/webhooks/payments'
+ *  URL in a dashboard. The port follows `API_PORT`: a checkout on a port slot
+ *  (`docs/PORTS.md`) has no API on 8110, and a webhook posted there is
+ *  refused, so no card is ever filed. */
+const HOOK_URL = process.env.PSP_HOOK_URL
+  ?? `http://localhost:${process.env.API_PORT ?? 8110}/api/webhooks/payments`
 
 export interface Intent {
   id:       string

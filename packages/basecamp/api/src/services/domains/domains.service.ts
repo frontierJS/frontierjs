@@ -147,9 +147,7 @@ export default createService({
     const asked = ($.data ?? {}) as Record<string, unknown>
     if ('hostname' in asked && String(asked.hostname).trim().toLowerCase() !== domain.hostname.toLowerCase())
       throw new BadRequest('A hostname is fixed once added — add the new one, then delete this one')
-    // The cert columns are `uploadCert`'s, never a client's.
-    const patch = narrowPatch($.data as Record<string, unknown>,
-      ['appId', 'hostname', 'certSecretId', 'certKind', 'certIssuedAt', 'certExpiresAt'])
+    const patch = narrowPatch($.data as Record<string, unknown>)
 
     if (changesNothing(patch)) return decorate(domain)
 
@@ -201,15 +199,16 @@ export default createService({
       },
     })
 
+    const cert = {
+      certSecretId:  secret.id,
+      certKind:      kind ?? 'uploaded',
+      certIssuedAt:  issuedAt ?? new Date().toISOString(),
+      certExpiresAt: expiresAt,
+    }
     const updated = await db().domain.update({
       where: { id: domain.id },
-      data: {
-        certSecretId:  secret.id,
-        certKind:      kind ?? 'uploaded',
-        certIssuedAt:  issuedAt ?? new Date().toISOString(),
-        certExpiresAt: expiresAt,
-        version:       domain.version,
-      },
+      data: { ...cert, version: domain.version },
+      system: Object.keys(cert),
     })
     return decorate(updated)
   },

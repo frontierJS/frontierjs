@@ -27,8 +27,8 @@ model Notification {
   userId      String
   type        String
   data        Json
-  contextType String?
-  contextId   String?
+  subjectType String?
+  subjectId   String?
   deliveryKey String?
   readAt      DateTime?
   createdAt   DateTime  @default(now())

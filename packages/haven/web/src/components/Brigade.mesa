@@ -101,7 +101,7 @@
   const PASS  = box(pass)
   const LAMPS = box(lamps)
   const BELL  = box(bell)
-  const TICKETS = Math.floor((RAIL.w + TICKET.gap) / (TICKET.w + TICKET.gap))
+  var TICKETS = Math.floor((RAIL.w + TICKET.gap) / (TICKET.w + TICKET.gap))
 
   let workers = readWorkers()
   let now  = Date.now()

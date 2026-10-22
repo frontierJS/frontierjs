@@ -416,3 +416,52 @@ describe('defineMethod carries the input with the body (FJS-503)', () => {
     } as never)).toThrow(/defineMethod\('PayOrder'.*'Other'/)
   })
 })
+
+// ─── an input on a CRUD verb ──────────────────────────────────────────────
+
+// The declaration REPLACES the model-derived validator (FJS-2873). Left in
+// place, autoValidate refused a wire-only key the type names and the model
+// does not, before validateInput ran.
+describe('an input on a CRUD verb replaces autoValidate', () => {
+  const CRUD_SCHEMA = `
+    type NewOrder { status String  expiresIn Int @gte(1) }
+    model Order { id Int @id  status String @default("new") }
+  `
+
+  async function mkCrud() {
+    const db  = await createClient({ db: ':memory:', schema: CRUD_SCHEMA })
+    const app = createApp({ db: db as never })
+    const seen: unknown[] = []
+    app.services.register(buildService({
+      name: 'orders', model: 'Order', db: db as never,
+      methods: ['find', 'get', { method: 'create', input: 'NewOrder' }, 'patch'] as never,
+      hooks: { before: { create: [function seeIt(ctx: any) { seen.push({ ...ctx.data }) }] } },
+    } as never))
+    await app._startForTest()
+    return { app, seen }
+  }
+
+  test('a key the type names and the model does not reaches the method', async () => {
+    const { app } = await mkCrud()
+    // The Data boundary would refuse expiresIn if it reached the write, so the
+    // proof is that validation passed: the answer is whatever the write says.
+    let err: any
+    try { await call(app, 'create', { status: 'x', expiresIn: 5 }) } catch (e) { err = e }
+    expect(JSON.stringify(err?.data ?? err?.message ?? '')).not.toMatch(/is not a field of Order/)
+  })
+
+  test('the declared type still refuses what it declares', async () => {
+    const { app } = await mkCrud()
+    let err: any
+    try { await call(app, 'create', { status: 'x', expiresIn: 0 }) } catch (e) { err = e }
+    expect(err.code ?? err.status ?? err.statusCode).toBe(400)
+    expect(JSON.stringify(err.data ?? err.message)).toMatch(/expiresIn/)
+  })
+
+  test('a CRUD verb beside it with no input keeps autoValidate', async () => {
+    const { app } = await mkCrud()
+    let err: any
+    try { await call(app, 'patch', { status: 'x', nope: 1 }) } catch (e) { err = e }
+    expect(JSON.stringify(err?.data ?? err?.message ?? '')).toMatch(/not a field of Order/)
+  })
+})

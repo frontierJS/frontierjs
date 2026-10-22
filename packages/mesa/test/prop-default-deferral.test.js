@@ -100,3 +100,45 @@ describe('a prop fallback that names a reactive variable (FJS-899)', () => {
     expect(ctx.result).toContain(`$$option.props.label : 'x'`)
   })
 })
+
+// FJS-1501: a plain `const` is not reactive, and a fallback reading it threw
+// `Cannot access 'a' before initialization` all the same.
+describe('a prop fallback that names a plain const (FJS-1501)', () => {
+  it('mounts an `export let` prop whose fallback reads a plain const', async () => {
+    const C = await build(`<script>
+  const a = 'x'
+  export let b = a
+</script>
+<p>{b}</p>`, 'PlainConstLet.mesa')
+    expect(mount(C).textContent).toBe('x')
+  })
+
+  it('mounts it when the const reads an import-shaped member', async () => {
+    const C = await build(`<script>
+  const settings = { phone: '555' }
+  const phone = settings.phone
+  export let text = settings.text || phone
+</script>
+<p>{text}</p>`, 'PlainConstChain.mesa')
+    expect(mount(C).textContent).toBe('555')
+  })
+
+  it('mounts `export const` and `export var` the same way', async () => {
+    const C = await build(`<script>
+  const a = 'x'
+  export const b = a + '1'
+  export var c = a + '2'
+</script>
+<p>{b}{c}</p>`, 'PlainConstOthers.mesa')
+    expect(mount(C).textContent).toBe('x1x2')
+  })
+
+  it('still lets the parent win', async () => {
+    const C = await build(`<script>
+  const a = 'x'
+  export let b = a
+</script>
+<p>{b}</p>`, 'PlainConstParent.mesa')
+    expect(mount(C, { b: 'given' }).textContent).toBe('given')
+  })
+})

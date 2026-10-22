@@ -10,7 +10,7 @@
 // drivers never called builder.build(), so they read chainable methods instead
 // of values, and both transports still shipped empty:
 //
-//   in-app row → data:{}, contextType:null, contextId:null
+//   in-app row → data:{}, subjectType:null, subjectId:null
 //   email      → no subject, text:"", html = an empty wrapper div
 //
 // and notify() reported success. Every assertion below that inspects a payload
@@ -104,8 +104,8 @@ describe('fan-out to all three transports', () => {
     expect(row.data.body).toBe('Hi u1')
     expect(row.data.action).toEqual({ label: 'Get started', url: '/dashboard' })
     expect(row.data.plan).toBe('pro')
-    expect(row.contextType).toBe('Order')
-    expect(row.contextId).toBe('7')
+    expect(row.subjectType).toBe('Order')
+    expect(row.subjectId).toBe('7')
   })
 
   test('a ULID context id is stored whole (FJS-1270)', async () => {
@@ -113,8 +113,8 @@ describe('fan-out to all three transports', () => {
 
     const rows = await h.rows()
     const row  = rows[rows.length - 1]
-    expect(row.contextType).toBe('Shift')
-    expect(row.contextId).toBe('01K5Z9QW8YR3N4T6V7X8Y9Z0AB')
+    expect(row.subjectType).toBe('Shift')
+    expect(row.subjectId).toBe('01K5Z9QW8YR3N4T6V7X8Y9Z0AB')
   })
 
   test('an email notification sends a real subject AND body', async () => {

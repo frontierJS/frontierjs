@@ -25,7 +25,7 @@ const src = new URL('../src/import/', import.meta.url).pathname
 // `tools/introspect.js` reads a live SQLite database and is graded the same way
 // — one table for both, or two answers to *how bad is this*. Leaving it off the
 // list is how a kind it emits ends up ungraded and therefore `changed`.
-const PRODUCERS = ['prisma.js', 'rails.js', 'sql.js', 'frappe.js', 'polymorphic.js']
+const PRODUCERS = ['prisma.js', 'rails.js', 'sql.js', 'frappe.js', 'polymorphic.js', 'index.js']
   .map(f => join(src, f))
   .concat([new URL('../src/tools/introspect.js', import.meta.url).pathname])
 
@@ -531,5 +531,44 @@ model Status {
   id Int @id
 }`)).toEqual(['FathersOnVerses', '_ClientToTag'])
     expect(tierOf('model-name-not-singular')).toBe('noted')
+  })
+})
+
+// `litestone types` refuses a model named for another's generated shape
+// (`FJS-D1282`), and an importer that does not say so hands over a schema the
+// author learns cannot be typed one command later (`FJS-3423`).
+describe('a model named for another model\'s generated type is noted (`FJS-3423`)', () => {
+  const collisions = (src: string, format = 'prisma') =>
+    convert({ source: src, format, label: 'fx' }).gaps
+      .filter(g => g.kind === 'generated-name-collision').map(g => g.model)
+
+  test('Project beside ProjectUpdate is named, and the schema is emitted as written', () => {
+    const r = convert({ source: `model Project {
+  id Int @id
+}
+model ProjectUpdate {
+  id Int @id
+}
+model Task {
+  id Int @id
+}`, format: 'prisma', label: 'fx' })
+    expect(r.gaps.filter(g => g.kind === 'generated-name-collision').map(g => g.model)).toEqual(['ProjectUpdate'])
+    expect(r.lite).toContain('model ProjectUpdate')
+    expect(tierOf('generated-name-collision')).toBe('noted')
+  })
+
+  test('a Frappe doctype named for one is named too', () => {
+    const doc = (name: string) => ({ doctype: 'DocType', name, fields: [{ fieldname: 'title', fieldtype: 'Data' }] })
+    const r = convert({ source: [doc('Project'), doc('Project Update')], format: 'frappe', label: 'fx' })
+    expect(r.gaps.filter(g => g.kind === 'generated-name-collision').map(g => g.model)).toEqual(['ProjectUpdate'])
+  })
+
+  test('unrelated models are not', () => {
+    expect(collisions(`model Project {
+  id Int @id
+}
+model Task {
+  id Int @id
+}`)).toEqual([])
   })
 })

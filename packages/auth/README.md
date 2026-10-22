@@ -60,7 +60,7 @@ export const auth = createLitestoneAuth(db, {
     await mailer.send({
       to:      email,
       subject: 'Reset your password',
-      html:    `<a href="${env.FRONTIER_APP_URL}/auth/password-reset/confirm#token=${token}">Reset</a>`,
+      html:    `<a href="${env.FRONTIER_APP_URL}/reset/#token=${token}">Reset</a>`,
     })
   },
   onEmailVerificationRequested: async ({ email, token }) => {

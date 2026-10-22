@@ -34,8 +34,8 @@ model Notification {
   userId      String              // String, not Int — auth issues uuid ids
   type        String              // the notification's stable name
   data        Json                // whatever its formatter built
-  contextType String?             // a loose reference, with no foreign key
-  contextId   String?
+  subjectType String?             // a loose reference, with no foreign key
+  subjectId   String?
   deliveryKey String?             // the definition's `key`, so a retry writes no second row
   readAt      DateTime?           // null = unread
   createdAt   DateTime  @default(now())
@@ -69,13 +69,13 @@ attribute and no JS-string predicate.
 (`PaymentReceived.notification.ts`), or the `type:` it states. Not a foreign key,
 not an enum: adding a notification type requires no migration.
 
-`contextType`/`contextId` are a loose polymorphic reference. No foreign key by
+`subjectType`/`subjectId` are a loose polymorphic reference. No foreign key by
 design — notifications survive record deletion without cascades.
 
-That is also why `fli check`'s `polymorphic-subject` asks about `contextType`:
+That is also why `fli check`'s `polymorphic-subject` asks about `subjectType`:
 with no foreign key, nothing refuses a value that names nothing — not a
 migration, not a seed, not `asSystem()`. An app whose contexts are a known set
-constrains the one column that can be, `@@check("contextType IN ('Order',
+constrains the one column that can be, `@@check("subjectType IN ('Order',
 'Invoice')")` or a `@values` set; an app whose set grows with every model
 baselines the rule to say so. Either answer is fine and neither is the default,
 which is why the check asks.
@@ -87,6 +87,7 @@ which is why the check asks.
 ```typescript
 // api/src/app.ts
 import { notifications } from '@frontierjs/notifications'
+import { mail, createResendMailer } from '@frontierjs/junction/mail'
 
 // mail must be configured before notifications if the email transport is used
 app.configure(mail({ mailer: createResendMailer({
@@ -111,7 +112,7 @@ The plugin declares `requires: ['mailer']` when the email transport uses the mai
 
 ## Writing a notification
 
-A notification is a file under `notifications/`, named for the type it writes.
+A notification is a `*.notification.ts` file, named for the type it writes.
 The file name IS the type — `PaymentReceived.notification.ts` is
 `PaymentReceived`, verbatim, the same rule `<name>.job.ts` follows — so nothing
 restates it and nothing can drift from what the browser reads back.
@@ -194,8 +195,8 @@ app.notifications           // every type this app declares, by name
 
 ### Where they are found
 
-In `notifications/` beside the app's root — `createApp({ root: import.meta.url })`
-(`FJS-D1080`). An app with no root loads none, and its definitions then have to
+Anywhere under the app's root — `createApp({ root: import.meta.url })`
+(`FJS-D1080`, `FJS-D1141`), so a notification sits in its domain folder; `node_modules` is skipped. An app with no root loads none, and its definitions then have to
 state `type:` themselves.
 
 ### Renaming
@@ -476,7 +477,7 @@ Standard Junction service — policy scopes all queries to the current user auto
 ```
 GET  /notifications               — all for current user
 GET  /notifications?readAt=null   — unread only
-GET  /notifications?contextType=Order&contextId=123
+GET  /notifications?subjectType=Order&subjectId=123
 PATCH /notifications/456          { readAt: "2026-04-18T..." }
 ```
 

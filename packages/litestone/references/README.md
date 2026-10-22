@@ -54,15 +54,11 @@ disagree, the disagreement is the finding.
 
 ## Two things this catalog found on its first pass
 
-**The polymorphic subject exists twice under two names.** `AuditEvent` in
-basecamp carries `subjectType` / `subjectId` with an `@@index` on the pair;
-`Notification` in `@frontierjs/notifications` carries `contextType` / `contextId` for the same
-idea — *which row is this row about*. Two apps in one repo, one concept, two
-spellings, and nothing anywhere could have noticed.
-
-The catalog's preference is **`subjectType` / `subjectId`** for anything new.
-That is a recommendation for the next model, not a demand to migrate the two that
-exist: renaming a column is a migration, and neither is wrong.
+**The polymorphic subject is `subjectType` / `subjectId`** (`FJS-D1361`).
+`AuditEvent` in basecamp carries it with an `@@index` on the pair, and
+`Notification` in `@frontierjs/notifications` carries it for the same idea —
+*which row is this row about*. It was once spelt `contextType` / `contextId`
+there; one concept now has one spelling.
 
 **`@frontierjs/notifications` wrote to a model it did not ship, and now it
 ships it.** `drivers/inapp.ts` calls `asSystem().notification.create()` naming

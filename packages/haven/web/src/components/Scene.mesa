@@ -181,6 +181,7 @@
   // top-level const that reads a prop or a `let` is derived — made when it is
   // first read, inside whatever effect reads it, and again on every step.
   var here = room ? presence(`room:${room.id}`, { meta: { ...spawn, ...(worn.ink && { ink: worn.ink }), ...(worn.pet && { pet: true }) } }) : null
+  $: page.pathname
   $.onMount(() => {
     if (!here) return
     remember(stage, page.pathname)
@@ -320,6 +321,11 @@
 
   /** Whether a figure drawn as `as` may stand on `nx, ny`, every cell it covers floor. */
   const stands = (nx, ny, as = shape) => standsOn({ x: nx, y: ny }, as).every((c) => stage.walkable(c.x, c.y))
+
+  function wear(p) {
+    pet = worn.pet = p
+    sync()
+  }
 
   function moveTo(nx, ny) {
     facing = facingOf({ x, y }, { x: nx, y: ny }) ?? facing
@@ -527,7 +533,7 @@
     <Weather {stage} />
     <Hush {here} lines={roomLines?.rows ?? []} hush={(id) => { hushed = id; sync() }} />
     <Emotes {stage} {here} {x} {y} {view} {spawn} {emote} {moveTo} emoteTo={(e) => { emote = e; sync() }} />
-    <Pets {stage} {here} {x} {y} {view} {spawn} {facing} {ink} {pet} petTo={(p) => { pet = worn.pet = p; sync() }} />
+    <Pets {stage} {here} {x} {y} {view} {spawn} {facing} {ink} {pet} petTo={wear} />
     <Work />
   {/if}
 </div>

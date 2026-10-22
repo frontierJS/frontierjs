@@ -1811,7 +1811,6 @@ export interface WorkspaceCreate {
   name: string
   slug: string
   type?: WorkspaceType
-  ownerId: string
   settings?: unknown
   status?: WorkspaceStatus
   ingressAccountId?: string | null
@@ -1824,12 +1823,15 @@ export interface WorkspaceUpdate {
   name?: string
   slug?: string
   type?: WorkspaceType
-  ownerId?: string
   settings?: unknown
   status?: WorkspaceStatus
   ingressAccountId?: string | null
   ingressZoneId?: string | null
   version: number
+}
+
+export interface WorkspaceSystem {
+  ownerId?: string
 }
 
 export interface WorkspaceWhere extends WhereBase {
@@ -2140,11 +2142,6 @@ export interface ApiKeyCreate {
   name: string
   scopes?: string[]
   expiresAt?: string | Date | null
-  revokedAt?: string | Date | null
-  lastUsedAt?: string | Date | null
-  totalUses?: number
-  usageDate?: string | null
-  usesOnDate?: number
   createdBy?: string | null
 }
 
@@ -2155,17 +2152,17 @@ export interface ApiKeyUpdate {
   name?: string
   scopes?: string[]
   expiresAt?: string | Date | null
-  revokedAt?: string | Date | null
-  lastUsedAt?: string | Date | null
-  totalUses?: number
-  usageDate?: string | null
-  usesOnDate?: number
   createdBy?: string | null
 }
 
 export interface ApiKeySystem {
   credentialId?: string | null
   tokenHint?: string
+  revokedAt?: string | Date | null
+  lastUsedAt?: string | Date | null
+  totalUses?: number
+  usageDate?: string | null
+  usesOnDate?: number
 }
 
 export interface ApiKeyWhere extends WhereBase {
@@ -3039,10 +3036,6 @@ export interface DomainCreate {
   port?: number
   proxied?: boolean
   sslMode?: string
-  certSecretId?: string | null
-  certKind?: string | null
-  certIssuedAt?: string | Date | null
-  certExpiresAt?: string | Date | null
 }
 
 export interface DomainUpdate {
@@ -3055,11 +3048,14 @@ export interface DomainUpdate {
   port?: number
   proxied?: boolean
   sslMode?: string
+  version: number
+}
+
+export interface DomainSystem {
   certSecretId?: string | null
   certKind?: string | null
   certIssuedAt?: string | Date | null
   certExpiresAt?: string | Date | null
-  version: number
 }
 
 export interface DomainWhere extends WhereBase {
@@ -3742,8 +3738,6 @@ export interface RecipeCreate {
   description?: string | null
   script: string
   timeoutSeconds?: number
-  lastRunAt?: string | Date | null
-  runCount?: number
   createdBy?: string | null
 }
 
@@ -3755,9 +3749,12 @@ export interface RecipeUpdate {
   description?: string | null
   script?: string
   timeoutSeconds?: number
+  createdBy?: string | null
+}
+
+export interface RecipeSystem {
   lastRunAt?: string | Date | null
   runCount?: number
-  createdBy?: string | null
 }
 
 export interface RecipeWhere extends WhereBase {
@@ -4231,11 +4228,8 @@ export interface NotificationChannelCreate {
   name: string
   kind: ChannelKind
   config?: unknown
-  secretId?: string | null
   secret?: string | null
   isActive?: boolean
-  lastTestAt?: string | Date | null
-  lastDeliveryAt?: string | Date | null
   createdBy?: string | null
 }
 
@@ -4245,13 +4239,16 @@ export interface NotificationChannelUpdate {
   name?: string
   kind?: ChannelKind
   config?: unknown
-  secretId?: string | null
   secret?: string | null
   isActive?: boolean
-  lastTestAt?: string | Date | null
-  lastDeliveryAt?: string | Date | null
   createdBy?: string | null
   version: number
+}
+
+export interface NotificationChannelSystem {
+  secretId?: string | null
+  lastTestAt?: string | Date | null
+  lastDeliveryAt?: string | Date | null
 }
 
 export interface NotificationChannelWhere extends WhereBase {
@@ -5488,8 +5485,8 @@ export interface Notification {
   userId: string
   type: string
   data: unknown
-  contextType?: NotificationContext | null
-  contextId?: string | null
+  subjectType?: NotificationContext | null
+  subjectId?: string | null
   deliveryKey?: string | null
   readAt?: string | null
   createdAt: string
@@ -5500,8 +5497,8 @@ export interface NotificationCreate {
   userId: string
   type: string
   data: unknown
-  contextType?: NotificationContext | null
-  contextId?: string | null
+  subjectType?: NotificationContext | null
+  subjectId?: string | null
   deliveryKey?: string | null
   readAt?: string | Date | null
 }
@@ -5511,8 +5508,8 @@ export interface NotificationUpdate {
   userId?: string
   type?: string
   data?: unknown
-  contextType?: NotificationContext | null
-  contextId?: string | null
+  subjectType?: NotificationContext | null
+  subjectId?: string | null
   deliveryKey?: string | null
   readAt?: string | Date | null
 }
@@ -5522,8 +5519,8 @@ export interface NotificationWhere extends WhereBase {
   userId?: string | WhereOp<string> | null
   type?: string | WhereOp<string> | null
   data?: unknown | WhereOp<unknown> | null
-  contextType?: NotificationContext | WhereOp<NotificationContext> | null
-  contextId?: string | WhereOp<string> | null
+  subjectType?: NotificationContext | WhereOp<NotificationContext> | null
+  subjectId?: string | WhereOp<string> | null
   deliveryKey?: string | WhereOp<string> | null
   readAt?: string | Date | WhereOp<string | Date> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
@@ -5927,11 +5924,11 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly auditTrail: TableClient<AuditTrail, AuditTrailCreate, AuditTrailUpdate, AuditTrailWhere, AuditTrailRelations, never, '@@gate'>
   readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere, UserRelations, never, '@@gate'>
   readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere, AccountRelations, never, '@@gate'>
-  readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere, WorkspaceRelations, never, '@@gate'>
+  readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere, WorkspaceRelations, never, 'ownerId' | '@@gate', WorkspaceSystem>
   readonly workspaceMember: TableClient<WorkspaceMember, WorkspaceMemberCreate, WorkspaceMemberUpdate, WorkspaceMemberWhere, WorkspaceMemberRelations, never, 'userId' | '@@gate', WorkspaceMemberSystem>
   readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere, InvitationRelations, never, 'token' | '@@gate'>
   readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere, SecretRelations, never, '@@gate'>
-  readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere, ApiKeyRelations, never, 'credentialId' | 'tokenHint' | '@@gate', ApiKeySystem>
+  readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere, ApiKeyRelations, never, 'credentialId' | 'tokenHint' | 'revokedAt' | 'lastUsedAt' | 'totalUses' | 'usageDate' | 'usesOnDate' | '@@gate', ApiKeySystem>
   readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere, ServerRelations, 'reboot' | 'drain' | 'undrain' | 'provision' | 'destroy' | 'checkIn' | 'loseContact' | 'reportProvisioned' | 'reportRunning' | 'reportStopped' | 'reportRebuilding' | 'reportDestroyed', 'enrollTokenHash' | 'status' | '@@gate'>
   readonly serverEvent: TableClient<ServerEvent, ServerEventCreate, ServerEventUpdate, ServerEventWhere, ServerEventRelations, never, '@@gate'>
   readonly outpostNonce: TableClient<OutpostNonce, OutpostNonceCreate, OutpostNonceUpdate, OutpostNonceWhere, OutpostNonceRelations, never, '@@gate'>
@@ -5942,7 +5939,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly environment: TableClient<Environment, EnvironmentCreate, EnvironmentUpdate, EnvironmentWhere, EnvironmentRelations, never, '@@gate'>
   readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'status' | 'deployOnPush' | 'pushSecret' | 'pushTokenHash' | 'pushActorId' | 'blueprintId' | '@@gate', AppSystem>
   readonly variable: TableClient<Variable, VariableCreate, VariableUpdate, VariableWhere, VariableRelations, never, '@@gate'>
-  readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere, DomainRelations, never, '@@gate'>
+  readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere, DomainRelations, never, 'certSecretId' | 'certKind' | 'certIssuedAt' | 'certExpiresAt' | '@@gate', DomainSystem>
   readonly domainRoute: TableClient<DomainRoute, DomainRouteCreate, DomainRouteUpdate, DomainRouteWhere, DomainRouteRelations, never, '@@gate'>
   readonly appEditor: TableClient<AppEditor, AppEditorCreate, AppEditorUpdate, AppEditorWhere, AppEditorRelations, never, '@@gate'>
   readonly appServer: TableClient<AppServer, AppServerCreate, AppServerUpdate, AppServerWhere, AppServerRelations, never, '@@gate'>
@@ -5952,14 +5949,14 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly deploymentStep: TableClient<DeploymentStep, DeploymentStepCreate, DeploymentStepUpdate, DeploymentStepWhere, DeploymentStepRelations, never, '@@gate'>
   readonly job: TableClient<Job, JobCreate, JobUpdate, JobWhere, JobRelations, 'start' | 'idle' | 'fail' | 'cancel', 'retryCount' | 'lastRunAt' | 'lastRunStatus' | 'status' | '@@gate', JobSystem>
   readonly jobRun: TableClient<JobRun, JobRunCreate, JobRunUpdate, JobRunWhere, JobRunRelations, never, '@@gate'>
-  readonly recipe: TableClient<Recipe, RecipeCreate, RecipeUpdate, RecipeWhere, RecipeRelations, never, '@@gate'>
+  readonly recipe: TableClient<Recipe, RecipeCreate, RecipeUpdate, RecipeWhere, RecipeRelations, never, 'lastRunAt' | 'runCount' | '@@gate', RecipeSystem>
   readonly recipeRun: TableClient<RecipeRun, RecipeRunCreate, RecipeRunUpdate, RecipeRunWhere, RecipeRunRelations, never, '@@gate'>
   readonly diskUsage: TableClient<DiskUsage, DiskUsageCreate, DiskUsageUpdate, DiskUsageWhere, DiskUsageRelations, never, '@@gate'>
   readonly serverPosture: TableClient<ServerPosture, ServerPostureCreate, ServerPostureUpdate, ServerPostureWhere, ServerPostureRelations, never, '@@gate'>
   readonly cleanupRun: TableClient<CleanupRun, CleanupRunCreate, CleanupRunUpdate, CleanupRunWhere, CleanupRunRelations, never, '@@gate'>
   readonly featureFlag: TableClient<FeatureFlag, FeatureFlagCreate, FeatureFlagUpdate, FeatureFlagWhere, FeatureFlagRelations, never, '@@gate'>
   readonly flagOverride: TableClient<FlagOverride, FlagOverrideCreate, FlagOverrideUpdate, FlagOverrideWhere, FlagOverrideRelations, never, '@@gate'>
-  readonly notificationChannel: TableClient<NotificationChannel, NotificationChannelCreate, NotificationChannelUpdate, NotificationChannelWhere, NotificationChannelRelations, never, '@@gate'>
+  readonly notificationChannel: TableClient<NotificationChannel, NotificationChannelCreate, NotificationChannelUpdate, NotificationChannelWhere, NotificationChannelRelations, never, 'secretId' | 'lastTestAt' | 'lastDeliveryAt' | '@@gate', NotificationChannelSystem>
   readonly alertRule: TableClient<AlertRule, AlertRuleCreate, AlertRuleUpdate, AlertRuleWhere, AlertRuleRelations, never, 'snoozedUntil' | '@@gate', AlertRuleSystem>
   readonly alertRuleChannel: TableClient<AlertRuleChannel, AlertRuleChannelCreate, AlertRuleChannelUpdate, AlertRuleChannelWhere, AlertRuleChannelRelations, never, '@@gate'>
   readonly alertEvent: TableClient<AlertEvent, AlertEventCreate, AlertEventUpdate, AlertEventWhere, AlertEventRelations, never, '@@gate'>

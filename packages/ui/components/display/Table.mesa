@@ -81,6 +81,11 @@
   // which is the half of `FJS-1077` that was a divergence rather than a crash:
   // two pages wrote the same click as `{name:'desc'}` and as `-name`.
   export let onsort     = undefined // (orderBy) => void
+  // Column -> its `@collate`, for the Table that sorts its own rows. This kit
+  // holds no schema, so a nocase column ordered here is BINARY unless the
+  // caller passes the resource's `collations`: apple, Bing, BNI re-sort as
+  // BNI, Bing, apple.
+  export let collations = undefined // { [column]: 'nocase' | 'rtrim' }
   export let striped    = false    // alternate row shading
   export let hover      = true     // row hover highlight
   export let compact    = false    // reduce row padding
@@ -121,10 +126,10 @@
   // snippet ordered by `orderBy` (`FJS-D672`). Over ONE PAGE of a server list
   // that sorts the page and not the list; such a caller states `onsort`. The
   // comparator is toolbelt's, the one the live list uses to place a pushed row.
-  $: shown = onsort ? rows : sortedRows(rows, orderBy)
+  $: shown = onsort ? rows : sortedRows(rows, orderBy, collations)
 
-  function sortedRows(list, ordering) {
-    const cmp = comparatorFor(ordering || null)
+  function sortedRows(list, ordering, collating) {
+    const cmp = comparatorFor(ordering || null, collating)
     return cmp ? [...list].sort(cmp) : list
   }
 

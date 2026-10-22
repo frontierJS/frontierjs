@@ -1425,12 +1425,12 @@ CREATE TABLE IF NOT EXISTS "notification" (
   "userId" TEXT NOT NULL,
   "type" TEXT NOT NULL,
   "data" TEXT NOT NULL,
-  "contextType" TEXT,
-  "contextId" TEXT,
+  "subjectType" TEXT,
+  "subjectId" TEXT,
   "deliveryKey" TEXT,
   "readAt" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("contextType" IN ('Order')),
+  CHECK ("subjectType" IN ('Order')),
   UNIQUE ("userId", "type", "deliveryKey")
 ) STRICT;
 

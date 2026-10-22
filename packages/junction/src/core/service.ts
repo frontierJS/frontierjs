@@ -31,7 +31,7 @@ import { AUTO_EVENT_MAP, isAnnounceHook } from './events.ts'
 import {
   createLitestoneBase, autoValidate, validateInput, gateAuthAround, autoFilter, autoSort, liftReservedQuery,
   watchFilterReads, markDerived, isDerivedHook, isCrudGatedMethod,
-  jsonSchemaToJunctionSchema, resolveDefsKey, announcementPayload, declaredTransitionMethods, accessorCandidates,
+  jsonSchemaToJunctionSchema, resolveDefsKey, announcementPayload, declaredTransitionMethods, declaresNoSoftDelete, accessorCandidates,
 } from './litestone.ts'
 
 // ─── Service-level cache ──────────────────────────────────────────────────
@@ -329,6 +329,14 @@ export interface Service {
    * directly — those are what callService and the three advertisers agree on.
    */
   _methods?: Set<string> | null
+
+  /**
+   * CRUD verbs the model cannot answer — `restore` over a model with no
+   * `@@softDelete`. Kept apart from `_methods` so an unlisted name stays the
+   * 404 it is on a service with no allow-list, and a verb listed here is the
+   * 405 of any method the policy leaves out. Read through `isMethodAllowed()`.
+   */
+  _unserved?: ReadonlySet<string>
 
   /**
    * The declared input type per method, resolved from `methods:`.
@@ -1133,6 +1141,13 @@ export interface BaseServiceOptions {
   methodGates?: Record<string, number>
   /** Per-method required claims, read off a `methods:` list the same way. */
   methodClaims?: Record<string, string[]>
+  /**
+   * The methods whose declared `input:` stands in for the model-derived
+   * validator, read off `methods:` by `buildService`. The base omits
+   * `autoValidate` from each, since it would refuse a key the input names and
+   * the model does not before the declaration ran.
+   */
+  inputMethods?: readonly string[]
 
   /**
    * Hook pipeline. Merged with the derived layer and carried onto the returned
@@ -1247,7 +1262,7 @@ export const SERVICE_RUNTIME_KEYS: ReadonlySet<string> = new Set([
   'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
   'declaredFields',
   '_find', '_get', '_create', '_update', '_patch', '_remove', '_restore',
-  '_hookMap', '_meta', '_schemas', '_methods', '_customMethods', '_transactional',
+  '_hookMap', '_meta', '_schemas', '_methods', '_unserved', '_customMethods', '_transactional',
   'pipelines', 'describe',
 ])
 
@@ -2087,6 +2102,7 @@ export function serviceMethodNames(svc: object): string[] {
  * what it says it answers cannot drift.
  */
 export function isMethodAllowed(svc: object, method: string): boolean {
+  if ((svc as { _unserved?: ReadonlySet<string> })._unserved?.has(method)) return false
   const allowed = (svc as { _methods?: Set<string> | null })._methods
   // Offered wherever a list can be read: a `readOnly` service is exactly the
   // one whose screen needs the columns it can filter on.
@@ -2146,7 +2162,7 @@ export function buildBase(
   //     it unless a request-scoped client is already there (withLitestoneDb
   //     always wins).
 
-  const { model, name, hooks, db, paginate, allowBulk, bulkMax, idField, softDelete, cache, schema, methodGates, methodClaims } = opts
+  const { model, name, hooks, db, paginate, allowBulk, bulkMax, idField, softDelete, cache, schema, methodGates, methodClaims, inputMethods } = opts
 
   const base = model === null ? overNoModel(name) : createLitestoneBase({
     model,
@@ -2235,6 +2251,10 @@ export function buildBase(
   // hooks — an unmarked one is invisible to the dedupe and installs itself a
   // second time.
   const derived = (...fns: Hook[]): Hook[] => fns.map(markDerived)
+  // A declared input replaces the row validator on its verb; the filter and
+  // sort hooks are not validators and stay.
+  const rowValidator = (method: string, mode: 'create' | 'patch'): Hook[] =>
+    inputMethods?.includes(method) ? [] : derived(autoValidate(model as string | undefined, mode))
 
   // The per-method levels a `methods:` list declares. The floor `gateAuthAround`
   // derives needs no declaration; this is only what sits above it.
@@ -2256,8 +2276,8 @@ export function buildBase(
       // find cannot see. `autoSort` grades a COLUMN order by; a groupBy sorts
       // by group keys and aggregates, which litestone validates itself.
       aggregate: derived(autoFilter(model)),
-      create: derived(autoValidate(model, 'create')),
-      patch:  derived(autoValidate(model, 'patch')),
+      create: rowValidator('create', 'create'),
+      patch:  rowValidator('patch', 'patch'),
       // `'patch'` and not `'create'` (`FJS-663`, ruled `FJS-D179`). The create
       // document omits `@version`, so a create-mode validator STRIPPED the
       // version a PUT carried and the Data boundary then refused the write for
@@ -2266,7 +2286,7 @@ export function buildBase(
       // just sent. What create mode bought was requiredness, which the write
       // does not honor: `table.update` merges, so demanding a field that will
       // not be replaced enforces a discipline nothing delivers.
-      update: derived(autoValidate(model, 'patch')),
+      update: rowValidator('update', 'patch'),
     },
   }
 
@@ -2322,8 +2342,8 @@ export function buildBase(
         const create = createSchema(jsonSchemaToJunctionSchema(defsKey, schema, 'create'))
         const patch  = createSchema(jsonSchemaToJunctionSchema(defsKey, schema, 'update'))
         const before = mergedHooks.before as Record<string, unknown[]>
-        before.create = [create.hook()]
-        before.patch  = [patch.hook()]
+        if (!inputMethods?.includes('create')) before.create = [create.hook()]
+        if (!inputMethods?.includes('patch'))  before.patch  = [patch.hook()]
         explicitSchemas = { create, patch }
       } catch (err) {
         console.warn(
@@ -2692,7 +2712,9 @@ export function buildService(def: ServiceDefinition): Service {
   const declaredGates  = collectMethodGates(def.methods, (def.name as string) ?? '(unnamed)')
   const declaredClaims = collectMethodClaims(def.methods, (def.name as string) ?? '(unnamed)')
   const declaredReads  = collectReadMethods(def.methods, (def.name as string) ?? '(unnamed)')
+  const methodInputs   = collectMethodInputs(def.methods, (def.name as string) ?? '(unnamed)', def)
   const base = buildBase({
+    inputMethods: Object.keys(methodInputs),
     model:      def.model,
     name:       def.name,
     db:         def.db,
@@ -2794,10 +2816,8 @@ export function buildService(def: ServiceDefinition): Service {
   // The declared inputs, one derived before-hook each. Pushed AFTER the user's
   // layer for the same reason the model-derived hooks are: a before hook may
   // still shape ctx.data, and it is the shaped payload that must satisfy the
-  // declaration. On a CRUD name this runs after autoValidate and is therefore
-  // the one that decides — which is what "an input replaces the model-derived
-  // validator" has to mean.
-  const methodInputs = collectMethodInputs(def.methods, defName ?? '(unnamed)', def)
+  // declaration. On a CRUD name the base left autoValidate out, so this is the
+  // only validator the verb has.
   const inputEntries = Object.entries(methodInputs)
   if (inputEntries.length) {
     hookMaps.push({
@@ -2970,7 +2990,7 @@ export function buildService(def: ServiceDefinition): Service {
   // manifest, OpenAPI, the findings — then reads one table, and a move listed
   // in `methods:` or keyed in `hooks:` stops being a finding rather than being
   // excused after the fact.
-  const resolveTable = (moves: CustomMethodMap): void => {
+  const resolveTable = (moves: CustomMethodMap, noRestore = false): void => {
     const serviceName = service.name ?? defName ?? '(unnamed)'
     const seen = new Map<string, string>()
     const report = (key: string, f: string) => { if (!seen.has(key)) seen.set(key, f) }
@@ -3009,6 +3029,12 @@ export function buildService(def: ServiceDefinition): Service {
       serviceName,
       report,
     )
+    // A model that never soft-deletes has nothing to restore, so the manifest,
+    // OpenAPI and MCP must not offer it. A restore the author wrote, or a
+    // `softDelete` column stated on the service, keeps it.
+    ;(service as Service)._unserved = noRestore && !def.softDelete && !def.restore
+      ? new Set(['restore'])
+      : new Set()
     // A hook map keyed on a method this service does not have, or on a phase that
     // is not a phase. Both were silent: `before: { creat: [requireAuth] }` built a
     // pipeline nothing ever ran, the service answered normally, and the hook that
@@ -3061,9 +3087,13 @@ export function buildService(def: ServiceDefinition): Service {
   resolveTable({})
 
   Object.defineProperty(service, SERVE_MOVES, {
-    value: (schema: unknown) => resolveTable(serviceAccessor(service) === null ? {} : declaredTransitionMethods(
-      schema, serviceAccessor(service) as string, service.name,
-      (def.idField as string | undefined) ?? 'id')),
+    value: (schema: unknown) => {
+      const accessor = serviceAccessor(service)
+      if (accessor === null) return resolveTable({})
+      resolveTable(
+        declaredTransitionMethods(schema, accessor, service.name, (def.idField as string | undefined) ?? 'id'),
+        declaresNoSoftDelete(schema, accessor))
+    },
   })
 
   Object.defineProperty(service, BUILT, { value: true, enumerable: false })

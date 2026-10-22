@@ -343,7 +343,7 @@ import {
 
 | Call | Behavior |
 | --- | --- |
-| `goto(path, query?, { scroll, replace, directives })` | navigate. `directives` is `page.directives` shaped and unprefixed; the router joins it to the URL as `$` params, so a page never spells one |
+| `goto(path, query?, { scroll, replace, directives })` | navigate. `directives` is `page.directives` shaped and unprefixed; the router joins it to the URL as `$` params, so a page never spells one. Resolves `true` when it committed, `false` when a guard cancelled, the route failed to load or a newer navigation won — never rejects |
 | `back()` / `forward()` | history |
 | `reload(path?, query?)` | the whole app again from the code on disk, at `path` (where it is, by default) — a page load, or under `fli dev:tui` a new shell process |
 | `url(path, query?)` | build a URL with the configured trailing-slash policy |
@@ -1009,7 +1009,7 @@ Everything in `sierra.config.js`:
 | `schema` | auto-detect | path to the `.lite` file, or `false` |
 | `junction` | — | `{ url, apiPrefix, authPrefix, tokenKey, cookieAuth, auth, services, debug, … }` — data only, since it reaches the browser as JSON |
 | `theme` | — | `{ themes, default, system, persist, key, apply, attribute }` — `attribute` only with `apply: 'attribute'` |
-| `analytics` | — | `{ provider }` — `'plausible'` (`domain`, `apiHost`), `'gtm'` (`containerId`), or a custom provider's module path relative to the Vite root (`'/src/analytics.js'`), which exports `init`, `pageview` and `track`. On `static` the build writes the vendor's tag into every page's `<head>` and an island's `track()` reaches it; a custom provider is refused there, since a prerendered page has nothing to run it |
+| `analytics` | — | `{ provider }` — `'plausible'` (`domain`, `apiHost`), `'gtm'` (`containerId`), or a custom provider's module path relative to the Vite root (`'/src/analytics.js'`), which exports `init`, `pageview` and `track`. On `static` the build writes the vendor's tag into every page's `<head>` and an island's `track()` reaches it; a custom provider is refused there, since a prerendered page has nothing to run it. Plausible gets the address without its search or fragment. **GTM's built-in Page URL variable reads `location.href` itself and the tag cannot override it**, so a container's tags must read a Data Layer Variable named `page_location` (the address without its search, pushed on `gtm.js` and on each pageview) to keep a query-string token from the vendor; whether Page URL carries the fragment is unmeasured |
 | `devtools` | — | `{ port, position, n1Threshold }` |
 | `autoImport.components` | `[]` | directories, scanned recursively, whose PascalCase components need no import. Ordered: a later directory wins a name an earlier one holds, and the build logs each override; the same name twice in one directory, or against a `modules` binding, is a build error |
 | `autoImport.modules` | `{}` | package → bindings that need no import |

@@ -44,7 +44,7 @@ export default createService({
     await getScoped('project', 'Project')
     // slug is immutable: it is half of the @@unique([workspaceId, slug]) key
     // and appears in URLs the UI has already handed out.
-    const patch = narrowPatch($.data as Record<string, unknown>, ['slug'])
+    const patch = narrowPatch($.data as Record<string, unknown>)
     if (changesNothing(patch)) return getScoped('project', 'Project')
     return db().project.update({ where: { id: $.id as string }, data: patch })
   },

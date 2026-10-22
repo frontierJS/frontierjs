@@ -11,9 +11,10 @@ title: Edit from the preview
   import { drafts } from '../../../../resources/Draft.mesa'
 
   let error = null
+  var appId = page.params.id
 
   drafts.service.invoke('handoff', null, {
-    appId: page.params.id, returnTo: page.query?.return, challenge: page.query?.challenge,
+    appId, returnTo: page.query?.return, challenge: page.query?.challenge,
   })
     .then(({ redirect }) => { location.replace(redirect) })
     .catch(err => { error = err.message })
@@ -21,7 +22,7 @@ title: Edit from the preview
 
 {#if error}
   <article class="alert danger" id="screen-error"><div class="alert-content">{error}</div></article>
-  <p><a href={`/sites/${page.params.id}/`}>Edit this site here instead</a></p>
+  <p><a href={`/sites/${appId}/`}>Edit this site here instead</a></p>
 {:else}
   <p class="text-muted" id="handoff-pending">Signing you in to the preview…</p>
 {/if}

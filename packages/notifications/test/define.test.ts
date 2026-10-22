@@ -13,13 +13,16 @@
 // and reported success both times.
 
 import { describe, test, expect, beforeAll } from 'bun:test'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defineNotification } from '../define.ts'
 import { inApp, mail } from '../builders.ts'
-import { notificationsDirOf, loadNotifications } from '../loader.ts'
+import { loadNotifications } from '../loader.ts'
 import { makeApp, type Harness } from './harness.ts'
 
-const FIXTURES = join(import.meta.dir, 'fixtures', 'notifications')
+const ROOT     = join(import.meta.dir, 'fixtures')
+const FIXTURES = join(ROOT, 'notifications')
 
 describe('defineNotification — the definition itself', () => {
 
@@ -84,13 +87,19 @@ describe('defineNotification — the definition itself', () => {
 
 describe('the loader — the file name is the type', () => {
 
-  test('notifications/ under the app root (FJS-D1080)', () => {
-    expect(notificationsDirOf(join(FIXTURES, '..'))).toBe(FIXTURES)
+  test('finds a file anywhere under the app root, in notifications/ or a domain folder (FJS-D1141)', async () => {
+    const reg = await loadNotifications(ROOT)
+    expect(reg.has('InvoiceLate')).toBe(true)
+    expect(reg.has('WelcomePerson')).toBe(true)
   })
 
-  test('a root with no notifications/, or no root, loads nothing', () => {
-    expect(notificationsDirOf(import.meta.dir)).toBeNull()
-    expect(notificationsDirOf(null)).toBeNull()
+  test('does not descend into node_modules', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'fjs-notif-'))
+    try {
+      mkdirSync(join(root, 'node_modules/x'), { recursive: true })
+      writeFileSync(join(root, 'node_modules/x/Never.notification.ts'), 'throw new Error("scanned node_modules")\n')
+      expect((await loadNotifications(root)).size).toBe(0)
+    } finally { rmSync(root, { recursive: true, force: true }) }
   })
 
   test('names each definition for its file, with no case conversion to get wrong', async () => {
@@ -117,13 +126,13 @@ describe('through the real plugin', () => {
   let h: Harness
 
   beforeAll(async () => {
-    h = await makeApp({ root: join(FIXTURES, '..'), transports: { email: { mailer: 'default' } } })
+    h = await makeApp({ root: ROOT, transports: { email: { mailer: 'default' } } })
   })
 
   test('app.notifications answers what this app can send, without sending one', () => {
     const reg = (h.app as { notifications?: Map<string, unknown> }).notifications
     expect(reg).toBeDefined()
-    expect([...reg!.keys()].sort()).toEqual(['LegacyName', 'ReceiptIssued', 'WelcomePerson'])
+    expect([...reg!.keys()].sort()).toEqual(['InvoiceLate', 'LegacyName', 'ReceiptIssued', 'WelcomePerson'])
   })
 
   test('the registry is read-only at RUNTIME, not only in the types', () => {
@@ -137,7 +146,7 @@ describe('through the real plugin', () => {
     expect(reg.has('Injected')).toBe(false)
     // Reading is untouched.
     expect(reg.get('WelcomePerson')).toBeDefined()
-    expect([...reg.keys()].length).toBe(3)
+    expect([...reg.keys()].length).toBe(4)
   })
 
   test('a loaded definition writes its FILE NAME into notifications.type', async () => {

@@ -187,17 +187,17 @@ table `api_key` · db `main` · gate `5`
 | `credentialId` | `String` | yes | — | @system |
 | `expiresAt` | `DateTime` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
-| `lastUsedAt` | `DateTime` | yes | — | — |
+| `lastUsedAt` | `DateTime` | yes | — | @system |
 | `name` | `String` | no | — | **required on write** |
-| `revokedAt` | `DateTime` | yes | — | — |
+| `revokedAt` | `DateTime` | yes | — | @system |
 | `scopes` | `String[]` | no | `'[]'` | — |
 | `tokenHint` | `String` | no | — | @system · **required on write** |
-| `totalUses` | `Int` | no | `0` | — |
+| `totalUses` | `Int` | no | `0` | @system |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
-| `usageDate` | `String` | yes | — | — |
+| `usageDate` | `String` | yes | — | @system |
 | `user` | `User` | — | — | relation |
 | `userId` | `String` | no | — | **required on write** |
-| `usesOnDate` | `Int` | no | `0` | — |
+| `usesOnDate` | `Int` | no | `0` | @system |
 | `workspace` | `Workspace` | — | — | relation |
 | `workspaceId` | `String` | no | — | **required on write** |
 
@@ -835,10 +835,10 @@ table `domain` · db `main` · gate `2.5` · @@softDelete
 | --- | --- | --- | --- | --- |
 | `app` | `App` | — | — | relation |
 | `appId` | `String` | no | — | **required on write** |
-| `certExpiresAt` | `DateTime` | yes | — | — |
-| `certIssuedAt` | `DateTime` | yes | — | — |
-| `certKind` | `String` | yes | — | — |
-| `certSecretId` | `String` | yes | — | — |
+| `certExpiresAt` | `DateTime` | yes | — | @system |
+| `certIssuedAt` | `DateTime` | yes | — | @system |
+| `certKind` | `String` | yes | — | @system |
+| `certSecretId` | `String` | yes | — | @system |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |
 | `hostname` | `String` | no | — | **required on write** |
@@ -1479,13 +1479,13 @@ table `notification` · db `main` · gate `0.8.1.8`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `contextId` | `String` | yes | — | — |
-| `contextType` | `NotificationContext` | yes | — | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `data` | `Json` | no | — | **required on write** |
 | `deliveryKey` | `String` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `readAt` | `DateTime` | yes | — | — |
+| `subjectId` | `String` | yes | — | — |
+| `subjectType` | `NotificationContext` | yes | — | — |
 | `type` | `String` | no | — | **required on write** |
 | `user` | `User` | — | — | relation |
 | `userId` | `String` | no | — | **required on write** |
@@ -1511,13 +1511,13 @@ table `notification_channel` · db `main` · gate `2.5` · @@softDelete
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `isActive` | `Boolean` | no | `1` | — |
 | `kind` | `ChannelKind` | no | — | **required on write** |
-| `lastDeliveryAt` | `DateTime` | yes | — | — |
-| `lastTestAt` | `DateTime` | yes | — | — |
+| `lastDeliveryAt` | `DateTime` | yes | — | @system |
+| `lastTestAt` | `DateTime` | yes | — | @system |
 | `monitors` | `MonitorChannel[]` | — | — | relation |
 | `name` | `String` | no | — | **required on write** |
 | `rules` | `AlertRuleChannel[]` | — | — | relation |
 | `secret` | `String` | — | — | transient |
-| `secretId` | `String` | yes | — | — |
+| `secretId` | `String` | yes | — | @system |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `version` | `Int` | no | `1` | — |
 | `workspace` | `Workspace` | — | — | relation |
@@ -1632,9 +1632,9 @@ table `recipe` · db `main` · gate `4.5` · @@softDelete
 | `deletedAt` | `DateTime` | yes | — | — |
 | `description` | `String` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
-| `lastRunAt` | `DateTime` | yes | — | — |
+| `lastRunAt` | `DateTime` | yes | — | @system |
 | `name` | `String` | no | — | **required on write** |
-| `runCount` | `Int` | no | `0` | — |
+| `runCount` | `Int` | no | `0` | @system |
 | `runs` | `RecipeRun[]` | — | — | relation |
 | `script` | `String` | no | — | **required on write** |
 | `slug` | `String` | no | — | **required on write** |
@@ -2161,7 +2161,7 @@ table `workspace` · db `main` · gate `1.1.5.6` · @@softDelete(cascade)
 | `members` | `WorkspaceMember[]` | — | — | relation |
 | `monitors` | `Monitor[]` | — | — | relation |
 | `name` | `String` | no | — | **required on write** |
-| `ownerId` | `String` | no | — | **required on write** |
+| `ownerId` | `String` | no | — | @system · **required on write** |
 | `projects` | `Project[]` | — | — | relation |
 | `secrets` | `Secret[]` | — | — | relation |
 | `servers` | `Server[]` | — | — | relation |

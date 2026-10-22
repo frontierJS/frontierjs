@@ -262,9 +262,17 @@ describe('buildUrl', () => {
     expect(result).toContain('sort=name')
   })
 
-  test('omits null/undefined/empty params', () => {
-    const result = buildUrl('/leads', { page: null, sort: undefined, q: '' }, 'always')
+  test('omits undefined/empty params', () => {
+    const result = buildUrl('/leads', { page: undefined, sort: undefined, q: '' }, 'always')
     expect(result).toBe('/leads/')
+  })
+
+  // FJS-1442: null is a filter (IS NULL), not an absent one. Dropping it
+  // navigated "the rows with no collection" to the unfiltered list.
+  test('keeps a null filter, and it reads back as null', () => {
+    const url = buildUrl('/bookmarks', { collectionId: null, q: undefined }, 'always')
+    expect(url).toBe('/bookmarks/?collectionId=null')
+    expect(parseQueryParams(url.slice(url.indexOf('?')))).toEqual({ collectionId: null })
   })
 
   test('omits a cleared multi-select, and keeps an empty operand under a filter', () => {

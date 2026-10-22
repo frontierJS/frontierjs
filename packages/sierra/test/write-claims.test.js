@@ -78,3 +78,34 @@ describe('sealedFields', () => {
     expect(locked({ id: 'u1', isStaff: false, role: 'admin' })).not.toContain('notes')
   })
 })
+
+// FJS-2744 -- `@immutable(after: move)` is frozen from the states the move reaches,
+// and the schema carries that as `x-litestone-frozen`, not `x-litestone-seal`.
+describe('sealedFields -- @immutable(after: move)', () => {
+  const DOC = {
+    type: 'object',
+    title: 'Doc',
+    properties: {
+      id:        { type: 'string', readOnly: true },
+      status:    { type: 'string' },
+      signature: {
+        type: 'string',
+        'x-litestone-kind': 'immutable-after',
+        'x-litestone-frozen': { field: 'status', states: ['accepted', 'paid'], after: 'accept' },
+      },
+    },
+  }
+  const frozenFor = (record) => {
+    registerSchemas({ Doc: DOC }, ['Doc'])
+    return createResource('docs', { model: 'Doc' }).sealedFields(record)
+  }
+
+  test('a row past the move reports the column', () => {
+    expect(frozenFor({ id: 'd1', status: 'accepted' })).toContain('signature')
+  })
+
+  test('a row not yet past the move, and no row at all, report nothing', () => {
+    expect(frozenFor({ id: 'd1', status: 'draft' })).toEqual([])
+    expect(frozenFor(null)).toEqual([])
+  })
+})

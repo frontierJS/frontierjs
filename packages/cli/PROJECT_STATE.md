@@ -20,7 +20,7 @@ A modular CLI automation platform where every command is a plain `.md` file, com
 
 ## Where it stands
 
-Working. ~210 commands (`fli list --json` is the count). Two deploy modes coexist: Docker/SSH/nginx (default when `frontier.config.js` has a `deploy` block) and legacy CapRover. Runtime is bun (`FJS-D593`).
+Working. ~210 commands (`fli list --json` is the count). Deploy is Docker/SSH/nginx from the `deploy` block in `frontier.config.js`; without one `fli deploy` refuses. Runtime is bun (`FJS-D593`).
 
 ## Test suite
 

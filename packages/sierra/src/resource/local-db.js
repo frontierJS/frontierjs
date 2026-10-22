@@ -41,6 +41,9 @@ let _config = null
 let _client = null
 let _opening = null
 let _closing = null
+// The device schema the client was opened over: what says which columns of a
+// row the server answered are not the device's to write.
+let _schema = null
 
 /**
  * Called by `virtual:sierra` when the app configured `offline: { db: true }`.
@@ -121,6 +124,7 @@ export async function localDb() {
         schema,
         db:      _config.db ?? '/fjs-local.db',
       })
+      _schema = schema
       return _client
     } catch (err) {
       if (_leaving) return null
@@ -199,10 +203,62 @@ export async function writeRows(model, rows, whole = null) {
 
   const table = db.asSystem()[accessor]
   if (rows.length) {
-    await _upsert(table, rows)
+    const shape = _shapeOf(model)
+    await _land(table, shape ? rows.map(r => _writable(r, shape)) : rows, shape)
   }
   if (whole) await _dropAbsent(model, table, rows, whole)
   return true
+}
+
+// ─── what of the server's row the device can write ─────────────────────────────
+
+// Columns the client refuses to write by name (`_virtualWriteKeys` in
+// litestone's core/client.js): a value computed on read, with no column behind it.
+const SERVER_OWNED = new Set(['computed', 'generated', 'funcCall', 'derived', 'transient', 'from'])
+
+const _shapes = new Map()
+
+/** The columns of `model` the device cannot write, and its key; null where the schema is not known. */
+function _shapeOf(model) {
+  if (_shapes.has(model)) return _shapes.get(model)
+  const m = _schema?.schema?.models?.find(x => x.name === model)
+  const shape = m && {
+    owned: new Set(m.fields.filter(f => f.attributes?.some(a => SERVER_OWNED.has(a.kind))).map(f => f.name)),
+    key:   m.fields.filter(f => f.attributes?.some(a => a.kind === 'id')).map(f => f.name),
+  }
+  _shapes.set(model, shape ?? null)
+  return shape ?? null
+}
+
+function _writable(row, { owned }) {
+  if (!row || !owned.size || !Object.keys(row).some(k => owned.has(k))) return row
+  return Object.fromEntries(Object.entries(row).filter(([k]) => !owned.has(k)))
+}
+
+// A `select`ed answer is a slice of a row, and an insert needs the row. The
+// slice is merged over the row the device holds, so a held row takes the new
+// values in one batch; one the device does not hold cannot be built from a
+// slice and is left for a read that asks for all of it.
+async function _land(table, rows, shape) {
+  try {
+    return await _upsert(table, rows)
+  } catch (err) {
+    if (err?.name !== 'ValidationError' || shape?.key.length !== 1) throw err
+    const [id] = shape.key
+    const held = new Map((await table.findMany({
+      where: { [id]: { in: rows.map(r => r?.[id]).filter(v => v != null) } },
+    })).map(r => [r[id], _writable(r, shape)]))
+    const merged = rows.filter(r => r?.[id] != null).map(r => held.has(r[id]) ? { ...held.get(r[id]), ...r } : r)
+    try {
+      return await _upsert(table, merged)
+    } catch (again) {
+      if (again?.name !== 'ValidationError') throw again
+      // A batch is one transaction; what no merge completes is dropped row by row.
+      for (const r of merged) {
+        try { await _upsert(table, [r]) } catch (one) { if (one?.name !== 'ValidationError') throw one }
+      }
+    }
+  }
 }
 
 // An update gate of 9 refuses the system client too, and upsertMany grades its
@@ -260,7 +316,13 @@ export function answeredWhole(res, directives) {
 // device cannot evaluate — a relation that did not cross — takes nothing off,
 // and `readLocal` declines the same question, so nothing stale is shown either.
 async function _dropAbsent(model, table, rows, { where, idField }) {
-  if (!idField) return
+  // A `select` that left the key out names no row, and every held row would
+  // read as one the answer did not name.
+  // A `select` that left the key out names no row, and every held row would
+  // read as one the answer did not name.
+  // A `select` that left the key out names no row, and every held row would
+  // read as one the answer did not name.
+  if (!idField || rows.some(r => r?.[idField] == null)) return
   try {
     const named = new Set(rows.map(r => String(r?.[idField])))
     const held  = await table.findMany({ where: where ?? {}, select: { [idField]: true } })
@@ -376,7 +438,7 @@ export async function clearLocalDb() {
 }
 
 /** Test seam: forget the configuration and the open client. */
-export function _resetLocalDb() { _config = null; _client = null; _opening = null; _closing = null; _leaving = false; _watching = false; _warned.clear() }
+export function _resetLocalDb() { _config = null; _client = null; _schema = null; _shapes.clear(); _opening = null; _closing = null; _leaving = false; _watching = false; _warned.clear() }
 
 /**
  * Test seam: stand a client in for the one a worker would have opened.
@@ -387,8 +449,11 @@ export function _resetLocalDb() { _config = null; _client = null; _opening = nul
  * callers below hold a module-local binding that no namespace spy can reach.
  */
 export function _useLocalDbClient(client, config = {}) {
-  _config = { schemaUrl: '/x.json', wasmUrl: '/y.js', ...config }
+  const { deviceSchema = null, ...rest } = config
+  _config = { schemaUrl: '/x.json', wasmUrl: '/y.js', ...rest }
   _client = client
+  _schema = deviceSchema
+  _shapes.clear()
   _opening = null
   _closing = null
 }

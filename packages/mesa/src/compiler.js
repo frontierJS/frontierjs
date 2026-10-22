@@ -4158,6 +4158,17 @@ export function analyzeScript(raw, ast) {
   // make({ onsaved: () => auto.adopt() })` calls the value being defined, and
   // promoting it for that turned `auto` in the callback into the memo handle
   // (`FJS-1064`).
+  //
+  // A top-level `function` declaration is this script's own binding as much as
+  // a `const` arrow is, and only the arrow is in `vars`: `const tree =
+  // walk(folders.rows)` was a snapshot over `function walk` and derived over
+  // `const walk = () =>`, so the spelling of the helper decided whether the
+  // sidebar ever filled (`FJS-1439`).
+  const declaredFns = new Set()
+  for (const stmt of ast.body) {
+    const d = stmt.type === 'ExportNamedDeclaration' ? stmt.declaration : stmt
+    if (d?.type === 'FunctionDeclaration' && d.id) declaredFns.add(d.id.name)
+  }
   const callsLocal = (node, self) => {
     let found = false
     const walk = (n) => {
@@ -4165,7 +4176,7 @@ export function analyzeScript(raw, ast) {
       if (n.type === 'CallExpression' || n.type === 'NewExpression') {
         let callee = n.callee
         while (callee?.type === 'MemberExpression') callee = callee.object
-        if (callee?.type === 'Identifier' && callee.name !== self && vars[callee.name]) { found = true; return }
+        if (callee?.type === 'Identifier' && callee.name !== self && (vars[callee.name] || declaredFns.has(callee.name))) { found = true; return }
       }
       for (const k of Object.keys(n)) {
         if (k === 'start' || k === 'end' || k === 'type' || k === 'raw') continue
@@ -7224,8 +7235,17 @@ export function elementBindTarget(ctx, attr, varName) {
     // assignment target (`$$runtime.get($$sig_draft)[key] = $$v` is fine),
     // whereas a bare identifier could rewrite to a call expression, and
     // `$$runtime.get($$sig_x) = $$v` is a syntax error.
+    //
+    // A write into the object a `let` holds notifies nobody, and the author
+    // has no place to put the `obj = obj` that fixes it, so the setter ends
+    // with it: `bind:value={pick[id]}` left `disabled={!pick[id]}` stale.
     const isMemberTarget = /[.[]/.test(varName)
-    setter = `($$v) => { ${isMemberTarget ? rw : varName} = $$v; }`
+    const root = varName.match(/^[A-Za-z_$][\w$]*/)?.[0]
+    const rootRead = root && ctx.analysis?.vars?.[root]?.kind === 'let' ? `$$runtime.get($$sig_${root})` : null
+    const notify = isMemberTarget && rootRead && rw.startsWith(rootRead)
+      ? ` $$runtime.set($$sig_${root}, ${rootRead}, true);`
+      : ''
+    setter = `($$v) => { ${isMemberTarget ? rw : varName} = $$v;${notify} }`
   }
   return { getter, setter }
 }
@@ -8733,13 +8753,16 @@ export function emitScript(ctx) {
   const props = Object.values(vars).filter((v) => v.isProp && v.kind === 'let')
   // Collect deferred defaults keyed by var name — emitted in step 5 after topoSort
   // A prop's fallback is emitted into the head, which runs before any of the
-  // script's own declarations. A fallback that names one of them therefore
+  // script's own declarations, plain `const` and `let` included. A fallback
+  // that names one of them therefore
   // reads a binding in its temporal dead zone, and the component throws
   // `ReferenceError` at mount naming neither the prop nor the file — so it is
   // applied in step 5b instead, once every declaration exists.
   const defaultNeedsDeferring = (v, ctx) => {
     if (!v.initRaw || !v.initNode) return false
-    return [...collectRefs(v.initNode)].some((r) => ctx.analysis.reactiveNames?.includes(r))
+    return [...collectRefs(v.initNode)].some(
+      (r) => ctx.analysis.reactiveNames?.includes(r) || (vars[r] && !vars[r].isProp)
+    )
   }
 
   const deferredPropDefaults = {}

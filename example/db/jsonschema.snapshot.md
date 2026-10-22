@@ -1165,8 +1165,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `userId` | `string` | yes | — | — | — |
 | `type` | `string` | yes | — | — | — |
 | `data` | `json` | yes | — | `x-sortable: "json"` `x-aggregatable` | — |
-| `contextType` | `NotificationContext`? | — | — | — | — |
-| `contextId` | `string`? | — | — | — | — |
+| `subjectType` | `NotificationContext`? | — | — | — | — |
+| `subjectId` | `string`? | — | — | — | — |
 | `deliveryKey` | `string`? | — | — | — | — |
 | `readAt` | `string`? | — | — | `format: "date-time"` | — |
 

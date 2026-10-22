@@ -191,7 +191,7 @@ describe('a preference decides, and no row means the default', () => {
     await notifyPeople(app, 'DeployFailed', [user.id], { ...PAYLOAD, reason: 'boom' })
     const row = await db.notification.findFirst({ where: { userId: user.id } })
     expect(row.type).toBe('DeployFailed')
-    expect(row.contextType).toBe('Deployment')
+    expect(row.subjectType).toBe('Deployment')
     expect(row.readAt).toBe(null)
   })
 

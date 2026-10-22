@@ -6,7 +6,7 @@
 
 import { X509Certificate } from 'node:crypto'
 import { redactUrl } from '@frontierjs/toolbelt/redact'
-import { parseEvents } from '@frontierjs/toolbelt/sse'
+import { parseEvents, type ParseState } from '@frontierjs/toolbelt/sse'
 import { BaseTransport } from './base.ts'
 import { encodeBody, CONTENT_TYPE } from './encode.ts'
 import type { BodyEncoding, EncodedBody } from './encode.ts'
@@ -237,7 +237,7 @@ export class HttpTransport extends BaseTransport {
     const sse      = isEventStream(res.headers.get('content-type') ?? '')
     const decoder  = new TextDecoder()
     const maxBytes = this.opts.max_response_bytes ?? DEFAULT_MAX_BYTES
-    let rest = '', lastId = '', sequence = 0, finished = false
+    let state: ParseState | undefined, sequence = 0, finished = false
 
     const chunk = (data: unknown): ConduitChunk => ({ data, sequence: sequence++, timestamp: Date.now(), meta })
 
@@ -255,21 +255,21 @@ export class HttpTransport extends BaseTransport {
 
         if (!sse) { yield chunk(next.value); continue }
 
-        const parsed = parseEvents(rest + decoder.decode(next.value, { stream: true }), lastId)
-        rest = parsed.rest; lastId = parsed.lastId
+        const parsed = parseEvents(decoder.decode(next.value, { stream: true }), state)
+        state = parsed.state
         for (const ev of parsed.events) yield chunk(ev)
         // An event is held until its blank line, so a server that never sends
         // one grows this without bound.
-        if (rest.length > maxBytes) throw fail('invalid_response', `An event exceeded ${maxBytes} bytes without ending`)
+        if (state.held > maxBytes) throw fail('invalid_response', `An event exceeded ${maxBytes} bytes without ending`)
       }
       finished = true
 
       if (sse) {
-        const parsed = parseEvents(rest + decoder.decode(), lastId)
+        const parsed = parseEvents(decoder.decode(), state)
         for (const ev of parsed.events) yield chunk(ev)
         // A close is the only end SSE has, so a body that stops between two
         // events reads as finished; one that stops inside an event did not.
-        if (parsed.rest.trim() !== '') throw fail('stream_error', 'The stream ended inside an event')
+        if (parsed.state.open) throw fail('stream_error', 'The stream ended inside an event')
       }
     } finally {
       req.signal?.removeEventListener('abort', cancel)

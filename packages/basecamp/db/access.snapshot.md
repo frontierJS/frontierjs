@@ -11,7 +11,7 @@ without a schema change you meant to make is a shipped security bug.
 
 ```
 71 models · 1 view · 72 gated · 0 unrestricted
-56 with row policies · 20 with protected fields · 35 declared moves · 15 @system · 0 @seals
+56 with row policies · 24 with protected fields · 35 declared moves · 15 @system · 0 @seals
 ```
 
 ## Gates
@@ -616,6 +616,11 @@ rather than refusing the row.
 | `AlertRule` | `snoozedUntil` | `@system` |
 | `ApiKey` | `credentialId` | `@system` |
 | `ApiKey` | `tokenHint` | `@system` |
+| `ApiKey` | `revokedAt` | `@system` |
+| `ApiKey` | `lastUsedAt` | `@system` |
+| `ApiKey` | `totalUses` | `@system` |
+| `ApiKey` | `usageDate` | `@system` |
+| `ApiKey` | `usesOnDate` | `@system` |
 | `App` | `status` | `@system` |
 | `App` | `deployOnPush` | `@system` |
 | `App` | `pushSecret` | `@encrypted` |
@@ -630,6 +635,10 @@ rather than refusing the row.
 | `Dependency` | `advisories` | `@system` |
 | `Dependency` | `checkedAt` | `@system` |
 | `Dependency` | `checkError` | `@system` |
+| `Domain` | `certSecretId` | `@system` |
+| `Domain` | `certKind` | `@system` |
+| `Domain` | `certIssuedAt` | `@system` |
+| `Domain` | `certExpiresAt` | `@system` |
 | `Flow` | `currentVersion` | `@allow(write, status == null || status != 'active')` |
 | `FlowCredential` | `secret` | `@encrypted` |
 | `Invitation` | `token` | `@guarded` |
@@ -641,9 +650,14 @@ rather than refusing the row.
 | `Monitor` | `lastCheckedAt` | `@system` |
 | `Monitor` | `nextCheckAt` | `@system` |
 | `Monitor` | `lastLatencyMs` | `@system` |
+| `NotificationChannel` | `secretId` | `@system` |
+| `NotificationChannel` | `lastTestAt` | `@system` |
+| `NotificationChannel` | `lastDeliveryAt` | `@system` |
 | `OauthFlow` | `state` | `@guarded` |
 | `OauthFlow` | `verifier` | `@guarded` |
 | `OauthFlow` | `invitation` | `@guarded` |
+| `Recipe` | `lastRunAt` | `@system` |
+| `Recipe` | `runCount` | `@system` |
 | `Run` | `context` | `@encrypted` |
 | `Secret` | `data` | `@encrypted` |
 | `Server` | `enrollTokenHash` | `@guarded` |
@@ -660,6 +674,7 @@ rather than refusing the row.
 | `Verification` | `value` | `@guarded` |
 | `Verification` | `secret` | `@guarded` |
 | `Verification` | `code` | `@guarded` |
+| `Workspace` | `ownerId` | `@system` |
 | `WorkspaceMember` | `userId` | `@system` |
 
 ## State transitions

@@ -3,32 +3,26 @@ title: env:pull
 description: Pull environment variables from a remote source into a local .env file
 alias: epull
 examples:
-  - fli epull --from caprover
   - fli epull --from url --url https://my-secret-store.example.com/env
   - fli epull --from gist --gist-id abc123
   - fli epull --from ssh --server prod --path /srv/app/.env
-  - fli epull --from caprover --app my-api --to .env.production
+  - fli epull --from file --path ../other/.env --to .env.production
+  - fli epull --from url --url https://my-secret-store.example.com/env --dry
   - fli epull --from vaultwarden
   - fli epull --from vaultwarden --path .env.vault --to .env.production
   - fli epull --from send --url 'https://warden.example.com/#/send/<id>/<key>'
-  - fli epull --dry
 flags:
   from:
     char: f
     type: string
-    choices: [caprover, url, gist, ssh, file, vaultwarden, send]
+    choices: [url, gist, ssh, file, vaultwarden, send]
     description: Where the variables come from
-    defaultValue: caprover
+    defaultValue: ''
   to:
     char: t
     type: string
     description: Local destination file
     defaultValue: .env
-  app:
-    char: a
-    type: string
-    description: App name (for caprover source)
-    defaultValue: ''
   server:
     char: s
     type: string
@@ -142,23 +136,6 @@ const pullFromSsh = (env, server, remotePath) => {
   return execSync(`ssh ${serverAlias} "cat ${path}"`, { encoding: 'utf8' })
 }
 
-const pullFromCaprover = async (env, appName) => {
-  const captain = env.CAPROVER_URL || env.DEV_CAPTAIN
-  const token   = env.CAPROVER_TOKEN
-  if (!captain) throw new Error('CAPROVER_URL or DEV_CAPTAIN not set in .env')
-  if (!token)   throw new Error('CAPROVER_TOKEN not set in .env')
-  if (!appName) throw new Error('--app is required for caprover source')
-
-  const base = captain.replace(/\/$/, '')
-  const res  = await fetch(`${base}/api/v2/user/apps/appData/${appName}`, {
-    headers: { 'x-captain-auth': token }
-  })
-  if (!res.ok) throw new Error(`CapRover API error ${res.status}`)
-  const data = await res.json()
-  const vars = data?.data?.appDefinition?.envVars || []
-  return vars.map(({ key, value }) => `${key}=${value}`).join('\n') + '\n'
-}
-
 // The vault user is the operator's, not the app's, so its keys usually sit in
 // the global env (`fli eset VW_PASSWORD …`) rather than in the file being written.
 // Only `KEY=vw://Item/field` lines are pulled: a plain value in the refs file is
@@ -199,7 +176,6 @@ const pullFromSend = async (link, password) => {
 Pull environment variables from a remote source and merge them into a local `.env` file.
 
 Supported sources:
-- **`caprover`** — reads env vars from a CapRover app via API (requires `CAPROVER_URL` + `CAPROVER_TOKEN`)
 - **`url`** — fetches raw env content from any HTTPS URL
 - **`gist`** — fetches the first `.env` file from a GitHub Gist
 - **`ssh`** — SSHes into a server and cats the remote `.env` file
@@ -225,8 +201,6 @@ try {
     remoteContent = await pullFromGist(flag['gist-id'])
   } else if (flag.from === 'ssh') {
     remoteContent = pullFromSsh($.env, flag.server, flag.path)
-  } else if (flag.from === 'caprover') {
-    remoteContent = await pullFromCaprover($.env, flag.app)
   } else if (flag.from === 'vaultwarden') {
     const { loginNeeds }               = await import(resolve(global.fliRoot, 'core/vaultwarden.js'))
     const { acquireMissing, ttyPrompts } = await import(resolve(global.fliRoot, 'core/requires.js'))
@@ -250,7 +224,7 @@ try {
     if (!existsSync(srcPath)) { log.error(`File not found: ${srcPath}`); process.exitCode = 1; return }
     remoteContent = readFileSync(srcPath, 'utf8')
   } else {
-    log.error(`Unknown source: ${flag.from}. Use: caprover | url | gist | ssh | file | vaultwarden | send`)
+    log.error(`${flag.from ? `Unknown source: ${flag.from}` : '--from is required'}. Use: url | gist | ssh | file | vaultwarden | send`)
     process.exitCode = 1
     return
   }

@@ -1,7 +1,7 @@
 // api/jobs/invoice-remind.job.ts — the email an invoice's `remind` move owes.
 //
 // Dispatched by the outbox relay, never by hand: the `Invoice.remind` hook
-// (`api/src/core/commitments.ts`) writes the row in the transaction that sets
+// (`domain/billing/renewal.commitments.ts`) writes the row in the transaction that sets
 // `reminded`, so the move and the intent to send commit together and a crash
 // between them costs a delay rather than the email.
 //

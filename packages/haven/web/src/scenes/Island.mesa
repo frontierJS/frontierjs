@@ -26,7 +26,7 @@
   const SHORE = { x: 4, y: 1 }
   const JETTY = { x: 20, y: 3, w: 6, h: 10 }
   const BOAT  = { x: 28, y: 1 }
-  const PLANK = { x: JETTY.x + JETTY.w, y: BOAT.y + GANGWAY.dy, w: BOAT.x + GANGWAY.dx - JETTY.x - JETTY.w }
+  var PLANK = { x: JETTY.x + JETTY.w, y: BOAT.y + GANGWAY.dy, w: BOAT.x + GANGWAY.dx - JETTY.x - JETTY.w }
   const INSIDE = { x: 2, y: 1, w: 94, h: 24 }
 
   const reach = (x, y) => ((x - ISLE.x) / ISLE.rx) ** 2 + ((y - ISLE.y) / ISLE.ry) ** 2

@@ -27,11 +27,10 @@ title: Server
   let busy      = null
   let editing   = false
 
-  // What a person may correct about a machine: how it is named and grouped,
+  // The edit form's `only=` is what a person may correct about a machine: how it is named and grouped,
   // and how it is reached. The rest of the row is the machine's own report or
   // the provider's, and a box for it would be overwritten by the next
   // heartbeat or Sync. `sshKeyId` is out because nothing reads it.
-  const EDITABLE = ['name', 'role', 'region', 'sshUser', 'sshPort', 'labels']
 
   function saved() {
     editing = false
@@ -362,7 +361,7 @@ title: Server
 
   <Drawer open={editing} title={`Edit ${server.name}`} onclose={() => editing = false}>
     {#if editing}
-      <Server record={server} only={EDITABLE} oncancel={() => editing = false} ondone={saved} submitId="server-edit-save" />
+      <Server record={server} only={['name', 'role', 'region', 'sshUser', 'sshPort', 'labels']} oncancel={() => editing = false} ondone={saved} submitId="server-edit-save" />
     {/if}
   </Drawer>
 

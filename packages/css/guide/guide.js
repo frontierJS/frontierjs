@@ -2331,10 +2331,15 @@ function densityPage() {
           would write <code>roomy</code>, see nothing happen, and have no way
           to find out why.
         </p>
+        <p>
+          A <code>.facts</code> in a named box under 30rem stacks its pairs
+          too, so one in a narrow aside stacks on a wide screen without an
+          app restyling it.
+        </p>
         <div class="alert warning">
           <div class="alert-icon" aria-hidden="true">!</div>
           <div class="alert-content">
-            <strong>The name is required, and the package ships no container of its own.</strong>
+            <strong>The name is required,and the package ships no container of its own.</strong>
             <p>
               <code>container-type: inline-size</code> is not free. It means
               the box can no longer be sized by its contents — measured, a

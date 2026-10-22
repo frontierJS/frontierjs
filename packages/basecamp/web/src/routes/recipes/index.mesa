@@ -149,9 +149,8 @@ title: Recipes
     }
   }
 
-  // What an author writes. The counters are the run job's, and the slug follows
+  // The edit form's `only=` is what an author writes. The counters are the run job's, and the slug follows
   // the name on the server.
-  const AUTHORED = ['name', 'description', 'script', 'timeoutSeconds']
   let editing = false
 
   function saved() {
@@ -314,7 +313,7 @@ title: Recipes
 
     <Drawer open={editing} title={`Edit ${selected.name}`} onclose={() => editing = false}>
       {#if editing}
-        <Recipe record={selected} only={AUTHORED} oncancel={() => editing = false} ondone={saved} submitId="recipe-edit-save" />
+        <Recipe record={selected} only={['name', 'description', 'script', 'timeoutSeconds']} oncancel={() => editing = false} ondone={saved} submitId="recipe-edit-save" />
       {/if}
     </Drawer>
 

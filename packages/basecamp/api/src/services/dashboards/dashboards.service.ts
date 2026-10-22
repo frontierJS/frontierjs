@@ -238,7 +238,7 @@ export default createService({
     // The slug follows the name, because a dashboard's handle is not in
     // anyone else's source code — unlike a flag key or a network slug, which
     // are immutable for exactly that reason.
-    const patch = narrowPatch(data, ['slug', 'createdBy'])
+    const patch = narrowPatch(data)
     if (typeof patch.name === 'string' && patch.name !== dashboard.name) {
       patch.slug = slugify(patch.name as string)
     }

@@ -87,3 +87,29 @@ export function permissionFor(namespace) {
 export function isFreePermission(perm) {
   return perm === 'no-permission'
 }
+
+// Members of a catalogued namespace that work without its permission. A
+// namespace used only through these needs nothing declared: tabs.sendMessage
+// and tabs.connect are messaging, and the `tabs` permission gates only the
+// sensitive fields (url, title) of what tabs.query and the rest return.
+const FREE_MEMBERS = {
+  tabs: new Set(['sendMessage', 'connect']),
+}
+
+/**
+ * True when every member seen on a namespace is one that needs no permission.
+ * A bare reference ('*') could call anything, so it never qualifies.
+ *
+ * @param {string} namespace
+ * @param {Iterable<string>} [members]
+ */
+export function isFreeUse(namespace, members) {
+  const free = FREE_MEMBERS[namespace]
+  if (!free || !members) return false
+  let any = false
+  for (const m of members) {
+    if (!free.has(m)) return false
+    any = true
+  }
+  return any
+}

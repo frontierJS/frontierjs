@@ -145,7 +145,9 @@ export default createService({
     if (credential)
       data.secretId = await storeCredential(kind, data.name as string, credential)
 
-    return withRuleCount(await db().notificationChannel.create({ data }))
+    return withRuleCount(await db().notificationChannel.create({
+      data, system: 'secretId' in data ? ['secretId'] : [],
+    }))
   },
 
   async patch() {
@@ -160,7 +162,7 @@ export default createService({
     // destination all change underneath. Delete and recreate says so.
     // `secretId` likewise — it moves only through the rotation below, never
     // by a client naming a Secret it happens to know the id of.
-    const patch = narrowPatch(data, ['kind', 'secretId', 'createdBy', 'lastTestAt', 'lastDeliveryAt'])
+    const patch = narrowPatch(data)
 
     if (credential) {
       const spec = KINDS[channel.kind as string]
@@ -183,6 +185,7 @@ export default createService({
     if (changesNothing(patch)) return withRuleCount(channel)
     return withRuleCount(await db().notificationChannel.update({
       where: { id: channel.id }, data: patch,
+      system: 'secretId' in patch ? ['secretId'] : [],
     }))
   },
 
@@ -252,6 +255,7 @@ export default createService({
     return db().notificationChannel.update({
       where: { id: channel.id },
       data:  { lastTestAt: new Date().toISOString(), version: channel.version },
+      system: ['lastTestAt'],
     })
   },
 

@@ -177,8 +177,8 @@ const db = join(app, 'db', 'app.db')
 // travelled all the way into the database.
 if (!await must($, probe.eventually(() => probe.sqliteRow({
   db,
-  sql:    'select type, contextType, contextId, userId from notification order by id desc limit 1',
-  expect: (rows) => rows[0]?.type === 'NoteAdded' && rows[0]?.contextType === 'Note',
+  sql:    'select type, subjectType, subjectId, userId from notification order by id desc limit 1',
+  expect: (rows) => rows[0]?.type === 'NoteAdded' && rows[0]?.subjectType === 'Note',
   name:   'the in-app transport wrote a row, typed by the file name',
 }), { retries: 10, everyMs: 300 }), {
   likely:    'notify() threw — the last of the API output is below',

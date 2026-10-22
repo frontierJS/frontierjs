@@ -8,7 +8,7 @@
  * no answer.
  */
 
-import { formatBytes, formatMoney, BYTE_UNITS, minorUnits, isKnownCurrency, knownCurrencies, fromMinor, toMinor, roundMinor, allocate,
+import { formatBytes, formatMoney, BYTE_UNITS, minorUnits, isKnownCurrency, knownCurrencies, fromMinor, toMinor, roundMinor, divRound, allocate,
          MEASURE_UNITS, LENGTH_UNITS, parseLength, unitInfo, isKnownUnit, baseUnit, suggestUnit, convertUnit } from '../../src/units/units.js'
 
 /* ── The ladder ────────────────────────────────────────────────────── */
@@ -560,4 +560,39 @@ test('units: allocate refuses ratios whose sum or share overflows', function () 
 
 test('units: formatMoney with decimals past 100 falls back instead of throwing', function () {
   for (const decimals of [200, -1, 1.5]) assert.equal(typeof formatMoney(1, 'USD', { decimals }), 'string')
+})
+
+/* ── Exact rounding (`FJS-2142`) ───────────────────────────────────── */
+
+test('units: divRound keeps the half-cent tie the float path loses', function () {
+  // 9780 calls (scale 6) × $0.00025 (scale 9) is 2.445 dollars at 15 places; a cent is 10^13 of them.
+  assert.equal(roundMinor(9780 * 0.00025 * 100), 244)
+  assert.equal(divRound(9780n * 10n ** 6n * 250000n, 10n ** 13n), 245n)
+})
+
+test('units: divRound is exact past 2^53', function () {
+  // 1,234,567 calls at $0.00025 is 308,641,750,000,000,000 at 15 places.
+  assert.equal(divRound(308641750000000000n, 10n ** 13n), 30864n)
+  assert.equal(divRound(10n ** 30n + 5n, 10n), 10n ** 29n + 1n)
+})
+
+test('units: divRound modes, signs and a negative divisor', function () {
+  assert.equal(divRound(5n, 2n), 3n)
+  assert.equal(divRound(-5n, 2n), -3n)
+  assert.equal(divRound(5n, -2n), -3n)
+  assert.equal(divRound(-5n, -2n), 3n)
+  assert.equal(divRound(5n, 2n, { mode: 'half-even' }), 2n)
+  assert.equal(divRound(7n, 2n, { mode: 'half-even' }), 4n)
+  assert.equal(divRound(-5n, 2n, { mode: 'half-even' }), -2n)
+  assert.equal(divRound(14n, 5n), 3n)
+  assert.equal(divRound(-14n, 5n), -3n)
+  assert.equal(divRound(6n, 3n), 2n)
+  assert.equal(divRound(0n, 7n), 0n)
+})
+
+test('units: divRound refuses what is not a bigint, a zero divisor and an unknown mode', function () {
+  assert.throws(() => divRound(1, 2n), /bigint/)
+  assert.throws(() => divRound(1n, 2), /bigint/)
+  assert.throws(() => divRound(1n, 0n), /zero/)
+  assert.throws(() => divRound(1n, 2n, { mode: 'floor' }), /unknown mode/)
 })

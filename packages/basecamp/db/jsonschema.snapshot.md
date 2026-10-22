@@ -596,14 +596,14 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` `x-transforms` | — |
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` `x-transforms` | — |
 | `type` | `WorkspaceType` = `"team"` | — | — | — | — |
-| `ownerId` | `string` | yes | — | — | — |
+| `ownerId` | `string` | — | — | `x-litestone-kind` | — |
 | `settings` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `status` | `WorkspaceStatus` = `"active"` | — | — | — | — |
 | `ingressAccountId` | `string`? | — | — | — | — |
 | `ingressZoneId` | `string`? | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `accountId`, `name`, `slug`, `ownerId` · not accepted — `id`, `version`
+**On create**: required — `accountId`, `name`, `slug` · not accepted — `id`, `version`
 
 ### `WorkspaceMember`
 
@@ -675,11 +675,11 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `tokenHint` | `string` | — | — | `x-litestone-kind` | — |
 | `scopes` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
 | `expiresAt` | `string`? | — | — | `format: "date-time"` | — |
-| `revokedAt` | `string`? | — | — | `format: "date-time"` | — |
-| `lastUsedAt` | `string`? | — | — | `format: "date-time"` | — |
-| `totalUses` | `integer` = `0` | — | — | — | — |
-| `usageDate` | `string`? | — | — | — | — |
-| `usesOnDate` | `integer` = `0` | — | — | — | — |
+| `revokedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `lastUsedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `totalUses` | `integer` = `0` | — | — | `x-litestone-kind` | — |
+| `usageDate` | `string`? | — | — | `x-litestone-kind` | — |
+| `usesOnDate` | `integer` = `0` | — | — | `x-litestone-kind` | — |
 | `createdBy` | `string`? | — | — | — | — |
 
 **On create**: required — `userId`, `name` · not accepted — `id`
@@ -930,10 +930,10 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `port` | `integer` = `443` | — | — | — | — |
 | `proxied` | `boolean` = `false` | — | — | — | — |
 | `sslMode` | `string` = `"full_strict"` | — | — | — | — |
-| `certSecretId` | `string`? | — | — | — | — |
-| `certKind` | `string`? | — | — | — | — |
-| `certIssuedAt` | `string`? | — | — | `format: "date-time"` | — |
-| `certExpiresAt` | `string`? | — | — | `format: "date-time"` | — |
+| `certSecretId` | `string`? | — | — | `x-litestone-kind` | — |
+| `certKind` | `string`? | — | — | `x-litestone-kind` | — |
+| `certIssuedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `certExpiresAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `appId`, `hostname` · not accepted — `id`, `version`
@@ -1147,8 +1147,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `description` | `string`? | — | — | `minLength: 0` `maxLength: 500` | — |
 | `script` | `string` | yes | — | `minLength: 1` `maxLength: 20000` | — |
 | `timeoutSeconds` | `integer` = `300` | — | — | `minimum: 5` `maximum: 3600` | — |
-| `lastRunAt` | `string`? | — | — | `format: "date-time"` | — |
-| `runCount` | `integer` = `0` | — | — | — | — |
+| `lastRunAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `runCount` | `integer` = `0` | — | — | `x-litestone-kind` | — |
 | `createdBy` | `string`? | — | — | — | — |
 
 **On create**: required — `name`, `slug`, `script` · not accepted — `id`
@@ -1292,10 +1292,10 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `kind` | `ChannelKind` | yes | — | — | — |
 | `config` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
-| `secretId` | `string`? | — | — | — | — |
+| `secretId` | `string`? | — | — | `x-litestone-kind` | — |
 | `isActive` | `boolean` = `true` | — | — | — | — |
-| `lastTestAt` | `string`? | — | — | `format: "date-time"` | — |
-| `lastDeliveryAt` | `string`? | — | — | `format: "date-time"` | — |
+| `lastTestAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `lastDeliveryAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `createdBy` | `string`? | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
@@ -1670,8 +1670,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `userId` | `string` | yes | — | — | — |
 | `type` | `string` | yes | — | — | — |
 | `data` | `json` | yes | — | `x-sortable: "json"` `x-aggregatable` | — |
-| `contextType` | `NotificationContext`? | — | — | — | — |
-| `contextId` | `string`? | — | — | — | — |
+| `subjectType` | `NotificationContext`? | — | — | — | — |
+| `subjectId` | `string`? | — | — | — | — |
 | `deliveryKey` | `string`? | — | — | — | — |
 | `readAt` | `string`? | — | — | `format: "date-time"` | — |
 

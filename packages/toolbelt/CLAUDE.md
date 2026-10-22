@@ -9,7 +9,7 @@ dependency graph on the strength of it, so breaking purity costs the standing.
 
 **One kit per subpath.** `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/docfences`, `/env`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
 `/fill`, `/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/keys`, `/mailbox`, `/markdown`, `/match`, `/mime`,
-`/predicate`, `/query`, `/rank`, `/redact`, `/search`, `/signature`, `/sigv4`, `/sse`, `/textedit`, `/trace`, `/transforms` and `/units` today; a caller
+`/predicate`, `/query`, `/rank`, `/redact`, `/seal`, `/search`, `/signature`, `/sigv4`, `/sse`, `/textedit`, `/trace`, `/transforms` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
 `bun run test` — `test/run.js` is the whole harness, no dependencies, runs
@@ -66,7 +66,9 @@ src/units/           a magnitude with a unit, as a person reads it. Bytes:
                      callers had four copies and two answers (`FJS-408`).
                      Money: `Intl.NumberFormat`, one locale, the bare symbol —
                      five copies in one app and two email bodies with no
-                     currency at all (`FJS-440`). Arithmetic: `roundMinor` and
+                     currency at all (`FJS-440`). Arithmetic: `roundMinor`,
+                     `divRound` (the same two modes over a BigInt quotient,
+                     for a rate × quantity past 2^53, `FJS-2142`) and
                      `allocate`, the rounding mode and the leftover unit
                      `@money` deliberately left to the app (`FJS-D154`).
                      MEASURES: the symbol table behind `.lite`'s `@unit`
@@ -179,6 +181,17 @@ src/signature/       what a signed machine-to-machine request is — canonical
                      ONE id for a plus-address — lower-case Crockford base32, an
                      80-bit MAC over `purpose:id`, expiry read from the id's ULID
                      (`FJS-1941`)
+src/seal/            a value only one key can open — `seal(publicKey, data)`,
+                     `open(privateKey, sealed)`, `generateSealingKeys`. RFC
+                     9180's base mode (DHKEM-X25519, HKDF-SHA256, AES-256-GCM)
+                     in WebCrypto, so a terminal and a browser seal with one
+                     function; any HPKE library opens it under `info`
+                     `frontierjs/seal v1`. A second X25519 pair beside the
+                     Ed25519 one, never converted from it (`FJS-D1400`).
+                     `open` answers null for what does not open and throws
+                     only for a private key that does not parse. Pony
+                     Express's letters are the caller (`IDEAS/pony-express.md`
+                     Phase 3)
 src/sigv4/           AWS Signature V4 — sign, presign, `deriveSigningKey`, and
                      the canonical-URI rules AWS's own suite grades. Litestone's
                      `File` columns and `conduit-s3` sign the same requests, and
@@ -195,7 +208,9 @@ src/trace/           what a W3C `traceparent` says — `parseTraceparent`.
                      callers are TypeScript
 src/sse/             the `text/event-stream` frame, both ways — `formatEvent`,
                      which junction's `ctx.sse()` writes with, and
-                     `parseEvents`, incremental over decoded text, which
+                     `parseEvents`, one decoded chunk plus the state the last call
+                     answered (a rescan of the pending event per chunk was
+                     quadratic, `FJS-2193`), which
                      sierra's `readEvents` reads with. Every page reading a
                      stream had written a reader, splitting on `\n\n`
                      (`FJS-1581`). `data` is JSON both ways; a line that is not
@@ -570,6 +585,11 @@ license.
   a factor of a hundred whichever direction it is going. `allocate` refuses for
   the same reason rather than splitting evenly when the ratios sum to zero — a
   guess that adds up is the worst kind.
+- **`roundMinor(units * rate * 100)` loses half-cent ties, and `divRound` is the
+  way out.** 9,780 × 0.00025 × 100 is 244.99999…, so it bills $2.44 where the
+  exact answer is $2.45 (`FJS-2142`); the product is also past 2^53 at
+  `@scale(6)` × `@scale(9)`. Multiply in BigInt and `divRound(product, 10n ** 13n)`.
+  It takes bigints only — a Number past 2^53 is already wrong on arrival.
 - **`allocate` has no `scale` and no currency, and that is not an omission.**
   The smallest thing a split can hand out is one of whatever `amount` is counted
   in, which the caller decided by holding an integer. `FJS-D154` was filed with

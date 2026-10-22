@@ -21,7 +21,7 @@
 import { describe, test, expect, beforeAll } from 'bun:test'
 import { createApp }     from '../src/core/app.ts'
 import { createService } from '../src/core/service.ts'
-import { createClient }  from '../../litestone/src/index.js'
+import { createClient, generateJsonSchema } from '../../litestone/src/index.js'
 
 // 80 models, because the cost being measured is `generateJsonSchema` over the
 // WHOLE schema and a two-model fixture cannot tell a cache hit from a miss —
@@ -137,12 +137,18 @@ describe('the key is the schema, not the client', () => {
     // on this fixture: 1.3x with the key on the schema, 6.6x with it back on
     // the client, and 15x on the 188-model one.
     //
-    // The floor below is not decoration. The first version of this test used a
-    // two-model schema and a bound with a constant in it, and it passed with
-    // the fix reverted — a test that proves nothing (`FJS-351`). If the fixture
-    // is ever too small or the machine too fast to measure, this fails saying
-    // so rather than passing by accident.
-    expect(reused).toBeGreaterThan(0.05)
+    // The first version of this test used a two-model schema and a bound with
+    // a constant in it, and it passed with the fix reverted — a test that
+    // proves nothing (`FJS-351`). The guard is the price of one miss, timed
+    // directly and compared with a hit: an absolute floor on the hit fails
+    // whenever a warm process makes the hit cheaper, which says nothing about
+    // whether the fixture can tell a miss from a hit (`FJS-2085`).
+    const derive = () => generateJsonSchema(db.$schema)
+    for (let i = 0; i < 3; i++) derive()
+    const t0 = Bun.nanoseconds()
+    for (let i = 0; i < 10; i++) derive()
+    const miss = (Bun.nanoseconds() - t0) / 10 / 1e6
+    expect(miss / reused).toBeGreaterThan(5)
     expect(fresh / reused).toBeLessThan(3)
   })
 })

@@ -27,6 +27,9 @@
     { ref: 'ORD-4', who: 'Edsger', amount: '£4.00',  tone: 'danger' },
   ]
 
+  const nameColumns = [{ name: 'name', label: 'Name', sortable: true }]
+  const names = [{ name: 'BNI' }, { name: 'Bing' }, { name: 'apple' }]
+
   // Driven from the page rather than from a header click: a bound ordering is
   // how a list restores the sort out of its URL, and a push from the parent
   // takes a different path through the component than a click does.
@@ -160,6 +163,19 @@
 <button type="button" id="push-indexed" onclick={() => { pushedOrder = { 0: { ref: 'asc' } } }}>push indexed</button>
 
 <output id="sort">{orderBy}</output>
+
+<!-- FJS-3402: the same ordering over a column the schema declares nocase, and
+     over one it does not. -->
+<div id="nocase">
+  <Table columns={nameColumns} rows={names} orderBy="name" collations={{ name: 'nocase' }}>
+    {#snippet row(r)}<tr><td>{r.name}</td></tr>{/snippet}
+  </Table>
+</div>
+<div id="binary">
+  <Table columns={nameColumns} rows={names} orderBy="name">
+    {#snippet row(r)}<tr><td>{r.name}</td></tr>{/snippet}
+  </Table>
+</div>
 
 <!--
   FJS-1622: rows that hold state of their own. The checkbox is uncontrolled, so

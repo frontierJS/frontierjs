@@ -76,9 +76,9 @@ export async function sendInApp(
         userId:      recipient.id,
         type,
         data:        data,
-        contextType: message.contextType ?? null,
+        subjectType: message.subjectType ?? null,
         // The column is String; an integer id arrives as a number from a builder.
-        contextId:   message.contextId == null ? null : String(message.contextId),
+        subjectId:   message.subjectId == null ? null : String(message.subjectId),
         ...(deliveryKey !== undefined && { deliveryKey }),
       },
     })

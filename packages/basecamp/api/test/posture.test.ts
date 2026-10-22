@@ -336,7 +336,15 @@ describe('the host row on /hub/security/', () => {
   })
 
   test('the host row\'s own report carries the hub controls beside its fleet grade, for the hub alone', async () => {
-    await env.system.server.update({ where: { id: machine.id }, data: { slug: HOST_SLUG } })
+    // A slug is set once, so the host is a machine enrolled under that slug and
+    // not the fixture renamed.
+    const drifted = { machine, SECRET }
+    machine = await env.system.server.create({ data: { workspaceId: ws.id, name: 'hub-host', slug: HOST_SLUG, status: 'pending' } })
+    const { mintEnrollToken, hashEnrollToken } = await import('../src/providers/compute/enrollment.ts')
+    const token = mintEnrollToken().token
+    await env.system.server.update({ where: { id: machine.id },
+      data: { enrollTokenHash: hashEnrollToken(token), enrollExpiresAt: new Date(Date.now() + 60_000) } })
+    SECRET = (await env.http.post(`/servers/${machine.id}/enroll`).send({ token, cert: CERT })).body.secret
     const files = { db: { path: '/srv/db', mode: '700', owner: 'root', group: 'root' },
                     env: { path: '/srv/.env', mode: '644', owner: 'root', group: 'root' } }
     expect((await report({ ...CLEAN, host_files: files })).status).toBe(200)
@@ -351,6 +359,7 @@ describe('the host row on /hub/security/', () => {
 
     // A workspace owner reaches the row through `latest`, never the hub's view.
     expect((await env.as(owner).service('posture').call('host', undefined, {}).catch((e: any) => e)).code ?? 404).toBe(404)
+    ;({ machine, SECRET } = drifted)
   })
 
   test('a report naming no machine is refused, whatever signs it', async () => {

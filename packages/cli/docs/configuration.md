@@ -26,13 +26,10 @@ DB_DIR=db
 SITE_DIR=site
 CLI_DIR=cli
 
-# Server targets (legacy CapRover deploys + utils:ssh)
+# Server targets (env:pull --from ssh + utils:ssh)
 DEV_SERVER, DEV_SERVER_PATH
 STAGE_SERVER, STAGE_SERVER_PATH
 PROD_SERVER, PROD_SERVER_PATH
-
-# CapRover (env:pull --from caprover)
-DEV_CAPTAIN, CAPROVER_URL, CAPROVER_TOKEN
 ```
 
 ### Port schema

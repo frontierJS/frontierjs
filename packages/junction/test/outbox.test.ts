@@ -354,3 +354,46 @@ describe('the relay under tenancy { strategy row }', () => {
     expect('tenant' in jobs.sent[0].opts).toBe(false)
   })
 })
+
+// ─── FJS-2621: a writer that is not a service call ──────────────────────────
+
+import { enqueueOutboxOn } from '../src/plugins/outbox/engine.ts'
+
+describe('enqueueOutboxOn — a job or receiver with no ServiceContext', () => {
+
+  test('a committed transaction leaves the row, with a null actor and the stated tenant', async () => {
+    const db = await mkDb()
+    const id = await db.$transaction(async (tx: any) => {
+      await tx.post.create({ data: { title: 'filed' } })
+      return enqueueOutboxOn(appWithRelay(), tx, 'mail.move', { mailbox: 'closed' }, { tenant: 't-1' })
+    })
+
+    const owed = await rows(db)
+    expect(owed).toHaveLength(1)
+    expect(owed[0]).toMatchObject({ id, job: 'mail.move', payload: { mailbox: 'closed' }, actorId: null, tenantId: 't-1' })
+  })
+
+  test('a rolled-back transaction leaves no row', async () => {
+    const db = await mkDb()
+    await expect(db.$transaction(async (tx: any) => {
+      await tx.post.create({ data: { title: 'filed' } })
+      await enqueueOutboxOn(appWithRelay(), tx, 'mail.move', {})
+      throw new Error('ingest failed')
+    })).rejects.toThrow('ingest failed')
+
+    expect(await rows(db)).toHaveLength(0)
+  })
+
+  test('outside a transaction it refuses by name', async () => {
+    const db = await mkDb()
+    await expect(enqueueOutboxOn(appWithRelay(), db, 'mail.move', {}))
+      .rejects.toThrow('no transaction is open')
+    expect(await rows(db)).toHaveLength(0)
+  })
+
+  test('with no relay installed it refuses by name', async () => {
+    const db = await mkDb()
+    await expect(db.$transaction((tx: any) => enqueueOutboxOn({}, tx, 'mail.move', {})))
+      .rejects.toThrow('no outbox relay is installed')
+  })
+})

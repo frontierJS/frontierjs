@@ -640,6 +640,27 @@ describe('windowed and computed finds apply the caller\'s directives (FJS-2904)'
     for (const r of picked) expect(Object.keys(r)).toEqual(['id'])
   })
 
+  // `findScoped` dropped `$after`, so a tether growing its window over any list
+  // built on it was handed page one on every press (FJS-3347).
+  test('a findScoped list answers $after: the window walks past its first page', async () => {
+    const svc = () => env.as(owner).service('projects')
+    for (const n of ['w1', 'w2', 'w3']) await svc().create({ name: n, slug: `win-${n}-${Math.random().toString(36).slice(2, 8)}` })
+
+    const seen: string[] = []
+    let after: string | undefined
+    for (let page = 0; page < 50; page++) {
+      const res = await svc().find({}, { directives: { limit: 2, ...(after ? { after } : {}) } })
+      seen.push(...res.data.map((r: any) => r.id))
+      if (!res.hasMore) break
+      expect(typeof res.endCursor).toBe('string')
+      after = res.endCursor
+    }
+    const all = (await svc().find({}, { directives: { limit: 200 } })).data.map((r: any) => r.id)
+    expect(all.length).toBeGreaterThan(2)
+    expect(seen.length).toBe(new Set(seen).size)
+    expect([...seen].sort()).toEqual([...all].sort())
+  })
+
   test('trash sorts and projects what is deleted', async () => {
     const mk = (n: string) => env.as(owner).service('projects').create({ name: n, slug: `trash-${n}-${Math.random().toString(36).slice(2, 8)}` })
     for (const n of ['zeta', 'alpha']) await env.as(owner).service('projects').remove((await mk(n)).id)
@@ -1952,7 +1973,7 @@ describe('a column the system writes and its caller does not', () => {
   }
   const readsUser = async (principal: Record<string, unknown>, id: string) =>
     !!await ((env.actingAs as any)(principal)).user.findUnique({ where: { id } })
-  const issuer = () => ({ id: owner.userId, workspaceId: ws.id, memberRole: 'owner' })
+  const issuer = () => ({ id: owner.id, workspaceId: ws.id, memberRole: 'owner' })
 
   test('an issuer reads the bot, and its key is the caller\'s write — the trail files it under them', async () => {
     const bot = await botIn(ws.id)
@@ -1962,10 +1983,10 @@ describe('a column the system writes and its caller does not', () => {
       name: `bot-${tag()}`, scopes: ['servers:read'], expiresIn: '30d', userId: bot.id,
     })
     expect(made.userId).toBe(bot.id)
-    expect(made.createdBy).toBe(owner.userId)
+    expect(made.createdBy).toBe(owner.id)
 
     const entry = await trailEntry('ApiKey', 'create', made.id)
-    expect(entry?.actorId).toBe(owner.userId)
+    expect(entry?.actorId).toBe(owner.id)
     expect(entry?.actorType).toBe('user')
 
     // The model's gate is the caller's too: a developer is below it.
@@ -1979,10 +2000,10 @@ describe('a column the system writes and its caller does not', () => {
   test('a member who cannot issue a key reads no bot, and neither does a non-member', async () => {
     const bot = await botIn(ws.id)
     expect(await readsUser(issuer(), bot.id)).toBe(true)
-    expect(await readsUser({ id: viewer.userId,    workspaceId: ws.id, memberRole: 'viewer' },    bot.id)).toBe(false)
-    expect(await readsUser({ id: developer.userId, workspaceId: ws.id, memberRole: 'developer' }, bot.id)).toBe(false)
+    expect(await readsUser({ id: viewer.id,    workspaceId: ws.id, memberRole: 'viewer' },    bot.id)).toBe(false)
+    expect(await readsUser({ id: developer.id, workspaceId: ws.id, memberRole: 'developer' }, bot.id)).toBe(false)
     // membershipClaim emits no `workspaceId` for a non-member.
-    expect(await readsUser({ id: outsider.userId }, bot.id)).toBe(false)
+    expect(await readsUser({ id: outsider.id }, bot.id)).toBe(false)
   })
 
   test('an issuer reads a bot of their own workspace and not one of another', async () => {
@@ -2002,8 +2023,8 @@ describe('a column the system writes and its caller does not', () => {
     const bot = await botIn(ws.id)
 
     expect(await readsUser(issuer(), bot.id)).toBe(true)
-    expect(await readsUser(issuer(), owner.userId)).toBe(true)
-    expect(await readsUser(issuer(), developer.userId)).toBe(false)
+    expect(await readsUser(issuer(), owner.id)).toBe(true)
+    expect(await readsUser(issuer(), developer.id)).toBe(false)
   })
 
   test('…and a key for somebody who is not a bot is refused before the mint', async () => {
@@ -2377,8 +2398,9 @@ describe('an app made from a blueprint', () => {
       environmentId: environment.id, name: 'Plain', type: 'container',
       source: { kind: 'image', image: 'nginx:alpine' },
     }) as any
-    await expect(env.as(developer).service('apps').patch(plain.id, { blueprintId: bp.id }))
-      .rejects.toThrow(/blueprintId/)
+    await env.as(developer).service('apps').patch(plain.id, { blueprintId: bp.id })
+    const stored = await (env.system as any).app.findFirst({ where: { id: plain.id } })
+    expect(stored.blueprintId).toBeNull()
   })
 })
 
@@ -2432,7 +2454,9 @@ describe('variables', () => {
     expect(edited.value).toBe(null)
     const stored = await (env.system as any).variable.findFirst({ where: { id: row.id } })
     expect(stored.secretValue).toBe('second')
-    await expect(vars().patch(row.id, { secret: false, version: edited.version })).rejects.toThrow(/secret/)
+    // `secret` is set-once: the patch drops it and the value stays secret.
+    const kept = await vars().patch(row.id, { secret: false, version: edited.version }) as any
+    expect(kept.secret).toBe(true)
 
     await vars().remove(row.id)
     await vars().create({ appId: api.id, key: 'TOKEN', value: 'third', secret: true })
@@ -3396,7 +3420,7 @@ describe('the trash lists what was deleted, and each service brings its own back
     const entries = await (env.system as any).auditTrail.findMany({ where: { model: 'Secret', operation: 'create' } })
     const mine    = entries.filter((e: any) => JSON.stringify(e.records ?? e).includes(secret.id))
     expect(mine.length).toBeGreaterThan(0)
-    expect(mine.every((e: any) => e.actorId === owner.userId)).toBe(true)
+    expect(mine.every((e: any) => e.actorId === owner.id)).toBe(true)
   })
 
   // FJS-2881: `test` handed delivery a `sys` it never declared, so every test
@@ -3472,9 +3496,9 @@ describe('notifications — the inbox reads what the driver writes', () => {
 
   let older: any, newer: any, theirs: any
   beforeAll(async () => {
-    older  = await note(owner.userId,     'older', '2026-01-01T00:00:00.000Z')
-    newer  = await note(owner.userId,     'newer', '2026-01-02T00:00:00.000Z')
-    theirs = await note(developer.userId, 'theirs', '2026-01-03T00:00:00.000Z')
+    older  = await note(owner.id,     'older', '2026-01-01T00:00:00.000Z')
+    newer  = await note(owner.id,     'newer', '2026-01-02T00:00:00.000Z')
+    theirs = await note(developer.id, 'theirs', '2026-01-03T00:00:00.000Z')
   })
 
   test('a person lists their own, newest first, and never somebody else\'s', async () => {
@@ -3513,7 +3537,7 @@ describe('notifications — the inbox reads what the driver writes', () => {
   })
 
   test('a viewer marks their own read — the lowest role still reads its inbox', async () => {
-    const n = await note(viewer.userId, 'for the viewer', '2026-01-04T00:00:00.000Z')
+    const n = await note(viewer.id, 'for the viewer', '2026-01-04T00:00:00.000Z')
     const out = await env.as(viewer).service('notifications').patch(n.id, {})
     expect(out.readAt).toBeTruthy()
     const { count } = await env.as(viewer).service('notifications').call('readAll')
@@ -3530,36 +3554,36 @@ describe('users — a person edits their own profile, at any standing', () => {
 
   test('a viewer reads and edits their own row through me', async () => {
     const users = env.as(viewer).service('users')
-    expect((await users.get('me')).id).toBe(viewer.userId)
+    expect((await users.get('me')).id).toBe(viewer.id)
     const out = await users.patch('me', { displayName: 'Vee', username: 'vee' })
     expect(out.displayName).toBe('Vee')
-    const row = await sys().user.findUnique({ where: { id: viewer.userId } })
+    const row = await sys().user.findUnique({ where: { id: viewer.id } })
     expect([row.displayName, row.username]).toEqual(['Vee', 'vee'])
   })
 
   test('a caller naming no workspace edits theirs too', async () => {
-    const bare = session({ id: viewer.userId })
-    const out = await env.as(bare).service('users').patch(viewer.userId, { displayName: 'Vee 2' })
+    const bare = session({ id: viewer.id })
+    const out = await env.as(bare).service('users').patch(viewer.id, { displayName: 'Vee 2' })
     expect(out.displayName).toBe('Vee 2')
   })
 
   test('nobody reads or edits somebody else\'s, the owner of the workspace included', async () => {
-    await expect(env.as(owner).service('users').get(viewer.userId)).rejects.toThrow(/No user/)
-    await expect(env.as(owner).service('users').patch(viewer.userId, { displayName: 'forged' }))
+    await expect(env.as(owner).service('users').get(viewer.id)).rejects.toThrow(/No user/)
+    await expect(env.as(owner).service('users').patch(viewer.id, { displayName: 'forged' }))
       .rejects.toThrow(/No user/)
-    expect((await sys().user.findUnique({ where: { id: viewer.userId } })).displayName).not.toBe('forged')
+    expect((await sys().user.findUnique({ where: { id: viewer.id } })).displayName).not.toBe('forged')
   })
 
   // Which columns is the schema's, and the service names none of them. Each of
   // these is one a person must not write about themselves.
   test('the address, the organization and every graded column are dropped', async () => {
-    const before = await sys().user.findUnique({ where: { id: developer.userId } })
+    const before = await sys().user.findUnique({ where: { id: developer.id } })
     await env.as(developer).service('users').patch('me', {
       email: 'taken@x.co', accountId: null, emailVerified: true,
       isSystemAdmin: true, status: 'suspended', kind: 'bot', displayName: 'Dev',
       deletedAt: new Date().toISOString(), id: 'hijack', createdAt: '2000-01-01T00:00:00.000Z',
     })
-    const row = await sys().user.findUnique({ where: { id: developer.userId } })
+    const row = await sys().user.findUnique({ where: { id: developer.id } })
     expect(row.email).toBe(before.email)
     expect(row.accountId).toBe(before.accountId)
     expect(row.emailVerified).toBe(before.emailVerified)
@@ -3655,7 +3679,7 @@ describe('leaving a workspace, and handing one over', () => {
 
   test('nor to somebody outside the workspace', async () => {
     const c = await crew('owner')
-    await expect(c.as(0).call('transferOwnership', c.w.id, { userId: developer.userId }))
+    await expect(c.as(0).call('transferOwnership', c.w.id, { userId: developer.id }))
       .rejects.toThrow(/Member not found/)
     expect(await c.roleOf(0)).toBe('owner')
   })
@@ -3705,6 +3729,13 @@ describe('a list honors every filter it admits', () => {
   test('deployments by branch — a filter the /deployments/ bar offers', async () => {
     const got = ids(await env.as(owner).service('deployments').find({ branch: d2.branch }))
     expect(got).toEqual([d2.id])
+  })
+
+  test('a hand patch of a release writes its run columns and drops its set-once ones', async () => {
+    const patched = await env.as(owner).service('deployments').patch(d1.id, { trigger: 'rollback', author: 'someone else', durationMs: 42 })
+    expect(patched.durationMs).toBe(42)
+    expect(patched.trigger).toBe('manual')
+    expect(patched.author).toBeNull()
   })
 
   test('jobs by name', async () => {
@@ -3864,7 +3895,7 @@ describe('hub custom methods declare their input', () => {
     await expect(env.as(sysadmin).service('hub').call('setWorkspaceStatus', undefined,
       { workspaceId: ws.id, status: 'paused' })).rejects.toThrow(/status/)
     await expect(env.as(sysadmin).service('hub').call('setUserStatus', undefined,
-      { userId: owner.userId, status: 'gone' })).rejects.toThrow(/status/)
+      { userId: owner.id, status: 'gone' })).rejects.toThrow(/status/)
   })
 })
 
@@ -3888,7 +3919,7 @@ describe('workspace member verbs declare their input', () => {
     await expect(env.as(owner).service('workspaces').call('addMember', ws.id,
       { userId: 'nobody-yet', role: 'wizard' })).rejects.toThrow(/role/)
     await expect(env.as(owner).service('workspaces').call('setMemberRole', ws.id,
-      { userId: owner.userId, role: 'wizard' })).rejects.toThrow(/role/)
+      { userId: owner.id, role: 'wizard' })).rejects.toThrow(/role/)
     await expect(env.as(owner).service('invitations').create(
       { email: `bad-${Date.now()}@x.co`, role: 'wizard' })).rejects.toThrow(/role/)
   })
@@ -4099,9 +4130,11 @@ describe('monitors', () => {
     const created = await env.as(owner).service('monitors').create(fresh({ status: 'down' })).catch(() => null) as any
     // Either refused or stripped; what it may never be is accepted as `down`.
     if (created) expect(created.status).toBe('pending')
-    // A transition column is moved by its declared moves, never by a patch.
+    // A transition column is moved by its declared moves, never by a patch:
+    // the update schema marks it read-only and narrowPatch drops it.
     const m = await env.as(owner).service('monitors').create(fresh()) as any
-    await expect(env.as(owner).service('monitors').patch(m.id, { status: 'up' })).rejects.toThrow()
+    await env.as(owner).service('monitors').patch(m.id, { status: 'up' })
+    expect(((await (env.system as any).monitor.findFirst({ where: { id: m.id } })) as any).status).toBe('pending')
     await expect(env.as(owner).service('monitors').patch(m.id, { failStreak: 9 })).rejects.toThrow()
     await expect(env.as(owner).service('monitors').create(fresh({ url: 'ftp://example.com/' })))
       .rejects.toThrow(/url/i)
@@ -4133,7 +4166,7 @@ describe('monitors', () => {
     expect(detached.channels.length).toBe(0)
 
     const other = await sys.workspace.create({ data: {
-      accountId: ws.accountId, name: 'Other', slug: `o-${tag()}`, ownerId: owner.userId } })
+      accountId: ws.accountId, name: 'Other', slug: `o-${tag()}`, ownerId: owner.id } })
     const foreign = await sys.notificationChannel.create({ data: {
       workspaceId: other.id, name: `f-${tag()}`, kind: 'webhook', config: { url: 'https://hooks.example.com/y' } } })
     await expect(env.as(owner).service('monitors').call('attachChannel', m.id, { channelId: foreign.id }))

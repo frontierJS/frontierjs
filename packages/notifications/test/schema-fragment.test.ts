@@ -50,18 +50,18 @@ describe('the schema fragment', () => {
     expect(model, 'the fragment declares model Notification').toBeDefined()
     const fields = new Set(model!.fields.map(f => f.name))
 
-    for (const column of ['userId', 'type', 'data', 'contextType', 'contextId'])
+    for (const column of ['userId', 'type', 'data', 'subjectType', 'subjectId'])
       expect(fields.has(column)).toBe(true)
 
     // The recipient's own column, and the reason update is USER in the gate.
     expect(fields.has('readAt')).toBe(true)
   })
 
-  test('contextId is String — a ULID or uuid row id must fit the column (FJS-1270)', () => {
+  test('subjectId is String — a ULID or uuid row id must fit the column (FJS-1270)', () => {
     const out    = parse('database main { path "./x.db" }\n' + readFileSync(join(root, FRAGMENT), 'utf8'))
     type Field   = { name: string, type: { name: string } }
     const models = out.schema!.models as Array<{ name: string, fields: Field[] }>
-    const field  = models.find(m => m.name === 'Notification')!.fields.find(f => f.name === 'contextId')
+    const field  = models.find(m => m.name === 'Notification')!.fields.find(f => f.name === 'subjectId')
     expect(field!.type.name).toBe('String')
   })
 

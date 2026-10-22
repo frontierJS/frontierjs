@@ -6,8 +6,8 @@
  * the commitments that drive it, reached the way the queue reaches them. A
  * renewal is a period CLOSING (`FJS-D367`): `SubscriptionPeriod`'s
  * `@@commitment(close, on: endsOn)` owes the move, and the hook in
- * `api/src/core/commitments.ts` issues the invoice and opens the next period in
- * the same transaction (`FJS-D368`). Standing an API up would add a transport
+ * `api/src/domain/billing/renewal.commitments.ts` issues the invoice and opens
+ * the next period in the same transaction (`FJS-D368`). Standing an API up would add a transport
  * to a drive that asserts nothing about one, and would put this on the login
  * limiter for no reason (`verify:tenants` runs under bun for the same reason).
  *
@@ -23,9 +23,10 @@
  * A period is fired through junction's own `fireCommitment` — the plugin's
  * path, re-derivation and transaction included — on a client scoped to the
  * shop's `SYSTEM` principal, which is what `commitments()` hands it. The hook
- * dispatches the collection after the commit into `app.jobs`, and there is no
- * app here, so a recorder stands in for the queue and the collection itself is
- * `verify:collect`'s, which runs the whole chain against a started app.
+ * writes the collection as an outbox row on the move's transaction, and there
+ * is no app here to relay it, so the relay's kick is a no-op and the drive
+ * reads the committed rows; the collection itself is `verify:collect`'s, which
+ * runs the whole chain against a started app.
  *
  * Every fixture is minted under a per-run prefix (`FJS-530`, `FJS-546`): a
  * subscription reference and an invoice number are both `@unique`, and a drive
@@ -34,7 +35,7 @@
 
 import { db }              from '../../api/src/core/db.ts'
 import { SYSTEM }          from '../../api/src/core/gate.ts'
-import { commitmentHooks } from '../../api/src/core/commitments.ts'
+import hooks               from '../../api/src/domain/billing/renewal.commitments.ts'
 import { advancePeriod, settleInvoice, voidInvoice, startSubscription, DUNNING_DAYS, GRACE_DAYS, TERMS_DAYS } from '../../api/src/domain/billing'
 import { fireCommitment } from '@frontierjs/junction/commitments'
 import { plainDateIn, addToDate, daysBetween, startOfDay } from '@frontierjs/toolbelt/datetime'
@@ -45,9 +46,8 @@ const RUN = String(Date.now()).slice(-6)
 
 const { got, t } = results()
 
-/** The queue the hook dispatches the collection into, recording. See the header. */
-const queued = []
-const hooks  = commitmentHooks(() => ({ dispatch: (_job, payload) => { queued.push(payload) } }))
+/** The relay `enqueue` needs present; with no app there is nothing to deliver. See the header. */
+const outbox = { deliver: async () => {} }
 
 /** The shop's own principal, as `commitments()` scopes a fire. */
 const shop = db.$setAuth(SYSTEM)
@@ -57,7 +57,7 @@ const shop = db.$setAuth(SYSTEM)
  *  fails the assertions after it by name rather than crashing the report. */
 const fire = async (period) => !period ? 'no open period' : fireCommitment(shop, {
   accessor: 'subscriptionPeriod', transition: 'close', id: period.id, dueAt: period.endsOn, timeZone: 'UTC',
-}, { hooks })
+}, { hooks, outbox })
 
 const openPeriod = (subscriptionId) =>
   sys.subscriptionPeriod.findFirst({ where: { subscriptionId, status: 'open' } })
@@ -135,7 +135,8 @@ t('renew.windowMoved', (await reread()).currentPeriodEnd === advancePeriod(perio
     periods.length === 2 && periods[0].status === 'closed' && periods[1].status === 'open' && periods[1].startsOn === periodEnd)
 }
 // Presented AFTER the commit, as its own job — once.
-t('renew.collectionQueuedOnce', queued.filter(q => q.invoiceId === after[after.length - 1].id).length === 1)
+t('renew.collectionQueuedOnce', (await sys.outboxMessage.findMany({ where: { job: 'invoice-collect' } }))
+  .filter(r => r.payload.invoiceId === after[after.length - 1].id).length === 1)
 t('renew.dueDateFromTerms',
   daysBetween(plainDateIn(invoice.issuedAt, 'UTC'), invoice.dueOn) === TERMS_DAYS)
 // The period is a pair of DAYS, and the invoice charges for the one the

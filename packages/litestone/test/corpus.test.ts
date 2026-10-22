@@ -37,7 +37,7 @@ import { readFileSync, existsSync, rmSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Database } from 'bun:sqlite'
-import { parse, createClient, introspect, buildPristine, diffSchemas } from '../src/index.js'
+import { parse, createClient, introspect, buildPristine, diffSchemas, generateTypeScript } from '../src/index.js'
 import { COMMITTED, FETCHED, LOCAL } from './fixtures/corpus/tiers.js'
 
 const dir = new URL('./fixtures/corpus/', import.meta.url).pathname
@@ -89,6 +89,13 @@ describe('the corpus — schemas converted from real applications', () => {
       expect(parsed.errors).toEqual([])
       expect(parsed.valid).toBe(true)
       expect(parsed.schema.models.length).toBeGreaterThan(20)
+    })
+
+    // `litestone types` refuses a model whose generated shapes collide with
+    // another's (`FJS-D1282`), and a fixture that parses and builds but cannot be
+    // typed is a schema no app could run the command over (`FJS-3379`).
+    test(`${name} generates types without a name collision`, () => {
+      expect(() => generateTypeScript(parse(source).schema)).not.toThrow()
     })
 
     test(`${name} builds a database, and booting again against it migrates nothing`, async () => {

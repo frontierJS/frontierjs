@@ -308,7 +308,7 @@ export default createService({
     // `key` is immutable: it is the name in somebody else's source code, and
     // half of a @@unique. Renaming it silently turns every SDK call into a
     // miss, which resolves to the default and looks like the flag being off.
-    const patch = narrowPatch(data, ['key', 'createdBy'])
+    const patch = narrowPatch(data)
     if (changesNothing(patch)) return flagWithOverrides(flag)
 
     return flagWithOverrides(await db().featureFlag.update({

@@ -31,6 +31,8 @@ siteName: Basecamp
   import { primary, groups, elsewhere } from '../lib/nav.js'
   import { paletteItems, visible } from '@frontierjs/ui/nav'
 
+  var TOPBAR = primary.entries
+
   $: (page.siteName, page.route, page.pathname, page.title)
   $: (status.connected, session.user, session.level, session.workspaceId, session.workspaces)
   $: commandPalette.open
@@ -332,7 +334,7 @@ siteName: Basecamp
          and this row is hidden (`.hide-sm`, the style block below). -->
     {#if session.user}
       <nav class="cluster hide-sm" aria-label="Primary">
-        {#each primary.entries as link}
+        {#each TOPBAR as link}
           <a class="navlink" href={link.href}
              aria-current={(page.route, current(link)) ? 'page' : null}
           >{link.label}</a>
@@ -502,7 +504,7 @@ siteName: Basecamp
           />
         </div>
       {/if}
-      {@render navlinks(primary.entries)}
+      {@render navlinks(TOPBAR)}
       {@render navlists()}
     </nav>
   </Drawer>

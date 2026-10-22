@@ -175,7 +175,7 @@ try {
 
   // ── 3. the staff's row, and only their own ─────────────────────────────
   // Scoped to THIS run, not to the reference. A notification has no foreign key
-  // to its order (`contextType`/`contextId` is a loose reference, deliberately),
+  // to its order (`subjectType`/`subjectId` is a loose reference, deliberately),
   // so deleting the order at the end of a run leaves its notifications behind —
   // which is the design working, and would otherwise make the second run of
   // this file count two.

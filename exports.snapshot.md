@@ -401,6 +401,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./rank (default)` | `src/rank/rank.js` | yes |
 | exports | `./redact (types)` | `src/redact/redact.d.ts` | yes |
 | exports | `./redact (default)` | `src/redact/redact.js` | yes |
+| exports | `./seal` | `src/seal/seal.js` | yes |
 | exports | `./search` | `src/search/search.js` | yes |
 | exports | `./signature` | `src/signature/signature.js` | yes |
 | exports | `./sigv4 (types)` | `src/sigv4/sigv4.d.ts` | yes |

@@ -32,7 +32,7 @@ import { resolve }                                  from 'path'
 // bytes into the app's own schema, the way `fli auth:install` writes out
 // `model User` — because the app OWNS this model. It relates userId to its own
 // User, it adds the columns its bell menu wants, and it answers
-// `polymorphic-subject` for contextType, which this package cannot answer for
+// `polymorphic-subject` for subjectType, which this package cannot answer for
 // it. `fli outbox:install` imports by name instead, and that is right there:
 // OutboxMessage is @@gate(8) machinery an app never writes.
 //
@@ -78,7 +78,7 @@ Installs the one model `@frontierjs/notifications` requires.
 It is **appended** rather than imported: `Notification` is the app's model, not
 the package's. The package writes rows to it through `asSystem()` and reads
 none, while the app relates it to its own `User`, puts it on a screen and
-decides what `contextType` may hold — and `userId`'s type follows the app's own
+decides what `subjectType` may hold — and `userId`'s type follows the app's own
 user key, which an `extend model` could not change.
 
 The text has one origin all the same. `fli check`'s `package-model-drift` reads

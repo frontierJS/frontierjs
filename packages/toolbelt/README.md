@@ -24,6 +24,7 @@ import { glow } from '@frontierjs/toolbelt/glow'
 | `/predicate` | does this record satisfy a declared `.lite` expression | shipping |
 | `/query` | what a query string MEANS — types, structure, both directions | shipping |
 | `/redact` | is this key a credential, and redacting a value by that answer | shipping |
+| `/seal` | a value only one key can open — HPKE base mode over X25519, in WebCrypto | shipping |
 | `/search` | ranking a corpus nobody indexed | shipping |
 | `/signature` | what a signed machine-to-machine request is, and a short signed token for an address | shipping |
 | `/units` | a magnitude with a unit, as a person reads it | shipping |
