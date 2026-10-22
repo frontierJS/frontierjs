@@ -15,7 +15,7 @@ first join spends it, and an unspent one expires in a day (`FJS-D1394`).
 
 ```js
 let member
-try { member = tellMember() }
+try { member = await tellMember() }
 catch (e) { log.error(e.message); process.exitCode = 1; return }
 
 if (flag.dry) {

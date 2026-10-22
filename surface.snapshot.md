@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3795 source file(s) read
-232 entry point(s), 37 imported by nothing outside their package, 16 emitted
-1553 value export(s), 621 reached by nothing outside, 166 emitted
+26 package(s) · 3797 source file(s) read
+233 entry point(s), 38 imported by nothing outside their package, 16 emitted
+1557 value export(s), 621 reached by nothing outside, 166 emitted
 449 type export(s), 346 reached by nothing outside
 ```
 
@@ -40,8 +40,8 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `sierra` | 25 | 6 | 196 | 82 | 21 | 0 | 0 |
 | `auth` | 6 | 1 | 51 | 36 | 3 | 15 | 13 |
 | `jetty` | 7 | 4 | 43 | 29 | 0 | 0 | 0 |
+| `toolbelt` | 58 | 2 | 258 | 31 | 11 | 0 | 0 |
 | `ui` | 9 | 0 | 51 | 33 | 4 | 0 | 0 |
-| `toolbelt` | 57 | 1 | 254 | 31 | 11 | 0 | 0 |
 | `conduit` | 4 | 2 | 26 | 15 | 1 | 59 | 44 |
 | `site-kit` | 9 | 4 | 30 | 12 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 8 | 0 | 36 | 21 |
@@ -301,9 +301,9 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/toolbelt`
 
-`packages/toolbelt` · 57 entry point(s) · 254 value, 0 type export(s)
+`packages/toolbelt` · 58 entry point(s) · 258 value, 0 type export(s)
 
-**Entries imported by nothing outside (1):** `./seal`
+**Entries imported by nothing outside (2):** `./seal` `./textbox`
 
 **Entries not source (20, not graded):** `./bearer` `./cells` `./cron` `./datetime` `./devline` `./directives` `./fill` `./gate` `./geo` `./env` `./hooks` `./ids` `./mailbox` `./mime` `./query` `./rank` `./redact` `./sigv4` `./sse` `./trace`
 

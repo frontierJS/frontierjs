@@ -70,6 +70,59 @@ const runFli = async (argv) => {
   return r.status ?? 1
 }
 
+// ─── Basecamp on a box ────────────────────────────────────────────────────────
+// `fli provision` runs these on the box it just bought and `provision:install`
+// on one that already answers ssh, so the two cannot install differently.
+// Answers the first run that failed, or null.
+const ringZero = async (dest, domain) => {
+  for (const argv of [['deploy:setup', '--auto-install', '--server', dest, '--domain', domain], ['deploy', '--server', dest, '--domain', domain]]) {
+    const status = await runFli(argv)
+    if (status !== 0) return { argv, status }
+  }
+  return null
+}
+
+const EMAIL = /^[^\s@]+@[^\s@]+$/
+
+// The hostname as `deploy.web.domain` would hold it, or null for one Caddy
+// cannot route by.
+const hostnameOf = async (domain) => {
+  const { resolve } = await import('node:path')
+  const { edgeNames, EdgeError } = await import(resolve(global.fliRoot, 'core/edge.js'))
+  try { return edgeNames({ web: { domain } }).web.domain }
+  catch (e) {
+    if (!(e instanceof EdgeError)) throw e
+    return null
+  }
+}
+
+// Basecamp's own first-run route, asked on the box itself: the hostname may not
+// resolve yet. The body travels inside the script on ssh's stdin, never in an
+// argv another process on either machine can read. An empty password is
+// generated and printed once. Answers false when no admin was made.
+const makeAdmin = async ({ dest, identity, workspace, admin, password, log, echo }) => {
+  const { spawnSync }  = await import('node:child_process')
+  const { existsSync } = await import('node:fs')
+  const generated = !password
+  if (generated) password = (await import('node:crypto')).randomBytes(18).toString('base64url')
+  const { default: conf } = await import(provisionScript().root + 'frontier.config.js')
+  const body = JSON.stringify({ workspace_name: workspace, name: admin.split('@')[0], email: admin, password })
+  const setup = spawnSync('ssh', ['-o', 'BatchMode=yes', ...(identity && existsSync(identity) ? ['-i', identity] : []), dest, 'sh -s'], {
+    encoding: 'utf8',
+    input: `curl -sS -w '\\n%{http_code}' -X POST -H 'content-type: application/json' --data-binary @- http://localhost:${conf.deploy.api.port}/setup <<'FLI_SETUP_EOF'\n${body}\nFLI_SETUP_EOF\n`,
+  })
+  const [code, ...rest] = (setup.stdout || '').trimEnd().split('\n').reverse()
+  const said = (() => { try { return JSON.parse(rest.reverse().join('\n')).message } catch { return setup.stderr.trim() } })()
+  if (code === '409') { log.warn(`  ${workspace} already has an admin — ${admin} was not made`); return true }
+  if (code !== '201') {
+    log.error(`POST /setup answered ${code || 'nothing'}${said ? `: ${said}` : ''}. Make the admin at /setup in the browser`)
+    return false
+  }
+  echo(`  admin    ${admin}`)
+  if (generated) echo(`  password ${password}   shown once — change it after you sign in`)
+  return true
+}
+
 // A droplet has an address before it has an sshd. BatchMode, so nothing here
 // can wait on a password; accept-new records the host key once, so the ring 0
 // runs after it meet a known host and ask nothing.
@@ -102,5 +155,6 @@ is up.
 ## What it makes
 
 One droplet, tagged `basecamp`, carrying your SSH public key and nothing
-else. `fli deploy:setup --auto-install` then installs what the box needs over
-SSH, and `fli deploy` from `packages/basecamp` installs Basecamp on it.
+else. `fli provision:install <server> --domain <host>` then puts Basecamp on it
+from any directory — `fli deploy:setup --auto-install` and `fli deploy`, run
+in `packages/basecamp` — and works the same on a box you made some other way.

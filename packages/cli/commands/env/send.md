@@ -43,15 +43,7 @@ flags:
 ---
 
 <script>
-import { existsSync, readFileSync } from 'fs'
 import { basename, resolve } from 'path'
-
-const keyOf = (line) => {
-  const t = line.trim()
-  if (!t || t.startsWith('#')) return null
-  const idx = t.indexOf('=')
-  return idx === -1 ? null : t.slice(0, idx).replace(/^export\s+/, '').trim()
-}
 </script>
 
 Encrypt an env file into a Vaultwarden/Bitwarden text Send and print the link.
@@ -64,20 +56,14 @@ Send is that user's, listed under Send in its vault. A key missing at a
 terminal is asked for (the password without echo) and saved to the global env.
 
 ```js
-const { globalEnvPath } = await import(resolve(global.fliRoot, 'core/global-env.js'))
-const envPath = flag.global ? globalEnvPath() : resolve($.paths.root, flag.file)
-const source = flag.global ? '~/.config/fli/.env' : flag.file
-if (!existsSync(envPath)) { log.error(`No env file at ${envPath}`); process.exitCode = 1; return }
-
-let body = readFileSync(envPath, 'utf8')
-const wanted = (arg.keys?.trim() || '').split(/\s+/).filter(Boolean)
-if (wanted.length) {
-  const lines = body.split('\n').filter(l => wanted.includes(keyOf(l)))
-  const missing = wanted.filter(k => !lines.some(l => keyOf(l) === k))
-  if (missing.length) { log.error(`${source} has no ${missing.join(', ')}`); process.exitCode = 1; return }
-  body = lines.join('\n') + '\n'
-}
-const count = body.split('\n').filter(keyOf).length
+const { pickEnv } = await import(resolve(global.fliRoot, 'core/global-env.js'))
+let body, count, source
+try {
+  ({ body, count, source } = pickEnv({
+    root: $.paths.root, file: flag.file, global: flag.global,
+    keys: (arg.keys?.trim() || '').split(/\s+/).filter(Boolean),
+  }))
+} catch (e) { log.error(e.message); process.exitCode = 1; return }
 
 const env = $.env
 const { loginNeeds }               = await import(resolve(global.fliRoot, 'core/vaultwarden.js'))

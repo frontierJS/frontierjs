@@ -12,8 +12,13 @@
 // as Haven's login is. The owner is member one, seeded from the OWNER_KEY
 // and OWNER_NICK vars that `tell:setup` writes.
 //
-// Plaintext (FJS-D1393): whoever holds the Cloudflare account reads letters
-// until they are read, and reading deletes them (FJS-D1395).
+// A member with a sealing key (FJS-D1400) is sent only sealed letters, and
+// a plain one to them is refused here rather than trusted to the sender
+// (FJS-D1402), so the post holds only ciphertext for them. A letter to a
+// member with none is plaintext, as V1's were (FJS-D1393). Reading deletes
+// either (FJS-D1395). The post hands out the keys, and a client pins them on
+// first contact and signs inside the seal (IDEAS/pony-express.md 4.1), so a
+// host swapping a key or writing a letter is caught there, not here.
 //
 // `GET /follow` is a WebSocket, signed like every other route at the upgrade.
 // The object pushes the waiting letters on accept and each new one as `send`
@@ -36,13 +41,20 @@ const SEND_SECONDS = 10
 /** An invite is spent by its first join or expires in a day (FJS-D1394). */
 const INVITE_SECONDS = 86400
 const BODY_MAX     = 4000
+/** A sealed letter's length, opaque here: 4000 characters JSON-escaped, sealed, then base64url, with room. */
+const SEALED_MAX   = 32768
+/** `@frontierjs/toolbelt/seal`'s public key, 32 bytes of base64url. */
+const SEAL_KEY     = /^[A-Za-z0-9_-]{43}$/
 /** Haven's `Member.nick` rule, so a nick here is one Haven accepts in Phase 5. */
 const NICK         = /^[a-z0-9_-]{2,16}$/
 
 const KEY_HEADER = 'x-tell-key'
 
-/** One letter as a client reads it, from `/inbox` and down a `/follow` socket alike. */
-const LETTER = 'id, fromNick AS "from", body AS text, created'
+const LETTER = 'id, fromNick AS "from", body, sealed, created'
+
+/** One letter as a client reads it, from `/inbox` and down a `/follow` socket alike — `text` or `sealed`, never both. */
+const letterOut = ({ id, from, body, sealed, created }) =>
+  sealed ? { id, from, sealed: body, created } : { id, from, text: body, created }
 
 const now = () => Math.floor(Date.now() / 1000)
 const answer = (body, status = 200) => Response.json(body, { status })
@@ -69,12 +81,18 @@ export class TellPost {
     // keeps its socket at no cost.
     state.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'))
     this.sql.exec(`
-      CREATE TABLE IF NOT EXISTS members (nick TEXT PRIMARY KEY, publicKey TEXT NOT NULL UNIQUE, joined INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS members (nick TEXT PRIMARY KEY, publicKey TEXT NOT NULL UNIQUE, sealKey TEXT, joined INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS invites (code TEXT PRIMARY KEY, byNick TEXT NOT NULL, expires INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS letters (id INTEGER PRIMARY KEY, fromNick TEXT NOT NULL, toNick TEXT NOT NULL, body TEXT NOT NULL, created INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS letters (id INTEGER PRIMARY KEY, fromNick TEXT NOT NULL, toNick TEXT NOT NULL, body TEXT NOT NULL, sealed INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS letters_to ON letters (toNick, id);
       CREATE TABLE IF NOT EXISTS nonces (id TEXT PRIMARY KEY, until INTEGER NOT NULL);
     `)
+    // A post deployed before the seal keeps its members (FJS-D1400 publishes
+    // their keys by a signed update), so its tables gain the two columns; a
+    // column already there throws and is left.
+    for (const [table, column] of [['members', 'sealKey TEXT'], ['letters', 'sealed INTEGER NOT NULL DEFAULT 0']]) {
+      try { this.sql.exec(`ALTER TABLE ${table} ADD COLUMN ${column}`) } catch {}
+    }
     const owner = String(env.OWNER_NICK ?? '').trim().toLowerCase()
     if (env.OWNER_KEY && NICK.test(owner)) {
       this.sql.exec('INSERT OR IGNORE INTO members (nick, publicKey, joined) VALUES (?, ?, ?)', owner, env.OWNER_KEY, now())
@@ -94,6 +112,7 @@ export class TellPost {
       'GET /waiting': this.waiting,
       'POST /invite': this.invite,
       'GET /members': this.members,
+      'POST /seal-key': this.sealKey,
     }[route]
     if (!handler) return refuse(404, `No route ${route}.`)
 
@@ -133,19 +152,25 @@ export class TellPost {
   // ─── routes ──────────────────────────────────────────────────────────────
 
   send(from, body) {
-    const { to, text } = parse(body)
+    const { to, text, sealed } = parse(body)
     const toNick = typeof to === 'string' ? to.trim().toLowerCase() : ''
-    if (!toNick || typeof text !== 'string' || !text.trim()) return refuse(400, 'A letter is { to, text }.')
-    if (text.length > BODY_MAX) return refuse(413, `A letter is at most ${BODY_MAX} characters; this one is ${text.length}.`)
-    if (!this.sql.exec('SELECT 1 FROM members WHERE nick = ?', toNick).toArray().length) return refuse(404, `No member is called '${toNick}'.`)
+    const isSealed = typeof sealed === 'string'
+    if (!toNick || (isSealed ? !sealed.startsWith('v1.') : typeof text !== 'string' || !text.trim())) return refuse(400, 'A letter is { to, text } or { to, sealed }.')
+    const letter = isSealed ? sealed : text
+    const max = isSealed ? SEALED_MAX : BODY_MAX
+    if (letter.length > max) return refuse(413, `A letter is at most ${max} characters; this one is ${letter.length}.`)
+    const recipient = this.sql.exec('SELECT sealKey FROM members WHERE nick = ?', toNick).toArray()[0]
+    if (!recipient) return refuse(404, `No member is called '${toNick}'.`)
+    if (recipient.sealKey && !isSealed) return refuse(409, `${toNick} has a sealing key, so a letter to them is sealed. A newer fli seals it.`)
+    if (!recipient.sealKey && isSealed) return refuse(409, `${toNick} has no sealing key, so nothing sealed can reach them.`)
 
     const t = now()
     const recent = (this.sent.get(from) ?? []).filter(at => at > t - SEND_SECONDS)
     if (recent.length >= SEND_MAX) return refuse(429, `Slow down — ${SEND_MAX} letters in ${SEND_SECONDS} seconds.`)
     this.sent.set(from, [...recent, t])
 
-    const { id } = this.sql.exec('INSERT INTO letters (fromNick, toNick, body, created) VALUES (?, ?, ?, ?) RETURNING id', from, toNick, text, t).one()
-    const frame = JSON.stringify({ id, from, text, created: t })
+    const { id } = this.sql.exec('INSERT INTO letters (fromNick, toNick, body, sealed, created) VALUES (?, ?, ?, ?, ?) RETURNING id', from, toNick, letter, isSealed ? 1 : 0, t).one()
+    const frame = JSON.stringify(letterOut({ id, from, body: letter, sealed: isSealed, created: t }))
     for (const ws of this.state.getWebSockets(toNick)) {
       try { ws.send(frame) } catch {}
     }
@@ -155,7 +180,7 @@ export class TellPost {
   inbox(nick) {
     const letters = this.sql.exec(`DELETE FROM letters WHERE toNick = ? RETURNING ${LETTER}`, nick)
       .toArray().sort((a, b) => a.id - b.id)
-    return answer({ letters: letters.map(({ from, text, created }) => ({ from, text, created })) })
+    return answer({ letters: letters.map(({ id, ...row }) => letterOut(row)) })
   }
 
   // What the notice line names (IDEAS/pony-express.md 2.2): who has letters
@@ -177,7 +202,7 @@ export class TellPost {
     } else {
       this.state.acceptWebSocket(server, [who.nick])
       for (const letter of this.sql.exec(`SELECT ${LETTER} FROM letters WHERE toNick = ? ORDER BY id`, who.nick).toArray()) {
-        server.send(JSON.stringify(letter))
+        server.send(JSON.stringify(letterOut(letter)))
       }
     }
     return new Response(null, { status: 101, webSocket: client })
@@ -205,12 +230,25 @@ export class TellPost {
   }
 
   members() {
-    return answer({ members: this.sql.exec('SELECT nick, publicKey, joined FROM members ORDER BY joined, nick').toArray() })
+    return answer({ members: this.sql.exec('SELECT nick, publicKey, sealKey, joined FROM members ORDER BY joined, nick').toArray() })
+  }
+
+  // How a member publishes the key letters to them are sealed to: at setup
+  // for the owner, and on the first verb after the seal for anyone who joined
+  // before it. Signed by the member's signing key like every route, so only
+  // that member sets it. A new key replaces the old, and a letter sealed to
+  // the old one stays unopenable.
+  sealKey(nick, body) {
+    const { sealKey } = parse(body)
+    if (typeof sealKey !== 'string' || !SEAL_KEY.test(sealKey)) return refuse(400, 'A sealing key is { sealKey }, 32 bytes of base64url.')
+    this.sql.exec('UPDATE members SET sealKey = ? WHERE nick = ?', sealKey, nick)
+    return answer({ nick, sealKey })
   }
 
   async join(req, url, body) {
-    const { code, nick: asked, publicKey } = parse(body)
-    if (typeof publicKey !== 'string' || !publicKey) return refuse(400, 'A join is { code, nick, publicKey }, signed with that key.')
+    const { code, nick: asked, publicKey, sealKey } = parse(body)
+    if (typeof publicKey !== 'string' || !publicKey) return refuse(400, 'A join is { code, nick, publicKey, sealKey }, signed with that key.')
+    if (typeof sealKey !== 'string' || !SEAL_KEY.test(sealKey)) return refuse(400, 'A join brings a sealing key, 32 bytes of base64url. A newer fli makes one.')
 
     // The key in the body is the key that must have signed it, so a join
     // naming somebody else's key verifies under nothing it holds.
@@ -227,8 +265,8 @@ export class TellPost {
     // code cannot both see it.
     const spent = this.sql.exec('DELETE FROM invites WHERE code = ? AND expires > ? RETURNING byNick', String(code ?? ''), now()).toArray()[0]
     if (!spent) return refuse(403, 'That invite is spent, expired or unknown. Ask a member for a new one.')
-    this.sql.exec('INSERT INTO members (nick, publicKey, joined) VALUES (?, ?, ?)', nick, publicKey, now())
-    return answer({ nick, invitedBy: spent.byNick }, 201)
+    this.sql.exec('INSERT INTO members (nick, publicKey, sealKey, joined) VALUES (?, ?, ?, ?)', nick, publicKey, sealKey, now())
+    return answer({ nick, invitedBy: spent.byNick, sealKey }, 201)
   }
 }
 

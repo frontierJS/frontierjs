@@ -22,6 +22,9 @@
 //   { destroyed: '<id>' }
 //   { machines: [{ id, status, ip, region, serverId }] }   every fleet-tagged droplet
 //   { error: '<what>' }                               and the exit is non-zero
+//
+// stderr is what the minute is spent on, for the person watching: fli lets it
+// through to the terminal untouched.
 
 import { connectorFor, fleetMark, priceIn, sizeRegions } from '../providers/compute/index.ts'
 import type { ComputeSize }   from '../providers/compute/index.ts'
@@ -29,6 +32,27 @@ import { bearerSend }         from './bearer-send.ts'
 
 const answer = (o: Record<string, unknown>) => console.log(JSON.stringify(o))
 const fail   = (error: string): never => { answer({ error }); process.exit(1) }
+const step   = (t: string) => process.stderr.write(`  · ${t}\n`)
+
+/** The boot wait as one line that counts: rewritten in place at a terminal,
+ *  one line per change of state anywhere else, so a log is not a wall of seconds. */
+function waitLine() {
+  const tty   = !!process.stderr.isTTY
+  const start = Date.now()
+  const secs  = () => Math.round((Date.now() - start) / 1000)
+  let label = ''
+  const draw  = () => process.stderr.write(`\r\x1b[K  · ${label} ${secs()}s`)
+  const timer = tty ? setInterval(draw, 1000) : undefined
+  return {
+    say(next: string) { if (next === label) return; label = next; tty ? draw() : step(next) },
+    end(last: string) { clearInterval(timer); if (tty) process.stderr.write('\r\x1b[K'); step(`${last} (${secs()}s)`) },
+  }
+}
+
+const BOOTING: Record<string, string> = {
+  starting: 'DigitalOcean is laying down the disk and booting Ubuntu',
+  running:  'Booted, waiting for its public address',
+}
 
 /** How long a droplet gets to come up. DO's own figure is under a minute; past
  *  this the id is answered as pending so the caller can still destroy it. */
@@ -81,35 +105,48 @@ async function create() {
   if (!name || !region || !image || !size || !publicKey)
     fail('create needs name, region, image, size and publicKey')
 
+  step(`Reading DigitalOcean's catalog: regions, sizes, images`)
   const catalog = await connector.catalog(send)
   if (!catalog.regions.some(r => r.slug === region && r.available))
     fail(`no region '${region}'; available: ${catalog.regions.filter(r => r.available).map(r => r.slug).join(', ')}`)
   if (!catalog.images.some(i => i.slug === image))
     fail(`no image '${image}'; Ubuntu ones: ${catalog.images.filter(i => i.slug.startsWith('ubuntu')).map(i => i.slug).join(', ')}`)
   const picked = pickSize(catalog.sizes, size, region)
+  const price  = priceIn(picked, region)
 
   // A second run must not buy a second box. A fleet-tagged droplet with no
   // server id is one this script made and nothing has claimed.
+  step('Checking the account for a box an earlier run left behind')
   const prior = (await connector.marked(send, fleetMark())).filter(m => !m.serverId)
   if (prior.length)
     fail(`a machine provisioned earlier is still at this account: `
       + prior.map(m => `${m.providerServerId} (${m.ipAddress ?? 'no address yet'})`).join(', ')
       + ` — destroy it with fli provision:destroy <id>, or deploy to it`)
 
+  step('Putting your SSH public key on the account')
   const sshKey = await connector.sshKey(send, { name: keyName || `fli ${name}`, publicKey })
+  step(`Ordering ${picked.slug} in ${region}, ${image}`
+    + (price == null ? '' : ` at ${(price / 100).toFixed(2)} ${picked.currency}/mo`))
   const { providerServerId } = await connector.create(send, {
     name, region, image, size: picked.slug, sshKeys: [sshKey], mark: fleetMark(),
   })
+  step(`Droplet ${providerServerId} ordered, tagged for the fleet`)
 
   const made = { id: providerServerId, name, region, size: picked.slug, image,
-                 monthly: priceIn(picked, region), currency: picked.currency }
+                 monthly: price, currency: picked.currency }
 
+  const wait = waitLine()
   const deadline = Date.now() + READY_DEADLINE_MS
   while (Date.now() < deadline) {
     const machine = await connector.machine(send, providerServerId)
-    if (machine?.status === 'running' && machine.ipAddress) return answer({ ...made, ip: machine.ipAddress })
+    if (machine?.status === 'running' && machine.ipAddress) {
+      wait.end(`Up at ${machine.ipAddress}`)
+      return answer({ ...made, ip: machine.ipAddress })
+    }
+    wait.say(BOOTING[machine?.status ?? ''] ?? `DigitalOcean says ${machine?.status ?? 'nothing yet'}`)
     await Bun.sleep(POLL_MS)
   }
+  wait.end(`No address after ${READY_DEADLINE_MS / 60_000} minutes`)
   answer({ ...made, pending: true })
 }
 

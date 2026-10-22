@@ -24,7 +24,9 @@
   import Select   from '@frontierjs/ui/components/forms/Select.mesa'
   import Flow     from './Flow.mesa'
 
-  export let api = ''
+  export let api   = ''
+  export let shown = () => true   // (...fields) => does the console's filter keep this row
+  export let keyed = null         // (rows) => the keys this pane binds, for the console
 
   const SHOWN           = 8
   const MAX_LINES       = 2000
@@ -186,6 +188,8 @@
   $: goingOut = publishable(pub).filter(p => isPicked(picked, touched, pub, all, p.name) && (all || p.affected))
   $: summary  = `${plural(goingOut.length, 'package')} · ${bump} · ${tag || 'latest'}${push ? '' : ' · not pushed'}${narrowed(picked, touched, pub, all) ? ' · narrowed by hand' : ''}`
   $: regBy    = Object.fromEntries((registry?.packages ?? []).map(p => [p.name, p]))
+  // The filter narrows what is drawn, never what goes out: `goingOut` reads the whole list.
+  $: seenPkgs = (pub?.packages ?? []).filter(p => shown(p.name))
 
   function nextVersion(v, bump) {
     const m = /^(\d+)\.(\d+)\.(\d+)/.exec(v ?? '')
@@ -363,6 +367,9 @@
     }
   }
 
+  const readAll = () => { readRelease(); readPublish(); readTree() }
+  keyed?.([{ keys: 'r', label: 'read again', run: readAll }])
+
   $.onMount(async () => {
     readTree()
     readCi()
@@ -376,7 +383,7 @@
 <header class="bar">
   <strong>Take it out</strong>
   <span class="text-xs text-muted">{worst ? worstNote : 'classifying…'}</span>
-  <Button treatment="ghost" size="xs" onclick={() => { readRelease(); readPublish(); readTree() }}>read again</Button>
+  <Button treatment="ghost" size="xs" onclick={readAll}>read again</Button>
 </header>
 
 {#if failed}
@@ -486,7 +493,7 @@
       <Checkbox label="include unchanged" checked={all} onchange={(on) => changed(() => all = on)} />
     </div>
     <span class="text-xs" data-summary>{summary}</span>
-    {#each (allPkgs ? pub.packages : pub.packages.slice(0, SHOWN)) as p (p.name)}
+    {#each (allPkgs ? seenPkgs : seenPkgs.slice(0, SHOWN)) as p (p.name)}
       <div class="cluster gap-sm" data-pkg={p.name}>
         <Checkbox
           label={p.name}
@@ -502,8 +509,8 @@
         {#if regBy[p.name]}<span class="text-xs text-muted">npm {regBy[p.name].remote ?? '—'} · {regBy[p.name].status}</span>{/if}
       </div>
     {/each}
-    {#if !allPkgs && pub.packages.length > SHOWN}
-      <Button treatment="ghost" size="xs" onclick={() => allPkgs = true}>show the other {pub.packages.length - SHOWN}</Button>
+    {#if !allPkgs && seenPkgs.length > SHOWN}
+      <Button treatment="ghost" size="xs" onclick={() => allPkgs = true}>show the other {seenPkgs.length - SHOWN}</Button>
     {/if}
     <Flow
       name="publish"

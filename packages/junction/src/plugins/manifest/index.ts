@@ -2,7 +2,6 @@
 // manifest — exposes GET /manifest (or custom path) returning a
 // structural snapshot of the running app: services, hooks, channels, plugins.
 //
-// Consumed by FJSChain to build the App CoR Overview.
 // Data is derived entirely from live runtime state — no AST, no file walking.
 //
 // Mounts in boot() — routes added there are still picked up by the

@@ -1,0 +1,593 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "$defs": {
+    "AuditTrail": {
+      "type": "object",
+      "title": "AuditTrail",
+      "x-litestone-kind": "model",
+      "properties": {
+        "operation": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "field": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "transition": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "WHICH named move an update was, where it was one. Two moves between the same states write identical images; only this separates them."
+        },
+        "records": {
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "before": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Redacted by the writer: `@encrypted`, `@guarded`, `@secret` and `@hashed` land as `[redacted]`, `@personal` as `[personal]`.",
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "after": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "actorId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Text, because the actor is whatever the host's users are keyed by; an Int key reads back as its digits in a string."
+        },
+        "actorType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subjectId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Support mode: `actorId` is the operator and `subjectId` the principal the boundary enforced as."
+        },
+        "episodeId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "correlationId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "origin": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ip": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "userAgent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tenant": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "meta": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "model",
+        "records"
+      ],
+      "x-gate": {
+        "read": 8,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      }
+    },
+    "Member": {
+      "type": "object",
+      "title": "Member",
+      "x-litestone-kind": "model",
+      "properties": {
+        "nick": {
+          "type": "string",
+          "x-transforms": [
+            "trim",
+            "lower"
+          ],
+          "minLength": 2,
+          "maxLength": 16,
+          "pattern": "^[a-z0-9_-]+$",
+          "description": "What the bubble is signed with. Lowercase so `Sam` and `sam` are one figure in the square rather than two.",
+          "x-messages": {
+            "regex": "letters, digits, - and _",
+            "pattern": "letters, digits, - and _"
+          }
+        },
+        "publicKey": {
+          "type": "string",
+          "description": "The machine's key, written once at the first login. A member is the same person tomorrow because the key is, so it never moves."
+        },
+        "bannedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Set by a mod, cleared by a mod (`null` lifts the ban). Never by the member it names, since that would be a caller writing their own grade.",
+          "x-litestone-write-policy": true,
+          "x-litestone-write-claims": {
+            "role": "mod"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "nick",
+        "publicKey"
+      ],
+      "x-litestone-policies": true,
+      "x-identify": [
+        "nick",
+        "publicKey"
+      ],
+      "x-gate": {
+        "read": 3,
+        "create": 8,
+        "update": 3,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "messages",
+          "model": "Message",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "sessions",
+          "model": "Session",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "votes",
+          "model": "Vote",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "Room": {
+      "type": "object",
+      "title": "Room",
+      "x-litestone-kind": "model",
+      "properties": {
+        "slug": {
+          "type": "string",
+          "x-transforms": [
+            "lower"
+          ],
+          "minLength": 2,
+          "maxLength": 24,
+          "pattern": "^[a-z0-9-]+$",
+          "description": "The scene's name in the client — `square`, `tavern`. The art is the client's; the row is what a channel and a history pane hang off."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "pairLoId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "A booth is a room for two (`api/src/booth.ts`): the lower and the higher member id of the pair, set together by the system and by nothing else. Both null is a scene anybody may enter. A pair, not a list, because a booth has two seats; the ids are plain columns and not relations, since a second relation to Member would need a name on both sides for a fact only the read policy below uses."
+        },
+        "pairHiId": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "slug",
+        "name"
+      ],
+      "x-litestone-policies": true,
+      "x-identify": [
+        "slug"
+      ],
+      "x-gate": {
+        "read": 3,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "messages",
+          "model": "Message",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "game",
+          "model": "Game",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": true
+        }
+      ]
+    },
+    "Message": {
+      "type": "object",
+      "title": "Message",
+      "x-litestone-kind": "model",
+      "properties": {
+        "roomId": {
+          "type": "integer"
+        },
+        "memberId": {
+          "type": "integer",
+          "description": "A stamp rather than a default, so a payload naming somebody else's id is overwritten with the caller's own.",
+          "readOnly": true
+        },
+        "body": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "minLength": 1,
+          "maxLength": 280
+        },
+        "toId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "A whisper's listener (`/w <nick> <line>`). Null is a line said aloud. A plain column and not a relation, as Room's pair is: only the read policy below uses it, and a second relation to Member would need a name on both sides. Whoever it names reads the line, and so does its speaker."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "roomId",
+        "body"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 3,
+        "create": 3,
+        "update": 9,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "room",
+          "model": "Room",
+          "type": "belongsTo",
+          "fields": [
+            "roomId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "member",
+          "model": "Member",
+          "type": "belongsTo",
+          "fields": [
+            "memberId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "Game": {
+      "type": "object",
+      "title": "Game",
+      "x-litestone-kind": "model",
+      "description": "The checkers a pair plays across their table (`api/src/checkers.ts`, `IDEAS/haven.md` 9.1b): one row per booth, begun again in place when a game is over. Written by `games` as the system and read by the pair alone, as the booth's lines are -- so a move is never a thing a client says about the board, only a path the service checks against the rules before it writes.",
+      "properties": {
+        "roomId": {
+          "type": "integer"
+        },
+        "redId": {
+          "type": "integer",
+          "description": "Red moves first and is the one who began the game; black is the other member of the pair. Plain columns, as Room's pair is."
+        },
+        "blackId": {
+          "type": "integer"
+        },
+        "board": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "description": "Sixty-four characters, rank 8 first: `r` `R` red's man and king, `b` `B` black's, `.` empty."
+        },
+        "turn": {
+          "type": "string",
+          "pattern": "^[rb]$",
+          "description": "Whose move it is, `r` or `b`.",
+          "x-messages": {
+            "regex": "a turn is r or b",
+            "pattern": "a turn is r or b"
+          }
+        },
+        "winnerId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Set when the side to move has no move left, or resigned."
+        },
+        "last": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The last move said back, `c3-e5`."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "roomId",
+        "redId",
+        "blackId",
+        "board",
+        "turn"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 3,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "room",
+          "model": "Room",
+          "type": "belongsTo",
+          "fields": [
+            "roomId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "Vote": {
+      "type": "object",
+      "title": "Vote",
+      "x-litestone-kind": "model",
+      "description": "A member's aye or nay on one idea of `IDEAS/overview.md`, as it stands in the town hall (`IDEAS/haven.md` Phase 15). One per member and idea: a second vote changes the first, and withdrawing it removes the row. Cast through `votes.cast`, which also refuses an idea the hall does not hold.",
+      "properties": {
+        "memberId": {
+          "type": "integer",
+          "description": "A stamp, as a line's is: a vote is always the caller's own.",
+          "readOnly": true
+        },
+        "idea": {
+          "type": "string",
+          "pattern": "^[0-9]+[.][0-9]+[a-z]?$",
+          "description": "The idea's row number in the overview, `4.21a` -- kept while the row's words change, which is why a vote names it and not its title.",
+          "x-messages": {
+            "regex": "an idea is its row number, like 4.21a",
+            "pattern": "an idea is its row number, like 4.21a"
+          }
+        },
+        "aye": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "idea",
+        "aye"
+      ],
+      "x-litestone-policies": true,
+      "x-identify": [
+        "idea"
+      ],
+      "x-gate": {
+        "read": 3,
+        "create": 3,
+        "update": 3,
+        "delete": 3
+      },
+      "x-relations": [
+        {
+          "field": "member",
+          "model": "Member",
+          "type": "belongsTo",
+          "fields": [
+            "memberId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "Miss": {
+      "type": "object",
+      "title": "Miss",
+      "x-litestone-kind": "model",
+      "description": "A question the barkeep could not answer from the books (`IDEAS/haven.md` 8.4). The count of these is what would justify a model behind the bar (`FJS-D994`), and the words are what the docs lack. Not who asked: the question is the finding, and a stranger's name beside it is nobody's use. Written by `barkeep.ask` as the system; read by the owner, from the database.",
+      "properties": {
+        "question": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "minLength": 1,
+          "maxLength": 280
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "question"
+      ],
+      "x-gate": {
+        "read": 8,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      }
+    },
+    "Session": {
+      "type": "object",
+      "title": "Session",
+      "x-litestone-kind": "model",
+      "description": "What a login mints once the signature verifies (`api/src/login.ts`), and what `verifySession` reads a token back to. A Grant: the token leaves in the login's answer and only its digest is stored. Nothing below the system reads or writes one — a member holds the token, never the row.",
+      "properties": {
+        "revokedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Set by the owner, never cleared. A revoked grant is kept rather than deleted so the audit trail still names what the token could reach."
+        },
+        "lastUsedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Stamped by the exchange, which is `@system` because a bearer must not be able to rewrite their own trail. transit was the only instance to record it and the only one that could answer \"was this link ever opened\".",
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "memberId": {
+          "type": "integer"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Required where the trait leaves it open: the key re-mints one in a signature, so a session that never expires buys nothing and is a standing hole for a token that leaked."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "memberId",
+        "expiresAt"
+      ],
+      "x-gate": {
+        "read": 8,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "member",
+          "model": "Member",
+          "type": "belongsTo",
+          "fields": [
+            "memberId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    }
+  }
+}

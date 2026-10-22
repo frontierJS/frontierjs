@@ -31,7 +31,6 @@ All three are scanned at startup, in that order. A title in a later root overrid
 | `core/prose.js` | Prose-driven dry-run — interpolates `$.vars` into prose section |
 | `core/ports.js` | Port broker — `[ENV][CATEGORY][PROJECT][SERVICE]` 4-digit scheme, lock file at `~/.fli/sessions.lock` |
 | `web/index.html` | Single-file Web GUI — sidebar, form/source view, SSE output. Written in `@frontierjs/css` |
-| `web/viewer/index.html` | FJSChain — chain-of-responsibility diagram for `project:map --as=serve`. Written in `@frontierjs/css` |
 | `core/assets.js` | The styling language and the highlighter a browser gets, from the copy this fli holds |
 
 ### Command file anatomy
@@ -165,7 +164,7 @@ Compiled command shims live at `<fliRoot>/.fli-tmp/<pid>/c_*.mjs`. Created lazil
 - **Runtime**: bun (`FJS-D593`) — the shebang, the version check in `bin/fli.js`, and `Bun.$` behind a command's `$`
 - **Frontend**: `web/index.html` — a single-file GUI written in `@frontierjs/css`, no framework dependency
 - **Testing**: `bun test`, plus `bun run test:browser` (mesa's CDP harness) for the GUI
-- **Visualization**: FJSChain — plain HTML/JS in `@frontierjs/css`, served with no network
+- **Visualization**: the console's `:map` (`console/ProjectMap.mesa`), the chain drawn from `project:map --json`
 - **Port management**: `core/ports.js` with lock manager at `~/.fli/sessions.lock`
 - **Deploy infrastructure**: SSH + Docker + nginx, no external platform required
 - **Monorepo scope**: `@frontierjs`

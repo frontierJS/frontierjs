@@ -1,7 +1,9 @@
 /*
  * test/browser/console.mjs — one `fli gui`, two frames: Chrome over CDP and a
  * pty, asked whether they show the same rows (`IDEAS/one-console.md` 1.3).
- * Then each pane after `:run`, asked whether both frames count the same list.
+ * Then the keys (2.3): the legend, a `/` filter, each pane after `:run`
+ * reached by its digit, and `:` back — asked of both frames the same way.
+ * `:map` (2.4) is the last digit, and its issues are counted in both.
  *
  * `Console.mesa` is one file compiled for two targets, and the claim the console
  * rests on is that a person at either sees the same thing. Nothing else asks
@@ -93,7 +95,7 @@ function terminalFrame(lines) {
   for (const line of lines.map((l) => l.replace(/[▀▄█▐▌]+$/, '').trimEnd())) {
     const head = line.match(/^(\S+) (\d+)$/)
     if (head) { g = { kind: head[1], count: Number(head[2]), rows: [] }; groups.push(g); cols = null; continue }
-    if (!g) continue
+    if (!g || isLegend(line)) continue
     if (/^Name\s+State\s+Command\s+Actions$/.test(line)) {
       cols = ['State', 'Command', 'Actions'].map((w) => line.indexOf(w))
       continue
@@ -155,15 +157,35 @@ function diff(term, web) {
   return out
 }
 
-// Each pane after `:run`, in strip order — the terminal reaches it with one
-// ArrowRight on the strip, which holds focus from mount. Read off the line
-// that heads the pane's first list.
+// Each pane after `:run`, in strip order, reached by its digit. Read off the
+// line that heads the pane's first list.
 const firstNumber = (s) => s.match(/\d+/)?.[0] ?? null
 const PANES = [
-  ['check',  ['findings']],
-  ['decide', ['decisions']],
-  ['ship',   ['release', 'publish']],
+  ['check',  '2', ['findings']],
+  ['decide', '3', ['decisions']],
+  ['ship',   '4', ['release', 'publish']],
+  ['map',    '5', ['issues']],
 ]
+
+// The legend is the footer's last line in the terminal and `[data-legend]` in
+// the browser, compared as text with a key's bracket and spacing taken out.
+const legendOf = (s) => squash(s.replace(/[[\]]/g, ' '))
+const isLegend   = (l) => /: go to a pane|^\s*<CR> /.test(l)
+const termLegend = () => legendOf(screen(out).filter(isLegend).at(-1) ?? '')
+const webLegend  = () => browser.evaluate(`return document.querySelector('[data-legend]')?.textContent ?? ''`).then(legendOf)
+async function legendsAgree(label, expect) {
+  let t = '', w = ''
+  const agree = async () => { t = termLegend(); w = await webLegend(); return same(t, w) && expect.every((e) => w.includes(e)) }
+  check(await until(agree, 10000), `${label} — both frames show the same legend`, `terminal ${JSON.stringify(t)}\nbrowser  ${JSON.stringify(w)}`)
+}
+
+// A key at both frames: the pty takes bytes, Chrome a real key event.
+const BYTES = { Enter: '\r', Escape: '\x1b' }
+async function press(k) {
+  pty.stdin.write(BYTES[k] ?? k)
+  await (k.length === 1 ? browser.type(k) : browser.press(k))
+  await sleep(150)
+}
 
 // ─── the terminal frame: `fli gui` under a pty ────────────────────────
 
@@ -208,11 +230,29 @@ try {
   check(!differences.length, 'the terminal and the browser show the same rows — group, name, state, command, actions',
     differences.slice(0, 20).join('\n') + (differences.length > 20 ? `\n… and ${differences.length - 20} more` : ''))
 
+  // ─── the keys: the legend, then a filter typed into both ───────────
+
+  await legendsAgree(':run', ['1 :run', ': go to a pane', '/ filter', 'r read again'])
+
+  const TERM = 'drive'
+  for (const k of ['/', ...TERM, 'Enter']) await press(k)
+  const total = (gs) => gs.reduce((n, g) => n + g.rows.length, 0)
+  let narrowed = []
+  const filtered = async () => {
+    const web = await browser.evaluate(BROWSER_FRAME)
+    narrowed = diff(terminalFrame(screen(out)), web)
+    return total(web) > 0 && total(web) < inventory.length && !narrowed.length
+  }
+  check(await until(filtered, 10000), `/${TERM} narrows both frames to the same rows`, narrowed.slice(0, 10).join('\n'))
+  await legendsAgree('filtered', ['<Esc> clear the filter', `filtered by /${TERM}`])
+  await press('Escape')
+  check(await until(async () => (await browser.evaluate(BROWSER_FRAME)).reduce((n, g) => n + g.rows.length, 0) === inventory.length
+    && total(terminalFrame(screen(out))) === inventory.length, 10000), 'Esc clears the filter in both frames')
+
   // ─── the other panes: the count each one heads its list with ───────
 
-  for (const [pane, parts] of PANES) {
-    await browser.evaluate(`document.querySelector('[data-tab-id="${pane}"]').click(); return true`)
-    pty.stdin.write('\x1b[C')
+  for (const [pane, digit, parts] of PANES) {
+    await press(digit)
     for (const part of parts) {
       await browser.waitFor(`/\\d/.test(document.querySelector('[data-part="${part}"] .bar span')?.textContent ?? '')`, { ms: 120000 })
       const web = squash(await browser.evaluate(`return document.querySelector('[data-part="${part}"] .bar span').textContent`))
@@ -222,7 +262,14 @@ try {
       const term = squash(line()?.slice(part.length) ?? '')
       check(firstNumber(term) !== null && firstNumber(term) === firstNumber(web), `:${pane} — both frames count the same ${part} (${firstNumber(web)})`, `terminal ${JSON.stringify(term)} ≠ browser ${JSON.stringify(web)}`)
     }
+    await legendsAgree(`:${pane}`, ['1 :run', pane === 'check' ? 'r check again' : 'r read again'])
   }
+
+  // `:` and a unique prefix, back to the first pane.
+  for (const k of [':', 'r', 'u', 'Enter']) await press(k)
+  check(await until(painted, 20000), ':ru goes back to :run in the terminal', screen(out).slice(0, 3).join('\n') + `\nlegend: ${termLegend()}`)
+  check(await until(async () => await browser.evaluate(`return document.querySelectorAll('tr[data-id]').length`) === inventory.length, 20000),
+    ':ru goes back to :run in the browser', await webLegend())
   check(!browser.errors.length, 'the browser page raised no error', browser.errors.join('\n'))
 } catch (e) {
   check(false, 'the drive ran to the end', e.stack ?? String(e))

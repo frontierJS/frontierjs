@@ -30,6 +30,7 @@
   // getter to call, and not a snapshot taken at setup.
   const activeId  = $context.activeId
   const setActive = $context.setActive
+  const focusTab  = $context.focusTab
 
   function handleKeyDown(e) {
     const isNext = e.key === 'ArrowRight'
@@ -49,10 +50,7 @@
 
     e.preventDefault()
     setActive?.(next)
-    // Focus the newly active tab button — query by data-tab-id attr
-    // Matched by property: an id holding a quote is not a valid selector.
-    const nextEl = [...e.currentTarget.querySelectorAll('[data-tab-id]')].find(el => el.dataset.tabId === next)
-    $.focus(nextEl)
+    focusTab?.(next)
   }
 </script>
 

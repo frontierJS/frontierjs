@@ -239,6 +239,7 @@ const DRAW = {
     const out = []
     for (let r = 0; r < lines; r++) {
       const row = b.items.slice(r * per, r * per + per)
+      const sleepy = row.some((i) => i.asleep)
       const box = row.map((i, n) => {
         const x = n * (tile + 1)
         const ink = i.tone ? inkOf(i.tone) : ACCENTS[(r * per + n) % ACCENTS.length]
@@ -253,6 +254,7 @@ const DRAW = {
           body([run(x + 2, clip(i.value, inner), ink)]),
           ...(counts ? [body([run(x + 2, '━'.repeat(fill), ink), run(x + 2 + fill, '━'.repeat(inner - fill), dim(ink, 0.75))].filter((t) => t.text))] : []),
           body(i.note ? [run(x + 2, clip(i.note, inner), inkOf(i.noteTone ?? 'muted'))] : []),
+          ...(sleepy ? [body(i.asleep ? [run(x + 2, clip(`${i.asleep} snoozed`, inner), TONES.info)] : [])] : []),
           i.foot
             ? [run(x, '╰─', frame), run(x + 3, foot(i), TONES.muted), run(x + 4 + cells(foot(i)), '─'.repeat(Math.max(0, tile - 6 - cells(foot(i)))) + '─╯', frame)]
             : [run(x, '╰' + '─'.repeat(tile - 2) + '╯', frame)],

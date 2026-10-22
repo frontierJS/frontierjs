@@ -40,10 +40,6 @@ flags:
     type: number
     description: Port for fli gui
     defaultValue: 5500
-  view-port:
-    type: number
-    description: Port for fli project:map --as=serve
-    defaultValue: 5501
   studio-port:
     type: number
     description: Port for the database studio
@@ -65,7 +61,6 @@ openTutor($, 'tutor:tools', {
 $.config.source       = flag.source || defaultSource()
 $.config.apiPort      = flag['api-port']
 $.config.guiPort      = flag['gui-port']
-$.config.viewPort     = flag['view-port']
 $.config.studioPort   = flag['studio-port']
 $.config.devtoolsPort = flag['devtools-port']
 
@@ -73,7 +68,6 @@ $.config.devtoolsPort = flag['devtools-port']
 // make a printed URL a lie.
 $.vars.apiPort      = $.config.apiPort
 $.vars.guiPort      = $.config.guiPort
-$.vars.viewPort     = $.config.viewPort
 $.vars.studioPort   = $.config.studioPort
 $.vars.devtoolsPort = $.config.devtoolsPort
 ```
@@ -98,7 +92,7 @@ memory. They never move with the app.
 | `fli gui` | 5500 | what is there, what is running, and does anything fail a check |
 | `fli db:studio` | 5502 | what is actually in the database |
 | junction's console | 5503 | what happened to that call |
-| `fli project:map --as=serve` | 5501 | what handles a request, and in what order |
+| `:map` in `fli gui` | 5500 | what handles a request, and in what order |
 
 **Start at the GUI.** It is the only one that knows about the other three — it
 lists everything startable in this project, shows which of them is up right

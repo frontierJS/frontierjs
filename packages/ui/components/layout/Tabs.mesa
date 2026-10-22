@@ -31,10 +31,11 @@
   export let onchange  = undefined  // called with new activeId whenever tab changes
   // Tab registration list for keyboard nav — not reactive, used imperatively only.
   // var: non-reactive sampler — reads/writes invisible to reactive graph.
-  // Entries are { id, isDisabled }, where isDisabled is a GETTER the Tab owns:
-  // `disabled` is its prop and can change after registration, so a boolean
-  // copied in here would go stale and the strip would keep stepping onto a tab
-  // that has since been turned off.
+  // Entries are { id, isDisabled, el }, each a GETTER the Tab owns: `disabled`
+  // is its prop and can change after registration, so a boolean copied in here
+  // would go stale and the strip would keep stepping onto a tab that has since
+  // been turned off. `el` is the button, held by reference because a terminal
+  // node has no querySelector to find it by.
   var _registry = []
 
   const ids       = () => _registry.map(t => t.id)
@@ -95,8 +96,8 @@
   }
 
   // Registration — called by Tab on mount, for keyboard arrow navigation
-  $context.registerTab = (id, isDisabled) => {
-    if (!_registry.some(t => t.id === id)) _registry.push({ id, isDisabled })
+  $context.registerTab = (id, isDisabled, el) => {
+    if (!_registry.some(t => t.id === id)) _registry.push({ id, isDisabled, el })
   }
 
   $context.unregisterTab = (id) => {
@@ -107,6 +108,13 @@
   $context.adjacent = adjacentId
   // The first/last selectable tab — Home and End
   $context.edge = edgeId
+
+  const focusTab = (id) => $.focus(_registry.find(t => t.id === id)?.el?.())
+  $context.focusTab = focusTab
+
+  // Focus on the selected tab, for a parent that keeps focus inside the strip
+  // when what held it goes away: `bind:this={tabs}` then `tabs.focus()`.
+  export function focus() { return focusTab(activeId) }
 </script>
 
 <div class="tabs" {class} {...$attributes}>

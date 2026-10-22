@@ -1,0 +1,182 @@
+<script>
+  // MapMachines.mesa — each `@@transitions` column as a board: its states, its
+  // moves, and who makes each one (`IDEAS/one-console.md` 2.4). The reading
+  // and the layout are `map-model.js`'s; this draws them.
+  //
+  // The board is an SVG, and the terminal paints an `<svg>` as its
+  // `aria-label` alone. So the moves are also a row of buttons, grouped by who
+  // makes them, and pressing either opens the same detail: the picture is the
+  // browser's, the moves are both targets'.
+
+  import Badge from '@frontierjs/ui/components/display/Badge.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import { MOVE_TONE, MOVE_SAYS, layoutMachine, levelName, levelWord, timerWhen, timerWords, article, machinesGap } from './map-model.js'
+
+  export let model
+
+  const KINDS = Object.keys(MOVE_TONE)
+
+  let idx  = 0
+  let pick = null   // the move whose detail is open, by name
+
+  $: all    = model.machines
+  $: mc     = all[Math.min(idx, all.length - 1)] ?? null
+  $: L      = mc ? layoutMachine(mc) : null
+  $: sel    = mc && pick ? mc.moves.find(m => m.name === pick) ?? null : null
+  $: groups = mc ? KINDS.map(k => ({ kind: k, moves: mc.moves.filter(m => m.kind === k) })).filter(g => g.moves.length) : []
+  $: who    = mc ? {
+    person: `Callers at ${mc.update != null ? levelWord(model.access, mc.update) : 'any level'}`,
+    gated:  'Only higher',
+    app:    'The app does',
+    timed:  'On a date',
+  } : {}
+
+  function choose(i) { idx = i; pick = null }
+  const toggle = (name) => { pick = pick === name ? null : name }
+
+  // Each takes what it reads as an argument: a template call to a local
+  // function does not subscribe to what it reads.
+  const faded   = (pick, name) => !!pick && pick !== name
+  const moveTag = (access, k, m) => m.name + (k === 'gated' ? ` · ${levelName(access, m.gate)}` : k === 'timed' ? ` · ${timerWhen(m.timer)}` : '')
+  const said    = (mc, mv, access) => {
+    const a = `${article(mc.model)} ${mc.model}`
+    return {
+      person: `Anyone who may update ${a}: ${levelWord(access, mc.update ?? 0)} and above.`,
+      gated:  `Only ${levelWord(access, mv.gate)} and above. Everyone else who may edit ${a} is refused this one move.`,
+      app:    'Nobody can ask for it. The app makes this move itself, through a system call.',
+      timed:  `Nobody can ask for it. It happens on its own, ${mv.timer ? timerWords(mv.timer) : ''}.`,
+    }[mv.kind]
+  }
+  const declared = (mv) => `${mv.name}: ${mv.from.join(' | ')} -> ${mv.to}` + (mv.gate != null ? ` @gate(${mv.gate})` : '') +
+    (mv.system ? ' @system' : '') + (mv.seals ? ' @seals' : '')
+  const stateSub = (s) => s.entry ? 'starts here' : s.final ? 'final' : s.unreached ? 'nothing moves here' : ''
+
+  $: gap = machinesGap(model.atlas)
+</script>
+
+{#if !mc}
+  <EmptyState title="No state machines">No model declares @@transitions, so every status column is written freely and nothing says which change is allowed.</EmptyState>
+{:else}
+  <div class="cluster gap-2xs" role="group" aria-label="state machines">
+    {#each all as m, i (m.model + '.' + m.field)}
+      <button class={`btn ${m === mc ? 'outlined' : 'ghost'} text-xs`} aria-pressed={m === mc} onclick={() => choose(i)}>{m.model}.{m.field}</button>
+    {/each}
+  </div>
+
+  <section class="stack gap-md" data-machine={`${mc.model}.${mc.field}`}>
+    <div class="stack gap-2xs">
+      <strong>{mc.model}<span class="text-muted">.{mc.field}</span></strong>
+      <p class={`text-sm ${mc.note ? '' : 'text-muted'}`}>{mc.note || `No /// note on ${mc.model} in db/schema.lite.`}</p>
+    </div>
+
+    {#each groups as g (g.kind)}
+      <div class="cluster gap-2xs">
+        <div class="text-sm">{who[g.kind]}</div>
+        {#each g.moves as m (m.name)}
+          <button
+            class={`btn outlined text-xs ${MOVE_TONE[g.kind]}`}
+            aria-pressed={pick === m.name}
+            data-move={m.name}
+            onclick={() => toggle(m.name)}
+          >{moveTag(model.access, g.kind, m)}</button>
+        {/each}
+      </div>
+    {/each}
+
+    <div class="machine-figure">
+      <svg class="machine-svg" viewBox={`0 0 ${L.width} ${L.height}`} width={L.width} height={L.height} role="img"
+        aria-label={`${mc.model}.${mc.field}: states ${mc.states.join(', ')}`}>
+        <defs>
+          {#each [...Object.values(MOVE_TONE), 'ink'] as t (t)}
+            <marker id={`mv-${t}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" style={`fill: ${t === 'ink' ? 'var(--ink)' : `var(--color-${t})`}`}></path>
+            </marker>
+          {/each}
+        </defs>
+        <g transform={`translate(${L.dx},${L.dy})`}>
+          {#each L.edges as e (e.key)}
+            <path class={`mv-line ${e.mv.kind}${faded(pick, e.mv.name) ? ' faded' : ''}`} d={e.d}
+              style={`stroke: var(--color-${MOVE_TONE[e.mv.kind]})`} marker-end={`url(#mv-${MOVE_TONE[e.mv.kind]})`}></path>
+          {/each}
+          {#if mc.entry != null}
+            <circle class="mv-entry" cx={L.entry.x - 28} cy={L.entry.y} r="6"></circle>
+            <path d={`M${L.entry.x - 22},${L.entry.y} H${L.entry.x - 3}`} style="stroke: var(--ink)" stroke-width="1.5" marker-end="url(#mv-ink)"></path>
+          {/if}
+          {#each L.states as s (s.state)}
+            <g class={`mv-state${s.final ? ' final' : ''}${s.unreached ? ' unreached' : ''}`}>
+              {#if s.final}<rect class="ring" x={s.cx - s.w / 2 - 4} y={s.cy - s.h / 2 - 4} width={s.w + 8} height={s.h + 8} rx={(s.h + 8) / 2}></rect>{/if}
+              <rect x={s.cx - s.w / 2} y={s.cy - s.h / 2} width={s.w} height={s.h} rx={s.h / 2}></rect>
+              <text class="mv-state-name" x={s.cx} y={s.cy + (stateSub(s) ? 0 : 4)} text-anchor="middle">{s.state}</text>
+              {#if stateSub(s)}<text class="mv-state-sub" x={s.cx} y={s.cy + 13} text-anchor="middle">{stateSub(s)}</text>{/if}
+            </g>
+          {/each}
+          {#each L.edges as e (e.key)}
+            <g class={`mv-label${pick === e.mv.name ? ' on' : ''}${faded(pick, e.mv.name) ? ' faded' : ''}`}
+              style={`color: var(--color-${MOVE_TONE[e.mv.kind]})`} onclick={() => toggle(e.mv.name)}>
+              <rect x={e.lx - e.lw / 2} y={e.ly - L.labelH / 2} width={e.lw} height={L.labelH} rx={L.labelH / 2}></rect>
+              <text x={e.lx} y={e.ly + 4} text-anchor="middle">{e.text}</text>
+            </g>
+          {/each}
+        </g>
+      </svg>
+    </div>
+
+    <div class="cluster gap-md text-xs text-muted" aria-hidden="true">
+      {#each KINDS as k, i (k)}
+        <span class="cluster gap-2xs">{i ? ' · ' : ''}<svg width="34" height="10"><path class={`mv-line ${k}`} d="M1,5 H33" style={`stroke: var(--color-${MOVE_TONE[k]})`}></path></svg>{MOVE_SAYS[k]}</span>
+      {/each}
+    </div>
+
+    {#if sel}
+      <article class="card outlined stack gap-sm" data-detail="move">
+        <div class="cluster gap-sm"><Badge tone={MOVE_TONE[sel.kind]} size="xs">{MOVE_SAYS[sel.kind]}</Badge><strong>{sel.name}</strong></div>
+        <p class="text-sm">Moves {article(mc.model)} {mc.model} from <code>{sel.from.join(' or ')}</code> to <code>{sel.to}</code>. {said(mc, sel, model.access)}</p>
+        {#if sel.seals}<p class="text-sm"><strong>It seals the row.</strong> After this move every <code>@immutable</code> column is frozen for everybody, the app included, and its <code>@sealed</code> children can no longer change.</p>{/if}
+        <div class="text-sm">declared <code>{declared(sel)}</code></div>
+        {#if sel.timer}<span class="text-sm">timer <code>{sel.timer.id}</code> on <code>{sel.timer.owner}</code>: {timerWhen(sel.timer)}</span>{/if}
+        <div class="text-sm">asked by {#if sel.methods.length}<code>{sel.methods.join(', ')}</code>{:else}<span class="text-muted">no service method of this name</span>{/if}</div>
+        <div class="text-sm">announced {#if mc.channel}on <code>{mc.channel}</code>, graded per listener{:else}<span class="text-muted">no channel</span>{/if}</div>
+      </article>
+    {:else}
+      <article class="card outlined stack gap-sm" data-detail="machine">
+        <p class="text-sm">{mc.states.length} states and {mc.moves.length} moves. A write that changes <code>{mc.field}</code> any other way is refused at the Data boundary whoever sends it, so a job, a seed and an agent meet the same picture. Press a move for what it means.</p>
+        {#if mc.incoming.length}<p class="text-sm"><strong>Moved from outside:</strong> {mc.incoming.map(t => `a ${t.owner} makes ${t.transition} ${timerWords(t)}`).join('; ')}.</p>{/if}
+        {#if mc.outgoing.length}<p class="text-sm"><strong>Moves other machines:</strong> {mc.outgoing.map(t => `${t.target}.${t.transition} ${timerWords(t)}`).join('; ')}.</p>{/if}
+        <div class="text-sm">service {#if mc.services.length}<code>{mc.services.join(', ')}</code>{:else}<span class="text-muted">none</span>{/if}</div>
+        <div class="text-sm">announced {#if mc.channel}on <code>{mc.channel}</code>, graded per listener{:else}<span class="text-muted">no channel</span>{/if}</div>
+      </article>
+    {/if}
+    {#if gap}<p class="text-xs text-muted">{gap}</p>{/if}
+  </section>
+{/if}
+
+<style>
+  /*
+   * A line's color is its move's tone, set inline from MOVE_TONE so the
+   * legend and the board cannot disagree; what is here is the SHAPE of each
+   * kind, which still reads in a theme whose tones sit close together. The
+   * figure scrolls inside itself rather than squeezing the states.
+   */
+  .machine-figure { overflow-x: auto; }
+  .machine-svg    { display: block; max-inline-size: none; }
+  .machine-svg text { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; fill: currentColor; }
+
+  .mv-line { fill: none; stroke-width: 1.8; }
+  .mv-line.gated { stroke-dasharray: 7 4; }
+  .mv-line.app,
+  .mv-line.timed { stroke-dasharray: 2 4; stroke-linecap: round; stroke-width: 2.2; }
+
+  .mv-state rect       { fill: var(--surface-raised, var(--surface)); stroke: var(--ink); stroke-width: 1.5; }
+  .mv-state rect.ring  { fill: none; stroke-width: 1; }
+  .mv-state.unreached rect { stroke: var(--ink-mute); stroke-dasharray: 4 4; }
+  .mv-state-name       { font-weight: 600; font-size: 13px; color: var(--ink); }
+  .mv-state-sub        { font-size: 10.5px; color: var(--ink-mute); }
+  .mv-entry            { fill: var(--ink); }
+
+  .mv-label            { cursor: pointer; }
+  .mv-label rect       { fill: var(--surface); stroke: currentColor; stroke-opacity: 0.35; }
+  .mv-label text       { font-weight: 600; }
+  .mv-label:hover rect,
+  .mv-label.on rect    { stroke-opacity: 1; stroke-width: 1.6; }
+  .faded               { opacity: 0.25; }
+</style>

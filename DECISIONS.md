@@ -12156,6 +12156,12 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d1402"></a>2026-10-22 · `FJS-D1402` — Q11 — What the seal covers — Every letter: a `tell` to a member who has published a sealing key goes sealed, and `--env` is that path plus read-once; to a member with none, a plain letter goes as V1's plaintext with a printed note and `--env` is refused.
+
+Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (seal only `--env`, and reword Phase 3's done-when) and **C** (seal every letter and refuse any `tell` to a member with no sealing key).
+
+The paper's recommendation, taken as written: Phase 3's done-when already says the Durable Object holds only ciphertext after a `tell`, sealing costs the same for every letter, and one path is one path. Until Phase 4.1 a host that serves its own key still reads what is sealed to it, so the claim after Phase 3 is "the host cannot read a letter unless it lies about a key". Confidence 2.
+
 ### <a id="fjs-d1401"></a>2026-10-22 · `FJS-D1401` — Q10 — A key a keymap took is the keymap's, split by target: on a terminal the runtime steps the keymaps before it makes the keydown and makes none of a taken key; in a browser, which has no step before dispatch, a later listener reads it prevented.
 
 Asked in [`IDEAS/keys.md`](IDEAS/keys.md) § Open questions, after 3.5 was built — answered late, so this is a hearing on built code (§ IV *doctrine vs. discovery*), not a decision ahead of it. **A** was picked over **B** (browser `keys()` also stops propagation, so no later listener hears it on either target) and **C** (dispatch it prevented on both, and Haven stops reading `defaultPrevented` as NORMAL).

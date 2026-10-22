@@ -1,18 +1,16 @@
-// ─── viewer-machines.test.js — the machines and warden panels' readings ───────
+// ─── map-machines.test.js — the machines and warden panels' readings ──────────
 //
 // Both panels draw a verdict a reader acts on — *who may make this move*, *what
-// does a level-4 caller reach* — and both are computed in the page from the map,
-// so a wrong one renders as a confident picture. The pure halves are graded
-// here; the drawing is proved by opening the served page.
+// does a level-4 caller reach* — and both are computed from the map, so a wrong
+// one renders as a confident picture. The pure halves are graded here; the
+// drawing is the console drive's.
 //
 // Every negative is paired with the positive beside it: a `kind` that answered
 // 'person' for everything, or a `wardenAt` refusing everything, would satisfy
 // the negatives alone.
 
 import { describe, test, expect } from 'bun:test'
-import { loadViewer }             from './viewer-page.js'
-
-const { buildMachines, layoutMachine, wardenAt } = loadViewer(['buildMachines', 'layoutMachine', 'wardenAt'])
+import { buildMachines, layoutMachine, wardenAt } from '../console/map-model.js'
 
 // The shape `litestone jsonschema` writes: moves under x-transitions, timed
 // moves under x-commitments on the model that DECLARES them, which need not be

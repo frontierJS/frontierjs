@@ -142,7 +142,11 @@ const PLACEHOLDER_SERVER = 'your-server.com'
 const ADDRESS_KEYS = ['server', 'user']
 
 const deployConfFor = async ($, flag, log) => {
-  const loaded = (await loadFrontierConfig($.paths.root))?.deploy
+  const file = await loadFrontierConfig($.paths.root)
+  // Every caller's refusal says "no deploy block", which sends a run from the
+  // wrong directory off to write one into a root with no app in it.
+  if (!file) log?.error(`No frontier.config.js in ${$.paths.root} — run this from the app's directory`)
+  const loaded = file?.deploy
   if (!loaded) return null
   const deployConf = flag?.domain ? { ...loaded, web: { ...(loaded.web || {}), domain: flag.domain } } : loaded
   if (flag?.server) return withServer(deployConf, flag.server)

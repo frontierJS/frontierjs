@@ -242,12 +242,15 @@ export async function runTerminalConsole({ api, openUrl = () => {} }) {
       : e
   })
   const Console = (await import(join(SCREENS, 'Console.mesa'))).default
+  const Legend  = (await import(join(SCREENS, 'Legend.mesa'))).default
   return new Promise((done, fail) => {
     tui.createRenderer({ exitOnCtrlC: true, onDestroy: done }).then((renderer) => {
       // A row's `open` is a link; the terminal has no page to follow it in.
       tui.followLinks(renderer, (href) => openUrl(new URL(href, api).href))
-      tui.mount(Console, { renderer, props: { api } })
-      tui.focusNext()
+      // The console places its own focus; the legend is a footer line, so a
+      // long pane never scrolls it away.
+      const legendAt = (read) => tui.mount(Legend, { renderer, parent: tui.footerOf(renderer), props: { read } })
+      tui.mount(Console, { renderer, props: { api, legendAt } })
     }, fail)
   })
 }

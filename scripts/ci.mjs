@@ -1783,8 +1783,7 @@ function tutor() {
     // lesson runs the API off its assigned port on purpose, which is the case
     // its liveness assertion is written to survive.
     { id: 'tutor:tools',  args: ['--api-port', String(API), '--gui-port', '7500',
-                                 '--view-port', '7501', '--studio-port', '7502',
-                                 '--devtools-port', '7503'] },
+                                 '--studio-port', '7502', '--devtools-port', '7503'] },
     // A real browser, and the only lesson that needs one. Chrome is present for
     // the css and ui suites, so this is the same requirement the `tests` phase
     // already has rather than a new one.

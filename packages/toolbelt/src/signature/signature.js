@@ -435,6 +435,33 @@ async function ed25519Verify(publicKey, signature, message) {
   }
 }
 
+/**
+ * A message signed with a `generateSigningKeys` pair, outside any request —
+ * a letter that outlives the request carrying it, verified by whoever opens
+ * it later. The caller puts a purpose line at the top of `message`, so a
+ * signed letter can never be presented as a signed request or the reverse.
+ *
+ * @param {{ privateKey: string, message: string }} opts
+ * @returns {Promise<string>} the signature, base64url
+ */
+export async function signMessage({ privateKey, message }) {
+  if (!privateKey) throw new TypeError('signMessage: privateKey is required')
+  if (typeof message !== 'string') throw new TypeError('signMessage: message is a string')
+  return ed25519Sign(privateKey, message)
+}
+
+/**
+ * Whether `signature` is `publicKey`'s over `message`. False for anything
+ * that does not parse, since both arrive from somebody else.
+ *
+ * @param {{ publicKey: string, signature: string, message: string }} opts
+ * @returns {Promise<boolean>}
+ */
+export async function verifyMessage({ publicKey, signature, message }) {
+  if (typeof publicKey !== 'string' || typeof signature !== 'string' || typeof message !== 'string') return false
+  return ed25519Verify(publicKey, signature, message)
+}
+
 /** One header off a Headers or a plain object, whatever case the sender used. */
 function headerValue(headers, name) {
   const key = name.toLowerCase()

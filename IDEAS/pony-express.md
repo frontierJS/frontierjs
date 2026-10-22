@@ -6,7 +6,7 @@ dated: 2026-10-21
 
 # Idea — The pony express: a line from any shell to anyone with `fli`
 
-**Status: PROPOSED.** Dated 2026-10-21. Phases 0 and 1 and steps 2.1 and 2.2 are built; the rest is not. Do not cite
+**Status: PROPOSED.** Dated 2026-10-21. Phases 0 to 3 and step 4.1 are built; the rest is not. Do not cite
 this file as behavior — see `VERIFYING.md`. Claims about the tree were read on
 the date above, not run. It grows `IDEAS/haven.md` § Ideas past the plan, *The
 pony express*, into a plan of its own.
@@ -57,6 +57,8 @@ were read, the rest are from memory.
 | Seal to a public key, no session | libsodium sealed box, age, HPKE (RFC 9180) base mode | Phase 3's construction |
 | Trust the key you first met | OpenSSH `known_hosts`, Signal safety numbers | Phase 4's pin and words |
 | A one-shot secret handoff | Magic Wormhole, Bitwarden Send (`fli esend`) | 3.3, a value sealed to a person rather than to a link |
+| A low number as standing | ICQ's UIN, Hacker News and GitHub user ids, Discord's Early Supporter badge | 6.2's number, read off the record and never bought |
+| Invite-only growth | Gmail's 2004 invites, Bluesky's 2023 invite codes | 6.3's allowance and 6.6's tree |
 
 ## Rejected
 
@@ -86,6 +88,11 @@ were read, the rest are from memory.
 - **A new machine is a new member**, with a new invite, until linking (Q5).
 - **An invite code is a password for one use.** Anyone holding it before it is
   spent walks in, so it expires and is spent by the first join.
+- **A member number is tied to a key**, so a lost key loses the number unless
+  Q10 rules otherwise. That turns Q5's *wait until somebody asks twice* into a
+  ruling owed before the first number goes out.
+- **The numbers publish the growth rate.** The newest member's badge says how
+  many have joined.
 
 ---
 
@@ -243,22 +250,72 @@ Done when: a unit spec in toolbelt opens what it sealed and refuses a tampered o
   under bun and node; `@hpke/core` opened what it sealed and it opened
   `@hpke/core`'s, both runtimes, from a scratch check not committed. The
   webpush HKDF stays its own: node's `hkdfSync` there, RFC 8291's labels.
-- [ ] 3.2 A sealing key beside the signing key: `key.json` gains an X25519
+- [x] 3.2 A sealing key beside the signing key: `key.json` gains an X25519
   pair, published on the member row at join, or by a signed update for a
   member who joined before it. Q2 ruled a second pair (`FJS-D1400`).
-- [ ] 3.3 `fli tell <nick> --env KEY...`: env values sealed to a person, read
-  once, gone. `env:send`'s key picking (`--file`, `-g`) is reused rather than
-  copied. Prints why when the recipient has no sealing key yet.
+  Built: `key.json` holds `sealing` beside the signing pair, and a key file
+  without one gains it on the next verb. `members.sealKey`; `join` requires
+  and echoes it; `POST /seal-key` is the signed update, sent by setup for the
+  owner and by the first `tell` or `inbox` after the seal for anyone else,
+  cached as `tell.sealKey` once the post confirms. The members and letters
+  tables gain their columns in place, so a post deployed before the seal keeps
+  its members, against the usual no-upgrade-step rule: the alternative was
+  every member joining again.
+- [x] 3.3 Every `tell` is sealed to a recipient who has a sealing key; to one
+  without, a plain letter goes as V1's plaintext and says so (`FJS-D1402`).
+  `fli tell <nick> --env KEY...` is the same path, read once, gone, and is
+  refused to a recipient with no sealing key. `env:send`'s key picking
+  (`--file`, `-g`) is reused rather than copied.
+  Built: the sender reads the recipient's key off `GET /members` and seals
+  JSON, `{ text }` or `{ env, source, count }`; the post stores `{ sealed }`
+  opaque and refuses a plaintext letter to a member with a key (409), so
+  ciphertext is enforced there and not trusted to the sender. `inbox` and
+  `-f` open each letter, mark a plain one, and print the env lines under
+  `env from .env`. The picking is `pickEnv` in `core/global-env.js`, which
+  `env:send` now calls. A command's own booleans now never take a value
+  (`core/bootstrap.js` reads argv again once the command is known), which
+  `--env KEY` needed and which also fixes `env:send`'s own `-g KEY` example.
+  Driven under `wrangler dev` (4.151) with three scratch `HOME`s, 25 checks:
+  the pre-seal Worker with a member who joined it, then this one over the
+  same storage — the old letter kept and marked plain, each member's key
+  published on their first verb, the stored body `v1.` with no plaintext in
+  it, a raw plaintext send refused 409, `--env` refused to a member with no
+  key and nothing stored, an env letter opened backlog-first then a live
+  letter in order under `-f`, every letter acked. Not run against the real
+  account. A sealed letter does not prove its sender: the post stamps `from`,
+  and a lying host could seal anything to a public key; that is Phase 4's.
 
 ### Phase 4 — Trust
 
 Goal: a host that swaps a key is caught, not trusted.
 Done when: a test Worker answering a different key for a pinned nick makes `fli tell` refuse and name both fingerprints.
 
-- [ ] 4.1 Pin on first contact: `~/.fli/tell/peers.json` records each
+- [x] 4.1 Pin on first contact: `~/.fli/tell/peers.json` records each
   correspondent's signing key the first time `tell` or `inbox` meets them, and
   a later mismatch refuses loudly. Pinned BY KEY, the nick only shown, so a
   nick taken over by somebody else is what the pin notices.
+  Built: `pinPeer` in `core/tell.js`, a pin `{ nick, sealKey, since }` under
+  the signing key, a fingerprint the first 64 bits of the key's SHA-256 in four
+  groups. `tell` grades the roster's answer for the recipient and refuses, with
+  both fingerprints and nothing sent, on another key under a pinned nick, a
+  pinned key under another nick, another sealing key, or none where one was
+  pinned, since withholding it would turn the letter plain. The pin covers the
+  sealing key as well as the signing key, because the sealing key is the one a
+  lying host would swap. `inbox` meets a sender
+  through the letter: a sealed letter is now `{ body, key, sig }` inside the
+  seal, signed over a purpose line, the recipient's signing key and the body
+  (`signMessage`/`verifyMessage`, new in `@frontierjs/toolbelt/signature`), so
+  the post cannot write one and a letter re-sealed to a third member does not
+  verify there. A letter unsigned, failing its signature, or signed by a key
+  not pinned to its `from` is withheld, named, and the run exits 1. A
+  plain letter carries no key and is graded by nothing, as before.
+  Driven under `wrangler dev` with three scratch `HOME`s and a test Worker
+  wrapping `TellPost` to lie in `GET /members` and leave letters it wrote, 22
+  checks: pins made once on each side, every refusal above with both
+  fingerprints and the letter count unmoved, forged letters (unsigned, signed by
+  another key, re-sealed from another member) withheld under `inbox` and under
+  `-f` beside an honest one, and a pins file that is not JSON refused and left
+  alone. Not run against the real account.
 - [ ] 4.2 `fli tell:who <nick>`: the key's fingerprint as a few words, to read
   aloud and compare off-band — Signal's safety number at terminal size.
 - [ ] 4.3 Linking a second machine. **Needs Q5.**
@@ -275,6 +332,42 @@ Done when: a whisper to an offline member arrives as a letter in their `inbox`, 
 - [ ] 5.3 A letter announced to a member in the square draws as a whisper and
   is deleted as read.
 - [ ] 5.4 A post office piece in the square, a door you can walk to.
+
+### Phase 6 — Member numbers
+
+Goal: an early `fli` user holds a number that says when they joined and who vouched for them, and can prove it.
+Done when: three scratch `HOME`s joined in turn against the project's deployed post hold #1, #2 and #3 in signed rows that verify against the post's key with the network off, and a forged row is refused by `tell:who`.
+
+Nothing here is handed out until Q9 and Q10 are ruled.
+
+- [ ] 6.1 The project's post: the one post whose numbers count. **Needs Q9.**
+  Any other post keeps its own order, which means nothing outside it.
+- [ ] 6.2 A number per member: `members` gains `number INTEGER UNIQUE` and
+  `invitedBy`, set inside `join` as one past the highest number. The object
+  takes one request at a time, so two joins cannot draw one number. A number
+  is never reused — a member who leaves keeps it and the row stays. The owner
+  is #1. Today `join` drops the inviter: `invites.byNick` is read and never
+  copied to the member.
+- [ ] 6.3 An invite allowance: each member mints a fixed count of codes, three
+  to start, held as a var beside `OWNER_NICK`. A low number then means
+  somebody vouched for it, and numbers cannot be farmed. `invite` is
+  unbounded today (1.3).
+- [ ] 6.4 The signed member row: at join the post signs `{ number, nick,
+  publicKey, joined, invitedBy, fliVersion }` with a key of its own, and
+  `join` writes it to `~/.fli/tell/member.json`. It proves the number with no
+  call to the server, which is what Haven reads in 6.8. `fliVersion` makes
+  *joined before 1.0* a fact read off the row rather than a badge handed out.
+- [ ] 6.5 4.2's `fli tell:who` takes a nick or a number and prints the signed
+  row beside the fingerprint words: `#0042 sam · joined 2026-10-21 · pre-1.0
+  · via #0007`. One verb for *who is this*, not two.
+- [ ] 6.6 `fli tell:lineage [nick]`: the invite tree read from `invitedBy`.
+- [ ] 6.7 `GET /badge/<number>.svg` from the Worker, for a README.
+- [ ] 6.8 In Haven, the number is a nameplate on a member's figure, and 5.4's
+  post office carries the members as a board. **Needs Phase 5.**
+- [ ] 6.9 The oath: `tell:join` prints one line to accept before the code is
+  spent — where a code of conduct is read once. From memory, not checked: the
+  historical Pony Express ran April 1860 to October 1861 with about 80 riders
+  on the trail at a time, and each swore an oath.
 
 ---
 
@@ -330,3 +423,28 @@ Done when: a whisper to an offline member arrives as a letter in their `inbox`, 
   - **B** — an invite code: `fli tell:invite` mints a one-use code,
     `fli tell:join <code>` spends it, and the server keeps a members table.
   - **Recommend A** — four people, no table and no expiry to get right.
+- **Q9 — Where the numbers live.**
+  - **A** — on the project's post: a number is the member row's number there,
+    and a member of it is on no other post (1.3's one post per machine).
+  - **B** — a registry apart from the mail: `fli tell:claim` signs with the
+    tell key to a list the project runs, and mail stays on any post.
+  - **Recommend A** (confidence 2) — one table and no new noun; the one-post
+    rule bites only once private posts are common, and B is the reopen path.
+- **Q10 — What a lost key does to a number.**
+  - **A** — linking (Q5's A) before numbers go out: a second machine signed
+    into the same member is also the backup.
+  - **B** — a recovery code printed at join, which the post trades once for a
+    new key under the same number.
+  - **C** — nothing: a lost key is a lost number, and the member starts again.
+  - **Recommend A** (confidence 2) — it answers Q5 too, and a recovery code is
+    a password the member must keep somewhere, which the keys exist to avoid.
+    This reverses Q5's *B for now*, since a number is what makes a second
+    machine worth asking for.
+- ~~**Q11 — What the seal covers.**~~ **Answered 2026-10-22 (`FJS-D1402`): A — every letter, once the recipient has a sealing key.**
+  - **A** — every letter, once the recipient has a sealing key; plaintext with
+    a note to one without, `--env` refused.
+  - **B** — only `--env`; reword Phase 3's done-when.
+  - **C** — every letter, and a `tell` to a member with no sealing key is
+    refused.
+  - **Recommend A** — the done-when already says only ciphertext, and the
+    cost is the same.

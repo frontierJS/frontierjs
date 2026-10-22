@@ -3,10 +3,10 @@ title: 05-view
 description: The chain of responsibility — what handles a request, in order
 ---
 
-## `fli project:map --as=serve` — what is between the request and the row
+## `:map` in `fli gui` — what is between the request and the row
 
 ```console
-fli project:map --as=serve   # http://localhost:{{viewPort}}
+fli gui   # http://localhost:{{guiPort}}/console/, then 5 for :map
 ```
 
 The other three tools answer questions about a moment. This one answers a
@@ -33,7 +33,7 @@ junction app --app api/src/app.ts
 
 That file is `app.snapshot.md`, and it is graded in CI, so a method that
 quietly stops being served is a diff on a branch rather than a 405 in
-production. It is written below, and then the viewer is asked what it can see.
+production. It is written below, and then the map is asked what it can see.
 
 ```js
 if (!await narrate($)) return
@@ -71,44 +71,34 @@ if (!await must($, probe.fileContains({
 
 await ensureApi($)
 
-const view = await startServer($, {
-  name: 'pmap',
-  argv: fliArgv('project:map', '--as=serve', '--port', String($.config.viewPort), '--no-open'),
-  cwd:  app,
-  port: $.config.viewPort,
-  path: '/',
-})
-if (!await must($, view.up, {
-  likely:    `something already holds ${$.config.viewPort}`,
-  reproduce: `cd ${app} && fli project:map --as=serve --port ${$.config.viewPort}`,
-})) return
-
-const at = (path) => `http://127.0.0.1:${$.config.viewPort}${path}`
+// The console `02-gui` started serves the map too: `:map` reads this app's
+// `project:map --json` through it, so there is no second server to start.
+const at = (path) => `http://127.0.0.1:${$.config.guiPort}${path}`
 
 // The chain, end to end: a model in the seed, the service that answers for it,
 // and the resource a screen reaches it through.
 if (!await must($, await probe.httpJson({
-  url:      at('/data'),
+  url:      at('/api/map?app=.'),
   expect:   (j) => (j.resources ?? []).some((r) => r.model === 'Note' && r.service === 'notes'),
   describe: 'Note is drawn, with the service that answers for it',
   name:     'the chain',
 }), {
-  likely: 'the viewer regenerates on every request — if this is empty the app has no resources under web/src',
+  likely: 'the map is read again on every request — if this is empty the app has no resources under web/src',
 })) return
 
 // The environment panel. Not decorative: a required variable that is not set is
 // an app that boots, serves, and fails at the first write.
 if (!await must($, await probe.httpJson({
-  url:      at('/data'),
+  url:      at('/api/map?app=.'),
   expect:   (j) => (j.env?.vars ?? []).every((v) => !v.required || v.status === 'set'),
   describe: 'every required variable is set',
   name:     'the environment',
 }), {
-  likely: 'the page names which one is missing, and offers to generate the ones it can',
+  likely: ':map\'s env list names which one is missing, and offers to generate the ones it can',
 })) return
 
 log.info('')
-log.info(`  the viewer is at http://localhost:${$.config.viewPort} — refresh it to regenerate from the files`)
+log.info(`  the map is :map at http://localhost:${$.config.guiPort}/console/ — r reads it again from the files`)
 log.info('')
 
 remember($, '05-view', { snapshot: snap })

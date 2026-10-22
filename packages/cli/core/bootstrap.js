@@ -599,6 +599,16 @@ export async function run(process) {
     return
   }
 
+  // A command's own booleans never take a value either, and they are known
+  // only now: read without them, `fli esend -g KEY` is `{ g: 'KEY' }` and the
+  // run is refused as "must be type boolean".
+  const ownBools = Object.entries(entry.meta.flags ?? {})
+    .filter(([, d]) => d?.type === 'boolean')
+    .flatMap(([name, d]) => d.char ? [name, d.char] : [name])
+  if (ownBools.length) {
+    ({ _: [, ...rawArgs], ...flag } = parseArgv(process.argv.slice(2), { bools: [...BOOL_ARGV, ...ownBools] }))
+  }
+
   // Strip internal bootstrap flags before passing to the command. --project is
   // consumed by bin/fli.js (it pins global.projectRoot). --debug is read there
   // too, for the clean-error path, and still reaches the command: it is a

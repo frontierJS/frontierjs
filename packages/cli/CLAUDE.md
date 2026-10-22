@@ -74,7 +74,7 @@ core/
                 every other line is HELD until it prints, never dropped, and a
                 surface that exits or stays silent past `settleMs` releases it
   open-url.js   a URL in the person's browser — argv, detached; `fli dev`'s `o`,
-                `fli gui --open`, `project:map --as=serve`
+                `fli gui --open`
   clipboard.js  text onto the clipboard over stdin, never a shell string —
                 `env:send`'s link, `crypto:keygen --copy`
   requires.js   what a namespace's `_module.md` says it cannot run without —
@@ -87,7 +87,9 @@ core/
                 with `ttyPrompts(tty)`; a `secret` entry is read without echo
   global-env.js `~/.config/fli/.env` — the one spelling of the path, the line
                 writer `fli eset` uses, the placeholder and the header. `~/.fli/`
-                is machine state (locks, caches, a walk's defaults), never a key
+                is machine state (locks, caches, a walk's defaults), never a key.
+                `pickEnv` is the keys a send carries, for `env:send` and
+                `tell --env`
   command-parse.js  does every command in a routes tree parse — each compiled
                 with the module the runtime pairs it with, checked by `node
                 --check`, reported at the `.md` line. The `command-parses` rule
@@ -433,6 +435,15 @@ core/
                 from one mesa root, or a screen compiles against one copy and
                 runs on another. A compile error is served as a module that
                 throws naming the file
+  map-view.js   the console's `:map` — which directories here are apps (a
+                `db/schema.lite` under the root or a surface's dir), one app's
+                map as `project:map --json` spawned in it, and the secret fill.
+                An app is named by its directory and looked up in that list,
+                never joined onto a path
+  env-health.js which secrets an app's `.env.example` names and which are
+                set, and `fillSecret`, the one write — through that same list,
+                so a key it does not name is refused. `project:map` reports it
+                and `:map` offers the fill
   check-worker.js  one scope of `/api/check` on its own thread, so the scopes
                 overlap (wall time is the repo scope, not the sum) and the server
                 stays answerable; `handleCheck` shares one run among overlapping
@@ -641,7 +652,9 @@ core/
   argv.js       the command line into `{ _, ...flags }`, read before the command
                 is known, so a value's type is how it LOOKS and getConfig
                 coerces toward the declaration after. `BOOL_ARGV` never takes a
-                value, and a boolean not typed is ABSENT — a defaulted `false`
+                value, nor a command's own booleans, which bootstrap adds by
+                reading argv again once the command is known; a boolean not
+                typed is ABSENT — a defaulted `false`
                 beside `-d` is how `db:import -d` once ran for real
   verbosity.js  one bit — did the caller type `--verbose`. A leaf with no
                 imports, read on the startup path, set in `bootstrap.js` before
@@ -751,7 +764,9 @@ core/
                 `GET /waiting` again, so no command waits on the network
   tell-worker.js  the Cloudflare Worker `fli tell` speaks to — one Durable
                 Object, members, invites, letters, and the `/follow` socket
-                `inbox -f` holds (`IDEAS/pony-express.md`).
+                `inbox -f` holds (`IDEAS/pony-express.md`). A member with a
+                sealing key is sent only sealed letters; a plain one to them is
+                refused here (`FJS-D1402`).
                 Never imported: wrangler bundles it from a config `tell:setup`
                 writes, so it runs in workerd and imports toolbelt and nothing
                 Bun-only. `cloudflare:workers` is not imported either, since
@@ -768,10 +783,24 @@ db/        deploy.lite + ddl.snapshot.sql — the deploy journal's models, and t
 cli/src/   the CLI's own source tree
 console/   the console's screens, `.mesa` — `Console.mesa` is the root both
            targets mount, the pane strip; then one file per pane (`Run`,
-           `Check`, `Decide`, `Ship`). `Flow` is one walked flow, the release
-           or the publish: it draws the steps the server's tables name and
-           grades none of them — `Ship` does, from what it has read. A pane unmounts when another is shown, so
-           `:check`'s tree walk runs only while it is in view.
+           `Check`, `Decide`, `Ship`, `ProjectMap` — not `Map`, which would
+           shadow the global a compiled component uses). `Flow` is one walked
+           flow, the release or the publish: it draws the steps the server's
+           tables name and grades none of them — `Ship` does, from what it has
+           read. `:map`'s parts are `MapChain`, `MapMachines`, `MapWarden` and
+           `MapPanel` (every other list); what they draw is `map-model.js`,
+           pure and tested, and `map-reference.js` is what the chain IS for
+           every project. On the terminal an `<svg>` paints only its
+           `aria-label`, so a picture there is also a row of buttons (a
+           machine's moves), and a run of inline nodes is joined by text
+           arrows. A pane unmounts when another is shown, so `:check`'s tree
+           walk runs only while it is in view.
+           The keys are ONE `keys()` on `Console`'s root, a pane's table
+           (handed up through `keyed`, its labels the actions) ahead of the
+           console's; `Legend` is `bindings()` over the same tables, drawn
+           in the terminal's footer strip (`legendAt`) or at the page's foot.
+           The root keeps focus, so a key arriving with focus outside it
+           only brings focus back.
            A screen reads `server.js`'s endpoints through its `api` prop and
            nothing else, so the browser and the terminal draw one copy
 web/       the browser-facing side
@@ -1169,13 +1198,13 @@ test/     one file per module under core/, plus the deploy pipeline's own
   two callers each.** The going-back path is the one nobody exercises until the
   day it matters, so `_steps-revert` calls the same functions `_steps-docker`
   does rather than a copy of them.
-- **`project:map` is one reading presented three ways** (`FJS-D223` one scope
-  down, `FJS-1016`): **one axis, so one flag**, and `--as` absorbs `--json`. `buildProjectMap` in `_module.md` is the one reader;
-  `--layer` narrows what is COLLECTED, `--out` is a destination on its own axis.
-  **`--as=serve` does not exit**, which is the one asymmetry — every other `--as`
-  value anywhere answers and stops — so the flag description says so rather than
-  leaving somebody to find it. **Every progress note is suppressed when stdout
-  is the document**, or `| jq` reads a `Reading schema...` line first.
+- **`project:map` is one reading presented two ways** (`FJS-D223` one scope
+  down, `FJS-1016`): the report, and `--json`. `buildProjectMap` in `_module.md`
+  is the one reader, and the console's `:map` reaches it by spawning `--json`
+  (`core/map-view.js`) rather than collecting beside it. `--layer` narrows what
+  is COLLECTED, `--out` is a destination on its own axis. **Every progress note
+  is suppressed when stdout is the document**, or `| jq` and `:map` read a
+  `Reading schema...` line first.
 - **A line somebody must ACT on is `log.info`/`echo`; the paragraph explaining
   it is `log.detail`, which prints only under `--verbose`.** The flag is global
   (`defaultFlags` in `core/runtime.js`, one bit in `core/verbosity.js` set in
@@ -1257,7 +1286,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
   panels and leaves every file-derived one intact. The page prints WHICH of the three
   reasons it was (`--no-atlas`, a boot failure, no snapshot), because an app with
   no jobs and an app nobody could boot must not draw the same empty table.
-- **`project:map --as=serve` has ONE viewer and `collectIssues` has a test.** Both of its
+- **`:map`'s `collectIssues` has a test.** Both of its
   checks were wrong for every row they ever printed, and both survived because
   nothing ran the function (`FJS-1017`). There is deliberately no per-service
   gateAuth check now: the hook is `around.all` and the service builder installs
@@ -1268,10 +1297,10 @@ test/     one file per module under core/, plus the deploy pipeline's own
   declaration and a view as well. *No resource binds to this service* is a
   COLUMN in the services panel rather than an issue — an API-only service is
   correctly bound by nothing, and 24 such rows pushed the real findings off the
-  page. `test/viewer-issues.test.js` reaches the two pure functions by
-  evaluating the page's script block with the browser stubbed; every negative in
-  it is PAIRED with a finding that must still fire, or a `collectIssues`
-  returning nothing would pass.
+  page. It lives in `console/map-model.js` with the rest of the map's pure
+  half, and `test/map-issues.test.js` imports it; every negative there is PAIRED
+  with a finding that must still fire, or a `collectIssues` returning nothing
+  would pass.
 - **`package.json`'s `test` script is an explicit file list, so a new test file
   runs nowhere until it is named there.** It is not a glob and adding one is
   silent — the file passes in isolation and is absent from `bun run test`.

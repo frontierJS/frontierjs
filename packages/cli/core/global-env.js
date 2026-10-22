@@ -10,7 +10,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
-import { dirname, join } from 'path'
+import { dirname, join, resolve } from 'path'
 
 export const GLOBAL_ENV_HEADER = '# FLI global environment\n# Add env vars here that apply across all projects\n'
 
@@ -81,4 +81,33 @@ export function ensurePlaceholder(key, url, { home } = {}) {
   if (hasEnvLine(text, key)) return false
   writeEnv(file, text + (text.endsWith('\n') ? '\n' : '\n\n') + placeholderFor(key, url))
   return true
+}
+
+// ─── picking keys to send ────────────────────────────────────────────────────
+
+const keyOf = (line) => {
+  const t = line.trim()
+  if (!t || t.startsWith('#')) return null
+  const idx = t.indexOf('=')
+  return idx === -1 ? null : t.slice(0, idx).replace(/^export\s+/, '').trim()
+}
+
+/**
+ * The env text a send carries — `env:send` and `tell --env` — read from the
+ * global env under `global`, else `file` under `root`; only the `keys` lines
+ * when any are named. `{ body, count, source }`, and a throw naming the file
+ * or the keys it lacks.
+ */
+export function pickEnv({ root, file = '.env', global = false, keys = [], home } = {}) {
+  const path   = global ? globalEnvPath(home) : resolve(root, file)
+  const source = global ? '~/.config/fli/.env' : file
+  if (!existsSync(path)) throw new Error(`No env file at ${path}`)
+  let body = readFileSync(path, 'utf8')
+  if (keys.length) {
+    const lines   = body.split('\n').filter(l => keys.includes(keyOf(l)))
+    const missing = keys.filter(k => !lines.some(l => keyOf(l) === k))
+    if (missing.length) throw new Error(`${source} has no ${missing.join(', ')}`)
+    body = lines.join('\n') + '\n'
+  }
+  return { body, count: body.split('\n').filter(keyOf).length, source }
 }

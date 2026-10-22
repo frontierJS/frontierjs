@@ -67,13 +67,21 @@ export const isSnoozed = (snoozes, url, now = new Date()) => !!url && !!snoozes[
  */
 export function hideSnoozed(answer, snoozes, now = new Date()) {
   let hidden = 0
+  // A count whose key a hidden item carries says how many of its own are
+  // asleep, or its number reads as more than the list under it shows.
+  const asleep = new Map()
   const cut = answer.blocks.map((b) => {
     if (b.kind !== 'list') return b
-    const items = b.items.filter((i) => !isSnoozed(snoozes, i.url, now))
+    const items = b.items.filter((i) => {
+      if (!isSnoozed(snoozes, i.url, now)) return true
+      for (const k of i.keys ?? []) asleep.set(k, (asleep.get(k) ?? 0) + 1)
+      return false
+    })
     hidden += b.items.length - items.length
     return { ...b, items }
   }).filter((b) => b.kind !== 'list' || b.items.length)
   if (!hidden) return { answer, hidden }
   const blocks = cut.filter((b, n) => b.kind !== 'heading' || (cut[n + 1] && cut[n + 1].kind !== 'heading'))
+    .map((b) => b.kind === 'stats' ? { ...b, items: b.items.map((i) => asleep.get(i.key) ? { ...i, asleep: asleep.get(i.key) } : i) } : b)
   return { answer: { ...answer, blocks }, hidden }
 }

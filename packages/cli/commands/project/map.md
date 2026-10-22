@@ -4,21 +4,12 @@ description: What this project IS — its schema, services, resources and migrat
 alias: pmap
 examples:
   - fli project:map
-  - fli project:map --as=serve
   - fli project:map --json
   - fli project:map --out project-map.json
   - fli project:map --layer schema
   - fli project:map --no-atlas
   - fli project:map --project packages/basecamp
 flags:
-  as:
-    char: a
-    type: string
-    description: "Which layout — report (the terminal, default) or serve (FJSChain in a browser; it does not exit, Ctrl+C to stop)"
-    choices:
-      - report
-      - serve
-    defaultValue: report
   json:
     type: boolean
     description: Print the model instead
@@ -36,23 +27,11 @@ flags:
     type: string
     description: Write the model as JSON to this path — a destination, not a presentation
     defaultValue: ''
-  port:
-    char: p
-    type: number
-    description: Port to serve on, with --as=serve
-    defaultValue: 5501
-  open:
-    type: boolean
-    description: Open the browser once the server is up, with --as=serve (--no-open to skip)
-    defaultValue: true
-tool:
-  name: pmap
-  flags: --as=serve --no-open
 ---
 
-One reader of the project, presented three ways: the terminal report and
-FJSChain in a browser, which `--as` picks between, and the model itself, which
-is `--json` (`FJS-D401`).
+One reader of the project, presented two ways: the terminal report, and the
+model itself, which is `--json` (`FJS-D401`). The console's `:map` pane (`fli
+gui`) draws that model, read through this command.
 
 `project:view` was the second command over this same reading, and the two
 disagreed — 54 models against 42 over one tree, because one counted definitions
@@ -65,20 +44,12 @@ rather than re-argued.
 says only what it looked at. `--out` is a destination rather than a presentation
 and sits on its own axis.
 
-**`--as=serve` does not exit** — it is a server, where every other value here
-answers and stops.
-
 **Reading a project needs no running server.** `--atlas` boots the app once for
 the three registers no file can answer; it degrades rather than fails, so a
 missing bun costs three sections and nothing else.
 
 ```js
-if (flag.json && flag.as !== 'report') {
-  log.error(`--json prints the model; --as=${flag.as} serves a page. Drop one of the two flags.`)
-  process.exitCode = 1
-  return
-}
-const as    = flag.json ? 'json' : flag.as
+const as    = flag.json ? 'json' : 'report'
 const layer = (flag.layer || '').toLowerCase()
 
 if (!existsSync(resolve($.paths.db, 'schema.lite'))) {
@@ -110,11 +81,6 @@ if (flag.out) {
 
 if (as === 'json') {
   echo(JSON.stringify(map, null, 2))
-  return
-}
-
-if (as === 'serve') {
-  await serveProjectMap($, map, { port: flag.port, open: flag.open, atlas: flag.atlas, log })
   return
 }
 

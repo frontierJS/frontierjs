@@ -1020,7 +1020,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
 
   // ── x-gate ─────────────────────────────────────────────────────────────────
   // Emitted when the model has @@gate — structural metadata, emitted on all modes.
-  // Consumers (FJSChain DB panel, gap analysis) read gate levels without raw schema.
+  // Consumers (the console's :map, gap analysis) read gate levels without raw schema.
   const gateAttr = model.attributes.find(a => a.kind === 'gate')
   if (gateAttr) {
     const gate = parseGateString(gateAttr.value)

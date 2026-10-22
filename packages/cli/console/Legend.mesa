@@ -1,0 +1,23 @@
+<script>
+  // Legend.mesa — the keys that fire where focus is now, one line, always on
+  // screen (`IDEAS/one-console.md` 2.3). `Console` works the rows out with
+  // `bindings()` over the keymaps that dispatch them, so a key listed here is a
+  // key that fires, and nothing here is written by hand.
+  //
+  // Text, never buttons: on the terminal it is drawn in the footer strip, a
+  // second root outside the console's keymap, and focus that went in there
+  // would leave every key unbound. The separator is text because the
+  // terminal paints no flex gap.
+
+  // A signal read, so the terminal's footer copy follows the console's state.
+  // `rows` is [{ keys, action }]; `status` the filter in force, or what the
+  // last `:` said.
+  export let read   // () => { rows, status }
+</script>
+
+<footer class="cluster gap-sm text-xs text-muted" data-legend>
+  {#each read().rows as r, i (r.keys)}
+    <span data-key={r.keys}>{i ? ' · ' : ''}<kbd>{r.keys}</kbd> {r.action}</span>
+  {/each}
+  {#if read().status}<span data-status> · {read().status}</span>{/if}
+</footer>

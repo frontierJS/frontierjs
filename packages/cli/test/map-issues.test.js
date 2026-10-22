@@ -1,4 +1,4 @@
-// ─── viewer-issues.test.js — what the served project map calls a finding ──────
+// ─── map-issues.test.js — what the console's map calls a finding ─────────────
 //
 // `collectIssues` had no test, and both of its checks were wrong for every row
 // they ever printed.
@@ -20,9 +20,7 @@
 // a `collectIssues` that returned nothing would satisfy the negatives alone.
 
 import { describe, test, expect } from 'bun:test'
-import { loadViewer }             from './viewer-page.js'
-
-const { buildModel, collectIssues } = loadViewer(['buildModel', 'collectIssues'])
+import { buildModel, collectIssues } from '../console/map-model.js'
 
 // A service exactly as `app.snapshot.md` reports one: gateAuth in AROUND,
 // never in before. Copied from the shape a real snapshot parses to.

@@ -585,12 +585,14 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   screen says it happened — and a spec that never touches the field the
   predicate reads cannot tell the two apart.
 - **What a part registers with its parent, it registers as a getter.** `Tab`
-  hands `Tabs` `(id, () => disabled)`, because `disabled` is its own prop and
-  can change long after the registration ran — a copied boolean is a strip that
+  hands `Tabs` `(id, () => disabled, () => el)`, because `disabled` is its own
+  prop and can change long after the registration ran — a copied boolean is a strip that
   keeps stepping onto a tab the app has since turned off, and it passes every
   assertion written against the initial state (`FJS-313`). Order in that
   registry is mount order, and the default pick is taken from it, so a
-  `TabList` that defers a child changes which tab opens.
+  `TabList` that defers a child changes which tab opens. The `el` getter is
+  how an arrow key and `Tabs`' exported `focus()` reach a button on a
+  terminal, which has no `querySelector`.
 - **A list with a keyboard cursor takes the pointer on `mousemove`, never on
   `mouseenter`.** `mouseenter` fires when an ELEMENT arrives under a still
   pointer, which is the ordinary case twice over: a ⌘K palette opens under

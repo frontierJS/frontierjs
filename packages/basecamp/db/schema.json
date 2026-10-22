@@ -41,6 +41,13 @@
             "null"
           ],
           "description": "TOTP only — the last step this secret was accepted at, which is what makes a code single-use. A code is valid for its whole 30-second window, so without this the window IS a replay window and nothing about the second code looks wrong. Null until the first successful login.  Beside `scope`, `accessToken` and `tokenExpiresAt`, which are OAuth-only in the same way: one table per KIND of credential would be four tables whose only difference is which columns are null."
+        },
+        "linked": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "OAuth only — true when the provider was attached to an account that already existed, which the mailbox vouched for before the provider did. `providerOnly` and the reset refusal count only an unmarked `oauth:*` row: an account a provider MADE has nothing but the provider securing it, and one the mailbox made keeps the mailbox as a way in (`FJS-D1011`)."
         }
       },
       "additionalProperties": false,
@@ -93,6 +100,11 @@
             "string",
             "null"
           ]
+        },
+        "enrollmentOnly": {
+          "type": "boolean",
+          "default": false,
+          "description": "Signed in on a first factor alone, where `requireSecondFactor` says the account owes a second. The plugin refuses every service call but the enrollment three while it is set; `confirmTotp` clears it."
         },
         "impersonatingUserId": {
           "type": [
@@ -183,6 +195,12 @@
             "null"
           ],
           "description": "emailChange only: whose account the address replaces the current one on. The identifier is the NEW address, which belongs to nobody yet, so the account cannot be found from it the way every other purpose finds one."
+        },
+        "registrant": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "attempts": {
           "type": "integer",
@@ -631,6 +649,11 @@
         "definition"
       ],
       "x-litestone-policies": true,
+      "x-pick-where": {
+        "flowId": {
+          "ownerId": "auth().id"
+        }
+      },
       "x-identify": [
         "version"
       ],
@@ -684,6 +707,11 @@
         "flowId"
       ],
       "x-litestone-policies": true,
+      "x-pick-where": {
+        "flowId": {
+          "ownerId": "auth().id"
+        }
+      },
       "x-gate": {
         "read": 4,
         "create": 4,
@@ -1094,9 +1122,14 @@
           ]
         },
         "secret": {
-          "type": [
-            "string",
-            "null"
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "password"
+            },
+            {
+              "type": "null"
+            }
           ],
           "x-aggregatable": "encrypted",
           "x-sortable": "encrypted",
@@ -1181,6 +1214,141 @@
         "delete": 8
       }
     },
+    "AuditTrail": {
+      "type": "object",
+      "title": "AuditTrail",
+      "x-litestone-kind": "model",
+      "properties": {
+        "operation": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "field": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "transition": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "WHICH named move an update was, where it was one. Two moves between the same states write identical images; only this separates them."
+        },
+        "records": {
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "before": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Redacted by the writer: `@encrypted`, `@guarded`, `@secret` and `@hashed` land as `[redacted]`, `@personal` as `[personal]`.",
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "after": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "actorId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Text, because the actor is whatever the host's users are keyed by; an Int key reads back as its digits in a string."
+        },
+        "actorType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subjectId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Support mode: `actorId` is the operator and `subjectId` the principal the boundary enforced as."
+        },
+        "episodeId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "correlationId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "origin": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ip": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "userAgent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tenant": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "meta": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "model",
+        "records"
+      ],
+      "x-gate": {
+        "read": 8,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      }
+    },
     "User": {
       "type": "object",
       "title": "User",
@@ -1238,7 +1406,7 @@
         },
         "kind": {
           "$ref": "#/$defs/UserKind",
-          "default": "human",
+          "default": "user",
           "x-litestone-write-policy": true,
           "x-litestone-write-claims": {
             "isSystemAdmin": true
@@ -1333,6 +1501,15 @@
         {
           "field": "memberships",
           "model": "WorkspaceMember",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "appEditors",
+          "model": "AppEditor",
           "type": "hasMany",
           "fields": [],
           "references": [],
@@ -1459,7 +1636,9 @@
           "default": "team"
         },
         "ownerId": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "settings": {
           "default": {},
@@ -1487,8 +1666,7 @@
       "required": [
         "accountId",
         "name",
-        "slug",
-        "ownerId"
+        "slug"
       ],
       "x-version": "version",
       "x-identify": [
@@ -1587,6 +1765,15 @@
           "optional": false
         },
         {
+          "field": "monitors",
+          "model": "Monitor",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
           "field": "channels",
           "model": "NotificationChannel",
           "type": "hasMany",
@@ -1624,7 +1811,9 @@
           "type": "string"
         },
         "userId": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "role": {
           "$ref": "#/$defs/WorkspaceRole",
@@ -1672,8 +1861,7 @@
       },
       "additionalProperties": false,
       "required": [
-        "workspaceId",
-        "userId"
+        "workspaceId"
       ],
       "x-litestone-policies": true,
       "x-determined": {
@@ -1804,6 +1992,7 @@
         },
         "data": {
           "type": "string",
+          "format": "password",
           "default": "{}",
           "x-aggregatable": "encrypted",
           "x-sortable": "encrypted",
@@ -1925,7 +2114,9 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "lastUsedAt": {
           "anyOf": [
@@ -1936,21 +2127,29 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "totalUses": {
           "type": "integer",
-          "default": 0
+          "default": 0,
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "usageDate": {
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "usesOnDate": {
           "type": "integer",
-          "default": 0
+          "default": 0,
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "createdBy": {
           "type": [
@@ -3033,6 +3232,36 @@
           "type": "boolean",
           "default": false
         },
+        "deployOnPush": {
+          "type": "boolean",
+          "default": false,
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "pushSecret": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "password"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system",
+          "x-aggregatable": "encrypted",
+          "x-sortable": "encrypted",
+          "x-filterable": "encrypted"
+        },
+        "pushActorId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
         "blueprintId": {
           "type": [
             "string",
@@ -3131,8 +3360,26 @@
           "optional": false
         },
         {
+          "field": "domainRoutes",
+          "model": "DomainRoute",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
           "field": "variables",
           "model": "Variable",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "editors",
+          "model": "AppEditor",
           "type": "hasMany",
           "fields": [],
           "references": [],
@@ -3188,9 +3435,14 @@
           ]
         },
         "secretValue": {
-          "type": [
-            "string",
-            "null"
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "password"
+            },
+            {
+              "type": "null"
+            }
           ],
           "x-aggregatable": "encrypted",
           "x-sortable": "encrypted",
@@ -3295,13 +3547,17 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "certKind": {
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "certIssuedAt": {
           "anyOf": [
@@ -3312,7 +3568,9 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "certExpiresAt": {
           "anyOf": [
@@ -3323,7 +3581,9 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         }
       },
       "additionalProperties": false,
@@ -3349,6 +3609,147 @@
           "type": "belongsTo",
           "fields": [
             "appId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "routes",
+          "model": "DomainRoute",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "DomainRoute": {
+      "type": "object",
+      "title": "DomainRoute",
+      "x-litestone-kind": "model",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
+        },
+        "domainId": {
+          "type": "string"
+        },
+        "appId": {
+          "type": "string"
+        },
+        "pathPrefix": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "minLength": 2,
+          "maxLength": 200
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "domainId",
+        "appId",
+        "pathPrefix"
+      ],
+      "x-litestone-policies": true,
+      "x-identify": [
+        "pathPrefix"
+      ],
+      "x-gate": {
+        "read": 2,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
+      "x-relations": [
+        {
+          "field": "domain",
+          "model": "Domain",
+          "type": "belongsTo",
+          "fields": [
+            "domainId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "app",
+          "model": "App",
+          "type": "belongsTo",
+          "fields": [
+            "appId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "AppEditor": {
+      "type": "object",
+      "title": "AppEditor",
+      "x-litestone-kind": "model",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/EditorRole",
+          "default": "edit"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "appId",
+        "userId"
+      ],
+      "x-litestone-policies": true,
+      "x-pick-where": {
+        "appId": {
+          "workspaceId": "auth().workspaceId"
+        }
+      },
+      "x-gate": {
+        "read": 1,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
+      "x-relations": [
+        {
+          "field": "app",
+          "model": "App",
+          "type": "belongsTo",
+          "fields": [
+            "appId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "user",
+          "model": "User",
+          "type": "belongsTo",
+          "fields": [
+            "userId"
           ],
           "references": [
             "id"
@@ -3421,6 +3822,136 @@
       ],
       "x-gate": {
         "read": 2,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "app",
+          "model": "App",
+          "type": "belongsTo",
+          "fields": [
+            "appId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "server",
+          "model": "Server",
+          "type": "belongsTo",
+          "fields": [
+            "serverId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "AppBackup": {
+      "type": "object",
+      "title": "AppBackup",
+      "x-litestone-kind": "model",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "serverId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/RunStatus",
+          "default": "pending"
+        },
+        "sizeBytes": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "fileCount": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "string",
+              "x-transforms": [
+                "trim"
+              ],
+              "minLength": 0,
+              "maxLength": 500
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requestedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finishedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "durationMs": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "appId",
+        "serverId"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 5,
         "create": 8,
         "update": 8,
         "delete": 8
@@ -4168,11 +4699,15 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "runCount": {
           "type": "integer",
-          "default": 0
+          "default": 0,
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "createdBy": {
           "type": [
@@ -4783,7 +5318,9 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "secret": {
           "anyOf": [
@@ -4816,7 +5353,9 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "lastDeliveryAt": {
           "anyOf": [
@@ -4827,7 +5366,9 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "createdBy": {
           "type": [
@@ -4869,6 +5410,15 @@
         {
           "field": "rules",
           "model": "AlertRuleChannel",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "monitors",
+          "model": "MonitorChannel",
           "type": "hasMany",
           "fields": [],
           "references": [],
@@ -5128,6 +5678,413 @@
           "type": "belongsTo",
           "fields": [
             "ruleId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "Monitor": {
+      "type": "object",
+      "title": "Monitor",
+      "x-litestone-kind": "model",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
+        },
+        "name": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "appId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "format": "uri"
+        },
+        "method": {
+          "$ref": "#/$defs/HttpMethod",
+          "default": "GET"
+        },
+        "headers": {
+          "default": {},
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "body": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "intervalSec": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 86400,
+          "default": 120
+        },
+        "retries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 2
+        },
+        "retryIntervalSec": {
+          "type": "integer",
+          "minimum": 60,
+          "default": 120
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 60000,
+          "default": 10000
+        },
+        "acceptedStatus": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "minLength": 3,
+          "maxLength": 200,
+          "default": "200-299"
+        },
+        "maxRedirects": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20,
+          "default": 10
+        },
+        "ignoreTls": {
+          "type": "boolean",
+          "default": false
+        },
+        "invert": {
+          "type": "boolean",
+          "default": false
+        },
+        "resendEvery": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "tags": {
+          "default": [],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "status": {
+          "$ref": "#/$defs/MonitorStatus",
+          "default": "pending"
+        },
+        "failStreak": {
+          "type": "integer",
+          "default": 0,
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "lastCheckedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "nextCheckAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "lastLatencyMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "url"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 2,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
+      "x-transitions": {
+        "status": {
+          "markUp": {
+            "from": [
+              "pending",
+              "down"
+            ],
+            "to": "up",
+            "gate": null,
+            "system": true
+          },
+          "markDown": {
+            "from": [
+              "pending",
+              "up"
+            ],
+            "to": "down",
+            "gate": null,
+            "system": true
+          },
+          "pause": {
+            "from": [
+              "pending",
+              "up",
+              "down"
+            ],
+            "to": "paused",
+            "gate": 5,
+            "system": false
+          },
+          "resume": {
+            "from": [
+              "paused"
+            ],
+            "to": "pending",
+            "gate": 5,
+            "system": false
+          }
+        }
+      },
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "checks",
+          "model": "MonitorCheck",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "events",
+          "model": "MonitorEvent",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "channels",
+          "model": "MonitorChannel",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "MonitorCheck": {
+      "type": "object",
+      "title": "MonitorCheck",
+      "x-litestone-kind": "model",
+      "properties": {
+        "monitorId": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "statusCode": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "latencyMs": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "monitorId",
+        "ok",
+        "message"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 2,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "monitor",
+          "model": "Monitor",
+          "type": "belongsTo",
+          "fields": [
+            "monitorId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "MonitorEvent": {
+      "type": "object",
+      "title": "MonitorEvent",
+      "x-litestone-kind": "model",
+      "properties": {
+        "monitorId": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "fromStatus": {
+          "$ref": "#/$defs/MonitorStatus"
+        },
+        "toStatus": {
+          "$ref": "#/$defs/MonitorStatus"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "monitorId",
+        "fromStatus",
+        "toStatus",
+        "message"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 2,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "monitor",
+          "model": "Monitor",
+          "type": "belongsTo",
+          "fields": [
+            "monitorId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "MonitorChannel": {
+      "type": "object",
+      "title": "MonitorChannel",
+      "x-litestone-kind": "model",
+      "properties": {
+        "monitorId": {
+          "type": "string"
+        },
+        "channelId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "monitorId",
+        "channelId"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 2,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
+      "x-relations": [
+        {
+          "field": "monitor",
+          "model": "Monitor",
+          "type": "belongsTo",
+          "fields": [
+            "monitorId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "channel",
+          "model": "NotificationChannel",
+          "type": "belongsTo",
+          "fields": [
+            "channelId"
           ],
           "references": [
             "id"
@@ -6295,6 +7252,12 @@
             "null"
           ]
         },
+        "deliveryKey": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "readAt": {
           "anyOf": [
             {
@@ -6437,7 +7400,8 @@
         "emailVerify",
         "oauthLink",
         "magicLink",
-        "emailChange"
+        "emailChange",
+        "registration"
       ],
       "title": "VerificationPurpose"
     },
@@ -6524,8 +7488,9 @@
     "UserKind": {
       "type": "string",
       "enum": [
-        "human",
+        "user",
         "bot",
+        "peer",
         "ai"
       ],
       "title": "UserKind"
@@ -6546,6 +7511,16 @@
         "suspended"
       ],
       "title": "WorkspaceStatus"
+    },
+    "ProvisionStepName": {
+      "type": "string",
+      "enum": [
+        "start",
+        "create",
+        "poll",
+        "timeout"
+      ],
+      "title": "ProvisionStepName"
     },
     "SecretKind": {
       "type": "string",
@@ -6731,6 +7706,28 @@
       ],
       "title": "AlertSeverity"
     },
+    "MonitorStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "up",
+        "down",
+        "paused"
+      ],
+      "title": "MonitorStatus"
+    },
+    "HttpMethod": {
+      "type": "string",
+      "enum": [
+        "GET",
+        "HEAD",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE"
+      ],
+      "title": "HttpMethod"
+    },
     "AlertSubject": {
       "type": "string",
       "enum": [
@@ -6774,7 +7771,8 @@
         "slack",
         "pagerduty",
         "email",
-        "webhook"
+        "webhook",
+        "chat"
       ],
       "title": "ChannelKind"
     },
@@ -6843,25 +7841,36 @@
         "AlertEvent",
         "JobRun",
         "Server",
-        "Workspace"
+        "Workspace",
+        "Monitor"
       ],
       "title": "NotificationContext"
     },
     "NotificationKind": {
       "type": "string",
       "enum": [
-        "deploy_success",
-        "deploy_failed",
-        "alert_firing",
-        "alert_resolved",
-        "server_unreachable",
-        "posture_failed",
-        "dependency_vulnerable",
-        "member_joined",
-        "job_failed",
-        "weekly_digest"
+        "DeploySuccess",
+        "DeployFailed",
+        "AlertFiring",
+        "AlertResolved",
+        "ServerUnreachable",
+        "MonitorDown",
+        "MonitorUp",
+        "PostureFailed",
+        "DependencyVulnerable",
+        "MemberJoined",
+        "JobFailed",
+        "WeeklyDigest"
       ],
       "title": "NotificationKind"
+    },
+    "EditorRole": {
+      "type": "string",
+      "enum": [
+        "edit",
+        "publish"
+      ],
+      "title": "EditorRole"
     },
     "Capability": {
       "type": "string",
@@ -7028,6 +8037,551 @@
       "required": [
         "userId",
         "role"
+      ]
+    },
+    "WidgetAdd": {
+      "type": "object",
+      "title": "WidgetAdd",
+      "x-litestone-kind": "type",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/WidgetKind"
+        },
+        "serverId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "appId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "config": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cols": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    "WidgetUpdate": {
+      "type": "object",
+      "title": "WidgetUpdate",
+      "x-litestone-kind": "type",
+      "properties": {
+        "widgetId": {
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WidgetKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "serverId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "appId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "config": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cols": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "widgetId"
+      ]
+    },
+    "WidgetRemove": {
+      "type": "object",
+      "title": "WidgetRemove",
+      "x-litestone-kind": "type",
+      "properties": {
+        "widgetId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "widgetId"
+      ]
+    },
+    "DashboardReorder": {
+      "type": "object",
+      "title": "DashboardReorder",
+      "x-litestone-kind": "type",
+      "properties": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "ids"
+      ]
+    },
+    "AlertChannelRef": {
+      "type": "object",
+      "title": "AlertChannelRef",
+      "x-litestone-kind": "type",
+      "properties": {
+        "channelId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "channelId"
+      ]
+    },
+    "MonitorChannelRef": {
+      "type": "object",
+      "title": "MonitorChannelRef",
+      "x-litestone-kind": "type",
+      "properties": {
+        "channelId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "channelId"
+      ]
+    },
+    "AlertSnooze": {
+      "type": "object",
+      "title": "AlertSnooze",
+      "x-litestone-kind": "type",
+      "properties": {
+        "minutes": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "minutes"
+      ]
+    },
+    "NetworkAttach": {
+      "type": "object",
+      "title": "NetworkAttach",
+      "x-litestone-kind": "type",
+      "properties": {
+        "serverId": {
+          "type": "string"
+        },
+        "ipAddress": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "serverId"
+      ]
+    },
+    "NetworkDetach": {
+      "type": "object",
+      "title": "NetworkDetach",
+      "x-litestone-kind": "type",
+      "properties": {
+        "serverId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "serverId"
+      ]
+    },
+    "VolumeReport": {
+      "type": "object",
+      "title": "VolumeReport",
+      "x-litestone-kind": "type",
+      "properties": {
+        "server_id": {
+          "type": "string"
+        },
+        "volumes": {
+          "type": "array",
+          "items": {},
+          "default": []
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "server_id",
+        "volumes"
+      ]
+    },
+    "DomainCertUpload": {
+      "type": "object",
+      "title": "DomainCertUpload",
+      "x-litestone-kind": "type",
+      "properties": {
+        "certPem": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100000
+        },
+        "keyPem": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100000
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "issuedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "certPem",
+        "keyPem",
+        "expiresAt"
+      ]
+    },
+    "NotificationPreferenceSave": {
+      "type": "object",
+      "title": "NotificationPreferenceSave",
+      "x-litestone-kind": "type",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/NotificationKind"
+        },
+        "email": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "inApp": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    "NotificationPreferenceReset": {
+      "type": "object",
+      "title": "NotificationPreferenceReset",
+      "x-litestone-kind": "type",
+      "properties": {
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NotificationKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "WorkspaceTransfer": {
+      "type": "object",
+      "title": "WorkspaceTransfer",
+      "x-litestone-kind": "type",
+      "properties": {
+        "userId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "userId"
+      ]
+    },
+    "AppFromBlueprint": {
+      "type": "object",
+      "title": "AppFromBlueprint",
+      "x-litestone-kind": "type",
+      "properties": {
+        "blueprintId": {
+          "type": "string"
+        },
+        "environmentId": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "values": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "blueprintId",
+        "environmentId"
+      ]
+    },
+    "AppPlace": {
+      "type": "object",
+      "title": "AppPlace",
+      "x-litestone-kind": "type",
+      "properties": {
+        "serverId": {
+          "type": "string"
+        },
+        "replicaIndex": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "serverId"
+      ]
+    },
+    "AppUnplace": {
+      "type": "object",
+      "title": "AppUnplace",
+      "x-litestone-kind": "type",
+      "properties": {
+        "serverId": {
+          "type": "string"
+        },
+        "replicaIndex": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "serverId"
+      ]
+    },
+    "AppVolumeRestore": {
+      "type": "object",
+      "title": "AppVolumeRestore",
+      "x-litestone-kind": "type",
+      "properties": {
+        "serverId": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "overwrite": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "serverId",
+        "path"
+      ]
+    },
+    "AppBackupTake": {
+      "type": "object",
+      "title": "AppBackupTake",
+      "x-litestone-kind": "type",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "serverId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "appId",
+        "serverId"
+      ]
+    },
+    "FlagOverrideSet": {
+      "type": "object",
+      "title": "FlagOverrideSet",
+      "x-litestone-kind": "type",
+      "properties": {
+        "environmentId": {
+          "type": "string"
+        },
+        "isEnabled": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "rollout": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "variantKey": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "environmentId"
+      ]
+    },
+    "FlagOverrideClear": {
+      "type": "object",
+      "title": "FlagOverrideClear",
+      "x-litestone-kind": "type",
+      "properties": {
+        "environmentId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "environmentId"
+      ]
+    },
+    "ServerProvision": {
+      "type": "object",
+      "title": "ServerProvision",
+      "x-litestone-kind": "type",
+      "properties": {
+        "name": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "role": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ServerRole"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "accountId": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "size": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "accountId",
+        "region",
+        "size",
+        "image"
+      ]
+    },
+    "ServerProvisionStep": {
+      "type": "object",
+      "title": "ServerProvisionStep",
+      "x-litestone-kind": "type",
+      "properties": {
+        "step": {
+          "$ref": "#/$defs/ProvisionStepName"
+        },
+        "enrollToken": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "step"
       ]
     }
   }

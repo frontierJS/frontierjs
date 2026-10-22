@@ -1,0 +1,366 @@
+<script>
+  // MapChain.mesa — the chain of responsibility, and the detail of whatever in
+  // it is pressed: a hook point, a realm, one of the realm's nouns, or a
+  // package that joins the chain (`IDEAS/one-console.md` 2.4).
+  //
+  // What a hook point IS comes from `map-reference.js`; what runs there comes
+  // from the app snapshot, through `liveHooksFor`. The detail draws the two
+  // apart and labels them, because one is true of FrontierJS and the other of
+  // this project only.
+  //
+  // A lane is a line of buttons with text arrows between them, so the terminal
+  // reads it as the same left-to-right run the browser draws; the elbows that
+  // close the loop are pictures, hidden from both readers of the text. The
+  // incoming lane is reversed in the markup rather than with `row-reverse`, so
+  // what a screen reader or the terminal reads is what the page shows.
+
+  import Badge from '@frontierjs/ui/components/display/Badge.mesa'
+  import Table from '@frontierjs/ui/components/display/Table.mesa'
+  import { REF } from './map-reference.js'
+  import { REALM_TONE, bands, liveHooksFor } from './map-model.js'
+
+  export let model   // buildModel()'s
+
+  const NODES  = REF.CHAIN_DATA.nodes
+  const lane   = (which) => NODES.filter(n => n.lane === which)
+  const OUT    = bands(lane('out'))
+  const IN     = bands([...lane('in')].reverse())
+  const HOOKS  = [{ name: 'owner', label: 'Where' }, { name: 'phase', label: 'Phase' }, { name: 'fns', label: 'Chain, in run order' }]
+  const FIELDS = [{ name: 'name', label: 'Field' }, { name: 'type', label: 'Type' }, { name: 'flags', label: '' }]
+
+  // An elbow per corner of the loop: a request enters at the UI end of the
+  // bottom lane, turns at the data end, and its result comes back along the top.
+  const ELBOW = {
+    'top-left':     { path: 'M6 36 L6 16 Q6 8 14 8 L42 8',  head: '38,4 42,8 38,12' },
+    'top-right':    { path: 'M0 8 L28 8 Q36 8 36 16 L36 36', head: '32,32 36,36 40,32' },
+    'bottom-left':  { path: 'M42 28 L14 28 Q6 28 6 20 L6 0', head: '2,4 6,0 10,4' },
+    'bottom-right': { path: 'M36 0 L36 20 Q36 28 28 28 L0 28',  head: '4,24 0,28 4,32' },
+  }
+
+  let selected = null   // { kind: 'node' | 'realm' | 'noun' | 'package', id, i? }
+
+  function select(kind, id, i = null) {
+    const same = selected?.kind === kind && selected.id === id && selected.i === i
+    selected = same ? null : { kind, id, i }
+  }
+
+  // Each takes `selected` as an argument: a template call to a local function
+  // does not subscribe to what it reads.
+  const pressed = (selected, kind, id) => selected?.kind === kind && selected.id === id
+  const tagsAt  = (model, id) => model.packages.filter(p => p.installed && (p.chainPoints ?? []).some(c => c.nodeId === id))
+  const realmOf = (id) => REF.CHAIN_DATA.realms.find(r => r.id === id)
+
+  $: node    = selected?.kind === 'node' ? NODES.find(n => n.id === selected.id) : null
+  $: ref     = node ? REF.CHAIN_DATA.hookDetail[node.id] : null
+  $: live    = node ? liveHooksFor(model, node.id) : null
+  $: realm   = selected?.kind === 'realm' || selected?.kind === 'noun' ? realmOf(selected.id) : null
+  $: noun    = selected?.kind === 'noun'
+    ? (selected.id === 'litestone' ? { kind: 'model', it: model.models[selected.i] }
+      : selected.id === 'junction' ? { kind: 'service', it: model.services[selected.i] }
+      : { kind: 'resource', it: model.resources[selected.i] })
+    : null
+  $: pkg     = selected?.kind === 'package' ? model.packages.find(p => p.id === selected.id) : null
+  $: chains  = noun?.kind === 'service'
+    ? ['before', 'after', 'around', 'error'].flatMap(p => Object.entries(noun.it.hooks?.[p] ?? {})
+        .map(([m, fns]) => ({ owner: m, phase: p, fns: fns.join(' → ') })))
+    : []
+  $: liveRows = (live?.rows ?? []).map(r => ({ ...r, fns: r.fns.join(' → ') }))
+  $: fieldRows = noun?.kind === 'model'
+    ? noun.it.fields.map(f => ({ name: f.name, type: f.type + (f.nullable ? '?' : ''), flags: [f.required && 'required', f.readOnly && 'readOnly'].filter(Boolean).join(' ') }))
+    : []
+</script>
+
+{#snippet nodeSlot(n)}
+  <span class="node-slot">
+    {#each tagsAt(model, n.id) as p (p.id)}
+      <button
+        class={`node-tag pill text-xs ${REALM_TONE[n.realm]}`}
+        title={p.label}
+        aria-pressed={pressed(selected, 'package', p.id)}
+        onclick={() => select('package', p.id)}
+      >{p.short}</button>
+    {/each}
+    <button
+      class={`gui-node ${REALM_TONE[n.realm]}`}
+      data-node={n.id}
+      aria-pressed={pressed(selected, 'node', n.id)}
+      onclick={() => select('node', n.id)}
+    ><strong class="text-sm">{n.label}</strong> <span class="text-xs text-muted">{n.sub}</span></button>
+  </span>
+{/snippet}
+
+{#snippet run(groups, arrow)}
+  <div class="chain-lane">
+    {#each groups as b, gi (gi)}
+      {#if gi}<span class="flow" aria-hidden="true"> {arrow} </span>{/if}
+      <span class={`realm-band ${REALM_TONE[b.realm]}`}>
+        {#each b.nodes as n, ni (n.id)}
+          {#if ni}<span class="flow" aria-hidden="true"> {arrow} </span>{/if}
+          {@render nodeSlot(n)}
+        {/each}
+      </span>
+    {/each}
+  </div>
+{/snippet}
+
+{#snippet elbow(corner)}
+  <svg width="42" height="36" viewBox="0 0 42 36" fill="none" aria-hidden="true">
+    <path d={ELBOW[corner].path} stroke="currentColor" stroke-width="1" fill="none"></path>
+    <polygon points={ELBOW[corner].head} fill="currentColor"></polygon>
+  </svg>
+{/snippet}
+
+<section class="stack gap-md" data-part="chain">
+  <div class="bar dense">
+    <strong class="text-sm">the chain</strong>
+    <span class="text-xs text-muted">press a node, a realm or a package for its detail</span>
+  </div>
+
+  <div class="chain">
+    <div class={`chain-rail ${REALM_TONE.data}`} style="grid-area: 1 / 1">{@render elbow('top-left')}</div>
+    <div style="grid-area: 1 / 2 / 2 / 5"><span class="text-xs text-muted">result →</span> {@render run(OUT, '→')}</div>
+    <div class={`chain-rail ${REALM_TONE.ui}`} style="grid-area: 1 / 5">{@render elbow('top-right')}</div>
+
+    <div class={`spine ${REALM_TONE.data}`} style="grid-area: 2 / 1 / 3 / 3">
+      <span class="text-xs text-muted">data realm</span>
+      {#each lane('mid') as n (n.id)}{@render nodeSlot(n)}{/each}
+    </div>
+    <div class="realms" style="grid-area: 2 / 3">
+      {#each REF.CHAIN_DATA.realms as r (r.id)}
+        <article class={`card realm ${REALM_TONE[r.realm]}`} data-realm={r.id}>
+          <div class="bar dense">
+            <button
+              class={`btn link ${REALM_TONE[r.realm]}`}
+              aria-pressed={pressed(selected, 'realm', r.id)}
+              onclick={() => select('realm', r.id)}
+            ><strong>{r.label}</strong></button>
+            <span class="text-xs text-muted">{(model.nouns[r.id] ?? []).length}</span>
+          </div>
+          <p class="text-xs text-muted">{r.sub}</p>
+          {#if (model.nouns[r.id] ?? []).length}
+            <div class="realm-nouns stack gap-3xs">
+              {#each model.nouns[r.id] as n, i (n.name)}
+                <button class="btn ghost text-sm noun" onclick={() => select('noun', r.id, i)}>
+                  {n.name} <span class="text-xs text-muted">{n.meta}</span> {#if n.badge}<Badge size="xs">{n.badge}</Badge>{/if}
+                </button>
+              {/each}
+            </div>
+          {:else}
+            <p class="text-xs text-muted">nothing in this realm</p>
+          {/if}
+        </article>
+      {/each}
+    </div>
+    <div class={`spine ${REALM_TONE.ui}`} style="grid-area: 2 / 4 / 3 / 6">
+      <span class="text-xs text-muted">ui realm</span>
+      {#each lane('ui') as n (n.id)}{@render nodeSlot(n)}{/each}
+    </div>
+
+    <div class={`chain-rail ${REALM_TONE.data}`} style="grid-area: 3 / 1">{@render elbow('bottom-left')}</div>
+    <div style="grid-area: 3 / 2 / 4 / 5"><span class="text-xs text-muted">← request</span> {@render run(IN, '←')}</div>
+    <div class={`chain-rail ${REALM_TONE.ui}`} style="grid-area: 3 / 5">{@render elbow('bottom-right')}</div>
+  </div>
+
+  {#if node}
+    <article class={`card stack gap-sm ${REALM_TONE[node.realm]}`} data-detail="node">
+      <div class="bar dense">
+        <strong>{ref?.title ?? node.label}</strong>
+        <Badge size="xs">{node.realm} realm</Badge>
+        <button class="btn ghost text-xs" aria-label="close" onclick={() => selected = null}>×</button>
+      </div>
+      {#if ref?.desc}<p class="text-sm">{ref.desc}</p>{/if}
+      {#if live}
+        <div class="bar dense">
+          <strong class="text-sm">What runs here in this project</strong>
+          <span class="text-xs text-muted">read from {model.app?.file ?? 'the app snapshot'}</span>
+        </div>
+        <Table columns={HOOKS} rows={liveRows} compact emptyText="nothing is registered at this point">
+          {#snippet row(r)}
+            <tr><td>{r.owner}</td><td><code>{r.phase}</code></td><td><code>{r.fns}</code></td></tr>
+          {/snippet}
+        </Table>
+      {/if}
+      {#if ref?.hooks?.length}
+        <div class="stack gap-3xs">
+          <span class="text-xs text-muted">what this point is for · reference, describes FrontierJS and not this project</span>
+          {#each ref.hooks as h, i (i)}
+            <div class="text-sm"><code>{h.phase}</code> {h.fns.join(' → ')} <span class="text-xs text-muted">{h.svc}</span></div>
+          {/each}
+        </div>
+      {/if}
+      {#if ref?.context}<span class="text-xs">context <code>{ref.context}</code></span>{/if}
+    </article>
+  {/if}
+
+  {#if realm && !noun}
+    <article class={`card stack gap-sm ${REALM_TONE[realm.realm]}`} data-detail="realm">
+      <div class="bar dense">
+        <strong>{realm.label}</strong>
+        <Badge size="xs">{realm.realm} realm</Badge>
+        <button class="btn ghost text-xs" aria-label="close" onclick={() => selected = null}>×</button>
+      </div>
+      <p class="text-sm">{realm.sub}</p>
+      <div class="text-sm">{(model.nouns[realm.id] ?? []).length} nouns · chain points {NODES.filter(n => n.realm === realm.realm).map(n => n.id).join(' · ')}</div>
+    </article>
+  {/if}
+
+  {#if noun?.it}
+    <article class={`card stack gap-sm ${REALM_TONE[realm.realm]}`} data-detail={noun.kind}>
+      <div class="bar dense">
+        <strong>{noun.kind} {noun.it.name}</strong>
+        {#if noun.kind === 'model'}
+          {#if noun.it.gate}<Badge size="xs">@@gate {noun.it.gate}</Badge>{:else}<Badge tone="warning" size="xs">no gate</Badge>{/if}
+          {#if noun.it.softDelete}<Badge size="xs">softDelete</Badge>{/if}
+          {#if noun.it.version}<Badge size="xs">@version {noun.it.version}</Badge>{/if}
+        {/if}
+        {#if noun.kind === 'service'}
+          {#if noun.it.model && noun.it.model !== noun.it.name}<Badge size="xs">model {noun.it.model}</Badge>{/if}
+          {#if noun.it.channel}<Badge tone="success" size="xs">broadcasts on {noun.it.channel}</Badge>{:else}<Badge size="xs">no channel</Badge>{/if}
+        {/if}
+        <button class="btn ghost text-xs" aria-label="close" onclick={() => selected = null}>×</button>
+      </div>
+      {#if noun.kind === 'model'}
+        <Table columns={FIELDS} rows={fieldRows} compact>
+          {#snippet row(f)}
+            <tr><td><code>{f.name}</code></td><td>{f.type}</td><td class="text-xs text-muted">{f.flags}</td></tr>
+          {/snippet}
+        </Table>
+        {#each noun.it.relations as rel, i (i)}
+          <div class="text-sm">{rel.type === 'm2m' ? 'N→N' : 'N→1'} {rel.model}</div>
+        {/each}
+      {/if}
+      {#if noun.kind === 'service'}
+        <div class="text-sm">methods <code>{noun.it.methods.join(' · ') || '—'}</code></div>
+        <div class="text-sm">custom <code>{noun.it.customMethods.join(' · ') || '—'}</code></div>
+        {#if chains.length}
+          <Table columns={[{ name: 'owner', label: 'Method' }, { name: 'phase', label: 'Phase' }, { name: 'fns', label: 'Chain, in run order' }]} rows={chains} compact>
+            {#snippet row(c)}
+              <tr><td><code>{c.owner}</code></td><td>{c.phase}</td><td><code>{c.fns}</code></td></tr>
+            {/snippet}
+          </Table>
+        {/if}
+      {/if}
+      {#if noun.kind === 'resource'}
+        <div class="text-sm">service {#if noun.it.service}<code>{noun.it.service}</code>{#if !model.services.some(s => s.name === noun.it.service)} <Badge tone="danger" size="xs">no such service</Badge>{/if}{:else}—{/if}</div>
+        <div class="text-sm">model {#if noun.it.model}<code>{noun.it.model}</code>{:else}<span class="text-muted">derived from the service name</span>{/if}</div>
+        <div class="text-sm">hooks <code>{(noun.it.hooks ?? []).join(' · ') || '—'}</code></div>
+      {/if}
+    </article>
+  {/if}
+
+  {#if pkg}
+    <article class="card stack gap-sm" data-detail="package">
+      <div class="bar dense">
+        <strong>{pkg.label}</strong>
+        <Badge tone={pkg.installed ? 'success' : ''} size="xs">{pkg.installed ? 'installed' : 'not installed'}</Badge>
+        <button class="btn ghost text-xs" aria-label="close" onclick={() => selected = null}>×</button>
+      </div>
+      <span class="text-xs text-muted">where it joins the chain · reference</span>
+      {#each pkg.chainPoints ?? [] as c (c.nodeId + c.role)}
+        <div class="text-sm"><code>{c.nodeId}</code> {c.role}</div>
+      {/each}
+    </article>
+  {/if}
+</section>
+
+<style>
+  /*
+   * Five columns and three rows, which is the picture: the two lanes across
+   * the top and bottom, the data spine and the UI spine down the sides, the
+   * three realms between them. No color is written here: a realm carries a
+   * tone and the tone carries the color.
+   */
+  .chain {
+    display:               grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+    gap:                   var(--space-sm);
+    align-items:           stretch;
+  }
+  .chain-rail {
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    --rail-tone:     var(--bg-mix, var(--color-primary));
+  }
+  /* --bg-mix is element-scoped and does not inherit, so the rail derives it
+     into an ordinary custom property, which does. */
+  .chain-rail svg { color: var(--rail-tone); opacity: 0.6; }
+
+  .chain-lane {
+    display:     flex;
+    align-items: stretch;
+    gap:         var(--space-2xs);
+  }
+  .realm-band {
+    display:       flex;
+    align-items:   stretch;
+    gap:           var(--space-2xs);
+    flex:          1 1 0;
+    min-inline-size: 0;
+    padding:       var(--space-2xs);
+    border-radius: var(--card-radius);
+    background:    color-mix(in srgb, var(--bg-mix, var(--color-primary)) 8%, transparent);
+  }
+  .flow {
+    align-self: center;
+    color:      var(--ink-mute);
+  }
+  .spine {
+    display:        flex;
+    flex-direction: column;
+    gap:            var(--space-2xs);
+    padding:        var(--space-sm);
+    border-radius:  var(--card-radius);
+    border:         var(--border-width) solid color-mix(in srgb, var(--bg-mix, var(--color-primary)) 35%, transparent);
+    background:     color-mix(in srgb, var(--bg-mix, var(--color-primary)) 7%, transparent);
+    inline-size:    9.5rem;
+  }
+  .node-slot {
+    display:        flex;
+    flex-direction: column;
+    gap:            var(--space-3xs);
+    flex:           1 1 0;
+    min-inline-size: 0;
+  }
+  .gui-node {
+    display:        flex;
+    flex-direction: column;
+    flex:           1;
+    gap:            var(--space-3xs);
+    padding:        var(--space-sm);
+    text-align:     start;
+    font:           inherit;
+    cursor:         pointer;
+    overflow-wrap:  anywhere;
+    border-radius:  var(--card-radius);
+    border:         var(--border-width) solid color-mix(in srgb, var(--bg-mix, var(--color-primary)) 40%, transparent);
+    background:     color-mix(in srgb, var(--bg-mix, var(--color-primary)) 10%, var(--surface));
+    color:          var(--ink);
+  }
+  .gui-node:hover { border-color: var(--bg-mix, var(--color-primary)); }
+  .gui-node[aria-pressed="true"] {
+    border-color: var(--bg-mix, var(--color-primary));
+    background:   color-mix(in srgb, var(--bg-mix, var(--color-primary)) 22%, var(--surface));
+  }
+  /* A package name is wider than its node's share of the lane, so it is cut
+     rather than wrapped; the whole name is in its title and its detail. */
+  .node-tag {
+    max-inline-size: 100%;
+    overflow:        hidden;
+    text-overflow:   ellipsis;
+    cursor:          pointer;
+    border:          var(--border-width) solid color-mix(in srgb, var(--bg-mix, var(--color-primary)) 45%, transparent);
+    background:      transparent;
+    color:           var(--bg-mix, var(--color-primary));
+  }
+  .node-tag[aria-pressed="true"] { background: color-mix(in srgb, var(--bg-mix, var(--color-primary)) 18%, transparent); }
+  .realms {
+    display:               grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap:                   var(--space-md);
+  }
+  .realm { border-color: color-mix(in srgb, var(--bg-mix, var(--color-primary)) 45%, transparent); }
+  /* Capped, or a realm with 37 models sets the height of all three. */
+  .realm-nouns { max-block-size: 16rem; overflow-y: auto; }
+  .noun { justify-content: flex-start; text-align: start; }
+</style>

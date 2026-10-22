@@ -17,7 +17,9 @@
   import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
 
-  export let api = ''
+  export let api   = ''
+  export let shown = () => true   // (...fields) => does the console's filter keep this row
+  export let keyed = null         // (rows) => the keys this pane binds, for the console
 
   const SHOWN           = 8
   const CI_POLL_LIVE_MS = 2000
@@ -167,6 +169,18 @@
   })()
   $: head = ci?.available ? ci.active ?? ci.runs[0] ?? null : null
 
+  $: seenFindings = findings?.filter(f => shown(f.rule, f.severity, f.file, f.scope, f.message)) ?? null
+  $: seenProves   = proves?.filter(r => shown(r.changed, ...r.targets.map(t => t.command ?? t.name))) ?? null
+  const counted = (seen, all) => seen.length === all.length ? `${all.length}` : `${seen.length} of ${all.length}`
+
+  // The keys are the buttons the bar shows, under the words they show.
+  $: keyed?.([
+    { keys: 'r', label: 'check again', run: readTree },
+    ...(!ci?.available ? [] : ci.active
+      ? [{ keys: 's', label: 'stop', run: stopCi }]
+      : [{ keys: 'f', label: 'run fast', run: () => startCi({ tier: 'fast' }) }, { keys: 'F', label: 'run full', run: () => startCi({}) }]),
+  ])
+
   $.onMount(() => { readTree(); readCi() })
   $.onDestroy(() => clearTimeout(ciTimer))
 </script>
@@ -184,10 +198,10 @@
 <section class="surface stack" data-part="findings">
   <div class="bar dense">
     <strong class="text-sm">findings</strong>
-    <span class="text-xs text-muted">{findings ? findings.length : '…'}</span>
+    <span class="text-xs text-muted">{seenFindings ? counted(seenFindings, findings) : '…'}</span>
   </div>
-  {#if findings}
-    {#each (allFindings ? findings : findings.slice(0, SHOWN)) as f, i (i)}
+  {#if seenFindings}
+    {#each (allFindings ? seenFindings : seenFindings.slice(0, SHOWN)) as f, i (i)}
       <div class="stack gap-3xs" data-finding={f.severity}>
         <div class="cluster gap-sm">
           <Badge tone={f.severity === 'error' ? 'danger' : 'warning'} size="xs">{f.rule ?? f.severity}</Badge>
@@ -196,8 +210,8 @@
         <span class="text-xs text-muted">{f.message}</span>
       </div>
     {/each}
-    {#if !allFindings && findings.length > SHOWN}
-      <Button treatment="ghost" size="xs" onclick={() => allFindings = true}>show the other {findings.length - SHOWN}</Button>
+    {#if !allFindings && seenFindings.length > SHOWN}
+      <Button treatment="ghost" size="xs" onclick={() => allFindings = true}>show the other {seenFindings.length - SHOWN}</Button>
     {/if}
   {/if}
 </section>
@@ -205,13 +219,13 @@
 <section class="surface stack" data-part="proves">
   <div class="bar dense">
     <strong class="text-sm">proves</strong>
-    <span class="text-xs text-muted">{proves ? `${changed} file(s) changed · ${proves.length} drive row(s)` : '…'}</span>
+    <span class="text-xs text-muted">{seenProves ? `${changed} file(s) changed · ${counted(seenProves, proves)} drive row(s)` : '…'}</span>
   </div>
   {#if proves && changed && !proves.length}
     <span class="text-xs text-muted">no row of the proof table covers the change</span>
   {/if}
-  {#if proves}
-    {#each (allProves ? proves : proves.slice(0, SHOWN)) as r, i (i)}
+  {#if seenProves}
+    {#each (allProves ? seenProves : seenProves.slice(0, SHOWN)) as r, i (i)}
       <div class="stack gap-3xs" data-proof={r.match.tier}>
         <span class="text-sm">{r.changed}</span>
         <span class="text-xs text-muted">{TIER_WORD[r.match.tier] ?? r.match.tier}{(r.match.on ?? []).length ? ` — ${r.match.on.slice(0, 3).join(', ')}` : ''}</span>
@@ -228,8 +242,8 @@
         </div>
       </div>
     {/each}
-    {#if !allProves && proves.length > SHOWN}
-      <Button treatment="ghost" size="xs" onclick={() => allProves = true}>show the other {proves.length - SHOWN}</Button>
+    {#if !allProves && seenProves.length > SHOWN}
+      <Button treatment="ghost" size="xs" onclick={() => allProves = true}>show the other {seenProves.length - SHOWN}</Button>
     {/if}
   {/if}
 </section>

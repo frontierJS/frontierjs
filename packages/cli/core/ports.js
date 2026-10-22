@@ -67,7 +67,6 @@ export const CAT = {
 
 export const GLOBAL = {
   gui:         5500,   // fli web GUI
-  pmap:        5501,   // fli project:map --as=serve (FJSChain)
   studio:      5502,   // litestone db studio
   devtools:    5503,   // junction's API console — app.configure(devtools())
   proxy:       5504,   // fli ports:proxy — the FALLBACK when 80 cannot be bound

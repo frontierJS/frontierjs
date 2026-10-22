@@ -1,36 +1,195 @@
 <script>
   // Console.mesa — the console's root: one strip of panes, one pane drawn at a
-  // time (`IDEAS/one-console.md` § 3). Both targets mount this file, so a pane
-  // added here is on the terminal and in the browser with no second edit.
+  // time, and the keys (`IDEAS/one-console.md` § 3, 2.3). Both targets mount
+  // this file, so a pane added here is on the terminal and in the browser with
+  // no second edit.
   //
   // A pane is UNMOUNTED when another is shown, not hidden. `:check` runs every
   // `fli check` scope and `:decide` reads the whole register, so a hidden pane
   // would pay both on load and keep polling behind the one in view.
   //
-  // `api` is the origin every pane reads; see `Run.mesa`.
+  // The keys are one `keys()` on the root: the pane's table, then the
+  // console's. A pane hands its table up through `keyed` as rows of `{ keys,
+  // label, run }`, and the label is the action, so the legend reads the same
+  // table the keys dispatch from. Kept per pane id: the pane going away and
+  // the one arriving are not ordered, so a pane clearing its own entry on
+  // destroy could wipe the new one's.
+  //
+  // The root keeps focus. A key reaches the root's keymap only from inside it,
+  // and a pressed button that unmounts (start becoming stop) leaves focus on
+  // nothing. So the selected tab takes it on mount, after a pane switch and
+  // when a field closes, and a key that arrives with focus outside the console
+  // only brings it back: that key is spent.
+  //
+  // `api` is the origin every pane reads; see `Run.mesa`. `legendAt` is how
+  // the terminal draws the legend, in its footer strip, which does not scroll;
+  // absent, the legend is drawn here. Either way it reads one signal, since a
+  // component mounted in another root hears no prop of this one.
 
+  import { keymap, bindings } from '@frontierjs/toolbelt/keys'
+  import { keys }             from '@frontierjs/mesa/keys'
+  import { createSignal, flushSync } from '@frontierjs/mesa/runtime'
   import Tabs     from '@frontierjs/ui/components/layout/Tabs.mesa'
   import TabList  from '@frontierjs/ui/components/layout/TabList.mesa'
   import Tab      from '@frontierjs/ui/components/layout/Tab.mesa'
   import TabPanel from '@frontierjs/ui/components/layout/TabPanel.mesa'
+  import Legend   from './Legend.mesa'
   import Run      from './Run.mesa'
   import Check    from './Check.mesa'
   import Decide   from './Decide.mesa'
   import Ship     from './Ship.mesa'
+  import ProjectMap from './ProjectMap.mesa'
 
-  export let api  = ''
-  export let pane = 'run'
+  export let api      = ''
+  export let pane     = 'run'
+  export let legendAt = null   // (read) => void, read: () => { rows, status }
+
+  const PANES = ['run', 'check', 'decide', 'ship', 'map']
+
+  // No `<Mod-…>` is bound anywhere here, so `mac` changes no row.
+  const CONSOLE = keymap({
+    ...Object.fromEntries(PANES.map((p, i) => [String(i + 1), `:${p}`])),
+    ':': 'go to a pane',
+    '/': 'filter',
+  })
+  const UNFILTER = keymap({ '<Esc>': 'clear the filter' })
+  const FIELD = {
+    command: keymap({ '<CR>': 'go', '<Esc>': 'close' }),
+    filter:  keymap({ '<CR>': 'keep', '<Esc>': 'clear' }),
+  }
+
+  let own    = {}     // pane id → [{ keys, label, run }]
+  let filter = ''
+  let field  = null   // 'command' | 'filter' while its line is open
+  let text   = ''
+  let note   = ''
+  let root
+  let tabs
+  let input
+
+  $: rows    = own[pane] ?? []
+  $: paneMap = rows.length ? keymap(Object.fromEntries(rows.map(a => [a.keys, a.label]))) : null
+  $: maps    = field ? [FIELD[field]] : [paneMap, filter ? UNFILTER : null, CONSOLE].filter(Boolean)
+  $: legend  = bindings({ active: maps, mac: false, text: false })
+  $: status  = note || (filter ? `filtered by /${filter}` : '')
+  const [legendNow, setLegend] = createSignal({ rows: [], status: '' })
+  $: setLegend({ rows: legend, status })
+
+  // What a pane asks of a row it may show: does any of these fields hold
+  // the filter. A function rather than the string, so no pane spells a match.
+  $: shown = matcher(filter)
+  function matcher(q) {
+    const n = q.trim().toLowerCase()
+    if (!n) return () => true
+    return (...fields) => fields.some(f => f != null && String(f).toLowerCase().includes(n))
+  }
+
+  const keyedFor = (id) => (list) => { own = { ...own, [id]: list ?? [] } }
+
+  const home = () => $.tick().then(() => tabs?.focus())
+
+  function go(id) {
+    note = ''
+    pane = id
+    home()
+  }
+
+  function open(kind) {
+    note  = ''
+    field = kind
+    text  = kind === 'filter' ? filter : ''
+    // Mounted and focused before this key's turn ends: a terminal hands keys
+    // over a read at a time, so `:ru` typed fast arrives as one, and the `ru`
+    // would land on the tab ahead of a flush that came later.
+    flushSync()
+    $.focus(input)
+  }
+
+  function close() {
+    field = null
+    home()
+  }
+
+  function on(action) {
+    if (action.startsWith(':')) return go(action.slice(1))
+    if (action === 'go to a pane') return open('command')
+    if (action === 'filter') return open('filter')
+    if (action === 'clear the filter') { filter = ''; return }
+    rows.find(a => a.label === action)?.run()
+  }
+
+  // A unique prefix is enough, as k9s takes `:po` for pods.
+  function command() {
+    const name = text.trim().replace(/^:/, '')
+    const hits = PANES.filter(p => p.startsWith(name))
+    close()
+    if (name && hits.length === 1) return go(hits[0])
+    if (name) note = `no pane :${name} — ${PANES.map(p => `:${p}`).join(' ')}`
+  }
+
+  function fieldKey(action) {
+    if (action === 'go') return command()
+    if (action === 'clear') filter = ''
+    close()
+  }
+
+  function typed(e) {
+    text = e.target.value
+    if (field === 'filter') filter = text
+  }
+
+  function outside(e) {
+    if (!root?.contains(e.target)) tabs?.focus()
+  }
+
+  $.onMount(() => {
+    legendAt?.(legendNow)
+    home()
+  })
 </script>
 
-<Tabs bind:activeId={pane}>
-  <TabList label="panes">
-    <Tab id="run">:run</Tab>
-    <Tab id="check">:check</Tab>
-    <Tab id="decide">:decide</Tab>
-    <Tab id="ship">:ship</Tab>
-  </TabList>
-  <TabPanel id="run" unmount><Run {api} /></TabPanel>
-  <TabPanel id="check" unmount><Check {api} /></TabPanel>
-  <TabPanel id="decide" unmount><Decide {api} /></TabPanel>
-  <TabPanel id="ship" unmount><Ship {api} /></TabPanel>
-</Tabs>
+<mesa:window onkeydown={outside} />
+
+<div class="stack" bind:this={root} {@attach keys(() => ({ active: field ? [] : maps, on }))}>
+  {#if field}
+    <div class="cluster gap-2xs" data-field={field}>
+      <span>{field === 'command' ? ':' : '/'}</span>
+      <input
+        class="input"
+        bind:this={input}
+        value={text}
+        aria-label={field === 'command' ? 'pane' : 'filter'}
+        oninput={typed}
+        {@attach keys(() => ({ active: [FIELD[field]], on: fieldKey }))}
+      >
+    </div>
+  {/if}
+  <Tabs bind:this={tabs} bind:activeId={pane}>
+    <TabList label="panes">
+      <Tab id="run">:run</Tab>
+      <Tab id="check">:check</Tab>
+      <Tab id="decide">:decide</Tab>
+      <Tab id="ship">:ship</Tab>
+      <Tab id="map">:map</Tab>
+    </TabList>
+    <TabPanel id="run" unmount><Run {api} {shown} keyed={keyedFor('run')} /></TabPanel>
+    <TabPanel id="check" unmount><Check {api} {shown} keyed={keyedFor('check')} /></TabPanel>
+    <TabPanel id="decide" unmount><Decide {api} {shown} keyed={keyedFor('decide')} /></TabPanel>
+    <TabPanel id="ship" unmount><Ship {api} {shown} keyed={keyedFor('ship')} /></TabPanel>
+    <TabPanel id="map" unmount><ProjectMap {api} {shown} keyed={keyedFor('map')} /></TabPanel>
+  </Tabs>
+
+  {#if !legendAt}
+    <div class="console-legend"><Legend read={legendNow} /></div>
+  {/if}
+</div>
+
+<style>
+  .console-legend {
+    position: sticky;
+    bottom: 0;
+    padding-block: var(--space-2xs);
+    background: var(--surface);
+    border-top: 1px solid var(--rule);
+  }
+</style>

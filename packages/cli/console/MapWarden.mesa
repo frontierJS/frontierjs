@@ -1,0 +1,159 @@
+<script>
+  // MapWarden.mesa — one model at one caller level, through the layers
+  // `litestone/docs/warden.md` names (`IDEAS/one-console.md` 2.4). The verdict
+  // is `wardenAt`'s, tested in `map-model.js`; this lays it out, and lists what
+  // the chosen level reaches on every model so a model is one press away.
+
+  import Badge from '@frontierjs/ui/components/display/Badge.mesa'
+  import Callout from '@frontierjs/ui/components/display/Callout.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import { OPS, wardenAt, levelName, levelWord, servicesFor } from './map-model.js'
+
+  export let model
+
+  const LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8]
+
+  let name  = null
+  let level = 4
+
+  $: acc     = model.access
+  $: models  = acc && !acc.error ? [...acc.models].sort((a, b) =>
+    (!!b.transitions?.length - !!a.transitions?.length) || a.name.localeCompare(b.name)) : []
+  $: m       = models.find(x => x.name === name) ?? models[0] ?? null
+  $: v       = m ? wardenAt(m, level) : null
+  $: pols    = m ? Object.entries(m.policies ?? {}) : []
+  $: tenancy = model.atlas?.principal?.tenancy ?? null
+  $: unknown = acc?.claims?.unknown ?? []
+  $: channel = m ? servicesFor(model.services, m.name).find(s => s.channel)?.channel ?? null : null
+
+  // Each takes what it reads as an argument: a template call to a local
+  // function does not subscribe to what it reads.
+  const gateOk  = (m, level, op) => { const need = m.gate?.[op]; return need == null || (need !== 9 && level >= need) }
+  const opTone  = (o) => !o.ok ? 'danger' : o.filtered ? 'info' : 'success'
+  const opWord  = (o, op) => !o.ok ? `${op} ✕` : `${op}: ${o.says}`
+  const glyphs  = (x, level) => { const w = wardenAt(x, level); return OPS.map(op => !w.ops[op].ok ? '·' : w.ops[op].filtered ? '◐' : '●').join('') }
+  const reaches = (x, level) => OPS.some(op => wardenAt(x, level).ops[op].ok)
+  const allowOf = (a) => `@allow(${a.operations.length > 1 ? 'all' : a.operations[0]}, ${a.expr})`
+</script>
+
+{#if !acc}
+  <EmptyState title="No access reading">Read without --layer to have the Warden read db/schema.lite.</EmptyState>
+{:else if acc.error}
+  <Callout tone="warning" title="The Warden could not be read.">{acc.error}</Callout>
+{:else if !m}
+  <EmptyState title="No models">litestone access found no model in db/schema.lite.</EmptyState>
+{:else}
+  <div class="stack gap-2xs">
+    <span class="text-sm">who is asking</span>
+    <div class="cluster gap-2xs" role="group" aria-label="caller level">
+      {#each LEVELS as n (n)}
+        <button class={`btn ${n === level ? 'outlined' : 'ghost'} text-xs`} aria-pressed={n === level} onclick={() => level = n}>{n} {levelName(acc, n)}</button>
+      {/each}
+    </div>
+  </div>
+
+  <section class="stack gap-sm" data-part="reach">
+    <div class="bar dense">
+      <strong class="text-sm">what {levelWord(acc, level)} reaches</strong>
+      <span class="text-xs text-muted">read · create · update · delete: ● every row, ◐ some rows, · refused</span>
+    </div>
+    <div class="cluster gap-2xs">
+      {#each models as x (x.name)}
+        <button
+          class={`btn ${x === m ? 'outlined' : 'ghost'} text-xs${reaches(x, level) ? '' : ' text-muted'}`}
+          aria-pressed={x === m}
+          onclick={() => name = x.name}
+        >{x.name} <span class="glyphs">{glyphs(x, level)}</span></button>
+      {/each}
+    </div>
+  </section>
+
+  <section class="stack gap-sm" data-part="layers">
+    <div class="bar dense">
+      <strong class="text-sm">{m.name} at {levelName(acc, level)}</strong>
+      <span class="text-xs text-muted">9 layers</span>
+    </div>
+    <div class="table-wrap">
+      <table class="table dense">
+        <thead><tr><th></th><th>Layer</th><th>Declared on {m.name}</th><th>At {levelName(acc, level)}</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>1</td><td><strong>principal</strong> <span class="text-xs text-muted">who is asking</span></td>
+            <td>
+              A caller at <strong>{levelWord(acc, level)}</strong>.
+              {#if tenancy?.strategy} Tenancy is <code>{tenancy.strategy}</code>{#if tenancy.resolve}, resolved from {tenancy.resolve}{/if}.{/if}
+              {#if unknown.length}<span class="text-xs text-muted"> Read by a rule and declared by no resolver: <code>{unknown.join(', ')}</code>; a rule reading one treats it as unknown.</span>{/if}
+            </td>
+            <td><Badge size="xs">{v.system ? 'system call' : 'signed in'}</Badge></td>
+          </tr>
+          <tr>
+            <td>2</td><td><strong>gate</strong> <span class="text-xs text-muted">what kind of caller</span></td>
+            <td>{#if m.gate}<code>@@gate({m.gateSource})</code>{:else}<span class="text-muted">No gate: open to every caller.</span>{/if}</td>
+            <td>{#each OPS as op, i (op)}{i ? ' ' : ''}<Badge tone={gateOk(m, level, op) ? 'success' : 'danger'} size="xs">{op} {gateOk(m, level, op) ? '✓' : '✕'}</Badge>{/each}</td>
+          </tr>
+          <tr>
+            <td>3</td><td><strong>capability</strong> <span class="text-xs text-muted">which action</span></td>
+            <td>{#if m.capabilities}<code>{JSON.stringify(m.capabilities)}</code>{:else}<span class="text-muted">None declared; the gate alone decides.</span>{/if}</td>
+            <td><Badge size="xs">{m.capabilities ? 'declared' : 'none'}</Badge></td>
+          </tr>
+          <tr>
+            <td>4</td><td><strong>row policy</strong> <span class="text-xs text-muted">whose row</span></td>
+            <td>
+              {#each pols as [op, p] (op)}
+                <div><strong>{op}</strong>{#if p.allows?.length} admits <code>{p.allows.map(a => a.expr).join(' or ')}</code>{/if}{#if p.denies?.length} · refuses <code>{p.denies.map(a => a.expr).join(' or ')}</code>{/if}</div>
+              {:else}
+                <span class="text-muted">No row policy: whoever passes the gate reaches every row.</span>
+              {/each}
+            </td>
+            <td>
+              {#if v.system}<Badge tone="success" size="xs">lifted for system</Badge>
+              {:else}{#each OPS.filter(op => v.ops[op].ok) as op, i (op)}{i ? ' ' : ''}<Badge tone={opTone(v.ops[op])} size="xs">{opWord(v.ops[op], op)}</Badge>{:else}<Badge size="xs">nothing reached</Badge>{/each}{/if}
+            </td>
+          </tr>
+          <tr>
+            <td>5</td><td><strong>field</strong> <span class="text-xs text-muted">which columns</span></td>
+            <td>
+              {#each m.fields ?? [] as f (f.name)}
+                <div><code>{f.name}</code> <span class="text-xs text-muted">{f.protection ?? ''}{(f.allows ?? []).length ? ' · ' + f.allows.map(allowOf).join(' ') : ''}</span></div>
+              {:else}
+                <span class="text-muted">No column is protected.</span>
+              {/each}
+            </td>
+            <td>{#if (m.fields ?? []).length}<Badge tone={v.system ? 'success' : 'info'} size="xs">{v.system ? 'writes @system' : `${m.fields.length} held back`}</Badge>{:else}<Badge size="xs">none</Badge>{/if}</td>
+          </tr>
+          <tr>
+            <td>6</td><td><strong>validate</strong> <span class="text-xs text-muted">is it well-formed</span></td>
+            <td><span class="text-muted">Field rules and unknown keys: integrity, the same for every caller.</span></td>
+            <td><Badge size="xs">everyone</Badge></td>
+          </tr>
+          <tr>
+            <td>7</td><td><strong>transition</strong> <span class="text-xs text-muted">is this move allowed</span></td>
+            <td>
+              {#if v.moves.length}
+                <code>{v.moves.map(x => x.name).join(' · ')}</code>
+                <span class="text-xs text-muted"> {v.system ? 'A system call may make any move, but only along the graph: which moves exist is never lifted.' : 'Which moves exist holds for everyone; who may ask is what changes with level.'}</span>
+              {:else}
+                <span class="text-muted">No state machine on this model.</span>
+              {/if}
+            </td>
+            <td>{#each v.moves as x, i (x.field + x.name)}{i ? ' ' : ''}<Badge tone={x.ok ? 'success' : 'danger'} size="xs">{x.name} {x.ok ? '✓' : '✕'}</Badge>{:else}<Badge size="xs">none</Badge>{/each}</td>
+          </tr>
+          <tr>
+            <td>8</td><td><strong>execute</strong> <span class="text-xs text-muted">SQLite</span></td>
+            <td><span class="text-muted">CHECK, unique, foreign keys: never lifted, not for the app either.</span></td>
+            <td><Badge size="xs">everyone</Badge></td>
+          </tr>
+          <tr>
+            <td>9</td><td><strong>announce</strong> <span class="text-xs text-muted">who hears about it</span></td>
+            <td>{#if channel}Announced on <code>{channel}</code>; each listener is graded as themselves.{:else}<span class="text-muted">No service channel announces this model.</span>{/if}</td>
+            <td><Badge size="xs">{channel ? 'per listener' : 'none'}</Badge></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+{/if}
+
+<style>
+  .glyphs { font-family: var(--font-mono, ui-monospace, monospace); letter-spacing: 0.1em; }
+</style>

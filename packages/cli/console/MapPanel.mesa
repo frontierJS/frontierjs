@@ -1,0 +1,342 @@
+<script>
+  // MapPanel.mesa — one of the map's lists, by name (`IDEAS/one-console.md`
+  // 2.4). Every one but the last three is read off the project; `workflows`,
+  // `errors` and `session` describe FrontierJS and say so. A list with nothing
+  // in it says what would fill it, and the three a built app answers (`jobs`,
+  // `notifications`, `principal`) say WHICH reason they are empty, because an
+  // app with no jobs and an app nobody could boot must not draw the same
+  // nothing.
+  //
+  // Every list takes the console's `/` filter, and its heading says `n of m`
+  // while one is in force.
+
+  import Badge from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout from '@frontierjs/ui/components/display/Callout.mesa'
+  import Code from '@frontierjs/ui/components/display/Code.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Table from '@frontierjs/ui/components/display/Table.mesa'
+  import Accordion from '@frontierjs/ui/components/layout/Accordion.mesa'
+  import AccordionItem from '@frontierjs/ui/components/layout/AccordionItem.mesa'
+  import { REF } from './map-reference.js'
+
+  export let model
+  export let panel  = 'issues'
+  export let shown  = () => true   // (...fields) => does the console's filter keep this row
+  export let fix    = null         // (key) => Promise — writes one secret, then the map reads again
+  export let fixing = null         // the key being written
+
+  const ISSUE_TONE = { error: 'danger', warning: 'warning', info: '' }
+  const PATH_TONE  = { pass: 'success', fail: 'danger', error: 'danger', skip: '' }
+  const REFERENCE  = new Set(['workflows', 'errors', 'session'])
+  const TITLE      = { errors: 'error paths' }
+
+  const col = (name, label = name) => ({ name, label })
+
+  // Each row's fields for the filter. `shown` is an argument, so the `$:`
+  // below that names it is woken when the filter changes.
+  const KEEP = {
+    issues:        (shown, i) => shown(i.msg, i.ref, i.severity),
+    schema:        (shown, m) => shown(m.name, ...m.fields.map(f => f.name)),
+    services:      (shown, s) => shown(s.name, s.model, s.channel, ...s.methods, ...s.customMethods),
+    routes:        (shown, r) => shown(r.method, r.path, r.kind),
+    plugins:       (shown, p) => shown(p),
+    resources:     (shown, r) => shown(r.name, r.service, r.model),
+    channels:      (shown, c) => shown(c.channel, c.service, ...c.resources),
+    relations:     (shown, r) => shown(r.from, r.fromField, r.to),
+    jobs:          (shown, j) => shown(j.name, j.id, j.cron, j.expr),
+    notifications: (shown, n) => shown(n.type, ...n.transports),
+    principal:     () => true,
+    migrations:    (shown, m) => shown(m.name, m.sql),
+    env:           (shown, v) => shown(v.key, v.desc, v.status),
+    workflows:     (shown, w) => shown(w.label, ...w.steps.map(s => s.action)),
+    errors:        (shown, p) => shown(p.label, p.trigger),
+    session:       (shown, f) => shown(f.key, f.desc),
+  }
+
+  $: atlas = model.atlas ?? {}
+  $: gone  = atlas.skipped ? 'Started with --no-atlas, so the app was never built.' : atlas.error ?? null
+  $: jobs  = atlas.jobs ?? null
+  $: notes = atlas.notifications ?? null
+  $: prin  = atlas.principal ?? null
+
+  // What each list holds, all of it and as the filter leaves it.
+  $: lists = {
+    issues:        model.issues,
+    schema:        model.models,
+    services:      model.services,
+    routes:        model.app?.routes ?? [],
+    plugins:       model.app?.plugins ?? [],
+    resources:     model.resources,
+    channels:      model.channels,
+    relations:     model.relations,
+    jobs:          [...(jobs?.durable ?? []), ...(jobs?.timers ?? [])],
+    notifications: notes?.declared ?? [],
+    principal:     [],
+    migrations:    model.migrations,
+    env:           model.env?.vars ?? [],
+    workflows:     REF.WORKFLOWS,
+    errors:        REF.ERROR_PATHS,
+    session:       REF.SESSION_DATA.contextShape,
+  }
+  $: all  = lists[panel] ?? []
+  $: seen = all.filter(x => (KEEP[panel] ?? (() => true))(shown, x))
+  $: count = seen.length === all.length ? `${all.length}` : `${seen.length} of ${all.length}`
+  $: appHooks = Object.entries(model.app?.appHooks ?? {}).flatMap(([phase, byMethod]) =>
+    Object.entries(byMethod).map(([m, fns]) => ({ phase, method: m, fns: fns.join(' → ') })))
+  $: serviceRows = panel === 'services' ? seen.map(s => ({
+    ...s,
+    shownModel: s.model && s.model !== s.name ? s.model : '',
+    bound: model.resources.filter(r => r.service === s.name).map(r => r.name).join(' '),
+  })) : []
+  $: principalRows = prin ? [
+    ['tenancy strategy', prin.tenancy?.strategy ?? 'none'],
+    ['resolved by',      prin.tenancy?.resolve ?? '—'],
+    ['resolver',         prin.resolver?.name ?? 'none installed'],
+    ['kind',             prin.resolver?.described?.kind ?? '—'],
+    ['claims it builds', (prin.resolver?.described?.claims ?? []).join(' · ') || 'none'],
+    ['named by',         prin.resolver?.described?.namedBy ?? '—'],
+  ].map(([what, is]) => ({ what, is })) : []
+</script>
+
+<section class="stack gap-md" data-part={panel}>
+  <div class="bar dense">
+    <strong class="text-sm">{TITLE[panel] ?? panel}</strong>
+    <span class="text-xs text-muted">{count}</span>
+  </div>
+
+  {#if REFERENCE.has(panel)}
+    <Callout tone="info" title="Reference.">This describes FrontierJS and is the same for every project; nothing here is read from {model.root}.</Callout>
+  {/if}
+
+  {#if panel === 'issues'}
+    {#each seen as i, n (n)}
+      <div class="cluster gap-sm" data-issue={i.severity}>
+        <Badge tone={ISSUE_TONE[i.severity]} size="xs">{i.severity}</Badge>
+        <div class="text-sm">{i.msg}</div>
+        <span class="text-xs text-muted">{i.ref}</span>
+        {#if i.fix && fix}<Button treatment="outlined" size="xs" loading={fixing === i.fix} onclick={() => fix(i.fix)}>generate</Button>{/if}
+      </div>
+    {:else}
+      <EmptyState title={all.length ? 'Nothing matches the filter' : 'Nothing to report'}>{all.length ? '' : 'Every check this map can make came back clean.'}</EmptyState>
+    {/each}
+
+  {:else if panel === 'schema'}
+    {#if !all.length && !model.enums.length}
+      <EmptyState title="No schema">db/schema.lite produced no models; run fli db:push or check the path.</EmptyState>
+    {:else}
+      <Accordion multiple>
+        {#each seen as m (m.name)}
+          <AccordionItem id={m.name} label={`${m.name} · ${m.fields.length} fields · ${m.gate ? `@@gate ${m.gate}` : 'no gate'}`}>
+            <Table columns={[col('name', 'Field'), col('type', 'Type'), col('required', 'Required')]} rows={m.fields} compact>
+              {#snippet row(f)}
+                <tr><td><code>{f.name}</code></td><td>{f.type}{f.nullable ? '?' : ''}</td><td>{#if f.required}<Badge size="xs">required</Badge>{/if}</td></tr>
+              {/snippet}
+            </Table>
+          </AccordionItem>
+        {/each}
+      </Accordion>
+      {#if model.enums.length}
+        <strong class="text-sm">enums</strong>
+        {#each model.enums as e (e.name)}
+          <div class="text-sm"><code>{e.name}</code> {e.values.join(' · ')}</div>
+        {/each}
+      {/if}
+    {/if}
+
+  {:else if panel === 'services'}
+    {#if !all.length}
+      <EmptyState title="No services">No app.snapshot.md; run junction app --app (entry) at the project root.</EmptyState>
+    {:else}
+      <p class="text-xs text-muted">Read off <code>{model.app?.file ?? ''}</code>, written by <code>{model.app?.generatedBy ?? ''}</code>. A dash under resource means nothing on the client binds to that service: coverage rather than a defect.</p>
+      <Table columns={[col('name', 'Service'), col('model', 'Model'), col('methods', 'Methods'), col('custom', 'Custom'), col('channel', 'Channel'), col('resource', 'Resource')]} rows={serviceRows} compact>
+        {#snippet row(s)}
+          <tr>
+            <td><code>{s.name}</code></td>
+            <td>{s.shownModel ? s.shownModel : '—'}</td>
+            <td><code>{s.methods.join(' ')}</code></td>
+            <td><code>{s.customMethods.join(' ') || '—'}</code></td>
+            <td>{#if s.channel}<Badge tone="success" size="xs">{s.channel}</Badge>{:else}—{/if}</td>
+            <td>{s.bound || '—'}</td>
+          </tr>
+        {/snippet}
+      </Table>
+    {/if}
+
+  {:else if panel === 'routes'}
+    <Table columns={[col('method', 'Method'), col('path', 'Path'), col('kind', 'Kind')]} rows={seen} compact emptyText="The app snapshot lists no routes, or there is no snapshot to read.">
+      {#snippet row(r)}
+        <tr><td><Badge size="xs">{r.method}</Badge></td><td><code>{r.path}</code></td><td>{r.kind}</td></tr>
+      {/snippet}
+    </Table>
+
+  {:else if panel === 'plugins'}
+    {#if !all.length && !appHooks.length}
+      <EmptyState title="Nothing registered">No app snapshot to read plugins or app hooks from.</EmptyState>
+    {:else}
+      <strong class="text-sm">plugins, in configure order</strong>
+      {#each seen as p, i (p)}
+        <div class="text-sm">{i + 1} <code>{p}</code></div>
+      {/each}
+      {#if appHooks.length}
+        <strong class="text-sm">app hooks: they run for every service</strong>
+        <Table columns={[col('phase', 'Phase'), col('method', 'Method'), col('fns', 'Chain')]} rows={appHooks} compact>
+          {#snippet row(h)}
+            <tr><td>{h.phase}</td><td><code>{h.method}</code></td><td><code>{h.fns}</code></td></tr>
+          {/snippet}
+        </Table>
+      {/if}
+    {/if}
+
+  {:else if panel === 'resources'}
+    <Table columns={[col('name', 'Resource'), col('service', 'Service'), col('model', 'Model'), col('hooks', 'Hooks')]} rows={seen} compact emptyText="Nothing under web/src/resources/; an api-only project has none, which is a whole project.">
+      {#snippet row(r)}
+        <tr><td><code>{r.name}</code></td><td>{r.service ?? '—'}</td><td>{r.model ?? 'derived'}</td><td><code>{(r.hooks ?? []).join(' ') || '—'}</code></td></tr>
+      {/snippet}
+    </Table>
+
+  {:else if panel === 'channels'}
+    <Table columns={[col('channel', 'Channel'), col('service', 'Service'), col('resources', 'Resources listening')]} rows={seen} compact emptyText="No service declares a channel, so no write reaches a second tab.">
+      {#snippet row(c)}
+        <tr><td><Badge tone="success" size="xs">{c.channel}</Badge></td><td><code>{c.service}</code></td><td>{c.resources.join(' ') || '—'}</td></tr>
+      {/snippet}
+    </Table>
+
+  {:else if panel === 'relations'}
+    <Table columns={[col('from', 'From'), col('field', 'Field'), col('type', ''), col('to', 'To'), col('cascade', 'On delete')]} rows={seen} compact emptyText="No model declares a relation in db/schema.lite.">
+      {#snippet row(r)}
+        <tr><td><code>{r.from}</code></td><td>{r.fromField ?? '—'}</td><td>{r.type}</td><td><code>{r.to}</code></td><td>{#if r.cascade}<Badge tone="warning" size="xs">cascade</Badge>{:else}—{/if}</td></tr>
+      {/snippet}
+    </Table>
+
+  {:else if panel === 'jobs'}
+    {#if gone}
+      <EmptyState title="Jobs not read">{gone}</EmptyState>
+    {:else if !jobs?.hasQueue}
+      <EmptyState title="No queue installed">This app configures no app.jobs, so nothing here is durable: a different statement from a queue with no jobs in it.</EmptyState>
+    {:else if !all.length}
+      <EmptyState title="A queue, and no handlers">Every dispatch this app makes will find nothing to run it.</EmptyState>
+    {:else}
+      <strong class="text-sm">durable work: app.jobs</strong>
+      <p class="text-xs text-muted">A row in the queue database, a retry budget, and the principal that asked for it re-resolved when it runs. Survives a restart.</p>
+      <Table columns={[col('name', 'Job'), col('cron', 'Schedule'), col('attempts', 'Attempts'), col('timeout', 'Timeout')]} rows={seen.filter(j => j.name)} compact emptyText="None match.">
+        {#snippet row(j)}
+          <tr><td><code>{j.name}</code></td><td>{j.cron ?? 'on dispatch'}</td><td>{j.maxAttempts}</td><td>{#if j.timeout == null}<Badge tone="warning" size="xs">none</Badge>{:else}{j.timeout}ms{/if}</td></tr>
+        {/snippet}
+      </Table>
+      <strong class="text-sm">in-process timers: app.scheduler</strong>
+      <p class="text-xs text-muted">No persistence, no retry, no principal; gone with the process, and running in every replica rather than once across them.</p>
+      <Table columns={[col('id', 'Id'), col('type', 'Kind'), col('expr', 'Declared')]} rows={seen.filter(j => !j.name)} compact emptyText="None registered.">
+        {#snippet row(t)}
+          <tr><td><code>{t.id}</code></td><td>{t.type}</td><td><code>{t.expr}</code></td></tr>
+        {/snippet}
+      </Table>
+    {/if}
+
+  {:else if panel === 'notifications'}
+    {#if gone}
+      <EmptyState title="Notifications not read">{gone}</EmptyState>
+    {:else if !notes?.installed}
+      <EmptyState title="No notifications plugin">This app has no app.notifications, so nothing here can send: a different statement from a plugin configured and finding nothing.</EmptyState>
+    {:else if !all.length}
+      <EmptyState title="Configured, and nothing registered">Every app.notify this app makes will throw, naming a definition the loader never saw.</EmptyState>
+    {:else}
+      <p class="text-xs text-muted">The type is persisted: written into notifications.type and read back by the browser to choose a renderer, so a type that moves orphans every row already written under the old string.</p>
+      <Table columns={[col('type', 'Type'), col('transports', 'Transports')]} rows={seen} compact>
+        {#snippet row(d)}
+          <tr><td><code>{d.type}</code></td><td>{#if d.transports.length}<code>{d.transports.join(' · ')}</code>{:else}<Badge tone="warning" size="xs">none</Badge>{/if}</td></tr>
+        {/snippet}
+      </Table>
+    {/if}
+
+  {:else if panel === 'principal'}
+    {#if gone}
+      <EmptyState title="The principal realm not read">{gone}</EmptyState>
+    {:else if !prin}
+      <EmptyState title="No tenancy, no resolver">This app declares no tenancy and installs no principal resolver. That is an answer, not a gap.</EmptyState>
+    {:else}
+      <p class="text-xs text-muted">Who a caller arrives as, and who they become. Read off a built app: a resolver is installed in code and appears in no schema.</p>
+      <Table columns={[col('what', ''), col('is', '')]} rows={principalRows} compact>
+        {#snippet row(r)}
+          <tr><td>{r.what}</td><td><code>{r.is}</code></td></tr>
+        {/snippet}
+      </Table>
+    {/if}
+
+  {:else if panel === 'migrations'}
+    {#if !all.length}
+      <EmptyState title="No migrations">Nothing in db/migrations/; a project on fli db:push has none.</EmptyState>
+    {:else}
+      <Accordion multiple>
+        {#each seen as m (m.name)}
+          <AccordionItem id={m.name} label={m.name}>
+            <Code text={m.sql ?? ''} language="sql" copy={false} />
+          </AccordionItem>
+        {/each}
+      </Accordion>
+    {/if}
+
+  {:else if panel === 'env'}
+    {#if !all.length}
+      <EmptyState title="No environment data">No .env.example to read the shape from.</EmptyState>
+    {:else}
+      <p class="text-xs text-muted">Secrets live in <code>{model.env.file}</code>.</p>
+      {#each seen as v (v.key)}
+        <div class="cluster gap-sm" data-env={v.key}>
+          <Badge tone={v.status === 'set' ? 'success' : 'danger'} size="xs">{v.status}</Badge>
+          <code>{v.key}</code>
+          {#if v.required}<Badge tone="warning" size="xs">required</Badge>{/if}
+          {#if v.desc}<span class="text-xs text-muted">{v.desc}</span>{/if}
+          {#if v.status === 'missing' && fix}<Button treatment="outlined" size="xs" loading={fixing === v.key} onclick={() => fix(v.key)}>{v.fixable ? 'generate and insert' : 'add to .env'}</Button>{/if}
+        </div>
+      {/each}
+    {/if}
+
+  {:else if panel === 'workflows'}
+    <Accordion multiple>
+      {#each seen as w (w.id)}
+        <AccordionItem id={w.id} label={`${w.label} · ${w.steps.length} steps`}>
+          <ol class="stack gap-2xs">
+            {#each w.steps as s, i (i)}
+              <li class="text-sm">{s.action}{#if s.file} <code>{s.file}</code>{/if}{#if s.cmd} <code>{s.cmd}</code>{/if}</li>
+            {/each}
+          </ol>
+        </AccordionItem>
+      {/each}
+    </Accordion>
+
+  {:else if panel === 'errors'}
+    <Accordion multiple>
+      {#each seen as p (p.id)}
+        <AccordionItem id={p.id} label={`${p.label} · ${p.trigger}`}>
+          <div class="stack gap-2xs">
+            {#each p.nodes as n, i (i)}
+              <div class="text-sm"><Badge tone={PATH_TONE[n.status]} size="xs">{n.status}</Badge> <code>{n.node}</code> {n.outcome}</div>
+            {/each}
+            {#if p.note}<p class="text-xs text-muted">{p.note}</p>{/if}
+          </div>
+        </AccordionItem>
+      {/each}
+    </Accordion>
+
+  {:else if panel === 'session'}
+    <strong class="text-sm">SessionContext: what a verified caller is</strong>
+    <Table columns={[col('key', 'Key'), col('type', 'Type'), col('example', 'Example'), col('desc', '')]} rows={seen} compact>
+      {#snippet row(f)}
+        <tr><td><code>{f.key}</code></td><td>{f.type}</td><td><code>{f.example}</code></td><td>{f.desc}</td></tr>
+      {/snippet}
+    </Table>
+    <strong class="text-sm">lifecycle</strong>
+    <ol class="stack gap-2xs">
+      {#each REF.SESSION_DATA.lifecycle as l (l.step)}
+        <li class="text-sm"><strong>{l.step}</strong> {l.desc}</li>
+      {/each}
+    </ol>
+    <strong class="text-sm">the trust ladder: what @@gate(R.C.U.D) grades against</strong>
+    <Table columns={[col('level', 'Level'), col('name', 'Name'), col('desc', '')]} rows={REF.SESSION_DATA.trustLevels} compact>
+      {#snippet row(t)}
+        <tr><td>{t.level}</td><td><code>{t.name}</code></td><td>{t.desc}</td></tr>
+      {/snippet}
+    </Table>
+  {/if}
+</section>

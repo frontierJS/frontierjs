@@ -3,7 +3,8 @@
 // LOOKS; getConfig coerces each flag toward the command's declaration after.
 //
 // `bools` are the names that never take a value — without them `fli x --dry foo`
-// reads as `{ dry: 'foo' }`. A boolean that was not typed is ABSENT, never
+// reads as `{ dry: 'foo' }`. `bootstrap.js` reads argv again with the command's
+// own booleans added once it knows the command. A boolean that was not typed is ABSENT, never
 // false: getConfig reads a defined long name as "given", and a defaulted
 // `dry: false` beside `-d` once ran `db:import` for real.
 

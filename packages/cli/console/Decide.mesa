@@ -17,7 +17,9 @@
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
   import Select from '@frontierjs/ui/components/forms/Select.mesa'
 
-  export let api = ''
+  export let api   = ''
+  export let shown = () => true   // (...fields) => does the console's filter keep this row
+  export let keyed = null         // (rows) => the keys this pane binds, for the console
 
   const SHOWN = 8
   const SEVERITY_TONE = { S1: 'danger', S2: 'warning', S3: 'info', decision: 'info' }
@@ -81,7 +83,13 @@
     await readDecisions()
   }
 
-  $.onMount(() => { readNext(); readDecisions() })
+  const readAll = () => { failed = null; readNext(); readDecisions() }
+  keyed?.([{ keys: 'r', label: 'read again', run: readAll }])
+
+  $: seenNext      = (next?.ready ?? []).filter(r => shown(r.id, r.title, ...r.pkg))
+  $: seenDecidable = decidable?.filter(q => shown(q.id, q.question, q.file)) ?? null
+
+  $.onMount(readAll)
 </script>
 
 <header class="bar">
@@ -98,7 +106,7 @@
     <strong class="text-sm">next</strong>
     <span class="text-xs text-muted">{next ? `${next.ready.length} of ${next.readyCount} ready · ${next.blocked.length} blocked` : '…'}</span>
   </div>
-  {#each (next?.ready ?? []) as r (r.id)}
+  {#each seenNext as r (r.id)}
     <div class="stack gap-3xs" data-next={r.id}>
       <div class="cluster gap-sm">
         <Badge tone={SEVERITY_TONE[r.severity] ?? ''} size="xs">{r.severity}</Badge>
@@ -114,9 +122,9 @@
 <section class="surface stack" data-part="decisions">
   <div class="bar dense">
     <strong class="text-sm">decisions</strong>
-    <span class="text-xs text-muted">{decidable ? `${decidable.length} to pick · ${open} still need options written` : '…'}</span>
+    <span class="text-xs text-muted">{seenDecidable ? `${seenDecidable.length === decidable.length ? decidable.length : `${seenDecidable.length} of ${decidable.length}`} to pick · ${open} still need options written` : '…'}</span>
   </div>
-  {#each (decidable ? (all ? decidable : decidable.slice(0, SHOWN)) : []) as q (q.id)}
+  {#each (seenDecidable ? (all ? seenDecidable : seenDecidable.slice(0, SHOWN)) : []) as q (q.id)}
     <div class="stack gap-2xs" data-decision={q.id}>
       <span class="text-sm">{q.question}</span>
       <span class="text-xs text-muted">{q.file}:{q.line}{q.recommend?.why ? ` · why ${q.recommend.letter}: ${q.recommend.why}` : ''}</span>
@@ -150,7 +158,7 @@
       {#if result[q.id]}<span class="text-xs text-danger" role="status">{result[q.id]}</span>{/if}
     </div>
   {/each}
-  {#if decidable && !all && decidable.length > SHOWN}
-    <Button treatment="ghost" size="xs" onclick={() => all = true}>show the other {decidable.length - SHOWN}</Button>
+  {#if seenDecidable && !all && seenDecidable.length > SHOWN}
+    <Button treatment="ghost" size="xs" onclick={() => all = true}>show the other {seenDecidable.length - SHOWN}</Button>
   {/if}
 </section>

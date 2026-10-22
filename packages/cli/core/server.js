@@ -29,6 +29,9 @@
 //   GET  /api/publish         → the workspace's packages and the publish steps — `core/publish-view.js`
 //   POST /api/publish/registry → what npm holds, `ws:npm --json` — a press, it asks the registry
 //   POST /api/start/:id · POST /api/stop/:id · GET /api/output/:id
+//   GET  /api/map/apps        → the apps here — `core/map-view.js`
+//   GET  /api/map?app=<dir>   → that app's `project:map --json`
+//   POST /api/map/secret      → one secret into its `.env` — `core/env-health.js`
 //
 // And the console, the same reads drawn by `.mesa` screens — `core/console.js`:
 //   GET  /console/            → the page; its modules under /console/ and /@fjs/
@@ -144,6 +147,17 @@ function route(req, res) {
   // GET /api/state — which of them are up
   if (req.method === 'GET' && path === '/api/state') {
     return handleState(req, res)
+  }
+
+  // GET /api/map/apps · GET /api/map?app= · POST /api/map/secret — the `:map` pane
+  if (req.method === 'GET' && path === '/api/map/apps') {
+    return handleMapApps(req, res)
+  }
+  if (req.method === 'GET' && path === '/api/map') {
+    return handleMap(req, res, url.searchParams.get('app') ?? '.')
+  }
+  if (req.method === 'POST' && path === '/api/map/secret') {
+    return handleMapSecret(req, res)
   }
 
   // GET /api/proves — which of them prove what you have changed
@@ -500,6 +514,36 @@ async function handleState(req, res) {
   } catch (err) {
     json(res, 500, { error: err.message })
   }
+}
+
+// ─── /api/map ────────────────────────────────────────────────────────────────
+//
+// The `:map` pane's reads, `core/map-view.js`. The secret is the one write: a
+// generated value or an empty placeholder into that app's `.env`.
+
+async function handleMapApps(req, res) {
+  try {
+    const { mapApps } = await import('./map-view.js')
+    json(res, 200, { apps: mapApps(global.projectRoot) })
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
+}
+
+async function handleMap(req, res, app) {
+  const { readMap } = await import('./map-view.js')
+  const out = await readMap(global.projectRoot, app, { fliRoot: global.fliRoot })
+  json(res, out.status, out.body)
+}
+
+async function handleMapSecret(req, res) {
+  const foreign = foreignOrigin(req)
+  if (foreign) return json(res, 403, { error: `a secret is not written from ${foreign}` })
+  let body
+  try { body = await readBody(req) } catch { return json(res, 400, { error: 'Invalid JSON body' }) }
+  const { fillMapSecret } = await import('./map-view.js')
+  const out = fillMapSecret(global.projectRoot, String(body?.app ?? '.'), body?.key)
+  json(res, out.status, out.body)
 }
 
 // ─── GET /api/proves ─────────────────────────────────────────────────────────

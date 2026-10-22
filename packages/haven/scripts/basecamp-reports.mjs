@@ -182,11 +182,14 @@ const REPORTS = {
       const sum = (rows, key) => rows.reduce((n, r) => n + r[key], 0)
       const all = [...groups.values()].flat()
       const title = (p) => p[0].toUpperCase() + p.slice(1)
+      // A card and its projects share a key: Tab filters the list to one plan,
+      // and the desk counts a card's snoozed projects by it.
+      const keyOf = (p) => p.replace(' ', '-')
       return {
         title: `${sum(all, 'open')} open to-dos by plan`,
         blocks: [
           { kind: 'stats', items: [...groups].filter(([p, rows]) => p !== 'on hold' || rows.length).map(([p, rows]) => ({
-            label: title(p), value: sum(rows, 'open'),
+            label: title(p), value: sum(rows, 'open'), key: keyOf(p),
             note: `${sum(rows, 'late')} late`, noteTone: sum(rows, 'late') ? 'danger' : 'muted',
             foot: `${rows.length} project${rows.length === 1 ? '' : 's'}`,
             tone: p === 'unset' || p === 'on hold' ? 'muted' : undefined,
@@ -199,6 +202,7 @@ const REPORTS = {
               note: r.late ? `${r.late} late · ${r.oldest}d` : r.undated === r.open ? 'none dated' : '',
               noteTone: r.late ? 'danger' : undefined,
               url: projectUrl(r.id),
+              keys: [keyOf(p)],
             })) })),
           ]),
         ],

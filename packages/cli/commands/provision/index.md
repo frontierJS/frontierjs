@@ -52,8 +52,8 @@ question, and a run with no terminal uses `basecamp`. Then creates one droplet
 with your SSH key on it, waits until it has an address,
 and adds a `Host` block for it to `~/.ssh/config` — asked first, yes unless you
 say no; a `Host` of that name already there is left alone and the block printed
-instead. Nothing is installed on it: `fli deploy:setup --auto-install` installs
-over SSH, and `fli deploy` from `packages/basecamp` puts Basecamp on it.
+instead. Nothing is installed on it unless asked: `fli provision:install` puts
+Basecamp on it, and the run prints that line.
 
 `--admin <email>` installs without asking, which is how a run with no terminal
 gets past the bare box: `deploy:setup --auto-install` asks nothing, makes the
@@ -116,14 +116,13 @@ if (process.stdin.isTTY && !flag.json && !flag.domain) {
   p.close()
 }
 if (domain) {
-  const { edgeNames, EdgeError } = await import(resolve(global.fliRoot, 'core/edge.js'))
-  try { domain = edgeNames({ web: { domain } }).web.domain }
-  catch (e) {
-    if (!(e instanceof EdgeError)) throw e
+  const named = await hostnameOf(domain)
+  if (!named) {
     log.error(`"${domain}" is not a hostname: letters, digits, dots and dashes`)
     process.exitCode = 1
     return
   }
+  domain = named
 }
 if (domain) {
   if (await cloudflareToken({ interactive: !!process.stdin.isTTY, say: (t) => log.warn(t) })) {
@@ -164,13 +163,11 @@ if (install && !domain) {
   process.exitCode = 1
   return
 }
-if (admin && !/^[^\s@]+@[^\s@]+$/.test(admin)) {
+if (admin && !EMAIL.test(admin)) {
   log.error(`"${admin}" is not an email address`)
   process.exitCode = 1
   return
 }
-const generated = !!admin && !password
-if (generated) password = (await import('node:crypto')).randomBytes(18).toString('base64url')
 
 // The name is a hostname at DigitalOcean and a Host pattern in ~/.ssh/config: a
 // space or a `*` would buy the box and then write a Host line matching others.
@@ -235,10 +232,13 @@ ${block.replace(/^(?=.)/gm, '  ')}`
 // box travels as `--server` on every line this run prints, never as an edit to
 // that file. The Host alias when this run wrote it, the address otherwise.
 const dest = `root@${made.ip}`
-const later = ` --server ${added ? made.name : dest}${domain && domain !== configured ? ` --domain ${domain}` : ''}`
+const box = added ? made.name : dest
+const named = domain && domain !== configured ? ` --domain ${domain}` : ''
+const later = ` --server ${box}${named}`
+const installLine = `fli provision:install ${box}${named}`
 if (!install) {
-  echo`  Then, in packages/basecamp:
-    fli deploy:setup --auto-install${later} && fli deploy${later}
+  echo`  Then, from anywhere in this checkout:
+    ${installLine}
 `
   return
 }
@@ -248,21 +248,18 @@ if (!install) {
 // the person, and what fails, fails with its own words.
 log.info(`Waiting for ssh on ${dest} — a fresh droplet answers in about a minute`)
 if (!await waitForSsh(dest, { identity })) {
-  log.error(`${dest} did not answer ssh in four minutes. When it does, in packages/basecamp: fli deploy:setup --auto-install${later} && fli deploy${later}`)
+  log.error(`${dest} did not answer ssh in four minutes. When it does: ${installLine}`)
   process.exitCode = 1
   return
 }
-for (const argv of [['deploy:setup', '--auto-install', '--server', dest, '--domain', domain], ['deploy', '--server', dest, '--domain', domain]]) {
-  const status = await runFli(argv)
-  if (status !== 0) {
-    log.error(`fli ${argv.join(' ')} exited ${status}. Fix what it said and run it again from packages/basecamp`)
-    process.exitCode = status || 1
-    return
-  }
+const failed = await ringZero(dest, domain)
+if (failed) {
+  log.error(`fli ${failed.argv.join(' ')} exited ${failed.status}. Fix what it said and run ${installLine}`)
+  process.exitCode = failed.status || 1
+  return
 }
 log.success(`Basecamp is on ${made.name} (${made.ip})`)
 
-const { default: conf } = await import(provisionScript().root + 'frontier.config.js')
 echo`
   Point ${domain} at it (DNS-only, so Caddy's certificate is what the browser sees):
     fli provision:dns ${made.ip}${domain === configured ? '' : ` --host ${domain}`}
@@ -271,26 +268,5 @@ echo`  A later deploy, from packages/basecamp:
     fli deploy${later}
 `
 
-if (!admin) return
-
-// Basecamp's own first-run route, asked on the box itself: the hostname may not
-// resolve yet. The body travels inside the script on ssh's stdin, never in an
-// argv another process on either machine can read.
-const body = JSON.stringify({ workspace_name: made.name, name: admin.split('@')[0], email: admin, password })
-const { spawnSync } = await import('node:child_process')
-const setup = spawnSync('ssh', ['-o', 'BatchMode=yes', ...(existsSync(identity) ? ['-i', identity] : []), dest, 'sh -s'], {
-  encoding: 'utf8',
-  input: `curl -sS -w '\\n%{http_code}' -X POST -H 'content-type: application/json' --data-binary @- http://localhost:${conf.deploy.api.port}/setup <<'FLI_SETUP_EOF'\n${body}\nFLI_SETUP_EOF\n`,
-})
-const [code, ...rest] = (setup.stdout || '').trimEnd().split('\n').reverse()
-const said = (() => { try { return JSON.parse(rest.reverse().join('\n')).message } catch { return setup.stderr.trim() } })()
-if (code === '409') log.warn(`  ${made.name} already has an admin — ${admin} was not made`)
-else if (code !== '201') {
-  log.error(`POST /setup answered ${code || 'nothing'}${said ? `: ${said}` : ''}. Make the admin at /setup in the browser`)
-  process.exitCode = 1
-}
-else {
-  echo(`  admin    ${admin}`)
-  if (generated) echo(`  password ${password}   shown once — change it after you sign in`)
-}
+if (admin && !await makeAdmin({ dest, identity, workspace: made.name, admin, password, log, echo })) process.exitCode = 1
 ```

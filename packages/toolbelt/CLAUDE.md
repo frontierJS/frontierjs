@@ -9,7 +9,7 @@ dependency graph on the strength of it, so breaking purity costs the standing.
 
 **One kit per subpath.** `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/docfences`, `/env`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
 `/fill`, `/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/keys`, `/mailbox`, `/markdown`, `/match`, `/mime`,
-`/predicate`, `/query`, `/rank`, `/redact`, `/seal`, `/search`, `/signature`, `/sigv4`, `/sse`, `/textedit`, `/trace`, `/transforms` and `/units` today; a caller
+`/predicate`, `/query`, `/rank`, `/redact`, `/seal`, `/search`, `/signature`, `/sigv4`, `/sse`, `/textbox`, `/textedit`, `/trace`, `/transforms` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
 `bun run test` — `test/run.js` is the whole harness, no dependencies, runs
@@ -177,6 +177,8 @@ src/signature/       what a signed machine-to-machine request is — canonical
                      or an Ed25519 key pair (`v1-ed25519=`,
                      `generateSigningKeys`) for a stranger whose server
                      shares nothing with it (`FJS-D981`).
+                     `signMessage`/`verifyMessage` are that pair over a
+                     message outside any request — a Pony Express letter.
                      Also `mintToken`/`readToken`: a short, case-safe token over
                      ONE id for a plus-address — lower-case Crockford base32, an
                      80-bit MAC over `purpose:id`, expiry read from the id's ULID
@@ -322,6 +324,14 @@ src/keys/            a key sequence read against a keymap — vim's chord
                      and Firefox's reserved keys and the OS defaults — on BOTH
                      platforms, so a refusal is the same on every machine; a
                      key a page may cancel (`<Mod-s>`) is not on it
+src/textbox/         a text control edited by vim's keys — `textbox()` state,
+                     `edit(state, action)`, and `NORMAL`/`INSERT`, the
+                     tables a host hands to `/keys`'s `keymap()` and steps
+                     with `text: false` in both modes, since under `true` Esc
+                     is the control's (`FJS-D1386`). khat's `input.rs` cut to
+                     L1 (`IDEAS/keys.md` 4.1): flat rows, no operator grammar,
+                     no `j`/`k`. Offsets are UTF-16, a `<textarea>`'s unit;
+                     `h l x` step a grapheme. Caller: the `<Textbox>` of 4.2
 src/textedit/        `locateText` — an element's words swapped where its
                      `.mesa` or `.md` source wrote them, or `{ why }` when that
                      takes a guess (interpolated, split by markup, written
@@ -754,5 +764,6 @@ license.
 | `match` | `packages/toolbelt`: `bun run test`, then `packages/sierra`: `bun run test` (the tether that reads it) and `packages/jetty`: `bun run test` (the other one, which may not import sierra). A `near` change is graded against litestone as well — `false` here REMOVES a row from a live list, so the two halves have to agree about a row on the circle's edge |
 | `sse` | `packages/toolbelt`: `bun run test` — the spec reads every frame at every chunk boundary. Then `packages/sierra`: `bun run test event-stream`, which reads a REAL junction `ctx.sse()` stream through `readEvents` and asserts leaving the loop fires the server's `onDisconnect` |
 | `frontmatter` | `packages/toolbelt`: `bun run test frontmatter`, then `packages/sierra`: `bun run test -- scanner` (the route table) and `packages/mesa`: `npx vitest run md-` (the `.md` module). A change to what the subset ADMITS is graded by `test/fixtures/frontmatter-compare.mjs` — js-yaml's core schema over every real block under the roots it is given (this repo, `fjs-prototypes`, the ksite client sites); the spec's rows are the cases somebody thought of |
+| `textbox` | `packages/toolbelt`: `bun run test textbox` AND `node test/run.js textbox` — graphemes are the runtime's `Intl.Segmenter`, and Bun's `containing()` disagrees with node's, so the kit walks segments and the grapheme row is the one to watch under both |
 | `textedit` | `packages/toolbelt`: `bun run test textedit`, then `packages/cli`: `bun test test/vite-ask.test.js` (the `/text` route over a real file) and `website`: `verify:ask`, which swaps a picked element's words in a browser |
 | `directives` | `packages/junction`: `bun run test` — the bridge strips by this table, and `live-order.test.ts` asserts both transports only emit names it holds. Then `packages/sierra`: `bun run test` (`page-query.test.js`), and `example`: `verify` for a real navigation. **The orderBy pair has a third caller and a browser is the only place it runs**: `packages/ui`: `test:browser`, whose `Table — the modes` pushes the object and bracket-indexed shapes through the prop, each paired with a header that must stay unmarked |

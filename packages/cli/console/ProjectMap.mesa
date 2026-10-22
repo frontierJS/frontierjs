@@ -1,0 +1,183 @@
+<script>
+  // ProjectMap.mesa — what an app IS, read off its files: the console's `:map` pane
+  // (`IDEAS/one-console.md` 2.4). The chain of responsibility, then one list
+  // at a time: issues, the schema, the state machines, the Warden, services,
+  // routes and the rest.
+  //
+  // The map is `project:map --json` for one app (`/api/map`), turned into what
+  // the lists draw by `map-model.js`, so this pane and the terminal report read
+  // one model. A workspace holds several apps and the pane maps one at a time;
+  // which apps there are is the server's answer (`/api/map/apps`), never a
+  // path typed here.
+  //
+  // The map is read off FILES, so it looks the same for an app that is not
+  // started. Whether it answers is `/api/state` for the app's own surfaces,
+  // polled, beside the name.
+
+  import Badge from '@frontierjs/ui/components/display/Badge.mesa'
+  import Tabs     from '@frontierjs/ui/components/layout/Tabs.mesa'
+  import TabList  from '@frontierjs/ui/components/layout/TabList.mesa'
+  import Tab      from '@frontierjs/ui/components/layout/Tab.mesa'
+  import TabPanel from '@frontierjs/ui/components/layout/TabPanel.mesa'
+  import MapChain    from './MapChain.mesa'
+  import MapMachines from './MapMachines.mesa'
+  import MapWarden   from './MapWarden.mesa'
+  import MapPanel    from './MapPanel.mesa'
+  import { buildModel } from './map-model.js'
+
+  export let api   = ''
+  export let shown = () => true   // (...fields) => does the console's filter keep this row
+  export let keyed = null         // (rows) => the keys this pane binds, for the console
+
+  const POLL_MS = 4000
+  const PANELS  = ['issues', 'schema', 'machines', 'warden', 'services', 'routes', 'plugins', 'resources',
+    'channels', 'relations', 'jobs', 'notifications', 'principal', 'migrations', 'env', 'workflows', 'errors', 'session']
+  const LABEL   = { errors: 'error paths' }
+
+  let apps    = []
+  let app     = '.'
+  let model   = null
+  let reading = false
+  let failed  = null
+  let panel   = 'issues'
+  let surfaces = []
+  let state   = {}
+  let fixing  = null
+  let note    = ''
+
+  const read = async (path, init) => {
+    const res  = await fetch(`${api}${path}`, init)
+    const body = await res.json()
+    if (!res.ok || body.error) throw new Error(body.error ?? `${path} answered ${res.status}`)
+    return body
+  }
+
+  async function readMap() {
+    reading = true
+    try {
+      model  = buildModel(await read(`/api/map?app=${encodeURIComponent(app)}`))
+      failed = null
+    } catch (e) {
+      failed = e.message
+    }
+    reading = false
+  }
+
+  async function poll() {
+    try { state = (await read('/api/state')).state } catch {}
+  }
+
+  async function readAll() {
+    note = ''
+    try {
+      apps = (await read('/api/map/apps')).apps
+      if (!apps.includes(app)) app = apps[0] ?? '.'
+      surfaces = (await read('/api/runnables')).rows.filter(r => r.kind === 'surface')
+    } catch (e) {
+      failed = e.message
+    }
+    if (apps.length) await readMap()
+    else failed = 'no app here: nothing under this root has a db/schema.lite'
+    await poll()
+  }
+
+  function choose(dir) {
+    if (dir === app) return
+    app   = dir
+    model = null
+    readMap()
+  }
+
+  async function fix(key) {
+    fixing = key
+    try {
+      const out = await read('/api/map/secret', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app, key }),
+      })
+      note = out.generated ? `generated ${key} and wrote it to ${out.file}` : `added ${key}= to ${out.file}; paste your value there`
+      await readMap()
+    } catch (e) {
+      note = `could not write ${key}: ${e.message}`
+    }
+    fixing = null
+  }
+
+  const step = (by) => { panel = PANELS[(PANELS.indexOf(panel) + by + PANELS.length) % PANELS.length] }
+  const nextApp = () => choose(apps[(apps.indexOf(app) + 1) % apps.length])
+
+  // Each takes what it reads as an argument: a template call to a local
+  // function does not subscribe to what it reads.
+  const appName = (dir) => dir === '.' ? 'this app' : dir
+  const badgeOf = (model, id) => {
+    if (!model) return ''
+    if (id === 'issues') return String(model.issues.filter(i => i.severity === 'error').length || '')
+    if (id === 'env') return String(model.env?.missingRequired || '')
+    return ''
+  }
+
+  $: mine = surfaces.filter(r => r.dir === app)
+  $: up   = mine.filter(r => state[r.id]?.state === 'up')
+  $: live = !mine.length ? '' : up.length ? `${up.map(r => r.name).join(' · ')} up` : 'nothing running'
+  $: miss = model?.env?.missingRequired ?? 0
+
+  $: keyed?.([
+    { keys: 'r', label: 'read again', run: readAll },
+    { keys: 'n', label: 'next list', run: () => step(1) },
+    { keys: 'p', label: 'previous list', run: () => step(-1) },
+    ...(apps.length > 1 ? [{ keys: 'a', label: 'next app', run: nextApp }] : []),
+  ])
+
+  var timer = null
+  $.onMount(async () => {
+    await readAll()
+    timer = setInterval(poll, POLL_MS)
+  })
+  $.onDestroy(() => clearInterval(timer))
+</script>
+
+<header class="bar">
+  <strong>The map of {appName(app)}</strong>
+  <span class="cluster gap-2xs">
+    {#if live}<Badge tone={up.length ? 'success' : ''} size="xs">{live}</Badge>{/if}
+    {#if model}<Badge tone={miss ? 'danger' : 'success'} size="xs">{miss ? `env: ${miss} missing` : 'env: ok'}</Badge>{/if}
+    {#if reading}<span class="text-xs text-muted">reading…</span>{/if}
+  </span>
+</header>
+
+{#if apps.length > 1}
+  <div class="cluster gap-2xs" role="group" aria-label="apps">
+    {#each apps as dir (dir)}
+      <button class={`btn ${dir === app ? 'outlined' : 'ghost'} text-xs`} aria-pressed={dir === app} data-app={dir} onclick={() => choose(dir)}>{appName(dir)}</button>
+    {/each}
+  </div>
+{/if}
+
+{#if failed}
+  <p class="text-sm text-danger" data-failed>{failed}</p>
+{/if}
+{#if note}
+  <p class="text-sm" role="status">{note}</p>
+{/if}
+
+{#if model}
+  <MapChain {model} />
+
+  <Tabs bind:activeId={panel}>
+    <TabList label="lists" variant="pills">
+      {#each PANELS as id (id)}
+        <Tab {id}>{LABEL[id] ?? id}{#if badgeOf(model, id)} <Badge tone="danger" size="xs">{badgeOf(model, id)}</Badge>{/if}</Tab>
+      {/each}
+    </TabList>
+    {#each PANELS as id (id)}
+      <TabPanel {id} unmount>
+        {#if id === 'machines'}
+          <MapMachines {model} />
+        {:else if id === 'warden'}
+          <MapWarden {model} />
+        {:else}
+          <MapPanel {model} panel={id} {shown} {fix} {fixing} />
+        {/if}
+      </TabPanel>
+    {/each}
+  </Tabs>
+{/if}

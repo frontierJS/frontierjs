@@ -326,8 +326,70 @@ into the step as `failed`. Not pressed by any drive: every step runs a real
 command. Seen: a kit `Select` or `Input` inside a `cluster` takes the whole
 row in the browser, so the pickers stack, and the terminal does not show that
 (`:decide`'s pickers do the same).
-- [ ] 2.3 The key model across panes, plus the always-visible key legend.
-- [ ] 2.4 The viewer.
+- [x] 2.3 The key model across panes, plus the always-visible key legend.
+
+**2.3, how it is built** (2026-10-21). One `keys()` on `Console`'s root, as
+0.3 priced it: the active pane's table, then `<Esc>` clearing a filter while
+one is in force, then the console's own, `1`–`4` for the panes (read off one
+`PANES` list, as the `:` names are), `:` and `/`. A pane hands its table up
+through a `keyed` prop as `{ keys, label, run }` rows, Haven's `HomeRow`
+shape, and the label IS the action, so `bindings()` over the same tables is
+the legend with nothing written twice; each pane binds `r` for its own
+read-again, and `:check` binds `f`/`F` to run CI fast or full, or `s` to stop
+the run going, as its bar's buttons do. `/` filters as you type: the console
+hands every pane one predicate, `shown(...fields)`, and a narrowed list says
+`n of m`; `:` takes a unique prefix (`:ru`), k9s's way, and names the panes
+for one it cannot place. Each field's `<CR>` and `<Esc>` are a keymap on the
+input itself. **The root keeps focus**: the selected tab takes it on mount,
+after a pane switch and when a field closes, and a key that arrives with focus
+outside the console (a pressed button that unmounted) only brings it back.
+To reach the tab on the terminal, the kit's `Tab` now registers its button
+with `Tabs` by reference, `Tabs` exports `focus()`, and `TabList`'s arrow
+keys use the same lookup instead of `querySelectorAll`, which a terminal node
+does not have (`FJS-2391`'s rule). **The legend** is `Legend.mesa`, plain
+text: in the terminal `runTerminalConsole` mounts it in mesa's `footerOf`
+strip, as sierra's mode line is, and in the browser it sits at the page's foot
+(sticky); it reads a signal either way, since the footer is a second root that
+hears no prop. It is text and not buttons because focus inside that second
+root would be outside the keymap. The drive now presses the keys in both
+frames: the legend compared on every pane, `/drive` narrowing both to the
+same rows and Esc restoring them, `2` `3` `4` reaching the panes, and `:ru`
+coming back: green, and red with the Esc keymap left out. Found on the way: a
+terminal can hand `:ru` over in one read, so the `ru` landed on the tab before
+the flush that mounted the field; `:` now flushes and focuses in its own turn
+(`flushSync`). Still seen: the header title and its count touch
+(`release16 steps`), and the kit pickers stack in the browser.
+- [x] 2.4 The viewer.
+
+**2.4, how it is built** (2026-10-22). The viewer is the console's fifth
+pane, `:map` (`console/ProjectMap.mesa`), and `project:map --as=serve` is
+gone with its server, its port (5501) and `web/viewer/index.html`: `FJS-D1389`
+put one command on one console, and a second server drawing the same screen is
+the second name it refused (`project:map` keeps the report and `--json`,
+as `app:atlas` lost its `--as` under `FJS-D401`). The map is still
+`buildProjectMap`: `server.js` spawns `project:map --json` in the app's root
+for `/api/map?app=<dir>` (`core/map-view.js`, about a second with the atlas
+boot), so no second reader exists. A workspace holds several apps, so the pane
+has a picker; an app is a directory with `db/schema.lite`, out of the root
+and the surfaces' dirs, looked up by name and never joined onto a path. The
+pure half of the old page (the model, the findings, the machines and their
+layout, `wardenAt`) is `console/map-model.js`, and its two tests import it
+rather than evaluating a page's script block; the reference data is
+`map-reference.js`. The one write, a secret into the app's `.env`, is
+`core/env-health.js` now, shared with `project:map`'s report and refused
+from a foreign origin, which the old `/fix/secret` was not. The chain draws
+as lanes of buttons joined by text arrows, so the terminal reads the same
+run; a machine's board is an SVG, which the terminal paints as its
+`aria-label`, so its moves are also buttons and either opens the detail.
+Keys: `r` reads again, `n`/`p` step through the 18 lists, `a` the next app,
+and `/` filters every list with `n of m`. The theme picker did not come
+along. The tutor's lesson 3 reads `:map` off the `fli gui` it already
+started. The drive presses `5` in both frames and compares the issue count
+and the legend: green. Checked by hand: the chain, machines and Warden in
+Chrome and in the terminal. Found on the way: `.lane` and `.rail` are
+`@frontierjs/css` classes, and a space opening an `{#if}` or closing an
+`{#each}` body is trimmed, so a terminal line glued badge to text until
+the separator became an expression.
 
 ### Phase 3 — The app half
 

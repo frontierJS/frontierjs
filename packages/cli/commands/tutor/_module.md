@@ -281,8 +281,8 @@ const startServer = async ($, { name, script, argv, cwd, env = {}, port, path = 
   const logPath = join(logDir, `${name}.log`)
   const out     = openSync(logPath, 'w')
 
-  // `argv` is the other kind of server a lesson starts. `fli gui`, `fli db:studio`
-  // and `fli project:map --as=serve` are TOOLS: run against the app rather than from
+  // `argv` is the other kind of server a lesson starts. `fli gui` and `fli
+  // db:studio` are TOOLS: run against the app rather than from
   // inside it, so there is no package script to name — and never a bare `fli`,
   // which is whatever global install the machine happens to carry.
   const [bin, ...rest] = argv ?? ['bun', 'run', script]

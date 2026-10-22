@@ -160,26 +160,20 @@ function surfaces(root) {
 // name→command table would be the one list in this file that could go stale,
 // and the derivation has a second virtue: a tool the schema reserves that no
 // command answers for comes back with `start: null` rather than a plausible
-// guess. A command that serves only under a flag declares `tool:` (name and
-// flags) in its frontmatter instead, as `pages:` does for a page. Junction's devtools is honestly one of those — an APP configures it,
+// guess. Junction's devtools is honestly one of those — an APP configures it,
 // `fli` cannot start it — and `FJS-557` is the other, where studio's command
 // defaults to a port the schema has never heard of.
 
 function tools(root, { commands } = {}) {
   const list   = commands ?? commandRows(root)
   const byPort = new Map()
-  const byName = new Map()
   for (const cmd of list) {
     if (typeof cmd.port === 'number' && !byPort.has(cmd.port)) byPort.set(cmd.port, cmd)
-    if (cmd.tool && !byName.has(cmd.tool.name)) byName.set(cmd.tool.name, cmd)
   }
 
   return Object.entries(GLOBAL).map(([name, reserved]) => {
-    // A command that serves only under a flag declares the tool it starts and
-    // the flags; the port default alone would start the wrong thing.
-    const cmd   = byName.get(name) ?? byPort.get(reserved)
-    const flags = String(byName.get(name)?.tool.flags ?? '').split(/\s+/).filter(Boolean)
-    const argv  = cmd ? ['fli', cmd.alias ?? cmd.name, ...flags] : null
+    const cmd  = byPort.get(reserved)
+    const argv = cmd ? ['fli', cmd.alias ?? cmd.name] : null
     // In a project the GUI is that project's, on its own tooling port.
     const port = name === 'gui' && root ? guiPort(root) : reserved
     return {
@@ -243,7 +237,6 @@ export function readCommands(dir, root, trail, depth = 3) {
       // where the command takes no port, which is almost all of them.
       port:        portDefault(head),
       pages:       pagesOf(text),
-      tool:        toolOf(text),
     })
   }
 
@@ -263,19 +256,6 @@ function pagesOf(text) {
     const list = parseFrontmatter(text).frontmatter?.pages
     return Array.isArray(list) ? list.filter(p => typeof p?.file === 'string') : []
   } catch { return [] }
-}
-
-/**
- * `tool:` — the reserved tool (a `GLOBAL` name in ports.js) this command
- * starts and the flags that start it. Read from the whole frontmatter for the
- * reason `pages:` is, and only when the key is there.
- */
-function toolOf(text) {
-  if (!/^tool:\s*$/m.test(text)) return null
-  try {
-    const t = parseFrontmatter(text).frontmatter?.tool
-    return typeof t?.name === 'string' ? t : null
-  } catch { return null }
 }
 
 /** `port:` under `flags:`, and its `defaultValue`. Null where there is none. */

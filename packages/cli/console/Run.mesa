@@ -16,7 +16,9 @@
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Table  from '@frontierjs/ui/components/display/Table.mesa'
 
-  export let api = ''
+  export let api   = ''
+  export let shown = () => true   // (...fields) => does the console's filter keep this row
+  export let keyed = null         // (rows) => the keys this pane binds, for the console
 
   const POLL_MS = 3000
 
@@ -50,7 +52,7 @@
   let pending = {}
 
   $: groups = kinds
-    .map(kind => ({ kind, rows: rows.filter(r => r.kind === kind) }))
+    .map(kind => ({ kind, rows: rows.filter(r => r.kind === kind && shown(r.name, r.id, r.start, r.dir)) }))
     .filter(g => g.rows.length)
 
   const read = async (path, init) => {
@@ -90,16 +92,23 @@
     pending = rest
   }
 
-  var timer = null
-  $.onMount(async () => {
+  async function readRows() {
     try {
       const body = await read('/api/runnables')
       rows  = body.rows
       kinds = body.kinds ?? Object.keys(KIND_TITLE)
+      failed = null
     } catch (e) {
       failed = e.message
     }
     await poll()
+  }
+
+  keyed?.([{ keys: 'r', label: 'read again', run: readRows }])
+
+  var timer = null
+  $.onMount(async () => {
+    await readRows()
     timer = setInterval(poll, POLL_MS)
   })
   $.onDestroy(() => clearInterval(timer))

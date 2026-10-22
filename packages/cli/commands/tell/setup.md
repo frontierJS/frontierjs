@@ -34,6 +34,9 @@ the `OWNER_KEY` var and the nick as `OWNER_NICK`, and the Durable Object seeds
 them. A public key is not a secret, so both are plain vars in
 `~/.fli/tell/wrangler.jsonc`, where wrangler's own state lands beside them.
 
+Last it publishes the owner's sealing key, signed, so letters to the owner
+are sealed (`FJS-D1400`).
+
 Run again, it redeploys the same key and keeps every member and letter — that
 is how a newer `fli`'s Worker reaches the post. A new key under an old nick is
 refused by the post, since the nick is already the old key's.
@@ -123,6 +126,9 @@ if (!me) {
   return
 }
 if (me.nick !== nick) log.warn(`This key is ${me.nick} at the post, not ${nick} — a nick is set by the first deploy.`)
+if (me.sealKey !== keys.sealing.publicKey) writeTellConfig({ sealKey: null })
+const published = await publishSealKey(api, keys).catch(e => e.message)
+if (published) log.warn(`The post did not take this machine's sealing key (${published}) — the next \`fli tell\` verb tries again.`)
 log.success(`The post is up at ${api}, and ${me.nick} is ${members.length === 1 ? 'its one member' : `one of ${members.length} members`}.`)
 echo(`  saved as tell.api in ${CONFIG_FILE}`)
 ```

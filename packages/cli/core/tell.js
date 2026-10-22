@@ -22,6 +22,8 @@ export const KEY_FILE     = join(TELL_DIR, 'key.json')
 export const CONFIG_FILE  = join(homedir(), '.fli', 'config.json')
 /** What the last check found — `{ checked, waiting: [{ from, count }] }`. */
 export const WAITING_FILE = join(TELL_DIR, 'waiting.json')
+/** Every correspondent met, `{ [signingKey]: { nick, sealKey, since } }` (IDEAS/pony-express.md 4.1). */
+export const PEERS_FILE   = join(TELL_DIR, 'peers.json')
 /** The header the Worker reads a member's key from (core/tell-worker.js). */
 const KEY_HEADER          = 'x-tell-key'
 /** bash's MAILCHECK default. */
@@ -58,6 +60,55 @@ export const tellFetch = async (api, keys, method, path, body, { signal } = {}) 
     headers: { 'content-type': 'application/json', ...await tellSign(keys, method, path, text) },
   })
   return { status: res.status, json: await res.json().catch(() => null) }
+}
+
+// ─── pins ────────────────────────────────────────────────────────────────────
+
+/** A key as two people compare it: the first 64 bits of its SHA-256, in four groups. */
+export const fingerprint = async (key) => {
+  const { sha256Hex } = await import('@frontierjs/toolbelt/signature')
+  return (await sha256Hex(String(key))).slice(0, 16).match(/.{4}/g).join(' ')
+}
+
+/** The pins whole, or {} before the first. A file that is not JSON is refused, never overwritten: it is the only record of who was met. */
+export const readPeers = () => {
+  if (!existsSync(PEERS_FILE)) return {}
+  try { return JSON.parse(readFileSync(PEERS_FILE, 'utf8')) ?? {} }
+  catch (e) { throw new Error(`${PEERS_FILE} is not JSON (${e.message}) — fix it by hand; fli will not overwrite the pins in it`) }
+}
+
+const writePeers = (peers) => {
+  mkdirSync(TELL_DIR, { recursive: true, mode: 0o700 })
+  const tmp = `${PEERS_FILE}.${process.pid}`
+  writeFileSync(tmp, JSON.stringify(peers, null, 2) + '\n')
+  renameSync(tmp, PEERS_FILE)
+}
+
+/**
+ * A correspondent as the post or a letter names them, graded against the pins.
+ * The first sight of a signing key pins it and answers `{ met }`; a
+ * disagreement answers `{ refused }` naming both fingerprints and writes
+ * nothing. Pinned by key with the nick only shown, so a nick answering with
+ * another key is a mismatch, and so is a pinned key under another nick.
+ * `sealKey` is graded only when the caller saw one — the roster names it, a
+ * letter does not — and a pinned one the post stops naming is a mismatch too,
+ * or withholding it would turn every letter plain.
+ */
+export const pinPeer = async ({ nick, publicKey, sealKey }) => {
+  const peers = readPeers()
+  const pin = peers[publicKey]
+  const fix = `If that is really them, compare fingerprints with them away from the post, then delete the entry from ${PEERS_FILE}.`
+  const holder = Object.keys(peers).find(key => key !== publicKey && peers[key]?.nick === nick)
+  if (holder) return { refused: `${nick} was pinned at ${await fingerprint(holder)}, and this key is ${await fingerprint(publicKey)}. ${fix}` }
+  if (pin && pin.nick !== nick) return { refused: `${await fingerprint(publicKey)} was pinned as ${pin.nick} and now answers as ${nick}. ${fix}` }
+  if (pin && sealKey !== undefined && pin.sealKey && sealKey !== pin.sealKey) {
+    const now = sealKey ? `answers ${await fingerprint(sealKey)}` : 'names none'
+    return { refused: `${nick}'s sealing key was pinned at ${await fingerprint(pin.sealKey)}, and the post ${now}. ${fix}` }
+  }
+  if (pin && (pin.sealKey || !sealKey)) return {}
+  peers[publicKey] = { nick, sealKey: sealKey ?? pin?.sealKey ?? null, since: pin?.since ?? now() }
+  writePeers(peers)
+  return pin ? {} : { met: await fingerprint(publicKey) }
 }
 
 // ─── the notice line ─────────────────────────────────────────────────────────

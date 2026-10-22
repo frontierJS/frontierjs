@@ -58,7 +58,7 @@ Commands are markdown files under `commands/`, one namespace per directory —
 | `fli deploy` · `deploy:*` | Setup a server, build, swap, health-check, roll back. `deploy:local` is the same pipeline against Docker on this machine |
 | `fli ws:*` | The workspace — version, status, add, install, link, npm, exec, run, changed, clean, graph, exports, invariants, atlas, init; `fli list` names the rest |
 | `fli ps` | What holds each port the scheme can name, and which dev slot each app has |
-| `fli project:map` | What this application IS — one reading, three presentations (`--as=report\|serve\|json`) |
+| `fli project:map` | What this application IS — the terminal report, or `--json`; `fli gui`'s `:map` draws the same model |
 
 `fli list` prints all of them, `fli <command> --help` prints one, and
 `fli list --json` is the machine-readable form.
@@ -556,7 +556,7 @@ reach the servers as `FRONTIER_PORT_FE`, `FRONTIER_PORT_BE`, `FRONTIER_PORT_SITE
 `FRONTIER_PORT_WIDGET` and `FRONTIER_PORT_DESKTOP`, which the scaffolded configs read; an
 app whose configs ignore them stays on slot 0. `fli ps` lists the slots. Global
 fli tooling has no project and so no env, and takes a 5 where the env digit
-goes — **5500–5509**, of which **5500 is the GUI, 5501 `project:map --as=serve`, 5502 db studio and 5503 junction's devtools console**. No project port in
+goes — **5500–5509**, of which **5500 is the GUI, 5502 db studio and 5503 junction's devtools console**. No project port in
 any env can land there.
 
 ---

@@ -34,7 +34,7 @@ PROD_SERVER, PROD_SERVER_PATH
 
 ### Port schema
 
-`[ENV][CATEGORY][PROJECT][SERVICE]` 4-digit structure. ENV: 7=test, 8=dev, 9=prod — a project's. Global tooling has no project and so no env, and takes a 5 in that place: `5500`–`5509` whole: `5500` (gui), `5501` (project map, served), `5502` (studio), `5503` (junction devtools). An app `PROJECTS` does not name is project 0, and `fli dev` gives it a service digit of its own — remembered per app root in `~/.fli/sessions.lock`, under an O_EXCL guard.
+`[ENV][CATEGORY][PROJECT][SERVICE]` 4-digit structure. ENV: 7=test, 8=dev, 9=prod — a project's. Global tooling has no project and so no env, and takes a 5 in that place: `5500`–`5509` whole: `5500` (gui), `5502` (studio), `5503` (junction devtools). An app `PROJECTS` does not name is project 0, and `fli dev` gives it a service digit of its own — remembered per app root in `~/.fli/sessions.lock`, under an O_EXCL guard.
 
 ## Dev setup
 
