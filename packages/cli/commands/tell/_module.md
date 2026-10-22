@@ -94,8 +94,6 @@ const syncChain = async (member) => {
   const links = answer.json?.links ?? []
   const chain = await readChain(links)
   if (chain.refused) return { refused: `the post's chain for ${member.nick} does not verify (${chain.refused})` }
-  const out = chain.revoked.find(r => r.machine === member.keys.publicKey)
-  if (out) return { refused: `this machine was revoked from ${member.nick} at link ${out.seq} and speaks for nobody now` }
   if (!chain.machines.includes(member.keys.publicKey)) return { refused: `the post's chain for ${member.nick} does not hold this machine` }
   const mine = await readChain(await ownChain(member.keys))
   if (mine.refused) return { refused: `${CHAIN_FILE} does not verify (${mine.refused}) — put back the copy this machine wrote` }
@@ -120,20 +118,20 @@ const syncChain = async (member) => {
  * `tell.root` says the post has it — the owner after setup, and a member who
  * joined before chains on their first verb after it, whose sealing key
  * reaches the post this way — and this machine's box claim, unless `tell.box`
- * says the same. Answers null, or the reason the post gave; a failure is
- * tried again on the next verb.
+ * says the same. Answers null, or which of the two the post refused and why;
+ * a failure is tried again on the next verb.
  */
 const publishOwn = async (api, keys) => {
   const saved = readConfig().tell ?? {}
   const root = await ownRoot(keys)
   if (saved.root !== root) {
     const answer = await tellFetch(api, keys, 'POST', '/chain', { links: await ownChain(keys) })
-    if (answer.status !== 200) return `${answer.status}: ${answer.json?.message ?? 'no reason given'}`
+    if (answer.status !== 200) return `this member's chain (${answer.status}: ${answer.json?.message ?? 'no reason given'})`
     writeTellConfig({ root })
   }
   if (saved.box !== keys.box.publicKey) {
     const answer = await tellFetch(api, keys, 'POST', '/box', await boxClaim(keys))
-    if (answer.status !== 201) return `${answer.status}: ${answer.json?.message ?? 'no reason given'}`
+    if (answer.status !== 201) return `this machine's box key (${answer.status}: ${answer.json?.message ?? 'no reason given'})`
     writeTellConfig({ box: keys.box.publicKey })
   }
   return null

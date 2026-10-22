@@ -34,6 +34,7 @@
 //   POST /api/map/secret      → one secret into its `.env` — `core/env-health.js`
 //   GET  /api/live/stream     → devtools' socket, a frame a line — `core/live-view.js`
 //   GET  /api/live/health · /api/live/metrics · /api/live/jobs · /api/live/call
+//   GET  /api/live/data · /api/live/data/<Model>?as=&tenant= → rows as somebody (`:data`)
 //   POST /api/live/jobs/<id>/retry · …/cancel · /api/live/jobs/run/<name>
 //   POST /api/live/call       → one method as somebody, inside the app (`:call`)
 //
@@ -164,7 +165,7 @@ function route(req, res) {
     return handleMapSecret(req, res)
   }
 
-  // GET /api/live/… · POST /api/live/… — `:live` and `:call`, devtools carried
+  // GET /api/live/… · POST /api/live/… — `:live`, `:call` and `:data`, devtools carried
   if (req.method === 'GET' && path === '/api/live/stream') {
     return import('./live-view.js').then(m => m.streamLive(res))
   }

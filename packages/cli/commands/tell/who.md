@@ -21,11 +21,14 @@ and three-syllable words so a skipped one is heard.
 
 The root is the hash of the link that signs the member's first machine and
 their sealing key together, and every later link is signed by one of their
-machines (4.3, 4.4), so the words hold across every machine the member links,
+machines (4.3, 4.4), so the words hold across every machine the member links
+or revokes,
 and the post can swap neither key without a chain that fails to verify. The
 chain is graded against the pins exactly as `tell` grades it: met for the
 first time it is pinned, and another root, or a chain shorter than the pinned
 one, is refused. When the post does not answer, the pin is read instead.
+With no nick it also lists this member's machines by fingerprint, the names
+`fli tell:revoke` takes.
 
 ```js
 const nick = String(arg.nick ?? '').trim().toLowerCase()
@@ -46,6 +49,11 @@ if (!nick || nick === member.nick) {
   const chain = synced?.chain ?? await readChain(await ownChain(member.keys))
   const root = await ownRoot(member.keys)
   await show(`${member.nick ?? 'you'} (this member)`, root, chain.machines?.length ?? 1)
+  // The names `fli tell:revoke` takes.
+  for (const machine of chain.machines ?? [member.keys.publicKey]) {
+    echo(chalk`    {dim machine} ${await fingerprint(machine)}${machine === member.keys.publicKey ? chalk` {dim (this machine)}` : ''}`)
+  }
+  echo('')
   if (readConfig().tell?.root !== root) {
     log.warn('The post may not hold this chain yet, so others read other words until any `fli tell` verb publishes it.')
   }

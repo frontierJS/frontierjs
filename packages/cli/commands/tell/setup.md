@@ -127,8 +127,8 @@ if (!me) {
 }
 if (me.nick !== nick) log.warn(`This key is ${me.nick} at the post, not ${nick} — a nick is set by the first deploy.`)
 if (me.root !== await ownRoot(keys)) writeTellConfig({ root: null })
-const published = await publishChain(api, keys).catch(e => e.message)
-if (published) log.warn(`The post did not take this member's chain (${published}) — the next \`fli tell\` verb tries again.`)
+const published = await publishOwn(api, keys).catch(e => e.message)
+if (published) log.warn(`The post did not take ${published} — the next \`fli tell\` verb tries again.`)
 log.success(`The post is up at ${api}, and ${me.nick} is ${members.length === 1 ? 'its one member' : `one of ${members.length} members`}.`)
 echo(`  saved as tell.api in ${CONFIG_FILE}`)
 ```

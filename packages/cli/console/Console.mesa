@@ -41,12 +41,13 @@
   import ProjectMap from './ProjectMap.mesa'
   import Live     from './Live.mesa'
   import Call     from './Call.mesa'
+  import Data     from './Data.mesa'
 
   export let api      = ''
   export let pane     = 'run'
   export let legendAt = null   // (read) => void, read: () => { rows, status }
 
-  const PANES = ['run', 'check', 'decide', 'ship', 'map', 'live', 'call']
+  const PANES = ['run', 'check', 'decide', 'ship', 'map', 'live', 'call', 'data']
 
   // No `<Mod-…>` is bound anywhere here, so `mac` changes no row.
   const CONSOLE = keymap({
@@ -72,9 +73,20 @@
   $: rows    = own[pane] ?? []
   $: paneMap = rows.length ? keymap(Object.fromEntries(rows.map(a => [a.keys, a.label]))) : null
   $: maps    = field ? [FIELD[field]] : [paneMap, filter ? UNFILTER : null, CONSOLE].filter(Boolean)
-  $: legend  = bindings({ active: maps, mac: false, text: false })
+  $: legend  = folded(bindings({ active: maps, mac: false, text: false }))
   $: status  = note || (filter ? `filtered by /${filter}` : '')
   const [legendNow, setLegend] = createSignal({ rows: [], status: '' })
+
+  // The digits are one row: a row per pane wrapped the legend past a 160-cell
+  // terminal at the eighth, and the strip already says which pane a digit is
+  // by its place in it.
+  function folded(rows) {
+    const digits = rows.filter(r => /^\d$/.test(r.keys))
+    if (digits.length < 2) return rows
+    const at = rows.indexOf(digits[0])
+    const rest = rows.filter(r => !digits.includes(r))
+    return [...rest.slice(0, at), { keys: `${digits[0].keys}–${digits.at(-1).keys}`, action: 'the panes' }, ...rest.slice(at)]
+  }
   $: setLegend({ rows: legend, status })
 
   // What a pane asks of a row it may show: does any of these fields hold
@@ -175,6 +187,7 @@
       <Tab id="map">:map</Tab>
       <Tab id="live">:live</Tab>
       <Tab id="call">:call</Tab>
+      <Tab id="data">:data</Tab>
     </TabList>
     <TabPanel id="run" unmount><Run {api} {shown} keyed={keyedFor('run')} /></TabPanel>
     <TabPanel id="check" unmount><Check {api} {shown} keyed={keyedFor('check')} /></TabPanel>
@@ -183,6 +196,7 @@
     <TabPanel id="map" unmount><ProjectMap {api} {shown} keyed={keyedFor('map')} /></TabPanel>
     <TabPanel id="live" unmount><Live {api} {shown} keyed={keyedFor('live')} /></TabPanel>
     <TabPanel id="call" unmount><Call {api} {shown} keyed={keyedFor('call')} /></TabPanel>
+    <TabPanel id="data" unmount><Data {api} {shown} keyed={keyedFor('data')} /></TabPanel>
   </Tabs>
 
   {#if !legendAt}

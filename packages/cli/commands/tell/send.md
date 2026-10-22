@@ -95,8 +95,12 @@ const refused = (answer) => {
 
 let answer, sealed = false
 try {
-  const published = await publishChain(member.api, member.keys)
-  if (published) log.warn(`The post did not take this member's chain (${published}) — letters to you go plain until it does.`)
+  const published = await publishOwn(member.api, member.keys)
+  if (published) log.warn(`The post did not take ${published} — the next \`fli tell\` verb tries again.`)
+  // The letter carries this member's head, which is read fresh: another machine may have linked or revoked one.
+  const own = await syncChain(member)
+  if (own.refused) { log.error(`Not sent: ${own.refused}.`); process.exitCode = 1; return }
+  if (own.unsealed) log.warn(`A revoke rotated this member's sealing key and it did not reach this machine: ${own.unsealed}. Letters to you are sealed to it.`)
 
   const met = await meetMember(member, to)
   if (met.missing) { log.error(`No member is called '${to}'.`); process.exitCode = 1; return }
@@ -106,7 +110,7 @@ try {
 
   if (met.chain) {
     sealed = true
-    answer = await tellFetch(member.api, member.keys, 'POST', '/send', { to, sealed: await sealLetter(member.keys, met.chain, payload) })
+    answer = await tellFetch(member.api, member.keys, 'POST', '/send', { to, sealed: await sealLetter(member.keys, own.chain, met.chain, payload) })
   } else if (flag.env) {
     log.error(`${to} has published no chain yet, so no sealing key, and env values go only sealed. Any \`fli tell\` verb on a newer fli publishes theirs.`)
     process.exitCode = 1

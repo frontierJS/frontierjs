@@ -1,0 +1,199 @@
+<script>
+  // Data.mesa — a model's rows as somebody, in the running app: the console's
+  // `:data` pane (`IDEAS/one-console.md` 3.3).
+  //
+  // The rows come from devtools' `GET /api/data/<Model>`, read through the
+  // app's own client in the principal's scope, so the gate refuses, a row
+  // policy narrows and a protected field redacts as they do for a request.
+  // The models are the app's schema, read off the same client, so none is
+  // written here. Nobody named is nobody, STRANGER(0), never the app itself:
+  // a pane that read as the app would show every row to every guess.
+  //
+  // Reads only. Editing a row is Studio's until Phase 4 moves it.
+
+  import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
+  import Table  from '@frontierjs/ui/components/display/Table.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
+
+  export let api   = ''
+  export let shown = () => true   // (...fields) => does the console's filter keep this row
+  export let keyed = null         // (rows) => the keys this pane binds, for the console
+
+  const PAGE = 50
+  const CELL = 60
+
+  let up      = null   // null until devtools first answers
+  let down    = ''
+  let models  = []
+  let model   = ''
+  let as      = ''
+  let tenant  = ''
+  let offset  = 0
+  let reading = false
+  let answer  = null   // the last read of `model`: { ok, standing, rows, total } or a refusal
+
+  const query = (more) => {
+    const q = new URLSearchParams(more)
+    if (tenant.trim()) q.set('tenant', tenant.trim())
+    return q.size ? `?${q}` : ''
+  }
+
+  async function readModels() {
+    try {
+      const res  = await fetch(`${api}/api/live/data${query()}`)
+      const body = await res.json()
+      if (body.down) { up = false; down = body.error; return }
+      up = true
+      down = ''
+      models = body.models ?? []
+      if (!res.ok) down = body.message ?? `devtools answered ${res.status}`
+    } catch (e) {
+      up = false
+      down = `the console's server did not answer: ${e.message}`
+    }
+  }
+
+  async function readRows() {
+    if (!model || reading) return
+    reading = true
+    const sent = { model, as: as.trim(), tenant: tenant.trim(), offset }
+    let out
+    try {
+      const q   = { limit: String(PAGE), offset: String(offset), ...(sent.as ? { as: sent.as } : {}) }
+      const res = await fetch(`${api}/api/live/data/${encodeURIComponent(model)}${query(q)}`)
+      out = await res.json()
+      if (out.down) { up = false; down = out.error }
+    } catch (e) {
+      out = { ok: false, message: `the console's server did not answer: ${e.message}` }
+    }
+    reading = false
+    answer  = { ...sent, ...out }
+  }
+
+  async function read() {
+    await readModels()
+    if (up) await readRows()
+  }
+
+  const pick = (m) => { model = m; offset = 0; readRows() }
+  const page = (by) => {
+    if (!answer?.ok) return
+    const next = offset + by * PAGE
+    if (next < 0 || next >= answer.total) return
+    offset = next
+    readRows()
+  }
+
+  // A cell is one line: a long text or a nested value would push every column
+  // after it off a terminal row.
+  const cell = (v) => {
+    const s = v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v)
+    return s.length > CELL ? `${s.slice(0, CELL - 1)}…` : s
+  }
+  // Every key any row on the page carries, in the order first seen: a column
+  // a policy redacted on one row and not another still has a header.
+  const columnsOf = (rows) => [...new Set(rows.flatMap(r => Object.keys(r)))].map(name => ({ name, label: name }))
+  const counted = (seen, total) => seen === total ? `${total}` : `${seen} of ${total}`
+
+  $: seenModels = models.filter(m => shown(m))
+  $: rows       = answer?.ok ? answer.rows : []
+  $: seenRows   = rows.filter(r => shown(...Object.values(r).map(cell)))
+  $: columns    = columnsOf(rows)
+  $: last       = answer?.ok ? Math.min(answer.offset + rows.length, answer.total) : 0
+
+  $: keyed?.([
+    { keys: 'r', label: 'read again', run: read },
+    ...(answer?.ok && answer.offset + PAGE < answer.total ? [{ keys: 'n', label: 'next page', run: () => page(1) }] : []),
+    ...(answer?.ok && answer.offset > 0 ? [{ keys: 'p', label: 'previous page', run: () => page(-1) }] : []),
+  ])
+
+  $.onMount(readModels)
+</script>
+
+<header class="bar">
+  <strong>Rows, as somebody</strong>
+  <span class="cluster gap-2xs">
+    {#if up === null}
+      <span class="text-xs text-muted">reading…</span>
+    {:else if up}
+      <span class="text-xs text-muted" data-models={models.length}>{counted(seenModels.length, models.length)} models</span>
+    {:else}
+      <Badge size="xs" data-live="down">not running</Badge>
+    {/if}
+  </span>
+</header>
+
+{#if up === false}
+  <p class="text-sm text-muted" data-down>{down}. The rows are read inside the app, through devtools; r reads again once the app is up.</p>
+{/if}
+
+{#if up}
+  <section class="surface stack" data-part="who">
+    <div class="bar dense">
+      <strong class="text-sm">{model || 'pick a model below'}</strong>
+      <span class="text-xs text-muted">{as.trim() ? `as ${as.trim()}` : 'as nobody'}</span>
+    </div>
+    <Input label="" aria-label="as" value={as} placeholder="as: an email, username, name or id, or Model:value; empty is nobody" oninput={(e) => as = e.target.value} />
+    <Input label="" aria-label="tenant" value={tenant} placeholder="tenant, under tenancy strategy database" oninput={(e) => tenant = e.target.value} />
+    <div class="cluster gap-sm">
+      <Button size="xs" disabled={!model} loading={reading} data-data-go onclick={() => { offset = 0; readRows() }}>read</Button>
+    </div>
+  </section>
+
+  <section class="surface stack" data-part="models">
+    <div class="bar dense">
+      <strong class="text-sm">models</strong>
+      <span class="text-xs text-muted">{counted(seenModels.length, models.length)}</span>
+    </div>
+    {#if down}<span class="text-xs text-danger">{down}</span>{/if}
+    <div class="cluster gap-2xs">
+      {#each seenModels as m (m)}
+        <Button
+          treatment={model === m ? 'outlined' : 'ghost'}
+          size="xs"
+          aria-pressed={model === m}
+          data-model={m}
+          onclick={() => pick(m)}
+        >{m}</Button>
+      {/each}
+    </div>
+    {#if !models.length && !down}
+      <div class="text-xs text-muted">this app's schema names no model</div>
+    {/if}
+  </section>
+
+  {#if answer}
+    <section class="surface stack" data-part="rows" data-answer={answer.ok ? 'ok' : 'refused'}>
+      <div class="bar dense">
+        <span class="cluster gap-sm">
+          <Badge tone={answer.ok ? 'success' : 'danger'} size="xs">{answer.ok ? 'ok' : answer.status ?? 'refused'}</Badge>
+          <code>{answer.model}</code>
+        </span>
+        {#if answer.ok}
+          <span class="text-xs text-muted" data-rows={seenRows.length} data-total={answer.total}>{answer.total ? `${answer.offset + 1}–${last} of ${answer.total}` : 'no rows'}{seenRows.length === rows.length ? '' : ` · ${seenRows.length} shown`}</span>
+        {/if}
+      </div>
+      {#if answer.standing}<span class="text-xs text-muted" data-standing>standing: {answer.standing}</span>{/if}
+      {#if !answer.ok}
+        <span class="text-xs text-danger" data-refused>{answer.name ? `${answer.name}: ` : ''}{answer.message}</span>
+      {:else if rows.length}
+        <Table {columns} rows={seenRows} compact>
+          {#snippet row(r)}
+            <tr>
+              {#each columns as c (c.name)}
+                <td>{cell(r[c.name])}</td>
+              {/each}
+            </tr>
+          {/snippet}
+        </Table>
+        <div class="cluster gap-sm">
+          {#if answer.offset > 0}<Button treatment="ghost" size="xs" onclick={() => page(-1)}>previous page</Button>{/if}
+          {#if answer.offset + PAGE < answer.total}<Button treatment="ghost" size="xs" onclick={() => page(1)}>next page</Button>{/if}
+        </div>
+      {:else}
+        <div class="text-xs text-muted">no rows this principal may read here</div>
+      {/if}
+    </section>
+  {/if}
+{/if}

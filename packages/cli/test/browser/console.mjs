@@ -9,7 +9,9 @@
  * what acts on the queue — the payload, retry run through to done, run now.
  * `:call` (3.2) calls the same app: both frames count its methods, then Chrome
  * creates a note as a member, sees the call and its announcement on `:live`,
- * and sees the same create as nobody refused.
+ * and sees the same create as nobody refused. `:data` (3.3) reads the same
+ * app: both frames count its models, then Chrome reads a gated model as
+ * nobody (refused) and as a member (the row).
  *
  * `Console.mesa` is one file compiled for two targets, and the claim the console
  * rests on is that a person at either sees the same thing. Nothing else asks
@@ -93,11 +95,14 @@ const flaky = defineJob({ name: 'flaky-job', maxAttempts: 1, timeout: 5000, hand
   return 1
 } })
 const sweep = defineJob({ name: 'nightly-sweep', cron: '0 3 * * *', handler: async () => 1 })
-// A person to call as, and a model only a person may write, for the call pane.
+// A person to call as, a model only a person may write, for the call pane,
+// and one a guest may not read at all, for the data pane.
 const db = await createClient({ db: ':memory:', schema: \`
   model User { id Int @id @default(autoincrement())  email String  @@auth }
-  model Note { id Int @id @default(autoincrement())  body String  @@allow(all, auth() != null) }\` })
+  model Note { id Int @id @default(autoincrement())  body String  @@allow(all, auth() != null) }
+  model Memo { id Int @id @default(autoincrement())  body String  @@gate(3) }\` })
 await db.asSystem().user.create({ data: { email: 'ann@x.test' } })
+await db.asSystem().memo.create({ data: { body: 'for members' } })
 const app = createApp({
   db,
   auth:   createStubAuth({ users: [{ id: '1', role: 'member' }] }),
@@ -234,6 +239,7 @@ const PANES = [
   ['map',    '5', ['issues']],
   ['live',   '6', ['calls', 'jobs']],
   ['call',   '7', ['methods']],
+  ['data',   '8', ['models']],
 ]
 
 // The legend is the footer's last line in the terminal and `[data-legend]` in
@@ -301,7 +307,7 @@ try {
 
   // ─── the keys: the legend, then a filter typed into both ───────────
 
-  await legendsAgree(':run', ['1 :run', ': go to a pane', '/ filter', 'r read again'])
+  await legendsAgree(':run', ['1–8 the panes', ': go to a pane', '/ filter', 'r read again'])
 
   const TERM = 'drive'
   for (const k of ['/', ...TERM, 'Enter']) await press(k)
@@ -331,14 +337,15 @@ try {
       const term = squash(line()?.slice(part.length) ?? '')
       check(firstNumber(term) !== null && firstNumber(term) === firstNumber(web), `:${pane} — both frames count the same ${part} (${firstNumber(web)})`, `terminal ${JSON.stringify(term)} ≠ browser ${JSON.stringify(web)}`)
     }
-    await legendsAgree(`:${pane}`, ['1 :run', pane === 'check' ? 'r check again' : 'r read again'])
+    await legendsAgree(`:${pane}`, ['1–8 the panes', pane === 'check' ? 'r check again' : 'r read again'])
   }
 
   // ─── :call, as a member and as nobody (Chrome) ────────────────────
 
+  await press('7')
   const field = (label, value) => browser.evaluate(`const i = document.querySelector('input[aria-label="${label}"]'); i.value = ${JSON.stringify(value)}; i.dispatchEvent(new Event('input', { bubbles: true })); return true`)
   const answer = (kind) => `document.querySelector('[data-answer]')?.dataset.answer === '${kind}' && document.querySelector('[data-answer]')`
-  check(await browser.evaluate(`const b = document.querySelector('[data-method="notes.create"]'); b?.click(); return !!b`), ':call — notes.create is offered, read off the service')
+  check(await until(() => browser.evaluate(`const b = document.querySelector('[data-method="notes.create"]'); b?.click(); return !!b`), 8000), ':call — notes.create is offered, read off the service')
   check(!(await browser.evaluate(`return !!document.querySelector('[data-method="notes._create"]')`)), ':call — no hook-bypass twin is offered')
   await field('as', 'ann@x.test')
   await field('arguments', '{"body":"from :call"}')
@@ -377,6 +384,34 @@ try {
   check(await until(() => browser.evaluate(`return document.querySelectorAll('[data-call]').length > ${before}`), 5000), ':live — a call made now arrives on the stream')
   const page = await fetch(`http://127.0.0.1:${DEVTOOLS}/`).then((r) => r.status === 404 && r.text())
   check(String(page).includes(':live'), 'devtools serves no page of its own, and says where its console is', String(page))
+
+  // ─── :data, as nobody and as a member (Chrome) ────────────────────
+  //
+  // Read inside the app, through its own client: the gate refuses a guest
+  // outright, and the row policy leaves a guest nothing where a member sees
+  // the note `:call` wrote.
+
+  await press('8')
+  // A pick reads at once, and the answer names its model and standing, so
+  // the wait is for THIS read's answer rather than the one before it.
+  const rowsFor = async (model, as) => {
+    await field('as', as)
+    await browser.evaluate(`document.querySelector('[data-model="${model}"]').click(); return true`)
+    const mine = `const s = document.querySelector('[data-part="rows"]'); return s?.querySelector('code')?.textContent === '${model}' && s.querySelector('[data-standing]')?.textContent.includes('${as || 'nobody'}') ? { answer: s.dataset.answer, text: s.textContent, total: s.querySelector('[data-total]')?.dataset.total ?? null } : null`
+    await until(() => browser.evaluate(mine), 8000)
+    return browser.evaluate(mine)
+  }
+  check(await until(() => browser.evaluate(`return !!document.querySelector('[data-model="Memo"]')`), 8000), ':data — the models are the schema\'s, Memo among them')
+  let seen = await rowsFor('Memo', '')
+  check(seen?.answer === 'refused' && seen.text.includes('403') && seen.text.includes('requires level 3') && seen.text.includes('nobody'),
+    ':data — a guest reading Memo is refused, 403, by the gate', JSON.stringify(seen))
+  seen = await rowsFor('Memo', 'ann@x.test')
+  check(seen?.answer === 'ok' && seen.total === '1' && seen.text.includes('for members') && seen.text.includes('ann@x.test (User 1)'),
+    ':data — the same read as a member is the row', JSON.stringify(seen))
+  seen = await rowsFor('Note', '')
+  check(seen?.answer === 'ok' && seen.total === '0', ':data — a guest reading Note is answered and shown no row, by the policy', JSON.stringify(seen))
+  seen = await rowsFor('Note', 'ann@x.test')
+  check(seen?.answer === 'ok' && seen.text.includes('from :call'), ':data — a member reading Note sees the note :call wrote', JSON.stringify(seen))
 
   // `:` and a unique prefix, back to the first pane.
   for (const k of [':', 'r', 'u', 'Enter']) await press(k)

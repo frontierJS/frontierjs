@@ -108,9 +108,12 @@ if (!saved.api) {
     return
   }
 
-  writeFileSync(KEY_FILE, JSON.stringify({ ...keys, sealing }, null, 2) + '\n', { mode: 0o600 })
+  writeKeys({ ...keys, sealing })
   writeOwnChain(links)
   writeTellConfig({ api, nick: offer.nick, root: chain.root })
+  // A revoke seals the next sealing key to this machine's box key, so the post holds the claim from the start.
+  const boxed = await publishOwn(api, { ...keys, sealing }).catch(e => e.message)
+  if (boxed) log.warn(`The post did not take ${boxed} — the next \`fli tell\` verb tries again.`)
   log.success(`This machine is ${offer.nick} at ${api} — ${plural(chain.machines.length, 'machine')} now.`)
   echo(chalk`\n  {bold ${offer.nick}} {dim · ${rootPrint(chain.root)}}`)
   echo(chalk`    {cyan ${await safetyWords(chain.root)}}\n`)
@@ -140,8 +143,8 @@ if (flag.dry) {
 
 let synced, asked
 try {
-  const published = await publishChain(member.api, member.keys)
-  if (published) { log.error(`The post does not hold this member's chain (${published}), so there is nothing to link to.`); process.exitCode = 1; return }
+  const published = await publishOwn(member.api, member.keys)
+  if (published) { log.error(`The post did not take ${published}, so this machine cannot link one.`); process.exitCode = 1; return }
   synced = await syncChain(member)
   if (synced.refused) { log.error(`Not linked: ${synced.refused}.`); process.exitCode = 1; return }
   asked = await tellFetch(member.api, member.keys, 'GET', `/link/ask?code=${code}`)

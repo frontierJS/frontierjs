@@ -37,11 +37,19 @@ async function ask(path, init) {
   return { status: res.status, body }
 }
 
-const JOB_QUERY = ['queue', 'status', 'limit', 'offset']
+const JOB_QUERY  = ['queue', 'status', 'limit', 'offset']
+const DATA_QUERY = ['as', 'tenant', 'limit', 'offset']
+
+const carried = (search, keys) => {
+  const q = new URLSearchParams()
+  for (const k of keys) if (search.get(k)) q.set(k, search.get(k))
+  return q.size ? `?${q}` : ''
+}
 
 /** One read: `health`, `metrics` (the metrics half of devtools' state),
- *  `call` (what `:call` may name, per service) or `jobs`, whose filters are
- *  carried by name. `{ status, body }`. */
+ *  `call` (what `:call` may name, per service), `jobs`, or `data` (the
+ *  schema's models) and `data/<Model>` (a page of its rows as somebody,
+ *  for `:data`), whose query is carried by name. `{ status, body }`. */
 export async function readLive(what, search = new URLSearchParams()) {
   if (what === 'health') return ask('/api/health')
   if (what === 'call')   return ask('/api/call')
@@ -49,11 +57,10 @@ export async function readLive(what, search = new URLSearchParams()) {
     const out = await ask('/api/state')
     return out.status === 200 ? { status: 200, body: out.body.metrics ?? {} } : out
   }
-  if (what === 'jobs') {
-    const q = new URLSearchParams()
-    for (const k of JOB_QUERY) if (search.get(k)) q.set(k, search.get(k))
-    return ask(`/api/jobs${q.size ? `?${q}` : ''}`)
-  }
+  if (what === 'jobs') return ask(`/api/jobs${carried(search, JOB_QUERY)}`)
+  if (what === 'data') return ask(`/api/data${carried(search, ['tenant'])}`)
+  const rows = /^data\/([^/]+)$/.exec(what)
+  if (rows) return ask(`/api/data/${encodeURIComponent(decodeURIComponent(rows[1]))}${carried(search, DATA_QUERY)}`)
   return { status: 404, body: { error: `no live reading ${what}` } }
 }
 

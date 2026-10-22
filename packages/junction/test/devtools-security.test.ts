@@ -16,6 +16,8 @@ import { describe, test, expect, afterEach } from 'bun:test'
 import { createApp } from '../src/core/app.ts'
 import { devtools }  from '../src/plugins/devtools/index.ts'
 import { createService } from '../src/core/service.ts'
+import { createStubAuth } from '../src/testing/index.ts'
+import { createClient }   from '../../litestone/src/index.js'
 
 const running: Array<{ stop: () => Promise<void> }> = []
 afterEach(async () => { for (const a of running.splice(0)) await a.stop().catch(() => {}) })
@@ -190,5 +192,73 @@ describe('a call, as somebody (FJS-D1426)', () => {
     const res = await post(base, { method: 'notes.whoami' })
     expect(res.status).toBe(403)
     expect((await res.json()).message).toContain('startSupport')
+  })
+})
+
+describe('rows, as somebody (fli gui :data)', () => {
+
+  async function withRows(env: string | undefined) {
+    const was = process.env.NODE_ENV
+    if (env === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = env
+    try {
+      const db: any = await createClient({ db: ':memory:', schema: `
+        model User { id Int @id @default(autoincrement())  email String  @@auth }
+        model Memo { id Int @id @default(autoincrement())  body String  @@gate(3) }
+        model Note { id Int @id @default(autoincrement())  body String  @@allow(all, auth() != null) }` })
+      await db.asSystem().user.create({ data: { email: 'ann@x.test' } })
+      await db.asSystem().memo.create({ data: { body: 'for members' } })
+      await db.asSystem().note.createMany({ data: [{ body: 'a' }, { body: 'b' }, { body: 'c' }] })
+      const app: any = createApp({
+        db, logLevel: 'silent', config: { port: 0 },
+        auth: createStubAuth({ users: [{ id: '1', role: 'member' }] }),
+        system: { id: 'app', role: 'system' },
+      })
+      app.configure(devtools({ port: 0, auth: () => true }))
+      await app.start()
+      running.push(app)
+      return app._devtools.url.replace('localhost', '127.0.0.1') as string
+    } finally {
+      if (was === undefined) delete process.env.NODE_ENV
+      else process.env.NODE_ENV = was
+    }
+  }
+  const read = async (base: string, path: string) => {
+    const res = await fetch(`${base}${path}`)
+    return { status: res.status, body: await res.json() as any }
+  }
+
+  test('the models are the schema\'s, and a member reads what the gate lets a member read', async () => {
+    const base = await withRows('development')
+    expect((await read(base, '/api/data')).body.models).toEqual(['User', 'Memo', 'Note'])
+    const memo = await read(base, '/api/data/Memo?as=ann@x.test')
+    expect(memo).toMatchObject({ status: 200, body: { ok: true, total: 1, standing: 'ann@x.test (User 1)' } })
+    expect(memo.body.rows[0].body).toBe('for members')
+    const page = await read(base, '/api/data/Note?as=ann@x.test&limit=2&offset=1')
+    expect(page.body.rows.map((r: any) => r.body)).toEqual(['b', 'c'])
+    expect(page.body.total).toBe(3)
+  })
+
+  test('nobody is a stranger, never the app: the gate refuses and the row policy hides', async () => {
+    const base = await withRows('development')
+    const memo = await read(base, '/api/data/Memo')
+    expect(memo.status).toBe(403)
+    expect(memo.body).toMatchObject({ ok: false, name: 'Forbidden', message: '"Memo.read" requires level 3, user has level 0' })
+    expect(memo.body.standing).toContain('nobody')
+    expect((await read(base, '/api/data/Note')).body).toMatchObject({ ok: true, rows: [], total: 0 })
+  })
+
+  test('a model the schema does not name is 404 naming the ones it does', async () => {
+    const base = await withRows('development')
+    const out = await read(base, '/api/data/Nope?as=ann@x.test')
+    expect(out.status).toBe(404)
+    expect(out.body.message).toContain('User, Memo, Note')
+  })
+
+  test('in production the rows are 403 naming support mode, with auth admitting the caller', async () => {
+    const base = await withRows('production')
+    const out = await read(base, '/api/data/Note?as=ann@x.test')
+    expect(out.status).toBe(403)
+    expect(out.body.message).toContain('startSupport')
   })
 })

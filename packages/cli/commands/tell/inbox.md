@@ -45,19 +45,33 @@ if (flag.dry) {
 }
 
 try {
-  const published = await publishChain(member.api, member.keys)
-  if (published) log.warn(`The post did not take this member's chain (${published}) — letters to you go plain until it does.`)
+  const published = await publishOwn(member.api, member.keys)
+  if (published) log.warn(`The post did not take ${published} — the next \`fli tell\` verb tries again.`)
+  // A revoke elsewhere rotated the sealing key; this is where this machine picks up the new one.
+  const own = await syncChain(member)
+  if (own.refused) { log.error(`Not read: ${own.refused}.`); process.exitCode = 1; return }
+  if (own.rekeyed) log.info('A revoke rotated this member\'s sealing key; this machine now holds the new one.')
+  if (own.unsealed) log.warn(`A revoke rotated this member's sealing key and it did not reach this machine: ${own.unsealed}. Letters sealed to it will not open here.`)
 } catch (e) { log.error(`${member.api} did not answer (${e.message}).`); process.exitCode = 1; return }
 
 const indent = (text) => text.replace(/\n$/, '').split('\n').map(line => `    ${line}`).join('\n')
 
-// A machine the sender's pinned chain holds costs no call; any other sends
-// for the chain, which must verify and carry the pin forward.
-const gradeSender = async (from, key) => {
-  if (Object.values(readPeers()).find(p => p?.nick === from)?.machines?.includes(key)) return {}
+// A letter signed by a machine the sender's pin holds, at a head no newer
+// than the pin, costs no call; any other sends for the chain, which must
+// verify, carry the pin forward and hold the head the letter names — a letter
+// written at a link the post does not serve is the post hiding that link, a
+// revoke most of all (FJS-D1421).
+const gradeSender = async (from, { key, seq, head }) => {
+  const pin = Object.values(readPeers()).find(p => p?.nick === from)
+  if (pin?.machines?.includes(key) && (seq < pin.seq || (seq === pin.seq && head === pin.head))) return {}
   const met = await meetMember(member, from).catch(e => ({ failed: e.message }))
   if (met.refused || met.failed) return { refused: met.refused ?? `the post did not serve ${from}'s chain (${met.failed})` }
-  if (!met.chain?.machines.includes(key)) return { refused: `it is signed by ${await fingerprint(key)}, which is no machine in ${from}'s chain` }
+  if (!met.chain) return { refused: `the post serves no chain for ${from}` }
+  if (seq > met.chain.seq) return { refused: `it was written at link ${seq} of ${from}'s chain, and the post serves ${met.chain.seq} — the post is hiding a link of theirs` }
+  if (met.chain.hashes[seq - 1] !== head) return { refused: `its link ${seq} of ${from}'s chain is not the one the post serves — a fork` }
+  const out = met.chain.revoked.find(r => r.machine === key)
+  if (out) return { refused: `it is signed by ${await fingerprint(key)}, which ${from} revoked at link ${out.seq}` }
+  if (!met.chain.machines.includes(key)) return { refused: `it is signed by ${await fingerprint(key)}, which is no machine in ${from}'s chain` }
   return { met: met.met }
 }
 
@@ -65,7 +79,7 @@ const gradeSender = async (from, key) => {
 // 1: its words are whoever forged it, and the read already deleted it.
 const printLetter = async ({ from, text, sealed, created }) => {
   const opened = sealed ? await openLetter(member.keys, sealed) : { inside: { text } }
-  const pin = opened?.key ? await gradeSender(from, opened.key) : {}
+  const pin = opened?.key ? await gradeSender(from, opened) : {}
   const inside = opened?.inside
   const label = !sealed ? ' · plain' : inside?.env !== undefined ? ` · env from ${inside.source ?? 'a file'}` : ''
   echo(chalk`\n  {bold ${from}} {dim · ${relative(created * 1000, Date.now(), { style: 'short' })}${label}}`)
