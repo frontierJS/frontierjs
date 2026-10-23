@@ -244,6 +244,7 @@ src/
     group-by.js — the groupBy verb: group keys, aggregates, one optional DateTime interval bucket, HAVING (buildAggHaving lives here), orderBy over keys and aggregates, gap fill on the caller's calendar; makeGroupBy(shape, ctx, deps) returns the one verb, which makeTable puts in the table literal under its own name
     aggregate.js — the aggregate verb: COUNT/SUM/AVG/MIN/MAX, GROUP_CONCAT (_stringAgg) and the named aggregates over the visible rows, one object back; makeAggregate(shape, ctx, deps) returns the one verb
     search.js — the search verb over the @@fts index: step 1 pages the hits on the index (by rank) or collects them all (under a caller's orderBy), step 2 reads the rows from the base table, with the global filter, the plugin read filters and the row policy folded ONCE and bound to both steps (`FJS-262`); makeSearch(shape, ctx, deps) returns the one verb
+    find-many-cursor.js — the findManyCursor verb: keyset pagination, one SELECT bounded by the previous page's last values and ordered by the cursor fields, { items, nextCursor, hasMore } back; a cursor from another sort is refused by name (`FJS-779`); makeFindManyCursor(shape, ctx, deps) returns the one verb
     stamps.js — what a write fills in: generated defaults, @createdBy/@updatedBy, @sequence
     computed.js — @computed: load, normalize, apply to a read row
     field-policy.js — field @allow(read) applied to read rows
