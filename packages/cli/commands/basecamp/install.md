@@ -102,7 +102,7 @@ if (asking) password = await tty.secret(`${question(`Password for ${admin}`, 'En
 const yes = async (q) => await tty.keys(question(q), { y: 'yes', n: 'no' }) === 'y'
 const outpost = flag.outpost && (!asking || await yes(OUTPOST_QUESTION))
 
-const refused = await zoneRefusal({ domain, log, echo, chalk })
+const { refusal: refused } = await zoneRefusal({ domain, log, echo, chalk })
 if (refused) {
   log.error(`${refused}. Nothing was installed`)
   process.exitCode = 1

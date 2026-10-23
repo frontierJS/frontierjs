@@ -34,15 +34,16 @@ const runProvision = async (input, file = 'provision-host.ts', env = {}) => {
 const webDomain = async () =>
   (await import(provisionScript().root + 'frontier.config.js')).default.deploy.web?.domain
 
-// The token page and what to pick on it are the cloudflare namespace's, read
-// off its module so the two commands cannot send a person to different pages.
+// The token page and what to pick on it are `basecamp:dns`'s `requires:`, read
+// off that file so install and create cannot send a person to a different page.
+// They ask here rather than declaring it: no token is not a refusal for them.
 const cloudflareToken = async ({ interactive, write = true, say }) => {
   if (process.env.CLOUDFLARE_TOKEN) return true
   const { resolve }                    = await import('node:path')
   const { loadModuleFile }             = await import(resolve(global.fliRoot, 'core/registry.js'))
   const { requiresOf, acquireMissing } = await import(resolve(global.fliRoot, 'core/requires.js'))
-  const { meta } = loadModuleFile(resolve(global.fliRoot, 'commands/cloudflare/_module.md'))
-  const left = await acquireMissing('cloudflare', requiresOf(meta).filter(r => r.key === 'CLOUDFLARE_TOKEN'), { interactive, write, say })
+  const { meta } = loadModuleFile(resolve(global.fliRoot, 'commands/basecamp/dns.md'))
+  const left = await acquireMissing('basecamp', requiresOf(meta).filter(r => r.key === 'CLOUDFLARE_TOKEN'), { interactive, write, say })
   return !left.length
 }
 
@@ -52,16 +53,17 @@ const hostRecord = (input) => runProvision(input, 'host-record.ts', { CLOUDFLARE
 
 // Asked before the install, so a token that opens no zone holding the hostname
 // refuses before minutes of apt rather than after them. No token is not a
-// refusal — the record can come later. Answers the refusal, or null.
+// refusal — the record can come later. Answers `{ refusal, points }`, points
+// being the address Basecamp's record there holds now: null with none.
 const zoneRefusal = async ({ domain, log, echo, chalk }) => {
   if (!await cloudflareToken({ interactive: !!process.stdin.isTTY, say: (t) => log.warn(t) })) {
     log.warn(`No CLOUDFLARE_TOKEN: the install leaves ${domain} without a DNS record and prints the line that writes it`)
-    return null
+    return { refusal: null, points: null }
   }
   const found = await hostRecord({ host: domain, check: true })
-  if (found.error) return `Cloudflare: ${found.error.replace(/^Cloudflare:\s*/, '')}`
+  if (found.error) return { refusal: `Cloudflare: ${found.error.replace(/^Cloudflare:\s*/, '')}`, points: null }
   echo(`  ${chalk.green('✓')} ${chalk.dim(`${found.zone} is at Cloudflare`)}\n`)
-  return null
+  return { refusal: null, points: found.points ?? null }
 }
 
 // The box's IPv4 address. An ssh alias names none, so ssh's own reading of its

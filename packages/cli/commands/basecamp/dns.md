@@ -2,6 +2,8 @@
 title: basecamp:dns
 description: Point Basecamp's hostname at its box at Cloudflare, in a record Basecamp's own edge reads as its own
 effects: writes one DNS record at Cloudflare, and with --proxied a Configuration Rule for that host
+requires:
+  - CLOUDFLARE_TOKEN: https://dash.cloudflare.com/profile/api-tokens  Create Token, the Edit zone DNS template, then add Zone / Zone / Read
 examples:
   - fli basecamp:dns 203.0.113.7
   - fli basecamp:dns 203.0.113.7 --host ops.example.com
@@ -39,7 +41,8 @@ the flag a rerun keeps whatever the record holds.
 
 The zone is the longest one the token opens that the hostname ends with. A
 first run at a terminal with no `CLOUDFLARE_TOKEN` opens the token page and
-takes the paste, as `fli cf:dns` does.
+takes the paste. The token is the connector's, not `cf`'s login that `fli
+cf:dns` runs on, because the box's own Basecamp writes with it later.
 
 ```js
 const ip = String(arg.ip ?? '').trim()
@@ -47,11 +50,6 @@ if (!ip) { log.error('Pass the address: fli basecamp:dns <ip>'); process.exitCod
 
 const host = flag.host || await webDomain()
 if (!host) { log.error('No hostname: pass --host, or set deploy.web.domain in packages/basecamp/frontier.config.js'); process.exitCode = 1; return }
-
-if (!await cloudflareToken({ interactive: !!process.stdin.isTTY, write: flag.dry !== true, say: (t) => log.error(t) })) {
-  process.exitCode = 1
-  return
-}
 
 if (flag.dry) { log.dry(`A ${host} → ${ip}, ${flag.proxied ? 'proxied, Full (strict) for this host' : 'proxy state kept'}, marked basecamp`); return }
 

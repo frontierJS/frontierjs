@@ -402,6 +402,27 @@ squatting line is written where a member reads the network's rules.
   `workers_dev` off, and no member's config names the origin. Deployed
   2026-10-22: `frontier:who` and `tell:inbox` answer from the new host and
   the `workers.dev` address answers 404.
+- [ ] 5.4 A network a member runs. `network.frontierjs.com` stays the
+  default, and a member whose primary id is there can stand up their own
+  post at their own host (owner's ask 2026-10-22, not designed yet). Until
+  it is designed, nothing built may close it off:
+  - The identity is the chain root, never the post. A nick and a number are
+    per post, so `#0042 sam` means "on this post", and a nick from another
+    post is written with its host (`sam@net.example.com`) where one could be
+    mistaken for the other.
+  - `POST_ORIGIN` is a default, not the only origin. No code compares an
+    origin to it to decide what a peer is, and when a member belongs to a
+    second post their config names which post each membership is on.
+  - The owner of a post is that post's member one (`FJS-D1460`), so a
+    second post has its own owner with the same powers, and none over the
+    default network.
+  - A post's owner may choose to connect it to other posts, so a member of
+    one can reach, mail or be read by a member of another (owner's ask
+    2026-10-22). It is opt-in per post, and nothing connects by default. It
+    stays open because a chain root verifies on any post, so a connected post
+    checks a stranger's chain itself rather than trusting the post that
+    vouched for them. Prior art to read first: Matrix federation and
+    ActivityPub's per-instance block and allow lists.
 
 ### Phase 6 — The owner's view
 

@@ -109,7 +109,7 @@ two kinds of row.
 terminal, `--open` for the browser — the same two targets every pane has.
 
 Out of V1: DNSSEC, zone settings, import/export, Pages and Workers (their flag
-commands stay), a record cache (dnstui's), any provider but Cloudflare.
+commands stay, over the module), a record cache (dnstui's), any provider but Cloudflare.
 
 ---
 
@@ -133,7 +133,7 @@ Done when: `fli cf:dns --zone <z>` prints the rows it printed before, through th
 
 - [x] 1.1 `core/cloudflare.js`: `profiles()` (each `cf` profile, plus one `token` entry when `CLOUDFLARE_API_TOKEN` is set (`FJS-D1473`)), `accounts(profile)`, `zones(profile, account)`, `records(profile, zone)`, `createRecord`, `updateRecord`, `deleteRecord` — each one spawn, JSON on stdout with no flag (0.1), lists walked by page (0.4), the error as `cf`'s own message with the verb named; `env: process.env` on the spawn (package CLAUDE.md § What bites)
 - [x] 1.2 `test/cloudflare.test.js` over a stand-in `cf` script first on the PATH that answers the Phase 0 fixtures by verb; the fixture header carries the `cf` version it was read from
-- [ ] 1.3 Move `commands/cloudflare/{dns,zones,purge}.md` onto it; delete `cfApi` and `resolveZone`; `pages.md` and `workers.md` follow or are named as staying with a reason
+- [x] 1.3 Move `commands/cloudflare/{dns,zones,purge}.md` onto it; delete `cfApi` and `resolveZone`; `pages.md` and `workers.md` follow or are named as staying with a reason — all five moved; `--token` is `--profile` (`profileFor`: the name, else `CLOUDFLARE_API_TOKEN`, else `cf`'s active login); `findZone` replaces `resolveZone` and dns's owning-zone walk; `--update` sends only the fields given; `cf:workers --status` lost its cron triggers (§ Measured 1.3)
 - [ ] 1.4 `_module.md` § Setup rewritten: `cf auth login` first, the token path second for CI; `requires:` stays `CLOUDFLARE_TOKEN` only where a command still takes one
 
 ### Phase 2 — The pane, read-only
@@ -227,6 +227,8 @@ Read from `cf` v0.15.0 (npm package `cf`, node 22) on 2026-10-22, signed in with
 **0.3 Wall time.** 1.3 s per spawn (`accounts list` 1.32 s, `records list` 1.35 s; 0.9 s user). Over the 400 ms line: **the Records screen reads once and edits locally**, `r` rereads.
 
 **0.4 Pagination.** `--page`/`--per-page` on every list, no cursor, past the end an empty array. **Zones default to 20 per page** — the run returned 20 of 21 with no flag — so `zones` passes `--per-page 50` and walks pages until a short one; records returned 22 of 22 and `--per-page 1000` is accepted, so `records` passes a large page and walks the same way. `--order`/`--direction` exist on both.
+
+**1.3 Pages, Workers, purge.** `zones list` with no `--account-id` spans every account the login reaches (21), so `findZone` resolves a name there. `cache purge -z <id> --body '{"purge_everything":true}'` or `'{"files":[…]}'` is POST `/zones/<id>/purge_cache`. `pages …` and `workers …` take no `--account-id` and refuse with two accounts reachable — the same *More than one account* box as a zone by name — and `CLOUDFLARE_ACCOUNT_ID` in the spawn's env clears it. **Pages lists cap at 10 a page**: 11 is `[8000024] Invalid list options provided`, 400, so the old `per_page=50` list never ran. `pages projects deployments create <name>` is the deploy, multipart with an empty body. `workers list`/`get` are the new Workers API (`/workers/workers`): rows carry `id` and `name`, `updated_on`/`deployed_on` and `references.domains`, no `modified_on`. `workers deployments list --worker <name>` answers an OBJECT, `{deployments: [{versions: [{version_id, percentage}]}]}`; the first version of the first deployment is the one serving traffic, and `workers versions get <id> --worker-id <name>` carries its `bindings`. The newest version is not that one — an upload not deployed is newer. **No verb reads cron triggers** (`workers triggers` only deploys), so `cf:workers --status` shows none.
 
 **0.5 Door.** `Console.mesa` already has `export let pane = 'run'`; `runTerminalConsole` passes `{api, legendAt}` and the browser mount `{root}` (`core/console.js`), so `fli gui :dns` is a positional in `commands/fli/gui.md` handed through both as `pane` (the browser one off `location.hash`). `fli doctor` reads `BINARIES` in `core/doctor.js`, `{name, required, hint}`; the row is `{ name: 'cf', required: false, hint: 'npm i -g cf  (needed for :dns and cloudflare:)' }`.
 

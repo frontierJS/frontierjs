@@ -848,7 +848,10 @@ core/
                 spawn of Cloudflare's `cf` (`FJS-D1469`), no credential and no
                 HTTP here. A profile row spawns with `CLOUDFLARE_API_TOKEN`
                 DELETED, since `cf` lets the env token beat `--profile`; lists
-                walk pages, zones go by id. `IDEAS/cloudflare-dns.md` § Measured
+                walk pages, zones go by id. Every `cf:` command takes
+                `--profile` through `profileFor`; Pages and Workers verbs take
+                no `--account-id`, so the account rides the spawn as
+                `CLOUDFLARE_ACCOUNT_ID`. `IDEAS/cloudflare-dns.md` § Measured
                 is what it was read against. `test/cloudflare.test.js` drives it over
                 `test/fixtures/cf/stand-in.mjs`, which keeps the real `cf`'s token
                 precedence — a new `cf` version is a new fixture file

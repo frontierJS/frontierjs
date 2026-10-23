@@ -1,8 +1,6 @@
 ---
 namespace: cloudflare
 description: Cloudflare account management — DNS, cache, Pages, Workers
-requires:
-  - CLOUDFLARE_TOKEN: https://dash.cloudflare.com/profile/api-tokens  Create Token, the Edit zone DNS template, then add Zone / Zone / Read
 defaults:
   flags:
     zone:
@@ -13,46 +11,57 @@ defaults:
 
 ## Setup
 
-You need a Cloudflare API Token to use any `cloudflare:` command.
-
-1. Go to **dash.cloudflare.com → My Profile → API Tokens**
-2. Click **Create Token** → use the **Edit zone DNS** template as a starting point
-3. Add permissions for what you need:
-   - Zone / DNS / Edit — for DNS commands
-   - Zone / Zone / Read — for finding a zone by its name
-   - Zone / Cache Purge / Purge — for cache commands
-   - Account / Cloudflare Pages / Edit — for Pages commands
-4. Add it to your global fli env:
+Every `cloudflare:` command runs Cloudflare's own CLI, `cf`, and uses its login.
+fli stores no Cloudflare credential.
 
 ```
-fli eset CLOUDFLARE_TOKEN <your-token> --global
-fli eset CLOUDFLARE_ACCOUNT_ID <your-account-id> --global
-fli eset CLOUDFLARE_DEFAULT_ZONE example.com --global
+npm i -g cf
+cf auth login
 ```
 
-## Account ID
+`cf auth login` opens the browser and signs you in once. Every account that
+login reaches is then reachable from fli.
 
-Find your Account ID in the Cloudflare dashboard sidebar on any domain's overview page.
+## A client's login — `--profile`
 
-## Client work — switching accounts
-
-For client projects, add a `.env` file to the project root — it overrides
-the global config automatically:
+Keep a second login as a named `cf` profile and name it on the run:
 
 ```
-CLOUDFLARE_TOKEN=<client-token>
-CLOUDFLARE_ACCOUNT_ID=<client-account-id>
-CLOUDFLARE_DEFAULT_ZONE=<client-domain.com>
+cf auth create client
+fli cf:dns --zone clientdomain.com --profile client
 ```
 
-Or pass `--profile` and `--zone` inline for a one-off override:
+## CI, or a token — `CLOUDFLARE_API_TOKEN`
+
+Where nobody can sign in, set a token. `cf` reads it from the env, and it wins
+over the login:
 
 ```
-fli cloudflare:dns --zone clientdomain.com --profile client
+CLOUDFLARE_API_TOKEN=<token> fli cf:dns --zone example.com
 ```
+
+Make one at **dash.cloudflare.com → My Profile → API Tokens → Create Token**,
+with what the commands need:
+
+- Zone / DNS / Edit — `cf:dns`
+- Zone / Zone / Read — finding a zone by its name, `cf:zones`
+- Zone / Cache Purge / Purge — `cf:purge`
+- Account / Cloudflare Pages / Edit — `cf:pages`
+- Account / Workers Scripts / Read — `cf:workers`
+
+A `--profile` run never sees the token.
+
+## Accounts
+
+`--account` is needed only on `cf:pages` and `cf:workers`, and only when the
+login reaches more than one account — `cf` then refuses and lists them. `fli
+cf:zones` prints each zone with its account.
 
 ## Environment variables
 
-- `CLOUDFLARE_TOKEN` — required, API token with appropriate scopes; a first run at a terminal opens the token page and takes the paste
-- `CLOUDFLARE_ACCOUNT_ID` — Pages and Workers only, which refuse without it
-- `CLOUDFLARE_DEFAULT_ZONE` — default zone name or ID for DNS/cache commands
+- `CLOUDFLARE_API_TOKEN` — a token in place of the login; CI
+- `CLOUDFLARE_ACCOUNT_ID` — the default `--account`
+- `CLOUDFLARE_DEFAULT_ZONE` — the default `--zone`, a name or an id
+
+`CLOUDFLARE_TOKEN` is not read here. It is Basecamp's own connector token, asked
+for by `fli basecamp:dns`.

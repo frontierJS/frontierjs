@@ -64,16 +64,16 @@ export const profileFor = (name) =>
  */
 export async function profiles() {
   const out = process.env[TOKEN_ENV] ? [{ kind: 'token', name: TOKEN_ENV }] : []
-  const rows = await cf({ kind: 'none' }, ['auth', 'list'])
+  const rows = await cf({ kind: 'none' }, 'auth list', [])
   return [...rows.map(p => ({ kind: 'profile', name: p.name })), ...out]
 }
 
 /** The accounts a profile reaches. */
-export const accounts = (profile) => walk(profile, ['accounts', 'list'], ZONE_PAGE)
+export const accounts = (profile) => walk(profile, 'accounts list', [], ZONE_PAGE)
 
 /** An account's zones; with no account, every zone the profile reaches. */
 export const zones = (profile, accountId) =>
-  walk(profile, ['zones', 'list', ...(accountId ? ['--account-id', accountId] : [])], ZONE_PAGE)
+  walk(profile, 'zones list', accountId ? ['--account-id', accountId] : [], ZONE_PAGE)
 
 /**
  * The zone a host belongs to: the longest zone name it equals or ends in, so
@@ -90,51 +90,51 @@ export async function findZone(profile, host) {
 
 /** A zone's records, every page. */
 export const records = (profile, zoneId) =>
-  walk(profile, ['dns', 'records', 'list', '-z', zoneId], RECORD_PAGE)
+  walk(profile, 'dns records list', ['-z', zoneId], RECORD_PAGE)
 
 /** Create a record from a whole body; answers the record Cloudflare stored. */
 export const createRecord = (profile, zoneId, body) =>
-  cf(profile, ['dns', 'records', 'create', '-z', zoneId, '--body', JSON.stringify(body)])
+  cf(profile, 'dns records create', ['-z', zoneId, '--body', JSON.stringify(body)])
 
 /** Patch a record — a key absent from `changes` is left as it is. */
 export const updateRecord = (profile, zoneId, recordId, changes) =>
-  cf(profile, ['dns', 'records', 'edit', recordId, '-z', zoneId, '--body', JSON.stringify(changes)])
+  cf(profile, 'dns records edit', [recordId, '-z', zoneId, '--body', JSON.stringify(changes)])
 
 /** Delete a record. `--force` because the asking is the caller's, done before this. */
 export const deleteRecord = (profile, zoneId, recordId) =>
-  cf(profile, ['dns', 'records', 'delete', recordId, '-z', zoneId, '--force'])
+  cf(profile, 'dns records delete', [recordId, '-z', zoneId, '--force'])
 
 /** Purge a zone's cache: `{ purge_everything: true }` or `{ files: [...] }`. */
 export const purge = (profile, zoneId, body) =>
-  cf(profile, ['cache', 'purge', '-z', zoneId, '--body', JSON.stringify(body)])
+  cf(profile, 'cache purge', ['-z', zoneId, '--body', JSON.stringify(body)])
 
 // ─── Pages ────────────────────────────────────────────────────────────────
 
 /** An account's Pages projects. */
 export const pagesProjects = (profile, accountId) =>
-  walk(profile, ['pages', 'projects', 'list'], PAGES_PAGE, accountId)
+  walk(profile, 'pages projects list', [], PAGES_PAGE, accountId)
 
 /** Create a Pages project from a whole body; answers the project. */
 export const createPagesProject = (profile, accountId, body) =>
-  cf(profile, ['pages', 'projects', 'create', '--body', JSON.stringify(body)], accountId)
+  cf(profile, 'pages projects create', ['--body', JSON.stringify(body)], accountId)
 
 /** A project's most recent deployments, newest first. */
 export const pagesDeployments = (profile, accountId, project, count = PAGES_PAGE) =>
-  cf(profile, ['pages', 'projects', 'deployments', 'list', '--project-name', project, '--per-page', String(count)], accountId)
+  cf(profile, 'pages projects deployments list', ['--project-name', project, '--per-page', String(count)], accountId)
 
 /** Start a deployment of a git-connected project from its production branch. */
 export const deployPages = (profile, accountId, project) =>
-  cf(profile, ['pages', 'projects', 'deployments', 'create', project], accountId)
+  cf(profile, 'pages projects deployments create', [project], accountId)
 
 // ─── Workers ──────────────────────────────────────────────────────────────
 
 /** An account's Workers. */
 export const workers = (profile, accountId) =>
-  walk(profile, ['workers', 'list'], WORKER_PAGE, accountId)
+  walk(profile, 'workers list', [], WORKER_PAGE, accountId)
 
 /** One Worker by id or name, with what references it (`references.domains`). */
 export const worker = (profile, accountId, name) =>
-  cf(profile, ['workers', 'get', name], accountId)
+  cf(profile, 'workers get', [name], accountId)
 
 /**
  * The version serving a Worker's traffic — the first version of its latest
@@ -142,15 +142,15 @@ export const worker = (profile, accountId, name) =>
  * VERSION is not this one: an upload that was not deployed is newer.
  */
 export async function activeVersion(profile, accountId, worker) {
-  const { deployments = [] } = await cf(profile, ['workers', 'deployments', 'list', '--worker', worker], accountId) ?? {}
+  const { deployments = [] } = await cf(profile, 'workers deployments list', ['--worker', worker], accountId) ?? {}
   const id = deployments[0]?.versions?.[0]?.version_id
-  return id ? cf(profile, ['workers', 'versions', 'get', id, '--worker-id', worker], accountId) : null
+  return id ? cf(profile, 'workers versions get', [id, '--worker-id', worker], accountId) : null
 }
 
-async function walk(profile, args, perPage, accountId) {
+async function walk(profile, verb, args, perPage, accountId) {
   const all = []
   for (let page = 1; ; page++) {
-    const rows = await cf(profile, [...args, '--per-page', String(perPage), '--page', String(page)], accountId)
+    const rows = await cf(profile, verb, [...args, '--per-page', String(perPage), '--page', String(page)], accountId)
     all.push(...rows)
     if (rows.length < perPage) return all
   }
@@ -164,18 +164,18 @@ export function spawnFor(profile) {
   return { env, tail: profile.kind === 'profile' ? ['--profile', profile.name] : [] }
 }
 
-async function cf(profile, args, accountId) {
+/** One spawn of `cf <verb> ...args`; a refusal names the verb, never the args. */
+async function cf(profile, verb, args, accountId) {
   const { env, tail } = spawnFor(profile)
   if (accountId) env[ACCOUNT_ENV] = accountId
-  const at = args.findIndex(a => a.startsWith('-'))
-  const verb = `cf ${args.slice(0, Math.min(at < 0 ? args.length : at, 3)).join(' ')}`
+  const label = `cf ${verb}`
   let proc
   try {
     // `env:` is required: a Bun spawn hands the child the env the process
     // started with, so an unset token would still reach `cf` without it.
-    proc = Bun.spawn(['cf', ...args, ...tail], { env, stdout: 'pipe', stderr: 'pipe', stdin: 'ignore' })
+    proc = Bun.spawn(['cf', ...verb.split(' '), ...args, ...tail], { env, stdout: 'pipe', stderr: 'pipe', stdin: 'ignore' })
   } catch (err) {
-    if (err?.code === 'ENOENT') throw new CloudflareError(`${verb}: cf is not installed — ${INSTALL}`)
+    if (err?.code === 'ENOENT') throw new CloudflareError(`${label}: cf is not installed — ${INSTALL}`)
     throw err
   }
   const [stdout, stderr, code] = await Promise.all([
@@ -183,13 +183,13 @@ async function cf(profile, args, accountId) {
     new Response(proc.stderr).text(),
     proc.exited,
   ])
-  if (code !== 0) throw new CloudflareError(`${verb}: ${unbox(stderr) || `exit ${code}`}`)
+  if (code !== 0) throw new CloudflareError(`${label}: ${unbox(stderr) || `exit ${code}`}`)
   const text = stdout.trim()
   if (!text) return null
   try {
     return JSON.parse(text)
   } catch {
-    throw new CloudflareError(`${verb}: answered something that is not JSON — ${text.slice(0, 200)}`)
+    throw new CloudflareError(`${label}: answered something that is not JSON — ${text.slice(0, 200)}`)
   }
 }
 

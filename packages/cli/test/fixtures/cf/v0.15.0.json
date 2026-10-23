@@ -1,7 +1,8 @@
 {
   "cf": "v0.15.0",
   "read": "2026-10-22, IDEAS/cloudflare-dns.md § Measured. Ids and names are invented; every object's keys and every refusal's text are as cf printed them. Writes were read with --dry-run only, so what create/edit/delete answer is the API's own object, not a run.",
-  "perPage": { "accounts": 20, "zones": 20, "records": 100 },
+  "perPage": { "accounts": 20, "zones": 20, "records": 100, "pages": 10 },
+  "maxPerPage": { "pages": 10 },
   "profiles": { "default": "login", "client": "client-login" },
   "tokens": { "project-token": "project" },
   "accounts": {
@@ -33,9 +34,80 @@
     ],
     "zone-agency": []
   },
+  "pages": {
+    "acc-own": [
+      { "id": "proj-site", "name": "site", "subdomain": "site.pages.dev", "domains": ["site.pages.dev"], "production_branch": "main", "created_on": "2025-01-01T00:00:00Z", "build_config": {}, "canonical_deployment": { "id": "dep-site-2", "short_id": "dep-site", "project_id": "proj-site", "project_name": "site", "environment": "production", "url": "https://dep-site.site.pages.dev", "created_on": "2026-10-21T00:00:00Z", "modified_on": "2026-10-21T00:00:00Z", "latest_stage": { "name": "deploy", "status": "success", "started_on": "2026-10-21T00:00:00Z", "ended_on": "2026-10-21T00:00:00Z" }, "deployment_trigger": { "type": "github:push", "metadata": { "branch": "main" } }, "stages": [], "build_config": {}, "source": {}, "env_vars": {}, "aliases": null, "is_skipped": false, "production_branch": "main", "uses_functions": false }, "deployment_configs": {}, "framework": "", "framework_version": "", "latest_deployment": { "id": "dep-site-2", "short_id": "dep-site", "project_id": "proj-site", "project_name": "site", "environment": "production", "url": "https://dep-site.site.pages.dev", "created_on": "2026-10-21T00:00:00Z", "modified_on": "2026-10-21T00:00:00Z", "latest_stage": { "name": "deploy", "status": "success", "started_on": "2026-10-21T00:00:00Z", "ended_on": "2026-10-21T00:00:00Z" }, "deployment_trigger": { "type": "github:push", "metadata": { "branch": "main" } }, "stages": [], "build_config": {}, "source": {}, "env_vars": {}, "aliases": null, "is_skipped": false, "production_branch": "main", "uses_functions": false }, "preview_script_name": "", "production_script_name": "", "source": { "type": "github", "config": { "owner": "own", "repo_name": "site" } }, "uses_functions": false },
+      { "id": "proj-docs", "name": "docs", "subdomain": "docs.pages.dev", "domains": ["docs.pages.dev"], "production_branch": "main", "created_on": "2025-01-01T00:00:00Z", "build_config": {}, "canonical_deployment": null, "deployment_configs": {}, "framework": "", "framework_version": "", "latest_deployment": null, "preview_script_name": "", "production_script_name": "", "source": { "type": "github", "config": { "owner": "own", "repo_name": "docs" } }, "uses_functions": false }
+    ],
+    "acc-agency": [
+      { "id": "proj-agency-site", "name": "agency-site", "subdomain": "agency-site.pages.dev", "domains": ["agency-site.pages.dev"], "production_branch": "main", "created_on": "2025-01-01T00:00:00Z", "build_config": {}, "canonical_deployment": null, "deployment_configs": {}, "framework": "", "framework_version": "", "latest_deployment": null, "preview_script_name": "", "production_script_name": "", "source": { "type": "github", "config": { "owner": "own", "repo_name": "agency-site" } }, "uses_functions": false }
+    ]
+  },
+  "pagesDeployments": {
+    "site": [
+      { "id": "dep-site-2", "short_id": "dep-site", "project_id": "proj-site", "project_name": "site", "environment": "production", "url": "https://dep-site.site.pages.dev", "created_on": "2026-10-21T00:00:00Z", "modified_on": "2026-10-21T00:00:00Z", "latest_stage": { "name": "deploy", "status": "success", "started_on": "2026-10-21T00:00:00Z", "ended_on": "2026-10-21T00:00:00Z" }, "deployment_trigger": { "type": "github:push", "metadata": { "branch": "main" } }, "stages": [], "build_config": {}, "source": {}, "env_vars": {}, "aliases": null, "is_skipped": false, "production_branch": "main", "uses_functions": false },
+      { "id": "dep-site-1", "short_id": "dep-site", "project_id": "proj-site", "project_name": "site", "environment": "production", "url": "https://dep-site.site.pages.dev", "created_on": "2026-10-20T00:00:00Z", "modified_on": "2026-10-20T00:00:00Z", "latest_stage": { "name": "deploy", "status": "failure", "started_on": "2026-10-20T00:00:00Z", "ended_on": "2026-10-20T00:00:00Z" }, "deployment_trigger": { "type": "github:push", "metadata": { "branch": "main" } }, "stages": [], "build_config": {}, "source": {}, "env_vars": {}, "aliases": null, "is_skipped": false, "production_branch": "main", "uses_functions": false }
+    ]
+  },
+  "workers": {
+    "acc-own": [
+      { "id": "wkr-forms", "name": "forms", "tags": [], "observability": { "enabled": false }, "logpush": false, "subdomain": { "enabled": true }, "tail_consumers": [], "created_on": "2025-01-01T00:00:00Z", "updated_on": "2026-10-01T00:00:00Z", "deployed_on": "2026-10-01T00:00:00Z", "references": { "workers": [], "domains": [{ "id": "dom-forms.own.example", "hostname": "forms.own.example", "zone_id": "zone-own", "zone_name": "own.example", "certificate_id": "cert-1" }], "dispatch_namespace_outbounds": [], "durable_objects": [], "queues": [] } },
+      { "id": "wkr-draft", "name": "draft", "tags": [], "observability": { "enabled": false }, "logpush": false, "subdomain": { "enabled": true }, "tail_consumers": [], "created_on": "2025-01-01T00:00:00Z", "updated_on": "2026-10-01T00:00:00Z", "deployed_on": "2026-10-01T00:00:00Z", "references": { "workers": [], "domains": [], "dispatch_namespace_outbounds": [], "durable_objects": [], "queues": [] } }
+    ]
+  },
+  "workerDeployments": {
+    "forms": {
+      "deployments": [
+        { "id": "wdep-2", "source": "wrangler", "strategy": "percentage", "author_email": "dev@own.example", "annotations": {}, "versions": [{ "version_id": "ver-forms-2", "percentage": 100 }], "created_on": "2026-10-01T00:00:00Z" }
+      ]
+    },
+    "draft": { "deployments": [] }
+  },
+  "workerVersions": {
+    "ver-forms-2": {
+      "id": "ver-forms-2",
+      "number": 2,
+      "bindings": [
+        { "name": "SUBMISSIONS", "namespace_id": "kv-1", "type": "kv_namespace" },
+        { "name": "LOOKUP_TOKEN", "type": "secret_text" }
+      ],
+      "annotations": {},
+      "author_email": "dev@own.example",
+      "author_id": "user-1",
+      "compatibility_date": "2026-01-01",
+      "created_on": "2026-10-01T00:00:00Z",
+      "env": {},
+      "main_module": "index.js",
+      "source": "wrangler",
+      "startup_time_ms": 5,
+      "urls": [],
+      "usage_model": "standard"
+    },
+    "ver-forms-3": {
+      "id": "ver-forms-3",
+      "number": 3,
+      "bindings": [
+        { "name": "UNDEPLOYED", "type": "plain_text" }
+      ],
+      "annotations": {},
+      "author_email": "dev@own.example",
+      "author_id": "user-1",
+      "compatibility_date": "2026-01-01",
+      "created_on": "2026-10-01T00:00:00Z",
+      "env": {},
+      "main_module": "index.js",
+      "source": "wrangler",
+      "startup_time_ms": 5,
+      "urls": [],
+      "usage_model": "standard"
+    }
+  },
   "refusals": {
     "path": "\n┌ APIError\n│ [10000] Authentication error\n│ 403 Forbidden · HTTP {path}\n└\n\n→ Check your API token permissions\n",
     "token": "\n┌ APIError\n│ [6003] Invalid request headers\n│ 400 Bad Request · HTTP {path}\n└\n",
-    "profile": "\n┌ Error\n│ No authentication token found.\n│\n│ Please set one of the following:\n│   1. Set the CLOUDFLARE_API_TOKEN environment variable\n│   2. Run 'cf auth login' to authenticate via OAuth\n│\n│ For API tokens, visit: https://dash.cloudflare.com/profile/api-tokens\n└\n"
+    "profile": "\n┌ Error\n│ No authentication token found.\n│\n│ Please set one of the following:\n│   1. Set the CLOUDFLARE_API_TOKEN environment variable\n│   2. Run 'cf auth login' to authenticate via OAuth\n│\n│ For API tokens, visit: https://dash.cloudflare.com/profile/api-tokens\n└\n",
+    "account": "\n┌ Error\n│ More than one account available but unable to select one in non-interactive\n│ mode.\n│ Please set the appropriate `account_id` in your cf config file or assign it to\n│ the `CLOUDFLARE_ACCOUNT_ID` environment variable.\n│ Available accounts are (`<name>`: `<account_id>`):\n{accounts}└\n",
+    "listOptions": "\n┌ APIError\n│ [8000024] Invalid list options provided. Review the `page` or `per_page` parameter.\n│ 400 Bad Request · HTTP {path}\n└\n",
+    "notFound": "\n┌ APIError\n│ [10007] This Worker does not exist on your account.\n│ 404 Not Found · HTTP {path}\n└\n"
   }
 }

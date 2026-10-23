@@ -401,13 +401,13 @@ pub=$(get interfaces/public/0/ipv4/address) || exit 0
 pubgw=$(get interfaces/public/0/ipv4/gateway) || exit 0
 ip route replace default via "$pubgw" dev eth0 table 100
 ip rule show | grep -q "from $pub lookup 100" || ip rule add from "$pub" lookup 100 priority 100
-gw=$pubgw
+gw=$pubgw src=$pub
 anchor=$(get interfaces/public/0/anchor_ipv4/address) && anchorgw=$(get interfaces/public/0/anchor_ipv4/gateway) && {
   ip route replace default via "$anchorgw" dev eth0 table 101
   ip rule show | grep -q "from $anchor lookup 101" || ip rule add from "$anchor" lookup 101 priority 101
-  [ "$(get reserved_ip/ipv4/active)" = true ] && gw=$anchorgw
+  [ "$(get reserved_ip/ipv4/active)" = true ] && gw=$anchorgw src=$anchor
 }
-ip route replace default via "$gw" dev eth0
+ip route replace default via "$gw" dev eth0 src "$src"
 SH
 chmod 755 /usr/local/sbin/reserved-egress
 cat > /etc/systemd/system/reserved-egress.service <<'UNIT'

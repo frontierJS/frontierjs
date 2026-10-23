@@ -40,6 +40,10 @@ flags:
     type: string
     description: Install Basecamp without asking, and make this email its first admin
     defaultValue: ''
+  reserved-ip:
+    type: boolean
+    description: Put a DigitalOcean reserved IP in front of the box, so a replacement keeps its address and outbound traffic leaves from it ($5/mo while no box holds it)
+    defaultValue: true
   outpost:
     type: boolean
     description: When installing, enroll the box in Basecamp's own fleet, so apps can run beside it (asked at a terminal)
@@ -66,6 +70,16 @@ and adds a `Host` block for it to `~/.ssh/config` — asked first, yes unless yo
 say no; a `Host` of that name already there is left alone and the block printed
 instead. Nothing is installed on it unless asked: `fli basecamp:install` puts
 Basecamp on it, and the run prints that line.
+
+The box answers on a DigitalOcean reserved IP unless `--no-reserved-ip`: the
+address the ssh block, the install and the DNS record all name, and the one its
+outbound traffic leaves from — a timer on the box routes egress through it
+while it is assigned, and back through the droplet's own address once it is
+not. When the hostname's record already holds a reserved IP in the region that
+no droplet holds, that one is reused, so a replaced Basecamp keeps its address
+and its DNS; otherwise a new one is reserved. It outlives the box and bills
+$5/mo while no box holds it. A reservation that fails warns, and the run goes
+on with the droplet's own address.
 
 `--admin <email>` installs without asking, which is how a run with no terminal
 gets past the bare box: `deploy:setup --auto-install` asks nothing, makes the
@@ -164,10 +178,14 @@ if (domain) {
   }
   domain = named
 }
+// The address the hostname's record holds now: a reserved IP there is reused,
+// so a replacement box keeps its DNS.
+let points = null
 if (domain) {
-  const refused = await zoneRefusal({ domain, log, echo, chalk })
-  if (refused) {
-    log.error(`${refused}. Nothing was bought`)
+  const zone = await zoneRefusal({ domain, log, echo, chalk })
+  points = zone.points
+  if (zone.refusal) {
+    log.error(`${zone.refusal}. Nothing was bought`)
     process.exitCode = 1
     return
   }
@@ -224,6 +242,7 @@ if (asking) {
   row('hostname', domain || chalk.dim('none yet'))
   row('server', `${chalk.bold(name)} ${chalk.dim(`· ${flag.size} · ${flag.region} · ${flag.image}`)}`)
   row('key', keyPath.replace(home, '~'))
+  row('address', flag['reserved-ip'] ? `reserved IP ${chalk.dim(points ? `— ${points} if it is a spare in ${flag.region}, else a new one` : '— a new one, kept when the box goes')}` : chalk.dim('the droplet\'s own'))
   row('ssh', addHost ? `Host ${name} in ~/.ssh/config` : chalk.dim('print the Host block'))
   row('install', install ? `yes ${chalk.dim('— deploy:setup --auto-install, then deploy')}` : chalk.dim('no — fli basecamp:install later'))
   if (admin) row('admin', `${admin} ${chalk.dim(password ? '' : '— password generated')}`)
@@ -237,6 +256,7 @@ log.info(`Creating ${name} (${flag.size}, ${flag.region}) — about a minute`)
 const made = await runProvision({
   action: 'create', name, region: flag.region, image: flag.image, size: flag.size,
   publicKey: readFileSync(keyPath, 'utf8'),
+  reservedIp: flag['reserved-ip'], reuse: points ?? undefined,
 })
 
 if (made.error) { log.error(made.error); process.exitCode = 1; return }
@@ -257,8 +277,20 @@ const block = `Host ${made.name}
   User root
   IdentityFile ${identity.replace(home, '~')}
 `
-row('ip', chalk.bold(made.ip))
+row('ip', made.dropletIp && made.dropletIp !== made.ip
+  ? `${chalk.bold(made.ip)} ${chalk.dim(`reserved${made.reserved.reused ? ', reused' : ''} · droplet ${made.dropletIp}`)}`
+  : chalk.bold(made.ip))
+if (made.reserved?.error) log.warn(`  No reserved IP: ${made.reserved.error}. The box answers on its own address`)
 echo('')
+
+// The box is minutes old, so a known_hosts line for its address is an older
+// box's — a reused reserved IP always has one — and accept-new refuses a
+// changed key, which reads as ssh never answering.
+const { spawnSync } = await import('node:child_process')
+if (spawnSync('ssh-keygen', ['-F', made.ip], { stdio: 'ignore' }).status === 0) {
+  spawnSync('ssh-keygen', ['-R', made.ip], { stdio: 'ignore' })
+  log.info(`  Dropped the old known_hosts line for ${made.ip}`)
+}
 
 // A Host of the same name is somebody's existing machine: ssh takes the FIRST
 // match, so appending a second would be silently ignored, and replacing it would
