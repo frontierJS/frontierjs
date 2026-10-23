@@ -15,7 +15,7 @@ defaults:
 
 <script>
 const { loadFrontierConfig, dockerfileScripts } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
-const { vendorWorkspacePackages, linkedDeps, GENERATED_DIR } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
+const { vendorApp, linkedDeps, GENERATED_DIR } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
 const { createMachine, shQuote } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
 const { dockerLogArgs } = await import(new URL('file://' + global.fliRoot + '/core/docker-logging.js'))
 const { apiContainerName } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
@@ -87,7 +87,7 @@ const machineFor = ($, host, path = null, transport = null) => createMachine({
 // ─── enrollOutpost ────────────────────────────────────────────────────────────
 // The API's box joined to the app's own fleet (`FJS-D1191`), for a deploy block
 // saying `outpost: true`. Two callers: `08b-outpost` after a release, and
-// `deploy:outpost` alone, which `fli provision:install` runs once `/setup` has
+// `deploy:outpost` alone, which `fli basecamp:install` runs once `/setup` has
 // made the workspace — the deploy step meets an empty database on a fresh box
 // and answers `skip`.
 //
@@ -172,35 +172,6 @@ const enrollOutpost = (machine, { appId, deployConf, path, host, log }) => {
   } catch (err) {
     log.warn(`Outpost: the database and env file paths were not written — ${err.message.split('\n')[0]}`)
   }
-  return result
-}
-
-// ─── vendorApp ────────────────────────────────────────────────────────────────
-// Write the build context the Dockerfile installs from: deploy/generated/, with
-// a manifest and — for an app depending on the framework by `link:` or
-// `workspace:` — a packed copy of every one of those packages beside it.
-//
-// Runs on EVERY build, not only a linked one. With nothing linked it copies the
-// manifest and the lockfile, which is what lets one Dockerfile serve both source
-// modes; making it conditional here would move the condition into a template
-// nobody regenerates when the source mode changes.
-//
-// It throws on anything it cannot finish. A half-vendored context installs the
-// rest from npm and produces an image running two trees at once, which does not
-// have to fail to be wrong.
-//
-// It does NOT prune devDependencies, and the reason is worth stating because
-// pruning them looks free: the image builds nothing — it copies `api/` and
-// `db/` and runs `db:migrate` then `start` — and **`bun install --production`
-// resolves devDependencies anyway**, only skipping their install, so one dev
-// tool that 404s fails an image that would never have run it. The `transform`
-// hook can drop them; a manifest that no longer matches the lockfile beside it
-// then fails `--frozen-lockfile` outright, which is the worse trade. An
-// unresolvable devDependency is a publish problem and belongs upstream.
-const vendorApp = (root, log) => {
-  const result = vendorWorkspacePackages({ appRoot: root, log: (m) => log.detail(m) })
-  const n = result.vendored.length
-  if (n) log.success(`Vendored ${n} workspace ${n === 1 ? 'dependency' : 'dependencies'} from ${result.packagesDir}`)
   return result
 }
 
@@ -1324,9 +1295,9 @@ fli deploy:run <cmd>    ← run a one-off command inside the running container
 fli deploy:rollback     ← roll back to the previous release
 fli deploy:setup        ← first-time server setup walkthrough
 fli deploy:retire       ← take the app off its server — routes, Outpost, container, images, files
-
-fli deploy:basecamp --app <id> ← build here, load onto the App's Basecamp machines, release that digest
 ```
+
+An app Basecamp runs is released with `fli basecamp:deploy --app <id>` instead.
 
 ## Getting started
 

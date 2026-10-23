@@ -1,15 +1,15 @@
 ---
-title: provision:dns
+title: basecamp:dns
 description: Point Basecamp's hostname at its box at Cloudflare, in a record Basecamp's own edge reads as its own
 effects: writes one DNS record at Cloudflare, and with --proxied a Configuration Rule for that host
 examples:
-  - fli provision:dns 203.0.113.7
-  - fli provision:dns 203.0.113.7 --host ops.example.com
-  - fli provision:dns 203.0.113.7 --proxied
+  - fli basecamp:dns 203.0.113.7
+  - fli basecamp:dns 203.0.113.7 --host ops.example.com
+  - fli basecamp:dns 203.0.113.7 --proxied
 args:
   -
     name: ip
-    description: The box's address, as fli provision printed it
+    description: The box's address, as fli basecamp:create printed it
 flags:
   host:
     type: string
@@ -22,13 +22,13 @@ flags:
 ---
 
 Writes `A <host> → <ip>`, DNS-only unless `--proxied`, through Basecamp's own Cloudflare
-connector, run from this checkout as `fli provision` runs its DigitalOcean one.
+connector, run from this checkout as `fli basecamp:create` runs its DigitalOcean one.
 The record carries Basecamp's fleet mark in its comment, so Basecamp manages it
 later rather than refusing it as somebody else's. A rerun moves the record to
 the new address; a record somebody made by hand at that name is refused, never
 overwritten.
 
-`fli provision` and `provision:install` make this same write once Basecamp is
+`fli basecamp:create` and `basecamp:install` make this same write once Basecamp is
 up; this command is for a box whose record could not be written then.
 
 `--proxied` is the flip those two offer once HTTPS answers (`FJS-D1380`): a
@@ -43,7 +43,7 @@ takes the paste, as `fli cf:dns` does.
 
 ```js
 const ip = String(arg.ip ?? '').trim()
-if (!ip) { log.error('Pass the address: fli provision:dns <ip>'); process.exitCode = 1; return }
+if (!ip) { log.error('Pass the address: fli basecamp:dns <ip>'); process.exitCode = 1; return }
 
 const host = flag.host || await webDomain()
 if (!host) { log.error('No hostname: pass --host, or set deploy.web.domain in packages/basecamp/frontier.config.js'); process.exitCode = 1; return }

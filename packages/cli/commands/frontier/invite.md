@@ -6,7 +6,9 @@ examples:
   - fli frontier:invite
 ---
 
-Any member may invite (`FJS-D1394`). There is one post and `fli` knows
+Any member may invite (`FJS-D1394`), three joins each, and a code not yet
+spent counts as one until it expires; the owner is not counted (`FJS-D1466`).
+There is one post and `fli` knows
 where it is (`FJS-D1414`), so the code is the whole invite — hand them the
 line and they run it.
 
@@ -36,6 +38,8 @@ const hours = Math.round((answer.json.expires - Date.now() / 1000) / 3600)
 log.success(`An invite, good for one join within ${hours} hours. Hand this to the next person:`)
 const line = `fli frontier:stake ${answer.json.code}`
 echo(`\n  ${line}\n`)
+if (answer.json.left === 0) log.info('That was your last invite.')
+else if (answer.json.left != null) log.info(`${answer.json.left} more ${answer.json.left === 1 ? 'invite' : 'invites'} left to you.`)
 
 if (tty.interactive && await tty.keys('Copy the line to the clipboard?', { y: 'copy', n: 'no' }) === 'y') {
   const { copyToClipboard, clipboardTools } = await import(resolve(global.fliRoot, 'core/clipboard.js'))

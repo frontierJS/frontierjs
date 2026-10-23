@@ -191,16 +191,18 @@ export async function Command({ file, arg, flag, emit }) {
   }
 
   // ── Module: merge defaults then check requires ───────────────────────────────
-  if (mod) {
-    metadata.flags = withModuleFlags(metadata.flags, mod)
+  if (mod) metadata.flags = withModuleFlags(metadata.flags, mod)
 
-    // A key the namespace cannot run without. At a terminal it is acquired —
-    // the page offered, the token pasted and stored — and the run goes on;
-    // anywhere else (`fli gui`, a pipe) it is the refusal, with the setup docs,
-    // because a namespace with an index command never reaches printNamespace.
-    const missing = missingRequires(mod.meta)
+  // A key the namespace or this one command cannot run without — a command's
+  // own `requires:` is for a namespace whose siblings do not all need it. At a
+  // terminal it is acquired — the page offered, the token pasted and stored —
+  // and the run goes on; anywhere else (`fli gui`, a pipe) it is the refusal,
+  // with the setup docs, because a namespace with an index command never
+  // reaches printNamespace.
+  {
+    const missing = missingRequires({ requires: [...(mod?.meta?.requires ?? []), ...(metadata.requires ?? [])] })
     if (missing.length) {
-      const ns  = mod.meta.namespace || metadata.title?.split(':')?.[0]
+      const ns  = mod?.meta?.namespace || metadata.title?.split(':')?.[0]
       const say = emit ? (t, level = 'error') => emit({ type: 'log', level, text: t }) : (t, level = 'error') => logger(t, level)
       const left = await acquireMissing(ns, missing, {
         interactive: !emit && !!process.stdin.isTTY,
@@ -210,7 +212,7 @@ export async function Command({ file, arg, flag, emit }) {
       if (left.length) {
         const verbose = isVerbose()
         if (!verbose) await say(`  Or run:    fli ${ns} --verbose  for setup instructions`)
-        else if (mod.prose) emit ? await emit({ type: 'output', text: mod.prose }) : renderProse(mod.prose, {})
+        else if (mod?.prose) emit ? await emit({ type: 'output', text: mod.prose }) : renderProse(mod.prose, {})
         throw new Error('Missing required environment variables')
       }
     }

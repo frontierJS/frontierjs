@@ -1,24 +1,26 @@
 ---
-title: provision:off
-description: Power off a droplet fli provision made, so provision:destroy will take it
+title: basecamp:stop
+description: Power off a droplet fli basecamp:create made, so basecamp:destroy will take it
+requires:
+  - DIGITALOCEAN_TOKEN: https://cloud.digitalocean.com/account/api/tokens/new  Pick Full Access
 effects: powers off a droplet at DigitalOcean; whatever it serves goes down
 confirm: human
 examples:
-  - fli provision:off 512345678
-  - fli provision:off
+  - fli basecamp:stop 512345678
+  - fli basecamp:stop
 args:
   -
     name: id
-    description: The droplet id fli provision printed; with none, pick from the list
+    description: The droplet id fli basecamp:create printed; with none, pick from the list
 ---
 
-The first of the two hands on a destroy: `fli provision:destroy` refuses a
+The first of the two hands on a destroy: `fli basecamp:destroy` refuses a
 droplet that is not off, so a box still serving is never one mistyped id away
 from gone. This cuts the power — a hard stop, not a shutdown asked of the OS —
 and waits up to a minute for DigitalOcean to report it `off`. The disk is kept
 and it still bills; power it back on at DigitalOcean, or destroy it.
 
-Refuses the same droplets destroy does: one `fli provision` did not make, and a
+Refuses the same droplets destroy does: one `fli basecamp:create` did not make, and a
 fleet machine Basecamp made, which is powered off in Basecamp. With no id it
 lists the Basecamp hosts still on and asks which.
 
@@ -29,9 +31,9 @@ if (!id) {
   const found = await runProvision({ action: 'list' })
   if (found.error) { log.error(found.error); process.exitCode = 1; return }
   const on = found.machines.filter(m => !m.serverId && m.status !== 'off')
-  if (!on.length) { echo('No Basecamp host fli provision made is powered on'); return }
+  if (!on.length) { echo('No Basecamp host fli basecamp:create made is powered on'); return }
   if (!process.stdin.isTTY) {
-    log.error('Which droplet? fli provision:off <id>')
+    log.error('Which droplet? fli basecamp:stop <id>')
     echo.lines(on.map(m => machineLine(m, chalk)), { indent: 2 })
     process.exitCode = 1; return
   }
@@ -46,6 +48,6 @@ if (!id) {
 
 const done = await runProvision({ action: 'off', id })
 if (done.error) { log.error(done.error); process.exitCode = 1; return }
-if (done.pending) { log.warn(`Droplet ${done.off} was asked to power off and is not off yet — fli provision:list shows when it is`); return }
-log.success(`Droplet ${done.off} is off. To remove it: fli provision:destroy ${done.off}`)
+if (done.pending) { log.warn(`Droplet ${done.off} was asked to power off and is not off yet — fli basecamp shows when it is`); return }
+log.success(`Droplet ${done.off} is off. To remove it: fli basecamp:destroy ${done.off}`)
 ```

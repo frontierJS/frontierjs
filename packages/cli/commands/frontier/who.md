@@ -30,16 +30,33 @@ one, is refused. When the post does not answer, the pin is read instead.
 With no nick it also lists this member's machines by fingerprint, the names
 `fli frontier:revoke` takes, a paper key (`fli frontier:paper`) among them.
 
+Beside the words is the member's crest, the same bits drawn as a 5×5 picture
+(`core/crest.js`), so a member is known at a glance. A crest proves nothing on
+its own; the words are what you compare.
+
 ```js
+const { crest } = await import(new URL('file://' + global.fliRoot + '/core/crest.js'))
+const { colorEnabled } = await import(new URL('file://' + global.fliRoot + '/core/color.js'))
 const nick = String(arg.nick ?? '').trim().toLowerCase()
 
 let member
 try { member = await currentMember() }
 catch (e) { log.error(e.message); process.exitCode = 1; return }
 
+// The crest beside the words, a cell two characters wide so it draws square.
+// With color off the field is shaded, or the charge would float on nothing.
+const crestRows = (root) => {
+  const { rows, field, charge } = crest(root)
+  const cell = (on) => colorEnabled ? chalk.hex(on ? charge.hex : field.hex)('██') : on ? '██' : '░░'
+  return rows.map(row => row.map(cell).join(''))
+}
+
 const show = async (label, root, machines) => {
-  echo(chalk`\n  {bold ${label}} {dim · ${rootPrint(root)} · ${plural(machines, 'machine')}}`)
-  echo(chalk`    {cyan ${await safetyWords(root)}}\n`)
+  const [first, second, ...rest] = crestRows(root)
+  echo(chalk`\n  ${first}  {bold ${label}} {dim · ${rootPrint(root)} · ${plural(machines, 'machine')}}`)
+  echo(chalk`  ${second}  {cyan ${await safetyWords(root)}}`)
+  for (const row of rest) echo(`  ${row}`)
+  echo('')
 }
 
 if (!nick || nick === member.nick) {

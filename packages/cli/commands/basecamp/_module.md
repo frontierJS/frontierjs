@@ -1,8 +1,6 @@
 ---
-namespace: provision
-description: Make the box Basecamp will run on, at DigitalOcean, and hand back how to SSH to it
-requires:
-  - DIGITALOCEAN_TOKEN: https://cloud.digitalocean.com/account/api/tokens/new  Pick Full Access
+namespace: basecamp
+description: Basecamp itself — make its box at DigitalOcean, install it, point its hostname, take it down, and release an app through it
 ---
 
 <script>
@@ -15,14 +13,14 @@ const provisionScript = () => {
   return { root }
 }
 
-// `host-record.ts` beside it is the Cloudflare half, for `provision:dns` and `pointHost`.
+// `host-record.ts` beside it is the Cloudflare half, for `basecamp:dns` and `pointHost`.
 const runProvision = async (input, file = 'provision-host.ts', env = {}) => {
   const { spawnSync }  = await import('node:child_process')
   const { existsSync } = await import('node:fs')
   const { root } = provisionScript()
   const script = root + 'api/src/core/' + file
   if (!existsSync(script))
-    return { error: `no Basecamp checkout at ${root}: fli provision runs from the framework repository` }
+    return { error: `no Basecamp checkout at ${root}: the basecamp commands run from the framework repository` }
 
   const run = spawnSync('bun', [script, JSON.stringify(input)], {
     cwd: root, encoding: 'utf8', env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'inherit'],
@@ -80,11 +78,11 @@ const boxAddress = async (dest) => {
 }
 
 // Basecamp's own record, written once Basecamp answers on the box — the
-// `provision:dns` write, so the record carries the fleet's mark either way. Never
+// `basecamp:dns` write, so the record carries the fleet's mark either way. Never
 // asks for a token: `zoneRefusal` already did, before the install. A record
 // already behind the proxy stays there. Answers the record, or null after
 // printing the line that finishes the job.
-const dnsLine = (host, ip, configured) => `fli provision:dns ${ip ?? '<ip>'}${host === configured ? '' : ` --host ${host}`}`
+const dnsLine = (host, ip, configured) => `fli basecamp:dns ${ip ?? '<ip>'}${host === configured ? '' : ` --host ${host}`}`
 const pointHost = async ({ host, ip, configured, log }) => {
   const manual = dnsLine(host, ip, configured)
   if (!ip) { log.warn(`  No address for the box, so ${host} has no DNS record. With its address: ${manual}`); return null }
@@ -132,8 +130,8 @@ const offerProxy = async ({ record, configured, log, yes }) => {
   return true
 }
 
-// One row of `provision:list`, and of the pick `provision:off` and `provision:destroy` offer with no id.
-// A droplet with no server id is the Basecamp host: `fli provision` is the
+// One row of `basecamp:list`, and of the pick `basecamp:stop` and `basecamp:destroy` offer with no id.
+// A droplet with no server id is the Basecamp host: `fli basecamp:create` is the
 // only maker of one, and refuses to make a second while one is at the account.
 // Each column is padded before it is painted: an escape code counts toward padEnd.
 // `chalk` is handed in, since a module script does not see `$`.
@@ -162,7 +160,7 @@ const runFli = async (argv) => {
 }
 
 // ─── Basecamp on a box ────────────────────────────────────────────────────────
-// `fli provision` runs these on the box it just bought and `provision:install`
+// `fli basecamp:create` runs these on the box it just bought and `basecamp:install`
 // on one that already answers ssh, so the two cannot install differently.
 // Answers the first run that failed, or null. `say` hears each step as it
 // starts: deploy:setup is minutes of apt with nothing printed for long stretches.
@@ -256,7 +254,8 @@ const waitForSsh = async (dest, { identity, timeoutMs = 240_000, everyMs = 5_000
 
 ## Setup
 
-A DigitalOcean personal access token, in your global fli env. A first run at a
+`create`, `stop`, `destroy` and the bare `fli basecamp` list need a
+DigitalOcean personal access token, in your global fli env. A first run at a
 terminal walks you through it: it opens the page the token is made on, takes
 the paste, stores it, and asks whether to install Basecamp on the box once it
 is up.
@@ -270,8 +269,14 @@ is up.
 ## What it makes
 
 One droplet, tagged `basecamp`, carrying your SSH public key and nothing
-else. `fli provision:install <server> --domain <host>` then puts Basecamp on it
+else. `fli basecamp:install <server> --domain <host>` then puts Basecamp on it
 from any directory — `fli deploy:setup --auto-install` and `fli deploy`, run
 in `packages/basecamp` — and works the same on a box you made some other way.
 Both ask whether the box is also an Outpost, and enroll it with `fli
 deploy:outpost` once the first admin is made.
+
+## Releasing through it
+
+`fli basecamp:deploy --app <id>` builds an app's image here, loads it onto
+every machine Basecamp runs that app on, and asks Basecamp to release it. It
+needs a `BASECAMP_API_KEY` from the running Basecamp, not a DigitalOcean token.

@@ -1,6 +1,6 @@
 ---
 namespace: tell
-description: Letters between fli users — one Cloudflare Worker, a key per machine, an invite to join
+description: Letters between members of the Frontier network, left at the project's post
 ---
 
 <script>
@@ -64,11 +64,9 @@ Mail between members of the Frontier network (`FJS-D1392`). Who a
 member is — the key, the chain, the nick — is `frontier:` (`commands/frontier/`,
 `core/frontier-member.js`); these verbs only read it.
 
-- `tell:setup` — the owner's one run: a key, the Worker deployed to their Cloudflare account, the origin saved.
 - `tell:send <nick> <words>`, alias `tell` — a letter left at the post for a member, signed, and sealed to them once they have a sealing key. `--env KEY...` sends env values instead, and only sealed.
 - `tell:inbox`, alias `inbox` — the letters waiting, oldest first, opened; reading deletes them. `-f` stays open and prints each as it arrives.
 
 What a machine keeps for mail, beside the member's files `commands/frontier/_module.md` lists:
 
-- `~/.fli/frontier/wrangler.jsonc` — the owner's deploy config; wrangler's state sits beside it.
 - `~/.fli/frontier/waiting.json` — who has letters waiting, as the last check found it; every `fli` command prints one line from it while any wait, and checks again in the background once it is a minute old.

@@ -224,21 +224,47 @@ verbs spelled as Phase 1 renamed them. 2.4 carries Q7's age (`FJS-D1445`), so
 it is the step Phase 3 waits on. Nothing here is handed out until
 the chain, linking and revoking are built (`FJS-D1409`), which they are.
 
-- [ ] 2.1 The project's post, the only one (`FJS-D1413`, `FJS-D1414`): its
+- [x] 2.1 The project's post, the only one (`FJS-D1413`, `FJS-D1414`): its
   origin is built into `fli`, `frontier:stake <nick> <code>` takes a bare
   code, and `tell:setup` leaves the user surface to become how the
   maintainers deploy it. Joining stays by invite until a point not yet named
   (`FJS-D1415`), which is ruled as its own question when it is near.
-- [ ] 2.2 A number per member: `members` gains `number INTEGER UNIQUE` and
+  Built: `POST_ORIGIN` in `core/tell.js`, `https://network.frontierjs.com`
+  (owner, 2026-10-22), and `FLI_FRONTIER_POST` stands a `wrangler dev` post
+  in for a drive. `frontier.api` is gone from `config.json`: `frontier.nick`
+  is what says a machine is a member, so a member staked on `workers.dev`
+  moves with no edit. `invite` prints `fli frontier:stake <code>`, and `link`
+  and `paper` on a new machine take no origin. `tell:setup` became `ws:post`,
+  which deploys the custom domain with `workers_dev` off (owner, 2026-10-22).
+  Driven under `wrangler dev` with three scratch `HOME`s, 18 checks: a bare
+  code staked, a URL-shaped one and a spent one refused, a letter each way,
+  a paper key walking a new machine in, `ws:post --dry`. Unknown commands
+  exit 0, so `tell:setup` being gone is read off its output (`FJS-3466`).
+- [x] 2.2 A number per member: `members` gains `number INTEGER UNIQUE` and
   `invitedBy`, set inside `join` as one past the highest number. The object
   takes one request at a time, so two joins cannot draw one number. A number
   is never reused — a member who leaves keeps it and the row stays. The owner
   is #1. Today `join` drops the inviter: `invites.byNick` is read and never
   copied to the member.
-- [ ] 2.3 An invite allowance: each member mints a fixed count of codes, three
-  to start, held as a var beside `OWNER_NICK`. A low number then means
-  somebody vouched for it, and numbers cannot be farmed. `invite` is
-  unbounded today (`FJS-D1394`).
+  Built: the columns are added by `ALTER` with a unique index beside them,
+  since SQLite cannot add a UNIQUE column. A member from before numbers draws
+  one at startup, owner first and then by `joined`, with `invitedBy` left
+  blank. `GET /members` answers both, ordered by number, and `stake` prints
+  `You are #3 ada …`. Driven under `wrangler dev`, 9 checks: a post on the
+  HEAD worker with the owner and one member, restarted on the new one, holds
+  #1 and #2; two joins after it draw #3 and #4 with their inviters; a restart
+  moves no number; a refused join draws none. The live post's `jordan`
+  becomes #1 at the next `fli ws:post`.
+- [x] 2.3 An invite allowance: each member mints a fixed count of codes, three
+  to start. A low number then means somebody vouched for it, and numbers
+  cannot be farmed (`FJS-D1466`).
+  Built: `INVITE_ALLOWANCE` beside `INVITE_SECONDS` in `core/tell-worker.js`,
+  not a var, since `ws:post` writes the config from code on every run. Joins
+  vouched for plus live codes are counted, so an unspent code gives its seat
+  back when it expires; the owner is uncounted. `invite` prints what is left.
+  Driven under `wrangler dev`, 10 checks: the owner mints a fourth, a member
+  counts 2, 1, last and is refused at a fourth, a join keeps the seat, a code
+  minted before the cap still spends. Expiry is not driven: a day.
 - [ ] 2.4 The signed member row: at join the post signs `{ number, nick,
   root, head, joined, invitedBy, fliVersion, signed }` with a key of its own,
   countersigning the chain's head (`FJS-D1421`) and signed again as the head
@@ -253,7 +279,8 @@ the chain, linking and revoking are built (`FJS-D1409`), which they are.
   prints the signed row beside the fingerprint words: `#0042 sam · joined
   2026-10-21 · pre-1.0 · via #0007`. One verb for *who is this*, not two.
 - [ ] 2.6 `fli frontier:lineage [nick]`: the invite tree read from `invitedBy`.
-- [ ] 2.7 `GET /badge/<number>.svg` from the Worker, for a README.
+- [ ] 2.7 `GET /badge/<number>.svg` from the Worker, for a README: the
+  member's crest (2.10) beside `#0042 sam` (owner, 2026-10-22).
 - [ ] 2.8 In Haven, the number is a nameplate on a member's figure, and
   `IDEAS/haven.md` 22.4's post office carries the members as a board.
   **Needs haven Phase 22.**
@@ -261,6 +288,28 @@ the chain, linking and revoking are built (`FJS-D1409`), which they are.
   code is spent — where a code of conduct is read once. From memory, not
   checked: the historical Pony Express ran April 1860 to October 1861 with
   about 80 riders on the trail at a time, and each swore an oath.
+- [x] 2.10 The crest: a member's mark, drawn from the chain root as the
+  eight words are (owner, 2026-10-22). It is the words as a picture, so it
+  is stored nowhere and is the same on every machine. It is for recognition,
+  not proof: people compare a picture fast but unevenly under attack
+  ([Tan et al., CHI 2017](https://users.ece.cmu.edu/~lbauer/papers/2017/chi2017-fingerprints-author.pdf)),
+  so the words stay the check. The shape is borrowed: a mirrored 5×5 grid
+  from a hash ([GitHub identicons](https://github.blog/2013-08-14-identicons),
+  after Perrig and Song's 1999 hash visualization) and a mark per identity
+  ([Urbit sigils](https://github.com/urbit/sigil-js)). One pure module beside
+  `pgp-words.js`, read by the Worker (2.7's SVG) and the cli (`frontier:who`
+  draws it in colored half-blocks). A fixed root-to-grid vector is its test,
+  because moving the algorithm redraws every member's crest. The root draws
+  the field. The number and nick are written on the frame (a scroll reading
+  `#0042 sam`), and they are not in the hash, because a crest that changed
+  with them would no longer match the words.
+  Built: `core/crest.js` reads the 64 bits the words read — two bytes for
+  the 15 cells, then a metal, a color and which is the field, so the rule of
+  tincture always holds. Four colors, not five: sable vanishes on a dark
+  terminal. `frontier:who` draws it beside the label and words, `██` per cell,
+  the field shaded `░░` with color off. The scroll waits for 2.5 (the number in
+  `who`) and 2.7 (the SVG). The fixed root-to-grid test is owed until the
+  drawing is settled.
 
 ### Phase 3 — Haven reads the chain
 
@@ -295,12 +344,13 @@ prints the squatting line.
   beside the row and never in place of the nick.
 - [ ] 5.2 The nick as a subdomain. Waits on Q3, which is ruled again when
   Frontier Cloud has a first customer (`FJS-D1448`).
-- [ ] 5.3 The post served from a `frontierjs.com` host rather than
+- [x] 5.3 The post served from a `frontierjs.com` host rather than
   `fli-tell.knightworks.workers.dev`: a custom domain on the same Worker,
-  owner's ask 2026-10-22. The origin is in every invite and in every member's
-  `frontier.api`, so each member staked before the move edits their config
-  by hand. Land it before 2.1 builds the origin into `fli` (`FJS-D1414`) and
-  before strangers join, while the members are few enough to tell.
+  owner's ask 2026-10-22. Land it before strangers join.
+  Built with 2.1: `network.frontierjs.com`, deployed by `fli ws:post` with
+  `workers_dev` off, and no member's config names the origin. Deployed
+  2026-10-22: `frontier:who` and `tell:inbox` answer from the new host and
+  the `workers.dev` address answers 404.
 
 ### Phase 6 — The owner's view
 

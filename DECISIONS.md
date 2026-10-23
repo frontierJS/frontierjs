@@ -35,6 +35,14 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1465"></a>2026-10-22 · `FJS-D1465` — fli's Basecamp commands are one `basecamp:*` namespace, named for what is on the other end of the wire: `fli basecamp` lists, `basecamp:create`, `basecamp:install`, `basecamp:dns`, `basecamp:stop`, `basecamp:destroy` take Basecamp's own box through its life, and `basecamp:deploy` releases an app through a running Basecamp. `deploy:outpost` stays in `deploy:*`, because it is `fli deploy`'s own step.
+
+Asked in chat, after `fli provi<Tab>` listed seven `provision:*` commands that act on one thing, Basecamp, under a verb. **The table as written** was picked over the other arrangements and words offered. As recommended. This supersedes the name in `IDEAS/zero-to-live.md` 3.1 (`fli provision`, 2026-10-20), and a bare `fli basecamp` no longer buys a droplet, so the command that costs money has to be named in full. `provision:off` became `basecamp:stop`, the opposite of the verb `create`. There is no alias for any old spelling (root `CLAUDE.md` § Evolution policy).
+
+A command may now declare its own `requires:`, read beside its namespace's (`packages/cli/core/runtime.js`), because `basecamp:deploy`, `install` and `dns` need no DigitalOcean token while `create`, the list, `stop` and `destroy` do. Under the namespace-wide list, `install` and `dns` used to demand one. `vendorApp` moved to `core/vendor.js`, so the `deploy` and `basecamp` namespaces share one owner rather than a module script each.
+
+The nine: one origin, since each command lives in one file and the old files were moved rather than copied; no new concept, since a namespace and `requires:` already exist; complexity is removed, because `deploy:basecamp` no longer sits beside SSH deploys it shares nothing with; predictability improves, because a namespace names a counterpart, as `deploy:*` names a server this pipeline owns; nothing is derived; the owner is the module, and `vendorApp`'s is `core/vendor.js`; at the boundary, a caller no longer has to know that `install` does not use the token it was asked for; the failure stays a refusal at the runtime naming the key; on silence, `parseCommands` and the cli suite fail a command that does not compile, but nothing fails a stale `provision:` in prose. Answered after the edit.
+
 ### <a id="fjs-d1451"></a>2026-10-22 · `FJS-D1451` — Q6 — Whether a nick can change — Never. The nick is the name, and the number never changes either.
 
 Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (renamable, with the old nick held back for a period).
@@ -1619,6 +1627,12 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d1466"></a>2026-10-22 · `FJS-D1466` — The invite allowance — Three joins per member, a code not yet spent counted as one, and the owner uncounted.
+
+Asked while building [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) 2.3. **A** (the owner uncapped) was picked over **B** (the owner capped too, raising the number and redeploying for more seats) and **C** (a second var for the owner's count).
+
+The recommendation, taken: joining is by invite only (`FJS-D1415`), so the owner is the network's one open door, and a cap at the root stalls it. A join counts for good and a live code until it expires, so a code nobody spends gives its seat back. The number is `INVITE_ALLOWANCE` beside `INVITE_SECONDS` in `core/tell-worker.js`, not a Worker var: `fli ws:post` writes the wrangler config from code on every run, so a var would be the same constant stated in a second file. A member from before numbers (`FJS-D1394`'s V1) has a blank `invitedBy`, so a join it vouched for then is not counted.
 
 ### <a id="fjs-d1461"></a>2026-10-23 · `FJS-D1461` — Q10 — Whether the owner's view shows letter text — Never: count, oldest, bytes, and sealed or plain. *Synapse's* admin API lists rooms and whether each is encrypted, and returns encrypted content still encrypted ([rooms](https://github.com/dklimpel/synapse_archive/blob/119b137cfa72e5e24c700eb5c5c060e62728597d/docs/admin_api/rooms.md), [FAQ](https://git.sharpetronics.com/sharpetronics/synapse/raw/branch/develop/docs/usage/administration/admin_faq.md)).
 
@@ -14938,7 +14952,7 @@ The nine, answered before the first edit: 1 origin — the key written once, loc
 
 Adjudication: none in tension. Tier: Register here; Map in `packages/cli/CLAUDE.md` (`env-preflight.js`).
 
-*Lives in:* `packages/cli/core/env-preflight.js` (`fillKey`) · `packages/cli/commands/deploy/_steps-setup/03-directories.md` · `packages/cli/commands/deploy/_steps-setup/05-caddy.md` · `packages/cli/commands/provision/index.md` · `packages/basecamp/.env.example`.
+*Lives in:* `packages/cli/core/env-preflight.js` (`fillKey`) · `packages/cli/commands/deploy/_steps-setup/03-directories.md` · `packages/cli/commands/deploy/_steps-setup/05-caddy.md` · `packages/cli/commands/basecamp/create.md` · `packages/basecamp/.env.example`.
 
 ### <a id="fjs-d1380"></a>2026-10-21 · `FJS-D1380` — Q1 — Proxied or DNS-only for Basecamp's own hostname — DNS-only: step 3.4's script makes Basecamp's Domain row without naming `proxied`, so it takes the schema's `false` (`FJS-D563`, `Domain.proxied` in `packages/basecamp/db/schema.lite`); the A record points straight at the droplet and Caddy's HTTP-01 certificate is what the browser sees. The command's last step then verifies HTTPS answers at the hostname with a valid certificate, and at a terminal offers the flip to proxied — which sets the zone to Full (strict) first (step 2.4), since the origin now has the certificate strict mode needs.
 **Amended 2026-10-22 by [`FJS-D1422`](#fjs-d1422):** the flip sets Full (strict) for Basecamp's host alone, as a Configuration Rule, and never the zone.

@@ -1,4 +1,8 @@
-// ─── requires.js — what a namespace's `_module.md` says it cannot run without ─
+// ─── requires.js — what a namespace or one command says it cannot run without ─
+//
+// A namespace states it in `_module.md`; a command states its own in its
+// frontmatter when its siblings do not all need the key (FJS-D1465). The runtime
+// reads both as one list.
 //
 // An entry is a key, or a key with the page where one is made — and, after the
 // URL, what to pick on that page, because a vendor's form cannot be prefilled:

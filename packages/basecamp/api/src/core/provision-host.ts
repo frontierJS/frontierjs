@@ -1,6 +1,6 @@
 // api/src/core/provision-host.ts — the machine Basecamp itself will run on, made at DigitalOcean.
 //
-// `fli provision` runs it from this checkout (`FJS-D1253`), with the token in
+// `fli basecamp:create` runs it from this checkout (`FJS-D1253`), with the token in
 // the environment so it never sits in a process listing:
 //
 //   DIGITALOCEAN_TOKEN=… bun api/src/core/provision-host.ts '{"action":"create","size":"4gb",…}'
@@ -124,7 +124,7 @@ async function create() {
   if (prior.length)
     fail(`a machine provisioned earlier is still at this account: `
       + prior.map(m => `${m.providerServerId} (${m.ipAddress ?? 'no address yet'})`).join(', ')
-      + ` — fli provision:off <id> then fli provision:destroy <id> removes it, or fli provision:install installs on it`)
+      + ` — fli basecamp:stop <id> then fli basecamp:destroy <id> removes it, or fli basecamp:install installs on it`)
 
   step('Putting your SSH public key on the account')
   const sshKey = await connector.sshKey(send, { name: keyName || `fli ${name}`, publicKey })
@@ -159,7 +159,7 @@ async function ownDroplet(doIt: string) {
   const id = input.id
   if (!id) fail(`${input.action} needs id`)
   const ours = (await connector.marked(send, fleetMark())).find(m => m.providerServerId === id)
-  if (!ours) fail(`${id} is not a droplet fli provision made (no fleet tag at this account)`)
+  if (!ours) fail(`${id} is not a droplet fli basecamp:create made (no fleet tag at this account)`)
   if (ours!.serverId) fail(`${id} is a fleet machine Basecamp made (server ${ours!.serverId}): ${doIt} in Basecamp`)
   return ours!
 }
@@ -168,7 +168,7 @@ async function destroy() {
   const ours = await ownDroplet('destroy it')
   // Powering it off first is the second hand on the destroy: a box still
   // serving cannot be removed by one mistyped id or one wrong pick.
-  if (ours.status !== 'off') fail(`${ours.providerServerId} is ${ours.status}: fli provision:off ${ours.providerServerId} first, then destroy it`)
+  if (ours.status !== 'off') fail(`${ours.providerServerId} is ${ours.status}: fli basecamp:stop ${ours.providerServerId} first, then destroy it`)
 
   await connector.destroy(send, ours.providerServerId)
   answer({ destroyed: ours.providerServerId })

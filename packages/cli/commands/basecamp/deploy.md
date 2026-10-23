@@ -1,11 +1,11 @@
 ---
-title: deploy:basecamp
+title: basecamp:deploy
 description: Build the app's image here, load it onto every machine Basecamp runs the app on, and release that digest
 examples:
-  - BASECAMP_API_KEY=… fli deploy:basecamp --app <app-id>
-  - BASECAMP_URL=https://basecamp.example.com BASECAMP_API_KEY=… fli deploy:basecamp --app <app-id>
-  - fli deploy:basecamp --app <app-id> --server deploy@10.0.0.5
-  - fli deploy:basecamp --app <app-id> --dry
+  - BASECAMP_API_KEY=… fli basecamp:deploy --app <app-id>
+  - BASECAMP_URL=https://basecamp.example.com BASECAMP_API_KEY=… fli basecamp:deploy --app <app-id>
+  - fli basecamp:deploy --app <app-id> --server deploy@10.0.0.5
+  - fli basecamp:deploy --app <app-id> --dry
 flags:
   app:
     type: string
@@ -14,6 +14,10 @@ flags:
   url:
     type: string
     description: Basecamp's API origin (default is BASECAMP_URL, then the local dev API)
+  server:
+    type: string
+    description: "An ssh destination for an App on one machine: an alias from ~/.ssh/config, or user@host. Replaces the Server row's address"
+    defaultValue: ''
 ---
 
 The release path for an app Basecamp runs whose image cannot be built from a
@@ -41,6 +45,10 @@ would put it in shell history. The key needs `apps:read`,
 standing that may release in its workspace.
 
 <script>
+const { loadFrontierConfig }         = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
+const { vendorApp, GENERATED_DIR }   = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
+const { createMachine }              = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
+
 // The dev API's port in basecamp's own CLAUDE.md, as `fli ws:deps --push` has it.
 const LOCAL_BASECAMP = 'http://localhost:8120'
 
@@ -130,10 +138,11 @@ if (!/^sha256:[0-9a-f]{64}$/.test(imageId)) throw new Error(`docker named no ima
 log.success(`Built ${tag} → ${imageId.slice(0, 19)}`)
 
 // ─── Onto each machine ────────────────────────────────────────────────────────
-const here = machineFor($, 'localhost', null, 'local')
+const machineFor = (host, transport = null) => createMachine({ host, exec: $.exec, transport })
+const here = machineFor('localhost', 'local')
 for (const d of destinations) {
   log.info(`Loading ${tag} onto ${d.name} (${d.host})...`)
-  const shipped = here.shipTo(machineFor($, d.host), tag)
+  const shipped = here.shipTo(machineFor(d.host), tag)
   if (!shipped) log.info(`${d.name} is this machine's daemon — the image is already there`)
 }
 

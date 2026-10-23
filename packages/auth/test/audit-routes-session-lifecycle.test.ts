@@ -76,6 +76,24 @@ describe('session fixation', () => {
   })
 })
 
+// V8.3.2 -- a level change rotates no token, so the next request has to re-read
+// the person or a demoted admin keeps admin for the session's 30 days.
+describe('a level change on a live session', () => {
+  test('a promotion and a demotion each reach the same token on its next request', async () => {
+    const a = await person('level')
+    const { token, user } = signedIn(await h.auth.login(a.email, a.password))
+    const bearer = { authorization: `Bearer ${token}` }
+
+    await h.sys.user.update({ where: { id: user.id }, data: { role: 'admin' } })
+    expect((await raw(bearerApp, 'GET', '/account/me', { headers: bearer })).body.role).toBe('admin')
+
+    await h.sys.user.update({ where: { id: user.id }, data: { role: 'user' } })
+    const me = await raw(bearerApp, 'GET', '/account/me', { headers: bearer })
+    expect(me.status).toBe(200)
+    expect(me.body.role).toBe('user')
+  })
+})
+
 describe('cookie attributes', () => {
   test('login sets HttpOnly; SameSite=Lax; Path=/ and logout clears with the same Path', async () => {
     const a = await person('attrs')

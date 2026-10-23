@@ -410,7 +410,7 @@ call. A row of parts with one separator is an array `.join(chalk.dim(' · '))`.
 `echo` is a tag as well as a call, and the template prints verbatim, so every
 leading space in the source is output and a body line starts at column 0.
 `echo` adds the final newline, so the closing backtick on its own line leaves
-one blank line after the block. `commands/provision/index.md` is the reference:
+one blank line after the block. `commands/basecamp/create.md` is the reference:
 
 ```js
 const block = `Host ${made.name}

@@ -1,11 +1,11 @@
 // api/src/core/host-record.ts — Basecamp's own hostname, pointed at its box at Cloudflare.
 //
-// `fli provision:dns` runs it from this checkout, with the token in the
+// `fli basecamp:dns` runs it from this checkout, with the token in the
 // environment so it never sits in a process listing:
 //
 //   CLOUDFLARE_TOKEN=… bun api/src/core/host-record.ts '{"host":"ops.example.com","ip":"203.0.113.7"}'
 //
-// `{"host":…,"check":true}` finds the zone and writes nothing: `fli provision`
+// `{"host":…,"check":true}` finds the zone and writes nothing: `fli basecamp:create`
 // asks it before buying a box, so a token that cannot reach the name is found
 // while nothing has been spent.
 //

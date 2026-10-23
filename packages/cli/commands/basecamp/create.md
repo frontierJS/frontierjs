@@ -1,14 +1,16 @@
 ---
-title: provision:create
+title: basecamp:create
 description: Create a DigitalOcean droplet for Basecamp, print its IP and add its ssh Host
-alias: provision
+requires:
+  - DIGITALOCEAN_TOKEN: https://cloud.digitalocean.com/account/api/tokens/new  Pick Full Access
 effects: creates a droplet at DigitalOcean, billed to the token's account; installing also writes its DNS record at Cloudflare
 confirm: human
 examples:
-  - fli provision
-  - fli provision --size 8gb --region sfo3
-  - fli provision --name ops --key ~/.ssh/id_rsa.pub
-  - fli provision --domain ops.example.com
+  - fli basecamp:create
+  - fli basecamp:create --size 8gb --region sfo3
+  - fli basecamp:create --name ops --key ~/.ssh/id_rsa.pub
+  - fli basecamp:create --domain ops.example.com
+  - fli basecamp:create --yes --domain ops.example.com --name ops
 flags:
   size:
     type: string
@@ -42,6 +44,11 @@ flags:
     type: boolean
     description: When installing, enroll the box in Basecamp's own fleet, so apps can run beside it (asked at a terminal)
     defaultValue: true
+  yes:
+    char: y
+    type: boolean
+    description: Say yes to every question, installing included, and take Enter's answer for the rest
+    defaultValue: false
   json:
     char: j
     type: boolean
@@ -57,7 +64,7 @@ are shown together and one last key buys the box or leaves it. Then creates one 
 with your SSH key on it, waits until it has an address,
 and adds a `Host` block for it to `~/.ssh/config` — asked first, yes unless you
 say no; a `Host` of that name already there is left alone and the block printed
-instead. Nothing is installed on it unless asked: `fli provision:install` puts
+instead. Nothing is installed on it unless asked: `fli basecamp:install` puts
 Basecamp on it, and the run prints that line.
 
 `--admin <email>` installs without asking, which is how a run with no terminal
@@ -68,7 +75,7 @@ gets past the bare box: `deploy:setup --auto-install` asks nothing, makes the
 password is asked; Enter, or no terminal, generates one and prints it once.
 An install also asks whether the box is an Outpost of Basecamp's own fleet —
 yes by default, `--no-outpost` to leave it out — and enrolls it with `fli
-deploy:outpost` after the admin, as `fli provision:install` does.
+deploy:outpost` after the admin, as `fli basecamp:install` does.
 
 The box and the hostname reach the install as `--server` and `--domain`, and
 every deploy line the run prints carries both, so nothing is written into
@@ -76,15 +83,23 @@ every deploy line the run prints carries both, so nothing is written into
 with none refuses before anything is bought.
 
 Once Basecamp is up the run points the hostname at the box — `fli
-provision:dns`'s write, DNS-only, in a record Basecamp's own edge reads as its
+basecamp:dns`'s write, DNS-only, in a record Basecamp's own edge reads as its
 own. The token is checked right after the hostname, before any other question or
 purchase: one that opens no zone holding it refuses the run, so nothing is spent
 on a box whose name cannot be pointed at it. With no `CLOUDFLARE_TOKEN` a
 terminal takes the paste, and a run with no terminal warns, installs, and prints
-the `fli provision:dns` line instead of writing the record.
+the `fli basecamp:dns` line instead of writing the record.
+
+`--yes` answers every question for you: each yes/no is yes — installing,
+the Outpost and the purchase included — and each typed answer is what Enter
+takes. It refuses without `--domain` and `--name`, since a run that asks nothing
+names the box on the command line. The admin is `--admin`, else
+`ME` from your global fli env (none, and it is made at `/setup` in the
+browser), and the password generated. The summary still prints. A missing
+token is still asked for, since it has no default.
 
 A second run refuses while a box made by an earlier one is still at the
-account, so a retry never buys two. `fli provision:list` shows it, and `fli provision:off <id>` then `fli provision:destroy <id>` removes it.
+account, so a retry never buys two. `fli basecamp` shows it, and `fli basecamp:stop <id>` then `fli basecamp:destroy <id>` removes it.
 
 ```js
 const { existsSync, readFileSync } = await import('node:fs')
@@ -111,14 +126,24 @@ if (flag.admin && flag.json) {
   return
 }
 
-const asking = process.stdin.isTTY && !flag.json
+// Under --yes the tty answers each question with its default, so the run takes
+// the asking path with nobody at it; `yes` below turns a no-default into yes.
+const asking = (process.stdin.isTTY || flag.yes) && !flag.json
+
+// A default hostname or name under --yes would buy a box nobody named.
+const unnamed = flag.yes ? ['domain', 'name'].filter(f => !flag[f]) : []
+if (unnamed.length) {
+  log.error(`--yes needs ${unnamed.map(f => `--${f}`).join(' and ')}: it buys and installs without asking, so the box is named on the command line. Nothing was bought`)
+  process.exitCode = 1
+  return
+}
 const question = (q, hint) => `${chalk.cyan('?')} ${chalk.bold(q)}${hint ? chalk.dim(`  ${hint}`) : ''}`
 const ask = async (q, hint) => (await tty.line(`${question(q, hint)}\n  ${chalk.cyan('›')}`)).trim()
-const yes = async (q, fallback) =>
+const yes = async (q, fallback) => flag.yes ||
   await tty.keys(question(q), fallback ? { y: 'yes', n: 'no' } : { n: 'no', y: 'yes' }) === 'y'
 const row = (label, value) => echo(`  ${chalk.dim(label.padEnd(9))} ${value}`)
 
-if (asking) echo(`\n  ${chalk.bold('fli provision')}  ${chalk.dim('a DigitalOcean droplet for Basecamp')}\n`)
+if (asking) echo(`\n  ${chalk.bold('fli basecamp:create')}  ${chalk.dim('a DigitalOcean droplet for Basecamp')}\n`)
 
 // The hostname is asked before anything else, and the DNS step this run ends by
 // naming is checked on it: a token that opens no zone holding the hostname
@@ -193,7 +218,7 @@ if (asking) {
   row('server', `${chalk.bold(name)} ${chalk.dim(`· ${flag.size} · ${flag.region} · ${flag.image}`)}`)
   row('key', keyPath.replace(home, '~'))
   row('ssh', addHost ? `Host ${name} in ~/.ssh/config` : chalk.dim('print the Host block'))
-  row('install', install ? `yes ${chalk.dim('— deploy:setup --auto-install, then deploy')}` : chalk.dim('no — fli provision:install later'))
+  row('install', install ? `yes ${chalk.dim('— deploy:setup --auto-install, then deploy')}` : chalk.dim('no — fli basecamp:install later'))
   if (admin) row('admin', `${admin} ${chalk.dim(password ? '' : '— password generated')}`)
   if (install) row('outpost', outpost ? `yes ${chalk.dim('— fli deploy:outpost once the admin is made')}` : chalk.dim('no'))
   echo('')
@@ -215,7 +240,7 @@ echo('')
 row('droplet', `${chalk.bold(made.name)}  ${made.id}  ${chalk.dim(`${made.size} · ${made.region} · ${made.image}${monthly}`)}`)
 
 if (made.pending) {
-  log.warn(`  It has no address yet. Read it later in the DigitalOcean console, or destroy it: fli provision:destroy ${made.id}`)
+  log.warn(`  It has no address yet. Read it later in the DigitalOcean console, or destroy it: fli basecamp:destroy ${made.id}`)
   return
 }
 
@@ -259,7 +284,7 @@ const dest = `root@${made.ip}`
 const box = added ? made.name : dest
 const named = domain && domain !== configured ? ` --domain ${domain}` : ''
 const later = ` --server ${box}${named}`
-const installLine = `fli provision:install ${box}${named}`
+const installLine = `fli basecamp:install ${box}${named}`
 if (!install) {
   echo`
   ${chalk.dim('Then, from anywhere in this checkout:')}

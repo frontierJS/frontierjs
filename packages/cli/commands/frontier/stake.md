@@ -75,6 +75,6 @@ if (answer.status !== 201) {
 writeMemberConfig({ nick: answer.json.nick, root: answer.json.root ?? null })
 const boxed = await publishOwn(api, keys).catch(e => e.message)
 if (boxed) log.warn(`The post did not take ${boxed} — the next \`fli tell\` verb tries again.`)
-log.success(`You are ${answer.json.nick} at ${api}, invited by ${answer.json.invitedBy}.`)
+log.success(`You are #${answer.json.number} ${answer.json.nick} at ${api}, invited by ${answer.json.invitedBy}.`)
 echo(`  saved as frontier.nick in ${CONFIG_FILE}`)
 ```

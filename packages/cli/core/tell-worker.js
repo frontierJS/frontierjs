@@ -2,7 +2,7 @@
 // and one Durable Object holding every member, invite and letter
 // (FJS-D1392).
 //
-// Never imported by the cli. `fli tell:setup` points a wrangler config at this
+// Never imported by the cli. `fli ws:post` points a wrangler config at this
 // file and wrangler bundles it, so it runs in workerd and may use nothing a
 // Worker lacks. It ships because `core/` is in the package's `files`.
 //
@@ -11,7 +11,7 @@
 // `signRequest`), named in `x-tell-key`; a key that is no member's machine is
 // refused before the signature is looked at. `join` is signed by the machine
 // its root names, as Haven's login is. The owner is member one, seeded from
-// the OWNER_KEY and OWNER_NICK vars that `tell:setup` writes, with no chain
+// the OWNER_KEY and OWNER_NICK vars that `ws:post` writes, with no chain
 // until its first verb publishes one — as is any member who joined before
 // chains. A chain is stored only once every link verifies and it carries the
 // stored one forward, so the post can neither write a link nor take one back.
@@ -67,6 +67,12 @@ const SEND_MAX     = 5
 const SEND_SECONDS = 10
 /** An invite is spent by its first join or expires in a day (FJS-D1394). */
 const INVITE_SECONDS = 86400
+/**
+ * Joins a member may vouch for, live codes counted, so a low number means
+ * somebody vouched for it and numbers cannot be farmed. The owner has none:
+ * joining is by invite only (FJS-D1415), so the owner is the one open door.
+ */
+const INVITE_ALLOWANCE = 3
 const BODY_MAX     = 4000
 /** A sealed letter's length, opaque here: 4000 characters JSON-escaped, sealed, then base64url, with room. */
 const SEALED_MAX   = 32768
@@ -134,12 +140,22 @@ export class TellPost {
     for (const [table, column] of [
       ['members', 'sealKey TEXT'], ['letters', 'sealed INTEGER NOT NULL DEFAULT 0'],
       ['members', 'root TEXT'], ['members', 'seq INTEGER'], ['members', 'head TEXT'],
+      ['members', 'number INTEGER'], ['members', 'invitedBy TEXT'],
     ]) {
       try { this.sql.exec(`ALTER TABLE ${table} ADD COLUMN ${column}`) } catch {}
     }
-    const owner = String(env.OWNER_NICK ?? '').trim().toLowerCase()
+    // SQLite's ALTER cannot add a UNIQUE column, so the index is what stops
+    // two members holding one number.
+    this.sql.exec('CREATE UNIQUE INDEX IF NOT EXISTS members_number ON members (number)')
+    const owner = this.owner = String(env.OWNER_NICK ?? '').trim().toLowerCase()
     if (env.OWNER_KEY && NICK.test(owner)) {
       this.sql.exec('INSERT OR IGNORE INTO members (nick, publicKey, joined) VALUES (?, ?, ?)', owner, env.OWNER_KEY, now())
+    }
+    // A member who joined before numbers draws one now, the owner first and
+    // then in the order they joined, so the owner of a post deployed before
+    // numbers is still #1. A numbered row is never touched again.
+    for (const { nick } of this.sql.exec('SELECT nick FROM members WHERE number IS NULL ORDER BY nick = ? DESC, joined, nick', owner).toArray()) {
+      this.sql.exec('UPDATE members SET number = (SELECT COALESCE(MAX(number), 0) + 1 FROM members) WHERE nick = ?', nick)
     }
     // A member with no chain is a chain of one not yet published: its one
     // machine is the key it came in with, and a sealing key no chain signed
@@ -281,13 +297,20 @@ export class TellPost {
   invite(nick) {
     const t = now()
     this.sql.exec('DELETE FROM invites WHERE expires <= ?', t)
+    // A code that expires unspent gives its seat back; a join never does.
+    let left = null
+    if (nick !== this.owner) {
+      const { used } = this.sql.exec('SELECT (SELECT COUNT(*) FROM members WHERE invitedBy = ?) + (SELECT COUNT(*) FROM invites WHERE byNick = ?) AS used', nick, nick).one()
+      if (used >= INVITE_ALLOWANCE) return refuse(403, `You have vouched for ${INVITE_ALLOWANCE}, counting codes not yet spent. A code nobody spends gives its seat back when it expires.`)
+      left = INVITE_ALLOWANCE - used - 1
+    }
     const code = inviteCode()
     this.sql.exec('INSERT INTO invites (code, byNick, expires) VALUES (?, ?, ?)', code, nick, t + INVITE_SECONDS)
-    return answer({ code, expires: t + INVITE_SECONDS }, 201)
+    return answer({ code, expires: t + INVITE_SECONDS, left }, 201)
   }
 
   members() {
-    return answer({ members: this.sql.exec('SELECT nick, publicKey, sealKey, root, seq, head, joined FROM members ORDER BY joined, nick').toArray() })
+    return answer({ members: this.sql.exec('SELECT number, nick, invitedBy, publicKey, sealKey, root, seq, head, joined FROM members ORDER BY number').toArray() })
   }
 
   // A member's links as they were signed, for a client to verify itself:
@@ -504,9 +527,11 @@ export class TellPost {
     if (this.sql.exec('SELECT 1 FROM members WHERE nick = ?', nick).toArray().length) return refuse(409, `The nick '${nick}' is taken. Choose another.`)
     const spent = this.sql.exec('DELETE FROM invites WHERE code = ? AND expires > ? RETURNING byNick', String(code ?? ''), now()).toArray()[0]
     if (!spent) return refuse(403, 'That invite is spent, expired or unknown. Ask a member for a new one.')
-    this.sql.exec('INSERT INTO members (nick, publicKey, joined) VALUES (?, ?, ?)', nick, machine, now())
+    // Drawn in the same synchronous run, so two joins cannot draw one
+    // number; a member never leaves the table, so a number is never reused.
+    const { number } = this.sql.exec('INSERT INTO members (nick, publicKey, joined, number, invitedBy) VALUES (?, ?, ?, (SELECT COALESCE(MAX(number), 0) + 1 FROM members), ?) RETURNING number', nick, machine, now(), spent.byNick).one()
     this.storeChain(nick, links, graded.chain, 0)
-    return answer({ nick, invitedBy: spent.byNick, root: graded.chain.root }, 201)
+    return answer({ number, nick, invitedBy: spent.byNick, root: graded.chain.root }, 201)
   }
 }
 

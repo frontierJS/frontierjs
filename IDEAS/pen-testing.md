@@ -27,7 +27,7 @@ Each row's requirements are `THREATS.md`'s *ASVS* column. A signed request (B8�
 
 - **`rateLimitHook` counts in a process `Map`** (`packages/junction/src/core/rate-limit.ts:56`). A restart resets the login throttle, and N processes allow N× the attempts. `auth.lite` already moved TOTP and login-challenge attempts into rows for this reason. The rate limiters have not followed.
 
-**Not probed yet:** session id rotation on login and privilege change, how Mesa escapes interpolated text and attributes, upload type/size checks on `attachments`, OAuth `state`/PKCE, TOTP replay inside one window.
+**Not probed yet:** how Mesa escapes interpolated text and attributes, upload type/size checks on `attachments`, OAuth `state`/PKCE, TOTP replay inside one window.
 
 ## 2. Plan
 
@@ -84,8 +84,9 @@ Done when: Phase 4's scan reports no header findings.
 Goal: each item in § 1 *Not probed* becomes a row, an `ISSUES.md` defect, or n.a. with a reason.
 Done when: § 1's *Not probed* list is empty.
 
-- [ ] 3.1 Session rotation on login, password change and level change
+- [x] 3.1 Session rotation on login, password change and level change
   - Probed in 0.2. Login leaves the incoming session live (`FJS-3196`). A level change is re-read on every HTTP request but not by an open socket (`FJS-3187`).
+  - Graded 2026-10-22 as THREATS B20, cited from V7.2.4, V7.4.3 and V8.3.2 in `docs/ASVS.md`. `FJS-3196` and `FJS-3187` were closed by then and their tests pass. A level change rotates no token, so the proof is that the next request re-reads the person: `audit-routes-session-lifecycle.test.ts` § a level change on a live session, red with `verifySession` caching the person. Grading it found `FJS-3192` closed with its build absent from the tree (`FJS-3468`), so TOTP enable and email change still end no other session; that is B20's *Open* cell. TOTP enrollment and a support episode raise a session in place, and neither token was outside its holder.
 - [ ] 3.2 Mesa output encoding in text, attributes, `href` and `style`
   - 0.2 graded V1.2.1 covered (`packages/mesa/test/render-ssr.test.js`). `{@html}` is a raw sink with no sanitizer (V1.3.1 none).
 - [ ] 3.3 Upload type, size and served content-type for litestone `FileStorage` (`File` columns, `@accept`) and junction's multipart parser

@@ -256,3 +256,32 @@ function writeManifest(path, manifest) {
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, JSON.stringify(manifest, null, 2) + '\n')
 }
+
+// ─── vendorApp ────────────────────────────────────────────────────────────────
+// Write the build context the Dockerfile installs from: deploy/generated/, with
+// a manifest and — for an app depending on the framework by `link:` or
+// `workspace:` — a packed copy of every one of those packages beside it.
+//
+// Runs on EVERY build, not only a linked one. With nothing linked it copies the
+// manifest and the lockfile, which is what lets one Dockerfile serve both source
+// modes; making it conditional here would move the condition into a template
+// nobody regenerates when the source mode changes.
+//
+// It throws on anything it cannot finish. A half-vendored context installs the
+// rest from npm and produces an image running two trees at once, which does not
+// have to fail to be wrong.
+//
+// It does NOT prune devDependencies, and the reason is worth stating because
+// pruning them looks free: the image builds nothing — it copies `api/` and
+// `db/` and runs `db:migrate` then `start` — and **`bun install --production`
+// resolves devDependencies anyway**, only skipping their install, so one dev
+// tool that 404s fails an image that would never have run it. The `transform`
+// hook can drop them; a manifest that no longer matches the lockfile beside it
+// then fails `--frozen-lockfile` outright, which is the worse trade. An
+// unresolvable devDependency is a publish problem and belongs upstream.
+export const vendorApp = (root, log) => {
+  const result = vendorWorkspacePackages({ appRoot: root, log: (m) => log.detail(m) })
+  const n = result.vendored.length
+  if (n) log.success(`Vendored ${n} workspace ${n === 1 ? 'dependency' : 'dependencies'} from ${result.packagesDir}`)
+  return result
+}

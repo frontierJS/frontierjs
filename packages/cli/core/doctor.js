@@ -168,8 +168,11 @@ export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf 
  */
 export function requiringModules({ commands, getModule }) {
   const out = []
+  // A command's own `requires:` counts toward its namespace, or a namespace whose
+  // keys are all per command (basecamp) drops out of the doctor.
   for (const ns of [...new Set(commands.map(c => c.title.split(':')[0]))]) {
-    const requires = requiresOf(getModule(ns)?.meta).map(r => r.key)
+    const own = commands.filter(c => c.title.split(':')[0] === ns).flatMap(c => requiresOf(c))
+    const requires = [...new Set([...requiresOf(getModule(ns)?.meta), ...own].map(r => r.key))]
     if (requires.length) out.push({ ns, requires })
   }
   return out.sort((a, b) => a.ns.localeCompare(b.ns))

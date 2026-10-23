@@ -215,7 +215,7 @@ export default createService({
     // builds nothing. An inline one is a preview's Freeze, so its snapshot
     // holds no files: the app's own would be uploaded over the digest, and a
     // rollback to it would put back the app's files rather than the bytes that
-    // served. A container one is an image `fli deploy:basecamp` built where
+    // served. A container one is an image `fli basecamp:deploy` built where
     // the workspace is and loaded onto the machine (`FJS-D942`): building the
     // app's git source instead would ship the branch, not those bytes.
     const named = data.builtImage != null

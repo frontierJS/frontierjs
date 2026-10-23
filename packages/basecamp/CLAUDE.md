@@ -178,7 +178,7 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           core/credentials.ts owns both conduit ref forms — `secret:<id>` and
           `env:<NAME>`; a target carries the ref, never the material
           core/provision-host.ts and core/host-record.ts are run by `fli
-          provision` and `fli provision:dns` on a LAPTOP, never by the app:
+          basecamp:create` and `fli basecamp:dns` on a LAPTOP, never by the app:
           the droplet, and Basecamp's own A record under the fleet's mark,
           each through this app's connector over core/bearer-send.ts, since
           no app is booted to hold a conduit registry
@@ -663,7 +663,7 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   and runs Validate, Activate, Health check — the machine already holds the
   bytes (a preview's Freeze). On a container App it runs Validate, Start
   container, Health check, whatever the source says: the image was built where
-  the workspace is and loaded onto the machine by `fli deploy:basecamp`
+  the workspace is and loaded onto the machine by `fli basecamp:deploy`
   (`FJS-D942`), and building the git source would ship the branch instead. Every inline Activate sends the App's live Domain
   rows as `hosts`, as `/deploy` does, so a machine with no Caddy fails the
   release of an inline app that has a Domain rather than leaving it unrouted.

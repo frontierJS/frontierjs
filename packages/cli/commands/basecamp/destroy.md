@@ -1,21 +1,23 @@
 ---
-title: provision:destroy
-description: Destroy a droplet fli provision made
+title: basecamp:destroy
+description: Destroy a droplet fli basecamp:create made
+requires:
+  - DIGITALOCEAN_TOKEN: https://cloud.digitalocean.com/account/api/tokens/new  Pick Full Access
 effects: destroys a droplet at DigitalOcean and everything on its disk
 confirm: human
 examples:
-  - fli provision:destroy 512345678
-  - fli provision:destroy
+  - fli basecamp:destroy 512345678
+  - fli basecamp:destroy
 args:
   -
     name: id
-    description: The droplet id fli provision printed; with none, pick from the list
+    description: The droplet id fli basecamp:create printed; with none, pick from the list
 ---
 
-Refuses any droplet `fli provision` did not make: the token reaches every
+Refuses any droplet `fli basecamp:create` did not make: the token reaches every
 droplet at the account, and a fleet machine Basecamp made is destroyed in
 Basecamp, which also retires its row. Refuses one that is not powered off,
-too — `fli provision:off` first, so a box still serving is never one mistyped
+too — `fli basecamp:stop` first, so a box still serving is never one mistyped
 id away from gone.
 
 With no id it lists the Basecamp hosts that are off and asks which. The pick
@@ -30,14 +32,14 @@ if (!id) {
   if (found.error) { log.error(found.error); process.exitCode = 1; return }
   const hosts = found.machines.filter(m => !m.serverId)
   const ours  = hosts.filter(m => m.status === 'off')
-  if (!hosts.length) { echo('No Basecamp host fli provision made is at this account'); return }
+  if (!hosts.length) { echo('No Basecamp host fli basecamp:create made is at this account'); return }
   if (!ours.length) {
-    echo('None is powered off. fli provision:off <id> first:')
+    echo('None is powered off. fli basecamp:stop <id> first:')
     echo.lines(hosts.map(m => machineLine(m, chalk)), { indent: 2 })
     return
   }
   if (!process.stdin.isTTY) {
-    log.error('Which droplet? fli provision:destroy <id>')
+    log.error('Which droplet? fli basecamp:destroy <id>')
     echo.lines(ours.map(m => machineLine(m, chalk)), { indent: 2 })
     process.exitCode = 1; return
   }

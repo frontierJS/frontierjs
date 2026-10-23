@@ -1,10 +1,10 @@
 ---
-title: provision:install
+title: basecamp:install
 description: Install Basecamp on a box that already answers ssh, from any directory
 effects: installs docker, caddy and Basecamp on the box over ssh, and writes its DNS record at Cloudflare
 examples:
-  - fli provision:install root@203.0.113.7 --domain ops.example.com
-  - fli provision:install ops --admin you@example.com
+  - fli basecamp:install root@203.0.113.7 --domain ops.example.com
+  - fli basecamp:install ops --admin you@example.com
 args:
   -
     name: server
@@ -24,8 +24,8 @@ flags:
     defaultValue: true
 ---
 
-The install half of `fli provision`, for a box that already exists — one an
-earlier `fli provision` bought, or one made by hand. It runs
+The install half of `fli basecamp:create`, for a box that already exists — one an
+earlier `fli basecamp:create` bought, or one made by hand. It runs
 `fli deploy:setup --auto-install` and then `fli deploy` in `packages/basecamp`, with the box as
 `--server` and the hostname as `--domain`, so it works from any directory and
 writes nothing into `frontier.config.js`. Those two are the only deploy values
@@ -38,11 +38,11 @@ email is asked when not passed and the password asked hidden; Enter, or no
 terminal, generates one and prints it once.
 
 Once Basecamp is up the run points the hostname at the box — `fli
-provision:dns`'s write, DNS-only, under the fleet's mark — at the address ssh
+basecamp:dns`'s write, DNS-only, under the fleet's mark — at the address ssh
 resolves the box to, so an alias works. The token is checked before the install:
 one that opens no zone holding the hostname refuses before anything is
 installed. With no `CLOUDFLARE_TOKEN` a terminal takes the paste, and a run with
-no terminal warns, installs, and prints the `fli provision:dns` line instead.
+no terminal warns, installs, and prints the `fli basecamp:dns` line instead.
 
 A rerun on the same box is a redeploy: `deploy:setup` installs only what is
 missing, the record is moved to the box's address if it changed, and
@@ -56,7 +56,7 @@ made it says so, and the Servers page's *Use this Basecamp server* does it later
 
 ```js
 const dest = String(arg.server ?? '').trim()
-if (!dest) { log.error('Pass the box: fli provision:install <ssh alias or user@host>'); process.exitCode = 1; return }
+if (!dest) { log.error('Pass the box: fli basecamp:install <ssh alias or user@host>'); process.exitCode = 1; return }
 
 const configured = (await webDomain()) || ''
 const asked = flag.domain || configured
@@ -77,7 +77,7 @@ const question = (q, hint) => `${chalk.cyan('?')} ${chalk.bold(q)}${hint ? chalk
 const ask = async (q, hint) => (await tty.line(`${question(q, hint)}\n  ${chalk.cyan('›')}`)).trim()
 const row = (label, value) => echo(`  ${chalk.dim(label.padEnd(9))} ${value}`)
 
-if (asking) echo(`\n  ${chalk.bold('fli provision:install')}  ${chalk.dim(`Basecamp on ${dest}`)}\n`)
+if (asking) echo(`\n  ${chalk.bold('fli basecamp:install')}  ${chalk.dim(`Basecamp on ${dest}`)}\n`)
 
 // tty.line, not prompt.js: a readline closed on this stdin leaves the secret
 // after it echoing, with an Enter that never arrives.

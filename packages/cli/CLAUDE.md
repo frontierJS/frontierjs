@@ -77,7 +77,7 @@ core/
                 `fli gui --open`
   clipboard.js  text onto the clipboard over stdin, never a shell string —
                 `env:send`'s link, `crypto:keygen --copy`
-  requires.js   what a namespace's `_module.md` says it cannot run without —
+  requires.js   what a namespace's `_module.md`, or one command's frontmatter, says it cannot run without —
                 `- KEY` or `- KEY: <url where one is made> <what to pick there>`, read by the
                 runtime, the doctor, `--verbose` and the gui through one
                 `requiresOf`. At a terminal a missing key is ACQUIRED: the page
@@ -803,6 +803,10 @@ core/
   pgp-words.js  the PGP word list, a word per byte, for `frontier:who`'s eight
                 words. Both ends of a comparison read it, so a word moved here
                 reads as a mismatch to every older fli
+  crest.js      the same 64 bits as a 5×5 picture in two heraldic tinctures,
+                beside the words in `frontier:who`, and the Worker's to read for
+                2.7's badge. Recognition, never proof; a bit moved here redraws
+                every member's crest
   frontier-chain.js  what a member IS — a chain of links, each signed by one of
                 its machines, from a root link signing the first machine and the
                 sealing key (`FJS-D1416`); a `link` adds a machine, signed by one
