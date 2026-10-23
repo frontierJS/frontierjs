@@ -15,6 +15,11 @@
  * at the same app as somebody: both frames count its tools, then Chrome
  * sees a guest offered fewer, its create refused by the app, and a member's
  * land. The agent is a stand-in `claude` that makes the MCP call it is asked.
+ * `:dns` (cloudflare-dns 2.2) reads a stand-in `cf` answering from the
+ * fixture `test/cloudflare.test.js` uses: both frames count the accounts, then
+ * the same keys walk both into a zone's records and back out. Signed out
+ * (2.3), both show one *sign in* row, then the same device code, and the
+ * accounts again once the stand-in is approved.
  *
  * `Console.mesa` is one file compiled for two targets, and the claim the console
  * rests on is that a person at either sees the same thing. Nothing else asks
@@ -38,7 +43,7 @@
  *   app is not what `:live` grades; `fli gui --devtools-port` points it there.
  */
 import { spawn } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
@@ -112,6 +117,12 @@ else {
 }
 out({ type: 'result', subtype: 'success', is_error: false, num_turns: 2, total_cost_usd: 0 })
 `, { mode: 0o755 })
+// The token is the fixture's, so a real one in the shell is never what `:dns` grades.
+writeFileSync(join(binDir, 'cf'), `#!/bin/sh\nexec "${process.execPath}" "${join(CLI, 'test/fixtures/cf/stand-in.mjs')}" "$@"\n`, { mode: 0o755 })
+const CF_ENV = { CF_FIXTURE: join(CLI, 'test/fixtures/cf/v0.15.0.json'), CLOUDFLARE_API_TOKEN: 'project-token', CF_SIGNED_OUT: join(binDir, 'cf-signed-out') }
+// The sign-in's link is opened by the server, which a real opener would do on
+// the screen of whoever runs the drive.
+for (const opener of ['xdg-open', 'open']) writeFileSync(join(binDir, opener), `#!/bin/sh\necho "$@" >> "${join(binDir, 'opened')}"\n`, { mode: 0o755 })
 
 // ─── the app `:live` reads ────────────────────────────────────────────
 //
@@ -282,6 +293,7 @@ const PANES = [
   ['call',   '7', ['methods']],
   ['data',   '8', ['models']],
   ['ask',    '9', ['tools']],
+  ['dns',    '0', ['accounts']],
 ]
 
 // The legend is the footer's last line in the terminal and `[data-legend]` in
@@ -307,7 +319,7 @@ async function press(k) {
 // ─── the terminal frame: `fli gui` under a pty ────────────────────────
 
 const pty = spawn('script', ['-qfec', `stty rows ${ROWS} cols ${COLS}; bun ${FLI} gui --port ${PORT} --devtools-port ${DEVTOOLS}`, '/dev/null'], {
-  cwd: REPO, stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, TERM: 'xterm-256color', PATH: `${binDir}:${process.env.PATH}` },
+  cwd: REPO, stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, ...CF_ENV, TERM: 'xterm-256color', PATH: `${binDir}:${process.env.PATH}` },
 })
 let out = ''
 pty.stdout.on('data', (d) => { out += d })
@@ -349,7 +361,7 @@ try {
 
   // ─── the keys: the legend, then a filter typed into both ───────────
 
-  await legendsAgree(':run', ['1–9 the panes', ': go to a pane', '/ filter', 'r read again'])
+  await legendsAgree(':run', ['1–0 the panes', ': go to a pane', '/ filter', 'r read again'])
 
   const TERM = 'drive'
   for (const k of ['/', ...TERM, 'Enter']) await press(k)
@@ -372,14 +384,20 @@ try {
     await press(digit)
     for (const part of parts) {
       await browser.waitFor(`/\\d/.test(document.querySelector('[data-part="${part}"] .bar span')?.textContent ?? '')`, { ms: 120000 })
-      const web = squash(await browser.evaluate(`return document.querySelector('[data-part="${part}"] .bar span').textContent`))
       // No space is promised after the title: the terminal paints no flex gap.
       const line = () => screen(out).find((l) => l.startsWith(part) && /^\s*\d/.test(l.slice(part.length)))
       check(await until(line, 120000), `:${pane} paints its ${part} in the terminal`, screen(out).slice(0, 40).join('\n'))
-      const term = squash(line()?.slice(part.length) ?? '')
-      check(firstNumber(term) !== null && firstNumber(term) === firstNumber(web), `:${pane} — both frames count the same ${part} (${firstNumber(web)})`, `terminal ${JSON.stringify(term)} ≠ browser ${JSON.stringify(web)}`)
+      // A pane paints a count before its last read lands (`:ship` drops its
+      // ci step until ci answers), and each frame reads on its own clock.
+      let web = '', term = ''
+      const agree = async () => {
+        web  = squash(await browser.evaluate(`return document.querySelector('[data-part="${part}"] .bar span').textContent`))
+        term = squash(line()?.slice(part.length) ?? '')
+        return firstNumber(term) !== null && firstNumber(term) === firstNumber(web)
+      }
+      check(await until(agree, 10000), `:${pane} — both frames count the same ${part} (${firstNumber(web)})`, `terminal ${JSON.stringify(term)} ≠ browser ${JSON.stringify(web)}`)
     }
-    await legendsAgree(`:${pane}`, ['1–9 the panes', pane === 'check' ? 'r check again' : 'r read again'])
+    await legendsAgree(`:${pane}`, ['1–0 the panes', pane === 'check' ? 'r check again' : 'r read again'])
   }
 
   // ─── :call, as a member and as nobody (Chrome) ────────────────────
@@ -495,6 +513,57 @@ try {
   check(talk.tool.length === 1 && !talk.refused.length && talk.text.includes('done'), ':ask — the same create as a member lands', JSON.stringify(talk))
   check(await until(async () => (await (await fetch(`http://127.0.0.1:${DEVTOOLS}/api/data/Note?as=ann%40x.test`)).json()).rows?.some((r) => r.body === 'from :ask'), 5000),
     ':ask — the member agent\'s note is in the app')
+
+  // ─── :dns, walked by keys in both frames ──────────────────────────
+  //
+  // Two profiles and the token row reach four accounts; the cursor starts on
+  // the first, default · Own account, whose one zone holds two records, the
+  // MX marked by Basecamp.
+
+  await press('0')
+  const dnsCount = async (part) => {
+    const web  = await browser.evaluate(`return document.querySelector('[data-part="${part}"] .bar span')?.textContent ?? ''`)
+    const line = screen(out).find((l) => l.startsWith(part) && /^\s*\d/.test(l.slice(part.length)))
+    return { web: firstNumber(web), term: firstNumber(line?.slice(part.length) ?? '') }
+  }
+  const dnsAgree = async (part, n, label) => {
+    let seen = {}
+    check(await until(async () => { seen = await dnsCount(part); return seen.web === String(n) && seen.term === String(n) }, 20000),
+      `:dns — ${label}: both frames count ${n} ${part}`, JSON.stringify(seen) + '\n' + screen(out).slice(0, 30).join('\n'))
+  }
+  await dnsAgree('accounts', 4, 'two profiles and the token row')
+  check(await browser.evaluate(`return !!document.querySelector('[data-profile="CLOUDFLARE_API_TOKEN"][data-account="acc-project"]')`), ':dns — the env token is an account row, named by the variable')
+  await press('Enter')
+  await dnsAgree('zones', 1, 'Enter walks into default · Own account')
+  await legendsAgree(':dns zones', ['<Esc> back', 'r read again'])
+  await press('Enter')
+  await dnsAgree('records', 2, 'Enter walks into own.example')
+  check(await until(() => browser.evaluate(`return document.querySelector('[data-record="rec-mx"] [data-mark]')?.textContent.trim() === 'basecamp' && !document.querySelector('[data-record="rec-apex"] [data-mark]')`), 5000),
+    ':dns — the record Basecamp marked carries the badge, the other does not')
+  check(screen(out).some((l) => l.includes('mx.own.example') && l.includes('basecamp')), ':dns — the terminal draws the badge on the MX row')
+  await press('Escape')
+  await dnsAgree('zones', 1, 'Esc walks back to the zones')
+  await press('Escape')
+  await dnsAgree('accounts', 4, 'Esc again walks back to the accounts')
+
+  // Signed out, the token row stays and the sign-in row is first. The stand-in
+  // waits on its file as `cf` waits on the person, so deleting it approves.
+  writeFileSync(CF_ENV.CF_SIGNED_OUT, '')
+  await press('r')
+  await dnsAgree('accounts', 2, 'signed out: the sign-in row and the token row')
+  check(await browser.evaluate(`return document.querySelector('[data-part="accounts"] tr[aria-current="true"]')?.hasAttribute('data-sign-in')`), ':dns — the cursor starts on the sign-in row')
+  await press('Enter')
+  const CODE = 'FRDWWLAT'
+  check(await until(async () => await browser.evaluate(`return [...document.querySelectorAll('[data-part="sign-in"] [data-said]')].some((n) => n.textContent.trim() === '${CODE}')`)
+    && screen(out).some((l) => l.includes(CODE)), 20000),
+    ':dns — both frames show cf auth login\'s device code', screen(out).slice(0, 30).join('\n'))
+  await legendsAgree(':dns signing in', ['<Esc> stop signing in'])
+  check(await until(() => existsSync(join(binDir, 'opened')), 5000) && readFileSync(join(binDir, 'opened'), 'utf8').trim() === 'https://dash.cloudflare.com/oauth2/device/verify',
+    ':dns — the server opened the device link once for both frames', existsSync(join(binDir, 'opened')) ? readFileSync(join(binDir, 'opened'), 'utf8') : 'not opened')
+  rmSync(CF_ENV.CF_SIGNED_OUT)
+  await dnsAgree('accounts', 4, 'approved: the accounts are read again')
+  check(await browser.evaluate(`return !document.querySelector('[data-part="sign-in"]')`) && !screen(out).some((l) => l.includes(CODE)),
+    ':dns — the device code is gone from both frames once signed in')
 
   // `:` and a unique prefix, back to the first pane.
   for (const k of [':', 'r', 'u', 'Enter']) await press(k)

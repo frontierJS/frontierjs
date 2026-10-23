@@ -30,7 +30,7 @@ chain's head, so a post that hides the revoke from them is caught there
 (`FJS-D1421`). Revoking a machine never lets it back: link a new key instead.
 
 ```js
-const { nextLink, verifyBox } = await import(new URL('file://' + global.fliRoot + '/core/frontier-chain.js'))
+const { nextLink, verifyBox } = await import('@frontierjs/toolbelt/frontier')
 
 const wanted = String(arg.machine ?? '').replace(/\s+/g, '').toLowerCase()
 if (!/^[0-9a-f]{4,16}$/.test(wanted)) {

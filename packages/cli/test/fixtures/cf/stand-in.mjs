@@ -8,8 +8,12 @@
 // verb takes its account from `CLOUDFLARE_ACCOUNT_ID` and refuses to pick one of
 // several, and a Pages list over 10 a page is a 400. `CF_LOG`, when set, gets
 // one JSON line per spawn — the argv, the token and the account that reached it.
+//
+// While the file `CF_SIGNED_OUT` names exists no profile is signed in, and
+// `auth login` prints the device text, then waits for the file to go — the
+// drive deleting it is the person approving the code.
 
-import { readFileSync, appendFileSync } from 'fs'
+import { readFileSync, appendFileSync, existsSync } from 'fs'
 
 const fixture = JSON.parse(readFileSync(process.env.CF_FIXTURE, 'utf8'))
 const argv = process.argv.slice(2)
@@ -33,9 +37,17 @@ function refuse(kind, path = '', accounts = '') {
 }
 const answer = (value) => { process.stdout.write(JSON.stringify(value, null, 2) + '\n'); process.exit(0) }
 
-if (verb === 'auth list') answer(Object.keys(fixture.profiles).map(name => ({ name, boundDirectories: [] })))
+const signedOut = () => !!process.env.CF_SIGNED_OUT && existsSync(process.env.CF_SIGNED_OUT)
 
-const credential = token !== undefined ? fixture.tokens[token] : fixture.profiles[flags.profile ?? 'default']
+if (verb === 'auth list') answer(signedOut() ? [] : Object.keys(fixture.profiles).map(name => ({ name, boundDirectories: [] })))
+if (verb === 'auth login') {
+  process.stdout.write(fixture.login.stdout)
+  process.stderr.write(fixture.login.device)
+  while (signedOut()) await new Promise(r => setTimeout(r, 100))
+  process.exit(0)
+}
+
+const credential = token !== undefined ? fixture.tokens[token] : signedOut() ? undefined : fixture.profiles[flags.profile ?? 'default']
 const reach = fixture.accounts[credential] ?? []
 const reaches = (accountId) => reach.some(a => a.id === accountId)
 const zoneOf = (id) => Object.entries(fixture.zones).find(([, zs]) => zs.some(z => z.id === id))?.[0]
@@ -75,6 +87,7 @@ if (verb.startsWith('dns records')) {
   const rows = fixture.records[zoneId] ?? []
   const stamp = { created_on: '2026-10-22T00:00:00Z', modified_on: '2026-10-22T00:00:00Z' }
   if (verb === 'dns records list') page(rows, 'records')
+  if (verb === 'dns records get') answer(rows.find(r => r.id === words[3]) ?? refuse('path', `${path}/${words[3]}`))
   if (verb === 'dns records create') answer({ id: 'rec-created', proxiable: true, settings: {}, meta: {}, comment: null, tags: [], ...JSON.parse(flags.body), ...stamp })
   if (verb === 'dns records edit') answer({ ...rows.find(r => r.id === words[3]), ...JSON.parse(flags.body), modified_on: stamp.modified_on })
   if (verb === 'dns records delete') answer({ id: words[3] })

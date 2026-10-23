@@ -170,7 +170,7 @@ export async function serveStatic(
       headers: {
         'etag':          fileEtag,
         'last-modified': mtimeStr,
-        'cache-control': buildCacheControl(ext, maxAge)
+        'cache-control': buildCacheControl(safe, ext, maxAge)
       }
     })
   }
@@ -193,7 +193,7 @@ export async function serveStatic(
     ...disposition,
     'etag':          fileEtag,
     'last-modified': mtimeStr,
-    'cache-control': buildCacheControl(ext, maxAge),
+    'cache-control': buildCacheControl(safe, ext, maxAge),
     'accept-ranges': 'bytes'
   }
 
@@ -355,10 +355,15 @@ async function serveRange(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-function buildCacheControl(ext: string, maxAge: number): string {
-  if (CACHEABLE[ext])
-    return `public, max-age=${maxAge}, must-revalidate`
-  return NOCACHE
+// A bundle file under /assets is named by its content hash, so a cached copy
+// can never be stale and a year is the longest a browser honors. The page that
+// names the hashes is not under /assets, so it keeps revalidating.
+const HASHED = /\/assets\/[^/]*-[\w-]{8,}\.\w+$/
+
+function buildCacheControl(urlPath: string, ext: string, maxAge: number): string {
+  if (!CACHEABLE[ext]) return NOCACHE
+  if (HASHED.test(urlPath)) return 'public, max-age=31536000, immutable'
+  return `public, max-age=${maxAge}, must-revalidate`
 }
 
 // The path a URL names, or the status that refuses it. Undecodable and NUL are

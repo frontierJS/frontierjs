@@ -85,7 +85,7 @@ if (report.ok) {
 } else {
   log.warn(`${report.checks - report.failed}/${report.checks} checks passed  \u00b7  ${report.failed} issue${report.failed !== 1 ? 's' : ''} found`)
   // What is MISSING and what STOPS you are different sentences: a machine with
-  // no CLOUDFLARE_TOKEN cannot run `cloudflare:` and runs everything else.
+  // no GITHUB_TOKEN cannot run `github:` and runs everything else.
   if (!report.blocked) echo('\n  Nothing here stops fli running \u2014 every required binary and path is present.')
   echo('')
   echo('  To fix missing env vars:')

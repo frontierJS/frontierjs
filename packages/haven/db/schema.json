@@ -156,9 +156,9 @@
             "pattern": "letters, digits, - and _"
           }
         },
-        "publicKey": {
+        "root": {
           "type": "string",
-          "description": "The machine's key, written once at the first login. A member is the same person tomorrow because the key is, so it never moves."
+          "description": "Who the member is: the root of their Frontier chain, so every machine in the chain walks in as one figure (`IDEAS/frontier-network.md` 3.1). A machine with no chain is its own key here until 3.2 refuses it, and an imported voice's is `none:<nick>` (`api/src/keyless.ts`). Never moves."
         },
         "bannedAt": {
           "anyOf": [
@@ -180,12 +180,12 @@
       "additionalProperties": false,
       "required": [
         "nick",
-        "publicKey"
+        "root"
       ],
       "x-litestone-policies": true,
       "x-identify": [
         "nick",
-        "publicKey"
+        "root"
       ],
       "x-gate": {
         "read": 3,

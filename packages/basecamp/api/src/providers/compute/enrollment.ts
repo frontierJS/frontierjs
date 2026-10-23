@@ -35,7 +35,7 @@ import { OPENSSL_CERT_ARGS } from '@frontierjs/outpost/cert'
  *  workspace carries (a test holds the two together); Docker and Caddy come
  *  from signed apt repositories. */
 export const BUN_VERSION     = '1.4.4'
-export const OUTPOST_VERSION = '0.1.4'
+export const OUTPOST_VERSION = '0.1.5'
 
 /** How long a machine has to enroll. A cloud-init run is seconds; fifteen
  *  minutes is room for a slow image pull and nothing like room for a leaked
@@ -243,6 +243,10 @@ systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
 # posture: patch.security-pending
 timeout 1800 systemctl start apt-daily-upgrade.service \
   || echo "the first security-update pass did not finish; apt-daily-upgrade.timer will retry" >&2
+# A pass that upgrades systemd re-executes it, which ends the wait above while
+# unattended-upgrade still holds dpkg's lock, and every apt call below then
+# spends its lock timeout on it (FJS-3469).
+timeout 1800 sh -c 'while [ "$(systemctl show -P ActiveState apt-daily-upgrade.service)" = activating ]; do sleep 5; done' || true
 
 # sshd takes the first value it reads and the drop-ins are read in name order,
 # so 10- wins over the 50-cloud-init.conf that turns passwords back on. A box
@@ -334,6 +338,17 @@ chmod a+r /etc/apt/keyrings/docker.asc
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/$ID $VERSION_CODENAME stable" \\
   > /etc/apt/sources.list.d/docker.list
 apt_update
+# Written before the install so the daemon's first start reads it. With the
+# proxy on, a published port is a nat rule AND a docker-proxy process, and the
+# firewall above grades only the rule. Off, it is the one rule, a loopback
+# publish included: dockerd sets route_localnet on docker0 and drops spoofed
+# 127/8 itself.
+install -d -m 0755 /etc/docker
+cat > /etc/docker/daemon.json <<'DOCKEREOF'
+{
+  "userland-proxy": false
+}
+DOCKEREOF
 apt_install docker-ce docker-ce-cli containerd.io
 
 # Caddy, the machine's ingress (FJS-D564). The Outpost is the only thing that
@@ -560,7 +575,7 @@ rm -rf /var/lib/outpost
 systemctl disable --now caddy-api.service 2>/dev/null || true
 export DEBIAN_FRONTEND=noninteractive
 apt-get purge -yqq caddy docker-ce docker-ce-cli containerd.io >/dev/null 2>&1 || true
-rm -rf /var/lib/docker /var/lib/containerd /var/lib/caddy /etc/caddy
+rm -rf /var/lib/docker /var/lib/containerd /etc/docker /var/lib/caddy /etc/caddy
 rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.asc
 rm -f /etc/apt/sources.list.d/caddy-stable.list /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 rm -f /etc/apt/apt.conf.d/52basecamp-unattended-upgrades

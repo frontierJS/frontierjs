@@ -2103,7 +2103,15 @@ tell`, standing alone on a Cloudflare Worker today (`FJS-D1392`).
 - [ ] 22.2 A whisper (`/w <nick>`) to a member with no presence becomes a letter.
 - [ ] 22.3 A letter announced to a member in the square draws as a whisper and
   is deleted as read.
-- [ ] 22.4 A post office piece in the square, a door you can walk to.
+- [x] 22.4 A post office piece in the square, a door you can walk to.
+  Built ahead of the phase (owner, 2026-10-22) as a picture: the house past
+  the well (`house('POST OFFICE')`, the door at 170, 10) opens on
+  `scenes/PostOffice.mesa` — 32 numbered P.O. boxes (2.8's board), the
+  counter with the clerk in the middle window (a `clerk` spot, nobody
+  answering yet), the sorting table, scale, sacks, parcels, the pillar box,
+  two benches and a cat. Nothing reads or writes a letter there until
+  22.1–22.3. `scenes.test.js` and `map.test.js` green; no drive kept (no new
+  tests while experimenting).
 
 ## Ideas past the plan
 

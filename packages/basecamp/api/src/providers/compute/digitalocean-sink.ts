@@ -81,6 +81,10 @@ export const CREATED: Record<string, unknown>[] = []
  *  computes one, and a caller only ever hands it back. */
 const KEYS: Record<string, unknown>[] = []
 
+/** Reserved IPs at the account, by address. Each sits in one region and
+ *  outlives the droplet it is assigned to. */
+const RESERVED = new Map<string, Record<string, unknown>>()
+
 let nextId = 1000
 
 /** Reset between tests. A stand-in that accumulates state across a suite makes
@@ -89,6 +93,7 @@ let nextId = 1000
 export function resetSink(): void {
   CREATED.length = 0
   KEYS.length    = 0
+  RESERVED.clear()
   nextId = 1000
   for (const id of [...DROPLETS.keys()]) if (id !== '901') DROPLETS.delete(id)
 }
@@ -202,6 +207,44 @@ export function startDoSink(port = PORT) {
           : all })
       }
 
+      if (url.pathname === '/v2/reserved_ips') {
+        if (req.method !== 'POST') return json({ reserved_ips: [...RESERVED.values()] })
+        const body   = await req.json().catch(() => null) as Record<string, unknown> | null
+        const region = REGIONS.find(r => r.slug === body?.region)
+        if (!region) return json({ id: 'unprocessable_entity', message: `unknown region ${body?.region}` }, 422)
+        const ip  = `192.0.2.${(nextId++) % 250}`
+        const row = { ip, region: { slug: region.slug, name: region.name }, droplet: null, locked: false }
+        RESERVED.set(ip, row)
+        return json({ reserved_ip: row }, 202)
+      }
+
+      const reservedAction = url.pathname.match(/^\/v2\/reserved_ips\/([^/]+)\/actions$/)
+      if (reservedAction && req.method === 'POST') {
+        const row  = RESERVED.get(decodeURIComponent(reservedAction[1]))
+        if (!row) return json({ id: 'not_found', message: 'The resource you requested could not be found.' }, 404)
+        const body = await req.json().catch(() => null) as Record<string, unknown> | null
+        if (body?.type !== 'assign') return json({ id: 'unprocessable_entity', message: `action ${body?.type} is not in this sink` }, 422)
+        const target = DROPLETS.get(String(body.droplet_id))
+        if (!target) return json({ id: 'unprocessable_entity', message: 'droplet not found' }, 422)
+        // An address is regional: DO refuses one assigned across regions.
+        if ((target.region as Record<string, unknown>).slug !== (row.region as Record<string, unknown>).slug)
+          return json({ id: 'unprocessable_entity', message: 'reserved IP and droplet are in different regions' }, 422)
+        row.droplet = { id: target.id, name: target.name }
+        return json({ action: { id: 4, type: 'assign_ip', status: 'in-progress' } }, 201)
+      }
+
+      const reserved = url.pathname.match(/^\/v2\/reserved_ips\/([^/]+)$/)
+      if (reserved) {
+        const ip  = decodeURIComponent(reserved[1])
+        const row = RESERVED.get(ip)
+        if (!row) return json({ id: 'not_found', message: 'The resource you requested could not be found.' }, 404)
+        if (req.method === 'DELETE') {
+          RESERVED.delete(ip)
+          return new Response(null, { status: 204 })
+        }
+        return json({ reserved_ip: row })
+      }
+
       const action = url.pathname.match(/^\/v2\/droplets\/([^/]+)\/actions$/)
       if (action && req.method === 'POST') {
         const row  = DROPLETS.get(decodeURIComponent(action[1]))
@@ -220,6 +263,8 @@ export function startDoSink(port = PORT) {
         if (req.method === 'DELETE') {
           if (!row) return json({ id: 'not_found', message: 'not found' }, 404)
           DROPLETS.delete(id)
+          for (const r of RESERVED.values())
+            if ((r.droplet as Record<string, unknown> | null)?.id === row.id) r.droplet = null
           // DO answers 204 with no body. Worth mimicking: a connector that
           // assumed a JSON body here would work against a fake and fail here.
           return new Response(null, { status: 204 })

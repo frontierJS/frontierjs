@@ -79,7 +79,7 @@ export const fingerprint = async (key) => {
   return (await sha256Hex(String(key))).slice(0, 16).match(/.{4}/g).join(' ')
 }
 
-/** A member's root (core/frontier-chain.js) as a fingerprint: the same 64 bits `safetyWords` reads, in four groups. */
+/** A member's root (@frontierjs/toolbelt/frontier) as a fingerprint: the same 64 bits `safetyWords` reads, in four groups. */
 export const rootPrint = (root) => String(root).slice(0, 16).match(/.{4}/g).join(' ')
 
 /**
@@ -136,7 +136,7 @@ const writePeers = (peers) => {
  * nick only shown.
  */
 export const pinPeer = async (nick, chain) => {
-  const { extendsSeen } = await import('./frontier-chain.js')
+  const { extendsSeen } = await import('@frontierjs/toolbelt/frontier')
   const peers = readPeers()
   const fix = `If that is really them, compare \`fli frontier:who ${nick}\` with them away from the post, then delete the entry from ${PEERS_FILE}.`
   const holder = Object.keys(peers).find(root => root !== chain?.root && peers[root]?.nick === nick)

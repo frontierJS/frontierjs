@@ -1,0 +1,274 @@
+<script>
+  // Dns.mesa — every Cloudflare account a login reaches, its zones, a zone's
+  // records: the console's `:dns` pane (`IDEAS/cloudflare-dns.md` Phase 2).
+  //
+  // Three screens walked with Enter and Esc, over `/api/dns/*`, which is
+  // `core/cloudflare.js` over `cf`. A spawn is over a second, so a screen is
+  // read once on arrival and `r` reads it again; an answer that lands after
+  // the walk moved on is dropped, or a slow zone list would draw over records.
+  //
+  // The cursor is the pane's, moved by `j`/`k`, rather than focus: the root
+  // keeps focus (`Console.mesa`), and a key both targets dispatch from one
+  // table walks both the same way.
+  //
+  // With no `cf` profile the Accounts screen carries one *sign in* row, which
+  // runs `cf auth login` on the server and draws what it prints — the device
+  // link, which the server opens, and the code to type there. A token row does
+  // not stand in for it: a token is minted inside one account, a login is the
+  // person's.
+
+  import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
+  import Table  from '@frontierjs/ui/components/display/Table.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let api   = ''
+  export let shown = () => true   // (...fields) => does the console's filter keep this row
+  export let keyed = null         // (rows) => the keys this pane binds, for the console
+
+  const CELL = 60
+  // Basecamp's edge connector marks the records it writes in `comment`, and
+  // the two must read one spelling: the fleet word whole, or before a colon
+  // (`read()` in `basecamp/api/src/providers/edge/cloudflare.ts`). The
+  // server's write warning reads `MARK` in `core/cloudflare.js`; a pane imports
+  // no server module, so the spelling is copied and moves with it.
+  const MARK = /^basecamp(:(domain|app):.+)?$/
+
+  const COLUMNS = {
+    accounts: [{ name: 'at', label: '', hideLabel: true }, { name: 'profile', label: 'Profile' }, { name: 'account', label: 'Account' }, { name: 'id', label: 'Id' }],
+    zones:    [{ name: 'at', label: '', hideLabel: true }, { name: 'name', label: 'Zone' }, { name: 'status', label: 'Status' }, { name: 'plan', label: 'Plan' }],
+    records:  [{ name: 'at', label: '', hideLabel: true }, { name: 'name', label: 'Name' }, { name: 'type', label: 'Type' }, { name: 'content', label: 'Content' }, { name: 'ttl', label: 'TTL' }, { name: 'proxied', label: 'Proxied' }, { name: 'comment', label: 'Comment' }],
+  }
+
+  let account = null   // { profile, id, name } once walked into
+  let zone    = null   // { id, name } once walked into
+  let lists   = { accounts: null, zones: null, records: null }
+  let cursor  = { accounts: 0, zones: 0, records: 0 }
+  let failed  = ''
+  let reading = false
+  let seq     = 0
+  let signing = null   // { lines, ctl } while `cf auth login` waits for approval
+
+  $: screen = zone ? 'records' : account ? 'zones' : 'accounts'
+
+  // An account row, or a profile `cf` refused, which stays a row with the
+  // refusal. Each row carries the screen it was read for, and the template
+  // draws it by that: the screen and the list it shows change in separate
+  // writes, and a row drawn by the other screen's shape throws.
+  const flatten = (reachable) => reachable.flatMap(r => r.error
+    ? [{ profile: r.profile, error: r.error }]
+    : r.accounts.map(a => ({ profile: r.profile, id: a.id, name: a.name })))
+  const withSignIn = (rows) => rows.some(r => r.profile.kind === 'profile') ? rows : [{ signIn: true }, ...rows]
+
+  const byNameThenType = (a, b) => a.name.localeCompare(b.name) || a.type.localeCompare(b.type)
+
+  async function read() {
+    const mine = ++seq
+    const kind = zone ? 'records' : account ? 'zones' : 'accounts'
+    const q = new URLSearchParams(kind === 'zones' ? { profile: account.profile.name, account: account.id }
+      : kind === 'records' ? { profile: account.profile.name, zone: zone.id } : {})
+    reading = true
+    failed  = ''
+    try {
+      const res  = await fetch(`${api}/api/dns/${kind}${q.size ? `?${q}` : ''}`)
+      const body = await res.json()
+      if (mine !== seq) return
+      if (!res.ok) { failed = body.error ?? `/api/dns/${kind} answered ${res.status}`; lists = { ...lists, [kind]: [] }; return }
+      const list = kind === 'accounts' ? withSignIn(flatten(body.accounts))
+        : kind === 'records' ? [...body.records].sort(byNameThenType)
+        : body.zones
+      lists = { ...lists, [kind]: list.map(r => ({ ...r, kind })) }
+    } catch (e) {
+      if (mine === seq) failed = `the console's server did not answer: ${e.message}`
+    } finally {
+      if (mine === seq) reading = false
+    }
+  }
+
+  function walkTo(next) {
+    if ('account' in next) { account = next.account; cursor = { ...cursor, zones: 0 }; lists = { ...lists, zones: null } }
+    if ('zone' in next) { zone = next.zone; cursor = { ...cursor, records: 0 }; lists = { ...lists, records: null } }
+    read()
+  }
+
+  function enter(row) {
+    if (!row || row.error) return
+    if (row.signIn) return signIn()
+    if (screen === 'accounts') walkTo({ account: row })
+    else if (screen === 'zones') walkTo({ zone: { id: row.id, name: row.name } })
+  }
+
+  // Back a screen. The list walked out of is still drawn from what was read.
+  function back() {
+    seq++
+    reading = false
+    failed  = ''
+    if (zone) zone = null
+    else account = null
+  }
+
+  // The stream is `cf`'s lines as it prints them; closing it is what stops
+  // the server's wait for approval.
+  async function signIn() {
+    if (signing) return
+    const ctl = new AbortController()
+    signing = { lines: [], ctl }
+    failed  = ''
+    const take = (event) => {
+      if (signing?.ctl !== ctl) return
+      if (event.type === 'line') signing = { ...signing, lines: [...signing.lines, event.text] }
+      if (event.type === 'done') {
+        signing = null
+        if (event.ok) read()
+        else failed = event.error
+      }
+    }
+    try {
+      const res = await fetch(`${api}/api/dns/login`, { method: 'POST', signal: ctl.signal })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        if (signing?.ctl === ctl) { signing = null; failed = body.error ?? `/api/dns/login answered ${res.status}` }
+        return
+      }
+      const reader = res.body.getReader()
+      const text   = new TextDecoder()
+      let buf = ''
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += text.decode(value, { stream: true })
+        const frames = buf.split('\n\n')
+        buf = frames.pop()
+        for (const f of frames) if (f.startsWith('data: ')) take(JSON.parse(f.slice(6)))
+      }
+    } catch (e) {
+      if (signing?.ctl === ctl && e.name !== 'AbortError') failed = `the console's server did not answer: ${e.message}`
+    }
+    if (signing?.ctl === ctl) signing = null
+  }
+
+  function stopSignIn() {
+    signing?.ctl.abort()
+    signing = null
+  }
+
+  const move = (by) => {
+    const n = seen.length
+    if (n) cursor = { ...cursor, [screen]: Math.max(0, Math.min(n - 1, cursor[screen] + by)) }
+  }
+
+  // A cell is one line: a long TXT would push every column after it off a
+  // terminal row.
+  const cell = (v) => {
+    const s = v === null || v === undefined ? '' : String(v)
+    return s.length > CELL ? `${s.slice(0, CELL - 1)}…` : s
+  }
+  const ttl     = (r) => r.ttl === 1 ? 'auto' : String(r.ttl)
+  const proxied = (r) => r.proxiable ? (r.proxied ? 'on' : 'off') : ''
+  const marked  = (r) => !!r.comment && MARK.test(r.comment)
+  const counted = (seen, total) => seen === total ? `${total}` : `${seen} of ${total}`
+
+  $: list = lists[screen] ?? []
+  $: seen = list.filter(r => r.signIn ? shown('sign in', 'cf auth login')
+    : r.kind === 'accounts' ? shown(r.profile.name, r.name, r.id, r.error)
+    : r.kind === 'zones' ? shown(r.name, r.status, r.plan?.name)
+    : shown(r.name, r.type, r.content, r.comment))
+  $: at = Math.min(cursor[screen], Math.max(0, seen.length - 1))
+
+  $: keyed?.([
+    ...(screen !== 'records' && seen.length ? [{ keys: '<CR>', label: 'open', run: () => enter(seen[at]) }] : []),
+    ...(seen.length > 1 ? [{ keys: 'j', label: 'down', run: () => move(1) }, { keys: 'k', label: 'up', run: () => move(-1) }] : []),
+    ...(screen !== 'accounts' ? [{ keys: '<Esc>', label: 'back', run: back }] : []),
+    ...(signing ? [{ keys: '<Esc>', label: 'stop signing in', run: stopSignIn }] : []),
+    { keys: 'r', label: 'read again', run: read },
+  ])
+
+  $.onMount(read)
+  $.onDestroy(() => signing?.ctl.abort())
+</script>
+
+<header class="bar">
+  <span class="cluster gap-2xs" data-crumbs>
+    {#if account}
+      <Button treatment="ghost" size="xs" data-crumb="accounts" onclick={() => { zone = null; back() }}>cloudflare</Button>
+      <span> › </span>
+      {#if zone}
+        <Button treatment="ghost" size="xs" data-crumb="zones" onclick={back}>{account.profile.name} · {account.name}</Button>
+        <span> › </span>
+        <strong data-crumb="records">{zone.name}</strong>
+      {:else}
+        <strong data-crumb="zones">{account.profile.name} · {account.name}</strong>
+      {/if}
+    {:else}
+      <strong data-crumb="accounts">cloudflare</strong>
+    {/if}
+  </span>
+  {#if reading}<span class="text-xs text-muted">reading…</span>{/if}
+</header>
+
+{#if failed}
+  <p class="text-sm text-danger" data-failed>{failed}</p>
+{/if}
+
+<section class="surface stack" data-part={screen}>
+  <div class="bar dense">
+    <strong class="text-sm">{screen}</strong>
+    <span class="text-xs text-muted">{lists[screen] ? counted(seen.length, list.length) : '…'}</span>
+  </div>
+  {#if lists[screen] && list.length}
+    <Table columns={COLUMNS[screen]} rows={seen} compact>
+      {#snippet row(r)}
+        {#if r.signIn}
+          <tr data-sign-in aria-current={seen.indexOf(r) === at ? 'true' : null} onclick={() => { cursor = { ...cursor, accounts: seen.indexOf(r) }; enter(r) }}>
+            <td>{seen.indexOf(r) === at ? '›' : ' '}</td>
+            <td>sign in</td>
+            <td class="text-muted">no cf profile — cf auth login</td>
+            <td></td>
+          </tr>
+        {:else if r.kind === 'accounts'}
+          <tr data-account={r.id ?? ''} data-profile={r.profile.name} aria-current={seen.indexOf(r) === at ? 'true' : null} onclick={() => { cursor = { ...cursor, accounts: seen.indexOf(r) }; enter(r) }}>
+            <td>{seen.indexOf(r) === at ? '›' : ' '}</td>
+            <td>{r.profile.name}{r.profile.kind === 'token' ? ' (token)' : ''}</td>
+            {#if r.error}
+              <td class="text-danger" data-refused>{cell(r.error)}</td>
+              <td></td>
+            {:else}
+              <td>{r.name}</td>
+              <td class="text-muted">{r.id}</td>
+            {/if}
+          </tr>
+        {:else if r.kind === 'zones'}
+          <tr data-zone={r.id} aria-current={seen.indexOf(r) === at ? 'true' : null} onclick={() => { cursor = { ...cursor, zones: seen.indexOf(r) }; enter(r) }}>
+            <td>{seen.indexOf(r) === at ? '›' : ' '}</td>
+            <td>{r.name}</td>
+            <td>{r.status}</td>
+            <td class="text-muted">{r.plan?.name ?? ''}</td>
+          </tr>
+        {:else}
+          <tr data-record={r.id} aria-current={seen.indexOf(r) === at ? 'true' : null} onclick={() => cursor = { ...cursor, records: seen.indexOf(r) }}>
+            <td>{seen.indexOf(r) === at ? '›' : ' '}</td>
+            <td>{cell(r.name)}</td>
+            <td>{r.type}{r.priority != null ? ` ${r.priority}` : ''}</td>
+            <td>{cell(r.content)}</td>
+            <td>{ttl(r)}</td>
+            <td>{proxied(r)}</td>
+            <td>{#if marked(r)}<Badge tone="info" size="xs" data-mark>basecamp</Badge> {/if}{marked(r) && r.comment === 'basecamp' ? '' : cell(r.comment)}</td>
+          </tr>
+        {/if}
+      {/snippet}
+    </Table>
+  {:else if lists[screen]}
+    <div class="text-xs text-muted">{screen === 'zones' ? 'this account has no zone' : 'this zone has no record'}</div>
+  {/if}
+</section>
+
+{#if signing}
+  <section class="surface stack" data-part="sign-in">
+    <div class="bar dense">
+      <strong class="text-sm">cf auth login</strong>
+      <span class="text-xs text-muted">waiting for approval…</span>
+    </div>
+    {#each signing.lines as line}
+      <div class="text-sm" data-said>{line}</div>
+    {/each}
+  </section>
+{/if}

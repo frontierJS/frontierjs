@@ -6,7 +6,8 @@
   // the fountain, the notice board (7.5), which the route's `Notices` reads. The
   // tavern's door is the left house's, and the workshop's (Phase 11) is the
   // house beside it, with its sign; the town hall is the first house past
-  // the first screen, with its own. Three edges are borders
+  // the first screen, with its own, and the post office the house past the
+  // well. Three edges are borders
   // (`IDEAS/haven.md` 6.2): east onto the road, west into the woods, and a
   // gap in the hedge south down to the docks. The picture this draws is
   // `square.frame.txt`, which `scenes.test.js` pins.
@@ -52,10 +53,12 @@ rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
  wwwwwwwwwwwwwwdddwwwwwwwwwwwww
 `)
 
-  // The workshop and the town hall (`IDEAS/haven.md` Phase 15, the first
-  // house east of the first screen) are one house with another sign.
-  const workshop = house('WORKSHOP')
-  const townhall = house('TOWN HALL')
+  // The workshop, the town hall (`IDEAS/haven.md` Phase 15, the first
+  // house east of the first screen) and the post office (22.4, east of the
+  // well) are one house with another sign.
+  const workshop   = house('WORKSHOP')
+  const townhall   = house('TOWN HALL')
+  const postOffice = house('POST OFFICE')
 
   const houseB = piece('house', String.raw`
    ~'
@@ -170,7 +173,8 @@ rrrrrrrrrrrrrr
   <Row of={flower} y={24} x={54} n={26} step={3} />
   <Piece of={townhall} x={130} y={2} />
   <Door  x={140} y={10} to="/townhall/" />
-  <Piece of={houseB} x={160} y={1} />
+  <Piece of={postOffice} x={160} y={2} />
+  <Door  x={170} y={10} to="/postoffice/" />
   <Piece of={houseC} x={188} y={2} />
   <Piece of={tree} x={124} y={13} />
   <Piece of={tree} x={186} y={12} />

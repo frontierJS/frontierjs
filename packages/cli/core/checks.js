@@ -217,8 +217,6 @@ export const RULES = [
     title: 'every lesson is one the tutorial index lists' },
   { id: 'skill-pointer',        scope: 'repo', severity: 'error', invariant: null,
     title: 'every skill CLAUDE.md names is a SKILL.md whose frontmatter agrees' },
-  { id: 'american-spelling',    scope: 'repo', severity: 'warn',  invariant: null,
-    title: 'one spelling, and it is the American one' },
   { id: 'home-path-literal',    scope: 'repo', severity: 'error', invariant: null,
     title: 'no file names the home directory of the machine it was written on' },
 

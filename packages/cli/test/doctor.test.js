@@ -121,7 +121,7 @@ describe('namespace env vars', () => {
   })
 
   test('and it does not count as blocking, because it blocks one namespace', () => {
-    // A machine with no CLOUDFLARE_TOKEN cannot run `cloudflare:` and runs
+    // A machine with no GITHUB_TOKEN cannot run `github:` and runs
     // everything else. Counting it here makes almost every machine read as
     // unable to run fli, which is how a summary stops being read.
     const m = machine()

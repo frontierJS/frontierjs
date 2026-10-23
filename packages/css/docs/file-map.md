@@ -147,3 +147,81 @@ is a convenience artifact, not the product.
 
 ---
 
+
+---
+
+## Layout — the annotated tree
+
+Moved verbatim from `CLAUDE.md`; the package map is the section above, this is the per-file annotation.
+
+```
+src/
+  index.css        the entry — @layer order is declared HERE
+  foundation/      reset · tokens · tones · surface · layout · chip
+                   reset.css is the first layer, and the bar for a rule in it
+                   is a UA default that fights a shipped term AND that the
+                   term cannot fix itself — `a:where([class])` loses the UA
+                   underline; Feed/Steps/Facts lose the list margin here
+                   because zeroing it in `patterns` beats a Card's flow
+                   surface.css also owns the INTERACTIVE surface —
+                   `:where(a, button)` on Card/Tile/Surface gets a cursor, a
+                   1px lift and a tone-following border. Keyed on the element,
+                   not a `.hover` class: an <a href> IS the interaction, so
+                   the affordance cannot be misattached or forgotten
+                   tokens.css owns TWO ladders now — --text-* and --space-*
+                   — plus --density, the axis that multiplies the second,
+                   and the align axis beside it (`.align-*`, `--align`)
+  components/      buttons · cards · tables · dialogs · drawers · popovers ·
+                   tooltips · toasts · alerts · badges · pills · avatar ·
+                   form-core · feedback · frame · icon · typography · code ·
+                   overlays (how the whole Overlay tier enters and leaves)
+  patterns/        nav · tabs · steps · lists · feed · facts · bars · disclosure ·
+                   prose · bands (Band, and the `.bleed, .band` escape rule) ·
+                   aside (Aside, here and not beside `.screen` because its collapse
+                   hides a Facts or a Stack, which style `display` in `patterns`)
+  a11y/            a11y.css · focus.css
+  themes/          default · dark · midnight · forest · sunset · elite · basecamp
+                   · notebook · press · field · dracula · twilight. press.css is the token-surface
+                   probe — it changes face, scale, leading, density, rules, ring
+                   and shadow shape and ships no selector of its own. field.css
+                   is its dark counterpart, written for the pages a project
+                   generates about itself; it is the reason
+                   --heading-letter-spacing exists, and it clears AA on
+                   --surface-raised for all seven tones (danger had to move)
+  utilities.css    the deliberately small escape hatch
+  print.css        the browser's own Print: hides Frame, Toolbar, Pagination and
+                   lets the Screen flow. Same layer as utilities so it undoes
+                   component rules; `print.spec.js` lifts the @media print
+                   rules onto the screen to measure them. A PDF rendered by
+                   headless Chrome is print-kit's print.css, not this
+vocabulary.js      THE OTHER HALF — two exports, one subject.
+                   VOCAB: terms in 8 tiers, which element each is.
+                   ANATOMY: which of them expect children, their named parts,
+                   one canonical markup block each — plus NOT_ANATOMY, the
+                   hyphenated classes that are NOT parts and why.
+                   Four readers: the guide's Vocabulary and Anatomy pages,
+                   guide/search.js, and two specs
+guide/             the reference — 50 pages, the thing to read before adding CSS.
+                   guide.js is an ES MODULE (it imports glow); vocabulary.js,
+                   decisions.js and search.js stay classic scripts because
+                   test/run.js inlines them
+guide/decisions.js the Learn wizard's routing tree — questions and near
+                   misses. Every FACT about a term is read from vocabulary.js;
+                   this file holds only what the reference cannot
+                   The other Learn page is `Why this one` — the audit against
+                   seven other frameworks, inside guide.js
+guide/search.js    the ⌘K search: tokenizer, ranker, and the term entries built
+                   from vocabulary.js. Also owns `slugify` — the section id and
+                   the href a result builds to it must be one function
+vocabulary.json    GENERATED from vocabulary.js, committed, shipped. The
+                   consumer-readable half: the .js is a classic script and
+                   exports nothing, so nothing outside the guide could read
+                   it. Not built into dist/ — that is gitignored and wiped
+                   every build, so an install from git would find it missing.
+                   `bun run build:vocabulary` regenerates; the suite fails if
+                   it drifts (vocabulary.spec.js reads a verdict the runner
+                   computes by regenerating in memory)
+build.js           optional dist/ bundle
+build-vocabulary.js  vocabulary.js → vocabulary.json
+test/run.js        the harness
+```

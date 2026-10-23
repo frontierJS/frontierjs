@@ -39,6 +39,8 @@ export interface HavenAppOptions {
   now?:        LoginOptions['now']
   /** The nicks that walk in as mods. Default `HAVEN_MODS`, comma-separated. */
   mods?:       string[]
+  /** The Frontier post's public key a chain login's row is signed under. Default `HAVEN_POST_KEY`. */
+  postKey?:    string
   /** Sockets one IP may hold. Default `HAVEN_WS_PER_IP`, else 4. */
   wsPerIp?:    number
 }
@@ -84,7 +86,7 @@ export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
   app.configure(channels(setup as never, options))
   // Inside configure() so it registers during start(), after the router is patched.
   const mods  = opts.mods ?? (process.env.HAVEN_MODS ?? '').split(',').map(n => n.trim()).filter(Boolean)
-  const login = loginRoute(db, auth, { now: opts.now, mods, welcome: crier.welcome })
+  const login = loginRoute(db, auth, { now: opts.now, mods, welcome: crier.welcome, postKey: opts.postKey ?? process.env.HAVEN_POST_KEY })
   app.configure(a => {
     a.get(CLIENT_PATH, clientRoute())
     a.post(LOGIN_PATH, login)

@@ -11,7 +11,7 @@ const { generateSigningKeys, signMessage, verifyMessage } = await import('@front
 const { generateSealingKeys, seal, open: openSealed } = await import('@frontierjs/toolbelt/seal')
 const { FRONTIER_DIR, KEY_FILE, CONFIG_FILE, PEERS_FILE, CHAIN_FILE, readConfig, readPeers, tellSign, tellFetch, writeWaiting, pinPeer, fingerprint, rootPrint, safetyWords, postOrigin } =
   await import(new URL('file://' + global.fliRoot + '/core/tell.js'))
-const { readChain, rootLink, linkHash, extendsSeen, boxClaim } = await import(new URL('file://' + global.fliRoot + '/core/frontier-chain.js'))
+const { readChain, rootLink, linkHash, extendsSeen, boxClaim } = await import('@frontierjs/toolbelt/frontier')
 const { plural } = await import(new URL('file://' + global.fliRoot + '/core/text.js'))
 const { NICK, writeMemberConfig, machineKeys, writeKeys, completeKeys, ownChain, ownRoot, writeOwnChain, syncChain, publishOwn, meetMember, pickNick, currentMember } =
   await import(new URL('file://' + global.fliRoot + '/core/frontier-member.js'))

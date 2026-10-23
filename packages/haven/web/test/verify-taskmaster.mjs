@@ -31,7 +31,7 @@ import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../../api/src/app.ts'
 import { ROOMS } from '../../api/src/rooms.ts'
-import { signIn } from '../../api/test/sign-in.ts'
+import { POST_KEY, signIn, stakedHome } from '../../api/test/sign-in.ts'
 import { cellOf, terminal, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
 
@@ -50,7 +50,7 @@ const check = (ok, label, evidence = '') => {
 // ─── a root that costs nothing ────────────────────────────────────────
 
 const samHome = mkdtempSync(join(tmpdir(), 'haven-sam-'))
-const anaHome = mkdtempSync(join(tmpdir(), 'haven-ana-'))
+const anaHome = await stakedHome('haven-ana-', 'ana')
 const fake    = mkdtempSync(join(tmpdir(), 'haven-root-'))
 const bare    = mkdtempSync(join(tmpdir(), 'haven-bare-'))
 const RAN     = join(fake, 'ran.json')
@@ -74,7 +74,7 @@ writeFileSync(join(fake, 'scripts/fix-loop.mjs'), `
 const env = await createTestEnv({
   schema: join(WEB, '../db/schema.lite'),
   listen: true,
-  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-taskmaster', port: 0 }),
+  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-taskmaster', port: 0, postKey: POST_KEY }),
 })
 for (const room of ROOMS) await env.system.room.create({ data: { ...room } })
 const API = `http://localhost:${env.port}`
@@ -185,7 +185,7 @@ check(await until(() => speech(OFFER.length) === OFFER, 8000),
 // ─── a machine with no checkout ───────────────────────────────────────
 
 const frame = await new Promise((resolve) => {
-  const p = spawn('bun', [FLI, 'haven', '--frame', '/workshop/', '--api', API, '--nick', 'ana'], {
+  const p = spawn('bun', [FLI, 'haven', '--frame', '/workshop/', '--api', API], {
     cwd: tmpdir(), stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, HOME: anaHome, HAVEN_TASKMASTER_ROOT: bare },
   })
   let framed = '', err = ''

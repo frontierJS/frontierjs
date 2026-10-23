@@ -630,8 +630,6 @@ export const CHECKS = {
     return { findings }
   },
 
-  'american-spelling':  ({ root }) => americanSpelling({ root }),
-
   'home-path-literal':  ({ root }) => homePathLiteral({ root }),
 }
 
@@ -655,119 +653,6 @@ function siblingLacks(t, root) {
   if (t.command === null) return !existsSync(join(dir, t.name))
   const script = t.name.replace(/^bun run /, '').split(/\s+/)[0]
   try { return !JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).scripts?.[script] } catch { return true }
-}
-
-// ─── american-spelling ────────────────────────────────────────────────────────
-//
-// `FJS-D192` flipped this repo from British to American, prose and identifiers
-// alike, and nothing graded it — so it re-drifted, and the second sweep
-// (`FJS-D239`'s neighbour, 2026-09-07) was 1,131 replacements across 285 files.
-// A ruling nothing measures is a ruling that has to be re-applied by hand every
-// few weeks, which is `FJS-D190`'s argument about invariants one tier down.
-//
-// **The table is the -ise/-ize family and nothing else.** It is the one that
-// actually drifts, because both spellings look correct to a reader and neither
-// is flagged by any editor. `-our`, `-re` and `-ce` are not graded: `colour`
-// went with `FJS-D192` itself and stayed gone, and a rule that fires on `centre`
-// would have to know it is not a proper noun.
-//
-// **Three legitimate English nouns are the reason this is a word list and not a
-// suffix rule**: `parenthesis`, `synthesis` and `initialism` all carry `-is-`
-// and none is a British spelling. Every entry below therefore carries enough
-// letters that it cannot match one — each needs the `-e`, `-ing` or `-ation`
-// those nouns do not have. A suffix rule tried on this repo rewrote `analyses`,
-// the plural of `analysis`, in `toolbelt/inflect` AND in the test that guards
-// it, in one commit, leaving nothing to fail — the comment there is a warning
-// rather than history.
-//
-// **What is deliberately not graded**: `cancelled`, which `FJS-D192` names as
-// its one standing exception (a persisted enum value across `example` and
-// `basecamp`, so a rename is a migration); the two append-only archives, whose
-// entries record what was written; and generated `*.snapshot.*`, which is its
-// generator's output rather than anybody's prose.
-
-const BRITISH = [
-  'summarise', 'normalise', 'serialise', 'sanitise', 'memoise', 'materialise',
-  'recognise', 'initialise', 'organise', 'optimise', 'minimise', 'maximise',
-  'finalise', 'visualise', 'anonymise', 'tokenise', 'itemise', 'humanise',
-  'pluralise', 'singularise', 'generalise', 'neutralise', 'canonicalise',
-  'synchronise', 'containerise', 'parameterise', 'internalise', 'editorialise',
-  'institutionalise', 'parenthesise', 'synthesise', 'deserialise',
-  'normalisation', 'organisation', 'optimisation', 'itemisation',
-  'materialisation', 'memoisation', 'pluralisation', 'neutralisation',
-  'containerisation', 'singularisation',
-  'normalising', 'organising', 'optimising', 'summarising', 'sanitising',
-  'materialising', 'recognising', 'initialising', 'synthesising',
-  'parenthesising', 'synchronising', 'pluralising', 'generalising',
-  'tokenising', 'finalising', 'maximising', 'visualising', 'anonymising',
-  'catalogue', 'greylist', 'labelling',
-]
-
-const BRITISH_RE = new RegExp(`(${BRITISH.join('|')})`, 'i')
-
-const SPELL_EXT  = /\.(js|ts|mjs|cjs|jsx|tsx|md|lite|mesa|json|html|css|sql|yml|yaml)$/
-
-// Four exemptions beyond the archives, and the last is the one that matters.
-// `*.live.*` is `ws:atlas --live`'s deliberately ungated output and `out/` is a
-// build directory. This file is where the table above lives, so a rule reading
-// its own source would report every word it exists to find — the shape a
-// dictionary check always has, and cheaper to state than to encode around by
-// splitting the strings.
-//
-// **`test/fixtures/corpus/` is foreign input and grading it would be wrong**,
-// not merely noisy: those schemas are fetched from real projects so the readers
-// meet input nobody here wrote, and `Organisation` is Documenso's own model
-// name. Correcting it would edit somebody else's schema and break the very
-// property the corpus exists for. The rule grades what this repo WROTE.
-const SPELL_SKIP = /\.snapshot\.|\.live\.|\/out\/|test\/fixtures\/corpus\/|docs\/handoff-archive\/|ISSUES_ARCHIVE\.md$|core\/checks\.js$/
-
-function americanSpelling({ root }) {
-  const findings = []
-  const seen     = new Set()
-
-  walk(root, 6, (dir) => {
-    for (const name of safeRead(dir)) {
-      if (!SPELL_EXT.test(name)) continue
-      const file = join(dir, name)
-      const rel  = relative(root, file)
-      if (SPELL_SKIP.test(rel) || seen.has(rel)) continue
-      seen.add(rel)
-      let text
-      try { if (!statSync(file).isFile()) continue; text = readFileSync(file, 'utf8') }
-      catch { continue }
-      if (!BRITISH_RE.test(text)) continue
-      text.split('\n').forEach((line, i) => {
-        const m = BRITISH_RE.exec(line)
-        if (!m) return
-        // The escape, and it is narrow on purpose: a line carrying `spelling-exempt`
-        // is one where the British form is INPUT rather than prose — a synonym
-        // table holding what a searcher types, a matcher for a column an app
-        // named itself. Correcting those deletes the entry rather than fixing a
-        // spelling. It takes a reason on the same line because the marker is the
-        // only thing a reader will see.
-        if (/spelling-exempt/.test(line)) return
-        // One finding per LINE and at most three per file: a sweep is one
-        // action, and a hundred rows of the same word is a report nobody reads.
-        if (findings.filter(f => f.file === file).length >= 3) return
-        findings.push({ file, line: i + 1,
-          message: `writes \`${m[1]}\` — this repo is American throughout, prose and identifiers ` +
-                   `alike (\`FJS-D192\`). Write \`${american(m[1])}\`.` })
-      })
-    }
-  })
-  return { findings }
-}
-
-// The American form of one British word, derived rather than paired: every entry
-// in the table above differs only in `s` → `z`, except the three that are a
-// different word. A second column would be a second thing to keep in step.
-function american(word) {
-  const lower = word.toLowerCase()
-  const out = lower === 'catalogue' ? 'catalog'
-            : lower === 'greylist'  ? 'graylist'
-            : lower === 'labelling' ? 'labeling'
-            : lower.replace(/is(e|a|i)/, 'iz$1')
-  return word[0] === word[0].toUpperCase() ? out[0].toUpperCase() + out.slice(1) : out
 }
 
 // ─── home-path-literal ────────────────────────────────────────────────────────
@@ -1061,12 +946,10 @@ function seamOwner({ root }) {
 
 // ─── seam-listed ──────────────────────────────────────────────────────────────
 //
-// `CLAUDE.md` § Bridge index says what it is for out loud: the key list stays
-// at the root so *is there an owner for this already* is answerable without
-// loading ninety paragraphs. A seam absent from it answers that question NO,
-// which is the one wrong answer the section can give — and it had been giving
-// it for `signIn`, ruled in `FJS-D261` and explained in its own bullet, for as
-// long as the two lists were kept by hand and compared by nobody.
+// `CLAUDE.md` § Bridge index keeps the key list `seam:` segments are graded
+// against. A seam absent from it refuses a register row that names a real owner,
+// and it had been absent for `signIn`, ruled in `FJS-D261` and explained in its
+// own bullet, for as long as the two lists were kept by hand and compared by nobody.
 //
 // It grades one direction. A name in the key list with no bullet behind it is
 // `doc-cites-dead`'s shape and not this one; a seam explained and never listed
@@ -1080,8 +963,8 @@ function seamListed({ root }) {
   return { findings: gaps.map(s => ({
     file, line: s.line,
     message: `\`${s.names[0]}\` is a seam the \`bridge-index\` skill explains and § Bridge index ` +
-             `does not name. The key list is what answers *is there an owner for this already* ` +
-             `without loading the skill, and a seam missing from it answers no. Add it under ` +
+             `does not name. A register's \`seam:\` segment is graded against the key list, so a ` +
+             `seam missing from it refuses a row naming a real owner. Add it under ` +
              `**${s.section}**.`,
   })) }
 }

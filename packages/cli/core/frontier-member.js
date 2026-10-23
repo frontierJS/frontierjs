@@ -10,9 +10,9 @@ import { userInfo } from 'node:os'
 import { generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { generateSealingKeys, open as openSealed } from '@frontierjs/toolbelt/seal'
 import { FRONTIER_DIR, KEY_FILE, CONFIG_FILE, CHAIN_FILE, MEMBER_FILE, readConfig, tellFetch, pinPeer, postOrigin } from './tell.js'
-import { NICK, readChain, rootLink, linkHash, extendsSeen, boxClaim, readRow, ROW_AGE, memberNumber } from './frontier-chain.js'
+import { NICK, readChain, rootLink, linkHash, extendsSeen, boxClaim, readRow, ROW_AGE, memberNumber, rowBindsChain } from '@frontierjs/toolbelt/frontier'
 
-export { NICK, memberNumber }
+export { NICK, memberNumber, rowBindsChain }
 
 /** Merges into the `frontier` key, keeping every other key (`haven` lives there too). */
 export const writeMemberConfig = (patch) => {
@@ -23,12 +23,11 @@ export const writeMemberConfig = (patch) => {
 }
 
 /**
- * This machine's keys, `machineKeys`' shape in Haven's sign-in.js, made and
- * written 0600 on the first call: the Ed25519 signing pair at the top;
+ * This machine's keys, made and written 0600 on the first call: the Ed25519 signing pair at the top;
  * `sealing`, the member's X25519 pair letters are sealed to (`FJS-D1400`),
  * with `retired`, the pairs a revoke rotated out, kept for the letters still
  * sealed to them; and `box`, this machine's own X25519 pair, which a revoke
- * seals the new sealing pair to (core/frontier-chain.js). The signing and sealing
+ * seals the new sealing pair to (@frontierjs/toolbelt/frontier). The signing and sealing
  * pairs make the root of the member's chain: lose them and this machine is
  * nobody until it joins again.
  */
@@ -58,7 +57,7 @@ export const completeKeys = async (keys) => {
 }
 
 /**
- * This member's chain as this machine holds it (core/frontier-chain.js):
+ * This member's chain as this machine holds it (@frontierjs/toolbelt/frontier):
  * `chain.json` once a link has been made, else a chain of one whose root is
  * made from `key.json` alone. A linked machine (4.5) is not the root, so it
  * always has the file. A file that is not JSON is refused, never overwritten.
@@ -222,12 +221,6 @@ export const fetchRow = async (member, { nick, number }) => {
   if (number ? read.row.number !== number : read.row.nick !== nick) return { refused: `the post answered the row of #${read.row.number} ${read.row.nick}` }
   return read
 }
-
-/** Null when `row` binds `chain` (a `readChain` answer) — its root, and a head the chain holds — else why not. */
-export const rowBindsChain = (row, chain) =>
-  row.root !== chain.root ? 'the row names another chain root than the chain the post hands out'
-    : !chain.hashes.includes(row.head) ? 'the row names a head the chain does not hold'
-    : null
 
 /** A row's facts in a line: `joined 2026-10-21 · pre-1.0 · via jordan`. */
 export const rowFacts = (row) => [

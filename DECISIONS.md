@@ -49,6 +49,54 @@ A command may now declare its own `requires:`, read beside its namespace's (`pac
 
 The nine: one origin, since each command lives in one file and the old files were moved rather than copied; no new concept, since a namespace and `requires:` already exist; complexity is removed, because `deploy:basecamp` no longer sits beside SSH deploys it shares nothing with; predictability improves, because a namespace names a counterpart, as `deploy:*` names a server this pipeline owns; nothing is derived; the owner is the module, and `vendorApp`'s is `core/vendor.js`; at the boundary, a caller no longer has to know that `install` does not use the token it was asked for; the failure stays a refusal at the runtime naming the key; on silence, `parseCommands` and the cli suite fail a command that does not compile, but nothing fails a stale `provision:` in prose. Answered after the edit.
 
+### <a id="fjs-d1477"></a>2026-10-23 · `FJS-D1477` — A Haven takes only a Frontier member's machine: a login with no chain is refused (401), the key login and `~/.fli/haven/key.json` go, and a browser holds no key — `fli haven --browser` hands it the session in the address.
+
+Asked through AskUserQuestion, building `IDEAS/frontier-network.md` 3.2. The browser question was ruled **hand-off from fli**, as recommended. The two rejected options were a browser that signs its own chain login and a browser key a member links into the chain. A browser keeps no key and is no machine, so neither a WebCrypto key in IndexedDB nor a chain link was needed. The agents question (Ace and Charles, who sign in with keys of their own under `~/.fli/haven/agents/`) was put off by the owner until the rest was built. Asked then, with a Haven-listed agent key (`HAVEN_AGENTS`, after Matrix appservice registration) recommended, the owner answered **leave them out for now**. `bun run agents` is refused at its first login, the live halves of `agents.test.js` are skipped, and `machineKeys` stays in `sign-in.js` for them alone until their way in is ruled ([FJS-3471](ISSUES.md#fjs-3471)).
+
+- **The login.** `POST /haven/login` with no `links` is a 401 that names `fli frontier:stake` and `fli frontier:link`. `{ publicKey, nick }` is gone, and so is the first-come nick of `FJS-D981`. A nick held here by another chain is 409, and a nick naming one of the voices is refused as held.
+- **The door.** `fli haven` refuses before it signs anything on a machine with no `frontier.nick`, naming how a machine joins. `--nick` goes, because the nick is the post's row (`FJS-D1451`).
+- **The browser.** `fli haven --browser` signs in on the terminal and opens the page at `#session=<token>`. The page reads it in `sessionToken()`, wipes it with `history.replaceState`, and the token is then the Junction client's, kept by `tokenStorage` under `junction.tokenKey` like any app's session, so a reload is the same member. A fragment never reaches a server. From a checkout the page is `bun run web`'s on `GLOBAL.havenWeb`, which the door refuses to start for you, because an API fli started dies when fli exits.
+- **Tests.** Every test haven pins a test post (`postKey: POST_KEY`, `api/test/sign-in.ts`). A drive's `fli haven` walks from `stakedHome()`, a HOME as `fli frontier:stake` leaves one, with a row fresh enough that the post is never asked.
+
+What is left open: the URL that `fli haven --browser` opens carries the token, so it can sit in the browser's history from the navigation before the wipe. It also sits in the opener's argv while that runs, and in whatever the user pastes it into from the printed fallback. It is a session, not a key, and dies with the session.
+
+The nine:
+- **One origin.** One login shape. The session store is Junction's `tokenStorage`, not a second one.
+- **No new concept.** A session hand-over already exists as `HAVEN_TOKEN` for the terminal, and `#session=` is the same hand-over for a page.
+- **Complexity** falls: one login shape, and no browser crypto.
+- **Predictability.** A terminal and a browser both walk in on a session fli minted.
+- **Derived.** The nick derives from the row, and the browser's identity from the terminal's.
+- **Owner.** `api/src/login.ts` owns the refusal, `walk.md` the hand-off, and `tokenStorage` the kept token.
+- **At the boundary.** A machine in no chain learns how to join from the refusal itself.
+- **The failure** is a refusal at both ends, never a warning, because a key in no chain is a stranger.
+- **On silence**, what must stay true is that a key in no chain never makes a member. What fails when that stops: `login.test.ts` § a key in no chain is refused, and `verify:explore` § a machine in no Frontier chain.
+
+These answers were written after the build (late), from the ruling asked before it. The adjudication is *preservation vs. evolution*: the key login, `--nick` and the browser key go with no alias. Tier: Register.
+
+### <a id="fjs-d1476"></a>2026-10-22 · `FJS-D1476` — A Haven login is the Frontier chain: `POST /haven/login` takes `{ publicKey, links, row }`, read offline against `HAVEN_POST_KEY`, the member is the chain's root, and the nick is the row's. The chain's code is `@frontierjs/toolbelt/frontier`.
+
+Asked through AskUserQuestion, building `IDEAS/frontier-network.md` 3.1. There were four questions, and each followed the recommendation:
+
+- **Where the chain code lives**: it moves from cli's `core/frontier-chain.js` to toolbelt as `/frontier`. Copying it into Haven was rejected, and so was making Haven depend on cli. Haven depends on no cli, and the Worker, fli and the login read the same code.
+- **How a Haven knows the post**: through the `HAVEN_POST_KEY` env var. Without it, a chain login is refused (503) with a message that names the var. Asking the post at boot was rejected, because a Haven would then trust whatever a DNS answer handed it. `fli haven` in a checkout gives the API it starts the key this machine pinned as `frontier.postKey`.
+- **Who the member is**: the chain root. `Member.publicKey` is now `Member.root`, so every machine in a chain is one figure. Keying by machine was rejected because a second laptop would be a stranger.
+- **What the body carries**: the links and the row, verified with no call to the post. A login that makes the Haven fetch the row was rejected, because the post would then hear of every login.
+
+A login with no `links` keeps the old key login, with first-come nick, until 3.2 refuses it. The browser and the agents still sign in that way. So the "first-come nick goes" of 3.1 holds for a chain login only. The rest of it goes with the key login in 3.2.
+
+The nine:
+- **One origin.** The chain code moved, so it was not copied.
+- **No new concept.** A chain, a row and a root already exist, and `root` replaces a column rather than adding one.
+- **Complexity** rises for a while: two login shapes until 3.2.
+- **Predictability.** Every reader of a member row grades it with the same `readRow`.
+- **Derived.** The nick derives from the row.
+- **Owner.** `api/src/login.ts` owns the translation, and toolbelt owns the grade.
+- **At the boundary.** A caller learns its refusal by name: a stale row names its age (`FJS-D1445`), a foreign key, a forged row, another root.
+- **The failure** is a 401 that names its reason.
+- **On silence**, what must stay true is that a Haven with no `HAVEN_POST_KEY` takes no chain login rather than taking one unchecked. What fails when that stops: none in the repo. The scratch drive and probe proved it once, and Haven adds no test while its owner is experimenting.
+
+These answers were written after the build (late), from the four rulings asked before it. The adjudications are *preservation vs. evolution*, so `publicKey` is renamed with no alias and the key login stays only as 3.1's staging before 3.2, and *ergonomics vs. strictness*, so a stale row is refused rather than warned, because an identity is the costly failure. Tier: Register.
+
 ### <a id="fjs-d1475"></a>2026-10-22 · `FJS-D1475` — The oath is withdrawn: `frontier:stake` asks nothing to accept, and the squatting line is a written rule no verb prints.
 
 Asked in chat; the owner's call. `IDEAS/frontier-network.md` 2.9 is withdrawn, and 4.2 keeps the npm-style squatting line of `FJS-D1450` as a rule written in the cli README's Frontier section rather than a line the oath printed. **Keep it as a written rule** was picked over **A** (drop the line with the oath) and **C** (print it only when `stake` refuses a nick). Against the recommendation, which was A (confidence 2): while every member arrives by invite, the invite is the gate. The line stays because an owner reclaiming a nick can point to it. This amends `FJS-D1450`'s "the squatting line" to mean the written rule.
@@ -2255,7 +2303,7 @@ Decided while building `FJS-1450` and `FJS-1749` together, the two gaps most app
 
 The nine (§ V): one origin — key, purpose, model and column stated once and read by the resolver, the mint and the redeem; no new noun — *mint* and *redeem* are the verbs nine apps and `FJS-D340` already use, `signature` the kind `FJS-D522` asked for; the complexity is the problem's (a clicked link must die); predictable — `system:` admits a third column kind by the rule the first two follow; derived — the cookie name from `from: cookie()`, the link purpose from the purpose; the owners already exist (litestone's write refusals, junction's resolver); typed and tested at both boundaries; a dead link is one sentence (`FJS-D696`) and a misnamed column is refused by name; silence — a token in a broadcast is asserted absent, and a stale `exports.snapshot.md` fails CI. Adjudication: *paved road vs. the workaround* — the same workaround in nine places is a measurement of the road. Tier: Register.
 
-*Lives in:* `packages/litestone/src/core/client.js` (`refuseGuardedWrite`, `refuseSystemEntries`) · `packages/litestone/references/Grant.lite` · `packages/junction/src/core/bearer.ts` (`bearerClaim`, `bearerOf`) · `packages/junction/src/core/litestone.ts` (`checkPrincipalSetting`, `describedOf`) · `packages/junction/test/bearer-claim.test.ts` · `packages/junction/test/principal-list.test.ts` · `packages/litestone/test/references.test.ts`.
+*Lives in:* `packages/litestone/src/core/write-data.js` (`refuseGuardedWrite`, `refuseSystemEntries`) · `packages/litestone/references/Grant.lite` · `packages/junction/src/core/bearer.ts` (`bearerClaim`, `bearerOf`) · `packages/junction/src/core/litestone.ts` (`checkPrincipalSetting`, `describedOf`) · `packages/junction/test/bearer-claim.test.ts` · `packages/junction/test/principal-list.test.ts` · `packages/litestone/test/references.test.ts`.
 
 ### <a id="fjs-d801"></a>2026-10-09 · `FJS-D801` — Does the redirect URI get scaffolded — Derived as in A, and also printed: boot states each provider's exact redirect URI, so the string pasted into the provider console is the one the app sends.
 
@@ -14940,6 +14988,24 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1480"></a>2026-10-23 · `FJS-D1480` — Q3 — The address that outlives a Hetzner box (`--reserved-ip`) — A Primary IPv4 with `auto_delete: false`, given to the server at create (`public_net.ipv4`). It IS the server's own address, so outbound traffic already leaves from it and Hetzner needs no egress script. Reuse means the hostname's record holds a Primary IP in the same location that no server holds.
+
+Asked in [`IDEAS/hetzner-host.md`](IDEAS/hetzner-host.md) § Open questions. **A** was picked over **B** (A Floating IP plus an egress script, the same arrangement as on DigitalOcean. Hetzner also needs the address configured inside the box before the box receives anything on it), **C** (No held address on Hetzner: `--reserved-ip` is refused there).
+
+The paper's recommendation, taken as written: It is Hetzner's own mechanism for keeping an address across a rebuild, and it removes a script rather than porting one. Confidence 2: the Primary IP's price, and whether it is bound to a location or a datacenter, are from memory and not fetched, so 1.1 checks them against Hetzner's API docs.
+
+### <a id="fjs-d1479"></a>2026-10-23 · `FJS-D1479` — Q2 — The name of the token key — `HETZNER_TOKEN`, named like `DIGITALOCEAN_TOKEN`.
+
+Asked in [`IDEAS/hetzner-host.md`](IDEAS/hetzner-host.md) § Open questions. **A** was picked over **B** (`HCLOUD_TOKEN`, the key that Hetzner's `hcloud` CLI and its Terraform provider already read).
+
+The paper's recommendation, taken as written: Match the siblings: the tree's keys are `<VENDOR>_TOKEN`, and `CLOUDFLARE_TOKEN` already departs from Cloudflare's own `CLOUDFLARE_API_TOKEN`. Basecamp's env has `HETZNER_URL` beside it too, so a person who knows one key can predict the next. B is the reopen path if reusing an existing `hcloud` setup turns out to matter. Confidence 2.
+
+### <a id="fjs-d1478"></a>2026-10-23 · `FJS-D1478` — Q1 — How the cloud is chosen — The same flag, but its default comes from the tokens in the global fli env. With exactly one cloud's token, use that cloud. With both, ask at a terminal and refuse without one. With neither, ask at a terminal which cloud to use, then ask for its token. Bare `basecamp` lists the boxes at every cloud that has a token, and `stop`/`destroy <id>` look the id up among the fleet-tagged boxes at each cloud.
+
+Asked in [`IDEAS/hetzner-host.md`](IDEAS/hetzner-host.md) § Open questions. **B** was picked over **A** (Every `basecamp:*` command that calls a vendor takes `--cloud <kind>`, which defaults to `digitalocean`), **C** (A, plus a stored default (`fli eset FLI_CLOUD hetzner --global`)).
+
+The paper's recommendation, taken as written: It is the flag the owner asked for, and there is nothing else to set, because the token a person has already says which cloud they use. C stores the same answer in a second place, and it can disagree with the token. Confidence 2: an account with both tokens has to answer the question every time. The flag is called `--cloud` rather than `--provider` because its values are only the compute kinds of `ProviderKind` (`digitalocean`, `hetzner`), and `cloudflare` is a Provider too.
+
 ### <a id="fjs-d1473"></a>2026-10-23 · `FJS-D1473` — Q6 — Which env name fli keeps for a token — Rename fli's to `CLOUDFLARE_API_TOKEN`: one name, `cf` reads it with no mapping, and the module only has to DELETE it for a profile row.
 
 Asked in [`IDEAS/cloudflare-dns.md`](IDEAS/cloudflare-dns.md) § Open questions. **A** was picked over **B** (keep `CLOUDFLARE_TOKEN` and map it onto `CLOUDFLARE_API_TOKEN` on the spawn).
@@ -17352,6 +17418,12 @@ opposite of what the file is for.
 · `invariants.snapshot.md` · `packages/cli/core/checks.js` (`invariant-enforcer`).
 
 ### <a id="fjs-d192"></a>2026-09-03 · `FJS-D192` — house style is American spelling, not British. The rule flipped; the words did too, except where a word is data.
+
+**Amended 2026-10-22: the owner retired the grader.** `fli check`'s
+`american-spelling` is gone, so CI no longer reports a British spelling. The
+house style is still American; a drift is now fixed when someone sees it,
+rather than by a CI warning. The amendment below explains why the grader was
+added in the first place.
 
 **Amended 2026-09-07: it re-drifted, because nothing graded it.** Four days after
 the flip the repo held **1,131 British occurrences across 285 files** — the first

@@ -1,11 +1,11 @@
 import { join } from 'node:path'
 import { createTestEnv } from '@frontierjs/testing'
 import { buildHavenApp } from '../../api/src/app.ts'
-import { signIn } from '../../api/test/sign-in.ts'
+import { POST_KEY, signIn } from '../../api/test/sign-in.ts'
 const WEB = join(import.meta.dir, '..')
 const TUI = join(WEB, '../node_modules/@frontierjs/sierra/src/tools/tui.js')
 const env = await createTestEnv({ schema: join(WEB, '../db/schema.lite'), listen: true,
-  api: ({ db }) => buildHavenApp({ db, sessionKey: 'k', port: 0 }) })
+  api: ({ db }) => buildHavenApp({ db, sessionKey: 'k', port: 0, postKey: POST_KEY }) })
 const sq = await env.system.room.create({ data: { slug: 'square', name: 'The square' } })
 const sam = await signIn(env.port, 'sam'), ana = await signIn(env.port, 'ana')
 const ws = new WebSocket(`ws://localhost:${env.port}/ws`, ['fjs', `fjs.bearer.${sam.token}`])

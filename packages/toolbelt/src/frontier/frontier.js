@@ -1,8 +1,8 @@
-// core/frontier-chain.js — what a member IS at the post: a chain of links, each
+// src/frontier/frontier.js — what a member IS at the post: a chain of links, each
 // signed by one of the member's machines, from a first link whose hash is the
 // member's root (FJS-D1416, FJS-D1421).
 //
-// Read by both ends: the Worker (core/tell-worker.js, bundled by wrangler, so
+// Read by every end: the Worker (cli's core/tell-worker.js, bundled by wrangler, so
 // nothing here may need node) refuses a chain that does not verify before it
 // stores it, and the cli verifies every chain the post hands it, because the
 // post is the party the chain exists to check. The post can write no link: a
@@ -27,7 +27,7 @@
 // key). The box key is not in the chain; the machine signs a claim to it, so
 // the post can hand out only box keys a machine of the member's signed.
 
-import { sha256Hex, signMessage, verifyMessage } from '@frontierjs/toolbelt/signature'
+import { sha256Hex, signMessage, verifyMessage } from '../signature/signature.js'
 
 const LINK = 'frontierjs/tell link v1'
 const ASK  = 'frontierjs/tell ask v1'
@@ -203,3 +203,9 @@ export async function readRow(row, postKey, now = Math.floor(Date.now() / 1000))
   if (signed < now - ROW_AGE) return { refused: `the row was signed ${Math.floor((now - signed) / 3600)} hours ago, and a row is taken for ${ROW_AGE / 3600}` }
   return { row: { number, nick, root, head, joined, invitedBy: invitedBy ?? null, fliVersion: fliVersion ?? null, signed, sig } }
 }
+
+/** Null when `row` binds `chain` (a `readChain` answer) — its root, and a head the chain holds — else why not. */
+export const rowBindsChain = (row, chain) =>
+  row.root !== chain.root ? 'the row names another chain root than the chain read beside it'
+    : !chain.hashes.includes(row.head) ? 'the row names a head the chain does not hold'
+    : null

@@ -74,6 +74,27 @@ export const CADDY_ADMIN = 'http://127.0.0.1:2019'
  */
 export const EDGE_HOPS = 1
 
+/**
+ * Cloudflare's edge ranges (https://api.cloudflare.com/client/v4/ips). Every
+ * live record is proxied, so without these the socket address Caddy sees is a
+ * Cloudflare edge and every visitor shares one rate-limit bucket (`FJS-1841`'s
+ * shape one hop out). A peer in these ranges is believed about who it fronts,
+ * via `CF-Connecting-IP`; any other peer is the client itself.
+ */
+export const CLOUDFLARE_RANGES = [
+  '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22', '141.101.64.0/18',
+  '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20', '197.234.240.0/22', '198.41.128.0/17',
+  '162.158.0.0/15', '104.16.0.0/13', '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+  '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b500::/32', '2405:8100::/32',
+  '2a06:98c0::/29', '2c0f:f248::/32',
+]
+
+/** Caddy's trust in the peer, written to every server this deploy owns. */
+export const trustedProxies = () => ({
+  trusted_proxies:   { source: 'static', ranges: [...CLOUDFLARE_RANGES] },
+  client_ip_headers: ['CF-Connecting-IP'],
+})
+
 // A hostname, and nothing a shell or a config could read as syntax: the value
 // is interpolated into both.
 const HOSTNAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/i
@@ -191,10 +212,15 @@ const route = ({ id, host, inner }) => ({
 
 const apiRoute = (apiPort, paths = null) => ({
   ...(paths ? { match: [{ path: paths }] } : {}),
-  // X-Forwarded-For carries the address Caddy observed and nothing a caller
-  // sent, since no proxy in front of it is trusted. EDGE_HOPS is what tells
-  // the app this one hop is there.
-  handle:   [{ handler: 'reverse_proxy', upstreams: [{ dial: `127.0.0.1:${apiPort}` }] }],
+  // X-Forwarded-For is SET, not appended: one entry, the client Caddy
+  // resolved (the socket, or what a Cloudflare peer says it fronts). Appending
+  // would hand the app a chain whose rightmost entry is the Cloudflare edge,
+  // and EDGE_HOPS = 1 would key every caller on it.
+  handle:   [{
+    handler:   'reverse_proxy',
+    upstreams: [{ dial: `127.0.0.1:${apiPort}` }],
+    headers:   { request: { set: { 'X-Forwarded-For': ['{http.vars.client_ip}'] } } },
+  }],
   terminal: true,
 })
 
@@ -228,12 +254,23 @@ const navigation = (roots) => ({
   handle: [{ handler: 'rewrite', uri: '/index.html' }],
 })
 
+const ASSET_CACHE = 'public, max-age=31536000, immutable'
+const PAGE_CACHE  = 'no-cache'
+
 // The SPA: a file that exists, else index.html. Root is read per request, so
 // the `current` symlink swap is the whole of a web release — nothing reloads.
 const spa = (serverPath, headers) => [
   { handle: [{ handler: 'vars', root: `${serverPath}/current` }] },
   { match:  [{ file: { try_files: ['{http.request.uri.path}', '/index.html'] } }],
     handle: [{ handler: 'rewrite', uri: '{http.matchers.file.relative}' }] },
+  // file_server sends no Cache-Control, so Cloudflare held a bundle file for its
+  // own default TTL and every browser asked again on every visit. A file under
+  // /assets is named by its content hash and can never be stale; the page is
+  // what names the current hashes, so it is checked on every load.
+  { match: [{ path: ['/assets/*'] }],
+    handle: [{ handler: 'headers', response: { set: { 'Cache-Control': [ASSET_CACHE] } } }] },
+  { match: [{ path: ['/index.html'] }],
+    handle: [{ handler: 'headers', response: { set: { 'Cache-Control': [PAGE_CACHE] } } }] },
   { handle: [
     { handler: 'headers', response: { set: headers } },
     { handler: 'encode', encodings: { gzip: {} }, prefer: ['gzip'] },
@@ -345,12 +382,14 @@ export function applyEdge(config, { appId, routes, plain = [] }) {
       throw new EdgeError(`${taken.join(', ')} is already routed to ${other['@id'] ?? 'a route nobody named'} on this machine`)
   }
   server.routes = [...(server.routes ?? []).filter(r => !ours.has(r['@id'])), ...routes]
+  Object.assign(server, trustedProxies())
 
   const servers = http.servers
   const kept    = (servers[PLAIN_SERVER]?.routes ?? []).filter(r => !oursPlain.has(r['@id']))
   if (kept.length || plain.length) {
     const srv  = servers[PLAIN_SERVER] ??= { listen: [`:${http.http_port ?? 80}`] }
     srv.routes = [...kept, ...plain]
+    Object.assign(srv, trustedProxies())
   } else delete servers[PLAIN_SERVER]
 
   const logs  = server.logs ??= {}

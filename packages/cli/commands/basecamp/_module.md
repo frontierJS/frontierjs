@@ -1,6 +1,6 @@
 ---
 namespace: basecamp
-description: Basecamp itself — make its box at DigitalOcean, install it, point its hostname, take it down, and release an app through it
+description: Basecamp itself — make its box at a cloud, install it, point its hostname, take it down, and release an app through it
 ---
 
 <script>
@@ -30,6 +30,85 @@ const runProvision = async (input, file = 'provision-host.ts', env = {}) => {
   catch { return { error: `${file} answered no JSON (exit ${run.status})` } }
 }
 
+// ─── Clouds ───────────────────────────────────────────────────────────────────
+// The one place on this side a vendor is named: the token key provision-host.ts
+// reads (the kind upper-cased, then _TOKEN), the page that makes one, and what a
+// held address costs there.
+const CLOUDS = {
+  digitalocean: { label: 'DigitalOcean', key: 'DIGITALOCEAN_TOKEN',
+    url: 'https://cloud.digitalocean.com/account/api/tokens/new', note: 'Pick Full Access',
+    addresses: 'https://cloud.digitalocean.com/networking/reserved_ips', held: '$5/mo while no box holds it' },
+  hetzner: { label: 'Hetzner', key: 'HETZNER_TOKEN',
+    url: 'https://console.hetzner.cloud/projects', note: 'Open the project, then Security → API tokens → Generate, Read & Write',
+    addresses: 'https://console.hetzner.cloud/projects', held: '€0.50/mo plus VAT, held or not' },
+}
+const cloudLabel = (cloud) => CLOUDS[cloud]?.label ?? cloud
+
+// Asked rather than declared in `requires:`: which token a run needs is not
+// known until the cloud is.
+const cloudToken = async (cloud, { interactive, write = true, say }) => {
+  const c = CLOUDS[cloud]
+  if (process.env[c.key]) return true
+  const { resolve }        = await import('node:path')
+  const { acquireMissing } = await import(resolve(global.fliRoot, 'core/requires.js'))
+  const left = await acquireMissing('basecamp', [{ key: c.key, url: c.url, note: c.note }], { interactive, write, say })
+  return !left.length
+}
+
+// The cloud a command buys at or acts on (FJS-D1478): --cloud, else the one
+// whose token is stored. With both stored a terminal is asked and none is
+// refused; with neither, a terminal is asked which and then for its token.
+// `interactive` is false under --yes, which would otherwise take the first
+// cloud as Enter's answer and buy at one nobody named.
+const pickCloud = async ({ cloud, interactive, tty, chalk, say }) => {
+  const kinds = Object.keys(CLOUDS)
+  if (cloud && !CLOUDS[cloud]) return { error: `--cloud takes ${kinds.join(' or ')}, not '${cloud}'` }
+  const stored = kinds.filter(k => process.env[CLOUDS[k].key])
+  cloud ||= stored.length === 1 ? stored[0] : ''
+  if (!cloud) {
+    if (!interactive) return { error: stored.length
+      ? `tokens for ${stored.map(cloudLabel).join(' and ')} are stored: pass --cloud ${kinds.join('|')}`
+      : `no cloud token is stored: pass --cloud ${kinds.join('|')}, or set ${kinds.map(k => CLOUDS[k].key).join(' or ')}` }
+    const keys = Object.fromEntries(kinds.map(k => [k[0], cloudLabel(k)]))
+    const pick = await tty.keys(chalk`{cyan ?} {bold Which cloud?}`, keys)
+    cloud = kinds.find(k => k[0] === pick)
+  }
+  if (!await cloudToken(cloud, { interactive, say })) return { error: `${CLOUDS[cloud].key} is not set` }
+  return { cloud }
+}
+
+// The clouds a read spans: every one with a stored token unless --cloud names
+// one, else the one pickCloud settles on.
+const cloudsToRead = async (opts) => {
+  const stored = Object.keys(CLOUDS).filter(k => process.env[CLOUDS[k].key])
+  if (!opts.cloud && stored.length) return { clouds: stored }
+  const picked = await pickCloud(opts)
+  return picked.error ? picked : { clouds: [picked.cloud] }
+}
+
+// Every fleet-marked box across those clouds, each carrying its cloud. One
+// cloud failing fails the read: a pick offered off a partial list is not the
+// whole account.
+const listBoxes = async (clouds) => {
+  const machines = []
+  for (const cloud of clouds) {
+    const done = await runProvision({ cloud, action: 'list' })
+    if (done.error) return { error: `${cloudLabel(cloud)}: ${done.error}` }
+    machines.push(...done.machines.map(m => ({ ...m, cloud })))
+  }
+  return { machines }
+}
+
+// The cloud a typed id is at. Ids are per cloud and may collide, so an id at
+// two of them is refused rather than guessed.
+const cloudOf = (id, machines, clouds) => {
+  const at = [...new Set(machines.filter(m => String(m.id) === id).map(m => m.cloud))]
+  if (at.length > 1) return { error: `${id} is a box at ${at.map(cloudLabel).join(' and ')}: pass --cloud` }
+  if (at.length) return { cloud: at[0] }
+  if (clouds.length === 1) return { cloud: clouds[0] }
+  return { error: `${id} is not a box fli basecamp:create made at ${clouds.map(cloudLabel).join(' or ')}` }
+}
+
 // Basecamp's own hostname, the one `pointHost` points at the box.
 const webDomain = async () =>
   (await import(provisionScript().root + 'frontier.config.js')).default.deploy.web?.domain
@@ -50,6 +129,23 @@ const cloudflareToken = async ({ interactive, write = true, say }) => {
 // spawnSync hands the child the environment bun STARTED with, so a token
 // pasted just now goes on the call itself.
 const hostRecord = (input) => runProvision(input, 'host-record.ts', { CLOUDFLARE_TOKEN: process.env.CLOUDFLARE_TOKEN })
+
+// Each machine's hostname, read off the A record pointing at its address —
+// Basecamp's config names no domain and create keeps the one it was handed
+// nowhere, so Cloudflare is the only place the pairing lives. The reserved IP
+// is asked too, since the record names that and not the box's own. No
+// token leaves every machine unnamed rather than refusing the list.
+const withHosts = async (machines) => {
+  if (!process.env.CLOUDFLARE_TOKEN) return machines
+  return Promise.all(machines.map(async (m) => {
+    for (const ip of [m.reservedIp, m.ip].filter(Boolean)) {
+      const found = await hostRecord({ find: ip })
+      const name = found.records?.find(r => r.marked)?.name ?? found.records?.[0]?.name
+      if (name) return { ...m, host: name }
+    }
+    return m
+  }))
+}
 
 // Asked before the install, so a token that opens no zone holding the hostname
 // refuses before minutes of apt rather than after them. No token is not a
@@ -133,7 +229,7 @@ const offerProxy = async ({ record, configured, log, yes }) => {
 }
 
 // One row of `basecamp:list`, and of the pick `basecamp:stop` and `basecamp:destroy` offer with no id.
-// A droplet with no server id is the Basecamp host: `fli basecamp:create` is the
+// A box with no server id is the Basecamp host: `fli basecamp:create` is the
 // only maker of one, and refuses to make a second while one is at the account.
 // Each column is padded before it is painted: an escape code counts toward padEnd.
 // `chalk` is handed in, since a module script does not see `$`.
@@ -145,7 +241,10 @@ const machineLine = (m, chalk) => {
   const role   = m.serverId
     ? chalk`📡 {magenta fleet machine} {dim · server ${m.serverId} · destroy it in Basecamp}`
     : chalk`⛺ {bold.green Basecamp host}`
-  return chalk`{bold ${m.id}}  ${status}  ${ip}  {dim 🌐 ${(m.region ?? '-').padEnd(5)}}  ${role}`
+  const host   = m.host ? chalk`  {cyan https://${m.host}}` : ''
+  const name   = chalk.bold((m.name ?? '-').padEnd(14))
+  const where  = `${cloudLabel(m.cloud).padEnd(12)} ${(m.region ?? '-').padEnd(5)}`
+  return chalk`{bold ${m.id}}  ${name}  ${status}  ${ip}  {dim 🌐 ${where}}  ${role}${host}`
 }
 
 // ─── Ring 0 from here ─────────────────────────────────────────────────────────
@@ -251,7 +350,7 @@ const adminThenFleet = async ({ outpost, domain, later, ...admin }) => {
   return !outpost || await joinFleet(admin.dest, domain)
 }
 
-// A droplet has an address before it has an sshd. BatchMode, so nothing here
+// A box has an address before it has an sshd. BatchMode, so nothing here
 // can wait on a password; accept-new records the host key once, so the ring 0
 // runs after it meet a known host and ask nothing.
 const waitForSsh = async (dest, { identity, timeoutMs = 240_000, everyMs = 5_000 } = {}) => {
@@ -270,22 +369,36 @@ const waitForSsh = async (dest, { identity, timeoutMs = 240_000, everyMs = 5_000
 
 ## Setup
 
-`create`, `stop`, `destroy` and the bare `fli basecamp` list need a
-DigitalOcean personal access token, in your global fli env. A first run at a
-terminal walks you through it: it opens the page the token is made on, takes
-the paste, stores it, and asks whether to install Basecamp on the box once it
-is up.
+`create`, `stop`, `destroy` and the bare `fli basecamp` list need a cloud's
+API token in your global fli env. `--cloud` names the cloud; without it the
+one whose token is stored is used, and with both stored a terminal is asked
+which. A first run at a terminal with neither asks which cloud, opens the page
+its token is made on, takes the paste and stores it.
 
-- **Full Access**, or **Custom Scopes**: `droplet` create/read/delete, `ssh_key` create/read, `tag` create, `regions` `sizes` `image` read
+The token is shown once; a project `.env` overrides the global one, for a
+client's own account. Optional: `fli eset ME you@example.com --global` — the
+first admin's email question then takes it on Enter, and `--yes` needs no
+`--admin`.
+
+### DigitalOcean — `DIGITALOCEAN_TOKEN`
+
+- Made at https://cloud.digitalocean.com/account/api/tokens/new
+- **Full Access**, or **Custom Scopes**: `droplet` create/read/delete, `ssh_key` create/read, `tag` create, `regions` `sizes` `image` read, `reserved_ip` create/read/delete
 - **For Basecamp too** — the same token as a cloud account in Basecamp (Secrets, kind `provider_key`) — add `account` read: Basecamp's Verify reads `/v2/account`, and a token without it fails Verify though it provisions
-- Store it: `fli eset DIGITALOCEAN_TOKEN <token> --global` — a run with none leaves a placeholder line there
-- The token is shown once; a project `.env` overrides it, for a client's own account
-- Optional: `fli eset ME you@example.com --global` — the first admin's email question then takes it on Enter, and `--yes` needs no `--admin`
+- A reserved IP bills $5/mo while no droplet holds it
+- `fli eset DIGITALOCEAN_TOKEN <token> --global`
+
+### Hetzner — `HETZNER_TOKEN`
+
+- Made per project: https://console.hetzner.cloud/projects, open the project, then **Security → API tokens → Generate**, **Read & Write**
+- The token reaches that project only, so the box is bought in it
+- A Primary IPv4 bills €0.50/mo plus VAT whether or not a server holds it
+- `fli eset HETZNER_TOKEN <token> --global`
 
 ## What it makes
 
-One droplet, tagged `basecamp`, carrying your SSH public key and nothing
-else. `fli basecamp:install <server> --domain <host>` then puts Basecamp on it
+One box, marked `basecamp` at its cloud, carrying your SSH public key and
+nothing else. `fli basecamp:install <server> --domain <host>` then puts Basecamp on it
 from any directory — `fli deploy:setup --auto-install` and `fli deploy`, run
 in `packages/basecamp` — and works the same on a box you made some other way.
 Both ask whether the box is also an Outpost, and enroll it with `fli
@@ -295,4 +408,4 @@ deploy:outpost` once the first admin is made.
 
 `fli basecamp:deploy --app <id>` builds an app's image here, loads it onto
 every machine Basecamp runs that app on, and asks Basecamp to release it. It
-needs a `BASECAMP_API_KEY` from the running Basecamp, not a DigitalOcean token.
+needs a `BASECAMP_API_KEY` from the running Basecamp, not a cloud token.

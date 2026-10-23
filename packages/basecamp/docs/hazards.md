@@ -1,0 +1,448 @@
+# basecamp — what bites here
+
+The full hazard catalog for `@frontierjs/basecamp`, moved out of `CLAUDE.md`. The dozen that bite most often stay there; this is every one, verbatim.
+
+- **A level is per WORKSPACE, and it rides on the principal.** Every model
+  declares `@@gate`; `api/src/core/gate.ts` is the ladder (viewer/billing 2,
+  developer 4, admin 5, owner 6, `isSystemAdmin` 7, authenticated-but-not-a-member
+  1). The level comes from the `WorkspaceMember` row for the workspace the
+  request is FOR, which is why `sessionGateLevel()` is not used here — it grades
+  standing that travels with the user and would answer the same in every
+  workspace. **The resolution is the framework's**: `createApp({ principal:
+  membershipClaim(…) })` in `app.ts` reads the `WorkspaceMember` row once
+  per request and puts `workspaceId` and `memberRole` on a fresh principal
+  before the Data boundary scopes the client from it (`FJS-D113`). Two things
+  stay this app's: `restandingFor()`, for the workspaces service, which
+  addresses `ctx.id` rather than the header and would otherwise carry an admin's
+  standing into any other workspace they can name; and the role hooks, kept
+  only where no gate grades the work — the workspaces service's member
+  methods, which address `ctx.id` while `gateAuth` grades the header's
+  workspace, and `invitations.create`, which writes through `asSystem()` for
+  the `@guarded` token and cannot state a `gate:` on a CRUD verb of a
+  model-backed service. A method takes no hook: the model's gate refuses, or a `gate:`
+  in the service's `methods:` where it writes through `asSystem()` or acts on a
+  machine or provider first (`FJS-2856`), and `app.ts`'s error mapper says the
+  refusal as a role, in-process and on the wire alike. `methods:` is the
+  whole surface, so a service gaining a `gate:` lists every verb it answers.
+- **`Server`, `Environment` and `Variable` are graded on TWO axes.**
+  `@@capabilities` on all three, ANDed with the gate (`FJS-D146`): a caller needs the
+  level AND the grant. `WorkspaceMember.capabilities` holds the grant and
+  `membershipClaim({ capabilities })` reads it onto `auth().capabilities` off the
+  row the standing already comes from — per request, per workspace, so the same
+  person holds a different set in each.
+  **`api/src/core/capabilities.ts` is the one owner of role → set** and every
+  membership write stamps through it: setup, the hub, an accepted invitation,
+  `addMember`, `setMemberRole`, `db/seed.js` and the test fixtures. A role is a
+  DEFAULT set rather than a synonym for one — the column is the truth afterwards,
+  which is what lets one grant come off one person without inventing a role — and
+  `setMemberRole` RE-stamps, since leaving old grants behind makes a demotion
+  change a word on screen and nothing else.
+  **The grid does not replace `refuseGrantAboveOwn()`, it gives it a second
+  axis.** `admin` and `owner` hold the same grid, because what separates them is
+  the workspace itself, so a subset test cannot see an admin minting an owner
+  (`FJS-410`) while the ladder cannot see a sideways grant (`FJS-529`). Both are
+  checked. It stays a hook because the grade is of the ROLE handed out, which litestone's
+  `Capability[]` guard does not see. `addMember`, `setMemberRole` and
+  `removeMember` write on the caller's own client (`FJS-2356`), so that guard,
+  the model's gate and `@@deny(update, userId == auth().id)` all apply; a
+  fixture seeding an admin stamps `grantsFor(role)` or the guard refuses them.
+  **The three `capability-ladder` warnings from `fli check` are answered, not
+  ignored**: the gates stay steep because the grant table is bounded by them, so
+  the ladder still catches a grant mis-stamped by a bug or a migration.
+- **`narrowPatch(data)` takes no list: which columns a patch drops is the schema's** (`FJS-D1243`). It reads litestone's UPDATE schema for the call's model — `readOnly` for a `@@transitions` field, a row stamp, the tenant column and an `@immutable` one — plus the primary key. A column only a worker or the service writes is `@system` and the write names it: `system: ['col']` on the caller's client, or a `sys()` client. `@system` is NOT dropped, so a caller naming one is refused by name. A new set-once column is `@immutable` in `db/schema.lite` and nowhere else, and nothing in a service restates the set.
+- **Thirteen models declare `@version`, and a service-side write of a row must carry
+  the version it read.** The rule for which is in `db/schema.lite`'s header:
+  a row a PERSON edits, never one a machine also writes on its own schedule —
+  `@version` is per row and not per column, so a heartbeat or an engine moving
+  `status` would refuse an edit for a change nobody made. Three consequences
+  here. A method that fetches a row and then writes it (`makePrimary`,
+  `uploadCert`, `verify`, `demoteSiblings`) states
+  `version: row.version` — a real compare-and-swap, not a formality. An empty
+  patch is `changesNothing(patch)` and not `!Object.keys(patch).length`, because
+  the version rides on every one and would otherwise turn an untouched form into
+  a write that bumps it. And a screen holding a DRAFT pins the version in the
+  draft: `createResource` fills one in from what the tether holds, the tether is
+  live, and a push moves the remembered version while the draft sits still —
+  which erases the other person's write with the guard in place and nothing
+  said. `<Form record={row}>` is already right; the hand-rolled editors are not
+  unless they carry it.
+- **`User` reads and updates at VISITOR(1), and the level is not what makes that
+  safe.** A gate is per MODEL, so 1 on update is *any signed-in caller rewrites
+  any person's row*. `@@allow(update, id == auth().id)` narrows it to their
+  own, `@@allow(read, id == auth().id)` does the same for reads (a roster
+  reads its people through the membership, `asSystem()`), and
+  `@allow(write, auth().isSystemAdmin)` on `isSystemAdmin`, `status`, `kind`,
+  `email`, `accountId` and `scopes` keeps what a person may not write about
+  themselves out of reach — a column the caller can write is not a column a level can be
+  graded from. `users.patch('me')` is the one caller-scoped write, and it names
+  no columns: a new column is self-writable the moment it lands unless it
+  carries a field policy. Both are bypassed by `asSystem()`, which is every legitimate
+  write here (`/setup`, the hub). **`@guarded` would not have done it**: it is a
+  read-side lock, the write lands and the answer comes back with the column
+  missing, which reads exactly like a refusal (`FJS-248`). This is the shape `@frontierjs/auth`'s own fragment now ships (`DECISIONS.md` § Access control); what differs here is the standing, deliberately — auth writes the policy against `auth().isAdmin`, this app has no app-wide admin (a level is per WORKSPACE) and its hub reads through `asSystem()`, so the row policy is self-only with no admin exception and the guarded columns are the three its own resolver grades on.
+- **`db/schema.d.ts` is generated, committed, and the only place the client is
+  typed.** `bun run db:types` writes it (`audience=system` — the API reads
+  `Secret.data`, which is `@encrypted`, through `asSystem()`), `api/src/core/db.ts`
+  casts once, and nothing downstream casts at all. `bun run test` fails if the
+  file is not what the schema generates right now, which is the half that makes a
+  committed generated file safe. **A hand-written row interface is the thing this
+  replaces**: `job-run.job.ts` carried `JobRow` in snake_case with `service_id` on
+  it — three renames stale, describing no row that has ever existed, while the
+  code around it read the right camelCase names.
+- **Tenancy is DECLARED, and it is one block at the top of the schema** —
+  `tenancy { strategy row  column workspaceId  claim workspaceId }`, which
+  desugars into a `@@deny` per model plus a `@default(auth().workspaceId)` stamp.
+  Some models say `@@tenant(none)` by name — the auth models, `Workspace`
+  itself, `WorkspaceMember` (what standing is READ from, before there is a
+  workspace on the principal to compare against), and a handful of others that
+  span workspaces or belong to the installation rather than to one; `AuditEvent`
+  is NOT among them (a nullable `workspaceId` takes the ordinary row-scoping
+  desugar instead). The rest are scoped through a parent
+  and NOTHING DECLARES IT: a `DeploymentStep`, a `JobRun`, a `Volume` carry no
+  `workspaceId` of their own, so litestone walks the belongs-to relations and
+  reports each by name in a standing warning. Do not reach for
+  `@@tenant(via: rel)` to silence it — several of them have two scoped
+  parents, which get one deny EACH and are AND'd, so naming one relation drops
+  the other. `db/access.snapshot.md` is the generated, checkable list of which
+  model is which. Nothing in a service restates the column: `deriveSlug`
+  does not stamp it and `findScoped`/`getScoped` do not filter on it.
+  `Deployment`/`Job`/`Domain`
+  brought a shape the hierarchy did not have — a read filtered on `appId` alone
+  (an app's recent releases, a hostname's siblings), safe before only because the
+  app had been fetched scoped first. Adding the next one is an audit before it is a line: **a
+  policy filters where a gate refuses**, so any read crossing a workspace that
+  is not `asSystem()` starts matching nothing, quietly. The engines, the hub and
+  the outpost endpoints already are; a new one is the thing to check. `db/README.md`
+  § Access control is the depth, `db/test/schema.test.ts` runs it with no
+  service in the picture.
+- **The tenant crossing is asserted by `verifyTenantIsolation()`, and the row-policy
+  check cannot do it.** `verifyRowPolicies` grades a compiled WHERE against
+  litestone's JS evaluator and declines a rule holding a `check()` by name — which
+  here is the FOURTEEN models scoped through a parent, so its own skipped rows are
+  the normal state. `FJS-382` is what that costs. The fifth check executes the
+  crossing instead: a row seeded for tenant A, reached for by tenant B and by a
+  caller holding no claim, on read/create/update/delete/post-update. **31 graded,
+  14 exempt, no leak.** Coverage is asserted as a SET, so a model that quietly
+  drops out of the check fails the suite rather than passing silently.
+- **`asSystem()` has to survive a transaction, and a system path is where you
+  notice.** `db.asSystem().$transaction(tx => …)` handing the callback the ROOT
+  client makes `POST /setup` — four models in one transaction — fail with
+  *"Account.create" requires SYSTEM access (use asSystem())* about a call that
+  was using it. Fixed in litestone (`FJS-149`); the mirror image,
+  `$setAuth(u).$transaction`, silently ran with `auth()` null.
+- **A session carries three columns auth knows nothing about.** `isSystemAdmin`,
+  `status` and `kind` are Basecamp's additions to auth's `User`, and they reach
+  `ctx.user` through `sessionFields` (`core/session-auth.ts`), which auth
+  calls from `toContext()` with the row already in hand. Read them off the
+  session; **do not re-read the user to get one** — that is a third query on the
+  hottest path in the app, which is the thing the seam exists to avoid.
+- **`suspended` has two doors and both are needed.** Login refuses (after the
+  password check, so the refusal does not disclose which addresses are suspended
+  accounts), and an app-level `before: all` hook refuses a token issued
+  earlier. Deleting the `Session` rows does NOT cover it — an API key is a
+  `Credential` and survives that. A suspended workspace is refused in
+  `scopeToWorkspace`, the one hook every scoped service already runs. Neither is
+  a delete: `@@softDelete(cascade)` stamps every child, a status change stamps
+  nothing.
+- **`autoValidate` deletes every key the model does not declare — unless the
+  schema declares it `@transient`.** The plaintext `secret` a channel is created
+  with is not a column and now says so (`FJS-D23`): it is validated with the
+  model's own rules and lifted onto **`ctx.transients`**, so `create` and `patch`
+  read `ctx.transients.secret` and the write carries columns only. An
+  UNDECLARED wire-only key is now a 400 naming it and pointing at `@transient`
+  (`FJS-889`) rather than dropped in silence — which is how four services here
+  were caught wiring `deriveSlug` onto a model with no `slug` column at all.
+- **`ctx.params` does not exist in Junction at all** — on either context, since
+  `FJS-D03`. Services used to read `ctx.params.user.user_id` and
+  `ctx.params.headers`, every one `undefined`, so role checks silently
+  passed for everyone; both are fixed now, and the idiom survives only in two
+  comments (`app.ts`, `core/hooks.ts`) warning against it. Fixing an occurrence
+  means `ctx.user` / `ctx.caller.headers` / `ctx.route` — and `ctx.route`
+  is the answer on a raw route too, which is what changed: the word used to
+  mean path captures there and nothing here, and that asymmetry is what kept
+  the idiom arriving.
+- **`before: { all: [...] }` hits every method**, outpost endpoints included.
+- **Leaving a method out does not remove it.** `createService({ model })` brings
+  Junction's Litestone base, which answers every CRUD verb the service does not
+  declare — with validation, so a well-formed payload is written. `POST /volumes`
+  answered **201** and created a row for a disk that does not exist, on a service
+  whose whole point is that nobody authors one. `methods: ['find', …]` is the
+  allow-list that makes an absence real; it also throws at construction on a
+  name the service does not have.
+- **A conduit target carries a REF, not a credential.** `auth: { type: 'hmac',
+  secret }` type-checks through a cast and cannot work: the signer reads `ref`,
+  so every send fails `auth_failed` naming credential `undefined` — and the
+  material is written into the registry, which `GET /conduit-targets` returns.
+  `core/credentials.ts` resolves `secret:<id>` and `env:<NAME>`. Nothing had
+  ever sent to an outpost, so neither half showed for two phases.
+- **`bun run db:seed` is the only thing here that writes every model, and `db/test/seed.test.ts` runs it** — as a process, in a throwaway cwd, including `--force`. **It discovers the tables rather than listing them**: every table in the seeded database must have rows unless it is named in `NOT_SEEDED` with a reason, and the exemptions are asserted empty too, so neither list can go stale. Adding a model is a choice between seeding it and saying why not. **`--force` deletes the database file**, not rows: AuditEvent is locked at delete and a locked child blocks its parent's Cascade (`FJS-D1281`), so a Workspace with a trail row cannot be row-deleted even by `asSystem()`.
+- **Migrations are per DATABASE — `db/migrations/main/`** — and both the boot
+  path and the seeder apply them with litestone's `apply()`, never junction's
+  `dbClient.migrate(dir)`, which globs one level and reports success for a
+  directory it cannot read. That is how a fresh boot came up with no tables and
+  said nothing (`FJS-193`'s family).
+- **Only `find` is built into a list envelope; an action is handed back whole.**
+  It used to be shape alone — any `{ data, total }` was rebuilt as a paginated
+  list from `total`/`limit`/`offset`/`data`/`errors` and every sibling key was
+  dropped with a 200 and no warning, whatever method produced it.
+  `dashboards.kinds` shipped nine widget kinds and neither of the vocabularies
+  needed to configure them, so the picker offered widgets it could not fill in
+  (`FJS-140`). An action answering rows keeps everything
+  it sends, and a `find` that answers anything but a list throws rather than
+  guessing. NAMED keys and no `data` is still the clearest shape for an action
+  that answers more than one thing — `volumes.usage`, `cleanup.targets`.
+- **The three API snapshots are still at the PACKAGE ROOT here, and `example`'s
+  four are in `api/` — but the reason is gone.** A snapshot belongs in the
+  surface it describes, and the `snapshots` phase reruns each generator from the
+  snapshot's own directory, so moving them needs the app to boot from `api/`.
+  It could not: both declared paths followed the process CWD, so a generator
+  rerun anywhere else opened a NEW database that litestone then migrated to the
+  full schema — working, empty, and indistinguishable from the real one by
+  anything but its contents. `core/db.ts` passes `resolveFrom: 'schema'` now —
+  and the anchor is the APP ROOT rather than the schema's directory, since
+  `schemaAnchor` steps out of one named `db`, so both declared paths keep their
+  `./db/` prefix and rewriting either relative to `db/` moves the whole app
+  and every caller that redirects one path names the other (`FJS-633`), so the
+  app answers the same database from any directory and the move is available.
+  It has not been made: a moved snapshot reads to CI's `snapshots` phase as one
+  removed plus one added, so it costs a `removedSnapshots` allowance, and that
+  is a separate change from the one that unblocked it. Generate all three from
+  the package root as their headers still say.
+- **`API_PATHS` is DERIVED from `app.snapshot.md` — do not add a path to it.**
+  It was a hand-kept copy of the service registry and went stale six times;
+  three of those were paths this app's source names nowhere, because a plugin
+  registered them (`connections` is junction's channels, `account`/`sessions`
+  are auth's, `conduit-targets` is conduit's). It is parsed now, off the file
+  `junction app` writes and CI already reruns with `--check`, so a service
+  reaches both proxies by regenerating the snapshot. The failure it removes is
+  silent and asymmetric: a signed-in browser makes every service call as a frame
+  on `/ws`, so a missing HTTP path is invisible until something *unauthenticated*
+  calls a service, and it surfaces as a **404 from Vite** rather than a refusal
+  from the API. Regenerate the snapshot when you add a service; nothing else.
+- **Nothing in the browser names the workspace, and `stampWorkspace` is gone.**
+  Sixteen resources hooked it before create, over a create schema that had
+  stopped requiring the column — the tenancy declaration desugars a
+  `@default(auth().workspaceId)` and litestone leaves an `auth()` default out of
+  create-mode `required`. **Removing it is what found the defect it was
+  covering** (`FJS-387`): the column was still WRITABLE, so `make()` seeded it,
+  blank-strip turned the seed into an explicit `null`, and a stated null is a
+  value — so the default never applied and `/projects/create/` answered 400. It
+  is `readOnly` now, which is `@system`'s treatment.
+  **The one place the tenant is still stated by hand is a SYSTEM write.**
+  `invitations.create` goes through `sys()`, and a system client carries no
+  principal for the default to read — so `stampInvitation` sets
+  `workspaceId: ws()`. That is the rule for any new `sys().<model>.create` on a
+  scoped model: the tenant
+  comes from `ws()`, never from the payload. `invitations.create` is the one
+  such write left, because `Invitation.token` is `@guarded`; a column that is
+  only `@encrypted` is written on the caller's own client, as a channel
+  credential's Secret is.
+- **A model whose required columns are server-written cannot be created from the
+  browser.** `createResource` validates by default, and `ApiKey`'s create-mode
+  `required` used to be `["userId","name","tokenHint"]`, two of three
+  server-side. `workspaceId` stopped being a fourth once the tenancy stamp
+  defaulted it from the principal, and `tokenHint` is `@system` now
+  (`FJS-095`, ruling `FJS-D22`) — out of `required` entirely, not just
+  `readOnly`. What is left is `userId`: genuinely caller-supplied (a key may go
+  to a bot rather than the asker), so it stays required with no owner control
+  on the form, and `web/src/resources/ApiKey.mesa` still sets
+  `validate: false` for that one column — `autoValidate` on the server is what
+  actually enforces the schema.
+- **The audit trail must cover custom methods.** It recorded `create`/`patch`/
+  `remove` only, so drain, deploy, cancel and trigger were in no trail at all. It
+  now runs on `all` minus reads, with `servers.heartbeat` excluded by name.
+- **A scheduled Job's clock is Caravan's, and `services/jobs/job-schedule.ts` is the one
+  place a row is bound to it.** `app.scheduler` is junction's in-process timer —
+  no persistence, no retry, no principal — and this app used it to fire
+  `app.jobs.dispatch(…)`, which is a clock with none of the queue's durability
+  while looking like it has one (`FJS-D36`). Two defects came out of it and both
+  needed a restart or an edit to see: registration happened only in `create()`,
+  so **the first deploy stopped every scheduled job in the app** while the rows
+  still said `scheduled` (`FJS-327`), and `patch()` validated a new expression
+  without touching the clock, so **an edit was accepted and the old schedule
+  kept firing** (`FJS-328`). `syncSchedule(app, row)` is the whole rule and it
+  reads the UPDATED row, because `kind` and `status` change a schedule as surely
+  as the expression does; `restoreSchedules(app)` rebuilds the clock at boot, called from `app.ts` — a
+  job file declares its own handler and cannot declare a schedule that came from
+  a row.
+- **A deploy resolves an EXECUTOR before it does anything, and there are three
+  answers.** `api/src/providers/executor.ts` is the one owner: a registered outpost,
+  the named stub (`BASECAMP_STUB_OUTPOST=1`, refused under `NODE_ENV=production`,
+  and it writes *no /deploy was issued* into every step it touches), or a refusal.
+  It picks the first online placement it can REACH, not the first online one —
+  a machine that has not heartbeated since the API restarted has no target yet,
+  and the seed's machines say `online` with no outpost at all.
+  It is asked twice — `deployments.create` refuses where the person can see it,
+  the job asks again when it runs, because a placement can be removed
+  between the two. Never add a fourth branch that returns early and lets the
+  caller mark the step `success`: that was the whole of `FJS-257`, a release
+  finishing green in 23ms having issued no command.
+- **A release that names a digest uploads and builds nothing.** `deployments.create`
+  with `builtImage` on an inline App snapshots `{ kind: 'inline', files: [] }`
+  and runs Validate, Activate, Health check — the machine already holds the
+  bytes (a preview's Freeze). On a container App it runs Validate, Start
+  container, Health check, whatever the source says: the image was built where
+  the workspace is and loaded onto the machine by `fli basecamp:deploy`
+  (`FJS-D942`), and building the git source would ship the branch instead. Every inline Activate sends the App's live Domain
+  rows as `hosts`, as `/deploy` does, so a machine with no Caddy fails the
+  release of an inline app that has a Domain rather than leaving it unrouted.
+- **An App's source is a KIND, and `inline` means the files ARE the release**
+  (`FJS-D345`). `git`, `image`, `inline`, read in one place —
+  `api/src/core/app-source.ts` — and a source naming no kind is REFUSED rather
+  than inferred from which keys happen to be present. Three things follow and
+  each is a place a later change will want to shortcut. **`inline` forces
+  `type: static`**, because inline bytes through the container pipeline fail
+  four steps in with a docker error about an image nobody named. **The step
+  list is read off the SOURCE, not the type** — `buildInitialSteps` — and a
+  rollback builds it from the TARGET's snapshot, or an app switched between
+  kinds rolls an old release back through a pipeline its bytes cannot run.
+  **A list carries `summarizeSource`, not the files**: fifty pasted pages on a
+  request that draws a table of names, and `content` is removed rather than
+  blanked so nothing renders an empty editor over a file that has a page in it.
+- **`Backup` is the installation's and `AppBackup` is the app's** (`FJS-D965`).
+  `app-backups.take` asks the Outpost on one placement to tar `fjs-<app>-data`
+  and records the path ON THAT MACHINE (`FJS-1782`) — no bytes reach Basecamp, so
+  a lost machine takes its archives with it. It writes the row at SYSTEM, which
+  is why `take` states its own gate, and a stub executor's answer is recorded
+  `failed`: no archive was taken. Restoring is `apps.restoreVolume` once the
+  file is in the machine's restore directory.
+- **A git push is a conduit Receiver, and the release runs as the person who
+  enabled it** (`FJS-D884`, `plugins/push.ts`). Two doors on one apply: the
+  forge's HMAC at `/hooks/git/{appId}` and a per-App token URL at
+  `/hooks/git/{appId}/{token}`; `apps.enablePush` mints both once (the secret
+  `@encrypted`, the token a hash) and re-running it rotates them. A refusal is
+  conduit's one 401 whatever was wrong, push off included. The apply calls
+  `deployments.create` under `app.runAs(pushActorId, { tenant })`, because a
+  service call as the system answers 401 and the standing is read again: a
+  person removed since enabling is a 500 the forge shows red. A push to another
+  branch, a tag, a deleted branch and a forge ping are `ignored`. `api/test/push.test.ts`
+  signs the exact bytes `env.http` sends, which for an object is `JSON.stringify(body)`.
+- **Deleting an app retires it from the machine** — `/static/retire` for inline,
+  `/stop` for a container, which also drops its Caddy route. Neither stops on
+  its own, so a row removed here and a page still answering on the internet is
+  the failure. Best effort and logged: a machine that cannot be reached does
+  not refuse an operator's decision.
+- **A `/deploy` names the app's hostnames and Caddy on the machine routes them**
+  (`FJS-D564`). `routedHosts()` reads the LIVE `Domain` rows, not the release
+  snapshot, and a hostname sent there is a certificate request — so a deleted
+  row must drop out. A hostname with no `App.port` fails the release in
+  Outpost's words. A `Domain` changed between releases reaches the machine
+  through `domain:dns`, which sends `/route` to every running placement on an
+  online server — and a machine it cannot reach fails the job so it retries.
+  The container's BIND moves only with a release, so a `/route` answering
+  `rebind` is followed by one — `deployments.rebind`, internal, the app's own
+  settings over the LIVE digest (never a rebuild, never a rollback's
+  settings), skipped while a release is already queued, and run as whoever
+  wrote the Domain (`FJS-D577`). A machine moving has no caller to own that
+  restart, so there it stays a logged warning. A
+  redirecting Domain is not a host: `routedRedirects()` sends it as `redirects`
+  beside `hosts`, on `/deploy`, `/static/activate` and `/route`, and Caddy
+  answers it with a 308 itself (`FJS-1615`). An inline app's `/route` carries
+  `static: true`, which dials the static origin the way Activate does.
+  A prefix of a Domain that ANOTHER App answers is a `DomainRoute` (`FJS-D1040`):
+  `routedPaths()` sends it as `paths` beside `hosts`, and `routeDomainApp` pushes the
+  Domain's own App and every App holding a route on it. Both Apps must run on the
+  machine the zone points at — one Caddy cannot route between machines.
+- **A status column with a machine behind it is declared, and the level for a
+  move goes on the move.** `Server`, `Deployment` and `Job` carry
+  `@@transitions(status, …)`, so a move is `db.<model>.transition(id, name)` and
+  never an `update` naming the column: the from-list, the authority and the
+  compare-and-swap are all one declaration, and `db/access.snapshot.md` prints
+  them. **`drain`/`undrain` carry no role hook** — `@gate(5)` on the move is the
+  same sentence in the place a reviewer can see it. Two things follow. A move at
+  `@gate(8)` is one only `asSystem()` can make (`heartbeat`'s `checkIn`), and a
+  system client lifts the gate but still makes only DECLARED moves from the
+  row's current state (`FJS-D502`) — so an engine answering after a cancel has
+  to leave the cancelled row alone, as `finishRun` does. And a refusal arrives in litestone's
+  vocabulary — *requires level 5* — which is why `app.ts` registers one error
+  mapper turning it back into a role, for `TransitionGateError` and
+  `AccessDeniedError` alike (CRUD and a method's declared `gate:`); add to that
+  mapper, never beside it.
+- **A placement is written by `apps.place`, through `asSystem()`.** `AppServer`
+  is `@@gate(2.8)` — a member may read it, only the system may write it — so
+  the authority check is against the WORKSPACE in the service and the write is a
+  system one. Nothing writing the row while three engines read it is what
+  leaves a deploy with no machine to talk to.
+- **A tag is not an identity.** An executor reply may carry a `digest`; it is
+  recorded on `Deployment.builtImage` and every later step is addressed by it.
+  Only `sha256:<64 hex>` is accepted — a `builtImage` nobody can resolve reads as
+  an answer, which is worse than an empty one.
+- **The audit trail is two hooks and both sides are read the same way.**
+  `basecampAuditPreImage` (before) parks the row on `ctx.locals`; the after half
+  re-reads through `asSystem()` rather than diffing `ctx.result`, because a
+  service may answer a projection and a scoped read strips protected columns —
+  taking the after from the result reported an `@encrypted` column as REMOVED on
+  every rotation. Protected column names come from `db.$protectedFields()`, never
+  a list here.
+- **A service DECLARES its channel; it does not run a announce hook.**
+  `channel: workspaceChannel` on the definition, which answers the channel's
+  NAME, so a definition needs no app. Junction announces in one
+  place and excludes `find`/`get` there; an `after: { all: [announce(…)] }` hook
+  cannot, and broadcast every read to the whole workspace (`FJS-031`). Declaring
+  both is refused at construction.
+- **A connection carries no workspace, so `channels({ claims })` says which one
+  a channel is** (`FJS-749`, `FJS-D191`). Every broadcast model here is scoped
+  on `workspaceId` and that claim is resolved per REQUEST by `membershipClaim`,
+  off the header — an upgrade has neither, so a graded broadcast saw no claim
+  and the tenancy `@@deny` fired on UNKNOWN, refusing every subscriber on all
+  eighteen live services. Answering off the channel name is sound rather than a
+  shortcut: the join reads `WorkspaceMember` through `asSystem()` and puts a
+  connection in `workspace:<id>` only where a membership row exists, so being in
+  the channel IS the verified claim. `workspaceIdFromChannel` lives beside
+  `workspaceChannelName` — a name written in one place and read in another is
+  one a caller can get wrong while every other caller keeps working.
+- **A machine's readings are TWO things and they answer different questions.**
+  `Server.health` is a snapshot — one Json column overwritten every check-in —
+  and the metric store is the line. A card draws both: the bar is what the box
+  said a moment ago, the sparkline is the last day. Reading a series is
+  `servers.metrics`, and **its confinement is the PARENT READ**:
+  `MetricSeries` is `@@gate(8)` and `@@tenant(none)`, so `getScoped('server')`
+  runs at the caller's own standing first and only then is the series read
+  through `asSystem()`. Opening the package's gate for a row policy was refused
+  — an app that declares none then serves every reading to anyone, fail-open
+  (`FJS-956`). **Never spell a `labelsKey` here**: `seriesKey()` is junction's,
+  and a second spelling is a second series holding half the readings.
+- **A notification is what one PERSON can switch off; a channel is where the
+  WORKSPACE is paged.** Both go out when an alert fires and collapsing them
+  gives you either a pager anybody can silence for everyone or a bell menu
+  nobody can turn down. The preference lives in `NotificationPreference` and is
+  resolved in ONE place, `core/notify.ts` — a sender that decided for itself is
+  a screen honoured by some callers and ignored by others (`FJS-967`). Three
+  things about it bite:
+  **the absence of a row is the kind's DEFAULT, never silence** (`kinds.ts`
+  holds them), or this app delivers nothing until somebody opens a screen they
+  have no reason to open;
+  **transports ride on the RECIPIENT**, because `via()` is not awaited and a
+  preference is per person, so two recipients of one send legitimately differ;
+  and **email is a capability, not a preference** — `notify()` throws on a
+  transport with no driver BEFORE delivering any of them, so on an app with no
+  mailer a person who asked for email would get neither. Every one of the seven
+  therefore implements both formatters: `kinds.ts` holds defaults, not a ceiling.
+- **The file name of a `*.notification.ts` IS the persisted type**, so the seven
+  are named for `NotificationKind`'s own values. Renaming one renames a value
+  already written to `notifications.type`. `api/test/notify.test.ts` holds the
+  enum, `kinds.ts` and the directory together in both directions — any two of
+  them agreeing proves nothing about the third.
+- **A rule's condition is COLUMNS, and delivery has one owner.** `AlertRule` was
+  `condition Json @default("{}")` with three writers spelling it three ways — the
+  form `{operator, threshold}`, the seed `{op, value}`, the card reading
+  `.operator` — so every seeded rule rendered an em-dash and nothing errored
+  (`FJS-D227`). It is `operator`/`threshold`/`forMinutes` now. The rule the
+  ruling generalizes: **`Json` is right where nothing joins, queries or
+  interprets the value; the moment something reads INTO it to decide, it is a
+  language and belongs in the schema.** Beside it, `core/delivery.ts` is the only
+  place that knows how a `NotificationChannel` is reached — it takes its client
+  and its conduit as arguments rather than reading `$`, because a cron has no
+  ambient call context, and a per-kind table in two places is a kind added to one
+  of them: tests green, never delivers.
+- **Only `recovered` resolves an alert.** `alert-evaluate.job.ts` separates
+  `no-data`, `uncovered` and `recovered`, and the separation is the design: a
+  scrape that STOPPED and a value that came back inside its threshold draw the
+  same flat line, so an evaluator that closes on *not breaching* closes the
+  incident an outage just opened. `forMinutes` also needs the window to be
+  COVERED — every point breaching is not the same claim as *it has been bad for
+  five minutes*, and one reading after a restart satisfies the first.
+- **Zero raw SQL, on purpose** — everything goes through accessors, which is what
+  keeps policies enforceable. `db.asSystem().sql` is the only bypass and it
+  enforces nothing.
+

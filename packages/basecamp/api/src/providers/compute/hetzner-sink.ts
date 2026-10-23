@@ -34,6 +34,7 @@ const LOCATIONS = [
   { id: 1, name: 'nbg1', description: 'Nuremberg DC Park 1', country: 'DE', city: 'Nuremberg' },
   { id: 2, name: 'fsn1', description: 'Falkenstein DC Park 1', country: 'DE', city: 'Falkenstein' },
   { id: 3, name: 'hel1', description: 'Helsinki DC Park 1', country: 'FI', city: 'Helsinki' },
+  { id: 4, name: 'ash',  description: 'Ashburn, VA',          country: 'US', city: 'Ashburn, VA' },
 ]
 
 /**
@@ -45,10 +46,12 @@ const LOCATIONS = [
  * rather than an equal one, and the assertion can see it.
  *
  * `cax11` is offered in ONE location, which is what makes *a size the region
- * does not have* testable without arranging anything.
+ * does not have* testable without arranging anything. It is also Arm and
+ * cheaper than `cpx21` at the same memory, so a picker choosing the cheapest
+ * 4 GB in Falkenstein buys a box that cannot run an amd64 image.
  *
- * `memory` is a float of gigabytes, `1.9` included, because that is what
- * Hetzner sends and rounding it is the connector's job.
+ * `memory` is a float of gigabytes, because that is what Hetzner sends and
+ * rounding it is the connector's job.
  */
 const price = (net: number) => ({
   net:   net.toFixed(10),
@@ -60,20 +63,22 @@ const price = (net: number) => ({
 
 const SERVER_TYPES = [
   { id: 22, name: 'cpx11', description: 'CPX 11', cores: 2, memory: 2, disk: 40,
-    deprecated: false,
+    deprecated: false, architecture: 'x86',
     prices: [
       { location: 'nbg1', price_hourly: price(0.0071), price_monthly: price(4.35) },
       { location: 'fsn1', price_hourly: price(0.0071), price_monthly: price(4.35) },
       { location: 'hel1', price_hourly: price(0.0079), price_monthly: price(4.85) },
+      { location: 'ash',  price_hourly: price(0.0083), price_monthly: price(5.09) },
     ] },
   { id: 23, name: 'cpx21', description: 'CPX 21', cores: 3, memory: 4, disk: 80,
-    deprecated: false,
+    deprecated: false, architecture: 'x86',
     prices: [
       { location: 'nbg1', price_hourly: price(0.0127), price_monthly: price(7.55) },
       { location: 'fsn1', price_hourly: price(0.0127), price_monthly: price(7.55) },
+      { location: 'ash',  price_hourly: price(0.0140), price_monthly: price(8.49) },
     ] },
-  { id: 45, name: 'cax11', description: 'CAX 11 (Arm)', cores: 2, memory: 1.9, disk: 40,
-    deprecated: false,
+  { id: 45, name: 'cax11', description: 'CAX 11 (Arm)', cores: 2, memory: 4, disk: 40,
+    deprecated: false, architecture: 'arm',
     prices: [
       { location: 'fsn1', price_hourly: price(0.0060), price_monthly: price(3.79) },
     ] },
@@ -104,11 +109,27 @@ const SERVERS = new Map<string, Record<string, unknown>>([
  *  crossed the wire and not only that something was created. */
 export const HZ_CREATED: Record<string, unknown>[] = []
 
-let nextId = 8000
+/** SSH keys at the project, by id. */
+const KEYS = new Map<number, Record<string, unknown>>()
+
+/** Primary IPs, by id. Each is bound to a LOCATION and survives its server
+ *  when `auto_delete` is false, which is the address a replaced box keeps. */
+const PRIMARY_IPS = new Map<number, Record<string, unknown>>()
+
+/** Server id → the Primary IP it was created on. Kept off the server row,
+ *  which is answered as JSON and carries no such field at Hetzner. */
+const HELD = new Map<string, Record<string, unknown>>()
+
+let nextId    = 8000
+let nextKeyId = 500
+let nextIpId  = 900
 
 export function resetHzSink(): void {
   HZ_CREATED.length = 0
-  nextId = 8000
+  nextId = 8000; nextKeyId = 500; nextIpId = 900
+  KEYS.clear()
+  PRIMARY_IPS.clear()
+  HELD.clear()
   for (const id of [...SERVERS.keys()]) if (id !== '7701') SERVERS.delete(id)
 }
 
@@ -157,7 +178,21 @@ async function createServer(req: Request): Promise<Response> {
     if (!/^[a-zA-Z0-9]([-_.a-zA-Z0-9]{0,61}[a-zA-Z0-9])?$/.test(key))
       return fail('invalid_input', `label key ${JSON.stringify(key)} is invalid`, 400)
 
+  // A Primary IP named at create is the ONE way onto a new server: Hetzner
+  // assigns only to a server that is off, and a server made without one gets
+  // an address of its own that has to be removed before another can go on.
+  const net    = (spec.public_net ?? {}) as Record<string, unknown>
+  const heldId = net.ipv4 == null ? null : Number(net.ipv4)
+  const held   = heldId == null ? null : PRIMARY_IPS.get(heldId)
+  if (heldId != null && !held) return fail('not_found', `primary_ip ${heldId} not found`, 404)
+  if (held && (held.location as Record<string, unknown>).name !== location.name)
+    return fail('invalid_input',
+      `primary_ip ${heldId} is in ${(held.location as Record<string, unknown>).name}, not ${location.name}`, 422)
+  if (held && held.assignee_id != null)
+    return fail('primary_ip_assigned', `primary_ip ${heldId} is assigned to server ${held.assignee_id}`, 422)
+
   const id  = String(nextId++)
+  if (held) { held.assignee_id = Number(id); HELD.set(id, held) }
   const row = {
     id:         Number(id),
     name:       spec.name,
@@ -188,8 +223,34 @@ async function createServer(req: Request): Promise<Response> {
 export function hzBoot(providerServerId: string, ip = '198.51.100.50'): void {
   const row = SERVERS.get(providerServerId)
   if (!row) return
+  const held = HELD.get(providerServerId)
   row.status     = 'running'
-  row.public_net = { ipv4: { id: 2, ip, blocked: false } }
+  row.public_net = { ipv4: held ? { id: held.id, ip: held.ip, blocked: false }
+                                : { id: 2, ip, blocked: false } }
+}
+
+/** `POST /v1/primary_ips`: 201 with the address and a null action, as Hetzner
+ *  answers one made unassigned. */
+async function createPrimaryIp(req: Request): Promise<Response> {
+  const spec = await req.json().catch(() => null) as Record<string, unknown> | null
+  if (!spec?.name) return fail('invalid_input', 'name is required', 400)
+  if (spec.type !== 'ipv4' && spec.type !== 'ipv6')
+    return fail('invalid_input', 'type must be ipv4 or ipv6', 400)
+  const location = LOCATIONS.find(l => l.name === spec.location)
+  if (!location) return fail('invalid_input', `location ${spec.location} not found`, 400)
+
+  const id  = nextIpId++
+  const row = {
+    id, type: spec.type, ip: `203.0.113.${id % 250}`, name: spec.name,
+    assignee_id: null, assignee_type: 'server',
+    // Hetzner's default is false. A stand-in defaulting to true would hide a
+    // connector that forgot to ask, until the first replaced box lost its DNS.
+    auto_delete: spec.auto_delete === true,
+    location: { name: location.name, description: location.description },
+    labels: spec.labels ?? {}, blocked: false, dns_ptr: [], protection: { delete: false },
+  }
+  PRIMARY_IPS.set(id, row)
+  return json({ primary_ip: row, action: null }, 201)
 }
 
 /**
@@ -219,6 +280,50 @@ export function startHzSink(port = PORT) {
       }
 
       if (url.pathname === '/v1/locations') return json({ locations: LOCATIONS })
+
+      if (url.pathname === '/v1/ssh_keys') {
+        if (req.method !== 'POST') return json({ ssh_keys: [...KEYS.values()] })
+        return req.json().then((spec: Record<string, unknown>) => {
+          const body = String(spec?.public_key ?? '').trim()
+          if (!spec?.name || !body) return fail('invalid_input', 'name and public_key are required', 400)
+          // Hetzner refuses a second copy of a key by name or by body, where
+          // DigitalOcean refuses only the body.
+          for (const k of KEYS.values())
+            if (k.name === spec.name || k.public_key === body)
+              return fail('uniqueness_error', 'SSH key with the same fingerprint or name already exists', 409)
+          const id  = nextKeyId++
+          const row = { id, name: spec.name, public_key: body,
+                        fingerprint: `b7:2f:30:a0:2f:6c:58:6c:21:04:58:61:ba:06:3b:${(id % 256).toString(16).padStart(2, '0')}`,
+                        labels: {} }
+          KEYS.set(id, row)
+          return json({ ssh_key: row }, 201)
+        })
+      }
+
+      if (url.pathname === '/v1/primary_ips') {
+        if (req.method === 'POST') return createPrimaryIp(req)
+        const ip       = url.searchParams.get('ip')
+        const selector = url.searchParams.get('label_selector')
+        return json({ primary_ips: [...PRIMARY_IPS.values()]
+          .filter(p => !ip || p.ip === ip)
+          .filter(p => !selector || selects(p.labels as Record<string, unknown>, selector)) })
+      }
+
+      const primary = url.pathname.match(/^\/v1\/primary_ips\/(\d+)$/)
+      if (primary) {
+        const id  = Number(primary[1])
+        const row = PRIMARY_IPS.get(id)
+        if (!row) return fail('not_found', 'primary_ip not found', 404)
+        if (req.method === 'DELETE') {
+          // Hetzner refuses to delete an assigned Primary IP, which is the
+          // guard against releasing the address a running box serves on.
+          if (row.assignee_id != null)
+            return fail('must_be_unassigned', 'primary IP must be unassigned before deletion', 422)
+          PRIMARY_IPS.delete(id)
+          return new Response(null, { status: 204 })
+        }
+        return json({ primary_ip: row })
+      }
 
       if (url.pathname === '/v1/server_types') return json({ server_types: SERVER_TYPES })
 
@@ -256,6 +361,12 @@ export function startHzSink(port = PORT) {
         if (req.method === 'DELETE') {
           if (!row) return fail('not_found', 'server not found', 404)
           SERVERS.delete(id)
+          const held = HELD.get(id)
+          HELD.delete(id)
+          if (held) {
+            if (held.auto_delete) PRIMARY_IPS.delete(Number(held.id))
+            else held.assignee_id = null
+          }
           // 200 with an action, where DigitalOcean answers 204 with no body at
           // all. A connector that read a body here unconditionally would work
           // against one vendor and throw against the other.

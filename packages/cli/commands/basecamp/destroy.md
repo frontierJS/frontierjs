@@ -1,9 +1,7 @@
 ---
 title: basecamp:destroy
-description: Destroy a droplet fli basecamp:create made
-requires:
-  - DIGITALOCEAN_TOKEN: https://cloud.digitalocean.com/account/api/tokens/new  Pick Full Access
-effects: destroys a droplet at DigitalOcean and everything on its disk
+description: Destroy a box fli basecamp:create made
+effects: destroys a box at its cloud and everything on its disk
 confirm: human
 examples:
   - fli basecamp:destroy 512345678
@@ -11,41 +9,50 @@ examples:
 args:
   -
     name: id
-    description: The droplet id fli basecamp:create printed; with none, pick from the list
+    description: The box id fli basecamp:create printed; with none, pick from the list
+flags:
+  cloud:
+    type: string
+    description: The cloud the box is at, by kind; found by its id otherwise
+    defaultValue: ''
 ---
 
-Refuses any droplet `fli basecamp:create` did not make: the token reaches every
-droplet at the account, and a fleet machine Basecamp made is destroyed in
+Refuses any box `fli basecamp:create` did not make: the token reaches every
+box at the account, and a fleet machine Basecamp made is destroyed in
 Basecamp, which also retires its row. Refuses one that is not powered off,
 too — `fli basecamp:stop` first, so a box still serving is never one mistyped
 id away from gone.
 
-With no id it lists the Basecamp hosts that are off and asks which. The pick
-still goes through the same refusal, so a list read a moment ago cannot widen
-it.
+With no id it lists the Basecamp hosts that are off, at every cloud whose
+token is stored, and asks which. The pick still goes through the same refusal,
+so a list read a moment ago cannot widen it. A typed id is looked up the same
+way, and one at two clouds needs `--cloud`.
 
-Then it names what `fli basecamp:create` left beside the droplet, none of it
-DigitalOcean's to remove: the `Host` block in `~/.ssh/config` and the
-`known_hosts` line for its address, and Basecamp's A record at Cloudflare.
-DigitalOcean hands a released address to its next customer, so a record still
-pointing at it serves a stranger's box under Basecamp's name, and the next box
-given that address fails ssh on a changed host key.
+Then it names what `fli basecamp:create` left beside the box, none of it the
+cloud's to remove: the `Host` block in `~/.ssh/config` and the `known_hosts`
+line for its address, and Basecamp's A record at Cloudflare. A cloud hands a
+released address to its next customer, so a record still pointing at it serves
+a stranger's box under Basecamp's name, and the next box given that address
+fails ssh on a changed host key.
 
 A reserved IP in front of the box outlives it. At a terminal the run asks
 whether to keep it — Enter keeps it, for the next `fli basecamp:create`, which
 reuses the address the hostname's record holds — or release it; with no
 terminal it is kept. A kept one is still Basecamp's, so the `Host` block and
-the record naming it are left as they are and not listed, and it bills $5/mo
-until a box holds it or it is released.
+the record naming it are left as they are and not listed, and it bills at the
+cloud's rate until it is released — `fli basecamp:create`'s Setup names each.
 
 ```js
 let id = String(arg.id ?? '').trim()
-let machines = null
+
+// Read before the destroy, for the address too: after it, the cloud has no row to ask.
+const read = await cloudsToRead({ cloud: flag.cloud, interactive: !!process.stdin.isTTY, tty, chalk, say: (t) => log.warn(t) })
+if (read.error) { log.error(read.error); process.exitCode = 1; return }
+const found = await listBoxes(read.clouds)
+if (found.error) { log.error(found.error); process.exitCode = 1; return }
+let cloud = ''
 
 if (!id) {
-  const found = await runProvision({ action: 'list' })
-  if (found.error) { log.error(found.error); process.exitCode = 1; return }
-  machines = found.machines
   const hosts = found.machines.filter(m => !m.serverId)
   const ours  = hosts.filter(m => m.status === 'off')
   if (!hosts.length) { echo('No Basecamp host fli basecamp:create made is at this account'); return }
@@ -55,7 +62,7 @@ if (!id) {
     return
   }
   if (!process.stdin.isTTY) {
-    log.error('Which droplet? fli basecamp:destroy <id>')
+    log.error('Which box? fli basecamp:destroy <id>')
     echo.lines(ours.map(m => machineLine(m, chalk)), { indent: 2 })
     process.exitCode = 1; return
   }
@@ -65,32 +72,38 @@ if (!id) {
   if (!answer) { echo('Nothing destroyed'); return }
   const picked = ours[Number(answer) - 1]
   if (!/^\d+$/.test(answer) || !picked) { log.error(`No row ${answer}`); process.exitCode = 1; return }
-  id = picked.id
+  id = String(picked.id)
+  cloud = picked.cloud
+} else {
+  const at = cloudOf(id, found.machines, read.clouds)
+  if (at.error) { log.error(at.error); process.exitCode = 1; return }
+  cloud = at.cloud
 }
 
-// The address is read before the destroy: after it, DigitalOcean has no row to ask.
-machines ??= (await runProvision({ action: 'list' })).machines ?? []
-const target = machines.find(m => String(m.id) === id)
-const dropletIp = target?.ip ?? null
+const target = found.machines.find(m => String(m.id) === id && m.cloud === cloud)
+const boxIp  = target?.ip ?? null
+const { addresses: page, held } = CLOUDS[cloud]
 
-const done = await runProvision({ action: 'destroy', id })
+const done = await runProvision({ cloud, action: 'destroy', id })
 if (done.error) { log.error(done.error); process.exitCode = 1; return }
-log.success(`Destroyed droplet ${done.destroyed}`)
+log.success(`Destroyed box ${done.destroyed} at ${cloudLabel(cloud)}`)
 
-// Released, the address goes back to DigitalOcean's pool and is anybody's, so
-// it joins the leftovers; kept, nothing naming it is stale.
+// Released, the address goes back to the cloud's pool and is anybody's, so it
+// joins the leftovers; kept, nothing naming it is stale.
 const reserved = done.reservedIp ?? target?.reservedIp ?? null
 let kept = !!reserved
 if (reserved && process.stdin.isTTY) {
-  const pick = await tty.keys(chalk`{cyan ?} {bold Keep the reserved IP ${reserved} for the next box?}{dim   $5/mo while no box holds it}`, { k: 'keep', r: 'release' })
+  const pick = await tty.keys(chalk`{cyan ?} {bold Keep the reserved IP ${reserved} for the next box?}{dim   ${held}}`, { k: 'keep', r: 'release' })
   if (pick === 'r') {
-    const gone = await runProvision({ action: 'release', ip: reserved })
-    if (gone.error) log.error(`${gone.error}. Release it in the DigitalOcean console: https://cloud.digitalocean.com/networking/reserved_ips`)
+    const gone = await runProvision({ cloud, action: 'release', ip: reserved })
+    if (gone.error) log.error(`${gone.error}. Release it in the ${cloudLabel(cloud)} console: ${page}`)
     else { kept = false; log.success(`Released ${reserved}`) }
   }
 }
-if (kept) log.info(`  Kept ${reserved} — the next fli basecamp:create reuses it. Releasing it later: https://cloud.digitalocean.com/networking/reserved_ips`)
-const addresses = [dropletIp, kept ? null : reserved].filter(Boolean)
+if (kept) log.info(`  Kept ${reserved} — the next fli basecamp:create reuses it. Releasing it later: ${page}`)
+// At a cloud that puts the held address on the box itself, the box's own
+// address IS the reserved one, and a kept one leaves nothing stale.
+const addresses = [...new Set([boxIp, reserved])].filter(ip => ip && !(kept && ip === reserved))
 
 const { existsSync, readFileSync } = await import('node:fs')
 const { spawnSync } = await import('node:child_process')
@@ -98,7 +111,7 @@ const home = process.env.HOME
 const left = []
 
 // The Host patterns whose HostName is an address — create names the block
-// after the droplet, but a person may have renamed it or written their own.
+// after the box, but a person may have renamed it or written their own.
 const sshConfig = `${home}/.ssh/config`
 const lines = existsSync(sshConfig) ? readFileSync(sshConfig, 'utf8').split('\n') : []
 for (const ip of addresses) {
@@ -115,7 +128,7 @@ for (const ip of addresses) {
   if (spawnSync('ssh-keygen', ['-F', ip], { stdio: 'ignore' }).status === 0)
     left.push(['known_hosts', ip, `ssh-keygen -R ${ip}`])
 }
-if (!dropletIp) {
+if (!boxIp) {
   left.push(['~/.ssh/config', 'the Host block basecamp:create added', 'delete it; the address was not readable'])
   left.push(['known_hosts', 'the box\'s address', 'ssh-keygen -R <ip>'])
 }

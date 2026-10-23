@@ -12,8 +12,8 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 
 import {
-  profiles, profileFor, accounts, zones, findZone, records, createRecord, updateRecord, deleteRecord, purge,
-  pagesProjects, createPagesProject, pagesDeployments, deployPages, workers, worker, activeVersion,
+  profiles, profileFor, accounts, reachable, zones, findZone, records, record, marked, createRecord, updateRecord, deleteRecord, purge,
+  pagesProjects, createPagesProject, pagesDeployments, deployPages, workers, worker, activeVersion, login,
   CloudflareError, TOKEN_ENV, unbox,
 } from '../core/cloudflare.js'
 
@@ -21,7 +21,7 @@ const FIXTURES = join(import.meta.dir, 'fixtures', 'cf')
 const FIXTURE = join(FIXTURES, 'v0.15.0.json')
 const DEFAULT = { kind: 'profile', name: 'default' }
 const TOKEN = { kind: 'token', name: TOKEN_ENV }
-const KEYS = ['PATH', TOKEN_ENV, 'CLOUDFLARE_ACCOUNT_ID', 'CF_FIXTURE', 'CF_LOG']
+const KEYS = ['PATH', TOKEN_ENV, 'CLOUDFLARE_ACCOUNT_ID', 'CF_FIXTURE', 'CF_LOG', 'CF_SIGNED_OUT']
 
 let dir, saved
 
@@ -121,6 +121,69 @@ describe('which credential a command runs as', () => {
     expect((await accounts(profileFor())).map(a => a.id)).toEqual(['acc-own', 'acc-agency'])
     expect(calls()[0].argv).not.toContain('--profile')
   })
+
+  test('the token row\'s name is the token, and refused while it is unset', async () => {
+    const err = await refusal((async () => profileFor(TOKEN_ENV))())
+    expect(err).toBeInstanceOf(CloudflareError)
+    expect(err.message).toBe(`${TOKEN_ENV} is not set`)
+    process.env[TOKEN_ENV] = 'project-token'
+    expect(profileFor(TOKEN_ENV)).toEqual(TOKEN)
+  })
+})
+
+describe('reachable', () => {
+  test('each profile with its accounts, and a refusing one keeps its row', async () => {
+    process.env[TOKEN_ENV] = 'bogus-token'
+    const rows = await reachable()
+    expect(rows.map(r => r.profile.name)).toEqual(['default', 'client', TOKEN_ENV])
+    expect(rows[0].accounts.map(a => a.id)).toEqual(['acc-own', 'acc-agency'])
+    expect(rows[1].accounts.map(a => a.id)).toEqual(['acc-client'])
+    expect(rows[2].accounts).toBeUndefined()
+    expect(rows[2].error).toStartWith('cf accounts list: ')
+  })
+})
+
+describe('sign in', () => {
+  const signedOut = () => {
+    process.env.CF_SIGNED_OUT = join(dir, 'signed-out')
+    writeFileSync(process.env.CF_SIGNED_OUT, '')
+  }
+
+  test('signed out, there is no profile to read', async () => {
+    signedOut()
+    expect(await profiles()).toEqual([])
+    expect(await reachable()).toEqual([])
+  })
+
+  test('cf auth login streams its words, names the link once, and answers when approved', async () => {
+    signedOut()
+    const events = []
+    const flow = login({ onEvent: (e) => {
+      events.push(e)
+      if (e.text === 'FRDWWLAT') rmSync(process.env.CF_SIGNED_OUT)
+    } })
+    expect(await flow.done).toEqual({ ok: true })
+    const said = events.filter(e => e.type === 'line').map(e => e.text)
+    expect(said).toContain('To authorize cf, please visit:')
+    expect(said).toContain('FRDWWLAT')
+    expect(events.filter(e => e.type === 'link')).toEqual([{ type: 'link', url: 'https://dash.cloudflare.com/oauth2/device/verify' }])
+    expect(calls().at(-1).argv).toEqual(['auth', 'login', '--no-browser'])
+    expect((await profiles()).map(p => p.name)).toEqual(['default', 'client'])
+  })
+
+  test('the login spawns without the env token, so it cannot answer as the project', async () => {
+    process.env[TOKEN_ENV] = 'project-token'
+    await login({ onEvent: () => {} }).done
+    expect(calls().at(-1).token).toBeNull()
+  })
+
+  test('stopped before approval, it is not a sign-in', async () => {
+    signedOut()
+    const flow = login({ onEvent: (e) => { if (e.type === 'link') flow.stop() } })
+    const out = await flow.done
+    expect(out.ok).toBe(false)
+    expect(out.error).toStartWith('cf auth login: ')
+  })
 })
 
 describe('findZone', () => {
@@ -197,6 +260,16 @@ describe('writes', () => {
   test('delete is forced, because the asking happened before it', async () => {
     expect(await deleteRecord(DEFAULT, 'zone-own', 'rec-mx')).toEqual({ id: 'rec-mx' })
     expect(calls()[0].argv).toEqual(['dns', 'records', 'delete', 'rec-mx', '-z', 'zone-own', '--force', '--profile', 'default'])
+  })
+
+  test('one record is read by id, as Cloudflare holds it now', async () => {
+    expect(await record(DEFAULT, 'zone-own', 'rec-mx')).toMatchObject({ id: 'rec-mx', type: 'MX', comment: 'basecamp' })
+    expect(calls()[0].argv).toEqual(['dns', 'records', 'get', 'rec-mx', '-z', 'zone-own', '--profile', 'default'])
+  })
+
+  test('the Basecamp mark is the fleet word whole, or before a colon', () => {
+    for (const ours of ['basecamp', 'basecamp:app:shop', 'basecamp:domain:own.example']) expect(marked(ours)).toBe(true)
+    for (const not of ['basecamp-ish', 'added by hand', 'basecamp:', '', null, undefined]) expect(marked(not)).toBe(false)
   })
 })
 

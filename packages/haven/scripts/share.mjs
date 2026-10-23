@@ -114,7 +114,7 @@ if (!reachable) {
 console.log(`
 Haven is public at ${PUBLIC_URL}
   trust setting  FRONTIER_TRUST_PROXY=1 (one hop: cloudflared appends the visitor's address)
-  a friend runs  fli haven --nick <name>   (from a checkout: add --api ${PUBLIC_URL})
+  a member runs  fli haven                 (from a checkout: add --api ${PUBLIC_URL})
   you run        fli haven --api ${PUBLIC_URL}
 Ctrl-C stops the API and the tunnel.
 `)

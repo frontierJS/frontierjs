@@ -32,6 +32,10 @@
 //   GET  /api/map/apps        → the apps here — `core/map-view.js`
 //   GET  /api/map?app=<dir>   → that app's `project:map --json`
 //   POST /api/map/secret      → one secret into its `.env` — `core/env-health.js`
+//   GET  /api/dns/accounts · /api/dns/zones?profile=&account= · /api/dns/records?profile=&zone=
+//                             → `:dns`, `core/cloudflare.js` over `cf`
+//   POST /api/dns/login       → SSE stream, `cf auth login`'s device code; its link opened here
+//   POST /api/dns/records · PUT|DELETE /api/dns/records/<id> → one write; a Basecamp record is a 409 first
 //   GET  /api/live/stream     → devtools' socket, a frame a line — `core/live-view.js`
 //   GET  /api/live/health · /api/live/metrics · /api/live/jobs · /api/live/call
 //   GET  /api/live/data · /api/live/data/<Model>?as=&tenant= → rows as somebody (`:data`)
@@ -164,6 +168,19 @@ function route(req, res) {
   }
   if (req.method === 'POST' && path === '/api/map/secret') {
     return handleMapSecret(req, res)
+  }
+
+  // GET /api/dns/… · POST /api/dns/login — the `:dns` pane
+  if (req.method === 'POST' && path === '/api/dns/login') {
+    return handleDnsLogin(req, res)
+  }
+  const dnsMatch = path.match(/^\/api\/dns\/(accounts|zones|records)$/)
+  if (req.method === 'GET' && dnsMatch) {
+    return handleDns(res, dnsMatch[1], url.searchParams)
+  }
+  const dnsWrite = path.match(/^\/api\/dns\/records(?:\/([^/]+))?$/)
+  if (dnsWrite && (req.method === 'POST' ? !dnsWrite[1] : (req.method === 'PUT' || req.method === 'DELETE') && dnsWrite[1])) {
+    return handleDnsWrite(req, res, dnsWrite[1] && decodeURIComponent(dnsWrite[1]))
   }
 
   // GET /api/live/… · POST /api/live/… — `:live`, `:call` and `:data`, devtools carried
@@ -565,6 +582,102 @@ async function handleMapSecret(req, res) {
   const { fillMapSecret } = await import('./map-view.js')
   const out = fillMapSecret(global.projectRoot, String(body?.app ?? '.'), body?.key)
   json(res, out.status, out.body)
+}
+
+// ─── /api/dns ────────────────────────────────────────────────────────────────
+//
+// The `:dns` pane's reads, each the module's answer as it is. A refusal is
+// `cf`'s own words at 502, since the failure is upstream of this server.
+
+async function handleDns(res, kind, params) {
+  const cloudflare = await import('./cloudflare.js')
+  try {
+    if (kind === 'accounts') return json(res, 200, { accounts: await cloudflare.reachable() })
+    const profile = cloudflare.profileFor(params.get('profile') || undefined)
+    if (kind === 'zones') return json(res, 200, { zones: await cloudflare.zones(profile, params.get('account') || undefined) })
+    const zone = params.get('zone')
+    if (!zone) return json(res, 400, { error: 'zone is required' })
+    json(res, 200, { records: await cloudflare.records(profile, zone) })
+  } catch (err) {
+    json(res, err instanceof cloudflare.CloudflareError ? 502 : 500, { error: err.message })
+  }
+}
+
+// A write to a record Basecamp marked goes ahead, but only once the person has
+// seen that the sync will put it back (`FJS-D1471`): without `confirm` it is a
+// 409 carrying the warning, and the pane sends again with `confirm: true`. The
+// target is read from Cloudflare first, because the pane's table is one read
+// old and the sync may have marked the record since. A comment that writes the
+// mark hands the record to the sync, so it warns the same way.
+async function handleDnsWrite(req, res, id) {
+  const foreign = foreignOrigin(req)
+  if (foreign) return json(res, 403, { error: `a DNS record is not written from ${foreign}` })
+  let body
+  try { body = await readBody(req) } catch { return json(res, 400, { error: 'Invalid JSON body' }) }
+  const { zone, confirm } = body ?? {}
+  const sent = req.method === 'POST' ? body?.record : req.method === 'PUT' ? body?.changes : {}
+  if (!zone) return json(res, 400, { error: 'zone is required' })
+  if (!sent || typeof sent !== 'object') return json(res, 400, { error: `${req.method === 'POST' ? 'record' : 'changes'} is required` })
+  const cloudflare = await import('./cloudflare.js')
+  try {
+    const profile = cloudflare.profileFor(body.profile || undefined)
+    if (!confirm) {
+      const target = id ? await cloudflare.record(profile, zone, id) : null
+      const warning = target && cloudflare.marked(target.comment)
+        ? `${target.name} ${target.type} is Basecamp's (${target.comment}) — domain:dns puts it back on its next sync`
+        : cloudflare.marked(sent.comment)
+        ? `the comment ${sent.comment} hands this record to Basecamp — domain:dns may change or remove it on its next sync`
+        : null
+      if (warning) return json(res, 409, { warning })
+    }
+    if (req.method === 'POST') return json(res, 201, { record: await cloudflare.createRecord(profile, zone, sent) })
+    if (req.method === 'PUT') return json(res, 200, { record: await cloudflare.updateRecord(profile, zone, id, sent) })
+    await cloudflare.deleteRecord(profile, zone, id)
+    json(res, 200, { deleted: id })
+  } catch (err) {
+    json(res, err instanceof cloudflare.CloudflareError ? 502 : 500, { error: err.message })
+  }
+}
+
+// One sign-in at a time: `cf` keeps one login per profile, and two device
+// codes leave the person guessing which one to type. A second stream while one
+// waits joins it — the terminal and a browser on one console show one code —
+// and the last stream closing is the person leaving, which stops the wait.
+let signingIn = null
+async function handleDnsLogin(req, res) {
+  const foreign = foreignOrigin(req)
+  if (foreign) return json(res, 403, { error: `cf auth login is not started from ${foreign}` })
+  const cloudflare = await import('./cloudflare.js')
+  if (!signingIn) {
+    const { openUrl } = await import('./open-url.js')
+    const flow = { said: [], watching: new Set() }
+    const send = (event) => {
+      flow.said.push(event)
+      for (const w of flow.watching) if (!w.destroyed) w.write(`data: ${JSON.stringify(event)}\n\n`)
+    }
+    try {
+      flow.cf = cloudflare.login({ onEvent: (event) => {
+        if (event.type === 'link') openUrl(event.url)
+        send(event)
+      } })
+    } catch (err) {
+      return json(res, err instanceof cloudflare.CloudflareError ? 502 : 500, { error: err.message })
+    }
+    signingIn = flow
+    flow.cf.done.then((out) => {
+      signingIn = null
+      send({ type: 'done', ...out })
+      for (const w of flow.watching) w.end()
+    })
+  }
+  const flow = signingIn
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })
+  for (const event of flow.said) res.write(`data: ${JSON.stringify(event)}\n\n`)
+  flow.watching.add(res)
+  res.on('close', () => {
+    flow.watching.delete(res)
+    if (!flow.watching.size && signingIn === flow) flow.cf.stop()
+  })
 }
 
 // ─── /api/live ───────────────────────────────────────────────────────────────

@@ -6,7 +6,7 @@
 // file and wrangler bundles it, so it runs in workerd and may use nothing a
 // Worker lacks. It ships because `core/` is in the package's `files`.
 //
-// A member is a chain of machines (core/frontier-chain.js,
+// A member is a chain of machines (@frontierjs/toolbelt/frontier,
 // FJS-D1416): every route but `join` is signed by one of them (toolbelt's
 // `signRequest`), named in `x-tell-key`; a key that is no member's machine is
 // refused before the signature is looked at. `join` is signed by the machine
@@ -67,7 +67,7 @@
 // drawn beside the crest of the member's chain root (core/crest.js).
 
 import { generateSigningKeys, verifyMessage, verifyRequest } from '@frontierjs/toolbelt/signature'
-import { FLI_VERSION, NICK, askCode, extendsSeen, linkMessage, memberNumber, readChain, signRow, verifyBox } from './frontier-chain.js'
+import { FLI_VERSION, NICK, askCode, extendsSeen, linkMessage, memberNumber, readChain, signRow, verifyBox } from '@frontierjs/toolbelt/frontier'
 import { crestSvg } from './crest.js'
 
 // ─── limits ────────────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ const BODY_MAX     = 4000
 const SEALED_MAX   = 32768
 /** `@frontierjs/toolbelt/seal`'s public key, 32 bytes of base64url. */
 const SEAL_KEY     = /^[A-Za-z0-9_-]{43}$/
-/** A chain as it travels, JSON: far past `frontier-chain.js`'s 256 links of three keys and a signature each. */
+/** A chain as it travels, JSON: far past toolbelt/frontier's 256 links of three keys and a signature each. */
 const CHAIN_MAX    = 131072
 /** Machines a member's rekeys are sealed to, at most — a chain's own bound. */
 const REKEYS_MAX   = 256

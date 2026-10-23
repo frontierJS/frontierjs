@@ -1,28 +1,30 @@
 ---
 title: basecamp:create
-description: Create a DigitalOcean droplet for Basecamp, print its IP and add its ssh Host
-requires:
-  - DIGITALOCEAN_TOKEN: https://cloud.digitalocean.com/account/api/tokens/new  Pick Full Access
-effects: creates a droplet at DigitalOcean, billed to the token's account; installing also writes its DNS record at Cloudflare
+description: Create a box for Basecamp at a cloud, print its IP and add its ssh Host
+effects: creates a box at a cloud, billed to the token's account; installing also writes its DNS record at Cloudflare
 confirm: human
 examples:
   - fli basecamp:create
-  - fli basecamp:create --size 8gb --region sfo3
+  - fli basecamp:create --cloud hetzner --size 8gb
   - fli basecamp:create --name ops --key ~/.ssh/id_rsa.pub
   - fli basecamp:create --domain ops.example.com
   - fli basecamp:create --yes --domain ops.example.com --name ops
 flags:
+  cloud:
+    type: string
+    description: The cloud to buy at, by kind (default the one whose token is stored; asked at a terminal when both are)
+    defaultValue: ''
   size:
     type: string
-    description: Memory (1gb, 4gb, 8gb …) for the cheapest size with that much, or a DigitalOcean slug
+    description: Memory (1gb, 4gb, 8gb …) for the cheapest x86 size with that much, or the cloud's own size slug
     defaultValue: 4gb
   region:
     type: string
-    description: DigitalOcean region slug
-    defaultValue: nyc3
+    description: The cloud's region slug (default its US one)
+    defaultValue: ''
   name:
     type: string
-    description: The droplet's name, and the Host in the ssh block (asked at a terminal, basecamp otherwise)
+    description: The box's name, and the Host in the ssh block (asked at a terminal, basecamp otherwise)
     defaultValue: ''
   domain:
     type: string
@@ -30,8 +32,8 @@ flags:
     defaultValue: ''
   image:
     type: string
-    description: DigitalOcean image slug
-    defaultValue: ubuntu-24-04-x64
+    description: The cloud's image slug (default its Ubuntu 24.04)
+    defaultValue: ''
   key:
     type: string
     description: The SSH public key put on the box (default ~/.ssh/id_ed25519.pub, else id_rsa.pub)
@@ -42,7 +44,7 @@ flags:
     defaultValue: ''
   reserved-ip:
     type: boolean
-    description: Put a DigitalOcean reserved IP in front of the box, so a replacement keeps its address and outbound traffic leaves from it ($5/mo while no box holds it)
+    description: Hold an address apart from the box, so a replacement keeps it and outbound traffic leaves from it (billed at the cloud's rate, Setup names it)
     defaultValue: true
   outpost:
     type: boolean
@@ -64,22 +66,24 @@ Asks Basecamp's hostname first — Enter takes `deploy.web.domain` from
 `packages/basecamp/frontier.config.js` (none when it is empty), `--domain` skips
 the question. Then the server's name — Enter takes `basecamp`, `--name` skips the
 question, and a run with no terminal uses `basecamp`. At a terminal the answers
-are shown together and one last key buys the box or leaves it. Then creates one droplet
+are shown together and one last key buys the box or leaves it. Then creates one box
 with your SSH key on it, waits until it has an address,
 and adds a `Host` block for it to `~/.ssh/config` — asked first, yes unless you
 say no; a `Host` of that name already there is left alone and the block printed
 instead. Nothing is installed on it unless asked: `fli basecamp:install` puts
 Basecamp on it, and the run prints that line.
 
-The box answers on a DigitalOcean reserved IP unless `--no-reserved-ip`: the
-address the ssh block, the install and the DNS record all name, and the one its
-outbound traffic leaves from — a timer on the box routes egress through it
-while it is assigned, and back through the droplet's own address once it is
-not. When the hostname's record already holds a reserved IP in the region that
-no droplet holds, that one is reused, so a replaced Basecamp keeps its address
-and its DNS; otherwise a new one is reserved. It outlives the box and bills
-$5/mo while no box holds it. A reservation that fails warns, and the run goes
-on with the droplet's own address.
+The box answers on a reserved IP unless `--no-reserved-ip`: the address the
+ssh block, the install and the DNS record all name, and the one its outbound
+traffic leaves from. At a cloud that routes it beside the box's own address, a
+timer on the box sends egress through it while it is assigned, and back
+through the box's own once it is not; at one that puts it on the box itself,
+there is nothing to route. When the hostname's record already holds a reserved
+IP in the region that no box holds, that one is reused, so a replaced Basecamp
+keeps its address and its DNS; otherwise a new one is reserved, before the box
+is bought. It outlives the box and bills at the cloud's rate. A reservation
+refused refuses the run with nothing bought; one that does not reach the box
+warns, and the run goes on with the box's own address.
 
 `--admin <email>` installs without asking, which is how a run with no terminal
 gets past the bare box: `deploy:setup --auto-install` asks nothing, makes the
@@ -153,17 +157,22 @@ if (unnamed.length) {
   process.exitCode = 1
   return
 }
+const cloudPick = await pickCloud({ cloud: flag.cloud, interactive: !!process.stdin.isTTY && !flag.yes, tty, chalk, say: (t) => log.warn(t) })
+if (cloudPick.error) { log.error(`${cloudPick.error}. Nothing was bought`); process.exitCode = 1; return }
+const cloud  = cloudPick.cloud
+const vendor = cloudLabel(cloud)
+
 const question = (q, hint) => `${chalk.cyan('?')} ${chalk.bold(q)}${hint ? chalk.dim(`  ${hint}`) : ''}`
 const ask = async (q, hint) => (await tty.line(`${question(q, hint)}\n  ${chalk.cyan('›')}`)).trim()
 const yes = async (q, fallback) => flag.yes ||
   await tty.keys(question(q), fallback ? { y: 'yes', n: 'no' } : { n: 'no', y: 'yes' }) === 'y'
 const row = (label, value) => echo(`  ${chalk.dim(label.padEnd(9))} ${value}`)
 
-if (asking) echo(`\n  ${chalk.bold('fli basecamp:create')}  ${chalk.dim('a DigitalOcean droplet for Basecamp')}\n`)
+if (asking) echo(`\n  ${chalk.bold('fli basecamp:create')}  ${chalk.dim(`a box at ${vendor} for Basecamp`)}\n`)
 
 // The hostname is asked before anything else, and the DNS step this run ends by
 // naming is checked on it: a token that opens no zone holding the hostname
-// refuses here, not after the questions, the droplet and the install. No token
+// refuses here, not after the questions, the box and the install. No token
 // is not a refusal — the record can come later.
 const configured = (await webDomain()) || ''
 let domain = flag.json ? '' : flag.domain || configured
@@ -192,7 +201,7 @@ if (domain) {
 }
 else if (asking) echo('')
 
-// Every question before the droplet is bought, so the minute it takes is one
+// Every question before the box is bought, so the minute it takes is one
 // the person can walk away from.
 let name = flag.name
 let admin = flag.admin
@@ -228,7 +237,7 @@ if (admin && !EMAIL.test(admin)) {
   return
 }
 
-// The name is a hostname at DigitalOcean and a Host pattern in ~/.ssh/config: a
+// The name is a hostname at the cloud and a Host pattern in ~/.ssh/config: a
 // space or a `*` would buy the box and then write a Host line matching others.
 if (!/^[a-z0-9][a-z0-9.-]*$/i.test(name)) {
   log.error(`"${name}" is not a hostname: letters, digits, dots and dashes`)
@@ -240,21 +249,21 @@ if (!/^[a-z0-9][a-z0-9.-]*$/i.test(name)) {
 if (asking) {
   echo('')
   row('hostname', domain || chalk.dim('none yet'))
-  row('server', `${chalk.bold(name)} ${chalk.dim(`· ${flag.size} · ${flag.region} · ${flag.image}`)}`)
+  row('server', `${chalk.bold(name)} ${chalk.dim(`· ${vendor} · ${flag.size} · ${flag.region || 'its default region'} · ${flag.image || 'its default image'}`)}`)
   row('key', keyPath.replace(home, '~'))
-  row('address', flag['reserved-ip'] ? `reserved IP ${chalk.dim(points ? `— ${points} if it is a spare in ${flag.region}, else a new one` : '— a new one, kept when the box goes')}` : chalk.dim('the droplet\'s own'))
+  row('address', flag['reserved-ip'] ? `reserved IP ${chalk.dim(points ? `— ${points} if it is a spare in ${flag.region || 'the region'}, else a new one` : '— a new one, kept when the box goes')}` : chalk.dim('the box\'s own'))
   row('ssh', addHost ? `Host ${name} in ~/.ssh/config` : chalk.dim('print the Host block'))
   row('install', install ? `yes ${chalk.dim('— deploy:setup --auto-install, then deploy')}` : chalk.dim('no — fli basecamp:install later'))
   if (admin) row('admin', `${admin} ${chalk.dim(password ? '' : '— password generated')}`)
   if (install) row('outpost', outpost ? `yes ${chalk.dim('— fli deploy:outpost once the admin is made')}` : chalk.dim('no'))
   echo('')
-  if (!await yes('Create the droplet?', true)) { log.info('Nothing was bought'); return }
+  if (!await yes(`Buy the box at ${vendor}?`, true)) { log.info('Nothing was bought'); return }
   echo('')
 }
 
-log.info(`Creating ${name} (${flag.size}, ${flag.region}) — about a minute`)
+log.info(`Creating ${name} at ${vendor} (${[flag.size, flag.region].filter(Boolean).join(', ')}) — about a minute`)
 const made = await runProvision({
-  action: 'create', name, region: flag.region, image: flag.image, size: flag.size,
+  cloud, action: 'create', name, region: flag.region, image: flag.image, size: flag.size,
   publicKey: readFileSync(keyPath, 'utf8'),
   reservedIp: flag['reserved-ip'], reuse: points ?? undefined,
 })
@@ -264,10 +273,10 @@ if (flag.json)  { echo(JSON.stringify(made, null, 2)); return }
 
 const monthly = made.monthly == null ? '' : ` · ${(made.monthly / 100).toFixed(2)} ${made.currency}/mo`
 echo('')
-row('droplet', `${chalk.bold(made.name)}  ${made.id}  ${chalk.dim(`${made.size} · ${made.region} · ${made.image}${monthly}`)}`)
+row('box', `${chalk.bold(made.name)}  ${made.id}  ${chalk.dim(`${made.size} · ${made.region} · ${made.image}${monthly}`)}`)
 
 if (made.pending) {
-  log.warn(`  It has no address yet. Read it later in the DigitalOcean console, or destroy it: fli basecamp:destroy ${made.id}`)
+  log.warn(`  It has no address yet. fli basecamp reads it later, or destroy it: fli basecamp:stop ${made.id}, then fli basecamp:destroy ${made.id}`)
   return
 }
 
@@ -277,8 +286,8 @@ const block = `Host ${made.name}
   User root
   IdentityFile ${identity.replace(home, '~')}
 `
-row('ip', made.dropletIp && made.dropletIp !== made.ip
-  ? `${chalk.bold(made.ip)} ${chalk.dim(`reserved${made.reserved.reused ? ', reused' : ''} · droplet ${made.dropletIp}`)}`
+row('ip', made.reserved?.ip
+  ? `${chalk.bold(made.ip)} ${chalk.dim(`reserved${made.reserved.reused ? ', reused' : ''}${made.boxIp !== made.ip ? ` · box ${made.boxIp}` : ''}`)}`
   : chalk.bold(made.ip))
 if (made.reserved?.error) log.warn(`  No reserved IP: ${made.reserved.error}. The box answers on its own address`)
 echo('')
@@ -335,7 +344,7 @@ if (!install) {
 // Ring 0 on the box it just made, named as `root@ip` so nothing has to be in
 // ~/.ssh/config yet. Each command runs on this terminal: what it asks, it asks
 // the person, and what fails, fails with its own words.
-log.info(`Waiting for ssh on ${dest} — a fresh droplet answers in about a minute`)
+log.info(`Waiting for ssh on ${dest} — a fresh box answers in about a minute`)
 if (!await waitForSsh(dest, { identity })) {
   log.error(`${dest} did not answer ssh in four minutes. When it does: ${installLine}`)
   process.exitCode = 1

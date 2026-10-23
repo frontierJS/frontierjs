@@ -10,6 +10,12 @@ Everything that is not the package README, or `../PROJECT_STATE.md`.
   semantics, the two component-children protocols, island markers, `tmpDir`, and
   what a browser global answers on the server
 
+## Package map
+
+- [layout.md](layout.md) — the file-by-file map of the package
+- [hazards.md](hazards.md) — every hazard, the full `What bites here`
+- [browser-drives.md](browser-drives.md) — `test/browser/`: the five drives and what bites when writing a spec
+
 ## Design investigations
 
 - [EXTERNAL_REACTIVITY.md](EXTERNAL_REACTIVITY.md) — how external state reaches a

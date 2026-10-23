@@ -51,12 +51,16 @@ const ZONE_ID = /^[a-f0-9]{32}$/i
 
 /**
  * The credential a command runs as: a named `cf` profile, else the env token,
- * else whichever login `cf` has active.
+ * else whichever login `cf` has active. `TOKEN_ENV` names the token row, and
+ * is refused while unset — the spawn would otherwise answer as the login.
  */
-export const profileFor = (name) =>
-  name ? { kind: 'profile', name }
+export function profileFor(name) {
+  if (name === TOKEN_ENV && !process.env[TOKEN_ENV]) throw new CloudflareError(`${TOKEN_ENV} is not set`)
+  return name === TOKEN_ENV ? { kind: 'token', name }
+    : name ? { kind: 'profile', name }
     : process.env[TOKEN_ENV] ? { kind: 'token', name: TOKEN_ENV }
     : { kind: 'none' }
+}
 
 /**
  * Where an account can come from: each `cf` profile, then the env token.
@@ -70,6 +74,19 @@ export async function profiles() {
 
 /** The accounts a profile reaches. */
 export const accounts = (profile) => walk(profile, 'accounts list', [], ZONE_PAGE)
+
+/**
+ * The Accounts screen: each profile with the accounts it reaches, or `cf`'s
+ * refusal in its place — one signed-out profile must not empty the screen.
+ */
+export const reachable = async () => Promise.all((await profiles()).map(async profile => {
+  try {
+    return { profile, accounts: await accounts(profile) }
+  } catch (err) {
+    if (!(err instanceof CloudflareError)) throw err
+    return { profile, error: err.message }
+  }
+}))
 
 /** An account's zones; with no account, every zone the profile reaches. */
 export const zones = (profile, accountId) =>
@@ -91,6 +108,19 @@ export async function findZone(profile, host) {
 /** A zone's records, every page. */
 export const records = (profile, zoneId) =>
   walk(profile, 'dns records list', ['-z', zoneId], RECORD_PAGE)
+
+/** One record, as Cloudflare holds it now. */
+export const record = (profile, zoneId, recordId) =>
+  cf(profile, 'dns records get', [recordId, '-z', zoneId])
+
+/**
+ * Basecamp's edge connector marks the records it writes in `comment`, and the
+ * two must read one spelling: the fleet word whole, or before a colon (`read()`
+ * in `basecamp/api/src/providers/edge/cloudflare.ts`). A marked record is one
+ * `domain:dns` puts back on its next sync.
+ */
+export const MARK = /^basecamp(:(domain|app):.+)?$/
+export const marked = (comment) => typeof comment === 'string' && MARK.test(comment)
 
 /** Create a record from a whole body; answers the record Cloudflare stored. */
 export const createRecord = (profile, zoneId, body) =>
@@ -145,6 +175,60 @@ export async function activeVersion(profile, accountId, worker) {
   const { deployments = [] } = await cf(profile, 'workers deployments list', ['--worker', worker], accountId) ?? {}
   const id = deployments[0]?.versions?.[0]?.version_id
   return id ? cf(profile, 'workers versions get', [id, '--worker-id', worker], accountId) : null
+}
+
+// ─── Sign in ──────────────────────────────────────────────────────────────
+
+/**
+ * `cf auth login` as a device flow: `cf` prints a link and a code, and waits
+ * up to five minutes for the person to approve it in a browser. Each line it
+ * prints is `onEvent({ type: 'line', text })`, in its own words, and the link
+ * is `{ type: 'link', url }` once, for the caller to open — `--no-browser`
+ * because the spawn has no terminal, and a browser `cf` opens itself is one
+ * the console cannot name. `done` answers `{ ok, error }`; `stop()` kills it.
+ */
+export function login({ onEvent }) {
+  const { env } = spawnFor({ kind: 'none' })
+  let proc
+  try {
+    proc = Bun.spawn(['cf', 'auth', 'login', '--no-browser'], { env, stdout: 'pipe', stderr: 'pipe', stdin: 'ignore' })
+  } catch (err) {
+    if (err?.code === 'ENOENT') throw new CloudflareError(`cf auth login: cf is not installed — ${INSTALL}`)
+    throw err
+  }
+  let linked = false
+  let said = ''
+  const take = (line) => {
+    const text = line.trim()
+    if (!text) return
+    onEvent({ type: 'line', text })
+    if (!linked && /^https?:\/\/\S+$/.test(text)) {
+      linked = true
+      onEvent({ type: 'link', url: text })
+    }
+  }
+  const lines = async (stream, keep) => {
+    const decoder = new TextDecoder()
+    let buf = ''
+    for await (const chunk of stream) {
+      const text = decoder.decode(chunk, { stream: true })
+      if (keep) said += text
+      buf += text
+      for (let nl = buf.indexOf('\n'); nl >= 0; nl = buf.indexOf('\n')) {
+        take(buf.slice(0, nl))
+        buf = buf.slice(nl + 1)
+      }
+    }
+    take(buf)
+  }
+  const done = Promise.all([lines(proc.stdout, false), lines(proc.stderr, true), proc.exited])
+    // The device text came through as lines; a refusal is the box after it.
+    .then(([, , code]) => {
+      if (code === 0) return { ok: true }
+      const box = said.lastIndexOf('┌')
+      return { ok: false, error: `cf auth login: ${(box >= 0 && unbox(said.slice(box))) || `exit ${code}`}` }
+    })
+  return { done, stop: () => proc.kill() }
 }
 
 async function walk(profile, verb, args, perPage, accountId) {

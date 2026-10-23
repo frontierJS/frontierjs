@@ -7,9 +7,9 @@
  * square laid out. Sam is signed in through the real Ed25519 login and is
  * Sierra's interactive shell under a pty: `/` opened, six steps
  * right, a hedge bumped into, a line said. Ana walks in through `fli haven
- * --frame /` (`IDEAS/haven.md` 2.3), started while Sam stands there, with a
- * HOME of its own: the first run writes the key there, and every later frame is the
- * same member because it signs with that key again. Ana's frame must show Sam's figure on the
+ * --frame /` (`IDEAS/haven.md` 2.3), started while Sam stands there, from a
+ * HOME staked as a Frontier member (`FJS-D1477`): every frame is the same
+ * member because it signs with that machine's chain. Ana's frame must show Sam's figure on the
  * cell Sam walked to with Sam's line over it, and Sam's screen must show Ana's
  * figure while Ana's frame is up — each direction is the other client's frame,
  * never a client's own echo. Then Sam walks through the left house's door: a
@@ -48,7 +48,7 @@ import { join } from 'node:path'
 import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../../api/src/app.ts'
-import { signIn } from '../../api/test/sign-in.ts'
+import { POST_KEY, signIn, stakedHome } from '../../api/test/sign-in.ts'
 import { TUI, blank, cellOf, screen, terminal, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
 import { follow, VIEW } from '../src/lib/scene/stage.js'
@@ -71,13 +71,13 @@ const check = (ok, label, evidence = '') => {
 const env = await createTestEnv({
   schema: join(WEB, '../db/schema.lite'),
   listen: true,
-  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-explore', port: 0, mods: ['sam'] }),
+  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-explore', port: 0, postKey: POST_KEY, mods: ['sam'] }),
 })
 for (const [slug, name] of [['square', 'The square'], ['tavern', 'The tavern'], ['road', 'The road'], ['woods', 'The woods'], ['docks', 'The docks']]) {
   await env.system.room.create({ data: { slug, name } })
 }
 const sam = await signIn(env.port, 'sam')
-const anaHome = mkdtempSync(join(tmpdir(), 'haven-ana-'))
+const anaHome = await stakedHome('haven-ana-', 'ana')
 const API = `http://localhost:${env.port}`
 
 // ─── Sam walks in ─────────────────────────────────────────────────────
@@ -145,8 +145,8 @@ check(await until(() => screen(out).includes('-- INSERT --') && screen(out).incl
 // ─── Ana, a second terminal ───────────────────────────────────────────
 
 /** A `fli haven --frame` of one path: started now, answered with its output once it exits. */
-function havenFrame(path, { home = anaHome, nick = 'ana' } = {}) {
-  const p = spawn('bun', [FLI, 'haven', '--frame', path, '--api', API, '--nick', nick], {
+function havenFrame(path, { home = anaHome } = {}) {
+  const p = spawn('bun', [FLI, 'haven', '--frame', path, '--api', API], {
     cwd: tmpdir(), stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, HOME: home },
   })
   let framed = ''
@@ -162,7 +162,7 @@ check(await until(() => at(sx, sy) === 'A' && screen(out).includes('2 here') && 
   "Sam's screen shows Ana's figure where a figure walks in, by its initial, and Ana's nick", screen(out))
 const { code: frameCode, framed, err: frameErr } = await frameDone
 check(frameCode === 0, 'fli haven --frame / exits 0', frameErr)
-check(existsSync(join(anaHome, '.fli/haven/key.json')), "the first fli haven wrote Ana's key under ~/.fli/haven/")
+check(!existsSync(join(anaHome, '.fli/haven/key.json')), 'fli haven made no key of its own under ~/.fli/haven/')
 check(cellOf(framed, sx + dx, sy, 1, square) === 'S', "Ana's frame shows Sam's figure on the cell it walked to", framed)
 check(cellOf(framed, sx + dx, sy - 2, 8, square) === '(hi all)', "with Sam's line over it", framed)
 check(cellOf(framed, sx, sy, 1, square) === '@', "and Ana's own figure where it walked in", framed)
@@ -243,14 +243,18 @@ await walk(samTerm, 'right', inFront, { x: lane, y: inFront.y })
   && await walk(samTerm, 'right', { x: lane, y: sy }, { x: sx, y: sy })
 check(at(sx, sy) === '@', 'and he walks back to where a figure walks in', screen(out))
 
-// ─── the key is the member ────────────────────────────────────────────
+// ─── the chain is the member ──────────────────────────────────────────
 
 const anas = await env.system.member.findMany({ where: { nick: 'ana' } })
-check(anas.length === 1, "three fli haven runs from Ana's HOME are one member, signed in by one key", JSON.stringify(anas))
-const otherHome = mkdtempSync(join(tmpdir(), 'haven-other-'))
+check(anas.length === 1, "three fli haven runs from Ana's HOME are one member, signed in by one chain", JSON.stringify(anas))
+const otherHome = await stakedHome('haven-other-', 'ana')
 const stranger = await havenFrame('/', { home: otherHome })
-check(stranger.code !== 0 && /taken/.test(stranger.err + stranger.framed),
-  "another machine's key cannot walk in as ana", stranger.err + stranger.framed)
+check(stranger.code !== 0 && /held/.test(stranger.err + stranger.framed),
+  "another chain's row naming ana cannot walk in as ana", stranger.err + stranger.framed)
+const bareHome = mkdtempSync(join(tmpdir(), 'haven-bare-'))
+const bare = await havenFrame('/', { home: bareHome })
+check(bare.code !== 0 && /no Frontier chain/.test(bare.err + bare.framed),
+  'a machine in no Frontier chain is refused, told how one joins', bare.err + bare.framed)
 
 // ─── a mod ────────────────────────────────────────────────────────────
 
@@ -364,6 +368,7 @@ if (code === 'timeout') shell.kill('SIGKILL')
 await env.close()
 rmSync(anaHome, { recursive: true, force: true })
 rmSync(otherHome, { recursive: true, force: true })
+rmSync(bareHome, { recursive: true, force: true })
 
 console.log(failed ? `\n${failed} failed` : '\nall passed')
 process.exit(failed ? 1 : 0)

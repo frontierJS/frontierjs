@@ -26,8 +26,12 @@ if (flag.dry) {
 }
 
 let answer
-try { answer = await tellFetch(member.api, member.keys, 'POST', '/invite') }
-catch (e) { log.error(`${member.api} did not answer (${e.message}).`); process.exitCode = 1; return }
+try {
+  // An owner who only invites would otherwise leave the badge a 409 until some other verb publishes the chain.
+  const published = await publishOwn(member.api, member.keys)
+  if (published) log.warn(`The post did not take ${published} — the next \`fli frontier\` verb tries again.`)
+  answer = await tellFetch(member.api, member.keys, 'POST', '/invite')
+} catch (e) { log.error(`${member.api} did not answer (${e.message}).`); process.exitCode = 1; return }
 if (answer.status !== 201) {
   log.error(`${member.api} refused the invite (${answer.status} ${answer.json?.message ?? ''}).`)
   process.exitCode = 1

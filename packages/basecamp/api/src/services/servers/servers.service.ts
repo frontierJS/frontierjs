@@ -553,6 +553,10 @@ export default createService({
     if (!chosen)
       throw new BadRequest(
         `'${size}' is not a size ${connector.label} offers this account`)
+    // An app image is built amd64 on the laptop that releases it, and an Arm
+    // box enrolls and then cannot run one.
+    if (chosen.arch !== 'x86')
+      throw new BadRequest(`'${size}' is an Arm size; the fleet runs x86 only`)
     // What it costs THERE. A size is priced per region at Hetzner and once at
     // DigitalOcean, so this is the same read for both — and a null is *not
     // sold in that region*, which is the availability answer as well as the

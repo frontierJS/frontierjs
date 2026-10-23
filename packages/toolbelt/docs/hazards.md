@@ -1,0 +1,372 @@
+# toolbelt — what bites here
+
+The full hazard catalog for `@frontierjs/toolbelt`, moved out of `CLAUDE.md`. The dozen that bite most often stay there; this is every one, verbatim.
+
+- **`/datetime`'s zone answers are the RUNTIME's, and node and bun differ.** The
+  rules come from the host ICU and nothing else (`FJS-D268`): `America/Asuncion`
+  disagreed for 36 months of 2020-2030. The vectors are generated under node, so a
+  row failing under bun alone is a zone whose rules changed — drop it from the
+  generator's `ZONES`, never special-case it in the spec. Run the suite under
+  both (`bun run test`, then `node test/run.js datetime`).
+- **The inverse reads the offset a day either side, and the one-line version is
+  wrong only near a transition.** `wall - offsetAt(wall)` passes every ordinary
+  day, which is why the vector spec carries it as a negative control that must
+  fail more than fifty rows. Measured: narrowing `candidates` to the offset at
+  the wall clock alone reds three specs.
+- **A pattern word built from token letters is taken as tokens.** `at` is `a`
+  then `t` and renders `A-06:00`; only a run that cannot split is refused. The
+  spec asserts the limit. Bracket every literal word.
+- **`hh` is 24-hour unless a day-period token is in the SAME pattern.** Rendering
+  the time and the AM/PM in two calls gives `16:05` and `PM`. Put both in one
+  pattern.
+- **An ISO string with no `Z` or offset is refused, and SQLite's
+  `CURRENT_TIMESTAMP` shape is one.** `Date.parse` would read it in the host
+  zone. Litestone writes `…Z`, so a refusal means the value came from somewhere
+  else.
+- **`addToDate`'s clamp does not remember the day it came from.** Temporal's
+  `constrain` is stateless, so `'2026-01-31'` plus a month twice is 28 February
+  and then 28 March. A recurring date is computed from its ANCHOR each time, or
+  a subscription sold on the 31st walks backwards through the year.
+- **A day is not 24 hours, and `startOfDay` is not always midnight.** Santiago
+  moves its clocks at midnight, so that day begins at 01:00 — the vectors carry
+  it, and the negative control (midnight minus the day's offset) fails on it.
+  A day's window is `[startOfDay(d), startOfDay(d + 1 day))`.
+- **`relative` is ELAPSED time.** 30 hours ago is `1 day ago` even across two
+  midnights, and a month is an average month. A calendar answer (*yesterday*)
+  needs a zone and is a different function: `dayHeader`, whose weekday window
+  is the past five days only, so one header is one day.
+
+- **`/query`'s number rule is one line and it is the whole design.** A string is
+  a number only if `String(Number(v)) === v`. Every trap of the obvious
+  `parseFloat` version falls out of it — `'007'` stays a SKU, `'+1'` stays a
+  phone number, `'1.50'` keeps its cents, `'9007199254740993'` stays text because
+  the round trip loses its last digit. Adding a "helpful" case (trimming
+  whitespace, accepting `1e5`, accepting hex) puts one of those back. `FJS-D125`.
+- **`encodePairs` answers PAIRS, not an object, and that is not a style
+  choice.** An object cannot hold `k[]=1&k[]=2` — the second write lands on the
+  same key and the array comes back with one element, which is the shape the kit
+  exists to carry.
+- **The parser must never run over a WS frame.** A frame is JSON and already has
+  its types; parsing it would turn a filter that genuinely says the string `'5'`
+  into 5. Only a query STRING lost the types, so only a query string is parsed.
+
+- **`diffDocs` answers a MERGED document, and that is the whole point.** A
+  removed key is in neither the new document nor any tree built from it, so a
+  caller diffing by walking `after` can show every change except the ones that
+  took something away — which is the half people are looking for. `merged`
+  carries a removed entry at its OLD value, marked, so one walk renders all
+  three states. Two things follow: `count` is LEAF level, because a container
+  is marked `changed` only as a rollup and counting both reports one edit
+  twice; and `open` is every ANCESTOR row on the route to a difference, not the
+  differing row itself, since opening a row shows its children.
+- **Arrays are compared BY POSITION, and it is stated rather than hidden.**
+  Removing the first of three items reads as two changes and one removal. True
+  about the document, and not the most useful reading — the alternative is a
+  longest-common-subsequence pass, which is a different feature with its own
+  decision in it (*what makes two objects the same item?*) and is deliberately
+  not guessed at. A container whose two sides are different KINDS is one
+  `changed` and is not recursed into, because nothing below it corresponds.
+- **`accessorPath` and `jsonPointer` exist because the naive join is wrong in
+  the way that looks right.** `a.content-type` parses as a subtraction, `a.0`
+  is a syntax error, and a pointer joined with slashes names a member that does
+  not exist as soon as a key holds one. Two spellings because they answer
+  different questions: the accessor goes into code, the pointer is what a JSON
+  Schema validator names when it refuses a member.
+- **`searchDoc` answers `open` as well as `keep`, and that is the half that is
+  easy to miss.** `treeRows` emits children of an OPEN container only, so a
+  match four levels down is not a row yet — a filter that does not open its own
+  ancestors finds everything and shows nothing. A container whose key matches
+  keeps its whole subtree (*find me `tags`* is not a search for the word), a
+  value is matched as the text a reader SEES (so `null` and a number's digits
+  are findable), and `count` is hits rather than kept rows.
+- **`markRuns` marks every occurrence and keeps the original casing.** One
+  marked and the next not says *this is the one*, which a highlighter cannot
+  know; and returning the query's casing would rewrite the document on screen.
+- **`convertTo` is the deliberate counterpart to `coerceLike`, and both are
+  live at once.** `coerceLike` keeps the type an edit replaces (a text box hands
+  back text, so the type has to survive); `convertTo` changes it on purpose.
+  Without the second, a document can be edited and never RESHAPED — typing `{}`
+  into a string field gives the string `"{}"`. It is lossless where a mapping
+  exists, including a string that PARSES as the kind asked for, and drops the
+  value where none does. Two easy-to-invert rules: `'false'` is `false`, and an
+  unreadable number is `0` and never `NaN`, which is not a JSON value.
+- **A JSON member is an OWN property, and ordinary property access is not that.**
+  `__proto__` is legal JSON, `JSON.parse` keeps it as an own key, and
+  `copy[key] = value` reaches `Object.prototype`'s setter instead of creating
+  one — so every rebuild here (`setIn`, `removeIn`, `renameKey`, `diffDocs`'
+  merged) silently dropped the key and took the value's prototype, and deleting
+  an UNRELATED key destroyed a `__proto__` sibling and its whole subtree
+  (`FJS-996`). `put()` and `member()` are the two owners; use them rather than
+  `[]`. **`constructor` and `toString` behave correctly under plain
+  assignment**, so a test reaching for either grades nothing — the spec rows are
+  written with `__proto__` for that reason. The same access is why `matchesQuery`
+  answered `false` (drop the row) instead of `null` (ask the server) for an
+  undeclared field named `constructor`, and why `splitParams` lost a `__proto__`
+  filter instead of letting the Data boundary refuse it by name.
+- **`sameValue` is deep equality for JSON and nothing else** — no Map, no Set,
+  no cycle guard, no NaN. A general one here would be a second answer to a
+  question this kit already scopes. **`keepUnchanged(prev, next)` is the third
+  question over a pair of documents** — equal, different, and *which nodes of
+  `next` may be `prev`'s own*. A view keyed on `===` needs the last one after
+  every re-parse of text a person is editing (`FJS-1619`).
+- **Every `/json` walker REFUSES a document nested past `MAX_DEPTH` (100) with a
+  `RangeError`, and `tryParse` reports it as `{ok: false}`.** A path key is as
+  long as the path and a walk makes one per ancestor, so work was cubic in the
+  depth and 100k deep overflowed the stack (`FJS-2198`). A view of a stored Json
+  value asks `exceedsDepth(value)` first and says so, as `Json.mesa` does. **A
+  cycle answers `true` too** (it is walked to the bound), so the message names
+  both causes (`FJS-3152`). The
+  predicate parser bounds nesting the same way, as a `ParseError`.
+- **`patchText(text, prev, next)` is the way back to TEXT, and `format()` of the
+  whole document is the wrong one.** It replaces only the changed spans, so a
+  hand-formatted document, a condensed one and `78.0` survive a cell edit
+  (`FJS-1623`). `prev` must be what `text` parses to — a mismatch of kind or
+  length throws. A reordered object is rewritten whole, as is one whose text holds
+  a duplicate key, and an object whose integer-like keys do not lead its text
+  reads as reordered, because `JSON.parse` moves them to the front.
+
+- **`ctx.result` is an ACCESSOR and the value is not the test.** Three ordinary
+  hook mistakes end the pipeline with nothing having run — an `around` that
+  returns without calling `next()`, an `around` that catches and does not
+  rethrow, an `error` hook that clears `ctx.error` and sets nothing — and all
+  three used to resolve the call to the `null` the context was born with, which
+  a screen reads as an answer. `null` is also a legitimate answer (a `get` for
+  a row that is not there), so what separates them is whether anything ever
+  ASSIGNED it. `hookContext` tracks that; `answered(ctx)` reports it. A context
+  from anywhere else answers `false`, so a caller that has not adopted it is
+  never told its pipeline broke.
+- **A method NAME is a map key, so both lookups are own-key.** `p['constructor']`
+  answers `Object` and `runHooks` iterates it — `TypeError: list is not
+  iterable`, on the pipeline — while `toString` and `valueOf` fail the other way
+  and silently run nothing; `mergeHooks` threw whenever one side declared such a
+  name and the other did not (`FJS-1003`). Its writes are `defineProperty` for
+  `/json`'s reason too. **Every spec row names one of the six inherited members
+  specifically**: an ordinary method name behaves correctly either way, so a row
+  using one grades nothing.
+- **The WORDS have one owner here and the Error class does not.** Both callers
+  throw a `ResourceHookError` of their own type — each package's errors are its
+  own surface, and this package exports only pure functions (`FJS-D26`). What
+  would drift between two hand-written messages is which phase and the two ways
+  out, so that is `hookChainMessage`.
+- **`mergeHooks` answers a NEW map.** It merged in place in both copies it came
+  from; a pure function may not mutate its arguments, and that rule is this
+  package's license rather than its style (`FJS-D26`). A caller upgrading has to
+  assign the result. The failure mode after the change is a map that never grew,
+  which is louder than one silently rewritten.
+- **`formatMoney` is `Intl` and not a symbol table, and the reason is JPY.**
+  What separates two currencies is not the glyph: it is which side it sits on,
+  whether there is a space and how thousands are grouped. A hand-rolled
+  `toFixed(2)` invents a minor unit the yen does not have. One locale by default — `en-US` with `currencyDisplay:
+  'narrowSymbol'` answers `$28.00`, `£28.00`, `€28.00`; asking for each
+  currency's home locale instead answers `US$28.00` for dollars, which is
+  correct and is not what a price tag says.
+- **The currency table is SHIPPED and the host's ICU is not asked** (`FJS-745`).
+  Two facts made that necessary. `Intl.supportedValuesOf('currency')` answers 162
+  codes under node and 306 under bun, differing on 145 — so `@money(ZWG)` parsed
+  on one runtime and was refused as a typo on the other. And
+  `resolvedOptions().maximumFractionDigits` disagrees on fourteen codes both
+  carry: node says the Iraqi dinar has no decimal places, bun says three, ISO
+  says three. **Neither runtime is wrong** — that number answers how an amount is
+  DISPLAYED, which is CLDR's question, and `@money` derives its scale from how it
+  is STORED, which is ISO 4217's exponent. `formatMoney` still asks `Intl` for the
+  glyph, its side and the grouping, and pins the decimals to the exponent so one
+  stored amount renders identically wherever it is read.
+- **`minorUnits` refuses a code with no minor unit in its own words.** `XAU`,
+  `XDR`, `XXX` and ten more are ISO codes and are not amounts — `isKnownCurrency`
+  is true for them and `minorUnits` throws, because answering 2 would let
+  `toMinor` invent a hundredth of a troy ounce. A typo and a metal are different
+  refusals with different ways out.
+- **Cron's two date fields OR, and only when BOTH are restricted.** Day of month
+  and day of week are OR'd with each other and AND'd with the other three, so
+  `0 0 1 * mon` is the first of the month AND every Monday. It reads as a bug
+  and it is the grammar; under a uniform five-field AND it fired only when the
+  1st happened to BE a Monday, about one month in seven, which is a schedule
+  that runs and looks alive (`FJS-1008`). **Restricted means *not written as a
+  star***, which is cron's own test — the field's FIRST CHARACTER — so `0-6`
+  names every day and is still restricted, and `0 0 1 * 0-6` fires daily.
+  Reading set COMPLETENESS instead is tidier and diverges on exactly that one
+  line, silently, which is what the familiarity adjudication rules out.
+- **A cron name belongs to its FIELD, never to the line.** Resolving day names
+  over the whole expression made `0 0 * sat *` mean June — six of the seven sit
+  inside 1-12, so a misplaced name became a number rather than an error
+  (`FJS-1009`). Each field carries its own table, which is also why month names
+  work at all.
+- **An unrecognized 3-letter code does NOT throw, and the separator is a
+  no-break space.** Intl accepts any well-formed code and prints it where the
+  symbol goes, joined with U+00A0. Only a malformed code (fewer than three
+  letters) raises, and that is the branch the `catch` exists for. An assertion
+  written with a plain space fails against two strings that are identical in the
+  diff.
+- **`formatMoney`'s amount is MAJOR units.** 28.5 is twenty-eight fifty. It does
+  not guess between major and minor, because a caller storing integer cents
+  knows it and a caller storing a float does not — guessing between them is how
+  a price gains two zeroes. `fromMinor`/`toMinor` are the crossing, and
+  `roundMinor`/`allocate` are on the other side of it: everything they touch is
+  minor units, and neither takes a currency at all.
+- **Not a number gets THREE answers here, one per surface, and they are not an
+  oversight.** `Number(null)`, `Number('')` and `Number([])` are all 0, so every
+  function has to ask before it divides — `asNumber` is the one private owner of
+  *is this a number at all*. What each does about the answer is decided by what
+  a mistake destroys. A **formatter** answers `''`: display can say nothing.
+  **`fromMinor`** answers NaN, which its sink `formatMoney` turns into `''`, so
+  *we do not know* reaches the cell rather than rendering `$0.00` — and a throw
+  would take a screen down over one missing amount. **`toMinor` and
+  `roundMinor` throw**: those are the write and the arithmetic, and a silent 0
+  is a free order or a receipt that balances and is wrong (`FJS-1011`). The
+  CURRENCY code is strict on every one of them, because a typo there is wrong by
+  a factor of a hundred whichever direction it is going. `allocate` refuses for
+  the same reason rather than splitting evenly when the ratios sum to zero — a
+  guess that adds up is the worst kind.
+- **`roundMinor(units * rate * 100)` loses half-cent ties, and `divRound` is the
+  way out.** 9,780 × 0.00025 × 100 is 244.99999…, so it bills $2.44 where the
+  exact answer is $2.45 (`FJS-2142`); the product is also past 2^53 at
+  `@scale(6)` × `@scale(9)`. Multiply in BigInt and `divRound(product, 10n ** 13n)`.
+  It takes bigints only — a Number past 2^53 is already wrong on arrival.
+- **`allocate` has no `scale` and no currency, and that is not an omission.**
+  The smallest thing a split can hand out is one of whatever `amount` is counted
+  in, which the caller decided by holding an integer. `FJS-D154` was filed with
+  a third parameter and it did not survive being written.
+- **The canonical string is six lines and the query is the third.** Method,
+  path, query, timestamp, nonce, body hash — joined with newlines, so no part
+  may contain one. The query is the one line allowed to be EMPTY: a request with
+  no parameters signs an empty line rather than omitting one, or a query could
+  be smuggled into the path. It is canonicalized — pairs sorted by key then
+  value, RFC 3986 encoded (`encodeURIComponent` leaves `!'()*` alone and the RFC
+  reserves them) — because nothing preserves parameter order across a proxy or a
+  client library, and an order-sensitive signature fails intermittently and
+  reads as a clock problem.
+- **The scheme signs SECONDS, and it is CHECKED rather than documented.** Both
+  units are a finite number and `Date.now()` is every JS caller's reflex, so a
+  millisecond timestamp signed and verified perfectly with the tolerance then
+  meaning 300**ms** — a webhook a third of a second old refused as clock skew,
+  reported as `3600000s out` for a request one hour old (`FJS-1001`). `1e11`
+  separates the two units from 1973 to the year 5138, so a millisecond-shaped
+  value is refused by name and told to divide by 1000. **The asymmetry is
+  deliberate**: `now` is the caller's own argument and THROWS, while a
+  millisecond timestamp in a header ANSWERS `{ok: false}`, because a header is
+  remote input and a receiver must not be crashed by what a caller put in one.
+  Measured: removing the guard reds 3 rows, widening it to every positive number
+  reds 17 — the second number is the point, since a guard that refused real
+  timestamps would break conduit and outpost, which both sign
+  `Math.floor(Date.now() / 1000)`.
+- **The version rides in the signature VALUE, `v1-sha256=…`, and it is carried
+  before anything needs it.** A signature on another version is refused by name
+  before the digest is compared, because *signature does not match* is the same
+  sentence a wrong secret produces and is the wrong half to spend an outage on.
+  Nothing outside this repo signs anything, so there has only ever been one
+  version; what the marker buys is that a second one costs
+  `SIGNATURE_VERSION` and the prefix beside it, where a change that only alters
+  the canonical string is a fleet-wide 401 nobody can diagnose.
+- **`canonicalQuery` checks `Array.isArray` BEFORE `.entries()`.** An Array has
+  an `entries()` of its own and it answers index/value pairs, so a list of pairs
+  canonicalizes as `0=to%2Calice` — a well-formed string that agrees with
+  nothing.
+- **`createStore` is NOT here and must not arrive.** `FJS-D16` named it to move
+  and the ruling is amended: a store is state. Admitting one costs the standing
+  that lets litestone and mesa import this package at all.
+- **A spec body may be async, and the harness had to learn it.** `test(name,
+  fn)` awaits a returned promise now; before that a rejection inside an async
+  spec was an unhandled rejection reported as a PASS. `test.failing(name, fn)`
+  is a filed defect's repro: it passes while `fn` throws and fails the run once
+  it does not, so the fix drops `.failing` and closes the row it cites.
+- **A highlighter fails silently or not at all.** It drops a character, the
+  output still looks like code, and the reader copies a sample that does not
+  work. The round-trip test over the whole corpus is the only one that matters;
+  everything else in `glow.spec.js` is a detail.
+- **`prefix: true` eats the first character of a CSS line.** `+`, `-` and `>`
+  start a diff marker and are stripped. `--custom-prop` is disambiguated (two
+  dashes are never a marker); `> .child` and `+ .sibling` cannot be, so a CSS
+  caller passes `prefix: false`.
+- **The corpus is a snapshot, not a mirror.** It is committed so this package
+  has no cross-package dependency. A new *kind* of sample in the css guide is
+  not covered until someone runs `extract.mjs`.
+- **Everything `renderRow` pushes is a raw slice of the source, tokens and the
+  gaps between them alike.** Both go through `encode()`. Two shapes have
+  already leaked here: a rule matching more than one character, back when
+  `elem()` encoded only a lone `<` or `>` (an HTML comment went to the page as
+  live markup), and the gap text, which looked safe only because `<`, `>` and
+  `&` are punctuation rules in most languages and so usually arrive as tokens.
+  Do not move encoding back into a per-rule special case.
+- **`encode()` escapes `&` FIRST.** Reverse the order and the ampersand of an
+  escape the function just wrote gets escaped again, so a source line reading
+  `&lt;` renders as a `<` the author never typed. Callers depend on this:
+  mesa's `compiler-md.js` decodes a fence body precisely because glow re-encodes
+  what it emits.
+- **A comment that opens mid-line is a token, not a block.** `/*` anywhere on
+  a line used to start a comment block and swallow the code before it, which
+  reads as a disabled line. `isTrailingComment()` is the split; a comment
+  that opens the line, or runs on, is still a block.
+- **glow's output is elements, never classes** — `<em>` a value, `<sup>` a
+  comment. `@frontierjs/css`'s `components/code.css` themes exactly that shape,
+  so emitting a class here would silently break the theme rather than fail.
+- **CI fails the build on an import that is not relative.** `scripts/ci.mjs`
+  § hygiene checks the manifest for dependencies and every file under `src/`
+  for a clock, a global, a network call and a non-relative specifier — the
+  blunt rule catches a node builtin, a sibling and a registry package at once.
+  A kit that genuinely needs one of those does not belong in this package.
+- **`inflect` is load-bearing for Invariant 2, not a convenience.** litestone
+  derives a table name with `pluralize` and reads it back with `singularize`,
+  junction derives a model name from a service name, sierra indexes both
+  directions — so a rule changed here renames tables. **The shape half is the
+  same fact and arrived late**: six sites composed `pascal(singularize(t))` by
+  hand with four splitters while importing the singular half from here, so
+  `order-item` was `OrderItem` to the cli rule that grades model names and
+  `Order-item` to two of the litestone readers that produce them. `modelName` is
+  exported so the composition has one spelling. The irregular table is
+  whole-word only for that reason: teaching it to reach inside `audit_index`
+  would rename a table in every schema that already has one.
+- **`directives` is load-bearing the same way `inflect` is.** A `$` key it does not name no longer falls through as a
+  FILTER — that was `FJS-988`, where the Data boundary reported a column nobody
+  declared three layers from the cause. **The kit REPORTS the unknown names and
+  the boundary refuses**: `unknownDirectives()` is the report, junction's bridge
+  answers 400 naming them, and sierra's router drops, because a router has
+  nowhere to put an error a person could act on (`FJS-D237`). The list a refusal
+  prints is derived from this table, never copied. The kit
+  holds BOTH directions — `parseDirectives` reads, `directiveParams` writes —
+  because a URL is round-tripped rather than only consumed: junction's client
+  sends one, and sierra's router hands one back to a page that has to write the
+  next. Junction's client held its own field-by-field copy of the write half and
+  named itself the one table in its own comment; a generated list page then
+  handed its filter bar `page.query`, which by construction holds no directive,
+  and typing in a filter dropped the sort a header had just set (`FJS-1047`). A
+  directive is one row and it is wired both ways or neither.
+- **A new subpath is invisible to a vite that is already running.** The exports
+  map is read at server start, so the error names the very file that plainly
+  has the entry — *"./directives" is not exported ... (see exports field in
+  .../toolbelt/package.json)* — and the app it was added for does not mount.
+  Restart the dev server; nothing about the code is wrong.
+- **`-ses` is split by a LIST and it has to be.** `statuses` → `status` and
+  `cases` → `case` differ by whether the stem before `es` is itself a word, and
+  no ending can see that — `status` and `cas` both end in a vowel plus `s`. So
+  the default is strip one `s`, with an `-ss` rule and a closed list of
+  singulars that genuinely end in a bare `s`. It stripped `es` for both until
+  `FJS-479`, which made `purchases` resolve to `purchas`, which is a model
+  junction cannot find, which is **no `@@gate` and no validation** on that
+  service. Adding a word to the list is cheap; changing the default is not.
+- **The irregular table is DATA ABOUT ENGLISH and a spelling sweep will eat
+  it.** `analyses` is the plural of `analysis` on both sides of the Atlantic; a
+  find/replace of `analyse` → `analyze` rewrote it to `analyzes` here **and in
+  the test that asserted it**, in one commit, so the suite stayed green and
+  `singularize('analyses')` answered `analyse` — a model junction cannot find.
+  The header carries a warning; the structural guard is the one below.
+- **The spec READS the table for the round trip and hand-writes the plurals for
+  correctness, and the split is the point.** A copy of the table in the test
+  grades nothing — it agrees with whatever the table says, including a plural
+  nobody speaks. Measured: reintroducing `analyzes` leaves *every irregular
+  round-trips* green and fails the corpus, and so does dropping `half`.
+- **A round trip is not a correctness test here.** `pluralize('cas')` is
+  `cases`, so `singularize`/`pluralize` agreed with each other for as long as
+  both were wrong. Assert the singular you expect, not that it survives.
+- **The `-ses` list is asked about the bare word too, and that is what keeps
+  `lens`.** `pens` has its ending, so no rule separates them; before the list
+  was read there, `lens` became `len` and `fli check` refused the `Lens.mesa`
+  `fli make:resource` had written (`FJS-1421`). A singular ending in a bare `s`
+  that the `us`/`is`/`as` guards miss goes on that list, never into
+  `INVARIANT`, which would make its plural `lens` as well.
+
+- **A string is truthy in a values ternary by its NUMERIC PREFIX**, because
+  `evaluate` answers in SQLite's logic: `{contact.name ? contact.name : 'x'}`
+  fills `x` for `Ann`. A hole choosing a default writes `contact.name != null`.
+- **`fill` leaves what it cannot fill AS WRITTEN** -- a name the context lacks, a
+  value that is not a scalar, a brace that holds no readable expression -- so a
+  gap shows. `check` is where an unknown name is refused, at save.

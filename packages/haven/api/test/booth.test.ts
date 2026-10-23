@@ -12,7 +12,7 @@ import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../src/app.ts'
 import { boothSlug } from '../src/booth.ts'
-import { signIn } from './sign-in.ts'
+import { POST_KEY, signIn } from './sign-in.ts'
 
 const SCHEMA = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 
@@ -27,7 +27,7 @@ beforeEach(async () => {
   env = await createTestEnv({
     schema: SCHEMA,
     listen: true,
-    api:    ({ db }: { db: any }) => buildHavenApp({ db, sessionKey: 'test-session-key', port: 0 }),
+    api:    ({ db }: { db: any }) => buildHavenApp({ db, sessionKey: 'test-session-key', port: 0, postKey: POST_KEY }),
   })
   sys = env.system
   await sys.room.create({ data: { slug: 'tavern', name: 'The tavern' } })

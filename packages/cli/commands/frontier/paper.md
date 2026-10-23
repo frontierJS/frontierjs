@@ -25,7 +25,7 @@ lost from this one with `fli frontier:revoke`. A paper key you lost is revoked t
 same way.
 
 ```js
-const { nextLink, countersign, boxClaim } = await import(new URL('file://' + global.fliRoot + '/core/frontier-chain.js'))
+const { nextLink, countersign, boxClaim } = await import('@frontierjs/toolbelt/frontier')
 const { hexWords, wordsHex } = await import(new URL('file://' + global.fliRoot + '/core/tell.js'))
 
 /** Sixteen bytes, as sixteen words — 128 bits, which `frontier:who`'s 64 are not. */

@@ -1417,7 +1417,25 @@ export class JunctionClient extends EventEmitter {
    * resolved the old principal (`FJS-2651`).
    */
   _principalChanged(): void {
+    this._identityChanged()
     this._noteCredential(CREDENTIAL_CHANGED)
+  }
+
+  // Bumped on every change of who this client is. A read sent under one value
+  // and answered under another is the previous caller's row.
+  private _identity = 0
+  private _identityViews: Set<() => void> = new Set()
+
+  /**
+   * Every row this client holds was read as somebody else: emptied before
+   * anything hears of the change, so a `record(id)` asked for in a `token`
+   * listener fetches rather than answering the previous caller's row
+   * (`FJS-3388`). A view still open reads again as the new caller.
+   */
+  private _identityChanged(): void {
+    this._identity++
+    this.entries.clear()
+    for (const reread of [...this._identityViews]) reread()
   }
 
   private _noteServerBuild(id: unknown): void {
@@ -1592,6 +1610,7 @@ export class JunctionClient extends EventEmitter {
     if (!changed) return
     // Who this client is has changed. Anything cached as the previous caller
     // — Sierra's prefetch, an app's own store — is now somebody else's data.
+    this._identityChanged()
     this.emit('token', token)
     if (this._ws && this._ws.readyState < 2) {
       // Cycle existing socket so upgrade carries the new token
@@ -2228,21 +2247,34 @@ export class JunctionClient extends EventEmitter {
         reread = setTimeout(() => { reread = null; void fetch() }, Math.random() * 2000)
       })
 
+      // The caller changed under an open view. The entry is already empty;
+      // gone and the failure were answers to the previous caller (`FJS-3388`).
+      const onIdentity = (): void => {
+        gone = false
+        failure = null
+        if (composed) { own = null; emit(null) }
+        void fetch()
+      }
+      this._identityViews.add(onIdentity)
+
       // `shared` is the cold first read only. A refresh asks for newer than
       // anything in flight, so it never joins one.
       const read = async (shared: boolean): Promise<T | null> => {
         if (composed) return readComposed()
         const wasGone = gone
+        const asked = this._identity
         try {
           const row = ropts.load
             ? await ropts.load()
             : shared
-            ? await coldRead(entry, () => svc.get(id as string | number))
+            ? await coldRead(entry, asked, () => svc.get(id as string | number))
             : await svc.get(id as string | number)
+          if (asked !== this._identity) return value()
           if (row != null) registry.write(model, row, key)
           failure = null
           return row ?? null
         } catch (e) {
+          if (asked !== this._identity) return value()
           // A refused or missing row is not a crash here: the view answers
           // whatever it last knew, and the caller awaiting `ready` sees null
           // with `error()` saying why. Subscribers hear it too, since a push
@@ -2271,6 +2303,7 @@ export class JunctionClient extends EventEmitter {
         // `watch` is itself the hold, so letting it go is what starts the TTL.
         release:   () => {
           offEntry(); offGone(); offChanged(); offReconnected()
+          this._identityViews.delete(onIdentity)
           if (reread) clearTimeout(reread)
           reread = null
           subs.clear()
@@ -3392,13 +3425,14 @@ export interface RecordResult<T extends Record<string, unknown> = Record<string,
 // the warm-entry skip only helps after the first read lands. The in-flight
 // promise is held per entry so the second view waits on it; each view still
 // writes the entry and records its own failure from what the promise settles.
-const _coldReads = new WeakMap<object, Promise<unknown>>()
+// A read in flight for the previous caller is not joined (`FJS-3388`).
+const _coldReads = new WeakMap<object, { asked: number; p: Promise<unknown> }>()
 
-function coldRead<R>(entry: object, load: () => Promise<R>): Promise<R> {
+function coldRead<R>(entry: object, asked: number, load: () => Promise<R>): Promise<R> {
   const held = _coldReads.get(entry)
-  if (held) return held as Promise<R>
-  const p = load().finally(() => { _coldReads.delete(entry) })
-  _coldReads.set(entry, p)
+  if (held?.asked === asked) return held.p as Promise<R>
+  const p = load().finally(() => { if (_coldReads.get(entry)?.p === p) _coldReads.delete(entry) })
+  _coldReads.set(entry, { asked, p })
   return p
 }
 

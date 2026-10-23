@@ -371,6 +371,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./fill (default)` | `src/fill/fill.js` | yes |
 | exports | `./gate (types)` | `src/gate/gate.d.ts` | yes |
 | exports | `./gate (default)` | `src/gate/gate.js` | yes |
+| exports | `./frontier` | `src/frontier/frontier.js` | yes |
 | exports | `./geo (types)` | `src/geo/geo.d.ts` | yes |
 | exports | `./geo (default)` | `src/geo/geo.js` | yes |
 | exports | `./docfences` | `src/docfences/docfences.js` | yes |

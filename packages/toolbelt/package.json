@@ -41,6 +41,7 @@
       "types": "./src/gate/gate.d.ts",
       "default": "./src/gate/gate.js"
     },
+    "./frontier": "./src/frontier/frontier.js",
     "./geo": {
       "types": "./src/geo/geo.d.ts",
       "default": "./src/geo/geo.js"

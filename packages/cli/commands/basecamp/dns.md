@@ -24,7 +24,7 @@ flags:
 ---
 
 Writes `A <host> → <ip>`, DNS-only unless `--proxied`, through Basecamp's own Cloudflare
-connector, run from this checkout as `fli basecamp:create` runs its DigitalOcean one.
+connector, run from this checkout as `fli basecamp:create` runs a cloud's compute one.
 The record carries Basecamp's fleet mark in its comment, so Basecamp manages it
 later rather than refusing it as somebody else's. A rerun moves the record to
 the new address; a record somebody made by hand at that name is refused, never

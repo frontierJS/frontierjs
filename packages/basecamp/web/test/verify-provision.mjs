@@ -898,9 +898,9 @@ try {
 
   await fill({ region: 'fsn1' })
   const fsn = await until(`[...document.getElementById('size').options].map(o => o.value).filter(Boolean)`,
-    v => v.includes('cax11') ? v : false, 'fsn1 never offered the Arm size')
-  check('and fsn1 does — the picker narrows by region at the second vendor too',
-    fsn.includes('cax11'))
+    v => v.includes('cpx21') ? v : false, 'fsn1 never offered cpx21')
+  check('fsn1 sells the Arm size and the picker still leaves it out: the fleet runs x86 only',
+    !fsn.includes('cax11'), fsn.join(', '))
 
   // ── the same size, two regions, two prices ──
   await fill({ region: 'nbg1' })

@@ -334,6 +334,109 @@ describe('resource().record(id)', () => {
   })
 })
 
+// ─── a change of caller ───────────────────────────────────────────────────────
+
+// Every row the client holds was read as the previous caller. Measured with a
+// counting stub: a warm record(1) survived setToken(other), and a fresh
+// record(1).ready answered it with no request (`FJS-3388`).
+describe('a change of caller empties the entries', () => {
+  // Answers as the caller the request names, the way the server does, and
+  // holds the reply until `release()` while `gate` is set — a read in flight.
+  function stub(rows: Record<string, unknown>) {
+    const original = globalThis.fetch
+    const state = { calls: 0, gate: false, waiting: [] as (() => void)[] }
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      state.calls++
+      const auth = new Headers(init?.headers).get('Authorization') ?? 'anonymous'
+      const body = JSON.stringify(rows[auth.replace(/^Bearer /, '')])
+      if (state.gate) await new Promise<void>(r => state.waiting.push(r))
+      return new Response(body, { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }) as unknown as typeof fetch
+    return {
+      state,
+      release: () => { for (const r of state.waiting.splice(0)) r() },
+      restore: () => { globalThis.fetch = original },
+    }
+  }
+
+  const rows = {
+    anonymous: { id: 1, owner: 'a' },
+    other:     { id: 1, owner: 'b' },
+    operator:  { id: 1, owner: 'operator' },
+  }
+
+  it('the registry empties a held entry in place and drops a released one', () => {
+    const r = new EntryRegistry()
+    const heard: unknown[] = []
+    const off = r.entry('Order', 1).watch(v => heard.push(v))
+    r.write('Order', { id: 1, owner: 'a' })
+    r.write('Order', { id: 2, owner: 'a' })
+    r.clear()
+    expect(r.peek('Order', 1)?.get()).toBeNull()
+    expect(r.peek('Order', 2)).toBeUndefined()
+    expect(heard.at(-1)).toBeNull()
+    // The held entry is the one the next write lands in, so its view hears it.
+    r.write('Order', { id: 1, owner: 'b' })
+    expect(heard.at(-1)).toEqual({ id: 1, owner: 'b' })
+    off()
+  })
+
+  it('after setToken, a fresh record(id) fetches as the new caller', async () => {
+    const s = stub(rows)
+    const c = client()
+    const r = c.resource('orders', { model: 'Order' })
+    const first = r.record(1)
+    await first.ready
+    first.release()
+    c.setToken('other')
+    expect(c.entries.peek('Order', 1)?.get() ?? null).toBeNull()
+    expect(await r.record(1).ready).toEqual({ id: 1, owner: 'b' })
+    expect(s.state.calls).toBe(2)
+    s.restore()
+  })
+
+  it('a view still open reads again as the new caller', async () => {
+    const s = stub(rows)
+    const c = client()
+    const r = c.resource('orders', { model: 'Order' })
+    const view = r.record(1)
+    await view.ready
+    c.setToken('other')
+    expect(view.get()).toBeNull()
+    await Bun.sleep(0)
+    expect(view.get()).toEqual({ id: 1, owner: 'b' })
+    view.release()
+    s.restore()
+  })
+
+  it('a read sent as the previous caller is neither kept nor joined', async () => {
+    const s = stub(rows)
+    const c = client()
+    const r = c.resource('orders', { model: 'Order' })
+    s.state.gate = true
+    const before = r.record(1)
+    await Bun.sleep(0)
+    c.setToken('other')
+    const after = r.record(1)
+    await Bun.sleep(0)
+    s.release()
+    await before.ready
+    expect(await after.ready).toEqual({ id: 1, owner: 'b' })
+    expect(c.entries.peek('Order', 1)?.get()).toEqual({ id: 1, owner: 'b' })
+    before.release(); after.release()
+    s.restore()
+  })
+
+  it('a support episode starting empties them too — the token stays the same', async () => {
+    const s = stub({ operator: { subjectId: 'u2', endsAt: '2099-01-01T00:00:00Z' } })
+    const c = client({ token: 'operator' })
+    c.entries.write('Order', rows.operator)
+    await c.auth.startSupport('u2', 'ticket 1')
+    expect(c.entries.peek('Order', 1)).toBeUndefined()
+    s.restore()
+  })
+})
+
 // A refusal and a missing row are different answers to a person, and `ready`
 // resolving `null` for both left a detail screen one vague sentence (`FJS-1063`,
 // `FJS-D695`). The reason rides the view beside `get()`; `ready` keeps resolving.

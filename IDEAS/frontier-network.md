@@ -330,7 +330,9 @@ the chain, linking and revoking are built (`FJS-D1409`), which they are.
   own key makes, the owner refused before a verb publishes the chain and
   drawn after, an unknown number, a nick, another extension and a POST
   refused, every other route still signed, and Chrome parsing it and drawing
-  two as `<img>` at 24px tall.
+  two as `<img>` at 24px tall. `frontier:invite` publishes the chain too, since
+  an owner who only invites otherwise kept a 409 badge; driven 6 checks, the
+  badge 409 before the first invite and the owner's crest after it.
 - [ ] 2.8 In Haven, the number is a nameplate on a member's figure, and
   `IDEAS/haven.md` 22.4's post office carries the members as a board.
   **Needs haven Phase 22.**
@@ -370,12 +372,31 @@ address book.
 Done when: a scratch `HOME` that staked `ada` walks into a local Haven as
 `ada` with no `~/.fli/haven/`, and a key in no chain is refused.
 
-- [ ] 3.1 `POST /haven/login` takes a login signed by a machine in the chain
+- [x] 3.1 `POST /haven/login` takes a login signed by a machine in the chain
   plus the signed member row, and the nick comes from the row. A row signed
   longer ago than the age is refused, naming its age (`FJS-D1445`). The
   first-come nick of `FJS-D981` goes.
-- [ ] 3.2 Refuse a login whose key is in no chain. `~/.fli/haven/key.json`
+  Built 2026-10-22 (`FJS-D1476`): the body is `{ publicKey, links, row }`,
+  read offline against `HAVEN_POST_KEY`, and `Member.root` is the chain root.
+  The chain code is `@frontierjs/toolbelt/frontier`. The key login, with its
+  first-come nick, stays until 3.2, because the browser and agents use it.
+  Driven: a scratch HOME staked as `ada` walks in as `ada` with no
+  `~/.fli/haven/`, and a 30-hour row is refused, naming its age.
+- [x] 3.2 Refuse a login whose key is in no chain. `~/.fli/haven/key.json`
   goes.
+  Built 2026-10-23 (`FJS-D1477`): a login with no `links` is a 401 naming
+  `fli frontier:stake` and `frontier:link`, and `fli haven` refuses before
+  signing on a machine with no `frontier.nick`; `--nick` goes. A browser
+  holds no key: `fli haven --browser` signs in on the terminal and opens the
+  page with `#session=<token>`, which the page takes into the Junction
+  client's `tokenStorage` and wipes from the address. Test havens pin a test
+  post (`POST_KEY`), and a drive's `fli haven` walks from `stakedHome()`.
+  The agents are left out until their way in is ruled ([FJS-3471](../ISSUES.md#fjs-3471)).
+  Driven: `verify:explore` (a second chain's row naming `ana` is 409, a HOME
+  in no chain is refused, no `~/.fli/haven/key.json`), `verify:browser` (Bea
+  walks in on a handed session, the address is clean, a reload is the same
+  member), `verify:fresh` (a staked machine with no checkout, twice, one
+  member).
 
 ### Phase 4 — Names
 

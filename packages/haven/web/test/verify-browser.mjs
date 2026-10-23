@@ -8,9 +8,10 @@
  * pty, signed in the way `fli haven` signs a machine in. Bea is a headless
  * Chrome tab on this package's own Vite dev server, which builds the same
  * routes with the browser twins of `#paint`, `#cell` and `#sign-in`, and
- * signs in with a WebCrypto key it keeps in IndexedDB. Every check reads one
- * client's figure, line or art off the OTHER client's screen: Sam's figure
- * and line in Bea's tab, Bea's in Sam's terminal, and the art row for row.
+ * walks in on a session handed in its address, as `fli haven --browser`
+ * hands one. Every check reads one client's figure, line or art off the
+ * OTHER client's screen: Sam's figure and line in Bea's tab, Bea's in Sam's
+ * terminal, and the art row for row.
  * Then Bea reloads and is the same member, walks through the left house's
  * door, and the terminal sees the square empty of her.
  *
@@ -38,7 +39,7 @@ import { createTestEnv } from '@frontierjs/testing'
 
 import { openChrome } from '../../../mesa/src/drive.js'
 import { buildHavenApp } from '../../api/src/app.ts'
-import { signIn } from '../../api/test/sign-in.ts'
+import { POST_KEY, signIn } from '../../api/test/sign-in.ts'
 import { cellOf, terminal, until } from './terminal.mjs'
 import { litAt } from '../src/lib/scene/stage.js'
 import { DAY_MS } from '../src/lib/scene/sky.js'
@@ -68,7 +69,7 @@ process.env.FJS_BUILD = 'haven-server-build'
 const env = await createTestEnv({
   schema: join(WEB, '../db/schema.lite'),
   listen: true,
-  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-browser', port: 0 }),
+  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-browser', port: 0, postKey: POST_KEY }),
 })
 await env.system.room.create({ data: { slug: 'square', name: 'The square' } })
 await env.system.room.create({ data: { slug: 'tavern', name: 'The tavern' } })
@@ -145,9 +146,11 @@ const tabCells = (x, y, width = 1) => browser.evaluate(`
 `)
 const tabText = () => browser.evaluate('return document.body.innerText')
 
-await browser.navigate(`${WEB_ORIGIN}/?nick=bea`)
+// Signed in the way `fli haven --browser` signs her in, and handed over the same way.
+const bea = await signIn(env.port, 'bea')
+await browser.navigate(`${WEB_ORIGIN}/#session=${bea.token}`)
 check(await until(async () => (await tabText()).includes('2 here') && (await tabText()).includes('· sam')),
-  "Bea's tab walks in through a signed login, two here, and names Sam", await tabText())
+  "Bea's tab walks in on the session in its address, two here, and names Sam", await tabText())
 check(await tabCells(sx, sy) === '@', "Bea's tab draws her own figure where a figure walks in", await tabCells(sx, sy))
 check(await tabCells(samX, sy) === 'S', "Bea's tab draws Sam's figure on the cell Sam walked to", await tabCells(samX - 2, sy, 5))
 check(await until(() => term.at(sx, sy) === 'B' && term.screen().includes('2 here') && term.screen().includes('· bea')),
@@ -250,20 +253,16 @@ check(await until(async () => !(await tabText()).includes('PageDown newer') && a
 check(await until(async () => (await tabText()).includes('Reload to walk in with it')),
   'a server on another build than the page says so on the page (x-fjs-build)', await tabText())
 
-// ─── the key is the member ────────────────────────────────────────────
+// ─── the session is the tab's, not its address ─────────────────────────
 
-const kept = await browser.evaluate(`
-  const db = await new Promise((r, j) => { const o = indexedDB.open('haven'); o.onsuccess = () => r(o.result); o.onerror = () => j(o.error) })
-  const keys = await new Promise((r) => { const q = db.transaction('keys').objectStore('keys').get('machine'); q.onsuccess = () => r(q.result) })
-  return keys?.publicKey ?? null
-`)
-check(typeof kept === 'string', "the tab keeps its key in IndexedDB, not in the page's storage", String(kept))
+const held = await browser.evaluate(`return { hash: location.hash, kept: localStorage.getItem('haven_token') }`)
+check(held?.hash === '' && held?.kept === bea.token, "the address no longer carries the session, and the client's tokenStorage does", JSON.stringify(held))
 
 await browser.navigate(`${WEB_ORIGIN}/`)
 check(await until(async () => (await tabText()).includes('2 here') && await tabCells(sx, sy) === '@'),
-  'a reload walks in again, with no nick asked for', await tabText())
+  'a reload walks in again, with nothing handed', await tabText())
 const beas = await env.system.member.findMany({ where: { nick: 'bea' } })
-check(beas.length === 1 && beas[0].publicKey === kept, 'and is the same member, by the same key', JSON.stringify(beas))
+check(beas.length === 1 && beas[0].id === bea.id, 'and is the same member', JSON.stringify(beas))
 
 // ─── the door ─────────────────────────────────────────────────────────
 

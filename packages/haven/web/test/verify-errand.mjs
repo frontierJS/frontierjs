@@ -26,7 +26,7 @@ import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../../api/src/app.ts'
 import { ROOMS } from '../../api/src/rooms.ts'
-import { signIn } from '../../api/test/sign-in.ts'
+import { POST_KEY, signIn, stakedHome } from '../../api/test/sign-in.ts'
 import { cellOf, terminal, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
 
@@ -46,12 +46,12 @@ const check = (ok, label, evidence = '') => {
 }
 
 const samHome = mkdtempSync(join(tmpdir(), 'haven-errand-sam-'))
-const anaHome = mkdtempSync(join(tmpdir(), 'haven-errand-ana-'))
+const anaHome = await stakedHome('haven-errand-ana-', 'ana')
 
 const env = await createTestEnv({
   schema: join(WEB, '../db/schema.lite'),
   listen: true,
-  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-errand', port: 0 }),
+  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-errand', port: 0, postKey: POST_KEY }),
 })
 for (const room of ROOMS) await env.system.room.create({ data: { ...room } })
 const API = `http://localhost:${env.port}`
@@ -121,7 +121,7 @@ async function visit(label, { errand, expectBoy, hyperlinks = true }) {
 // First visit: the boy comes, Ana (another machine) sees nothing of him.
 const first = await visit('first visit', { errand: CMD, expectBoy: true })
 const anaFrame = await new Promise((resolve) => {
-  const p = spawn('bun', [FLI, 'haven', '--frame', '/tavern/', '--api', API, '--nick', 'ana'], {
+  const p = spawn('bun', [FLI, 'haven', '--frame', '/tavern/', '--api', API], {
     cwd: tmpdir(), stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, HOME: anaHome, HAVEN_ERRAND: '' },
   })
   let out = ''

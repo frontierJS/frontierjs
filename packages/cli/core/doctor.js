@@ -151,7 +151,7 @@ export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf 
     // *everything is present*, and a dashboard needs the first one: a machine
     // with no docker is a working machine for everything but `deploy:`.
     //
-    // System and config ONLY. A missing `CLOUDFLARE_TOKEN` blocks `cloudflare:`
+    // System and config ONLY. A missing `GITHUB_TOKEN` blocks `github:`
     // and nothing else, so counting it here would make almost every machine
     // read as unable to run fli — which is how a summary stops being read.
     blocked: [...system, ...config].filter(c => c.level === 'error').length,

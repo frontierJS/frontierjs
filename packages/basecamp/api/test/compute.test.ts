@@ -621,6 +621,8 @@ describe('a machine claims its own credential', () => {
     expect(script).toContain('codename=${distro_codename}-security')
     // FJS-3462: the timer's first pass can be a day after enrollment.
     expect(script).toMatch(/^timeout \d+ systemctl start apt-daily-upgrade\.service/m)
+    // FJS-3469: a systemd upgrade inside that pass ends systemctl's wait early.
+    expect(script).toMatch(/^timeout \d+ sh -c 'while \[ "\$\(systemctl show -P ActiveState apt-daily-upgrade\.service\)" = activating \]/m)
     expect(script).toContain('/etc/ssh/sshd_config.d/10-basecamp.conf')
     expect(script).toContain('PasswordAuthentication no')
     expect(script).toContain('PermitRootLogin prohibit-password')
@@ -717,6 +719,20 @@ describe('a machine claims its own credential', () => {
     expect(script).toContain(`bash -s "bun-v${BUN_VERSION}"`)
     expect(script).toContain(`/bin/bun x --bun @frontierjs/outpost@${OUTPOST_VERSION}`)
     expect(BUN_VERSION).toMatch(/^\d+\.\d+\.\d+$/)
+  })
+
+  // A published port with the proxy on is a nat rule and a docker-proxy
+  // process, and the forward chain grades only the rule. The file goes in
+  // before the install so no daemon ever starts without it.
+  test('the install turns the docker userland proxy off before docker is installed', async () => {
+    const { installScript } = await import('../src/providers/compute/enrollment.ts')
+    const script = installScript()
+    const daemon = script.indexOf('/etc/docker/daemon.json')
+    const install = script.indexOf('apt_install docker-ce')
+    expect(daemon).toBeGreaterThan(-1)
+    expect(install).toBeGreaterThan(daemon)
+    const json = script.slice(daemon).match(/<<'DOCKEREOF'\n([\s\S]*?)\nDOCKEREOF/)![1]
+    expect(JSON.parse(json)).toEqual({ 'userland-proxy': false })
   })
 
   // Basecamp's own box already holds the Caddy keyring from `fli deploy:setup`,

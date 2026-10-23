@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import { generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { generateSealingKeys } from '@frontierjs/toolbelt/seal'
 
-import { rootLink, nextLink, countersign, readChain, extendsSeen } from '../core/frontier-chain.js'
+import { rootLink, nextLink, countersign, readChain, extendsSeen } from '@frontierjs/toolbelt/frontier'
 
 const machine = async () => ({ ...await generateSigningKeys(), sealing: await generateSealingKeys() })
 
@@ -112,7 +112,7 @@ describe('a thief holding a revoked machine', () => {
 const PIN_SCRIPT = `
   import { generateSigningKeys } from '@frontierjs/toolbelt/signature'
   import { generateSealingKeys } from '@frontierjs/toolbelt/seal'
-  import { rootLink, readChain } from './core/frontier-chain.js'
+  import { rootLink, readChain } from '@frontierjs/toolbelt/frontier'
   import { pinPeer, PEERS_FILE } from './core/tell.js'
   if (!PEERS_FILE.startsWith(process.env.HOME + '/')) { console.log(JSON.stringify({ outside: PEERS_FILE })); process.exit(0) }
   const member = async () => readChain([await rootLink({ ...await generateSigningKeys(), sealing: await generateSealingKeys() })])

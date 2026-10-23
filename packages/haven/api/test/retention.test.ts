@@ -9,9 +9,9 @@ import { join } from 'node:path'
 
 import { createTestEnv } from '@frontierjs/testing'
 
-import { buildHavenApp } from '../src/app.ts'
-import { sweepRooms }    from '../src/retention.ts'
-import { signIn }        from './sign-in.ts'
+import { buildHavenApp }    from '../src/app.ts'
+import { sweepRooms }       from '../src/retention.ts'
+import { POST_KEY, signIn } from './sign-in.ts'
 
 const SCHEMA = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 
@@ -21,7 +21,7 @@ beforeEach(async () => {
   env = await createTestEnv({
     schema: SCHEMA,
     listen: true,
-    api:    ({ db }: { db: any }) => buildHavenApp({ db, sessionKey: 'test-session-key', port: 0 }),
+    api:    ({ db }: { db: any }) => buildHavenApp({ db, sessionKey: 'test-session-key', port: 0, postKey: POST_KEY }),
   })
   sys    = env.system
   square = await sys.room.create({ data: { slug: 'square', name: 'The square' } })

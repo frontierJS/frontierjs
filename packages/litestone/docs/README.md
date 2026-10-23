@@ -59,6 +59,8 @@
 - [publishing.md](publishing.md) — npm scope, pre-publish checklist, version strategy
 
 ## Meta
+- [layout.md](layout.md) — the file-by-file map of the package
+- [hazards.md](hazards.md) — every hazard and every rule in full, the long form of `CLAUDE.md`'s `What bites here`
 - [internals.md](internals.md) — **for a change to litestone itself**: the rule each path must keep, the failure that established it, and its `FJS-###`. Reads, writes, events, policies, parse, migrations, SQLite, tenancy, client utilities, tooling
 
 ## Audits

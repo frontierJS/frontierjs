@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3864 source file(s) read
-234 entry point(s), 36 imported by nothing outside their package, 15 emitted
-1572 value export(s), 619 reached by nothing outside, 165 emitted
+26 package(s) · 3866 source file(s) read
+235 entry point(s), 36 imported by nothing outside their package, 15 emitted
+1589 value export(s), 620 reached by nothing outside, 165 emitted
 451 type export(s), 347 reached by nothing outside
 ```
 
@@ -41,7 +41,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `auth` | 6 | 1 | 52 | 37 | 3 | 15 | 13 |
 | `jetty` | 7 | 4 | 43 | 29 | 0 | 0 | 0 |
 | `ui` | 9 | 0 | 51 | 33 | 3 | 0 | 0 |
-| `toolbelt` | 59 | 0 | 263 | 29 | 11 | 0 | 0 |
+| `toolbelt` | 60 | 0 | 280 | 30 | 11 | 0 | 0 |
 | `conduit` | 4 | 2 | 26 | 15 | 1 | 59 | 44 |
 | `site-kit` | 9 | 4 | 38 | 12 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 8 | 0 | 36 | 21 |
@@ -299,11 +299,11 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/toolbelt`
 
-`packages/toolbelt` · 59 entry point(s) · 263 value, 0 type export(s)
+`packages/toolbelt` · 60 entry point(s) · 280 value, 0 type export(s)
 
 **Entries not source (20, not graded):** `./bearer` `./cells` `./cron` `./datetime` `./devline` `./directives` `./fill` `./gate` `./geo` `./env` `./hooks` `./ids` `./mailbox` `./mime` `./query` `./rank` `./redact` `./sigv4` `./sse` `./trace`
 
-**Unreached values (29):** `assertValues` `baseUnit` `canonicalQuery` `canonicalRequest` `canonicalUri` `centroid` `CONTENT_TYPES` `DIGITS` `divRound` `encodePairs` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `resolveWall` `RUNNABLE_LANGS` `SECRET_KEY_NAMES` `TRANSFORM_NAMES`
+**Unreached values (30):** `assertValues` `baseUnit` `canonicalQuery` `canonicalRequest` `canonicalUri` `centroid` `CONTENT_TYPES` `DIGITS` `divRound` `encodePairs` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `resolveWall` `RUNNABLE_LANGS` `SECRET_KEY_NAMES` `signMessage` `TRANSFORM_NAMES`
 
 **Emitted (11):** `CRON_FIELDS` `dayHeader` `formatChord` `fromWall` `inBoxes` `OPERATORS` `parseRow` `pointInPolygon` `polygonArea` `renderRow` `SIGNATURE_VERSION`
 

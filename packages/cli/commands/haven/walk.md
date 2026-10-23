@@ -2,10 +2,10 @@
 title: haven:walk
 description: Walk into Haven — the place in the terminal every fli user shares
 alias: haven
-effects: signs this machine in to a Haven server, making a member on its first login
+effects: signs this Frontier member's machine in to a Haven server, making a Haven member on its first login; with --browser, opens the browser Haven handed the session
 examples:
   - fli haven
-  - fli haven --nick sam
+  - fli haven --browser
   - fli haven --api http://localhost:5505
   - fli haven --frame /tavern/
 flags:
@@ -14,11 +14,11 @@ flags:
     type: string
     description: Haven's API origin, when it is not haven.api in ~/.fli/config.json or the one Haven's web/ config names
     defaultValue: ''
-  nick:
-    char: n
-    type: string
-    description: The nick a first login walks in as — haven.nick in ~/.fli/config.json, else this machine's user name
-    defaultValue: ''
+  browser:
+    char: b
+    type: boolean
+    description: Open the browser Haven, handed this login's session, instead of walking in here
+    defaultValue: false
   frame:
     char: f
     type: string
@@ -32,10 +32,18 @@ way `fli dev:tui` runs an app's. The sign-in is Haven's code too
 (`web/src/lib/session/sign-in.js`), so the client, the login and the server version
 together.
 
-The first run writes this machine's key pair to `~/.fli/haven/key.json`. The
-key is the member (`FJS-D981`) — the same key walks in as the same person on
-every server `--api` names, and a nick is read only on the first login with
-it. Every run signs a fresh login, so no session is kept on disk.
+A member walks in as their Frontier chain (`fli frontier:stake`, or
+`fli frontier:link` from a machine already in it): the login carries the
+member's links and the post's signed row, every machine in the chain is the
+same figure, and the nick is the row's. A row past half its age is fetched
+from the post first. A machine in no chain is refused (`FJS-D1477`). Every run
+signs a fresh login, so no session is kept on disk. A checkout's haven started
+here is handed the post key this machine pinned, as `HAVEN_POST_KEY`.
+
+`--browser` signs in the same way and opens the browser Haven with the session
+in its address, since a browser holds no key (`FJS-D1477`). From a checkout the
+page is `bun run web`'s on 5506, which this door does not start: a haven it
+started would stop when it exits, so run `bun run dev` in the haven first.
 
 Haven is found beside this `fli` when it runs from a FrontierJS checkout:
 that is the developer's own build, and it wins. Anywhere else the server names
@@ -49,7 +57,7 @@ unless `--api` names another.
 `~/.fli/config.json` states this machine's defaults, and a flag wins over it:
 
 ```json
-{ "haven": { "api": "https://haven.knightly.dev", "nick": "sam" } }
+{ "haven": { "api": "https://haven.knightly.dev" } }
 ```
 
 From a checkout with no `--api` and no `haven.api`, the door knocks on the
@@ -84,12 +92,18 @@ const sibling  = resolve(global.fliRoot, '..', 'haven')
 const checkout = !sibling.split(sep).includes('node_modules') && existsSync(signInOf(sibling))
 
 const CONFIG_FILE = join(homedir(), '.fli', 'config.json')
-let saved = {}
+let config = {}
 if (existsSync(CONFIG_FILE)) {
-  try { saved = JSON.parse(readFileSync(CONFIG_FILE, 'utf8')).haven ?? {} }
+  try { config = JSON.parse(readFileSync(CONFIG_FILE, 'utf8')) }
   catch (e) { log.warn(`${CONFIG_FILE} is not JSON (${e.message}) — walking in without it`) }
 }
-const nick = flag.nick || saved.nick || undefined
+const saved = config.haven ?? {}
+if (!config.frontier?.nick) {
+  log.error('This machine is in no Frontier chain, and a haven takes only a member\'s machine — run `fli frontier:stake` with an invite, or `fli frontier:link` from a machine already in your member.')
+  process.exitCode = 1
+  return
+}
+const after = flag.browser ? 'open the browser Haven on that session' : 'run the haven\'s web/ in this terminal'
 
 // What the server at `origin` says it runs, or null when nothing answers.
 const clientOf = async (origin) => {
@@ -110,9 +124,14 @@ if (checkout) {
       process.exitCode = 1
       return
     }
+    if (!answer && flag.browser) {
+      log.error(`No haven answers at ${api} — run \`bun run dev\` in ${haven}, which serves the browser Haven beside it`)
+      process.exitCode = 1
+      return
+    }
     if (!answer) {
       if (flag.dry) {
-        log.dry(`Would run bun run api in ${haven}, sign this machine in to ${api}, then run the haven's web/ in this terminal`)
+        log.dry(`Would run bun run api in ${haven}, sign this machine in to ${api}, then ${after}`)
         return
       }
       const { spawn } = await import('node:child_process')
@@ -122,7 +141,10 @@ if (checkout) {
       const out = openSync(logFile, 'a')
       // Its own process group: `bun run api` is bun running a script that runs
       // the app, and a signal to the wrapper's pid leaves the server answering.
-      local = spawn('bun', ['run', 'api'], { cwd: haven, detached: true, stdio: ['ignore', out, out] })
+      // The post this machine pinned is the one its row is signed by, so the
+      // checkout's haven takes this member's login without being told.
+      const env = { ...process.env, HAVEN_POST_KEY: process.env.HAVEN_POST_KEY || config.frontier?.postKey || '' }
+      local = spawn('bun', ['run', 'api'], { cwd: haven, env, detached: true, stdio: ['ignore', out, out] })
       // Unref'd, or a server that never ends holds fli open after the walk does.
       local.unref()
       const stop = () => { try { process.kill(-local.pid, 'SIGTERM') } catch {} }
@@ -167,7 +189,7 @@ if (checkout) {
   if (!existsSync(signInOf(haven))) {
     const spec = `${stated.package}@${stated.version}`
     if (flag.dry) {
-      log.dry(`Would install ${spec} into ${root}, sign this machine in to ${api}, then run its web/ in this terminal`)
+      log.dry(`Would install ${spec} into ${root}, sign this machine in to ${api}, then ${after}`)
       return
     }
     log.info(`${api} runs ${spec} — installing it into ${root}`)
@@ -191,21 +213,49 @@ if (!shell) {
 }
 
 if (flag.dry) {
-  log.dry(`Would sign this machine in to ${api}, then run the haven's web/ in this terminal`)
+  log.dry(`Would sign this machine in to ${api}, then ${after}`)
   return
 }
 
-const { KEY_FILE, machineKeys, signIn } = await import(signInOf(haven))
+const { signIn } = await import(signInOf(haven))
+// A Frontier member walks in as their chain: every machine of it is one
+// figure, and the nick is the post's row (`IDEAS/frontier-network.md` 3.1). A
+// row past half its age is fetched fresh; when the post does not answer, the
+// one held is sent anyway, and the haven names its age if it is too old.
+const chainLogin = async () => {
+  const fm = await import(resolve(global.fliRoot, 'core/frontier-member.js'))
+  const member = await fm.currentMember()
+  if (await fm.rowStale(member)) {
+    const fresh = await fm.refreshRow(member).catch(e => ({ refused: `the post did not answer (${e.message})` }))
+    if (fresh.refused) log.warn(`This member's row was not refreshed: ${fresh.refused}`)
+  }
+  const row = fm.readOwnRow()
+  if (!row) throw new Error('This machine holds no member row from the post, so it cannot walk in as a Frontier member — run it again once the post answers.')
+  return signIn(api, { keys: member.keys, links: await fm.ownChain(member.keys), row })
+}
+
 let walker
-try {
-  const { keys, made } = await machineKeys()
-  if (made) log.info(`This machine's key is ${KEY_FILE} — it is who you are in the haven, so keep it.`)
-  walker = await signIn(api, { keys, nick })
-} catch (e) {
-  // The default nick is this machine's user name, which the haven's schema can
-  // refuse, so the refusal names the flag that answers it.
-  log.error(/\bnick\b/.test(e.message) && !nick ? `${e.message} — choose one with --nick` : e.message)
+try { walker = await chainLogin() }
+catch (e) {
+  log.error(e.message)
   process.exitCode = 1
+  return
+}
+
+if (flag.browser) {
+  // The page talks to its own origin: a checkout's is the dev server proxying
+  // to the API, a hosted haven's is the API.
+  const { GLOBAL } = await import(resolve(global.fliRoot, 'core/ports.js'))
+  const page = checkout ? `http://localhost:${GLOBAL.havenWeb}` : api
+  if (!await fetch(page, { signal: AbortSignal.timeout(1000) }).then(r => r.ok, () => false)) {
+    log.error(`No browser Haven answers at ${page}${checkout ? ` — run \`bun run dev\` in ${haven}` : ''}`)
+    process.exitCode = 1
+    return
+  }
+  const { openUrl } = await import(resolve(global.fliRoot, 'core/open-url.js'))
+  const url = `${page}/#session=${walker.token}`
+  openUrl(url)
+  log.info(`Opened the browser Haven as ${walker.member.nick}. If no browser opened, this address walks in, and is a session: ${url}`)
   return
 }
 

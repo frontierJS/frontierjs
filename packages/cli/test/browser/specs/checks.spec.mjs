@@ -110,7 +110,7 @@ export async function run(t) {
       return { where: li.querySelector('code').textContent, severity: li.dataset.finding };
     `)
     t.is(first.where, 'this machine', 'the machine is the first row, because nothing else matters if fli cannot run here')
-    // Blocked is system and config only: a missing CLOUDFLARE_TOKEN blocks that
+    // Blocked is system and config only: a missing GITHUB_TOKEN blocks that
     // namespace and nothing else, and grading it as an error would make almost
     // every machine read as broken.
     t.is(first.severity, answer.blocked ? 'error' : 'warn',

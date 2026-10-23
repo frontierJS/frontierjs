@@ -30,7 +30,7 @@ It is also how a lost machine is replaced (`FJS-D1409`): link the new one from
 any machine you still have. An ask runs out after ten minutes.
 
 ```js
-const { askCode, nextLink, countersign } = await import(new URL('file://' + global.fliRoot + '/core/frontier-chain.js'))
+const { askCode, nextLink, countersign } = await import('@frontierjs/toolbelt/frontier')
 const { wordsHex } = await import(new URL('file://' + global.fliRoot + '/core/tell.js'))
 
 const text = String(arg.words ?? '').trim()

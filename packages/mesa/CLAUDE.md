@@ -37,442 +37,40 @@ the root) and never fails on a time; a case that throws fails it.
 
 ---
 
-## Layout
+## Where things are
 
-```
-src/
-  compiler.js          — the compiler. ~290 KB, one file: parse → analyze → emit
-  ir.js                — lower(ctx): the parse tree plus analysis as one target-free
-                         tree, ctx.ir, built on every compile; a kind it does not
-                         translate is `unlowered` and named, never dropped
-  terminal/tags.js     — the terminal target's table: which tags and DOM event
-                         names it paints (FJS-D700, FJS-D692). Pure data; the
-                         compiler refuses what is not in it, by file and line
-  host/emit.js         — the host emitter, the stage compile() runs for every
-                         target in host/targets.js (FJS-D699, FJS-D1074):
-                         ctx.ir → calls on $$host written into ctx.module.body.
-                         Takes the target's profile; refuses, never approximates
-                         — except a tag it cannot paint on or inside a static
-                         aria-hidden="true", which it leaves out (`hostDropped`)
-  host/targets.js      — one profile per non-DOM target: its tables, which
-                         `class:` names it paints, whether it paints CSS, the
-                         runtime it imports
-  native/tags.js       — the native target's table (FJS-D1074): what a phone
-                         builds. What it has no element for is absent, so refused.
-                         tagClass(): the `_p` every element carries (FJS-D1139).
-                         userAgentSheet: the browser's own sheet, which a phone
-                         lacks, for whatever builds a bundle to put first. Its
-                         `._html` rule is the 16px root, on the page the runtime
-                         classes; the engine's own root is 14px, read by rem and em
-  native/css.js        — cssOffense(): the selectors and at-rules a phone's
-                         stylesheet drops in silence, so a `<style>` rule using
-                         one is refused by line. lowerTypes(): a type selector
-                         as its tag class, since every element is the engine's
-                         view or text; scopeCSS and lowerSheet both run it
-  native/sheet.js      — lowerSheet(): a whole stylesheet, the kit's bundle
-                         first, flattened out of its layers and split one rule
-                         per list member, `:where()`/`:is()` lists included,
-                         since the encoder drops a layer or a list whole, then
-                         its tokens evaluated and agreeing members rejoined. Returns what
-                         it dropped by line, an app knob it lost included
-  native/tokens.js     — lowerTokens(): the token graph evaluated per (theme ×
-                         axis × tone), so no var() on a phone is more than one
-                         hop from a literal. The contexts are read off the
-                         sheet: `.theme-*`, and each @property's setters
-  native/values.js     — lowerValues(): oklch(), oklab(), color() and color-mix() over
-                         literals computed to rgb()/rgba(), clipped as Chrome
-                         paints, logical properties written physical for
-                         left-to-right, and `display` by its inner display
-                         (flow → the engine's `linear`, since it lays `block`
-                         out as a row). A color or display it cannot lower
-                         comes back by line
-  runtime.js           — the signal runtime the emitted code calls. ~174 KB
-  runtime-terminal.js  — the terminal runtime, @frontierjs/mesa/runtime/terminal:
-                         `$$host`, a cell tree over @opentui/core (optional peer,
-                         pinned exact while 0.x — FJS-D698). Bun only. Events
-                         dispatch as a browser's (capture, target, bubble) and
-                         it is a CLIENT: `$.onMount` and `{@attach}` run, so a DOM API
-                         reached there throws on a terminal (FJS-2242). Also the
-                         one place another package gets a renderer from
-                         (`createRenderer`, `createHeadlessRenderer`) — its own
-                         engine import would be a second copy — the page
-                         (`pageOf`), a strip under it that does not scroll (`footerOf`),
-                         and a pane at its right (`sideOf`): Tab stays in the
-                         pane holding focus, `focusPane` crosses, and a key in
-                         the side never reaches the window a scene walks on.
-                         Whoever fills the side hands its show-and-hide to
-                         `setSideToggle`, and a page reads it with
-                         `sideToggle()` — null where there is no side
-  runtime-native.js    — the native runtime, @frontierjs/mesa/runtime/native:
-                         `$$host` over Lynx's Element PAPI, the main-thread
-                         globals, so no engine import and no peer. The one file
-                         that names Lynx. Pointer and mouse events are made from
-                         touch, one finger, so an attachment's addEventListener runs.
-                         `$.measure`/`$.viewport`/`$.focus` answer a Promise
-                         here, in runtime.js and in runtime-terminal.js alike
-  entities.js          — htmlEntitiesToText(): character references as text,
-                         read by the compiler and the terminal runtime's {@html}
-  render-component.js  — renderComponent(): a component → HTML, at build time
-  render.js            — SSR / static-site rendering entry
-  compiler-md.js       — Markdown + frontmatter compiler (the .md path)
-  css-inliner.js       — scoped-style extraction and inlining
-  optional-peer.js     — missingPeer(): the error when a server-half peer is absent
-  drive.js             — Chrome over CDP, @frontierjs/mesa/drive: openChrome,
-                         findChrome, createNetwork. Published: an app's drive
-                         and every in-repo drive import it (`FJS-D554`). No
-                         framework import, no dependency
-  window-binds.js      — what <mesa:window bind:prop> binds and the event
-                         that moves each; the compiler refuses any other prop
-  browser/             — @frontierjs/mesa/browser, the browser kit (`FJS-D1097`;
-                         plan IDEAS/browser-kit.md). Every wrapper answers by
-                         host.js — live in a tab, its default under a server
-                         render, a throw on a terminal (isClient() without
-                         isBrowserClient()). persisted.js is #1, on runtime.js's
-                         subscribe(); prefix.js is the app's key namespace, its
-                         own module because sierra's router sets it in every app
-                         and persisted.js carries /redact. tab.js is #8, an
-                         object watched like session (`$: tab.online`), armed at
-                         its first read and held for the tab. clock.js is #2,
-                         one timer per `every`, parked by a watch on
-                         tab.visible. media.js is #3, one MediaQueryList
-                         per query; every signal wrapper is a CALL held in a
-                         const, since a template read of an imported name is
-                         static (`FJS-060`, `FJS-3096`). hotkey.js is #5, a
-                         keymap in its root's one keys() attachment, newest
-                         first, so of two `<Esc>` the newest answers until
-                         disposed; a chord a browser takes first (toolbelt's
-                         `browserOwned`) throws there and at keys()'s attach.
-                         result.js is the
-                         one { ok, via, reason } an action returns;
-                         browser.d.ts states each server answer
-  keys.js              — @frontierjs/mesa/keys: `keys(() => ({ active, on }))`,
-                         toolbelt /keys read on an element's keydown — the one
-                         attachment a tab and a terminal both run (`FJS-D1388`),
-                         so not in browser/, which throws on a terminal. On a
-                         terminal node it is hosted through `__hostKeys`, and
-                         the runtime's `stepKeys` steps every host on the
-                         focus path, innermost first, then the shell's
-                         (`setShellKeys`), before it makes the keydown; a key
-                         one took makes NO keydown there (`FJS-D1401`), and
-                         `keymapsAt(r)` lists them for help. A getter
-                         may answer `mode`, which `modeAt(r)` reads off
-                         the innermost host for the shell to follow
-                         (`FJS-D1411`). A key ending a
-                         pending sequence unfinished is swallowed on both
-                         targets. On a phone it refuses `keydown` by name
+`docs/layout.md` is the file-by-file map; read it when a change touches a file
+this list does not name. The owners that matter on most turns:
 
-mesa-vite/
-  index.js             — the Vite plugin, exported as @frontierjs/mesa/vite
-  client.js            — the HMR client, @frontierjs/mesa/vite/client
-  swap.js              — the DOM swap it performs, @frontierjs/mesa/vite/swap.
-                         jetty imports this one: no import.meta, no imports
-  client-source.js     — client.js + swap.js joined, for a plugin serving the
-                         client at a virtual id
-  inspect-client.js    — click-to-source, as a string for a plugin to serve.
-                         Sierra serves this same source at an id of its own
-  hmr.js               — the HMR boundary, @frontierjs/mesa/vite/hmr
-  devtools.html        — the /__mesa/devtools panel it serves
-
-docs/VISION.md         — the language: rules 1–40ish, numbered. Cite by rule
-docs/STATIC_RENDERING.md — server rendering: what runs, islands, tmpDir, globals
-
-test/terminal/
-  run.mjs              — bun test/terminal/run.mjs: the terminal target in
-                         OpenTUI's headless renderer — fixtures compiled with
-                         target: 'terminal', specs asserting the captured frame
-                         after typed keys. Bun only: node 22 cannot load the engine,
-                         so vitest excludes this directory
-
-test/browser/
-  drive.mjs            — the spec runner over src/drive.js. SHARED, unpublished:
-                         @frontierjs/ui and the cli read it by relative path
-  probes.js            — the in-page DOM half (waitVisible, matchedRules, …)
-  runtime/             — the language in a real browser (server · page · fixtures · specs)
-  vite/                — the plugin in a real dev server (app · specs)
-  repl/                — example/index.html itself, offline off example/vendor/
-  kit/                 — @frontierjs/mesa/browser, one spec per wrapper; runtime/'s
-                         server and page, its own fixtures
-  drive/               — src/drive.js itself: each spec launches its own browsers
-                         (a kept profile, a wedged close, a browser gone mid-call,
-                         a signal to the launcher)
-
-bench/
-  run.mjs              — bun run bench: bytes, DOM mutations, time, heap
-  baseline.json        — the gated numbers. Ratchets down: --update, --adopt
-  fixtures/            — rows (Mesa) · vanilla (the floor) · floor (the smallest
-                         component) · shared/data.js (the workload both tables run)
-
-scripts/
-  corpus.mjs           — bun run corpus: every .mesa in the workspace, compiled
-                         prod and dev, acorn-parsed; --save NAME / --diff NAME
-                         grade a change meant to move no byte; --portability
-                         terminal tallies every node the terminal would refuse
-  portability.js       — the report's counting, pure: a file lowers only when
-                         every component it imports lowers. A tally change is
-                         graded by test/portability.test.js, not by eye
-  host-tree.js         — compileTree(): a .mesa file and its imports compiled
-                         for a host target against this tree's src/. The two
-                         drives and `tui` share it. A bare import resolves
-                         from the source's directory, since the output sits in
-                         a temp dir where `@frontierjs/toolbelt` names nothing;
-                         `@frontierjs/mesa/*` is left alone. Each file's scoped rules
-                         come back on `styles`, since a Lynx bundle takes its
-                         stylesheet at build time and has no addStyles
-  tui.mjs              — bun run tui <file.mesa>: one file live in a real
-                         terminal (--frame prints one and exits, --props=JSON).
-                         Paths are relative to packages/mesa; from elsewhere
-                         call `bun packages/mesa/scripts/tui.mjs <path>`
-```
-
-**The Vite plugin is a subpath, not a package.** A `package.json` of its own
-would put it below the `packages/*` glob — uninstalled, so nothing imports it
-and nothing can test it. It also could not
-find its own compiler: the resolver hunted `@mesa/compiler` and
-`node_modules/mesa/`, one never published and the other someone else's package
-on npm. The compiler is now a sibling and reached by relative path, which is
-also the rule for every in-repo consumer of mesa (`bun install` copies workspace
-deps, so a package-name import serves a stale snapshot). `vite` is an optional
-peer — mesa stays a leaf.
-
-**happy-dom, css-tree and the six markdown packages are optional peers too**, mirrored in
-`devDependencies` for this suite. The server half reaches them through a
-top-level `await import()` that `missingPeer` (`src/optional-peer.js`) turns into
-an error naming the install. **A static `import` of one from anything a client
-build reaches breaks every client-only install.** `test/optional-peers.test.js`
-walks that graph.
-
-**The file EXTENSION decides the language.** A `.mesa` file with frontmatter is
-Mesa, not Markdown — `compiler-md.js` is only for `.md` (FJS-106).
-
----
+- `src/compiler.js` is the compiler, one file: parse → analyze → emit · `src/ir.js` is `lower(ctx)`, the target-free tree every compile builds · `src/runtime.js` is the signal runtime the emitted code calls.
+- Host targets: `src/host/emit.js` emits `ctx.ir` as `$$host` calls for every profile in `src/host/targets.js`; `src/terminal/tags.js` and `src/native/tags.js` are what each target paints; `src/runtime-terminal.js` (over `@opentui/core`) and `src/runtime-native.js` (Lynx, the one file that names it) are their runtimes; `src/native/{css,sheet,tokens,values}.js` lower a stylesheet for a phone.
+- Server half: `src/render.js` (SSR entry), `src/render-component.js`, `src/compiler-md.js` (`.md` only), `src/css-inliner.js`, `src/optional-peer.js` (`missingPeer`).
+- `src/drive.js` is Chrome over CDP, published — every in-repo drive and an app's drive import it · `src/browser/` is the browser kit (`host.js` answers per host; `persisted.js` on `subscribe()`) · `src/keys.js` is the one attachment a tab and a terminal both run.
+- `mesa-vite/index.js` is the Vite plugin; `client.js` + `swap.js` joined by `client-source.js`; `hmr.js` the boundary Sierra shares · `scripts/corpus.mjs`, `scripts/host-tree.js`, `scripts/tui.mjs` · `bench/run.mjs` + `bench/baseline.json`.
+- `docs/VISION.md` is the language (cite by RULE); `docs/STATIC_RENDERING.md` is server rendering.
 
 ## What bites here
 
-**`$` is the door, and it is emitted in two halves.** The instance-independent
-members — the five animation helpers, the four lifecycle functions, `measure`,
-`viewport` and `focus` — are a module-scope `$$shared`, the last three read off the target's
-runtime (`$$host` on a host target); the per-instance `$` is `Object.create($$shared)` with
-only `option`, `slots`, `props`, `attributes`, `emit`, `context`, `mounted`,
-`inspect` and `async` assigned on top, and each of those only when the sniff
-found it in use. So a component that reaches for nothing emits neither.
+The dozen that bite most; the full catalog is `docs/hazards.md`, read it before
+touching the compiler's `$` emission, attributes, the flush, slots, the Vite
+plugin or HMR. What bites in `test/browser/` is `docs/browser-drives.md`.
 
-**Most of the door needs no compiler support and four members do.** `$props`
-is a property read and compiles to one — `$$props`, the emitted local the bare
-spelling aliases. `$context`, `$.inspect` and `$.mounted`
-are rewritten to their bare spelling BEFORE the script is parsed — on the AST,
-so a `'$context'` inside a string is not caught — because each is compiled
-rather than read and would otherwise be a member access that quietly does
-nothing. `$async` is the fourth and is NOT in that rewrite: it is the only one
-reachable from a template, which no script-side pass sees, so it is assigned as
-an ordinary property instead — beside its own declaration in `module.code`,
-because `module.head` has already run by then.
+- **A running dev server never re-transforms**, and an in-repo consumer imports mesa by **relative path** — `bun install` copies workspace deps, so `@frontierjs/mesa` serves a stale snapshot until reinstall.
+- **The Vite plugin is a subpath, not a package**, and `vite`, happy-dom, css-tree and the six markdown packages are optional peers reached by `await import()`; a static `import` of one from anything a client build reaches breaks every client-only install (`test/optional-peers.test.js`).
+- **The file EXTENSION decides the language** — `.mesa` with frontmatter is Mesa, `compiler-md.js` is `.md` only (`FJS-106`).
+- **`$` is emitted in two halves** — module-scope `$$shared` plus a per-instance `Object.create($$shared)` that carries only what the sniff found in use; `$context`, `$.inspect` and `$.mounted` are rewritten on the AST before parse, `$async` is assigned as a property, and a colliding local, a bare `$onMount` or a copied `$` THROW rather than warn.
+- **An ARIA `false` is written, not removed, for exactly four states** (`aria-expanded`, `-selected`, `-checked`, `-pressed`); `null` always removes.
+- **`set_attribute` is the one owner of an attribute, and turning a control OFF resets the PROPERTY too** — happy-dom keeps no dirty flag, so only `test/browser/runtime/dirty-props` can see it.
+- **A dev build stamps `data-fjs-loc` in the TEMPLATE** — compile with `loc: false` before comparing output to a literal.
+- **`{#each}` takes an array, iterable or array-like and refuses a number or plain object by name** (`eachItems()`); `{@attach}` runs when the element MOUNTS and never on the server.
+- **The flush settles derivations OUTSIDE-IN, one DOM depth at a time**, and a new `_flush` tier inherits that; draining the derived layer first threw from inside `{#if}` (`FJS-303`).
+- **A slot is a snippet with no arguments and nothing past the parser knows slots exist** (`lowerSlots`, `FJS-D668`); `<slot>` takes no attribute but `name`, and a slot made only of comments is not content.
+- **The component registry is keyed by ANCHOR**, so a component never adopts a neighboring text node as its anchor (`FJS-110`); island markers are comments, not elements.
+- **HMR fails closed by injecting NO accept** — ask `canInject` first, `__setMark` goes on the NEW function, and the client is TWO files a plugin must serve joined (`client-source.js`).
+- **`css` on the compiler is a DESTINATION, not a switch** — falsy extracts onto `ctx.css.result` and a caller that does not place them has dropped every style.
+- **A Vite plugin test runs in Node, not happy-dom** (`// @vitest-environment node`), and a script importing `@opentui/core` from OUTSIDE `packages/mesa` gets a SECOND copy that fails `instanceof` inside the engine — run the terminal drive from `packages/mesa`.
 
-**Three names are refused and they are not the same refusal.** A declaration
-colliding with an injected local (`BUILTIN_LOCALS`) throws because the output
-would not parse; a bare `$onMount` throws because that spelling is retired (the five data members are not — `FJS-D135`); `$`
-used as anything but a member object throws because a copy is not what the
-compiler follows. All three THROW rather than pushing to `analysis.errors`,
-which the call site downgrades to warnings — a module that does not parse is not
-a warning.
-
-**An ARIA `false` is written, not removed — for exactly four states.**
-`aria-expanded`, `aria-selected`, `aria-checked` and `aria-pressed` default to
-**undefined** rather than false, so absent says *not expandable / not
-selectable / not checkable / not a toggle* while `"false"` says *it is, and it
-currently is not*. Removing it announces a different KIND of control in the one
-state that matters. Only those four: the rest either default to false already
-(absent and `"false"` agree) or take a string, where `aria-label={false}` must
-remove the label rather than name the element "false". `null` always removes,
-which is what the `x || null` idiom through `@frontierjs/ui` is for.
-
-**An attribute has ONE owner and turning a control OFF is a property, not an
-attribute.** `set_attribute` is that owner; `bindAttribute` is it inside an
-effect and nothing more. They were two implementations that agreed on
-everything but what a falsy value means — and the compiler picks between them
-per attribute, so a component was correct or broken depending on whether the
-value was static, with nothing in the component able to see either. The rule
-they now share: `el.checked` and `el.value` stop reflecting their attribute the
-moment anything writes the property (the DOM's dirty flag), so `null`/`false`
-must reset the property as well as remove the attribute. Otherwise a control
-goes on and never off — `<Switch bind:checked>` and `<Checkbox>` both were
-one-way for their whole lives. **happy-dom keeps no dirty flag**, so no vitest
-suite here can reach it; `test/browser/runtime/dirty-props` is the assertion,
-and it flips twice because a one-shot recovery passes a single round trip.
-
-**A dev build stamps `data-fjs-loc` on every template element.** It is what
-click-to-source reads (`mesa-vite/inspect-client.js`), it is dev-only, and it is
-in the TEMPLATE — so an assertion comparing a compiled template string against a
-literal has to compile with `loc: false`, not merely with `dev: true`. `loc`
-defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
-The same switch sets `__fjsPlaced` on each component's anchor comment, the
-line that placed it — the inspector's only way from a package layout's own
-chrome back to the app file (`FJS-3332`). It also records a `.md` module's
-`frontmatter` (runtime `recorded`), and an element whose whole text is one field
-read (`{item.name}`) is restamped at runtime with that value's content line
-(`stampFrom`, `FJS-D1231`); a copy that changed the key keeps the template's.
-
-- **An instance `<script>` has exactly two export forms** — `export let` (a
-  prop) and `export function` (a method on what `bind:this` hands the parent,
-  VISION §10.2 / RULE 36). Anything else is refused by name. `export function`
-  used to be deleted from the output while every reference to it survived, so a
-  component calling its own exported function threw `ReferenceError` on first
-  interaction — which no render test can see, because SSR dispatches no events.
-- **`$attributes` is a live view, and the prop push carries the WHOLE object
-  because of it.** `restProps` returns a Proxy over a signal, not a copy: a copy
-  taken at init froze every forwarded dynamic attribute at its mount value while
-  the component's own children — the same expression — tracked (`FJS-612`). Two
-  things hold it up and both read as redundant. The sync effect pushes
-  `allProps` rather than the reactive half, because an attribute the child did
-  not declare has no signal to be written twice into and would otherwise be lost
-  the first time anything else on the element moved; and the rest object is
-  rebuilt **wholesale** on each push rather than merged, because a merge can
-  never remove a key, so a spread that stops carrying one would leave it on the
-  element for ever. The sink lives in the prop registry under a SYMBOL, so
-  anything walking that registry for accessors — `componentApi` — must skip
-  non-string keys.
-- **`bind:this` on a COMPONENT is the exported interface; on an ELEMENT it is
-  the node.** The component form reads props through the child's own signals, so
-  `ref.count` is live and `ref.count = 2` writes it. Handing over the anchor
-  comment instead fails silently.
-- **`<mesa:element this={tag}>` is compiled under a placeholder tag** and
-  transplanted at runtime, wrapped in a `keyBlock` so a changed tag rebuilds.
-  The scope class rides on the placeholder and is copied across, so a scoped
-  `h2 { }` does match the transplanted `<h2>`. Unknown `mesa:*` names are an error listing the ones that exist; they
-  used to emit nothing, which made a typo and a missing feature the same event.
-- **`{#each}` takes an array, an iterable or an array-like — and refuses a
-  number or a plain object by name.** `eachItems()` in `runtime.js` is the one
-  definition; `{#each}` and `{#virtual each}` share it. Calling `.map()` on
-  whatever arrives means `{#each { length: 6 }}` — a fixed-size grid, which is
-  what the kit's `DatePicker` builds its calendar from — died as `array.map is
-  not a function`, naming no block and no expression. That component had
-  therefore never rendered at all while compiling perfectly (`FJS-147`).
-- **`{@attach}` does not run on the server.** No mount, no attachment — the
-  same rule that already keeps `$.onMount` and `watchProxy` off the SSR path.
-  Running it handed the function a happy-dom element, which has no
-  `el.animate`, so one animating attachment threw and took the whole render
-  down (`FJS-146`). Guard is `!_isClient` in `attach()`/`applyAttachments()`.
-- **`{@attach}` runs when the element MOUNTS, not when it is built** (VISION
-  §10.6, enforced since `FJS-114`). Running it on a detached node instead is where
-  `el.animate(..., { fill: 'forwards' })` returns an animation that never starts
-  — so every kit overlay painted at keyframe 0 and the command palette was an
-  invisible full-screen backdrop that ate every click. An already-connected
-  element still attaches synchronously; a detached one is deferred one
-  microtask, the same queue `$.onMount` uses.
-- **The flush settles derivations OUTSIDE-IN, and that ordering is load-bearing.**
-  One DOM-depth at a time, shallowest first, skipping anything whose owning
-  block is already queued. Draining the whole derived layer to quiescence first
-  — which is what it used to do, so that renders read derivations that had
-  stopped moving — let a memo inside `{#if a[i]}` recompute before the guard
-  tore it down, so `{@const d = a[i][j]}` read `undefined[j]` and threw from
-  inside a handler (`FJS-303`). **A new tier in `_flush` inherits this**: only a
-  DOM-building node disposes anything, so only its depth counts, and only its
-  pendingness holds a derivation back. Do not reach for "is anything pending" —
-  that costs a redundant effect run and a glitch-freedom test says so.
-- **Devtools read the live graph, so a new signal shape must carry `_src`.**
-  `__dev.graph()` walks `_deps`/`_subs` off `read._src` (set in `createSignal`
-  and `createMemo`, the only two places an edge is made); a reader without it
-  is invisible to the panel and nothing says so. The one fact not on an edge —
-  what DID wake a node — is `_cause`, stamped by `_notify` only while `_devOn`.
-  `runtime/specs/devtools-cause` reads a chain back (`FJS-1324`).
-- **A slot is a snippet with no arguments, and nothing past the parser knows
-  slots exist** (`FJS-D668`). `lowerSlots` in `compiler.js` rewrites `slot=`
-  and unslotted content to `{#snippet name()}` / `{#snippet children()}` and
-  `<slot>` to `{@render}`, before `lower()` or the DOM builder reads the tree,
-  so every target and both runtimes see snippets only — a new target needs no
-  slot code. Content snippets are wrapped in `$$runtime.content()`, which is how
-  `unclaimedContent` tells dropped content from a function prop and how
-  `restProps` keeps it off `$attributes`. A prop written beside content of its
-  name is the override (`contentFallback`). A component takes `(__anchor, __props)`
-  and nothing else (`FJS-3149`).
-- **`<slot>` takes no attribute but `name`.** A slot carries content IN and
-  never a value out; there is no `let:` to read one with. Refused at compile
-  time (VISION RULE 35b, `FJS-304`). A hole the child must PARAMETERIZE is a
-  snippet prop — `export let children` + `{@render children?.(value)}`.
-- **Scoped styles do not reach into child components** — use `:global(...)`. The
-  selector *subject* carries the hash (`button` → `button.mHASH`).
-- **A dynamic `class` merges, it never replaces** — everything routes through
-  `bindClassPassthrough`. Do not reintroduce a bare `set_attribute(el,'class')`.
-- **Output must be reproducible** (Invariant 12): scope ids are
-  content-addressed, which is what lets a static build dedupe CSS across the two
-  compilers it runs.
-- **A clean compile is not proof of valid JS** (Invariant 15). Parse the output.
-- **A slot made only of comments is not content.** Comments are dropped from the
-  output unless `preserveComments` is on, so such a block rendered nothing and
-  still made `$slots.default` true — and a component that branches on the answer
-  turned itself off because somebody wrote a comment inside it. `<Form>`
-  generating its field list when nobody passed controls is the case that found
-  it: one HTML comment and every field silently vanished.
-- **Island markers are comments, not elements.** An element gets foster-parented
-  out of `<tbody>` and then matches `>` selectors it should not.
-- **The component registry is keyed by ANCHOR, so a component's anchor must be a
-  node of its own.** `registerComponentAnchor` / `pushProps` map anchor →
-  registry; two components sharing one node means the second registration
-  replaces the first and the first goes deaf to prop pushes forever, with a DOM
-  that still looks right. `tpl` keeps text entries separate while the emitted
-  template is one string, and adjacent text parses as ONE `Text` node — so never
-  let a component adopt a neighbouring text node as its anchor (`FJS-110`).
-- **The HMR boundary is exported, because it has two callers.**
-  `mesa-vite/hmr.js` (`@frontierjs/mesa/vite/hmr`) and `mesa-vite/client.js`
-  (`@frontierjs/mesa/vite/client`) are Sierra's too — it reimplements the PLUGIN
-  and never the boundary (`FJS-D16`), and `injectHMR` being private here is why
-  it had copied one. `injectHMR(js, id, root, clientId)` takes the client id,
-  since each plugin serves the client at a virtual id of its own. **Ask
-  `canInject` first**: the two patterns it tests are shapes of the compiler's
-  OUTPUT, and a `.replace()` whose pattern stops matching is silent. **Failing
-  closed is injecting NO accept**: an injected one makes the module self-accept,
-  so Vite escalates nothing and a boundary that cannot swap swallows every edit
-  instead of falling back to a reload (`FJS-865`). The CLIENT is asked the same
-  question before a boundary is injected, since a stub client behind a live
-  accept is that same silence. **`__setMark` goes on the NEW function**, the one
-  handed to
-  `__mesa_hot_update`; setting it on the old module's leaves the new
-  `__hmrMark` undefined, so the first update registers `hmrMark: undefined` and
-  the second drops the entry as stale — HMR worked once per page load and then
-  said *no registered instances*. `test/vite-hmr.test.js` pins all of it against
-  real compiled output.
-- **The client is TWO files, and a plugin must serve them joined.** A virtual
-  id resolves no relative import, so handing Vite `client.js` alone is a 200
-  that dies in the browser and puts every component back on the full-reload
-  path. `client-source.js` is the one owner of that join and fails closed. The
-  split exists because jetty performs the same swap (`FJS-259`) — which is also
-  why `swap.js` carries **no `import.meta` and no imports**: jetty bundles it
-  into MV3 content scripts, and those are classic scripts (`FJS-030`). **The
-  registry the client keeps is swept on the way in and on every update**, not
-  only by the swap: a swap runs when that one file is edited, so a route
-  navigated away from left its marker, anchor, props and block retained for the
-  life of the tab (`FJS-875`).
-- **A Vite plugin test runs in Node, not happy-dom.** This package's vitest
-  environment is happy-dom, whose global `URL` makes
-  `fileURLToPath(new URL('./devtools.html', import.meta.url))` throw *must be of
-  scheme file* — against a path that is perfectly fine in a real dev server. Put
-  `// @vitest-environment node` at the top of the file. The plugin suites are
-  `vite-plugin` (hooks), `vite-devtools` (the route, against both copies of it,
-  and neither of them in a build), `vite-compiler-resolution` (a stub compiler
-  is the point there and in the two below, nowhere else), `vite-hmr-failclosed`
-  (the boundary REFUSING — the shape `canInject` rejects, and a client that
-  cannot be assembled), and the two that start a real dev server in middleware
-  mode, `vite-server` and `vite-server-failclosed` — the only ones that can see
-  a hook that is never REACHED, or ask Vite what it concluded about a module it
-  served.
-- **`css` on the compiler is a DESTINATION, not a switch.** Truthy inlines the
-  scoped rules as `$$runtime.addStyles(id, …)`; falsy extracts them onto
-  `ctx.css.result` and emits nothing, so a caller that does not place them has
-  silently dropped every style. Both Vite plugins inline. The Vite plugin's own
-  `css: false` therefore means *drop the block*, and says so (`FJS-291`).
-- **The compiler is resolved once per PLUGIN INSTANCE.** Two plugins in one
-  Vite config — the ordinary case (`FJS-D16`) — each keep the compiler they
-  asked for. A memo at module scope handed the second whichever compiler
-  resolved first and dropped its `compilerPath` in silence (`FJS-880`).
-- **A script importing `@opentui/core` from OUTSIDE `packages/mesa` gets a
-  SECOND copy**, auto-installed by bun from its cache, and two copies fail
-  `instanceof BaseRenderable` inside the engine's `remove()` as `remove expects
-  a renderable child object` — which reads as the runtime being broken. Run
-  the terminal drive, and any probe of the engine, from `packages/mesa`.
-- **A running dev server never re-transforms.** Editing `compiler.js` invalidates
-  nothing in a server that is already up — restart it, or the fix "does not work".
-  In-repo consumers must import mesa by **relative path**, not `@frontierjs/mesa`:
-  `bun install` copies workspace deps into `node_modules/.bun/`, so an importer
-  sees a stale snapshot until reinstall.
+---
 
 ## The contexts in this package
 
@@ -508,78 +106,18 @@ their own label, constraints and server error from it.
 
 ---
 
-## The browser drives
-
-**`test/browser/` is where this package is run rather than described** — five
-drives over one harness, shared with `@frontierjs/ui` (`drive.mjs`,
-`probes.js`) and read by relative path because mesa is the leaf. The browser
-under the runner is `src/drive.js`, which is published: a change to it reaches
-every app's drive, so `drive/` pins what an app asks of it and the runner
-never did — a kept `profile` read back after a relaunch — and
-`test/drive.test.js` keeps the half that launches nothing. All five gate. A
-collected test that opens Chrome is `test-not-hermetic` in `fli check`. What
-bites:
-
-- **A spec exports `run(t)`, not a suite.** vitest excludes `test/browser/**`
-  for that reason; without the exclusion it collects eleven files and fails
-  each one with *no test suite found*.
-- **A fixture is a component**, because a slot cannot be expressed as a props
-  object. Props reach it as JSON.
-- **A spec that PASSES can still be the point, and it can also be lying about
-  where to look.** `chained-derived` was written for a shape that misbehaved in
-  a real screen (`FJS-512`) and passed here, so it was kept as the list of
-  causes ruled out. It passed because a component-ROOT template has its
-  whitespace collapsed and the real screen's blocks were one branch down, where
-  it survives — the fixture reproduced the markup and not the position. Say in
-  the header what a green spec pins; and when a spec cannot reproduce a real
-  failure, suspect the frame around the shape before the shape.
-- **Input goes through the pipeline** (`t.press`, `t.type`, `t.clickAt`). A
-  dispatched `KeyboardEvent` moves no focus, types no character and dismisses
-  no `[popover]`.
-- **`t.eventually(expr, expected, label, ms?)`** for anything a state change
-  produces — mesa flushes on a microtask. `ms` is for a round trip that is not
-  one: a Vite update is **seconds**.
-- **`t.allow(re)`** declares a page error the spec is provoking. Everything
-  else still fails the run, including any `[Mesa]` console warning — the
-  framework reports a render it survived but corrupted that way.
-- **Two writes to one file within tens of milliseconds are ONE watch event.**
-  Measured at 23ms apart: the second edit fired no `change` and arrived only
-  when a later edit flushed it — which looks exactly like broken HMR. The Vite
-  drive's `edit()` holds until the file has settled, so a spec never has to
-  know; anything else touching files does.
-- **The Vite drive edits a COPY** in a temp directory. An edit is what an HMR
-  update is, and a drive that writes to the tree leaves it dirty when it
-  crashes.
-- **`each-unkeyed.spec.mjs` is the DEFAULT `{#each}` key written down** — the
-  index, and the trade it makes: an unkeyed list can never collide, and a row
-  that moves is rebound in place rather than moved, so its DOM state stays with
-  the position. `each.spec.mjs` is the keyed half, where a reordered row must
-  be the same NODE moved. Keying by the item was the default until `FJS-325`,
-  and a duplicate value corrupted the reconciler beyond recovery.
-- **No backticks in a probe's own comments.** Everything handed to
-  `t.evaluate` is a template literal, so one backtick inside a comment in it
-  ends the string and the spec fails to PARSE — which reads as the drive being
-  broken rather than the spec. It has bitten twice.
-- **A relay between two pages needs `browser.newPage(url, ready)`** — a second
-  target with its own `evaluate`/`navigate`/`close`, whose errors land in the
-  same array. `BroadcastChannel` is cross-document by definition, so one tab
-  posting and listening proves nothing.
-- **A drive over a page it does not own installs its probes with
-  `bootstrap`** — a script CDP runs before anything else in every document.
-  The REPL has nowhere to put one, and reaching for a probe that is not there
-  reads as the page being broken.
-- **Nothing the REPL defines is reachable from page scope** — it is one module
-  script, so `encodeState` and the editor view are both invisible. Drive the
-  buttons instead. `copyShareLink` writes the hash with `replaceState` BEFORE
-  it touches the clipboard, which is what makes the share round trip assertable
-  without a clipboard permission.
-- **Wait on what CHANGED, not on the status word.** `#pvlbl` already says
-  *running* before a click that loads another example, so an `eventually` on it
-  returns at once and the assertion afterwards reads the example being
-  replaced. Twice, in two specs.
-
 ## Proving a change
 
 `bun run test` — which includes the five gating browser drives — then,
 because SSR and hydration fail apart, both of `example`: `bun run verify` and
 `bun run verify:site`. See `docs/TESTING.md`.
+
+<!-- layout-named: the file names fli done grades a new module against, kept here because done.js reads this file by path. The map itself is docs/layout.md.
+baseline.json browser.d.ts build-vendor.mjs cases.mjs client.js client-source.js clock.js 
+compiler.js compiler-md.js corpus.mjs css-inliner.js css.js data.js devtools.html drive.js 
+emit.js entities.js hmr.js host.js host-tree.js hotkey.js index.html index.js inspect-client.js 
+ir.js keys.js media.js optional-peer.js package.json persisted.js portability.js prefix.js 
+render-component.js render.js result.js run.mjs runtime.js runtime-native.js 
+runtime-terminal.js sheet.js STATIC_RENDERING.md swap.js tab.js tags.js targets.js tokens.js 
+tui.mjs values.js VISION.md window-binds.js 
+-->

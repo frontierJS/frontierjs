@@ -102,6 +102,7 @@
       "usage_model": "standard"
     }
   },
+  "login": {"stdout": "ℹ Starting OAuth login flow...\n\n", "device": "Attempting to login via OAuth Device Authorization Grant...\nTo authorize cf, please visit:\n\n  https://dash.cloudflare.com/oauth2/device/verify\n\nand enter the code:\n\n  FRDWWLAT\n\nYou have 5 minutes to approve this request.\n", "approved": "unmeasured: what cf prints once the code is approved — the real run was never approved"},
   "refusals": {
     "path": "\n┌ APIError\n│ [10000] Authentication error\n│ 403 Forbidden · HTTP {path}\n└\n\n→ Check your API token permissions\n",
     "token": "\n┌ APIError\n│ [6003] Invalid request headers\n│ 400 Bad Request · HTTP {path}\n└\n",

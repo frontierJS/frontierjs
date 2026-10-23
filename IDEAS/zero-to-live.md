@@ -11,8 +11,8 @@ tree 2026-10-18. Do not cite this file as behavior — see `VERIFYING.md`.
 
 **The ask** (owner, 2026-10-18): make creating a server, installing Basecamp and
 Outpost, creating a web app, deploying it and setting up Cloudflare as automated
-as possible. **The cloud is DigitalOcean.** Hetzner stays a connector Basecamp
-speaks, and this plan neither uses it nor proves it.
+as possible. **The cloud is DigitalOcean.** `hetzner-host.md` adds Hetzner as a
+second cloud and proves it on real boxes.
 
 This sits inside `deploy-plane.md`'s three rings and restates none of them: ring 0
 `fli deploy` installs Basecamp, ring 1 Basecamp installs Outpost, ring 2 Outpost

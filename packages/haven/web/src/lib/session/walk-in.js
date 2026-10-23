@@ -1,7 +1,8 @@
 // src/walk-in.js — this client walking into one room, on either target.
 //
 // The token is `#sign-in`'s answer: a terminal's is the one `fli haven` handed
-// over as HAVEN_TOKEN, a browser's is a login it signs itself. Without one the
+// over as HAVEN_TOKEN, a browser's the one `fli haven --browser` put in its
+// address. Without one the
 // socket is anonymous, and presence tracks no anonymous connection, so the
 // room would show nobody, this figure included — so a missing one throws, and
 // the route says why on the screen rather than drawing an empty room.
