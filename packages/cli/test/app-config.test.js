@@ -253,8 +253,8 @@ describe('an extension app names what jetty builds with', () => {
   })
 
   test('both commands that add the surface write them', () => {
-    for (const cmd of [['project', 'new.md'], ['make', 'extension.md']]) {
-      expect(readFileSync(join(CLI, 'commands', ...cmd), 'utf8')).toContain('extensionDevDeps(')
+    for (const file of ['core/scaffold/app.js', 'commands/make/extension.md']) {
+      expect(readFileSync(join(CLI, file), 'utf8')).toContain('extensionDevDeps(')
     }
   })
 })
@@ -273,8 +273,8 @@ describe('a site app names what the prerender runs on', () => {
   })
 
   test('both commands that add the surface write them', () => {
-    for (const cmd of [['project', 'new.md'], ['make', 'site.md']]) {
-      expect(readFileSync(join(CLI, 'commands', ...cmd), 'utf8')).toContain('siteDevDeps(')
+    for (const file of ['core/scaffold/app.js', 'commands/make/site.md']) {
+      expect(readFileSync(join(CLI, file), 'utf8')).toContain('siteDevDeps(')
     }
   })
 })
@@ -289,7 +289,7 @@ describe('the scaffolded getLevel grades a claims-only guest STRANGER', () => {
   const LEVELS = { STRANGER: 0, USER: 4, ADMINISTRATOR: 5, OWNER: 6, SYSADMIN: 7 }
 
   function scaffoldedGetLevel(file) {
-    const text  = readFileSync(join(CLI, 'commands', ...file), 'utf8')
+    const text  = readFileSync(join(CLI, file), 'utf8')
     const start = text.indexOf('getLevel(user')
     let depth = 0, end = text.indexOf('{', start)
     for (let i = end; i < text.length; i++) {
@@ -302,8 +302,8 @@ describe('the scaffolded getLevel grades a claims-only guest STRANGER', () => {
     return new Function('LEVELS', `${js}; return getLevel`)(LEVELS)
   }
 
-  for (const file of [['project', 'new.md'], ['auth', 'install.md']]) {
-    test(file.join('/'), () => {
+  for (const file of ['core/scaffold/api.js', 'commands/auth/install.md']) {
+    test(file, () => {
       const getLevel = scaffoldedGetLevel(file)
       expect(getLevel(null)).toBe(LEVELS.STRANGER)
       expect(getLevel({ passId: 'x' })).toBe(LEVELS.STRANGER)
@@ -392,8 +392,8 @@ describe('every framework package a generator imports is one a scaffold declares
   test('a UI app is given every package its generated pages import', () => {
     // `FJS_PACKAGES` is the catalog; this is the SUBSET a scaffold actually
     // writes, which is the half that decides whether the build works. Read off
-    // the command rather than restated — the two drifted apart once already.
-    const src  = readFileSync(join(CLI, 'commands', 'project', 'new.md'), 'utf8')
+    // the scaffold rather than restated — the two drifted apart once already.
+    const src  = readFileSync(join(CLI, 'core', 'scaffold', 'app.js'), 'utf8')
     const uiBlock = src.slice(src.indexOf('if (useUI) {'), src.indexOf('if (useExtension) {'))
     expect(uiBlock.length).toBeGreaterThan(0)
 
@@ -544,16 +544,18 @@ describe('every dependency a scaffold writes is an exact version', () => {
 // resolver, and sierra's can() answers true for a null level -- so a scaffold
 // without one shows a plain user the manager's nav.
 describe('the scaffolded auth plugin is handed the app’s getLevel', () => {
-  test('project/new.md wires services.level to gate.ts', () => {
-    const text = readFileSync(join(CLI, 'commands', 'project', 'new.md'), 'utf8')
+  const apiScaffold = () => readFileSync(join(CLI, 'core', 'scaffold', 'api.js'), 'utf8')
+
+  test('the scaffolded auth.ts wires services.level to gate.ts', () => {
+    const text = apiScaffold()
     const auth = text.slice(text.indexOf('function makeApiCoreAuthTs'), text.indexOf('function makeJunctionConfig'))
     expect(auth).toMatch(/import \{ getLevel[^}]*\} from '\.\/gate\.ts'/)
     expect(auth).toMatch(/authRoutes\(\{\s*auth,[\s\S]*services:\s*\{\s*level:\s*getLevel\s*\}/)
   })
 
   // FJS-3200 -- the observer is the only trace of a change the person did not make.
-  test('project/new.md wires onCredentialChanged for every CREDENTIAL_EVENTS name', async () => {
-    const text = readFileSync(join(CLI, 'commands', 'project', 'new.md'), 'utf8')
+  test('the scaffolded auth.ts wires onCredentialChanged for every CREDENTIAL_EVENTS name', async () => {
+    const text = apiScaffold()
     const auth = text.slice(text.indexOf('function makeApiCoreAuthTs'), text.indexOf('function makeJunctionConfig'))
     expect(auth).toContain('onCredentialChanged')
     const types = readFileSync(join(CLI, '..', 'auth', 'types.ts'), 'utf8')

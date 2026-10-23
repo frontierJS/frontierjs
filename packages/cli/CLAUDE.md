@@ -97,7 +97,13 @@ core/
   runtime.js    executes a compiled command
   registry.js   command discovery and resolution
   prose.js      the markdown side
-  checks.js     the architecture rules — shared with scripts/ci.mjs
+  checks.js     the architecture rules — shared with scripts/ci.mjs. The rule
+                table, the runner, the baseline and the fixes; a rule's BODY is
+                in `checks/` by realm: `data.js`, `api.js`, `ui.js`, then
+                `app.js` for an app-scope rule belonging to no realm and
+                `repo.js` for the workspace's own, each exporting its slice of
+                `CHECKS`; `lib.js` is the readers two slices share. A reader
+                one slice uses stays in that slice
   tree.js       what a clone of this root holds — tracked plus unignored
                 untracked. A check that asks the disk instead is green here and
                 red on a runner; `null` without git, and the caller uses the disk
@@ -530,6 +536,15 @@ core/
                 in it: they change with no commit
   crud-templates.js     what a GENERATED CRUD page IS — shared by `make:scaffold`
                         and `admin:generate`. Built on @frontierjs/ui
+  scaffold/     the files `fli new` WRITES, one module per surface, each builder a
+                pure function of the spec — `app.js` the root (package.json,
+                README, .gitignore, fli.json, the empty schema), `api.js` the
+                `api/` surface (index, app, core/*, the access test, the retention
+                job, junction.config), `web.js` the `web/` surface (index.html,
+                vite + sierra configs, App.mesa, nav, controls, every route).
+                `project/new.md` keeps the questions, the spec and the file list;
+                the text of what is written lives here so a test can import a
+                builder instead of slicing the command with a regex
   widget-surface.js     what a `widgets/` surface IS — shared by `new` and `make:widget`
   site-surface.js       what a `site/` surface IS — ditto, `make:site`
   extension-surface.js  what an `extension/` surface IS — ditto, `make:extension`
@@ -814,7 +829,7 @@ core/
                 sealed copy arrive on `POST /chain`, and `GET /chain` with no
                 nick answers the caller's own, which is how typed words learn
                 their member.
-                Never imported: wrangler bundles it from a config `tell:setup`
+                Never imported: wrangler bundles it from a config `ws:post`
                 writes, so it runs in workerd and imports toolbelt and nothing
                 Bun-only. `cloudflare:workers` is not imported either, since
                 it does not resolve outside workerd
@@ -1398,7 +1413,10 @@ test/     one file per module under core/, plus the deploy pipeline's own
   (Invariant 2) and five callers, and a rule answering it a sixth time would
   grade an app by an inflection the app does not run — `children` → `child` is
   exactly the case `service-model` has to get right. Nothing else may be
-  imported: `ci.mjs` runs on plain node.
+  imported: `ci.mjs` runs on plain node. Every file under `core/checks/` is
+  under the same rule, because the entry imports all of them. A slice never
+  imports the entry — `repo.js`'s doc and enforcer rules take the table as the
+  `rules` argument the runner passes to every body.
 - **`core/invariants.js` is the enforcer per Invariant, and it may not import
   `core/checks.js`.** The rule table is the derived half of that answer, so it is
   handed IN — the same shape `checkRulesCountable` uses and for the same reason:
@@ -1532,7 +1550,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
   `.editorconfig`, the workflow. That set is the framework's real opinion about
   tooling and far more people will read it than will read this repo, so it is one
   module with the reasoning attached rather than string literals in
-  `project/new.md`, and `test/app-config.test.js` asserts each default. Two
+  `core/scaffold/app.js`, and `test/app-config.test.js` asserts each default. Two
   rules it encodes: **the config is a dependency the app extends in a line**
   (`@frontierjs/config`), and **`fli check` runs first** in `bun run check`,
   because it is the half a linter cannot reach.

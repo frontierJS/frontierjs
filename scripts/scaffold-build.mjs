@@ -447,7 +447,7 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
       return fail(
         'the scaffolded app imports a framework package its own package.json does not declare — ' +
         'it resolves here because the packed overrides hoist every package, and fails on a real ' +
-        '`fli new`. Add it to FJS_PACKAGES and to the surface block in commands/project/new.md',
+        '`fli new`. Add it to FJS_PACKAGES and to the surface block in packages/cli/core/scaffold/app.js',
         imports.undeclared.join('\n'))
 
     log(`  ✓ every framework package it imports is one it declares (${imports.seen} seen)`)

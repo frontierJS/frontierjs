@@ -125,7 +125,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V6.2.3 | 1 | covered | `packages/auth/auth.ts:2202`, `packages/auth/test/credential-events.test.ts:70` | Current password is checked against the hash and rate-limited per account |
 | V6.2.4 | 1 | none | `packages/auth/auth.ts:337` | Length is the only check. Probe: `password` accepted |
 | V6.2.5 | 1 | covered | `packages/auth/auth.ts:338`, `packages/auth/test/password-policy.test.ts:35` | Length is the only rule. No composition rules |
-| V6.2.6 | 1 | covered | `packages/cli/commands/project/new.md:1942`, `packages/cli/test/generators-run.test.js:200` | Scaffold and ui `Input` use type=password. ui adds a reveal toggle |
+| V6.2.6 | 1 | covered | `packages/cli/core/scaffold/web.js:663`, `packages/cli/test/generators-run.test.js:200` | Scaffold and ui `Input` use type=password. ui adds a reveal toggle |
 | V6.2.7 | 1 | covered | `packages/cli/test/generators-run.test.js:200`, `packages/ui/README.md:261` | autocomplete current/new-password set. No paste blocking found |
 | V6.2.8 | 1 | covered | `packages/auth/plugin.ts:698`, `packages/auth/crypto.ts:13` | No trim or case change. Bun bcrypt pre-hashes past 72 bytes (probe). No test |
 | V6.2.9 | 2 | covered | `packages/auth/crypto.ts:13`, `packages/junction/src/config/index.ts:239` | Only the 256 KB body cap limits length. 200 chars verified by probe. No test |
@@ -133,7 +133,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V6.2.11 | 2 | none | `packages/auth/auth.ts:337` | There is no word list to apply |
 | V6.2.12 | 2 | none | `packages/auth/auth.ts:337` | No breached-password check |
 | V6.3.1 | 1 | partial | `packages/auth/plugin.ts:50`, `packages/junction/src/core/hooks-resilience.ts:150`, `packages/auth/test/audit-routes-ratelimit.test.ts:23` | THREATS B12. 10 per 15 min per IP only, per process (FJS-D1193). No per-account budget. Lockout is left to `onLoginFailed` · [FJS-3198](../ISSUES.md#fjs-3198) |
-| V6.3.2 | 1 | covered | `packages/cli/commands/auth/dev-admin.md:132`, `packages/cli/commands/project/new.md:447` | A fresh app seeds no user. `dev-admin` refuses production |
+| V6.3.2 | 1 | covered | `packages/cli/commands/auth/dev-admin.md:132`, `packages/cli/core/scaffold/app.js:301` | A fresh app seeds no user. `dev-admin` refuses production |
 | V6.3.3 | 2 | partial | `packages/auth/auth.ts:415`, `packages/auth/test/totp-login.test.ts:160` | TOTP is opt-in per person, with no switch to require it. No FIDO or passkey for L3 |
 | V6.3.4 | 2 | covered | `packages/auth/auth.ts:415`, `packages/auth/test/magic-link.test.ts:187`, `packages/auth/test/oauth-routes.test.ts:339` | Password, magic link and OAuth all end at `firstFactorProven`, so TOTP is owed on each |
 | V6.3.5 | 3 | none | `packages/auth/auth.ts:433` | `login.challenged` and `login.failed` go to the trail. Nobody is notified |
@@ -181,10 +181,10 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V7.4.1 | 1 | covered | `packages/auth/auth.ts:1769`, `packages/auth/test/audit-routes-session-lifecycle.test.ts:93` | Logout deletes the row. A lapsed row cannot be read |
 | V7.4.2 | 1 | partial | `packages/auth/auth.ts:1861`, `packages/auth/test/people.test.ts:106` | Deleting an account revokes its sessions. There is no disabled state, so a suspended person keeps live sessions |
 | V7.4.3 | 2 | partial | `packages/auth/auth.ts:2215`, `packages/auth/test/audit-services-password-change.test.ts:45` | Password change and reset end other sessions. Enabling TOTP or changing email ends none and offers nothing · [FJS-3192](../ISSUES.md#fjs-3192) |
-| V7.4.4 | 2 | covered | `packages/cli/commands/project/new.md:1574` | The scaffold Shell puts a sign-out on every page |
+| V7.4.4 | 2 | covered | `packages/cli/core/scaffold/web.js:295` | The scaffold Shell puts a sign-out on every page |
 | V7.4.5 | 2 | covered | `packages/auth/services.ts:717`, `packages/cli/commands/auth/revoke-sessions.md`, `packages/auth/test/people.test.ts:106` | `people.signOut` for one person. `fli auth:revoke-sessions --all` for everyone |
 | V7.5.1 | 2 | partial | `packages/auth/services.ts:403`, `packages/auth/services.ts:599` | Email and TOTP changes ask for the password, never the second factor. OAuth unlink and minting a key ask nothing · [FJS-3192](../ISSUES.md#fjs-3192) |
-| V7.5.2 | 2 | partial | `packages/auth/services.ts:495`, `packages/cli/commands/project/new.md:2263` | Listing and revoking sessions is built and scaffolded. No re-authentication before ending one |
+| V7.5.2 | 2 | partial | `packages/auth/services.ts:495`, `packages/cli/core/scaffold/web.js:984` | Listing and revoking sessions is built and scaffolded. No re-authentication before ending one |
 | V7.6.1 | 2 | none | `packages/auth/auth.ts:1447` | No maximum time since the IdP sign-in. The session lasts `sessionTtl` regardless |
 | V7.6.2 | 2 | partial | `packages/auth/plugin.ts:519`, `packages/auth/plugin.ts:352` | Magic-link and email links are spent only by POST. The OAuth begin route is a GET any page can start |
 
@@ -292,7 +292,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V13.1.1 | 2 | partial | `packages/conduit/src/transports/http.ts:310` | conduit targets declare third parties in one config; no generated inventory, raw `fetch` unlisted |
 | V13.2.1 | 2 | partial | `packages/junction/src/auth/credentials.ts`, `packages/junction/test/credentials.test.ts` | signed requests for inbound services; SQLite in-process; API keys are long-lived static secrets |
 | V13.2.2 | 2 | partial | `packages/junction/src/core/litestone.ts`, `packages/junction/test/method-scopes.test.ts` | scoped clients and key scopes exist; auth and jobs write via `asSystem()` by design |
-| V13.2.3 | 2 | covered | `packages/cli/commands/project/new.md:2776`, `packages/junction/src/core/env.ts:228` | scaffold ships no default account; ENCRYPTION_KEY generated random into gitignored `.env` · [FJS-3206](../ISSUES.md#fjs-3206) |
+| V13.2.3 | 2 | covered | `packages/cli/commands/project/new.md:574`, `packages/junction/src/core/env.ts:228` | scaffold ships no default account; ENCRYPTION_KEY generated random into gitignored `.env` · [FJS-3206](../ISSUES.md#fjs-3206) |
 | V13.2.4 | 2 | partial | `packages/conduit/src/transports/http.ts:314`, `packages/junction/src/core/public-url.ts`, `packages/junction/test/webhook-targets.test.ts` | THREATS B13. conduit binds each target to declared origins; stranger URLs get a private-range denylist, not an allowlist |
 | V13.2.5 | 2 | partial | `packages/conduit/src/transports/http.ts:314` | same seam; no process-wide egress allowlist |
 | V13.3.1 | 2 | partial | `packages/junction/src/core/env.ts`, `packages/cli/core/checks.js` (`battery-raw-secret`) | `.env` plus `defineEnv`, kept out of git and image; no vault or HSM seam |
@@ -309,7 +309,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | --- | --- | --- | --- | --- |
 | V14.1.1 | 2 | partial | `packages/litestone/src/core/personal.js`, `packages/litestone/src/access.js:413` | closed `@personal` categories and protection attributes; parse warns on unmarked personal names; no data map generator · [FJS-3213](../ISSUES.md#fjs-3213) |
 | V14.1.2 | 2 | partial | `packages/litestone/docs/encryption.md`, `packages/litestone/docs/trail.md`, `packages/litestone/src/core/catalog.js` | each attribute's regime documented; no per-level requirement set (integrity, retention, logging) |
-| V14.2.1 | 1 | partial | `packages/junction/src/client/index.ts:181`, `packages/cli/commands/project/new.md:1140` | session rides header or WS subprotocol; reset, verify and magic-link tokens ride the query string |
+| V14.2.1 | 1 | partial | `packages/junction/src/client/index.ts:181`, `packages/cli/core/scaffold/api.js:574` | session rides header or WS subprotocol; reset, verify and magic-link tokens ride the query string |
 | V14.2.2 | 2 | covered | `packages/junction/src/core/service.ts:37`, `packages/junction/src/transport/http.ts:1014`, `packages/junction/test/cache-conformance.test.ts` | service cache opt-in, keyed per user and tenant; authenticated reads `private` |
 | V14.2.3 | 2 | partial | `packages/sierra/src/analytics/index.js:112`, `packages/sierra/src/analytics/tag.js:25` | analytics opt-in, pathname only from `track`; vendor tag's own auto-pageview still reads the full URL · [FJS-3205](../ISSUES.md#fjs-3205) |
 | V14.2.4 | 2 | partial | `packages/litestone/src/core/audit-log.js`, `packages/litestone/src/core/encryption.js`, `packages/litestone/test/unique-redaction.test.ts` | encryption, audit redaction and declared retention built; no documented level to grade against |
@@ -339,7 +339,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 
 | ID | L | Grade | Where | Note |
 | --- | --- | --- | --- | --- |
-| V16.1.1 | 2 | partial | `packages/litestone/docs/trail.md`, `packages/cli/commands/project/new.md:1266` | audit trail documented with declared 90d retention; no inventory covering request and app logs |
+| V16.1.1 | 2 | partial | `packages/litestone/docs/trail.md`, `packages/cli/core/scaffold/app.js:433` | audit trail documented with declared 90d retention; no inventory covering request and app logs |
 | V16.2.1 | 2 | partial | `packages/junction/src/transport/middleware.ts:367`, `packages/litestone/src/core/audit-log.js` | request line has time, ip, path, status, correlation id but no user; trail carries actor |
 | V16.2.2 | 2 | covered | `packages/junction/src/core/logger.ts:200` | every timestamp `toISOString()` UTC; clock sync is the host's |
 | V16.2.3 | 2 | partial | `packages/junction/src/core/logger.ts:250` | stdout and the declared audit database only, but no inventory to check against |

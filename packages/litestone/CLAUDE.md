@@ -239,6 +239,7 @@ src/
     write-data.js — the payload boundary of a write: writeKeySets(shape) and makeWriteData(shape, ctx, deps) — writeData, the @guarded/@system/@immutable/@sequence/capability refusals, encryption, enums, @allow(write) on create, @rank minting and the bind-safety floor; built once per table by makeTable
     where-rewrite.js — the rewrites a where takes before buildWhere, in order: $scope → $raw, @@extensible key → slot, write transforms on equality operands, matchable-protected operand encoding; makeWhereRewrite(shape, ctx, deps) hands makeTable buildWhereWithEncryption and whereFragment
     state-guards.js — the rules that read the STORED row before a write lands: the transitions machine (refuseOffEntry, checkTransitions, applyTransitionWhereClause) and the seal (sealWhereClause, sealInsertGuard, sealSelfClause, the refusal readers); NOT_VISIBLE; makeStateGuards(shape, ctx, deps), built once per table by makeTable
+    extensible.js — the @@extensible pool for one table: the schema half (_extensible, extPoolFor) and the data half (_extDeclarations, extTenant, extScope, allocateExtSlot, backfillExtSlot, mirrorExtSlots, remirrorMovedRow); EXT_SLOTS; makeExtensible(shape, ctx, deps), built once per table by makeTable — the cold halves of writeData (`FJS-1108`)
     stamps.js — what a write fills in: generated defaults, @createdBy/@updatedBy, @sequence
     computed.js — @computed: load, normalize, apply to a read row
     field-policy.js — field @allow(read) applied to read rows
