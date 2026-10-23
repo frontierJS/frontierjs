@@ -16,7 +16,16 @@
   // link, which the server opens, and the code to type there. A token row does
   // not stand in for it: a token is minted inside one account, a login is the
   // person's.
+  //
+  // `a` and `e` open `DnsForm.mesa` over the records; its keys replace the
+  // pane's while it is open. `d` shows the record and Enter deletes it; `p`
+  // flips `proxied` at once, since a second press puts it back. A record
+  // Basecamp marked answers either with a warning, and Enter sends again with
+  // `confirm`. Every write the server took reads the records again, so the
+  // table is Cloudflare's answer and never the pane's guess.
 
+  import { flushSync } from '@frontierjs/mesa/runtime'
+  import DnsForm, { TYPES, line } from './DnsForm.mesa'
   import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
   import Table  from '@frontierjs/ui/components/display/Table.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
@@ -24,6 +33,7 @@
   export let api   = ''
   export let shown = () => true   // (...fields) => does the console's filter keep this row
   export let keyed = null         // (rows) => the keys this pane binds, for the console
+  export let home  = () => {}     // gives focus back to the console, as a field closing does
 
   const CELL = 60
   // Basecamp's edge connector marks the records it writes in `comment`, and
@@ -47,6 +57,11 @@
   let reading = false
   let seq     = 0
   let signing = null   // { lines, ctl } while `cf auth login` waits for approval
+  let editing = null   // { record } while the form is open; a null record adds
+  let formKeys = []
+  let said    = ''
+  let asking  = null   // { record, changes?, warning? } — a delete, or a warned flip, waiting on Enter
+  let writing = false
 
   $: screen = zone ? 'records' : account ? 'zones' : 'accounts'
 
@@ -85,6 +100,8 @@
   }
 
   function walkTo(next) {
+    editing = null
+    asking  = null
     if ('account' in next) { account = next.account; cursor = { ...cursor, zones: 0 }; lists = { ...lists, zones: null } }
     if ('zone' in next) { zone = next.zone; cursor = { ...cursor, records: 0 }; lists = { ...lists, records: null } }
     read()
@@ -102,6 +119,8 @@
     seq++
     reading = false
     failed  = ''
+    editing = null
+    asking  = null
     if (zone) zone = null
     else account = null
   }
@@ -151,6 +170,57 @@
     signing = null
   }
 
+  // Mounted before this key's turn ends, so the form's first field has focus
+  // for the next key a terminal hands over in the same read.
+  function form(record) {
+    if (record && !TYPES.includes(record.type)) { failed = `the form does not write ${record.type} records`; return }
+    failed  = ''
+    said    = ''
+    editing = { record }
+    flushSync()
+  }
+
+  function closeForm() {
+    editing = null
+    home()
+  }
+
+  function wrote(text) {
+    editing = null
+    said    = text
+    home()
+    read()
+  }
+
+  // A delete has no `changes`; a flip's are `{ proxied }`.
+  async function write(a, confirm) {
+    if (writing) return
+    writing = true
+    failed  = ''
+    said    = ''
+    const url = `${api}/api/dns/records/${encodeURIComponent(a.record.id)}`
+    const payload = { profile: account.profile.name, zone: zone.id, ...(a.changes ? { changes: a.changes } : {}), ...(confirm ? { confirm: true } : {}) }
+    try {
+      const res = await fetch(url, { method: a.changes ? 'PUT' : 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const out = await res.json().catch(() => ({}))
+      asking = res.status === 409 && out.warning ? { ...a, warning: out.warning } : null
+      if (asking) return
+      if (!res.ok) failed = out.error ?? `${url} answered ${res.status}`
+      else {
+        said = a.changes ? `edited ${line(out.record)}` : `deleted ${line(a.record)}`
+        read()
+      }
+    } catch (e) {
+      asking = null
+      failed = `the console's server did not answer: ${e.message}`
+    } finally {
+      writing = false
+    }
+  }
+
+  const askDelete = (record) => { failed = ''; said = ''; asking = { record } }
+  const flip = (record) => write({ record, changes: { proxied: !record.proxied } }, false)
+
   const move = (by) => {
     const n = seen.length
     if (n) cursor = { ...cursor, [screen]: Math.max(0, Math.min(n - 1, cursor[screen] + by)) }
@@ -174,7 +244,13 @@
     : shown(r.name, r.type, r.content, r.comment))
   $: at = Math.min(cursor[screen], Math.max(0, seen.length - 1))
 
-  $: keyed?.([
+  $: keyed?.(editing ? formKeys : asking ? [
+    { keys: '<CR>', label: asking.warning ? 'send anyway' : 'delete', run: () => write(asking, !!asking.warning) },
+    { keys: '<Esc>', label: 'keep it', run: () => asking = null },
+  ] : [
+    ...(screen === 'records' && lists.records ? [{ keys: 'a', label: 'add', run: () => form(null) }] : []),
+    ...(screen === 'records' && seen.length ? [{ keys: 'e', label: 'edit', run: () => form(seen[at]) }, { keys: 'd', label: 'delete', run: () => askDelete(seen[at]) }] : []),
+    ...(screen === 'records' && seen[at]?.proxiable ? [{ keys: 'p', label: seen[at].proxied ? 'proxy off' : 'proxy on', run: () => flip(seen[at]) }] : []),
     ...(screen !== 'records' && seen.length ? [{ keys: '<CR>', label: 'open', run: () => enter(seen[at]) }] : []),
     ...(seen.length > 1 ? [{ keys: 'j', label: 'down', run: () => move(1) }, { keys: 'k', label: 'up', run: () => move(-1) }] : []),
     ...(screen !== 'accounts' ? [{ keys: '<Esc>', label: 'back', run: back }] : []),
@@ -202,11 +278,27 @@
       <strong data-crumb="accounts">cloudflare</strong>
     {/if}
   </span>
-  {#if reading}<span class="text-xs text-muted">reading…</span>{/if}
+  {#if writing}<span class="text-xs text-muted">sending…</span>{:else if reading}<span class="text-xs text-muted">reading…</span>{/if}
 </header>
 
 {#if failed}
   <p class="text-sm text-danger" data-failed>{failed}</p>
+{/if}
+{#if said}
+  <p class="text-sm text-success" role="status" data-said-write>{said}</p>
+{/if}
+
+{#if asking && zone}
+  <section class="surface stack gap-3xs" data-part="confirm">
+    <strong class="text-sm">{asking.changes ? `proxy ${asking.changes.proxied ? 'on' : 'off'}` : 'delete'}</strong>
+    <code class="text-sm" data-asked>- {line(asking.record)}</code>
+    {#if asking.changes}<code class="text-sm" data-asked-after>+ {line({ ...asking.record, ...asking.changes })}</code>{/if}
+    {#if asking.warning}<p class="text-sm text-warning" data-warning>{asking.warning}</p>{/if}
+  </section>
+{/if}
+
+{#if editing && zone}
+  <DnsForm {api} profile={account.profile.name} {zone} record={editing.record} keyed={(rows) => formKeys = rows} done={wrote} close={closeForm} />
 {/if}
 
 <section class="surface stack" data-part={screen}>

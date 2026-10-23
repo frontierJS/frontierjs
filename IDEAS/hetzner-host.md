@@ -79,12 +79,39 @@ Done when: create, list, stop, destroy and release run by hand against both
 stand-ins (8122 and 8124), and `rg -i 'digitalocean|droplet'` finds nothing in
 `provision-host.ts` or `commands/basecamp/`, except in a per-cloud token page.
 
-- [ ] 1.1 Add `GET`/`POST /v1/ssh_keys` to the Hetzner stand-in, plus the primary-IP routes Q3 needs
-- [ ] 1.2 Add `ComputeSize.arch` (`x86` | `arm`). DigitalOcean fills in `x86` for every size, and Hetzner reads `architecture` from the server type. `pickSize` and the provision wizard pick only x86 unless they are asked for ARM, and ARM boxes themselves are out of scope (§ After this)
-- [ ] 1.3 Move the held address behind the connector: optional `address` methods (`hold`, `reuse`, `list`, `release`, and `userData` for any egress script). DigitalOcean's methods are today's `reservedIps` and `RESERVED_EGRESS`, and Hetzner's are Q3's answer. After this, `provision-host.ts` imports no vendor file
-- [ ] 1.4 Add a `defaults: { region, image }` field to each connector. DigitalOcean's is `nyc3` and `ubuntu-24-04-x64`. Hetzner's is `ash` and `ubuntu-24.04`: Ashburn keeps the box in the US like `nyc3`. `--region` and `--image` default to empty, which falls through to the connector's defaults
-- [ ] 1.5 Make `provision-host.ts` take `cloud` in its input. It reads the token from that cloud's key (Q2), calls `connectorFor(cloud)`, and takes its progress lines from `connector.label`
-- [ ] 1.6 Add `--cloud` to `basecamp:create`, bare `basecamp`, `basecamp:stop` and `basecamp:destroy`, resolved as Q1 rules. Drop the token from their frontmatter `requires:`. `_module.md` fetches the token for the chosen cloud, the way `cloudflareToken` already does: a `requires:` list is static and cannot depend on a flag. Rewrite the help and docs text to say "box" where it now says "droplet"
+- [x] 1.1 Add `GET`/`POST /v1/ssh_keys` to the Hetzner stand-in, plus the primary-IP routes Q3 needs
+- [x] 1.2 Add `ComputeSize.arch` (`x86` | `arm`). DigitalOcean fills in `x86` for every size, and Hetzner reads `architecture` from the server type. `pickSize` and the provision wizard pick only x86 unless they are asked for ARM, and ARM boxes themselves are out of scope (§ After this)
+- [x] 1.3 Move the held address behind the connector: optional `address` methods (`hold`, `reuse`, `list`, `release`, and `userData` for any egress script). DigitalOcean's methods are today's `reservedIps` and `RESERVED_EGRESS`, and Hetzner's are Q3's answer. After this, `provision-host.ts` imports no vendor file
+- [x] 1.4 Add a `defaults: { region, image }` field to each connector. DigitalOcean's is `nyc3` and `ubuntu-24-04-x64`. Hetzner's is `ash` and `ubuntu-24.04`: Ashburn keeps the box in the US like `nyc3`. `--region` and `--image` default to empty, which falls through to the connector's defaults
+- [x] 1.5 Make `provision-host.ts` take `cloud` in its input. It reads the token from that cloud's key (Q2), calls `connectorFor(cloud)`, and takes its progress lines from `connector.label`
+- [x] 1.6 Add `--cloud` to `basecamp:create`, bare `basecamp`, `basecamp:stop` and `basecamp:destroy`, resolved as Q1 rules. Drop the token from their frontmatter `requires:`. `_module.md` fetches the token for the chosen cloud, the way `cloudflareToken` already does: a `requires:` list is static and cannot depend on a flag. Rewrite the help and docs text to say "box" where it now says "droplet"
+
+**Done 2026-10-23.** Each command ran by hand through `fli` against both
+stand-ins, and the `rg` check finds vendor names only in `_module.md`'s
+`CLOUDS` table and its Setup section, which together are the per-cloud token
+page. Four departures from the steps:
+
+- The connector field is `reservedIps`, not `address`, because `address` is
+  already the vendor URL a stand-in overrides. Its methods are `list`, `get`,
+  `reserve`, `release`, an optional `assign` and an optional `egress`.
+- The address is held BEFORE the box is bought. Hetzner assigns a Primary IP
+  only at create or while the box is off, and holding it first means a refusal
+  leaves nothing billing.
+- On Hetzner the box's own address IS the held one, so `basecamp:destroy`
+  dedupes the two before listing what is left over.
+- Under `--yes` the cloud is never asked: Enter's answer would buy at whichever
+  cloud is listed first, the shape that makes `--yes` refuse without `--name`.
+  Unless exactly one token is stored, `--cloud` is required. A token for the
+  named cloud is still asked for at a terminal.
+
+Facts Phase 2 will meet:
+
+- A Hetzner Primary IPv4 bills €0.50/mo plus VAT whether or not a box holds it.
+  It is bound to one location, and it must be unassigned before it can be
+  deleted (422 `must_be_unassigned`).
+- Reuse still goes by the hostname's DNS record. Without `CLOUDFLARE_TOKEN`, or
+  with `--region` in another location, a create holds a fresh address and the
+  kept one goes on billing.
 
 ### Phase 2 — One real Hetzner box, both rings
 

@@ -85,6 +85,19 @@ const INVITE_SECONDS = 86400
  * joining is by invite only (FJS-D1415), so the owner is the one open door.
  */
 const INVITE_ALLOWANCE = 3
+/**
+ * Nicks a join is refused because they read as the post, the project or
+ * everyone speaking (FJS-D1450). A nick is never renamed, so one staked here
+ * stays staked. The owner is seeded from OWNER_NICK, never joins, and is not
+ * checked against it.
+ */
+const RESERVED = new Set([
+  'admin', 'administrator', 'root', 'system', 'owner', 'operator',
+  'mod', 'moderator', 'staff', 'team', 'official',
+  'support', 'help', 'security', 'abuse', 'postmaster', 'hostmaster', 'webmaster', 'noreply', 'no-reply',
+  'frontier', 'frontierjs', 'fjs', 'fli', 'post', 'network', 'haven', 'tell',
+  'all', 'everyone', 'here', 'nobody', 'anonymous', 'null', 'undefined',
+])
 const BODY_MAX     = 4000
 /** A sealed letter's length, opaque here: 4000 characters JSON-escaped, sealed, then base64url, with room. */
 const SEALED_MAX   = 32768
@@ -585,6 +598,7 @@ export class TellPost {
 
     const nick = typeof asked === 'string' ? asked.trim().toLowerCase() : ''
     if (!NICK.test(nick)) return refuse(400, 'A nick is 2 to 16 lower-case letters, digits, - and _.')
+    if (RESERVED.has(nick)) return refuse(409, `The nick '${nick}' is reserved: it reads as the post or the project speaking. Choose another.`)
     if (links.length !== 1) return refuse(400, 'A join brings a chain of one, its root. A machine linked to a member is already in.')
     if (fliVersion !== undefined && !FLI_VERSION.test(String(fliVersion))) return refuse(400, 'A join\'s fliVersion is the version of the fli that sent it.')
     // Made before the synchronous run below, so the join's own row costs it no await.

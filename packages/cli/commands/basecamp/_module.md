@@ -60,13 +60,15 @@ const cloudToken = async (cloud, { interactive, write = true, say }) => {
 // refused; with neither, a terminal is asked which and then for its token.
 // `interactive` is false under --yes, which would otherwise take the first
 // cloud as Enter's answer and buy at one nobody named.
-const pickCloud = async ({ cloud, interactive, tty, chalk, say }) => {
+// choose is whether the cloud may be asked, apart from whether a token may be
+// pasted: Enter's answer to which cloud would buy at whichever is listed first.
+const pickCloud = async ({ cloud, interactive, choose = interactive, tty, chalk, say }) => {
   const kinds = Object.keys(CLOUDS)
   if (cloud && !CLOUDS[cloud]) return { error: `--cloud takes ${kinds.join(' or ')}, not '${cloud}'` }
   const stored = kinds.filter(k => process.env[CLOUDS[k].key])
   cloud ||= stored.length === 1 ? stored[0] : ''
   if (!cloud) {
-    if (!interactive) return { error: stored.length
+    if (!choose) return { error: stored.length
       ? `tokens for ${stored.map(cloudLabel).join(' and ')} are stored: pass --cloud ${kinds.join('|')}`
       : `no cloud token is stored: pass --cloud ${kinds.join('|')}, or set ${kinds.map(k => CLOUDS[k].key).join(' or ')}` }
     const keys = Object.fromEntries(kinds.map(k => [k[0], cloudLabel(k)]))

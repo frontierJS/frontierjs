@@ -1548,29 +1548,6 @@ function makeTable(readDb, writeDb, shape, ctx) {
     buildWhereWithEncryption: (...a) => buildWhereWithEncryption(...a),
   })
 
-
-
-  // ── The two shapes a write announcement can take ──────────────────────────
-  // A write that read its row back can say WHICH row changed. A bulk statement
-  // answers `{count}` and never builds the rows, so it can only say how many
-  // and under what filter — and a consumer holding no row has to re-ask rather
-  // than guess. Saying NOTHING is the third option and it is the one that was
-  // there: every bulk write and every hard delete was invisible, so a job that
-  // `createMany`d a hundred rows left every open tab stale (FJS-307).
-  //
-  // `scope` is the discriminator and it is stated rather than inferred, because
-  // `result: null` is not the same fact on both — a `select: false` write is a
-  // ROW write that has no row to hand over.
-  //
-  // The audience check leads in both, so an app that subscribes to nothing does
-  // not pay for the payload it would build.
-  // `transition` is set only when THIS write is a named move AND the transition
-  // event below is actually going to fire. A consumer announcing one thing per
-  // write has no other way to know that a second event is coming for the same
-  // row: it would either announce twice, or skip an update whose transition
-  // event was suppressed (a SYSTEM write, where the move is deliberately not
-  // announced) and announce nothing at all.
-
   const { _cardNotes, noteCardinality, noteCardinalityBySql, _exclNotes, exclTouched, noteExclusion, noteExclusionBySql } =
     makeLedgerNotes(shape, { tx, writeDb })
 

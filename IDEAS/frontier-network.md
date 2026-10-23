@@ -404,9 +404,17 @@ Goal: the namespace has written rules before it has strangers.
 Done when: staking a reserved nick is refused naming the reason, and the
 squatting line is written where a member reads the network's rules.
 
-- [ ] 4.1 A reserved list held by the Worker beside `OWNER_NICK` (Q5).
-- [ ] 4.2 An npm-style squatting line, a written rule in the cli README's
-  Frontier section that no verb prints (`FJS-D1475`).
+- [x] 4.1 A reserved list held by the Worker beside `OWNER_NICK` (Q5).
+  Built 2026-10-23: `RESERVED` in `packages/cli/core/tell-worker.js`, a
+  constant like `INVITE_ALLOWANCE`, checked before the invite is spent, so a
+  refused stake leaves the code good. A 409 names the reason; `stake` stopped
+  adding its own "Stake another nick", which was wrong on the key-held 409s.
+  A row staked before the list is untouched. Drive 6/6 against `wrangler
+  dev`; undeployed. Silence: nothing fails if the check goes — no test
+  file or `DRIVES.md` row yet, owed when the owner calls it settled.
+- [x] 4.2 An npm-style squatting line, a written rule in the cli README's
+  Frontier section that no verb prints (`FJS-D1475`). Built 2026-10-23: the
+  README's § The Frontier network, the four rules for a nick.
 - [x] 4.3 What a bad invitee costs the inviter — nothing to build: Q4 ruled
   that the public tree (2.6) is the whole of it (`FJS-D1449`).
 
@@ -470,7 +478,8 @@ the same JSON.
 - [ ] 6.5 Refused signatures counted per day on the object, and shown as a
   health figure. Probing is the one attack the owner can see from here.
 - [ ] 6.6 Owner actions, added only when one is first needed: withdraw an
-  invite, reserve a nick (4.1), hide a member. Each writes a row to an
+  invite, reserve a nick (extending 4.1's `RESERVED`, never a second list
+  beside it), hide a member. Each writes a row to an
   `actions` log that the view prints.
 
 ---

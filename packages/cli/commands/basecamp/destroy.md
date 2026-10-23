@@ -15,6 +15,10 @@ flags:
     type: string
     description: The cloud the box is at, by kind; found by its id otherwise
     defaultValue: ''
+  release-ip:
+    type: boolean
+    description: Release the box's reserved IP too, without asking; kept otherwise (asked at a terminal)
+    defaultValue: false
 ---
 
 Refuses any box `fli basecamp:create` did not make: the token reaches every
@@ -38,9 +42,10 @@ fails ssh on a changed host key.
 A reserved IP in front of the box outlives it. At a terminal the run asks
 whether to keep it — Enter keeps it, for the next `fli basecamp:create`, which
 reuses the address the hostname's record holds — or release it; with no
-terminal it is kept. A kept one is still Basecamp's, so the `Host` block and
-the record naming it are left as they are and not listed, and it bills at the
-cloud's rate until it is released — `fli basecamp:create`'s Setup names each.
+terminal it is kept, and `--release-ip` releases it without asking. A kept
+one is still Basecamp's, so the `Host` block and the record naming it are left
+as they are and not listed, and it bills at the cloud's rate until it is
+released — `fli basecamp:create`'s Setup names each.
 
 ```js
 let id = String(arg.id ?? '').trim()
@@ -55,7 +60,7 @@ let cloud = ''
 if (!id) {
   const hosts = found.machines.filter(m => !m.serverId)
   const ours  = hosts.filter(m => m.status === 'off')
-  if (!hosts.length) { echo('No Basecamp host fli basecamp:create made is at this account'); return }
+  if (!hosts.length) { echo(`No Basecamp host fli basecamp:create made is at ${read.clouds.map(cloudLabel).join(' or ')}`); return }
   if (!ours.length) {
     echo('None is powered off. fli basecamp:stop <id> first:')
     echo.lines(hosts.map(m => machineLine(m, chalk)), { indent: 2 })
@@ -92,15 +97,15 @@ log.success(`Destroyed box ${done.destroyed} at ${cloudLabel(cloud)}`)
 // joins the leftovers; kept, nothing naming it is stale.
 const reserved = done.reservedIp ?? target?.reservedIp ?? null
 let kept = !!reserved
-if (reserved && process.stdin.isTTY) {
-  const pick = await tty.keys(chalk`{cyan ?} {bold Keep the reserved IP ${reserved} for the next box?}{dim   ${held}}`, { k: 'keep', r: 'release' })
+if (reserved && (flag['release-ip'] || process.stdin.isTTY)) {
+  const pick = flag['release-ip'] ? 'r' : await tty.keys(chalk`{cyan ?} {bold Keep the reserved IP ${reserved} for the next box?}{dim   ${held}}`, { k: 'keep', r: 'release' })
   if (pick === 'r') {
     const gone = await runProvision({ cloud, action: 'release', ip: reserved })
     if (gone.error) log.error(`${gone.error}. Release it in the ${cloudLabel(cloud)} console: ${page}`)
     else { kept = false; log.success(`Released ${reserved}`) }
   }
 }
-if (kept) log.info(`  Kept ${reserved} — the next fli basecamp:create reuses it. Releasing it later: ${page}`)
+if (kept) log.info(`  Kept ${reserved} — the next fli basecamp:create reuses it. Releasing it later: ${page}, or --release-ip on the next destroy`)
 // At a cloud that puts the held address on the box itself, the box's own
 // address IS the reserved one, and a kept one leaves nothing stale.
 const addresses = [...new Set([boxIp, reserved])].filter(ip => ip && !(kept && ip === reserved))
@@ -136,7 +141,7 @@ if (!boxIp) {
 // The records are found by the address rather than the hostname: Basecamp's
 // config names no domain, and the one create was handed is kept nowhere. A
 // proxied record resolves to Cloudflare's addresses, so DNS cannot answer this.
-for (const ip of addresses.length ? addresses : [null]) {
+for (const ip of boxIp ? addresses : [null]) {
   const found = ip && process.env.CLOUDFLARE_TOKEN ? await hostRecord({ find: ip }) : null
   if (found?.records) {
     for (const r of found.records)
@@ -148,6 +153,7 @@ for (const ip of addresses.length ? addresses : [null]) {
   }
 }
 
+if (!left.length) return
 echo('')
 echo('Left beside it — check each:')
 echo.lines(left.flatMap(([where, what, how]) => [chalk`{bold ${where.padEnd(14)}} ${what}`, chalk`${' '.repeat(15)}{cyan ${how}}`]), { indent: 2 })

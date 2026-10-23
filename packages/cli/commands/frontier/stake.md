@@ -74,8 +74,7 @@ if (answer.status === 409 && saved.nick) {
   if (me) { log.success(`This machine is already ${me.nick} at ${api}. The invite is unspent — pass it on.`); return }
 }
 if (answer.status !== 201) {
-  const hint = answer.status === 409 ? ' Stake another nick.' : ''
-  log.error(`${api} refused the join (${answer.status}): ${answer.json?.message ?? 'no reason given'}${hint}`)
+  log.error(`${api} refused the join (${answer.status}): ${answer.json?.message ?? 'no reason given'}`)
   process.exitCode = 1
   return
 }

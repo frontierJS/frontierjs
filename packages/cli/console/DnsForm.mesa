@@ -1,0 +1,228 @@
+<script module>
+  /** The types the form writes; the pane offers `e` on these only. */
+  export const TYPES = ['A', 'AAAA', 'CNAME', 'TXT', 'NS', 'MX', 'SRV', 'CAA']
+
+  /** One record as a zone-file line, so a before, an after and a delete read the same way. */
+  export function line(r) {
+    const d = r.data
+    const value = r.type === 'SRV' && d ? `${d.priority} ${d.weight} ${d.port} ${d.target}`
+      : r.type === 'CAA' && d ? `${d.flags} ${d.tag} "${d.value}"`
+      : `${r.priority != null ? `${r.priority} ` : ''}${r.content}`
+    return [r.name, r.type, value, `ttl ${r.ttl === 1 ? 'auto' : r.ttl}`, r.proxied ? 'proxied' : '', r.comment ? `# ${r.comment}` : '']
+      .filter(Boolean).join('  ')
+  }
+</script>
+
+<script>
+  // DnsForm.mesa — add or edit one record, for the `:dns` pane
+  // (`IDEAS/cloudflare-dns.md` 3.2). The type picks the fields; Enter shows
+  // the record as it would be beside the one it replaces, and a second Enter
+  // sends it. A field changed after that takes the review back, so what is
+  // sent is always what was last shown.
+  //
+  // A record Basecamp marked answers the first send with a warning
+  // (`FJS-D1471`, `/api/dns/records`); the warning is shown and the next Enter
+  // sends again with `confirm`.
+  //
+  // Each control carries its own keymap rather than the console root's: a key
+  // typed into a field is the field's (`FJS-D1386`), so the root never hears
+  // Enter or Esc there. Tab is bound too, because the two frames order their
+  // Tab stops differently and the form's order has to be one.
+
+  import { keymap } from '@frontierjs/toolbelt/keys'
+  import { keys }   from '@frontierjs/mesa/keys'
+
+  export let api     = ''
+  export let profile = ''
+  export let zone    = null   // { id, name }
+  export let record  = null   // the record edited; null adds one
+  export let keyed   = null   // (rows) => the form's keys, for the pane's legend
+  export let done    = () => {}   // (said) => the write landed
+  export let close   = () => {}
+
+  // Cloudflare refuses `proxied` on the rest; the edge connector's list
+  // (`PROXIABLE` in `basecamp/api/src/providers/edge/cloudflare.ts`).
+  const PROXIABLE = new Set(['A', 'AAAA', 'CNAME'])
+  // SRV and CAA are written as `data`, which Cloudflare renders into `content`.
+  const FIELDS = {
+    A: ['content'], AAAA: ['content'], CNAME: ['content'], TXT: ['content'], NS: ['content'],
+    MX:  ['priority', 'content'],
+    SRV: ['priority', 'weight', 'port', 'target'],
+    CAA: ['flags', 'tag', 'value'],
+  }
+  const LABEL = {
+    A: 'IPv4 address', AAAA: 'IPv6 address', CNAME: 'target', TXT: 'text', NS: 'nameserver', MX: 'mail server',
+  }
+  const NUMBERS = new Set(['priority', 'weight', 'port', 'flags'])
+
+  let type    = record?.type ?? 'A'
+  let f       = fieldsOf(record)
+  let review  = null   // { body, before, after, warning? } once Enter has shown it
+  let problem = ''
+  let sending = false
+  const controls = {}   // field name → its element, for Tab
+
+  function fieldsOf(r) {
+    const d = r?.data ?? dataOf(r)
+    const ttl = !r || r.ttl === 1 ? 'auto' : String(r.ttl)
+    const s = (v) => v === null || v === undefined ? '' : String(v)
+    return {
+      name: r?.name ?? '', content: r?.content ?? '', priority: s(r?.priority ?? d.priority),
+      weight: s(d.weight), port: s(d.port), target: s(d.target), flags: s(d.flags), tag: s(d.tag), value: s(d.value),
+      ttl, proxied: r ? !!r.proxied : false, comment: r?.comment ?? '',
+    }
+  }
+
+  // A listed SRV or CAA may carry only `content`: `weight port target` with
+  // the priority beside it, or `flags tag "value"`.
+  function dataOf(r) {
+    if (r?.type === 'SRV') { const [weight, port, target] = r.content.split(/\s+/); return { priority: r.priority, weight, port, target } }
+    if (r?.type === 'CAA') { const m = /^(\d+)\s+(\S+)\s+"?(.*?)"?$/.exec(r.content) ?? []; return { flags: m[1], tag: m[2], value: m[3] } }
+    return {}
+  }
+
+  const order = (type) => [...(record ? [] : ['type']), 'name', ...FIELDS[type], 'ttl', ...(PROXIABLE.has(type) ? ['proxied'] : []), 'comment']
+
+  // A name with no zone on the end is relative to it, and `@` is the apex.
+  const full = (name) => {
+    const n = name.trim().replace(/\.$/, '')
+    if (!n || n === '@') return zone.name
+    return n === zone.name || n.endsWith(`.${zone.name}`) ? n : `${n}.${zone.name}`
+  }
+
+  // The record the fields describe, as Cloudflare takes it — or what keeps it
+  // from being one.
+  function built(type, f) {
+    if (!f.name.trim()) return { problem: 'name is empty: a name, or @ for the zone itself' }
+    for (const k of FIELDS[type]) {
+      const v = String(f[k]).trim()
+      if (!v) return { problem: `${k === 'content' ? LABEL[type] : k} is empty` }
+      if (NUMBERS.has(k) && !/^\d+$/.test(v)) return { problem: `${k} is a whole number, not ${v}` }
+    }
+    const ttl = f.ttl.trim() === 'auto' || !f.ttl.trim() ? 1 : Number(f.ttl)
+    if (!Number.isInteger(ttl) || (ttl !== 1 && ttl < 30)) return { problem: `ttl is auto or seconds, not ${f.ttl}` }
+    const body = { type, name: full(f.name), ttl }
+    if (type === 'SRV') body.data = { priority: Number(f.priority), weight: Number(f.weight), port: Number(f.port), target: f.target.trim() }
+    else if (type === 'CAA') body.data = { flags: Number(f.flags), tag: f.tag.trim(), value: f.value.trim() }
+    else body.content = f.content.trim()
+    if (type === 'MX') body.priority = Number(f.priority)
+    if (PROXIABLE.has(type)) body.proxied = f.proxied
+    if (f.comment.trim() || record?.comment) body.comment = f.comment.trim() || null
+    return { body }
+  }
+
+  // An edit sends only what moved: `edit` is a patch, and a key sent unchanged
+  // is one more thing the answer could disagree about.
+  function changes(body) {
+    const out = {}
+    for (const [k, v] of Object.entries(body)) {
+      const was = k === 'data' ? same(record.data ?? dataOf(record), v) : record[k] ?? null
+      if (JSON.stringify(v) !== JSON.stringify(was)) out[k] = v
+    }
+    return out
+  }
+  // `data` as it was, in the keys and order the form writes, numbers as numbers.
+  const same = (was, v) => Object.fromEntries(Object.keys(v).map(k => [k, NUMBERS.has(k) ? Number(was[k]) : was[k]]))
+
+  function show() {
+    const out = built(type, f)
+    if (out.problem) { problem = out.problem; return }
+    problem = ''
+    const body = record ? changes(out.body) : out.body
+    if (record && !Object.keys(body).length) { problem = 'nothing changed'; return }
+    review = { body, before: record ? line(record) : '', after: line(record ? { ...record, ...body } : body) }
+  }
+
+  async function send() {
+    if (sending) return
+    sending = true
+    problem = ''
+    const url = `${api}/api/dns/records${record ? `/${encodeURIComponent(record.id)}` : ''}`
+    const payload = { profile, zone: zone.id, [record ? 'changes' : 'record']: review.body, ...(review.warning ? { confirm: true } : {}) }
+    try {
+      const res = await fetch(url, { method: record ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const out = await res.json().catch(() => ({}))
+      if (res.status === 409 && out.warning) review = { ...review, warning: out.warning }
+      else if (!res.ok) problem = out.error ?? `${url} answered ${res.status}`
+      else done(`${record ? 'edited' : 'added'} ${line(out.record)}`)
+    } catch (e) {
+      problem = `the console's server did not answer: ${e.message}`
+    }
+    sending = false
+  }
+
+  const go = () => review ? send() : show()
+
+  // From no field — focus left the form — Tab goes to the first.
+  function step(from, by) {
+    const names = order(type)
+    const at = names.indexOf(from)
+    const next = at < 0 ? names[0] : names[(at + by + names.length) % names.length]
+    if (controls[next]) $.focus(controls[next])
+  }
+
+  function changed(k, v) {
+    f = { ...f, [k]: v }
+    review = null
+  }
+
+  function retype(t) {
+    type = t
+    review = null
+    problem = ''
+  }
+
+  $: rows = [
+    { keys: '<CR>', label: review ? (review.warning ? 'send anyway' : 'send') : 'show the change', run: go },
+    { keys: '<Tab>', label: 'next field', run: (from) => step(from, 1) },
+    { keys: '<S-Tab>', label: 'previous field', run: (from) => step(from, -1) },
+    { keys: '<Esc>', label: 'close the form', run: close },
+  ]
+  $: map = keymap(Object.fromEntries(rows.map(a => [a.keys, a.label])))
+  $: keyed?.(rows.map(a => ({ ...a, run: () => a.run(null) })))
+
+  // Registers the control for Tab and hands it the form's keys; the field it
+  // is answers which way Tab goes.
+  const field = (name) => (el) => {
+    controls[name] = el
+    const off = keys(() => ({ active: [map], on: (action) => rows.find(a => a.label === action)?.run(name) }))(el)
+    return () => {
+      off?.()
+      if (controls[name] === el) delete controls[name]
+    }
+  }
+
+  $.onMount(() => {
+    const first = controls[order(type)[0]]
+    if (first) $.focus(first)
+  })
+</script>
+
+<section class="surface stack" data-part="form">
+  <div class="bar dense">
+    <strong class="text-sm">{record ? `edit ${record.name} ${record.type}` : `add a record to ${zone.name}`}</strong>
+    {#if sending}<span class="text-xs text-muted">sending…</span>{/if}
+  </div>
+  {#each order(type) as name (name)}
+    <div class="cluster gap-2xs" data-field={name}>
+      <span class="text-xs text-muted">{name === 'content' ? LABEL[type] : name}</span>
+      {#if name === 'type'}
+        <select class="input" aria-label="type" value={type} onchange={(e) => retype(e.target.value)} {@attach field('type')}>
+          {#each TYPES as t (t)}<option value={t}>{t}</option>{/each}
+        </select>
+      {:else if name === 'proxied'}
+        <input type="checkbox" aria-label="proxied" checked={f.proxied} onchange={(e) => changed('proxied', e.target.checked)} {@attach field('proxied')}>
+      {:else}
+        <input class="input" aria-label={name} value={f[name]} placeholder={name === 'name' ? `@ or a name under ${zone.name}` : name === 'ttl' ? 'auto or seconds' : ''} oninput={(e) => changed(name, e.target.value)} {@attach field(name)}>
+      {/if}
+    </div>
+  {/each}
+  {#if problem}<p class="text-sm text-danger" data-problem>{problem}</p>{/if}
+  {#if review}
+    <div class="stack gap-3xs" data-review>
+      {#if review.before}<code class="text-sm" data-before>- {review.before}</code>{/if}
+      <code class="text-sm" data-after>+ {review.after}</code>
+      {#if review.warning}<p class="text-sm text-warning" data-warning>{review.warning}</p>{/if}
+    </div>
+  {/if}
+</section>

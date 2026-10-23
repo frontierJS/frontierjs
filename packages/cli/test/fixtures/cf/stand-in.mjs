@@ -12,8 +12,13 @@
 // While the file `CF_SIGNED_OUT` names exists no profile is signed in, and
 // `auth login` prints the device text, then waits for the file to go — the
 // drive deleting it is the person approving the code.
+//
+// Each spawn is a fresh process, so a write is forgotten unless `CF_STATE`
+// names a file: then a zone's records are read from it once written, and
+// create, edit and delete write it — a drive rereading after a write sees the
+// table change, as against the real one.
 
-import { readFileSync, appendFileSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'fs'
 
 const fixture = JSON.parse(readFileSync(process.env.CF_FIXTURE, 'utf8'))
 const argv = process.argv.slice(2)
@@ -84,13 +89,27 @@ if (verb.startsWith('dns records')) {
   const path = `/zones/${zoneId}/dns_records`
   guard(path)
   if (!reaches(zoneOf(zoneId))) refuse('path', verb === 'dns records list' ? `${path}?page=${flags.page ?? 1}&per_page=${flags['per-page'] ?? fixture.perPage.records}` : path)
-  const rows = fixture.records[zoneId] ?? []
+  const kept = process.env.CF_STATE && existsSync(process.env.CF_STATE) ? JSON.parse(readFileSync(process.env.CF_STATE, 'utf8')) : {}
+  const rows = kept[zoneId] ?? fixture.records[zoneId] ?? []
+  const keep = (next, value) => {
+    if (process.env.CF_STATE) writeFileSync(process.env.CF_STATE, JSON.stringify({ ...kept, [zoneId]: next }))
+    answer(value)
+  }
   const stamp = { created_on: '2026-10-22T00:00:00Z', modified_on: '2026-10-22T00:00:00Z' }
+  const target = () => rows.find(r => r.id === words[3]) ?? refuse('path', `${path}/${words[3]}`)
   if (verb === 'dns records list') page(rows, 'records')
-  if (verb === 'dns records get') answer(rows.find(r => r.id === words[3]) ?? refuse('path', `${path}/${words[3]}`))
-  if (verb === 'dns records create') answer({ id: 'rec-created', proxiable: true, settings: {}, meta: {}, comment: null, tags: [], ...JSON.parse(flags.body), ...stamp })
-  if (verb === 'dns records edit') answer({ ...rows.find(r => r.id === words[3]), ...JSON.parse(flags.body), modified_on: stamp.modified_on })
-  if (verb === 'dns records delete') answer({ id: words[3] })
+  if (verb === 'dns records get') answer(target())
+  if (verb === 'dns records create') {
+    const body = JSON.parse(flags.body)
+    const id = rows.some(r => r.id === 'rec-created') ? `rec-created-${rows.length}` : 'rec-created'
+    const made = { id, proxiable: ['A', 'AAAA', 'CNAME'].includes(body.type), settings: {}, meta: {}, comment: null, tags: [], ...body, ...stamp }
+    keep([...rows, made], made)
+  }
+  if (verb === 'dns records edit') {
+    const edited = { ...target(), ...JSON.parse(flags.body), modified_on: stamp.modified_on }
+    keep(rows.map(r => r.id === edited.id ? edited : r), edited)
+  }
+  if (verb === 'dns records delete') keep(rows.filter(r => r.id !== target().id), { id: words[3] })
 }
 
 if (verb === 'cache purge') {

@@ -205,7 +205,7 @@
     <TabPanel id="call" unmount><Call {api} {shown} keyed={keyedFor('call')} /></TabPanel>
     <TabPanel id="data" unmount><Data {api} {shown} keyed={keyedFor('data')} /></TabPanel>
     <TabPanel id="ask" unmount><Ask {api} {shown} keyed={keyedFor('ask')} /></TabPanel>
-    <TabPanel id="dns" unmount><Dns {api} {shown} keyed={keyedFor('dns')} /></TabPanel>
+    <TabPanel id="dns" unmount><Dns {api} {shown} {home} keyed={keyedFor('dns')} /></TabPanel>
   </Tabs>
 
   {#if !legendAt}

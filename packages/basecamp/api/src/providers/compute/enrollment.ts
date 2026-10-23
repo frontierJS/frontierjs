@@ -261,6 +261,10 @@ KbdInteractiveAuthentication no
 PermitRootLogin prohibit-password
 MaxAuthTries 3
 SSHEOF
+  # Where ssh is socket-activated, a security pass that upgraded openssh leaves
+  # ssh.service stopped until the next login, and its /run/sshd with it, so
+  # sshd -t and sshd -T refuse a config that is fine.
+  install -d -m 0755 /run/sshd
   sshd -t
   systemctl try-reload-or-restart ssh.service
 else

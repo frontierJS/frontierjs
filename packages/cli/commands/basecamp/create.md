@@ -12,7 +12,7 @@ examples:
 flags:
   cloud:
     type: string
-    description: The cloud to buy at, by kind (default the one whose token is stored; asked at a terminal when both are)
+    description: The cloud to buy at, by kind (default the one whose token is stored; asked at a terminal when both or neither are, required under --yes then)
     defaultValue: ''
   size:
     type: string
@@ -64,8 +64,9 @@ flags:
 
 Asks Basecamp's hostname first — Enter takes `deploy.web.domain` from
 `packages/basecamp/frontier.config.js` (none when it is empty), `--domain` skips
-the question. Then the server's name — Enter takes `basecamp`, `--name` skips the
-question, and a run with no terminal uses `basecamp`. At a terminal the answers
+the question. Then the server's name — Enter takes the hostname's first label (`ops2` for
+`ops2.example.com`, `basecamp` with no hostname), `--name` skips the
+question, and a run with no terminal uses that label. At a terminal the answers
 are shown together and one last key buys the box or leaves it. Then creates one box
 with your SSH key on it, waits until it has an address,
 and adds a `Host` block for it to `~/.ssh/config` — asked first, yes unless you
@@ -112,8 +113,10 @@ the `fli basecamp:dns` line instead of writing the record.
 
 `--yes` answers every question for you: each yes/no is yes — installing,
 the Outpost and the purchase included — and each typed answer is what Enter
-takes. It refuses without `--domain` and `--name`, since a run that asks nothing
-names the box on the command line. The admin is `--admin`, else
+takes. It refuses without `--domain`, since a run that asks nothing
+names the box on the command line (`--name` defaults to the hostname's first
+label), and without `--cloud` unless exactly one
+cloud's token is stored. The admin is `--admin`, else
 `ME` from your global fli env, and with neither it refuses; the password is
 generated. The summary still prints. A missing
 token is still asked for, since it has no default.
@@ -151,13 +154,13 @@ if (flag.admin && flag.json) {
 const asking = (process.stdin.isTTY || flag.yes) && !flag.json
 
 // A default hostname or name under --yes would buy a box nobody named.
-const unnamed = flag.yes ? ['domain', 'name'].filter(f => !flag[f]) : []
-if (unnamed.length) {
-  log.error(`--yes needs ${unnamed.map(f => `--${f}`).join(' and ')}: it buys and installs without asking, so the box is named on the command line. Nothing was bought`)
+const unnamed = flag.yes && !flag.domain
+if (unnamed) {
+  log.error(`--yes needs --domain: it buys and installs without asking, so the box is named on the command line. Nothing was bought`)
   process.exitCode = 1
   return
 }
-const cloudPick = await pickCloud({ cloud: flag.cloud, interactive: !!process.stdin.isTTY && !flag.yes, tty, chalk, say: (t) => log.warn(t) })
+const cloudPick = await pickCloud({ cloud: flag.cloud, interactive: !!process.stdin.isTTY, choose: !!process.stdin.isTTY && !flag.yes, tty, chalk, say: (t) => log.warn(t) })
 if (cloudPick.error) { log.error(`${cloudPick.error}. Nothing was bought`); process.exitCode = 1; return }
 const cloud  = cloudPick.cloud
 const vendor = cloudLabel(cloud)
@@ -203,6 +206,8 @@ else if (asking) echo('')
 
 // Every question before the box is bought, so the minute it takes is one
 // the person can walk away from.
+// The hostname's first label names the box: ops2.example.com is ops2.
+const fallbackName = domain.split('.')[0] || 'basecamp'
 let name = flag.name
 let admin = flag.admin
 let password = ''
@@ -210,7 +215,7 @@ let install = !!admin
 let outpost = flag.outpost
 let addHost = false
 if (asking) {
-  name ||= await ask('Server name', 'Enter: basecamp') || 'basecamp'
+  name ||= await ask('Server name', `Enter: ${fallbackName}`) || fallbackName
   addHost = await yes(`Add Host ${name} to ~/.ssh/config once it has an address?`, true)
   install ||= await yes('Install Basecamp on it once it is up?', false)
   if (install && !admin) admin = await askAdmin(ask)
@@ -220,7 +225,7 @@ if (asking) {
     log.warn(`ssh offers your default identity, not ${keyPath}: if the install cannot connect, add the Host block it prints and run it from packages/basecamp`)
 }
 
-name ||= 'basecamp'
+name ||= fallbackName
 if (install && !domain) {
   log.error(`Installing needs Basecamp's hostname: Caddy routes by it and fetches its certificate. Pass --domain, or answer the hostname question`)
   process.exitCode = 1

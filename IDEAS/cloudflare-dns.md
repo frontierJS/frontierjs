@@ -151,8 +151,8 @@ Goal: add, edit, delete and the proxy toggle, each shown before it is sent.
 Done when: the drive adds a TXT, edits it, flips a proxy and deletes it against the stand-in, and once by hand against a real zone the owner names.
 
 - [x] 3.1 `POST /api/dns/records`, `PUT`, `DELETE`, each over the module; a `basecamp`-marked target answers a `warning` the pane must echo before sending again
-- [ ] 3.2 The form per type — A/AAAA/CNAME/TXT/NS plain, MX/SRV with priority, CAA with flags/tag; `proxied` offered only for the types Cloudflare proxies (the connector's list in `cloudflare.ts` is the precedent); the before/after line
-- [ ] 3.3 Delete confirm, the proxy toggle as a one-key edit, and `r` after every write so the table is Cloudflare's answer and never the pane's guess
+- [x] 3.2 The form per type — A/AAAA/CNAME/TXT/NS plain, MX/SRV with priority, CAA with flags/tag; `proxied` offered only for the types Cloudflare proxies (the connector's list in `cloudflare.ts` is the precedent); the before/after line
+- [x] 3.3 Delete confirm, the proxy toggle as a one-key edit, and `r` after every write so the table is Cloudflare's answer and never the pane's guess
 
 ### Phase 4 — The door
 
@@ -235,6 +235,10 @@ Read from `cf` v0.15.0 (npm package `cf`, node 22) on 2026-10-22, signed in with
 **2.3 Sign in.** Signed out, `auth list` is `[]`, `auth whoami` is `{authenticated: false, error: "Not logged in"}`, and a list verb is the *No authentication token found* box. `cf auth login --no-browser` with stdin closed prints `ℹ Starting OAuth login flow...` on stdout and the device text on stderr — *To authorize cf, please visit:*, the link `https://dash.cloudflare.com/oauth2/device/verify` alone on its line, *and enter the code:*, an 8-letter code alone on its line, *You have 5 minutes to approve this request.* — then waits. **Not measured:** what it prints once approved, and how an expired code reads; the run was never approved, and the pane takes exit 0 as signed in and anything else as the box `cf` prints.
 
 **3.1 Writes.** `POST /api/dns/records` and `PUT`/`DELETE /api/dns/records/<id>` carry `{profile, zone, record | changes, confirm}`. Without `confirm`, an edit or delete reads the target with `cf dns records get <id>` first — +1.3 s, because the table is one read old — and a marked target, or a comment that writes the mark, is a 409 `{warning}`; the pane sends again with `confirm: true`. **Not measured:** what the real `get` answers for an unknown record id; the stand-in answers the 403 an unknown zone id does.
+
+**3.2 Form.** `console/DnsForm.mesa`, opened by `a` and `e`; each control carries the form's keymap (Enter, Tab, Shift+Tab, Esc), since a key typed into a field never reaches the console root and the two frames order Tab stops differently. A name with no zone on the end is put under it and `@` is the apex. SRV and CAA are sent as `data`; an edit sends only the keys that moved, and a cleared comment is sent as `null`. A write the server took rereads the records, so the reread half of 3.3 is done for the form. **Not measured:** whether the real `edit` clears a comment on `null` or wants `""`; whether a real SRV or CAA row carries `data` in `list` (the form reads `content` when it does not).
+
+**3.3 Table writes.** `d` draws the record and Enter deletes it; `p` sends `{proxied}` flipped in one press, offered on a row whose `proxiable` is true — Cloudflare's answer, not the form's type list — since a second press puts it back. A marked target answers either with the 409, drawn in the same panel, and Enter sends again with `confirm`. Every write rereads; nothing is patched into the table. The stand-in keeps writes in the file `CF_STATE` names, so the drive sees the table change after each. **Not measured:** a warned flip (the fixture has no marked proxiable record — the path is the delete's).
 
 **Writes.** `create`/`edit`/`update` take only `--body '<json>'` — no per-field flags — and `--dry-run` prints `{command, method, url, pathParams, query, bodyKind, body}` without sending, exit 0; `delete <id>` the same with `bodyKind: none`. The stand-in `cf` (1.2) answers these shapes.
 

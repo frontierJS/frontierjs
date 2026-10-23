@@ -17,7 +17,11 @@
  * land. The agent is a stand-in `claude` that makes the MCP call it is asked.
  * `:dns` (cloudflare-dns 2.2) reads a stand-in `cf` answering from the
  * fixture `test/cloudflare.test.js` uses: both frames count the accounts, then
- * the same keys walk both into a zone's records and back out. Signed out
+ * the same keys walk both into a zone's records and back out. The form (3.2)
+ * adds a TXT and edits it, shows an edit's before and after, and sends to the
+ * MX Basecamp marked only past its warning; `p` flips the apex's proxy and `d`
+ * deletes the TXT (3.3), the MX's delete stopping at its warning. The stand-in
+ * keeps its writes, so each reread shows the table changed. Signed out
  * (2.3), both show one *sign in* row, then the same device code, and the
  * accounts again once the stand-in is approved.
  *
@@ -119,7 +123,7 @@ out({ type: 'result', subtype: 'success', is_error: false, num_turns: 2, total_c
 `, { mode: 0o755 })
 // The token is the fixture's, so a real one in the shell is never what `:dns` grades.
 writeFileSync(join(binDir, 'cf'), `#!/bin/sh\nexec "${process.execPath}" "${join(CLI, 'test/fixtures/cf/stand-in.mjs')}" "$@"\n`, { mode: 0o755 })
-const CF_ENV = { CF_FIXTURE: join(CLI, 'test/fixtures/cf/v0.15.0.json'), CLOUDFLARE_API_TOKEN: 'project-token', CF_SIGNED_OUT: join(binDir, 'cf-signed-out') }
+const CF_ENV = { CF_FIXTURE: join(CLI, 'test/fixtures/cf/v0.15.0.json'), CLOUDFLARE_API_TOKEN: 'project-token', CF_SIGNED_OUT: join(binDir, 'cf-signed-out'), CF_STATE: join(binDir, 'cf-state.json') }
 // The sign-in's link is opened by the server, which a real opener would do on
 // the screen of whoever runs the drive.
 for (const opener of ['xdg-open', 'open']) writeFileSync(join(binDir, opener), `#!/bin/sh\necho "$@" >> "${join(binDir, 'opened')}"\n`, { mode: 0o755 })
@@ -309,7 +313,7 @@ async function legendsAgree(label, expect) {
 }
 
 // A key at both frames: the pty takes bytes, Chrome a real key event.
-const BYTES = { Enter: '\r', Escape: '\x1b' }
+const BYTES = { Enter: '\r', Escape: '\x1b', Tab: '\t', ArrowDown: '\x1b[B' }
 async function press(k) {
   pty.stdin.write(BYTES[k] ?? k)
   await (k.length === 1 ? browser.type(k) : browser.press(k))
@@ -541,6 +545,106 @@ try {
   check(await until(() => browser.evaluate(`return document.querySelector('[data-record="rec-mx"] [data-mark]')?.textContent.trim() === 'basecamp' && !document.querySelector('[data-record="rec-apex"] [data-mark]')`), 5000),
     ':dns — the record Basecamp marked carries the badge, the other does not')
   check(screen(out).some((l) => l.includes('mx.own.example') && l.includes('basecamp')), ':dns — the terminal draws the badge on the MX row')
+
+  // The form (3.2) and the table's own writes (3.3), by the same keys in both
+  // frames. The stand-in keeps each write, so a reread is the table changed.
+  const bothShow = async (sel, text, label) => {
+    const want = squash(text)
+    let web = ''
+    check(await until(async () => {
+      web = squash(await browser.evaluate(`return document.querySelector('${sel}')?.textContent ?? ''`))
+      return web.includes(want) && screen(out).some((l) => squash(l).includes(want))
+    }, 10000), `:dns — ${label}`, `want ${JSON.stringify(want)}\nbrowser ${JSON.stringify(web)}\n` + screen(out).slice(0, 40).join('\n'))
+  }
+  const rowShows = async (id, has, label) => {
+    let web = ''
+    check(await until(async () => {
+      web = squash(await browser.evaluate(`return document.querySelector('[data-record="${id}"]')?.textContent ?? ''`))
+      return has.every((h) => web.includes(h)) && screen(out).some((l) => has.every((h) => l.includes(h)))
+    }, 10000), `:dns — ${label}`, `browser ${JSON.stringify(web)}\n` + screen(out).slice(0, 40).join('\n'))
+  }
+  const typeKeys = async (text) => { for (const k of text) await press(k) }
+  await legendsAgree(':dns records', ['a add', 'e edit', 'd delete', 'p proxy off'])
+  await press('a')
+  await bothShow('[data-part="form"]', 'add a record to own.example', 'a opens the add form in both frames')
+  await legendsAgree(':dns form', ['<CR> show the change', '<Tab> next field', '<Esc> close the form'])
+  for (let i = 0; i < 3; i++) await press('ArrowDown')
+  await bothShow('[data-field="content"]', 'text', 'Down three times picks TXT, whose content is text')
+  check(await browser.evaluate(`return !document.querySelector('[data-field="proxied"]') && !document.querySelector('[data-field="priority"]')`),
+    ':dns — a TXT offers neither proxied nor priority')
+  await press('Tab')
+  await typeKeys('_drive')
+  await press('Tab')
+  await typeKeys('hello')
+  await press('Enter')
+  await bothShow('[data-after]', '+ _drive.own.example TXT hello ttl auto', 'Enter shows the record it would add, the name under the zone')
+  await legendsAgree(':dns review', ['<CR> send'])
+  await press('Enter')
+  await bothShow('[data-said-write]', 'added _drive.own.example TXT hello ttl auto', 'a second Enter sends it, and the form closes')
+  await dnsAgree('records', 3, 'the records are read again after the write, the TXT among them')
+  await legendsAgree(':dns records on a TXT', ['d delete'])
+  check(!(await webLegend()).includes('proxy'), ':dns — a TXT is offered no proxy flip', await webLegend())
+
+  // The TXT sorts first, so the cursor is on it.
+  await press('e')
+  await bothShow('[data-part="form"]', 'edit _drive.own.example TXT', 'e opens the TXT just added')
+  for (let i = 0; i < 3; i++) await press('Tab')
+  await typeKeys('note')
+  await press('Enter')
+  await bothShow('[data-after]', '+ _drive.own.example TXT hello ttl auto # note', 'its edit shows the comment it would gain')
+  await press('Enter')
+  await bothShow('[data-said-write]', 'edited _drive.own.example TXT hello ttl auto # note', 'Enter sends the edit')
+  await rowShows('rec-created', ['_drive.own.example', 'note'], 'the reread draws the TXT with its comment in both frames')
+
+  await press('j')
+  await press('e')
+  await bothShow('[data-part="form"]', 'edit own.example A', 'j then e opens the apex A')
+  for (let i = 0; i < 4; i++) await press('Tab')
+  await typeKeys('hand')
+  await press('Enter')
+  await bothShow('[data-before]', '- own.example A 192.0.2.10 ttl auto proxied', 'an edit shows the record as it is')
+  await bothShow('[data-after]', '+ own.example A 192.0.2.10 ttl auto proxied # hand', 'beside the record as it would be')
+  await press('Escape')
+  check(await until(async () => await browser.evaluate(`return !document.querySelector('[data-part="form"]')`) && !screen(out).some((l) => l.includes('edit own.example A')), 10000),
+    ':dns — Esc closes the form in both frames, nothing sent')
+
+  await press('p')
+  await bothShow('[data-said-write]', 'edited own.example A 192.0.2.10 ttl auto', 'p flips the proxy in one press')
+  await rowShows('rec-apex', ['192.0.2.10', 'off'], 'the reread draws the apex unproxied in both frames')
+  await legendsAgree(':dns records after the flip', ['p proxy on'])
+
+  await press('j')
+  await press('e')
+  await bothShow('[data-part="form"]', 'edit own.example MX', 'j then e opens the MX Basecamp marked')
+  for (let i = 0; i < 3; i++) await press('Tab')
+  await typeKeys('0')
+  await press('Enter')
+  await bothShow('[data-after]', '+ own.example MX 10 mx.own.example ttl 36000 # basecamp', 'the MX shows its priority and the new ttl')
+  await press('Enter')
+  await bothShow('[data-warning]', "own.example MX is Basecamp's (basecamp)", 'sending to a marked record answers the warning first')
+  await legendsAgree(':dns warned', ['<CR> send anyway'])
+  await press('Enter')
+  await bothShow('[data-said-write]', 'edited own.example MX 10 mx.own.example ttl 36000 # basecamp', 'Enter again sends it with confirm')
+
+  // The MX's delete stops at the warning, and Esc keeps it.
+  await press('d')
+  await bothShow('[data-asked]', '- own.example MX 10 mx.own.example ttl 36000 # basecamp', 'd shows the record it would delete')
+  await legendsAgree(':dns delete', ['<CR> delete', '<Esc> keep it'])
+  await press('Enter')
+  await bothShow('[data-part="confirm"] [data-warning]', "own.example MX is Basecamp's (basecamp)", 'deleting the marked MX answers the warning first')
+  await press('Escape')
+  check(await until(async () => await browser.evaluate(`return !document.querySelector('[data-part="confirm"]')`) && !screen(out).some((l) => l.includes('- own.example MX')), 10000),
+    ':dns — Esc keeps the MX, in both frames')
+  await dnsAgree('records', 3, 'nothing deleted')
+
+  await press('k')
+  await press('k')
+  await press('d')
+  await bothShow('[data-asked]', '- _drive.own.example TXT hello ttl auto # note', 'k k then d asks to delete the TXT')
+  await press('Enter')
+  await bothShow('[data-said-write]', 'deleted _drive.own.example TXT hello ttl auto # note', 'Enter deletes it')
+  await dnsAgree('records', 2, 'the reread no longer has the TXT')
+  await press('k')
   await press('Escape')
   await dnsAgree('zones', 1, 'Esc walks back to the zones')
   await press('Escape')

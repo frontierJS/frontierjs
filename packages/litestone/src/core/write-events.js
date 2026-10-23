@@ -104,6 +104,21 @@ export function makeWriteEvents(shape, ctx, deps) {
     })
   }
 
+  // ── The two shapes a write announcement can take ──────────────────────────
+  // A write that read its row back says WHICH row changed. A bulk statement
+  // answers `{count}` and never builds the rows, so it says how many and under
+  // what filter, and a consumer holding no row re-asks rather than guesses.
+  // `scope` is stated rather than inferred: `result: null` is not the same fact
+  // on both, since a `select: false` write is a ROW write with no row to hand
+  // over. The audience check leads in both, so an app that subscribes to
+  // nothing does not build the payload.
+  //
+  // `transition` is set only when THIS write is a named move AND the transition
+  // event is going to fire. A consumer announcing one thing per write has no
+  // other way to know a second event is coming for the same row: it would
+  // either announce twice, or skip an update whose transition event was
+  // suppressed (a SYSTEM write) and announce nothing at all.
+  //
   // `before` is the row as it stood ahead of an update, shaped like `result`,
   // for a subscriber that must tell who could read it then from who can now. It
   // is absent where no image was read (a bulk write, a restore, a write that
