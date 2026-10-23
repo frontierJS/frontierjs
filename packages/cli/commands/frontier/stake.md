@@ -4,10 +4,11 @@ description: Stake a nick with an invite — this machine becomes a member of th
 effects: makes ~/.fli/frontier/key.json if absent, spends the invite at the post, and writes frontier.api and frontier.nick to ~/.fli/config.json
 examples:
   - fli frontier:stake ada https://fli-tell.sam.workers.dev#Zp3kQ0x9
+  - fli frontier:stake https://fli-tell.sam.workers.dev#Zp3kQ0x9
 args:
   -
     name: nick
-    description: The nick to stake — 2 to 16 of a-z, 0-9, - and _. It is yours for good (FJS-D1451)
+    description: The nick to stake — 2 to 16 of a-z, 0-9, - and _. It is yours for good (FJS-D1451). Asked for at a terminal when only the invite is given
   -
     name: invite
     description: The line `fli frontier:invite` printed — the post's origin, then `#` and the code
@@ -20,11 +21,16 @@ post spends the code and writes the member in as a chain of one: a root link
 signing this machine's key and its sealing key together, so letters to it are
 sealed from the first (`FJS-D1400`, `IDEAS/pony-express.md` 4.3).
 
+The line `frontier:invite` prints carries no nick, so pasted as it is the
+one argument is the invite and the nick is asked for.
+
 One post per machine: a machine already at another post is refused rather
 than moved, since its `frontier.api` is how every other verb finds its mail.
 
 ```js
-const raw = String(arg.invite ?? '').trim()
+const given = [arg.nick, arg.invite].map(a => String(a ?? '').trim()).filter(Boolean)
+const raw = given.find(a => a.includes('#')) ?? given[1] ?? ''
+let typedNick = given.find(a => a !== raw) ?? ''
 let api, code
 try {
   const url = new URL(raw)
@@ -38,10 +44,15 @@ if (!api || !code) {
   return
 }
 
+if (!typedNick) {
+  try { typedNick = (await tty.line('The nick to stake, yours for good (2 to 16 of a-z, 0-9, - and _):')).trim() }
+  catch { log.error('Name the nick to stake: `fli frontier:stake <nick> <invite>`.'); process.exitCode = 1; return }
+}
+
 let saved, nick
 try {
   saved = readConfig().frontier ?? {}
-  nick = pickNick(arg.nick, {})
+  nick = pickNick(typedNick, {})
 } catch (e) { log.error(e.message); process.exitCode = 1; return }
 
 if (saved.api && saved.api !== api) {

@@ -159,7 +159,9 @@ Done when: pony-express's 4.7 drive passes with every verb respelled, and
   machine moved by hand on 2026-10-22.
 - [x] 1.3 `frontier:stake <nick> <code>` replaces `tell:join`.
   `tell:setup` leaves the user surface as pony-express 6.1 already plans.
-  Built: the nick is the first argument, not `--nick`. Driven under `wrangler
+  Built: the nick is the first argument, not `--nick`, and asked for at a
+  terminal when only the invite is given, since the line `invite` prints
+  carries none. Driven under `wrangler
   dev` with two scratch `HOME`s, 10 checks: an invite minted, `ada` staked,
   a spent code refused, a letter each way, reading deleted it, and
   `tell:join` an unknown command. Not run against the deployed post.
@@ -202,6 +204,12 @@ prints the squatting line.
   beside the row and never in place of the nick.
 - [ ] 5.2 The nick as a subdomain. Waits on Q3, which is ruled again when
   Frontier Cloud has a first customer (`FJS-D1448`).
+- [ ] 5.3 The post served from a `frontierjs.com` host rather than
+  `fli-tell.knightworks.workers.dev`: a custom domain on the same Worker,
+  owner's ask 2026-10-22. The origin is in every invite and in every member's
+  `frontier.api`, so each member staked before the move edits their config
+  by hand. Land it before 2.1 builds the origin into `fli` (`FJS-D1414`) and
+  before strangers join, while the members are few enough to tell.
 
 ---
 

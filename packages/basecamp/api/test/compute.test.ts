@@ -664,6 +664,10 @@ describe('a machine claims its own credential', () => {
     expect(unit).toMatch(/^ReadWritePaths=.*\/var\/lib\/outpost/m)
     expect(unit).toMatch(/^ReadWritePaths=.*\/etc\/basecamp/m)
     expect(unit).toMatch(/^ReadWritePaths=.*\$BUN_INSTALL/m)
+    // These carried bct's systemd-analyze score from 7.9 to 5.3, under SANDBOX_MAX.
+    for (const directive of ['ProtectKernelLogs=yes', 'ProtectClock=yes', 'PrivateDevices=yes', 'RestrictNamespaces=yes', 'SystemCallArchitectures=native'])
+      expect(unit).toContain(directive)
+    expect(unit).toMatch(/^RestrictAddressFamilies=.*AF_NETLINK/m)
   })
 
   test('the install is a script bash can parse', async () => {

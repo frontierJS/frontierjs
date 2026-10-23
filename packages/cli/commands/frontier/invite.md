@@ -34,5 +34,12 @@ if (answer.status !== 201) {
 
 const hours = Math.round((answer.json.expires - Date.now() / 1000) / 3600)
 log.success(`An invite, good for one join within ${hours} hours. Hand this to the next person:`)
-echo(`\n  fli frontier:stake ${member.api}#${answer.json.code}\n`)
+const line = `fli frontier:stake ${member.api}#${answer.json.code}`
+echo(`\n  ${line}\n`)
+
+if (tty.interactive && await tty.keys('Copy the line to the clipboard?', { y: 'copy', n: 'no' }) === 'y') {
+  const { copyToClipboard, clipboardTools } = await import(resolve(global.fliRoot, 'core/clipboard.js'))
+  if (copyToClipboard(line)) log.success('Copied')
+  else log.warn(`Could not copy — is ${clipboardTools() ?? 'a clipboard tool'} installed?`)
+}
 ```

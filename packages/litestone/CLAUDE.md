@@ -236,6 +236,7 @@ src/
     transaction.js — $transaction: nesting by async context, read routing while one is open
     locks.js — $lock / $locks: the advisory-lock primitive over the _locks table
     introspect.js — the `$`-introspection surface: $checkWhere … $claimsFor, built once over the root ctx and handed to every flavor
+    write-data.js — the payload boundary of a write: writeKeySets(shape) and makeWriteData(shape, ctx, deps) — writeData, the @guarded/@system/@immutable/@sequence/capability refusals, encryption, enums, @allow(write) on create, @rank minting and the bind-safety floor; built once per table by makeTable
     stamps.js — what a write fills in: generated defaults, @createdBy/@updatedBy, @sequence
     computed.js — @computed: load, normalize, apply to a read row
     field-policy.js — field @allow(read) applied to read rows

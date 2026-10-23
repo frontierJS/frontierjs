@@ -15414,6 +15414,12 @@ Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A
 
 The paper's recommendation, taken as written: it is the only choice with one reader and no reverse edge, it keeps `FJS-D860`'s "the package owns its words" (the prelude), and the 19 runners then each become a small test over a shared reader instead of 19 copies of litestone's 226 lines.
 
+### <a id="fjs-d1459"></a>2026-10-22 · `FJS-D1459` — The Outpost's static origin binds `127.0.0.1` and the install's firewall does not open it; Caddy is the only way in.
+
+Asked in chat over bct's posture report, where `net.unexpected-listener` named 8181. **A** was picked over **B** (posture expects 8181 on every box, so the public listener stays and stops being flagged) and **C** (`OUTPOST_STATIC_PORT=0` on bct only). As recommended.
+
+Every Activate and every `/route` with `static: true` already dials `127.0.0.1:8181` (`ingress.js`), so the public bind served nobody Caddy did not, and it answered plain HTTP around Caddy's TLS on every enrolled box. `FJS-D565` and `FJS-D930` already put a container's published port on loopback; this extends that rule to the Outpost's own listener. The cost is that an inline app with no hostname can no longer be reached at `<ip>:8181/<slug>` from outside the machine. `declaredFor()` stops expecting 8181, and enrollment's input rule loses it.
+
 ### <a id="fjs-d931"></a>2026-10-12 · `FJS-D931` — Q5 — Pin the installs — Also pin a major for Docker and Caddy with an apt preference, keep every version beside `BUN_VERSION`, and report the installed versions in the heartbeat.
 
 Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions. **B** was picked over **A** (As built: Bun and the Outpost pinned in `enrollment.ts` (`BUN_VERSION`, `OUTPOST_VERSION`), Docker and Caddy whatever their signed apt repositories serve on the day), **C** (Pin exact versions for all four).
