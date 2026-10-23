@@ -41,14 +41,6 @@ Asked in [`IDEAS/cloudflare-dns.md`](IDEAS/cloudflare-dns.md) § Open questions.
 
 The paper's recommendation, taken as written: the screens and keys are DNS's and the provider is the breadcrumb's first crumb; `:edge` is a fleet noun and this has no fleet.
 
-### <a id="fjs-d1465"></a>2026-10-22 · `FJS-D1465` — fli's Basecamp commands are one `basecamp:*` namespace, named for what is on the other end of the wire: `fli basecamp` lists, `basecamp:create`, `basecamp:install`, `basecamp:dns`, `basecamp:stop`, `basecamp:destroy` take Basecamp's own box through its life, and `basecamp:deploy` releases an app through a running Basecamp. `deploy:outpost` stays in `deploy:*`, because it is `fli deploy`'s own step.
-
-Asked in chat, after `fli provi<Tab>` listed seven `provision:*` commands that act on one thing, Basecamp, under a verb. **The table as written** was picked over the other arrangements and words offered. As recommended. This supersedes the name in `IDEAS/zero-to-live.md` 3.1 (`fli provision`, 2026-10-20), and a bare `fli basecamp` no longer buys a droplet, so the command that costs money has to be named in full. `provision:off` became `basecamp:stop`, the opposite of the verb `create`. There is no alias for any old spelling (root `CLAUDE.md` § Evolution policy).
-
-A command may now declare its own `requires:`, read beside its namespace's (`packages/cli/core/runtime.js`), because `basecamp:deploy`, `install` and `dns` need no DigitalOcean token while `create`, the list, `stop` and `destroy` do. Under the namespace-wide list, `install` and `dns` used to demand one. `vendorApp` moved to `core/vendor.js`, so the `deploy` and `basecamp` namespaces share one owner rather than a module script each.
-
-The nine: one origin, since each command lives in one file and the old files were moved rather than copied; no new concept, since a namespace and `requires:` already exist; complexity is removed, because `deploy:basecamp` no longer sits beside SSH deploys it shares nothing with; predictability improves, because a namespace names a counterpart, as `deploy:*` names a server this pipeline owns; nothing is derived; the owner is the module, and `vendorApp`'s is `core/vendor.js`; at the boundary, a caller no longer has to know that `install` does not use the token it was asked for; the failure stays a refusal at the runtime naming the key; on silence, `parseCommands` and the cli suite fail a command that does not compile, but nothing fails a stale `provision:` in prose. Answered after the edit.
-
 ### <a id="fjs-d1477"></a>2026-10-23 · `FJS-D1477` — A Haven takes only a Frontier member's machine: a login with no chain is refused (401), the key login and `~/.fli/haven/key.json` go, and a browser holds no key — `fli haven --browser` hands it the session in the address.
 
 Asked through AskUserQuestion, building `IDEAS/frontier-network.md` 3.2. The browser question was ruled **hand-off from fli**, as recommended. The two rejected options were a browser that signs its own chain login and a browser key a member links into the chain. A browser keeps no key and is no machine, so neither a WebCrypto key in IndexedDB nor a chain link was needed. The agents question (Ace and Charles, who sign in with keys of their own under `~/.fli/haven/agents/`) was put off by the owner until the rest was built. Asked then, with a Haven-listed agent key (`HAVEN_AGENTS`, after Matrix appservice registration) recommended, the owner answered **leave them out for now**. `bun run agents` is refused at its first login, the live halves of `agents.test.js` are skipped, and `machineKeys` stays in `sign-in.js` for them alone until their way in is ruled ([FJS-3471](ISSUES.md#fjs-3471)).
@@ -72,6 +64,14 @@ The nine:
 - **On silence**, what must stay true is that a key in no chain never makes a member. What fails when that stops: `login.test.ts` § a key in no chain is refused, and `verify:explore` § a machine in no Frontier chain.
 
 These answers were written after the build (late), from the ruling asked before it. The adjudication is *preservation vs. evolution*: the key login, `--nick` and the browser key go with no alias. Tier: Register.
+
+### <a id="fjs-d1465"></a>2026-10-22 · `FJS-D1465` — fli's Basecamp commands are one `basecamp:*` namespace, named for what is on the other end of the wire: `fli basecamp` lists, `basecamp:create`, `basecamp:install`, `basecamp:dns`, `basecamp:stop`, `basecamp:destroy` take Basecamp's own box through its life, and `basecamp:deploy` releases an app through a running Basecamp. `deploy:outpost` stays in `deploy:*`, because it is `fli deploy`'s own step.
+
+Asked in chat, after `fli provi<Tab>` listed seven `provision:*` commands that act on one thing, Basecamp, under a verb. **The table as written** was picked over the other arrangements and words offered. As recommended. This supersedes the name in `IDEAS/zero-to-live.md` 3.1 (`fli provision`, 2026-10-20), and a bare `fli basecamp` no longer buys a droplet, so the command that costs money has to be named in full. `provision:off` became `basecamp:stop`, the opposite of the verb `create`. There is no alias for any old spelling (root `CLAUDE.md` § Evolution policy).
+
+A command may now declare its own `requires:`, read beside its namespace's (`packages/cli/core/runtime.js`), because `basecamp:deploy`, `install` and `dns` need no DigitalOcean token while `create`, the list, `stop` and `destroy` do. Under the namespace-wide list, `install` and `dns` used to demand one. `vendorApp` moved to `core/vendor.js`, so the `deploy` and `basecamp` namespaces share one owner rather than a module script each.
+
+The nine: one origin, since each command lives in one file and the old files were moved rather than copied; no new concept, since a namespace and `requires:` already exist; complexity is removed, because `deploy:basecamp` no longer sits beside SSH deploys it shares nothing with; predictability improves, because a namespace names a counterpart, as `deploy:*` names a server this pipeline owns; nothing is derived; the owner is the module, and `vendorApp`'s is `core/vendor.js`; at the boundary, a caller no longer has to know that `install` does not use the token it was asked for; the failure stays a refusal at the runtime naming the key; on silence, `parseCommands` and the cli suite fail a command that does not compile, but nothing fails a stale `provision:` in prose. Answered after the edit.
 
 ### <a id="fjs-d1476"></a>2026-10-22 · `FJS-D1476` — A Haven login is the Frontier chain: `POST /haven/login` takes `{ publicKey, links, row }`, read offline against `HAVEN_POST_KEY`, the member is the chain's root, and the nick is the row's. The chain's code is `@frontierjs/toolbelt/frontier`.
 
@@ -1688,18 +1688,6 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
-### <a id="fjs-d1467"></a>2026-10-22 · `FJS-D1467` — The post's signing key — Made by the Durable Object on first use and kept in its own storage; a client pins its public half on first sight.
-
-Asked while building [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) 2.4. **A** was picked over **B** (the owner's machine makes the pair, `fli ws:post` uploads the private half as a Worker secret, and the public half is a constant in `fli` beside `POST_ORIGIN` — Certificate Transparency's log keys shipped in browsers, Keybase's hard-coded server key) and **C** (A now, and the public half committed into `fli` once the live post has one).
-
-The recommendation, taken (confidence 2): no second secret on anybody's laptop, and the pin happens on a call the member already trusts — the join, or the first row fetched. *Memory:* SSH host keys, made on the host and pinned on first contact. The operator can read the key either way, since a Worker secret is readable by the code the operator deploys, so B buys no trust against `THREATS.md` B19; what it buys is a first reader that never trusted first contact, and that is the reopen path. The pin is `frontier.postKey` in `~/.fli/config.json`, and a row under another key is refused rather than re-pinned.
-
-### <a id="fjs-d1466"></a>2026-10-22 · `FJS-D1466` — The invite allowance — Three joins per member, a code not yet spent counted as one, and the owner uncounted.
-
-Asked while building [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) 2.3. **A** (the owner uncapped) was picked over **B** (the owner capped too, raising the number and redeploying for more seats) and **C** (a second var for the owner's count).
-
-The recommendation, taken: joining is by invite only (`FJS-D1415`), so the owner is the network's one open door, and a cap at the root stalls it. A join counts for good and a live code until it expires, so a code nobody spends gives its seat back. The number is `INVITE_ALLOWANCE` beside `INVITE_SECONDS` in `core/tell-worker.js`, not a Worker var: `fli ws:post` writes the wrangler config from code on every run, so a var would be the same constant stated in a second file. A member from before numbers (`FJS-D1394`'s V1) has a blank `invitedBy`, so a join it vouched for then is not counted.
-
 ### <a id="fjs-d1461"></a>2026-10-23 · `FJS-D1461` — Q10 — Whether the owner's view shows letter text — Never: count, oldest, bytes, and sealed or plain. *Synapse's* admin API lists rooms and whether each is encrypted, and returns encrypted content still encrypted ([rooms](https://github.com/dklimpel/synapse_archive/blob/119b137cfa72e5e24c700eb5c5c060e62728597d/docs/admin_api/rooms.md), [FAQ](https://git.sharpetronics.com/sharpetronics/synapse/raw/branch/develop/docs/usage/administration/admin_faq.md)).
 
 Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (show plain bodies, for debugging V1).
@@ -1711,6 +1699,18 @@ The paper's recommendation, taken as written: (confidence 3) — sealed letters 
 Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (Owner and Moderator roles now, Mastodon's current shape), **C** (no role: the owner reads the object's storage from Cloudflare, and nothing is built).
 
 The paper's recommendation, taken as written: (confidence 3) — four members leave nobody to give a Moderator role to, and B reopens when a second person needs one.
+
+### <a id="fjs-d1467"></a>2026-10-22 · `FJS-D1467` — The post's signing key — Made by the Durable Object on first use and kept in its own storage; a client pins its public half on first sight.
+
+Asked while building [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) 2.4. **A** was picked over **B** (the owner's machine makes the pair, `fli ws:post` uploads the private half as a Worker secret, and the public half is a constant in `fli` beside `POST_ORIGIN` — Certificate Transparency's log keys shipped in browsers, Keybase's hard-coded server key) and **C** (A now, and the public half committed into `fli` once the live post has one).
+
+The recommendation, taken (confidence 2): no second secret on anybody's laptop, and the pin happens on a call the member already trusts — the join, or the first row fetched. *Memory:* SSH host keys, made on the host and pinned on first contact. The operator can read the key either way, since a Worker secret is readable by the code the operator deploys, so B buys no trust against `THREATS.md` B19; what it buys is a first reader that never trusted first contact, and that is the reopen path. The pin is `frontier.postKey` in `~/.fli/config.json`, and a row under another key is refused rather than re-pinned.
+
+### <a id="fjs-d1466"></a>2026-10-22 · `FJS-D1466` — The invite allowance — Three joins per member, a code not yet spent counted as one, and the owner uncounted.
+
+Asked while building [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) 2.3. **A** (the owner uncapped) was picked over **B** (the owner capped too, raising the number and redeploying for more seats) and **C** (a second var for the owner's count).
+
+The recommendation, taken: joining is by invite only (`FJS-D1415`), so the owner is the network's one open door, and a cap at the root stalls it. A join counts for good and a live code until it expires, so a code nobody spends gives its seat back. The number is `INVITE_ALLOWANCE` beside `INVITE_SECONDS` in `core/tell-worker.js`, not a Worker var: `fli ws:post` writes the wrangler config from code on every run, so a var would be the same constant stated in a second file. A member from before numbers (`FJS-D1394`'s V1) has a blank `invitedBy`, so a join it vouched for then is not counted.
 
 ### <a id="fjs-d1449"></a>2026-10-22 · `FJS-D1449` — Q4 — What a bad invitee costs the inviter — Nothing: the tree is public, and that alone is the accountability.
 
@@ -3399,7 +3399,8 @@ write never reaches — so without a warning of its own the system path would ha
 been the one silent bypass of the two.
 
 *Lives in:* `packages/litestone/src/core/errors.js` (`BulkTransitionError`) ·
-`src/core/client.js` (`_bulkTransitionField`, `updateMany`, `upsertMany`) ·
+`src/core/state-guards.js` (`_bulkTransitionField`) · `src/core/client.js` (`updateMany`) ·
+`src/core/upsert-many.js` (`upsertMany`) ·
 `src/access.js` (the per-verb sentence) · `test/bulk-transitions.test.ts` ·
 `FJS-671` · closes `F16` of the foundation audit
 

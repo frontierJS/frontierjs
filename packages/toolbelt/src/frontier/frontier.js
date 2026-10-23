@@ -189,7 +189,9 @@ export const signRow = async (privateKey, row) =>
  * `ROW_AGE` before `now` (seconds), else `{ refused }` naming why. Every field
  * is checked before the signature, since a row arrives from whoever holds it.
  */
-export async function readRow(row, postKey, now = Math.floor(Date.now() / 1000)) {
+export async function readRow(row, postKey, now) {
+  // Without it both age checks compare against NaN and pass, so a stale row is taken.
+  if (!Number.isSafeInteger(now)) throw new TypeError('readRow needs now, in whole seconds')
   if (!row || typeof row !== 'object') return { refused: 'a row is an object' }
   const { number, nick, root, head, joined, invitedBy, fliVersion, signed, sig } = row
   const int = (n) => Number.isSafeInteger(n) && n > 0

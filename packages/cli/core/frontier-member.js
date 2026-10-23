@@ -170,7 +170,7 @@ export const readOwnRow = () => {
 export const gradeRow = async ({ row, postKey } = {}) => {
   const pinned = readConfig().frontier?.postKey
   if (pinned && postKey !== pinned) return { refused: `the post signed it with another key than the one pinned as frontier.postKey in ${CONFIG_FILE}` }
-  const read = await readRow(row, String(postKey ?? ''))
+  const read = await readRow(row, String(postKey ?? ''), Math.floor(Date.now() / 1000))
   if (!read.refused && !pinned) writeMemberConfig({ postKey })
   return read
 }

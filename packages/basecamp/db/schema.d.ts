@@ -307,6 +307,17 @@ export interface AppVolumeRestore {
 }
 
 /**
+ * What `apps.publish` accepts: a static build, each file as `{ path, content }`
+ * or `{ path, content_base64 }`, which Outpost bounds and names-checks.
+ */
+export interface AppPublish {
+  files: unknown
+  trigger?: string | null
+  commitSha?: string | null
+  branch?: string | null
+}
+
+/**
  * What `app-backups.take` accepts: the app, and the machine whose copy of
  * its data volume is taken (`FJS-D679`).
  */
@@ -5759,6 +5770,7 @@ export interface SeedTypes {
   AppPlace: AppPlace
   AppUnplace: AppUnplace
   AppVolumeRestore: AppVolumeRestore
+  AppPublish: AppPublish
   AppBackupTake: AppBackupTake
   FlagOverrideSet: FlagOverrideSet
   FlagOverrideClear: FlagOverrideClear

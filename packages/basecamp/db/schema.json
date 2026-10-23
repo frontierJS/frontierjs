@@ -106,6 +106,18 @@
           "default": false,
           "description": "Signed in on a first factor alone, where `requireSecondFactor` says the account owes a second. The plugin refuses every service call but the enrollment three while it is set; `confirmTotp` clears it."
         },
+        "reauthenticatedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "When this session last proved the password (and the code, where a second factor is live): at sign-in, and again at `account.reauthenticate`. The credential changes refuse past `reauthenticationWindow` (`FJS-D1209`). Null is never fresh."
+        },
         "impersonatingUserId": {
           "type": [
             "string",
@@ -8453,6 +8465,36 @@
       "required": [
         "serverId",
         "path"
+      ]
+    },
+    "AppPublish": {
+      "type": "object",
+      "title": "AppPublish",
+      "x-litestone-kind": "type",
+      "properties": {
+        "files": {},
+        "trigger": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commitSha": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "files"
       ]
     },
     "AppBackupTake": {

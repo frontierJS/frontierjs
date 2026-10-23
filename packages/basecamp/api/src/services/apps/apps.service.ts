@@ -10,6 +10,7 @@
 //   logs           — what the container is saying, read through the executor
 //   restoreVolume  — an archive on the machine, extracted into the app's data volume
 //   fromBlueprint  — an app made out of a catalog entry and its parameters
+//   publish        — a static build handed in, sent to the machine and released
 //
 // The table is `app`, not `service`. The old header here said "table name in
 // DB: service (legacy — kept for migration continuity)"; that name was the
@@ -49,6 +50,9 @@ const _WITH_ENV = { environment: true }
 /** Outpost bounds the extract at an hour; a multi-GB archive sent at conduit's
  *  10s default reads as a failure while the machine is still writing it. */
 const VOLUME_RESTORE_TIMEOUT_MS = 61 * 60_000
+
+/** A build is up to 24 MB written file by file; conduit's 10s default fails it mid-write. */
+const STATIC_PUBLISH_TIMEOUT_MS = 120_000
 
 /** A value for a parameter that says how to mint one. The number is BYTES,
  *  read the way `openssl rand -hex 32` reads it — so `random_hex_32` is 64
@@ -235,6 +239,8 @@ export default createService({
     { method: 'unplace', gate: LEVELS.USER, input: 'AppUnplace' },
     // Replaces what a database holds, so the level that may prune a volume.
     { method: 'restoreVolume', gate: LEVELS.ADMINISTRATOR, input: 'AppVolumeRestore' },
+    // A Deployment's create level, asked before the bytes reach the machine.
+    { method: 'publish', gate: LEVELS.USER, input: 'AppPublish' },
     // Both write @system columns as the app; the level is stated for that.
     // `enablePush` hands a standing to the push receiver, so it is a release's.
     { method: 'enablePush',  gate: LEVELS.ADMINISTRATOR },
@@ -500,6 +506,34 @@ export default createService({
     }, { timeoutMs: VOLUME_RESTORE_TIMEOUT_MS })
     if (reply.error) throw new BadRequest(`The volume was not restored: ${reply.error.message}`)
     return { serverId: placed.serverId, ...(reply.data ?? {}) }
+  },
+
+  // ── publish — POST /apps/:id  X-Service-Method: publish ──────────
+  //
+  // A static build made somewhere else — a preview's Freeze, `fli
+  // basecamp:deploy` on a laptop — sent to the App's machine, then released
+  // by the digest it answers. The caller never holds the Outpost secret, and
+  // the files never enter a row: a build runs to hundreds of files and
+  // megabytes, and every row here is in the audit trail.
+  async publish() {
+    const data   = $.data as Record<string, unknown>
+    const target = await getScoped('app', 'App')
+    if (sourceKindOf(target.source) !== 'inline')
+      throw new BadRequest(`App '${target.name}' is not inline — only an App served as files takes a build`)
+    if (!Array.isArray(data.files) || !data.files.length)
+      throw new BadRequest('files is the build: a list of { path, content } or { path, content_base64 }')
+
+    const executor = await resolveExecutor($.app, target.id)
+    if (!isExecutor(executor)) throw new BadRequest(executor.reason)
+    const reply = await executor.call('/static/publish', { app_id: target.id, files: data.files }, { timeoutMs: STATIC_PUBLISH_TIMEOUT_MS })
+    if (reply.error) throw new BadRequest(`The machine refused the build: ${reply.error.message}`)
+    const digest = String((reply.data as { digest?: unknown })?.digest ?? '')
+    if (!/^sha256:[0-9a-f]{64}$/.test(digest)) throw new Error('The machine wrote the build and reported no digest')
+
+    return $.app.service('deployments').create({
+      appId: target.id, builtImage: digest,
+      ...Object.fromEntries(['trigger', 'commitSha', 'branch'].filter(k => data[k] != null).map(k => [k, data[k]])),
+    })
   },
 
   // ── enablePush · disablePush — deploy on push (FJS-D884) ─────────

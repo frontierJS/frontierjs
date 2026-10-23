@@ -303,10 +303,11 @@ name when it declares none.
 
 ### `apps` · model `App`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `enablePush`, `disablePush`
-- **custom methods** — `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `enablePush`, `disablePush`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `publish`, `enablePush`, `disablePush`
+- **custom methods** — `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `publish`, `enablePush`, `disablePush`
 - **input** — `fromBlueprint` takes `AppFromBlueprint`
 - **input** — `place` takes `AppPlace`
+- **input** — `publish` takes `AppPublish`
 - **input** — `restoreVolume` takes `AppVolumeRestore`
 - **input** — `unplace` takes `AppUnplace`
 - **who may call** —
@@ -316,6 +317,7 @@ name when it declares none.
   - `place` — standing 4 or above — declared `gate: 4`; body writes as the app
   - `unplace` — standing 4 or above — declared `gate: 4`; body writes as the app
   - `restoreVolume` — standing 5 or above — declared `gate: 5`
+  - `publish` — standing 4 or above — declared `gate: 4`
   - `enablePush` — standing 5 or above — declared `gate: 5`; body writes as the app
   - `disablePush` — standing 5 or above — declared `gate: 5`; body writes as the app
 - **broadcasts on** — `(computed)`
@@ -334,6 +336,7 @@ name when it declares none.
 | before | `place` | `validateInput` |
 | before | `unplace` | `validateInput` |
 | before | `restoreVolume` | `validateInput` |
+| before | `publish` | `validateInput` |
 
 ### `audit` · model `AuditEvent`
 

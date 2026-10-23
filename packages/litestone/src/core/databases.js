@@ -397,6 +397,18 @@ export function narrowedDb(db, shadows, tenantOf) {
 /** @param {DbHandle} db */
 export const plainDb = (db) => db.$plain ?? db
 
+// bun:sqlite's `.changes` is a total-changes delta, so it counts what TRIGGERS
+// and FOREIGN KEY actions wrote as well as the rows the statement named: one
+// updated row on an `@@fts` model reported 17, and the ordinary `updatedAt`
+// trigger doubles every count on every model that carries the column. SQL
+// `changes()` is sqlite3_changes(), which counts only rows the statement itself
+// addressed. Read it off the SAME connection with no write in between — every
+// caller here is straight-line and has no await between the two.
+/** @param {DbHandle} db */
+export function rowsChanged(db) {
+  return db.query('SELECT changes() AS n').get()?.n ?? 0
+}
+
 // The `bun:sqlite` Database under however many wrappers are on it. `wideDb`,
 // `mappedDb` and the read router each expose `$plain` pointing one layer in, so
 // this walks down and then reads the statement cache's own handle. Bounded

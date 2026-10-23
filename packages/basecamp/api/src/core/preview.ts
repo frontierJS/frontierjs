@@ -7,11 +7,9 @@
 // dev server's port on the machine holding the worktree.
 //
 // Freeze builds `web/` with the App's browser variables (`VITE_`,
-// `FRONTIER_PUBLIC_`) and publishes the build to the machine itself, then
-// releases that digest as an ordinary Deployment: the files never enter a row,
-// because a built SPA runs to 180 files and several megabytes, every row here
-// is in the audit trail, and a Deployment is pushed whole to every browser in
-// the workspace. The commit names the bytes.
+// `FRONTIER_PUBLIC_`) and hands the build to `apps.publish`, which sends it to
+// the machine and releases that digest as an ordinary Deployment. The commit
+// names the bytes.
 // Activating routes the hostname to the static origin. Thaw routes it back to
 // the dev server's port. Retire removes the Environment, which takes its App
 // off the machine before the App, Variables and Domain go with it.
@@ -29,7 +27,7 @@ import { execFileSync, spawn }     from 'node:child_process'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir }                   from 'node:os'
 import { isAbsolute, join, normalize, relative } from 'node:path'
-import { executorOn, isExecutor, resolveExecutor } from '../providers/executor.ts'
+import { executorOn, isExecutor } from '../providers/executor.ts'
 import { snapshotVariables }        from './variables.ts'
 import { db }                       from './resource.ts'
 import { routedHosts, routedPaths, routedRedirects } from './runtime.ts'
@@ -184,19 +182,12 @@ export async function freezePreview(app: App, settings: PreviewSettings,
     if (env.FRONTIER_PUBLIC_API_URL && !files.some(f => 'content' in f && f.content.includes(env.FRONTIER_PUBLIC_API_URL)))
       throw new Error(`the build finished and no file carries FRONTIER_PUBLIC_API_URL (${env.FRONTIER_PUBLIC_API_URL}) — web/'s sierra.config.js has to read it for junction.url, or the frozen page calls its own origin`)
 
-    const executor = await resolveExecutor(app, branch.appId)
-    if (!isExecutor(executor)) throw new Error(executor.reason)
-    const reply = await executor.call('/static/publish', { app_id: branch.appId, files }, { timeoutMs: 120_000 })
-    if (reply.error) throw new Error(`the machine refused the build: ${reply.error.message}`)
-    const digest = String((reply.data as { digest?: unknown })?.digest ?? '')
-    if (!/^sha256:[0-9a-f]{64}$/.test(digest)) throw new Error('the machine wrote the build and reported no digest')
-
     const commitSha = cleanHead(branch.path)
-    const deployment = await svc('deployments').create({
-      appId: branch.appId, trigger: 'freeze', builtImage: digest, commitSha, branch: branch.branch,
-    }) as { id: string }
+    const deployment = await svc('apps').call('publish', branch.appId, {
+      files, trigger: 'freeze', commitSha, branch: branch.branch,
+    }) as { id: string, builtImage: string }
     const bytes = files.reduce((n, f) => n + ('content' in f ? Buffer.byteLength(f.content) : Buffer.from(f.content_base64, 'base64').length), 0)
-    return { deploymentId: deployment.id, digest, files: files.length, bytes, commitSha }
+    return { deploymentId: deployment.id, digest: deployment.builtImage, files: files.length, bytes, commitSha }
   } finally {
     rmSync(out, { recursive: true, force: true })
   }

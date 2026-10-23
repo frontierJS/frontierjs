@@ -45,7 +45,8 @@ reuses the address the hostname's record holds — or release it; with no
 terminal it is kept, and `--release-ip` releases it without asking. A kept
 one is still Basecamp's, so the `Host` block and the record naming it are left
 as they are and not listed, and it bills at the cloud's rate until it is
-released — `fli basecamp:create`'s Setup names each.
+released — `fli basecamp:create`'s Setup names each. With nothing left, it says
+so, rather than ending on the destroy.
 
 ```js
 let id = String(arg.id ?? '').trim()
@@ -105,7 +106,7 @@ if (reserved && (flag['release-ip'] || process.stdin.isTTY)) {
     else { kept = false; log.success(`Released ${reserved}`) }
   }
 }
-if (kept) log.info(`  Kept ${reserved} — the next fli basecamp:create reuses it. Releasing it later: ${page}, or --release-ip on the next destroy`)
+if (kept) log.info(`  Kept ${reserved} — the next fli basecamp:create reuses it, so the A record and Host block naming it stay. Releasing it later: ${page}, or --release-ip on the next destroy`)
 // At a cloud that puts the held address on the box itself, the box's own
 // address IS the reserved one, and a kept one leaves nothing stale.
 const addresses = [...new Set([boxIp, reserved])].filter(ip => ip && !(kept && ip === reserved))
@@ -153,8 +154,13 @@ for (const ip of boxIp ? addresses : [null]) {
   }
 }
 
-if (!left.length) return
 echo('')
+if (!left.length) {
+  echo(chalk.dim(addresses.length
+    ? `Nothing left beside it — no ~/.ssh/config block, known_hosts line or Cloudflare A record names ${addresses.join(', ')}`
+    : 'Nothing left beside it — what names the kept address stays for the next box'))
+  return
+}
 echo('Left beside it — check each:')
 echo.lines(left.flatMap(([where, what, how]) => [chalk`{bold ${where.padEnd(14)}} ${what}`, chalk`${' '.repeat(15)}{cyan ${how}}`]), { indent: 2 })
 ```

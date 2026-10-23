@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-146 definitions · 71 models · 1 view · 30 types · 44 enums · 0 other
+147 definitions · 71 models · 1 view · 31 types · 44 enums · 0 other
 ```
 
 ## Definitions
@@ -166,6 +166,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `AppPlace` | type |
 | `AppUnplace` | type |
 | `AppVolumeRestore` | type |
+| `AppPublish` | type |
 | `AppBackupTake` | type |
 | `FlagOverrideSet` | type |
 | `FlagOverrideClear` | type |
@@ -1992,6 +1993,19 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `overwrite` | `boolean`? | — | — | — | — |
 
 **On create**: required — `serverId`, `path`
+
+### `AppPublish`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `files` | `json` | yes | — | — | — |
+| `trigger` | `string`? | — | — | — | — |
+| `commitSha` | `string`? | — | — | — | — |
+| `branch` | `string`? | — | — | — | — |
+
+**On create**: required — `files`
 
 ### `AppBackupTake`
 
