@@ -9,7 +9,7 @@ const { dirname, join, resolve } = await import('node:path')
 const { userInfo } = await import('node:os')
 const { generateSigningKeys, signMessage, verifyMessage } = await import('@frontierjs/toolbelt/signature')
 const { generateSealingKeys, seal, open: openSealed } = await import('@frontierjs/toolbelt/seal')
-const { FRONTIER_DIR, KEY_FILE, CONFIG_FILE, PEERS_FILE, CHAIN_FILE, readConfig, readPeers, tellSign, tellFetch, writeWaiting, pinPeer, fingerprint, rootPrint, safetyWords } =
+const { FRONTIER_DIR, KEY_FILE, CONFIG_FILE, PEERS_FILE, CHAIN_FILE, readConfig, readPeers, tellSign, tellFetch, writeWaiting, pinPeer, fingerprint, rootPrint, safetyWords, postOrigin } =
   await import(new URL('file://' + global.fliRoot + '/core/tell.js'))
 const { readChain, rootLink, linkHash, extendsSeen, boxClaim } = await import(new URL('file://' + global.fliRoot + '/core/frontier-chain.js'))
 const { plural } = await import(new URL('file://' + global.fliRoot + '/core/text.js'))

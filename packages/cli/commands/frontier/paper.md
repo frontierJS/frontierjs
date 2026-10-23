@@ -1,14 +1,9 @@
 ---
 title: frontier:paper
 description: A key you print and keep, one more machine in your member — for when every machine is lost
-effects: on a linked machine, signs a paper key into this member's chain at the post with the sealing key sealed to it, and writes ~/.fli/frontier/chain.json; on a new machine, makes ~/.fli/frontier/key.json if absent, links it with the paper key, and writes the member's sealing key into key.json, chain.json and frontier.api, frontier.nick and frontier.root
+effects: on a linked machine, signs a paper key into this member's chain at the post with the sealing key sealed to it, and writes ~/.fli/frontier/chain.json; on a new machine, makes ~/.fli/frontier/key.json if absent, links it with the paper key, and writes the member's sealing key into key.json, chain.json and frontier.nick and frontier.root
 examples:
   - fli frontier:paper
-  - fli frontier:paper https://fli-tell.sam.workers.dev
-args:
-  -
-    name: origin
-    description: On a new machine, the post's origin; none on a linked machine, which makes a paper key
 ---
 
 A member is a chain of machines (`FJS-D1416`, `FJS-D1421`), and a second
@@ -18,13 +13,13 @@ written down, which are one more machine in the chain. It is opt-in, and the
 post holds nothing it can open — its public keys, and the member's sealing
 key sealed to it (Keybase's paper key).
 
-On a linked machine, run it with nothing. It prints the sixteen words once:
+On a linked machine, it makes one and prints the sixteen words once:
 write them down and keep them somewhere no one else can read them, since
 anyone holding them is your member. `fli frontier:who` lists it as `(paper)`, and
 a revoke seals each new sealing key to it as to any machine.
 
-On a new machine, run it with the post's origin and type the words when
-asked, or pipe them in. The paper key signs this machine into your member and
+On a new machine, which is no member yet, it asks for the words, or reads
+them piped in. The paper key signs this machine into your member and
 hands it the sealing key. The paper key stays good; revoke the machines you
 lost from this one with `fli frontier:revoke`. A paper key you lost is revoked the
 same way.
@@ -54,23 +49,11 @@ const refused = (what, answer) => `${what} (${answer.status}): ${answer.json?.me
 let saved
 try { saved = readConfig().frontier ?? {} }
 catch (e) { log.error(e.message); process.exitCode = 1; return }
-const text = String(arg.origin ?? '').trim()
 
 // ─── a new machine, with the paper key ───────────────────────────────────────
 
-if (!saved.api) {
-  let api
-  try {
-    const url = new URL(text)
-    if (/^https?:$/.test(url.protocol)) api = url.origin
-  } catch {}
-  if (!api) {
-    log.error(text
-      ? `'${text}' is no post — on a new machine, \`fli frontier:paper <origin>\` names the post the paper key is a member at.`
-      : 'No post is set up here. On a new machine, `fli frontier:paper <origin>` names the post your paper key is a member at.')
-    process.exitCode = 1
-    return
-  }
+if (!saved.nick) {
+  const api = postOrigin()
   if (flag.dry) {
     log.dry(`Would read a paper key's sixteen words, make ${KEY_FILE} if absent, and have the paper key sign this machine into its member at ${api}`)
     return
@@ -124,7 +107,7 @@ if (!saved.api) {
   const kept = sealing ? { ...keys, sealing } : keys
   writeKeys(kept)
   writeOwnChain(next)
-  writeMemberConfig({ api, nick, root: linked.root })
+  writeMemberConfig({ nick, root: linked.root })
   const boxed = await publishOwn(api, kept).catch(e => e.message)
   if (boxed) log.warn(`The post did not take ${boxed} — the next \`fli tell\` verb tries again.`)
   log.success(`The paper key signed this machine into ${nick} at ${api} — ${plural(linked.machines.length, 'machine')} now.`)
@@ -136,12 +119,6 @@ if (!saved.api) {
 }
 
 // ─── a machine already linked, making one ────────────────────────────────────
-
-if (text) {
-  log.error(`This machine is already at ${saved.api}. Run \`fli frontier:paper\` with nothing to make a paper key, or name the origin on a new machine.`)
-  process.exitCode = 1
-  return
-}
 
 let member
 try { member = await currentMember() }
@@ -188,5 +165,5 @@ const words = (await hexWords(hex)).split(' ')
 echo(chalk`    {cyan ${words.slice(0, 8).join(' ')}}`)
 echo(chalk`    {cyan ${words.slice(8).join(' ')}}\n`)
 log.warn('Write these down now — they are not kept anywhere, and are not shown again. Anyone holding them is your member.')
-log.info(`On a new machine, \`fli frontier:paper ${member.api}\` asks for them. Lost the paper? \`fli frontier:revoke ${print.replace(/\s+/g, '').slice(0, 8)}\`.`)
+log.info(`On a new machine, \`fli frontier:paper\` asks for them. Lost the paper? \`fli frontier:revoke ${print.replace(/\s+/g, '').slice(0, 8)}\`.`)
 ```

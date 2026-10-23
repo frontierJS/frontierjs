@@ -1,21 +1,20 @@
 ---
 title: frontier:link
 description: Sign a new machine into your member — it prints eight words, a linked machine types them
-effects: on a new machine, makes ~/.fli/frontier/key.json if absent, asks at the post and waits, then writes the member's sealing key into key.json, ~/.fli/frontier/chain.json and frontier.api, frontier.nick and frontier.root; on a linked machine, offers the link at the post and writes chain.json once it is taken
+effects: on a new machine, makes ~/.fli/frontier/key.json if absent, asks at the post and waits, then writes the member's sealing key into key.json, ~/.fli/frontier/chain.json and frontier.nick and frontier.root; on a linked machine, offers the link at the post and writes chain.json once it is taken
 examples:
-  - fli frontier:link https://fli-tell.sam.workers.dev
+  - fli frontier:link
   - fli frontier:link absurd cannonball crusade graduate nightbird pegasus spindle unravel
 args:
   -
     name: words
-    description: On the new machine, the post's origin; on a linked machine, the eight words the new one printed
+    description: On a linked machine, the eight words the new one printed; none on the new machine
     variadic: true
 ---
 
 A member is a chain of machines (`FJS-D1416`, `FJS-D1421`), and this is how
 one more is signed into it (4.5, `FJS-D1410`). On the new machine, run it with
-the post's origin — `frontier.api` on a machine already linked. It prints eight
-words and waits. On any machine already linked (`FJS-D1417`), run it with the
+nothing. It prints eight words and waits. On any machine already linked (`FJS-D1417`), run it with the
 eight words. The linked machine signs a link naming the new one and seals the
 member's sealing key to it; the new machine countersigns the link and
 publishes the chain, so neither is added without the other (`FJS-D1418`).
@@ -43,14 +42,10 @@ const poll = (ms) => new Promise(r => setTimeout(r, ms))
 
 // ─── the new machine ─────────────────────────────────────────────────────────
 
-if (!saved.api) {
-  let api
-  try {
-    const url = new URL(text)
-    if (/^https?:$/.test(url.protocol)) api = url.origin
-  } catch {}
-  if (!api) {
-    log.error(`'${text}' is no post — on the new machine, \`fli frontier:link <origin>\` names the post, frontier.api on a machine already linked.`)
+if (!saved.nick) {
+  const api = postOrigin()
+  if (text) {
+    log.error('This machine is no member yet, so it is the new one: run `fli frontier:link` here with nothing, and type the eight words it prints on a machine already linked.')
     process.exitCode = 1
     return
   }
@@ -110,7 +105,7 @@ if (!saved.api) {
 
   writeKeys({ ...keys, sealing })
   writeOwnChain(links)
-  writeMemberConfig({ api, nick: offer.nick, root: chain.root })
+  writeMemberConfig({ nick: offer.nick, root: chain.root })
   // A revoke seals the next sealing key to this machine's box key, so the post holds the claim from the start.
   const boxed = await publishOwn(api, { ...keys, sealing }).catch(e => e.message)
   if (boxed) log.warn(`The post did not take ${boxed} — the next \`fli tell\` verb tries again.`)
@@ -126,8 +121,8 @@ if (!saved.api) {
 const code = await wordsHex(text)
 if (!code) {
   log.error(text
-    ? `'${text}' is not the eight words \`fli frontier:link\` prints on the new machine. This machine is already at ${saved.api}.`
-    : `On the new machine run \`fli frontier:link ${saved.api}\`, then type the eight words it prints here.`)
+    ? `'${text}' is not the eight words \`fli frontier:link\` prints on the new machine. This machine is already ${saved.nick}.`
+    : 'On the new machine run `fli frontier:link`, then type the eight words it prints here.')
   process.exitCode = 1
   return
 }

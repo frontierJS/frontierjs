@@ -9,7 +9,7 @@ import { dirname } from 'node:path'
 import { userInfo } from 'node:os'
 import { generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { generateSealingKeys, open as openSealed } from '@frontierjs/toolbelt/seal'
-import { FRONTIER_DIR, KEY_FILE, CONFIG_FILE, CHAIN_FILE, readConfig, tellFetch, pinPeer } from './tell.js'
+import { FRONTIER_DIR, KEY_FILE, CONFIG_FILE, CHAIN_FILE, readConfig, tellFetch, pinPeer, postOrigin } from './tell.js'
 import { readChain, rootLink, linkHash, extendsSeen, boxClaim } from './frontier-chain.js'
 
 /** Haven's `Member.nick` rule, the Worker's too — checked here so a bad nick never deploys. */
@@ -113,7 +113,7 @@ export const syncChain = async (member) => {
 
 /**
  * Publishes what the post holds of this machine: the member's chain, unless
- * `frontier.root` says the post has it — the owner after setup, and a member who
+ * `frontier.root` says the post has it — the owner after `ws:post`, and a member who
  * joined before chains on their first verb after it, whose sealing key
  * reaches the post this way — and this machine's box claim, unless `frontier.box`
  * says the same. Answers null, or which of the two the post refused and why;
@@ -163,15 +163,15 @@ export const pickNick = (flagNick, saved) => {
 }
 
 /**
- * The post this machine is a member of — `frontier.api` and the key already on
- * disk — for every verb after `setup` and `join`. Never makes a key: a key
- * made here would be nobody at the post.
+ * This machine as a member of the post — `frontier.nick` and the key already
+ * on disk — for every verb after `stake`, `link` and `paper`. Never makes a
+ * key: a key made here would be nobody at the post.
  */
 export const currentMember = async () => {
   const saved = readConfig().frontier ?? {}
-  if (!saved.api) throw new Error(`No post is set up here — frontier.api is absent from ${CONFIG_FILE}. \`fli frontier:stake <nick> <code>\` walks in with an invite, or \`fli tell:setup\` stands up your own.`)
+  if (!saved.nick) throw new Error(`This machine is no member yet — frontier.nick is absent from ${CONFIG_FILE}. \`fli frontier:stake <nick> <code>\` walks in with an invite, and \`fli frontier:link\` adds a machine to a member you already are.`)
   if (!existsSync(KEY_FILE)) throw new Error(`${KEY_FILE} is missing, and the key is the member — put it back, or join again with a new invite.`)
   const keys = JSON.parse(readFileSync(KEY_FILE, 'utf8'))
   if (!keys?.publicKey || !keys?.privateKey) throw new Error(`${KEY_FILE} holds no key pair.`)
-  return { api: saved.api, nick: saved.nick, keys: await completeKeys(keys) }
+  return { api: postOrigin(), nick: saved.nick, keys: await completeKeys(keys) }
 }

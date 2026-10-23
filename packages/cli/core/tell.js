@@ -26,6 +26,10 @@ export const WAITING_FILE = join(FRONTIER_DIR, 'waiting.json')
 export const CHAIN_FILE   = join(FRONTIER_DIR, 'chain.json')
 /** Every correspondent met, `{ [root]: { nick, seq, head, machines, sealKey, since } }` — the chain as last seen (FJS-D1416, FJS-D1421). */
 export const PEERS_FILE   = join(FRONTIER_DIR, 'peers.json')
+/** The project's post, the only one (FJS-D1414). */
+export const POST_ORIGIN  = 'https://network.frontierjs.com'
+/** The post every verb speaks to — `FLI_FRONTIER_POST` stands a `wrangler dev` one in for a drive. */
+export const postOrigin   = () => process.env.FLI_FRONTIER_POST || POST_ORIGIN
 /** The header the Worker reads a member's key from (core/tell-worker.js). */
 const KEY_HEADER          = 'x-tell-key'
 /** bash's MAILCHECK default. */
@@ -200,10 +204,10 @@ export const tellNotice = () => {
 
 if (import.meta.main) {
   try {
-    const api  = readConfig().frontier?.api
+    const nick = readConfig().frontier?.nick
     const keys = JSON.parse(readFileSync(KEY_FILE, 'utf8'))
-    if (api && keys?.publicKey && keys?.privateKey) {
-      const { status, json } = await tellFetch(api, keys, 'GET', '/waiting', undefined, { signal: AbortSignal.timeout(10_000) })
+    if (nick && keys?.publicKey && keys?.privateKey) {
+      const { status, json } = await tellFetch(postOrigin(), keys, 'GET', '/waiting', undefined, { signal: AbortSignal.timeout(10_000) })
       if (status === 200 && Array.isArray(json?.waiting)) writeWaiting(json.waiting)
     }
   } catch {}

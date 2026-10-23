@@ -6,9 +6,9 @@ examples:
   - fli frontier:invite
 ---
 
-Any member may invite (`FJS-D1394`). The code carries the
-post's origin, `<origin>#<code>`, so the person joining configures nothing —
-hand them the line and they run `fli frontier:stake` with it.
+Any member may invite (`FJS-D1394`). There is one post and `fli` knows
+where it is (`FJS-D1414`), so the code is the whole invite — hand them the
+line and they run it.
 
 An invite is a password for one use: whoever holds it first walks in. The
 first join spends it, and an unspent one expires in a day (`FJS-D1394`).
@@ -34,7 +34,7 @@ if (answer.status !== 201) {
 
 const hours = Math.round((answer.json.expires - Date.now() / 1000) / 3600)
 log.success(`An invite, good for one join within ${hours} hours. Hand this to the next person:`)
-const line = `fli frontier:stake ${member.api}#${answer.json.code}`
+const line = `fli frontier:stake ${answer.json.code}`
 echo(`\n  ${line}\n`)
 
 if (tty.interactive && await tty.keys('Copy the line to the clipboard?', { y: 'copy', n: 'no' }) === 'y') {
