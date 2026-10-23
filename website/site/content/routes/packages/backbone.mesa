@@ -1,0 +1,120 @@
+---
+title: "The backbone — FrontierJS"
+description: "The handful of outside projects FrontierJS stands on: Bun and SQLite underneath, Vite and TypeScript to build, OpenTUI, Lynx and Tauri for every surface, Caddy, Docker and Litestream to run it."
+render: static
+---
+
+<!--
+  Only what the ecosystem stands on — a dependency one app happens to use is
+  not backbone. Every name here is in a package.json or driven by fli deploy
+  or Outpost; one that leaves the tree leaves this page.
+-->
+<section id="top" class="hero">
+  <div class="container">
+    <p class="eyebrow">The backbone</p>
+    <h1>Built on a short list, on purpose.</h1>
+    <p class="lede">
+      FrontierJS writes its own framework, but not its own runtime, database,
+      bundler or proxy. It stands on a small number of projects that are each
+      the best at one job, and it picks one per job so you never have to.
+    </p>
+  </div>
+</section>
+
+<section class="chapters">
+  <div class="container">
+    <ol class="arc">
+      <li>
+        <span class="n">01</span>
+        <div>
+          <h2>Runtime and data</h2>
+          <p>One runtime and one database, everywhere the app runs.</p>
+          <dl class="deps">
+            <dt>Bun</dt>
+            <dd>The runtime, the test runner and the HTTP server. Junction serves every API with <code>Bun.serve</code>, so FrontierJS runs on Bun and nothing else.</dd>
+            <dt>SQLite</dt>
+            <dd>Every database. <code>bun:sqlite</code> on the server, and SQLite's own WebAssembly build in the browser, so Litestone is one codebase in both places.</dd>
+          </dl>
+          <p class="takeaway">One runtime, one database, no driver matrix.</p>
+        </div>
+      </li>
+      <li>
+        <span class="n">02</span>
+        <div>
+          <h2>Build and toolchain</h2>
+          <p>How a <code>.mesa</code> file becomes a page, and how the code stays checked.</p>
+          <dl class="deps">
+            <dt>Vite</dt>
+            <dd>The dev server and the build behind Sierra, Mesa, Jetty, site-kit and every app's <code>web/</code>, this site included.</dd>
+            <dt>TypeScript</dt>
+            <dd>Typechecking for the server packages. Each package's baseline only goes down.</dd>
+            <dt>Biome</dt>
+            <dd>Lint and format in one tool. <code>@frontierjs/config</code> hands an app the same settings in one line.</dd>
+          </dl>
+          <p class="takeaway">One build, one checker, one formatter.</p>
+        </div>
+      </li>
+      <li>
+        <span class="n">03</span>
+        <div>
+          <h2>Every surface</h2>
+          <p>Mesa compiles one component language to many targets. These are the projects that make a target real.</p>
+          <dl class="deps">
+            <dt>OpenTUI</dt>
+            <dd>The terminal. Haven and <code>fli dev:tui</code> draw Mesa components as a full terminal interface.</dd>
+            <dt>Lynx + Rsbuild</dt>
+            <dd>Native mobile. Mesa's native backend renders through Lynx, built with Rsbuild.</dd>
+            <dt>Tauri 2</dt>
+            <dd>The desktop. The <code>desktop/</code> surface wraps the app in a small Rust shell that <code>fli</code> scaffolds for you.</dd>
+            <dt>xterm.js</dt>
+            <dd>A terminal inside the browser, for Basecamp's server consoles and Haven on the web.</dd>
+          </dl>
+          <p class="takeaway">One component language, a real native target for each surface.</p>
+          <p class="see">See: <a href="/tour/field/">Flow</a></p>
+        </div>
+      </li>
+      <li>
+        <span class="n">04</span>
+        <div>
+          <h2>Deploy and operations</h2>
+          <p>None of these are npm packages. <code>fli deploy</code> and Outpost install and drive them on your servers.</p>
+          <dl class="deps">
+            <dt>Caddy</dt>
+            <dd>The front door: reverse proxy and automatic TLS. Outpost re-points it when a new release goes live.</dd>
+            <dt>Docker</dt>
+            <dd>The box each app runs in on a fleet server, managed by Outpost.</dd>
+            <dt>Litestream</dt>
+            <dd>Continuous SQLite replication to a remote replica, so a database on one server is never the only copy.</dd>
+          </dl>
+          <p class="takeaway">A server is set up by a command, not a wiki page.</p>
+          <p class="see">See: <a href="/packages/outpost/">Outpost</a></p>
+        </div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<style>
+  .hero { padding: 4.5rem 0 1.5rem; }
+  .eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+  h1 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.03em; margin: .3em 0; }
+  .lede { font-size: 1.12rem; color: var(--ink-soft); max-width: 60ch; line-height: 1.6; }
+
+  .chapters { padding: 1rem 0 5rem; }
+  .arc { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+  .arc li { display: grid; grid-template-columns: 3rem minmax(0, 1fr); gap: 1rem; padding: 1.6rem 0; border-top: 1px solid var(--rule); }
+  .arc .n { font-size: .78rem; letter-spacing: .14em; color: var(--ink-mute); padding-top: .3rem; }
+  .arc h2 { font-size: 1.15rem; letter-spacing: -.01em; margin: 0 0 .4rem; }
+  .arc p { margin: 0; max-width: 64ch; line-height: 1.6; color: var(--ink-soft); }
+  .arc dl + p { margin-top: .7rem; }
+  .takeaway { color: var(--ink); font-weight: 600; }
+  .see { font-size: .82rem; color: var(--ink-mute); margin-top: .3rem !important; }
+
+  .deps { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .5rem 1.2rem; max-width: 64ch; margin: .8rem 0 0; padding: .7rem .9rem; border-left: 2px solid var(--color-primary); font-size: .92rem; line-height: 1.5; }
+  .deps dt { font-weight: 600; color: var(--ink); }
+  .deps dd { margin: 0; color: var(--ink-soft); }
+  @media (max-width: 34rem) {
+    .deps { grid-template-columns: minmax(0, 1fr); gap: .15rem; }
+    .deps dd + dt { margin-top: .5rem; }
+  }
+</style>

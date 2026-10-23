@@ -621,8 +621,12 @@ describe('a machine claims its own credential', () => {
     expect(script).toContain('codename=${distro_codename}-security')
     // FJS-3462: the timer's first pass can be a day after enrollment.
     expect(script).toMatch(/^timeout \d+ systemctl start apt-daily-upgrade\.service/m)
-    // FJS-3469: a systemd upgrade inside that pass ends systemctl's wait early.
-    expect(script).toMatch(/^timeout \d+ sh -c 'while \[ "\$\(systemctl show -P ActiveState apt-daily-upgrade\.service\)" = activating \]/m)
+    // FJS-3469: a systemd upgrade inside that pass ends systemctl's wait early,
+    // and a systemctl call that lands in the re-exec is refused by the bus; the
+    // wrapper retries it, and the wait runs under bash so it inherits the wrapper.
+    expect(script).toMatch(/^systemctl\(\) \{$/m)
+    expect(script).toContain('export -f systemctl')
+    expect(script).toMatch(/^timeout \d+ bash -c 'while \[ "\$\(systemctl show -P ActiveState apt-daily-upgrade\.service\)" = activating \]/m)
     expect(script).toContain('/etc/ssh/sshd_config.d/10-basecamp.conf')
     expect(script).toContain('PasswordAuthentication no')
     expect(script).toContain('PermitRootLogin prohibit-password')

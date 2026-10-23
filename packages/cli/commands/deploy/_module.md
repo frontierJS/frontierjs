@@ -19,6 +19,7 @@ const { vendorApp, linkedDeps, GENERATED_DIR } = await import(new URL('file://' 
 const { createMachine, shQuote } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
 const { dockerLogArgs } = await import(new URL('file://' + global.fliRoot + '/core/docker-logging.js'))
 const { apiContainerName } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
+const { appUser, appUserIds } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
 const { EDGE_HOPS, edgeNames: edgeNamesOf } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
 const { crossOrigins } = await import(new URL('file://' + global.fliRoot + '/core/shell-origins.js'))
 
@@ -42,6 +43,19 @@ const apiFiles = (deployConf, serverPath) => ({
   envFile:    deployConf?.api?.env ?? `${serverPath}/.env.production`,
   secretsDir: `${serverPath}/secrets`,
 })
+
+// The `--user` an app's container starts with: its own user on a box
+// (`FJS-D1484`), made by `deploy:setup`, and nothing on localhost, where the
+// image's user runs. Asked before any container is touched, so a box set up
+// before the user existed is refused while the running release still serves.
+const runAs = (machine, appId) => {
+  if (machine.local) return []
+  const user = appUser(appId)
+  const ids  = String(machine.capture(appUserIds(user)) ?? '').trim()
+  if (!/^\d+:\d+$/.test(ids)) throw new Error(
+    `${user} is not a user on this box, so the API has no uid of its own to run as -- run fli deploy:setup, which makes it and hands it ${appId}'s db directory, then deploy again`)
+  return [`--user ${ids}`]
+}
 
 // Where the API container sees the secrets directory: Docker's own path for a
 // secret, which `<KEY>_FILE` then names.
@@ -646,10 +660,11 @@ const lockRefusal = async (lock, { verb = 'deploy' } = {}) => {
 // the env file or the configuration set is refused by the app at boot, which
 // here would stop the running container and then restore it, so it is refused
 // before anything is touched.
-const swapContainer = ($, { host, container, image, apiPort, dbPath, envFile, secretsDir = null, build, deployConf, configuration = {}, corsOrigins = [], log }) => {
+const swapContainer = ($, { host, appId, container, image, apiPort, dbPath, envFile, secretsDir = null, build, deployConf, configuration = {}, corsOrigins = [], log }) => {
   const machine  = machineFor($, host)
   const replaced = `${container}_replaced`
 
+  const user    = runAs(machine, appId)
   const secrets = secretsDir ? secretNames(machine, secretsDir, log) : []
   if (secrets.length) {
     const inEnv = machine.capture(`for k in ${secrets.join(' ')}; do grep -qs "^$k=" ${envFile} && echo "$k"; done; true`)
@@ -680,6 +695,7 @@ fi`)
     'docker run -d',
     `--name ${container}`,
     '--restart unless-stopped',
+    ...user,
     `-p 127.0.0.1:${apiPort}:3000`,
     `--volume ${dbPath}:${CONTAINER_DB_DIR}`,
     `--env-file ${envFile}`,

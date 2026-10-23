@@ -296,7 +296,7 @@ function observeVisible(el) {
  *
  * @param {string} href — absolute URL
  */
-export async function prefetchHref(href) {
+export async function prefetchHref(href, { data = true } = {}) {
   if (!href || !_tree) return
 
   let url
@@ -339,8 +339,12 @@ export async function prefetchHref(href) {
 
   // Skip if this URL was already prefetched. Keyed per-URL so every slug of a
   // dynamic route gets its own chance — see the note on _prefetched above.
-  if (_prefetched.has(cacheKey)) return
-  _prefetched.add(cacheKey)
+  // A chunk-only warm does not take the gate: it answered no question about
+  // the data, so the data prefetch that follows it must still be allowed.
+  if (data) {
+    if (_prefetched.has(cacheKey)) return
+    _prefetched.add(cacheKey)
+  }
 
   // 1. Preload the component chunk. Deduped on the route id, not the URL:
   // every /blog/:slug/ shares one chunk, so importing it once is correct.
@@ -360,7 +364,10 @@ export async function prefetchHref(href) {
   // exactly the latency prefetch exists to remove.
   await loadLayoutChain(node, _layouts).catch(() => {})
 
-  // 3. Preload the data (run load() silently)
+  // 3. Preload the data (run load() silently). `data: false` stops here: the
+  // caller is signed out and the route is not — a load() now would 401, and a
+  // chunk is the same bytes whoever asks for it.
+  if (!data) return
   const loaderFactory = _loaders[node.id]
   if (loaderFactory) {
     try {
@@ -400,7 +407,7 @@ export async function prefetchHref(href) {
  *
  * @param {string} path — e.g. '/leads/123/'
  */
-export function prefetch(path) {
+export function prefetch(path, opts) {
   const url = new URL(path, window.location.origin)
-  return prefetchHref(url.href)
+  return prefetchHref(url.href, opts)
 }

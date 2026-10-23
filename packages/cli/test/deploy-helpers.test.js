@@ -411,6 +411,42 @@ describe('swapContainer', () => {
     expect(runCmd).toContain('sha256:abc')
   })
 
+  // FJS-D1484: on a box each app runs as its own host user, never the
+  // image's uid every app would share.
+  const onBox = (ids) => {
+    const commands = []
+    const context  = {
+      exec: ({ command, input }) => {
+        const s = input ?? command
+        commands.push(s)
+        return s.includes('id -u fjs-my-app') ? ids : ''
+      },
+      config: {},
+    }
+    const go = () => swapContainer(context, {
+      host: 'root@203.0.113.7', appId: 'my-app', container: 'my-app-api', image: 'sha256:abc', apiPort: 7102,
+      dbPath: '/srv/db', envFile: '/srv/.env.production', deployConf: {},
+      log: { info() {}, success() {}, warn() {}, error() {} },
+    })
+    return { commands, go }
+  }
+
+  test('on a box the container starts as the app\'s own user', () => {
+    const t = onBox('998:998\n')
+    t.go()
+    expect(t.commands.find(c => c.includes('docker run'))).toContain('--user 998:998')
+  })
+
+  test('a box with no user for the app is refused before the running container is touched', () => {
+    const t = onBox('')
+    expect(() => t.go()).toThrow(/fjs-my-app is not a user on this box.*fli deploy:setup/)
+    expect(t.commands.some(c => c.includes('docker rename') || c.includes('docker stop'))).toBe(false)
+  })
+
+  test('localhost passes no --user, so the image\'s user runs', () => {
+    expect(drive({ deployConf: {} }).runCmd).not.toContain('--user')
+  })
+
   test('the old container is renamed and stopped BEFORE the new one starts', () => {
     const { commands } = drive({ deployConf: {} })
 

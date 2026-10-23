@@ -16,7 +16,14 @@
 
 import { stripVTControlCharacters } from 'node:util'
 import { mkdir, realpath, stat }   from 'node:fs/promises'
+import { readFileSync, writeFileSync, renameSync } from 'node:fs'
 import { validRelativePath }       from './static.js'
+
+// Each app's container runs as a host uid of its own (`FJS-D1484`), handed out
+// from here up and never reused: a retired app's volume keeps its files, and a
+// reused uid would hand them to the next app. Above every login and system user
+// and below systemd's container ranges.
+const APP_UID_BASE = 400_000
 
 /** A digest is `sha256:` and 64 hex characters. Anything else is not an
  *  identity and Basecamp refuses to record it, so this refuses to report it. */
@@ -164,7 +171,30 @@ const BACKUP_TIMEOUT_MS = 3_600_000
 export function createDocker({
   run = spawnRun, fetch: fetchFn = globalThis.fetch, workDir = '/var/lib/outpost/apps', health = HEALTH,
   restoreDir = '/var/lib/outpost/restore', backupDir = '/var/lib/outpost/backups',
+  uidFile = '/var/lib/outpost/uids.json',
 } = {}) {
+
+  /** The app's host uid, made and recorded on its first ask. Read, chosen and
+   *  written with no await between, so two releases at once cannot take one. */
+  function appUid(appId) {
+    let table = {}
+    try { table = JSON.parse(readFileSync(uidFile, 'utf8')) } catch (err) {
+      if (err.code !== 'ENOENT') throw new Error(`${uidFile} could not be read, so no uid is handed out: ${err.message}`)
+    }
+    if (Number.isInteger(table[appId])) return table[appId]
+    table[appId] = Math.max(APP_UID_BASE - 1, ...Object.values(table).filter(Number.isInteger)) + 1
+    writeFileSync(`${uidFile}.partial`, JSON.stringify(table, null, 2) + '\n', { mode: 0o600 })
+    renameSync(`${uidFile}.partial`, uidFile)
+    return table[appId]
+  }
+
+  /** Whether the image declares a user other than root. An image that runs as
+   *  root is left so: it may need root to bind its port, and a uid would not
+   *  confine a root process anyway. */
+  async function runsUnprivileged(ref) {
+    const user = JSON.parse(await docker(['image', 'inspect', '--format', '{{json .Config.User}}', ref]) || '""')
+    return !!user && !/^(root|0)(:|$)/.test(user)
+  }
 
   /** Run a docker command, or throw with what the machine actually said. A
    *  route turns that into an error the caller reads; swallowing it here is
@@ -491,23 +521,36 @@ export function createDocker({
       // not in its exposed set, and `syncExposed` builds that set from this
       // label, so the declaration lives and dies with the container.
       if (port && exposesPort && !loopback) argv.push('--label', `${EXPOSED_LABEL}=${port}`)
+      // Addressed by digest where one is known — the tag is a name and two
+      // builds share it. This is the half `Deployment.builtImage` records.
+      const ref = await reference(image, digest)
+      const uid = await runsUnprivileged(ref) ? appUid(appId) : null
+      if (uid != null) argv.push('--user', `${uid}:${uid}`)
       // The data a container keeps, on a NAMED volume that outlives it. Every
       // release replaces the container, so a database started without one
       // comes back empty after its next release. Named for the app, so the
       // next container is handed the same one; a path docker would read as
       // anything but a mount point was refused above, before the old container
       // was touched.
-      if (config.volumePath != null) argv.push('-v', `${name}-data:${config.volumePath}`)
+      // An EMPTY volume takes the image's directory again at every mount,
+      // owner included, which would undo the uid's chown below. The chown's
+      // own mount makes the copy; the run's must not.
+      const volume = `${name}-data`
+      if (config.volumePath != null) argv.push(...uid != null
+        ? ['--mount', `type=volume,src=${volume},dst=${config.volumePath},volume-nocopy`]
+        : ['-v', `${volume}:${config.volumePath}`])
       if (config.cpuLimit   != null) argv.push('--cpus', String(config.cpuLimit))
       if (config.memLimitMb != null) argv.push('--memory', `${config.memLimitMb}m`)
-      // Addressed by digest where one is known — the tag is a name and two
-      // builds share it. This is the half `Deployment.builtImage` records.
-      argv.push(await reference(image, digest))
+      argv.push(ref)
 
       const held = await setAside(name, replaced)
       const path = config.healthCheck ?? null
       let containerId
       try {
+        // After the old container stops, which still writes as its own uid.
+        if (uid != null && config.volumePath != null)
+          await docker(['run', '--rm', '--user', '0:0', '--entrypoint', 'chown', '--mount', `type=volume,src=${volume},dst=${config.volumePath}`,
+                        ref, '-R', `${uid}:${uid}`, config.volumePath])
         containerId = await docker(argv)
       } catch (err) {
         // A port another process holds, a bad env value, an image the daemon

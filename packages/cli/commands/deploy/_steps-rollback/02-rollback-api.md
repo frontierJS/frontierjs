@@ -89,6 +89,7 @@ docker start  ${container}`, { dry: flag.dry })
     'docker run -d',
     `--name ${container}`,
     '--restart unless-stopped',
+    ...runAs(machine, appId),
     `-p 127.0.0.1:${apiPort}:3000`,
     `--volume ${dbPath}:${CONTAINER_DB_DIR}`,
     `--env-file ${envFile}`,

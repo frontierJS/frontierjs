@@ -110,9 +110,10 @@ describe('publishing bytes', () => {
 describe('what a publish refuses', () => {
 
   test('a path that walks out of the app directory', () => {
-    for (const bad of ['../etc/passwd', 'a/../../b', '/etc/passwd', 'a/./b', 'a//b', '..', 'x\0y', 'a\\b'])
+    for (const bad of ['../etc/passwd', 'a/../../b', '/etc/passwd', 'a/./b', 'a//b', '..', 'x\0y', 'a\\b', '.env', 'assets/.htaccess'])
       expect(validRelativePath(bad)).toBeTruthy()
-    expect(validRelativePath('assets/app.js')).toBeNull()
+    for (const good of ['assets/app.js', 'assets/_flowId_-CXA8a_8A.js', '_app/immutable/start.js'])
+      expect(validRelativePath(good)).toBeNull()
   })
 
   test('and the store refuses it too, not merely the validator', async () => {

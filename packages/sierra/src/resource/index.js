@@ -27,7 +27,7 @@ import { createJunctionClient, localTokenStore } from '@frontierjs/junction/clie
 // on its own subpath, because `status` and `session` are the two things a
 // component asks this module for and splitting them would be two imports for
 // one subject.
-export { session, ready, refresh, signIn, completeSignIn, signUp, verifyEmail, signOut, oauthErrorMessage, OAUTH_ERRORS } from './session.js'
+export { session, ready, refresh, signIn, warmSignIn, completeSignIn, signUp, verifyEmail, signOut, oauthErrorMessage, OAUTH_ERRORS } from './session.js'
 import { initSession, _onUnauthorized, session, ready as sessionReady } from './session.js'
 
 // Resource factory — re-exported from the resource module

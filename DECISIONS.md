@@ -1688,6 +1688,10 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1484"></a>2026-10-23 · `FJS-D1484` — Who a Basecamp box runs as — SSH and the Outpost stay root; the isolation owed is a host uid per app ([FJS-3474](ISSUES.md#fjs-3474)), not a deploy user.
+
+Asked in chat, set against Laravel Forge's `forge` user. **A** (root, plus a uid per app) was picked over **B** (root, and nothing else filed), **C** (a Forge-style `frontier` user with the docker group and NOPASSWD sudo, with root login turned off), and **D** (C and A together). As recommended. **Forge needs its user because PHP-FPM runs the site on the host**, and here an app runs in a container as `USER bun` (`FJS-D1120`). A deploy user would have to be in the docker group, and every unattended step would need NOPASSWD sudo, and each of those is root by another name. That is the argument the Outpost unit already makes for its own `User=`. What C buys is `PermitRootLogin no` over a login that is already key-only (`ssh.root-key-only`), a sudo log, and some protection against a person's typo, and every install, deploy and retire step would pay for it. **The part of Forge worth taking is its per-site isolation.** Every app on a box is host uid 1000 today, so an app that escapes its container reads every other app's db dir. Precedent (from memory, not re-checked): Kamal's `ssh.user` defaults to root, Coolify's non-root mode is marked experimental, and Dokku's `dokku` user is limited to a forced command. Where it lives: `basecamp:create` (`root@ip`), `Server.sshUser @default("root")`, and the comment on the Outpost unit in `packages/basecamp/api/src/providers/compute/enrollment.ts`.
+
 ### <a id="fjs-d1461"></a>2026-10-23 · `FJS-D1461` — Q10 — Whether the owner's view shows letter text — Never: count, oldest, bytes, and sealed or plain. *Synapse's* admin API lists rooms and whether each is encrypted, and returns encrypted content still encrypted ([rooms](https://github.com/dklimpel/synapse_archive/blob/119b137cfa72e5e24c700eb5c5c060e62728597d/docs/admin_api/rooms.md), [FAQ](https://git.sharpetronics.com/sharpetronics/synapse/raw/branch/develop/docs/usage/administration/admin_faq.md)).
 
 Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (show plain bodies, for debugging V1).
@@ -8254,6 +8258,30 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d1488"></a>2026-10-23 · `FJS-D1488` — Q4 — The storage destination's noun — `BackupDestination`, a model. The enum goes; both columns become relations, a null one meaning local. The credential follows `NotificationChannel`: a bare `secretId`, a `@transient` plaintext the service lifts into a `Secret` row. A Litestream replica is a continuous backup, so it is the same noun.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) § Open questions. **A** was picked over **B** (`Destination`, unprefixed. Too loose where deploys and notifications also have destinations), **C** (Another word: `StorageTarget` (`Target` is Conduit's, `FJS-D681`), `Bucket` (`bucket.bucket`, and rows sharing a bucket differ by prefix), `Repository` (collides with `RegistryImage.repository`)).
+
+The paper's recommendation, taken as written: The fields already say it, `NotificationChannel` is the sibling shape, and the precedent agrees: Dokploy's *Destinations* ([docs](https://docs.dokploy.com/docs/core/cloud-storage)), Velero's `BackupStorageLocation` ([docs](https://velero.io/docs/v1.17/api-types/backupstoragelocation)); Coolify's *S3 Storage* names the protocol. Reopen as `Destination` if a non-backup consumer (`@file` storage) ever wants the same place. Confidence 2.
+
+### <a id="fjs-d1487"></a>2026-10-23 · `FJS-D1487` — Q3 — Which first — Snapshots off the box first: it reuses `backup:run` and `/backup`, covers non-`.db` files and Basecamp itself, and brings the schedule and the pre-deploy copy.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) § Open questions. **A** was picked over **B** (Litestream first: seconds of loss sooner, the rest uncovered longer).
+
+The paper's recommendation, taken as written: The machine-loss gap is total today and A closes it with code that exists. Confidence 3.
+
+### <a id="fjs-d1486"></a>2026-10-23 · `FJS-D1486` — Q2 — Where Litestream runs for a fleet app — One systemd unit per machine, run by Outpost; each app an entry with its own key, scoped to a bucket or a prefix as the provider allows, so an app is revoked or moved alone.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) § Open questions. **A** was picked over **B** (One unit per machine and one key per machine), **C** (A sidecar container per app), **D** (No Litestream on the fleet; snapshots only).
+
+The paper's recommendation, taken as written: One process however many client apps a machine holds, `deploy-plane.md`'s "on the host", and the same path for Basecamp's own box. Per-app keys buy revocation and moves, not isolation: root on a shared box reads every volume already, so a client that needs a hard boundary gets its own machine. Confidence 2.
+
+### <a id="fjs-d1485"></a>2026-10-23 · `FJS-D1485` — Q1 — How a fleet machine reaches the bucket — Snapshots through a pre-signed PUT/GET Basecamp mints per transfer, so no key stays on the machine; Litestream through a standing key scoped to its own bucket or prefix, the one thing that cannot run on a pre-signed URL.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) § Open questions. **A** was picked over **B** (One standing scoped key per machine for both), **C** (Basecamp carries the bytes: no key on any machine, but the archive crosses the command port (`FJS-D679` refused it) and there is no Litestream on a fleet machine).
+
+The paper's recommendation, taken as written: It holds D6 for everything but the one consumer that needs a key, and a stolen machine reaches only its own replicas. Confidence 2.
 
 ### <a id="fjs-d1428"></a>2026-10-22 · `FJS-D1428` — How `:ask`'s declared standing reaches the app's `/mcp` — Devtools relays as whom: `/api/mcp?as=&tenant=` runs `actAs` (`:call`'s principal lookup) and hands the request to `app.mcp.answer(request, user)`, which `mcp()` owns beside its route; refused outside development.
 
@@ -14988,6 +15016,18 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1483"></a>2026-10-23 · `FJS-D1483` — Outpost takes a path segment that starts with `_`. A leading `.` is still refused.
+
+Asked through AskUserQuestion, building the static-App path of `fli basecamp:deploy`. As recommended. The first build sent from `example/` was refused at `assets/_flowId_-….js`, because Rollup names the chunk for a `[param]` route after its parameter and SvelteKit writes `_app/`. A static release could not carry any app with a param route. A dotfile (`.env`, `.htaccess`) stays outside the allow-list. The rule is `validRelativePath` in `packages/outpost/src/static.js`. A machine running Outpost 0.1.5 or earlier refuses these paths until it is released past that version.
+
+### <a id="fjs-d1482"></a>2026-10-23 · `FJS-D1482` — A static App built on the laptop bakes the checkout's own `.env`, not the App's Basecamp Variables.
+
+Asked through AskUserQuestion. Against the recommendation (**A**): the pick gave no reason beyond its option text, *less code, like the image path builds from the local tree*. A was a Basecamp read method that filters the App's Variables to the bundle prefixes, shared with Freeze. `fli basecamp:deploy` (`packages/cli/commands/basecamp/deploy.md`) runs `vite build` in `web/` with the shell's environment, and Vite reads `web/.env*` itself. Overrides `decision-rules` § V question 1: the bundle's env has a second source, and the gap is unenforced. A Freeze build and a laptop build of one App can bake different values, and the Variables page states only Freeze's (`FJS-3475`).
+
+### <a id="fjs-d1481"></a>2026-10-23 · `FJS-D1481` — `fli basecamp:deploy` releases an inline App: it builds `web/` into a temp directory, or sends `--dist <dir>` as it is, and hands the files to `apps.publish`. That method relays them to Outpost's `/static/publish` and releases the digest as a Deployment.
+
+Asked through AskUserQuestion about `--dist`. Against the recommendation (**leave it out** until an app asks for a pre-built folder): the pick gave no reason beyond its option text, *skips the build and ships that folder as-is*. The flag is refused on an App that is not inline, and `--server` is refused on an App that is. `apps.publish` (`packages/basecamp/api/src/services/apps/apps.service.ts`, gate `USER`, the Deployment create level, input `AppPublish`) is the one owner of publish-and-release, and Freeze calls it too. The caller never holds `OUTPOST_SECRET`, and the files never enter a row. The build goes to a temp directory because `vite build` empties its outDir and `web/dist` may belong to something else. Limits: Outpost takes 500 files, 4 MB each and 24 MB in all. Basecamp's body cap is 10 MB of JSON, and base64 adds a third to a binary file, so the body cap is the one a large site reaches first.
 
 ### <a id="fjs-d1480"></a>2026-10-23 · `FJS-D1480` — Q3 — The address that outlives a Hetzner box (`--reserved-ip`) — A Primary IPv4 with `auto_delete: false`, given to the server at create (`public_net.ipv4`). It IS the server's own address, so outbound traffic already leaves from it and Hetzner needs no egress script. Reuse means the hostname's record holds a Primary IP in the same location that no server holds.
 

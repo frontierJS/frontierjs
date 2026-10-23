@@ -31,21 +31,37 @@ handing off to something deeper rather than trying to be it.
 
 ## Routes that matter
 
+Six doors in the top bar, and every page lives under one. Nothing is deleted
+pre-alpha: a page with no door yet sits whole under `/drafts/`, unlisted, until
+its material is folded into one.
+
 - `/` — the splash: what is coming, and two doors out. It is one screen and
   hands off rather than arguing.
+- `/start/` — install, run, first model; `/start/tutorial/` is the `fli tutor`
+  page, held to the transcript rule below.
+- `/tour/` — proof, not prose: `derived`, `seams`, `walkthrough`, `ripple`,
+  `loop`, `field`. Each page shows the framework doing the thing.
+- `/docs/` — concepts first, then guides per job, then reference per package.
+- `/packages/` — every package, its realm and its maturity; `/packages/backbone/`
+  is the outside projects it stands on.
+- `/why/` — position against other stacks: `before-after`, `vs-laravel`,
+  `landscape` (`projects.json`), `comparisons` (`comparisons.json`).
 - `/journey/` — the build-in-the-open journal. **A post is a file**:
   `site/content/routes/journey/<slug>.mesa` with `title`, `description` and `date`
   in its frontmatter, rendered inside `site/content/components/JourneyPost.mesa`.
   The index reads every sibling's frontmatter (`site/content/data/journey.js`), so
   publishing is adding the file; no `date` means a draft, built but unlisted.
+- `/direction/` — where it points, labeled as direction: `story`, `specs`.
 - `/pitch/` — the long-form page below, every anchor (`/pitch/#start`) included.
-- `/seams/` — one request, every seam it crosses.
-- `/splash-tune/` — live controls for the map tour behind the splash and the
-  three cloud decks over it, run against the real splash in a frame. Unlisted
-  (`robots: noindex`). Tuning ends with *Copy*, pasted over the tour variables
-  in `site/content/routes/index.mesa`. The decks are `site/content/public/map/clouds-*.webp`,
-  one horizontally-wrapping tile each, cut from a painted cloud sheet; a tile
-  that does not wrap shows as a hard edge sliding across the splash.
+  It becomes the home page and then leaves.
+- `/drafts/` — `showroom5` (folds into Packages), `map` (the Packages index
+  visual), `allegory` (a journey post), `index2` and `index3` (hero rounds), and
+  `splash-tune`, live controls for the map tour behind the splash, run against
+  the real splash in a frame. Tuning ends with *Copy*, pasted over the tour
+  variables in `site/content/routes/index.mesa`. The decks are
+  `site/content/public/map/clouds-*.webp`, one horizontally-wrapping tile each,
+  cut from a painted cloud sheet; a tile that does not wrap shows as a hard edge
+  sliding across the splash.
 
 ## The pitch, in the order a stranger needs it
 
@@ -73,7 +89,7 @@ handing off to something deeper rather than trying to be it.
 
 ## The tutorial page
 
-`/tutor/` is the one page here that sells a COMMAND rather than the framework,
+`/start/tutorial/` is the one page here that sells a COMMAND rather than the framework,
 and it is held to a stricter version of *show, don't claim*: every sample on it
 is a transcript of a real run or a verbatim lift from the step that produced it.
 A paraphrase of `fli tutor`'s output would be the one thing on this site that has

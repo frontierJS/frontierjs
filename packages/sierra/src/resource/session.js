@@ -29,6 +29,7 @@
  */
 
 import { watchProxy } from '@frontierjs/mesa/runtime'
+import { prefetch } from '../router/prefetch.js'
 
 /**
  * @property {object|null} user   the SessionContext the server built, or null
@@ -231,6 +232,29 @@ export async function refresh() {
   }
 }
 
+/** The route a sign-in lands on, named by `warmSignIn`, consumed by `_attempt`. */
+let _landing = null
+
+/**
+ * Say where a sign-in in progress will land, and warm it. Call it on the
+ * password field's focus: a person typing a password is about to sign in, and
+ * that is early enough to fetch the landing route's chunk and layouts, which
+ * are the same bytes signed out or in. The data waits — a load() now would
+ * 401 — and runs the instant the token arrives, beside `account.me`, so by the
+ * time `signIn` resolves the route is cached and the first paint is one hop
+ * from the cache, not two from the network.
+ *
+ * The path is the app's call — `router.consumeReturnPath()` or its home — and
+ * this is the one place the session learns it.
+ *
+ * @param {string} path  e.g. '/'
+ */
+export function warmSignIn(path) {
+  if (!path || typeof window === 'undefined') return
+  _landing = path
+  Promise.resolve(prefetch(path, { data: false })).catch(() => {})
+}
+
 /**
  * Sign in.
  *
@@ -326,7 +350,19 @@ async function _attempt(run) {
     const result = await run()
     // A challenge is not a session, so there is nothing to load and asking would
     // answer 401 with no credential to show for it.
-    if (!_isChallenge(result)) await refresh()
+    if (!_isChallenge(result)) {
+      // The token is held from here, so the landing page's load() can run NOW,
+      // beside `account.me`, instead of after it — the second round trip was
+      // the gap between "signed in" and a page with rows in it. `refresh` is
+      // still what sets `session.user`: the level is the server's grading and
+      // the login body does not carry it.
+      const landing = _landing
+      _landing = null
+      await Promise.all([
+        refresh(),
+        landing ? prefetch(landing).catch(() => {}) : null,
+      ])
+    }
     return result
   } catch (err) {
     // `retryable: false` is the server saying this attempt is finished — the

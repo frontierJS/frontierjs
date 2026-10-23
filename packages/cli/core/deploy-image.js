@@ -24,6 +24,7 @@
 // disagree about the same app.
 
 import { readFileSync, readdirSync, existsSync, statSync } from 'fs'
+import { createHash } from 'crypto'
 import { join, extname } from 'path'
 
 const PRINT_KIT = '@frontierjs/print-kit'
@@ -43,6 +44,28 @@ export const CHROME_RUN = `RUN apt-get update \\
 // image says who runs; `deploy:setup` and `deploy:doctor` say who owns, from
 // these numbers, so a host directory and an image cannot name two users.
 export const IMAGE_USER = Object.freeze({ name: 'bun', uid: 1000, gid: 1000 })
+
+// Who an app's container runs as on a box (`FJS-D1484`): a system user of its
+// own, passed as `--user`. With IMAGE_USER for every app, an app that escaped
+// its container met each other app's db directory as its owner. A Linux user
+// name is at most 32 characters and an app id may be a 36-character uuid, so a
+// long id keeps its head and a digest of the whole, and two ids sharing a head
+// still name two users.
+export function appUser(appId) {
+  const name = `fjs-${String(appId).toLowerCase().replace(/[^a-z0-9-]+/g, '-')}`
+  if (name.length <= 32) return name
+  return `${name.slice(0, 23).replace(/-+$/, '')}-${createHash('sha256').update(String(appId)).digest('hex').slice(0, 8)}`
+}
+
+// Made once by `deploy:setup`; a name already there is left as it is, so a
+// re-run keeps the uid the db directory already belongs to.
+export const ensureAppUser = (name) => {
+  const add = `useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin ${name}`
+  return `id -u ${name} >/dev/null 2>&1 || ${add} 2>/dev/null || sudo ${add}`
+}
+
+// `uid:gid`, or nothing where the user is absent.
+export const appUserIds = (name) => `id -u ${name} >/dev/null 2>&1 && echo "$(id -u ${name}):$(id -g ${name})" || true`
 
 /**
  * What this app's image needs beyond api/ and db/. `chrome` names the package

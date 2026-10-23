@@ -20,7 +20,7 @@ import { createStaticServer }         from './serve.js'
 const config    = readConfig()
 
 function serveMachine(config) {
-  const docker    = createDocker({ workDir: config.workDir, restoreDir: config.restoreDir, backupDir: config.backupDir })
+  const docker    = createDocker({ workDir: config.workDir, restoreDir: config.restoreDir, backupDir: config.backupDir, uidFile: config.uidFile })
   const inspector = createInspector({ hostFiles: config.hostFiles })
   const outpost   = createOutpostServer(config, { docker, inspector })
   const reporter  = createReporter(config, { inspector })

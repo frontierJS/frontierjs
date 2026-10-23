@@ -1,0 +1,31 @@
+---
+title: "Drafts — FrontierJS"
+description: "Pages kept whole until each is folded into a door. Unlisted."
+robots: noindex
+render: static
+---
+<article id="top" class="container doorway">
+  <p class="eyebrow">Drafts</p>
+  <h1>Drafts</h1>
+  <p class="lede">Nothing is deleted pre-alpha. A page leaves here when its material has a home in a door.</p>
+  <ul class="doors">
+    <li><a href="/pitch/">The pitch</a><span>The long-form single scroll. Becomes the home page.</span></li>
+    <li><a href="/drafts/showroom5/">The stack</a><span>Every feature each package ships. Folds into Packages.</span></li>
+    <li><a href="/drafts/map/">The territory map</a><span>Every package on one map. Becomes the Packages index visual.</span></li>
+    <li><a href="/drafts/allegory/">The allegory</a><span>Running software as running a restaurant. Becomes a journey post.</span></li>
+    <li><a href="/drafts/index2/">Hero round one</a><span>Five candidate above-the-fold treatments.</span></li>
+    <li><a href="/drafts/index3/">Hero round two</a><span>Nine more, in three anchor families.</span></li>
+    <li><a href="/drafts/splash-tune/">Splash tuner</a><span>Live controls for the map tour behind the splash.</span></li>
+  </ul>
+</article>
+
+<style>
+  .doorway { max-width: 48rem; padding: 4rem 1.25rem 5rem; font-family: var(--font-primary); }
+  .eyebrow { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-mute); margin: 0; }
+  h1 { font-size: clamp(2rem, 5vw, 2.9rem); line-height: 1.08; letter-spacing: -.03em; margin: .3em 0 .5em; }
+  .lede { font-size: 1.15rem; line-height: 1.6; color: var(--ink-soft); }
+  .doors { list-style: none; padding: 0; margin: 2.5rem 0 0; }
+  .doors li { border-top: 1px solid var(--rule); padding: 1.25rem 0; display: grid; gap: .25rem; }
+  .doors a { font-size: 1.2rem; font-weight: 600; text-decoration: none; }
+  .doors span { color: var(--ink-soft); line-height: 1.6; }
+</style>

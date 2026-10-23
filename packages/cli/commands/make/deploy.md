@@ -124,8 +124,9 @@ COPY --from=base /app .
 # one with no pause in it. Put it beside DATABASE_URL. The deploy asks the running
 # app where its jobs database is before the swap, and says so when it is not here.
 #
-# The process runs as \`${IMAGE_USER.name}\`, not root, so the directory is handed to it here and
-# the HOST directory bound over it must belong to the same uid -- \`fli deploy:setup\`
+# The process runs as \`${IMAGE_USER.name}\`, not root, so the directory is handed to it here.
+# On a server the deploy starts it with --user as the app's own host user instead,
+# and the HOST directory bound over /db belongs to that user -- \`fli deploy:setup\`
 # creates it so, and \`fli deploy:doctor --remote\` says when it is not.
 RUN mkdir -p /db && chown ${IMAGE_USER.name}:${IMAGE_USER.name} /db
 

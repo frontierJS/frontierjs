@@ -173,6 +173,25 @@ set -euo pipefail
 # set -e exits without a word, and over ssh only this line says where.
 trap 'echo "install stopped at line $LINENO: $BASH_COMMAND" >&2' ERR
 
+# The security pass below can upgrade systemd, which re-executes it, and a
+# systemctl call that lands in the re-exec is refused by the bus rather than
+# queued (FJS-3469). A refusal is retried for two minutes; any other failure is
+# the call's own.
+systemctl() {
+  local n=0 out
+  until out=$(command systemctl "$@" 2>&1); do
+    case $out in
+      *"message bus"*|*"Connection reset"*|*"Transport endpoint"*|*"Failed to connect to bus"*) ;;
+      *) printf '%s\\n' "$out" >&2; return 1 ;;
+    esac
+    n=$((n + 1))
+    [ $n -lt 24 ] || { printf '%s\\n' "$out" >&2; return 1; }
+    sleep 5
+  done
+  printf '%s' "$out"
+}
+export -f systemctl
+
 : "$BASECAMP_URL"   # where this machine reports to
 : "$SERVER_ID"      # which row it is
 : "$ENROLL_TOKEN"   # single-use, short-lived, and the only secret here
@@ -246,7 +265,7 @@ timeout 1800 systemctl start apt-daily-upgrade.service \
 # A pass that upgrades systemd re-executes it, which ends the wait above while
 # unattended-upgrade still holds dpkg's lock, and every apt call below then
 # spends its lock timeout on it (FJS-3469).
-timeout 1800 sh -c 'while [ "$(systemctl show -P ActiveState apt-daily-upgrade.service)" = activating ]; do sleep 5; done' || true
+timeout 1800 bash -c 'while [ "$(systemctl show -P ActiveState apt-daily-upgrade.service)" = activating ]; do sleep 5; done' || true
 
 # sshd takes the first value it reads and the drop-ins are read in name order,
 # so 10- wins over the 50-cloud-init.conf that turns passwords back on. A box

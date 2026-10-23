@@ -18,6 +18,7 @@ const { configurationSet } = await import(new URL('file://' + global.fliRoot + '
 // step 04 has already said so out loud.
 const { container, replaced } = swapContainer($, {
   host,
+  appId,
   container: apiContainer(appId, deployConf),
   image:     $.config.imageAddress ?? imageTag,
   apiPort,

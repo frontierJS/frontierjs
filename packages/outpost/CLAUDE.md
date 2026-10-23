@@ -129,6 +129,12 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   cannot see (a snap docker and the host's `/tmp`) mounts an empty directory,
   and the restore extracts nothing and answers success. Overwrite EMPTIES the
   volume first — a `-wal` left beside a new database is replayed into it.
+- **An image with a non-root `USER` runs as the app's own uid** (`FJS-D1484`),
+  handed out from `APP_UID_BASE` and recorded in `uids.json`, never reused. A
+  chown of the volume does not stick by itself: docker copies the image's
+  directory, and its OWNER, into an empty named volume at every mount. So a
+  root one-shot chowns after the old container stops, and the run mounts
+  `volume-nocopy`. A root image is left as it is.
 - **`/backup` is a tar of the live volume, not a checkpointed copy**
   (`FJS-D679`). The container keeps running, so the SQLite file is archived
   with its `-wal` beside it and a restore replays that. The script lists every

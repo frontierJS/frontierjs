@@ -20,11 +20,21 @@ const dirs = [
 
 machine.run(`mkdir -p ${dirs} && (umask 077 && mkdir -p ${secretsDir})`)
 
-// The container runs as the image's user and /db is bound over the host's db
-// directory, so that directory belongs to the same uid (FJS-D1120). sudo for a
-// login that is not root; a box where the login already owns uid 1000 needs none.
-const { IMAGE_USER } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
-machine.run(`chown ${IMAGE_USER.uid}:${IMAGE_USER.gid} ${dbDir} 2>/dev/null || sudo chown ${IMAGE_USER.uid}:${IMAGE_USER.gid} ${dbDir}`)
+// /db is bound over the host's db directory, so that directory belongs to the
+// uid the container runs as: on a box the app's own user (FJS-D1484), and on
+// localhost the image's (FJS-D1120), where no other app shares the machine and
+// making a user would need sudo. sudo for a login that is not root.
+const { IMAGE_USER, appUser, ensureAppUser } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
+let owner = `${IMAGE_USER.uid}:${IMAGE_USER.gid}`
+if (!machine.local) {
+  const user = appUser($.config.appId)
+  machine.run(ensureAppUser(user))
+  owner = `${user}:${user}`
+}
+// SQLite makes its files 644, so a uid of its own does not stop another app
+// reading them through a 755 directory.
+machine.run(`chown ${owner} ${dbDir} 2>/dev/null || sudo chown ${owner} ${dbDir}`)
+machine.run(`chmod 750 ${dbDir} 2>/dev/null || sudo chmod 750 ${dbDir}`)
 
 // ─── The env file, seeded once ────────────────────────────────────────────────
 // The local `.env.production` is copied up only when the target has none, and
@@ -90,12 +100,12 @@ else if (existsSync(localEnv)) {
 }
 $.config.envSeeded = !present && existsSync(localEnv)
 
-// The container reads secretsDir as the image's user, as it does dbDir, and
-// after the seed above, which the login writes as itself.
-machine.run(`chown -R ${IMAGE_USER.uid}:${IMAGE_USER.gid} ${secretsDir} 2>/dev/null || sudo chown -R ${IMAGE_USER.uid}:${IMAGE_USER.gid} ${secretsDir}`)
+// The container reads secretsDir as the owner of dbDir, and after the seed
+// above, which the login writes as itself.
+machine.run(`chown -R ${owner} ${secretsDir} 2>/dev/null || sudo chown -R ${owner} ${secretsDir}`)
 
 log.success('Directories ready')
-log.info(`  ${serverPath}/db          ← SQLite database`)
+log.info(`  ${serverPath}/db          ← SQLite database, owned by ${owner.split(':')[0]}`)
 log.info(`  ${serverPath}/releases/   ← web release history`)
 log.info(`  ${serverPath}/src/        ← the app as committed, written by each deploy`)
 log.info(`  ${envFile}  ← ${envNote}`)

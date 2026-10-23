@@ -23,7 +23,7 @@ import { createStaticServer }     from '../src/serve.js'
 import { readConfig }             from '../src/config.js'
 import { ensureCert }             from '../src/cert.js'
 import pkg                        from '../package.json' with { type: 'json' }
-import { existsSync, mkdtempSync, statSync, writeFileSync, mkdirSync, symlinkSync, realpathSync } from 'node:fs'
+import { existsSync, mkdtempSync, statSync, writeFileSync, mkdirSync, symlinkSync, realpathSync, readFileSync } from 'node:fs'
 import { tmpdir }                 from 'node:os'
 import { join }                   from 'node:path'
 
@@ -47,6 +47,9 @@ function fakeRunner(answers = {}) {
     // a test canning `docker inspect` for port bindings would otherwise read as
     // a container that never came up.
     if (argv.includes('{{.State.Running}}')) return { exitCode: 0, stdout: 'true\n', stderr: '', ...answers.running }
+    // An image that declares no USER runs as root and keeps it, so a case
+    // about anything else is not handed a uid table to write.
+    if (argv.includes('{{json .Config.User}}')) return { exitCode: 0, stdout: '""\n', stderr: '', ...answers.user }
     const key = argv.slice(0, 3).join(' ')
     const canned = Object.entries(answers).find(([prefix]) => key.startsWith(prefix))?.[1]
     return { exitCode: 0, stdout: '', stderr: '', ...(canned ?? {}) }
@@ -173,6 +176,50 @@ describe('what the machine is asked to do', () => {
     expect(argv.findIndex(c => c.startsWith('docker run'))).toBeGreaterThan(at('docker stop -t 10 fjs-app-1_replaced'))
     expect(argv.lastIndexOf('docker rm -f fjs-app-1_replaced')).toBeGreaterThan(argv.findIndex(c => c.startsWith('docker run')))
     expect(argv).not.toContain('docker rm -f fjs-app-1')
+  })
+
+  // FJS-D1484: each app on a box is a host uid of its own, so one that
+  // escapes its container is a stranger to every other app's volume.
+  describe('an image with a USER runs as the app\'s own uid', () => {
+    const release = async (docker, app_id, config = { port: 3000, volumePath: '/db' }) => {
+      const server = createOutpostServer(CONFIG, { docker, inspector: createInspector({ run: async () => ({ exitCode: 0, stdout: '', stderr: '' }) }) })
+      return send(server, 'POST', '/deploy', { deployment_id: `dep-${app_id}`, app_id, image: DIGEST, config })
+    }
+    const machine = (user = '"bun"\n') => {
+      const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'docker run': { stdout: 'c-1\n' }, user: { stdout: user } })
+      const uidFile = join(mkdtempSync(join(tmpdir(), 'outpost-uids-')), 'uids.json')
+      return { fake, uidFile, docker: createDocker({ run: fake.run, workDir: CONFIG.workDir, uidFile }) }
+    }
+    const runs = (fake) => fake.calls.map(c => c.join(' ')).filter(c => c.startsWith('docker run'))
+
+    test('the volume is handed to the uid after the old container stops, and the run keeps the copy from undoing it', async () => {
+      const m = machine()
+      expect((await release(m.docker, 'app-1')).status).toBe(200)
+      const argv = m.fake.calls.map(c => c.join(' '))
+      const [chown, app] = runs(m.fake)
+      expect(chown).toBe(`docker run --rm --user 0:0 --entrypoint chown --mount type=volume,src=fjs-app-1-data,dst=/db ${DIGEST} -R 400000:400000 /db`)
+      expect(argv.indexOf(chown)).toBeGreaterThan(argv.indexOf('docker stop -t 10 fjs-app-1_replaced'))
+      expect(app).toContain('--user 400000:400000')
+      expect(app).toContain('--mount type=volume,src=fjs-app-1-data,dst=/db,volume-nocopy')
+    })
+
+    test('a uid is recorded once per app and never shared', async () => {
+      const m = machine()
+      await release(m.docker, 'app-1')
+      await release(m.docker, 'app-2')
+      await release(m.docker, 'app-1')
+      expect(JSON.parse(readFileSync(m.uidFile, 'utf8'))).toEqual({ 'app-1': 400000, 'app-2': 400001 })
+      expect(runs(m.fake).filter(c => !c.includes('chown')).map(c => /--user (\S+)/.exec(c)[1])).toEqual(['400000:400000', '400001:400001', '400000:400000'])
+    })
+
+    test('an image that runs as root is left as root, and no uid is handed out', async () => {
+      for (const user of ['""\n', '"root"\n', '"0:0"\n']) {
+        const m = machine(user)
+        await release(m.docker, 'app-1')
+        expect(runs(m.fake).some(c => c.includes('--user') || c.includes('chown'))).toBe(false)
+        expect(existsSync(m.uidFile)).toBe(false)
+      }
+    })
   })
 
   // A draft's review build (FJS-D1251): the repository's code runs in
