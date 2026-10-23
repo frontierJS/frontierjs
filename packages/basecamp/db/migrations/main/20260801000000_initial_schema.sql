@@ -202,46 +202,6 @@ CREATE TABLE IF NOT EXISTS "blueprint" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_blueprint_category" ON "blueprint" ("category");
 
-CREATE TABLE IF NOT EXISTS "backup" (
-  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
-  "kind" TEXT NOT NULL DEFAULT 'manual',
-  "status" TEXT NOT NULL DEFAULT 'pending',
-  "destination" TEXT NOT NULL DEFAULT 'local',
-  "sizeBytes" INTEGER,
-  "location" TEXT,
-  "error" TEXT,
-  "requestedBy" TEXT,
-  "startedAt" TEXT,
-  "finishedAt" TEXT,
-  "durationMs" INTEGER,
-  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("kind" IN ('manual', 'scheduled')),
-  CHECK ("status" IN ('pending', 'running', 'success', 'failed', 'timeout')),
-  CHECK ("destination" IN ('local', 's3'))
-) STRICT;
-CREATE INDEX IF NOT EXISTS "idx_backup_status" ON "backup" ("status");
-CREATE INDEX IF NOT EXISTS "idx_backup_createdAt" ON "backup" ("createdAt");
-
-CREATE TABLE IF NOT EXISTS "hub_config" (
-  "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'hub',
-  "name" TEXT NOT NULL DEFAULT 'Basecamp',
-  "baseUrl" TEXT NOT NULL,
-  "adminEmail" TEXT NOT NULL,
-  "heartbeatTimeoutSeconds" INTEGER NOT NULL DEFAULT 120,
-  "sessionTtlHours" INTEGER NOT NULL DEFAULT 168,
-  "requireTwoFactorForOwners" INTEGER NOT NULL DEFAULT 0,
-  "allowApiKeyAuth" INTEGER NOT NULL DEFAULT 1,
-  "allowBotUsers" INTEGER NOT NULL DEFAULT 1,
-  "backupEnabled" INTEGER NOT NULL DEFAULT 0,
-  "backupCron" TEXT NOT NULL DEFAULT '0 2 * * *',
-  "backupDestination" TEXT NOT NULL DEFAULT 'local',
-  "mailFromAddress" TEXT,
-  "mailFromName" TEXT,
-  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "version" INTEGER NOT NULL DEFAULT 1,
-  CHECK ("backupDestination" IN ('local', 's3'))
-) STRICT;
-
 CREATE TABLE IF NOT EXISTS "metric_point" (
   "seriesId" TEXT NOT NULL,
   "at" INTEGER NOT NULL,
@@ -481,7 +441,7 @@ CREATE TABLE IF NOT EXISTS "secret" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
-  CHECK ("kind" IN ('ssh_key', 'provider_key', 'registry_auth', 'tls_cert', 'notification', 'generic')),
+  CHECK ("kind" IN ('ssh_key', 'provider_key', 'registry_auth', 'tls_cert', 'notification', 'backup', 'generic')),
   CHECK ("providerKind" IN ('custom', 'hetzner', 'digitalocean', 'cloudflare')),
   UNIQUE ("workspaceId", "name"),
   CHECK (kind != 'provider_key' OR providerKind IS NOT NULL),
@@ -639,6 +599,27 @@ CREATE TABLE IF NOT EXISTS "notification_channel" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_notification_channel_workspaceId" ON "notification_channel" ("workspaceId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_notification_channel_deletedAt" ON "notification_channel" ("deletedAt") WHERE "deletedAt" IS NULL;
+
+CREATE TABLE IF NOT EXISTS "backup_destination" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "workspaceId" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "endpoint" TEXT NOT NULL,
+  "region" TEXT NOT NULL,
+  "bucket" TEXT NOT NULL,
+  "prefix" TEXT NOT NULL DEFAULT '',
+  "secretId" TEXT,
+  "lastTestAt" TEXT,
+  "createdBy" TEXT,
+  "version" INTEGER NOT NULL DEFAULT 1,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "deletedAt" TEXT,
+  UNIQUE ("workspaceId", "name"),
+  FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_backup_destination_workspaceId" ON "backup_destination" ("workspaceId") WHERE "deletedAt" IS NULL;
+CREATE INDEX IF NOT EXISTS "idx_backup_destination_deletedAt" ON "backup_destination" ("deletedAt") WHERE "deletedAt" IS NULL;
 
 CREATE TABLE IF NOT EXISTS "alert_rule" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -922,6 +903,51 @@ CREATE TABLE IF NOT EXISTS "recipe_run" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_recipe_run_recipeId" ON "recipe_run" ("recipeId");
 CREATE INDEX IF NOT EXISTS "idx_recipe_run_serverId" ON "recipe_run" ("serverId");
+
+CREATE TABLE IF NOT EXISTS "backup" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "kind" TEXT NOT NULL DEFAULT 'manual',
+  "status" TEXT NOT NULL DEFAULT 'pending',
+  "destinationId" TEXT,
+  "sizeBytes" INTEGER,
+  "location" TEXT,
+  "error" TEXT,
+  "requestedBy" TEXT,
+  "startedAt" TEXT,
+  "finishedAt" TEXT,
+  "durationMs" INTEGER,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("kind" IN ('manual', 'scheduled', 'found')),
+  CHECK ("status" IN ('pending', 'running', 'success', 'failed', 'timeout')),
+  FOREIGN KEY ("destinationId") REFERENCES "backup_destination" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_backup_status" ON "backup" ("status");
+CREATE INDEX IF NOT EXISTS "idx_backup_createdAt" ON "backup" ("createdAt");
+CREATE INDEX IF NOT EXISTS "idx_backup_destinationId" ON "backup" ("destinationId");
+
+CREATE TABLE IF NOT EXISTS "hub_config" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'hub',
+  "name" TEXT NOT NULL DEFAULT 'Basecamp',
+  "baseUrl" TEXT NOT NULL,
+  "adminEmail" TEXT NOT NULL,
+  "heartbeatTimeoutSeconds" INTEGER NOT NULL DEFAULT 120,
+  "sessionTtlHours" INTEGER NOT NULL DEFAULT 168,
+  "requireTwoFactorForOwners" INTEGER NOT NULL DEFAULT 0,
+  "allowApiKeyAuth" INTEGER NOT NULL DEFAULT 1,
+  "allowBotUsers" INTEGER NOT NULL DEFAULT 1,
+  "backupEnabled" INTEGER NOT NULL DEFAULT 0,
+  "backupCron" TEXT NOT NULL DEFAULT '0 2 * * *',
+  "backupDestinationId" TEXT,
+  "backupKeepLocalCount" INTEGER NOT NULL DEFAULT 7,
+  "backupKeepLocalDays" INTEGER,
+  "backupKeepRemoteCount" INTEGER NOT NULL DEFAULT 7,
+  "backupKeepRemoteDays" INTEGER,
+  "mailFromAddress" TEXT,
+  "mailFromName" TEXT,
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "version" INTEGER NOT NULL DEFAULT 1,
+  FOREIGN KEY ("backupDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS "alert_rule_channel" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),

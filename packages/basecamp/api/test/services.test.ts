@@ -17,9 +17,9 @@
 // service definition are the ones production runs.
 
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
-import { join }        from 'node:path'
+import { dirname, join } from 'node:path'
 import { ensureCert }  from '@frontierjs/outpost/cert'
-import { mkdtempSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir }      from 'node:os'
 import { createTestEnv, session } from '@frontierjs/testing'
 import { signRequest } from '@frontierjs/toolbelt/signature'
@@ -36,6 +36,7 @@ import { NOTIFICATION_KINDS }     from '../src/services/notification-preferences
 import { notifyPeople }           from '../src/core/notify.ts'
 import { createJunctionClient }   from '@frontierjs/junction/client'
 import { snapshotVariables, releaseEnv } from '../src/core/variables.ts'
+import { BACKUP_SCHEDULE, fireBackup, restoreSchedules } from '../src/services/jobs/job-schedule.ts'
 
 // The certificate a machine's command port answers with, which enrollment pins
 // on its Conduit target (FJS-1603). Every enrollment below presents it.
@@ -1565,6 +1566,27 @@ describe('the installation settings are one row, behind the hub tier', () => {
     expect(await (env.system as any).hubConfig.count()).toBe(1)
   })
 
+  test('the backup cron is on the clock exactly while it is enabled', async () => {
+    const svc     = env.as(sysadmin).service('hub-config')
+    const onClock = () => env.app.jobs.nextRuns().find((r: any) => r.name === BACKUP_SCHEDULE)?.cron ?? null
+
+    // Refused before the write, so a stored schedule always registers.
+    let row = await svc.call('current')
+    await expect(svc.call('save', null, { backupCron: 'nightly', version: row.version }))
+      .rejects.toThrow(/backupCron/)
+
+    row = await svc.call('save', null, { backupEnabled: true, backupCron: '15 3 * * *', version: row.version })
+    expect(onClock()).toBe('15 3 * * *')
+
+    // A registration does not survive a restart; boot reads the row (FJS-327).
+    env.app.jobs.unschedule(BACKUP_SCHEDULE)
+    await restoreSchedules(env.app)
+    expect(onClock()).toBe('15 3 * * *')
+
+    row = await svc.call('save', null, { backupEnabled: false, version: row.version })
+    expect(onClock()).toBeNull()
+  })
+
   test('an owner of a workspace is not a sysadmin', async () => {
     await expect(env.as(owner).service('hub-config').call('current')).rejects.toThrow()
   })
@@ -1650,10 +1672,134 @@ describe('a backup is asked for by a person and run by the app', () => {
       .rejects.toThrow(/already pending/)
   })
 
-  test('a destination with nothing behind it is refused by name, not queued to fail', async () => {
+  test('a destination nobody has declared is refused by name, not queued to fail', async () => {
     await (env.system as any).backup.deleteMany({ where: {} })
-    await expect(env.as(sysadmin).service('backups').create({ destination: 's3' }))
-      .rejects.toThrow(/Only 'local' backups are implemented/)
+    await expect(env.as(sysadmin).service('backups').create({ destinationId: 'no-such-bucket' }))
+      .rejects.toThrow(/No backup destination 'no-such-bucket'/)
+  })
+
+  test('a declared destination is accepted and recorded on the row', async () => {
+    await (env.system as any).backup.deleteMany({ where: {} })
+    const dest = await env.as(owner).service('backup-destinations').create({
+      name: `Off-box ${Math.random().toString(36).slice(2, 8)}`,
+      endpoint: 'https://s3.us-west-000.backblazeb2.com', region: 'us-west-000',
+      bucket: 'frontier-basecamp', prefix: 'basecamp-', secret: 'keyid:applicationkey',
+    })
+    const made = await env.as(sysadmin).service('backups').create({ destinationId: dest.id })
+    expect(made.destinationId).toBe(dest.id)
+    // Written at system, so the column is what says who asked.
+    expect(made.requestedBy).toBe(sysadmin.id)
+    await (env.system as any).backup.deleteMany({ where: {} })
+    await env.as(owner).service('backup-destinations').remove(dest.id)
+  })
+
+  test('the schedule writes a scheduled row nobody asked for, and skips beside one in flight', async () => {
+    const sys = env.system as any
+    await sys.backup.deleteMany({ where: {} })
+    await sys.hubConfig.update({ where: { id: 'hub' }, data: { backupEnabled: true } })
+
+    await fireBackup(env.app)
+    const fired = await sys.backup.findMany({})
+    expect(fired.length).toBe(1)
+    expect(fired[0].kind).toBe('scheduled')
+    expect(fired[0].requestedBy).toBeNull()
+
+    await fireBackup(env.app)
+    expect(await sys.backup.count()).toBe(1)
+
+    await sys.backup.deleteMany({ where: {} })
+    await sys.hubConfig.update({ where: { id: 'hub' }, data: { backupEnabled: false } })
+  })
+  // FJS-D1494: remove deletes the archive through retention's helper. A name
+  // this installation did not mint is refused, so a location column can never
+  // point the unlink at the live database.
+  test('remove deletes the archive, then the row; a location it did not mint is kept', async () => {
+    const sys = env.system as any
+    await sys.backup.deleteMany({ where: {} })
+    const dir = join(dirname(env.app.sqlite.filename), 'backups', 'basecamp-2026-01-02T03-04-05-006Z')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'main.db'), 'x')
+    const row = await sys.backup.create({ data: { status: 'success', location: dir } })
+    await env.as(sysadmin).service('backups').remove(row.id)
+    expect(existsSync(dir)).toBe(false)
+    expect(await sys.backup.findFirst({ where: { id: row.id } })).toBeNull()
+
+    const odd = await sys.backup.create({ data: { status: 'success', location: env.app.sqlite.filename } })
+    await expect(env.as(sysadmin).service('backups').remove(odd.id)).rejects.toThrow(/was kept/)
+    expect(existsSync(env.app.sqlite.filename)).toBe(true)
+    await sys.backup.deleteMany({ where: {} })
+  })
+
+  test('rescan is the sysadmin\'s, and names an unknown destination', async () => {
+    await expect(env.as(owner).service('backups').call('rescan', null, { destinationId: 'x' })).rejects.toThrow()
+    await expect(env.as(sysadmin).service('backups').call('rescan', null, { destinationId: 'no-such-bucket' }))
+      .rejects.toThrow(/No backup destination 'no-such-bucket'/)
+  })
+})
+
+describe('a backup destination is an address, and its key is a Secret', () => {
+  const uniq = () => Math.random().toString(36).slice(2, 8)
+  const bucket = (over: Record<string, unknown> = {}) => ({
+    name: `B2 ${uniq()}`, endpoint: 'https://s3.us-west-000.backblazeb2.com', region: 'us-west-000',
+    bucket: 'frontier-basecamp', prefix: 'basecamp-', secret: 'keyid:applicationkey', ...over,
+  })
+  const registered = async (id: string) =>
+    (await (env.app as any).conduit.list()).some((t: any) => t.id === `storage:s3:${id}`)
+
+  test('create lifts the credential into a Secret and registers the target; the row never carries the key', async () => {
+    const row = await env.as(owner).service('backup-destinations').create(bucket())
+    expect(row.secretId).toBeTruthy()
+    expect(row.secret).toBeUndefined()
+    expect(JSON.stringify(row)).not.toContain('applicationkey')
+
+    const secret = await (env.system as any).secret.findFirst({ where: { id: row.secretId } })
+    expect(secret).toMatchObject({ kind: 'backup', name: `backup:${row.name}`, workspaceId: ws.id })
+    expect(await registered(row.id)).toBe(true)
+
+    const got = await env.as(owner).service('backup-destinations').get(row.id)
+    expect(got.backup_count).toBe(0)
+  })
+
+  test('a key that is not id:secret is refused at create, and no credential is asked twice', async () => {
+    await expect(env.as(owner).service('backup-destinations').create(bucket({ secret: 'just-one-part' })))
+      .rejects.toThrow(/accessKeyId/)
+    await expect(env.as(owner).service('backup-destinations').create(bucket({ secret: undefined })))
+      .rejects.toThrow(/needs a credential/)
+  })
+
+  test('patch rotates the key in the same Secret and re-registers', async () => {
+    const row = await env.as(owner).service('backup-destinations').create(bucket())
+    await env.as(owner).service('backup-destinations').patch(row.id, { secret: 'newid:newkey', region: 'eu-central-003', version: row.version })
+    const secret = await (env.system as any).secret.findFirst({ where: { id: row.secretId } })
+    expect(secret.id).toBe(row.secretId)
+    expect(secret.isVerified).toBe(false)
+    const after = await env.as(owner).service('backup-destinations').get(row.id)
+    expect(after.region).toBe('eu-central-003')
+    expect(after.secretId).toBe(row.secretId)
+    expect(await registered(row.id)).toBe(true)
+  })
+
+  test('remove is refused while an archive names it, then takes the Secret and the target with it; restore brings all three back', async () => {
+    const sys = env.system as any
+    const row = await env.as(owner).service('backup-destinations').create(bucket())
+    const archived = await sys.backup.create({ data: { kind: 'manual', status: 'success', destinationId: row.id } })
+    await expect(env.as(owner).service('backup-destinations').remove(row.id)).rejects.toThrow(/1 backup/)
+    await sys.backup.delete({ where: { id: archived.id } })
+
+    await env.as(owner).service('backup-destinations').remove(row.id)
+    expect(await registered(row.id)).toBe(false)
+    expect((await sys.secret.findFirst({ where: { id: row.secretId }, withDeleted: true })).deletedAt).toBeTruthy()
+
+    const back = await env.as(owner).service('backup-destinations').restore(row.id)
+    expect(back.id).toBe(row.id)
+    expect((await sys.secret.findFirst({ where: { id: row.secretId } })).deletedAt).toBeNull()
+    expect(await registered(row.id)).toBe(true)
+  })
+
+  test('the hub schedule may point only at a destination that exists', async () => {
+    await expect(env.as(sysadmin).service('hub-config').call('save', null, {
+      name: 'Hub', baseUrl: 'https://hub.example', adminEmail: 'a@b.co', backupDestinationId: 'nope',
+    })).rejects.toThrow(/No backup destination 'nope'/)
   })
 
   test('and the handler refuses to run as somebody', async () => {

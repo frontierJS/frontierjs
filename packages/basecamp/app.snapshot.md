@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-55 services · 42 routes · 19 plugins · prefix (none)
+56 services · 42 routes · 20 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -30,6 +30,7 @@ text, so a body that elevates through a helper is not listed.
 | `apps.disablePush` | standing 5 or above — declared `gate: 5` |
 | `channels.test` | standing 5 or above — declared `gate: 5` |
 | `edge.syncStep` | anyone, a stranger included — declared `gate: 0` |
+| `hub-config.save` | **any signed-in caller** — floor, read gate 7; standing not graded |
 | `infra.onboarding` | standing 2 or above — declared `gate: 2` |
 | `servers.metrics` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `servers.provision` | **any signed-in caller** — floor, read gate 2; standing not graded |
@@ -57,7 +58,7 @@ and what it does.
 | `notification-preferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (88)
+### A service hook runs in front of the body (89)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -77,6 +78,7 @@ name, and is as unread as the body.
 | `apps.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `apps.logs` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `apps.fromBlueprint` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `backup-destinations.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `blueprints.setParams` | **any signed-in caller** — floor, read gate 1; standing not graded | `requireSystemAdmin` |
 | `channels.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `channels.rules` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
@@ -353,9 +355,31 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
+### `backup-destinations` · model `BackupDestination`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+- **broadcasts on** — `(computed)`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
 ### `backups` · model `Backup`
 
-- **methods** — `find`, `get`, `create`, `remove`
+- **methods** — `find`, `get`, `create`, `remove`, `rescan`
+- **custom methods** — `rescan`
+- **input** — `rescan` takes `BackupRescan`
+- **who may call** —
+  - `rescan` — standing 7 or above — declared `gate: 7`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -367,6 +391,7 @@ name when it declares none.
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
+| before | `rescan` | `validateInput` |
 
 ### `blueprints` · model `Blueprint`
 
@@ -805,7 +830,7 @@ name when it declares none.
 - **custom methods** — `current`, `save`
 - **who may call** —
   - `current` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`
-  - `save` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`
+  - `save` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`; body writes as the app
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -1487,7 +1512,8 @@ In configure order, which is what `requires:` is checked against.
 13. `terminalRoute`
 14. `staticRoutes`
 15. `basecamp-cloud-accounts`
-16. `basecamp-push`
-17. `basecamp-dns-follows-fleet`
-18. `basecamp-cleanup`
-19. `corsPlugin`
+16. `basecamp-backup-destinations`
+17. `basecamp-push`
+18. `basecamp-dns-follows-fleet`
+19. `basecamp-cleanup`
+20. `corsPlugin`

@@ -11,8 +11,10 @@
 // knows a job changed and the APP is what restores them at boot; a shared
 // module is what keeps the caravan name from being spelled in two places.
 
+import { parseCron }        from '@frontierjs/toolbelt/cron'
+import { queueBackup }      from '../../jobs/backup-run.job.ts'
 import type { App }         from '@frontierjs/junction'
-import type { Job }         from '../../../../db/schema.d.ts'
+import type { HubConfig, Job } from '../../../../db/schema.d.ts'
 
 /**
  * The caravan registration name for a job's schedule.
@@ -102,9 +104,52 @@ export function syncSchedule(
   else            unscheduleJob(app, job.id)
 }
 
+// ─── The hub's backup ───────────────────────────────────────────────────────
+//
+// The same rule over a different row: `HubConfig.backupCron` is on the clock
+// while `backupEnabled` is true. One name, because there is one settings row.
+
+export const BACKUP_SCHEDULE = 'hub:backup'
+
+/** The refusal for an expression the clock cannot hold, or null. Asked before
+ *  the settings row is written, so a save never stores a schedule that then
+ *  fails to register. */
+export function cronProblem(expr: string): string | null {
+  try { parseCron(expr); return null }
+  catch (err) { return (err as Error).message }
+}
+
+/**
+ * Take one scheduled archive. The destination is read from the settings row at
+ * FIRE time, so changing it needs no re-registration.
+ *
+ * A fire that finds an archive still in flight skips rather than queues behind
+ * it — the next one is a whole interval away, and two back to back are the
+ * same bytes twice.
+ */
+export async function fireBackup(app: App): Promise<void> {
+  const log = app.logger.child('job-schedule')
+  const config = await app.db!.asSystem().hubConfig.findFirst({ where: { id: 'hub' } })
+  if (!config?.backupEnabled) return
+
+  const queued = await queueBackup(app, {
+    kind: 'scheduled', destinationId: config.backupDestinationId ?? null, requestedBy: null,
+  })
+  if ('inFlight' in queued) log.warn('scheduled backup skipped', { in_flight: queued.inFlight.status })
+}
+
+/** Make the clock agree with the settings row. */
+export function syncBackupSchedule(app: App, config: Pick<HubConfig, 'backupEnabled' | 'backupCron'>): void {
+  if (config.backupEnabled && config.backupCron)
+    app.jobs.schedule(BACKUP_SCHEDULE, config.backupCron, () => fireBackup(app), { queue: 'fleet' })
+  else
+    app.jobs.unschedule(BACKUP_SCHEDULE)
+}
+
 // ─── restoreSchedules ────────────────────────────────────────────────────────
 //
-// Re-register every live scheduled job from the database.
+// Re-register every schedule the database holds: each live scheduled job, and
+// the hub's backup.
 //
 // A cron registration is in-process in both caravan and junction, so it does not
 // survive a restart on its own — and the only place a Job's schedule was ever
@@ -137,6 +182,16 @@ export async function restoreSchedules(app: App): Promise<number> {
       log.error('could not restore schedule', {
         job_id: job.id, cron: job.cronExpression, error: (err as Error).message,
       })
+    }
+  }
+
+  const config = await db.hubConfig.findFirst({ where: { id: 'hub' } })
+  if (config?.backupEnabled) {
+    try {
+      syncBackupSchedule(app, config)
+      restored++
+    } catch (err) {
+      log.error('could not restore the backup schedule', { cron: config.backupCron, error: (err as Error).message })
     }
   }
   return restored

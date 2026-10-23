@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-147 definitions · 71 models · 1 view · 31 types · 44 enums · 0 other
+148 definitions · 72 models · 1 view · 32 types · 43 enums · 0 other
 ```
 
 ## Definitions
@@ -77,6 +77,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `FeatureFlag` | model |
 | `FlagOverride` | model |
 | `NotificationChannel` | model |
+| `BackupDestination` | model |
 | `AlertRule` | model |
 | `AlertRuleChannel` | model |
 | `AlertEvent` | model |
@@ -135,7 +136,6 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `WidgetKind` | enum |
 | `ParamGenerator` | enum |
 | `BackupKind` | enum |
-| `BackupDestination` | enum |
 | `DependencyKind` | enum |
 | `NotificationContext` | enum |
 | `NotificationKind` | enum |
@@ -168,6 +168,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `AppVolumeRestore` | type |
 | `AppPublish` | type |
 | `AppBackupTake` | type |
+| `BackupRescan` | type |
 | `FlagOverrideSet` | type |
 | `FlagOverrideClear` | type |
 | `ServerProvision` | type |
@@ -191,7 +192,7 @@ validates, and a select that silently drops an option.
 - `UserStatus` — `pending_verification`, `active`, `suspended`
 - `WorkspaceStatus` — `active`, `suspended`
 - `ProvisionStepName` — `start`, `create`, `poll`, `timeout`
-- `SecretKind` — `ssh_key`, `provider_key`, `registry_auth`, `tls_cert`, `notification`, `generic`
+- `SecretKind` — `ssh_key`, `provider_key`, `registry_auth`, `tls_cert`, `notification`, `backup`, `generic`
 - `ServerStatus` — `pending`, `provisioning`, `installing`, `online`, `unreachable`, `draining`, `stopped`, `destroying`, `destroyed`
 - `ServerRole` — `general`, `build`, `database`, `gateway`, `worker`
 - `ServerEventKind` — `created`, `removed`, `reboot_requested`, `drain_started`, `drain_cancelled`, `provision_requested`, `provision_created`, `provision_ready`, `provision_timeout`, `destroy_requested`, `destroy_finished`, `enrollment_issued`, `sync_requested`, `status_synced`, `status_sync_ignored`, `sync_failed`, `sync_no_account`, `sync_unsupported`, `sync_unrecognized`, `came_online`, `unreachable`, `recipe_ran`, `recipe_failed`, `cleanup_queued`, `cleanup_ran`, `cleanup_failed`, `volume_removed`, `volumes_pruned`, `posture_failed`, `posture_restored`
@@ -215,8 +216,7 @@ validates, and a select that silently drops an option.
 - `FlagType` — `boolean`, `variant`
 - `WidgetKind` — `server_fleet`, `server_health`, `app_status`, `deploy_feed`, `job_history`, `activity_feed`, `alert_status`, `service_health`, `stat_counter`
 - `ParamGenerator` — `random_hex_16`, `random_hex_32`, `random_hex_64`
-- `BackupKind` — `manual`, `scheduled`
-- `BackupDestination` — `local`, `s3`
+- `BackupKind` — `manual`, `scheduled`, `found`
 - `DependencyKind` — `dependency`, `dev`, `peer`, `optional`
 - `NotificationContext` — `Deployment`, `AlertEvent`, `JobRun`, `Server`, `Workspace`, `Monitor`
 - `NotificationKind` — `DeploySuccess`, `DeployFailed`, `AlertFiring`, `AlertResolved`, `ServerUnreachable`, `MonitorDown`, `MonitorUp`, `PostureFailed`, `DependencyVulnerable`, `MemberJoined`, `JobFailed`, `WeeklyDigest`
@@ -588,6 +588,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `alertRules` — hasMany `AlertRule`
 - relation `monitors` — hasMany `Monitor`
 - relation `channels` — hasMany `NotificationChannel`
+- relation `backupDestinations` — hasMany `BackupDestination`
 - relation `flags` — hasMany `FeatureFlag`
 - relation `auditEvents` — hasMany `AuditEvent`
 
@@ -1303,6 +1304,29 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 **On create**: required — `name`, `kind` · accepted and never stored — `secret` · not accepted — `id`, `version`
 
+### `BackupDestination`
+
+- gate `read:2 create:5 update:5 delete:5` · version field `version` · closed (`additionalProperties: false`)
+- relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
+- relation `backups` — hasMany `Backup`
+- relation `hubs` — hasMany `HubConfig`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
+| `endpoint` | `string` | yes | Endpoint URL | `format: "uri"` `x-transforms` | — |
+| `region` | `string` | yes | — | `minLength: 1` `maxLength: 64` `x-transforms` | — |
+| `bucket` | `string` | yes | — | `minLength: 3` `maxLength: 63` `x-transforms` | — |
+| `prefix` | `string` = `""` | — | — | `minLength: 0` `maxLength: 200` `x-transforms` | — |
+| `secretId` | `string`? | — | — | `x-litestone-kind` | — |
+| `lastTestAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `createdBy` | `string`? | — | — | — | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `name`, `endpoint`, `region`, `bucket` · accepted and never stored — `secret` · not accepted — `id`, `version`
+
 ### `AlertRule`
 
 - gate `read:2 create:5 update:5 delete:5` · version field `version` · closed (`additionalProperties: false`)
@@ -1620,13 +1644,14 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 ### `Backup`
 
 - gate `read:7 create:7 update:8 delete:7` · closed (`additionalProperties: false`)
+- relation `destination` — belongsTo `BackupDestination` via `destinationId` · on delete Restrict · optional
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `kind` | `BackupKind` = `"manual"` | — | — | — | — |
 | `status` | `RunStatus` = `"pending"` | — | — | — | — |
-| `destination` | `BackupDestination` = `"local"` | — | — | — | — |
+| `destinationId` | `string`? | — | — | — | — |
 | `sizeBytes` | `integer`? | — | — | — | — |
 | `location` | `string`? | — | — | `minLength: 0` `maxLength: 500` `x-transforms` | — |
 | `error` | `string`? | — | — | `minLength: 0` `maxLength: 2000` | — |
@@ -1640,6 +1665,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 ### `HubConfig`
 
 - gate `read:7 create:7 update:7 delete:7` · version field `version` · closed (`additionalProperties: false`)
+- relation `backupDestination` — belongsTo `BackupDestination` via `backupDestinationId` · on delete SetNull · optional
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -1654,7 +1680,11 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `allowBotUsers` | `boolean` = `true` | — | — | — | — |
 | `backupEnabled` | `boolean` = `false` | — | — | — | — |
 | `backupCron` | `string` = `"0 2 * * *"` | — | — | `minLength: 1` `maxLength: 100` `x-transforms` | — |
-| `backupDestination` | `BackupDestination` = `"local"` | — | — | — | — |
+| `backupDestinationId` | `string`? | — | — | — | — |
+| `backupKeepLocalCount` | `integer` = `7` | — | — | `minimum: 1` `maximum: 1000` | — |
+| `backupKeepLocalDays` | `integer`? | — | — | `minimum: 1` `maximum: 3650` | — |
+| `backupKeepRemoteCount` | `integer` = `7` | — | — | `minimum: 1` `maximum: 1000` | — |
+| `backupKeepRemoteDays` | `integer`? | — | — | `minimum: 1` `maximum: 3650` | — |
 | `mailFromAddress` | `string`? | — | — | `format: "email"` `x-transforms` | — |
 | `mailFromName` | `string`? | — | — | `minLength: 0` `maxLength: 80` `x-transforms` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
@@ -2017,6 +2047,16 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `serverId` | `string` | yes | — | — | — |
 
 **On create**: required — `appId`, `serverId`
+
+### `BackupRescan`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `destinationId` | `string` | yes | — | — | — |
+
+**On create**: required — `destinationId`
 
 ### `FlagOverrideSet`
 

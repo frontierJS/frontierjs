@@ -59,6 +59,13 @@ describe('account', () => {
     expect((res.body as any).level).toBe(4)
   })
 
+  test('a sign-in body is the same graded session, so the browser need not ask me', async () => {
+    const res = await request(app).post('/auth/login').send({ email: ALICE, password: PW })
+    expect(res.status).toBe(200)
+    expect((res.body as any).user.email).toBe(ALICE)
+    expect((res.body as any).user.level).toBe(4)
+  })
+
   test('the session id travels, so a caller can tell which session is theirs', async () => {
     const me = await request(app).get('/account/me').auth(aliceToken)
     expect(typeof (me.body as any).sessionId).toBe('string')

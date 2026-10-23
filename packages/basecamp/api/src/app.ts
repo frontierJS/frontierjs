@@ -43,6 +43,8 @@ import { dependencyTargets }  from './core/dependencies.ts'
 import { accountMail }         from './core/account-mail.ts'
 import { isPreviewOrigin }      from './core/site-preview.ts'
 import { registerAllAccounts } from './providers/compute/accounts.ts'
+import { registerAllDestinations } from './providers/storage/index.ts'
+import { S3_SIGNER, s3Signer }    from './providers/storage/s3.ts'
 import { enrollTokenMatches, mintOutpostSecret, installScript, isCertificate } from './providers/compute/enrollment.ts'
 import { notifications }  from '@frontierjs/notifications'
 import { basecampAuditLog, basecampAuditPreImage, outpostCredential, outpostScope, workspaceOrKeys } from './core/hooks.ts'
@@ -355,6 +357,10 @@ export async function buildBasecampApp(
     // channels put theirs in a Secret (@encrypted), so the ref is `secret:<id>`
     // and the material never leaves the send path — see core/credentials.ts.
     credentials: createSecretResolver(db),
+    // The one signed scheme this app speaks: SigV4 for a `BackupDestination`'s
+    // bucket. The region rides each target's `auth.params`, so one signer
+    // serves every destination (providers/storage/s3.ts).
+    signers:     { [S3_SIGNER]: s3Signer },
     // Conduit refuses to register management routes without an explicit access
     // decision — GET|DELETE /conduit-targets is an operational endpoint.
     //
@@ -953,6 +959,18 @@ export async function buildBasecampApp(
     boot:     async () => {
       const n = await registerAllAccounts(app, db)
       if (n) logger.info('conduit: cloud accounts registered', { count: n })
+    },
+  })
+
+  // ── Backup destinations as Conduit targets ────────────────────────────
+  // A `BackupDestination` row is a bucket, registered on write by its service
+  // and re-registered for every existing row here, the accounts pattern.
+  app.configure({
+    name:     'basecamp-backup-destinations',
+    requires: ['conduit'],
+    boot:     async () => {
+      const n = await registerAllDestinations(app, db)
+      if (n) logger.info('conduit: backup destinations registered', { count: n })
     },
   })
 

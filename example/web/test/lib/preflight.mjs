@@ -46,6 +46,7 @@ export const PORTS = {
   api:    await at('be', { env: 'dev' }),               // 8110
   ui:     await at('fe', { env: 'dev' }),               // 8010
   uiTest: await at('fe', { env: 'test' }),              // 7010 — a drive's own vite
+  apiTest: await at('be', { env: 'test' }),             // 7110 — a drive's own API
   mail:   await at('be', { env: 'dev', service: 1 }),   // 8111
   psp:    await at('be', { env: 'dev', service: 2 }),   // 8112
   idp:    await at('be', { env: 'dev', service: 3 }),   // 8113

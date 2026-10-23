@@ -171,9 +171,12 @@ export default createService({
       if (channel.secretId) {
         // Rotate in place — the rules pointing at this channel keep working,
         // and `isVerified` goes false the way the secrets service does it.
+        // `Secret` is @version, so the write carries the revision it just read.
+        const held = await db().secret.findFirst({ where: { id: channel.secretId as string } })
+        if (!held) throw new BadRequest('The credential this channel points at is gone — remove and recreate the channel')
         await db().secret.update({
-          where: { id: channel.secretId as string },
-          data:  { data: JSON.stringify({ [spec.secretField]: credential }), isVerified: false },
+          where: { id: held.id as string },
+          data:  { data: JSON.stringify({ [spec.secretField]: credential }), isVerified: false, version: held.version },
         })
       } else {
         patch.secretId = await storeCredential(

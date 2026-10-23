@@ -57,6 +57,21 @@ decisions already made (money in minor units, `forServer` keyed on
 four drive assertions that go red the day one is wired — which is correct, and
 the fix is a fake vendor on a port of its own, the way `verify:stripe` does it.
 
+### Backups leave the box — `IDEAS/backups.md` Phase 1 (2026-10-23)
+
+`BackupDestination` is a workspace-owned row (`FJS-D1491`): an address plus a
+`Secret` holding `<accessKeyId>:<secretAccessKey>`, registered as the Conduit
+target `storage:s3:<id>` by `api/src/providers/storage/` (`FJS-D1490`, basecamp's
+own lift of `conduit-s3`). `HubConfig.backupDestinationId` and `Backup.destinationId`
+point at one, null meaning the local disk, and `/hub/settings/` has the picker
+and the inline form. `backup:run` uploads one tarball per archive (1.2),
+`HubConfig.backupCron` is on the clock (1.3), and retention prunes after each
+success, local and remote apart, through `jobs/backup-archives.ts` — the one
+delete `backups.remove` shares, and `backups.rescan`'s `found` rows (1.4).
+1.5 is Outpost's pre-signed upload, 1.8 the `test` action, 1.9 the B2 recipe
+in `docs/BACKUPS.md`. A dev database from before the tables has to be reset;
+there is no upgrade step pre-alpha.
+
 ## Verification
 
 | | |

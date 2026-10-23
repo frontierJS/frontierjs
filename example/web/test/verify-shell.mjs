@@ -40,11 +40,9 @@ import { openChrome, createNetwork } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
-// The preview server is already on the test tier; the API is not and does not
-// move, because its origin is written into rows that outlive the process — a
-// `File` ref stores the `publicBase` it was uploaded against (`FJS-1271`).
-// Both are env-overridable.
-const API_PORT = process.env.API_PORT ?? String(PORTS.api)
+// Both servers on the test tier, so this runs beside a dev server somebody
+// else is holding 8010/8110 with. Both are env-overridable.
+const API_PORT = process.env.API_PORT ?? String(PORTS.apiTest)
 const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 const PORT = process.env.PREVIEW_PORT ?? String(await portFor(import.meta.url, 'fe', { env: 'test', service: 1 }))
 const UI   = `http://localhost:${PORT}`

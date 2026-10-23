@@ -190,22 +190,30 @@ function forgetSession() {
   try { localStorage.removeItem(REMEMBERED) } catch { /* nothing to forget */ }
 }
 
+/**
+ * Take a graded session as the server answered it — from `account.me` on a
+ * restore, or from the sign-in body, which carries the same shape so a sign-in
+ * need not ask `me` for what it was just told.
+ */
+function _adopt(me) {
+  _w.error = null
+  _w.user  = me
+  // Present only when the app told the auth plugin how to grade — see
+  // AuthServicesOptions.level. null, not 0, when it publishes none: an
+  // unknown level is PERMISSIVE
+  // to `canAtLevel` (Invariant 6 — a client-side gate is an affordance), and
+  // answering 0 would hide every gated control in an app that never asked to
+  // be graded here.
+  _w.level = typeof me?.level === 'number' ? me.level : null
+  rememberSession(me, _w.level)
+  return me
+}
+
 /** Ask the server who this token is. Safe to call at any time. */
 export async function refresh() {
   if (!_client) return null
   try {
-    const me = await _client.auth.me()
-    _w.error = null
-    _w.user  = me
-    // Present only when the app told the auth plugin how to grade — see
-    // AuthServicesOptions.level. null, not 0, when it publishes none: an
-    // unknown level is PERMISSIVE
-    // to `canAtLevel` (Invariant 6 — a client-side gate is an affordance), and
-    // answering 0 would hide every gated control in an app that never asked to
-    // be graded here.
-    _w.level = typeof me?.level === 'number' ? me.level : null
-    rememberSession(me, _w.level)
-    return me
+    return _adopt(await _client.auth.me())
   } catch (err) {
     // 401 is the ordinary answer to a token that expired or was issued by a
     // database that has since been reset — not an error to show anybody.
@@ -351,17 +359,14 @@ async function _attempt(run) {
     // A challenge is not a session, so there is nothing to load and asking would
     // answer 401 with no credential to show for it.
     if (!_isChallenge(result)) {
-      // The token is held from here, so the landing page's load() can run NOW,
-      // beside `account.me`, instead of after it — the second round trip was
-      // the gap between "signed in" and a page with rows in it. `refresh` is
-      // still what sets `session.user`: the level is the server's grading and
-      // the login body does not carry it.
+      // The sign-in body is the graded session, the shape `me` answers, so it
+      // is adopted here and `me` is not asked. The token is held from here, so
+      // the landing page's load() runs now instead of after a round trip that
+      // was the gap between "signed in" and a page with rows in it.
+      _adopt(result.user)
       const landing = _landing
       _landing = null
-      await Promise.all([
-        refresh(),
-        landing ? prefetch(landing).catch(() => {}) : null,
-      ])
+      if (landing) await prefetch(landing).catch(() => {})
     }
     return result
   } catch (err) {

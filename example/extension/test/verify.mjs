@@ -48,7 +48,7 @@ const ROOT = join(EXT, '..')
 const DIST = join(EXT, 'dist/chrome')
 const SITE = join(ROOT, 'site/dist')
 
-const API_PORT = process.env.API_PORT ?? String(PORTS.api)
+const API_PORT = process.env.API_PORT ?? String(PORTS.apiTest)
 const API    = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 // 7 test · 7 siteServe · 1 example · 0 — the same slot `verify:site` uses. The
 // two drives do not run at once, and the extension's manifest declares this

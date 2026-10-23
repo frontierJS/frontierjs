@@ -8259,7 +8259,43 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1494"></a>2026-10-23 · `FJS-D1494` — `backups.remove` deletes the archive, through the helper retention prunes with — A local archive goes as `backups/<basename(location)>`, refused unless the name is `basecamp-*`; a remote one as a `deleteObject` on its destination, the object first and the row after, so a failed delete keeps the row and the next prune retries it.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) 1.4. **Yes** was picked over *remove stays row-only*: once retention deletes files, a row-only remove leaves a directory nothing will ever find again, because rescan lists the remote prefix and not the disk. The old docstring's reason — a delete that unlinks a stored path can unlink the wrong one — is answered by deriving the path rather than reading it. Confidence 3.
+
+### <a id="fjs-d1493"></a>2026-10-23 · `FJS-D1493` — A rescanned archive is `BackupKind.found` — An object `basecamp-*.tar.gz` under a destination's prefix that no `Backup` row names gets a row of kind `found`: `startedAt` from the name's stamp, `sizeBytes` from the listing, `requestedBy` null, and it counts toward retention like any other.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) 1.4. **`found`** was picked over **`imported`** (Cloudron's word, but it says bytes were copied in and none were), **reuse `manual`** (claims a person asked for an archive Basecamp never took), and **report only** (retention cannot count what has no row, so the orphan is billed forever). The rows stay the index; rescan closes the gap between them and the bucket rather than adding a second one. Confidence 2.
+
+### <a id="fjs-d1491"></a>2026-10-23 · `FJS-D1491` — Q6 — Who owns a `BackupDestination` — `BackupDestination` is workspace-owned like `NotificationChannel`, and `HubConfig.backupDestinationId` points at one across the tier, `onDelete: SetNull`. Deleting that workspace drops the hub to `local`, so posture (1.7) grades *hub destination is local* red. Dokploy's destinations are per organization with the server's own backup picking one; Coolify's S3 storages are per team.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) § Open questions. **B** was picked over **A** (`Secret.workspaceId` becomes nullable, null meaning the installation. One column with two meanings, the unique index stops holding under NULL, and `verifyTenantIsolation()` learns an exception), **C** (The credential is an `@encrypted` column on the destination row, no `Secret`. A second owner of credential material, the move `HubConfig`'s own comment refused).
+
+The paper's recommendation, taken as written: It is `FJS-1020`'s precedent — a vendor key lives in a workspace — with zero existing callers moved, and per-App schedules (1.6) land under it without a second shape. Amends D1488 in its tenancy line only; the noun, the enum's removal and the `@transient` lift stand. Confidence 2.
+
+### <a id="fjs-d1490"></a>2026-10-23 · `FJS-D1490` — Q5 — How basecamp obtains `conduit-s3` — Basecamp's own `providers/storage/s3.ts`, a LIFT of the connector's `signer.ts` and `index.ts` (target builder, put/get/head/delete/list, presign) importing `@frontierjs/toolbelt/sigv4`, the compute pattern. When D1185 flips the swap is an import line.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) § Open questions. **C** was picked over **A** (Publish `@frontierjs/conduit-s3` to npm and depend on it. One `bun add`; the first connector shipped from the sibling, at 0.0.1 with one live vendor behind it, and a loose peer range silenced by the publish), **B** (Promote `conduit-s3` into `packages/`. It owns a protocol, not a vendor (`FJS-D889`), and SigV4 already lives in toolbelt — but it reverses D1185 for one package while the owner is not ready to commit the rest).
+
+The paper's recommendation, taken as written: It is the sanctioned copy — `FJS-D1253`'s condition names basecamp's `providers/` as a connector's one permitted twin — and a reader finds the same shape beside it. No SigV4 is copied, so Invariant 4 holds; what is copied is dialect. Reopen as B when the connectors workspace is committed. Confidence 2.
+
+### <a id="fjs-d1489"></a>2026-10-23 · `FJS-D1489` — `conduit-n8n` — Built, Tier B, in the connectors workspace: the owner's override of `IDEAS/conduit-connectors.md`'s *n8n is not a connector* row.
+
+Asked in session when the owner asked for a `conduit-n8n`. `decision-rules` ran first and recommended **B** (keep the ruling, amend the row: name intake's deploy tool as the one REST caller and the reopen trigger) over **A** (build it) and **C** (an app-owned `providers/` file in intake first, the Stripe shape). **A** was picked, against the recommendation, by the owner; the run is kept here so the next audit does not re-derive it.
+
+What the run found. Outbound to n8n is `plugins/webhooks` — signed, retried, a subscription row n8n owns. The credential pair `N8N_URL`/`N8N_API_KEY` is junction `attachments`' own worked example (`packages/junction/AGENTS.md`, `test/attachments.test.ts`). The REST client is one header and JSON; intake's whole client is ten lines in `tools/n8n-deploy.mjs`. The nine: fails 3 (complexity is ours), 6 (a second deliverer beside `plugins/webhooks`, Invariant 4) and the paper's test two. Precedent on the recommendation's side: Supabase ships generic signed webhooks and n8n ships the Supabase node — the host builds the node, the framework ships webhooks; n8n's Webhook node has no HMAC, so the receiving ring belongs on our side. Confidence 3.
+
+What building it bought that the run did not price. A live run against n8n 2.44.6 in docker found three facts no doc states: `activate` is idempotent, so it is `replayable` and a lost one is retried by conduit; a delete right after a deactivate is refused with *still being unpublished* and no wait named (`unpublishing`, C3's *not now* case, the connector names the wait); and the `no_trigger` and `not_registered` sentences, now verbatim in the sink.
+
+The shape. `n8nTargets({ address, ref?, hook? }) → { api, hook }`: two listeners on one origin, the API behind `X-N8N-API-KEY`, the webhook listener behind the Webhook node's own auth (none, or a header) and never the API key — the drive proves no hook call carried it. No vendor address; the builder refuses to guess one. Workflows and executions reads and writes, `trigger`. `createWorkflow` and `trigger` are unkeyed and `indeterminate` when lost; `executions({ workflowId, limit: 1 })` is the read that resolves a trigger (C6). The README's first paragraph says when `plugins/webhooks` is the tool instead, which is the boundary this ruling keeps.
+
+**Not changed by this ruling:** `plugins/webhooks` stays the one outbound deliverer and `attachments` the one credential origin; the connector takes `address` as an argument and reads no environment (C1). A second vendor wrapper around the webhooks battery is still refused by the same nine.
+
+*Lives in:* `../conduit-connectors/packages/conduit-n8n/`; `IDEAS/conduit-connectors.md` § Tier B row 12.
+
 ### <a id="fjs-d1488"></a>2026-10-23 · `FJS-D1488` — Q4 — The storage destination's noun — `BackupDestination`, a model. The enum goes; both columns become relations, a null one meaning local. The credential follows `NotificationChannel`: a bare `secretId`, a `@transient` plaintext the service lifts into a `Secret` row. A Litestream replica is a continuous backup, so it is the same noun.
+
+*Amended 2026-10-23 by `FJS-D1491`:* the credential's `Secret` row needs a workspace, so the destination is workspace-owned and the hub's `HubConfig` points at one; the noun, the enum's removal and the `@transient` lift stand.
 
 Asked in [`IDEAS/backups.md`](IDEAS/backups.md) § Open questions. **A** was picked over **B** (`Destination`, unprefixed. Too loose where deploys and notifications also have destinations), **C** (Another word: `StorageTarget` (`Target` is Conduit's, `FJS-D681`), `Bucket` (`bucket.bucket`, and rows sharing a bucket differ by prefix), `Repository` (collides with `RegistryImage.repository`)).
 
@@ -18295,6 +18331,12 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d1492"></a>2026-10-23 · `FJS-D1492` — Q6 — Parakeet TDT 0.6B v3 int8 through sherpa-onnx local, whisper.cpp for a language Parakeet does not cover, Deepgram as a conduit target.
+
+Asked in [`IDEAS/calls-and-media.md`](IDEAS/calls-and-media.md) § Open questions. **A** was picked over **B** (whisper.cpp local only: one engine, 99 languages, about 29 minutes per 45-minute call on CPU).
+
+The paper's recommendation, taken as written: measured 2026-10-23 on an i7-8850H, one 44.5-min English call, 6 threads: RTF 0.115 against `small.en-q5_1`'s 0.65 and `large-v3-turbo`'s 1.7. The engine is a config string; ffmpeg to 16 kHz mono and a spawned binary are the same job either way.
 
 ### <a id="fjs-d1474"></a>2026-10-23 · `FJS-D1474` — How a connector with more than one target spells its builder and its bind — Quo's bundle: one `<name>Targets`, one `bind<Name>`, and every call picks its own role.
 

@@ -368,6 +368,15 @@ try {
     'the rename did not survive a reload')
   ok('a save round-trips through the singleton')
 
+  // Retention is four numbers on the same form; an empty days field is no age limit.
+  await fill({ 'cfg-keep-local-count': '3' })
+  await click('#save-settings')
+  await until(`document.body.textContent`, t => t.includes('Settings saved'), 'the retention save never reported')
+  await goto('/hub/settings/')
+  const keep = await until(`[document.getElementById('cfg-keep-local-count')?.value, document.getElementById('cfg-keep-local-days')?.value]`,
+    v => v[0] === '3', 'the keep-count did not survive a reload').catch(e => [String(e.message)])
+  check('a keep-count saves and an unset age stays empty', keep[0] === '3' && keep[1] === '', JSON.stringify(keep))
+
   // The version guard, proved rather than described: a save carrying a stale
   // revision must be refused. Done through the client so the payload is exactly
   // what the screen sends, minus a correct version.
@@ -392,7 +401,7 @@ try {
   await until(`!!document.getElementById('take-backup')`, v => v, 'the backups screen never rendered')
 
   const schedule = await text('#backup-schedule')
-  check('the schedule is shown with its caveat', /Nothing registers it yet/i.test(schedule ?? ''),
+  check('the schedule says what a fire does', /each fire of this expression/i.test(schedule ?? ''),
     (schedule ?? '').slice(0, 120))
 
   const before = await evaluate(`document.querySelectorAll('#backup-history tbody tr').length`)
@@ -1715,18 +1724,18 @@ try {
   await until(`location.pathname`, p => p === '/dashboards/', 'deleting a board never left it')
   check('a dashboard is deleted from its own screen', (await apiGet(`/dashboards/${board?.id}`)).status === 404)
 
-  // Backups — forgetting drops the row and says the file stays.
+  // Backups — Delete says the archive goes, then the row does (FJS-D1494).
   await goto('/hub/backups/')
-  await until(`!!document.querySelector('[aria-label^="Forget "]')`, v => v, 'no settled backup offers Forget')
+  await until(`!!document.querySelector('[aria-label^="Delete "]')`, v => v, 'no settled backup offers Delete')
   const kept = await evaluate(`document.querySelectorAll('#backup-history tbody tr').length`)
-  await evaluate(`document.querySelector('[aria-label^="Forget "]').click()`)
+  await evaluate(`document.querySelector('[aria-label^="Delete "]').click()`)
   const warned = await until(`document.querySelector('[role=dialog][aria-modal=false]')?.textContent ?? ''`, t => t,
-    'forgetting asked nothing')
-  check('forgetting a backup says the archive stays on disk', /stays on disk|from this list/.test(warned), warned.slice(0, 120))
+    'deleting asked nothing')
+  check('deleting a backup says the archive is deleted', /is deleted|from this list/.test(warned), warned.slice(0, 120))
   await evaluate(`document.querySelector('[role=dialog][aria-modal=false] .cluster button:last-child').click()`)
   const left = await until(`document.querySelectorAll('#backup-history tbody tr').length`, n => n < kept,
-    'the forgotten backup stayed listed').catch(() => kept)
-  check('and it leaves the list', left < kept, `${kept} → ${left}`)
+    'the deleted backup stayed listed').catch(() => kept)
+  check('and it leaves the list', left < kept, `${kept} → ${left} ${await text('#screen-error')}`)
 
   // Blueprints — a sysadmin adds one, gives it ordered parameters, and edits it.
   await goto('/blueprints/')

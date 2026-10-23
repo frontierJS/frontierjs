@@ -40,7 +40,7 @@ import { certStatusOf } from '../domains/domains.service.ts'
 import { resolveExecutor, executorOn, isExecutor } from '../../providers/executor.ts'
 // The one reader of `App.source`. A service that parsed the blob itself would
 // be the second, and the two would disagree the first time a kind was added.
-import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit } from '../../core/app-source.ts'
+import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, isInline } from '../../core/app-source.ts'
 import { runtimeOf } from '../../core/runtime.ts'
 import type { App }            from '@frontierjs/junction'
 import { keyScope } from '../api-keys/scopes.ts'
@@ -185,12 +185,22 @@ async function detail(id: string) {
     db().job.findMany({ where: { appId: row.id }, orderBy: { createdAt: 'desc' }, limit: 10 }),
   ])
 
+  // A Freeze or `fli basecamp:deploy` serves a build the app's own files are
+  // not, and its release snapshots no files. Every inline release records a
+  // digest once it runs, so `builtImage` cannot tell the two apart — the
+  // screen warns before Deploy ships the Source tab over the build.
+  const live = isInline(row.source) ? deployments.find(d => d.status === 'success') : null
+  const liveSnapshot = live
+    ? (await db().deployment.findFirst({ where: { id: live.id }, select: { configSnapshot: true } }))?.configSnapshot as { source?: { files?: unknown[] } } | undefined
+    : undefined
+
   return {
     ...row,
     domains: (row.domains ?? []).map((d: Record<string, unknown>) => ({ ...d, ...certStatusOf(d as never) })),
     sourceLabel: describeSource(row.source),
     placement,
     recent_deployments: deployments,
+    liveBuild: !!liveSnapshot && !liveSnapshot.source?.files?.length,
     jobs,
   }
 }

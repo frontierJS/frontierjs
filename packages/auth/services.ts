@@ -107,13 +107,37 @@ export function refuseDelegated(ctx: { transport?: string; user?: unknown }, use
   )
 }
 
-export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions = {}): ServiceDefinition[] {
-
+/**
+ * A session as the browser reads it: the SessionContext plus the two opt-in
+ * gradings. `level` is absent by default — the app owns the role→level mapping
+ * (its own getLevel), and a default answer here would be a SECOND mapping that
+ * disagrees with the one every request is graded by. `standing` is the answer
+ * with no tenant in play; the browser's buttons read `level`, and an app
+ * graded per tenant has no honest `level` to give.
+ *
+ * ONE owner. `account.get('me')` answers this, and so does every route that
+ * produces a session (`respond` in plugin.ts) — a sign-in that did not carry it
+ * cost the browser a second round trip to ask `me` for two numbers it could
+ * have had with the token.
+ */
+export function gradeForWire(opts: Pick<AuthServicesOptions, 'level' | 'standingLevel'> = {}) {
   const level = asPrincipal(opts.level)
   // Recovery grades the operator AND the person, which `account.me`'s level
   // need not answer — an app whose level is per tenant has none for a bare
   // session, and `account.me` is what a browser gates its buttons on.
   const standingLevel = asPrincipal(opts.standingLevel) ?? level
+  const grade = (user: SessionContext) => ({
+    ...user,
+    ...(level         ? { level: level(user) }            : {}),
+    ...(standingLevel ? { standing: standingLevel(user) } : {}),
+  })
+  return Object.assign(grade, { level, standingLevel })
+}
+
+export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions = {}): ServiceDefinition[] {
+
+  const grade = gradeForWire(opts)
+  const { level, standingLevel } = grade
 
   // ─── A guess inside a live session ─────────────────────────────────────
   //
@@ -375,17 +399,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       if (ctx.id !== 'me' && String(ctx.id) !== user.id) {
         throw new NotFound(`No account '${ctx.id}' — this service answers for the caller ('me')`)
       }
-      // `level` is opt-in and absent by default. The app owns the role→level
-      // mapping (its own getLevel), and a default answer here would be a
-      // SECOND mapping that disagrees with the one every request is graded by.
-      // `standing` is the answer with no tenant in play, which a caller asking
-      // whether this PERSON may do something reads — the browser's buttons read
-      // `level`, and an app graded per tenant has no honest `level` to give.
-      return {
-        ...user,
-        ...(level         ? { level: level(user) }            : {}),
-        ...(standingLevel ? { standing: standingLevel(user) } : {}),
-      }
+      return grade(user)
     },
 
     /**

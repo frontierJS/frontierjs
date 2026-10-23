@@ -382,6 +382,12 @@ type AppBackupTake {
   serverId String
 }
 
+/// What `backups.rescan` accepts: the destination whose prefix is listed for
+/// archives no row names (`FJS-D1493`).
+type BackupRescan {
+  destinationId String
+}
+
 /// What `flags.setOverride` and `flags.clearOverride` accept. A rollout outside
 /// 0..100 is clamped by the method, so it is not narrowed here.
 type FlagOverrideSet {
@@ -414,7 +420,7 @@ type ServerProvisionStep {
   enrollToken String?
 }
 
-enum SecretKind     { ssh_key provider_key registry_auth tls_cert notification generic }
+enum SecretKind     { ssh_key provider_key registry_auth tls_cert notification backup generic }
 enum ServerStatus   { pending provisioning installing online unreachable draining stopped destroying destroyed }
 enum ServerRole     { general build database gateway worker }
 
@@ -553,14 +559,10 @@ enum WidgetKind {
 // each name means; the browser is told which one applies.
 enum ParamGenerator { random_hex_16 random_hex_32 random_hex_64 }
 
-// A backup is taken by hand or by the schedule. Nothing else distinguishes
-// them, and the schedule's own settings live on `HubConfig`.
-enum BackupKind        { manual scheduled }
-
-// Where the archive was written. `local` is the machine basecamp runs on,
-// which is a backup of a disk onto the same disk — honest, and the reason the
-// screen nudges towards the second one.
-enum BackupDestination { local s3 }
+// How an archive came to have a row: by hand, by the schedule, or `found` — a
+// rescan met it in the bucket with no row naming it (`FJS-D1493`), so nobody
+// here asked for it. The schedule's own settings live on `HubConfig`.
+enum BackupKind        { manual scheduled found }
 
 // Which manifest field declared a dependency — `dependencies`, `devDependencies`,
 // `peerDependencies`, `optionalDependencies`.
@@ -880,6 +882,7 @@ model Workspace {
   alertRules  AlertRule[]
   monitors    Monitor[]
   channels    NotificationChannel[]
+  backupDestinations BackupDestination[]
   flags       FeatureFlag[]
   auditEvents AuditEvent[]
 
@@ -2483,6 +2486,61 @@ model NotificationChannel {
   @@index([workspaceId])
 }
 
+// A bucket an archive is sent to — S3's protocol at any vendor (`FJS-D1488`).
+//
+// Workspace-owned like `NotificationChannel`, because the credential is a
+// `Secret` and a `Secret` has a workspace (`FJS-D1491`); the hub's own schedule
+// points at one from above through `HubConfig.backupDestinationId`. A
+// Litestream replica is a continuous backup, so a replica's bucket is this same
+// row and not a second noun.
+//
+// `endpoint` carries no bucket: the connector addresses path-style
+// (`<endpoint>/<bucket>/<key>`), which every vendor accepts where the
+// virtual-hosted form is AWS's and R2's. `region` is what SigV4 signs with and
+// is read off the endpoint at B2 (`s3.us-west-004.backblazeb2.com` →
+// `us-west-004`). `prefix` is where a key scoped to an object-name prefix
+// stops refusing: at B2 an application key restricted to `basecamp-` makes
+// every unprefixed PUT `AccessDenied`, so the prefix here must equal the key's.
+model BackupDestination {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  name        String    @trim @length(1, 200)
+  endpoint    String    @trim @url @label("Endpoint URL")
+  region      String    @trim @length(1, 64)
+  bucket      String    @trim @length(3, 63)
+  // Object keys are written under it; empty means the bucket root.
+  prefix      String    @default("") @trim @length(0, 200)
+
+  // Bare id, no @relation — the same shape as NotificationChannel.secretId.
+  secretId    String?   @system
+
+  // `<accessKeyId>:<secretAccessKey>` on the wire and nowhere else — at B2 the
+  // application key's keyID and applicationKey, never the master key. The
+  // service lifts it into a Secret row (@encrypted) and keeps `secretId`; the
+  // one reader is conduit's resolver, at send time, and it splits on the first
+  // colon because that is what the connector's `splitCredential` reads.
+  secret      String?   @transient @length(3, 4096) @label("Credential")
+
+  lastTestAt  DateTime? @system
+  createdBy   String?   @immutable
+
+  version     Int       @version
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+  deletedAt   DateTime?
+
+  backups     Backup[]
+  hubs        HubConfig[]
+
+  @@gate(2.5)
+  @@softDelete
+  @@trail(audit)
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+}
+
 model AlertRule {
   id          String    @id @default(uuid())
   workspaceId String
@@ -3153,13 +3211,23 @@ model Backup {
 
   kind         BackupKind        @default(manual)
   status       RunStatus         @default(pending)
-  destination  BackupDestination @default(local)
+
+  // Where the archive was sent. Null is `local`: the machine basecamp runs on,
+  // which is a backup of a disk onto the same disk — honest, and the reason the
+  // screen nudges towards a destination (`FJS-D1488`). `Restrict`, because a
+  // row that turned `local` while its `location` is an object key would claim
+  // a file this disk never held. Two paths, two owners: the FK blocks a hard
+  // delete, and the destination is @@softDelete, so its service answers 409
+  // on `remove` while an archive names it — an UPDATE the FK never sees.
+  destinationId String?
+  destination   BackupDestination? @relation(fields: [destinationId], references: [id], onDelete: Restrict)
 
   // Absent until it finishes. Bytes.
   sizeBytes    Int?
 
-  // Where the archive landed — a path for `local`, an object key for `s3`.
-  // Never a URL with a credential in it.
+  // Where the archive landed — a path when `destinationId` is null, an object
+  // key under the destination's `prefix` otherwise. Never a URL with a
+  // credential in it.
   location     String?           @trim @length(0, 500)
   error        String?           @length(0, 2000)
 
@@ -3178,6 +3246,7 @@ model Backup {
   @@trail(audit)
   @@index([status])
   @@index([createdAt])
+  @@index([destinationId])
 
   // @@tenant(none) — a backup is of the whole installation, every workspace in it
   @@tenant(none)
@@ -3237,7 +3306,24 @@ model HubConfig {
   // and unregistered when it stops being true — `app.jobs.unschedule`.
   backupEnabled             Boolean  @default(false)
   backupCron                String   @default("0 2 * * *") @trim @length(1, 100)
-  backupDestination         BackupDestination @default(local)
+
+  // Where the scheduled archive goes; null is the local disk. A workspace's
+  // row, pointed at from the hub tier (`FJS-D1491`): deleting that workspace
+  // drops the schedule to local, which is what posture grades red rather than
+  // a schedule that fails at 02:00.
+  backupDestinationId       String?
+  backupDestination         BackupDestination? @relation(fields: [backupDestinationId], references: [id], onDelete: SetNull)
+
+  // Retention, local and remote apart. An archive goes when it is outside the
+  // newest `Count` of its kind OR older than `Days`; null days is no age limit.
+  // The newest successful archive is never pruned, so a count of 0 would mean
+  // what 1 means and is refused. Remote counts per destination, so a bucket
+  // the hub stopped pointing at is still pruned. Applied after each backup
+  // finishes — a lowered limit waits for the next one.
+  backupKeepLocalCount      Int      @default(7) @gte(1) @lte(1000)
+  backupKeepLocalDays       Int?     @gte(1) @lte(3650)
+  backupKeepRemoteCount     Int      @default(7) @gte(1) @lte(1000)
+  backupKeepRemoteDays      Int?     @gte(1) @lte(3650)
 
   mailFromAddress           String?  @email @lower
   mailFromName              String?  @trim @length(0, 80)

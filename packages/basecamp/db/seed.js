@@ -963,6 +963,27 @@ async function seedInstallation(sys, owner, users) {
     data:  { deprecatedAt: new Date(Date.now() - 30 * 86_400_000).toISOString(), revision: ghost.revision },
   })
 
+  // ── Where the archives go ───────────────────────────────────────────
+  // A bucket at Backblaze B2, the first live vendor (`IDEAS/backups.md` 0.7).
+  // The credential is a Secret the row points at and never carries; the
+  // seeded one opens nothing, so a seeded `backup:run` lands locally. The
+  // destination is workspace-owned (`FJS-D1491`), so it hangs off a tenant.
+  const acme = await sys.workspace.findFirst({ where: { slug: 'acme-platform' } })
+  const offBoxKey = await sys.secret.create({
+    data: { workspaceId: acme.id, name: 'backup:Backblaze B2', kind: 'backup', data: 'seeded-key-id:seeded-application-key', createdBy: owner.id },
+  })
+  const offBox = await sys.backupDestination.create({
+    data: {
+      workspaceId: acme.id,
+      name:     'Backblaze B2',
+      endpoint: 'https://s3.us-west-000.backblazeb2.com',
+      region:   'us-west-000',
+      bucket:   'frontier-basecamp',
+      prefix:   'basecamp-',
+      secretId: offBoxKey.id,
+    },
+  })
+
   // ── The settings ────────────────────────────────────────────────────
   // The id is the constant the model defaults to, stated so the row this
   // writes is the row `hub-config.current` reads.
@@ -977,6 +998,7 @@ async function seedInstallation(sys, owner, users) {
       adminEmail: 'sam@example.com',
       backupEnabled:   true,
       backupCron:      '0 2 * * *',
+      backupDestinationId: offBox.id,
       mailFromAddress: 'hub@acme.example',
       mailFromName:    'Acme Platform Hub',
     },
@@ -988,9 +1010,11 @@ async function seedInstallation(sys, owner, users) {
   const took = new Date(Date.now() - 9 * 3_600_000)
   await sys.backup.create({
     data: {
-      kind: 'scheduled', status: 'success', destination: 'local',
+      kind: 'scheduled', status: 'success', destinationId: null,
       sizeBytes: 14_900_000,
-      location:  './db/backups/basecamp-seeded.db',
+      // Named the way the job names one, or the screen's Delete refuses it as
+      // a path this installation never wrote (`FJS-D1494`).
+      location:  `./db/backups/basecamp-${took.toISOString().replace(/[:.]/g, '-')}`,
       startedAt:  took.toISOString(),
       finishedAt: new Date(took.getTime() + 3_100).toISOString(),
       durationMs: 3_100,
@@ -1171,7 +1195,7 @@ if (import.meta.main) {
                        'alertRuleChannel', 'dashboard', 'dashboardWidget',
                        'recipe', 'recipeRun', 'diskUsage', 'serverPosture', 'cleanupRun',
                        'blueprint', 'blueprintParam', 'registryImage',
-                       'dependency', 'dependencyUse', 'backup', 'hubConfig', 'notificationPreference',
+                       'dependency', 'dependencyUse', 'backupDestination', 'backup', 'hubConfig', 'notificationPreference',
                        'auditEvent']) {
     counts[model] = await sys[model].count()
   }

@@ -70,7 +70,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const SITE = join(HERE, '..')
 const DIST = join(SITE, 'dist')
 const ROOT = join(SITE, '..')
-const API_PORT = process.env.API_PORT ?? String(PORTS.api)
+const API_PORT = process.env.API_PORT ?? String(PORTS.apiTest)
 const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 // test / siteServe / project 1 / service 3 — its own slot, so it collides with
 // neither `verify:site` (7710) nor `verify:account` (7712).

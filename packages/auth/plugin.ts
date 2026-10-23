@@ -15,7 +15,7 @@ import type { IAuth, SessionContext, ServiceContext, App, Plugin, TransportConte
 import { parseTtl, normalizePrefix, Unauthorized, BadRequest, Forbidden, NotFound } from '@frontierjs/junction'
 import { rateLimitHook } from '@frontierjs/junction/hooks'
 import type { AuthPluginOptions }                                  from './types.ts'
-import { createAuthServices, asPrincipal, refuseDelegated, DEFAULT_SERVICE_NAMES } from './services.ts'
+import { createAuthServices, gradeForWire, asPrincipal, refuseDelegated, DEFAULT_SERVICE_NAMES } from './services.ts'
 import { SupportEpisodeError }                                     from './errors.ts'
 import { OAUTH_STATE_COOKIE }                                      from './oauth.ts'
 import type { AuthCleanupHandle }                                 from './cleanup.ts'
@@ -73,6 +73,10 @@ export function auth(opts: AuthPluginOptions): Plugin {
   // This one holds a single account's guesses from a single address; keyed on the
   // email alone it would let a stranger lock a known user out. Called after the
   // body is read.
+  // What a session looks like on the wire, graded. `services: false` is an app
+  // with no account service and so no resolver to grade by; its sessions leave
+  // ungraded, which is what `me` would have answered had it existed.
+  const grade = services === false ? (u: SessionContext) => u : gradeForWire(services)
   const loginLimiter    = rateLimitHook(loginRateLimit)
   const accountLimiter  = rateLimitHook({
     key: ctx => `${(body(ctx as unknown as TransportContext).email ?? '').trim().toLowerCase()}|${(ctx as unknown as TransportContext).ip}`,
@@ -267,7 +271,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
           })
         }
 
-        return respond(ctx, result, cookieAuth, cookieMaxAge, 201)
+        return respond(ctx, result, cookieAuth, cookieMaxAge, grade, 201)
       })
 
       // ── POST /auth/login ─────────────────────────────────────────────
@@ -282,7 +286,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
 
         const result = await auth.login(email, password)
         await endArrivingSession(auth, ctx, result)
-        return respond(ctx, result, cookieAuth, cookieMaxAge)
+        return respond(ctx, result, cookieAuth, cookieMaxAge, grade)
       })
 
       // ── POST /auth/login/challenge ───────────────────────────────────
@@ -322,7 +326,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
         // Spent either way: the ticket is single-use.
         if (cookieAuth) clearChallengeCookie(ctx)
         await endArrivingSession(auth, ctx, result)
-        return respond(ctx, result, cookieAuth, cookieMaxAge)
+        return respond(ctx, result, cookieAuth, cookieMaxAge, grade)
       })
 
       // ── POST /auth/logout ────────────────────────────────────────────
@@ -408,7 +412,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
           else if (email && code) result = await verifyMagicLink.call(auth, { email, code })
           else throw new BadRequest('token, or email and code, is required')
 
-          return respond(ctx, result, cookieAuth, cookieMaxAge)
+          return respond(ctx, result, cookieAuth, cookieMaxAge, grade)
         })
       }
 
@@ -542,7 +546,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
         const verified = await auth.verifyEmail(token, clicking ? { keepSessionId: clicking } : undefined)
         if (!('signedIn' in verified)) return ctx.json({ ok: true })
         await endArrivingSession(auth, ctx, verified.signedIn)
-        return respond(ctx, verified.signedIn, cookieAuth, cookieMaxAge)
+        return respond(ctx, verified.signedIn, cookieAuth, cookieMaxAge, grade)
       })
 
       // ── GET /auth/oauth ──────────────────────────────────────────────
@@ -777,9 +781,15 @@ function respond(
   data:        unknown,
   cookieAuth:  boolean,
   cookieMaxAge: number,
+  grade:       (user: SessionContext) => SessionContext,
   status = 200
 ): Response {
-  const payload = data as { token?: string; challenge?: string; expiresAt?: string } | null
+  let payload = data as { token?: string; challenge?: string; expiresAt?: string; user?: SessionContext } | null
+
+  // A session leaves graded, the same shape `account.get('me')` answers, so
+  // the browser has `level` with the token and need not ask again.
+  if (payload?.user) payload = { ...payload, user: grade(payload.user) }
+  data = payload
 
   // A half-finished login: in cookie mode the ticket leaves the body for
   // `setChallengeCookie`, as the token leaves it for the session cookie.

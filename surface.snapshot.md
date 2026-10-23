@@ -26,10 +26,10 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3872 source file(s) read
+26 package(s) · 3881 source file(s) read
 235 entry point(s), 36 imported by nothing outside their package, 15 emitted
-1589 value export(s), 620 reached by nothing outside, 165 emitted
-451 type export(s), 347 reached by nothing outside
+1590 value export(s), 620 reached by nothing outside, 165 emitted
+451 type export(s), 343 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
@@ -37,12 +37,12 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `litestone` | 26 | 6 | 252 | 131 | 37 | 1 | 1 |
 | `junction` | 26 | 4 | 264 | 121 | 12 | 267 | 211 |
 | `mesa` | 18 | 4 | 286 | 100 | 70 | 0 | 0 |
-| `sierra` | 25 | 6 | 196 | 82 | 22 | 0 | 0 |
+| `sierra` | 25 | 6 | 197 | 82 | 22 | 0 | 0 |
 | `auth` | 6 | 1 | 52 | 37 | 3 | 15 | 13 |
 | `jetty` | 7 | 4 | 43 | 29 | 0 | 0 | 0 |
 | `ui` | 9 | 0 | 51 | 33 | 3 | 0 | 0 |
 | `toolbelt` | 60 | 0 | 280 | 30 | 11 | 0 | 0 |
-| `conduit` | 4 | 2 | 26 | 15 | 1 | 59 | 44 |
+| `conduit` | 4 | 2 | 26 | 15 | 1 | 59 | 40 |
 | `site-kit` | 9 | 4 | 38 | 12 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 8 | 0 | 36 | 21 |
 | `outpost` | 7 | 1 | 15 | 7 | 0 | 0 | 0 |
@@ -107,7 +107,7 @@ Every entry is imported and every name reached.
 
 **Emitted (1):** `withCache`
 
-**Unreached types (44):** `BreakerState` `BrokerFraming` `BrokerGap` `BrokerHandler` `BrokerHealth` `BrokerKeepalive` `BrokerLink` `BrokerMessage` `BrokerReceiver` `ClaimedModel` `ConduitChunk` `ConduitError` `ConduitErrorKind` `ConduitErrorResponse` `ConduitObservers` `ConduitRequest` `ConduitResponse` `ConduitResult` `ConduitStats` `ConduitStore` `CredentialCaller` `CredentialRefusal` `FrameDialect` `IConduit` `MirrorClaim` `MirrorModel` `MirrorRow` `MirrorVerb` `ReceiveResult` `RefusedAnswer` `ResilienceOptions` `ResponseMeta` `ResponseValidator` `Signer` `SignInput` `SignOutput` `StubMocks` `TargetAuth` `TargetKind` `TargetResilience` `TestConduit` `TestConduitOptions` `TraceContextOptions` `VerifyContext`
+**Unreached types (40):** `BreakerState` `BrokerFraming` `BrokerGap` `BrokerHandler` `BrokerHealth` `BrokerKeepalive` `BrokerLink` `BrokerMessage` `BrokerReceiver` `ClaimedModel` `ConduitChunk` `ConduitErrorKind` `ConduitErrorResponse` `ConduitObservers` `ConduitResponse` `ConduitStats` `ConduitStore` `CredentialCaller` `CredentialRefusal` `FrameDialect` `IConduit` `MirrorClaim` `MirrorModel` `MirrorRow` `MirrorVerb` `ReceiveResult` `RefusedAnswer` `ResilienceOptions` `ResponseMeta` `ResponseValidator` `SignInput` `SignOutput` `StubMocks` `TargetAuth` `TargetKind` `TargetResilience` `TestConduit` `TestConduitOptions` `TraceContextOptions` `VerifyContext`
 
 ## `@frontierjs/config`
 
@@ -265,7 +265,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/sierra`
 
-`packages/sierra` · 25 entry point(s) · 196 value, 0 type export(s)
+`packages/sierra` · 25 entry point(s) · 197 value, 0 type export(s)
 
 **Entries imported by nothing outside (6):** `./scanner` `./fetch` `./components/RouterView` `./components/ChainRenderer` `./check` `./tui`
 

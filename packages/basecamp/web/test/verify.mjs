@@ -274,6 +274,8 @@ const buildOutpost = (secret) => createOutpostServer(
     docker: createDocker({
       run: async (argv) => {
         outpostSaw.docker.push(argv.join(' '))
+        // Outpost parses this one as JSON, and a digest is not JSON.
+        if (argv.includes('{{json .Config.User}}')) return { exitCode: 0, stdout: '""', stderr: '' }
         if (argv.slice(0, 3).join(' ') === 'docker image inspect') return { exitCode: 0, stdout: SINK_DIGEST, stderr: '' }
         if (argv.slice(0, 2).join(' ') === 'docker inspect')       return { exitCode: 0, stdout: 'true', stderr: '' }
         return { exitCode: 0, stdout: '', stderr: '' }
@@ -510,7 +512,8 @@ check('workspace resolved',
 check('token persisted', await hasToken(), true)
 // The socket opens only once a token is stored, so this is also the proof that
 // storing it and handing it to the client happen together.
-check('websocket live', await evaluate(`document.querySelector('.pill')?.textContent.trim()`), 'live')
+check('websocket live',
+  await waitFor(`document.querySelector('header .status-dot')?.getAttribute('aria-label')`, t => t === 'Live'), 'Live')
 
 // 3. Setup closes behind itself.
 await goto('/setup/')

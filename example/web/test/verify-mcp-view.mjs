@@ -10,7 +10,7 @@
  *
  * ─── Three origins, and the third is the point ────────────────────────────
  *
- *   :8110  the API          `/api/mcp`, reached by the drive's MCP client only
+ *   :7110  the API          `/api/mcp`, reached by the drive's MCP client only
  *   :7117  the host page    ext-apps' `AppBridge`, and `/call`, the host's
  *                           server half, which holds the MCP session
  *   :7118  the sandbox      serves the bytes `resources/read` answered, under
@@ -50,7 +50,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
-const API_PORT = process.env.API_PORT ?? String(PORTS.api)
+const API_PORT = process.env.API_PORT ?? String(PORTS.apiTest)
 const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 const BASE = `${API}/api`
 const MCP  = new URL(`${BASE}/mcp`)

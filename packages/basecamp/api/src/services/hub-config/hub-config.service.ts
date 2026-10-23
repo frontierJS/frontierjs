@@ -26,10 +26,17 @@ import { createService, BadRequest, NotFound, $ } from '@frontierjs/junction'
 import { requireSystemAdmin }         from '../../core/hooks.ts'
 import { db, narrowPatch }            from '../../core/resource.ts'
 import { keyScope } from '../api-keys/scopes.ts'
+import { cronProblem, syncBackupSchedule } from '../jobs/job-schedule.ts'
 
 /** The primary key, which is a constant. `HubConfig.id` defaults to it, so this
  *  is the same string the schema writes and not a second opinion about it. */
 const HUB = 'hub'
+
+/** The clock follows the row it was saved as (`job-schedule.ts`). */
+function synced<T extends { backupEnabled: boolean; backupCron: string }>(row: T): T {
+  syncBackupSchedule($.app, row)
+  return row
+}
 
 export default createService({
   name:  'hub-config',
@@ -69,8 +76,21 @@ export default createService({
     // the precondition and not a column to write.
     const { version, ...data } = narrowPatch($.data as Record<string, unknown>)
 
+    // The schedule's destination is a workspace's row pointed at from the hub
+    // tier (`FJS-D1491`), so the lookup is at system; the FK would refuse an
+    // unknown id too, but as a constraint sentence and not a field.
+    if (data.backupDestinationId !== undefined && data.backupDestinationId !== null) {
+      const found = await db().asSystem().backupDestination.findFirst({ where: { id: data.backupDestinationId } })
+      if (!found) throw new BadRequest(`No backup destination '${data.backupDestinationId}'`)
+    }
+
+    if (typeof data.backupCron === 'string') {
+      const problem = cronProblem(data.backupCron)
+      if (problem) throw new BadRequest(`backupCron: ${problem}`)
+    }
+
     const existing = await db().hubConfig.findFirst({ where: { id: HUB } })
-    if (!existing) return await db().hubConfig.create({ data: { ...data, id: HUB } })
+    if (!existing) return synced(await db().hubConfig.create({ data: { ...data, id: HUB } }))
 
     // `@version` on this model means a second administrator saving over a form
     // the first one had open is a 409 rather than a silent overwrite — so an
@@ -82,7 +102,7 @@ export default createService({
       'with `current`, and it is what makes a second administrator saving over your ' +
       'form a conflict rather than a silent overwrite.')
 
-    return await db().hubConfig.update({ where: { id: HUB }, data: { ...data, version } })
+    return synced(await db().hubConfig.update({ where: { id: HUB }, data: { ...data, version } }))
   },
 
   hooks: {

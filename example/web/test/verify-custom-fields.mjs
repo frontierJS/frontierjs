@@ -102,7 +102,7 @@ const made = { customers: [], fields: [], products: [] }
 // after ten assertions and report it as a broken app.
 async function withApi(body) {
   const ROOT = fileURLToPath(new URL('../..', import.meta.url))
-  const API_PORT = process.env.API_PORT ?? String(PORTS.api)
+  const API_PORT = process.env.API_PORT ?? String(PORTS.apiTest)
   const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 
   let busy = false

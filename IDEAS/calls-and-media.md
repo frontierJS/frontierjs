@@ -120,7 +120,7 @@ from the job rather than as a Docker container per job. Under LiveKit it is
 Egress and Agents, and the job only orchestrates.
 
 Three jobs stand on it: **record** (artifact → `Call.artifacts`), **transcribe**
-(whisper.cpp local, or Deepgram through a conduit target), **notes** (transcript +
+(Parakeet through sherpa-onnx local, or Deepgram through a conduit target), **notes** (transcript +
 the channel's messages → summary and action items, through `app.conduit.send()`,
 written as a record attached to the call's channel). Live captions wait on
 `chat-surface.md` § Part 1: a method that declares it streams.
@@ -236,6 +236,15 @@ evolution*: none in tension, nothing here exists yet.
     capture plugin for system audio and the picker, Cap-style
   - **Recommend A** — the gap is two features on one OS, and B adds a native build and
     release to a kit that is not yet built; `FJS-D263` keeps B open as a later surface.
+- ~~**Q6**~~ **Answered 2026-10-23 (`FJS-D1492`): A — Parakeet TDT 0.6B v3 int8 through sherpa-onnx local, whisper.cpp for a language Parakeet does not cover, Deepgram as a conduit target.** — The local speech-to-text engine for 4.3. **Recommend Parakeet**: on a
+  CPU-only box it is five times faster than whisper.cpp for English at the same
+  job shape.
+  - **A** — Parakeet TDT 0.6B v3 int8 through sherpa-onnx local, whisper.cpp for a language
+    Parakeet does not cover, Deepgram as a conduit target
+  - **B** — whisper.cpp local only: one engine, 99 languages, about 29 minutes per 45-minute call on CPU
+  - **Recommend A** — measured 2026-10-23 on an i7-8850H, one 44.5-min English call, 6 threads:
+    RTF 0.115 against `small.en-q5_1`'s 0.65 and `large-v3-turbo`'s 1.7. The engine is a config
+    string; ffmpeg to 16 kHz mono and a spawned binary are the same job either way.
 
 ---
 
@@ -292,7 +301,8 @@ Done when: a job joins a mesh call as a bot principal, the artifact lands in `Ca
 
 - [ ] 4.1 Lift or sibling the Chromium worker (Q3)
 - [ ] 4.2 Record job: join as bot principal, write through Phase 3
-- [ ] 4.3 Transcribe job: whisper.cpp local, Deepgram as a conduit target
+- [ ] 4.3 Transcribe job: Parakeet TDT 0.6B v3 int8 through sherpa-onnx local, whisper.cpp as the multilingual fallback, Deepgram as a conduit target
+  - Measured 2026-10-23 on a CPU-only i7-8850H, one 44.5-min English call, 6 threads: Parakeet + silero VAD RTF 0.115 (5.2 min), whisper.cpp `small.en-q5_1` RTF 0.65 (29 min), `large-v3-turbo-q5_0` RTF 1.7. Both readable; Parakeet drops a phrase where VAD cuts mid-word, so tune min-silence or chunk on a fixed length. The engine is a config string; the job shape (ffmpeg to 16 kHz mono, spawn the binary) is the same for both.
 - [ ] 4.4 Notes job: transcript + channel messages → `app.conduit.send()` → record on the channel
 
 ### Phase 5 — The SFU adapter

@@ -204,6 +204,10 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           caravan from beside the app root, and the default export is the dispatch handle
           jobs/{recipe,cleanup}-run are both ways this app acts on a MACHINE —
           one shape, opposite safeguards; jobs/outpost-run.ts is their half
+          jobs/backup-archives.ts is an archive once it exists — the one
+          delete (retention's and backups.remove's, FJS-D1494), the prune
+          backup-run calls after a success, and the rescan that writes
+          `found` rows (FJS-D1493); not a job, so caravan loads nothing from it
           providers/ is who the app SPEAKS to — `index.ts` is nine (eight
           self-hosted appliances, plus `cloudSpend`, somebody else's service
           reached with a token), executor.ts and
@@ -217,6 +221,11 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           ACCOUNT — a `provider_key` Secret that compute/accounts.ts registers
           as `provider:<kind>:<secretId>` through `accountConnectorFor`
           (`FJS-D558`); a *-sink.ts beside each connector is its stand-in.
+          storage/ is a bucket held as a workspace `BackupDestination` row —
+          s3.ts is basecamp's own lift of conduit-s3 over toolbelt's sigv4
+          (`FJS-D1490`, no `link:` on the sibling repo survives the image
+          build), and index.ts registers each row as `storage:s3:<id>` on
+          write and at boot, a credential ref and never a key
           edge/ writes only records it MARKED, and the connector is where an
           unmarked set is refused (`FJS-D560`, `FJS-D562`), so no caller can
           skip the check by forgetting it

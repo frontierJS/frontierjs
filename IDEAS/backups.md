@@ -82,40 +82,161 @@ database.
 ### Phase 0 — Rule the shape
 
 Goal: no step after this waits on a question.
-Done when: Q1–Q4 are rulings in `DECISIONS.md`.
+Done when: Q1–Q6 are rulings in `DECISIONS.md`, and `conduit-s3` has run
+against one real vendor.
 
 - [x] 0.1 Q1: how a fleet machine reaches the bucket — [`FJS-D1485`](../DECISIONS.md#fjs-d1485) **A**: pre-signed per snapshot transfer, a scoped standing key only for Litestream
 - [x] 0.2 Q2: where Litestream runs for a fleet app — [`FJS-D1486`](../DECISIONS.md#fjs-d1486) **A**: one host unit per machine, run by Outpost, a key per app
 - [x] 0.3 Q3: snapshots or Litestream first — [`FJS-D1487`](../DECISIONS.md#fjs-d1487) **A**: snapshots first
 - [x] 0.4 Q4: the storage-destination noun's name — [`FJS-D1488`](../DECISIONS.md#fjs-d1488) **A**: `BackupDestination`, a model replacing the enum
+- [x] 0.5 Q5: how basecamp obtains `conduit-s3` — [`FJS-D1490`](../DECISIONS.md#fjs-d1490) **C**: basecamp's own lift over `@frontierjs/toolbelt/sigv4`, the compute-provider pattern
+- [x] 0.6 Q6: who owns a `BackupDestination` — [`FJS-D1491`](../DECISIONS.md#fjs-d1491) **B**: workspace-owned; `HubConfig.backupDestinationId` points at one, `SetNull`
+- [x] 0.7 Backblaze B2 is `conduit-s3`'s first live vendor (sibling repo). The
+      drive already takes a fixture: `FIXTURE_URL=https://s3.<region>.backblazeb2.com
+      FIXTURE_REGION=<region> FIXTURE_CREDENTIAL=<keyID>:<applicationKey>
+      FIXTURE_BUCKET=<bucket> bun run drive`, against a private bucket and an
+      application key restricted to it. A row that passes the sink and fails B2
+      is recorded per row in its `PROJECT_STATE.md` — the ones to watch are
+      `if-none-match: *` on PUT, the presigned PUT, and whether a bucket-scoped
+      key needs `listBuckets`. The 10 GB free tier makes this the standing
+      fixture for every later drive, so no docker is waited on.
+  - Ran 2026-10-23: 20 rows green, `s3.us-west-000.backblazeb2.com`, bucket
+    `frontier-basecamp`, key restricted to the bucket and to the name prefix
+    `basecamp-` — which needed a `FIXTURE_PREFIX` knob, since every drive key
+    was `drive/…`. One vendor difference: an expired presigned URL is 401 on
+    B2, 403 on AWS; the row asserts the refusal, not the number. The old row
+    sent a negative expiry, a 400 everywhere, and the sink now says so too.
+    Conditional PUT (`if-none-match: *`) is in no row, so still unproved. The
+    destination's `prefix` in 1.1 must equal the key's name prefix.
+
+**Done 2026-10-23.** Six rulings (`FJS-D1485`–`D1488`, `D1490`, `D1491`) and
+one live vendor. Two things the paper had wrong surfaced on the way: the
+sibling connector cannot be linked into the image build, so basecamp lifts
+it; and a `Secret` needs a workspace, so the destination has one.
 
 ### Phase 1 — Snapshots leave the box
 
 Goal: losing a machine, Basecamp's included, loses no backup.
 Done when: a scheduled Basecamp backup and a scheduled app backup each land in
-a bucket on a stand-in (MinIO), retention prunes the oldest, and a failed upload
-keeps the local file with a warning — in `verify:outpost` and `verify:screens`.
+a bucket, retention prunes the oldest, and a failed upload keeps the local file
+with a warning — against `conduit-s3`'s sink in `verify:outpost` and
+`verify:screens`, and once by hand against a Backblaze B2 bucket following
+`packages/basecamp/docs/BACKUPS.md`, with the result in `PROJECT_STATE.md`.
 
-- [ ] 1.1 `BackupDestination` (`FJS-D1488`) becomes a model: endpoint, bucket,
-      prefix, region and a `secretId` lifted from a `@transient` plaintext, as
-      `NotificationChannel` does. The enum goes; `Backup.destination` and
-      `HubConfig.backupDestination` become relations, null meaning local. `s3`
-      stops being refused. A `VOCABULARY.md` row.
-- [ ] 1.2 `backup:run` uploads Basecamp's archive. A failed upload keeps the
-      local copy and records the warning.
-- [ ] 1.3 `HubConfig.backupCron` is registered in `job-schedule.ts`, the one
+- [x] 1.1 `BackupDestination` (`FJS-D1488`, workspace-owned per `FJS-D1491`) becomes a model:
+      `name`, `endpoint` (no bucket in it), `bucket`, `prefix`, `region`,
+      `secretId @system` lifted from a `@transient secret` as `channels.service.ts`
+      does, `lastTestAt @system`. The credential is one string,
+      `<accessKeyId>:<secretAccessKey>` — for B2 the application key's keyID and
+      applicationKey, never the master key — because that is what `conduit-s3`'s
+      `splitCredential` reads. The enum goes; `Backup.destinationId` and
+      `HubConfig.backupDestinationId` are relations, null meaning local; `s3`
+      stops being refused and the stale `FJS-153` cite goes with it. Creating or
+      patching a row registers its conduit target, `storage:s3:<destinationId>`,
+      through `providers/storage/s3.ts` (`FJS-D1490`); `bun run db:types`, a seed row, a
+      `BackupDestination.mesa` resource and its form on the hub screen, a
+      `VOCABULARY.md` row.
+  - Built 2026-10-23: model, `backup-destinations` service (find/get/create/
+    patch/remove/restore), `providers/storage/{s3,index}.ts`, boot plugin
+    `basecamp-backup-destinations`, seed row, resource, picker + inline form
+    on `/hub/settings/`, five tests. Four calls made on the way, none a
+    ruling: `SecretKind.backup` is a new enum value (the consumer's noun,
+    like `notification`); `Backup.destination` is `onDelete: Restrict` and,
+    since the model is `@@softDelete`, `remove` answers 409 while an archive
+    names the row — the FK blocks the hard path, the service the soft one; the hub picker lists
+    the CURRENT workspace's destinations and shows a foreign id as such; and
+    `backups.create` writes the row at system, because a tenant-less `Backup`
+    naming a tenant-owned parent fails litestone's hidden-parent check in
+    caller context. Found beside it: `channels.patch`'s credential rotation
+    never carried `Secret.version`, so every rotation was a 400 — fixed with
+    the same shape here. `test` is 1.8; the dev `basecamp.db` predates the
+    table and needs `bun run db:reset` (the owner's call) before `fli dev`.
+- [x] 1.2 `backup:run` uploads Basecamp's archive. The archive is a directory,
+      so the job tars it first (`tar -czf`, the same tool Outpost's `/backup`
+      spawns; confirm the API image carries `tar`) and sends ONE `putObject` to
+      `<prefix>/basecamp-<stamp>.tar.gz`, which becomes `location`. The
+      connector has no multipart and the body is held in memory, so an archive
+      larger than RAM or 5 GB (B2's single-PUT cap) is a later step, not a
+      silent failure — the job refuses above a stated size. A failed upload
+      keeps the local copy, finishes `success` and records the warning in
+      `error`, Coolify's *Success (S3 Warning)*.
+  - Built 2026-10-23 in `jobs/backup-run.job.ts`: the image's `tar` is GNU
+    1.35 (`oven/bun:1.4.4-slim`); `MAX_UPLOAD_BYTES` is 1 GiB, under B2's
+    5 GB because the body is one buffer in the API process. Owner, asked
+    2026-10-23: the newest archive always stays on disk and the next backup
+    replaces it — an uploaded archive's local directory (named by its key,
+    `backups/<name>` ↔ `<prefix>/<name>.tar.gz`) goes when a later backup
+    finishes; a failed upload's or a local-only one's never does here. The
+    tarball is a transfer copy, removed either way. Three rows in
+    `backup-run.test.ts` against a `Bun.serve` stand-in through the app's own
+    conduit and signer (a signed PUT; the next one replaces the warm copy; a
+    403 `AccessDenied` kept local and kept after). The size refusal has no
+    row.
+- [x] 1.3 `HubConfig.backupCron` is registered in `job-schedule.ts`, the one
       clock, and `BackupKind.scheduled` is what it writes.
-- [ ] 1.4 Retention: a keep-count and an age, local and remote apart. Basecamp
+  - Built 2026-10-23: `syncBackupSchedule` puts the cron on the clock as
+    `hub:backup` while `backupEnabled`, and `hub-config.save` calls it after
+    every write; `restoreSchedules` restores it at boot. `save` refuses an
+    expression `@frontierjs/toolbelt/cron` cannot parse BEFORE the write, so a
+    stored schedule always registers. A fire (`fireBackup`) reads the
+    destination from the row at fire time and goes through `queueBackup` in
+    `backup-run.job.ts` — now the one door `backups.create` uses too — so a
+    fire beside an archive in flight is skipped with a warning, not queued.
+    The "nothing registers it yet" copy is gone from both screens and
+    `SCREENS.md`. Two rows in `services.test.ts` (on/off/boot restore; a fire
+    writes `scheduled` with `requestedBy` null and skips beside one in
+    flight). `verify:screens` backups section green; the run stops later at
+    the DNS path-route check, which touches nothing here.
+- [x] 1.4 Retention: a keep-count and an age, local and remote apart — local
+      being a row with no destination or a failed upload; the newest uploaded
+      archive's warm copy is 1.2's and not counted. Basecamp
       prunes; the rows are the index, and a rescan lists the prefix so an
       archive with no row is found rather than invisible (Cloudron's gap).
+  - Built 2026-10-23. `listObjects` (ListObjectsV2, a continuation token,
+    keys unescaped, UTF-8 byte order) landed in the sibling's `conduit-s3`
+    with a sink row, green on the B2 fixture too, and is lifted byte for byte
+    into `providers/storage/s3.ts`. `HubConfig` carries
+    `backupKeep{Local,Remote}{Count,Days}` (count 7, no age by default) and
+    the settings screen four fields. `jobs/backup-archives.ts` owns the
+    archive once it exists: `pruneBackups` runs after each success, groups
+    `local` and `remote:<destination>`, and never takes the newest;
+    `deleteArchive` is the one delete — retention's and `backups.remove`'s
+    (`FJS-D1494`) — and derives `backups/<name>` from an archive name, never
+    the stored path; a remote one goes object first, then row.
+    `backups.rescan` (sysadmin) writes `BackupKind.found` rows (`FJS-D1493`)
+    for `<prefix>/basecamp-<stamp>.tar.gz` keys no row names; the backups
+    screen has a Rescan button and Delete in place of Forget. Four rows in
+    `backup-run.test.ts` (count, age, remote delete, rescan), two in
+    `services.test.ts` (remove, rescan's gate). `verify:screens`' Delete and
+    keep-count checks pass — proved on a copy without the DNS block, since the
+    real run still stops there (`FJS-3477`).
+  - A B2 bucket keeps every version by default, so a DELETE hides an object
+    and the bytes stay billed. The recipe in 1.9 sets the bucket's lifecycle to
+    *keep only the last version*, which makes Basecamp's prune final; no
+    lifecycle rule of the bucket's own expires an archive Basecamp still lists.
 - [ ] 1.5 Outpost `/backup` uploads to a pre-signed PUT Basecamp mints per
       archive — the upload step `FJS-D679` left for `s3`. The machine holds no
-      standing key for it. The signer is litestone's `src/storage/sigv4.js`,
-      not a second one (Invariant 4).
+      standing key for it. The signer is `@frontierjs/toolbelt/sigv4`
+      (`FJS-D892`), the one SigV4; litestone's `storage/providers/s3.js` is a
+      caller of it, as basecamp is (Invariant 4).
 - [ ] 1.6 A schedule per App, and a snapshot before every fleet `/deploy`.
 - [ ] 1.7 `ENCRYPTION_KEY` escrow: a posture control and a line on the backups
       screen that an archive without its key cannot be read. The key never
       travels with the archive.
+- [ ] 1.8 `backup-destinations.test`: PUT then DELETE a probe key under the
+      prefix, write `lastTestAt`, answer the connector's failure kind
+      (`forbidden`, `clock_skew`, `refused`) in the form — so a wrong key fails
+      where a person is looking and not at 02:00. A `verify:screens` row against
+      the sink.
+- [ ] 1.9 `packages/basecamp/docs/BACKUPS.md`, the operator's recipe, B2 first:
+      a private bucket; an application key restricted to that bucket with read,
+      write, list and delete; the region read off the endpoint
+      (`s3.us-west-004.backblazeb2.com` → `us-west-004`); lifecycle *keep only
+      the last version*; the credential pasted as `keyID:applicationKey`; what
+      `location` means per destination; restore by hand — `getObject`, untar,
+      `litestone restore`. The free tier (10 GB stored, egress free to three
+      times that) is stated with its source, since a daily hub archive is
+      megabytes and the whole plan costs nothing until it does not.
 
 ### Phase 2 — Litestream on every fleet machine, run by Outpost
 
@@ -215,6 +336,49 @@ ship, could serve the drill without a restore.
     ([docs](https://velero.io/docs/v1.17/api-types/backupstoragelocation)); Coolify's
     *S3 Storage* names the protocol. Reopen as `Destination` if a non-backup
     consumer (`@file` storage) ever wants the same place. Confidence 2.
+
+- ~~**Q5 — How basecamp obtains `conduit-s3`.**~~ **Answered 2026-10-23 (`FJS-D1490`): C — Basecamp's own `providers/storage/s3.ts`, a LIFT of the connector's `signer.ts` and `index.ts` (target builder, put/get/head/delete/list, presign) importing `@frontierjs/toolbelt/sigv4`, the compute pattern. When D1185 flips the swap is an import line.** `FJS-D1185` keeps every
+  connector in the sibling workspace, and its body rules a `link:` out: the
+  image build packs workspace dependencies only. Basecamp's compute providers
+  are its own copies of `conduit-digitalocean` and `conduit-hetzner` for that
+  reason.
+  - **A** — Publish `@frontierjs/conduit-s3` to npm and depend on it. One
+    `bun add`; the first connector shipped from the sibling, at 0.0.1 with one
+    live vendor behind it, and a loose peer range silenced by the publish.
+  - **B** — Promote `conduit-s3` into `packages/`. It owns a protocol, not a
+    vendor (`FJS-D889`), and SigV4 already lives in toolbelt — but it reverses
+    D1185 for one package while the owner is not ready to commit the rest.
+  - **C** — Basecamp's own `providers/storage/s3.ts`, a LIFT of the connector's
+    `signer.ts` and `index.ts` (target builder, put/get/head/delete/list,
+    presign) importing `@frontierjs/toolbelt/sigv4`, the compute pattern. When
+    D1185 flips the swap is an import line.
+  - **Recommend C.** It is the sanctioned copy — `FJS-D1253`'s condition names
+    basecamp's `providers/` as a connector's one permitted twin — and a reader
+    finds the same shape beside it. No SigV4 is copied, so Invariant 4 holds;
+    what is copied is dialect. Reopen as B when the connectors workspace is
+    committed. Confidence 2.
+- ~~**Q6 — Who owns a `BackupDestination`.**~~ **Answered 2026-10-23 (`FJS-D1491`): B — `BackupDestination` is workspace-owned like `NotificationChannel`, and `HubConfig.backupDestinationId` points at one across the tier, `onDelete: SetNull`. Deleting that workspace drops the hub to `local`, so posture (1.7) grades *hub destination is local* red. Dokploy's destinations are per organization with the server's own backup picking one; Coolify's S3 storages are per team.** `FJS-D1488` lifts the credential
+  into a `Secret` row as `NotificationChannel` does, and `Secret.workspaceId`
+  is required with `@@unique([workspaceId, name])` on it. `Backup` and
+  `HubConfig` are `@@tenant(none)`; nothing in the schema says the destination
+  must be.
+  - **A** — `Secret.workspaceId` becomes nullable, null meaning the
+    installation. One column with two meanings, the unique index stops holding
+    under NULL, and `verifyTenantIsolation()` learns an exception.
+  - **B** — `BackupDestination` is workspace-owned like `NotificationChannel`,
+    and `HubConfig.backupDestinationId` points at one across the tier,
+    `onDelete: SetNull`. Deleting that workspace drops the hub to `local`, so
+    posture (1.7) grades *hub destination is local* red. Dokploy's destinations
+    are per organization with the server's own backup picking one; Coolify's
+    S3 storages are per team.
+  - **C** — The credential is an `@encrypted` column on the destination row, no
+    `Secret`. A second owner of credential material, the move `HubConfig`'s own
+    comment refused.
+  - **Recommend B.** It is `FJS-1020`'s precedent — a vendor key lives in a
+    workspace — with zero existing callers moved, and per-App schedules (1.6)
+    land under it without a second shape. Amends D1488 in its tenancy line
+    only; the noun, the enum's removal and the `@transient` lift stand.
+    Confidence 2.
 
 ## See also
 

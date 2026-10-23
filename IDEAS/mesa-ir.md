@@ -140,8 +140,9 @@ is the enforcement artifact for § 7's ninth question.
 | **Flutter** | owns every pixel and uses no platform widgets | the alternative to native views. Not this framework's shape, since it abandons the platform's controls |
 | **CAMELEON / UsiXML** (2003 onward) | an abstract UI in XML, reified per device | **the warning.** Model-based UI tried exactly this question and mostly failed in practice: the common vocabulary was too small, and per-device fixes leaked back into the abstract model. The lesson is that the abstract layer must stay small and real, with a per-target escape |
 | **OpenTUI** | a paint and layout engine separated from the component model | the terminal engine `FJS-D37` bought is a backend of this kind (`terminal-surface.md` § 6) |
+| **GPUI** via `@gpuix/native` (remorses/gpuix; gpuix-svelte, gpuix-solid on top, 2026) | Zed's GPU UI as a Node/Bun addon: ten numeric-id ops (`createElement`, `insertBefore`, `setStyle`, `setText`, `setEventListener`, `destroyElement`, `commitMutations`), a retained tree in Rust, Taffy flexbox, the engine rebuilding elements each frame | a third `$$host` engine of the Lynx shape, Flutter-shaped in what it paints: it owns every pixel, so it is a webview-free `desktop/` build target rather than a replacement for the Tauri shell (`FJS-D263`). Cheap on the runtime side, since the ops are the PAPI's; dear on style, since the CSS subset is narrower than Lynx's (class + one tag + `:hover`/`:active`, no combinators, no `em`/`vh`/`vw`, no `box-shadow`, no `display: none`), so a GPUI `cssOffense` refuses much of the kit. Headless renderer runs on macOS and Windows only; no pointer capture during a drag. Worth copying when a GPUI runtime is written: a native id is allocated only once a node is reachable from the root, `remove()` parks a node for `commit()` to reap so a same-frame reinsert resurrects it, ids never reset across a remount, and the frame loop is `setTimeout` at ~125 fps because `setImmediate` burns a core idle |
 
-Lynx and OpenTUI specifics are to be verified before anything depends on them.
+Lynx, OpenTUI and GPUI specifics are to be verified before anything depends on them.
 
 ---
 

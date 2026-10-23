@@ -35,7 +35,7 @@ Each names its pin; the full form, with the failure behind each, is
 this list does not name. The owners that matter on most turns:
 
 - `src/core/parser.js` `.lite` to AST · `catalog.js` every word a `.lite` file can hold · `schema-maps.js` the schema read once into the maps the client runs on · `ddl.js` AST to CREATE.
-- `src/core/client.js` is `createClient`, `makeTable` and the flavors; the verbs sit beside it — `aggregate.js`, `search.js`, `group-by.js`, `find-many-cursor.js`, `upsert-many.js`, `restore.js` — and a write's halves in `write-data.js`, `where-rewrite.js`, `state-guards.js`, `nested-writes.js`, `write-events.js`, `trail-entries.js`, `ledger-notes.js`, `extensible.js`.
+- `src/core/client.js` is `createClient`, `makeTable` and the flavors; the verbs sit beside it — `aggregate.js`, `search.js`, `group-by.js`, `find-many-cursor.js`, `upsert-many.js`, `restore.js` — a write's halves in `write-data.js`, `where-rewrite.js`, `state-guards.js`, `nested-writes.js`, `write-events.js`, `trail-entries.js`, `ledger-notes.js`, `extensible.js`, and its refusals in SQLite's words in `constraint-refusals.js`.
 - `src/core/query.js` buildWhere/buildOrderBy · `policy.js` `@@allow`/`@@deny` to SQL and JS · `args.js` what a verb may be passed · `errors.js` every error the client throws (junction builds them by name).
 - `src/core/migrate.js` + `migrations.js` + `operations.js` are the three-schema migration story · `introspect.js` the `$`-introspection surface · `transaction.js`, `locks.js`, `pragmas.js`, `databases.js` the connection story.
 - `src/core/engine.js` is `#sql-engine`; `engines/bun-sqlite.js` alone names `bun:sqlite`; `host/`, `browser/`, `drivers/` are the other side of the seams.
@@ -92,7 +92,7 @@ Then, because every other package sits on this one: `example` and `basecamp`
 | a read method | `test/litestone.test.ts` § *every read applies the filter, the policy and the gate*, and `test/verbs-rules.test.ts` |
 | a column kind or an operation | its row or column in `test/matrix.test.ts` — a missing cell fails |
 | an aggregate argument naming a field | `test/litestone.test.ts` § *an aggregate names a column* |
-| a write method | `test/write-events.test.ts`; `test/valuesets.test.ts` derives its list from `client.js` |
+| a write method | `test/write-events.test.ts`; `test/valuesets.test.ts` derives its list from `src/core` |
 | a policy form | `test/policy-interpreters.test.ts` — both compilers, same rows |
 | an access rule | one row admitted and one refused, through a real scoped client |
 | a `@map`-sensitive path | `test/column-mapping.test.ts` — mapped and unmapped, compared |

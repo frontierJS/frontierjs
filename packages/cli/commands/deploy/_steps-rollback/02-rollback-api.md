@@ -9,7 +9,7 @@ if ($.config.abort) return
 
 const { host, serverPath, appId, deployConf } = $.config
 const apiPort  = deployConf.api?.port ?? 3000
-const { dbDir: dbPath, envFile } = apiFiles(deployConf, serverPath)
+const { dbDir: dbPath, envFile, secretsDir } = apiFiles(deployConf, serverPath)
 const container = apiContainer(appId, deployConf)
 const replaced  = `${container}_replaced`
 const machine   = machineFor($, host, serverPath)
@@ -83,27 +83,42 @@ docker start  ${container}`, { dry: flag.dry })
     return
   }
 
-  const runCmd = [
-    `docker stop ${container} || true`,
-    `docker rm   ${container} || true`,
-    'docker run -d',
-    `--name ${container}`,
-    '--restart unless-stopped',
-    ...runAs(machine, appId),
-    `-p 127.0.0.1:${apiPort}:3000`,
-    `--volume ${dbPath}:${CONTAINER_DB_DIR}`,
-    `--env-file ${envFile}`,
-    // Same contract as 06-swap: the mapping targets 3000, so the app is told to
-    // bind 3000 whatever the env file says.
-    `--env FRONTIER_PORT_BE=3000`,
-    `--env NODE_ENV=production`,
-    // The same cap 06-swap applies. A rollback runs on the machine a failed
-    // deploy just left, which is the least good moment to start an uncapped one.
-    ...dockerLogArgs(deployConf),
-    previousImage,
-  ].join(' ')
+  // The function 06-swap and the revert call. A hand-written `docker run` here
+  // had drifted to no secrets mount, so a rolled-back API came up without the
+  // ENCRYPTION_KEY it reads from a file (`FJS-3476`).
+  const { configurationSet } = await import(new URL('file://' + global.fliRoot + '/core/release.js'))
+  swapContainer($, {
+    host,
+    appId,
+    container,
+    image: previousImage,
+    apiPort,
+    dbPath,
+    envFile,
+    secretsDir,
+    deployConf,
+    corsOrigins: derivedOrigins($, deployConf),
+    configuration: configurationSet(deployConf, $.config.target).values,
+    log,
+  })
 
-  machine.run(runCmd, { dry: flag.dry })
+  const { healthy, restored } = await healthOrRestore($, {
+    host, container, replaced, apiPort, healthPath: deployConf.api?.health ?? '/health', log,
+  })
+  if (!healthy) {
+    log.error(`Rollback to ${previous.tag} did not come up`)
+    if (restored) log.warn('  The release that was serving is running again.')
+    else          log.error('  Nothing is serving — restore by hand.')
+    $.config.abort = true
+    throw new Error(`Rollback failed health check for ${short(previousImage)}`)
+  }
+
+  // A `_replaced` left behind is restored by the next rollback's fast path, and
+  // the next deploy's rename onto that name fails.
+  machine.run(`if docker inspect ${replaced} > /dev/null 2>&1; then
+  docker stop ${replaced} || true
+  docker rm   ${replaced}
+fi`)
   log.success(`API rolled back → ${previousImage}`)
 }
 ```

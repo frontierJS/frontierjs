@@ -24,12 +24,26 @@ title: Hub settings
   // Two administrators with this form open is exactly the case it exists for:
   // without it the second save silently erases the first, and with it the second
   // gets a 409 naming both revisions and can re-read.
-  import { hubConfig } from '../../../resources/HubConfig.mesa'
+  //
+  // ─── The backup destination is a row in THIS workspace ───────────────────
+  //
+  // `BackupDestination` is workspace-owned (`FJS-D1491`) because its key is a
+  // `Secret` and a Secret has a workspace. The hub's one schedule points at one
+  // from above, so the picker lists the current workspace's destinations — the
+  // header names the workspace, nothing on this screen does — and the inline
+  // form makes one here rather than on a screen of its own. The credential is
+  // typed once as `<accessKeyId>:<secretAccessKey>`, sent beside the record
+  // and never shown again; the row that comes back carries an address only.
+  import { hubConfig }          from '../../../resources/HubConfig.mesa'
+  import { backupDestinations } from '../../../resources/BackupDestination.mesa'
+  import { session }            from '../../../session.js'
 
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import Callout  from '@frontierjs/ui/components/display/Callout.mesa'
   import Card     from '@frontierjs/ui/components/layout/Card.mesa'
+  import Form     from '@frontierjs/ui/components/forms/Form.mesa'
   import Input    from '@frontierjs/ui/components/forms/Input.mesa'
+  import Select   from '@frontierjs/ui/components/forms/Select.mesa'
   import Switch   from '@frontierjs/ui/components/forms/Switch.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
 
@@ -42,6 +56,12 @@ title: Hub settings
   // A fresh installation has no row. Not an error: the form is the way to make
   // one, and the screen says which state it is in.
   let unset     = false
+
+  let destinations = []
+  let addingDest   = false
+  let destDraft    = backupDestinations.make()
+  let destSecret   = ''
+  let destError    = null
 
   // The controls take a value and hand back a change rather than binding to
   // `draft.x` — `bind:` on a COMPONENT needs a writable top-level let and a
@@ -69,7 +89,8 @@ title: Hub settings
           name: 'Basecamp', baseUrl: '', adminEmail: '',
           heartbeatTimeoutSeconds: 120, sessionTtlHours: 168,
           requireTwoFactorForOwners: false, allowApiKeyAuth: true, allowBotUsers: true,
-          backupEnabled: false, backupCron: '0 2 * * *', backupDestination: 'local',
+          backupEnabled: false, backupCron: '0 2 * * *', backupDestinationId: null,
+          backupKeepLocalCount: 7, backupKeepLocalDays: null, backupKeepRemoteCount: 7, backupKeepRemoteDays: null,
           mailFromAddress: '', mailFromName: '',
         }
       } else {
@@ -81,6 +102,46 @@ title: Hub settings
   }
 
   load()
+
+  // The workspace's destinations, re-read when the header switches workspace:
+  // a destination the schedule names in another workspace still shows by id
+  // in the picker's "elsewhere" entry rather than vanishing.
+  async function loadDestinations() {
+    try {
+      destinations = (await backupDestinations.service.find({}, { limit: 200 })).data
+    } catch {
+      destinations = []
+    }
+  }
+  $: session.workspaceId, () => loadDestinations()
+
+  $: destOptions = [
+    { value: '', label: 'This machine (local disk)' },
+    ...destinations.map(d => ({ value: d.id, label: `${d.name} — ${d.bucket}` })),
+    ...(draft.backupDestinationId && !destinations.some(d => d.id === draft.backupDestinationId)
+      ? [{ value: draft.backupDestinationId, label: 'A destination in another workspace' }]
+      : []),
+  ]
+
+  function writeDest(name, value) { destDraft = { ...destDraft, [name]: value } }
+
+  async function createDestination(data) {
+    destError = null
+    try {
+      // `secret` is @transient — not a column, so not on the record the form
+      // validates. It rides alongside and the server lifts it into a Secret.
+      const made = await backupDestinations.service.create({ ...data, secret: destSecret })
+      toasts.success(`${made.name} added`)
+      addingDest = false
+      destDraft  = backupDestinations.make()
+      destSecret = ''
+      await loadDestinations()
+      write('backupDestinationId', made.id)
+    } catch (e) {
+      destError = e.message
+      throw e
+    }
+  }
 
   async function save() {
     error = null; fieldErrs = {}; saving = true
@@ -186,10 +247,70 @@ title: Hub settings
            error={fieldErrs.backupCron}
            hint="0 2 * * * is 02:00 daily"
            oninput={(e) => write('backupCron', e.target.value)} />
+    <Select name="backupDestinationId" id="cfg-backup-destination" label="Destination"
+            value={draft.backupDestinationId ?? ''} options={destOptions} placeholder=""
+            error={fieldErrs.backupDestinationId}
+            hint="An S3-compatible bucket this workspace has declared, or the disk this process runs on. An upload that fails keeps the archive on this disk and says why."
+            oninput={(e) => write('backupDestinationId', e.target.value || null)} />
+    {#if !addingDest}
+      <Button treatment="outlined" id="add-destination" onclick={() => { addingDest = true; destError = null }}>
+        Add a bucket
+      </Button>
+    {:else}
+      <div class="stack" id="new-destination">
+        {#if destError}
+          <article class="alert danger"><div class="alert-content">{destError}</div></article>
+        {/if}
+        <Form resource={backupDestinations} bind:record={destDraft} onsubmit={createDestination}>
+          <Input name="name" id="dest-name" value={destDraft.name}
+                 hint="Backblaze B2, Hetzner Object Storage, R2 — whatever you call the bucket"
+                 oninput={(e) => writeDest('name', e.target.value)} />
+          <Input name="endpoint" id="dest-endpoint" value={destDraft.endpoint}
+                 hint="https://s3.us-west-000.backblazeb2.com — the vendor's S3 endpoint, without the bucket in it"
+                 oninput={(e) => writeDest('endpoint', e.target.value)} />
+          <Input name="region" id="dest-region" value={destDraft.region}
+                 hint="us-west-000 — the region in the endpoint; SigV4 signs with it"
+                 oninput={(e) => writeDest('region', e.target.value)} />
+          <Input name="bucket" id="dest-bucket" value={destDraft.bucket}
+                 oninput={(e) => writeDest('bucket', e.target.value)} />
+          <Input name="prefix" id="dest-prefix" value={destDraft.prefix}
+                 hint="basecamp- — every archive key starts with this. A key scoped to a prefix at the vendor must match it exactly."
+                 oninput={(e) => writeDest('prefix', e.target.value)} />
+          <Input id="dest-secret" name="secret" type="password" label="Credential"
+                 hint="<accessKeyId>:<secretAccessKey> — stored encrypted, never shown again; rotating means typing a new one"
+                 value={destSecret} oninput={(e) => destSecret = e.target.value} />
+          <div class="cluster">
+            <Button type="submit" tone="primary">Add bucket</Button>
+            <Button treatment="ghost" onclick={() => { addingDest = false }}>Cancel</Button>
+          </div>
+        </Form>
+      </div>
+    {/if}
+    <h4 class="h6">Keep</h4>
+    <div class="grid" style="--grid-min: 12rem" id="backup-retention">
+      <Input name="backupKeepLocalCount" id="cfg-keep-local-count" type="number"
+             label="On this disk — newest" value={draft.backupKeepLocalCount}
+             error={fieldErrs.backupKeepLocalCount}
+             oninput={(e) => write('backupKeepLocalCount', Number(e.target.value))} />
+      <Input name="backupKeepLocalDays" id="cfg-keep-local-days" type="number"
+             label="On this disk — days" value={draft.backupKeepLocalDays ?? ''}
+             error={fieldErrs.backupKeepLocalDays} hint="Empty is no age limit"
+             oninput={(e) => write('backupKeepLocalDays', e.target.value === '' ? null : Number(e.target.value))} />
+      <Input name="backupKeepRemoteCount" id="cfg-keep-remote-count" type="number"
+             label="In each bucket — newest" value={draft.backupKeepRemoteCount}
+             error={fieldErrs.backupKeepRemoteCount}
+             oninput={(e) => write('backupKeepRemoteCount', Number(e.target.value))} />
+      <Input name="backupKeepRemoteDays" id="cfg-keep-remote-days" type="number"
+             label="In each bucket — days" value={draft.backupKeepRemoteDays ?? ''}
+             error={fieldErrs.backupKeepRemoteDays} hint="Empty is no age limit"
+             oninput={(e) => write('backupKeepRemoteDays', e.target.value === '' ? null : Number(e.target.value))} />
+    </div>
     <p class="text-sm text-muted">
-      <strong>Nothing registers this yet</strong> — see <a href="/hub/backups/">backups</a>. A
-      schedule that comes from a row has to be re-registered at boot and unregistered when the
-      row stops being true.
+      Saving puts the expression on the clock, or takes it off when the switch is off. The
+      archives it takes are listed in <a href="/hub/backups/">backups</a>. After each backup
+      finishes, an archive past either limit is deleted — the newest is always kept, and a
+      lowered limit applies at the next backup, not on save. A bucket keeping every version
+      bills a deleted archive until its lifecycle drops old versions.
     </p>
   </Card>
 
