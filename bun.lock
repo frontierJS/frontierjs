@@ -410,7 +410,7 @@
     },
     "packages/outpost": {
       "name": "@frontierjs/outpost",
-      "version": "0.1.4",
+      "version": "0.1.5",
       "bin": {
         "outpost": "./src/index.js",
       },

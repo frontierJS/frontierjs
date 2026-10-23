@@ -106,10 +106,11 @@ name when it declares none.
 
 ### `account`
 
-- **methods** — `get`, `changePassword`, `requestEmailChange`, `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`, `regenerateRecoveryCodes`
-- **custom methods** — `changePassword`, `requestEmailChange`, `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`, `regenerateRecoveryCodes`
+- **methods** — `get`, `reauthenticate`, `changePassword`, `requestEmailChange`, `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`, `regenerateRecoveryCodes`
+- **custom methods** — `reauthenticate`, `changePassword`, `requestEmailChange`, `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`, `regenerateRecoveryCodes`
 - **who may call** —
   - `get` — standing 1 or above — declared `gate: 1`
+  - `reauthenticate` — standing 1 or above — declared `gate: 1`
   - `changePassword` — standing 1 or above — declared `gate: 1`
   - `requestEmailChange` — standing 1 or above — declared `gate: 1`
   - `totpStatus` — standing 1 or above — declared `gate: 1`
