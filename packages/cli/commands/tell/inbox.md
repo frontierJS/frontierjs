@@ -15,7 +15,7 @@ flags:
 ---
 
 Every letter waiting for this machine's member, oldest first, with who sent
-it and how long ago (`IDEAS/pony-express.md` 1.4), a sealed one opened with
+it and how long ago (`FJS-D1393`), a sealed one opened with
 this machine's sealing key (`FJS-D1402`). A sealed letter carries the
 signature of the sender's machine, which must be one in the sender's chain:
 the first letter from a member pins their chain, and one whose signature

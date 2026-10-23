@@ -6,7 +6,7 @@ title: Deployment
   import { status }       from '@frontierjs/sierra/resource'
   import { session }      from '../../../session.js'
   import { deployments, DEPLOY_TONE } from '../../../resources/Deployment.mesa'
-  import { clock, at }    from '../../../datetime.js'
+  import { ago, clock, at, day } from '../../../datetime.js'
   import { toasts }       from '@frontierjs/ui/stores/toastStore'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
@@ -95,10 +95,28 @@ title: Deployment
 
   const STEP_TONE = { success: 'success', failed: 'danger', running: 'info', skipped: 'muted' }
 
-  const secs = (ms) => ms == null ? '—' : `${(ms / 1000).toFixed(1)}s`
+  // A sub-second step read `0.0s`, which says it took no time rather than little.
+  function span(ms) {
+    if (ms == null) return null
+    if (ms < 1000)  return `${ms}ms`
+    if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
+    return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`
+  }
+  const between = (from, to) => from && to ? Date.parse(to) - Date.parse(from) : null
+  const stepTook = (step) => span(step.durationMs ?? between(step.startedAt, step.finishedAt))
+  const words = (s) => s ? s[0].toUpperCase() + s.slice(1).replace(/_/g, ' ') : null
 
   $: steps = deployment?.steps ?? []
   $: done  = steps.filter(s => s.status === 'success').length
+
+  $: took     = deployment ? span(deployment.durationMs ?? between(deployment.startedAt, deployment.finishedAt)) : null
+  // Only worth a line when the release actually waited for a worker.
+  $: queuedMs = deployment ? between(deployment.queuedAt, deployment.startedAt) : null
+  // Finished on the day it started is a clock time; the date is already above it.
+  $: finished = deployment?.finishedAt
+    ? (day(deployment.finishedAt) === day(deployment.startedAt) ? clock(deployment.finishedAt) : at(deployment.finishedAt))
+    : null
+  $: hasSource = !!(deployment && (deployment.commitSha || deployment.branch || deployment.author))
 
   // What this release may do next, read off `@@transitions(status, …)` on the
   // model rather than off a copy of the terminal-state list. The old copy was
@@ -127,39 +145,45 @@ title: Deployment
 {#if loading}
   <p class="text-sm text-muted">Loading…</p>
 {:else if deployment}
-  <nav aria-label="Breadcrumb" class="cluster" id="deploy-breadcrumb">
-    {#if env}
-      <a class="navlink" href={`/environments/${env.id}/`}>{env.name}</a>
-      <span class="text-muted">/</span>
-    {/if}
-    {#if deployment.app}
-      <a class="navlink" href={`/apps/${deployment.appId}/`}>{deployment.app.name}</a>
-    {/if}
+  <nav class="breadcrumb" aria-label="Breadcrumb" id="deploy-breadcrumb">
+    <ol>
+      {#if env}<li><a class="link" href={`/environments/${env.id}/`}>{env.name}</a></li>{/if}
+      {#if deployment.app}<li><a class="link" href={`/apps/${deployment.appId}/`}>{deployment.app.name}</a></li>{/if}
+      <li><a aria-current="page">Release <code>{deployment.id.slice(0, 8)}</code></a></li>
+    </ol>
   </nav>
-  <div class="section-header">
-    <h1>{deployment.app?.name ?? 'Deployment'}</h1>
+
+  <header class="section-header deploy-head">
+    <div class="stack gap-2xs">
+      <div class="cluster">
+        <h1>{deployment.app?.name ?? 'Deployment'}</h1>
+        <span class="pill {DEPLOY_TONE[deployment.status] ?? ''}" id="deploy-status">{deployment.status}</span>
+      </div>
+      <p class="text-muted">
+        {words(deployment.trigger) ?? 'Manual'} deploy{#if env} to {env.name}{/if}
+        · <span title={at(deployment.startedAt ?? deployment.queuedAt)}>{ago(deployment.startedAt ?? deployment.queuedAt)}</span>
+      </p>
+    </div>
     <div class="cluster">
-      <span class="pill {DEPLOY_TONE[deployment.status] ?? ''}" id="deploy-status">{deployment.status}</span>
       {#if cancelIt}
-        <Button treatment="ghost" tone="danger" disabled={!cancelIt.allowed}
+        <Button treatment="outlined" tone="danger" disabled={!cancelIt.allowed}
                 data-confirm="The release stops at the step it is on."
                 data-confirm-title="Cancel this deployment?" data-confirm-label="Cancel deployment"
                 onclick={cancel}>Cancel</Button>
       {/if}
       {#if canRetry}
-        <Button treatment="ghost" id="deploy-again" disabled={busy}
+        <Button treatment="outlined" id="deploy-again" disabled={busy}
                 title="Ships the app as it is now" onclick={deployAgain}>Deploy again</Button>
       {/if}
       {#if rollbackIt}
-        <Button treatment="ghost" tone="warning" id="deploy-rollback"
+        <Button treatment="outlined" tone="warning" id="deploy-rollback"
                 disabled={!rollbackIt.allowed}
                 data-confirm="A new release of the previous build replaces what is live now."
                 data-confirm-title="Roll back?" data-confirm-label="Roll back" data-confirm-tone="warning"
                 onclick={rollback}>Roll back</Button>
       {/if}
-      <Button treatment="ghost" href="/deployments/">All deployments</Button>
     </div>
-  </div>
+  </header>
 
   {#if error}
     <article class="alert danger">
@@ -168,9 +192,8 @@ title: Deployment
   {/if}
 
   {#if running && !status.connected}
-    <!-- Honest about the mechanism: with no socket this page does not poll, so
-         it will sit on a stale status until it is reloaded. Saying so beats
-         quietly showing an out-of-date release as though it were current. -->
+    <!-- With no socket this page does not poll, so it sits on a stale status
+         until reloaded; saying so beats showing it as current. -->
     <article class="alert warning">
       <div class="alert-content">
         This release is still running and the live connection is down — reload to see where it got to.
@@ -178,74 +201,123 @@ title: Deployment
     </article>
   {/if}
 
-  <dl class="facts">
-    <dt>App</dt>
-    <dd>{#if deployment.app}<a href={`/apps/${deployment.appId}/`}>{deployment.app.name}</a>{:else}—{/if}</dd>
-    <dt>Environment</dt>
-    <dd>{#if env}<a href={`/environments/${env.id}/`}>{env.name}</a>{:else}—{/if}</dd>
-    <dt>Trigger</dt>     <dd>{deployment.trigger}</dd>
-    <dt>Commit</dt>      <dd><code>{deployment.commitSha ?? '—'}</code> {deployment.commitMessage ?? ''}</dd>
-    <dt>Branch</dt>      <dd>{#if deployment.branch}<code>{deployment.branch}</code>{:else}—{/if}</dd>
-    <dt>Author</dt>      <dd>{deployment.author ?? '—'}</dd>
-    <dt>Image</dt>       <dd><code>{deployment.toImage ?? '—'}</code></dd>
-    <!-- The tag above is a name; this is the identity. An executor that cannot
-         say which bytes ran leaves it empty rather than repeating the tag. -->
-    <dt>Digest</dt>
-    <dd id="deploy-digest">
-      {#if deployment.builtImage}
-        <code>{deployment.builtImage}</code>
+  <div class="deploy-body">
+    <!--
+      .feed, not .steps: .steps is a wizard indicator and draws its connector
+      through the labels; a release is an event stream (css patterns/feed.css).
+    -->
+    <section class="card deploy-steps" aria-labelledby="deploy-steps-title">
+      <div class="surface-header">
+        <h2 class="h5" id="deploy-steps-title">Steps</h2>
+        <span class="text-sm text-muted" id="step-progress">{done} / {steps.length} complete</span>
+      </div>
+      {#if !steps.length}
+        <p class="text-sm text-muted">No steps recorded yet.</p>
       {:else}
-        <span class="text-sm text-muted">not reported</span>
+        <ol class="feed" id="deploy-steps">
+          {#each steps as step}
+            <li>
+              <article class="feed-item">
+                <span class="feed-dot {STEP_TONE[step.status] ?? ''}" aria-hidden="true"></span>
+                <div class="feed-content stack gap-xs">
+                  <div class="split deploy-step-head">
+                    <strong>{step.name}</strong>
+                    <span class="cluster gap-sm">
+                      {#if step.startedAt}
+                        <span class="text-sm text-muted">{clock(step.startedAt)}{#if stepTook(step)} · {stepTook(step)}{/if}</span>
+                      {/if}
+                      <span class="pill {STEP_TONE[step.status] ?? ''}">{step.status}</span>
+                    </span>
+                  </div>
+                  {#if step.output}
+                    <pre class="code deploy-output">{step.output}</pre>
+                  {/if}
+                </div>
+              </article>
+            </li>
+          {/each}
+        </ol>
       {/if}
-    </dd>
-    <dt>Queued</dt>      <dd>{at(deployment.queuedAt)}</dd>
-    <dt>Started</dt>     <dd>{at(deployment.startedAt)}</dd>
-    <dt>Finished</dt>    <dd>{at(deployment.finishedAt)}</dd>
-    <dt>Duration</dt>    <dd>{secs(deployment.durationMs)}</dd>
-    <!-- The release that was live when this one was made. -->
-    <dt>Replaced</dt>
-    <dd id="deploy-previous">
-      {#if deployment.previousDeploymentId}
-        <a href={`/deployments/${deployment.previousDeploymentId}/`}><code>{deployment.previousDeploymentId.slice(0, 8)}</code></a>
-      {:else}
-        <span class="text-sm text-muted">nothing was live</span>
-      {/if}
-    </dd>
-  </dl>
+    </section>
 
-  <div class="section-header">
-    <h2 class="h4">Steps</h2>
-    <span class="text-sm text-muted" id="step-progress">{done} / {steps.length} complete</span>
+    <aside class="card deploy-details">
+      <h2 class="h5">Release</h2>
+      <dl class="facts" style="--fact-label-max: 45%">
+        <dt>Started</dt>   <dd>{at(deployment.startedAt, 'not yet')}</dd>
+        {#if queuedMs > 1000}
+          <dt>Queued</dt>  <dd>{span(queuedMs)} before it started</dd>
+        {/if}
+        <dt>Finished</dt>  <dd>{finished ?? (running ? 'still running' : '—')}</dd>
+        <dt>Duration</dt>  <dd>{took ?? '—'}</dd>
+        <!-- The release that was live when this one was made. -->
+        <dt>Replaced</dt>
+        <dd id="deploy-previous">
+          {#if deployment.previousDeploymentId}
+            <a class="link" href={`/deployments/${deployment.previousDeploymentId}/`}><code>{deployment.previousDeploymentId.slice(0, 8)}</code></a>
+          {:else}
+            <span class="text-muted">nothing was live</span>
+          {/if}
+        </dd>
+      </dl>
+
+      <h2 class="h5">Build</h2>
+      <dl class="facts" style="--fact-label-max: 45%">
+        {#if deployment.toImage}
+          <dt>Image</dt> <dd><code class="deploy-hash" title={deployment.toImage}>{deployment.toImage}</code></dd>
+        {/if}
+        <!-- The tag is a name; the digest is the identity. An executor that
+             cannot say which bytes ran leaves it empty rather than repeating the tag. -->
+        <dt>Digest</dt>
+        <dd id="deploy-digest">
+          {#if deployment.builtImage}
+            <code class="deploy-hash" title={deployment.builtImage}>{deployment.builtImage}</code>
+          {:else}
+            <span class="text-muted">not reported</span>
+          {/if}
+        </dd>
+      </dl>
+
+      <h2 class="h5">Source</h2>
+      {#if hasSource}
+        <dl class="facts" style="--fact-label-max: 45%">
+          {#if deployment.commitSha}
+            <dt>Commit</dt>
+            <dd><code title={deployment.commitSha}>{deployment.commitSha.slice(0, 7)}</code> {deployment.commitMessage ?? ''}</dd>
+          {/if}
+          {#if deployment.branch}<dt>Branch</dt> <dd><code>{deployment.branch}</code></dd>{/if}
+          {#if deployment.author}<dt>Author</dt> <dd>{deployment.author}</dd>{/if}
+        </dl>
+      {:else}
+        <p class="text-sm text-muted">No commit recorded for this release.</p>
+      {/if}
+    </aside>
   </div>
-
-  <!--
-    .feed, not .steps. Both are in the design system and only one fits: .steps
-    is a WIZARD — a horizontal indicator of where you are in a flow you are
-    driving — and it draws a connector line straight through its labels when
-    used for anything else. A deployment is a chronological event stream that
-    happens to you, which is what .feed is (css patterns/feed.css). The dot
-    reads --bg-mix, so a tone class colors it and no color is named here.
-  -->
-  <ol class="feed" id="deploy-steps">
-    {#each steps as step}
-      <li>
-        <article class="feed-item">
-          <span class="feed-dot {STEP_TONE[step.status] ?? ''}" aria-hidden="true"></span>
-          <div class="feed-content">
-            <div class="text-muted text-sm">{clock(step.startedAt)} · {secs(step.durationMs)}</div>
-            <div class="cluster">
-              <strong>{step.name}</strong>
-              <span class="pill {STEP_TONE[step.status] ?? ''}">{step.status}</span>
-            </div>
-            {#if step.output}
-              <pre class="text-sm">{step.output}</pre>
-            {/if}
-          </div>
-        </article>
-      </li>
-    {/each}
-  </ol>
 {:else}
   <NoRecord error={loadError} noun="Deployment" onretry={load}
             backHref="/deployments/" backLabel="Back to deployments" />
 {/if}
+
+<style>
+  .deploy-head { flex-wrap: wrap; align-items: flex-start; }
+  .deploy-body {
+    display: grid;
+    --deploy-aside-min: 18rem;
+    --deploy-aside-max: 24rem;
+    grid-template-columns: minmax(0, 1fr) minmax(var(--deploy-aside-min), var(--deploy-aside-max));
+    gap: var(--space-2xl);
+    align-items: start;
+  }
+  @media (max-width: 64rem) { .deploy-body { grid-template-columns: minmax(0, 1fr); } }
+
+  .deploy-step-head { flex-wrap: wrap; align-items: baseline; }
+  .deploy-output { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+  .deploy-hash {
+    display: inline-block;
+    max-inline-size: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+  }
+</style>

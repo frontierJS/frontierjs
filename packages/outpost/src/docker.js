@@ -743,7 +743,10 @@ export function createDocker({
  * together.
  */
 
-const UNATTENDED_LOG = '/var/log/unattended-upgrades/unattended-upgrades.log'
+// apt.systemd.daily touches this only after the install pass's unattended-upgrade
+// succeeds. The log is written by the download-only apt-daily pass too, so its
+// mtime reads a box that has never upgraded as one that did today.
+const UPGRADE_STAMP = '/var/lib/apt/periodic/upgrade-stamp'
 
 const POSTURE = {
   os:              ['cat', '/etc/os-release'],
@@ -757,7 +760,7 @@ const POSTURE = {
   aptPending:      ['apt-get', '-s', '-o', 'Debug::NoLocking=1', 'upgrade'],
   aptPeriodic:     ['apt-config', 'dump', 'APT::Periodic'],
   aptTimer:        ['systemctl', 'is-enabled', 'apt-daily-upgrade.timer'],
-  aptLastRun:      ['stat', '-c', '%Y', UNATTENDED_LOG],
+  aptLastRun:      ['stat', '-c', '%Y', UPGRADE_STAMP],
   dockerVersion:   ['docker', 'version', '--format', 'json'],
   caddyVersion:    ['caddy', 'version'],
   bunVersion:      ['bun', '--version'],

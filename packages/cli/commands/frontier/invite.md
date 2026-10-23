@@ -6,7 +6,7 @@ examples:
   - fli frontier:invite
 ---
 
-Any member may invite (`IDEAS/pony-express.md` 1.3). The code carries the
+Any member may invite (`FJS-D1394`). The code carries the
 post's origin, `<origin>#<code>`, so the person joining configures nothing —
 hand them the line and they run `fli frontier:stake` with it.
 

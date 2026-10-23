@@ -1,4 +1,4 @@
-// src/core/push.ts — a git push starts a release (FJS-1781, FJS-D884).
+// src/plugins/push.ts — a git push starts a release (FJS-1781, FJS-D884).
 //
 // The one inbound door for a forge, declared as two conduit Receivers on one
 // provider: the forge's own HMAC (`X-Hub-Signature-256`, which GitHub, Forgejo

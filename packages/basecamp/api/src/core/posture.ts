@@ -230,7 +230,7 @@ const CONTROLS: { id: string; group: string; severity: Severity; hardenedAtInsta
       : { ok: false, message: `Caddy's admin API listens on ${admin.filter(l => !isLoopback(l.address)).map(l => l.address).join(', ')}` }
   } },
 
-  { id: 'patch.security-pending', group: 'patching', severity: 'medium', grade: (r) => {
+  { id: 'patch.security-pending', group: 'patching', severity: 'medium', hardenedAtInstall: true, grade: (r) => {
     if (!r.updates) return unknown('Pending updates could not be read')
     return r.updates.security === 0
       ? { ok: true,  message: `No security updates pending (${r.updates.pending} other)` }

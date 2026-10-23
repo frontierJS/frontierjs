@@ -11,7 +11,7 @@ args:
     description: On a new machine, the post's origin; none on a linked machine, which makes a paper key
 ---
 
-A member is a chain of machines (`IDEAS/pony-express.md` 4.3), and a second
+A member is a chain of machines (`FJS-D1416`, `FJS-D1421`), and a second
 machine is the backup (`FJS-D1409`). A paper key is the backup for a member
 with one machine, or for losing all of them (4.7, `FJS-D1420`): sixteen words
 written down, which are one more machine in the chain. It is opt-in, and the

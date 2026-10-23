@@ -40,11 +40,12 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `app.principal()` | `packages/junction/src/core/app.ts` | 6 |
 | `$setAuth(user)` | `packages/litestone/src/core/client.js` | 5 |
 | `app.conduit.mirror(claim)` | `packages/conduit/src/mirror.ts` | 5 |
+| `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | 4 |
+| `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | 4 |
 | `app.conduit.receive(receiver)` | `packages/conduit/src/conduit.ts` | 4 |
 | `ctx.enqueue(job, payload)` | `packages/junction/src/plugins/outbox/engine.ts` | 4 |
 | `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | 3 |
-| `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | 3 |
-| `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | 3 |
+| `db.$protectedFields(accessor)` | `packages/litestone/src/core/client.js` | 3 |
 | `signRequest()` | `packages/toolbelt/src/signature/signature.js` | 3 |
 
 ## Data → API
@@ -64,15 +65,15 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `bearerClaim(...).mint(db, data)` / `.mintOnCreate()` / `.redeem(db)` | `packages/junction/src/core/bearer.ts` | yes | — |
 | `resolveTenancy(schema)` / `registry.tenantFor({host, headers, principal})` | `packages/litestone/src/core/tenancy.js` | yes | — |
 | `accessorCandidates()` | `packages/junction/src/core/litestone.ts` | yes | — |
-| `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | yes | 3 |
-| `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | yes | 3 |
-| `db.$readAs(accessor, row, principal)` | `packages/litestone/src/core/client.js` | yes | 1 |
-| `db.$checkWrite(accessor, op, row, changes?)` | `packages/litestone/src/core/client.js` | yes | 1 |
-| `db.$levelOf(accessor?, principal?)` | `packages/litestone/src/core/client.js` | yes | 1 |
-| `db.$primaryKey(accessor)` | `packages/litestone/src/core/client.js` | yes | 1 |
-| `db.$mirrorKey(accessor)` | `packages/litestone/src/core/client.js` | yes | 1 |
-| `db.$claimsFor(principal)` | `packages/litestone/src/core/client.js` | yes | 1 |
-| `db.$protectedFields(accessor)` | `packages/litestone/src/core/client.js` | yes | 2 |
+| `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | yes | 4 |
+| `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | yes | 4 |
+| `db.$readAs(accessor, row, principal)` | `packages/litestone/src/core/client.js` | yes | 2 |
+| `db.$checkWrite(accessor, op, row, changes?)` | `packages/litestone/src/core/client.js` | yes | 2 |
+| `db.$levelOf(accessor?, principal?)` | `packages/litestone/src/core/client.js` | yes | 2 |
+| `db.$primaryKey(accessor)` | `packages/litestone/src/core/client.js` | yes | 2 |
+| `db.$mirrorKey(accessor)` | `packages/litestone/src/core/client.js` | yes | 2 |
+| `db.$claimsFor(principal)` | `packages/litestone/src/core/client.js` | yes | 2 |
+| `db.$protectedFields(accessor)` | `packages/litestone/src/core/client.js` | yes | 3 |
 ## Schema → API/UI
 
 | Seam | Owner | Declared in | Other sites |

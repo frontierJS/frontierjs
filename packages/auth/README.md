@@ -329,7 +329,8 @@ Sign-in has two buckets. `loginRateLimit` is per address and loose (100 per 15
 minutes), since a school or an office is one address. `loginAccountRateLimit`
 (10 per 15 minutes) is keyed on the email and the address together, so a spray
 at one account from one address stops there while the rest of the room signs in.
-`/login/challenge` takes the per-address bucket only.
+`/login/challenge` takes the per-address bucket only. Each bucket is junction's
+`rateLimitHook`, which counts in the process (junction's README § Middleware).
 
 The four that change what the account requires are refused inside a support
 episode. `totpStatus` is not — seeing what somebody sees is what an episode is

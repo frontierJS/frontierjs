@@ -34,7 +34,7 @@ flags:
 ---
 
 A letter waits at the post until its member runs `fli inbox`, which prints
-and deletes it (`IDEAS/pony-express.md` 1.4, `FJS-D1395`). To a member who has
+and deletes it (`FJS-D1395`). To a member who has
 published a sealing key it is sealed to that key, so the post holds only
 ciphertext (`FJS-D1402`); to one who has not, it goes as plaintext and says so.
 A sealed letter is signed too, so the recipient knows who wrote it. The
@@ -42,7 +42,7 @@ sealing key comes from the member's chain, which their machines signed and
 this one verifies, so the post cannot swap it; the first letter to a member
 pins the chain's root in `~/.fli/frontier/peers.json`, and a later chain under
 another root, or shorter than the pinned one, is refused
-(`IDEAS/pony-express.md` 4.1, 4.3). Five letters in ten seconds from one
+(`FJS-D1416`, `FJS-D1421`). Five letters in ten seconds from one
 sender.
 
 `--env` picks keys the way `fli env:send` does (`--file`, `-g`) and sends

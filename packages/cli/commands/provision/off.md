@@ -20,7 +20,7 @@ and it still bills; power it back on at DigitalOcean, or destroy it.
 
 Refuses the same droplets destroy does: one `fli provision` did not make, and a
 fleet machine Basecamp made, which is powered off in Basecamp. With no id it
-lists the unclaimed ones still on and asks which.
+lists the Basecamp hosts still on and asks which.
 
 ```js
 let id = String(arg.id ?? '').trim()
@@ -29,14 +29,14 @@ if (!id) {
   const found = await runProvision({ action: 'list' })
   if (found.error) { log.error(found.error); process.exitCode = 1; return }
   const on = found.machines.filter(m => !m.serverId && m.status !== 'off')
-  if (!on.length) { echo('No unclaimed droplet fli provision made is powered on'); return }
+  if (!on.length) { echo('No Basecamp host fli provision made is powered on'); return }
   if (!process.stdin.isTTY) {
     log.error('Which droplet? fli provision:off <id>')
-    echo.lines(on.map(machineLine), { indent: 2 })
+    echo.lines(on.map(m => machineLine(m, chalk)), { indent: 2 })
     process.exitCode = 1; return
   }
 
-  echo.lines(on.map((m, i) => `${i + 1}) ${machineLine(m)}`), { indent: 2 })
+  echo.lines(on.map((m, i) => `${i + 1}) ${machineLine(m, chalk)}`), { indent: 2 })
   const answer = (await tty.line(`Power off which? [1-${on.length}, Enter to cancel] › `)).trim()
   if (!answer) { echo('Nothing powered off'); return }
   const picked = on[Number(answer) - 1]

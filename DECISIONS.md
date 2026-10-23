@@ -1620,6 +1620,18 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1461"></a>2026-10-23 · `FJS-D1461` — Q10 — Whether the owner's view shows letter text — Never: count, oldest, bytes, and sealed or plain. *Synapse's* admin API lists rooms and whether each is encrypted, and returns encrypted content still encrypted ([rooms](https://github.com/dklimpel/synapse_archive/blob/119b137cfa72e5e24c700eb5c5c060e62728597d/docs/admin_api/rooms.md), [FAQ](https://git.sharpetronics.com/sharpetronics/synapse/raw/branch/develop/docs/usage/administration/admin_faq.md)).
+
+Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (show plain bodies, for debugging V1).
+
+The paper's recommendation, taken as written: (confidence 3) — sealed letters cannot be opened anyway, so A treats both kinds the same, and B reads mail the members never agreed to have read.
+
+### <a id="fjs-d1460"></a>2026-10-23 · `FJS-D1460` — Q9 — Who holds superuser on the post — The owner only: member one (`OWNER_KEY`/`OWNER_NICK`), with no role table. *Mastodon's* Owner role bypasses every permission check ([roles](https://docs.joinmastodon.org/admin/roles/)), and its Admin, Moderator and custom roles serve a staff of several.
+
+Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (Owner and Moderator roles now, Mastodon's current shape), **C** (no role: the owner reads the object's storage from Cloudflare, and nothing is built).
+
+The paper's recommendation, taken as written: (confidence 3) — four members leave nobody to give a Moderator role to, and B reopens when a second person needs one.
+
 ### <a id="fjs-d1449"></a>2026-10-22 · `FJS-D1449` — Q4 — What a bad invitee costs the inviter — Nothing: the tree is public, and that alone is the accountability.
 
 Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (the inviter's unspent allowance is withdrawn), **C** (the Lobsters rule: the inviter can lose access).
@@ -1640,85 +1652,85 @@ The paper's recommendation, taken as written: (confidence 2) — B does not remo
 
 ### <a id="fjs-d1421"></a>2026-10-22 · `FJS-D1421` — Q19 — How a peer knows the post did not forge or hide a member's machines — Every link signed by a machine, so the post can write none; the post countersigns the chain's head into 6.4's member row, a peer refuses a chain shorter than one it has seen, and every sealed letter carries its sender's head (Keybase's sigchain; WhatsApp's in-chat device consistency).
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (A, plus a public append-only log of every chain (WhatsApp key transparency, iMessage Contact Key Verification, the did:plc audit log)), **C** (the post serves the list and is believed).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (A, plus a public append-only log of every chain (WhatsApp key transparency, iMessage Contact Key Verification, the did:plc audit log)), **C** (the post serves the list and is believed).
 
 The paper's recommendation, taken as written: (confidence 2) — B's log is a second service to run and audit for a network of invited members, and A's rollback refusal catches the hidden revoke B would; B is the reopen path.
 
 ### <a id="fjs-d1420"></a>2026-10-22 · `FJS-D1420` — Q18 — Whether there is a paper key — Opt-in: a printed key that is one more machine in the chain, able to link and revoke, and nothing held by the post (Keybase's paper key).
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (none: a second machine is the only backup (Signal)), **C** (A, printed at every join).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (none: a second machine is the only backup (Signal)), **C** (A, printed at every join).
 
 The paper's recommendation, taken as written: (confidence 2) — the post holds nothing, so it is not the recovery code `FJS-D1409` turned down; C makes every member keep a sheet.
 
 ### <a id="fjs-d1419"></a>2026-10-22 · `FJS-D1419` — Q17 — How a lost or stolen machine is removed — Any linked machine signs a revoke into the chain and rotates the member's sealing key (Keybase device revocation and per-user key).
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (A, with machines ranked by link order and a higher one able to undo a lower one's revoke for 72 hours (did:plc rotation keys)), **C** (the machine list expires and is re-signed, and a lost machine falls off (WhatsApp's signed device list, 35 days)).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (A, with machines ranked by link order and a higher one able to undo a lower one's revoke for 72 hours (did:plc rotation keys)), **C** (the machine list expires and is re-signed, and a lost machine falls off (WhatsApp's signed device list, 35 days)).
 
 The paper's recommendation, taken as written: (confidence 2) — the race B settles is a thief beating the owner to the revoke, rare among invited members; B is the reopen path.
 
 ### <a id="fjs-d1418"></a>2026-10-22 · `FJS-D1418` — Q16 — How a link is approved — The new machine prints eight PGP words, they are typed on a machine already linked, and both sign the link (Keybase's `reverse_sig`, WhatsApp's account and device signatures).
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (a QR code the old machine scans (Signal's linked devices)), **C** (short words shown on both and confirmed as matching (Matrix SAS)).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (a QR code the old machine scans (Signal's linked devices)), **C** (short words shown on both and confirmed as matching (Matrix SAS)).
 
 The paper's recommendation, taken as written: (confidence 2) — a terminal has no camera and SSH has no second channel; typing works in both, and two signatures mean neither machine is added without the other.
 
 ### <a id="fjs-d1417"></a>2026-10-22 · `FJS-D1417` — Q15 — Which machines may link a new one — Any machine already in the member's chain (Keybase device provisioning, SSB fusion identity, Matrix's self-signing key).
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (the first machine only (Signal's and WhatsApp's primary device)).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (the first machine only (Signal's and WhatsApp's primary device)).
 
 The paper's recommendation, taken as written: (confidence 3) — with the first machine lost, B leaves the backup unable to link the next one, which is the case `FJS-D1409` exists for.
 
 ### <a id="fjs-d1416"></a>2026-10-22 · `FJS-D1416` — Q14 — What the fingerprint words cover once a member has several machines — The member's chain root: the hash of its first link, every later machine and the sealing key signed into the chain (Keybase's sigchain, Matrix's master key, iMessage Contact Key Verification).
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **C** was picked over **A** (one member key copied to every machine (Signal's linked devices, SSB fusion identity): 4.2 stands, but a stolen copy cannot be removed without new words for everyone), **B** (the set of device keys (WhatsApp's security code): any link or revoke changes the words and every peer checks again).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **C** was picked over **A** (one member key copied to every machine (Signal's linked devices, SSB fusion identity): 4.2 stands, but a stolen copy cannot be removed without new words for everyone), **B** (the set of device keys (WhatsApp's security code): any link or revoke changes the words and every peer checks again).
 
 The paper's recommendation, taken as written: (confidence 3) — words fixed across a device change, and only a reset or a forged chain warns; 4.2's digest is redone over the root.
 
 ### <a id="fjs-d1415"></a>2026-10-22 · `FJS-D1415` — Q13 — Who may join the one post — By invite until a stated point, then anyone; the point is a question of its own.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **C** was picked over **A** (by invite only, with 6.3's allowance), **B** (anyone: `tell:join` with no code).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **C** was picked over **A** (by invite only, with 6.3's allowance), **B** (anyone: `tell:join` with no code).
 
 Against the recommendation (**A**): the owner wants the network to open eventually: invites keep the early numbers vouched-for and the door shut to spam while the network is small, and the point at which it opens is ruled on its own when it is near.
 
 ### <a id="fjs-d1414"></a>2026-10-22 · `FJS-D1414` — Q12 — How many posts there are — One: the project's post, its origin built into `fli`; `tell:setup` becomes how the maintainers deploy it, and `tell:join` takes a bare code.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (one by default, and `tell:setup` stays for anyone who wants a private post whose numbers count for nothing outside it), **C** (many, federated: posts relay to each other and a nick holds across them).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (one by default, and `tell:setup` stays for anyone who wants a private post whose numbers count for nothing outside it), **C** (many, federated: posts relay to each other and a nick holds across them).
 
 The paper's recommendation, taken as written: one network is the ask, and a private post is two kinds of post to explain and test; B is the reopen path when somebody asks.
 
 ### <a id="fjs-d1413"></a>2026-10-22 · `FJS-D1413` — Q9 — Where the numbers live — On the project's post: a number is the member row's number there, and a member of it is on no other post (1.3's one post per machine).
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (a registry apart from the mail: `fli tell:claim` signs with the tell key to a list the project runs, and mail stays on any post).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (a registry apart from the mail: `fli tell:claim` signs with the tell key to a list the project runs, and mail stays on any post).
 
 The paper's recommendation, taken as written: (confidence 2) — one table and no new noun; the one-post rule bites only once private posts are common, and B is the reopen path.
 
 ### <a id="fjs-d1410"></a>2026-10-22 · `FJS-D1410` — Q5 — A second machine — Linking: one machine signs another's key into the same member.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (none: a new machine is a new member).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (none: a new machine is a new member).
 
 Against the recommendation (**B**): ruled with Q10: a member number is tied to a key, so a second machine signed into the same member is also the backup for a lost key, and that makes it worth building before numbers go out rather than after somebody asks twice.
 
 ### <a id="fjs-d1409"></a>2026-10-22 · `FJS-D1409` — Q10 — What a lost key does to a number — Linking (Q5's A) before numbers go out: a second machine signed into the same member is also the backup.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (a recovery code printed at join, which the post trades once for a new key under the same number), **C** (nothing: a lost key is a lost number, and the member starts again).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (a recovery code printed at join, which the post trades once for a new key under the same number), **C** (nothing: a lost key is a lost number, and the member starts again).
 
 The paper's recommendation, taken as written: (confidence 2) — it answers Q5 too, and a recovery code is a password the member must keep somewhere, which the keys exist to avoid. This reverses Q5's *B for now*, since a number is what makes a second machine worth asking for.
 
 ### <a id="fjs-d1395"></a>2026-10-22 · `FJS-D1395` — Q3 — What reading does — Delete on open: a letter is read once.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (a read flag: `inbox` shows history).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (a read flag: `inbox` shows history).
 
 The paper's recommendation, taken as written: the host keeps nothing it does not need, and 3.3's env values must be read once anyway; a member who wants a copy keeps the printed line.
 
 ### <a id="fjs-d1394"></a>2026-10-22 · `FJS-D1394` — Q8 — How a person joins — An invite code: `fli tell:invite` mints a one-use code, `fli tell:join <code>` spends it, and the server keeps a members table.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **B** was picked over **A** (the owner adds their key: `fli tell:key` prints it, the owner pastes it into the Worker's member list and redeploys).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **B** was picked over **A** (the owner adds their key: `fli tell:key` prints it, the owner pastes it into the Worker's member list and redeploys).
 
 Against the recommendation (**A**): the owner wants joining to be one command a person runs, not a key pasted and a redeploy.
 
 ### <a id="fjs-d1393"></a>2026-10-22 · `FJS-D1393` — Q7 — Whether V1 seals — Plaintext V1: requests signed so no sender is faked, text readable on the owner's account; the seal is Phase 3 and changes no route.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (sealed from the first letter: a second key per member and the seal kit before anything sends).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (sealed from the first letter: a second key per member and the seal kit before anything sends).
 
 The paper's recommendation, taken as written: four friends on the owner's own account, and `--env`, the one case that needs it, waits for Phase 3.
 
@@ -12330,7 +12342,7 @@ Where it lives: ui `Textbox`'s `idle` (no key, no mode, the control types; Haven
 
 ### <a id="fjs-d1402"></a>2026-10-22 · `FJS-D1402` — Q11 — What the seal covers — Every letter: a `tell` to a member who has published a sealing key goes sealed, and `--env` is that path plus read-once; to a member with none, a plain letter goes as V1's plaintext with a printed note and `--env` is refused.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (seal only `--env`, and reword Phase 3's done-when) and **C** (seal every letter and refuse any `tell` to a member with no sealing key).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (seal only `--env`, and reword Phase 3's done-when) and **C** (seal every letter and refuse any `tell` to a member with no sealing key).
 
 The paper's recommendation, taken as written: Phase 3's done-when already says the Durable Object holds only ciphertext after a `tell`, sealing costs the same for every letter, and one path is one path. Until Phase 4.1 a host that serves its own key still reads what is sealed to it, so the claim after Phase 3 is "the host cannot read a letter unless it lies about a key". Confidence 2.
 
@@ -14890,6 +14902,18 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1462"></a>2026-10-23 · `FJS-D1462` — Q11 — Where the view lives — `fli frontier:post` with `--json` as the one reader, and a `:post` pane in `fli gui` that draws it (`project:map` and `:map`).
+
+Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (the command only), **C** (an `/admin` page on the Worker: a second login, at a URL a stranger can find).
+
+The paper's recommendation, taken as written: (confidence 2) — one reader with two presentations is `FJS-D223`, and the pane costs one spawn.
+
+### <a id="fjs-d1459"></a>2026-10-22 · `FJS-D1459` — The Outpost's static origin binds `127.0.0.1` and the install's firewall does not open it; Caddy is the only way in.
+
+Asked in chat over bct's posture report, where `net.unexpected-listener` named 8181. **A** was picked over **B** (posture expects 8181 on every box, so the public listener stays and stops being flagged) and **C** (`OUTPOST_STATIC_PORT=0` on bct only). As recommended.
+
+Every Activate and every `/route` with `static: true` already dials `127.0.0.1:8181` (`ingress.js`), so the public bind served nobody Caddy did not, and it answered plain HTTP around Caddy's TLS on every enrolled box. `FJS-D565` and `FJS-D930` already put a container's published port on loopback; this extends that rule to the Outpost's own listener. The cost is that an inline app with no hostname can no longer be reached at `<ip>:8181/<slug>` from outside the machine. `declaredFor()` stops expecting 8181, and enrollment's input rule loses it.
+
 ### <a id="fjs-d1422"></a>2026-10-22 · `FJS-D1422` — Q3 — How the flip to proxied makes the edge strict for Basecamp's host — A per-host Configuration Rule, marked like a record, written before the record turns proxied; the zone setting is never touched. The token needs *Zone › Config Rules › Edit*.
 
 Asked in [`IDEAS/zero-to-live.md`](IDEAS/zero-to-live.md) § Open questions. **A** was picked over **B** (flip only when the zone is already Full (strict), and otherwise stay DNS-only and say why. Never changes the zone; needs *Zone Settings* read), **C** (set the zone to Full (strict), as `FJS-D1380` is written).
@@ -15413,12 +15437,6 @@ Every legacy ksite client keeps its redirects in `content/settings/_redirects`, 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (`fli check` owns the reader AND the run: a package declares `test/doc-prelude.{js,ts}` (default export `(block) => { imports, head }`), `fli check` writes each unmarked fence as a module under that prelude and runs it. One runner for 20 packages, no per-package test file; the cost is a new file convention plus a process fleet inside `fli check`, and the prelude for a drive-needing package (mesa served page, sierra build) is not a head string), **C** (Reader in `packages/cli/core`, package runners import it by relative path from the workspace, the way `@frontierjs/ui` reads mesa's CDP harness. No new package surface, but it makes every package's suite depend on cli, a reverse edge).
 
 The paper's recommendation, taken as written: it is the only choice with one reader and no reverse edge, it keeps `FJS-D860`'s "the package owns its words" (the prelude), and the 19 runners then each become a small test over a shared reader instead of 19 copies of litestone's 226 lines.
-
-### <a id="fjs-d1459"></a>2026-10-22 · `FJS-D1459` — The Outpost's static origin binds `127.0.0.1` and the install's firewall does not open it; Caddy is the only way in.
-
-Asked in chat over bct's posture report, where `net.unexpected-listener` named 8181. **A** was picked over **B** (posture expects 8181 on every box, so the public listener stays and stops being flagged) and **C** (`OUTPOST_STATIC_PORT=0` on bct only). As recommended.
-
-Every Activate and every `/route` with `static: true` already dials `127.0.0.1:8181` (`ingress.js`), so the public bind served nobody Caddy did not, and it answered plain HTTP around Caddy's TLS on every enrolled box. `FJS-D565` and `FJS-D930` already put a container's published port on loopback; this extends that rule to the Outpost's own listener. The cost is that an inline app with no hostname can no longer be reached at `<ip>:8181/<slug>` from outside the machine. `declaredFor()` stops expecting 8181, and enrollment's input rule loses it.
 
 ### <a id="fjs-d931"></a>2026-10-12 · `FJS-D931` — Q5 — Pin the installs — Also pin a major for Docker and Caddy with an apt preference, keep every version beside `BUN_VERSION`, and report the installed versions in the heartbeat.
 
@@ -18175,19 +18193,19 @@ The nine for 3.1, which builds this ruling and `FJS-D1404`/`FJS-D1405`, consider
 
 ### <a id="fjs-d1400"></a>2026-10-22 · `FJS-D1400` — Q2 — The sealing key — A second, X25519 pair beside the Ed25519 one, published signed.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (derive X25519 from the Ed25519 key, as age does).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (derive X25519 from the Ed25519 key, as age does).
 
 The paper's recommendation, taken as written: WebCrypto does it with no dependency, and a browser member's IndexedDB key cannot be converted.
 
 ### <a id="fjs-d1398"></a>2026-10-22 · `FJS-D1398` — Q4 — The notice line's reach — Every `fli` command checks on an interval.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (only `fli tell:*` commands and a shell prompt hook a member opts into).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (only `fli tell:*` commands and a shell prompt hook a member opts into).
 
 The paper's recommendation, taken as written: the point is mail you notice without asking; the interval bounds the cost, and it stays silent with no key.
 
 ### <a id="fjs-d1392"></a>2026-10-22 · `FJS-D1392` — Q6 — Where V1's server runs — One Cloudflare Worker and one Durable Object: SQLite and the live sockets in one object, the free plan, deployed with wrangler.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (Val Town: one file edited in the browser, SQLite built in, no deploy step; live delivery likely a poll), **C** (Haven's API: identity and a host already there, but V1 waits on Haven being hosted).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (Val Town: one file edited in the browser, SQLite built in, no deploy step; live delivery likely a poll), **C** (Haven's API: identity and a host already there, but V1 waits on Haven being hosted).
 
 The paper's recommendation, taken as written: the only one with live delivery and no wait; B is the reopen path if wrangler is the friction.
 

@@ -619,6 +619,8 @@ describe('a machine claims its own credential', () => {
     expect(script).toContain('APT::Periodic::Unattended-Upgrade "1";')
     expect(script).toContain('Unattended-Upgrade::Automatic-Reboot "false";')
     expect(script).toContain('codename=${distro_codename}-security')
+    // FJS-3462: the timer's first pass can be a day after enrollment.
+    expect(script).toMatch(/^timeout \d+ systemctl start apt-daily-upgrade\.service/m)
     expect(script).toContain('/etc/ssh/sshd_config.d/10-basecamp.conf')
     expect(script).toContain('PasswordAuthentication no')
     expect(script).toContain('PermitRootLogin prohibit-password')

@@ -195,8 +195,8 @@ src/seal/            a value only one key can open — `seal(publicKey, data)`,
                      written down as words is the same key typed back
                      `open` answers null for what does not open and throws
                      only for a private key that does not parse. Pony
-                     Express's letters are the caller (`IDEAS/pony-express.md`
-                     Phase 3)
+                     Express's letters are the caller (`FJS-D1400`,
+                     `FJS-D1402`)
 src/sigv4/           AWS Signature V4 — sign, presign, `deriveSigningKey`, and
                      the canonical-URI rules AWS's own suite grades. Litestone's
                      `File` columns and `conduit-s3` sign the same requests, and

@@ -2089,6 +2089,22 @@ else's package.)
     Basecamp has; until both exist `fli check` skips `migration-history` and
     `log-db-unbound` rather than grading them. Needs 16.3.
 
+### Phase 22 — Haven carries letters
+
+Goal: a letter and a whisper are one thing to a member standing in Haven.
+Done when: a whisper to an offline member arrives as a letter in their `inbox`, and a letter sent from a shell appears as a `(psst: …)` to a recipient in the square.
+Starts when: 10.1 is built. Moved from the pony-express paper's Phase 5 (deleted 2026-10-22, last
+committed at `364f38d9`), its 5.x now 22.x; the letters it carries are `fli
+tell`, standing alone on a Cloudflare Worker today (`FJS-D1392`).
+
+- [ ] 22.1 The Haven model and service. **Needs Q16.** The Worker's three
+  routes move to Haven's API, or the Worker stays and Haven reads it — ruled
+  when Haven is hosted (10.1).
+- [ ] 22.2 A whisper (`/w <nick>`) to a member with no presence becomes a letter.
+- [ ] 22.3 A letter announced to a member in the square draws as a whisper and
+  is deleted as read.
+- [ ] 22.4 A post office piece in the square, a door you can walk to.
+
 ## Ideas past the plan
 
 Not steps. Each becomes one at the end of the plan when it is wanted. The
@@ -2240,10 +2256,9 @@ One mechanism each:
 These need server state:
 
 - **The pony express.** A mailbox per member. A whisper sent while its member is
-  offline waits there until they sign in. Grown into its own plan,
-  `IDEAS/pony-express.md`: a letter from any shell (`fli tell`, `fli inbox`),
-  standing alone on a Cloudflare Worker first and carried by Haven in its
-  Phase 5.
+  offline waits there until they sign in. Built as `fli tell`
+  (`FJS-D1392`): a letter from any shell, standing alone on a Cloudflare
+  Worker first and carried by Haven in Phase 22.
 - **The ferry's timetable.** The ferry and the island it runs to are built
   (`Docks.mesa`, `Island.mesa`, `pieces/ferry.js`), always docked at both
   ends. Left: it sails on a timetable, and its door is there only while it is
@@ -2335,6 +2350,14 @@ every screen but the caller's, which has its own in the answer.
 
 ## Open questions
 
+- **Q16 — What a letter is in Haven's schema.** Asked in the pony-express paper as its Q1.
+  - **A** — a `Message` with `toId` and no room: one model, but `roomId` goes
+    optional, `body`'s 280 limit and `@@gate`'s locked delete both bend, and
+    room retention reaches it.
+  - **B** — a model of its own, `Letter`: its own length, its own retention,
+    delete by the recipient.
+  - **Recommend B** — every rule on `Message` that 22.1 needs is different, and
+    a letter is never in a room.
 - ~~**Q15 — Who may talk to a figure Claude speaks for.**~~ **Answered 2026-10-14 (`FJS-D1017`): A — a mod only: a model-backed figure answers a line from a `HAVEN_MODS` nick and nothing else.** 14.9's agents run on the owner's machine in the shared square.
   - **A** — a mod only. The bill is the owner's, and `FJS-D994` stands for the public barkeep.
   - **B** — anyone, with a budget per member per day: `FJS-D994`'s B.

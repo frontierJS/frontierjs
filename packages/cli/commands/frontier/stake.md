@@ -15,11 +15,11 @@ args:
 ---
 
 The invite names the post, so there is nothing to configure
-(`IDEAS/pony-express.md` 1.3). This machine's key is made at
+(`FJS-D1394`). This machine's key is made at
 `~/.fli/frontier/key.json` if there is none, the join is signed with it, and the
 post spends the code and writes the member in as a chain of one: a root link
 signing this machine's key and its sealing key together, so letters to it are
-sealed from the first (`FJS-D1400`, `IDEAS/pony-express.md` 4.3).
+sealed from the first (`FJS-D1400`, `FJS-D1416`).
 
 The line `frontier:invite` prints carries no nick, so pasted as it is the
 one argument is the invite and the nick is asked for.

@@ -2,7 +2,7 @@
 // The PGP word list (Juola and Zimmermann, 1995, public domain): a word per
 // byte, two syllables at an even position and three at an odd one, so a
 // dropped or swapped word is heard as a wrong length. `fli frontier:who` reads a
-// key pair aloud with it (IDEAS/pony-express.md 4.2).
+// key pair aloud with it (FJS-D1416).
 //
 // Both ends of a comparison must hold this list exactly: a word moved here
 // makes every member of an older fli read a mismatch.

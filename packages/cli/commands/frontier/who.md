@@ -12,7 +12,7 @@ args:
 ---
 
 The post hands out every member's chain, so a host that lies could hand you
-one of its own (`IDEAS/pony-express.md` 4.2). `fli frontier:who sam` prints the
+one of its own (`FJS-D1416`). `fli frontier:who sam` prints the
 root of sam's chain as eight words; sam runs `fli frontier:who` and reads theirs.
 Do it somewhere the post cannot reach — a call, a room — and one word
 different means the chain you hold for sam is not sam's. It is Signal's

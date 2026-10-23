@@ -1803,9 +1803,11 @@ try {
   await until(`!!document.getElementById('deploy-breadcrumb')`, v => v, 'the deployment screen never rendered')
   check('a release links its app from the breadcrumb', await evaluate(
     `!!document.querySelector('#deploy-breadcrumb a[href="/apps/${release?.appId}/"]')`))
-  const facts = (await text('.facts'))?.replace(/\s+/g, ' ') ?? ''
-  check('and states branch, author and when it was queued',
-    /Branch/.test(facts) && /Author/.test(facts) && /Queued/.test(facts), facts.slice(0, 160))
+  const facts = (await text('.deploy-details'))?.replace(/\s+/g, ' ') ?? ''
+  // A release picked up at once has nothing to say about the queue.
+  const waited = !!release?.startedAt && Date.parse(release.startedAt) - Date.parse(release.queuedAt) > 1000
+  check('and states branch, author, and a wait for a worker only when there was one',
+    /Branch/.test(facts) && /Author/.test(facts) && /Queued/.test(facts) === waited, facts.slice(0, 160))
   check('and links the release it replaced', !release?.previousDeploymentId || await evaluate(
     `!!document.querySelector('#deploy-previous a[href="/deployments/${release?.previousDeploymentId}/"]')`))
 

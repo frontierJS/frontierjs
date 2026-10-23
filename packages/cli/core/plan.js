@@ -158,9 +158,40 @@ export function reissued(plan) {
 
 const MARK = { open: '☐', done: '☑', dropped: '⊘' }
 
+const plain = (strs, ...vals) => strs.reduce((out, str, i) => out + str + (i < vals.length ? vals[i] : ''), '').replace(/\{[a-z.]+ ([^{}]*)\}/g, '$1')
+
+/**
+ * The plan as the rows a session needs to act: the title, one line a phase,
+ * the next step with its findings, and the questions that block it. A plan is
+ * read to learn where it is, and where it is is one box; the hundred done
+ * steps above it are what `renderPlan` prints and what a `--all` asks for.
+ */
+export function renderNext(plan, chalk) {
+  const c    = chalk ?? plain
+  const rows = []
+  if (plan.title) rows.push(c`  {bold ${plan.title}}${plan.status ? c` {dim · ${plan.status}}` : ''}`, '')
+  const next  = plan.next
+  const phase = next ? phaseOf(plan, next) : null
+  for (const p of plan.phases) {
+    const done  = p.steps.filter(s => s.box !== 'open').length
+    const label = p.title ? `Phase ${p.n} — ${p.title}` : `Phase ${p.n}`
+    rows.push(p === phase ? c`  {cyan →} {bold ${label}}  {dim ${done}/${p.steps.length}}` : c`    ${label}  {dim ${done}/${p.steps.length}}`)
+  }
+  rows.push('')
+  if (next) {
+    if (phase?.goal)     rows.push(c`  {dim Goal:} ${phase.goal}`)
+    if (phase?.doneWhen) rows.push(c`  {dim Done when:} ${phase.doneWhen}`)
+    rows.push(c`  {cyan next} ${MARK.open} {bold ${next.id}} ${next.title}`)
+    for (const n of next.notes) rows.push(c`        {dim ${n}}`)
+    for (const q of plan.blocking) rows.push(c`  {yellow blocked by} ${q.state === 'decidable' ? '?' : '…'} ${q.question} {dim ${q.id}}`)
+  } else rows.push(c`  {green every box is closed}`)
+  rows.push('', c`  {dim fli plan ${plan.file} --all prints every step}`)
+  return rows
+}
+
 /** The plan as terminal rows — `chalk` is fli's own tag; `next` is marked `→`. */
 export function renderPlan(plan, chalk) {
-  const c    = chalk ?? ((strs, ...vals) => strs.reduce((out, str, i) => out + str + (i < vals.length ? vals[i] : ''), '').replace(/\{[a-z.]+ ([^{}]*)\}/g, '$1'))
+  const c    = chalk ?? plain
   const rows = []
   if (plan.title) rows.push(c`  {bold ${plan.title}}${plan.status ? c` {dim · ${plan.status}}` : ''}`, '')
   for (const p of plan.phases) {

@@ -38,7 +38,7 @@ import { createBasecampDb, jobsDatabasePath } from './core/db.ts'
 import { openSqlite }                    from './core/sqlite.ts'
 import { createSecretResolver }          from './core/credentials.ts'
 import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts'
-import { registerPushReceivers } from './core/push.ts'
+import { registerPushReceivers } from './plugins/push.ts'
 import { dependencyTargets }  from './core/dependencies.ts'
 import { accountMail }         from './core/account-mail.ts'
 import { isPreviewOrigin }      from './core/site-preview.ts'
@@ -957,7 +957,7 @@ export async function buildBasecampApp(
   })
 
   // ── A git push starts a release ───────────────────────────────────────
-  // The forge's door: two conduit Receivers (`core/push.ts`, `FJS-D884`).
+  // The forge's door: two conduit Receivers (`plugins/push.ts`, `FJS-D884`).
   app.configure({
     name:     'basecamp-push',
     requires: ['conduit'],

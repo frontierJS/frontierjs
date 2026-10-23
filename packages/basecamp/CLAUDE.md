@@ -688,7 +688,7 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   `failed`: no archive was taken. Restoring is `apps.restoreVolume` once the
   file is in the machine's restore directory.
 - **A git push is a conduit Receiver, and the release runs as the person who
-  enabled it** (`FJS-D884`, `core/push.ts`). Two doors on one apply: the
+  enabled it** (`FJS-D884`, `plugins/push.ts`). Two doors on one apply: the
   forge's HMAC at `/hooks/git/{appId}` and a per-App token URL at
   `/hooks/git/{appId}/{token}`; `apps.enablePush` mints both once (the secret
   `@encrypted`, the token a hash) and re-running it rotates them. A refusal is

@@ -537,9 +537,9 @@ siteName: Basecamp
   .nav-group[open] .nav-chevron { transform: none; }
 
   .status-dot {
-    inline-size:   0.5rem;
-    block-size:    0.5rem;
-    border-radius: 9999px;
+    inline-size:   var(--space-sm);
+    block-size:    var(--space-sm);
+    border-radius: var(--pill-radius);
     background:    var(--bg-mix, var(--color-muted));
     flex-shrink:   0;
   }

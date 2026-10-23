@@ -134,7 +134,8 @@ export function describeDeclaration(ts, decl) {
 
 /**
  * Every export of every published package: `[{ name, pkg, subpaths, file, line,
- * kind, text, doc }]`. One program holds all the entry files, so a file two
+ * end, kind, text, doc }]` — `line`..`end` the declaration's span, so a read
+ * after the lookup is one window that lands. One program holds all the entry files, so a file two
  * packages reach is parsed once. A name exported by several subpaths of one
  * package is one row listing them.
  */
@@ -164,13 +165,14 @@ export function collectExports(ts, root, { only } = {}) {
         const prior = rows.get(key)
         if (prior) { prior.subpaths.push(e.subpath); continue }
         const { line } = dsf.getLineAndCharacterOfPosition(decl.getStart(dsf))
+        const { line: end } = dsf.getLineAndCharacterOfPosition(decl.end)
         const d = describeDeclaration(ts, decl)
         // overloads: every signature, so a caller sees each shape the function takes
         const overloads = decls.length > 1 && decls.every(x => x.kind === ts.SyntaxKind.FunctionDeclaration)
           ? decls.filter(x => !x.body || x === decls[decls.length - 1]).map(x => headOf(x.getSourceFile(), x, x.body))
           : null
         rows.set(key, {
-          name: exp.name, pkg: p.name, subpaths: [e.subpath], file: relative(root, dsf.fileName), line: line + 1,
+          name: exp.name, pkg: p.name, subpaths: [e.subpath], file: relative(root, dsf.fileName), line: line + 1, end: end + 1,
           ...d, ...(overloads ? { text: overloads.join('\n') } : {}),
         })
       }
@@ -202,9 +204,12 @@ export function importFrom(row) {
   return `import { ${row.name} } from '${sub === '.' ? row.pkg : row.pkg + sub.slice(1)}'`
 }
 
+/** `file:line` for a one-liner, `file:line-end` for a span — the window a Read lands on. */
+export const whereOf = row => `${row.file}:${row.line}${row.end > row.line ? `-${row.end}` : ''}`
+
 /** One row as the text a reader gets. */
 export function renderSymbol(row) {
-  const out = [`# ${row.name} · ${row.kind} · ${row.file}:${row.line}`, `# ${importFrom(row)}${row.subpaths.length > 1 ? `   (also ${row.subpaths.slice(1).join(' ')})` : ''}`]
+  const out = [`# ${row.name} · ${row.kind} · ${whereOf(row)}`, `# ${importFrom(row)}${row.subpaths.length > 1 ? `   (also ${row.subpaths.slice(1).join(' ')})` : ''}`]
   if (row.doc) {
     const lines = row.doc.split('\n')
     out.push(...lines.slice(0, DOC_LINES).map(l => ('// ' + l).trimEnd()))
@@ -214,14 +219,14 @@ export function renderSymbol(row) {
   return out.join('\n')
 }
 
-/** `name  kind  file:line` per export, grouped by package — the index when no name is given. */
+/** `name  kind  file:line-end` per export, grouped by package — the index when no name is given. */
 export function renderIndex(rows) {
   const byPkg = new Map()
   for (const r of rows) (byPkg.get(r.pkg) ?? byPkg.set(r.pkg, []).get(r.pkg)).push(r)
   const out = []
   for (const [pkg, list] of byPkg) {
     out.push(`## ${pkg}`)
-    for (const r of list.sort((a, b) => a.name.localeCompare(b.name))) out.push(`  ${r.name}  ${r.kind}  ${r.file}:${r.line}`)
+    for (const r of list.sort((a, b) => a.name.localeCompare(b.name))) out.push(`  ${r.name}  ${r.kind}  ${whereOf(r)}`)
   }
   return out
 }

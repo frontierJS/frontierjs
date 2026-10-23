@@ -12,7 +12,7 @@ args:
     variadic: true
 ---
 
-A member is a chain of machines (`IDEAS/pony-express.md` 4.3), and this takes
+A member is a chain of machines (`FJS-D1416`, `FJS-D1421`), and this takes
 one out (4.6, `FJS-D1419`). Any machine still in the chain signs the revoke,
 so the one you lost is out the moment the post takes it: the post refuses its
 next request and closes its open `inbox -f`.

@@ -133,9 +133,20 @@ const offerProxy = async ({ record, configured, log, yes }) => {
 }
 
 // One row of `provision:list`, and of the pick `provision:off` and `provision:destroy` offer with no id.
-const machineLine = (m) =>
-  `${m.id}  ${m.status}  ${m.ip ?? 'no address yet'}  ${m.region ?? '-'}  `
-  + (m.serverId ? `Basecamp server ${m.serverId} — destroy it in Basecamp` : 'unclaimed')
+// A droplet with no server id is the Basecamp host: `fli provision` is the
+// only maker of one, and refuses to make a second while one is at the account.
+// Each column is padded before it is painted: an escape code counts toward padEnd.
+// `chalk` is handed in, since a module script does not see `$`.
+const STATUS_TONE = { running: 'green', off: 'gray', starting: 'yellow', deleting: 'red' }
+const machineLine = (m, chalk) => {
+  const paint  = chalk[STATUS_TONE[m.status] ?? 'yellow']
+  const status = paint(`● ${m.status.padEnd(8)}`)
+  const ip     = m.ip ? chalk.cyan(m.ip.padEnd(15)) : chalk.dim('no address yet')
+  const role   = m.serverId
+    ? chalk`📡 {magenta fleet machine} {dim · server ${m.serverId} · destroy it in Basecamp}`
+    : chalk`⛺ {bold.green Basecamp host}`
+  return chalk`{bold ${m.id}}  ${status}  ${ip}  {dim 🌐 ${(m.region ?? '-').padEnd(5)}}  ${role}`
+}
 
 // ─── Ring 0 from here ─────────────────────────────────────────────────────────
 // `fli deploy:setup` and `fli deploy` as child runs of this fli, in the Basecamp

@@ -2,7 +2,7 @@
  * seal.js — a value only one key can open.
  *
  * Pony Express keeps a letter in a Durable Object on somebody's Cloudflare
- * account until it is read (`IDEAS/pony-express.md` Phase 3). A letter sealed
+ * account until it is read (`FJS-D1400`, `FJS-D1402`). A letter sealed
  * to the recipient's public key is ciphertext to that host, and to anyone who
  * reads its storage, and opens only with the private key on the recipient's
  * machine. There is no session and no reply: the sender and the recipient need

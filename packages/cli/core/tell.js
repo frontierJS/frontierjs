@@ -1,6 +1,6 @@
 // ─── tell.js ──────────────────────────────────────────────────────────────────
 // What `fli tell` keeps on this machine and how it signs a request to the post
-// (IDEAS/pony-express.md), for the `tell` namespace and for the notice line
+// (FJS-D1392), for the `tell` namespace and for the notice line
 // every command prints while letters wait (2.2, FJS-D1398).
 //
 // On the startup path, so only node builtins load at the top: the signature
@@ -22,9 +22,9 @@ export const KEY_FILE     = join(FRONTIER_DIR, 'key.json')
 export const CONFIG_FILE  = join(homedir(), '.fli', 'config.json')
 /** What the last check found — `{ checked, waiting: [{ from, count }] }`. */
 export const WAITING_FILE = join(FRONTIER_DIR, 'waiting.json')
-/** This member's chain as this machine last saw it — absent on a machine that is a chain of one, whose root is made from `key.json` (IDEAS/pony-express.md 4.5). */
+/** This member's chain as this machine last saw it — absent on a machine that is a chain of one, whose root is made from `key.json` (FJS-D1418). */
 export const CHAIN_FILE   = join(FRONTIER_DIR, 'chain.json')
-/** Every correspondent met, `{ [root]: { nick, seq, head, machines, sealKey, since } }` — the chain as last seen (IDEAS/pony-express.md 4.3). */
+/** Every correspondent met, `{ [root]: { nick, seq, head, machines, sealKey, since } }` — the chain as last seen (FJS-D1416, FJS-D1421). */
 export const PEERS_FILE   = join(FRONTIER_DIR, 'peers.json')
 /** The header the Worker reads a member's key from (core/tell-worker.js). */
 const KEY_HEADER          = 'x-tell-key'
@@ -77,7 +77,7 @@ export const fingerprint = async (key) => {
 export const rootPrint = (root) => String(root).slice(0, 16).match(/.{4}/g).join(' ')
 
 /**
- * A member as two people read them aloud (IDEAS/pony-express.md 4.2, 4.4):
+ * A member as two people read them aloud (FJS-D1416):
  * the first 64 bits of the member's root as eight PGP words. The root is the
  * hash of a link that signs the first machine and the sealing key together,
  * and every later machine is signed into the chain under it, so a linked

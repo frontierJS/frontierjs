@@ -1,13 +1,13 @@
 // core/tell-worker.js — the server `fli tell` speaks to: one Cloudflare Worker
 // and one Durable Object holding every member, invite and letter
-// (IDEAS/pony-express.md 1.1, FJS-D1392).
+// (FJS-D1392).
 //
 // Never imported by the cli. `fli tell:setup` points a wrangler config at this
 // file and wrangler bundles it, so it runs in workerd and may use nothing a
 // Worker lacks. It ships because `core/` is in the package's `files`.
 //
-// A member is a chain of machines (core/frontier-chain.js, IDEAS/pony-express.md
-// 4.3): every route but `join` is signed by one of them (toolbelt's
+// A member is a chain of machines (core/frontier-chain.js,
+// FJS-D1416): every route but `join` is signed by one of them (toolbelt's
 // `signRequest`), named in `x-tell-key`; a key that is no member's machine is
 // refused before the signature is looked at. `join` is signed by the machine
 // its root names, as Haven's login is. The owner is member one, seeded from
@@ -240,7 +240,7 @@ export class TellPost {
     return answer({ letters: letters.map(({ id, ...row }) => letterOut(row)) })
   }
 
-  // What the notice line names (IDEAS/pony-express.md 2.2): who has letters
+  // What the notice line names (FJS-D1398): who has letters
   // waiting and how many, each sender in the order its first letter came.
   waiting(nick) {
     const waiting = this.sql.exec('SELECT fromNick AS "from", COUNT(*) AS count FROM letters WHERE toNick = ? GROUP BY fromNick ORDER BY MIN(id)', nick).toArray()

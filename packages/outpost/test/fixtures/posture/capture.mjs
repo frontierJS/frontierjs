@@ -37,7 +37,7 @@ const READINGS = {
   'unattended.periodic': ['apt-config', 'dump', 'APT::Periodic'],
   'unattended.config':   ['apt-config', 'dump', 'Unattended-Upgrade'],
   'unattended.timer':    ['systemctl', 'is-enabled', 'apt-daily-upgrade.timer'],
-  'unattended.lastRun':  ['stat', '-c', '%Y', LOG],
+  'unattended.lastRun':  ['stat', '-c', '%Y', '/var/lib/apt/periodic/upgrade-stamp'],
   'unattended.log':      ['tail', '-n', '20', LOG],
   'version.docker':      ['docker', 'version', '--format', 'json'],
   'version.caddy':       ['caddy', 'version'],

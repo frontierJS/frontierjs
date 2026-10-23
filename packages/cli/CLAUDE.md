@@ -803,7 +803,7 @@ core/
                 since the post is what the chain checks. Nothing node-only
   tell-worker.js  the Cloudflare Worker `fli tell` speaks to — one Durable
                 Object, members and their chains, invites, letters, and the
-                `/follow` socket `inbox -f` holds (`IDEAS/pony-express.md`). A
+                `/follow` socket `inbox -f` holds (`FJS-D1392`). A
                 member with a sealing key is sent only sealed letters; a plain
                 one to them is refused here (`FJS-D1402`). `frontier:link` is four
                 routes over one `asks` row, and the post carries the pieces

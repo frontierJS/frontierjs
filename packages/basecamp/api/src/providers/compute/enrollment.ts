@@ -236,6 +236,14 @@ Unattended-Upgrade::Automatic-Reboot "false";
 APTEOF
 systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
 
+# The timer's first pass can be a day out, and an image ships weeks of security
+# updates behind, so the box would enroll exposed. The pass the timer runs, run
+# now, so its stamp is the last run posture reports. A failed or slow pass
+# leaves the box to the timer; patch.security-pending says so.
+# posture: patch.security-pending
+timeout 1800 systemctl start apt-daily-upgrade.service \
+  || echo "the first security-update pass did not finish; apt-daily-upgrade.timer will retry" >&2
+
 # sshd takes the first value it reads and the drop-ins are read in name order,
 # so 10- wins over the 50-cloud-init.conf that turns passwords back on. A box
 # no key can reach keeps its password rather than locking its owner out, and

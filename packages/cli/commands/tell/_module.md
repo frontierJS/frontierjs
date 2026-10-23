@@ -22,7 +22,7 @@ const { NICK, writeMemberConfig, machineKeys, writeKeys, completeKeys, ownChain,
  * the sender's machine, `seq` and `head` the sender's chain as that machine
  * held it, and `sig` that key's signature over all of it and the RECIPIENT's
  * root. The post stamps `from` and could seal anything to a public key, so
- * the signature is what says who wrote it (IDEAS/pony-express.md 4.1), and
+ * the signature is what says who wrote it (FJS-D1393), and
  * the reader checks `key` is a machine in the sender's chain; naming the
  * recipient means a letter re-sealed to a third member does not verify there.
  * The head is how a reader learns of a link the post hides from it — a
@@ -60,7 +60,7 @@ const openLetter = async (keys, sealed) => {
 }
 </script>
 
-Mail between members of the Frontier network (`IDEAS/pony-express.md`). Who a
+Mail between members of the Frontier network (`FJS-D1392`). Who a
 member is — the key, the chain, the nick — is `frontier:` (`commands/frontier/`,
 `core/frontier-member.js`); these verbs only read it.
 

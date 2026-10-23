@@ -100,9 +100,8 @@ function outpostExecutor(app: App, serverId: string, target: string): Executor {
         body,
         ...(opts?.timeoutMs ? { timeout_ms: opts.timeoutMs } : {}),
       })
-      const said  = sent.error ? machineSaid(sent.error.raw) : null
-      const reply = sent as ExecutorReply
-      return said ? { ...reply, error: { message: said } } : reply
+      if (!sent.error) return { data: sent.data as Record<string, unknown> }
+      return { error: { message: machineSaid(sent.error.raw) ?? sent.error.message } }
     },
   }
 }

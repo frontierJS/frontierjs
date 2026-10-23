@@ -22,7 +22,7 @@ flags:
     defaultValue: ''
 ---
 
-The owner runs this once (`IDEAS/pony-express.md` 1.2). It makes this
+The owner runs this once (`FJS-D1392`). It makes this
 machine's key at `~/.fli/frontier/key.json`, deploys `core/tell-worker.js` to the
 owner's Cloudflare account with `bunx wrangler@4` — logged in the way wrangler
 is, `wrangler login` or `CLOUDFLARE_API_TOKEN` — and writes the Worker's
@@ -35,7 +35,7 @@ them. A public key is not a secret, so both are plain vars in
 `~/.fli/frontier/wrangler.jsonc`, where wrangler's own state lands beside them.
 
 Last it publishes the owner's chain, whose root signs the sealing key, so
-letters to the owner are sealed (`FJS-D1400`, `IDEAS/pony-express.md` 4.3).
+letters to the owner are sealed (`FJS-D1400`, `FJS-D1416`).
 
 Run again, it redeploys the same key and keeps every member and letter — that
 is how a newer `fli`'s Worker reaches the post. A new key under an old nick is

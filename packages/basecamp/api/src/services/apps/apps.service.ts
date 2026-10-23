@@ -30,7 +30,7 @@ import { db, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, w
          slugify, }
   from '../../core/resource.ts'
 import { env }      from '../../core/env.ts'
-import { mintPush } from '../../core/push.ts'
+import { mintPush } from '../../plugins/push.ts'
 // The ONE definition of a certificate's condition, imported rather than
 // recomputed: an include returns raw Domain rows, so without this the app
 // detail screen received hostnames with no cert_status at all and every one of
@@ -516,6 +516,7 @@ export default createService({
     await $.db.asSystem().app.update({
       where: { id: target.id },
       data:  { deployOnPush: true, pushSecret: secret, pushTokenHash: tokenHash, pushActorId: actor() },
+      system: ['deployOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId'],
     })
     // The answer holds the credentials, so the announcement states the row
     // instead and the workspace's other tabs never see them.
@@ -529,6 +530,7 @@ export default createService({
     await $.db.asSystem().app.update({
       where: { id: target.id },
       data:  { deployOnPush: false, pushSecret: null, pushTokenHash: null, pushActorId: null },
+      system: ['deployOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId'],
     })
     return detail(target.id)
   },

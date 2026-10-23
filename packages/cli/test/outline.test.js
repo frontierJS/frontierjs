@@ -13,7 +13,7 @@ import { join, resolve }           from 'node:path'
 import { typeScriptAt }            from '../core/functions.js'
 import {
   outlineCode, outlineMarkdown, outlineLite, outlineMesa, renderOutline, findRows, renderBody, pathOf, typeScriptFor,
-  wideRead, readVerdict, readRefusal, outlineHint, BLOCK_AT, WINDOW_AT, HINT_AT, SHOWN,
+  wideRead, readVerdict, readRefusal, outlineHint, hintedRead, readHint, BLOCK_AT, WINDOW_AT, HINT_AT, SHOWN,
 } from '../core/outline.js'
 
 const REPO = resolve(import.meta.dir, '../../..')
@@ -308,6 +308,29 @@ describe('the gate in front of a wide read', () => {
     expect(wideRead({ tool_name: 'Bash', tool_input: { command: 'cat > PLAN.md <<EOF' } })).toBe(null)
     expect(wideRead({ tool_name: 'Bash', tool_input: { command: 'cat a.json' } })).toBe(null)
     expect(wideRead({ tool_name: 'Edit', tool_input: { file_path: 'a/b.ts' } })).toBe(null)
+  })
+
+  test('a search or window into a register, any read of a plan, and an rg for one identifier are hinted at their command', () => {
+    const bash = command => hintedRead({ tool_name: 'Bash', tool_input: { command } })
+    expect(bash("rg -n 'idempotency' ISSUES.md")).toEqual({ kind: 'register', terms: ['idempotency'] })
+    expect(bash('grep -n "FJS-D927" DECISIONS.md')).toEqual({ kind: 'register', terms: ['FJS-D927'] })
+    expect(bash('sed -n 89,90p ISSUES_ARCHIVE.md')).toEqual({ kind: 'register', terms: [] })
+    expect(bash('sed -n 10,40p IDEAS/haven.md')).toEqual({ kind: 'plan', path: 'IDEAS/haven.md' })
+    expect(bash('cat PLAN.md | rg Phase')).toEqual({ kind: 'plan', path: 'PLAN.md' })
+    expect(bash(String.raw`rg -n '\bbearerClaim\b' packages/junction`)).toEqual({ kind: 'symbol', name: 'bearerClaim' })
+    expect(hintedRead({ tool_name: 'Read', tool_input: { file_path: '/x/IDEAS/keys.md', limit: 40 } })).toEqual({ kind: 'plan', path: '/x/IDEAS/keys.md' })
+    expect(hintedRead({ tool_name: 'Read', tool_input: { file_path: '/x/DECISIONS.md', limit: 40 } })).toEqual({ kind: 'register', terms: [] })
+    // A write, a diff, a short or phrase pattern, a named file outside the tree, and fli itself are not hunts.
+    expect(bash('echo x >> ISSUES.md')).toBe(null)
+    expect(bash('git diff ISSUES.md')).toBe(null)
+    expect(bash('rg -n foo src/x.js')).toBe(null)
+    expect(bash('rg -n "class Foo" packages')).toBe(null)
+    expect(bash('rg -n bearerClaim /tmp/other')).toBe(null)
+    expect(bash('fli find idempotency')).toBe(null)
+    expect(readHint({ kind: 'register', terms: ['FJS-3460'] })).toContain('`fli find FJS-3460 --show`')
+    expect(readHint({ kind: 'register', terms: ['junction', 'idempotency'] })).toContain('`fli find junction idempotency`')
+    expect(readHint({ kind: 'plan', path: 'PLAN.md' })).toContain('`fli plan PLAN.md`')
+    expect(readHint({ kind: 'symbol', name: 'bearerClaim' })).toContain('`fli sig bearerClaim`')
   })
 
   test('a whole or wide read is refused at BLOCK_AT; a narrow one is hinted at HINT_AT', () => {

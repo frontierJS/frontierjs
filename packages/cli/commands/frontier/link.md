@@ -12,7 +12,7 @@ args:
     variadic: true
 ---
 
-A member is a chain of machines (`IDEAS/pony-express.md` 4.3), and this is how
+A member is a chain of machines (`FJS-D1416`, `FJS-D1421`), and this is how
 one more is signed into it (4.5, `FJS-D1410`). On the new machine, run it with
 the post's origin — `frontier.api` on a machine already linked. It prints eight
 words and waits. On any machine already linked (`FJS-D1417`), run it with the

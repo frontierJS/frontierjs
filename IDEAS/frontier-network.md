@@ -7,7 +7,7 @@ dated: 2026-10-22
 # Idea — The Frontier network: one nick and one chain for every `fli` surface
 
 **Status: PROPOSED.** Dated 2026-10-22. Nothing here is built beyond what
-`IDEAS/pony-express.md` already built. Do not cite this file as behavior — see
+`fli tell` already built. Do not cite this file as behavior — see
 `VERIFYING.md`. Claims about the tree were read on the date above, not run.
 
 ---
@@ -32,9 +32,9 @@ fli haven                            # Haven: another, with no key of its own
 **Most of this is already built under the wrong noun.** `fli tell:` holds two
 jobs. Identity is `setup`, `join`, `invite`, `link`, `revoke`, `paper`, `who`
 and the chain in `packages/cli/core/tell-chain.js`. Mail is `send` and `inbox`.
-`IDEAS/pony-express.md` Phase 6 (numbers, the invite allowance, the signed
-member row, lineage, the badge, the oath) is already this network in all but
-name.
+Phase 2 (numbers, the invite allowance, the signed member row, lineage, the
+badge, the oath), which began as the pony-express paper's Phase 6, is already
+this network in all but name.
 
 **What is not built is the one identity.** A person on this tree today holds
 two:
@@ -57,8 +57,8 @@ checked.
 | --- | --- | --- |
 | [pico.sh](https://pico.sh/getting-started) | `ssh pico.sh`, pick a username, done. The key is the account and the username becomes the service subdomains. One key belongs to one account ([FAQ](https://pico.sh/faq)). Recovery is an API token kept somewhere safe. | `frontier:stake` as one command, and the nick as a subdomain (Q3) |
 | [Charm Cloud](https://charm.sh/cloud) | `charm link` joins machines to one account. A CLI-first backend, self-hostable, with SQLite, keys and data in one directory ([man](https://man.archlinux.org/man/charm.1.en)). *Memory:* Cloud was wound down. | The post stays self-hostable even with one official instance (`FJS-D1414`) |
-| Keybase | A per-device key signed into a chain, every device equal, a paper key that is revocable like any device ([2016 talk](https://openpgp.org/community/email-summit/2016/talk_KeybaseAndPGP_160709.pdf), [sigchain v2](https://book.keybase.io/docs/teams/sigchain)). *Memory:* acquired by Zoom in 2020 and stalled. | Already built as pony-express 4.3–4.7 |
-| Lobsters | A public invite tree. An inviter answers for their invitees and can lose access over them ([summary](https://linuxfr.org/users/ploum/journaux/un-service-d-hebergement-lobste-rs.epub), [critique](https://tildes.net/~tildes/1qq/tildes_versus_lobste_rs)). | Lineage (pony-express 6.6) and Q4 |
+| Keybase | A per-device key signed into a chain, every device equal, a paper key that is revocable like any device ([2016 talk](https://openpgp.org/community/email-summit/2016/talk_KeybaseAndPGP_160709.pdf), [sigchain v2](https://book.keybase.io/docs/teams/sigchain)). *Memory:* acquired by Zoom in 2020 and stalled. | Already built as `core/frontier-chain.js` (`FJS-D1416`–`FJS-D1421`) |
+| Lobsters | A public invite tree. An inviter answers for their invitees and can lose access over them ([summary](https://linuxfr.org/users/ploum/journaux/un-service-d-hebergement-lobste-rs.epub), [critique](https://tildes.net/~tildes/1qq/tildes_versus_lobste_rs)). | Lineage (2.6) and Q4 |
 | Urbit | An identity is a number, and each sponsor issues a fixed count; the scarcity is the anti-spam measure ([Wikipedia](https://en.wikipedia.com/wiki/Urbit)). *Memory:* each number has a pronounceable name (`~sampel-palnet`). | The allowance (6.3), and a spoken name for `#42` read off the PGP word list |
 | [Radicle](https://radicle.xyz/guides/user) | The alias is non-unique and changeable, and the Ed25519 key is the identity. | Rejected below: the shape a network takes when it declines a namespace |
 | [Bluesky](https://bsky.social/about/blog/4-28-2023-domain-handle-tutorial), [Nostr NIP-05](https://nostr.how/en/get-verified) | The handle is a domain the member proves, by DNS TXT or `/.well-known/`. NIP-05 says it identifies and does not verify. | Phase 5's optional proof |
@@ -103,7 +103,7 @@ Answered before the first edit, for the proposal as a whole.
 6. **Owner** — the existing ones: `tell-chain.js` (renamed in 1.1) and the
    Worker. Haven's login becomes a reader of the chain, not a second owner.
 7. **Boundary** — Haven's login verifies a login signed by a machine in the
-   chain against the post's signed member row (pony-express 6.4), so a reader
+   chain against the post's signed member row (2.4), so a reader
    needs no call to the post.
 8. **Failure** — a taken or reserved nick is refused at `stake` and names why.
    The cost is a retry, and nothing is written.
@@ -115,6 +115,31 @@ Answered before the first edit, for the proposal as a whole.
 **Tier:** Assessment. Every question is ruled (`FJS-D1444`–`FJS-D1451`); 0.4 and
 2.4 block Phase 3.
 
+## Privacy
+
+What a member gives up by joining, written before strangers join. The
+attackers are `THREATS.md` B17–B19; this is what holds when none of them acts.
+
+- **One nick links every surface.** The nick never changes (`FJS-D1451`), and
+  after Phase 3 the same chain signs a letter, a Haven login and anything
+  later. So everything a member does under the network is one identity to
+  anyone who reads two surfaces. A member who wants two identities stakes
+  twice, and each one costs an invite.
+- **The lineage is public.** Who invited whom is readable by any member, and
+  after 2.6 and 2.7 by anyone with the nick or the number (`FJS-D1449`). With
+  `joined` and `fliVersion` on the signed row (2.4), it dates each member and
+  places them in a social graph they did not draw.
+- **The operator sees more than the lineage** (B19): who writes to whom, when
+  and how much, every member's machine count, and, after 6.2, when each was
+  last seen. Phase 6 shows the owner that and nothing more.
+- **Leaving erases almost nothing.** A letter is deleted when it is read
+  (`FJS-D1395`), and a sealed one was never readable by the post. The rest
+  stays: the chain is append-only, and a peer that pinned it refuses a shorter
+  one, so the post cannot drop links without every pin reading it as tampering
+  (`FJS-D1421`). The member row and its number stay, and a number is never
+  reused (2.2). The nick stays taken. No verb removes a member today, and what
+  one would erase (the nick, the row, the lineage edge) is not ruled.
+
 ## Plan
 
 ### Phase 0 — Groundwork
@@ -123,21 +148,44 @@ Goal: the questions ruled, and the callers of both key directories known.
 Done when: Q1–Q8 are rulings, 0.4 is written, and every reader of
 `~/.fli/tell` and `~/.fli/haven` is listed under 0.1.
 
-- [ ] 0.1 List every reader of `~/.fli/tell/` and `~/.fli/haven/key.json`
-  with `rg`, including the prototypes `fli ws:surface --also ../fjs-prototypes`
-  reaches.
+- [x] 0.1 List every reader of `~/.fli/tell/` and `~/.fli/haven/key.json`
+  with `rg`. The prototypes are skipped: none of them holds either key
+  (owner, 2026-10-22).
+  Found: **`~/.fli/tell/` has no code reader.** Its one owner is
+  `packages/cli/core/tell.js:20`, now `~/.fli/frontier/`, and nothing reads
+  `config.json`'s old `tell` key; the path survives only in prose here. **`~/.fli/haven/key.json` has one owner,**
+  `packages/haven/web/src/lib/session/sign-in.js:18` (`KEY_FILE`,
+  `machineKeys()`), and these consumers, which 3.2 moves or deletes:
+  - `packages/cli/commands/haven/walk.md:198`, which imports `KEY_FILE` and
+    prints it on a first run, plus its prose at `:35`.
+  - `packages/haven/web/test/verify-explore.mjs:165`, which asserts the first
+    `fli haven` wrote the key there.
+  - The browser twin `sign-in.browser.js`, which keeps its pair in IndexedDB
+    (`haven` / `keys` / `machine`) and is checked by `verify-browser.mjs:256`.
+    3.2 has to give that one a chain too, or the browser is refused.
+  - Prose: `IDEAS/haven.md:216`, `IDEAS/study.md:347`.
+  The other files under `~/.fli/haven/` (seen, workers, errand, study,
+  taskmaster, menu, snoozed, `<version>/`) are client state, not identity,
+  and stay.
 - [x] 0.2 Rule Q1–Q8.
-- [ ] 0.3 Move `IDEAS/pony-express.md` Phase 6 here verbatim as Phase 2,
+- [x] 0.3 Move the pony-express paper's Phase 6 here verbatim as Phase 2,
   leaving a one-line pointer under its heading. Its step numbers become 2.x,
   and pony-express keeps mail (Phases 1–3 send and inbox, Phase 5 Haven
   carries letters).
-- [ ] 0.4 Write the post into `THREATS.md`, which names no post, chain or
+  Built: pony-express then sent its Phase 5 to `IDEAS/haven.md` Phase 22 and
+  the paper was deleted (owner, 2026-10-22; last committed at `364f38d9`).
+- [x] 0.4 Write the post into `THREATS.md`, which names no post, chain or
   `tell` today. One row per attacker, each naming what they may do and the
   test that proves it: a thief holding a revoked machine and a stale member
   row (Q7), a stranger squatting or impersonating a nick, and the operator of
   the post itself. Beside it, a § Privacy in this file: what one nick links
   across surfaces, what the public lineage publishes about who invited whom,
   and what a member who leaves can have erased from an append-only chain.
+  Built: `THREATS.md` B17–B19, proved by
+  `packages/cli/test/frontier-chain.test.js` (the chain refusals, and the pins
+  graded in a child under a temp `HOME`) and `seal.spec.js`; § Privacy above.
+  The row age (2.4), reserved nicks (4.1) and Haven reading the chain (Phase
+  3) are each row's *Open*.
 
 ### Phase 1 — The rename
 
@@ -158,7 +206,7 @@ Done when: pony-express's 4.7 drive passes with every verb respelled, and
   Built: `config.json`'s `tell` key became `frontier` with it. The owner's
   machine moved by hand on 2026-10-22.
 - [x] 1.3 `frontier:stake <nick> <code>` replaces `tell:join`.
-  `tell:setup` leaves the user surface as pony-express 6.1 already plans.
+  `tell:setup` leaves the user surface as 2.1 already plans.
   Built: the nick is the first argument, not `--nick`, and asked for at a
   terminal when only the invite is given, since the line `invite` prints
   carries none. Driven under `wrangler
@@ -168,8 +216,51 @@ Done when: pony-express's 4.7 drive passes with every verb respelled, and
 
 ### Phase 2 — Member numbers
 
-Goal and steps: pony-express Phase 6, moved here by 0.3. Its 6.4 carries
-Q7's age (`FJS-D1445`), so 2.4 is the step Phase 3 waits on.
+Goal: an early `fli` user holds a number that says when they joined and who vouched for them, and can prove it.
+Done when: three scratch `HOME`s staked in turn against the project's deployed post hold #1, #2 and #3 in signed rows that verify against the post's key with the network off, and a forged row is refused by `frontier:who`.
+
+Moved from the pony-express paper's Phase 6 by 0.3, its 6.x now 2.x and its
+verbs spelled as Phase 1 renamed them. 2.4 carries Q7's age (`FJS-D1445`), so
+it is the step Phase 3 waits on. Nothing here is handed out until
+the chain, linking and revoking are built (`FJS-D1409`), which they are.
+
+- [ ] 2.1 The project's post, the only one (`FJS-D1413`, `FJS-D1414`): its
+  origin is built into `fli`, `frontier:stake <nick> <code>` takes a bare
+  code, and `tell:setup` leaves the user surface to become how the
+  maintainers deploy it. Joining stays by invite until a point not yet named
+  (`FJS-D1415`), which is ruled as its own question when it is near.
+- [ ] 2.2 A number per member: `members` gains `number INTEGER UNIQUE` and
+  `invitedBy`, set inside `join` as one past the highest number. The object
+  takes one request at a time, so two joins cannot draw one number. A number
+  is never reused — a member who leaves keeps it and the row stays. The owner
+  is #1. Today `join` drops the inviter: `invites.byNick` is read and never
+  copied to the member.
+- [ ] 2.3 An invite allowance: each member mints a fixed count of codes, three
+  to start, held as a var beside `OWNER_NICK`. A low number then means
+  somebody vouched for it, and numbers cannot be farmed. `invite` is
+  unbounded today (`FJS-D1394`).
+- [ ] 2.4 The signed member row: at join the post signs `{ number, nick,
+  root, head, joined, invitedBy, fliVersion, signed }` with a key of its own,
+  countersigning the chain's head (`FJS-D1421`) and signed again as the head
+  moves, and `stake` writes it to `~/.fli/frontier/member.json`. It proves the
+  number with no call to the server, which is what Haven reads in 2.8.
+  `fliVersion` makes *joined before 1.0* a fact read off the row rather than a
+  badge handed out. A reader refuses a row whose `signed` is more than a day
+  old, one value held beside the row's verifier, and a member's machine
+  fetches a fresh row before its copy is that old, so a revoke reaches every
+  reader within a day (`FJS-D1445`).
+- [ ] 2.5 `fli frontier:who` takes a nick or a number and
+  prints the signed row beside the fingerprint words: `#0042 sam · joined
+  2026-10-21 · pre-1.0 · via #0007`. One verb for *who is this*, not two.
+- [ ] 2.6 `fli frontier:lineage [nick]`: the invite tree read from `invitedBy`.
+- [ ] 2.7 `GET /badge/<number>.svg` from the Worker, for a README.
+- [ ] 2.8 In Haven, the number is a nameplate on a member's figure, and
+  `IDEAS/haven.md` 22.4's post office carries the members as a board.
+  **Needs haven Phase 22.**
+- [ ] 2.9 The oath: `frontier:stake` prints one line to accept before the
+  code is spent — where a code of conduct is read once. From memory, not
+  checked: the historical Pony Express ran April 1860 to October 1861 with
+  about 80 riders on the trail at a time, and each swore an oath.
 
 ### Phase 3 — Haven reads the chain
 
@@ -194,7 +285,7 @@ Done when: staking a reserved nick is refused naming the reason, and the oath
 prints the squatting line.
 
 - [ ] 4.1 A reserved list held by the Worker beside `OWNER_NICK` (Q5).
-- [ ] 4.2 The oath (pony-express 6.9) carries an npm-style squatting line.
+- [ ] 4.2 The oath (2.9) carries an npm-style squatting line.
 - [x] 4.3 What a bad invitee costs the inviter — nothing to build: Q4 ruled
   that the public tree (2.6) is the whole of it (`FJS-D1449`).
 
@@ -211,9 +302,68 @@ prints the squatting line.
   by hand. Land it before 2.1 builds the origin into `fli` (`FJS-D1414`) and
   before strangers join, while the members are few enough to tell.
 
+### Phase 6 — The owner's view
+
+Goal: the owner sees the whole post from `fli` without opening Cloudflare.
+Holding the Cloudflare account already gives full access to the object's
+storage, so this phase adds a reading and grants no power (Q9–Q11).
+Done when: `fli frontier:post` run as the owner prints the five panels below
+and run as any other member is refused, and `fli gui`'s `:post` pane draws
+the same JSON.
+
+- [ ] 6.1 `GET /post`, signed and answered only to the owner's machines. It
+  returns the members (number, nick, joined, invited by, machine count,
+  sealed or plain, chain length, last seen), the open invites (inviter, time
+  left), the waiting mail per recipient (count, oldest, bytes, sealed or
+  plain, never a body: Q10), the pending `asks` and `rekeys`, and the health
+  figures (open `/follow` sockets, `nonces` rows, storage bytes). *Invited by*
+  is blank until 2.2 stores it.
+- [ ] 6.2 `members.lastSeen`, written on every signed request. Nothing records
+  when a member last used the post today.
+- [ ] 6.3 `fli frontier:post` prints the reading as panels, and `--json`
+  prints it as is. It is the one reader (`FJS-D223`).
+- [ ] 6.4 A `:post` pane in the console that spawns `--json`, the same way
+  `:map` reads `project:map`.
+- [ ] 6.5 Refused signatures counted per day on the object, and shown as a
+  health figure. Probing is the one attack the owner can see from here.
+- [ ] 6.6 Owner actions, added only when one is first needed: withdraw an
+  invite, reserve a nick (4.1), hide a member. Each writes a row to an
+  `actions` log that the view prints.
+
 ---
 
 ## Open questions
+
+- ~~**Q9 — Who holds superuser on the post.**~~ **Answered 2026-10-23 (`FJS-D1460`): A — the owner only: member one (`OWNER_KEY`/`OWNER_NICK`), with no role table. *Mastodon's* Owner role bypasses every permission check ([roles](https://docs.joinmastodon.org/admin/roles/)), and its Admin, Moderator and custom roles serve a staff of several.** Holding the Cloudflare account
+  already gives full access to the object's storage. A role in the post adds
+  a view and a record of what was done, not power.
+  - **A** — the owner only: member one (`OWNER_KEY`/`OWNER_NICK`), with no
+    role table. *Mastodon's* Owner role bypasses every permission check
+    ([roles](https://docs.joinmastodon.org/admin/roles/)), and its Admin,
+    Moderator and custom roles serve a staff of several.
+  - **B** — Owner and Moderator roles now, Mastodon's current shape.
+  - **C** — no role: the owner reads the object's storage from Cloudflare,
+    and nothing is built.
+  - **Recommend A** (confidence 3) — four members leave nobody to give a
+    Moderator role to, and B reopens when a second person needs one.
+- ~~**Q10 — Whether the owner's view shows letter text.**~~ **Answered 2026-10-23 (`FJS-D1461`): A — never: count, oldest, bytes, and sealed or plain. *Synapse's* admin API lists rooms and whether each is encrypted, and returns encrypted content still encrypted ([rooms](https://github.com/dklimpel/synapse_archive/blob/119b137cfa72e5e24c700eb5c5c060e62728597d/docs/admin_api/rooms.md), [FAQ](https://git.sharpetronics.com/sharpetronics/synapse/raw/branch/develop/docs/usage/administration/admin_faq.md)).** V1's plain letters
+  are readable by the post.
+  - **A** — never: count, oldest, bytes, and sealed or plain. *Synapse's*
+    admin API lists rooms and whether each is encrypted, and returns encrypted
+    content still encrypted ([rooms](https://github.com/dklimpel/synapse_archive/blob/119b137cfa72e5e24c700eb5c5c060e62728597d/docs/admin_api/rooms.md),
+    [FAQ](https://git.sharpetronics.com/sharpetronics/synapse/raw/branch/develop/docs/usage/administration/admin_faq.md)).
+  - **B** — show plain bodies, for debugging V1.
+  - **Recommend A** (confidence 3) — sealed letters cannot be opened anyway,
+    so A treats both kinds the same, and B reads mail the members never
+    agreed to have read.
+- ~~**Q11 — Where the view lives.**~~ **Answered 2026-10-23 (`FJS-D1462`): A — `fli frontier:post` with `--json` as the one reader, and a `:post` pane in `fli gui` that draws it (`project:map` and `:map`).**
+  - **A** — `fli frontier:post` with `--json` as the one reader, and a
+    `:post` pane in `fli gui` that draws it (`project:map` and `:map`).
+  - **B** — the command only.
+  - **C** — an `/admin` page on the Worker: a second login, at a URL a
+    stranger can find.
+  - **Recommend A** (confidence 2) — one reader with two presentations is
+    `FJS-D223`, and the pane costs one spawn.
 
 - ~~**Q1 — The verb for the first door.**~~ **Answered 2026-10-22 (`FJS-D1446`): A — `stake`: "stake a claim" is the frontier idiom, and the word is free in `VOCABULARY.md`.**
   - **A** — `stake`: "stake a claim" is the frontier idiom, and the word is
@@ -259,7 +409,7 @@ prints the squatting line.
     then need to follow a rename. B reopens when someone asks for it.
 - ~~**Q7 — How fresh a member row must be.**~~ **Answered 2026-10-22 (`FJS-D1445`): A — the post stamps the row with when it was signed, and a reader refuses a row older than a set age. A member's machine fetches a fresh row before it goes stale, so a revoke reaches every reader within that age. *Memory:* OCSP stapling (the holder brings a fresh signed proof) and short-lived certificates.**
   The row is signed again as the
-  head moves (pony-express 6.4), and a peer refuses a chain shorter than one it
+  head moves (2.4), and a peer refuses a chain shorter than one it
   has seen (`FJS-D1421`). A reader that has never seen the newer head has
   nothing to refuse, so a thief holding a revoked machine and the row from
   before the revoke walks into a surface that is meeting them for the first

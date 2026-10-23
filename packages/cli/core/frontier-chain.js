@@ -1,6 +1,6 @@
 // core/frontier-chain.js — what a member IS at the post: a chain of links, each
 // signed by one of the member's machines, from a first link whose hash is the
-// member's root (IDEAS/pony-express.md 4.3, FJS-D1416, FJS-D1421).
+// member's root (FJS-D1416, FJS-D1421).
 //
 // Read by both ends: the Worker (core/tell-worker.js, bundled by wrangler, so
 // nothing here may need node) refuses a chain that does not verify before it
@@ -71,7 +71,7 @@ export const countersign = async (keys, link) =>
  * What a new machine asking to be linked is called while it waits: the first
  * 64 bits of a hash over its signing key and the key the member's sealing key
  * is sealed to, read aloud as eight PGP words and typed on a linked machine
- * (IDEAS/pony-express.md 4.5). The typing side hashes the keys the post hands
+ * (FJS-D1418). The typing side hashes the keys the post hands
  * it, so a post that swapped either one answers keys the words do not name.
  */
 export const askCode = async (machine, sealKey) => (await sha256Hex(`${ASK}\n${machine}\n${sealKey}`)).slice(0, 16)
