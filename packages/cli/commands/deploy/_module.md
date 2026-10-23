@@ -888,17 +888,19 @@ fi`
 //
 // `{ routes, plain, paths }`, or `{ error }` for an EdgeError. `plain` is the
 // :80 refusals for the API's paths. `paths` null means no
-// snapshot, and the routes fall back to `/api/`. `html` is the `index.html` the
-// route will serve, read off the target: its inline scripts are hashed into the
-// CSP, and a page whose hash is missing has its theme and service worker refused.
+// snapshot, and the routes fall back to `/api/`. `html` is every page the route
+// will serve, prerendered ones included, read off the target: its inline scripts
+// and `style=` values are hashed into the CSP, and a page whose hash is missing
+// has its theme and service worker, or that style, refused.
 const edgeRoutesFor = async ({ root, appId, serverPath, apiPort, edge, html = '' }) => {
-  const { edgeRoutes, plainRoutes, apiPaths, inlineScriptHashes, EdgeError } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
+  const { edgeRoutes, plainRoutes, apiPaths, inlineScriptHashes, inlineStyleHashes, EdgeError } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
   const { readAppSnapshot } = await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
   const paths   = apiPaths(readAppSnapshot(root))
   const scripts = inlineScriptHashes(html)
+  const styles  = inlineStyleHashes(html)
   try {
     return {
-      routes: edgeRoutes({ appId, serverPath, apiPort, web: edge.web, api: edge.api, paths, scripts }),
+      routes: edgeRoutes({ appId, serverPath, apiPort, web: edge.web, api: edge.api, paths, scripts, styles }),
       plain:  plainRoutes({ appId, web: edge.web, api: edge.api, paths }),
       paths,
     }

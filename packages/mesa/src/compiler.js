@@ -5655,7 +5655,7 @@ export function buildBlock(data, option = {}) {
         const el = xNode.node({ name: n.name })
         tpl.push(el)
         labelRequest?.set(el)
-        const firstBind = binds.length
+        const firstBind = binds.body.length
         n.attributes.forEach((p) => {
           if (p._skip) return
 
@@ -5674,7 +5674,7 @@ export function buildBlock(data, option = {}) {
           }
 
           const b = ctx.bindProp(p, n, el)
-          if (b?.first) binds.splice(firstBind, 0, b.bind)
+          if (b?.first) binds.body.splice(firstBind, 0, b.bind)
           else if (b?.bind) binds.push(b.bind)
         })
         n.classes.forEach((c) => el.class.add(c))

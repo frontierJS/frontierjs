@@ -128,7 +128,7 @@ export const accessLogPath = (id) => `/var/log/caddy/${id}.access.log`
  * @throws {EdgeError} when no side names a domain: Caddy routes by hostname, and
  *   a route matching every host would take over whatever else the machine serves.
  */
-export function edgeRoutes({ appId, serverPath, apiPort, web, api, paths = null, scripts = [] }) {
+export function edgeRoutes({ appId, serverPath, apiPort, web, api, paths = null, scripts = [], styles = [] }) {
   const split = Boolean(api?.domain)
   if (!web?.domain && !split)
     throw new EdgeError('deploy.web.domain is not set. Caddy routes by hostname and fetches a certificate for it, so the edge needs one.')
@@ -140,7 +140,7 @@ export function edgeRoutes({ appId, serverPath, apiPort, web, api, paths = null,
   const routes = []
   if (web?.domain) routes.push(route({
     id: routeId(appId), host: web.domain,
-    inner: [caddyGuard(serverPath, guardId(appId)), ...proxy, ...spa(serverPath, scripts)],
+    inner: [caddyGuard(serverPath, guardId(appId)), ...proxy, ...spa(serverPath, documentHeaders({ scripts, styles, api: split ? `https://${api.domain}` : null }))],
   }))
   if (split) routes.push(route({
     id: routeId(appId, 'api'), host: api.domain,
@@ -230,43 +230,67 @@ const navigation = (roots) => ({
 
 // The SPA: a file that exists, else index.html. Root is read per request, so
 // the `current` symlink swap is the whole of a web release — nothing reloads.
-const spa = (serverPath, scripts) => [
+const spa = (serverPath, headers) => [
   { handle: [{ handler: 'vars', root: `${serverPath}/current` }] },
   { match:  [{ file: { try_files: ['{http.request.uri.path}', '/index.html'] } }],
     handle: [{ handler: 'rewrite', uri: '{http.matchers.file.relative}' }] },
   { handle: [
-    { handler: 'headers', response: { set: documentHeaders(scripts) } },
+    { handler: 'headers', response: { set: headers } },
     { handler: 'encode', encodings: { gzip: {} }, prefer: ['gzip'] },
     { handler: 'file_server' },
   ] },
 ]
 
+const sha256 = (text) => `'sha256-${createHash('sha256').update(text, 'utf8').digest('base64')}'`
+
 /**
- * The `'sha256-…'` source of each inline script in a built page, for the CSP's
- * `script-src` (`FJS-D1205`). A static file server cannot mint a nonce, so the
- * hash is read off the bytes being deployed and cannot drift from them. A
- * `<script src>` needs none: `'self'` already names it.
+ * The `'sha256-…'` source of each inline script in the pages being served, for
+ * the CSP's `script-src` (`FJS-D1205`). A static file server cannot mint a
+ * nonce, so the hash is read off the bytes being deployed and cannot drift
+ * from them. A `<script src>` needs none: `'self'` already names it.
  */
 export function inlineScriptHashes(html) {
   const out = []
   for (const [, attrs, body] of String(html ?? '').matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
     if (/\bsrc\s*=/i.test(attrs)) continue
-    const source = `'sha256-${createHash('sha256').update(body, 'utf8').digest('base64')}'`
+    const source = sha256(body)
     if (!out.includes(source)) out.push(source)
   }
   return out
 }
 
+/**
+ * The `'sha256-…'` source of each `style=` value in the pages being served,
+ * for `style-src-attr 'unsafe-hashes'` (`FJS-D1464`). Only prerendered HTML
+ * carries one: Mesa writes a component's styles through CSSOM, which a CSP does
+ * not gate. The browser hashes the value after parsing, so entities are decoded.
+ */
+export function inlineStyleHashes(html) {
+  const out = []
+  const markup = String(html ?? '').replace(/<script\b[\s\S]*?<\/script\s*>/gi, '')
+  for (const [, dq, sq] of markup.matchAll(/<[a-z][^>]*?\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
+    const source = sha256(decodeAttr(dq ?? sq))
+    if (!out.includes(source)) out.push(source)
+  }
+  return out
+}
+
+const decodeAttr = (v) => v.replace(/&(#x[0-9a-f]+|#\d+|quot|amp|lt|gt|apos);/gi, (m, e) => {
+  const named = { quot: '"', amp: '&', lt: '<', gt: '>', apos: "'" }[e.toLowerCase()]
+  if (named) return named
+  const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10)
+  return String.fromCodePoint(code)
+})
+
 // Caddy's file_server sends none of these, and helmet dresses only what the
 // API's router answers, so without them the page a person signs in on could be
 // framed, sniffed and run any inline script.
 //
-// The CSP is scripts only. Mesa's runtime adopts a constructed sheet per
-// component, which `style-src` does not gate (FJS-3232), but `default-src 'self'`
-// (FJS-D1192) would still refuse any `style=` attribute and `<style>` element an
-// app or a prerendered page carries; pen-testing 2.6 measures that first.
-// `'wasm-unsafe-eval'` is Litestone's SQLite in a worker, whose script is
-// served under this same policy; it compiles wasm and never evaluates a string.
+// The CSP is junction's default (FJS-D1192) with what a served page adds:
+// `'wasm-unsafe-eval'` is Litestone's SQLite in a worker, whose script is served
+// under this same policy; it compiles wasm and never evaluates a string. `data:`
+// images are helmet's default. A split API's origin is where the page's calls,
+// socket and stored files go, and `'self'` does not name it.
 //
 // `strict-origin-when-cross-origin`, not helmet's `no-referrer`: under
 // `no-referrer` a browser sends `Origin: null` on a POST, which fails CORS to
@@ -274,15 +298,20 @@ export function inlineScriptHashes(html) {
 //
 // HSTS without `includeSubDomains`: on a bare domain it would pin every other
 // site the client runs under it to https.
-const documentHeaders = (scripts = []) => ({
+const documentHeaders = ({ scripts = [], styles = [], api = null } = {}) => ({
   'Strict-Transport-Security': ['max-age=31536000'],
   'X-Content-Type-Options':  ['nosniff'],
   'Referrer-Policy':         ['strict-origin-when-cross-origin'],
   'X-Frame-Options':         ['DENY'],
   'Content-Security-Policy': [[
+    "default-src 'self'",
     `script-src ${["'self'", "'wasm-unsafe-eval'", ...scripts].join(' ')}`,
+    ...(styles.length ? [`style-src-attr 'unsafe-hashes' ${styles.join(' ')}`] : []),
+    `img-src ${["'self'", 'data:', ...(api ? [api] : [])].join(' ')}`,
+    ...(api ? [`connect-src 'self' ${api}`] : []),
     "object-src 'none'",
     "base-uri 'self'",
+    "form-action 'self'",
     "frame-ancestors 'none'",
   ].join('; ')],
 })

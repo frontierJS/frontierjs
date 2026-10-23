@@ -24,7 +24,7 @@ catch (e) {
 // an API-only deploy keeps the page already serving.
 const machine = machineFor($, host, serverPath)
 const docRoot = $.config.releaseDir ?? `${serverPath}/current`
-const html    = machine.capture(`cat ${docRoot}/index.html 2>/dev/null || true`)
+const html    = machine.capture(`find ${docRoot}/ -name '*.html' -type f -exec cat {} + 2>/dev/null || true`)
 
 const { routes, plain, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort, edge, html })
 const written = error ? { error } : await writeEdge(machine, { appId, routes, plain, ifPresent: true })

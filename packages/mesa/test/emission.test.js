@@ -468,6 +468,35 @@ describe('a valueless attribute on a component', () => {
   })
 })
 
+describe('a literal style attribute', () => {
+  // Under default-src 'self', Firefox refuses a style attribute that the
+  // template's innerHTML parsed and blanks it to style="". Chromium applies
+  // the clone, so a drive in Chrome alone never saw it (FJS-D1464).
+  const STYLED = `<script>
+  let hot = true
+</script>
+<div class="tiles" style="--tile-min: 14rem" style:color={hot ? 'red' : null}>
+  <p style="max-width: 28rem; font-family: &quot;Inter&quot;">x</p>
+</div>`
+
+  it('stays out of the template string and still parses', async () => {
+    const ctx = await compile(STYLED, 'Styled.mesa')
+    expect(ctx.analysis.errors).toEqual([])
+    for (const [, html] of ctx.result.matchAll(/\$\$runtime\.template\(`([^`]*)`/g)) expect(html).not.toContain('style=')
+    expect(() => parseJs(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
+  })
+
+  it('reaches the element, entities decoded, under a style: directive', async () => {
+    const c = mount(await build(STYLED, 'Styled.mesa'))
+    const div = c.querySelector('div'), p = c.querySelector('p')
+    expect(div.style.getPropertyValue('--tile-min').trim()).toBe('14rem')
+    expect(div.style.color).toBe('red')
+    expect(p.style.maxWidth).toBe('28rem')
+    expect(p.style.fontFamily).toContain('Inter')
+    c.remove()
+  })
+})
+
 describe('multi-line interpolated attributes', () => {
   // The preceding text binding is load-bearing. It is what pulls the attribute's
   // first line into the same grouping run, so the run is rewritten and the
@@ -489,9 +518,9 @@ describe('multi-line interpolated attributes', () => {
 
   it('keep the whole attribute value, not just the first line', async () => {
     const c = mount(await build(MULTILINE, 'Multi.mesa'))
-    const style = c.querySelector('div').getAttribute('style')
-    expect(style).toContain('background:')
-    expect(style).toContain('width:40%')       // the part after the newline
+    const { style } = c.querySelector('div')
+    expect(style.background).not.toBe('')
+    expect(style.width).toBe('40%')            // the part after the newline
     c.remove()
   })
 

@@ -20,7 +20,7 @@ const { routeId } = await import(new URL('file://' + global.fliRoot + '/core/edg
 // A first setup has no page yet and 07b-edge hashes the one each deploy builds;
 // a setup run again keeps the hashes of the page already serving.
 const machine = machineFor($, host, serverPath)
-const html    = machine.capture(`cat ${serverPath}/current/index.html 2>/dev/null || true`)
+const html    = machine.capture(`find ${serverPath}/current/ -name '*.html' -type f -exec cat {} + 2>/dev/null || true`)
 
 const { routes, plain, paths, error } = await edgeRoutesFor({ root: $.paths.root, appId, serverPath, apiPort, edge, html })
 if (error) {

@@ -12,7 +12,7 @@ import { readFileSync } from 'fs'
 import { createHash } from 'crypto'
 import {
   edgeNames, apiOrigin, edgeRoutes, plainRoutes, applyEdge, routeId, accessLogPath, INGRESS_SERVER, PLAIN_SERVER,
-  parseConfigRead, parseConfigWrite, writeConfigScript, EdgeError, inlineScriptHashes,
+  parseConfigRead, parseConfigWrite, writeConfigScript, EdgeError, inlineScriptHashes, inlineStyleHashes,
 } from '../core/edge.js'
 import { guardId } from '../core/pause.js'
 
@@ -314,6 +314,37 @@ describe('the document the web route serves', () => {
     expect(csp).not.toContain('unsafe-inline')
   })
 
+  // FJS-D1192's default, so a page refused under junction is refused here too.
+  test('falls back to its own origin for everything it does not name', () => {
+    const [r] = routesFor({ web: { domain: 'shop.example' } })
+    const csp = headersOf(r)['Content-Security-Policy'][0]
+    expect(csp).toStartWith("default-src 'self'; ")
+    expect(csp).toContain("form-action 'self'")
+    expect(csp).toContain("img-src 'self' data:;")
+    expect(csp).not.toContain('connect-src')
+    expect(csp).not.toContain('style-src')
+  })
+
+  test('names a split API origin for the calls and stored files the page fetches', () => {
+    const [r] = routesFor({ web: { domain: 'app.shop.example' }, api: { domain: 'api.shop.example' } })
+    const csp = headersOf(r)['Content-Security-Policy'][0]
+    expect(csp).toContain("connect-src 'self' https://api.shop.example")
+    expect(csp).toContain("img-src 'self' data: https://api.shop.example")
+  })
+
+  // A prerendered page is the one place a style= reaches the browser as markup
+  // (FJS-D1464); the browser hashes the value after decoding its entities.
+  test('allows each style= a served page carries, by hash, and no other', () => {
+    const page = '<div style="height: 120vh" aria-hidden="true"></div>' +
+      `<p style='font-family: &quot;Inter&quot;'>x</p><div style="height: 120vh"></div>` +
+      '<script>el.innerHTML = \'<b style="color: red">\'</script>'
+    expect(inlineStyleHashes(page)).toEqual([sha('height: 120vh'), sha('font-family: "Inter"')])
+    expect(inlineStyleHashes(html)).toEqual([])
+    const names = edgeNames({ web: { domain: 'shop.example' } })
+    const [r] = edgeRoutes({ appId: 'shop', serverPath: '/apps/shop', apiPort: 3000, ...names, styles: inlineStyleHashes(page) })
+    expect(headersOf(r)['Content-Security-Policy'][0]).toContain(`style-src-attr 'unsafe-hashes' ${sha('height: 120vh')} ${sha('font-family: "Inter"')}`)
+  })
+
   // The headers are the SPA's: a response the API sends is helmet's to dress.
   test('sit after the proxy, so the API\'s own responses keep their headers', () => {
     const [r] = routesFor({ web: { domain: 'shop.example' } })
@@ -323,8 +354,8 @@ describe('the document the web route serves', () => {
     expect(JSON.stringify(api)).not.toContain('Content-Security-Policy')
   })
 
-  test('both steps that write the routes hash the index.html being served', () => {
-    expect(src('_steps-docker/07b-edge.md')).toMatch(/index\.html/)
-    expect(src('_steps-setup/05-caddy.md')).toMatch(/index\.html/)
+  test('both steps that write the routes hash every page being served', () => {
+    expect(src('_steps-docker/07b-edge.md')).toMatch(/-name '\*\.html'/)
+    expect(src('_steps-setup/05-caddy.md')).toMatch(/-name '\*\.html'/)
   })
 })
