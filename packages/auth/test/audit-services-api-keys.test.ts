@@ -143,7 +143,7 @@ describe('an UNSCOPED key holds its owner’s whole standing at the credential s
     const t = await u.login()
     const key = ((await mint(t, { name: 'root' })).body as any).key as string
     const res = await request(app).post('/account/me').set('x-service-method', 'changePassword').auth(key)
-      .send({ currentPassword: PW, newPassword: 'pw-keys-2' })
+      .send({ newPassword: 'pw-keys-2' })
     expect(res.status).toBe(403)
   })
 

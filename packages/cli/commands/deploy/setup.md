@@ -19,6 +19,10 @@ flags:
     type: boolean
     description: Ask nothing — install every missing dependency and write the Caddy routes
     defaultValue: false
+  next-steps:
+    type: boolean
+    description: End on the checklist of what to do next; a command that does those steps itself runs this with --no-next-steps
+    defaultValue: true
 # Not the directory's index, so it declares its own steps folder rather than
 # inheriting `_steps/` — the runtime attaches a bare `_steps/` to index.md only
 # (FJS-250). Setting $.config.stepsDir alone is not enough: that redirects

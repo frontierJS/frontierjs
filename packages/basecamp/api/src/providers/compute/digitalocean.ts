@@ -26,7 +26,7 @@ import type { TargetDescriptor }  from '@frontierjs/conduit'
 import { FLEET, keyBody }         from './index.ts'
 import type {
   ComputeConnector, ComputeCatalog, ComputeMachine, MachineState,
-  ComputeRegion, ComputeSize, ComputeImage, MachineSpec, MachineMark,
+  ComputeRegion, ComputeSize, ComputeImage, MachineSpec, MachineMark, AccountSend,
 } from './index.ts'
 
 /** Where DigitalOcean is. Overridden by `DIGITALOCEAN_URL` for the dev sink.
@@ -320,3 +320,111 @@ export const digitalOcean: ComputeConnector = {
     return !res.error && Boolean((res.data as Row | null)?.account)
   },
 }
+
+// ─── Reserved IPs ────────────────────────────────────────────────────────
+// An address the account holds apart from any droplet, so a hostname pointed at
+// it never names whatever box DO hands a released address to next. Not on
+// `ComputeConnector`: only `fli basecamp:create` asks for one yet, and Hetzner's
+// Primary IP is a different shape — it becomes the server's own address, where
+// DO's sits beside it on an anchor — so the shared noun waits for the fleet.
+
+export interface ReservedIp { ip: string; region: string; dropletId: string | null }
+
+function toReserved(r: Row): ReservedIp {
+  const droplet = r.droplet as Row | null | undefined
+  return {
+    ip:        str(r.ip),
+    region:    str((r.region as Row | undefined)?.slug),
+    dropletId: droplet?.id == null ? null : String(droplet.id),
+  }
+}
+
+export const reservedIps = {
+  async list(send: AccountSend): Promise<ReservedIp[]> {
+    const res = await send({ method: 'GET', path: `/v2/reserved_ips?per_page=${PER_PAGE}` })
+    if (res.error) throw new Error(`DigitalOcean: ${said(res)}`)
+    return rows(res.data, 'reserved_ips').map(toReserved).filter(r => r.ip)
+  },
+
+  async get(send: AccountSend, ip: string): Promise<ReservedIp | null> {
+    const res = await send({ method: 'GET', path: `/v2/reserved_ips/${encodeURIComponent(ip)}` })
+    if (res.status === 404) return null
+    if (res.error) throw new Error(`DigitalOcean: ${said(res)}`)
+    const row = (res.data as Row | null)?.reserved_ip as Row | undefined
+    return row ? toReserved(row) : null
+  },
+
+  /** Billed from this moment: $5 a month while no droplet holds it. */
+  async reserve(send: AccountSend, region: string): Promise<ReservedIp> {
+    const res = await send({ method: 'POST', path: '/v2/reserved_ips', body: { region } })
+    if (res.error) throw new Error(`DigitalOcean refused the reserved IP: ${said(res)}`)
+    const row = (res.data as Row | null)?.reserved_ip as Row | undefined
+    if (!row || !str(row.ip)) throw new Error('DigitalOcean reserved an IP and answered no address')
+    return toReserved(row)
+  },
+
+  /** Asynchronous at DO: the action is accepted before the address routes, so
+   *  the caller reads `get` until the droplet holds it. */
+  async assign(send: AccountSend, ip: string, dropletId: string): Promise<void> {
+    const res = await send({
+      method: 'POST', path: `/v2/reserved_ips/${encodeURIComponent(ip)}/actions`,
+      body:   { type: 'assign', droplet_id: Number(dropletId) },
+    })
+    if (res.error) throw new Error(`DigitalOcean refused to assign ${ip}: ${said(res)}`)
+  },
+
+  async release(send: AccountSend, ip: string): Promise<void> {
+    const res = await send({ method: 'DELETE', path: `/v2/reserved_ips/${encodeURIComponent(ip)}` })
+    if (res.status === 404) return
+    if (res.error) throw new Error(`DigitalOcean: ${said(res)}`)
+  },
+}
+
+/**
+ * Cloud-init that sends the box's outbound traffic out its reserved IP, so an
+ * allowlist at a mail relay or a third-party API names the address that
+ * outlives the box rather than the droplet's own.
+ *
+ * Read from metadata every 30 seconds rather than written into netplan: the
+ * address is assigned after boot, it can be moved or released, and a default
+ * route through the anchor gateway with no reserved IP behind it is a box that
+ * cannot reach apt, its certificate authority or Basecamp. The two source rules
+ * keep a reply leaving by the gateway its request came in on, so ssh to the
+ * droplet's own address still answers once the default has moved.
+ */
+export const RESERVED_EGRESS = `#!/bin/sh
+cat > /usr/local/sbin/reserved-egress <<'SH'
+#!/bin/sh
+md=http://169.254.169.254/metadata/v1
+get() { curl -sf --max-time 2 "$md/$1"; }
+pub=$(get interfaces/public/0/ipv4/address) || exit 0
+pubgw=$(get interfaces/public/0/ipv4/gateway) || exit 0
+ip route replace default via "$pubgw" dev eth0 table 100
+ip rule show | grep -q "from $pub lookup 100" || ip rule add from "$pub" lookup 100 priority 100
+gw=$pubgw
+anchor=$(get interfaces/public/0/anchor_ipv4/address) && anchorgw=$(get interfaces/public/0/anchor_ipv4/gateway) && {
+  ip route replace default via "$anchorgw" dev eth0 table 101
+  ip rule show | grep -q "from $anchor lookup 101" || ip rule add from "$anchor" lookup 101 priority 101
+  [ "$(get reserved_ip/ipv4/active)" = true ] && gw=$anchorgw
+}
+ip route replace default via "$gw" dev eth0
+SH
+chmod 755 /usr/local/sbin/reserved-egress
+cat > /etc/systemd/system/reserved-egress.service <<'UNIT'
+[Unit]
+Description=Route outbound traffic out the reserved IP while one is assigned
+After=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/reserved-egress
+UNIT
+cat > /etc/systemd/system/reserved-egress.timer <<'UNIT'
+[Timer]
+OnBootSec=5
+OnUnitActiveSec=30
+[Install]
+WantedBy=timers.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now reserved-egress.timer
+`

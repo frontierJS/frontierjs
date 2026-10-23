@@ -1,7 +1,7 @@
 ---
 title: frontier:stake
 description: Stake a nick with an invite — this machine becomes a member of the Frontier network under it
-effects: makes ~/.fli/frontier/key.json if absent, spends the invite at the post, and writes frontier.nick to ~/.fli/config.json
+effects: makes ~/.fli/frontier/key.json if absent, spends the invite at the post, writes the signed row to ~/.fli/frontier/member.json, and writes frontier.nick and frontier.postKey to ~/.fli/config.json
 examples:
   - fli frontier:stake ada Zp3kQ0x9Lm2fTq8VwXc4bA
   - fli frontier:stake Zp3kQ0x9Lm2fTq8VwXc4bA
@@ -20,6 +20,14 @@ so the code is all an invite carries. This machine's key is made at
 the post spends the code and writes the member in as a chain of one: a root
 link signing this machine's key and its sealing key together, so letters to
 it are sealed from the first (`FJS-D1400`, `FJS-D1416`).
+
+The post answers the join with the member's row — number, nick, who
+invited them, the chain's root and head, when they joined and with which
+`fli` — signed with the post's own key (`FJS-D1467`). The key is pinned as
+`frontier.postKey` and the row written to `~/.fli/frontier/member.json`,
+which proves the number to a reader with no call to the post. The row is
+taken for a day (`FJS-D1445`), and the background check behind the notice
+line fetches a fresh one at half that.
 
 The line `frontier:invite` prints carries no nick, so pasted as it is the
 one argument is the code and the nick is asked for.
@@ -45,6 +53,7 @@ try {
   nick = pickNick(typedNick, {})
 } catch (e) { log.error(e.message); process.exitCode = 1; return }
 const api = postOrigin()
+const { fliVersion } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
 
 if (flag.dry) {
   log.dry(`Would make ${KEY_FILE} if absent, join ${api} as ${nick} with the invite, and save frontier.nick in ${CONFIG_FILE}`)
@@ -55,7 +64,7 @@ const { keys, made } = await machineKeys()
 if (made) log.info(`This machine's key is ${KEY_FILE} — it is who you are at the post, so keep it.`)
 
 let answer
-try { answer = await tellFetch(api, keys, 'POST', '/join', { code, nick, chain: await ownChain(keys) }) }
+try { answer = await tellFetch(api, keys, 'POST', '/join', { code, nick, chain: await ownChain(keys), fliVersion: fliVersion() ?? undefined }) }
 catch (e) { log.error(`${api} did not answer (${e.message}).`); process.exitCode = 1; return }
 
 if (answer.status === 409 && saved.nick) {
@@ -73,6 +82,8 @@ if (answer.status !== 201) {
 
 // Cached only as the post echoes it, so a post that did not store the chain gets it on the next verb.
 writeMemberConfig({ nick: answer.json.nick, root: answer.json.root ?? null })
+const taken = await takeRow(answer.json)
+if (taken.refused) log.warn(`The post's row for you was not kept: ${taken.refused}. The background check fetches it again.`)
 const boxed = await publishOwn(api, keys).catch(e => e.message)
 if (boxed) log.warn(`The post did not take ${boxed} — the next \`fli tell\` verb tries again.`)
 log.success(`You are #${answer.json.number} ${answer.json.nick} at ${api}, invited by ${answer.json.invitedBy}.`)

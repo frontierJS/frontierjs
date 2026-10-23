@@ -35,6 +35,12 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1470"></a>2026-10-23 · `FJS-D1470` — Q3 — The pane's name — `:dns`.
+
+Asked in [`IDEAS/cloudflare-dns.md`](IDEAS/cloudflare-dns.md) § Open questions. **A** was picked over **B** (`:cloudflare`), **C** (`:edge`, basecamp's word for the adapter kind).
+
+The paper's recommendation, taken as written: the screens and keys are DNS's and the provider is the breadcrumb's first crumb; `:edge` is a fleet noun and this has no fleet.
+
 ### <a id="fjs-d1465"></a>2026-10-22 · `FJS-D1465` — fli's Basecamp commands are one `basecamp:*` namespace, named for what is on the other end of the wire: `fli basecamp` lists, `basecamp:create`, `basecamp:install`, `basecamp:dns`, `basecamp:stop`, `basecamp:destroy` take Basecamp's own box through its life, and `basecamp:deploy` releases an app through a running Basecamp. `deploy:outpost` stays in `deploy:*`, because it is `fli deploy`'s own step.
 
 Asked in chat, after `fli provi<Tab>` listed seven `provision:*` commands that act on one thing, Basecamp, under a verb. **The table as written** was picked over the other arrangements and words offered. As recommended. This supersedes the name in `IDEAS/zero-to-live.md` 3.1 (`fli provision`, 2026-10-20), and a bare `fli basecamp` no longer buys a droplet, so the command that costs money has to be named in full. `provision:off` became `basecamp:stop`, the opposite of the verb `create`. There is no alias for any old spelling (root `CLAUDE.md` § Evolution policy).
@@ -42,6 +48,12 @@ Asked in chat, after `fli provi<Tab>` listed seven `provision:*` commands that a
 A command may now declare its own `requires:`, read beside its namespace's (`packages/cli/core/runtime.js`), because `basecamp:deploy`, `install` and `dns` need no DigitalOcean token while `create`, the list, `stop` and `destroy` do. Under the namespace-wide list, `install` and `dns` used to demand one. `vendorApp` moved to `core/vendor.js`, so the `deploy` and `basecamp` namespaces share one owner rather than a module script each.
 
 The nine: one origin, since each command lives in one file and the old files were moved rather than copied; no new concept, since a namespace and `requires:` already exist; complexity is removed, because `deploy:basecamp` no longer sits beside SSH deploys it shares nothing with; predictability improves, because a namespace names a counterpart, as `deploy:*` names a server this pipeline owns; nothing is derived; the owner is the module, and `vendorApp`'s is `core/vendor.js`; at the boundary, a caller no longer has to know that `install` does not use the token it was asked for; the failure stays a refusal at the runtime naming the key; on silence, `parseCommands` and the cli suite fail a command that does not compile, but nothing fails a stale `provision:` in prose. Answered after the edit.
+
+### <a id="fjs-d1475"></a>2026-10-22 · `FJS-D1475` — The oath is withdrawn: `frontier:stake` asks nothing to accept, and the squatting line is a written rule no verb prints.
+
+Asked in chat; the owner's call. `IDEAS/frontier-network.md` 2.9 is withdrawn, and 4.2 keeps the npm-style squatting line of `FJS-D1450` as a rule written in the cli README's Frontier section rather than a line the oath printed. **Keep it as a written rule** was picked over **A** (drop the line with the oath) and **C** (print it only when `stake` refuses a nick). Against the recommendation, which was A (confidence 2): while every member arrives by invite, the invite is the gate. The line stays because an owner reclaiming a nick can point to it. This amends `FJS-D1450`'s "the squatting line" to mean the written rule.
+
+The nine: one origin, the README section 4.2 writes, with the paper citing it rather than restating it; no new concept, since the oath was the would-be one and it goes; complexity falls, since `stake` loses a prompt; predictability holds, since no other `frontier:` verb asks for consent; nothing derived; the owner is the cli README; at the boundary, a staker needs to know nothing more than before; the failure is unchanged, a reserved or taken nick is still refused at the post (4.1); on silence, what must stay true is that the rule exists once 4.2 is built, and nothing fails when it is missing — `none`. Adjudication: none in tension. Tier: Register for the ruling, Assessment for the plan. Answered after the edit.
 
 ### <a id="fjs-d1451"></a>2026-10-22 · `FJS-D1451` — Q6 — Whether a nick can change — Never. The nick is the name, and the number never changes either.
 
@@ -1627,6 +1639,12 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d1467"></a>2026-10-22 · `FJS-D1467` — The post's signing key — Made by the Durable Object on first use and kept in its own storage; a client pins its public half on first sight.
+
+Asked while building [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) 2.4. **A** was picked over **B** (the owner's machine makes the pair, `fli ws:post` uploads the private half as a Worker secret, and the public half is a constant in `fli` beside `POST_ORIGIN` — Certificate Transparency's log keys shipped in browsers, Keybase's hard-coded server key) and **C** (A now, and the public half committed into `fli` once the live post has one).
+
+The recommendation, taken (confidence 2): no second secret on anybody's laptop, and the pin happens on a call the member already trusts — the join, or the first row fetched. *Memory:* SSH host keys, made on the host and pinned on first contact. The operator can read the key either way, since a Worker secret is readable by the code the operator deploys, so B buys no trust against `THREATS.md` B19; what it buys is a first reader that never trusted first contact, and that is the reopen path. The pin is `frontier.postKey` in `~/.fli/config.json`, and a row under another key is refused rather than re-pinned.
 
 ### <a id="fjs-d1466"></a>2026-10-22 · `FJS-D1466` — The invite allowance — Three joins per member, a code not yet spent counted as one, and the owner uncounted.
 
@@ -14922,6 +14940,24 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1473"></a>2026-10-23 · `FJS-D1473` — Q6 — Which env name fli keeps for a token — Rename fli's to `CLOUDFLARE_API_TOKEN`: one name, `cf` reads it with no mapping, and the module only has to DELETE it for a profile row.
+
+Asked in [`IDEAS/cloudflare-dns.md`](IDEAS/cloudflare-dns.md) § Open questions. **A** was picked over **B** (keep `CLOUDFLARE_TOKEN` and map it onto `CLOUDFLARE_API_TOKEN` on the spawn).
+
+The paper's recommendation, taken as written: two spellings of one secret is the duplication the evolution policy forbids, and nothing has shipped; B keeps a mapping forever for a name only fli knows.
+
+### <a id="fjs-d1472"></a>2026-10-23 · `FJS-D1472` — Q5 — Pane or standalone — A console pane, `fli dns` an alias into `fli gui`.
+
+Asked in [`IDEAS/cloudflare-dns.md`](IDEAS/cloudflare-dns.md) § Open questions. **A** was picked over **B** (a command that mounts `Dns.mesa` with no server, functions as props).
+
+The paper's recommendation, taken as written: the mount, loader, legend, keys and the two-target drive exist once; B is a second mount path and loses the browser.
+
+### <a id="fjs-d1471"></a>2026-10-23 · `FJS-D1471` — Q4 — A Basecamp-marked record — Warn and go ahead.
+
+Asked in [`IDEAS/cloudflare-dns.md`](IDEAS/cloudflare-dns.md) § Open questions. **A** was picked over **B** (refuse, as the connector refuses unmarked ones), **C** (hide them).
+
+The paper's recommendation, taken as written: the connector's refusal protects a stranger's record from a sync; a person at the keyboard is not the sync, and the sync puts its record back, so the write is reversible by the thing that owns it.
+
 ### <a id="fjs-d1462"></a>2026-10-23 · `FJS-D1462` — Q11 — Where the view lives — `fli frontier:post` with `--json` as the one reader, and a `:post` pane in `fli gui` that draws it (`project:map` and `:map`).
 
 Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (the command only), **C** (an `/admin` page on the Worker: a second login, at a URL a stranger can find).
@@ -18146,6 +18182,24 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d1474"></a>2026-10-23 · `FJS-D1474` — How a connector with more than one target spells its builder and its bind — Quo's bundle: one `<name>Targets`, one `bind<Name>`, and every call picks its own role.
+
+Asked in chat after an audit of the 25 connectors in the sibling workspace (`FJS-D1185`) found three spellings of one thing: google-maps, quo, 37signals and microsoft returned a record of descriptors from one builder; mattermost, oidc, slack and push exported a builder per target; and quo alone bound a bundle (`bindQuo → { v1, dated, files }`) while the rest bound one target at a time. **A** (quo's bundle) was picked over **B** (a plural builder, but `bindSend` per target with a call checking `send.spends`) and **C** (rule only the builder; binding left to each connector).
+
+The recommendation, taken as written: a call that picks its own role off the bundle cannot be handed the wrong target, which oidc and microsoft each guarded at runtime and mattermost did not guard at all. The rule, with its two refinements from mattermost's consumer (a credential choice made at bind; a per-user target keeps its own builder), is the workspace's `CONTRACT.md` § Amendments, *C1 — the bundle*, and is not restated here. Nothing grades it: the workspace has no check runner. Seven connectors moved in the same change, with `fjs-prototypes/chat` as mattermost's one caller.
+
+### <a id="fjs-d1469"></a>2026-10-23 · `FJS-D1469` — Q2 — One dialect owner — The flag commands move onto `core/cloudflare.js` and `cfApi` is deleted.
+
+Asked in [`IDEAS/cloudflare-dns.md`](IDEAS/cloudflare-dns.md) § Open questions. **A** was picked over **B** (`cfApi` stays for the flag commands, `cf` for the pane).
+
+The paper's recommendation, taken as written: two spellings of one call drift (`commands/cloudflare/dns.md` and basecamp's connector already disagree on which types take `proxied`); the evolution policy says move every caller in one change.
+
+### <a id="fjs-d1468"></a>2026-10-23 · `FJS-D1468` — Q1 — Where an account comes from — Both, a token shown as a row.
+
+Asked in [`IDEAS/cloudflare-dns.md`](IDEAS/cloudflare-dns.md) § Open questions. **C** was picked over **A** (`cf`'s profiles and login; fli stores no credential and adds no token store), **B** (fli's own named tokens (`CLOUDFLARE_TOKEN_<NAME>`), one per account, no `cf`).
+
+Against the recommendation (**A**): owner: a token-only machine (CI, a client who hands over one token) is a real account and must show as a row; cf profiles answer the login case and the env token answers the other, and neither needs a fli credential store.
 
 ### <a id="fjs-d1463"></a>2026-10-23 · `FJS-D1463` — Does ELA's Microsoft Graph mail code become a connector? — Yes: `@frontierjs/conduit-microsoft` in the connectors workspace; the DIALECT moves, the sync ENGINE stays ELA's
 

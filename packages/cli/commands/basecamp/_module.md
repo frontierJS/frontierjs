@@ -169,7 +169,7 @@ const runFli = async (argv) => {
 // enrolls once the admin is made.
 const ringZero = async (dest, domain, say = () => {}) => {
   const steps = [
-    { argv: ['deploy:setup', '--auto-install', '--server', dest, '--domain', domain], what: 'docker and caddy on the box — a few minutes on a fresh one' },
+    { argv: ['deploy:setup', '--auto-install', '--no-next-steps', '--server', dest, '--domain', domain], what: 'docker and caddy on the box — a few minutes on a fresh one' },
     { argv: ['deploy', '--no-outpost', '--server', dest, '--domain', domain], what: 'build the image, ship it, start Basecamp' },
   ]
   for (const [i, step] of steps.entries()) {
@@ -184,17 +184,19 @@ const ringZero = async (dest, domain, say = () => {}) => {
 // (`FJS-D1191`). After `makeAdmin`: enrollment files the box under the one
 // workspace `/setup` made, and with none yet `deploy:outpost` says so and exits 0.
 const OUTPOST_QUESTION = 'Make the box an Outpost too, so apps can run beside Basecamp on it?'
-const joinFleet = async (dest) => await runFli(['deploy:outpost', '--server', dest]) === 0
+const joinFleet = async (dest, domain) => await runFli(['deploy:outpost', '--server', dest, '--domain', domain]) === 0
 
 const EMAIL = /^[^\s@]+@[^\s@]+$/
 
 // The first admin's email, asked with `ME` (global fli env) as what Enter takes.
-// Enter can then no longer mean no admin, so `-` does.
+// An install always makes one: `/setup` also makes the workspace, and with none
+// the Outpost has nothing to enroll under and Basecamp sits open on `/setup`
+// for whoever reaches it first.
 const askAdmin = async (ask) => {
   const me = EMAIL.test(process.env.ME ?? '') ? process.env.ME : ''
-  const said = await ask(`First admin's email`, me ? `Enter: ${me} · -: make one at /setup in the browser` : 'Enter: make one at /setup in the browser')
-  return said === '-' ? '' : said || me
+  return await ask(`First admin's email`, me ? `Enter: ${me}` : 'required') || me
 }
+const NO_ADMIN = `Installing makes Basecamp's first admin, and its workspace with it: pass --admin <email>, or set your email once with fli eset ME you@example.com --global`
 
 // The hostname as `deploy.web.domain` would hold it, or null for one Caddy
 // cannot route by.
@@ -235,6 +237,18 @@ const makeAdmin = async ({ dest, identity, workspace, admin, password, log, echo
   return true
 }
 
+// The admin, then the Outpost: enrollment files the box under the workspace
+// `/setup` made, so when that failed the enrollment is printed rather than run.
+// `later` is the `--server`/`--domain` tail a person types from packages/basecamp.
+// Answers false when either failed.
+const adminThenFleet = async ({ outpost, domain, later, ...admin }) => {
+  if (!await makeAdmin(admin)) {
+    if (outpost) admin.log.info(`  Once the admin is made at https://${domain}/setup, from packages/basecamp: fli deploy:outpost${later}`)
+    return false
+  }
+  return !outpost || await joinFleet(admin.dest, domain)
+}
+
 // A droplet has an address before it has an sshd. BatchMode, so nothing here
 // can wait on a password; accept-new records the host key once, so the ring 0
 // runs after it meet a known host and ask nothing.
@@ -264,7 +278,7 @@ is up.
 - **For Basecamp too** — the same token as a cloud account in Basecamp (Secrets, kind `provider_key`) — add `account` read: Basecamp's Verify reads `/v2/account`, and a token without it fails Verify though it provisions
 - Store it: `fli eset DIGITALOCEAN_TOKEN <token> --global` — a run with none leaves a placeholder line there
 - The token is shown once; a project `.env` overrides it, for a client's own account
-- Optional: `fli eset ME you@example.com --global` — the first admin's email question then takes it on Enter, and `-` makes no admin
+- Optional: `fli eset ME you@example.com --global` — the first admin's email question then takes it on Enter, and `--yes` needs no `--admin`
 
 ## What it makes
 

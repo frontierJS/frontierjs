@@ -38,7 +38,8 @@ import {
   generateRecoveryCodes, normalizeRecoveryCode,
 } from './totp.ts'
 import {
-  InvalidCredentialsError, ReauthenticationFailedError, EmailTakenError, InvalidTokenError,
+  InvalidCredentialsError, ReauthenticationFailedError, ReauthenticationRequiredError,
+  EmailTakenError, InvalidTokenError,
   UserNotFoundError, AuthConfigError,
   LastCredentialError,
   NoPasswordCredentialError, NotFoundError,
@@ -83,6 +84,7 @@ export function createLitestoneAuth(
     // this long. An app raises it deliberately; nothing lets a caller ask for
     // more than it.
     supportTtl           = '30 minutes',
+    reauthenticationWindow = '1 hour',
     password: passwordPolicy = {},
     passwordResetTtl     = '1 hour',
     emailVerificationTtl = '24 hours',
@@ -323,6 +325,7 @@ export function createLitestoneAuth(
         userId:    user.id,
         token,
         expiresAt: expiresAt(sessionTtl, sys.$now()),
+        reauthenticatedAt: sys.$now().toISOString(),
         ...(held ? { enrollmentOnly: true } : {}),
       }
     })
@@ -501,13 +504,9 @@ export function createLitestoneAuth(
   }
 
   /**
-   * The password, again, for a change to the second factor.
-   *
-   * A session that can enroll its own factor has locked the owner out of their
-   * own account, and one that can remove theirs has taken the protection off
-   * without ever knowing the password. Both are reachable from a stolen tab, so
-   * both ask. Pays the comparison cost on a user with no password credential for
-   * the same reason `login()` does. `via` is the method that asked, for the trail.
+   * The password, again, inside a live session — `reauthenticate`'s first half.
+   * Pays the comparison cost on a user with no password credential for the
+   * same reason `login()` does. `via` is the method that asked, for the trail.
    */
   async function requireCurrentPassword(userId: string, password: string, via: string): Promise<any> {
     const user = await sys[person].findFirst({ where: { id: userId } })
@@ -535,6 +534,16 @@ export function createLitestoneAuth(
       actorId: userId, actorType: 'user',
       meta: { method, reason },
     })
+  }
+
+  // A change to how the account signs in is made against sessions somebody
+  // else may hold, so every other one ends and the one that asked is kept
+  // (`FJS-D1208`). An API key has no session to keep, and keeps none.
+  async function endOtherSessions(userId: string, keep?: string): Promise<number> {
+    const where: Record<string, unknown> = { userId }
+    if (keep) where.id = { not: keep }
+    const { count } = await sys.session.deleteMany({ where, ...PURGE })
+    return count
   }
 
   // Registration where the app can mail (`FJS-D1310`). The answer is the same
@@ -614,7 +623,7 @@ export function createLitestoneAuth(
   // route behind a second link. A registration answers the new ROW and
   // `verifyEmail` turns it into the sign-in, so the session is minted by the
   // one caller that hands it back.
-  async function spendVerification(token: string): Promise<{ registered: any } | { verified: SessionContext }> {
+  async function spendVerification(token: string, keep?: string): Promise<{ registered: any } | { verified: SessionContext }> {
     // See the note in confirmPasswordReset -- this matched a RESET token
     // without the purpose filter (FJS-476).
     const verification = await sys.verification.findFirst({
@@ -624,7 +633,7 @@ export function createLitestoneAuth(
       }
     })
     if (!verification) throw new InvalidTokenError('Invalid or expired verification token')
-    if (verification.purpose === 'emailChange')  return { verified: await confirmEmailChange(verification) }
+    if (verification.purpose === 'emailChange')  return { verified: await confirmEmailChange(verification, keep) }
     if (verification.purpose === 'registration') return { registered: await confirmRegistration(verification) }
 
     const email = verification.identifier
@@ -642,7 +651,7 @@ export function createLitestoneAuth(
   }
 
   /** The click on an `emailChange` link — `verifyEmail` finds the row and this spends it. */
-  async function confirmEmailChange(row: any): Promise<SessionContext> {
+  async function confirmEmailChange(row: any, keep?: string): Promise<SessionContext> {
     const user = await sys[person].findUnique({ where: { id: row.userId } })
     if (!user) {
       await sys.verification.delete({ where: { id: row.id } })
@@ -666,11 +675,13 @@ export function createLitestoneAuth(
     // would otherwise register a fresh account at the click, since the address
     // no longer names this one.
     await sys.verification.deleteMany({ where: { identifier: from }, ...PURGE })
+    const sessionsRevoked = await endOtherSessions(String(user.id), keep)
 
     // The OLD mailbox is told. Whoever changed the address held the session and
     // the password; if that was not the owner, this mail is how they find out.
     await credentialChanged('email.changed', String(user.id), {
       model: personModel, records: [String(user.id)], actorId: String(user.id), actorType: 'user',
+      meta: { sessionsRevoked },
     }, from)
 
     return toContext(changed, 'verified')
@@ -1265,11 +1276,13 @@ export function createLitestoneAuth(
     // ── TOTP: enrollment and the way back ────────────────────────────────
     //
     // Every one of these is reached from a service, so the caller is already
-    // authenticated and `userId` is theirs. The password is asked for again on
-    // the three that change what the account requires.
+    // authenticated and `userId` is theirs. The service asks
+    // `requireReauthenticated` first on the ones that change what the account
+    // requires (`FJS-D1209`); nothing here asks for the password.
 
-    async setupTotp(userId: string, currentPassword: string): Promise<{ secret: string; qr: string }> {
-      const user = await requireCurrentPassword(userId, currentPassword, 'setupTotp')
+    async setupTotp(userId: string): Promise<{ secret: string; qr: string }> {
+      const user = await sys[person].findUnique({ where: { id: userId } })
+      if (!user) throw new UserNotFoundError()
 
       // Refused rather than replaced. Overwriting would invalidate the secret the
       // person's authenticator holds while their next login still demands a code
@@ -1290,9 +1303,9 @@ export function createLitestoneAuth(
       return { secret, qr: otpauthUri({ secret, account: user.email, issuer: totpIssuer }) }
     },
 
-    async confirmTotp(userId: string, code: string): Promise<{ recoveryCodes: string[] }> {
-      // No password here, and that is not an inconsistency: this call is the
-      // second half of `setupTotp`, which asked. What it proves is the DEVICE.
+    async confirmTotp(userId: string, code: string, opts?: { exceptSessionId?: string }): Promise<{ recoveryCodes: string[] }> {
+      // No freshness asked here: this call is the second half of `setupTotp`,
+      // which asked. What it proves is the DEVICE.
       const pending = await sys.credential.findFirst({ where: { userId, type: TOTP_PENDING } })
       if (!pending) throw new NotFoundError('No enrollment in progress — call setupTotp first')
 
@@ -1336,20 +1349,19 @@ export function createLitestoneAuth(
       // The factor exists, so a session held to enrollment (`FJS-D1008`) is
       // released: the same token carries on, with no second sign-in to type a
       // code that was spent a line ago.
+      const sessionsRevoked = await endOtherSessions(userId, opts?.exceptSessionId)
       await sys.session.updateMany({ where: { userId, enrollmentOnly: true }, data: { enrollmentOnly: false } })
 
       await credentialChanged('totp.enabled', userId, {
         model: 'Credential', records: [String(pending.id)],
         actorId: userId, actorType: 'user',
-        meta: { recoveryCodes: recoveryCodes.length },
+        meta: { recoveryCodes: recoveryCodes.length, sessionsRevoked },
       })
 
       return { recoveryCodes }
     },
 
-    async disableTotp(userId: string, currentPassword: string): Promise<void> {
-      await requireCurrentPassword(userId, currentPassword, 'disableTotp')
-
+    async disableTotp(userId: string, opts?: { exceptSessionId?: string }): Promise<void> {
       const cred = await liveTotp(userId)
       if (!cred) throw new NotFoundError('Two-factor authentication is not enabled')
 
@@ -1359,23 +1371,24 @@ export function createLitestoneAuth(
       await sys.credential.deleteMany({ where: { userId, type: TOTP_PENDING } })
       await sys.credential.deleteMany({ where: { userId, type: RECOVERY } })
       await sys.loginChallenge.deleteMany({ where: { userId }, ...PURGE })
+      const sessionsRevoked = await endOtherSessions(userId, opts?.exceptSessionId)
 
       await credentialChanged('totp.disabled', userId, {
         model: 'Credential', records: [String(cred.id)],
         actorId: userId, actorType: 'user',
+        meta: { sessionsRevoked },
       })
     },
 
-    async regenerateRecoveryCodes(userId: string, currentPassword: string): Promise<{ recoveryCodes: string[] }> {
-      await requireCurrentPassword(userId, currentPassword, 'regenerateRecoveryCodes')
-
+    async regenerateRecoveryCodes(userId: string, opts?: { exceptSessionId?: string }): Promise<{ recoveryCodes: string[] }> {
       if (!await liveTotp(userId)) throw new NotFoundError('Two-factor authentication is not enabled')
 
-      const recoveryCodes = await issueRecoveryCodes(userId)
+      const recoveryCodes   = await issueRecoveryCodes(userId)
+      const sessionsRevoked = await endOtherSessions(userId, opts?.exceptSessionId)
       await credentialChanged('recoveryCodes.regenerated', userId, {
         model: 'Credential', records: [],
         actorId: userId, actorType: 'user',
-        meta: { count: recoveryCodes.length },
+        meta: { count: recoveryCodes.length, sessionsRevoked },
       })
       return { recoveryCodes }
     },
@@ -1389,12 +1402,12 @@ export function createLitestoneAuth(
     // API keys stay: a lost phone is not a leaked key.
     //
     // The two refusals here are the ones no caller may opt out of. Resetting
-    // your own is `disableTotp`, which asks for the password this skips.
+    // your own is `disableTotp`, behind the reauthentication this skips.
 
     async resetTotp(userId: string, opts: { actorId: string }): Promise<{ sessionsRevoked: number }> {
       if (!opts?.actorId) throw new AuthConfigError('resetTotp requires the operator it is recorded against')
       if (String(opts.actorId) === String(userId)) {
-        throw new ReauthenticationFailedError('Resetting your own second factor is disableTotp, which asks for your password')
+        throw new ReauthenticationFailedError('Resetting your own second factor is disableTotp, which asks you to confirm your password')
       }
 
       const user = await sys[person].findUnique({ where: { id: userId } })
@@ -2153,17 +2166,16 @@ export function createLitestoneAuth(
     },
 
     // ── requestEmailChange ───────────────────────────────────────────────
-    // Two proofs before the address moves: the password, because a session is
-    // what a stolen tab holds, and the mailbox, because the address is where a
-    // reset goes and one nobody proved hands the account to whoever typed it.
-    // The second is the link `verifyEmail` spends; until then the row is
-    // untouched and the account still answers to the old address.
+    // Two proofs before the address moves: a fresh session, which the service
+    // asks before this, and the mailbox, because the address is where a reset
+    // goes and one nobody proved hands the account to whoever typed it. The
+    // second is the link `verifyEmail` spends; until then the row is untouched
+    // and the account still answers to the old address.
 
-    async requestEmailChange(userId: string, currentPassword: string, newEmail: string): Promise<void> {
+    async requestEmailChange(userId: string, newEmail: string): Promise<void> {
       if (!onEmailVerificationRequested) {
         throw new AuthConfigError('requestEmailChange needs onEmailVerificationRequested — the link it mails is the proof')
       }
-      await requireCurrentPassword(userId, currentPassword, 'requestEmailChange')
 
       const address = newEmail.trim().toLowerCase()
       // Answered now rather than at the click, by the same 409 registering
@@ -2195,8 +2207,8 @@ export function createLitestoneAuth(
     // person who registered and was answered 202 otherwise lands on a sign-in
     // form asking for the password they typed a minute ago.
 
-    async verifyEmail(token: string): Promise<EmailVerificationResult> {
-      const spent = await spendVerification(token)
+    async verifyEmail(token: string, opts?: { keepSessionId?: string }): Promise<EmailVerificationResult> {
+      const spent = await spendVerification(token, opts?.keepSessionId)
       if ('registered' in spent) return { signedIn: await firstFactorProven(spent.registered, { via: 'registration' }) }
       return spent
     },
@@ -2335,41 +2347,58 @@ export function createLitestoneAuth(
       return { userId: String(row.userId), audience: String(row.label), scopes: row.scope ? String(row.scope).split(/\s+/).filter(Boolean) : [] }
     },
 
-    // ── changePassword ───────────────────────────────────────────────────
-    // The current password is verified here rather than trusted from a
-    // service: this is the one call that can turn a stolen session into a
-    // stolen account, and the check belongs beside the hash it compares.
+    // ── Sudo mode (`FJS-D1209`) ──────────────────────────────────────────
+    // A session proves the password once — and the code, where a second factor
+    // is live — and the credential changes ride that proof for
+    // `reauthenticationWindow`. Sign-in stamps it too, since signing in is the
+    // same proof. The session id comes from the context the service was
+    // handed, never from a payload, and the user id goes into the WHERE so a
+    // session of somebody else's is the same miss as none.
 
-    async changePassword(
-      userId: string, currentPassword: string, newPassword: string,
-      opts?: { exceptSessionId?: string },
-    ): Promise<void> {
+    async reauthenticate(
+      userId: string, sessionId: string, proof: { password: string; code?: string },
+    ): Promise<{ until: string }> {
+      const session = await sys.session.findFirst({ where: { id: sessionId, userId } })
+      if (!session) throw new InvalidTokenError('No such session')
+
+      await requireCurrentPassword(userId, proof.password, 'reauthenticate')
+      const totp = await liveTotp(userId)
+      if (totp && (!proof.code || verifyTotpCode(totp.value, proof.code, sys.$now(), totpDrift) === null)) {
+        await reauthenticationFailed(userId, 'reauthenticate', proof.code ? 'wrong-code' : 'no-code')
+        throw new ReauthenticationFailedError(proof.code ? 'Invalid code' : 'A code from your authenticator is required')
+      }
+
+      const now = sys.$now()
+      await sys.session.update({ where: { id: session.id }, data: { reauthenticatedAt: now.toISOString() } })
+      await audit('reauthenticated', {
+        model: 'Session', records: [String(session.id)], actorId: userId, actorType: 'user',
+        ...(totp ? { meta: { factor: 'totp' } } : {}),
+      })
+      return { until: expiresAt(reauthenticationWindow, now) }
+    },
+
+    async requireReauthenticated(userId: string, sessionId: string | undefined): Promise<void> {
+      const session = sessionId ? await sys.session.findFirst({ where: { id: sessionId, userId } }) : null
+      const at = session?.reauthenticatedAt ? new Date(session.reauthenticatedAt).getTime() : NaN
+      if (!(sys.$now().getTime() - at < parseTtl(reauthenticationWindow))) throw new ReauthenticationRequiredError()
+    },
+
+    // ── changePassword ───────────────────────────────────────────────────
+    // The service asks `requireReauthenticated` before this; the session that
+    // reaches here proved the current password inside the window.
+
+    async changePassword(userId: string, newPassword: string, opts?: { exceptSessionId?: string }): Promise<void> {
       requireStrongPassword(newPassword)
 
       const cred = await sys.credential.findFirst({ where: { userId, type: 'password' } })
-      // Same refusal for "no password set" as for "wrong password". An account
-      // with only an OAuth credential is a fact about that account, and this is
-      // reachable by anyone holding a session for it.
-      if (!cred) {
-        await reauthenticationFailed(userId, 'changePassword', 'no-password')
-        throw new ReauthenticationFailedError()
-      }
-      if (!await verifyPassword(currentPassword, cred.value)) {
-        await reauthenticationFailed(userId, 'changePassword', 'wrong-password')
-        throw new ReauthenticationFailedError()
-      }
+      if (!cred) throw new NoPasswordCredentialError('This account has no password to change')
 
       await sys.credential.update({
         where: { id: cred.id },
         data:  { value: await hashPassword(newPassword) },
       })
 
-      // A change is what a person does against a session somebody else holds,
-      // so every other one ends here, as a reset ends them all. An API key
-      // has no session to keep, and keeps none.
-      const where: Record<string, unknown> = { userId }
-      if (opts?.exceptSessionId) where.id = { not: opts.exceptSessionId }
-      const { count } = await sys.session.deleteMany({ where, ...PURGE })
+      const count = await endOtherSessions(userId, opts?.exceptSessionId)
 
       await credentialChanged('password.changed', userId, {
         model: 'Credential', records: [String(cred.id)], actorId: userId, actorType: 'user',

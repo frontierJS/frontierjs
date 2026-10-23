@@ -54,9 +54,21 @@
 // published on `POST /chain` with the sealing pair sealed to its box key in
 // `rekeys`; typed on a new machine, it signs that machine's link the same way.
 // The post holds its public keys and that sealed pair, nothing it can open.
+//
+// The member row (2.4) is the post's word on a member: number, nick, lineage
+// and the chain's root and head, signed with a key the object made for itself
+// and keeps in its own storage (FJS-D1467). It is signed when asked — at the
+// join, and on `GET /row` — so it names the head the post holds then. A
+// client pins the post's key on first sight.
+//
+// `GET /badge/<number>.svg` (2.7) is the one route nobody signs: a README
+// embeds it, so its reader is a browser with no key. It answers what
+// `GET /members` already tells any member, the number and nick (FJS-D1449),
+// drawn beside the crest of the member's chain root (core/crest.js).
 
-import { verifyMessage, verifyRequest } from '@frontierjs/toolbelt/signature'
-import { askCode, extendsSeen, linkMessage, readChain, verifyBox } from './frontier-chain.js'
+import { generateSigningKeys, verifyMessage, verifyRequest } from '@frontierjs/toolbelt/signature'
+import { FLI_VERSION, NICK, askCode, extendsSeen, linkMessage, memberNumber, readChain, signRow, verifyBox } from './frontier-chain.js'
+import { crestSvg } from './crest.js'
 
 // ─── limits ────────────────────────────────────────────────────────────────
 
@@ -86,10 +98,13 @@ const REKEYS_MAX   = 256
 const ASK_SECONDS  = 600
 /** Asks open at once: anyone may ask, so the table is bounded rather than the askers. */
 const ASKS_MAX     = 64
-/** Haven's `Member.nick` rule, so a nick here is one Haven accepts in Phase 5. */
-const NICK         = /^[a-z0-9_-]{2,16}$/
 
 const KEY_HEADER = 'x-tell-key'
+
+/** A number, a row key and never a pattern; nine digits is past any network this post holds. */
+const BADGE = /^\/badge\/(\d{1,9})\.svg$/
+/** A badge cannot change: a number is never reused, a nick never renamed, a root never replaced. A day bounds a crest redrawn by a newer crest.js. */
+const BADGE_CACHE = 'public, max-age=86400'
 
 const LETTER = 'id, fromNick AS "from", body, sealed, created'
 
@@ -132,6 +147,7 @@ export class TellPost {
       CREATE TABLE IF NOT EXISTS asks (code TEXT PRIMARY KEY, machine TEXT NOT NULL UNIQUE, sealKey TEXT NOT NULL, expires INTEGER NOT NULL, nick TEXT, link TEXT, sealed TEXT);
       CREATE TABLE IF NOT EXISTS boxes (machine TEXT PRIMARY KEY, box TEXT NOT NULL, sig TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS rekeys (machine TEXT PRIMARY KEY, sealKey TEXT NOT NULL, sealed TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS post (id INTEGER PRIMARY KEY CHECK (id = 1), publicKey TEXT NOT NULL, privateKey TEXT NOT NULL);
     `)
     // A post deployed before the seal or the chain keeps its members, so its
     // tables gain the columns; a column already there throws and is left.
@@ -140,7 +156,7 @@ export class TellPost {
     for (const [table, column] of [
       ['members', 'sealKey TEXT'], ['letters', 'sealed INTEGER NOT NULL DEFAULT 0'],
       ['members', 'root TEXT'], ['members', 'seq INTEGER'], ['members', 'head TEXT'],
-      ['members', 'number INTEGER'], ['members', 'invitedBy TEXT'],
+      ['members', 'number INTEGER'], ['members', 'invitedBy TEXT'], ['members', 'fliVersion TEXT'],
     ]) {
       try { this.sql.exec(`ALTER TABLE ${table} ADD COLUMN ${column}`) } catch {}
     }
@@ -172,6 +188,8 @@ export class TellPost {
     if (route === 'POST /link/ask') return this.ask(req, url, body)
     if (route === 'POST /link/accept') return this.accept(req, url, body)
     if (route === 'GET /follow') return this.follow(req, await this.member(req, url, body))
+    const badge = req.method === 'GET' && url.pathname.match(BADGE)
+    if (badge) return this.badge(Number(badge[1]))
 
     const handler = {
       'POST /send':   this.send,
@@ -179,6 +197,7 @@ export class TellPost {
       'GET /waiting': this.waiting,
       'POST /invite': this.invite,
       'GET /members': this.members,
+      'GET /row':     this.row,
       'GET /chain':   this.chain,
       'POST /chain':  this.extendChain,
       'GET /link/ask':     this.readAsk,
@@ -310,7 +329,57 @@ export class TellPost {
   }
 
   members() {
-    return answer({ members: this.sql.exec('SELECT number, nick, invitedBy, publicKey, sealKey, root, seq, head, joined FROM members ORDER BY number').toArray() })
+    return answer({ members: this.sql.exec('SELECT number, nick, invitedBy, fliVersion, publicKey, sealKey, root, seq, head, joined FROM members ORDER BY number').toArray() })
+  }
+
+  // ─── the member row ──────────────────────────────────────────────────────
+
+  /** The post's own signing pair, made on first use; two first uses racing keep whichever lands first. */
+  async postKeys() {
+    const held = this.sql.exec('SELECT publicKey, privateKey FROM post').toArray()[0]
+    if (held) return held
+    const made = await generateSigningKeys()
+    this.sql.exec('INSERT OR IGNORE INTO post (id, publicKey, privateKey) VALUES (1, ?, ?)', made.publicKey, made.privateKey)
+    return this.sql.exec('SELECT publicKey, privateKey FROM post').one()
+  }
+
+  /** `{ row, postKey }` for `nick` as stored now, or null for a member with no chain, whose row would bind no key. */
+  async signedRow(nick) {
+    const keys = await this.postKeys()
+    // Read after the await, so the row is one moment of the table.
+    const m = this.sql.exec('SELECT number, nick, root, head, joined, invitedBy, fliVersion FROM members WHERE nick = ?', nick).toArray()[0]
+    if (!m?.root) return null
+    const row = await signRow(keys.privateKey, { ...m, invitedBy: m.invitedBy ?? null, fliVersion: m.fliVersion ?? null, signed: now() })
+    return { row, postKey: keys.publicKey }
+  }
+
+  // A member's row by nick or by number, the caller's own with neither. A
+  // machine fetches its own before its copy is a day old, and after its chain
+  // moves; `frontier:who` reads anyone's.
+  async row(own, __, url) {
+    const number = url.searchParams.get('number')
+    const nick = number
+      ? this.sql.exec('SELECT nick FROM members WHERE number = ?', Number(number)).toArray()[0]?.nick
+      : String(url.searchParams.get('nick') ?? own).trim().toLowerCase()
+    if (!nick) return refuse(404, `No member is #${number}.`)
+    if (!this.sql.exec('SELECT 1 FROM members WHERE nick = ?', nick).toArray().length) return refuse(404, `No member is called '${nick}'.`)
+    const signed = await this.signedRow(nick)
+    if (!signed) return refuse(409, `${nick} has published no chain yet, so a row would bind no key. Any \`fli tell\` verb publishes it.`)
+    return answer(signed)
+  }
+
+  // Opened on its own, an SVG is a document on the post's origin, and the
+  // CSP keeps anything in it from running there.
+  badge(number) {
+    const m = this.sql.exec('SELECT nick, root FROM members WHERE number = ?', number).toArray()[0]
+    if (!m) return refuse(404, `No member is ${memberNumber(number)}.`)
+    if (!m.root) return refuse(409, `${memberNumber(number)} has published no chain yet, so there is no crest to draw. Any \`fli tell\` verb publishes it.`)
+    return new Response(crestSvg(m.root, `${memberNumber(number)} ${m.nick}`), { headers: {
+      'content-type': 'image/svg+xml; charset=utf-8',
+      'cache-control': BADGE_CACHE,
+      'content-security-policy': "default-src 'none'",
+      'x-content-type-options': 'nosniff',
+    } })
   }
 
   // A member's links as they were signed, for a client to verify itself:
@@ -505,7 +574,7 @@ export class TellPost {
   }
 
   async join(req, url, body) {
-    const { code, nick: asked, chain: links } = parse(body)
+    const { code, nick: asked, chain: links, fliVersion } = parse(body)
     const machine = Array.isArray(links) ? links[0]?.machine : undefined
     if (typeof machine !== 'string' || !machine) return refuse(400, 'A join is { code, nick, chain }, signed by the machine the chain\'s root names. A newer fli sends one.')
 
@@ -517,6 +586,9 @@ export class TellPost {
     const nick = typeof asked === 'string' ? asked.trim().toLowerCase() : ''
     if (!NICK.test(nick)) return refuse(400, 'A nick is 2 to 16 lower-case letters, digits, - and _.')
     if (links.length !== 1) return refuse(400, 'A join brings a chain of one, its root. A machine linked to a member is already in.')
+    if (fliVersion !== undefined && !FLI_VERSION.test(String(fliVersion))) return refuse(400, 'A join\'s fliVersion is the version of the fli that sent it.')
+    // Made before the synchronous run below, so the join's own row costs it no await.
+    await this.postKeys()
     const graded = await this.graded(nick, links)
     if (graded.refused) return refuse(graded.status, graded.refused)
 
@@ -529,9 +601,9 @@ export class TellPost {
     if (!spent) return refuse(403, 'That invite is spent, expired or unknown. Ask a member for a new one.')
     // Drawn in the same synchronous run, so two joins cannot draw one
     // number; a member never leaves the table, so a number is never reused.
-    const { number } = this.sql.exec('INSERT INTO members (nick, publicKey, joined, number, invitedBy) VALUES (?, ?, ?, (SELECT COALESCE(MAX(number), 0) + 1 FROM members), ?) RETURNING number', nick, machine, now(), spent.byNick).one()
+    const { number } = this.sql.exec('INSERT INTO members (nick, publicKey, joined, number, invitedBy, fliVersion) VALUES (?, ?, ?, (SELECT COALESCE(MAX(number), 0) + 1 FROM members), ?, ?) RETURNING number', nick, machine, now(), spent.byNick, fliVersion ?? null).one()
     this.storeChain(nick, links, graded.chain, 0)
-    return answer({ number, nick, invitedBy: spent.byNick, root: graded.chain.root }, 201)
+    return answer({ number, nick, invitedBy: spent.byNick, root: graded.chain.root, ...await this.signedRow(nick) }, 201)
   }
 }
 

@@ -323,7 +323,7 @@ describe('client.auth — the routes', () => {
     expect(c.token).toBeNull()
   })
 
-  it('password reset and email verification go to the routes, unauthenticated', async () => {
+  it('password reset goes to the routes unauthenticated, and email verification carries the held session', async () => {
     const { calls, restore } = mockFetch([{ ok: true }, { ok: true }, { ok: true }])
     cleanup = restore
     const c = createJunctionClient({ url: 'http://x', token: 'tok-1' })
@@ -340,6 +340,9 @@ describe('client.auth — the routes', () => {
     expect(calls[2].url).toBe('http://x/auth/email/verify')
     expect(calls[2].method).toBe('POST')
     expect(calls[2].body).toEqual({ token: 'verify tok/+1' })
+    // The held session names the one a confirmed change of address keeps
+    // (`FJS-D1208`); without it the tab that clicked is signed out too.
+    expect(calls[2].headers.Authorization).toBe('Bearer tok-1')
   })
 
   it('verifyEmail adopts the session a registration link answers, and nothing for a plain one', async () => {
@@ -429,16 +432,19 @@ describe('client.auth — the services', () => {
     expect(await c.auth.apiKeys()).toEqual([{ id: 'k1', name: 'ci', scopes: [] }] as never)
   })
 
-  it('changePassword is a custom method on the caller\'s own account', async () => {
-    const { calls, restore } = mockFetch([{ ok: true }])
+  it('reauthenticate and changePassword are custom methods on the caller\'s own account', async () => {
+    const { calls, restore } = mockFetch([{ until: 'T' }, { until: 'T' }, { ok: true }])
     cleanup = restore
     const c = createJunctionClient({ url: 'http://x', token: 't' })
 
-    await c.auth.changePassword('old', 'new')
-    expect(calls[0].url).toBe('http://x/account/me')
-    expect(calls[0].method).toBe('POST')
-    expect(calls[0].headers['X-Service-Method']).toBe('changePassword')
-    expect(calls[0].body).toEqual({ currentPassword: 'old', newPassword: 'new' })
+    expect(await c.auth.reauthenticate('old')).toEqual({ until: 'T' })
+    await c.auth.reauthenticate('old', '123456')
+    await c.auth.changePassword('new')
+    expect(calls.map(k => [k.method, k.url, k.headers['X-Service-Method'], k.body])).toEqual([
+      ['POST', 'http://x/account/me', 'reauthenticate', { password: 'old' }],
+      ['POST', 'http://x/account/me', 'reauthenticate', { password: 'old', code: '123456' }],
+      ['POST', 'http://x/account/me', 'changePassword', { newPassword: 'new' }],
+    ])
   })
 
   // The provider's method names are the wire's. A client that renamed one here
@@ -456,17 +462,17 @@ describe('client.auth — the services', () => {
     const c = createJunctionClient({ url: 'http://x', token: 't' })
 
     expect(await c.auth.totpStatus()).toEqual({ enabled: false, recoveryCodesRemaining: 0 })
-    expect(await c.auth.setupTotp('pw')).toEqual({ secret: 'S', qr: 'otpauth://totp/x' })
+    expect(await c.auth.setupTotp()).toEqual({ secret: 'S', qr: 'otpauth://totp/x' })
     expect(await c.auth.confirmTotp('123456')).toEqual({ recoveryCodes: ['A'] })
-    expect(await c.auth.regenerateRecoveryCodes('pw')).toEqual({ recoveryCodes: ['B'] })
-    await c.auth.disableTotp('pw')
+    expect(await c.auth.regenerateRecoveryCodes()).toEqual({ recoveryCodes: ['B'] })
+    await c.auth.disableTotp()
 
     expect(calls.map(k => [k.method, k.url, k.headers['X-Service-Method'], k.body])).toEqual([
       ['POST', 'http://x/account/me', 'totpStatus',              {}],
-      ['POST', 'http://x/account/me', 'setupTotp',               { currentPassword: 'pw' }],
+      ['POST', 'http://x/account/me', 'setupTotp',               {}],
       ['POST', 'http://x/account/me', 'confirmTotp',             { code: '123456' }],
-      ['POST', 'http://x/account/me', 'regenerateRecoveryCodes', { currentPassword: 'pw' }],
-      ['POST', 'http://x/account/me', 'disableTotp',             { currentPassword: 'pw' }],
+      ['POST', 'http://x/account/me', 'regenerateRecoveryCodes', {}],
+      ['POST', 'http://x/account/me', 'disableTotp',             {}],
     ])
   })
 })

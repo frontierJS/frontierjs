@@ -113,7 +113,10 @@ const NO_PROJECT_NEEDED = new Set(['list', 'help', '?', 'init', 'new', 'project:
 const firstArg = process.argv[2]
 // `completion:*` runs from ~/.bashrc on every new shell and on every tab press —
 // a warning there prints on terminal open and corrupts the prompt mid-line.
-const projectLessNs = firstArg?.startsWith('fli:') || firstArg?.startsWith('completion:') || firstArg === '--help' || firstArg === '-h' || !firstArg
+// The basecamp box commands run in fli's own checkout of Basecamp wherever they
+// are typed; `basecamp:deploy` reads the app here and is not one of them.
+const basecampBox = firstArg === 'basecamp' || /^basecamp:(create|install|dns|stop|destroy)$/.test(firstArg ?? '')
+const projectLessNs = firstArg?.startsWith('fli:') || firstArg?.startsWith('completion:') || firstArg === '--help' || firstArg === '-h' || !firstArg || basecampBox
 const cwdHasPkg = existsSync(resolve(process.cwd(), 'package.json'))
 if (!explicitProject && global.projectRoot === process.cwd() && !cwdHasPkg
     && !NO_PROJECT_NEEDED.has(firstArg) && !projectLessNs) {

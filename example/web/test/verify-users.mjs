@@ -408,10 +408,12 @@ let tok = joined.body.token
 // Re-authenticating is the pair: the same call one field different. 403 and
 // not 401, and the session answering afterwards is asserted beside it, because
 // a 401 is what a browser client signs the person out on (FJS-1088).
-check('setting up a factor with the wrong password is refused as 403',
-      (await account(tok, 'setupTotp', { currentPassword: 'not-it' })).status, 403)
+check('confirming the session with the wrong password is refused as 403',
+      (await account(tok, 'reauthenticate', { password: 'not-it' })).status, 403)
 check('…and the session that sent it is still a session', await whoami(tok), 200)
-const setup = await account(tok, 'setupTotp', { currentPassword: PASSWORD })
+check('…and with the right one answers when the window closes',
+      typeof (await account(tok, 'reauthenticate', { password: PASSWORD })).body?.until, 'string')
+const setup = await account(tok, 'setupTotp')
 check('…and with the right one answers a secret and an otpauth URI',
       [setup.status, /^[A-Z2-7]{32}$/.test(setup.body?.secret ?? ''), setup.body?.qr?.startsWith('otpauth://totp/')],
       [200, true, true])
@@ -466,10 +468,11 @@ check('…where the same code on a fresh ticket is accepted', [control.status, t
 // Switching it off. A ticket issued before does not become a way in without
 // the factor it was issued for.
 const stale = await password(twoStep)
-check('disabling with the wrong password is refused as 403',
-      (await account(tok, 'disableTotp', { currentPassword: 'not-it' })).status, 403)
-check('…and with the right one succeeds',
-      (await account(tok, 'disableTotp', { currentPassword: PASSWORD })).status, 200)
+check('with the factor on, the password alone does not confirm the session',
+      (await account(tok, 'reauthenticate', { password: PASSWORD })).status, 403)
+check('…the password and a code do, and disabling succeeds',
+      [(await account(tok, 'reauthenticate', { password: PASSWORD, code: authenticator(secret, 0) })).status,
+       (await account(tok, 'disableTotp')).status], [200, 200])
 check('a ticket issued before the factor was removed is refused, and says stop',
       await answer(stale.body.challenge, authenticator(secret, 1)).then(r => [r.status, r.body?.retryable]), [401, false])
 check('the status is back to nothing, recovery codes included', (await account(tok, 'totpStatus')).body,
@@ -527,7 +530,7 @@ check('the sysadmin resets it, ending the person\'s sessions', [reset.status, re
 check('…so the session on the lost phone is gone', await whoami(lost.token), 401)
 check('…and the password alone signs them in to set it up again',
       typeof (await password(addr('r'))).body?.token, 'string')
-check('a sysadmin resetting their own is refused — that is disableTotp, with a password',
+check('a sysadmin resetting their own is refused — that is disableTotp, behind reauthentication',
       (await post(`/account-recovery/me`, {}, asOps, 'resetTotp')).status, 403)
 
 await new Promise(r => setTimeout(r, 800))
@@ -728,7 +731,7 @@ check('…and now a token is stored, which the account service accepts',
 
 // Left as the drive found it: nobody else ever signs in as this address, but a
 // factor left on is a thing a later reader of the database has to explain.
-await account(signedToken, 'disableTotp', { currentPassword: PASSWORD })
+await account(signedToken, 'disableTotp')
 
 // ─── A forgotten password, on screen ───────────────────────────────────────
 //

@@ -728,6 +728,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `calls-and-media.md` — a huddle, a screen share and a recording from seams the app already has; no SFU, mesh behind one adapter
 - `changes-retirement.md` — Retire CHANGES.md: history is git, lessons go where they are read
 - `claim-checking.md` — Claim checking: a compiler for the prose in a repo
+- `cloudflare-dns.md` — Cloudflare DNS in the console: pick an account, pick a zone, edit its records, over the `cf` CLI's login
 - `command-views.md` — a command's output written as a Mesa view, rendered once as terminal text
 - `content-collections.md` — Content collections: words that are not rows
 - `controlled-language.md` — a controlled language: the vocabulary, given verbs and sentence shapes, as the thing an app is described in

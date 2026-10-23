@@ -16,7 +16,7 @@ flags:
     defaultValue: ''
   admin:
     type: string
-    description: Make this email Basecamp's first admin once it is up (asked at a terminal)
+    description: Make this email Basecamp's first admin once it is up (asked at a terminal; ME from your global fli env otherwise)
     defaultValue: ''
   outpost:
     type: boolean
@@ -34,8 +34,10 @@ already answers.
 
 `--admin <email>` then makes the first admin through Basecamp's own
 `POST /setup`, over ssh on the box, so no DNS is needed yet. At a terminal the
-email is asked when not passed and the password asked hidden; Enter, or no
-terminal, generates one and prints it once.
+email is asked when not passed, with `ME` from your global fli env as what Enter
+takes, and the password asked hidden; Enter, or no terminal, generates one and
+prints it once. **The admin is required**, since `/setup` makes the workspace
+too: with no email from any of the three, nothing is installed.
 
 Once Basecamp is up the run points the hostname at the box — `fli
 basecamp:dns`'s write, DNS-only, under the fleet's mark — at the address ssh
@@ -51,8 +53,8 @@ missing, the record is moved to the box's address if it changed, and
 The box is also asked to be an Outpost — a machine of the fleet this Basecamp
 runs, so apps can run beside it. Yes by default; `--no-outpost` leaves it out
 and skips the question. The enrollment runs last, as `fli deploy:outpost`,
-because it files the box under the workspace `POST /setup` makes. With no admin
-made it says so, and the Servers page's *Use this Basecamp server* does it later.
+because it files the box under the workspace `POST /setup` makes. When that
+call fails the enrollment is not run, and the line that runs it is printed.
 
 ```js
 const dest = String(arg.server ?? '').trim()
@@ -84,12 +86,18 @@ if (asking) echo(`\n  ${chalk.bold('fli basecamp:install')}  ${chalk.dim(`Baseca
 let admin = flag.admin
 let password = ''
 if (asking && !admin) admin = await askAdmin(ask)
-if (admin && !EMAIL.test(admin)) {
+admin ||= EMAIL.test(process.env.ME ?? '') ? process.env.ME : ''
+if (!admin) {
+  log.error(`${NO_ADMIN}. Nothing was installed`)
+  process.exitCode = 1
+  return
+}
+if (!EMAIL.test(admin)) {
   log.error(`"${admin}" is not an email address`)
   process.exitCode = 1
   return
 }
-if (admin && asking) password = await tty.secret(`${question(`Password for ${admin}`, 'Enter generates one')}\n  ${chalk.cyan('›')}`)
+if (asking) password = await tty.secret(`${question(`Password for ${admin}`, 'Enter generates one')}\n  ${chalk.cyan('›')}`)
 
 const yes = async (q) => await tty.keys(question(q), { y: 'yes', n: 'no' }) === 'y'
 const outpost = flag.outpost && (!asking || await yes(OUTPOST_QUESTION))
@@ -105,7 +113,7 @@ if (asking) {
   echo('')
   row('box', chalk.bold(dest))
   row('hostname', domain)
-  row('admin', admin ? `${admin} ${chalk.dim(password ? '' : '— password generated')}` : chalk.dim('none — make one at /setup'))
+  row('admin', `${admin} ${chalk.dim(password ? '' : '— password generated')}`)
   row('outpost', outpost ? `yes ${chalk.dim('— fli deploy:outpost once the admin is made')}` : chalk.dim('no'))
   echo('')
 }
@@ -131,6 +139,5 @@ echo`
 // An alias names the workspace after the box; a bare address has no name to give.
 const host = dest.split('@').pop()
 const workspace = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) ? 'basecamp' : host
-if (admin && !await makeAdmin({ dest, workspace, admin, password, log, echo })) process.exitCode = 1
-if (outpost && !await joinFleet(dest)) process.exitCode = 1
+if (!await adminThenFleet({ dest, workspace, admin, password, log, echo, outpost, domain, later: ` --server ${dest}${named}` })) process.exitCode = 1
 ```

@@ -10,9 +10,12 @@ title: Account
   // screen, because the credential rows are `@@gate(8)` and nothing outside the
   // provider may read one.
   //
-  // Three of the four writes ask for the password again. They change what the
-  // account needs in order to sign in, and a session left open on a shared
-  // machine is not the person who owns it.
+  // Three of the four writes need a session that confirmed the password in the
+  // last hour (`FJS-D1209`) — and the code, once the factor is on. They change
+  // what the account needs in order to sign in, and a session left open on a
+  // shared machine is not the person who owns it. A typed password confirms
+  // the session first; an empty one tries the write and says so when the
+  // window has closed.
   //
   // No QR image: drawing one needs an encoder this app does not ship. The
   // `otpauth://` URI and the secret are both what an authenticator accepts when
@@ -36,6 +39,7 @@ title: Account
   let recoveryCodes = []     // shown once, straight after they are issued
   let password      = ''
   let code          = ''
+  let sudoCode      = ''
   let error         = null
   let busy          = false
 
@@ -53,12 +57,22 @@ title: Account
   async function run(fn) {
     error = null
     busy  = true
-    try { await fn() } catch (e) { error = e?.message ?? String(e) } finally { busy = false }
+    try { await fn() } catch (e) {
+      error = e?.data?.data?.reason === 'reauthentication_required'
+        ? 'Type your password to confirm it is you — it has been more than an hour.'
+        : e?.message ?? String(e)
+    } finally { busy = false }
+  }
+
+  async function confirmed(fn) {
+    if (password) await auth().reauthenticate(password, sudoCode.trim() || undefined)
+    password = ''
+    sudoCode = ''
+    return fn()
   }
 
   const begin = () => run(async () => {
-    enrollment = await auth().setupTotp(password)
-    password   = ''
+    enrollment = await confirmed(() => auth().setupTotp())
   })
 
   const confirm = () => run(async () => {
@@ -70,14 +84,12 @@ title: Account
   })
 
   const regenerate = () => run(async () => {
-    recoveryCodes = (await auth().regenerateRecoveryCodes(password)).recoveryCodes
-    password      = ''
+    recoveryCodes = (await confirmed(() => auth().regenerateRecoveryCodes())).recoveryCodes
     await load()
   })
 
   const disable = () => run(async () => {
-    await auth().disableTotp(password)
-    password      = ''
+    await confirmed(() => auth().disableTotp())
     recoveryCodes = []
     await load()
     toasts.info('Two-step sign-in is off')
@@ -145,8 +157,8 @@ title: Account
     {:else if !status.enabled}
       <p>Signing in asks for your password only. Turn this on and it will also ask for a code from an app on your phone.</p>
       <form class="stack" onsubmit={e => { e.preventDefault(); begin() }}>
-        <Field label="Your password" hint="asked again because this changes how the account signs in">
-          <Input id="totp-password" type="password" bind:value={password} autocomplete="current-password" required />
+        <Field label="Your password" hint="asked when you have not confirmed it in the last hour">
+          <Input id="totp-password" type="password" bind:value={password} autocomplete="current-password" />
         </Field>
         <Button type="submit" id="totp-enable" disabled={busy}>Set up two-step sign-in</Button>
       </form>
@@ -157,8 +169,11 @@ title: Account
         {status.recoveryCodesRemaining === 1 ? 'code' : 'codes'} left.
       </p>
       <form class="stack" onsubmit={e => e.preventDefault()}>
-        <Field label="Your password" hint="needed for either of these">
-          <Input id="totp-password" type="password" bind:value={password} autocomplete="current-password" required />
+        <Field label="Your password" hint="asked when you have not confirmed it in the last hour">
+          <Input id="totp-password" type="password" bind:value={password} autocomplete="current-password" />
+        </Field>
+        <Field label="Code from the app" hint="with the password">
+          <Input id="totp-sudo-code" bind:value={sudoCode} autocomplete="one-time-code" inputmode="numeric" />
         </Field>
         <div class="cluster">
           <Button treatment="outlined" id="totp-regenerate" disabled={busy} onclick={regenerate}>New recovery codes</Button>

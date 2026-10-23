@@ -1966,7 +1966,8 @@ const me       = await client.auth.me()
 const sessions = await client.auth.sessions()          // where else am I signed in
 await client.auth.revokeOtherSessions()
 const { key }  = await client.auth.createApiKey({ name: 'ci' })  // the key exists once
-await client.auth.changePassword(current, next)
+await client.auth.reauthenticate(password, code)      // sudo mode: an hour of the changes below
+await client.auth.changePassword(next)                  // 403 reauthentication_required past it
 await client.auth.requestPasswordReset(email)
 await client.auth.requestMagicLink(email)
 await client.auth.signInWithMagicLink({ token })       // or { email, code } — answers what signIn does

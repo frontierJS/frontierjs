@@ -125,9 +125,10 @@ export interface ComputeMachine {
  * nobody here knows about, billing forever, and the mark is the only thread
  * back to it. Every connector must send it.
  *
- * Basecamp's OWN box is the one machine with no `userData` and with `sshKeys`
- * (`FJS-D1253`): `install.sh` is served by a Basecamp, so the box it will run
- * on cannot boot from it, and `fli deploy` reaches that box over SSH instead.
+ * Basecamp's OWN box is the one machine with `sshKeys` and no install in its
+ * `userData` (`FJS-D1253`): `install.sh` is served by a Basecamp, so the box it
+ * will run on cannot boot from it, and `fli deploy` reaches that box over SSH
+ * instead. Its `userData` is at most the reserved IP's egress route.
  */
 export interface MachineSpec {
   name:      string

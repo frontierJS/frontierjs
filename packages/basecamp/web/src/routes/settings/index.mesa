@@ -15,14 +15,18 @@ title: Your settings
   //                  is not a column the form may write: it moves through
   //                  `client.auth.requestEmailChange`, which mails the new
   //                  one, and the move lands on /verify-email/ at the click.
-  //   Password       `client.auth.changePassword` — the current one is required
-  //                  by the server, which is the whole point of the control.
+  //   Password       `client.auth.changePassword`, behind sudo mode like every
+  //                  credential change here (`FJS-D1209`): a typed password
+  //                  — and code, once two-step is on — confirms the session
+  //                  first through `client.auth.reauthenticate`; left empty,
+  //                  the change goes through within the hour after a sign-in
+  //                  and is refused by reason after it.
   //   Notifications  the new `notification-preferences` service.
   //   Sessions       `client.auth.sessions()` — every live sign-in, revocable.
   //   Two-step       `client.auth.setupTotp` → `confirmTotp`; three of the four
-  //                  writes re-ask for the password, because they change what
-  //                  signing in requires and an open session on a shared
-  //                  machine is not the account holder.
+  //                  writes are behind the same confirmation, because they
+  //                  change what signing in requires and an open session on a
+  //                  shared machine is not the account holder.
   //
   // ─── Why this reaches client.auth and not a resource ────────────────────
   //
@@ -94,6 +98,7 @@ title: Your settings
   let totpPassword  = ''
   let totpCode      = ''
   let totpError     = null
+  let sudoCode      = ''     // the second factor, beside whichever password confirms
 
   async function load() {
     error = null; loading = true
@@ -142,18 +147,28 @@ title: Your settings
     }
   }
 
+  // ─── Sudo mode ────────────────────────────────────────────────────────
+  // The password is never checked in the browser: the only copy is the
+  // server's hash, so a wrong one arrives as the reauthenticate's refusal.
+  async function confirmed(password, fn) {
+    if (password) await getClient().auth.reauthenticate(password, sudoCode.trim() || undefined)
+    sudoCode = ''
+    return fn()
+  }
+  const refusal = e => e?.data?.data?.reason === 'reauthentication_required'
+    ? 'Type your password to confirm it is you — it has been more than an hour.'
+    : e.message
+
   async function changePassword() {
     pwError = null
     if (next !== confirm) { pwError = 'The two new passwords do not match'; return }
     changing = true
     try {
-      await getClient().auth.changePassword(current, next)
+      await confirmed(current, () => getClient().auth.changePassword(next))
       current = ''; next = ''; confirm = ''
-      toasts.success('Password changed. Your other sessions stay signed in.')
+      toasts.success('Password changed. Your other sessions were signed out.')
     } catch (e) {
-      // 'Current password is incorrect' arrives here. Never checked in the
-      // browser: the only copy of the password is the server's hash.
-      pwError = e.message
+      pwError = refusal(e)
     } finally {
       changing = false
     }
@@ -229,11 +244,11 @@ title: Your settings
     emailError = null; busy = 'email'
     const to = newEmail.trim()
     try {
-      await getClient().auth.requestEmailChange(emailPassword, to)
+      await confirmed(emailPassword, () => getClient().auth.requestEmailChange(to))
       emailSentTo = to; newEmail = ''; emailPassword = ''
       toasts.success(`Link sent to ${to}`)
     } catch (e) {
-      emailError = e.message
+      emailError = refusal(e)
     } finally {
       busy = null
     }
@@ -242,11 +257,11 @@ title: Your settings
   // ─── Two-step sign-in ─────────────────────────────────────────────────
   async function totpStep(fn) {
     totpError = null; busy = 'totp'
-    try { await fn(getClient().auth) } catch (e) { totpError = e.message } finally { busy = null }
+    try { await fn(getClient().auth) } catch (e) { totpError = refusal(e) } finally { busy = null }
   }
 
   const beginTotp = () => totpStep(async a => {
-    enrollment   = await a.setupTotp(totpPassword)
+    enrollment   = await confirmed(totpPassword, () => a.setupTotp())
     totpPassword = ''
   })
 
@@ -259,13 +274,13 @@ title: Your settings
   })
 
   const regenerateCodes = () => totpStep(async a => {
-    recoveryCodes = (await a.regenerateRecoveryCodes(totpPassword)).recoveryCodes
+    recoveryCodes = (await confirmed(totpPassword, () => a.regenerateRecoveryCodes())).recoveryCodes
     totpPassword  = ''
     totp          = await a.totpStatus()
   })
 
   const disableTotp = () => totpStep(async a => {
-    await a.disableTotp(totpPassword)
+    await confirmed(totpPassword, () => a.disableTotp())
     totpPassword  = ''
     recoveryCodes = []
     totp          = await a.totpStatus()
@@ -345,12 +360,16 @@ title: Your settings
                autocomplete="email" required value={newEmail}
                oninput={e => newEmail = e.target.value} />
         <Input id="email-password" name="currentPassword" type="password" label="Your password"
-               hint="Asked again because a password reset goes to this address"
-               autocomplete="current-password" required value={emailPassword}
+               hint="Asked when you have not confirmed it in the last hour — a password reset goes to this address"
+               autocomplete="current-password" value={emailPassword}
                oninput={e => emailPassword = e.target.value} />
+        {#if totp?.enabled}
+          <Input id="email-sudo-code" name="code" label="Code from the app" autocomplete="one-time-code"
+                 inputmode="numeric" value={sudoCode} oninput={e => sudoCode = e.target.value} />
+        {/if}
         <div class="cluster">
           <Button type="submit" tone="primary" id="email-change-submit"
-                  disabled={busy === 'email' || !newEmail.trim() || !emailPassword}>
+                  disabled={busy === 'email' || !newEmail.trim()}>
             {busy === 'email' ? 'Sending…' : 'Send the link'}
           </Button>
         </div>
@@ -376,8 +395,13 @@ title: Your settings
       </article>
     {/if}
     <Input id="pw-current" name="currentPassword" type="password" label="Current password"
+           hint="Asked when you have not confirmed it in the last hour"
            autocomplete="current-password" value={current}
            oninput={(e) => current = e.target.value} />
+    {#if totp?.enabled}
+      <Input id="pw-sudo-code" name="code" label="Code from the app" autocomplete="one-time-code"
+             inputmode="numeric" value={sudoCode} oninput={e => sudoCode = e.target.value} />
+    {/if}
     <Input id="pw-new" name="newPassword" type="password" label="New password"
            autocomplete="new-password" value={next}
            hint="At least 8 characters"
@@ -385,7 +409,7 @@ title: Your settings
     <Input id="pw-confirm" name="confirmPassword" type="password" label="Confirm new password"
            autocomplete="new-password" value={confirm}
            oninput={(e) => confirm = e.target.value} />
-    <Button tone="primary" id="change-password" disabled={changing || !current || !next}
+    <Button tone="primary" id="change-password" disabled={changing || !next}
             onclick={changePassword}>
       {changing ? 'Changing…' : 'Change password'}
     </Button>
@@ -523,10 +547,10 @@ title: Your settings
       <p class="text-sm text-muted">Signing in asks for your password only. Turn this on and it also asks for a code from an app on your phone.</p>
       <form class="stack" novalidate onsubmit={e => { e.preventDefault(); beginTotp() }}>
         <Input id="totp-password" name="currentPassword" type="password" label="Your password"
-               hint="Asked again because this changes how you sign in" autocomplete="current-password"
-               required value={totpPassword} oninput={e => totpPassword = e.target.value} />
+               hint="Asked when you have not confirmed it in the last hour" autocomplete="current-password"
+               value={totpPassword} oninput={e => totpPassword = e.target.value} />
         <div class="cluster">
-          <Button type="submit" tone="primary" id="totp-enable" disabled={busy === 'totp' || !totpPassword}>Set up two-step sign-in</Button>
+          <Button type="submit" tone="primary" id="totp-enable" disabled={busy === 'totp'}>Set up two-step sign-in</Button>
         </div>
       </form>
     {:else}
@@ -537,14 +561,16 @@ title: Your settings
       </p>
       <div class="stack">
         <Input id="totp-password" name="currentPassword" type="password" label="Your password"
-               hint="Needed for either of these" autocomplete="current-password"
+               hint="Asked when you have not confirmed it in the last hour" autocomplete="current-password"
                value={totpPassword} oninput={e => totpPassword = e.target.value} />
+        <Input id="totp-sudo-code" name="code" label="Code from the app" autocomplete="one-time-code"
+               inputmode="numeric" value={sudoCode} oninput={e => sudoCode = e.target.value} />
         <div class="cluster">
-          <Button treatment="outlined" id="totp-regenerate" disabled={busy === 'totp' || !totpPassword}
+          <Button treatment="outlined" id="totp-regenerate" disabled={busy === 'totp'}
                   data-confirm="Every recovery code you saved stops working."
                   data-confirm-title="Replace your recovery codes?" data-confirm-label="Replace"
                   onclick={regenerateCodes}>New recovery codes</Button>
-          <Button treatment="outlined" tone="danger" id="totp-disable" disabled={busy === 'totp' || !totpPassword}
+          <Button treatment="outlined" tone="danger" id="totp-disable" disabled={busy === 'totp'}
                   data-confirm="Signing in asks for your password only."
                   data-confirm-title="Turn off two-step sign-in?" data-confirm-label="Turn off"
                   onclick={disableTotp}>Turn it off</Button>

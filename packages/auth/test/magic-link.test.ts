@@ -199,7 +199,7 @@ describe('an account with a second factor', () => {
   test('the link earns a ticket, not a session, and the TOTP code finishes it', async () => {
     const email = nextEmail()
     const u = await h.auth.createUser({ email, password: 'pw-correct-1' })
-    const { secret } = await h.auth.setupTotp!(u.id, 'pw-correct-1')
+    const { secret } = await h.auth.setupTotp!(u.id)
     await h.auth.confirmTotp!(u.id, totp(secret, new Date()))
 
     const mail   = await mailed(email)

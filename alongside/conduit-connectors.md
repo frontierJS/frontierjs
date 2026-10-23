@@ -15,8 +15,8 @@ read them before writing code:
 ## Where it stands
 
 **Every connector below already exists as a prototype** in the sibling workspace
-`../conduit-connectors/` (own repo; `IDEAS/conduit-connectors.md` § Prototyped
-has the state table, verified by running every drive 2026-10-12). The lane's
+`../conduit-connectors/` (own repo; its `PROJECT_STATE.md` has the state table, and `bun run drive` at
+its root re-proves it). The lane's
 job is now PROMOTION: move a prototype into `packages/conduit-<vendor>/` with its
 sink and drive, swap the two relative imports for workspace dependencies, and
 add the row. Start from the prototype, not from the references below.

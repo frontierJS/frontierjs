@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3852 source file(s) read
+26 package(s) · 3855 source file(s) read
 234 entry point(s), 36 imported by nothing outside their package, 15 emitted
-1571 value export(s), 618 reached by nothing outside, 165 emitted
+1572 value export(s), 619 reached by nothing outside, 165 emitted
 451 type export(s), 347 reached by nothing outside
 ```
 
@@ -38,7 +38,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `junction` | 26 | 4 | 264 | 121 | 12 | 267 | 211 |
 | `mesa` | 18 | 4 | 286 | 100 | 70 | 0 | 0 |
 | `sierra` | 25 | 6 | 196 | 82 | 22 | 0 | 0 |
-| `auth` | 6 | 1 | 51 | 36 | 3 | 15 | 13 |
+| `auth` | 6 | 1 | 52 | 37 | 3 | 15 | 13 |
 | `jetty` | 7 | 4 | 43 | 29 | 0 | 0 | 0 |
 | `ui` | 9 | 0 | 51 | 33 | 3 | 0 | 0 |
 | `toolbelt` | 59 | 0 | 263 | 29 | 11 | 0 | 0 |
@@ -63,13 +63,13 @@ surface gains an unreached export or loses its last caller, and not on every imp
 
 ## `@frontierjs/auth`
 
-`packages/auth` · 6 entry point(s) · 51 value, 15 type export(s)
+`packages/auth` · 6 entry point(s) · 52 value, 15 type export(s)
 
 **Entries imported by nothing outside (1):** `./schema`
 
 **Entries not source (2, not graded):** `./schema.lite` `./user.lite`
 
-**Unreached values (36):** `AuthConfigError` `AuthError` `base32Decode` `base32Encode` `beginFlow` `constantTimeEqual` `createAuthServices` `EmailTakenError` `exchangeCode` `fetchIdentity` `generateRecoveryCode` `generateRecoveryCodes` `generateTotpSecret` `generateVerifier` `hotp` `InvalidCredentialsError` `InvalidExpiryError` `InvalidSecondFactorError` `InvalidTokenError` `isAllowedReturnTo` `LastCredentialError` `NoPasswordCredentialError` `normalizeRecoveryCode` `OAUTH_STATE_COOKIE` `OAuthError` `otpauthUri` `ReauthenticationFailedError` `RECOVERY_CODE_COUNT` `retargetDb` `stateMatches` `SupportEpisodeError` `TOTP_DIGITS` `TOTP_STEP_SEC` `TotpAlreadyEnabledError` `UserNotFoundError` `WeakPasswordError`
+**Unreached values (37):** `AuthConfigError` `AuthError` `base32Decode` `base32Encode` `beginFlow` `constantTimeEqual` `createAuthServices` `EmailTakenError` `exchangeCode` `fetchIdentity` `generateRecoveryCode` `generateRecoveryCodes` `generateTotpSecret` `generateVerifier` `hotp` `InvalidCredentialsError` `InvalidExpiryError` `InvalidSecondFactorError` `InvalidTokenError` `isAllowedReturnTo` `LastCredentialError` `NoPasswordCredentialError` `normalizeRecoveryCode` `OAUTH_STATE_COOKIE` `OAuthError` `otpauthUri` `ReauthenticationFailedError` `ReauthenticationRequiredError` `RECOVERY_CODE_COUNT` `retargetDb` `stateMatches` `SupportEpisodeError` `TOTP_DIGITS` `TOTP_STEP_SEC` `TotpAlreadyEnabledError` `UserNotFoundError` `WeakPasswordError`
 
 **Emitted (3):** `authMachineryModels` `authUserModel` `PROVIDER_PRESETS`
 

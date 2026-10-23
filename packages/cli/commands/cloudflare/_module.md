@@ -11,45 +11,6 @@ defaults:
       defaultValue: '${CLOUDFLARE_ACCOUNT_ID}'
 ---
 
-<script>
-// ─── Cloudflare API helper ────────────────────────────────────────────────────
-// Token resolution order:
-//   1. flag.token (per-run override)
-//   2. CLOUDFLARE_TOKEN in project .env  (client work)
-//   3. CLOUDFLARE_TOKEN in ~/.config/fli/.env  (your default account)
-const cfToken = ($) =>
-  $?.flag?.token || process.env.CLOUDFLARE_TOKEN
-
-const cfApi = async ($, method, path, body) => {
-  const token = cfToken($)
-  const res = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
-    method,
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  })
-  const data = await res.json()
-  if (!data.success) {
-    const errs = (data.errors || []).map(e => `${e.code}: ${e.message}`).join(', ')
-    throw new Error(errs || `Cloudflare API error ${res.status}`)
-  }
-  return data.result
-}
-
-// Resolve zone ID from a zone name or ID string
-const resolveZone = async ($, zoneArg) => {
-  if (!zoneArg) throw new Error('No zone specified — use --zone or set CLOUDFLARE_DEFAULT_ZONE')
-  // If it looks like an ID (32 hex chars), use directly
-  if (/^[a-f0-9]{32}$/i.test(zoneArg)) return zoneArg
-  // Otherwise look it up by name
-  const zones = await cfApi($, 'GET', `/zones?name=${zoneArg}&per_page=1`)
-  if (!zones.length) throw new Error(`Zone not found: ${zoneArg}`)
-  return zones[0].id
-}
-</script>
-
 ## Setup
 
 You need a Cloudflare API Token to use any `cloudflare:` command.
@@ -84,10 +45,10 @@ CLOUDFLARE_ACCOUNT_ID=<client-account-id>
 CLOUDFLARE_DEFAULT_ZONE=<client-domain.com>
 ```
 
-Or pass `--token` and `--zone` inline for a one-off override:
+Or pass `--profile` and `--zone` inline for a one-off override:
 
 ```
-fli cloudflare:dns --zone clientdomain.com --token cf_xxxxx
+fli cloudflare:dns --zone clientdomain.com --profile client
 ```
 
 ## Environment variables

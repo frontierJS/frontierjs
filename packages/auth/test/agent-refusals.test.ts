@@ -139,9 +139,9 @@ describe('an agent cannot change the credentials of the person it acts for', () 
     expect(await h.auth.verifySession(other)).not.toBeNull()
   })
 
-  test('account_changePassword is refused before the password is read', async () => {
+  test('account_changePassword is refused and the password stays', async () => {
     const p   = await person()
-    const res = await call(p.token, 'account_changePassword', { data: { currentPassword: PW, newPassword: 'pw-agent-2' } })
+    const res = await call(p.token, 'account_changePassword', { data: { newPassword: 'pw-agent-2' } })
     expect(res.isError).toBe(true)
     expect(res.content[0].text).toContain("agent's tool call")
     expect(await h.auth.login(p.email, PW)).toHaveProperty('token')
@@ -149,7 +149,7 @@ describe('an agent cannot change the credentials of the person it acts for', () 
 
   test('account_requestEmailChange is refused, and no link is minted', async () => {
     const p   = await person()
-    const res = await call(p.token, 'account_requestEmailChange', { data: { currentPassword: PW, newEmail: `moved-${p.email}` } })
+    const res = await call(p.token, 'account_requestEmailChange', { data: { newEmail: `moved-${p.email}` } })
     expect(res.isError).toBe(true)
     expect(res.content[0].text).toContain("agent's tool call")
     expect(await h.sys.verification.findMany({ where: { purpose: 'emailChange', userId: p.userId } })).toEqual([])

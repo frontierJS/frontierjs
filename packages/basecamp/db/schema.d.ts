@@ -472,6 +472,13 @@ export interface Session {
    */
   enrollmentOnly: boolean
   /**
+   * When this session last proved the password (and the code, where a second
+   * factor is live): at sign-in, and again at `account.reauthenticate`. The
+   * credential changes refuse past `reauthenticationWindow` (`FJS-D1209`).
+   * Null is never fresh.
+   */
+  reauthenticatedAt?: string | null
+  /**
    * SUPPORT MODE — this session is an operator's, and while these are set it
    * resolves to somebody else.
    * 
@@ -507,6 +514,13 @@ export interface SessionCreate {
    */
   enrollmentOnly?: boolean
   /**
+   * When this session last proved the password (and the code, where a second
+   * factor is live): at sign-in, and again at `account.reauthenticate`. The
+   * credential changes refuse past `reauthenticationWindow` (`FJS-D1209`).
+   * Null is never fresh.
+   */
+  reauthenticatedAt?: string | Date | null
+  /**
    * SUPPORT MODE — this session is an operator's, and while these are set it
    * resolves to somebody else.
    * 
@@ -536,6 +550,7 @@ export interface SessionUpdate {
   ipAddress?: string | null
   userAgent?: string | null
   enrollmentOnly?: boolean
+  reauthenticatedAt?: string | Date | null
   impersonatingUserId?: string | null
   impersonationReason?: string | null
   impersonationEndsAt?: string | Date | null
@@ -550,6 +565,7 @@ export interface SessionWhere extends WhereBase {
   userAgent?: string | WhereOp<string> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   enrollmentOnly?: boolean | WhereOp<boolean> | null
+  reauthenticatedAt?: string | Date | WhereOp<string | Date> | null
   impersonatingUserId?: string | WhereOp<string> | null
   impersonationReason?: string | WhereOp<string> | null
   impersonationEndsAt?: string | Date | WhereOp<string | Date> | null

@@ -33,7 +33,7 @@ fli haven                            # Haven: another, with no key of its own
 jobs. Identity is `setup`, `join`, `invite`, `link`, `revoke`, `paper`, `who`
 and the chain in `packages/cli/core/tell-chain.js`. Mail is `send` and `inbox`.
 Phase 2 (numbers, the invite allowance, the signed member row, lineage, the
-badge, the oath), which began as the pony-express paper's Phase 6, is already
+badge), which began as the pony-express paper's Phase 6, is already
 this network in all but name.
 
 **What is not built is the one identity.** A person on this tree today holds
@@ -62,7 +62,7 @@ checked.
 | Urbit | An identity is a number, and each sponsor issues a fixed count; the scarcity is the anti-spam measure ([Wikipedia](https://en.wikipedia.com/wiki/Urbit)). *Memory:* each number has a pronounceable name (`~sampel-palnet`). | The allowance (6.3), and a spoken name for `#42` read off the PGP word list |
 | [Radicle](https://radicle.xyz/guides/user) | The alias is non-unique and changeable, and the Ed25519 key is the identity. | Rejected below: the shape a network takes when it declines a namespace |
 | [Bluesky](https://bsky.social/about/blog/4-28-2023-domain-handle-tutorial), [Nostr NIP-05](https://nostr.how/en/get-verified) | The handle is a domain the member proves, by DNS TXT or `/.well-known/`. NIP-05 says it identifies and does not verify. | Phase 5's optional proof |
-| [npm](https://docs.npmjs.com/policies/disputes) | Squatting is a written rule: a name held with no real use. It may refuse a valid claim that would risk the supply chain. | The squatting line in the oath (4.2) |
+| [npm](https://docs.npmjs.com/policies/disputes) | Squatting is a written rule: a name held with no real use. It may refuse a valid claim that would risk the supply chain. | The squatting line (4.2) |
 | [ENS](https://docs.ens.domains/ensv2/eth-registrar) | A yearly fee by name length. Its own forum finds squatting [cheaper than owning](https://discuss.ens.domains/t/ens-is-losing-money-with-the-current-model-heres-how-to-fix-it/14337). | Rejected below |
 
 **The problem has a name.** [Zooko's triangle](https://newsletter.squishy.computer/p/cheating-zookos-triangle):
@@ -265,7 +265,7 @@ the chain, linking and revoking are built (`FJS-D1409`), which they are.
   Driven under `wrangler dev`, 10 checks: the owner mints a fourth, a member
   counts 2, 1, last and is refused at a fourth, a join keeps the seat, a code
   minted before the cap still spends. Expiry is not driven: a day.
-- [ ] 2.4 The signed member row: at join the post signs `{ number, nick,
+- [x] 2.4 The signed member row: at join the post signs `{ number, nick,
   root, head, joined, invitedBy, fliVersion, signed }` with a key of its own,
   countersigning the chain's head (`FJS-D1421`) and signed again as the head
   moves, and `stake` writes it to `~/.fli/frontier/member.json`. It proves the
@@ -275,19 +275,69 @@ the chain, linking and revoking are built (`FJS-D1409`), which they are.
   old, one value held beside the row's verifier, and a member's machine
   fetches a fresh row before its copy is that old, so a revoke reaches every
   reader within a day (`FJS-D1445`).
-- [ ] 2.5 `fli frontier:who` takes a nick or a number and
+  Built: the object makes its own Ed25519 pair on first use and keeps it in
+  a `post` table (`FJS-D1467`); `signRow` and `readRow` sit in
+  `core/frontier-chain.js` beside the chain, with `ROW_AGE`, so the Worker and
+  every reader share one message. The row is signed when asked, never stored:
+  in the join's answer and on `GET /row[?nick=]`, so it always names the head
+  the post holds. `stake` sends `fliVersion` and pins `frontier.postKey`; the
+  background check behind the notice line fetches a fresh row at half the age
+  and when this machine's chain is ahead of the row's head. A member with no
+  published chain gets no row, and the owner and members from before 2.4 have
+  a null `fliVersion`. Driven under `wrangler dev`, 19 checks: the row verifies
+  offline under the pinned key; a forged number or inviter, a row past a day,
+  one signed by another key and one under another post key are refused; a
+  `fliVersion` that could carry a line is refused with the code unspent; a
+  paper key moves the head and the check re-signs; a restart keeps the key.
+- [x] 2.5 `fli frontier:who` takes a nick or a number and
   prints the signed row beside the fingerprint words: `#0042 sam · joined
   2026-10-21 · pre-1.0 · via #0007`. One verb for *who is this*, not two.
-- [ ] 2.6 `fli frontier:lineage [nick]`: the invite tree read from `invitedBy`.
-- [ ] 2.7 `GET /badge/<number>.svg` from the Worker, for a README: the
+  Built: `42` and `#42` read a number through `GET /row?number=`, and the
+  row is graded against the pinned post key, held to the nick or number
+  asked for, and bound to the chain just verified (`rowBindsChain`: its root,
+  a head the chain holds) before anything prints; a refusal exits 1 with no
+  number shown. The inviter prints as the nick the row signs, `via sam`, not
+  `#0007`: the row carries no inviter number, and a second row fetched for it
+  buys a number `who sam` already shows. `pre-1.0` is a `0.` `fliVersion`;
+  a null one prints nothing. With no nick, `member.json` is graded the same
+  way and fetched fresh when stale. With the post down, a nick reads its pin
+  with no row and a number is refused. Driven under `wrangler dev` through a
+  proxy that tampers with answers, 20 checks: `who bea`, `who 2`, `who #3`
+  print the row and words; a forged number, a row re-signed under another
+  key, another member's genuine row, and a chain swapped under the nick are
+  each refused; the owner prints `#0001` with no inviter or version; a
+  forged `member.json` is not shown and an old one is fetched fresh.
+- [x] 2.6 `fli frontier:lineage [nick]`: the invite tree read from `invitedBy`.
+  Built: from `GET /members`, no Worker change; the list is unsigned, which
+  costs nothing against the post, since the post signs every row (B17).
+  `lineageLines` in `core/frontier-member.js` draws it, each level by number,
+  and with a nick or number keeps only the line up to the root and everyone
+  under; each line reads as `who` prints, without the `via`, which is the
+  line above. Driven under `wrangler dev`, 15 checks: five members in two
+  branches drawn whole, `lineage cara` and `lineage #5` cut to their lines,
+  an unknown nick or number refused, an inviter loop a lying post invents
+  drawn once and stopped, `--dry` and a post down.
+- [x] 2.7 `GET /badge/<number>.svg` from the Worker, for a README: the
   member's crest (2.10) beside `#0042 sam` (owner, 2026-10-22).
+  Built: the one route nobody signs, since a README's reader has no key; it
+  says what `GET /members` tells any member (`FJS-D1449`). `crestSvg` in
+  `core/crest.js` draws it, 24px tall, and `memberNumber` moved to
+  `frontier-chain.js` so the Worker writes the number as the cli does. A day
+  of cache, since nothing on a badge changes but a redrawn crest; a CSP of
+  `default-src 'none'`, since an SVG opened alone is a document on the post's
+  origin. A member with no chain yet is a 409, as `GET /row` is. Driven under
+  `wrangler dev`, 17 checks: bea's badge byte for byte against the root her
+  own key makes, the owner refused before a verb publishes the chain and
+  drawn after, an unknown number, a nick, another extension and a POST
+  refused, every other route still signed, and Chrome parsing it and drawing
+  two as `<img>` at 24px tall.
 - [ ] 2.8 In Haven, the number is a nameplate on a member's figure, and
   `IDEAS/haven.md` 22.4's post office carries the members as a board.
   **Needs haven Phase 22.**
-- [ ] 2.9 The oath: `frontier:stake` prints one line to accept before the
-  code is spent — where a code of conduct is read once. From memory, not
-  checked: the historical Pony Express ran April 1860 to October 1861 with
-  about 80 riders on the trail at a time, and each swore an oath.
+- [x] 2.9 ~~The oath: `frontier:stake` prints one line to accept before the
+  code is spent.~~ Withdrawn (owner, 2026-10-22, `FJS-D1475`): `stake` asks
+  nothing to accept, and the squatting line it was to carry is a written rule
+  instead (4.2).
 - [x] 2.10 The crest: a member's mark, drawn from the chain root as the
   eight words are (owner, 2026-10-22). It is the words as a picture, so it
   is stored nowhere and is the same on every machine. It is for recognition,
@@ -307,8 +357,8 @@ the chain, linking and revoking are built (`FJS-D1409`), which they are.
   the 15 cells, then a metal, a color and which is the field, so the rule of
   tincture always holds. Four colors, not five: sable vanishes on a dark
   terminal. `frontier:who` draws it beside the label and words, `██` per cell,
-  the field shaded `░░` with color off. The scroll waits for 2.5 (the number in
-  `who`) and 2.7 (the SVG). The fixed root-to-grid test is owed until the
+  the field shaded `░░` with color off. The badge (2.7) writes the number and
+  nick on its frame. The fixed root-to-grid test is owed until the
   drawing is settled.
 
 ### Phase 3 — Haven reads the chain
@@ -330,11 +380,12 @@ Done when: a scratch `HOME` that staked `ada` walks into a local Haven as
 ### Phase 4 — Names
 
 Goal: the namespace has written rules before it has strangers.
-Done when: staking a reserved nick is refused naming the reason, and the oath
-prints the squatting line.
+Done when: staking a reserved nick is refused naming the reason, and the
+squatting line is written where a member reads the network's rules.
 
 - [ ] 4.1 A reserved list held by the Worker beside `OWNER_NICK` (Q5).
-- [ ] 4.2 The oath (2.9) carries an npm-style squatting line.
+- [ ] 4.2 An npm-style squatting line, a written rule in the cli README's
+  Frontier section that no verb prints (`FJS-D1475`).
 - [x] 4.3 What a bad invitee costs the inviter — nothing to build: Q4 ruled
   that the public tree (2.6) is the whole of it (`FJS-D1449`).
 

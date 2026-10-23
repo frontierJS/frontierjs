@@ -1978,6 +1978,7 @@ table `session` · db `main` · gate `8`
 | `impersonationEndsAt` | `DateTime` | yes | — | — |
 | `impersonationReason` | `String` | yes | — | — |
 | `ipAddress` | `String` | yes | — | — |
+| `reauthenticatedAt` | `DateTime` | yes | — | — |
 | `token` | `String` | no | — | unique · @guarded · **required on write** |
 | `user` | `User` | — | — | relation |
 | `userAgent` | `String` | yes | — | — |

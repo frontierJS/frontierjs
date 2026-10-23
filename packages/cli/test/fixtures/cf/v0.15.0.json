@@ -1,0 +1,41 @@
+{
+  "cf": "v0.15.0",
+  "read": "2026-10-22, IDEAS/cloudflare-dns.md § Measured. Ids and names are invented; every object's keys and every refusal's text are as cf printed them. Writes were read with --dry-run only, so what create/edit/delete answer is the API's own object, not a run.",
+  "perPage": { "accounts": 20, "zones": 20, "records": 100 },
+  "profiles": { "default": "login", "client": "client-login" },
+  "tokens": { "project-token": "project" },
+  "accounts": {
+    "login": [
+      { "id": "acc-own", "name": "Own account", "type": "standard", "settings": {}, "legacy_flags": {}, "created_on": "2024-01-01T00:00:00Z" },
+      { "id": "acc-agency", "name": "Agency account", "type": "standard", "settings": {}, "legacy_flags": {}, "created_on": "2024-02-01T00:00:00Z" }
+    ],
+    "client-login": [
+      { "id": "acc-client", "name": "Client account", "type": "standard", "settings": {}, "legacy_flags": {}, "created_on": "2025-03-01T00:00:00Z" }
+    ],
+    "project": [
+      { "id": "acc-project", "name": "Project account", "type": "standard", "settings": {}, "legacy_flags": {}, "created_on": "2025-04-01T00:00:00Z" }
+    ]
+  },
+  "zones": {
+    "acc-own": [
+      { "id": "zone-own", "name": "own.example", "status": "active", "paused": false, "type": "full", "name_servers": ["ada.ns.cloudflare.com", "bob.ns.cloudflare.com"], "account": { "id": "acc-own", "name": "Own account" }, "plan": { "name": "Free Website" } }
+    ],
+    "acc-agency": [
+      { "id": "zone-agency", "name": "agency.example", "status": "active", "paused": false, "type": "full", "name_servers": ["ada.ns.cloudflare.com", "bob.ns.cloudflare.com"], "account": { "id": "acc-agency", "name": "Agency account" }, "plan": { "name": "Free Website" } }
+    ],
+    "acc-client": [],
+    "acc-project": []
+  },
+  "records": {
+    "zone-own": [
+      { "id": "rec-apex", "name": "own.example", "type": "A", "content": "192.0.2.10", "proxiable": true, "proxied": true, "ttl": 1, "settings": {}, "meta": {}, "comment": null, "tags": [], "created_on": "2024-01-02T00:00:00Z", "modified_on": "2024-01-02T00:00:00Z" },
+      { "id": "rec-mx", "name": "own.example", "type": "MX", "content": "mx.own.example", "priority": 10, "proxiable": false, "proxied": false, "ttl": 3600, "settings": {}, "meta": {}, "comment": "basecamp", "tags": [], "created_on": "2024-01-02T00:00:00Z", "modified_on": "2024-01-02T00:00:00Z" }
+    ],
+    "zone-agency": []
+  },
+  "refusals": {
+    "path": "\n┌ APIError\n│ [10000] Authentication error\n│ 403 Forbidden · HTTP {path}\n└\n\n→ Check your API token permissions\n",
+    "token": "\n┌ APIError\n│ [6003] Invalid request headers\n│ 400 Bad Request · HTTP {path}\n└\n",
+    "profile": "\n┌ Error\n│ No authentication token found.\n│\n│ Please set one of the following:\n│   1. Set the CLOUDFLARE_API_TOKEN environment variable\n│   2. Run 'cf auth login' to authenticate via OAuth\n│\n│ For API tokens, visit: https://dash.cloudflare.com/profile/api-tokens\n└\n"
+  }
+}

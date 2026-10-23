@@ -66,13 +66,21 @@ index.ts     public API
   the caller HOLDS a session: `login()` and `completeLogin` have none to lose and
   keep 401; everything reached through a service throws
   `ReauthenticationFailedError`.
-- **Every method that checks the CURRENT password is rate-limited per account,
-  as one bucket.** `changePassword`, `setupTotp`, `disableTotp` and
-  `regenerateRecoveryCodes` each verify the password for whoever holds the
-  session, so unbounded they are a guessing oracle for a stolen session.
-  `reauthenticationRateLimit` defaults to login's own budget. A fifth method
-  that takes `currentPassword` calls `reauthenticate(ctx)` before the provider
-  or it is a door the others do not share.
+- **A credential change takes no password; it asks whether the SESSION proved
+  one recently** (`FJS-D1209`, sudo mode). `Session.reauthenticatedAt` is stamped
+  by `issueSession` and by `account.reauthenticate` (password, plus the code
+  where TOTP is live), and `services.ts`'s `fresh()` asks the provider's
+  `requireReauthenticated` before the seven: `changePassword`,
+  `requestEmailChange`, `setupTotp`, `disableTotp`, `regenerateRecoveryCodes`,
+  `api-keys.create`, `connections.remove`. A new method that changes how the
+  account signs in calls `fresh(user)` after `refuseDelegated`, or it is a
+  door the window does not cover. `reauthenticate` and `confirmTotp` are the two
+  that check a secret, and they share one rate-limit bucket (`limitGuesses`).
+  `test/reauthenticate.test.ts`.
+- **A change to how the account signs in ends every OTHER session** (`FJS-D1208`)
+  through `endOtherSessions(userId, keep)`: `changePassword`, `confirmTotp`,
+  `disableTotp`, `regenerateRecoveryCodes`, and a confirmed email change, where
+  `keep` is the session that posted the click to `/auth/email/verify`.
 - **`verifyTotp` does not consume the step and `completeLogin` does.** Not an
   inconsistency: consuming in both refuses a person who signs in and immediately
   opens settings with the code still on their screen, and what it would buy is a

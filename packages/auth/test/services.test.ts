@@ -81,26 +81,37 @@ describe('account', () => {
     expect((await request(app).get('/account/me')).status).toBe(401)
   })
 
-  test('changePassword verifies the current one, and the old password stops working', async () => {
+  test('changePassword rides a fresh session — a stale one is refused until it reauthenticates — and the old password stops working', async () => {
     const email = 'changer@example.com'
     await request(app).post('/auth/register').send({ email, password: 'old-pw' })
     const token = ((await request(app).post('/auth/login').send({ email, password: 'old-pw' })).body as any).token
+    const sessionId = ((await request(app).get('/account/me').auth(token)).body as any).sessionId
+    await h.sys.session.update({ where: { id: sessionId }, data: { reauthenticatedAt: null } })
 
-    const wrong = await request(app).post('/account/me')
+    const change = () => request(app).post('/account/me')
       .set('x-service-method', 'changePassword')
       .auth(token)
-      .send({ currentPassword: 'not-it', newPassword: 'new-pw' })
-    // 403 and not 401: the session is fine and the typed password is not. A 401
-    // here is what a browser client signs the person out on (FJS-1088), so the
-    // pair is the same token still answering afterwards.
-    expect(wrong.status).toBe(403)
+      .send({ newPassword: 'new-pw' })
+    const reauth = (password: string) => request(app).post('/account/me')
+      .set('x-service-method', 'reauthenticate')
+      .auth(token)
+      .send({ password })
+
+    // 403 and not 401: the session is fine and its proof is old. A 401 here is
+    // what a browser client signs the person out on (FJS-1088), so the pair is
+    // the same token still answering afterwards.
+    const stale = await change()
+    expect(stale.status).toBe(403)
+    expect(JSON.stringify(stale.body)).toContain('reauthentication_required')
     expect((await request(app).get('/account/me').auth(token)).status).toBe(200)
 
-    const ok = await request(app).post('/account/me')
-      .set('x-service-method', 'changePassword')
-      .auth(token)
-      .send({ currentPassword: 'old-pw', newPassword: 'new-pw' })
-    expect(ok.status).toBe(200)
+    // A wrong password is the same 403 and leaves the session stale.
+    expect((await reauth('not-it')).status).toBe(403)
+    expect((await change()).status).toBe(403)
+    expect((await request(app).get('/account/me').auth(token)).status).toBe(200)
+
+    expect((await reauth('old-pw')).status).toBe(200)
+    expect((await change()).status).toBe(200)
 
     expect((await request(app).post('/auth/login').send({ email, password: 'old-pw' })).status).toBe(401)
     expect((await request(app).post('/auth/login').send({ email, password: 'new-pw' })).status).toBe(200)
@@ -110,7 +121,7 @@ describe('account', () => {
     const res = await request(app).post('/account/me')
       .set('x-service-method', 'changePassword')
       .auth(aliceToken)
-      .send({ newPassword: 'x' })
+      .send({})
     expect(res.status).toBe(400)
   })
 })
@@ -142,7 +153,7 @@ describe('account — TOTP over HTTP', () => {
 
     // A body naming somebody else changes nothing — every method scopes to the
     // session, so the extra key is not even read.
-    const setup = await call('setupTotp', token, { currentPassword: PW, userId: 'bob' })
+    const setup = await call('setupTotp', token, { userId: 'bob' })
     expect(setup.status).toBe(200)
     const secret = (setup.body as any).secret
     expect((setup.body as any).qr).toContain('otpauth://totp/')
@@ -164,11 +175,11 @@ describe('account — TOTP over HTTP', () => {
     expect((login.body as any).token).toBeUndefined()
     expect((login.body as any).challenge).toBeTruthy()
 
-    const regen = await call('regenerateRecoveryCodes', token, { currentPassword: PW })
+    const regen = await call('regenerateRecoveryCodes', token, {})
     expect((regen.body as any).recoveryCodes).toHaveLength(10)
     expect((regen.body as any).recoveryCodes).not.toEqual((confirm.body as any).recoveryCodes)
 
-    expect((await call('disableTotp', token, { currentPassword: PW })).status).toBe(200)
+    expect((await call('disableTotp', token, {})).status).toBe(200)
     expect(((await call('totpStatus', token)).body as any).enabled).toBe(false)
     // Back to one step, which is what says disable reached the provider rather
     // than answering ok.
@@ -176,15 +187,13 @@ describe('account — TOTP over HTTP', () => {
   })
 
   test('the fields a body cannot be trusted for are 400, by name', async () => {
-    expect((await call('setupTotp', aliceToken, {})).status).toBe(400)
     expect((await call('confirmTotp', aliceToken, {})).status).toBe(400)
-    expect((await call('disableTotp', aliceToken, {})).status).toBe(400)
-    expect((await call('regenerateRecoveryCodes', aliceToken, {})).status).toBe(400)
+    expect((await call('reauthenticate', aliceToken, {})).status).toBe(400)
 
     // Paired with the reason it is 400 rather than 500: the field is missing,
     // not the method. With the field present this same call reaches the provider
     // and is refused on the password instead.
-    expect((await call('setupTotp', aliceToken, { currentPassword: 'wrong' })).status).toBe(403)
+    expect((await call('reauthenticate', aliceToken, { password: 'wrong' })).status).toBe(403)
   })
 
   test('a provider without them says so by name rather than 500ing', async () => {
@@ -214,14 +223,14 @@ describe('account — TOTP over HTTP', () => {
 
 // ─── account: the password, asked again ────────────────────────────────────
 //
-// Four methods verify the CURRENT password for whoever holds the session, which
-// makes each one a guessing oracle for a stolen session. Every row below is a
+// `reauthenticate` verifies the password and `confirmTotp` a code for whoever
+// holds the session, which makes each one a guessing oracle for a stolen session. Every row below is a
 // refusal beside the answer that separates it from a limiter that refuses
 // everything, or one that counts nothing: a second account untouched, a method
 // that asks for no password spending nothing, and the session still a session.
 
 describe('account — the password, asked again, is bounded per account', () => {
-  test('guesses spread across three methods share one bucket, and the fourth — the right password — is refused', async () => {
+  test('guesses spread across reauthenticate and confirmTotp share one bucket, and the fourth — the right password — is refused', async () => {
     const scoped  = await makeAuth({ encryptionKey: TEST_KEY })
     const bounded = await createTestApp({ auth: scoped.auth as any })
     bounded.setAuth(scoped.auth as any)
@@ -242,21 +251,23 @@ describe('account — the password, asked again, is bounded per account', () => 
     const as = (token: string, method: string, data: Record<string, unknown>) =>
       request(bounded).post('/account/me').set('x-service-method', method).auth(token).send(data as any)
 
-    expect((await as(guesser, 'setupTotp',               { currentPassword: 'guess-1' })).status).toBe(403)
-    expect((await as(guesser, 'changePassword',          { currentPassword: 'guess-2', newPassword: 'x' })).status).toBe(403)
-    expect((await as(guesser, 'regenerateRecoveryCodes', { currentPassword: 'guess-3' })).status).toBe(403)
+    // Enrolling checks no secret and spends nothing; it is what gives confirmTotp a guess.
+    expect((await as(guesser, 'setupTotp', {})).status).toBe(200)
+    expect((await as(guesser, 'reauthenticate', { password: 'guess-1' })).status).toBe(403)
+    expect((await as(guesser, 'confirmTotp',    { code: '000000' })).status).toBe(403)
+    expect((await as(guesser, 'reauthenticate', { password: 'guess-3' })).status).toBe(403)
 
-    const fourth = await as(guesser, 'setupTotp', { currentPassword: PW })
+    const fourth = await as(guesser, 'reauthenticate', { password: PW })
     expect(fourth.status).toBe(429)
     // A 429 is not a 401: the session that hit the limit is still a session.
     expect((await request(bounded).get('/account/me').auth(guesser)).status).toBe(200)
 
     // The bucket is the ACCOUNT's. A limiter keyed on anything wider refuses here.
-    expect((await as(bystander, 'setupTotp', { currentPassword: PW })).status).toBe(200)
+    expect((await as(bystander, 'reauthenticate', { password: PW })).status).toBe(200)
 
     // And only the password spends it: four reads, then the password, answered.
     for (let i = 0; i < 4; i++) expect((await as(reader, 'totpStatus', {})).status).toBe(200)
-    expect((await as(reader, 'setupTotp', { currentPassword: PW })).status).toBe(200)
+    expect((await as(reader, 'reauthenticate', { password: PW })).status).toBe(200)
 
     scoped.cleanup()
   })

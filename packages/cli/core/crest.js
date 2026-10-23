@@ -49,3 +49,36 @@ export const crest = (root) => {
     charge: metalField ? color : metal,
   }
 }
+
+// ─── the badge ───────────────────────────────────────────────────────────────
+
+const CELL  = 4
+const PAD   = 2
+const SIDE  = 5 * CELL
+const TALL  = SIDE + 2 * PAD
+/** A monospace advance at 12px; `textLength` holds the label to it whatever font the reader has. */
+const ADVANCE = 7.2
+const FRAME = '#24292f'
+
+const escapeXml = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+
+/**
+ * The crest for `root` as an SVG badge, `label` (`#0042 sam`) written on its
+ * frame — 2.7's `GET /badge/<number>.svg`. The label is not in the crest, so
+ * the picture stays the words' picture.
+ */
+export const crestSvg = (root, label) => {
+  const { rows, field, charge } = crest(root)
+  const cells = rows.flatMap((row, r) => row.map((on, c) => on ? `M${PAD + c * CELL} ${PAD + r * CELL}h${CELL}v${CELL}h-${CELL}z` : '')).join('')
+  const text  = escapeXml(label)
+  const width = Math.round(String(label).length * ADVANCE)
+  const wide  = TALL + 6 + width + 8
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${wide}" height="${TALL}" viewBox="0 0 ${wide} ${TALL}" role="img" aria-label="${text}">`,
+    `<title>${text}</title>`,
+    `<rect width="${wide}" height="${TALL}" rx="3" fill="${FRAME}"/>`,
+    `<g shape-rendering="crispEdges"><rect x="${PAD}" y="${PAD}" width="${SIDE}" height="${SIDE}" fill="${field.hex}"/><path d="${cells}" fill="${charge.hex}"/></g>`,
+    `<text x="${TALL + 6}" y="${TALL / 2 + 4}" fill="#fff" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" textLength="${width}" lengthAdjust="spacingAndGlyphs">${text}</text>`,
+    '</svg>',
+  ].join('')
+}

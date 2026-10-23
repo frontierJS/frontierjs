@@ -7,11 +7,18 @@
 //   DIGITALOCEAN_TOKEN=… bun api/src/core/provision-host.ts '{"action":"off","id":"123"}'
 //   DIGITALOCEAN_TOKEN=… bun api/src/core/provision-host.ts '{"action":"destroy","id":"123"}'
 //   DIGITALOCEAN_TOKEN=… bun api/src/core/provision-host.ts '{"action":"list"}'
+//   DIGITALOCEAN_TOKEN=… bun api/src/core/provision-host.ts '{"action":"release","ip":"203.0.113.9"}'
 //
 // The vendor's dialect is providers/compute/digitalocean.ts and nothing here
-// restates it. The box boots with no user_data: install.sh is served by a
-// running Basecamp, so this box cannot boot from it, and `fli deploy:setup`
-// installs it over SSH instead.
+// restates it. The box boots with no install in its user_data: install.sh is
+// served by a running Basecamp, so this box cannot boot from it, and `fli
+// deploy:setup` installs it over SSH instead.
+//
+// `"reservedIp":true` on a create holds an address beside the droplet and
+// answers it as `ip`, so the hostname and the ssh Host name an address that
+// outlives the box. `"reuse":"<ip>"` is the address the hostname points at now:
+// taken again when it is a reserved IP at this account, in the region, that no
+// droplet holds — which is a replaced box keeping its DNS.
 //
 // It carries the fleet tag and no server id. Reconcile reports it as an orphan
 // until a Server row names it, which is the truth: a droplet billing at this
@@ -19,10 +26,12 @@
 //
 // The last line of stdout is one JSON object, which is fli's whole contract:
 //   { id, name, ip, region, size, image, monthly }   created and up
+//     + dropletIp, reserved: { ip, reused } | { error }  under reservedIp
 //   { id, name, pending: true, … }                    created, not up before the deadline
 //   { off: '<id>' }  { off: '<id>', pending: true }   powered off, or asked and not off yet
-//   { destroyed: '<id>' }
-//   { machines: [{ id, status, ip, region, serverId }] }   every fleet-tagged droplet
+//   { destroyed: '<id>', reservedIp }                 the address it held, unassigned now
+//   { machines: [{ id, status, ip, region, serverId, reservedIp }] }   every fleet-tagged droplet
+//   { released: '<ip>' }
 //   { error: '<what>' }                               and the exit is non-zero
 //
 // stderr is what the minute is spent on, for the person watching: fli lets it
@@ -30,6 +39,7 @@
 
 import { connectorFor, fleetMark, priceIn, sizeRegions } from '../providers/compute/index.ts'
 import type { ComputeSize }   from '../providers/compute/index.ts'
+import { reservedIps, RESERVED_EGRESS } from '../providers/compute/digitalocean.ts'
 import { bearerSend }         from './bearer-send.ts'
 
 const answer = (o: Record<string, unknown>) => console.log(JSON.stringify(o))
@@ -60,6 +70,7 @@ const BOOTING: Record<string, string> = {
  *  this the id is answered as pending so the caller can still destroy it. */
 const READY_DEADLINE_MS = 180_000
 const OFF_DEADLINE_MS   = 60_000
+const ASSIGN_DEADLINE_MS = 60_000
 const POLL_MS           = 5_000
 
 const input = (() => {
@@ -104,7 +115,8 @@ function pickSize(sizes: ComputeSize[], wanted: string, region: string): Compute
 // ─── Actions ─────────────────────────────────────────────────────────────
 
 async function create() {
-  const { name, region, image, size, publicKey, keyName } = input
+  const { name, region, image, size, publicKey, keyName, reuse } = input
+  const holdIp = (input as Record<string, unknown>).reservedIp === true
   if (!name || !region || !image || !size || !publicKey)
     fail('create needs name, region, image, size and publicKey')
 
@@ -132,6 +144,7 @@ async function create() {
     + (price == null ? '' : ` at ${(price / 100).toFixed(2)} ${picked.currency}/mo`))
   const { providerServerId } = await connector.create(send, {
     name, region, image, size: picked.slug, sshKeys: [sshKey], mark: fleetMark(),
+    userData: holdIp ? RESERVED_EGRESS : undefined,
   })
   step(`Droplet ${providerServerId} ordered, tagged for the fleet`)
 
@@ -144,13 +157,45 @@ async function create() {
     const machine = await connector.machine(send, providerServerId)
     if (machine?.status === 'running' && machine.ipAddress) {
       wait.end(`Up at ${machine.ipAddress}`)
-      return answer({ ...made, ip: machine.ipAddress })
+      if (!holdIp) return answer({ ...made, ip: machine.ipAddress })
+      const reserved = await holdAddress(providerServerId, region, reuse)
+      return answer({ ...made, ip: reserved.ip ?? machine.ipAddress, dropletIp: machine.ipAddress, reserved })
     }
     wait.say(BOOTING[machine?.status ?? ''] ?? `DigitalOcean says ${machine?.status ?? 'nothing yet'}`)
     await Bun.sleep(POLL_MS)
   }
   wait.end(`No address after ${READY_DEADLINE_MS / 60_000} minutes`)
   answer({ ...made, pending: true })
+}
+
+// A failure here leaves the droplet bought and answered on its own address, so
+// the run goes on; the error names any address already reserved, since that one
+// bills while it holds nothing.
+async function holdAddress(dropletId: string, region: string, reuse?: string) {
+  let ip = ''
+  try {
+    const spare = reuse ? await reservedIps.get(send, reuse) : null
+    if (spare && spare.region === region && !spare.dropletId) {
+      ip = spare.ip
+      step(`Reusing reserved IP ${ip}, which the hostname already points at`)
+    } else {
+      if (reuse) step(`${reuse} is not a reserved IP in ${region} that no droplet holds`)
+      step(`Reserving an IP in ${region}, free while a droplet holds it`)
+      ip = (await reservedIps.reserve(send, region)).ip
+    }
+    await reservedIps.assign(send, ip, dropletId)
+    const deadline = Date.now() + ASSIGN_DEADLINE_MS
+    while (Date.now() < deadline) {
+      if ((await reservedIps.get(send, ip))?.dropletId === dropletId) {
+        step(`${ip} routes to the droplet`)
+        return { ip, reused: ip === spare?.ip }
+      }
+      await Bun.sleep(POLL_MS)
+    }
+    return { error: `${ip} is reserved and did not reach the droplet in ${ASSIGN_DEADLINE_MS / 1000}s` }
+  } catch (e) {
+    return { error: (e as Error).message + (ip ? ` — ${ip} is reserved and bills while it holds nothing` : '') }
+  }
 }
 
 // Only a box this script made. The token reaches every droplet at the
@@ -170,8 +215,10 @@ async function destroy() {
   // serving cannot be removed by one mistyped id or one wrong pick.
   if (ours.status !== 'off') fail(`${ours.providerServerId} is ${ours.status}: fli basecamp:stop ${ours.providerServerId} first, then destroy it`)
 
+  // Read before the destroy: DO unassigns the address with it.
+  const reservedIp = (await heldBy()).get(ours.providerServerId) ?? null
   await connector.destroy(send, ours.providerServerId)
-  answer({ destroyed: ours.providerServerId })
+  answer({ destroyed: ours.providerServerId, reservedIp })
 }
 
 async function powerOff() {
@@ -195,10 +242,29 @@ async function powerOff() {
 // A droplet carrying a serverId is Basecamp's, and destroy refuses it — so the
 // list says which, or the id it prints is one destroy will not take.
 async function list() {
+  const held = await heldBy()
   const machines = (await connector.marked(send, fleetMark())).map(m => ({
     id: m.providerServerId, status: m.status, ip: m.ipAddress, region: m.region, serverId: m.serverId,
+    reservedIp: held.get(m.providerServerId) ?? null,
   }))
   answer({ machines })
+}
+
+/** Droplet id → the reserved IP it holds. */
+async function heldBy() {
+  return new Map((await reservedIps.list(send)).filter(r => r.dropletId).map(r => [r.dropletId!, r.ip]))
+}
+
+// Only an address no droplet holds: the token reaches every reserved IP at the
+// account, and one that is assigned is serving somebody's box right now.
+async function release() {
+  const ip = input.ip
+  if (!ip) fail('release needs ip')
+  const held = await reservedIps.get(send, ip)
+  if (!held) fail(`${ip} is not a reserved IP at this account`)
+  if (held!.dropletId) fail(`${ip} is assigned to droplet ${held!.dropletId}: destroy that first`)
+  await reservedIps.release(send, ip)
+  answer({ released: ip })
 }
 
 try {
@@ -206,6 +272,7 @@ try {
   else if (input.action === 'destroy') await destroy()
   else if (input.action === 'off')     await powerOff()
   else if (input.action === 'list')    await list()
+  else if (input.action === 'release') await release()
   else fail(`unknown action '${input.action}'`)
   process.exit(0)
 } catch (e) {

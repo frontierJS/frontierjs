@@ -804,9 +804,9 @@ core/
                 words. Both ends of a comparison read it, so a word moved here
                 reads as a mismatch to every older fli
   crest.js      the same 64 bits as a 5×5 picture in two heraldic tinctures,
-                beside the words in `frontier:who`, and the Worker's to read for
-                2.7's badge. Recognition, never proof; a bit moved here redraws
-                every member's crest
+                beside the words in `frontier:who`, and `crestSvg`, the
+                Worker's `GET /badge/<number>.svg`. Recognition, never proof; a
+                bit moved here redraws every member's crest
   frontier-chain.js  what a member IS — a chain of links, each signed by one of
                 its machines, from a root link signing the first machine and the
                 sealing key (`FJS-D1416`); a `link` adds a machine, signed by one
@@ -819,7 +819,10 @@ core/
                 to each one left. Read by the Worker AND the cli: the
                 post refuses a chain that does not verify or carry the stored
                 one forward, and a client verifies every chain the post serves,
-                since the post is what the chain checks. Nothing node-only
+                since the post is what the chain checks. Also the member
+                ROW (`signRow`, `readRow`, `ROW_AGE`): the post's word on a
+                number and lineage, signed with the post's own key and refused
+                past a day. Nothing node-only
   tell-worker.js  the Cloudflare Worker `fli tell` speaks to — one Durable
                 Object, members and their chains, invites, letters, and the
                 `/follow` socket `inbox -f` holds (`FJS-D1392`). A
@@ -832,11 +835,23 @@ core/
                 A paper key is a machine like any other here: its link and
                 sealed copy arrive on `POST /chain`, and `GET /chain` with no
                 nick answers the caller's own, which is how typed words learn
-                their member.
+                their member. The object makes its own signing pair on first
+                use (`FJS-D1467`) and signs a member's row on asking — the
+                join's answer and `GET /row` — never storing one.
+                `GET /badge/<number>.svg` is the one route nobody signs, for a
+                README.
                 Never imported: wrangler bundles it from a config `ws:post`
                 writes, so it runs in workerd and imports toolbelt and nothing
                 Bun-only. `cloudflare:workers` is not imported either, since
                 it does not resolve outside workerd
+  cloudflare.js fli's one owner of the Cloudflare dialect — every call one
+                spawn of Cloudflare's `cf` (`FJS-D1469`), no credential and no
+                HTTP here. A profile row spawns with `CLOUDFLARE_API_TOKEN`
+                DELETED, since `cf` lets the env token beat `--profile`; lists
+                walk pages, zones go by id. `IDEAS/cloudflare-dns.md` § Measured
+                is what it was read against. `test/cloudflare.test.js` drives it over
+                `test/fixtures/cf/stand-in.mjs`, which keeps the real `cf`'s token
+                precedence — a new `cf` version is a new fixture file
   config.js · bootstrap.js · ports.js · utils.js · server.js
 commands/  one directory per namespace — `fli list` prints them all
 db/        deploy.lite + ddl.snapshot.sql — the deploy journal's models, and the

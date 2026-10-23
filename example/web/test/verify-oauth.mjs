@@ -371,7 +371,7 @@ console.log('\nan account with a second factor')
   const admin  = jar()
   await call(admin, '/auth/login', { email: 'alex@shop.test', password: 'correct-horse-battery' })
   const marked = await call(admin, `/users/${userId}`, { emailVerified: true }, 'PATCH')
-  const setup  = await call(own, '/account/me', { currentPassword: PW }, 'setupTotp')
+  const setup  = await call(own, '/account/me', {}, 'setupTotp')
   const secret = setup.body?.secret ?? ''
   const on     = await call(own, '/account/me', { code: authenticator(secret, -1) }, 'confirmTotp')
   ok('the account is verified and its factor is on',

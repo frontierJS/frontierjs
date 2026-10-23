@@ -157,8 +157,9 @@ own (§ *When a factor is lost*, below).
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET`  | `/account/me` | The caller's session — what `/auth/me` was |
-| `POST` | `/account/me` + `X-Service-Method: changePassword` | Verify the current password, replace it, and sign out every other session |
-| `POST` | `/account/me` + `X-Service-Method: requestEmailChange` | `{ currentPassword, newEmail }`. Verify the password and mail a link to the new address through `onEmailVerificationRequested`; the address changes, verified, when `/auth/email/verify` spends that link, and the OLD address is told (`email.changed`) |
+| `POST` | `/account/me` + `X-Service-Method: reauthenticate` | `{ password, code? }` — the code where a factor is on. Confirms THIS session for `reauthenticationWindow` (default 1 hour); answers `{ until }` |
+| `POST` | `/account/me` + `X-Service-Method: changePassword` | `{ newPassword }`. Replace it and sign out every other session |
+| `POST` | `/account/me` + `X-Service-Method: requestEmailChange` | `{ newEmail }`. Mail a link to the new address through `onEmailVerificationRequested`; the address changes, verified, when `/auth/email/verify` spends that link, and the OLD address is told (`email.changed`) |
 | `GET`  | `/sessions` | Where else this caller is signed in; the current one is marked |
 | `DELETE` | `/sessions/{id}` | End one of them |
 | `POST` | `/sessions` + `X-Service-Method: revokeOthers` | Sign out everywhere else |
@@ -269,7 +270,7 @@ because enrollment that enabled before it verified would cost the account rather
 than a retry on the first wrong clock.
 
 ```typescript
-const { secret, qr } = await auth.setupTotp(userId, currentPassword)
+const { secret, qr } = await auth.setupTotp(userId)
 const { recoveryCodes } = await auth.confirmTotp(userId, codeFromTheApp)
 ```
 
@@ -308,20 +309,35 @@ a route (`FJS-D20`):
 | Method | Takes | Answers |
 | --- | --- | --- |
 | `totpStatus` | — | `{ enabled, recoveryCodesRemaining }` |
-| `setupTotp` | `currentPassword` | `{ secret, qr }` — enables nothing |
+| `setupTotp` | — | `{ secret, qr }` — enables nothing |
 | `confirmTotp` | `code` | `{ recoveryCodes }` — this is what enables it |
-| `disableTotp` | `currentPassword` | `{ ok: true }` |
-| `regenerateRecoveryCodes` | `currentPassword` | `{ recoveryCodes }` |
+| `disableTotp` | — | `{ ok: true }` |
+| `regenerateRecoveryCodes` | — | `{ recoveryCodes }` |
 
 ```typescript
-const { secret, qr }    = await client.auth.setupTotp(currentPassword)
+const { secret, qr }    = await client.auth.setupTotp()
 const { recoveryCodes } = await client.auth.confirmTotp(code)
 ```
+
+**Sudo mode** (`FJS-D1209`). `changePassword`, `requestEmailChange`, `setupTotp`,
+`disableTotp`, `regenerateRecoveryCodes`, `api-keys.create` and
+`connections.remove` take no password. Each asks whether the calling session
+proved it within `reauthenticationWindow` — a sign-in counts, and so does
+`account.reauthenticate` — and answers **403** with
+`data.reason: 'reauthentication_required'` past it. A screen asks for the
+password then (and the code, where a factor is on), calls `reauthenticate`, and
+retries. An account with no password — signed up through a provider — has only
+the hour after a sign-in.
+
+`confirmTotp`, `disableTotp`, `regenerateRecoveryCodes` and a confirmed change of
+address each end every other session of the account and keep the one that
+asked (`FJS-D1208`), as `changePassword` does. For the address that is the
+session that posted the click to `/auth/email/verify`, or none.
 
 A wrong password or code here answers **403**, not 401. The session that sent it
 is fine, and a 401 is what a browser client signs the person out on.
 
-The methods that check the password again share a rate limit per account,
+`reauthenticate` and `confirmTotp` share a rate limit per account,
 `services: { reauthenticationRateLimit }`, which defaults to login's own
 10 per 15 minutes. Over it is a 429, and the session stays signed in.
 

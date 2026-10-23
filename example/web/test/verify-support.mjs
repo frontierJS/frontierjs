@@ -271,7 +271,7 @@ check('an admin reads the whole roster', asAdmin, n => n > 1)
 
   const pw = await fetch(`${BASE}/account/me`, {
     method: 'POST', headers: { ...as(adminToken), 'x-service-method': 'changePassword' },
-    body: JSON.stringify({ currentPassword: PASSWORD, newPassword: 'something-else-1' }),
+    body: JSON.stringify({ newPassword: 'something-else-1' }),
   })
   check('so is changing the password', pw.status, 403)
 

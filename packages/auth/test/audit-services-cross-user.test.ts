@@ -111,7 +111,7 @@ describe('account', () => {
   })
   test('totpStatus answers the caller whatever id is in the path', async () => {
     const alice = await person(), bob = await person()
-    const { secret } = await h.auth.setupTotp!(bob.userId, PW)
+    const { secret } = await h.auth.setupTotp!(bob.userId)
     await h.auth.confirmTotp!(bob.userId, totp(secret, new Date(Date.now() - 5 * TOTP_STEP_SEC * 1000)))
     const res = await request(app).post(`/account/${bob.userId}`).set('x-service-method', 'totpStatus').auth(alice.token).send({})
     // Either refused, or answered about ALICE (enabled: false) — never bob.
@@ -138,8 +138,9 @@ describe('account-recovery', () => {
 
   async function withFactor(role = 'user') {
     const u = await person(role)
-    const { secret } = await h.auth.setupTotp!(u.userId, PW)
-    await h.auth.confirmTotp!(u.userId, totp(secret, new Date(Date.now() - 5 * TOTP_STEP_SEC * 1000)))
+    const { secret } = await h.auth.setupTotp!(u.userId)
+    // Confirming ends every OTHER session (FJS-D1208); the token below is kept.
+    await h.auth.confirmTotp!(u.userId, totp(secret, new Date(Date.now() - 5 * TOTP_STEP_SEC * 1000)), { exceptSessionId: u.sessionId })
     return u
   }
 

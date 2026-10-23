@@ -9,11 +9,10 @@ import { dirname } from 'node:path'
 import { userInfo } from 'node:os'
 import { generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { generateSealingKeys, open as openSealed } from '@frontierjs/toolbelt/seal'
-import { FRONTIER_DIR, KEY_FILE, CONFIG_FILE, CHAIN_FILE, readConfig, tellFetch, pinPeer, postOrigin } from './tell.js'
-import { readChain, rootLink, linkHash, extendsSeen, boxClaim } from './frontier-chain.js'
+import { FRONTIER_DIR, KEY_FILE, CONFIG_FILE, CHAIN_FILE, MEMBER_FILE, readConfig, tellFetch, pinPeer, postOrigin } from './tell.js'
+import { NICK, readChain, rootLink, linkHash, extendsSeen, boxClaim, readRow, ROW_AGE, memberNumber } from './frontier-chain.js'
 
-/** Haven's `Member.nick` rule, the Worker's too — checked here so a bad nick never deploys. */
-export const NICK        = /^[a-z0-9_-]{2,16}$/
+export { NICK, memberNumber }
 
 /** Merges into the `frontier` key, keeping every other key (`haven` lives there too). */
 export const writeMemberConfig = (patch) => {
@@ -154,6 +153,127 @@ export const meetMember = async (member, nick) => {
   return pin.refused ? { refused: pin.refused } : { chain, met: pin.met }
 }
 
+// ─── the member row ──────────────────────────────────────────────────────────
+
+/** Half the age a reader takes, so the copy here is never the stale one. */
+const ROW_REFRESH = ROW_AGE / 2
+
+/** This member's row as the post last signed it, or null. Not graded: a reader grades it. */
+export const readOwnRow = () => {
+  try { return JSON.parse(readFileSync(MEMBER_FILE, 'utf8')) } catch { return null }
+}
+
+/**
+ * Grades a row the post answered (`{ row, postKey }`), anyone's: the post's
+ * key is pinned as `frontier.postKey` on first sight (FJS-D1467) and a row
+ * under another key is refused. `{ row }` or `{ refused }`.
+ */
+export const gradeRow = async ({ row, postKey } = {}) => {
+  const pinned = readConfig().frontier?.postKey
+  if (pinned && postKey !== pinned) return { refused: `the post signed it with another key than the one pinned as frontier.postKey in ${CONFIG_FILE}` }
+  const read = await readRow(row, String(postKey ?? ''))
+  if (!read.refused && !pinned) writeMemberConfig({ postKey })
+  return read
+}
+
+/** This member's own row graded and, when it verifies, written to `member.json`. */
+export const takeRow = async (answer) => {
+  const read = await gradeRow(answer)
+  if (read.refused) return read
+  mkdirSync(FRONTIER_DIR, { recursive: true, mode: 0o700 })
+  writeFileSync(MEMBER_FILE, JSON.stringify(read.row, null, 2) + '\n')
+  return read
+}
+
+/**
+ * True when `member.json` is absent, half its age, for another nick, or
+ * behind this machine's chain — a link or revoke made here. A row whose head
+ * this chain does not hold is the post ahead of this machine, which a fetch
+ * would not change.
+ */
+export const rowStale = async (member) => {
+  const row = readOwnRow()
+  if (!row || row.nick !== member.nick || !(row.signed > Date.now() / 1000 - ROW_REFRESH)) return true
+  const hashes = await Promise.all((await ownChain(member.keys)).map(linkHash))
+  return hashes.includes(row.head) && row.head !== hashes.at(-1)
+}
+
+/** This member's row fetched fresh and taken. `{ row }` or `{ refused }`; throws when the post does not answer. */
+export const refreshRow = async (member) => {
+  const answer = await tellFetch(member.api, member.keys, 'GET', '/row')
+  if (answer.status !== 200) return { refused: `the post refused (${answer.status}): ${answer.json?.message ?? 'no reason given'}` }
+  return takeRow(answer.json)
+}
+
+/**
+ * Another member's row, by nick or by number, graded against the pinned post
+ * key and held to the number asked for. `{ row }`, `{ missing }`, `{ unchained }`
+ * for a member with no chain, `{ refused }`, or `{ failed }` for a refusal by
+ * the post; throws when the post does not answer.
+ */
+export const fetchRow = async (member, { nick, number }) => {
+  const query = number ? `number=${number}` : `nick=${encodeURIComponent(nick)}`
+  const answer = await tellFetch(member.api, member.keys, 'GET', `/row?${query}`)
+  if (answer.status === 404) return { missing: true }
+  if (answer.status === 409) return { unchained: true }
+  if (answer.status !== 200) return { failed: `${answer.status}: ${answer.json?.message ?? 'no reason given'}` }
+  const read = await gradeRow(answer.json)
+  if (read.refused) return read
+  if (number ? read.row.number !== number : read.row.nick !== nick) return { refused: `the post answered the row of #${read.row.number} ${read.row.nick}` }
+  return read
+}
+
+/** Null when `row` binds `chain` (a `readChain` answer) — its root, and a head the chain holds — else why not. */
+export const rowBindsChain = (row, chain) =>
+  row.root !== chain.root ? 'the row names another chain root than the chain the post hands out'
+    : !chain.hashes.includes(row.head) ? 'the row names a head the chain does not hold'
+    : null
+
+/** A row's facts in a line: `joined 2026-10-21 · pre-1.0 · via jordan`. */
+export const rowFacts = (row) => [
+  `joined ${new Date(row.joined * 1000).toISOString().slice(0, 10)}`,
+  /^0\./.test(row.fliVersion ?? '') ? 'pre-1.0' : row.fliVersion ? `fli ${row.fliVersion}` : null,
+  row.invitedBy ? `via ${row.invitedBy}` : null,
+].filter(Boolean).join(' · ')
+
+/**
+ * The invite tree drawn from `GET /members`, `invitedBy` read as the parent:
+ * `[{ prefix, member }]` in tree order, each level by number. A member whose
+ * inviter is no member — the owner, and those numbered before inviters were
+ * kept — is a root. With `focus` (a nick), only the path down to it and
+ * everything under it; `[]` for a focus no member holds.
+ */
+export const lineageLines = (members, focus = null) => {
+  const byNick = new Map(members.map(m => [m.nick, m]))
+  const parent = (m) => byNick.has(m.invitedBy) && m.invitedBy !== m.nick ? m.invitedBy : null
+  const children = new Map()
+  for (const m of [...members].sort((a, b) => a.number - b.number)) {
+    const p = parent(m)
+    children.set(p, [...(children.get(p) ?? []), m])
+  }
+  let keep = null
+  if (focus) {
+    if (!byNick.has(focus)) return []
+    keep = new Set()
+    for (let n = focus; n; n = parent(byNick.get(n))) { if (keep.has(n)) break; keep.add(n) }
+    const under = [focus]
+    while (under.length) for (const c of children.get(under.pop()) ?? []) if (!keep.has(c.nick)) { keep.add(c.nick); under.push(c.nick) }
+  }
+  const lines = []
+  const seen = new Set()
+  const walk = (nick, lead, prefix) => {
+    const kids = (children.get(nick) ?? []).filter(c => !keep || keep.has(c.nick))
+    kids.forEach((m, i) => {
+      if (seen.has(m.nick)) return
+      seen.add(m.nick)
+      const last = i === kids.length - 1
+      lines.push({ prefix: nick === null ? '' : lead + (last ? '└── ' : '├── '), member: m })
+      walk(m.nick, nick === null ? '' : lead + (last ? '    ' : '│   '))
+    })
+  }
+  walk(null, '')
+  return lines
+}
 
 /** The nick a run speaks as: --nick, else `frontier.nick`, else this machine's user name. Throws on one the post would refuse. */
 export const pickNick = (flagNick, saved) => {

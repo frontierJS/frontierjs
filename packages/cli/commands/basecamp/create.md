@@ -73,6 +73,8 @@ gets past the bare box: `deploy:setup --auto-install` asks nothing, makes the
 `fli deploy` follows. Basecamp's first admin is then made through its own
 `POST /setup`, over ssh on the box, so no DNS is needed yet. At a terminal the
 password is asked; Enter, or no terminal, generates one and prints it once.
+**An install always makes the admin**, since `/setup` makes the workspace too:
+a run that would install with no email refuses before anything is bought.
 An install also asks whether the box is an Outpost of Basecamp's own fleet —
 yes by default, `--no-outpost` to leave it out — and enrolls it with `fli
 deploy:outpost` after the admin, as `fli basecamp:install` does.
@@ -94,8 +96,8 @@ the `fli basecamp:dns` line instead of writing the record.
 the Outpost and the purchase included — and each typed answer is what Enter
 takes. It refuses without `--domain` and `--name`, since a run that asks nothing
 names the box on the command line. The admin is `--admin`, else
-`ME` from your global fli env (none, and it is made at `/setup` in the
-browser), and the password generated. The summary still prints. A missing
+`ME` from your global fli env, and with neither it refuses; the password is
+generated. The summary still prints. A missing
 token is still asked for, since it has no default.
 
 A second run refuses while a box made by an earlier one is still at the
@@ -194,6 +196,11 @@ if (asking) {
 name ||= 'basecamp'
 if (install && !domain) {
   log.error(`Installing needs Basecamp's hostname: Caddy routes by it and fetches its certificate. Pass --domain, or answer the hostname question`)
+  process.exitCode = 1
+  return
+}
+if (install && !admin) {
+  log.error(`${NO_ADMIN}. Nothing was bought`)
   process.exitCode = 1
   return
 }
@@ -317,6 +324,5 @@ echo`
     fli deploy${later}
 `
 
-if (admin && !await makeAdmin({ dest, identity, workspace: made.name, admin, password, log, echo })) process.exitCode = 1
-if (outpost && !await joinFleet(dest)) process.exitCode = 1
+if (!await adminThenFleet({ dest, identity, workspace: made.name, admin, password, log, echo, outpost, domain, later })) process.exitCode = 1
 ```

@@ -200,7 +200,9 @@ export interface IAuth {
   requestPasswordReset?(email: string):                Promise<void>
   confirmPasswordReset?(token: string, newPassword: string): Promise<void>
   requestEmailVerification?(userId: string):           Promise<void>
-  verifyEmail?(token: string):                         Promise<EmailVerificationResult>
+  /** `keepSessionId` is the session that posted the click: a confirmed change of
+   *  address ends every other one and keeps it. */
+  verifyEmail?(token: string, opts?: { keepSessionId?: string }): Promise<EmailVerificationResult>
 
   /**
    * Register through the mailbox: answers before it knows whether the address is
@@ -267,20 +269,29 @@ export interface IAuth {
   // would revoke somebody else's.
 
   /**
-   * Verify the current password, replace it, and revoke every session but
-   * `exceptSessionId` — the one that asked. Throws if it does not verify.
+   * SUDO MODE. Prove the password again inside a live session — and the code,
+   * where a second factor is live — and stamp `sessionId` fresh. Answers when
+   * the window closes. Throws if either proof fails.
    */
-  changePassword?(
-    userId: string, currentPassword: string, newPassword: string,
-    opts?: { exceptSessionId?: string },
-  ): Promise<void>
+  reauthenticate?(userId: string, sessionId: string, proof: { password: string; code?: string }): Promise<{ until: string }>
 
   /**
-   * Verify the current password, then mail a link to `newEmail`. Changes
-   * nothing until `verifyEmail` spends that link — the address a password reset
-   * goes to cannot be one nobody has proved they read.
+   * Throws unless `sessionId` proved the password within the provider's window.
+   * Asked before every method below that changes how the account signs in,
+   * and before minting an API key or removing a connection — none of them takes
+   * the password itself.
    */
-  requestEmailChange?(userId: string, currentPassword: string, newEmail: string): Promise<void>
+  requireReauthenticated?(userId: string, sessionId: string | undefined): Promise<void>
+
+  /** Replace the password and revoke every session but `exceptSessionId` — the one that asked. */
+  changePassword?(userId: string, newPassword: string, opts?: { exceptSessionId?: string }): Promise<void>
+
+  /**
+   * Mail a link to `newEmail`. Changes nothing until `verifyEmail` spends that
+   * link — the address a password reset goes to cannot be one nobody has
+   * proved they read.
+   */
+  requestEmailChange?(userId: string, newEmail: string): Promise<void>
 
   /** The user's live sessions. Never carries the token — see AuthSessionInfo. */
   listSessions?(userId: string):                       Promise<AuthSessionInfo[]>
@@ -306,10 +317,11 @@ export interface IAuth {
 
   // ── TOTP (optional — provider may not support) ────────────────────────
   //
-  // Two of these take the current password, which is not ceremony: a stolen
-  // session that can enroll its own factor has locked the owner out of their own
-  // account, and one that can disable theirs has removed the protection without
-  // ever knowing the password.
+  // A stolen session that can enroll its own factor has locked the owner out
+  // of their own account, and one that can disable theirs has removed the
+  // protection without knowing the password — so the caller asks
+  // `requireReauthenticated` first. The three that change what a sign-in
+  // requires end every session but `exceptSessionId`.
 
   /**
    * Begin enrollment. Answers the secret and the `otpauth://` URI to render.
@@ -319,17 +331,17 @@ export interface IAuth {
    * enrollment that switched on here would gate the next login on codes the
    * person has never successfully produced.
    */
-  setupTotp?(userId: string, currentPassword: string): Promise<{ secret: string; qr: string }>
+  setupTotp?(userId: string): Promise<{ secret: string; qr: string }>
 
   /** Prove the enrollment works, and switch it on. Answers the recovery codes,
    *  which are shown once and never readable again. */
-  confirmTotp?(userId: string, code: string): Promise<{ recoveryCodes: string[] }>
+  confirmTotp?(userId: string, code: string, opts?: { exceptSessionId?: string }): Promise<{ recoveryCodes: string[] }>
 
   /** Switch it off and forget the secret and every recovery code. */
-  disableTotp?(userId: string, currentPassword: string): Promise<void>
+  disableTotp?(userId: string, opts?: { exceptSessionId?: string }): Promise<void>
 
   /** Fresh recovery codes; the old ones stop working. */
-  regenerateRecoveryCodes?(userId: string, currentPassword: string): Promise<{ recoveryCodes: string[] }>
+  regenerateRecoveryCodes?(userId: string, opts?: { exceptSessionId?: string }): Promise<{ recoveryCodes: string[] }>
 
   /** Is it on, and how many ways back are left. What a settings screen reads. */
   totpStatus?(userId: string): Promise<{ enabled: boolean; recoveryCodesRemaining: number }>

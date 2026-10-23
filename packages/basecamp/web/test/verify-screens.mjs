@@ -1168,12 +1168,13 @@ try {
   const remaining = await until(`document.getElementById('totp-remaining')?.textContent.trim()`, v => v,
     'the on state never rendered')
   check('and the card counts them', remaining === '10', remaining)
-  await fill({ 'totp-password': PASSWORD })
+  // With the factor on, confirming the session takes the code beside the password.
+  await fill({ 'totp-password': PASSWORD, 'totp-sudo-code': totp(secret, new Date()) })
   await click('#totp-disable')
   await confirmIt()
   await until(`document.getElementById('settings-totp')?.dataset.totpState`, v => v === 'off',
     'turning it off never came back off')
-  ok('and turning it off, with the password, puts it back')
+  ok('and turning it off, with the password and a code, puts it back')
 
   // Forgot password. Open while signed in, as the mail's link must be.
   await goto('/reset-password/')
@@ -1575,7 +1576,7 @@ try {
   })).json()
 
   const kimToken = (await kimLogin()).token
-  const { secret: kimSecret } = await asKim('setupTotp', { currentPassword: PASSWORD }, kimToken)
+  const { secret: kimSecret } = await asKim('setupTotp', {}, kimToken)
   await asKim('confirmTotp', { code: totp(kimSecret, new Date()) }, kimToken)
   check('the other person has two-step sign-in on', (await asKim('totpStatus', {}, kimToken))?.enabled === true)
   check('so a password alone no longer signs them in', !(await kimLogin()).token)

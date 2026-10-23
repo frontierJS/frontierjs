@@ -28,8 +28,10 @@ import type { AuthCleanupHandle }                                 from './cleanu
  */
 const CHALLENGE_COOKIE = 'login_challenge'
 
-/** The calls a session held to enrollment may make; the last of them ends the hold. */
-const ENROLLMENT_METHODS = new Set(['totpStatus', 'setupTotp', 'confirmTotp'])
+/** The calls a session held to enrollment may make; `confirmTotp` ends the hold. A
+ *  held session past the reauthentication window reaches `setupTotp` again
+ *  through `reauthenticate`. */
+const ENROLLMENT_METHODS = new Set(['totpStatus', 'reauthenticate', 'setupTotp', 'confirmTotp'])
 import type { AuthOAuth }                                          from './oauth.ts'
 
 // Rate limiting is junction's `rateLimitHook`, not a copy of it.
@@ -533,8 +535,11 @@ export function auth(opts: AuthPluginOptions): Plugin {
 
         // A registration's click signs in (`FJS-D1310`) and answers what
         // `/login` does. Confirming an address an account already has signs
-        // nobody in, so it ends no session and issues none.
-        const verified = await auth.verifyEmail(token)
+        // nobody in. A confirmed CHANGE of address ends every other session of
+        // the account (`FJS-D1208`) and keeps the one that posted the click.
+        const arrived  = extractToken(ctx)
+        const clicking = arrived ? (await auth.verifySession(arrived))?.sessionId : undefined
+        const verified = await auth.verifyEmail(token, clicking ? { keepSessionId: clicking } : undefined)
         if (!('signedIn' in verified)) return ctx.json({ ok: true })
         await endArrivingSession(auth, ctx, verified.signedIn)
         return respond(ctx, verified.signedIn, cookieAuth, cookieMaxAge)

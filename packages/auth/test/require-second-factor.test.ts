@@ -57,7 +57,7 @@ describe('requireSecondFactor: true', () => {
 
     // The three it may call.
     expect((await call(app, login.token, 'totpStatus')).status).toBe(200)
-    const setup = await call(app, login.token, 'setupTotp', { currentPassword: PW })
+    const setup = await call(app, login.token, 'setupTotp', {})
     expect(setup.status).toBe(200)
     const secret = (setup.body as any).secret as string
     // Still held: setup enables nothing.
@@ -74,7 +74,7 @@ describe('requireSecondFactor: true', () => {
   test('an enrolled account still owes a code, and its session is not held', async () => {
     const email = 'enrolled@example.com'
     const user  = await h.auth.createUser({ email, password: PW })
-    const { secret } = await h.auth.setupTotp!(user.id, PW)
+    const { secret } = await h.auth.setupTotp!(user.id)
     await h.auth.confirmTotp!(user.id, totp(secret, new Date()))
     const login = await signIn(app, email)
     expect(typeof login.challenge).toBe('string')
@@ -85,7 +85,7 @@ describe('requireSecondFactor: true', () => {
     const email = 'wrong-code@example.com'
     await h.auth.createUser({ email, password: PW })
     const login = await signIn(app, email)
-    await call(app, login.token, 'setupTotp', { currentPassword: PW })
+    await call(app, login.token, 'setupTotp', {})
     expect((await call(app, login.token, 'confirmTotp', { code: '000000' })).status).toBeGreaterThanOrEqual(400)
     expect((await request(app).get('/sessions').auth(login.token)).status).toBe(403)
   })

@@ -1031,11 +1031,18 @@ export class AuthClient {
    * when the account owes a second factor, finished by `completeSignIn`.
    * Confirming or changing an existing account's address signs nobody in and
    * answers `{ ok: true }`. Discriminate on `'user' in result`.
+   *
+   * The session this client holds rides along as a header rather than as its
+   * credential: a confirmed change of address ends every OTHER session and
+   * keeps the one that posted the click (`FJS-D1208`), and a 401 here is about
+   * the link, which must not sign the person out.
    */
   async verifyEmail(token: string): Promise<SignInResult | EmailVerified> {
     this._pendingChallenge = null
+    const held = this._c.token
     const raw = await this._c._request(
-      'POST', `${this._prefix}/email/verify`, { token }, { skipAuth: true }
+      'POST', `${this._prefix}/email/verify`, { token },
+      { skipAuth: true, ...(held ? { header: { Authorization: `Bearer ${held}` } } : {}) }
     ) as Record<string, unknown> | null
     if (raw?.ok === true) return { ok: true }
     return this._signedIn(raw)
@@ -1048,21 +1055,32 @@ export class AuthClient {
     return this._c.service(this._names.account).get('me') as Promise<Record<string, unknown>>
   }
 
-  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
-    await this._c.service(this._names.account).invoke('changePassword', 'me', { currentPassword, newPassword })
+  /**
+   * SUDO MODE. Prove the password again — and the code, where a second factor
+   * is on — so the credential changes below go through until `until`. Each of
+   * them answers 403 with `data.reason === 'reauthentication_required'` past
+   * it; a screen asks for the password then, calls this, and retries.
+   */
+  async reauthenticate(password: string, code?: string): Promise<{ until: string }> {
+    return this._c.service(this._names.account).invoke('reauthenticate', 'me', { password, ...(code ? { code } : {}) }) as Promise<{ until: string }>
+  }
+
+  async changePassword(newPassword: string): Promise<void> {
+    await this._c.service(this._names.account).invoke('changePassword', 'me', { newPassword })
   }
 
   /** Mail a link to `newEmail`; the address changes when that link is opened. */
-  async requestEmailChange(currentPassword: string, newEmail: string): Promise<void> {
-    await this._c.service(this._names.account).invoke('requestEmailChange', 'me', { currentPassword, newEmail })
+  async requestEmailChange(newEmail: string): Promise<void> {
+    await this._c.service(this._names.account).invoke('requestEmailChange', 'me', { newEmail })
   }
 
   // ── The second factor — also the account's ────────────────────────
   //
   // The method names are the provider's, so the header a screen sends is the
-  // key `need()` reads on the server. Three of the four writes re-ask for the
-  // password: they change what the account requires to sign in, and a session
-  // left open on a shared machine is not the account holder.
+  // key `need()` reads on the server. Three of the four writes need a session
+  // that reauthenticated within the window: they change what the account
+  // requires to sign in, and a session left open on a shared machine is not
+  // the account holder.
 
   /** Whether signing in owes a code, and how many ways back remain. */
   async totpStatus(): Promise<TotpStatus> {
@@ -1074,8 +1092,8 @@ export class AuthClient {
    * authenticator scans; drawing that as a QR code is the screen's. Nothing is
    * required of a sign-in until `confirmTotp` proves the device holds it.
    */
-  async setupTotp(currentPassword: string): Promise<{ secret: string; qr: string }> {
-    return this._c.service(this._names.account).invoke('setupTotp', 'me', { currentPassword }) as Promise<{ secret: string; qr: string }>
+  async setupTotp(): Promise<{ secret: string; qr: string }> {
+    return this._c.service(this._names.account).invoke('setupTotp', 'me', {}) as Promise<{ secret: string; qr: string }>
   }
 
   /** Prove the device, switch the factor on. The recovery codes are shown ONCE, here. */
@@ -1083,13 +1101,13 @@ export class AuthClient {
     return this._c.service(this._names.account).invoke('confirmTotp', 'me', { code }) as Promise<{ recoveryCodes: string[] }>
   }
 
-  async disableTotp(currentPassword: string): Promise<void> {
-    await this._c.service(this._names.account).invoke('disableTotp', 'me', { currentPassword })
+  async disableTotp(): Promise<void> {
+    await this._c.service(this._names.account).invoke('disableTotp', 'me', {})
   }
 
   /** Replaces every unused recovery code. The old ones stop working at once. */
-  async regenerateRecoveryCodes(currentPassword: string): Promise<{ recoveryCodes: string[] }> {
-    return this._c.service(this._names.account).invoke('regenerateRecoveryCodes', 'me', { currentPassword }) as Promise<{ recoveryCodes: string[] }>
+  async regenerateRecoveryCodes(): Promise<{ recoveryCodes: string[] }> {
+    return this._c.service(this._names.account).invoke('regenerateRecoveryCodes', 'me', {}) as Promise<{ recoveryCodes: string[] }>
   }
 
   /** Every live session of this caller's, the one making the request marked `current`. */

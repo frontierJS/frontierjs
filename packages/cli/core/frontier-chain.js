@@ -152,3 +152,54 @@ export const extendsSeen = (seen, chain) => {
   if (chain.hashes[seen.seq - 1] !== seen.head) return `its link ${seen.seq} is not the one seen before`
   return null
 }
+
+// ─── the member row ──────────────────────────────────────────────────────────
+
+// The post's word on a member, signed with the post's own key (FJS-D1467):
+// the number, nick and lineage only the post can state, bound to the chain's
+// root and head as it stores them (FJS-D1421). Signed when asked, never
+// stored, so a row always names the head the post holds at that moment. A
+// reader holds the post's key pinned and refuses a row older than ROW_AGE,
+// which is how a revoke reaches a reader meeting the member for the first
+// time (FJS-D1445).
+
+const ROW = 'frontierjs/frontier row v1'
+/** How old a row a reader takes — the reach of a revoke the reader has not seen. */
+export const ROW_AGE  = 86400
+/** A row signed this far ahead of the reader's clock is still taken. */
+const ROW_SKEW = 300
+const HASH    = /^[0-9a-f]{64}$/
+/** Haven's `Member.nick` rule, so a nick here is one Haven accepts — the Worker's and the cli's alike. */
+export const NICK = /^[a-z0-9_-]{2,16}$/
+/** A version as `package.json` writes one, bounded so it cannot carry a line. */
+export const FLI_VERSION = /^[0-9A-Za-z.+-]{1,32}$/
+/** `#0042`, a member number as the network writes it — `who`, `lineage` and the Worker's badge. */
+export const memberNumber = (n) => `#${String(n).padStart(4, '0')}`
+
+/** The bytes a row's `sig` covers, every field in a fixed order. */
+const rowMessage = ({ number, nick, root, head, joined, invitedBy, fliVersion, signed }) =>
+  [ROW, number, nick, root, head, joined, invitedBy ?? '', fliVersion ?? '', signed].join('\n')
+
+/** `row` (every field but `sig`) signed with the post's private key. */
+export const signRow = async (privateKey, row) =>
+  ({ ...row, sig: await signMessage({ privateKey, message: rowMessage(row) }) })
+
+/**
+ * `{ row }` when `row` is the post's, signed under `postKey` no more than
+ * `ROW_AGE` before `now` (seconds), else `{ refused }` naming why. Every field
+ * is checked before the signature, since a row arrives from whoever holds it.
+ */
+export async function readRow(row, postKey, now = Math.floor(Date.now() / 1000)) {
+  if (!row || typeof row !== 'object') return { refused: 'a row is an object' }
+  const { number, nick, root, head, joined, invitedBy, fliVersion, signed, sig } = row
+  const int = (n) => Number.isSafeInteger(n) && n > 0
+  if (!int(number) || !NICK.test(nick ?? '') || !HASH.test(root ?? '') || !HASH.test(head ?? '') || !int(joined) || !int(signed)) {
+    return { refused: 'the row is missing a field or has one malformed' }
+  }
+  if ((invitedBy ?? null) !== null && !NICK.test(invitedBy)) return { refused: 'the row\'s invitedBy is no nick' }
+  if ((fliVersion ?? null) !== null && !FLI_VERSION.test(fliVersion)) return { refused: 'the row\'s fliVersion is no version' }
+  if (!await verifyMessage({ publicKey: postKey, signature: sig, message: rowMessage(row) })) return { refused: 'the row is not signed by the post\'s key' }
+  if (signed > now + ROW_SKEW) return { refused: 'the row is signed in the future' }
+  if (signed < now - ROW_AGE) return { refused: `the row was signed ${Math.floor((now - signed) / 3600)} hours ago, and a row is taken for ${ROW_AGE / 3600}` }
+  return { row: { number, nick, root, head, joined, invitedBy: invitedBy ?? null, fliVersion: fliVersion ?? null, signed, sig } }
+}

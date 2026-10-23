@@ -26,6 +26,8 @@ export const WAITING_FILE = join(FRONTIER_DIR, 'waiting.json')
 export const CHAIN_FILE   = join(FRONTIER_DIR, 'chain.json')
 /** Every correspondent met, `{ [root]: { nick, seq, head, machines, sealKey, since } }` — the chain as last seen (FJS-D1416, FJS-D1421). */
 export const PEERS_FILE   = join(FRONTIER_DIR, 'peers.json')
+/** This member's row as the post last signed it (FJS-D1467), what a reader is handed in place of a call to the post. */
+export const MEMBER_FILE  = join(FRONTIER_DIR, 'member.json')
 /** The project's post, the only one (FJS-D1414). */
 export const POST_ORIGIN  = 'https://network.frontierjs.com'
 /** The post every verb speaks to — `FLI_FRONTIER_POST` stands a `wrangler dev` one in for a drive. */
@@ -209,6 +211,9 @@ if (import.meta.main) {
     if (nick && keys?.publicKey && keys?.privateKey) {
       const { status, json } = await tellFetch(postOrigin(), keys, 'GET', '/waiting', undefined, { signal: AbortSignal.timeout(10_000) })
       if (status === 200 && Array.isArray(json?.waiting)) writeWaiting(json.waiting)
+      const { currentMember, rowStale, refreshRow } = await import('./frontier-member.js')
+      const member = await currentMember()
+      if (await rowStale(member)) await refreshRow(member)
     }
   } catch {}
 }
