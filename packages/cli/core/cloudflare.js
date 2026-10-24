@@ -4,7 +4,7 @@
  * Every Cloudflare call fli makes is one spawn of Cloudflare's own CLI
  * (`FJS-D1469`); nothing here holds a credential or speaks HTTP. `cf` keeps the
  * login, fli keeps nothing, and the argv and JSON below are the only place the
- * shape of `cf` is known. Read against `cf` v0.15.0 — `IDEAS/cloudflare-dns.md`
+ * shape of `cf` is known. Read against `cf` `MIN_CF` — `IDEAS/cloudflare-dns.md`
  * § Measured is the record of what each verb answered.
  *
  * ── A profile is `cf`'s, or the env token ─────────────────────────────
@@ -36,6 +36,9 @@
  */
 
 export class CloudflareError extends Error {}
+
+/** The `cf` the stand-in fixture was read from; `fli doctor` warns below it. */
+export const MIN_CF = '0.15.0'
 
 /** The variable `cf` reads a token from. fli's commands read the same one. */
 export const TOKEN_ENV = 'CLOUDFLARE_API_TOKEN'

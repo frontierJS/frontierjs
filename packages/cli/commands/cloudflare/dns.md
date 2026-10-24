@@ -81,10 +81,11 @@ const profile = profileFor(flag.profile)
 // A default zone set for one client would otherwise put a hostname of another
 // zone into it, where Cloudflare refuses it with a message about neither.
 const fqdn = flag.name.toLowerCase().replace(/\.$/, '')
+const named = flag.zone || process.env.CLOUDFLARE_DEFAULT_ZONE
 const zone = (fqdn.includes('.') && await findZone(profile, fqdn))
-  || (flag.zone && await findZone(profile, flag.zone))
+  || (named && await findZone(profile, named))
 if (!zone) {
-  log.error(flag.zone ? `No zone this login reaches owns ${flag.zone}` : 'No zone — use --zone or set CLOUDFLARE_DEFAULT_ZONE')
+  log.error(named ? `No zone this login reaches owns ${named}` : 'No zone — use --zone or set CLOUDFLARE_DEFAULT_ZONE')
   return
 }
 

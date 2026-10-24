@@ -28,9 +28,10 @@ With `--urls` it purges only those specific URLs (up to 30 at a time).
 ```js
 const { profileFor, findZone, purge } = await import(new URL('file://' + global.fliRoot + '/core/cloudflare.js'))
 const profile = profileFor(flag.profile)
-if (!flag.zone) { log.error('No zone — use --zone or set CLOUDFLARE_DEFAULT_ZONE'); return }
-const zone = await findZone(profile, flag.zone)
-if (!zone) { log.error(`No zone this login reaches owns ${flag.zone}`); return }
+const named = flag.zone || process.env.CLOUDFLARE_DEFAULT_ZONE
+if (!named) { log.error('No zone — use --zone or set CLOUDFLARE_DEFAULT_ZONE'); return }
+const zone = await findZone(profile, named)
+if (!zone) { log.error(`No zone this login reaches owns ${named}`); return }
 
 if (flag.urls) {
   const urls = flag.urls.split(',').map(u => u.trim()).filter(Boolean)

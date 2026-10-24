@@ -85,6 +85,16 @@
      the bar's contents change, and the bar slides over whatever is pinned. */
   :global(:root) { --sticky-offset: 4rem; }
   :global(body) { background: var(--surface); color: var(--ink); }
+  /* Depth a reader feels rather than sees: light pooled behind the heading and
+     a fainter counter-glow low on the far side, tinted from the theme so every
+     swatch keeps it. Fixed, so it stays put while the page scrolls past it.
+     The splash paints its own light and would double up. */
+  :global(body:not(:has(.splash))::before) {
+    content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(55rem 38rem at 22% -8%, color-mix(in oklab, var(--color-primary) 9%, transparent), transparent 70%),
+      radial-gradient(45rem 34rem at 92% 105%, color-mix(in oklab, var(--color-primary) 5%, transparent), transparent 70%);
+  }
   /* html:root outranks a theme class on <html>, so every swatch keeps the face. */
   :global(html:root) { --font-display: 'Rubik Dirt', system-ui, sans-serif; }
 

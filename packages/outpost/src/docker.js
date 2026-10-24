@@ -167,6 +167,18 @@ done
 mv "/out/$FJS_NAME.partial" "/out/$FJS_NAME"
 echo "$(stat -c %s "/out/$FJS_NAME") $(find /data -type f | wc -l)"`
 const BACKUP_TIMEOUT_MS = 3_600_000
+// The archive streams off disk; an hour covers a multi-GB one on a slow link,
+// and the signed URL Basecamp mints outlives both this and the tar.
+const UPLOAD_TIMEOUT_MS = 3_600_000
+
+/** What a bucket said, short enough for a row: its XML `Code` and `Message`
+ *  when it answered S3's shape, the first line of the body otherwise. */
+function bucketSaid(status, text) {
+  const code    = /<Code>([^<]*)<\/Code>/.exec(text)?.[1]
+  const message = /<Message>([^<]*)<\/Message>/.exec(text)?.[1]
+  const said    = code ? `${code}${message ? `: ${message}` : ''}` : text.trim().split('\n')[0].slice(0, 200)
+  return `${status}${said ? ` ${said}` : ''}`
+}
 
 export function createDocker({
   run = spawnRun, fetch: fetchFn = globalThis.fetch, workDir = '/var/lib/outpost/apps', health = HEALTH,
@@ -710,16 +722,28 @@ export function createDocker({
 
     /**
      * The app's data volume tarred into `backupDir` on this machine
-     * (`FJS-D679`, `FJS-1782`). The archive stays here and the answer is its
-     * path, so no bytes cross the command port; a lost machine takes its
-     * backups with it. A running container is a SQLite writer with the file
-     * open: its `-wal` is in the archive beside the database and a restore
-     * replays it, so the script retakes a tar that saw a file move and refuses
-     * a volume that never holds still (exit 4).
+     * (`FJS-D679`, `FJS-1782`). The archive is written here and the answer is
+     * its path, so no bytes cross the command port. A running container is a
+     * SQLite writer with the file open: its `-wal` is in the archive beside
+     * the database and a restore replays it, so the script retakes a tar that
+     * saw a file move and refuses a volume that never holds still (exit 4).
+     *
+     * With `uploadUrl`, a pre-signed PUT Basecamp minted for one object
+     * (`FJS-D1485`), the finished archive is streamed to it from this process:
+     * the capture container has no network, and this machine holds no bucket
+     * key — the signature in the URL is the whole credential and it expires.
+     * The answer then carries `uploaded`, and `upload_error` in the bucket's
+     * words when it did not land. The archive stays on disk either way, so a
+     * refused upload is a backup that exists and has not left yet.
      */
-    async backup({ appId }) {
+    async backup({ appId, uploadUrl }) {
       if (typeof appId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(appId))
         throw new Error(`app_id '${appId}' is not a plain name`)
+      if (uploadUrl !== undefined) {
+        let parsed
+        try { parsed = new URL(uploadUrl) } catch { throw new Error('upload_url is not a URL') }
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error(`upload_url is ${parsed.protocol}, not http(s)`)
+      }
       const volume = `fjs-${appId}-data`
       const held   = await run(['docker', 'volume', 'inspect', volume])
       if (held.exitCode !== 0) throw new Error(`${volume} does not exist on this machine — the app has no data here to back up`)
@@ -742,7 +766,21 @@ export function createDocker({
         throw new Error(`backup of ${volume} failed (exit ${result.exitCode}): ${said}`)
       }
       const [bytes, files] = result.stdout.trim().split('\n').at(-1).split(/\s+/).map(Number)
-      return { volume, path: `${root}/${name}`, bytes, files }
+      const path = `${root}/${name}`
+      if (uploadUrl === undefined) return { volume, path, bytes, files }
+
+      // Answered, never thrown: the archive exists and the path is the answer.
+      // A throw here would read as a backup that failed.
+      try {
+        const res = await fetchFn(uploadUrl, {
+          method: 'PUT', body: Bun.file(path), headers: { 'content-type': 'application/gzip' },
+          signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+        })
+        if (res.ok) return { volume, path, bytes, files, uploaded: true }
+        return { volume, path, bytes, files, uploaded: false, upload_error: bucketSaid(res.status, await res.text().catch(() => '')) }
+      } catch (err) {
+        return { volume, path, bytes, files, uploaded: false, upload_error: err?.message ?? String(err) }
+      }
     },
 
     /** An operator's script, as root over the box. The unit is sandboxed and the

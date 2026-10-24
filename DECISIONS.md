@@ -1688,6 +1688,12 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1503"></a>2026-10-24 · `FJS-D1503` — Q2 — How `data` and `source` are classified — `@personal` on both in the reference, so the trail logs `[personal]`.
+
+Asked in [`IDEAS/thing.md`](IDEAS/thing.md) § Open questions. **A** was picked over **B** (the table gated owner-only, the fields unclassified), **C** (both).
+
+The paper's recommendation, taken as written: an instance that holds less loosens it; one that holds more is covered by default, and staff can still sort Things. Confidence 2.
+
 ### <a id="fjs-d1484"></a>2026-10-23 · `FJS-D1484` — Who a Basecamp box runs as — SSH and the Outpost stay root; the isolation owed is a host uid per app ([FJS-3474](ISSUES.md#fjs-3474)), not a deploy user.
 
 Asked in chat, set against Laravel Forge's `forge` user. **A** (root, plus a uid per app) was picked over **B** (root, and nothing else filed), **C** (a Forge-style `frontier` user with the docker group and NOPASSWD sudo, with root login turned off), and **D** (C and A together). As recommended. **Forge needs its user because PHP-FPM runs the site on the host**, and here an app runs in a container as `USER bun` (`FJS-D1120`). A deploy user would have to be in the docker group, and every unattended step would need NOPASSWD sudo, and each of those is root by another name. That is the argument the Outpost unit already makes for its own `User=`. What C buys is `PermitRootLogin no` over a login that is already key-only (`ssh.root-key-only`), a sudo log, and some protection against a person's typo, and every install, deploy and retire step would pay for it. **The part of Forge worth taking is its per-site isolation.** Every app on a box is host uid 1000 today, so an app that escapes its container reads every other app's db dir. Precedent (from memory, not re-checked): Kamal's `ssh.user` defaults to root, Coolify's non-root mode is marked experimental, and Dokku's `dokku` user is limited to a forced command. Where it lives: `basecamp:create` (`root@ip`), `Server.sshUser @default("root")`, and the comment on the Outpost unit in `packages/basecamp/api/src/providers/compute/enrollment.ts`.
@@ -4536,6 +4542,18 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d1504"></a>2026-10-24 · `FJS-D1504` — Q3 — Retention after graduating — Keep a graduated Thing forever.
+
+Asked in [`IDEAS/thing.md`](IDEAS/thing.md) § Open questions. **A** was picked over **B** (a job deletes graduated Things after N days, as Rails Action Mailbox does with `incinerate_after` ([Incineratable](https://api.rubyonrails.org/classes/ActionMailbox/InboundEmail/Incineratable.html))).
+
+The paper's recommendation, taken as written: the Thing is the before-image of what it became, and the trail already ages out on its own policy. Confidence 3.
+
+### <a id="fjs-d1502"></a>2026-10-24 · `FJS-D1502` — Q1 — The `Tree` trait or a hand-written `parentId` — `@@trait(Tree)`; every Thing carries `parentId` and the trait's required `rank`.
+
+Asked in [`IDEAS/thing.md`](IDEAS/thing.md) § Open questions. **A** was picked over **B** (a hand-written `parentId`, no rank).
+
+The paper's recommendation, taken as written: one tree shape in the house, and an email's children have an order; a root Thing's rank costs one column. Confidence 2.
 
 ### <a id="fjs-d1368"></a>2026-10-21 · `FJS-D1368` — What language does `@from(…, where:)` take, and how does a screen ask for a draft's computed columns — The expression language only, as every other `where:` (`@required`, `@@unique`, `@@index`) already is; a quoted string is refused at parse with the rewrite named. The AST reaches the client in `x-litestone-from` beside `rel`, the list field holding the children, and `resource.preview(draft)` — one verb, replacing `FJS-D1112`'s `generated(draft)` — answers each previewable `@generated` and each aggregate `@from` over `draft[rel]`, a child's own `@generated` answered first. Django's conditional aggregate is the same shape: `Sum('amount', filter=Q(...))` takes an ORM expression, not `RawSQL`.
 
@@ -8258,6 +8276,26 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d1497"></a>2026-10-23 · `FJS-D1497` — How Basecamp knows a copy of `ENCRYPTION_KEY` is kept off the box — A person attests it. `HubConfig.encryptionKeyEscrowedAt` and `encryptionKeyFingerprint` (the key's sha256, never the key) are `@system`, written by `hub-config.attestEscrow` alone, and `hub.key-escrowed` grades the attestation against the key in use: absent, or naming a key that is no longer the one in use, fails high. The development placeholder cannot be attested. The key never travels with an archive.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) 1.7. **An attestation bound to the key by digest** was picked over **a control that is always unknown beside static copy** (Coolify's shape — a warning in the docs and nothing graded, which is what posture exists to replace) and **Basecamp escrowing the key itself to a second place** (1Password's Emergency Kit; the kit already exists here as the `.env` `fli deploy:setup` leaves on the operator's machine, and a second copy Basecamp writes is a second owner of credential material). GitLab is the precedent for the shape: `gitlab-secrets.json` is kept OUT of the backup and `gitlab:doctor:secrets` checks the live key still decrypts; a fingerprint match is that check without the decrypt. Confidence 2.
+
+The nine, before any edit: 1 origin — the attestation is the sole origin of a fact only a person knows; the fingerprint is derived from the live key at write and at grade · 2 concept — no new noun; two columns and one control · 3 complexity — the problem's, named by three platforms · 4 predictability — a regenerated key turns the control red with a sentence naming both digests' prefixes · 5 derived — who attested is the audit trail's (`@@trail(audit)`), so no `escrowedBy` · 6 owner — `core/posture.ts` grades, `hub-config` writes, `core/db.ts` is the one reader of the key beside `createClient` · 7 boundary — `@system` columns, `requireSystemAdmin`, the placeholder refused · 8 failure — a `high` control, never a refusal on a backup · 9 silence — `posture.test.ts` § the hub grader (absent, match, mismatch, placeholder; the message never carries the digest whole) and `services.test.ts` § the installation settings (a forged `save` is a 403 by name, a stamp grades green, a changed key grades red).
+
+Found on the way: `/hub/settings/` echoed the whole row on save, which names the two `@system` columns and so was a 403 the moment they existed; the form now sends only what it changed, as `narrowPatch`'s own comment says a drop would hide.
+
+Adjudication: *ergonomics vs. strictness* — strictness follows what a mistake destroys, here every archive, so a digest match rather than a checkbox. Tier: Register.
+
+*Lives in:* `packages/basecamp/db/schema.lite` (`HubConfig`) · `packages/basecamp/api/src/core/posture.ts` (`hub.key-escrowed`, `HostDeclared`) · `packages/basecamp/api/src/core/db.ts` (`encryptionKeyFingerprint`) · `packages/basecamp/api/src/services/hub-config/hub-config.service.ts` (`attestEscrow`) · `packages/basecamp/web/src/routes/hub/backups/index.mesa`.
+
+### <a id="fjs-d1496"></a>2026-10-23 · `FJS-D1496` — The `Back up volume` step is fatal, has no opt-out, and no-ops on a first release — A release of an app whose snapshot `runtime.volumePath` is set runs `Back up volume` before `Start container`, read off the release's `configSnapshot` so a rollback copies too. It takes one archive through `takeAppBackup` with `kind: release` and the deployment's id on the row; an archive that fails fails the release, an archive still in flight fails it with the 409's sentence, and a release with no `previousDeploymentId` passes with *first release — no volume on the machine yet*. A stub executor records its `failed` row and the step passes saying no backup was taken: a stub is a development stand-in, not a machine.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) 1.6. **Fatal, no flag** was picked over **optional as ring-0 `05-backup.md`** (`optional: true`, skipped by `deployConf.db?.backup === false` — the ring-0 step copies a database the next image does not alter) and **an `App.backupBeforeDeploy` toggle** (an option whose off position bites at the one moment it matters, and `PHILOSOPHY.md` § IV prices every option). The departure is the reason: the new image migrates the volume forward, and the copy is the only way back. A `BackupDestination` is not required — with none, the archive is on the machine's disk and `location` says where. Confidence 3.
+
+### <a id="fjs-d1495"></a>2026-10-23 · `FJS-D1495` — `AppBackup.kind` reuses `BackupKind`, which gains `release` — `AppBackup` gets `kind BackupKind @default(manual)` and `deploymentId String?` (`SetNull`); `BackupKind` is `manual · scheduled · found · release`. `release` on a hub `Backup` row is unwritten rather than unsayable.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) 1.6. **Reuse** was picked over **a new `AppBackupKind`** (two enums answering one question — who asked — with three values in common) and **`deploymentId` alone, no kind** (a scheduled row and a person's row would then read the same). The column that says who asked is the same column on both backup rows; the pointer says which release. Confidence 3.
 
 ### <a id="fjs-d1494"></a>2026-10-23 · `FJS-D1494` — `backups.remove` deletes the archive, through the helper retention prunes with — A local archive goes as `backups/<basename(location)>`, refused unless the name is `basecamp-*`; a remote one as a `deleteObject` on its destination, the object first and the row after, so a failed delete keeps the row and the next prune retries it.
 
@@ -15052,6 +15090,30 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1501"></a>2026-10-24 · `FJS-D1501` — Q4 — The first five — The five mechanisms `ARCHITECT.md` spends the most words on, measured by section length; expected: the three realms from one schema, a `$`-directive crossing the bridge (Invariant 10), the gate ladder, the hook pipeline around a service call, the surfaces beside `db/` (Invariant 3).
+
+Asked in [`IDEAS/illustration.md`](IDEAS/illustration.md) § Open questions. **A** was picked over **B** (one figure end to end, cold-reader proof included, before five).
+
+The paper's recommendation, taken as written: 1.1 measures, so a wrong guess costs one line; five is the smallest set a § Diagrams section can be written from (Q3). Confidence 2.
+
+### <a id="fjs-d1500"></a>2026-10-24 · `FJS-D1500` — Q3 — A brand graphic language for diagrams now — Draw five figures, then write the section from what held.
+
+Asked in [`IDEAS/illustration.md`](IDEAS/illustration.md) § Open questions. **B** was picked over **A** (write `brand/README.md` § Diagrams before the first figure).
+
+The paper's recommendation, taken as written: it is `brand/README.md` § Later's own rule: a section only once there is a real asset to show. Confidence 3.
+
+### <a id="fjs-d1499"></a>2026-10-24 · `FJS-D1499` — Q2 — Renderer for a mechanism figure in committed docs — Hand SVG up to about eight parts, D2-to-SVG above that, committed as `.svg` beside the doc; Mermaid only where the reader is GitHub's renderer (a `README.md`).
+
+Asked in [`IDEAS/illustration.md`](IDEAS/illustration.md) § Open questions. **A** was picked over **B** (Mermaid fences everywhere, rendered by GitHub), **C** (D2 source at every size, SVG committed).
+
+The paper's recommendation, taken as written: an `.svg` takes the brand's graphic language and `currentColor`, and SVGenius says hand-authoring holds only at small sizes. No `.svg` or Mermaid fence exists in this repo's markdown yet, so there is no caller to move; B is the reopen path if GitHub readers come to dominate. Confidence 2.
+
+### <a id="fjs-d1498"></a>2026-10-24 · `FJS-D1498` — Q1 — Where the brief lives — A skill `illustrate` in `.claude/skills/`, owning § 5 and pointing at `brand/IMAGERY.md`, `artifact-diagramming` and `dataviz` by kind.
+
+Asked in [`IDEAS/illustration.md`](IDEAS/illustration.md) § Open questions. **A** was picked over **B** (a section in `brand/IMAGERY.md`).
+
+The paper's recommendation, taken as written: IMAGERY.md is a kit for one kind of picture and is read by a person pasting prompts; the brief is run by an agent on every kind. The precedent is `decision-rules` and `doc-hygiene`: a check an agent runs before an act lives in a skill. Confidence 3.
 
 ### <a id="fjs-d1483"></a>2026-10-23 · `FJS-D1483` — Outpost takes a path segment that starts with `_`. A leading `.` is still refused.
 

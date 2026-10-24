@@ -96,7 +96,7 @@ if (verb.startsWith('dns records')) {
     answer(value)
   }
   const stamp = { created_on: '2026-10-22T00:00:00Z', modified_on: '2026-10-22T00:00:00Z' }
-  const target = () => rows.find(r => r.id === words[3]) ?? refuse('path', `${path}/${words[3]}`)
+  const target = () => rows.find(r => r.id === words[3]) ?? refuse('record', `${path}/${words[3]}`)
   if (verb === 'dns records list') page(rows, 'records')
   if (verb === 'dns records get') answer(target())
   if (verb === 'dns records create') {

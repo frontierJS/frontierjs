@@ -301,8 +301,7 @@ Done when: a job joins a mesh call as a bot principal, the artifact lands in `Ca
 
 - [ ] 4.1 Lift or sibling the Chromium worker (Q3)
 - [ ] 4.2 Record job: join as bot principal, write through Phase 3
-- [ ] 4.3 Transcribe job: Parakeet TDT 0.6B v3 int8 through sherpa-onnx local, whisper.cpp as the multilingual fallback, Deepgram as a conduit target
-  - Measured 2026-10-23 on a CPU-only i7-8850H, one 44.5-min English call, 6 threads: Parakeet + silero VAD RTF 0.115 (5.2 min), whisper.cpp `small.en-q5_1` RTF 0.65 (29 min), `large-v3-turbo-q5_0` RTF 1.7. Both readable; Parakeet drops a phrase where VAD cuts mid-word, so tune min-silence or chunk on a fixed length. The engine is a config string; the job shape (ffmpeg to 16 kHz mono, spawn the binary) is the same for both.
+- [ ] 4.3 Transcribe job: the recording from 4.2 through `transcription.md`'s job; engine ruled `FJS-D1492`
 - [ ] 4.4 Notes job: transcript + channel messages → `app.conduit.send()` → record on the channel
 
 ### Phase 5 — The SFU adapter
@@ -322,5 +321,6 @@ Done when: `example` runs the Phase 1 drive against a LiveKit room with no chang
 - `rigs.md` — the unit; `FJS-D630`
 - `ecosystem-gaps.md` § 9 — media processing, the client half answered here
 - `bulk-data.md` — the second consumer of Phase 3
+- `transcription.md` — the transcribe job 4.3 consumes, and the engine evidence
 - `packages/print-kit/CLAUDE.md` — the worker Q3 is about
 - `packages/junction/docs/internals.md` § channels — presence, `rooms`, the frame bounds

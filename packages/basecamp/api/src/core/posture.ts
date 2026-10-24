@@ -374,6 +374,9 @@ function fileControl(what: string, stat: FileStat | null | undefined): Grade {
     : { ok: true,  message: `${stat.path} is mode ${stat.mode}` }
 }
 
+/** How much of a key's sha256 a sentence shows: enough to tell two keys apart, never the key. */
+export const shortFingerprint = (hex: string) => hex.slice(0, 12)
+
 const HUB_CONTROLS: { id: string; group: string; severity: Severity; grade: (r: PostureReadings | null, host: HostDeclared, now: number) => Grade }[] = [
   // Graded in process from the Backup rows, so a stale report does not hide it.
   { id: 'hub.backup-recent', group: 'hub', severity: 'high', grade: (_r, host, now) => {
@@ -382,6 +385,21 @@ const HUB_CONTROLS: { id: string; group: string; severity: Severity; grade: (r: 
     return age <= BACKUP_MAX_AGE_DAYS
       ? { ok: true,  message: age === 0 ? 'Last backup finished today' : `Last backup finished ${age} day(s) ago` }
       : { ok: false, message: `Last backup finished ${age} days ago` }
+  } },
+  // Every archive holds `Secret.data` and the fleet's secret Variables as
+  // ciphertext under ENCRYPTION_KEY, which never travels with one — so a box
+  // whose key has no copy elsewhere has backups that die with it. Nothing here
+  // can see that copy; a person attests it (`hub-config.attestEscrow`), and the
+  // attestation names the key by digest so a regenerated key voids it rather
+  // than a stale "kept" standing. In process, like the backup control.
+  { id: 'hub.key-escrowed', group: 'hub', severity: 'high', grade: (_r, host) => {
+    if (!host.keyFingerprint) return { ok: false, message: 'ENCRYPTION_KEY is the development placeholder — a copy of it protects nothing' }
+    const live = shortFingerprint(host.keyFingerprint)
+    if (!host.keyEscrow) return { ok: false, message: `No copy of ENCRYPTION_KEY ${live} is attested off this box — every archive is unreadable without it` }
+    const kept = shortFingerprint(host.keyEscrow.fingerprint)
+    return host.keyEscrow.fingerprint === host.keyFingerprint
+      ? { ok: true,  message: `A copy of ENCRYPTION_KEY ${live} was attested off this box on ${host.keyEscrow.at.slice(0, 10)}` }
+      : { ok: false, message: `The attested copy is of key ${kept}, not the key in use ${live} — the key changed since ${host.keyEscrow.at.slice(0, 10)}` }
   } },
   { id: 'hub.db-mode',  group: 'hub', severity: 'high', grade: (r) => fileControl('database volume', r?.host_files?.db) },
   { id: 'hub.env-mode', group: 'hub', severity: 'high', grade: (r) => envControl(r?.host_files) },
@@ -403,17 +421,24 @@ function envControl(files: PostureReadings['host_files']): Grade {
 
 export const HUB_CONTROL_IDS = HUB_CONTROLS.map(c => c.id)
 
+/** Graded from Basecamp's own rows, so a missing or stale report does not hide them. */
+const IN_PROCESS = new Set(['hub.backup-recent', 'hub.key-escrowed'])
+
 /** What the box a Basecamp runs on should look like, beyond any fleet machine. */
 export interface HostDeclared {
   /** `finishedAt` of the newest successful Backup; null when none has. */
-  lastBackupAt: string | null
+  lastBackupAt:   string | null
+  /** sha256 hex of the key in use; null on the development placeholder. */
+  keyFingerprint: string | null
+  /** The standing attestation — when, and the sha256 of the key it was made for; null when none. */
+  keyEscrow:      { at: string; fingerprint: string } | null
 }
 
 /**
  * The `hub.*` controls, graded from the host row's newest report. The fleet
  * controls are that row's own (`gradePosture`), so these are only what the box
- * holding `ENCRYPTION_KEY` adds. `hub.backup-recent` reads rows, never the
- * report, so it is graded whether or not the report is stale.
+ * holding `ENCRYPTION_KEY` adds. `hub.backup-recent` and `hub.key-escrowed`
+ * read rows, never the report, so they are graded whether or not it is stale.
  */
 export function gradeHub(
   readings: PostureReadings | null | undefined,
@@ -423,7 +448,7 @@ export function gradeHub(
   const taken = typeof at === 'number' ? at : Date.parse(at)
   const stale = !Number.isFinite(taken) || now - taken > 2 * intervalMs
   return HUB_CONTROLS.map(({ id, group, severity, grade }) => {
-    if (id !== 'hub.backup-recent' && (stale || !readings))
+    if (!IN_PROCESS.has(id) && (stale || !readings))
       return { id, group, severity, ok: 'unknown' as const, message: stale ? 'The last report is stale' : 'No report' }
     let g: Grade
     try { g = grade(readings ?? null, host, now) }

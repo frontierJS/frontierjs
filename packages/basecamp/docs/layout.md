@@ -208,6 +208,10 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           delete (retention's and backups.remove's, FJS-D1494), the prune
           backup-run calls after a success, and the rescan that writes
           `found` rows (FJS-D1493); not a job, so caravan loads nothing from it
+          jobs/app-backup-run.job.ts is the one `/backup` caller (Invariant 4) —
+          the schedule's `app-backup:run`, `app-backups.take` and a release's
+          `Back up volume` step all take through `takeAppBackup`; `destinationFor`
+          reads `App.backupDestinationId` at SYSTEM and refuses a crossed workspace
           providers/ is who the app SPEAKS to — `index.ts` is nine (eight
           self-hosted appliances, plus `cloudSpend`, somebody else's service
           reached with a token), executor.ts and
@@ -224,8 +228,9 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           storage/ is a bucket held as a workspace `BackupDestination` row —
           s3.ts is basecamp's own lift of conduit-s3 over toolbelt's sigv4
           (`FJS-D1490`, no `link:` on the sibling repo survives the image
-          build), and index.ts registers each row as `storage:s3:<id>` on
-          write and at boot, a credential ref and never a key
+          build), index.ts registers each row as `storage:s3:<id>` on
+          write and at boot, a credential ref and never a key, and s3-sink.ts
+          is the connector's SigV4-verifying stand-in lifted the same way
           edge/ writes only records it MARKED, and the connector is where an
           unmarked set is refused (`FJS-D560`, `FJS-D562`), so no caller can
           skip the check by forgetting it

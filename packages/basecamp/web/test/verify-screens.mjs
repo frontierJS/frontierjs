@@ -32,6 +32,7 @@ export const holds = ['ports']
 
 import { spawn } from 'node:child_process'
 import { rm } from 'node:fs/promises'
+import { randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../../mesa/src/drive.js'
@@ -54,6 +55,10 @@ const BASE     = `http://localhost:${WEB_PORT}`
 // 7127 beside the test one (`docs/PORTS.md`).
 const CF_PORT  = API_PORT + 7
 const CF_SINK  = `http://localhost:${CF_PORT}/client/v4`
+// The S3 stand-in, on the slot's `5`: 8125 beside the dev API, 7125 beside
+// the test one. A SigV4 verifier, so the destination `test` below is real.
+const S3_PORT  = API_PORT + 5
+const S3_SINK  = `http://127.0.0.1:${S3_PORT}`
 const EMAIL    = 'sam@example.com'      // the seeded owner, and a sysadmin
 const PASSWORD = 'hunter2hunter2'
 
@@ -83,6 +88,10 @@ const DB      = join(SCRATCH, 'basecamp.db')
 // developer's own `db/audit/` and nothing failed either way (`FJS-633`).
 const AUDIT   = join(SCRATCH, 'audit.db')
 
+// The dev placeholder cannot be attested (it is public), and the seed and the
+// API must encrypt with the same key, so one is minted before either spawns.
+process.env.ENCRYPTION_KEY ??= randomBytes(32).toString('hex')
+
 console.log('\nBasecamp — the screens\n')
 console.log(`  seeding ${DB}`)
 
@@ -99,7 +108,7 @@ if (seedCode !== 0) fail(`db/seed.js exited ${seedCode}\n${seedErr}`)
 // A stale dev server means this drive would assert against the OTHER app's
 // build and report a pass. Vite sets strictPort, so it would die anyway; the
 // API would not.
-for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT], ['Cloudflare sink', CF_PORT]]) {
+for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT], ['Cloudflare sink', CF_PORT], ['S3 sink', S3_PORT]]) {
   const answered = await fetch(`http://localhost:${port}/`).then(() => true).catch(() => false)
   if (answered) fail(`Something already answers on :${port} (${name}). Stop it — this drive would test it instead.`)
 }
@@ -123,6 +132,10 @@ children.push(spawn('bun', ['api/src/providers/edge/cloudflare-sink.ts'], {
   cwd: PKG, stdio: 'ignore', detached: true,
   env: { ...process.env, CF_SINK_PORT: String(CF_PORT) },
 }))
+children.push(spawn('bun', ['api/src/providers/storage/s3-sink.ts'], {
+  cwd: PKG, stdio: 'ignore', detached: true,
+  env: { ...process.env, S3_SINK_PORT: String(S3_PORT) },
+}))
 children.push(spawn('bun', ['run', 'web'], {
   cwd: PKG, stdio: 'ignore', detached: true,
   env: { ...process.env, API_PORT: String(API_PORT), UI_PORT: String(WEB_PORT) },
@@ -138,6 +151,7 @@ const waitFor = async (url, label) => {
 await waitFor(`http://localhost:${API_PORT}/health`, 'the API')
 await waitFor(BASE, 'the web server')
 await waitFor(`${CF_SINK}/zones`, 'the Cloudflare stand-in')
+await waitFor(`${S3_SINK}/_sink/seen`, 'the S3 stand-in')
 
 // ─── Chrome ──────────────────────────────────────────────────────────────
 // Headless Chrome answers (hover: none) and (pointer: none), so every rule
@@ -395,6 +409,45 @@ try {
     check('a save carrying a stale revision is refused', conflict !== 'accepted', conflict)
   }
 
+  // ─── A bucket, tested where the person is looking (1.8) ────────────────
+  // Adding a destination runs `test` at once — a PUT and a DELETE of a probe
+  // key through the registered target, against the SigV4 stand-in — and the
+  // answer is a line under the picker. Second bucket under `private/`, which
+  // the stand-in refuses for every key: the line has to say `forbidden`, not
+  // a bare 403, because the fix is the policy and not the credential. Nothing
+  // here is saved: the picker is left pointing at a bucket, and the page is
+  // left without `#save-settings`, so the hub schedule stays on local disk.
+  console.log('\n  /hub/settings/ — a backup destination is tested on the spot')
+  await goto('/hub/settings/')
+  await until(`!!document.getElementById('add-destination')`, v => v, 'the destination picker never rendered')
+  await click('#add-destination')
+  await until(`!!document.getElementById('dest-secret')`, v => v, 'the inline bucket form never opened')
+  await fill({ 'dest-name': 'Stand-in bucket', 'dest-endpoint': S3_SINK, 'dest-region': 'us-east-1',
+    'dest-bucket': 'frontier-basecamp', 'dest-prefix': 'basecamp-', 'dest-secret': 'AKIADEV:devsecret' })
+  await evaluate(`document.getElementById('dest-secret').form.requestSubmit()`)
+  const probed = await until(`document.getElementById('destination-test')?.textContent ?? ''`, t => t.length > 0,
+    'adding a bucket never reported its test').catch(e => String(e.message))
+  check('adding a bucket tests it, and a good key says the probe was written and deleted',
+    /written and deleted/.test(probed), probed.slice(0, 160))
+  const stamped = await text('#destination-tested')
+  check('and the picker line carries the stamp', /Last tested/.test(stamped ?? '') && !/never/.test(stamped ?? ''), (stamped ?? '').slice(0, 120))
+  const sinkSaw = await fetch(`${S3_SINK}/_sink/seen`).then(r => r.json())
+  const probeVerbs = sinkSaw.requests.filter(r => r.path.startsWith('/frontier-basecamp/basecamp-/basecamp-probe-')).map(r => `${r.method} ${r.status}`)
+  check('the stand-in saw one signed PUT and one DELETE and holds no key', probeVerbs.join(',') === 'PUT 200,DELETE 204' && sinkSaw.keys.length === 0,
+    `${probeVerbs.join(',')} · keys ${sinkSaw.keys.length}`)
+
+  await click('#add-destination')
+  await until(`!!document.getElementById('dest-secret')`, v => v, 'the inline bucket form never reopened')
+  await fill({ 'dest-name': 'Refused bucket', 'dest-endpoint': S3_SINK, 'dest-region': 'us-east-1',
+    'dest-bucket': 'frontier-basecamp', 'dest-prefix': 'private/', 'dest-secret': 'AKIADEV:devsecret' })
+  await evaluate(`document.getElementById('dest-secret').form.requestSubmit()`)
+  const refusedLine = await until(`document.getElementById('destination-test')?.textContent ?? ''`, t => /Refused bucket/.test(t),
+    'the refused bucket never reported its test').catch(e => String(e.message))
+  check('a key the policy refuses is said as forbidden with the S3 code, not as a bare 403',
+    /forbidden:/.test(refusedLine) && /AccessDenied/.test(refusedLine) && /policy/.test(refusedLine), refusedLine.slice(0, 200))
+  const refusedTone = await evaluate(`document.getElementById('destination-test')?.className ?? ''`)
+  check('and in the danger tone', /danger/.test(refusedTone), refusedTone)
+
   // ─── Hub backups ───────────────────────────────────────────────────────
   console.log('\n  /hub/backups/ — archives')
   await goto('/hub/backups/')
@@ -403,6 +456,20 @@ try {
   const schedule = await text('#backup-schedule')
   check('the schedule says what a fire does', /each fire of this expression/i.test(schedule ?? ''),
     (schedule ?? '').slice(0, 120))
+
+  // The key: the line says an archive without it cannot be read, the control
+  // reads red until a person attests a copy, and green after (1.7).
+  await until(`!!document.getElementById('key-escrow')`, v => v, 'the key line never rendered')
+  const keyLine = await text('#key-escrow')
+  check('the backups screen says an archive without its key cannot be read',
+    /cannot be read/.test(keyLine ?? '') && /not escrowed/.test(keyLine ?? ''), (keyLine ?? '').slice(0, 160))
+  await click('#attest-escrow')
+  await until(`!!document.querySelector('[role=dialog][aria-modal=false]')`, v => v, 'attesting asked nothing')
+  await evaluate(`document.querySelector('[role=dialog][aria-modal=false] .cluster button:last-child').click()`)
+  const attested = await until(`document.getElementById('key-escrow')?.textContent ?? ''`,
+    t => /was attested off this box/.test(t), 'attesting never turned the control green')
+  check('attesting a copy turns hub.key-escrowed green', /\bescrowed\b/.test(attested) && !/not escrowed/.test(attested),
+    attested.slice(0, 160))
 
   const before = await evaluate(`document.querySelectorAll('#backup-history tbody tr').length`)
   await click('#take-backup')

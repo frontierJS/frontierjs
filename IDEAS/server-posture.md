@@ -206,7 +206,9 @@ per box. The cost is that the hub's reading depends on that row, so under
 reads the box and `/hub/security/` says so.
 
 **Some controls only the host has:** `hub.backup-recent` (the newest `Backup`
-row, graded on age, in process) · `hub.db-mode` and `hub.env-mode` (the database
+row, graded on age, in process) · `hub.key-escrowed` (a person's attestation
+that a copy of `ENCRYPTION_KEY` is kept off the box, bound to the key by
+digest, in process — `FJS-D1497`) · `hub.db-mode` and `hub.env-mode` (the database
 volume and the file holding `ENCRYPTION_KEY` are not world-readable, from the
 reading). A setting that already refuses itself under production is not graded
 again: `localMachineRefusal`, devtools with no gate, and a missing `ENCRYPTION_KEY`

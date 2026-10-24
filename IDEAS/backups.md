@@ -214,21 +214,94 @@ with a warning — against `conduit-s3`'s sink in `verify:outpost` and
     and the bytes stay billed. The recipe in 1.9 sets the bucket's lifecycle to
     *keep only the last version*, which makes Basecamp's prune final; no
     lifecycle rule of the bucket's own expires an archive Basecamp still lists.
-- [ ] 1.5 Outpost `/backup` uploads to a pre-signed PUT Basecamp mints per
+- [x] 1.5 Outpost `/backup` uploads to a pre-signed PUT Basecamp mints per
       archive — the upload step `FJS-D679` left for `s3`. The machine holds no
       standing key for it. The signer is `@frontierjs/toolbelt/sigv4`
       (`FJS-D892`), the one SigV4; litestone's `storage/providers/s3.js` is a
       caller of it, as basecamp is (Invariant 4).
-- [ ] 1.6 A schedule per App, and a snapshot before every fleet `/deploy`.
-- [ ] 1.7 `ENCRYPTION_KEY` escrow: a posture control and a line on the backups
+  - Built 2026-10-23. `AppBackupTake.destinationId?` names a destination of
+    the app's OWN workspace (a caller-scope read, so another workspace's is
+    404 before any machine is asked); absent, the archive stays local. No
+    default — `decision-rules` graded the hub's bucket as a default the one
+    option that crosses `@@tenant(none)` into a tenant row, and the sibling
+    `backups.create` already takes `destinationId?` with none. Reopen as an
+    `App.backupDestinationId` column when 1.6's schedule needs a stored one;
+    the input stays the override. `take` reads the credential once through
+    `createSecretResolver`, mints a three-hour PUT for
+    `<prefix>/<appId>-<stamp>.tar.gz` (`providers/storage/s3.ts` `presign`),
+    and sends `upload_url` on the wire. Outpost `/backup` streams the finished
+    archive to it from its own process (`Bun.file`, so nothing is read into
+    memory; the capture container keeps `--network none`), and ANSWERS
+    `uploaded` and `upload_error` in the bucket's `Code: Message` — never a
+    throw, since the archive exists. `AppBackup.destinationId` is `Restrict`
+    like `Backup`'s; a landed upload makes the key `location`, a refused one
+    keeps the path with the warning in `error` and `status: success`, as
+    `backup:run` does. `backup-destinations` counts both kinds of row for
+    `backup_count` and the 409 on `remove`. The local archive stays on the
+    machine either way; retention for a machine's directory is not in this
+    plan. Four Outpost rows, three `services.test.ts` rows; `verify:docker`
+    and `verify:outpost` not run (Docker). Not proved against B2.
+- [x] 1.6 A schedule per App, and a snapshot before every fleet `/deploy`.
+  - Built 2026-10-23. `App.backupCron` (null is none, as `Job.cronExpression`
+    reads; `cronProblem` refuses a bad expression BEFORE the write) and
+    `App.backupDestinationId` (`SetNull`, own workspace only — the stored
+    pointer 1.5 said to reopen; `AppBackupTake.destinationId` stays the
+    override for a person). `syncAppBackupSchedule` puts `app:backup:<id>` on
+    the one clock from `create`, `patch`, `remove` and `restore`, and
+    `restoreSchedules` re-registers every row at boot; the fire is the
+    `app-backup:run` job. `jobs/app-backup-run.job.ts` is the ONE `/backup`
+    caller (Invariant 4) — the person's `take`, the schedule and a release's
+    `Back up volume` step all take through `takeAppBackup`, which refuses an
+    in-flight archive of that app on that machine with a 409 before writing a
+    row. `AppBackup.kind` reuses `BackupKind` + `release`, and `deploymentId`
+    names the release (`FJS-D1495`). The step is built off the release's
+    `configSnapshot.runtime.volumePath`, sits before `Start container`, is
+    fatal with no opt-out, and no-ops on a first release (`FJS-D1496`); a stub
+    executor passes it saying no backup was taken. No custom UI: the
+    schema-driven App form carries both columns. A machine's directory still
+    has no retention. One `services.test.ts` row (on the clock, restored,
+    off on null and on remove, back on restore), one `inline-app.test.ts` row
+    (the step list, create and rollback), `kind` on the manual row, the rival
+    destination refused on the app too. `verify:docker` and `verify:outpost`
+    not run (Docker). Not proved against B2.
+- [x] 1.7 `ENCRYPTION_KEY` escrow: a posture control and a line on the backups
       screen that an archive without its key cannot be read. The key never
       travels with the archive.
-- [ ] 1.8 `backup-destinations.test`: PUT then DELETE a probe key under the
+  - Built 2026-10-23, ruled `FJS-D1497`. Nothing here can see the copy
+    `fli deploy:setup` leaves in the operator's `.env`, so a person attests it:
+    `hub-config.attestEscrow` stamps `HubConfig.encryptionKeyEscrowedAt` and
+    `encryptionKeyFingerprint` (sha256 of the key in use, from
+    `core/db.ts`), both `@system`. `hub.key-escrowed` (high, in process like
+    `hub.backup-recent`) fails while none is stamped, while the stamped digest
+    is not the live key's, and on the development placeholder, which cannot
+    be attested. `/hub/backups/` has an *Encryption key* card reading that
+    control — the one grader — with the attest button behind a confirm.
+    Found: `/hub/settings/` echoed the whole row on save, a 403 once a
+    `@system` column existed; it sends only what changed now. Rows in
+    `posture.test.ts`, `services.test.ts`, two `verify:screens` checks on a
+    minted key.
+- [x] 1.8 `backup-destinations.test`: PUT then DELETE a probe key under the
       prefix, write `lastTestAt`, answer the connector's failure kind
       (`forbidden`, `clock_skew`, `refused`) in the form — so a wrong key fails
       where a person is looking and not at 02:00. A `verify:screens` row against
       the sink.
-- [ ] 1.9 `packages/basecamp/docs/BACKUPS.md`, the operator's recipe, B2 first:
+  - Built 2026-10-23: `test` is `gate: ADMINISTRATOR` like `channels.test`,
+    sends through the registered target (`sendFor`), probe key
+    `<prefix>/basecamp-probe-<stamp>-<rand>`, both verbs on purpose — a
+    write-only key passes a PUT and fails at the first prune. The stamp is
+    written only when both answered; a passing test also sets the Secret's
+    `isVerified`, which a rotation cleared — and it is the ONE writer of
+    `true` for a `backup` Secret: `secrets.verify` refuses that kind by name,
+    where it would otherwise have asserted it untested. The refusal is the kind first
+    (`forbidden: the probe write failed — the bucket's policy refuses this key
+    (AccessDenied) — …`), `explainFailure` in the service. The hub screen runs
+    it right after Add and has a *Test bucket* button beside the picker; the
+    answer is `#destination-test` under it. `conduit-s3`'s `sink.ts` is lifted
+    as `providers/storage/s3-sink.ts` (8125 dev / 7125 test, the same way as
+    `cloudflare-sink.ts`) — a SigV4 verifier, so `verify:screens` adds a good
+    bucket and a `private/` one and reads *written and deleted* then
+    `forbidden … AccessDenied`. Five API tests, one gate-table row.
+- [x] 1.9 `packages/basecamp/docs/BACKUPS.md`, the operator's recipe, B2 first:
       a private bucket; an application key restricted to that bucket with read,
       write, list and delete; the region read off the endpoint
       (`s3.us-west-004.backblazeb2.com` → `us-west-004`); lifecycle *keep only

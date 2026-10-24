@@ -6,13 +6,13 @@
 // over ONE model with one row. Folding them together would put a `model:` on a
 // service whose other twelve methods answer for none.
 //
-// ─── Two methods, not five ────────────────────────────────────────────────
+// ─── Three methods, not five ──────────────────────────────────────────────
 //
 // A singleton does not have a collection and does not have an id a caller
 // should know. `find` would have to answer a list of one, and `get` would make
-// every screen hardcode the constant `'hub'`. So `methods:` names `current` and
-// `save`, and junction answers 405 to the CRUD verbs — which is the surface
-// being honest rather than a restriction.
+// every screen hardcode the constant `'hub'`. So `methods:` names `current`,
+// `save` and `attestEscrow`, and junction answers 405 to the CRUD verbs — which
+// is the surface being honest rather than a restriction.
 //
 // ─── Why validation is the Data boundary's here ───────────────────────────
 //
@@ -25,6 +25,7 @@
 import { createService, BadRequest, NotFound, $ } from '@frontierjs/junction'
 import { requireSystemAdmin }         from '../../core/hooks.ts'
 import { db, narrowPatch }            from '../../core/resource.ts'
+import { encryptionKeyFingerprint }   from '../../core/db.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 import { cronProblem, syncBackupSchedule } from '../jobs/job-schedule.ts'
 
@@ -43,7 +44,7 @@ export default createService({
   scope: keyScope('hub-config'),
   model: 'HubConfig',
 
-  methods: ['current', 'save'],
+  methods: ['current', 'save', 'attestEscrow'],
 
   /**
    * The settings, or a 404 saying they have never been written.
@@ -103,6 +104,31 @@ export default createService({
       'form a conflict rather than a silent overwrite.')
 
     return synced(await db().hubConfig.update({ where: { id: HUB }, data: { ...data, version } }))
+  },
+
+  /**
+   * A person says a copy of ENCRYPTION_KEY is kept off this box.
+   *
+   * Nothing here can check that, so the row records WHEN and OF WHICH KEY —
+   * its sha256, never the key — and `hub.key-escrowed` (`core/posture.ts`)
+   * grades the attestation against the key in use: a regenerated key voids it
+   * on its own. Both columns are `@system`, so `save` cannot forge one. The
+   * development placeholder is refused: it is in the repo, and attesting a
+   * copy of it would grade a dev box green for a key production refuses.
+   */
+  async attestEscrow() {
+    const fingerprint = encryptionKeyFingerprint()
+    if (!fingerprint) throw new BadRequest(
+      'ENCRYPTION_KEY is the development placeholder, which is public — there is ' +
+      'nothing to keep a copy of. Set a real one (openssl rand -hex 32) and attest that.')
+    const existing = await db().hubConfig.findFirst({ where: { id: HUB } })
+    if (!existing) throw new NotFound(
+      'This installation has no settings yet. Save them once, then attest the key.')
+    return db().hubConfig.update({
+      where:  { id: HUB },
+      data:   { encryptionKeyEscrowedAt: new Date().toISOString(), encryptionKeyFingerprint: fingerprint, version: existing.version },
+      system: ['encryptionKeyEscrowedAt', 'encryptionKeyFingerprint'],
+    })
   },
 
   hooks: {

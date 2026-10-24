@@ -23,7 +23,6 @@ text, so a body that elevates through a helper is not listed.
 | Method | Who may call it |
 | --- | --- |
 | `api-keys.owners` | standing 5 or above — declared `gate: 5` |
-| `app-backups.take` | standing 5 or above — declared `gate: 5` |
 | `apps.place` | standing 4 or above — declared `gate: 4` |
 | `apps.unplace` | standing 4 or above — declared `gate: 4` |
 | `apps.enablePush` | standing 5 or above — declared `gate: 5` |
@@ -58,7 +57,7 @@ and what it does.
 | `notification-preferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (89)
+### A service hook runs in front of the body (90)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -108,6 +107,7 @@ name, and is as unread as the body.
 | `flags.resolve` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `hub-config.current` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
 | `hub-config.save` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
+| `hub-config.attestEscrow` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
 | `jobs.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `jobs.cancel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `jobs.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
@@ -273,7 +273,7 @@ name when it declares none.
 - **custom methods** — `take`
 - **input** — `take` takes `AppBackupTake`
 - **who may call** —
-  - `take` — standing 5 or above — declared `gate: 5`; body writes as the app
+  - `take` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -357,9 +357,11 @@ name when it declares none.
 
 ### `backup-destinations` · model `BackupDestination`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `test`
+- **custom methods** — `test`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `test` — standing 5 or above — declared `gate: 5`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -826,11 +828,12 @@ name when it declares none.
 
 ### `hub-config` · model `HubConfig`
 
-- **methods** — `current`, `save`
-- **custom methods** — `current`, `save`
+- **methods** — `current`, `save`, `attestEscrow`
+- **custom methods** — `current`, `save`, `attestEscrow`
 - **who may call** —
   - `current` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`
   - `save` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`; body writes as the app
+  - `attestEscrow` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

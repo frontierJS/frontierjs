@@ -216,7 +216,7 @@ validates, and a select that silently drops an option.
 - `FlagType` — `boolean`, `variant`
 - `WidgetKind` — `server_fleet`, `server_health`, `app_status`, `deploy_feed`, `job_history`, `activity_feed`, `alert_status`, `service_health`, `stat_counter`
 - `ParamGenerator` — `random_hex_16`, `random_hex_32`, `random_hex_64`
-- `BackupKind` — `manual`, `scheduled`, `found`
+- `BackupKind` — `manual`, `scheduled`, `found`, `release`
 - `DependencyKind` — `dependency`, `dev`, `peer`, `optional`
 - `NotificationContext` — `Deployment`, `AlertEvent`, `JobRun`, `Server`, `Workspace`, `Monitor`
 - `NotificationKind` — `DeploySuccess`, `DeployFailed`, `AlertFiring`, `AlertResolved`, `ServerUnreachable`, `MonitorDown`, `MonitorUp`, `PostureFailed`, `DependencyVulnerable`, `MemberJoined`, `JobFailed`, `WeeklyDigest`
@@ -862,6 +862,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - gate `read:2 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
 - relation `environment` — belongsTo `Environment` via `environmentId` · on delete Cascade
 - relation `blueprint` — belongsTo `Blueprint` via `blueprintId` · on delete SetNull · optional
+- relation `backupDestination` — belongsTo `BackupDestination` via `backupDestinationId` · on delete SetNull · optional
+- relation `appBackups` — hasMany `AppBackup`
 - relation `deployments` — hasMany `Deployment`
 - relation `jobs` — hasMany `Job`
 - relation `appServers` — hasMany `AppServer`
@@ -892,6 +894,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `pushSecret` | `string`? | — | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` `x-litestone-kind` | — |
 | `pushActorId` | `string`? | — | — | `x-litestone-kind` | — |
 | `blueprintId` | `string`? | — | — | `x-litestone-kind` | — |
+| `backupCron` | `string`? | — | — | `minLength: 1` `maxLength: 100` `x-transforms` | — |
+| `backupDestinationId` | `string`? | — | — | — | — |
 
 **On create**: required — `environmentId`, `name`, `slug` · not accepted — `id`
 
@@ -997,12 +1001,17 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - gate `read:5 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
 - relation `app` — belongsTo `App` via `appId` · on delete Cascade
 - relation `server` — belongsTo `Server` via `serverId` · on delete Cascade
+- relation `destination` — belongsTo `BackupDestination` via `destinationId` · on delete Restrict · optional
+- relation `deployment` — belongsTo `Deployment` via `deploymentId` · on delete SetNull · optional
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `appId` | `string` | yes | — | — | — |
 | `serverId` | `string` | yes | — | — | — |
+| `destinationId` | `string`? | — | — | — | — |
+| `kind` | `BackupKind` = `"manual"` | — | — | — | — |
+| `deploymentId` | `string`? | — | — | — | — |
 | `status` | `RunStatus` = `"pending"` | — | — | — | — |
 | `sizeBytes` | `integer`? | — | — | — | — |
 | `fileCount` | `integer`? | — | — | — | — |
@@ -1039,6 +1048,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `environment` — belongsTo `Environment` via `environmentId` · optional
 - relation `triggeredByUser` — belongsTo `User` via `triggeredBy` · optional
 - relation `steps` — hasMany `DeploymentStep`
+- relation `appBackups` — hasMany `AppBackup`
 - transitions on `status` — `build`: pending → building @system · `succeed`: building → success @system · `fail`: pending|building → failed @system · `cancel`: pending|building → cancelled · `rollback`: success → rolled_back @5
 
 | Field | Type | Required | Label | Rules | Messages |
@@ -1309,6 +1319,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - gate `read:2 create:5 update:5 delete:5` · version field `version` · closed (`additionalProperties: false`)
 - relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
 - relation `backups` — hasMany `Backup`
+- relation `appBackups` — hasMany `AppBackup`
+- relation `apps` — hasMany `App`
 - relation `hubs` — hasMany `HubConfig`
 
 | Field | Type | Required | Label | Rules | Messages |
@@ -1685,6 +1697,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `backupKeepLocalDays` | `integer`? | — | — | `minimum: 1` `maximum: 3650` | — |
 | `backupKeepRemoteCount` | `integer` = `7` | — | — | `minimum: 1` `maximum: 1000` | — |
 | `backupKeepRemoteDays` | `integer`? | — | — | `minimum: 1` `maximum: 3650` | — |
+| `encryptionKeyEscrowedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `encryptionKeyFingerprint` | `string`? | — | — | `x-litestone-kind` | — |
 | `mailFromAddress` | `string`? | — | — | `format: "email"` `x-transforms` | — |
 | `mailFromName` | `string`? | — | — | `minLength: 0` `maxLength: 80` `x-transforms` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
@@ -2045,6 +2059,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `appId` | `string` | yes | — | — | — |
 | `serverId` | `string` | yes | — | — | — |
+| `destinationId` | `string`? | — | — | — | — |
 
 **On create**: required — `appId`, `serverId`
 

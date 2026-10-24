@@ -109,6 +109,7 @@
     "profile": "\n┌ Error\n│ No authentication token found.\n│\n│ Please set one of the following:\n│   1. Set the CLOUDFLARE_API_TOKEN environment variable\n│   2. Run 'cf auth login' to authenticate via OAuth\n│\n│ For API tokens, visit: https://dash.cloudflare.com/profile/api-tokens\n└\n",
     "account": "\n┌ Error\n│ More than one account available but unable to select one in non-interactive\n│ mode.\n│ Please set the appropriate `account_id` in your cf config file or assign it to\n│ the `CLOUDFLARE_ACCOUNT_ID` environment variable.\n│ Available accounts are (`<name>`: `<account_id>`):\n{accounts}└\n",
     "listOptions": "\n┌ APIError\n│ [8000024] Invalid list options provided. Review the `page` or `per_page` parameter.\n│ 400 Bad Request · HTTP {path}\n└\n",
-    "notFound": "\n┌ APIError\n│ [10007] This Worker does not exist on your account.\n│ 404 Not Found · HTTP {path}\n└\n"
+    "notFound": "\n┌ APIError\n│ [10007] This Worker does not exist on your account.\n│ 404 Not Found · HTTP {path}\n└\n",
+    "record": "\n┌ APIError\n│ [81044] Record does not exist.\n│ 404 Not Found · HTTP {path}\n└\n"
   }
 }

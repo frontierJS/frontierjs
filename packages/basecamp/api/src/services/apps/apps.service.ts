@@ -27,7 +27,7 @@ import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/
 import { normalizeOrderBy, type SortParam } from '@frontierjs/toolbelt/query'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, ws, actor,
+import { db, getScoped, removeScoped, restoreScoped, deriveSlug, narrowPatch, changesNothing, ws, actor,
          slugify, }
   from '../../core/resource.ts'
 import { env }      from '../../core/env.ts'
@@ -42,6 +42,7 @@ import { resolveExecutor, executorOn, isExecutor } from '../../providers/executo
 // be the second, and the two would disagree the first time a kind was added.
 import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, isInline } from '../../core/app-source.ts'
 import { runtimeOf } from '../../core/runtime.ts'
+import { cronProblem, syncAppBackupSchedule } from '../jobs/job-schedule.ts'
 import type { App }            from '@frontierjs/junction'
 import { keyScope } from '../api-keys/scopes.ts'
 
@@ -145,6 +146,22 @@ function checkRuntime(data: Record<string, unknown>, current?: Record<string, un
   const port = 'port' in data ? data.port : current?.port
   if (path != null && port == null)
     throw new BadRequest(`A health check is asked of the published port, so '${path}' needs a port`)
+}
+
+/**
+ * The app's schedule (`IDEAS/backups.md` 1.6). An expression the clock cannot
+ * hold is refused BEFORE the write, as `hub-config.save` does, so a stored
+ * schedule always registers; the bucket is read in the caller's scope, so
+ * another workspace's row is refused by name and never pointed at.
+ */
+async function checkBackup(data: Record<string, unknown>): Promise<void> {
+  if (typeof data.backupCron === 'string') {
+    const problem = cronProblem(data.backupCron)
+    if (problem) throw new BadRequest(`backupCron: ${problem}`)
+  }
+  if (typeof data.backupDestinationId === 'string'
+      && !await db().backupDestination.exists({ where: { id: data.backupDestinationId } }))
+    throw new BadRequest(`No backup destination '${data.backupDestinationId}'`)
 }
 
 async function assertEnvironmentInWorkspace(environmentId: string) {
@@ -299,8 +316,10 @@ export default createService({
     const data = $.data as Record<string, unknown>
     checkSource(data)
     checkRuntime(data)
+    await checkBackup(data)
     await assertEnvironmentInWorkspace(data.environmentId as string)
     const created = await db().app.create({ data })
+    syncAppBackupSchedule($.app, created)
     return db().app.findFirst({ where: { id: created.id }, include: WITH_DETAIL })
   },
 
@@ -311,8 +330,9 @@ export default createService({
     const patch = narrowPatch($.data as Record<string, unknown>)
     checkSource(patch, current as Record<string, unknown>)
     checkRuntime(patch, current as Record<string, unknown>)
+    await checkBackup(patch)
     if (!changesNothing(patch))
-      await db().app.update({ where: { id: $.id as string }, data: patch })
+      syncAppBackupSchedule($.app, await db().app.update({ where: { id: $.id as string }, data: patch }))
 
     return db().app.findFirst({ where: { id: $.id as string }, include: WITH_DETAIL })
   },
@@ -321,7 +341,15 @@ export default createService({
     const target  = await getScoped('app', 'App')
     const machine = await retireFromMachine($.app, target)
     const removed = await removeScoped('app', 'App')
+    // A deleted app's volume is not a thing to archive at 02:00.
+    syncAppBackupSchedule($.app, { id: target.id, backupCron: null, deletedAt: null })
     return { ...removed, machine }
+  },
+
+  async restore() {
+    const row = await restoreScoped('app', 'App')
+    syncAppBackupSchedule($.app, row)
+    return detail(row.id)
   },
 
 

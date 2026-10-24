@@ -829,10 +829,10 @@ describe('what the machine is asked to do', () => {
   describe('/backup — an app\'s volume, tarred onto the machine (FJS-1782)', () => {
     const backupDir = join(mkdtempSync(join(tmpdir(), 'outpost-backups-')), 'backups')
 
-    const backing = (answers = {}) => {
+    const backing = (answers = {}, fetch) => {
       const runner = fakeRunner(answers)
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ run: runner.run, backupDir }), inspector: createInspector({ run: runner.run }),
+        docker: createDocker({ run: runner.run, backupDir, fetch }), inspector: createInspector({ run: runner.run }),
         log: { warn() {}, error() {} },
       })
       return { server, calls: runner.calls }
@@ -873,6 +873,54 @@ describe('what the machine is asked to do', () => {
       const { status, body } = await backup(server, { app_id: 'ela' })
       expect(status).toBe(500)
       expect(body.error).toContain('no space left on device')
+    })
+
+    // The upload leaves the box by a pre-signed PUT (FJS-D1485): streamed from
+    // this process, after the tar, and a refusal is answered beside the path.
+    describe('with an upload_url', () => {
+      const tarred = { 'docker run --rm': { stdout: '4096 3\n' } }
+      const url    = 'https://s3.example.test/bucket/apps/ela-2026.tar.gz?X-Amz-Signature=abc'
+
+      test('the finished archive is PUT to the URL from this process, and the answer says so', async () => {
+        const puts = []
+        const fetch = async (u, init) => { puts.push({ u, init }); return new Response(null, { status: 200 }) }
+        const { server, calls } = backing(tarred, fetch)
+        const { status, body } = await backup(server, { app_id: 'ela', upload_url: url })
+        expect(status).toBe(200)
+        expect(body).toMatchObject({ volume: 'fjs-ela-data', bytes: 4096, files: 3, uploaded: true })
+        expect(body.upload_error).toBeUndefined()
+        expect(puts).toHaveLength(1)
+        expect(puts[0].u).toBe(url)
+        expect(puts[0].init.method).toBe('PUT')
+        expect(puts[0].init.headers['content-type']).toBe('application/gzip')
+        // The body is the file the tar wrote, streamed, not read into memory.
+        expect(puts[0].init.body.name).toBe(body.path)
+        // The capture container still has no network: the upload is this process's.
+        expect(calls.find(a => a[1] === 'run')).toEqual(expect.arrayContaining(['--network', 'none']))
+      })
+
+      test('a bucket that refuses is answered in its words, with the path, never as a failed backup', async () => {
+        const xml = '<?xml version="1.0"?><Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>'
+        const { server } = backing(tarred, async () => new Response(xml, { status: 403 }))
+        const { status, body } = await backup(server, { app_id: 'ela', upload_url: url })
+        expect(status).toBe(200)
+        expect(body).toMatchObject({ uploaded: false, upload_error: '403 AccessDenied: Access Denied', bytes: 4096 })
+        expect(body.path.endsWith('.tar.gz')).toBe(true)
+      })
+
+      test('a network that drops the PUT is the same shape', async () => {
+        const { server } = backing(tarred, async () => { throw new Error('connect ECONNREFUSED') })
+        const { status, body } = await backup(server, { app_id: 'ela', upload_url: url })
+        expect(status).toBe(200)
+        expect(body).toMatchObject({ uploaded: false, upload_error: 'connect ECONNREFUSED' })
+      })
+
+      test('a URL that is not http(s) is refused before anything is tarred', async () => {
+        const { server, calls } = backing(tarred, async () => { throw new Error('must not be called') })
+        expect((await backup(server, { app_id: 'ela', upload_url: 'ftp://x/y' })).status).toBe(500)
+        expect((await backup(server, { app_id: 'ela', upload_url: 'not a url' })).status).toBe(500)
+        expect(calls.some(a => a[1] === 'run')).toBe(false)
+      })
     })
 
     // The script itself, run by the host's sh over temp directories, with a

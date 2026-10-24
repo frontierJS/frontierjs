@@ -93,7 +93,7 @@ process's user, so the default is refuse and a route opts out rather than in.
 | `POST /system/prune` | `{ targets, keep_images }` → `{ freed_bytes, removed, volumes, usage }` |
 | `POST /volumes/prune` | `{ names }` → `{ removed }` |
 | `DELETE /volumes/<name>` | → `{ removed }`, or 409 with the container holding it |
-| `POST /backup` | `{ app_id }` → `{ volume, path, bytes, files }`; `fjs-<app>-data` tarred (gzip) into `OUTPOST_BACKUP_DIR` by a throwaway container holding the volume read-only. The archive stays on the machine and the answer is its path. Refused for a volume the machine does not hold |
+| `POST /backup` | `{ app_id, upload_url? }` → `{ volume, path, bytes, files, uploaded?, upload_error? }`; `fjs-<app>-data` tarred (gzip) into `OUTPOST_BACKUP_DIR` by a throwaway container holding the volume read-only. The archive stays on the machine and the answer is its path. With `upload_url`, a pre-signed PUT Basecamp minted, the archive is streamed to it from the Outpost process and `uploaded` says whether it landed, `upload_error` the bucket's words when not; the machine holds no bucket key. Refused for a volume the machine does not hold |
 | `POST /volume/restore` | `{ app_id, path, overwrite? }` → `{ volume, archive, files, bytes, overwrite }`; a tar (gzip or not) under `OUTPOST_RESTORE_DIR`, extracted into `fjs-<app>-data`. Refused while any container holds the volume, and into one with files unless `overwrite: true`, which empties it first |
 | `GET /health` | unsigned liveness — says nothing about the machine |
 

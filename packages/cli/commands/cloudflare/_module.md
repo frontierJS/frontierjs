@@ -1,12 +1,6 @@
 ---
 namespace: cloudflare
 description: Cloudflare account management — DNS, cache, Pages, Workers
-defaults:
-  flags:
-    zone:
-      defaultValue: '${CLOUDFLARE_DEFAULT_ZONE}'
-    account:
-      defaultValue: '${CLOUDFLARE_ACCOUNT_ID}'
 ---
 
 ## Setup
@@ -20,7 +14,15 @@ cf auth login
 ```
 
 `cf auth login` opens the browser and signs you in once. Every account that
-login reaches is then reachable from fli.
+login reaches is then reachable from fli. `fli doctor` says whether `cf` is on
+the PATH.
+
+## The pane — `fli dns`
+
+`fli dns` opens the console on `:dns`: every account each `cf` profile and the
+token reach, then a zone, then its records, which you add, edit, delete and
+proxy from the keyboard. Signed out, the first row signs you in. `fli dns
+--open` is the same pane in the browser.
 
 ## A client's login — `--profile`
 

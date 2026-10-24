@@ -236,9 +236,20 @@ const offerProxy = async ({ record, configured, log, yes }) => {
 // Each column is padded before it is painted: an escape code counts toward padEnd.
 // `chalk` is handed in, since a module script does not see `$`.
 const STATUS_TONE = { running: 'green', off: 'gray', starting: 'yellow', deleting: 'red' }
+// Age since the vendor made the box, not uptime: a box powered off and on
+// keeps its first date, so the column is never called "online for".
+const ageOf = (createdAt, now = Date.now()) => {
+  const ms = now - Date.parse(createdAt ?? '')
+  if (!(ms >= 0)) return '-'
+  const min = Math.floor(ms / 60_000)
+  if (min < 60) return `${min}m`
+  if (min < 1440) return `${Math.floor(min / 60)}h`
+  return `${Math.floor(min / 1440)}d`
+}
 const machineLine = (m, chalk) => {
   const paint  = chalk[STATUS_TONE[m.status] ?? 'yellow']
   const status = paint(`● ${m.status.padEnd(8)}`)
+  const age    = chalk.dim(`⏱ ${ageOf(m.createdAt).padEnd(5)}`)
   const ip     = m.ip ? chalk.cyan(m.ip.padEnd(15)) : chalk.dim('no address yet')
   const role   = m.serverId
     ? chalk`📡 {magenta fleet machine} {dim · server ${m.serverId} · destroy it in Basecamp}`
@@ -246,7 +257,7 @@ const machineLine = (m, chalk) => {
   const host   = m.host ? chalk`  {cyan https://${m.host}}` : ''
   const name   = chalk.bold((m.name ?? '-').padEnd(14))
   const where  = `${cloudLabel(m.cloud).padEnd(12)} ${(m.region ?? '-').padEnd(5)}`
-  return chalk`{bold ${m.id}}  ${name}  ${status}  ${ip}  {dim 🌐 ${where}}  ${role}${host}`
+  return chalk`{bold ${m.id}}  ${name}  ${status}  ${age}  ${ip}  {dim 🌐 ${where}}  ${role}${host}`
 }
 
 // ─── Ring 0 from here ─────────────────────────────────────────────────────────

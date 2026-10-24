@@ -68,8 +68,22 @@ and the inline form. `backup:run` uploads one tarball per archive (1.2),
 `HubConfig.backupCron` is on the clock (1.3), and retention prunes after each
 success, local and remote apart, through `jobs/backup-archives.ts` — the one
 delete `backups.remove` shares, and `backups.rescan`'s `found` rows (1.4).
-1.5 is Outpost's pre-signed upload, 1.8 the `test` action, 1.9 the B2 recipe
-in `docs/BACKUPS.md`. A dev database from before the tables has to be reset;
+An app's archive leaves its machine by a pre-signed PUT `app-backups.take`
+mints for a destination of the app's own workspace and Outpost streams to
+(1.5, `FJS-D1485`) — `AppBackup.destinationId` names the bucket, a refused
+upload keeps the path with the warning. An app's own `backupCron` is on the same
+clock as `app:backup:<id>` (1.6), and a release of an app with a volume runs
+`Back up volume` before the swap — fatal, read off the release's snapshot
+(`FJS-D1496`); `jobs/app-backup-run.job.ts` is the one `/backup` caller all
+three doors take through. A copy of `ENCRYPTION_KEY` off the box is a
+person's attestation bound to the key's digest, graded by `hub.key-escrowed`
+and read on the backups screen (1.7, `FJS-D1497`). `backup-destinations.test`
+PUTs and DELETEs a probe key through the registered target and stamps
+`lastTestAt` only when both answered; the hub screen runs it as a bucket is
+added and says the connector's failure kind in words (`forbidden`,
+`clock_skew`…), against `providers/storage/s3-sink.ts`, basecamp's lift of
+`conduit-s3`'s SigV4-verifying stand-in (1.8). The operator's recipe is `docs/BACKUPS.md` (1.9); the hand run against a real B2 bucket, with its result here, is still owed.
+A dev database from before the tables has to be reset;
 there is no upgrade step pre-alpha.
 
 ## Verification

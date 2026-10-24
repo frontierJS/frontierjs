@@ -21,6 +21,7 @@ import { htmlEntitiesToText } from './entities.js'
 import { buildHost, hostRefusal } from './host/emit.js'
 import { TARGETS } from './host/targets.js'
 import { WINDOW_BINDS } from './window-binds.js'
+import { unwrapGlobal } from './native/css.js'
 
 /**
  * Names a component function may not take. Reserved words are a parse error;
@@ -4590,7 +4591,7 @@ function _scopeSelector(sel, cssId) {
 
   // :global(inner) — strip wrapper, emit inner unscoped
   if (sel.includes(':global(')) {
-    return sel.replace(/:global\(([^)]*)\)/g, '$1').trim()
+    return unwrapGlobal(sel).trim()
   }
 
   // Already scoped

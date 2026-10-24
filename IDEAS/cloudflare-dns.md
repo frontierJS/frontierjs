@@ -1,14 +1,16 @@
 ---
 id: cloudflare-dns
-status: proposed
+status: shipped
 dated: 2026-10-22
 ---
 
 # Idea — Cloudflare DNS in the console: pick an account, pick a zone, edit its records
 
-**Status: PROPOSED. Nothing below § The shape is built.** Dated 2026-10-22. Do
-not cite this file as behavior — see `VERIFYING.md`. § What exists was read off
-the tree and this machine on that date.
+**Status: SHIPPED — every step of § Plan is built 2026-10-24, uncommitted.**
+Dated 2026-10-22. The code is the behavior: `core/cloudflare.js`,
+`console/Dns.mesa`, `commands/cloudflare/`; this file is the record of how it
+was measured. § What exists was read off the tree and this machine on
+2026-10-22, before Phase 1.
 
 A person with several Cloudflare accounts — their own, each client's — opens
 one terminal screen, sees every account their login reaches, walks into a zone
@@ -159,8 +161,8 @@ Done when: the drive adds a TXT, edits it, flips a proxy and deletes it against 
 Goal: `fli dns` lands on the pane.
 Done when: `fli dns` at a TTY shows Accounts; `fli dns --open` shows it in the browser; `fli doctor` names `cf`.
 
-- [ ] 4.1 `fli gui` takes a pane (`fli gui :dns`), per 0.5; `commands/cloudflare/tui.md` with `alias: dns` and an `effects:` line naming the writes
-- [ ] 4.2 `fli doctor` row for `cf`; `docs/` line in `commands/cloudflare/_module.md`; `DRIVES.md` row for the console spec
+- [x] 4.1 `fli gui` takes a pane (`fli gui :dns`), per 0.5; `commands/cloudflare/tui.md` with `alias: dns` and an `effects:` line naming the writes — the pane is a positional, `:` optional, resolved by unique prefix as `:` resolves one and an unknown one opens `:run` with the `no pane` note; `--open` with a pane opens `/console/#<pane>`, since `/` is the older page; `fli dns` runs `fli gui :dns` as a child, passing `--open` and `--port`
+- [x] 4.2 `fli doctor` row for `cf`; `docs/` line in `commands/cloudflare/_module.md`; `DRIVES.md` row for the console spec — the row's `min` is `MIN_CF` from `core/cloudflare.js`, pinned to the fixture's `cf` by `test/cloudflare.test.js`, since doctor reads a version only for a row with a `min` and § Doctrine 9 wants it printed; `_module.md` § The pane names `fli dns`; the console drive's row names the `:dns` walk and the change table names `commands/cloudflare/tui.md` and `core/cloudflare.js`
 
 ---
 
@@ -230,15 +232,21 @@ Read from `cf` v0.15.0 (npm package `cf`, node 22) on 2026-10-22, signed in with
 
 **1.3 Pages, Workers, purge.** `zones list` with no `--account-id` spans every account the login reaches (21), so `findZone` resolves a name there. `cache purge -z <id> --body '{"purge_everything":true}'` or `'{"files":[…]}'` is POST `/zones/<id>/purge_cache`. `pages …` and `workers …` take no `--account-id` and refuse with two accounts reachable — the same *More than one account* box as a zone by name — and `CLOUDFLARE_ACCOUNT_ID` in the spawn's env clears it. **Pages lists cap at 10 a page**: 11 is `[8000024] Invalid list options provided`, 400, so the old `per_page=50` list never ran. `pages projects deployments create <name>` is the deploy, multipart with an empty body. `workers list`/`get` are the new Workers API (`/workers/workers`): rows carry `id` and `name`, `updated_on`/`deployed_on` and `references.domains`, no `modified_on`. `workers deployments list --worker <name>` answers an OBJECT, `{deployments: [{versions: [{version_id, percentage}]}]}`; the first version of the first deployment is the one serving traffic, and `workers versions get <id> --worker-id <name>` carries its `bindings`. The newest version is not that one — an upload not deployed is newer. **No verb reads cron triggers** (`workers triggers` only deploys), so `cf:workers --status` shows none.
 
-**0.5 Door.** `Console.mesa` already has `export let pane = 'run'`; `runTerminalConsole` passes `{api, legendAt}` and the browser mount `{root}` (`core/console.js`), so `fli gui :dns` is a positional in `commands/fli/gui.md` handed through both as `pane` (the browser one off `location.hash`). `fli doctor` reads `BINARIES` in `core/doctor.js`, `{name, required, hint}`; the row is `{ name: 'cf', required: false, hint: 'npm i -g cf  (needed for :dns and cloudflare:)' }`.
+**0.5 Door.** `Console.mesa` already has `export let pane = 'run'`; `runTerminalConsole` passes `{api, legendAt}` as props and the browser mount `{root}` as its OPTIONS — mesa's browser `mount` reads props off `option.props` and `root` is the delegation root (`core/console.js`), so `fli gui :dns` is a positional in `commands/fli/gui.md` handed through both as `pane` (the browser one off `location.hash`). `fli doctor` reads `BINARIES` in `core/doctor.js`, `{name, required, hint}`; the row is `{ name: 'cf', required: false, hint: 'npm i -g cf  (needed for :dns and cloudflare:)' }`.
 
 **2.3 Sign in.** Signed out, `auth list` is `[]`, `auth whoami` is `{authenticated: false, error: "Not logged in"}`, and a list verb is the *No authentication token found* box. `cf auth login --no-browser` with stdin closed prints `ℹ Starting OAuth login flow...` on stdout and the device text on stderr — *To authorize cf, please visit:*, the link `https://dash.cloudflare.com/oauth2/device/verify` alone on its line, *and enter the code:*, an 8-letter code alone on its line, *You have 5 minutes to approve this request.* — then waits. **Not measured:** what it prints once approved, and how an expired code reads; the run was never approved, and the pane takes exit 0 as signed in and anything else as the box `cf` prints.
 
-**3.1 Writes.** `POST /api/dns/records` and `PUT`/`DELETE /api/dns/records/<id>` carry `{profile, zone, record | changes, confirm}`. Without `confirm`, an edit or delete reads the target with `cf dns records get <id>` first — +1.3 s, because the table is one read old — and a marked target, or a comment that writes the mark, is a 409 `{warning}`; the pane sends again with `confirm: true`. **Not measured:** what the real `get` answers for an unknown record id; the stand-in answers the 403 an unknown zone id does.
+**3.1 Writes.** `POST /api/dns/records` and `PUT`/`DELETE /api/dns/records/<id>` carry `{profile, zone, record | changes, confirm}`. Without `confirm`, an edit or delete reads the target with `cf dns records get <id>` first — +1.3 s, because the table is one read old — and a marked target, or a comment that writes the mark, is a 409 `{warning}`; the pane sends again with `confirm: true`. An unknown record id in a zone the login reaches is `[81044] Record does not exist.` 404 from the real `get` — the 502 the pane draws — and the stand-in's `record` refusal is that text.
 
-**3.2 Form.** `console/DnsForm.mesa`, opened by `a` and `e`; each control carries the form's keymap (Enter, Tab, Shift+Tab, Esc), since a key typed into a field never reaches the console root and the two frames order Tab stops differently. A name with no zone on the end is put under it and `@` is the apex. SRV and CAA are sent as `data`; an edit sends only the keys that moved, and a cleared comment is sent as `null`. A write the server took rereads the records, so the reread half of 3.3 is done for the form. **Not measured:** whether the real `edit` clears a comment on `null` or wants `""`; whether a real SRV or CAA row carries `data` in `list` (the form reads `content` when it does not).
+**3.2 Form.** `console/DnsForm.mesa`, opened by `a` and `e`; each control carries the form's keymap (Enter, Tab, Shift+Tab, Esc), since a key typed into a field never reaches the console root and the two frames order Tab stops differently. A name with no zone on the end is put under it and `@` is the apex. SRV and CAA are sent as `data`; an edit sends only the keys that moved, and a cleared comment is sent as `null`. A write the server took rereads the records, so the reread half of 3.3 is done for the form. The real `edit` clears a comment on `null`. A real SRV carries `data` in both the create answer and `list`, with `content` `weight port target` and `priority` beside it. **Not measured:** CAA — a CAA on a live zone narrows which CA may issue its certificates, so the hand run wrote none; the form reads `content` when `data` is absent.
 
-**3.3 Table writes.** `d` draws the record and Enter deletes it; `p` sends `{proxied}` flipped in one press, offered on a row whose `proxiable` is true — Cloudflare's answer, not the form's type list — since a second press puts it back. A marked target answers either with the 409, drawn in the same panel, and Enter sends again with `confirm`. Every write rereads; nothing is patched into the table. The stand-in keeps writes in the file `CF_STATE` names, so the drive sees the table change after each. **Not measured:** a warned flip (the fixture has no marked proxiable record — the path is the delete's).
+**3.3 Table writes.** `d` draws the record and Enter deletes it; `p` sends `{proxied}` flipped in one press, offered on a row whose `proxiable` is true — Cloudflare's answer, not the form's type list — since a second press puts it back. A marked target answers either with the 409, drawn in the same panel, and Enter sends again with `confirm`. Every write rereads; nothing is patched into the table. The stand-in keeps writes in the file `CF_STATE` names, so the drive sees the table change after each. **Not measured:** a warned flip (no marked proxiable record in the fixture or `awe.dev` — the path is the delete's).
+
+**Phase 3 hand run** (`awe.dev`, the `default` login, through `fli gui`'s `/api/dns/*`). A TXT added, its content edited, its comment cleared, deleted; an A added unproxied, flipped on and read back proxied, deleted; an SRV added and listed, deleted; a `basecamp` comment on a create stopped at the 409; the zone read 22 records before and after. A write is 0.6–1.6 s, a `list` 0.7 s.
+
+**4.1 Door.** Under a pty with the stand-in `cf`, `fli dns --port 7598` paints `:dns` Accounts (4 rows) with no `:run` frame first; Chrome on `/console/#dns`, `#:dns` and `#dn` paints Accounts, `#zz` paints `:run` with *no pane :zz*, and `/console/` is `:run`. `test:browser:console` green after (one earlier run failed the reread after the first add and cascaded; the rerun was all green). The door's `--help` shows the namespace's blank `--zone`/`--account` (`FJS-3484`).
+
+**4.2 Doctor.** `fli doctor` prints `✓ cf found 0.15.0`; below the `min` it warns with `npm i -g cf@latest`, and absent it warns with the install line (not required).
 
 **Writes.** `create`/`edit`/`update` take only `--body '<json>'` — no per-field flags — and `--dry-run` prints `{command, method, url, pathParams, query, bodyKind, body}` without sending, exit 0; `delete <id>` the same with `bodyKind: none`. The stand-in `cf` (1.2) answers these shapes.
 

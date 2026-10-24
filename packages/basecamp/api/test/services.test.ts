@@ -36,7 +36,8 @@ import { NOTIFICATION_KINDS }     from '../src/services/notification-preferences
 import { notifyPeople }           from '../src/core/notify.ts'
 import { createJunctionClient }   from '@frontierjs/junction/client'
 import { snapshotVariables, releaseEnv } from '../src/core/variables.ts'
-import { BACKUP_SCHEDULE, fireBackup, restoreSchedules } from '../src/services/jobs/job-schedule.ts'
+import { BACKUP_SCHEDULE, appBackupSchedule, fireBackup, restoreSchedules } from '../src/services/jobs/job-schedule.ts'
+import { startS3Sink }            from '../src/providers/storage/s3-sink.ts'
 
 // The certificate a machine's command port answers with, which enrollment pins
 // on its Conduit target (FJS-1603). Every enrollment below presents it.
@@ -1544,6 +1545,34 @@ describe('the installation settings are one row, behind the hub tier', () => {
       .rejects.toThrow(/no settings yet/)
   })
 
+  test('the key escrow is attested by its own method, grades hub.key-escrowed, and is never written by save', async () => {
+    const hub = env.as(sysadmin).service('hub-config')
+    await expect(hub.call('attestEscrow', null, {})).rejects.toThrow(/no settings yet/)
+    // `@system`: a save naming either column is refused by name, never dropped in silence.
+    await expect(hub.call('save', null, {
+      name: 'Keyed', baseUrl: 'https://hub.keyed.test', adminEmail: 'ops@keyed.test',
+      encryptionKeyEscrowedAt: '2026-01-01T00:00:00.000Z', encryptionKeyFingerprint: 'f'.repeat(64),
+    })).rejects.toThrow(/@system/)
+    const made = await hub.call('save', null, { name: 'Keyed', baseUrl: 'https://hub.keyed.test', adminEmail: 'ops@keyed.test' })
+    expect([made.encryptionKeyEscrowedAt, made.encryptionKeyFingerprint]).toEqual([null, null])
+    const grade = async () => (await env.as(sysadmin).service('posture').call('host', undefined, {}))
+      .controls.find((c: any) => c.id === 'hub.key-escrowed')
+    expect((await grade()).ok).toBe(false)
+
+    const attested = await hub.call('attestEscrow', null, {})
+    expect(attested.encryptionKeyFingerprint).toMatch(/^[0-9a-f]{64}$/)
+    expect(attested.encryptionKeyEscrowedAt).toBeTruthy()
+    expect((await grade()).ok).toBe(true)
+
+    const saved = await hub.call('save', null, { version: attested.version, name: 'Keyed' })
+    expect(saved.encryptionKeyFingerprint).toBe(attested.encryptionKeyFingerprint)
+    // The attestation names the key: a different key in use voids it.
+    await (env.system as any).hubConfig.update({ where: { id: 'hub' },
+      data: { encryptionKeyFingerprint: 'e'.repeat(64) }, system: ['encryptionKeyFingerprint'] })
+    expect(await grade()).toMatchObject({ ok: false, message: expect.stringContaining('key changed') })
+    await (env.system as any).hubConfig.delete({ where: { id: 'hub' } })
+  })
+
   test('save creates it, then updates it', async () => {
     const made = await env.as(sysadmin).service('hub-config').call('save', null, {
       name: 'Acme Fleet', baseUrl: 'https://hub.acme.test', adminEmail: 'ops@acme.test',
@@ -1800,6 +1829,78 @@ describe('a backup destination is an address, and its key is a Secret', () => {
     await expect(env.as(sysadmin).service('hub-config').call('save', null, {
       name: 'Hub', baseUrl: 'https://hub.example', adminEmail: 'a@b.co', backupDestinationId: 'nope',
     })).rejects.toThrow(/No backup destination 'nope'/)
+  })
+
+  // 1.8: `test` is a PUT and a DELETE of a probe key through the registered
+  // target, against the S3 stand-in — a SigV4 verifier, so a wrong key is a
+  // real `SignatureDoesNotMatch` and not a stub that agrees with everything.
+  describe('test writes and deletes a probe key, and says which of the three 403s it met', () => {
+    let sink: ReturnType<typeof startS3Sink>
+    beforeAll(() => { sink = startS3Sink({ port: 0 }) })
+    afterAll(() => sink?.stop())
+
+    const seen = async () => (await fetch(`${sink.url}/_sink/seen`).then(r => r.json())) as { requests: { method: string; path: string; status: number }[]; keys: string[] }
+    const atSink = (over: Record<string, unknown> = {}) =>
+      bucket({ endpoint: sink.url, region: sink.region, bucket: 'frontier-basecamp', prefix: 'basecamp-', secret: sink.credential, ...over })
+
+    test('a good key: PUT then DELETE under the prefix, nothing left behind, lastTestAt stamped, the Secret verified', async () => {
+      await fetch(`${sink.url}/_sink/reset`)
+      const row = await env.as(owner).service('backup-destinations').create(atSink())
+      expect(row.lastTestAt).toBeNull()
+
+      const tested = await env.as(owner).service('backup-destinations').call('test', row.id)
+      expect(tested.lastTestAt).toBeTruthy()
+      expect(tested.version).toBe(row.version + 1)
+      expect(JSON.stringify(tested)).not.toContain('devsecret')
+
+      const { requests, keys } = await seen()
+      const probe = requests.filter(r => r.path.startsWith('/frontier-basecamp/basecamp-/basecamp-probe-'))
+      expect(probe.map(r => `${r.method} ${r.status}`)).toEqual(['PUT 200', 'DELETE 204'])
+      expect(keys).toEqual([])
+
+      const secret = await (env.system as any).secret.findFirst({ where: { id: row.secretId } })
+      expect(secret.isVerified).toBe(true)
+    })
+
+    test('a key the policy refuses answers forbidden, and the row is not stamped', async () => {
+      // The stand-in refuses every credential under `private/`, which is what
+      // separates a policy refusal from a bad key.
+      const row = await env.as(owner).service('backup-destinations').create(atSink({ prefix: 'private/' }))
+      await expect(env.as(owner).service('backup-destinations').call('test', row.id))
+        .rejects.toThrow(/^forbidden: the probe write failed .*AccessDenied/)
+      const after = await env.as(owner).service('backup-destinations').get(row.id)
+      expect(after.lastTestAt).toBeNull()
+    })
+
+    test('a wrong secret is the credential, said with the S3 code', async () => {
+      const row = await env.as(owner).service('backup-destinations').create(atSink({ secret: 'AKIADEV:not-the-secret' }))
+      await expect(env.as(owner).service('backup-destinations').call('test', row.id))
+        .rejects.toThrow(/SignatureDoesNotMatch/)
+    })
+
+    test('a clock fifteen minutes out is clock_skew, not a bad key', async () => {
+      const row = await env.as(owner).service('backup-destinations').create(atSink())
+      await fetch(`${sink.url}/_sink/arm`, { method: 'POST', body: JSON.stringify({ skew: 20 * 60 }) })
+      try {
+        await expect(env.as(owner).service('backup-destinations').call('test', row.id))
+          .rejects.toThrow(/^clock_skew: .*fix the clock/)
+      } finally {
+        await fetch(`${sink.url}/_sink/reset`)
+      }
+    })
+
+    test('the credential is verified by this test alone — secrets.verify refuses a backup Secret by name', async () => {
+      const row = await env.as(owner).service('backup-destinations').create(atSink())
+      await expect(env.as(owner).service('secrets').call('verify', row.secretId))
+        .rejects.toThrow(/testing its destination/)
+      const secret = await (env.system as any).secret.findFirst({ where: { id: row.secretId } })
+      expect(secret.isVerified).toBe(false)
+    })
+
+    test('a destination with no credential is refused before anything is sent', async () => {
+      const bare = await (env.system as any).backupDestination.create({ data: { workspaceId: ws.id, ...atSink(), secret: undefined } })
+      await expect(env.as(owner).service('backup-destinations').call('test', bare.id)).rejects.toThrow(/no credential/)
+    })
   })
 
   test('and the handler refuses to run as somebody', async () => {
@@ -3451,7 +3552,8 @@ describe('a custom method that writes as the app declares the level it needs (FJ
   const DEVELOPER = 4, ADMIN = 5
   const declared: Array<[string, string, number]> = [
     ['jobs', 'trigger', DEVELOPER], ['volumes', 'prune', ADMIN], ['posture', 'check', DEVELOPER],
-    ['channels', 'test', ADMIN], ['servers', 'sync', DEVELOPER], ['servers', 'catalog', DEVELOPER],
+    ['channels', 'test', ADMIN], ['backup-destinations', 'test', ADMIN],
+    ['servers', 'sync', DEVELOPER], ['servers', 'catalog', DEVELOPER],
     ['servers', 'reconcile', DEVELOPER], ['servers', 'issueEnrollment', ADMIN],
     ['apps', 'place', DEVELOPER], ['apps', 'unplace', DEVELOPER], ['invitations', 'resend', ADMIN],
     ['api-keys', 'owners', ADMIN], ['secrets', 'verify', ADMIN],
@@ -4380,6 +4482,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
     expect(row.status).toBe('failed')
     expect(row.error).toMatch(/stub executor/)
     expect(row.location).toBeNull()
+    expect(row.kind).toBe('manual')
     expect(row.durationMs).toBeGreaterThanOrEqual(0)
 
     const listed = await env.as(owner).service('app-backups').find({ appId: app.id }) as any
@@ -4396,5 +4499,69 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
   test('another workspace cannot name the app, and an unplaced server is refused', async () => {
     await expect(take(outsider, { appId: app.id, serverId: server.id })).rejects.toThrow()
     await expect(take(owner, { appId: app.id, serverId: machine.id })).rejects.toThrow(/not placed/)
+  })
+
+  // IDEAS/backups.md 1.6: the app's own schedule is the row, and the clock
+  // follows it — on patch, across a restart, and off it on a cleared cron or
+  // a soft delete.
+  test('backupCron puts the app on the clock, a restart restores it, and null or a delete takes it off', async () => {
+    const apps    = env.as(owner).service('apps')
+    const onClock = () => env.app.jobs.nextRuns().find((r: any) => r.name === appBackupSchedule(app.id))?.cron ?? null
+
+    await expect(apps.patch(app.id, { backupCron: 'nightly' })).rejects.toThrow(/backupCron/)
+    expect(onClock()).toBeNull()
+
+    await apps.patch(app.id, { backupCron: '30 3 * * *' })
+    expect(onClock()).toBe('30 3 * * *')
+
+    env.app.jobs.unschedule(appBackupSchedule(app.id))
+    await restoreSchedules(env.app)
+    expect(onClock()).toBe('30 3 * * *')
+
+    await apps.patch(app.id, { backupCron: null })
+    expect(onClock()).toBeNull()
+
+    await apps.patch(app.id, { backupCron: '30 3 * * *' })
+    await apps.remove(app.id)
+    expect(onClock()).toBeNull()
+    await apps.restore(app.id)
+    expect(onClock()).toBe('30 3 * * *')
+    await apps.patch(app.id, { backupCron: null })
+  })
+
+  // The archive leaves the machine by a pre-signed PUT minted here (FJS-D1485),
+  // for a destination of the app's own workspace and no other.
+  describe('naming a destination', () => {
+    const bucket = (over: Record<string, unknown> = {}) => ({
+      name: `B2 ${tag()}`, endpoint: 'https://s3.us-west-000.backblazeb2.com', region: 'us-west-000',
+      bucket: 'frontier-basecamp', prefix: 'apps', secret: 'keyid:applicationkey', ...over,
+    })
+
+    test('a destination of the workspace is minted for and recorded on the row, before the machine answers', async () => {
+      const dest = await env.as(owner).service('backup-destinations').create(bucket()) as any
+      const row  = await take(owner, { appId: app.id, serverId: server.id, destinationId: dest.id }) as any
+      // The stub took nothing, so the row is failed — but it names the bucket it was for.
+      expect(row.status).toBe('failed')
+      expect(row.destinationId).toBe(dest.id)
+      // ...and the destination now counts it, which is what refuses its removal.
+      await expect(env.as(owner).service('backup-destinations').remove(dest.id)).rejects.toThrow(/recorded in this destination/)
+    })
+
+    test('another workspace\'s destination is NotFound, and nothing is asked of the machine', async () => {
+      const sys   = env.system as any
+      const rival = await sys.workspace.create({ data: { accountId: ws.accountId, name: `Rival ${tag()}`, slug: `rival-${tag()}`, ownerId: ws.ownerId } })
+      const theirs = await sys.backupDestination.create({ data: { workspaceId: rival.id, ...bucket(), secret: undefined, secretId: 'sec-x' } })
+      await expect(take(owner, { appId: app.id, serverId: server.id, destinationId: theirs.id })).rejects.toThrow(/No backup destination/)
+      expect(await sys.appBackup.count({ where: { destinationId: theirs.id } })).toBe(0)
+      // Nor can the schedule be pointed at it.
+      await expect(env.as(owner).service('apps').patch(app.id, { backupDestinationId: theirs.id })).rejects.toThrow(/No backup destination/)
+    })
+
+    test('a destination with no credential is refused before the row is written', async () => {
+      const sys  = env.system as any
+      const bare = await sys.backupDestination.create({ data: { workspaceId: ws.id, ...bucket(), secret: undefined } })
+      await expect(take(owner, { appId: app.id, serverId: server.id, destinationId: bare.id })).rejects.toThrow(/holds no credential/)
+      expect(await sys.appBackup.count({ where: { destinationId: bare.id } })).toBe(0)
+    })
   })
 })

@@ -50,6 +50,7 @@
 // A deployment is unaffected — it binds both absolutely (/db/basecamp.db,
 // /db/audit.db) and an absolute path has no anchor.
 
+import { createHash } from 'node:crypto'
 import { createClient, GatePlugin } from '@frontierjs/litestone'
 import { env, DEV_ENCRYPTION_KEY } from './env.ts'
 import { basecampGateLevel }       from './gate.ts'
@@ -73,6 +74,17 @@ export function jobsDatabasePath(dbPath: string): string {
 }
 
 const SCHEMA_PATH = new URL('../../../db/schema.lite', import.meta.url).pathname
+
+/**
+ * The sha256 of the key in use, hex — what an escrow attestation names, so a
+ * key regenerated since is a mismatch rather than a stale "kept". Null on the
+ * development placeholder: it is in the repo, so a copy of it protects nothing
+ * and attesting one would grade a dev box green for a key production refuses.
+ */
+export function encryptionKeyFingerprint(): string | null {
+  if (env.ENCRYPTION_KEY === DEV_ENCRYPTION_KEY) return null
+  return createHash('sha256').update(env.ENCRYPTION_KEY).digest('hex')
+}
 
 export async function createBasecampDb(): Promise<BasecampDb> {
   // The dev key is in the repo. Booting production on it would encrypt every

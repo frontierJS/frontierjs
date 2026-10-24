@@ -13,8 +13,9 @@
 
 import { parseCron }        from '@frontierjs/toolbelt/cron'
 import { queueBackup }      from '../../jobs/backup-run.job.ts'
+import appBackupRun         from '../../jobs/app-backup-run.job.ts'
 import type { App }         from '@frontierjs/junction'
-import type { HubConfig, Job } from '../../../../db/schema.d.ts'
+import type { App as AppRow, HubConfig, Job } from '../../../../db/schema.d.ts'
 
 /**
  * The caravan registration name for a job's schedule.
@@ -146,10 +147,35 @@ export function syncBackupSchedule(app: App, config: Pick<HubConfig, 'backupEnab
     app.jobs.unschedule(BACKUP_SCHEDULE)
 }
 
+// ─── An app's backup ────────────────────────────────────────────────────────
+//
+// `App.backupCron` is on the clock while it is set and the app is not deleted
+// (`IDEAS/backups.md` 1.6). One name per app, derived from the row id as a
+// Job's is, so a patch replaces the registration. The fire dispatches
+// `app-backup:run`, which reads the row again — the bucket, the cron and the
+// deletion are all fire-time facts, so changing any of them needs no
+// re-registration but clearing the cron, which `syncAppBackupSchedule` does.
+
+export const appBackupSchedule = (appId: string): string => `app:backup:${appId}`
+
+/** Make the clock agree with the app row. */
+export function syncAppBackupSchedule(app: App, row: Pick<AppRow, 'id' | 'backupCron' | 'deletedAt'>): void {
+  if (row.backupCron && !row.deletedAt)
+    app.jobs.schedule(
+      appBackupSchedule(row.id),
+      row.backupCron,
+      // `actor: null`: nobody asked, and the handler declares `runsAsApp`.
+      async () => { await app.jobs.dispatch(appBackupRun, { appId: row.id }, { queue: 'fleet', priority: 5, actor: null }) },
+      { queue: 'fleet' },
+    )
+  else
+    app.jobs.unschedule(appBackupSchedule(row.id))
+}
+
 // ─── restoreSchedules ────────────────────────────────────────────────────────
 //
-// Re-register every schedule the database holds: each live scheduled job, and
-// the hub's backup.
+// Re-register every schedule the database holds: each live scheduled job, the
+// hub's backup, and each app's.
 //
 // A cron registration is in-process in both caravan and junction, so it does not
 // survive a restart on its own — and the only place a Job's schedule was ever
@@ -192,6 +218,18 @@ export async function restoreSchedules(app: App): Promise<number> {
       restored++
     } catch (err) {
       log.error('could not restore the backup schedule', { cron: config.backupCron, error: (err as Error).message })
+    }
+  }
+
+  // The system client reads past `@@softDelete`, so the deleted are filtered
+  // here: a deleted app's schedule would otherwise fire at 02:00.
+  const apps = await db.app.findMany({ where: { backupCron: { not: null }, deletedAt: null } })
+  for (const row of apps) {
+    try {
+      syncAppBackupSchedule(app, row)
+      restored++
+    } catch (err) {
+      log.error('could not restore an app backup schedule', { app_id: row.id, cron: row.backupCron, error: (err as Error).message })
     }
   }
   return restored

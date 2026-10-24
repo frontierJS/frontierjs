@@ -329,6 +329,7 @@ export const digitalOcean: ComputeConnector = {
       region:           str((droplet.region as Row | undefined)?.slug) || null,
       name:             str(droplet.name) || null,
       serverId:         markedServer(droplet),
+      createdAt:        str(droplet.created_at) || null,
     }
   },
 
@@ -420,6 +421,7 @@ export const digitalOcean: ComputeConnector = {
       region:           str((d.region as Row | undefined)?.slug) || null,
       name:             str(d.name) || null,
       serverId:         markedServer(d),
+      createdAt:        str(d.created_at) || null,
     })).filter(m => m.providerServerId)
   },
 

@@ -27,6 +27,7 @@ title: Hub backups
   import { backups }            from '../../../resources/Backup.mesa'
   import { hubConfig }          from '../../../resources/HubConfig.mesa'
   import { backupDestinations } from '../../../resources/BackupDestination.mesa'
+  import { postures }           from '../../../resources/ServerPosture.mesa'
   import { ago }       from '../../../datetime.js'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
 
@@ -64,6 +65,7 @@ title: Hub backups
       if (config?.backupDestinationId) {
         try { destination = await backupDestinations.service.get(config.backupDestinationId) } catch {}
       }
+      await loadEscrow()
     } catch (e) {
       error = e.message
     } finally {
@@ -72,6 +74,35 @@ title: Hub backups
   }
 
   load()
+
+  // ─── The key every archive turns on ────────────────────────────────────
+  //
+  // An archive holds `Secret.data` and the fleet's secret Variables as
+  // ciphertext under ENCRYPTION_KEY, which never travels with it. Whether a
+  // copy is kept off this box is `hub.key-escrowed`, graded by the one grader
+  // (`core/posture.ts`) and read here as the control it is, so this line and
+  // /hub/security/ cannot disagree. Attesting is a person's word: the server
+  // records when and the key's digest, and a regenerated key voids it.
+  let escrow    = null
+  let attesting = false
+  async function loadEscrow() {
+    try {
+      const host = await postures.service.invoke('host', null, {})
+      escrow = host.controls.find(c => c.id === 'hub.key-escrowed') ?? null
+    } catch { escrow = null }
+  }
+  async function attest() {
+    error = null; attesting = true
+    try {
+      await hubConfig.service.invoke('attestEscrow', null, {})
+      toasts.success('Attested. The control turns green while this key is the one in use.')
+      await loadEscrow()
+    } catch (e) {
+      error = e.message
+    } finally {
+      attesting = false
+    }
+  }
 
   // ─── This screen POLLS, and it is the only one here that does ──────────
   //
@@ -188,6 +219,32 @@ title: Hub backups
   process is reading from while it serves, which is an operator's job with the process stopped.
   There is no download either: the archive is a path on the machine and nothing serves it.
 </Callout>
+
+{#if escrow}
+  <Card id="key-escrow">
+    <div class="section-header">
+      <h3 class="h5">Encryption key</h3>
+      <Pill tone={escrow.ok === true ? 'success' : escrow.ok === false ? 'danger' : 'muted'}>
+        {escrow.ok === true ? 'escrowed' : escrow.ok === false ? 'not escrowed' : 'unknown'}
+      </Pill>
+    </div>
+    <p class="text-sm text-muted">
+      Every archive carries this installation's secrets as ciphertext under <code>ENCRYPTION_KEY</code>,
+      and the key never travels with one — an archive without its key cannot be read. The key is
+      <code>secrets/ENCRYPTION_KEY</code> on this box and the copy <code>fli deploy:setup</code> left in the
+      operator's local <code>.env</code>. Nothing here can see that copy, so a person attests it.
+    </p>
+    <p class="text-sm" id="key-escrow-reading">{escrow.message}</p>
+    {#if escrow.ok !== true}
+      <Button treatment="outlined" id="attest-escrow" disabled={attesting}
+              data-confirm="Only attest a copy you have read back from somewhere that is not this machine. A wrong answer here costs every archive the day this box is lost."
+              data-confirm-title="A copy of the key is kept off this box?" data-confirm-label="Attest"
+              onclick={attest}>
+        {attesting ? 'Recording…' : 'I keep a copy off this box'}
+      </Button>
+    {/if}
+  </Card>
+{/if}
 
 {#if config}
   <Card id="backup-schedule">

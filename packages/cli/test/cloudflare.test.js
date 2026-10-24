@@ -14,7 +14,7 @@ import { tmpdir } from 'os'
 import {
   profiles, profileFor, accounts, reachable, zones, findZone, records, record, marked, createRecord, updateRecord, deleteRecord, purge,
   pagesProjects, createPagesProject, pagesDeployments, deployPages, workers, worker, activeVersion, login,
-  CloudflareError, TOKEN_ENV, unbox,
+  CloudflareError, TOKEN_ENV, MIN_CF, unbox,
 } from '../core/cloudflare.js'
 
 const FIXTURES = join(import.meta.dir, 'fixtures', 'cf')
@@ -64,7 +64,7 @@ async function refusal(promise) {
 
 describe('the fixture', () => {
   test('names the cf it was read from', () => {
-    expect(JSON.parse(readFileSync(FIXTURE, 'utf8')).cf).toBe('v0.15.0')
+    expect(JSON.parse(readFileSync(FIXTURE, 'utf8')).cf).toBe(`v${MIN_CF}`)
   })
 })
 

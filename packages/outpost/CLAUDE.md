@@ -142,7 +142,11 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   differ, five tries, then exits 4 (`FJS-3178`): a busy app's backup is
   refused, never a split database. The archive is written as `.partial` and
   renamed, so a dead tar never leaves a file that reads as a backup, and it
-  stays on the machine — a lost machine takes its backups with it.
+  stays on the machine. An `upload_url`, a pre-signed PUT Basecamp minted for
+  one object (`FJS-D1485`), is the way it leaves: streamed from this process
+  after the tar, since the capture container has no network, and a refused
+  upload is ANSWERED (`uploaded: false`, `upload_error`), never thrown — the
+  archive exists. No bucket key is on the machine; the URL expires.
 - **A path with no extension is served `index.html`.** An app using the History
   API 404s on every refresh otherwise. A request that names a file gets the
   truth — a fallback there hides a typo forever.

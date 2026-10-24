@@ -27,7 +27,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `AlertSubject` | `series` · `server` · `volume` |
 | `AppStatus` | `deploying` · `error` · `running` · `starting` · `stopped` · `stopping` · `unknown` |
 | `AppType` | `container` · `cron` · `daemon` · `database` · `function` · `static` · `worker` |
-| `BackupKind` | `found` · `manual` · `scheduled` |
+| `BackupKind` | `found` · `manual` · `release` · `scheduled` |
 | `Capability` | `Environment.create` · `Environment.delete` · `Environment.update` · `Server.create` · `Server.delete` · `Server.destroy` · `Server.drain` · `Server.provision` · `Server.reboot` · `Server.undrain` · `Server.update` · `Variable.create` · `Variable.delete` · `Variable.update` |
 | `ChannelKind` | `chat` · `email` · `pagerduty` · `slack` · `webhook` |
 | `ComparisonOp` | `gt` · `gte` · `lt` · `lte` |
@@ -217,8 +217,12 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
+| `appBackups` | `AppBackup[]` | — | — | relation |
 | `appNetworks` | `AppNetwork[]` | — | — | relation |
 | `appServers` | `AppServer[]` | — | — | relation |
+| `backupCron` | `String` | yes | — | — |
+| `backupDestination` | `BackupDestination` | — | — | relation |
+| `backupDestinationId` | `String` | yes | — | — |
 | `blueprint` | `Blueprint` | — | — | relation |
 | `blueprintId` | `String` | yes | — | @system |
 | `containerPort` | `Int` | yes | — | — |
@@ -272,11 +276,16 @@ table `app_backup` · db `main` · gate `5.8.8.8`
 | `app` | `App` | — | — | relation |
 | `appId` | `String` | no | — | **required on write** |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `deployment` | `Deployment` | — | — | relation |
+| `deploymentId` | `String` | yes | — | — |
+| `destination` | `BackupDestination` | — | — | relation |
+| `destinationId` | `String` | yes | — | — |
 | `durationMs` | `Int` | yes | — | — |
 | `error` | `String` | yes | — | — |
 | `fileCount` | `Int` | yes | — | — |
 | `finishedAt` | `DateTime` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `kind` | `BackupKind` | no | `'manual'` | — |
 | `location` | `String` | yes | — | — |
 | `requestedBy` | `String` | yes | — | — |
 | `server` | `Server` | — | — | relation |
@@ -287,16 +296,28 @@ table `app_backup` · db `main` · gate `5.8.8.8`
 
 ```
 @@index(appId)
+@@index(deploymentId)
+@@index(destinationId)
 @@index(serverId)
 @@deny(create, !check(app, tenancy))
+@@deny(create, !check(deployment, tenancy))
+@@deny(create, !check(destination, tenancy))
 @@deny(create, !check(server, tenancy))
 @@deny(delete, !check(app, tenancy))
+@@deny(delete, !check(deployment, tenancy))
+@@deny(delete, !check(destination, tenancy))
 @@deny(delete, !check(server, tenancy))
 @@deny(postUpdate, !check(app, tenancy))
+@@deny(postUpdate, !check(deployment, tenancy))
+@@deny(postUpdate, !check(destination, tenancy))
 @@deny(postUpdate, !check(server, tenancy))
 @@deny(read, !check(app, tenancy))
+@@deny(read, !check(deployment, tenancy))
+@@deny(read, !check(destination, tenancy))
 @@deny(read, !check(server, tenancy))
 @@deny(update, !check(app, tenancy))
+@@deny(update, !check(deployment, tenancy))
+@@deny(update, !check(destination, tenancy))
 @@deny(update, !check(server, tenancy))
 ```
 
@@ -481,6 +502,8 @@ table `backup_destination` · db `main` · gate `2.5` · @@softDelete
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
+| `appBackups` | `AppBackup[]` | — | — | relation |
+| `apps` | `App[]` | — | — | relation |
 | `backups` | `Backup[]` | — | — | relation |
 | `bucket` | `String` | no | — | **required on write** |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
@@ -763,6 +786,7 @@ table `deployment` · db `main` · gate `2.4.4.4`
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `app` | `App` | — | — | relation |
+| `appBackups` | `AppBackup[]` | — | — | relation |
 | `appId` | `String` | no | — | **required on write** |
 | `author` | `String` | yes | — | — |
 | `branch` | `String` | yes | — | — |
@@ -1159,6 +1183,8 @@ table `hub_config` · db `main` · gate `7`
 | `backupKeepRemoteCount` | `Int` | no | `7` | — |
 | `backupKeepRemoteDays` | `Int` | yes | — | — |
 | `baseUrl` | `String` | no | — | **required on write** |
+| `encryptionKeyEscrowedAt` | `DateTime` | yes | — | @system |
+| `encryptionKeyFingerprint` | `String` | yes | — | @system |
 | `heartbeatTimeoutSeconds` | `Int` | no | `120` | — |
 | `id` | `String` | no | `'hub'` | id |
 | `mailFromAddress` | `String` | yes | — | — |

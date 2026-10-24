@@ -286,6 +286,37 @@ describe('the release pipeline an inline app runs', () => {
     expect(await stepNames(replacement.id)).toEqual(['Validate', 'Start container', 'Health check'])
   })
 
+  // The copy before the swap (IDEAS/backups.md 1.6, FJS-D1496): a volume is
+  // migrated forward by the new image, so a release of an app that has one
+  // archives it first. Read off the release's snapshot, so a rollback copies
+  // too, and an app with no volume has no step to stall on.
+  test('a release of an app with a data volume backs it up before the start', async () => {
+    const sys    = env.system as any
+    const target = await aContainerApp({ kind: 'image', image: 'nginx:alpine' })
+    await apps().patch(target.id, { volumePath: '/data' })
+    const release: any = await deployments().create({ appId: target.id, workspaceId: ws.id })
+    expect(await stepNames(release.id)).toEqual(
+      ['Validate', 'Pull image', 'Back up volume', 'Start container', 'Health check'])
+
+    // The snapshot's volume, not the app's: the volume is unset on the app and
+    // the step is still there, because the release being put back had one.
+    await apps().patch(target.id, { volumePath: null })
+    const git     = { kind: 'git', repo: 'git@host:a/b.git' }
+    const shipped = async (data: Record<string, unknown>) => {
+      const row = await sys.deployment.create({ data: {
+        appId: target.id, workspaceId: ws.id, finishedAt: new Date().toISOString(), ...data } })
+      await sys.deployment.transition(row.id, 'build')
+      return sys.deployment.transition(row.id, 'succeed')
+    }
+    const first   = await shipped({
+      builtImage: 'sha256:' + 'c'.repeat(64), configSnapshot: { source: git, runtime: { volumePath: '/data' } } })
+    const current = await shipped({
+      builtImage: 'sha256:' + 'd'.repeat(64), previousDeploymentId: first.id,
+      configSnapshot: { source: git, runtime: { volumePath: '/data' } } })
+    const replacement: any = await deployments().call('rollback', current.id, {})
+    expect(await stepNames(replacement.id)).toEqual(['Validate', 'Back up volume', 'Start container', 'Health check'])
+  })
+
   // A database had a list of its own, three names the runner sent as
   // command-less /exec calls: Outpost acknowledged each, started nothing, and
   // the App was marked running (FJS-1764).

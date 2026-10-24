@@ -24,7 +24,8 @@ import { LEVELS } from '@frontierjs/litestone'
 import { requireSystemAdmin, sessionScope, workspaceChannel } from '../../core/hooks.ts'
 import { db, ws }   from '../../core/resource.ts'
 import { declaredFor, gradeHub, gradePosture, postureChanges, postureRank, POSTURE_INTERVAL_MS } from '../../core/posture.ts'
-import type { Control, PostureReadings } from '../../core/posture.ts'
+import type { Control, HostDeclared, PostureReadings } from '../../core/posture.ts'
+import { encryptionKeyFingerprint } from '../../core/db.ts'
 import { notifyPeople, workspaceMembers } from '../../core/notify.ts'
 import { statusOf } from '../../core/dependencies.ts'
 import { keyScope } from '../api-keys/scopes.ts'
@@ -133,6 +134,18 @@ async function lastBackupAt(): Promise<string | null> {
   return row?.finishedAt ?? null
 }
 
+/** The rows the `hub.*` controls grade in process: the newest archive and the key's escrow. */
+async function hostDeclared(): Promise<HostDeclared> {
+  const config = await sys().hubConfig.findFirst({ where: { id: 'hub' } })
+  return {
+    lastBackupAt:   await lastBackupAt(),
+    keyFingerprint: encryptionKeyFingerprint(),
+    keyEscrow:      config?.encryptionKeyEscrowedAt && config.encryptionKeyFingerprint
+      ? { at: config.encryptionKeyEscrowedAt, fingerprint: config.encryptionKeyFingerprint }
+      : null,
+  }
+}
+
 async function scopedServer(id: string) {
   const server = await db().server.findFirst({ where: { id } })
   if (!server) throw new NotFound(`Server '${id}' not found`)
@@ -226,7 +239,7 @@ export default createService({
     const row    = server
       ? await sys().serverPosture.findFirst({ where: { serverId: server.id }, orderBy: { at: 'desc' } })
       : null
-    const hub = gradeHub(row?.readings ?? null, { lastBackupAt: await lastBackupAt() }, { at: row?.at ?? now, now })
+    const hub = gradeHub(row?.readings ?? null, await hostDeclared(), { at: row?.at ?? now, now })
     const machine  = server ? view(server, row) : null
     const controls = [...hub, ...(machine?.controls ?? [])]
     return {

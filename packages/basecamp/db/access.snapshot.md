@@ -11,7 +11,7 @@ without a schema change you meant to make is a shipped security bug.
 
 ```
 72 models · 1 view · 73 gated · 0 unrestricted
-57 with row policies · 25 with protected fields · 35 declared moves · 15 @system · 0 @seals
+57 with row policies · 26 with protected fields · 35 declared moves · 15 @system · 0 @seals
 ```
 
 ## Gates
@@ -150,14 +150,24 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 - deny **read** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(destination, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(deployment, tenancy)` — "Outside your workspaceId"
 - deny **create** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(destination, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(deployment, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(destination, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(deployment, tenancy)` — "Outside your workspaceId"
 - deny **postUpdate** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **postUpdate** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(destination, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(deployment, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(destination, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(deployment, tenancy)` — "Outside your workspaceId"
 
 ### `AppEditor`
 
@@ -652,6 +662,8 @@ rather than refusing the row.
 | `Domain` | `certExpiresAt` | `@system` |
 | `Flow` | `currentVersion` | `@allow(write, status == null || status != 'active')` |
 | `FlowCredential` | `secret` | `@encrypted` |
+| `HubConfig` | `encryptionKeyEscrowedAt` | `@system` |
+| `HubConfig` | `encryptionKeyFingerprint` | `@system` |
 | `Invitation` | `token` | `@guarded` |
 | `Job` | `retryCount` | `@system` |
 | `Job` | `lastRunAt` | `@system` |

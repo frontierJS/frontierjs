@@ -37,6 +37,7 @@ title: Hub settings
   import { hubConfig }          from '../../../resources/HubConfig.mesa'
   import { backupDestinations } from '../../../resources/BackupDestination.mesa'
   import { session }            from '../../../session.js'
+  import { at }                 from '../../../datetime.js'
 
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import Callout  from '@frontierjs/ui/components/display/Callout.mesa'
@@ -58,6 +59,11 @@ title: Hub settings
   let unset     = false
 
   let destinations = []
+  // The probe: `test` PUTs and DELETEs a key under the prefix for real, and the
+  // answer lands here — beside the picker, where the person who typed the key
+  // is looking — rather than in the job log at 02:00 (`IDEAS/backups.md` 1.8).
+  let testing      = null      // the destination id under test
+  let testSaid     = null      // { tone, text } of the last probe
   let addingDest   = false
   let destDraft    = backupDestinations.make()
   let destSecret   = ''
@@ -123,7 +129,28 @@ title: Hub settings
       : []),
   ]
 
+  $: picked = destinations.find(d => d.id === draft.backupDestinationId) ?? null
+
   function writeDest(name, value) { destDraft = { ...destDraft, [name]: value } }
+
+  // The failure is the connector's kind in words — `forbidden: …`,
+  // `clock_skew: …` — and it is shown whole, because which of the three 403s
+  // this is decides whether the person fixes the key, the policy or the clock.
+  async function testDestination(dest) {
+    testing = dest.id; testSaid = null
+    const said = toasts.loading(`Testing ${dest.name}…`)
+    try {
+      const updated = await backupDestinations.service.invoke('test', dest.id)
+      destinations  = destinations.map(d => d.id === dest.id ? { ...d, ...updated } : d)
+      testSaid = { tone: 'success', text: `${dest.name}: a probe key was written and deleted under ${updated.prefix || 'the bucket root'}` }
+      said.update('success', `${dest.name} tested`)
+    } catch (e) {
+      testSaid = { tone: 'danger', text: `${dest.name}: ${e.message}` }
+      said.update('danger', `Test failed: ${e.message}`)
+    } finally {
+      testing = null
+    }
+  }
 
   async function createDestination(data) {
     destError = null
@@ -137,6 +164,10 @@ title: Hub settings
       destSecret = ''
       await loadDestinations()
       write('backupDestinationId', made.id)
+      // Tested at once: a wrong key fails here, where the person who typed it
+      // is looking, and not at the first scheduled fire. The row stays either
+      // way — the fix is a patch, not a retype.
+      await testDestination(made)
     } catch (e) {
       destError = e.message
       throw e
@@ -149,7 +180,12 @@ title: Hub settings
       // The revision this screen READ, not one off a store: a push moving the
       // number would carry a revision nobody here has seen, which is the race
       // @version exists to lose (`FJS-341`).
-      const payload = { ...draft }
+      // Only what this form changed. The row echoed whole names its `@system`
+      // columns (the key escrow), which litestone refuses by name rather than
+      // dropping — so an untouched save would be a 403 about a column no
+      // control here shows.
+      const payload = unset ? { ...draft }
+        : Object.fromEntries(Object.entries(draft).filter(([k, v]) => v !== config[k]))
       if (!unset) payload.version = config.version
 
       const saved = await hubConfig.service.invoke('save', null, payload)
@@ -252,10 +288,29 @@ title: Hub settings
             error={fieldErrs.backupDestinationId}
             hint="An S3-compatible bucket this workspace has declared, or the disk this process runs on. An upload that fails keeps the archive on this disk and says why."
             oninput={(e) => write('backupDestinationId', e.target.value || null)} />
+    {#if picked}
+      <p class="text-sm text-muted" id="destination-tested">
+        Last tested {at(picked.lastTestAt, 'never')}.
+        {#if !picked.lastTestAt}
+          A test writes and deletes a probe key under the prefix with the stored key — the same path the schedule takes.
+        {/if}
+      </p>
+    {/if}
+    {#if testSaid}
+      <article class="alert {testSaid.tone}" id="destination-test" role="status"><div class="alert-content">{testSaid.text}</div></article>
+    {/if}
     {#if !addingDest}
-      <Button treatment="outlined" id="add-destination" onclick={() => { addingDest = true; destError = null }}>
-        Add a bucket
-      </Button>
+      <div class="cluster">
+        <Button treatment="outlined" id="add-destination" onclick={() => { addingDest = true; destError = null; testSaid = null }}>
+          Add a bucket
+        </Button>
+        {#if picked}
+          <Button treatment="outlined" id="test-destination" disabled={testing !== null}
+                  onclick={() => testDestination(picked)}>
+            {testing === picked.id ? 'Testing…' : 'Test bucket'}
+          </Button>
+        {/if}
+      </div>
     {:else}
       <div class="stack" id="new-destination">
         {#if destError}
@@ -274,7 +329,7 @@ title: Hub settings
           <Input name="bucket" id="dest-bucket" value={destDraft.bucket}
                  oninput={(e) => writeDest('bucket', e.target.value)} />
           <Input name="prefix" id="dest-prefix" value={destDraft.prefix}
-                 hint="basecamp- — every archive key starts with this. A key scoped to a prefix at the vendor must match it exactly."
+                 hint="backups — archives land at backups/<name>. A key scoped to a prefix at the vendor needs this plus a slash."
                  oninput={(e) => writeDest('prefix', e.target.value)} />
           <Input id="dest-secret" name="secret" type="password" label="Credential"
                  hint="<accessKeyId>:<secretAccessKey> — stored encrypted, never shown again; rotating means typing a new one"

@@ -64,6 +64,7 @@ const IMAGES = [
 const DROPLETS = new Map<string, Record<string, unknown>>([
   ['901', {
     id: 901, name: 'general-01', status: 'active', tags: [],
+    created_at: '2026-01-05T12:00:00Z',
     region:   { slug: 'nyc3' },
     networks: { v4: [
       { ip_address: '10.0.0.9',   type: 'private' },
@@ -133,6 +134,7 @@ async function createDroplet(req: Request): Promise<Response> {
     name:     spec.name,
     status:   'new',
     tags:     Array.isArray(spec.tags) ? spec.tags : [],
+    created_at: new Date().toISOString(),
     region:   { slug: region.slug },
     // A machine that is still building has no address yet. A caller waiting for
     // one is the behavior a real provision has to have.

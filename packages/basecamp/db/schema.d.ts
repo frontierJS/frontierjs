@@ -100,7 +100,7 @@ export type WidgetKind = 'server_fleet' | 'server_health' | 'app_status' | 'depl
 
 export type ParamGenerator = 'random_hex_16' | 'random_hex_32' | 'random_hex_64'
 
-export type BackupKind = 'manual' | 'scheduled' | 'found'
+export type BackupKind = 'manual' | 'scheduled' | 'found' | 'release'
 
 export type DependencyKind = 'dependency' | 'dev' | 'peer' | 'optional'
 
@@ -322,6 +322,7 @@ export interface AppPublish {
 export interface AppBackupTake {
   appId: string
   serverId: string
+  destinationId?: string | null
 }
 
 /**
@@ -2874,6 +2875,8 @@ export interface App {
   pushTokenHash?: string | null
   pushActorId?: string | null
   blueprintId?: string | null
+  backupCron?: string | null
+  backupDestinationId?: string | null
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -2894,6 +2897,8 @@ export interface AppCreate {
   cpuLimit?: number | null
   memLimitMb?: number | null
   exposesPort?: boolean
+  backupCron?: string | null
+  backupDestinationId?: string | null
 }
 
 export interface AppUpdate {
@@ -2911,6 +2916,8 @@ export interface AppUpdate {
   cpuLimit?: number | null
   memLimitMb?: number | null
   exposesPort?: boolean
+  backupCron?: string | null
+  backupDestinationId?: string | null
 }
 
 export interface AppSystem {
@@ -2943,6 +2950,8 @@ export interface AppWhere extends WhereBase {
   pushTokenHash?: string | WhereOp<string> | null
   pushActorId?: string | WhereOp<string> | null
   blueprintId?: string | WhereOp<string> | null
+  backupCron?: string | WhereOp<string> | null
+  backupDestinationId?: string | WhereOp<string> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
@@ -2958,6 +2967,8 @@ export type AppOrderBy =
 export interface AppRelations {
   environment: Environment | null
   blueprint: Blueprint | null
+  backupDestination: BackupDestination | null
+  appBackups: AppBackup[]
   deployments: Deployment[]
   jobs: Job[]
   appServers: AppServer[]
@@ -3288,6 +3299,9 @@ export interface AppBackup {
   id: string
   appId: string
   serverId: string
+  destinationId?: string | null
+  kind: BackupKind
+  deploymentId?: string | null
   status: RunStatus
   sizeBytes?: number | null
   fileCount?: number | null
@@ -3304,6 +3318,9 @@ export interface AppBackupCreate {
   id?: string
   appId: string
   serverId: string
+  destinationId?: string | null
+  kind?: BackupKind
+  deploymentId?: string | null
   status?: RunStatus
   sizeBytes?: number | null
   fileCount?: number | null
@@ -3319,6 +3336,9 @@ export interface AppBackupUpdate {
   id?: string
   appId?: string
   serverId?: string
+  destinationId?: string | null
+  kind?: BackupKind
+  deploymentId?: string | null
   status?: RunStatus
   sizeBytes?: number | null
   fileCount?: number | null
@@ -3334,6 +3354,9 @@ export interface AppBackupWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   appId?: string | WhereOp<string> | null
   serverId?: string | WhereOp<string> | null
+  destinationId?: string | WhereOp<string> | null
+  kind?: BackupKind | WhereOp<BackupKind> | null
+  deploymentId?: string | WhereOp<string> | null
   status?: RunStatus | WhereOp<RunStatus> | null
   sizeBytes?: number | WhereOp<number> | null
   fileCount?: number | WhereOp<number> | null
@@ -3356,6 +3379,8 @@ export type AppBackupOrderBy =
 export interface AppBackupRelations {
   app: App | null
   server: Server | null
+  destination: BackupDestination | null
+  deployment: Deployment | null
 }
 
 // ─── AppNetwork ──────────────────────────────────────────────────
@@ -3518,6 +3543,7 @@ export interface DeploymentRelations {
   environment: Environment | null
   triggeredByUser: User | null
   steps: DeploymentStep[]
+  appBackups: AppBackup[]
 }
 
 // ─── DeploymentStep ──────────────────────────────────────────────
@@ -4392,6 +4418,8 @@ export type BackupDestinationOrderBy =
 export interface BackupDestinationRelations {
   workspace: Workspace | null
   backups: Backup[]
+  appBackups: AppBackup[]
+  apps: App[]
   hubs: HubConfig[]
 }
 
@@ -5526,6 +5554,8 @@ export interface HubConfig {
   backupKeepLocalDays?: number | null
   backupKeepRemoteCount: number
   backupKeepRemoteDays?: number | null
+  encryptionKeyEscrowedAt?: string | null
+  encryptionKeyFingerprint?: string | null
   mailFromAddress?: string | null
   mailFromName?: string | null
   updatedAt: string
@@ -5576,6 +5606,11 @@ export interface HubConfigUpdate {
   version: number
 }
 
+export interface HubConfigSystem {
+  encryptionKeyEscrowedAt?: string | Date | null
+  encryptionKeyFingerprint?: string | null
+}
+
 export interface HubConfigWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   name?: string | WhereOp<string> | null
@@ -5593,6 +5628,8 @@ export interface HubConfigWhere extends WhereBase {
   backupKeepLocalDays?: number | WhereOp<number> | null
   backupKeepRemoteCount?: number | WhereOp<number> | null
   backupKeepRemoteDays?: number | WhereOp<number> | null
+  encryptionKeyEscrowedAt?: string | Date | WhereOp<string | Date> | null
+  encryptionKeyFingerprint?: string | WhereOp<string> | null
   mailFromAddress?: string | WhereOp<string> | null
   mailFromName?: string | WhereOp<string> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
@@ -6109,7 +6146,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly dependency: TableClient<Dependency, DependencyCreate, DependencyUpdate, DependencyWhere, DependencyRelations, never, 'latest' | 'deprecated' | 'advisories' | 'checkedAt' | 'checkError' | '@@gate', DependencySystem>
   readonly dependencyUse: TableClient<DependencyUse, DependencyUseCreate, DependencyUseUpdate, DependencyUseWhere, DependencyUseRelations, never, '@@gate'>
   readonly backup: TableClient<Backup, BackupCreate, BackupUpdate, BackupWhere, BackupRelations, never, '@@gate'>
-  readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere, HubConfigRelations, never, '@@gate'>
+  readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere, HubConfigRelations, never, 'encryptionKeyEscrowedAt' | 'encryptionKeyFingerprint' | '@@gate', HubConfigSystem>
   readonly notification: TableClient<Notification, NotificationCreate, NotificationUpdate, NotificationWhere, NotificationRelations, never, '@@gate'>
   readonly notificationPreference: TableClient<NotificationPreference, NotificationPreferenceCreate, NotificationPreferenceUpdate, NotificationPreferenceWhere, NotificationPreferenceRelations, never, '@@gate'>
   readonly fleetByProvider: ViewClient<FleetByProvider, FleetByProviderWhere>

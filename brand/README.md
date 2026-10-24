@@ -14,7 +14,10 @@ have an owner somewhere else in the repo, and a copy here would drift from it:
 | Semantic color, tones, light/dark, the type ladder, components | `@frontierjs/css`, `packages/css/src/foundation/tokens.css` |
 
 What this file owns is what nothing else holds: the territory, the mark, the
-brand palette, the faces, and the voice.
+brand palette, the faces, and the voice. **Making a picture** (a painted
+landscape, a hero or social card, an AI image prompt) **starts at
+`IMAGERY.md`**: the master prompt, the realm lines, the negative prompt and the
+acceptance check.
 
 `assets/` holds committed, shippable files (logo SVGs, favicons, social cards).
 A large design source goes beside them named `*.image-ref.*`, which the root
@@ -37,7 +40,7 @@ markers, ruled notebooks, a printed field guide read by lamplight. It does not
 come from the Old West as a costume.
 
 The reference image is `fjs-backdrop-portrait.png` at the repo root. It shows
-a figure on a ledge with a pack and a staff, a dog beside them, and a river
+a figure on a ledge with a pack and a staff, a wolf-like dog beside them, and a river
 valley running to the mountains at golden hour. The palette and the mood both
 start there. `fli ws:atlas` already uses it as its backdrop.
 
@@ -54,8 +57,8 @@ curled up at the sides turns a surveyor into a gunslinger.
 
 **Painted landscapes are illustration, and they are allowed.** Each realm has
 its own terrain: desert strata for Litestone, a river confluence for Junction,
-a forest ridge for Sierra. The current paintings are first drafts that will be
-refined. Their palette and composition are not settled yet.
+a forest ridge for Sierra. The current paintings are first drafts. The
+direction they are refined toward is `IMAGERY.md`.
 
 **Don'ts.** No cowboy hats, revolvers, saloon type or wanted posters. No CSS
 gradient passed off as a landscape: a landscape is painted or it is absent. No
@@ -67,8 +70,8 @@ neon or "hacker" green.
 and the lockup, the clear space, the smallest size (favicon and CLI banner
 included), and a misuse grid. The files go in `assets/`.
 
-Brief: something a surveyor would stamp. A benchmark disk, a triangulation
-mark or a contour ring. It has to work in one color at 16px.
+Brief: an explorer's face in shadow. The owner is supplying the drawing. It
+has to work in one color at 16px.
 
 ## 3 · Color
 
@@ -115,7 +118,9 @@ Say the constraint flatly and don't sell it. Every number has been measured.
 
 ## Later, when there is material
 
-Illustration (style, characters, landscapes, diagrams), graphic language
+The style, characters and landscapes of illustration are covered by
+`IMAGERY.md`, and the brief any figure is written to is the `illustrate` skill
+(`.claude/skills/`). Still to come: diagrams, the graphic language for the interface
 (lines, contours, markers, texture) and worked examples for the website, docs,
 GitHub, CLI and social. Each one gets a section here once there is a real
 asset to show.

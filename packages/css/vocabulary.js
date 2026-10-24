@@ -756,6 +756,7 @@ const NOT_ANATOMY = {
   'theme-basecamp': 'A theme', 'theme-notebook': 'A theme',
   'theme-press': 'A theme', 'theme-field': 'A theme',
   'theme-dracula': 'A theme', 'theme-twilight': 'A theme',
+  'theme-expedition': 'A theme', 'theme-catppuccin': 'A theme',
 };
 
 /*

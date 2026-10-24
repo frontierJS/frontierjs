@@ -15,12 +15,12 @@
   $: theme.value
 
   const SWATCHES = [
-    { name: 'theme-default',  label: 'Default',  swatch: '#0d83dd' },
-    { name: 'theme-sunset',   label: 'Sunset',   swatch: '#e07a3f' },
-    { name: 'theme-forest',   label: 'Forest',   swatch: '#2f7d4f' },
-    { name: 'theme-midnight', label: 'Midnight', swatch: '#3b4a6b' },
-    { name: 'theme-dark',     label: 'Dark',     swatch: '#1c1b18' },
-    { name: 'theme-elite',    label: 'Elite',    swatch: '#8b6f2e' },
+    { name: 'theme-default',    label: 'Default',    swatch: '#0d83dd' },
+    { name: 'theme-sunset',     label: 'Sunset',     swatch: '#e07a3f' },
+    { name: 'theme-expedition', label: 'Expedition', swatch: '#a8b58a' },
+    { name: 'theme-catppuccin', label: 'Catppuccin', swatch: '#cba6f7' },
+    { name: 'theme-dark',       label: 'Dark',       swatch: '#1c1b18' },
+    { name: 'theme-elite',      label: 'Elite',      swatch: '#8b6f2e' },
   ]
 </script>
 

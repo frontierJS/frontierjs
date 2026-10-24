@@ -196,6 +196,7 @@ function toMachine(server: Row, fallbackId = ''): ComputeMachine {
     region:           locationOf(server),
     name:             str(server.name) || null,
     serverId:         markedServer(server),
+    createdAt:        str(server.created) || null,
   }
 }
 

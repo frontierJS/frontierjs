@@ -378,8 +378,11 @@ type AppPublish {
 /// What `app-backups.take` accepts: the app, and the machine whose copy of
 /// its data volume is taken (`FJS-D679`).
 type AppBackupTake {
-  appId    String
-  serverId String
+  appId         String
+  serverId      String
+  // A destination of the app's own workspace; absent, the archive stays on
+  // the machine. No default: the hub's bucket is another workspace's row.
+  destinationId String?
 }
 
 /// What `backups.rescan` accepts: the destination whose prefix is listed for
@@ -562,7 +565,7 @@ enum ParamGenerator { random_hex_16 random_hex_32 random_hex_64 }
 // How an archive came to have a row: by hand, by the schedule, or `found` — a
 // rescan met it in the bucket with no row naming it (`FJS-D1493`), so nobody
 // here asked for it. The schedule's own settings live on `HubConfig`.
-enum BackupKind        { manual scheduled found }
+enum BackupKind        { manual scheduled found release }
 
 // Which manifest field declared a dependency — `dependencies`, `devDependencies`,
 // `peerDependencies`, `optionalDependencies`.
@@ -1690,10 +1693,22 @@ model App {
   blueprintId   String?     @system @immutable
   blueprint     Blueprint?  @relation(fields: [blueprintId], references: [id], onDelete: SetNull)
 
+  // The app's own archive schedule (`IDEAS/backups.md` 1.6). Null is no
+  // schedule, as `Job.cronExpression` reads; the clock follows the row through
+  // `job-schedule.ts`, so a patch replaces the registration and a soft delete
+  // ends it. The service refuses an expression the clock cannot hold BEFORE
+  // the write. `SetNull` as on `HubConfig`, not `AppBackup`'s `Restrict`: a
+  // schedule pointer holds no object key, so losing the bucket drops the next
+  // archive to the machine's disk rather than refusing the bucket's removal.
+  backupCron          String?  @trim @length(1, 100)
+  backupDestinationId String?
+  backupDestination   BackupDestination? @relation(fields: [backupDestinationId], references: [id], onDelete: SetNull)
+
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @default(now()) @updatedAt
   deletedAt     DateTime?
 
+  appBackups    AppBackup[]
   deployments   Deployment[]
   jobs          Job[]
   appServers    AppServer[]
@@ -1916,9 +1931,25 @@ model AppBackup {
   serverId    String
   server      Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
+  // Where the machine sent the archive, by a pre-signed PUT Basecamp minted
+  // (`FJS-D1485`); null is the machine's own disk. `Restrict` as on `Backup`:
+  // a row whose `location` is an object key must keep the bucket it names.
+  destinationId String?
+  destination   BackupDestination? @relation(fields: [destinationId], references: [id], onDelete: Restrict)
+
+  // How the archive came to be — `BackupKind`, the hub's word for the same
+  // thing. `release` is the copy a fleet `/deploy` takes before the swap, and
+  // `deploymentId` names that release; the row outlives a pruned release.
+  kind          BackupKind  @default(manual)
+  deploymentId  String?
+  deployment    Deployment? @relation(fields: [deploymentId], references: [id], onDelete: SetNull)
+
   status      RunStatus @default(pending)
   sizeBytes   Int?
   fileCount   Int?
+  // A path on the machine, or an object key under the destination's prefix
+  // when the upload landed. An upload that failed leaves the path here and
+  // says why in `error`, with `status` still `success`: the archive exists.
   location    String?   @trim @length(0, 500)
   error       String?   @length(0, 2000)
 
@@ -1934,6 +1965,8 @@ model AppBackup {
   @@trail(audit)
   @@index([appId])
   @@index([serverId])
+  @@index([destinationId])
+  @@index([deploymentId])
 }
 
 model AppNetwork {
@@ -1991,6 +2024,7 @@ model Deployment {
   updatedAt            DateTime     @default(now()) @updatedAt
 
   steps                DeploymentStep[]
+  appBackups           AppBackup[]
 
   @@gate(2.4.4.4)
   // The release pipeline, declared once and enforced at the Data boundary
@@ -2532,6 +2566,10 @@ model BackupDestination {
   deletedAt   DateTime?
 
   backups     Backup[]
+  appBackups  AppBackup[]
+  // `@keep`: an app outlives its bucket — the pointer is `SetNull`, the
+  // schedule drops to the machine's disk, and nothing about the app is retired.
+  apps        App[] @keep
   hubs        HubConfig[]
 
   @@gate(2.5)
@@ -3324,6 +3362,16 @@ model HubConfig {
   backupKeepLocalDays       Int?     @gte(1) @lte(3650)
   backupKeepRemoteCount     Int      @default(7) @gte(1) @lte(1000)
   backupKeepRemoteDays      Int?     @gte(1) @lte(3650)
+
+  // A copy of ENCRYPTION_KEY kept OFF this box, attested by a person. Nothing
+  // here can see that copy — `fli deploy:setup` leaves it in the operator's
+  // local `.env` — so the row holds only when somebody said they kept it and
+  // the sha256 of the key they said it of. The key never travels with an
+  // archive, and an archive without it cannot be read: `hub.key-escrowed`
+  // grades red while this is null or names a key that is no longer the one in
+  // use. Written by `hub-config.attestEscrow` alone, never by `save`.
+  encryptionKeyEscrowedAt   DateTime? @system
+  encryptionKeyFingerprint  String?   @system
 
   mailFromAddress           String?  @email @lower
   mailFromName              String?  @trim @length(0, 80)

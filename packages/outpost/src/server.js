@@ -274,8 +274,9 @@ export function createOutpostServer(config, {
     'POST /volumes/prune': (body) => inspector.pruneVolumes(body.names ?? []),
     // An archive already on the machine, into the app's stopped volume.
     'POST /volume/restore': (body) => docker.restore({ appId: body.app_id, path: body.path, overwrite: body.overwrite }),
-    // An app's data volume, tarred into this machine's backup directory.
-    'POST /backup':        (body) => docker.backup({ appId: body.app_id }),
+    // An app's data volume, tarred into this machine's backup directory and,
+    // given a pre-signed URL, uploaded from there.
+    'POST /backup':        (body) => docker.backup({ appId: body.app_id, uploadUrl: body.upload_url }),
     // Basecamp's *check now*: the readings come back in the answer and
     // Basecamp ingests them, rather than this posting a report beside it.
     'POST /posture':       () => inspector.posture(),

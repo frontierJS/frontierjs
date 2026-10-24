@@ -1150,7 +1150,12 @@ consistent online backup — a file copy of a live WAL database silently omits
 whatever is still in the `-wal`. Retention runs after each success, local and
 per-bucket apart, and `remove` deletes the archive before the row through the
 same helper (`FJS-D1494`); `rescan` gives a `found` row to an archive in the
-bucket no row names (`FJS-D1493`).
+bucket no row names (`FJS-D1493`). A destination is tested where it is typed:
+`/hub/settings/` runs `backup-destinations.test` — a PUT and a DELETE of a
+probe key through the registered target — as a bucket is added, and a *Test
+bucket* button repeats it for the picked one; the answer under the picker is
+the connector's failure kind in words, because a 403 is a wrong key, a policy
+refusal or a clock fifteen minutes out, and only the first is the credential.
 
 ### Seed rows followed the same day
 
@@ -1237,6 +1242,12 @@ database this process is reading from, in place, while it serves — an operator
 job with the process stopped, and the most dangerous control this app could
 have. There is no download either: the archive is a path on the machine and
 nothing serves it.
+
+**The backups screen says an archive without its key cannot be read**, and
+whether a copy of `ENCRYPTION_KEY` is kept off the box is `hub.key-escrowed`,
+read as the control it is rather than restated: a person attests the copy
+(`hub-config.attestEscrow`), the row keeps the key's digest, and a regenerated
+key voids it (`FJS-D1497`).
 
 **The hub settings screen has none of the mock's four credentials**, and the
 copy on the page explains why rather than leaving somebody hunting: they are

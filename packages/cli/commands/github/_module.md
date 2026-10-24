@@ -3,10 +3,6 @@ namespace: github
 description: GitHub repository management via the REST API
 requires:
   - GITHUB_TOKEN
-defaults:
-  flags:
-    org:
-      defaultValue: '${GITHUB_DEFAULT_ORG}'
 ---
 
 <script>

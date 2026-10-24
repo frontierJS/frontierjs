@@ -19,6 +19,7 @@
 //                                                            `port` only by a preview's Open, core/preview.ts)
 //   POST /health-check { app_id, digest }                  → { healthy }
 //   POST /exec         { step, deployment_id }             → run the step
+//   POST /backup       { app_id, upload_url? }             → the volume archived before the swap; sent by jobs/app-backup-run.job.ts, never from here
 //
 // A static app built from git speaks one route, `POST /site/publish`
 // { app_id, source, branch, commit, cloudflare } → { commit_sha, url }.
@@ -56,6 +57,7 @@ import { siteBranch } from '../core/site-checkout.ts'
 import { releaseSite } from '../core/site-publish.ts'
 import { releaseEnv } from '../core/variables.ts'
 import { runtimeOf, routedHosts, routedPaths, routedRedirects, markRunning, type Runtime } from '../core/runtime.ts'
+import { takeAppBackup, destinationFor } from './app-backup-run.job.ts'
 import type { App }         from '@frontierjs/junction'
 import type { StepStatus } from '../../../db/schema.d.ts'
 
@@ -308,6 +310,23 @@ function runner(app: App) {
       if (reply.error) throw new Error(`Pull failed: ${reply.error.message}`)
       return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest }
 
+
+    } else if (name.includes('back up')) {
+      // The copy before the swap (`FJS-D1496`). A first release has no
+      // container and no volume on the machine yet, so there is nothing to
+      // copy and the step says so; after that a refused copy fails the
+      // release, because the new image migrates the volume forward and the
+      // copy is the only way back. A stub took nothing, as on every step.
+      if (!deploy.previousDeploymentId) return { output: 'first release — no volume on the machine yet', digest }
+      const row = await takeAppBackup(app, {
+        target: service, executor, destination: await destinationFor(app, service),
+        kind: 'release', deploymentId: deploy.id, requestedBy: deploy.triggeredBy ?? null,
+      })
+      if (row.status !== 'success') {
+        if (executor.kind === 'stub') return { output: 'stub executor — no backup was taken', digest }
+        throw new Error(`Back up volume failed: ${row.error}`)
+      }
+      return { output: row.error ? `${row.location} — ${row.error}` : `copied to ${row.location}`, digest }
 
     } else if (name.includes('start') || name.includes('deploy')) {
       const reply = await executor.call('/deploy', {

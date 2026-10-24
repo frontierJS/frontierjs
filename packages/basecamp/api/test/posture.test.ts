@@ -22,7 +22,7 @@ import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor }         from '../src/core/capabilities.ts'
 import { declaredFor, gradeHub, gradePosture, HUB_CONTROL_IDS, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/core/posture.ts'
 import { HOST_SLUG } from '../src/core/host-machine.ts'
-import type { PostureReadings } from '../src/core/posture.ts'
+import type { HostDeclared, PostureReadings } from '../src/core/posture.ts'
 import { prunePosture } from '../src/jobs/retention.job.ts'
 
 const NOW = Date.parse('2026-10-13T12:00:00Z')
@@ -277,8 +277,9 @@ describe('a report lands', () => {
 describe('the hub grader', () => {
   const FILES = { db: { path: '/srv/basecamp/db', mode: '700', owner: 'root', group: 'root' },
                   env: { path: '/srv/basecamp/.env', mode: '600', owner: 'root', group: 'root' } }
-  const hub  = (r: PostureReadings | null, lastBackupAt: string | null, at: number = NOW) =>
-    Object.fromEntries(gradeHub(r, { lastBackupAt }, { at, now: NOW }).map(c => [c.id, c]))
+  const KEY  = 'a'.repeat(64)
+  const hub  = (r: PostureReadings | null, lastBackupAt: string | null, at: number = NOW, host: Partial<HostDeclared> = {}) =>
+    Object.fromEntries(gradeHub(r, { lastBackupAt, keyFingerprint: KEY, keyEscrow: null, ...host }, { at, now: NOW }).map(c => [c.id, c]))
 
   test('no backup ever is failing, and a recent one passes', () => {
     expect(hub({ ...CLEAN, host_files: FILES }, null)['hub.backup-recent'].ok).toBe(false)
@@ -303,13 +304,26 @@ describe('the hub grader', () => {
     expect(hub({ ...CLEAN, host_files: { ...FILES, key: null } }, null)['hub.env-mode'].ok).toBe(true)
   })
 
-  test('the backup is graded with no report or a stale one; the files are unknown', () => {
+  test('the backup and the key are graded with no report or a stale one; the files are unknown', () => {
     const none  = hub(null, null)
     expect(none['hub.backup-recent'].ok).toBe(false)
+    expect(none['hub.key-escrowed'].ok).toBe(false)
     expect(none['hub.env-mode'].ok).toBe('unknown')
     const stale = hub({ ...CLEAN, host_files: FILES }, null, NOW - 3 * POSTURE_INTERVAL_MS)
     expect(stale['hub.backup-recent'].ok).toBe(false)
+    expect(stale['hub.key-escrowed'].ok).toBe(false)
     expect(stale['hub.db-mode'].ok).toBe('unknown')
+  })
+
+  test('the key is escrowed when the attestation names the key in use, and not before, after a change, or on the placeholder', () => {
+    const at = '2026-10-23T10:00:00.000Z'
+    const grade = (host: Partial<HostDeclared>) => hub({ ...CLEAN, host_files: FILES }, null, NOW, host)['hub.key-escrowed']
+    expect(grade({})).toMatchObject({ ok: false, message: expect.stringContaining('unreadable without it') })
+    expect(grade({ keyEscrow: { at, fingerprint: KEY } })).toMatchObject({ ok: true, message: expect.stringContaining('2026-10-23') })
+    expect(grade({ keyEscrow: { at, fingerprint: 'b'.repeat(64) } })).toMatchObject({ ok: false, message: expect.stringContaining('key changed') })
+    // The message names keys by a prefix of the digest, never the digest whole.
+    expect(grade({ keyEscrow: { at, fingerprint: KEY } }).message).not.toContain(KEY)
+    expect(grade({ keyFingerprint: null, keyEscrow: { at, fingerprint: KEY } })).toMatchObject({ ok: false, message: expect.stringContaining('placeholder') })
   })
 
   test('only the hub controls: the fleet ones are the host row\'s own', () => {
@@ -332,6 +346,7 @@ describe('the host row on /hub/security/', () => {
     const c    = Object.fromEntries(view.controls.map((x: any) => [x.id, x]))
     expect([view.enrolled, view.reported]).toEqual([false, false])
     expect(c['hub.backup-recent'].ok).toBe(false)
+    expect(c['hub.key-escrowed']).toMatchObject({ ok: false, message: expect.stringContaining('No copy of ENCRYPTION_KEY') })
     expect(c['hub.db-mode'].ok).toBe('unknown')
   })
 

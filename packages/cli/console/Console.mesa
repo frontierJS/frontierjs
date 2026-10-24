@@ -138,12 +138,24 @@
   }
 
   // A unique prefix is enough, as k9s takes `:po` for pods.
+  function named(name) {
+    const hits = PANES.filter(p => p.startsWith(name))
+    return hits.length === 1 ? hits[0] : null
+  }
+  const unknown = (name) => `no pane :${name} — ${PANES.map(p => `:${p}`).join(' ')}`
+
   function command() {
     const name = text.trim().replace(/^:/, '')
-    const hits = PANES.filter(p => p.startsWith(name))
     close()
-    if (name && hits.length === 1) return go(hits[0])
-    if (name) note = `no pane :${name} — ${PANES.map(p => `:${p}`).join(' ')}`
+    if (name && named(name)) return go(named(name))
+    if (name) note = unknown(name)
+  }
+
+  // `fli gui :dn` names its pane the way `:` does; an unknown one opens on
+  // `:run` and says so, since Tabs shows no panel for an id it lacks.
+  if (!PANES.includes(pane)) {
+    note = named(pane) ? '' : unknown(pane)
+    pane = named(pane) ?? 'run'
   }
 
   function fieldKey(action) {

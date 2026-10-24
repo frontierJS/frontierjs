@@ -28,6 +28,7 @@ import { requiresOf }                 from './requires.js'
 import { esetHint, globalEnvPath }    from './global-env.js'
 import { execSync }     from 'node:child_process'
 import { join }         from 'node:path'
+import { MIN_CF }       from './cloudflare.js'
 import { homedir }      from 'node:os'
 
 // ─── what a machine needs ─────────────────────────────────────────────────────
@@ -52,6 +53,7 @@ export const BINARIES = [
   { name: 'ssh',     required: false, hint: 'sudo apt install openssh-client' },
   { name: 'rsync',   required: false, hint: 'sudo apt install rsync  (needed for deploy:)' },
   { name: 'docker',  required: false, hint: 'https://docs.docker.com/engine/install/' },
+  { name: 'cf',      required: false, hint: 'npm i -g cf  (needed for :dns and cloudflare:)', min: MIN_CF, upgrade: 'npm i -g cf@latest' },
 ]
 
 /**

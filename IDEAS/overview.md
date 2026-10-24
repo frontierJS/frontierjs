@@ -738,6 +738,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `external-field-cache.md` — a field whose value is fetched from a third party and cached
 - `failure-handling.md` — failure handling: one fault, read the same way by every layer that may try again
 - `field-workforce.md` — Field workforce coordination: the stressor that completes a loop example already half-owns
+- `illustration.md` — a paragraph and one picture in place of a page: the brief Claude fills before drawing, three kinds of figure with their owners, a cold-reader proof
 - `kernel-and-projections.md` — Kernel and projections: the structure the seed thesis implies
 - `keys.md` — one keymap engine under the terminal, the browser and the desktop; the vim box as one `.mesa`
 - `maintainability-signals.md` — the register and the loop log read as a map of where the code hurts: a seam segment, env rows with proof, drives that declare what they hold
@@ -764,6 +765,8 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `specifications.md` — Specifications: the truths FrontierJS is one implementation of
 - `stressor-questions.md` — The stressor questions, as one catalog
 - `tenant-authored-workflows.md` — A state machine the TENANT fills in, still enforced at the Data boundary
+- `thing.md` — Thing: input held before its model is known, graduated to a real model once its keys settle
+- `transcription.md` — a stored recording in, a transcript record out: one caravan job over a `File`, lifted out of calls-and-media 4.3
 - `tunnel.md` — `fli tunnel <port>`: a dev port on a public URL with the visitor's address intact; Bun refuses PROXY protocol, so the own relay is `ssh -R` into Outpost's Caddy
 - `ui-ontology.md` — the UI realm's primitives: what a screen is made of, read against fifty years of naming it
 - `version-compatibility.md` — Version compatibility: what a version number here promises

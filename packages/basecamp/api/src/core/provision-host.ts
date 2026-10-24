@@ -267,7 +267,7 @@ async function powerOff() {
 async function list() {
   const held = await heldBy()
   const machines = (await connector.marked(send, fleetMark())).map(m => ({
-    id: m.providerServerId, name: m.name, status: m.status, ip: m.ipAddress, region: m.region, serverId: m.serverId,
+    id: m.providerServerId, name: m.name, status: m.status, ip: m.ipAddress, region: m.region, serverId: m.serverId, createdAt: m.createdAt,
     reservedIp: held.get(m.providerServerId) ?? null,
   }))
   answer({ machines })

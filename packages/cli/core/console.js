@@ -119,7 +119,8 @@ export function consolePage(map) {
   import Console from '/console/Console.mesa'
   const root  = document.getElementById('console')
   const label = root.appendChild(document.createComment('console'))
-  mount(label, Console, { root })
+  const pane  = decodeURIComponent(location.hash.slice(1)).replace(/^:/, '')
+  mount(label, Console, { root, props: pane ? { pane } : {} })
 </script>
 </body>
 </html>
@@ -231,9 +232,9 @@ function installTerminalLoader() {
  * `Console.mesa` in this terminal, reading the server at `api`. Answers when the
  * renderer is destroyed — Ctrl+C — so the caller stops the server it started.
  * A screen that does not compile or lower throws before the screen is taken.
- * @param {{ api: string, openUrl?: (url: string) => void }} options
+ * @param {{ api: string, pane?: string, openUrl?: (url: string) => void }} options
  */
-export async function runTerminalConsole({ api, openUrl = () => {} }) {
+export async function runTerminalConsole({ api, pane = '', openUrl = () => {} }) {
   installTerminalLoader()
   // The engine is an optional peer of mesa, and this fli does not declare it.
   const tui = await mesaModule('./runtime/terminal').catch((e) => {
@@ -250,7 +251,7 @@ export async function runTerminalConsole({ api, openUrl = () => {} }) {
       // The console places its own focus; the legend is a footer line, so a
       // long pane never scrolls it away.
       const legendAt = (read) => tui.mount(Legend, { renderer, parent: tui.footerOf(renderer), props: { read } })
-      tui.mount(Console, { renderer, props: { api, legendAt } })
+      tui.mount(Console, { renderer, props: pane ? { api, legendAt, pane } : { api, legendAt } })
     }, fail)
   })
 }

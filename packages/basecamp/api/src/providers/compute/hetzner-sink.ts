@@ -100,6 +100,7 @@ const IMAGES = [
 const SERVERS = new Map<string, Record<string, unknown>>([
   ['7701', {
     id: 7701, name: 'legacy-01', status: 'running', labels: {},
+    created: '2026-01-05T12:00:00+00:00',
     public_net: { ipv4: { id: 1, ip: '198.51.100.7', blocked: false } },
     datacenter: { name: 'nbg1-dc3', location: { name: 'nbg1', description: 'Nuremberg DC Park 1' } },
   }],
@@ -198,6 +199,7 @@ async function createServer(req: Request): Promise<Response> {
     name:       spec.name,
     status:     'initializing',
     labels,
+    created:    new Date().toISOString(),
     // Still building, so there is no address yet. A caller waiting for one is
     // the behavior a real provision has to have.
     public_net: { ipv4: null },

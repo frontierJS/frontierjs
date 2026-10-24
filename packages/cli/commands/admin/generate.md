@@ -242,7 +242,7 @@ ${SC}
 
 <div class="grid">
   {#each models as m}
-    <a class="card" href={m.href}>
+    <a class="model-link" href={m.href}>
       <b>{m.label}</b>
       <small>model {m.model} · service {m.key}</small>
     </a>
@@ -250,8 +250,8 @@ ${SC}
 </div>
 
 <style>
-  .card { text-decoration: none; color: inherit }
-  .card small { color: var(--ink-mute); font-size: var(--text-sm) }
+  .model-link { text-decoration: none; color: inherit }
+  .model-link small { color: var(--ink-mute); font-size: var(--text-sm) }
 </style>
 `
 }

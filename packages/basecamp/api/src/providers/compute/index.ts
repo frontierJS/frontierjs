@@ -119,6 +119,9 @@ export interface ComputeMachine {
    *  orphan carrying a server id is a row that was deleted on this side, and
    *  one carrying none was never ours. */
   serverId:         string | null
+  /** When the vendor made it, ISO 8601. Not when it last booted: neither
+   *  vendor says that, so a box powered off and on keeps its first date. */
+  createdAt:        string | null
 }
 
 /**

@@ -33,11 +33,18 @@ title: Apps
   const list = apps.tethered({ state: 'local', composed: true, directives: { limit: 50 } })
 
   $: session.workspaceId, () => list.reload()
+
+  // The closest place to make one: the environment the newest app already sits
+  // in, where the add-app form is. With no apps yet there is no such place to
+  // guess, so it is the project list, one click from any environment.
+  $: inEnvironment = list.rows[0]?.environmentId
+  $: createHref    = inEnvironment ? `/environments/${inEnvironment}/` : '/projects/'
+  $: createLabel   = inEnvironment ? 'add one to this environment' : 'pick a project'
 </script>
 
 <div class="section-header">
   <h1>Apps</h1>
-  <span class="text-sm text-muted">created inside an environment</span>
+  <span class="text-sm text-muted">created inside an environment — <a href={createHref}>{createLabel}</a></span>
 </div>
 
 {#if list.error}

@@ -210,6 +210,8 @@ const THEMES = {
   press:    { name: 'Press',    description: 'Newsprint: serif headlines, mono body, hard shadows.' },
   dracula:  { name: 'Dracula',  description: 'Violet and pink on blue-black, six vivid accents.' },
   twilight: { name: 'Twilight', description: 'Warm sand on near-black, muted olive and clay.' },
+  expedition: { name: 'Expedition', description: 'Charcoal, sage and brass, parchment ink.' },
+  catppuccin: { name: 'Catppuccin', description: 'Catppuccin Mocha: pastel accents on blue-violet charcoal.' },
 }
 
 /*
