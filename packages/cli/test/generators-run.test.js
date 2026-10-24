@@ -115,7 +115,7 @@ describe('a generated page styles with the vocabulary, never a literal', () => {
 // one Sierra's session already holds rather than a stub fixed at 7 that nothing
 // wires.
 describe('admin:generate writes screens in the vocabulary and reads the real session', () => {
-  const WROTE = ['_module.mesa', 'index.mesa', 'leads/index.mesa', 'leads/[id].mesa']
+  const WROTE = ['_module.mesa', 'index.mesa', 'leads/index.mesa', 'leads/create.mesa', 'leads/[id].mesa']
 
   test('no literal color or size in the layout or the dashboard', async () => {
     const root = makeApp(LEAD_SERVICE)
@@ -144,6 +144,23 @@ describe('admin:generate writes screens in the vocabulary and reads the real ses
         if (!/\bsession\b/.test(src)) continue
         expect(src, f).toMatch(/import \{[^}]*\bsession\b[^}]*\} from '@frontierjs\/sierra\/resource'/)
         expect(src, f).not.toMatch(/_session|session\.js/)
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 30000)
+
+  // The pages render <ResourceForm />, the Resource's markup half. The Resource
+  // this command wrote where none existed had no markup half, so every edit
+  // page drew no field and dropped Save, and every create page drew nothing.
+  test('a Resource it writes carries the default form, as make:model --resource does', async () => {
+    const root = makeApp(LEAD_SERVICE)
+    try {
+      await run(root, 'admin:generate', [], {})
+      await run(root, 'make:model', ['Invoice'], { resource: true })
+      for (const f of ['Lead.mesa', 'Invoice.mesa']) {
+        const src = await Bun.file(join(root, 'web/src/resources', f)).text()
+        expect(src, f).toContain('<Form {resource}')
       }
     } finally {
       rmSync(root, { recursive: true, force: true })

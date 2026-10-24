@@ -1,8 +1,10 @@
 // What a GENERATED Resource file IS, for every command that writes one.
 //
-// Two commands write one — `fli make:resource` and `fli make:scaffold` — and a
-// copy in each drifts until the two emit a different FILE (Invariant 4: one
-// owner per translation).
+// Four commands write one — `fli make:resource`, `fli make:scaffold`,
+// `fli make:model --resource` and `fli admin:generate` — and a copy in each
+// drifts until they emit a different FILE (Invariant 4: one owner per
+// translation). The last two kept copies with no markup half, so every admin
+// page over a Resource they wrote drew no field and dropped its Save button.
 //
 // A Resource is the model's whole client-side surface (`FJS-D114`): the data
 // half in `<script module>`, which runs once at import and is what every other
@@ -22,8 +24,11 @@ import { pluralize }    from '@frontierjs/toolbelt/inflect'
  *
  * @param {string} model    PascalCase, singular — the model name AND the filename
  * @param {string} service  the service the resource calls, usually the plural
+ * @param {string} [exportName]  the binding, where the service name is not a
+ *                               legal identifier — `shipping-methods` is a
+ *                               filename, `shippingMethods` the export
  */
-export function resourceFile(model, service) {
+export function resourceFile(model, service, exportName = service) {
   return `<script module>
 // src/resources/${model}.mesa — the Resource layer.
 //
@@ -40,7 +45,7 @@ export function resourceFile(model, service) {
 
 import { createResource } from '@frontierjs/sierra/resource'
 
-export const ${service} = createResource('${service}', {
+export const ${exportName} = createResource('${service}', {
   // Stated rather than inferred, so an irregular plural cannot quietly resolve
   // to nothing.
   model: '${model}',
@@ -60,7 +65,7 @@ export const ${service} = createResource('${service}', {
 // declares props of its own, and one sharing the service's name shadows it
 // there: \`Action\` is \`actions\`, the button-row prop, so <Form> was handed
 // the snippet as its resource and drew no field (FJS-1959).
-const resource = ${service}
+const resource = ${exportName}
 </script>
 
 <script>

@@ -71,7 +71,7 @@ function scanModels(src) {
 }
 
 // ─── Naming ───────────────────────────────────────────────────────────────────
-const { servicePlural } = await import(resolve(global.fliRoot, 'core/resource-template.js'))
+const { servicePlural, resourceFile } = await import(resolve(global.fliRoot, 'core/resource-template.js'))
 
 function toLabel(name) {
   return name
@@ -94,43 +94,9 @@ function toLabel(name) {
 // even under `--force`: a hand-written Resource is the app's, and the admin is
 // a consumer of it.
 //
-// The template is `fli make:resource`'s. Both are the same file for the same
-// reason, so a divergence here is a bug rather than a variant.
-
-// `exportName` and `service` are two different strings on purpose and the split
-// is the whole of this signature. A service name is a FILENAME and may be
-// kebab-cased — `shipping-methods` — which is not a JavaScript identifier, so
-// using it for the export writes `export const shipping-methods = …` and the
-// file does not parse. The export is derived from the MODEL, which is
-// PascalCase by invariant 2 and therefore always a legal identifier.
-function makeResourceFile(model, service, exportName) {
-  return `<script module>
-// src/resources/${model}.mesa — the Resource layer.
-//
-// A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18):
-// the data half in <script module>, and markup below it — optional — is the
-// model's default form.
-//
-// Written by \`fli admin:generate\` because no Resource for this model existed.
-// It is yours now — edit it freely, and no later run will touch it.
-//
-// Read this next to db/schema.lite. Nothing here restates it: no field list, no
-// types, no enum values, no required list, no relations. The admin pages read
-// resource.fields, resource.relations and resource.gate at runtime, so a column
-// added later shows up on the next reload.
-
-import { createResource } from '@frontierjs/sierra/resource'
-
-// The first argument is the SERVICE name and \`model\` is the MODEL. The plural
-// is guessed by the same rules the API names its table with; where the service
-// is called something else, fix the string — nothing else changes, because the
-// model is stated rather than inferred.
-export const ${exportName} = createResource('${service}', {
-  model: '${model}',
-})
-</script>
-`
-}
+// The template is `fli make:resource`'s, imported rather than copied. A copy
+// lived here and never grew the markup half, so every Resource this command
+// wrote had no form and every admin edit page drew no field.
 
 // ─── admin/_routes.js ─────────────────────────────────────────────────────────
 //
@@ -568,7 +534,7 @@ const resources = allModels.map((m) => {
       log.dry(`Would write ${`resources/${m.name}.mesa`.padEnd(22)} ${file.replace(root + '/', '')}`)
     } else {
       mkdirSync(resourcesDir, { recursive: true })
-      writeFileSync(file, makeResourceFile(m.name, m.key, exportNameFor(m)), 'utf8')
+      writeFileSync(file, resourceFile(m.name, m.key, exportNameFor(m)), 'utf8')
       log.success(`${`resources/${m.name}.mesa`.padEnd(22)} ${file.replace(root + '/', '')}`)
       created.push(file.replace(root + '/', ''))
     }
