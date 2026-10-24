@@ -18,6 +18,12 @@ export async function run(t) {
   await t.clickAt('#combo button[aria-label=Clear]')
   await t.eventually(out('#combo'), CLEARED, 'the combobox × sends the column as null')
 
+  // A locked combobox offers no ×. The input was disabled and the button was
+  // not, so on a sealed document a press emptied an `@immutable` relation and
+  // its required rule then refused every other edit on the form.
+  t.is(await t.evaluate(`return !!document.querySelector('#locked button[aria-label=Clear]')`), false,
+    'a disabled combobox draws no × to clear it')
+
   await t.clickAt('#multi [aria-label="Remove South"]')
   await t.eventually(out('#multi'), CLEARED, 'removing a single MultiSelect\'s chip sends the column as null')
 
