@@ -54,7 +54,7 @@ export const holds = ['ports']
 
 import { Database }         from 'bun:sqlite'
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, mkdirSync, rmdirSync, cpSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, mkdirSync, rmdirSync, cpSync, readFileSync, readdirSync, symlinkSync } from 'node:fs'
 import { tmpdir }           from 'node:os'
 import { join, dirname }    from 'node:path'
 import { fileURLToPath }    from 'node:url'
@@ -122,10 +122,26 @@ const at = (root) => ({
   flags: ['--dir', join(root, 'shops'), '--registry', join(root, 'shops-registry.db')],
 })
 
+// `backup` and `restore` also carry whatever else sits beside the schema in a
+// `db/` directory (FJS-D493), and the paths above are moved out of it -- so the
+// seeded files in the real `db/` would be copied as strangers and a restore
+// would refuse, finding them in place. The CLI is pointed at a `db/` of its own
+// holding the schema and nothing else. `node_modules` is linked beside it
+// because the schema's imports resolve from the file's own path, and outside any
+// install bun resolves `@frontierjs/auth` to a different copy -- the restored
+// databases then fail `--verify` as drifted from a `session` table they match.
+const schemaDir  = join(scratch, 'db')
+const schemaFile = join(schemaDir, 'schema.lite')
+const makeSchemaDir = () => {
+  mkdirSync(schemaDir, { recursive: true })
+  symlinkSync(join(DB_DIR, '..', 'node_modules'), join(scratch, 'node_modules'))
+  for (const f of ['schema.lite', 'user.lite', 'migrations']) symlinkSync(join(DB_DIR, f), join(schemaDir, f))
+}
+
 const litestone = (root, ...args) => litestoneWith({}, root, ...args)
 const litestoneWith = (extra, root, ...args) => {
   const { env, flags } = at(root)
-  const r = spawnSync('litestone', [...args, ...flags], { cwd: DB_DIR, env: { ...env, ...extra }, encoding: 'utf8' })
+  const r = spawnSync('litestone', [...args, ...flags, '--schema', schemaFile], { cwd: DB_DIR, env: { ...env, ...extra }, encoding: 'utf8' })
   return { code: r.status, out: `${r.stdout ?? ''}${r.stderr ?? ''}`.replace(/\x1b\[[0-9;]*m/g, '') }
 }
 
@@ -135,12 +151,15 @@ const bucketKeys = async () => {
 }
 
 // Every table's rows, order-free. Litestream's own bookkeeping is excluded: it
-// is written to the source and is not part of what the app stored.
+// is written to the source and is not part of what the app stored. So is
+// `_litestone_meta`: `litestone backup` stamps `backup.takenAt` into every copy
+// (FJS-D665), and a copy that is not byte-equal to its source fails the
+// comparison on the stamp alone.
 const fingerprint = (path) => {
   const db = new Database(path, { readonly: true })
   try {
     const tables = db.query(`SELECT name FROM sqlite_master WHERE type = 'table'
-      AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_litestream%' ORDER BY name`).all()
+      AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_litestream%' AND name != '_litestone_meta' ORDER BY name`).all()
     const out = {}
     for (const { name } of tables)
       out[name] = db.query(`SELECT * FROM "${name}"`).all().map(r => JSON.stringify(r)).sort().join('\n')
@@ -190,6 +209,7 @@ try {
   }
   if (!made?.ok) throw new Error(`bucket create answered ${made?.status ?? 'nothing'}`)
 
+  makeSchemaDir()
   mkdirSync(join(live, 'shops'), { recursive: true })
   copyOf(seededShop, join(live, 'shops', 'flagship.db'))
   copyOf(join(DB_DIR, 'shops-registry.db'), join(live, 'shops-registry.db'))
@@ -210,7 +230,7 @@ try {
 
   // ─── replicate ──────────────────────────────────────────────────────────
 
-  replicator = spawn('litestone', ['replicate', '--url', REPLICA, ...at(live).flags],
+  replicator = spawn('litestone', ['replicate', '--url', REPLICA, ...at(live).flags, '--schema', schemaFile],
     { cwd: DB_DIR, env: at(live).env, stdio: ['ignore', 'pipe', 'pipe'] })
   let log = ''
   replicator.stdout.on('data', d => { log += d })

@@ -833,8 +833,15 @@ describe('an outpost endpoint takes a signature or nothing', () => {
     const req  = env.http.post(`/servers/${machine.id}`).set('x-service-method', 'heartbeat')
     for (const [k, v] of Object.entries(await signed(`/servers/${machine.id}`, body))) req.set(k, v)
 
-    const res = await req.send(body)
+    // The wire drops a @guarded key by itself and only warns, so the warning
+    // is the one sign the method answered the system client's whole row (FJS-3444).
+    const warned: string[] = []
+    const warn = console.warn
+    console.warn = (...args: unknown[]) => { warned.push(args.map(String).join(' ')) }
+    let res
+    try { res = await req.send(body) } finally { console.warn = warn }
     expect(res.status).toBe(200)
+    expect(warned.filter(w => w.includes('enrollTokenHash'))).toEqual([])
 
     const after = await (env.system as any).server.findUnique({ where: { id: machine.id } })
     expect(after.status).toBe('online')

@@ -1187,7 +1187,12 @@ export default createService({
       conduit.register({ ...known, last_seen_at: Date.now() }).catch(() => {})
     }
 
-    return updated
+    // The system client's row carries every column, so the reply would hand
+    // back the @guarded enrollTokenHash for junction to strip with a warning
+    // (`FJS-3444`). Asked of the schema so a column protected later drops too.
+    const reply = { ...updated }
+    for (const field of Object.keys(sys.$protectedFields('server') ?? {})) delete reply[field]
+    return reply
   },
 
 
