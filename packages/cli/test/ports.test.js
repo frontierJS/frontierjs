@@ -18,7 +18,7 @@ import { appPorts, devPorts, scriptsRunBy, projectIdFor, PROJECTS, port, ENV, CA
          GLOBAL, GLOBAL_RANGE, isGlobalPort, isReservedToolingPort, guiPort,
          apiContainerName, claimSession, getSessionStatus, releaseSession,
          readLock, readsPortVar, decode, worktreeOf, portFor, composedSurfaces,
-         portStatus, parseDockerPorts } from '../core/ports.js'
+         portStatus, parseDockerPorts, slotConflicts } from '../core/ports.js'
 
 // A surface is a directory at the app root (Invariant 3), so a fake tree is
 // exactly a set of directory names — no filesystem needed.
@@ -282,6 +282,28 @@ describe('claimSession — each app its own dev slot', () => {
     expect((await claim('/x/b', { name: 'b' })).slot).toBe(1)
   })
 
+  test('a slot two apps remember goes to the elder claim; the newer one is reallocated', async () => {
+    await claim('/x/a', { name: 'a' })
+    await claim('/x/b', { name: 'b' })
+    age('/x/a', DEAD, '2026-10-24T00:00:00.000Z')
+    // The lock has both on slot 0, as an earlier allocator left it.
+    age('/x/b', DEAD, '2026-10-25T00:00:00.000Z')
+    const all = readLock(lockFile); all['/x/b'].slot = 0; writeFileSync(lockFile, JSON.stringify(all))
+    expect(slotConflicts(readLock(lockFile)).map(c => [c.slot, c.apps.length])).toEqual([[0, 2]])
+    expect((await claim('/x/b', { name: 'b' })).slot).toBe(1)
+    expect((await claim('/x/a', { name: 'a' })).slot).toBe(0)
+    expect(slotConflicts(readLock(lockFile))).toEqual([])
+  })
+
+  test('a slot two apps remember stays with the one that is running', async () => {
+    await claim('/x/a', { name: 'a' })
+    await claim('/x/b', { name: 'b' })
+    age('/x/a', DEAD, '2026-10-24T00:00:00.000Z')
+    age('/x/b', process.pid, '2026-10-25T00:00:00.000Z')
+    const all = readLock(lockFile); all['/x/b'].slot = 0; writeFileSync(lockFile, JSON.stringify(all))
+    expect((await claim('/x/a', { name: 'a' })).slot).toBe(1)
+  })
+
   test('a new app skips a slot something unrecorded is listening on', async () => {
     const busy = async (rows) => rows.filter(r => r.port === 8000)
     expect((await claim('/x/a', { name: 'a', busy })).slot).toBe(1)
@@ -535,6 +557,18 @@ describe('portFor — the port a test asks for', () => {
 })
 
 describe('readsPortVar — would this surface follow a slot', () => {
+  test('an API on junction follows the slot without spelling the variable', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fli-ports-'))
+    try {
+      mkdirSync(join(root, 'api'), { recursive: true })
+      writeFileSync(join(root, 'api', 'index.ts'), "import app from './src/app.ts'\napp.start()")
+      const row = { env: 'FRONTIER_PORT_BE', surface: 'api' }
+      expect(readsPortVar(root, row)).toBe(false)
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ dependencies: { '@frontierjs/junction': 'link:@frontierjs/junction' } }))
+      expect(readsPortVar(root, row)).toBe(true)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
   let root
   beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'fli-reads-')) })
   afterEach(() => rmSync(root, { recursive: true, force: true }))

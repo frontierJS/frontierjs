@@ -7,6 +7,7 @@ examples:
   - fli ports:status
   - fli ps 8008
   - fli ports:status --clean
+  - fli ps --clean thod
   - fli ports:status --sessions
   - fli ps --include-idle
   - fli ps --docker
@@ -20,9 +21,9 @@ flags:
     description: List the idle dev slots too — by default only the running ones are shown
     defaultValue: false
   clean:
-    type: boolean
-    description: Forget the slots of apps that are not running
-    defaultValue: false
+    type: string
+    description: Forget the slots of apps that are not running; with a name, only that app's
+    defaultValue: ''
   json:
     type: boolean
     description: Output as JSON
@@ -74,7 +75,7 @@ Asked of `docker ps`, the one authority on what it published.
 before it signals it, and reads the same `pidsOnPort` this does.
 
 ```js
-const { getSessionStatus, releaseSession, busyKnownPorts, portStatus, dockerPorts } = await import(resolve(global.fliRoot, 'core/ports.js'))
+const { getSessionStatus, releaseSession, busyKnownPorts, portStatus, dockerPorts, slotConflicts, readLock } = await import(resolve(global.fliRoot, 'core/ports.js'))
 const { plural } = await import(resolve(global.fliRoot, 'core/text.js'))
 
 const target = String(arg.port ?? '').trim()
@@ -169,12 +170,29 @@ for (const s of shown) {
   echo('')
 }
 
-if (!flag['include-idle'] && only == null && idle.length && !flag.clean) {
-  echo(chalk`  {dim ${plural(idle.length, 'idle slot')} not listed —} --include-idle {dim to show,} --clean {dim to forget}\n`)
+// A slot two apps remember is how one gets refused at the other's port. Said
+// here so the lock cannot rot in silence; `fli dev` reallocates the newer claim.
+const conflicts = only == null ? slotConflicts(readLock()) : []
+for (const c of conflicts) {
+  log.warn(`${c.apps.length} apps remember ${c.env} slot ${c.slot} -- ${c.apps.map(a => a.name).join(', ')}`)
+}
+if (conflicts.length) echo(chalk`  {dim The elder claim keeps the slot; the others move on their next} fli dev\n`)
+
+// A bare `--clean` reaches a string flag as the word true.
+const clean = flag.clean === true || flag.clean === 'true' ? '*' : String(flag.clean ?? '').trim()
+if (!flag['include-idle'] && only == null && idle.length && !clean) {
+  echo(chalk`  {dim ${plural(idle.length, 'idle slot')} not listed —} --include-idle {dim to show,} --clean {dim to forget,} --clean <name> {dim for one}\n`)
 }
 
-if (flag.clean && idle.length) {
-  for (const s of idle) {
+if (clean) {
+  const named = s => clean === '*' || s.name === clean || s.name?.split('/').pop() === clean || s.root === clean || s.root.split('/').pop() === clean
+  const picked = idle.filter(named)
+  if (clean !== '*' && !picked.length) {
+    const running = alive.find(named)
+    log.error(running ? `${running.name} is running (pid ${running.pid}); stop it before forgetting its slot` : `No idle slot named ${clean}`)
+    return
+  }
+  for (const s of picked) {
     releaseSession(s.root)
     log.success(`Forgot the slot of ${s.name}`)
   }

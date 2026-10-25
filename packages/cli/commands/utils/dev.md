@@ -128,7 +128,7 @@ const root = $.paths.root
 
 const { warnIfDatabaseEmpty, detectRunner } =
   await import(resolve(global.fliRoot, 'core/db-preflight.js'))
-const { claimSession, busyPorts, composedSurfaces } =
+const { claimSession, busyPorts, composedSurfaces, whoHolds } =
   await import(resolve(global.fliRoot, 'core/ports.js'))
 const { runSurfaces } =
   await import(resolve(global.fliRoot, 'core/dev-run.js'))
@@ -170,15 +170,35 @@ if (flag.check) {
 
   if (busy.length && !flag.dry) {
     log.error(`Port${busy.length === 1 ? '' : 's'} already in use`)
-    echo.lines([
-      '',
-      ...busy.map(b => `${chalk.bold(String(b.port))}  ${b.label}${b.script ? chalk.dim(`  (bun run ${b.script})`) : ''}`),
-      '',
-      chalk.dim('Most likely a dev server from an earlier run. A stale API also holds'),
-      chalk.dim('the old database open, so `db:reset` will appear to do nothing while'),
-      chalk.dim('it is still running.') + ' fli ps ' + chalk.dim('names the process.'),
-      '',
-    ], { indent: 2 })
+    // Name the holder rather than guess. The two cases want different hands:
+    // this app's own earlier run is killed, another app's slot is left alone.
+    const lines = ['']
+    let ownRun = false, otherApp = false
+    for (const b of busy) {
+      lines.push(`${chalk.bold(String(b.port))}  ${b.label}${b.script ? chalk.dim(`  (bun run ${b.script})`) : ''}`)
+      const holders = whoHolds(b.port, root)
+      if (!holders.length) lines.push(chalk.dim('       held by a process this user cannot see'))
+      for (const h of holders) {
+        const who = h.own ? 'this app\'s own run'
+          : h.session ? `${h.session.name}${Number.isInteger(h.session.slot) ? ` on slot ${h.session.slot}` : ''}`
+          : 'a process outside any dev slot'
+        const where = h.own ? '' : h.session ? `  ${h.session.root}` : h.cwd ? `  ${h.cwd}` : ''
+        lines.push(`       ${chalk.dim('held by')} ${who} ${chalk.dim(`-- pid ${h.pid}`)}${chalk.dim(where)}`)
+        if (h.cmd) lines.push(chalk.dim(`         ${h.cmd}`))
+        if (h.own) ownRun = true
+        else if (h.session) otherApp = true
+      }
+    }
+    lines.push('')
+    if (ownRun) lines.push(
+      chalk.dim('A run of this app still holds the old database open, so `db:reset` will'),
+      chalk.dim('appear to do nothing while it lives.') + ' fli kill <port> ' + chalk.dim('stops it.'))
+    if (otherApp) lines.push(
+      chalk.dim('Another app has this slot. Stop it, or forget this app\'s slot with'),
+      chalk.dim(`\`fli ps --clean ${manifest.name ?? ''}\`.trim() and run again for a free one.`))
+    if (!ownRun && !otherApp) lines.push(chalk.dim('fli ps 8000 ') + chalk.dim('asks about a port by number.'))
+    lines.push('')
+    echo.lines(lines, { indent: 2 })
     process.exit(1)
   }
 
