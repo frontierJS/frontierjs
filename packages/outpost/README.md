@@ -59,9 +59,10 @@ machine — with a message saying so, rather than a green deploy that ran nothin
 The install (Basecamp's `installScript()`) writes `/usr/local/sbin/outpost-uninstall`
 beside the unit, so a box carries its own way back whatever happened to the
 Basecamp that enrolled it. `sudo outpost-uninstall` removes the Outpost, its
-credential and its firewall, and leaves the apps it placed running.
-`--purge` also removes those apps and every Docker volume, `/var/lib/outpost`
-with its backups, Docker, Caddy, their apt sources and the Outpost's bun.
+credential, its firewall and its Litestream unit, and leaves the apps it placed
+running, unreplicated. `--purge` also removes those apps and every Docker
+volume, `/var/lib/outpost` with its backups, Docker, Caddy, their apt sources,
+the Litestream binary and the Outpost's bun.
 It asks you to type `purge`, or takes `--yes` when there's no terminal. Both
 end by listing what they left on purpose: the sshd drop-in (removing it can
 turn password login back on), chrony, security updates, and the Server row,

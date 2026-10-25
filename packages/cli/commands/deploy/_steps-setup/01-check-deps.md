@@ -61,7 +61,7 @@ const deps = [
   // running SQLite will want a shell against it, and finding out at 3am that
   // there isn't one is the wrong time.
   { name: 'sqlite3', check: 'sqlite3 --version',   install: 'apt-get install -y sqlite3', optional: true },
-  // Pinned and checksum-verified, never apt — see LITESTREAM_PIN.
+  // Pinned and checksum-verified, never apt — litestone's LITESTREAM_PIN.
   { name: 'litestream', check: 'litestream version', install: litestreamInstall() },
 ]
 

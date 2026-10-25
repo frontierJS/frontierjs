@@ -725,6 +725,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `actualSpecs` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `health` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `dockerState` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `replication` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `labels` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 
 **On create**: required — `name`, `slug` · not accepted — `id`
@@ -863,6 +864,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `environment` — belongsTo `Environment` via `environmentId` · on delete Cascade
 - relation `blueprint` — belongsTo `Blueprint` via `blueprintId` · on delete SetNull · optional
 - relation `backupDestination` — belongsTo `BackupDestination` via `backupDestinationId` · on delete SetNull · optional
+- relation `replicaDestination` — belongsTo `BackupDestination` via `replicaDestinationId` · on delete SetNull · optional
 - relation `appBackups` — hasMany `AppBackup`
 - relation `deployments` — hasMany `Deployment`
 - relation `jobs` — hasMany `Job`
@@ -896,6 +898,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `blueprintId` | `string`? | — | — | `x-litestone-kind` | — |
 | `backupCron` | `string`? | — | — | `minLength: 1` `maxLength: 100` `x-transforms` | — |
 | `backupDestinationId` | `string`? | — | — | — | — |
+| `replicaDestinationId` | `string`? | — | — | — | — |
 
 **On create**: required — `environmentId`, `name`, `slug` · not accepted — `id`
 
@@ -1321,6 +1324,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `backups` — hasMany `Backup`
 - relation `appBackups` — hasMany `AppBackup`
 - relation `apps` — hasMany `App`
+- relation `replicaApp` — hasMany `App` · optional
+- relation `replicaHub` — hasMany `HubConfig` · optional
 - relation `hubs` — hasMany `HubConfig`
 
 | Field | Type | Required | Label | Rules | Messages |
@@ -1678,6 +1683,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 - gate `read:7 create:7 update:7 delete:7` · version field `version` · closed (`additionalProperties: false`)
 - relation `backupDestination` — belongsTo `BackupDestination` via `backupDestinationId` · on delete SetNull · optional
+- relation `replicaDestination` — belongsTo `BackupDestination` via `replicaDestinationId` · on delete SetNull · optional
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -1693,6 +1699,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `backupEnabled` | `boolean` = `false` | — | — | — | — |
 | `backupCron` | `string` = `"0 2 * * *"` | — | — | `minLength: 1` `maxLength: 100` `x-transforms` | — |
 | `backupDestinationId` | `string`? | — | — | — | — |
+| `replicaDestinationId` | `string`? | — | — | — | — |
 | `backupKeepLocalCount` | `integer` = `7` | — | — | `minimum: 1` `maximum: 1000` | — |
 | `backupKeepLocalDays` | `integer`? | — | — | `minimum: 1` `maximum: 3650` | — |
 | `backupKeepRemoteCount` | `integer` = `7` | — | — | `minimum: 1` `maximum: 1000` | — |

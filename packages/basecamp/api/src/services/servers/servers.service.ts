@@ -68,6 +68,7 @@ export interface HeartbeatData {
   specs?:        Record<string, unknown>
   docker?:       Record<string, unknown>
   outpost_url?:    string
+  replication?:  { apps?: { app_id: string; status: string | null; last_sync_at: string | null; databases: number }[]; error?: string }
 }
 
 // What a provider's own word for a state means here, as a NAMED MOVE rather
@@ -1085,6 +1086,9 @@ export default createService({
         // COALESCE(?, col) for exactly this.
         ...(data.specs  ? { actualSpecs: data.specs  } : {}),
         ...(data.docker ? { dockerState: data.docker } : {}),
+        // An Outpost too old to read Litestream leaves the last reading, whose
+        // `checked_at` then ages into unknown on the posture screen.
+        ...(data.replication ? { replication: { ...data.replication, checked_at: now } } : {}),
       },
     })
 

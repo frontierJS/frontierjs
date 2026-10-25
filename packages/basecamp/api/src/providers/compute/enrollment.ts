@@ -29,6 +29,7 @@
 
 import { randomBytes, createHash, timingSafeEqual, X509Certificate } from 'node:crypto'
 import { OPENSSL_CERT_ARGS } from '@frontierjs/outpost/cert'
+import { litestreamInstall } from '@frontierjs/litestone/replicate'
 
 /** What the install runs on a machine, held here so two machines provisioned a
  *  week apart run the same thing. The Outpost is pinned to the version this
@@ -394,6 +395,66 @@ systemctl disable --now caddy.service
 systemctl is-enabled --quiet caddy-api.service || rm -f /var/lib/caddy/.config/caddy/autosave.json
 systemctl enable --now caddy-api.service
 
+# Litestream, which replicates every app's SQLite to its bucket: litestone's
+# pinned, checksum-verified build, the one fli deploy:setup installs. Its own
+# unit, outside the Outpost's sandbox, because it writes into every app's
+# volume. The Outpost rewrites the config from Basecamp's list and restarts the
+# unit; until then it names no database, which 0.5 logs and runs on through.
+# It holds every app's bucket key and reads every app's database, so it is
+# sandboxed like the Outpost: it writes the volumes and /var/lib/litestream,
+# where each database's meta-dir goes so a /backup tar does not carry it. Its
+# control socket is under /run/litestream, which the Outpost reads each
+# heartbeat for every app's last sync.
+${litestreamInstall()}
+# A second install keeps the Outpost's entries: the file holds every app's key.
+if [ ! -f /etc/basecamp/litestream.yml ]; then
+  cat > /etc/basecamp/litestream.yml <<'LSEOF'
+socket:
+  enabled: true
+  path: "/run/litestream/litestream.sock"
+dbs: []
+LSEOF
+fi
+chmod 0600 /etc/basecamp/litestream.yml
+cat > /etc/systemd/system/basecamp-litestream.service <<UNITEOF
+[Unit]
+Description=Basecamp Litestream replication
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/litestream replicate -config /etc/basecamp/litestream.yml
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=-/var/lib/docker/volumes
+StateDirectory=litestream
+RuntimeDirectory=litestream
+RuntimeDirectoryMode=0700
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+PrivateDevices=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
+UNITEOF
+systemctl daemon-reload
+systemctl enable --now basecamp-litestream.service
+
 # Bun, which the Outpost is written for, at the version Basecamp holds.
 curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}"
 export BUN_INSTALL="$HOME/.bun"
@@ -512,11 +573,12 @@ systemctl enable --now outpost.service
  * `/usr/local/sbin/outpost-uninstall`, which is the only way it is run.
  *
  * Bare, it takes off the Outpost and what exists only for it: the unit, the
- * machine's credential and certificate, and the firewall, whose forward chain
- * drops a published port nothing refills the exposed set for once the Outpost
- * is gone. The apps it placed keep running. `--purge` takes the rest: those
- * apps and their volumes, `/var/lib/outpost` with its backups, Docker, Caddy
- * with every route and certificate, the Docker and Caddy apt sources and the
+ * machine's credential and certificate, the Litestream unit whose config the
+ * Outpost wrote, and the firewall, whose forward chain drops a published port
+ * nothing refills the exposed set for once the Outpost is gone. The apps it
+ * placed keep running. `--purge` takes the rest: those apps and their volumes,
+ * `/var/lib/outpost` with its backups, Docker, Caddy with every route and
+ * certificate, the Docker and Caddy apt sources, the Litestream binary and the
  * Outpost's bun.
  *
  * What would be worse undone stays, and the script ends by naming it: the sshd
@@ -565,12 +627,14 @@ fi
 
 # The agent first: a running Outpost refills the exposed set and rewrites routes.
 systemctl disable --now outpost.service 2>/dev/null || true
+systemctl disable --now basecamp-litestream.service 2>/dev/null || true
 systemctl disable --now basecamp-firewall.service 2>/dev/null || true
 nft delete table inet basecamp 2>/dev/null || true
-rm -f $UNIT /etc/systemd/system/basecamp-firewall.service
+rm -f $UNIT /etc/systemd/system/basecamp-litestream.service /etc/systemd/system/basecamp-firewall.service
+rm -rf /etc/systemd/system/basecamp-litestream.service.d
 rm -rf /etc/basecamp
 systemctl daemon-reload
-echo "Outpost removed: its unit, its credential and its firewall."
+echo "Outpost removed: its unit, its credential, its firewall and its Litestream, so no app here replicates."
 
 # The 80/20 line: what is cheap to keep and worse to undo is named, not undone.
 left() {
@@ -602,10 +666,11 @@ rm -rf /var/lib/docker /var/lib/containerd /etc/docker /var/lib/caddy /etc/caddy
 rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.asc
 rm -f /etc/apt/sources.list.d/caddy-stable.list /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 rm -f /etc/apt/apt.conf.d/52basecamp-unattended-upgrades
+rm -rf /usr/local/bin/litestream /var/lib/litestream
 
 [ -n "$BUN_DIR" ] && [ "$BUN_DIR" != /usr/local ] && rm -rf "$BUN_DIR"
 rm -f /usr/local/sbin/outpost-uninstall
-echo "Purged: apps, volumes, Docker, Caddy, /var/lib/outpost and the Outpost's bun."
+echo "Purged: apps, volumes, Docker, Caddy, Litestream, /var/lib/outpost and the Outpost's bun."
 left
 `
 }

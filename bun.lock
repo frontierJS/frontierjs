@@ -110,6 +110,7 @@
       },
       "dependencies": {
         "@frontierjs/css": "workspace:*",
+        "@frontierjs/litestone": "workspace:*",
         "@frontierjs/mesa": "workspace:*",
         "@frontierjs/toolbelt": "workspace:*",
         "@frontierjs/ui": "workspace:*",
@@ -415,6 +416,7 @@
         "outpost": "./src/index.js",
       },
       "dependencies": {
+        "@frontierjs/litestone": "workspace:*",
         "@frontierjs/toolbelt": "workspace:*",
       },
     },

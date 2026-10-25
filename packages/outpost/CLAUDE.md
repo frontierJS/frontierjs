@@ -14,8 +14,9 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 | `src/static.js` | **the other kind of release** — an app whose source is the FILES. Writes them under their own digest, swaps one symlink, and computes the digest itself. `activate` links the app's ID as a host label as well as its slug: a routed hostname reaches the ID, because a slug is a label any app on the machine may take over |
 | `src/serve.js` | the origin those files answer on. A SECOND listener, its own port, nothing signed — see below |
 | `src/vitals.js` | what the machine feels like — cpu, memory, disk, load, read from `/proc` and `statfs`. It REMEMBERS: cpu is a delta |
-| `src/report.js` | the outbound half: heartbeat, volume report, disk report — one signed POST, three callers |
+| `src/report.js` | the outbound half: heartbeat, volume report, disk report — one signed POST, three callers. The heartbeat carries `replication`, Litestream's `/list` read off its control socket |
 | `src/ingress.js` | **the machine's front door** — Caddy's admin API: a route per app (`@id` `fjs-<app>`) PATCHed on deploy, on `/route` (`static: true` for an inline app) and on `/static/activate` (to the static origin, Host set to `<app_id>.localhost`), DELETEd on stop and `/static/retire`, the ingress server made on the first one. `routes()` reads it back (`POST /ingress`) for basecamp's Routes card, every writer's routes and every other http server. A `redirects: [{host, to}]` list is a SECOND route, `fjs-<app>-redirects`, a Caddy-answered 308 that needs no container; a target is an http(s) URL with no braces, because Caddy expands `{…}` in a header, and an origin-only target keeps the request's path. `paths: [{host, prefix}]` is how two apps share a hostname (`FJS-D1040`): one route per prefix, `fjs-<app>-path-<n>`, kept longest prefix first AHEAD of every whole-host route by a PATCH of the routes array after each write — Caddy answers the first match, so an appended path route would never be reached. Only the same host and prefix is refused; the prefix is kept, never stripped. A whole-host route also gets its access log (`FJS-1928`): the server's `logger_names` maps each host to the route's `@id`, and Caddy's `logging` writes `/var/log/caddy/<id>.access.log`, excluded from the default log — `edge.js`'s shape under `fjs-`. A path route's hosts are not mapped (one host, one logger), so a shared hostname logs under the app that owns the whole host |
+| `src/replicate.js` | **Litestream's config** — `/replicate`'s list becomes `/etc/basecamp/litestream.yml` and a restart; `status()` reads `/list` off the control socket. A `host` entry is Basecamp's own database, at `OUTPOST_HOST_DB_PATH`, and every other machine skips it with a reason |
 | `src/cert.js` | the command port's self-signed certificate — made once, kept, and the argv the install script builds its own openssl line from |
 | `src/index.js` | the process: serve, start the timers, stop them on a signal |
 
@@ -36,6 +37,9 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   needs a `ReadWritePaths` entry there, or it fails on a machine and in no test.
   Killing the systemd-run client does not stop its unit, so the timeout is
   `RuntimeMaxSec` on the unit. Never run on a machine (`IDEAS/zero-to-live.md` 0.3).
+  Litestream is the install's `basecamp-litestream.service`, outside the sandbox
+  because it writes into every app's volume, reading `/etc/basecamp/litestream.yml`,
+  which this process may write.
 - **The route bodies are basecamp's wire contract and they are snake_case.**
   `app_id`, `timeout_s`, `keep_images`, `server_id`. Inside is camelCase. A route
   that passes a body straight through addresses a container called

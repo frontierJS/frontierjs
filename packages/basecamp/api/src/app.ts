@@ -56,6 +56,7 @@ import { basecampGateLevel, roleForLevel } from './core/gate.ts'
 import { basecampNodes }                  from './plugins/automations.ts'
 import { restoreSchedules }          from './services/jobs/job-schedule.ts'
 import { pushAppsOn }                from './jobs/domain-dns.job.ts'
+import { syncReplicasOn }            from './jobs/replicate-sync.job.ts'
 import { workspaceChannelName, workspaceIdFromChannel, notificationChannelName } from './core/channels.ts'
 
 import type { App }         from '@frontierjs/junction'
@@ -999,6 +1000,9 @@ export async function buildBasecampApp(
         if (e.event !== 'transition' || e.model !== 'Server') return
         if ((e.from === 'online') === (e.to === 'online')) return
         const row = e.record as { id: string; updatedAt?: string }
+        // A machine back online may be a re-enrolled one, whose Litestream
+        // config the install wrote as an empty list.
+        if (e.to === 'online') void syncReplicasOn(app, [row.id])
         return pushAppsOn(app, row.id, String(e.to), String(row.updatedAt ?? Date.now()))
           .catch(err => logger.warn('dns: fleet move not pushed', { serverId: row.id, error: (err as Error).message }))
       })

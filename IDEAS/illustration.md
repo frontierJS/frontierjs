@@ -209,6 +209,35 @@ the brief missed a part. This is the measurement; word count is the result.
 
 ---
 
+## 6 · The five, measured (1.1)
+
+`ARCHITECT.md` is 3,342 words, and § 2 Vocabulary is 1,940 of them, so section
+length alone names one section. This departs from the letter of `FJS-D1501`
+("measured by section length") to keep its substance — the five mechanisms the
+file spends most words on. The count is by **mechanism**: the words of every
+§ 1–§ 4 item that describes it, summed (awk over the file, fences skipped).
+Larkin & Simon's test (§ 1) drops what is a list or a definition before counting —
+the § 4 Domain Map table (313), the § 2 vocabulary table, the Queue's verb tiers,
+Policy's two meanings.
+
+| # | Mechanism | Words | Items counted |
+| - | --------- | ----- | ------------- |
+| 1 | Three realms grown from one schema | ~425 | § 1, § 3.1, Schema/Seed, Projection |
+| 2 | The Warden grading a Call | ~356 | Warden, Principal/Actor, § 3.6, Policy, Gate, gate ladder |
+| 3 | A Call down the pipeline and its Envelope back | ~350 | Call/Route, Method, § 3.3, Hook tiers, § 3.2, § 3.4 |
+| 4 | A Run, its pivot, and a Release as the deploy instance | ~313 | Flow/Run, Release/Environment, Release/Pivot |
+| 5 | A write announced: origin → event → channel → binding | ~300 | Signal/Event, Component/Binding, § 3.7, § 3.8, Channel |
+
+Against Q4's guess: **1 and 3 confirmed.** The `$`-directive crossing the bridge
+folds into 3 as its down leg, since `ARCHITECT.md` states directives only inside
+the Call bullet. The gate ladder widens to 2: a 0–9 scale on its own is a list,
+and the mechanism is where the Call is graded. **The surfaces beside `db/` are
+replaced**: `ARCHITECT.md` never uses *surface* in Invariant 3's sense, which
+lives in `VOCABULARY.md` (Surface, blessed), `CLAUDE.md` and `README.md` §
+Project Structure. **4 and 5 are new.**
+
+---
+
 ## Open questions
 
 - ~~**Q1 — Where the brief lives.**~~ **Answered 2026-10-24 (`FJS-D1498`): A — a skill `illustrate` in `.claude/skills/`, owning § 5 and pointing at `brand/IMAGERY.md`, `artifact-diagramming` and `dataviz` by kind.**
@@ -256,8 +285,9 @@ the brief missed a part. This is the measurement; word count is the result.
 
 ### Phase 1 — Five figures
 
-- [ ] 1.1 Measure `ARCHITECT.md` section lengths; confirm or replace the
-      five of Q4.
+- [x] 1.1 Measure `ARCHITECT.md` section lengths; confirm or replace the
+      five of Q4. Result § 6: two confirmed, two widened or folded, surfaces
+      replaced by a Run's pivot and a write announced.
 - [ ] 1.2 Brief each of the five; a brief that cannot fill a line in § 5 is
       filed as a finding on the mechanism (§ 4, Hohpe's test).
 - [ ] 1.3 Render each by its kind; parse every SVG.

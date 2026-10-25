@@ -165,12 +165,31 @@ const enrollOutpost = (machine, { appId, deployConf, path, host, log }) => {
     `OUTPOST_HOST_ENV_PATH=${files.envFile}`,
     `OUTPOST_HOST_KEY_PATH=${files.secretsDir}/ENCRYPTION_KEY`,
   ]
-  // Prints `unchanged`, `written` or `no-env`; the lines are always written
-  // in this order, so the grep is compared as one string.
+  // basecamp-litestream.service writes only the app volumes, so the hub's own
+  // replica (the Outpost's `host` entry) needs this directory too; ProtectHome
+  // hides a /home or /root one entirely and read-only is what a ReadWritePaths
+  // under it can lift. Written before the `unchanged` exit: a box enrolled
+  // after its first deploy has the lines and not the drop-in.
+  const dropIn = ['[Service]', `ReadWritePaths=${files.dbDir}`,
+    ...(/^\/(home|root)(\/|$)/.test(files.dbDir) ? ['ProtectHome=read-only'] : [])]
+  // Prints `unchanged`, `written` or `no-env` last; the lines are always
+  // written in this order, so the grep is compared as one string.
   const script = [
     SUDO,
     'F=/etc/basecamp/outpost.env',
     'sudo test -f "$F" || { echo no-env; exit 0; }',
+    'D=/etc/systemd/system/basecamp-litestream.service.d',
+    'if sudo test -f /etc/systemd/system/basecamp-litestream.service; then',
+    `  WANTD=$(printf '%s\\n' ${dropIn.map(sq).join(' ')})`,
+    '  HAVED=$(sudo cat "$D/host.conf" 2>/dev/null || true)',
+    '  if [ "$WANTD" != "$HAVED" ]; then',
+    '    sudo mkdir -p "$D"',
+    `    printf '%s\\n' ${dropIn.map(sq).join(' ')} | sudo tee "$D/host.conf" >/dev/null`,
+    '    sudo systemctl daemon-reload',
+    '    sudo systemctl try-restart basecamp-litestream.service',
+    '    echo litestream-written',
+    '  fi',
+    'fi',
     `WANT=$(printf '%s\\n' ${lines.map(sq).join(' ')})`,
     `HAVE=$(sudo grep -E '^OUTPOST_HOST_(DB|ENV|KEY)_PATH=' "$F" || true)`,
     '[ "$WANT" = "$HAVE" ] && { echo unchanged; exit 0; }',
@@ -180,7 +199,9 @@ const enrollOutpost = (machine, { appId, deployConf, path, host, log }) => {
     'echo written',
   ].join('\n')
   try {
-    const said = String(machine.capture(script) ?? '').trim().split('\n').pop()
+    const out  = String(machine.capture(script) ?? '').trim().split('\n')
+    const said = out.at(-1)
+    if (out.includes('litestream-written')) log.info(`Litestream: may now replicate ${files.dbDir}, and restarted`)
     if (said === 'written')     log.info('Outpost: told where the database and env file are, and restarted')
     else if (said === 'no-env') log.warn('Outpost: no /etc/basecamp/outpost.env on this box — /hub/security/ cannot grade its database or env file')
   } catch (err) {
@@ -321,15 +342,14 @@ const resolveSide = (deployConf, target, side) => {
 // the replica stayed empty. Demonstrated, not theorised: v0.3.4 does exactly
 // this today.
 //
-// LITESTREAM_MIN is a hand copy of litestone's own floor in
-// `src/tools/replicate.js` — change one, change both. This side cannot import
-// it: litestream reaches the server as a binary and litestone reaches it as a
-// dependency of the app, neither of which the CLI can resolve from here.
+// The floor, the pinned build and its install are litestone's, which this
+// package depends on for them: Basecamp's fleet install puts the same build on
+// every machine it enrolls.
 //
 // `run` takes a shell script and returns its stdout as a string — pass
 // `machine.capture`, so this stays a question about litestream rather than about
 // how a command reaches the box.
-const LITESTREAM_MIN = { major: 0, minor: 5 }
+const { LITESTREAM_MIN, litestreamInstall } = await import('@frontierjs/litestone/replicate')
 
 const litestreamStatus = (run) => {
   const pid = (run(`pgrep -x litestream 2>/dev/null || echo ''`) ?? '').trim()
@@ -352,37 +372,6 @@ const litestreamStatus = (run) => {
 }
 
 const LITESTREAM_MIN_LABEL = `v${LITESTREAM_MIN.major}.${LITESTREAM_MIN.minor}`
-
-// The build `deploy:setup` installs. A distro package or an unpinned `latest`
-// is whatever the day hands out, and 0.3.x is still what apt serves — the build
-// that replicates nothing. FJS controls the version, never the artifact
-// (`FJS-D31`): the bytes are upstream's release, refused unless they match the
-// digests upstream's own checksums.txt published for it. Raising the pin means
-// copying both lines from that file, and the pin must clear LITESTREAM_MIN.
-const LITESTREAM_PIN = {
-  version: '0.5.17',
-  sha256: {
-    x86_64: 'cfb371176d164437ae869f8351cfde49bd1804ae71c61923f75c9cba9c9c006d',
-    arm64:  'f8ca4a050095c1efbda2c4365172e61bf9d955ea0d9ac42f448b52e51819baa5',
-  },
-}
-
-// A shell script with no single quote in it — 02-install-deps runs it inside
-// `sudo sh -c '…'`. An architecture without a pinned digest refuses rather than
-// fetching something unchecked.
-const litestreamInstall = (dir = '/usr/local/bin') => {
-  const { version: v, sha256 } = LITESTREAM_PIN
-  return [
-    'set -e',
-    `case "$(uname -m)" in x86_64) a=x86_64; s=${sha256.x86_64};; aarch64|arm64) a=arm64; s=${sha256.arm64};; *) echo "litestream: no pinned build for $(uname -m)" >&2; exit 1;; esac`,
-    't=$(mktemp -d)',
-    `curl -fsSL -o "$t/l.tgz" "https://github.com/benbjohnson/litestream/releases/download/v${v}/litestream-${v}-linux-$a.tar.gz"`,
-    'echo "$s  $t/l.tgz" | sha256sum -c - >/dev/null || { echo "litestream: checksum mismatch, refusing" >&2; rm -rf "$t"; exit 1; }',
-    'tar -xzf "$t/l.tgz" -C "$t" litestream',
-    `install -m 0755 "$t/litestream" "${dir}/litestream"`,
-    'rm -rf "$t"',
-  ].join('; ')
-}
 
 // ─── aptIdle ──────────────────────────────────────────────────────────────────
 // A fresh droplet answers ssh while cloud-init and then unattended-upgrades are

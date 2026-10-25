@@ -52,6 +52,7 @@ import type { Executor }    from '../providers/executor.ts'
 import { notifyPeople, workspaceMembers } from '../core/notify.ts'
 import { runsAsCaller }         from './context.ts'
 import domainDns                from './domain-dns.job.ts'
+import { syncReplicasOn }       from './replicate-sync.job.ts'
 import { isInline, isGit, inlineFilesFor } from '../core/app-source.ts'
 import { siteBranch } from '../core/site-checkout.ts'
 import { releaseSite } from '../core/site-publish.ts'
@@ -246,6 +247,9 @@ function runner(app: App) {
       // marked is a machine DNS must not send anybody to.
       await markRunning(app.db, deploy.appId, executor.serverId)
       await toZones(deploy.appId, deploymentId)
+      // A first release is what makes the volume a replica list skips until
+      // it exists, so the machine is sent its list again.
+      if (service?.replicaDestinationId) await syncReplicasOn(app, [executor.serverId])
       log.info('deployment succeeded', { id: deploymentId, duration_ms: Date.now() - startedAt })
       await tellThem('DeploySuccess', deploy, service)
 

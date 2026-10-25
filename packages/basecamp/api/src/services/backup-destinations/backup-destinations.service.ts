@@ -34,6 +34,7 @@ import { registerDestination, unregisterDestination, keyUnder, sendFor } from '.
 import { splitCredential, putObject, deleteObject } from '../../providers/storage/s3.ts'
 import type { S3Failure } from '../../providers/storage/s3.ts'
 import { keyScope } from '../api-keys/scopes.ts'
+import { syncReplicasHeldBy } from '../../jobs/replicate-sync.job.ts'
 import type { App } from '@frontierjs/junction'
 
 type Row = Record<string, unknown> & { id: string; endpoint: string; region: string; bucket: string; prefix: string; secretId?: string | null; version: number }
@@ -174,6 +175,9 @@ export default createService({
     // Re-registered on every patch: the address or the region may have moved,
     // and the registry is an upsert.
     await registerDestination($.app as App, updated)
+    // The app or hub replicating with this key holds it on a machine, so a
+    // moved address or a rotated key is a new list there.
+    await syncReplicasHeldBy($.app as App, row.id as string)
     return withBackupCount(updated)
   },
 
@@ -193,6 +197,7 @@ export default createService({
     // The Secret goes with it: a key whose only reader is gone is a live
     // credential nothing is watching. Soft-delete, like the row.
     if (row.secretId) await db().secret.remove({ where: { id: row.secretId as string } })
+    await syncReplicasHeldBy($.app as App, row.id as string)
     return removed
   },
 
@@ -201,6 +206,7 @@ export default createService({
     const row = await restoreScoped('backupDestination', 'Backup destination') as Row
     if (row.secretId) await db().secret.restore({ where: { id: row.secretId as string } })
     await registerDestination($.app as App, row)
+    await syncReplicasHeldBy($.app as App, row.id as string)
     return withBackupCount(row)
   },
 

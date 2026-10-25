@@ -22,12 +22,13 @@
 // `data` — so a bad `baseUrl` still lands under the right box in a form. One
 // validator, reached by a different door.
 
-import { createService, BadRequest, NotFound, $ } from '@frontierjs/junction'
+import { createService, BadRequest, Conflict, NotFound, $ } from '@frontierjs/junction'
 import { requireSystemAdmin }         from '../../core/hooks.ts'
-import { db, narrowPatch }            from '../../core/resource.ts'
+import { db, narrowPatch, changesNothing } from '../../core/resource.ts'
 import { encryptionKeyFingerprint }   from '../../core/db.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 import { cronProblem, syncBackupSchedule } from '../jobs/job-schedule.ts'
+import { replicaHolder, syncHostReplica } from '../../jobs/replicate-sync.job.ts'
 
 /** The primary key, which is a constant. `HubConfig.id` defaults to it, so this
  *  is the same string the schema writes and not a second opinion about it. */
@@ -36,6 +37,17 @@ const HUB = 'hub'
 /** The clock follows the row it was saved as (`job-schedule.ts`). */
 function synced<T extends { backupEnabled: boolean; backupCron: string }>(row: T): T {
   syncBackupSchedule($.app, row)
+  return row
+}
+
+/** Write the destination pointers at system, then put the clock and the
+ *  replica list in line with the row. A moved replica pointer is a new list
+ *  on Basecamp's box. */
+async function pointed(pointers: Record<string, unknown>, row: any): Promise<any> {
+  if (!changesNothing(pointers))
+    row = await db().asSystem().hubConfig.update({ where: { id: HUB }, data: pointers })
+  synced(row)
+  if ('replicaDestinationId' in pointers) await syncHostReplica($.app)
   return row
 }
 
@@ -77,12 +89,20 @@ export default createService({
     // the precondition and not a column to write.
     const { version, ...data } = narrowPatch($.data as Record<string, unknown>)
 
-    // The schedule's destination is a workspace's row pointed at from the hub
-    // tier (`FJS-D1491`), so the lookup is at system; the FK would refuse an
+    // Both destinations are a workspace's row pointed at from the hub tier
+    // (`FJS-D1491`), so the lookup is at system; the FK would refuse an
     // unknown id too, but as a constraint sentence and not a field.
-    if (data.backupDestinationId !== undefined && data.backupDestinationId !== null) {
-      const found = await db().asSystem().backupDestination.findFirst({ where: { id: data.backupDestinationId } })
-      if (!found) throw new BadRequest(`No backup destination '${data.backupDestinationId}'`)
+    for (const key of ['backupDestinationId', 'replicaDestinationId']) {
+      const id = data[key]
+      if (id === undefined || id === null) continue
+      const found = await db().asSystem().backupDestination.findFirst({ where: { id } })
+      if (!found) throw new BadRequest(`No backup destination '${id}'`)
+    }
+    // One destination is one replica's (`FJS-D1505`).
+    if (typeof data.replicaDestinationId === 'string') {
+      const holder = await replicaHolder($.app, data.replicaDestinationId)
+      if (holder && 'app' in holder)
+        throw new Conflict(`That destination replicates the app '${holder.app.slug}'; give Basecamp a destination of its own`)
     }
 
     if (typeof data.backupCron === 'string') {
@@ -90,8 +110,16 @@ export default createService({
       if (problem) throw new BadRequest(`backupCron: ${problem}`)
     }
 
+    // The pointers name a tenant's row from a row of no tenant's, which
+    // Litestone's hidden-parent check refuses unless written at system — and
+    // a whole-row system write would also lift `@system` and let this method
+    // forge the key escrow. So they are written alone, after the rest.
+    const pointers: Record<string, unknown> = {}
+    for (const key of ['backupDestinationId', 'replicaDestinationId'])
+      if (key in data) { pointers[key] = data[key]; delete data[key] }
+
     const existing = await db().hubConfig.findFirst({ where: { id: HUB } })
-    if (!existing) return synced(await db().hubConfig.create({ data: { ...data, id: HUB } }))
+    if (!existing) return pointed(pointers, await db().hubConfig.create({ data: { ...data, id: HUB } }))
 
     // `@version` on this model means a second administrator saving over a form
     // the first one had open is a 409 rather than a silent overwrite — so an
@@ -103,7 +131,10 @@ export default createService({
       'with `current`, and it is what makes a second administrator saving over your ' +
       'form a conflict rather than a silent overwrite.')
 
-    return synced(await db().hubConfig.update({ where: { id: HUB }, data: { ...data, version } }))
+    // A save of the pointers alone still carries the revision it read, so a
+    // stale form is a 409 here too.
+    if (changesNothing(data)) return pointed({ ...pointers, version }, existing)
+    return pointed(pointers, await db().hubConfig.update({ where: { id: HUB }, data: { ...data, version } }))
   },
 
   /**

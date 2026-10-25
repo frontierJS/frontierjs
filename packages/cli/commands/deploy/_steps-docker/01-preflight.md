@@ -106,5 +106,26 @@ if (!ls.running) {
 
 $.config.litestreamRunning = ls.running === true && ls.supported !== false
 
+// Basecamp's own box replicates this database through its Outpost once the
+// hub names a replica destination (IDEAS/backups.md 2.4). A second Litestream
+// on the same WAL — the operator's `litestone replicate` — fights it for the
+// checkpoint, and each replica then misses what the other one took. A warning,
+// for the same reason as the version check above.
+if (ls.running) {
+  const { dbDir } = apiFiles(deployConf, serverPath)
+  let both = ''
+  try {
+    both = String(apiMachine.capture([
+      `n=$(pgrep -x litestream | wc -l)`,
+      `[ "$n" -ge 2 ] && sudo -n grep -qF -- '${dbDir.replace(/'/g, `'\\''`)}' /etc/basecamp/litestream.yml 2>/dev/null && echo both || true`,
+    ].join('\n')) ?? '').trim()
+  } catch {}
+  if (both === 'both') {
+    log.warn(`Litestream: TWO processes replicate ${dbDir} — the Outpost's and another`)
+    log.warn('  Basecamp replicates its own database once /hub/settings/ names a continuous replica;')
+    log.warn('  stop the operator-run one (litestone replicate) or clear that setting.')
+  }
+}
+
 log.success(`Preflight passed → ${appId} (${target})`)
 ```

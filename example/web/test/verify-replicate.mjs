@@ -67,7 +67,7 @@ const HERE   = dirname(fileURLToPath(import.meta.url))
 const DB_DIR = join(HERE, '..', '..', 'db')
 
 const S3_PORT   = await portFor(import.meta.url, 'be', { env: 'test', service: 6 })
-const S3_IMAGE  = 'chrislusf/seaweedfs:4.47'
+const S3_IMAGE  = 'chrislusf/seaweedfs:4.48'
 const CONTAINER = `fjs-verify-replicate-s3-${S3_PORT}`   // a checkout's own: its port is its branch's
 const BUCKET    = 'fjs-drive'
 const S3        = `http://127.0.0.1:${S3_PORT}`

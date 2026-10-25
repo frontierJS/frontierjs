@@ -16,14 +16,16 @@ import { createOutpostServer }   from './server.js'
 import { createReporter }        from './report.js'
 import { createDocker, createInspector } from './docker.js'
 import { createStaticServer }         from './serve.js'
+import { createReplicator }           from './replicate.js'
 
 const config    = readConfig()
 
 function serveMachine(config) {
   const docker    = createDocker({ workDir: config.workDir, restoreDir: config.restoreDir, backupDir: config.backupDir, uidFile: config.uidFile })
   const inspector = createInspector({ hostFiles: config.hostFiles })
-  const outpost   = createOutpostServer(config, { docker, inspector })
-  const reporter  = createReporter(config, { inspector })
+  const replicator = createReplicator({ configPath: config.litestreamConfig, metaDir: config.litestreamMetaDir, socketPath: config.litestreamSocket, hostDb: config.hostFiles?.db ?? null })
+  const outpost   = createOutpostServer(config, { docker, inspector, replicator })
+  const reporter  = createReporter(config, { inspector, replicator })
 
   const server = Bun.serve({
     port:  config.port,

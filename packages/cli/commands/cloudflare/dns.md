@@ -72,8 +72,10 @@ writes into the longest zone the login reaches that the name ends with, whatever
 the content and TTL as they are.
 
 ```js
-const TYPE_PAD = 8
-const NAME_PAD = 35
+const TYPE_PAD = 6
+const NAME_MAX = 40
+const TYPE_TONE = { A: chalk.cyan, AAAA: chalk.cyan, CNAME: chalk.magenta, MX: chalk.yellow, TXT: chalk.green, NS: chalk.blue }
+const PROXIED = chalk.hex('#f38020')
 const { profileFor, findZone, records, createRecord, updateRecord, deleteRecord } =
   await import(new URL('file://' + global.fliRoot + '/core/cloudflare.js'))
 const profile = profileFor(flag.profile)
@@ -140,14 +142,25 @@ const rows = (await records(profile, zone.id)).filter(r => !type || r.type === t
 
 if (flag.json) { echo(JSON.stringify(rows, null, 2)); return }
 
+// Names are written relative to the zone, the way `--name` takes them; the full
+// name pushed the content column past the terminal and every row wrapped.
+const short = (name) => name === zone.name ? '@'
+  : name.endsWith('.' + zone.name) ? name.slice(0, -zone.name.length - 1) : name
+const namePad = Math.min(NAME_MAX, Math.max(4, ...rows.map(r => short(r.name).length)))
+const fit = (text, width) => text.length > width ? text.slice(0, width - 1) + '…' : text
+// A DKIM TXT is hundreds of characters; past the edge it wraps into the next row.
+const contentWidth = process.stdout.isTTY
+  ? Math.max(20, process.stdout.columns - 2 - TYPE_PAD - 1 - namePad - 1 - 2)
+  : Infinity
+
 echo('')
-echo(`  Zone: ${zone.name}  ·  ${rows.length} record(s)${type ? `  (${type})` : ''}\n`)
-echo(`  ${'TYPE'.padEnd(TYPE_PAD)} ${'NAME'.padEnd(NAME_PAD)} CONTENT`)
-echo(`  ${'─'.repeat(TYPE_PAD)} ${'─'.repeat(NAME_PAD)} ${'─'.repeat(30)}`)
+echo(`  ${chalk.bold(zone.name)}  ${chalk.dim(`·  ${rows.length} record(s)${type ? `  (${type})` : ''}  ·  ${PROXIED('●')} proxied`)}\n`)
+echo(chalk.dim(`  ${'TYPE'.padEnd(TYPE_PAD)} ${'NAME'.padEnd(namePad)}   CONTENT`))
 for (const r of rows) {
-  const proxy = r.proxied ? ' ⚡' : ''
-  echo(`  ${r.type.padEnd(TYPE_PAD)} ${r.name.padEnd(NAME_PAD)} ${r.content}${proxy}`)
-  echo(`  ${' '.repeat(TYPE_PAD)} ${' '.repeat(NAME_PAD)} ${r.id}`)
+  const tone = TYPE_TONE[r.type] ?? chalk.white
+  const mark = r.proxied ? PROXIED('●') : ' '
+  echo(`  ${tone(r.type.padEnd(TYPE_PAD))} ${fit(short(r.name), namePad).padEnd(namePad)} ${mark} ${fit(r.content, contentWidth)}`)
+  echo(chalk.dim(`  ${' '.repeat(TYPE_PAD)} ${' '.repeat(namePad)}   ${r.id}`))
 }
 echo('')
 ```

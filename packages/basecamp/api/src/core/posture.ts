@@ -357,6 +357,79 @@ export function gradePosture(
   })
 }
 
+// ─── replication ──────────────────────────────────────────────────────────
+// Graded on READ from `Server.replication`, which every heartbeat rewrites, so
+// a stopped unit is red within one beat of this window rather than at the
+// next six-hourly report. `last_sync_at` is Litestream's own, and it stops
+// when the bucket stops answering: Litestream's `addr` metrics count local
+// WAL syncs, which carry on while nothing reaches the bucket.
+
+/** Behind by more than this is failing. A healthy app reads about one heartbeat behind. */
+export const REPLICA_MAX_LAG_MS = 5 * 60_000
+
+export interface ReplicationReading {
+  apps?:       { app_id: string; status: string | null; last_sync_at: string | null; databases?: number }[]
+  // Basecamp's own database, on its box only.
+  host?:       { status: string | null; last_sync_at: string | null; databases?: number }
+  error?:      string
+  checked_at?: string
+}
+
+/** One app's distance from its bucket, as the App screen draws it; a null
+ *  `appId` is Basecamp's own, as `/hub/backups/` does. */
+export function replicaLag(reading: ReplicationReading | null | undefined, appId: string | null, now: number):
+  { lastSyncAt: string | null; lagMs: number | null; late: boolean; status: string | null; error: string | null; checkedAt: string | null } {
+  const entry = (appId === null ? reading?.host : reading?.apps?.find(a => a.app_id === appId)) ?? null
+  const at    = entry?.last_sync_at ? Date.parse(entry.last_sync_at) : NaN
+  const lagMs = Number.isFinite(at) ? Math.max(0, now - at) : null
+  return {
+    lastSyncAt: entry?.last_sync_at ?? null,
+    lagMs,
+    late:       lagMs === null || lagMs > REPLICA_MAX_LAG_MS,
+    status:     entry?.status ?? null,
+    error:      reading?.error ?? null,
+    checkedAt:  reading?.checked_at ?? null,
+  }
+}
+
+const minutes = (ms: number) => Math.round(ms / 60_000)
+
+/** `backup.replica-lag`: every app placed here that names a replica, and
+ *  Basecamp's own database when `host`, is within `REPLICA_MAX_LAG_MS`. */
+export function gradeReplication(
+  reading: ReplicationReading | null | undefined,
+  apps:    { id: string; slug: string }[],
+  now:     number,
+  host     = false,
+): Control {
+  const control = (g: Grade): Control => ({ id: 'backup.replica-lag', group: 'backup', severity: 'high', ...g })
+  if (!apps.length && !host) return control({ ok: true, message: 'No app on this machine replicates' })
+  const checked = reading?.checked_at ? Date.parse(reading.checked_at) : NaN
+  if (!Number.isFinite(checked)) return control(unknown('This machine has not reported Litestream — an Outpost too old to read it, or no heartbeat yet'))
+  if (now - checked > REPLICA_MAX_LAG_MS) return control(unknown(`The last Litestream reading is ${minutes(now - checked)} min old`))
+  if (reading?.error) return control({ ok: false, message: reading.error })
+
+  const behind: string[] = []
+  let worst = 0
+  const expected = [
+    ...apps.map(a => ({ id: a.id as string | null, name: a.slug, listed: !!reading?.apps?.some(r => r.app_id === a.id),
+      why: 'no volume yet, or the list has not reached this machine' })),
+    ...(host ? [{ id: null, name: 'Basecamp\'s own database', listed: !!reading?.host,
+      why: 'the list has not reached this machine, or its Outpost has no OUTPOST_HOST_DB_PATH' }] : []),
+  ]
+  for (const e of expected) {
+    const { lagMs } = replicaLag(reading, e.id, now)
+    if (!e.listed) behind.push(`${e.name} is not replicating here (${e.why})`)
+    else if (lagMs === null) behind.push(`${e.name} has never synced`)
+    else if (lagMs > REPLICA_MAX_LAG_MS) behind.push(`${e.name} is ${minutes(lagMs)} min behind its bucket`)
+    else worst = Math.max(worst, lagMs)
+  }
+  const what = [apps.length ? `${apps.length} app(s)` : '', host ? 'Basecamp\'s own database' : ''].filter(Boolean).join(' and ')
+  return behind.length
+    ? control({ ok: false, message: behind.join('; ') })
+    : control({ ok: true,  message: `${what} replicating, at most ${Math.round(worst / 1000)}s behind` })
+}
+
 // ─── the box a Basecamp runs on ───────────────────────────────────────────
 
 // The default `backupCron` is daily, so two days is one missed run and a grace.

@@ -20,7 +20,7 @@ import { GatePlugin }  from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor }         from '../src/core/capabilities.ts'
-import { declaredFor, gradeHub, gradePosture, HUB_CONTROL_IDS, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/core/posture.ts'
+import { declaredFor, gradeHub, gradePosture, gradeReplication, HUB_CONTROL_IDS, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/core/posture.ts'
 import { HOST_SLUG } from '../src/core/host-machine.ts'
 import type { HostDeclared, PostureReadings } from '../src/core/posture.ts'
 import { prunePosture } from '../src/jobs/retention.job.ts'
@@ -259,7 +259,11 @@ describe('a report lands', () => {
     } })
     const stale = await env.as(owner).service('posture').call('latest', lone.id, {})
     expect(stale.stale).toBe(true)
-    expect(stale.controls.every((c: any) => c.ok === 'unknown')).toBe(true)
+    // The replica control is read off the heartbeat, which an old report does not age.
+    const [replica, reported] = [stale.controls.filter((c: any) => c.id === 'backup.replica-lag'),
+                                 stale.controls.filter((c: any) => c.id !== 'backup.replica-lag')]
+    expect(reported.every((c: any) => c.ok === 'unknown')).toBe(true)
+    expect(replica.map((c: any) => c.ok)).toEqual([true])
   })
 
   test('retention keeps each machine\'s newest however old', async () => {
@@ -273,6 +277,42 @@ describe('a report lands', () => {
 })
 
 // ─── the box a Basecamp runs on (FJS-2714) ─────────────────────────────────
+
+describe('the replica grader', () => {
+  const APPS  = [{ id: 'a1', slug: 'shop' }, { id: 'a2', slug: 'blog' }]
+  const ago   = (ms: number) => new Date(NOW - ms).toISOString()
+  const read  = (apps: any[], extra: object = {}) => ({ apps, checked_at: ago(10_000), ...extra })
+  const synced = (id: string, ms: number | null) => ({ app_id: id, status: 'replicating', last_sync_at: ms === null ? null : ago(ms), databases: 1 })
+
+  test('every app a few seconds behind passes; nothing to replicate passes', () => {
+    expect(gradeReplication(read([synced('a1', 2_000), synced('a2', 4_000)]), APPS, NOW).ok).toBe(true)
+    expect(gradeReplication(null, [], NOW).ok).toBe(true)
+  })
+
+  test('a stalled bucket, a never-synced app and a missing app each fail by name', () => {
+    const c = gradeReplication(read([synced('a1', 10 * 60_000), synced('a2', null)]), APPS, NOW)
+    expect(c.ok).toBe(false)
+    expect(c.message).toContain('shop is 10 min behind')
+    expect(c.message).toContain('blog has never synced')
+    expect(gradeReplication(read([synced('a1', 1_000)]), APPS, NOW).message).toContain('blog is not replicating here')
+  })
+
+  test('Litestream not answering fails; no reading, or an old one, is unknown', () => {
+    expect(gradeReplication({ error: 'Litestream is not running', checked_at: ago(1_000) }, APPS, NOW).ok).toBe(false)
+    expect(gradeReplication(null, APPS, NOW).ok).toBe('unknown')
+    expect(gradeReplication(read([synced('a1', 1_000), synced('a2', 1_000)], { checked_at: ago(20 * 60_000) }), APPS, NOW).ok).toBe('unknown')
+  })
+
+  test('on Basecamp\'s box its own database is graded beside the apps', () => {
+    const host = (ms: number | null) => ({ host: { status: 'replicating', last_sync_at: ms === null ? null : ago(ms), databases: 2 } })
+    const ok = gradeReplication(read([], host(3_000)), [], NOW, true)
+    expect(ok).toMatchObject({ ok: true, message: expect.stringContaining('Basecamp\'s own database replicating') })
+    expect(gradeReplication(read([], host(9 * 60_000)), [], NOW, true).message).toContain('Basecamp\'s own database is 9 min behind')
+    expect(gradeReplication(read([synced('a1', 1_000)]), [APPS[0]], NOW, true).message).toContain('OUTPOST_HOST_DB_PATH')
+    // A machine not asked to replicate it ignores a reading of it.
+    expect(gradeReplication(read([], host(9 * 60_000)), [], NOW).ok).toBe(true)
+  })
+})
 
 describe('the hub grader', () => {
   const FILES = { db: { path: '/srv/basecamp/db', mode: '700', owner: 'root', group: 'root' },

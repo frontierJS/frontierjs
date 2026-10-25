@@ -26,15 +26,15 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3881 source file(s) read
-235 entry point(s), 36 imported by nothing outside their package, 15 emitted
-1590 value export(s), 617 reached by nothing outside, 168 emitted
+26 package(s) · 3883 source file(s) read
+235 entry point(s), 35 imported by nothing outside their package, 15 emitted
+1593 value export(s), 618 reached by nothing outside, 167 emitted
 451 type export(s), 343 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `litestone` | 26 | 6 | 252 | 131 | 37 | 1 | 1 |
+| `litestone` | 26 | 5 | 255 | 132 | 36 | 1 | 1 |
 | `junction` | 26 | 4 | 264 | 120 | 12 | 267 | 211 |
 | `mesa` | 18 | 4 | 286 | 100 | 70 | 0 | 0 |
 | `sierra` | 25 | 6 | 197 | 82 | 22 | 0 | 0 |
@@ -181,15 +181,15 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/litestone`
 
-`packages/litestone` · 26 entry point(s) · 252 value, 1 type export(s)
+`packages/litestone` · 26 entry point(s) · 255 value, 1 type export(s)
 
-**Entries imported by nothing outside (6):** `./engines/sqlite-wasm` `./device-schema` `./import` `./replicate` `./transform` `./external-ref`
+**Entries imported by nothing outside (5):** `./engines/sqlite-wasm` `./device-schema` `./import` `./transform` `./external-ref`
 
 **Entries not source (7, not graded):** `.` `./migrations` `./testing` `./storage` `./replicate` `./transform` `./references/*`
 
-**Unreached values (131):** `appliedMigrations` `arcDefaultMessage` `blockedRefusal` `buildEdgeMap` `buildFKGraph` `buildNamedAggExpr` `buildPristine` `buildPristineForDatabase` `buildShadow` `buildWindowCols` `buildYaml` `BulkTransitionError` `canStoreBesideReplica` `clearEngine` `collectEdges` `columnDefaultExpr` `columnMapFor` `compactJsonl` `compileFormat` `createForDatabase` `createProvider` `createSearchIndex` `createSqliteWasmEngine` `currentEngine` `declarationCollisions` `declaredRedactColumns` `deriveAccess` `detectFormat` `detectM2MPairs` `driftAgainstLive` `expectedVerdict` `ExternalRefPlugin` `extractNamedAggs` `fakeFor` `fileHeader` `findLitestream` `ForeignKeyError` `gateLadder` `generateEdgeSideTableDDL` `generateFactory` `generateGateMatrix` `generateJoinTableDDL` `generateLiteSchema` `generateMigrationSQL` `generateModelDDL` `generateTableDDL` `generateValidationCases` `generateViewDDL` `getReplicaFile` `gradedKinds` `historyGap` `indexPredicate` `inlineImportsFromDisk` `introspectSQL` `isNamedAgg` `isSearchModel` `isSoftDeleteCascade` `isStrict` `isUpdatedAtField` `jsRefusal` `labelColumn` `layoutManifest` `litestreamVersion` `loadSource` `lossRefusal` `mapIdentifiers` `migrationStatements` `mutationScore` `nextMigrationName` `normalizeTableDdl` `normalizeTriggerSql` `ON_DELETE_ACTIONS` `openDatabase` `OverlapConflictError` `parseChecks` `parseCollations` `parseDuration` `parseGateString` `parseGeneratedColumns` `parseIndexColumns` `parseIndexSorts` `parseLayoutManifest` `parseLimit` `parseRef` `parseScales` `parseSize` `planEdgeStorage` `PluginRunner` `pointColumns` `pointDefaultMessage` `putReplicaFile` `REACHABLE_LEVELS` `readScaleConstraint` `renameCandidates` `renderAccessSnapshot` `REPEATABLE_FIELD_ATTRS` `REPEATABLE_MODEL_ATTRS` `requireLitestream` `resolveAllRowCounts` `resolveRedactColumns` `resolveRowCount` `restoreFile` `runSqliteRetention` `scaleConstraintName` `schemaForDatabase` `schemaMutants` `searchBackfillSql` `searchColumnsFor` `searchModels` `searchTriggerNames` `shadowRefusal` `SoftDeletedUniqueError` `stripParens` `summarizeDiff` `SYNC_NEEDS_VERSION` `tenantAdmission` `TIERS` `TRAIT_FORBIDDEN_FIELD_ATTRS` `TRAIT_FORBIDDEN_MODEL_ATTRS` `TransitionConflictError` `TransitionSystemError` `TYPE_DEFAULT_FORBIDDEN_KINDS` `TYPE_FORBIDDEN_FIELD_ATTRS` `TYPE_FORBIDDEN_FIELD_TYPES` `unacceptedLoss` `unmatchedMigrationFiles` `unresolvedBlocks` `updatedAtFields` `useStorage` `ValueSetExtendError` `VersionRequiredError`
+**Unreached values (132):** `appliedMigrations` `arcDefaultMessage` `blockedRefusal` `buildEdgeMap` `buildFKGraph` `buildNamedAggExpr` `buildPristine` `buildPristineForDatabase` `buildShadow` `buildWindowCols` `BulkTransitionError` `canStoreBesideReplica` `clearEngine` `collectEdges` `columnDefaultExpr` `columnMapFor` `compactJsonl` `compileFormat` `createForDatabase` `createProvider` `createSearchIndex` `createSqliteWasmEngine` `currentEngine` `declarationCollisions` `declaredRedactColumns` `deriveAccess` `detectFormat` `detectM2MPairs` `driftAgainstLive` `expectedVerdict` `ExternalRefPlugin` `extractNamedAggs` `fakeFor` `fileHeader` `findLitestream` `ForeignKeyError` `gateLadder` `generateEdgeSideTableDDL` `generateFactory` `generateGateMatrix` `generateJoinTableDDL` `generateLiteSchema` `generateMigrationSQL` `generateModelDDL` `generateTableDDL` `generateValidationCases` `generateViewDDL` `getReplicaFile` `gradedKinds` `historyGap` `indexPredicate` `inlineImportsFromDisk` `introspectSQL` `isNamedAgg` `isSearchModel` `isSoftDeleteCascade` `isStrict` `isUpdatedAtField` `jsRefusal` `labelColumn` `layoutManifest` `LITESTREAM_MIN` `LITESTREAM_PIN` `litestreamVersion` `loadSource` `lossRefusal` `mapIdentifiers` `migrationStatements` `mutationScore` `nextMigrationName` `normalizeTableDdl` `normalizeTriggerSql` `ON_DELETE_ACTIONS` `openDatabase` `OverlapConflictError` `parseChecks` `parseCollations` `parseDuration` `parseGateString` `parseGeneratedColumns` `parseIndexColumns` `parseIndexSorts` `parseLayoutManifest` `parseLimit` `parseRef` `parseScales` `parseSize` `planEdgeStorage` `PluginRunner` `pointColumns` `pointDefaultMessage` `putReplicaFile` `REACHABLE_LEVELS` `readScaleConstraint` `renameCandidates` `renderAccessSnapshot` `REPEATABLE_FIELD_ATTRS` `REPEATABLE_MODEL_ATTRS` `requireLitestream` `resolveAllRowCounts` `resolveRedactColumns` `resolveRowCount` `restoreFile` `runSqliteRetention` `scaleConstraintName` `schemaForDatabase` `schemaMutants` `searchBackfillSql` `searchColumnsFor` `searchModels` `searchTriggerNames` `shadowRefusal` `SoftDeletedUniqueError` `stripParens` `summarizeDiff` `SYNC_NEEDS_VERSION` `tenantAdmission` `TIERS` `TRAIT_FORBIDDEN_FIELD_ATTRS` `TRAIT_FORBIDDEN_MODEL_ATTRS` `TransitionConflictError` `TransitionSystemError` `TYPE_DEFAULT_FORBIDDEN_KINDS` `TYPE_FORBIDDEN_FIELD_ATTRS` `TYPE_FORBIDDEN_FIELD_TYPES` `unacceptedLoss` `unmatchedMigrationFiles` `unresolvedBlocks` `updatedAtFields` `useStorage` `ValueSetExtendError` `VersionRequiredError`
 
-**Emitted (37):** `ALLOWED_TOKENIZERS` `arcCheckExpr` `checksum` `COLLATIONS` `defineFactory` `describeSkipped` `factoryFrom` `fieldToColumnName` `FORMATS` `FrontierGateGetLevel` `generateIndexDDL` `isIndexExpression` `isSoftDelete` `isStoredField` `LAYOUT_FILE` `levelLabel` `loadFixture` `makeTestClient` `mapCol` `mapExprCols` `maskStrategies` `modelToTableName` `normalizeDdl` `pointColumnNames` `policyExprToString` `predicateToLite` `replicaUrl` `rescaleUpdate` `SEARCH_COLUMNS` `SEARCH_TABLE` `SEARCH_WEIGHTS` `searchRankExpr` `setEngine` `sqlType` `SYNC_POLICIES` `typedAttr` `VIEW_COLUMN_ATTRS`
+**Emitted (36):** `ALLOWED_TOKENIZERS` `arcCheckExpr` `COLLATIONS` `defineFactory` `describeSkipped` `factoryFrom` `fieldToColumnName` `FORMATS` `FrontierGateGetLevel` `generateIndexDDL` `isIndexExpression` `isSoftDelete` `isStoredField` `LAYOUT_FILE` `levelLabel` `loadFixture` `makeTestClient` `mapCol` `mapExprCols` `maskStrategies` `modelToTableName` `normalizeDdl` `pointColumnNames` `policyExprToString` `predicateToLite` `replicaUrl` `rescaleUpdate` `SEARCH_COLUMNS` `SEARCH_TABLE` `SEARCH_WEIGHTS` `searchRankExpr` `setEngine` `sqlType` `SYNC_POLICIES` `typedAttr` `VIEW_COLUMN_ATTRS`
 
 **Unreached types (1):** `CursorResult`
 

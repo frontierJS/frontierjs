@@ -1276,6 +1276,12 @@ model Server {
   actualSpecs      Json?
   health           Json?
   dockerState      Json?
+  // What this machine's Litestream says, as the heartbeat carried it:
+  // `{ apps: [{ app_id, status, last_sync_at, databases }] }` or `{ error }`
+  // (`IDEAS/backups.md` 2.3). Here and not on each App, because the
+  // heartbeat already writes this row and a column per app would be a second
+  // trailed write per app every thirty seconds. `checked_at` is when it was read.
+  replication      Json?
   labels           Json         @default("{}")
 
   createdAt        DateTime     @default(now())
@@ -1702,7 +1708,16 @@ model App {
   // archive to the machine's disk rather than refusing the bucket's removal.
   backupCron          String?  @trim @length(1, 100)
   backupDestinationId String?
-  backupDestination   BackupDestination? @relation(fields: [backupDestinationId], references: [id], onDelete: SetNull)
+  backupDestination   BackupDestination? @relation("AppBackups", fields: [backupDestinationId], references: [id], onDelete: SetNull)
+
+  // Where Litestream replicates this app's SQLite (`IDEAS/backups.md` 2.2). A
+  // second pointer, not the one above: a snapshot leaves the machine by a
+  // pre-signed URL, so that bucket's key never leaves Basecamp, and this key
+  // sits on every machine the app is placed on. Unique, because the key is
+  // the app's alone (`FJS-D1505`): a second app on one destination would put
+  // one app's key beside another's replica. Null is no replica.
+  replicaDestinationId String?  @unique
+  replicaDestination   BackupDestination? @relation("AppReplica", fields: [replicaDestinationId], references: [id], onDelete: SetNull)
 
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @default(now()) @updatedAt
@@ -2569,8 +2584,12 @@ model BackupDestination {
   appBackups  AppBackup[]
   // `@keep`: an app outlives its bucket — the pointer is `SetNull`, the
   // schedule drops to the machine's disk, and nothing about the app is retired.
-  apps        App[] @keep
-  hubs        HubConfig[]
+  apps        App[] @relation("AppBackups") @keep
+  // The one app, or the hub, replicating with this key — never both
+  // (`FJS-D1505`); `replicaHolder` in its service is the one reader.
+  replicaApp  App?  @relation("AppReplica") @keep
+  replicaHub  HubConfig? @relation("HubReplica") @keep
+  hubs        HubConfig[] @relation("HubBackups")
 
   @@gate(2.5)
   @@softDelete
@@ -3350,7 +3369,15 @@ model HubConfig {
   // drops the schedule to local, which is what posture grades red rather than
   // a schedule that fails at 02:00.
   backupDestinationId       String?
-  backupDestination         BackupDestination? @relation(fields: [backupDestinationId], references: [id], onDelete: SetNull)
+  backupDestination         BackupDestination? @relation("HubBackups", fields: [backupDestinationId], references: [id], onDelete: SetNull)
+
+  // Where Litestream replicates Basecamp's own database, from the Outpost on
+  // its box (`IDEAS/backups.md` 2.4, `FJS-D1486`): the same path an app's
+  // takes, so this key sits on that box. Unique for the reason
+  // `App.replicaDestinationId` is, and a destination an app replicates with
+  // is refused here.
+  replicaDestinationId      String?  @unique
+  replicaDestination        BackupDestination? @relation("HubReplica", fields: [replicaDestinationId], references: [id], onDelete: SetNull)
 
   // Retention, local and remote apart. An archive goes when it is outside the
   // newest `Count` of its kind OR older than `Days`; null days is no age limit.

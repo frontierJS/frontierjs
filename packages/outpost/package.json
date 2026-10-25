@@ -25,6 +25,7 @@
     "bun": ">=1.4.0"
   },
   "dependencies": {
+    "@frontierjs/litestone": "workspace:*",
     "@frontierjs/toolbelt": "workspace:*"
   },
   "files": [

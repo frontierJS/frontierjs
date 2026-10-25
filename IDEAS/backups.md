@@ -60,7 +60,8 @@ sits beside the app. None runs a restore drill.
   [Railway template](https://railway.com/deploy/pocketbase-custom-s3-backups)
 - **Litestream 0.5** — one replica per database; a `dir` + `pattern` +
   `watch: true` entry starts a new database within seconds; Prometheus metrics
-  on `addr`; credentials per replica; it writes beside the database
+  on `addr`, which count local WAL syncs and cannot measure bucket lag (2.3);
+  credentials per replica; it writes beside the database
   (`.<db>-litestream`), so the directory must be writable. Restore is per
   database, by URL with `-o`, and there is no restore-all. Nothing documented
   reloads the config live, so a change is a restart.
@@ -314,24 +315,135 @@ with a warning — against `conduit-s3`'s sink in `verify:outpost` and
 ### Phase 2 — Litestream on every fleet machine, run by Outpost
 
 Goal: an app's SQLite is seconds behind in a bucket, and Basecamp shows how far.
-Done when: an app placed on a stand-in Outpost replicates to MinIO, its lag is on
-the App screen, and stopping Litestream turns a posture control red.
+Done when: an app placed on a stand-in Outpost replicates to a stand-in bucket
+(SeaweedFS, the pin `verify:replicate` uses — MinIO's free edition is archived),
+its lag is on the App screen, and stopping Litestream turns a posture control red.
 
-- [ ] 2.1 Outpost's install script installs the pinned Litestream
+- [x] 2.1 Outpost's install script installs the pinned Litestream
       (`LITESTREAM_PIN`) as its own systemd unit, outside Outpost's sandbox.
-- [ ] 2.2 Outpost `POST /replicate { app_id, url, interval, retention }`
-      writes the app's entry — `dir:` the volume's mountpoint, `pattern: "*.db"`,
+  - Built 2026-10-24. The pin and its checksum-verified installer moved to
+    `@frontierjs/litestone/replicate` (`LITESTREAM_PIN`, `litestreamInstall`),
+    beside the floor, so `deploy:setup` and the fleet install are one build —
+    cli now depends on litestone. `basecamp-litestream.service` reads
+    `/etc/basecamp/litestream.yml`, written `dbs: []` once and never over the
+    Outpost's; 0.5.17 runs on an empty list (probed), so the unit is enabled at
+    install. Sandboxed like the Outpost — `ProtectSystem=strict`, writes only
+    `/var/lib/docker/volumes` and `StateDirectory=litestream`, where 2.2's
+    `meta-dir` goes. Uninstall stops it; purge removes the binary. A running
+    unit on an empty list looks healthy until 2.3 grades lag. The real download
+    and checksum ran here; not yet run on a box under systemd.
+- [x] 2.2 Outpost `POST /replicate { replicas: [{ app_id, bucket, path,
+      endpoint, region, access_key_id, secret_access_key }] }` writes every
+      app's entry — `dir:` the volume's mountpoint, `pattern: "*.db"`,
       `watch: true`, the app's own key, `meta-dir` OUTSIDE the volume so the
       `/backup` tar does not carry `.<db>-litestream` — and restarts the unit.
       The whole file is rewritten from Basecamp's list, never patched: Basecamp
       is the origin, the file a projection.
-  - How far a key can be scoped is the provider's (from memory: AWS IAM by
-    prefix, R2 and Spaces by bucket, Hetzner unverified) — check before 2.2,
-    and Q4's noun carries the scope.
-- [ ] 2.3 The heartbeat reads Litestream's metrics (`addr`); Basecamp shows
-      last sync and lag per App, and posture grades it.
-- [ ] 2.4 Basecamp's own box enrolls its database the same way, through its own
+  - Built 2026-10-24. `interval` and `retention` left the wire: retention is
+    top-level in 0.5, so per file and not per app, and no column holds an
+    interval; litestone's defaults stand. The YAML is litestone's `buildYaml`,
+    which gained `meta-dir` and a field-wise S3 replica (every value quoted;
+    `force-path-style`), so Outpost now depends on litestone — **litestone must
+    publish before Outpost**, which installs from npm. A volume not yet made is
+    answered in `skipped`; a list already in force with the unit active is not
+    restarted, since every release resends it. Basecamp: `App.replicaDestinationId
+    @unique` (`FJS-D1505`), and `jobs/replicate-sync.job.ts` is the one sender —
+    the machine's whole list, refused whole when one key cannot be read, one in
+    flight per machine and re-read after sending. Sent on the pointer set,
+    delete/restore (cascades too), place/unplace, a release succeeding, a
+    destination patched/removed/restored, and a machine back `online`. Proved
+    against SeaweedFS with 0.5.17: replicated under `apps/<id>/`, meta outside
+    the volume, restored 4 rows. **Restore by `-config` cannot find a `dir:`
+    database** ("database not found in config"); restore by URL with
+    `LITESTREAM_ACCESS_KEY_ID`/`_SECRET_ACCESS_KEY` works — 3.1 restores that
+    way. Not yet run on a box under systemd.
+  - How far a key can be scoped (researched 2026-10-24). Litestream's own
+    minimum is `s3:ListBucket` + `GetBucketLocation` on the bucket and
+    `Put`/`Get`/`DeleteObject` on its objects, narrowable to a path; delete
+    can go only when `retention` is off
+    ([guide](https://litestream.io/guides/s3/)).
+    - **B2 — prefix.** `b2_create_key` takes `bucketIds` and `namePrefix`;
+      minting needs `writeKeys`
+      ([b2_create_key](https://www.backblaze.com/apidocs/b2-create-key)).
+    - **AWS / MinIO — prefix.** `ListBucket` on the bucket with an
+      `s3:prefix` condition, object actions on `bucket/prefix/*`
+      ([AWS](https://repost.aws/knowledge-center/s3-folder-user-access) ·
+      [MinIO](https://min.io/docs/minio/linux/administration/identity-access-management/policy-based-access-control.html)).
+    - **R2 — bucket** for a standing token (*Bucket Item Read/Write*, made
+      through the API); prefix only on temporary credentials, at most 7 days
+      ([tokens](https://developers.cloudflare.com/r2/api/tokens/) ·
+      [temp credentials](https://developers.cloudflare.com/api/resources/r2/subresources/temporary_credentials/methods/create/)).
+    - **Spaces — bucket**, *Read* or *Read/Write/Delete*; keys cannot be made
+      by API or CLI
+      ([manage access](https://docs.digitalocean.com/products/spaces/how-to/manage-access/)).
+    - **Hetzner — project** by default; a bucket policy allowlists a key
+      (`p<project>:<key>`) on one bucket, with no prefix example and keys made
+      in the Console only
+      ([S3 credentials](https://docs.hetzner.com/storage/object-storage/faq/s3-credentials)).
+    - Precedent for minting: `fly storage create` makes a Tigris bucket and
+      sets its keys as that app's secrets
+      ([Fly](https://fly.io/docs/reference/tigris/)).
+    So a per-app key is a prefix at B2, AWS and MinIO and a bucket at R2,
+    Spaces and Hetzner, and two of the six cannot mint one. Q7 is `FJS-D1505` **A**.
+- [x] 2.3 The heartbeat reads Litestream's control socket (`/list`); Basecamp
+      shows last sync and lag per App, and posture grades it.
+  - Built 2026-10-24. Probed first against Litestream 0.5.17 and a SeaweedFS
+    bucket: the `addr` metrics cannot answer it. `litestream_sync_count` counts
+    local WAL syncs and kept rising with the bucket stopped, and
+    `replica_operation_total` carries no db label. The control socket's
+    `GET /list` answers each database's `last_sync_at`, which ticks about once
+    a second while healthy and stops when the bucket stops.
+  - The wire. `buildYaml` takes `socket` (litestone); Outpost writes it into
+    every `/replicate` config and the install's seed, under the unit's
+    `RuntimeDirectory=litestream`. `replicator.status()` reads `/list` over
+    the unix socket with a 3s timeout, rolls databases up per app by their
+    volume path (oldest sync wins), and never throws: no socket, a refusal or
+    a timeout is `{error}`. Every heartbeat carries it as `replication`.
+  - Stored on `Server.replication`, stamped `checked_at`, not on App: both are
+    `@@trail(audit)`, and a column per app would be a trailed write per app
+    every 30s. `apps.get` hands each placement `replicaLag()`; the App screen's
+    Placement card draws it as a badge.
+  - `backup.replica-lag` (group `backup`, high) is graded on READ off that
+    reading, like `hub.backup-recent` and `hub.key-escrowed`, so a stopped unit is red within one
+    beat rather than at the next six-hourly report, and an old posture report
+    does not grey it. Over 5 min behind, never synced, or absent from the
+    reading fails by app slug; a Litestream error fails; no reading, or one
+    older than 5 min, is unknown.
+  - Limits. One bucket unreachable at unit start hangs `/list` for the whole
+    machine, so every app on it reads red: it fails toward lag, never toward a
+    clean answer. An app placed but never released has no volume and reads
+    *not replicating here*. Not yet run on a box under systemd.
+  - The Phase 2 exit, driven 2026-10-24 from a scratch script (not committed):
+    the real replicator and reporter with `run` standing in for docker and
+    systemctl, a real Litestream 0.5.17 child, SeaweedFS 4.47, Basecamp in a
+    test env. Unknown before a heartbeat; objects under `apps/<id>/`;
+    `apps.get` 1s behind and the control green; Litestream killed, the next
+    heartbeat red with *not running*. A paused bucket froze `last_sync_at`
+    while `/list` still answered, so it reads red at 5 min, not at once. The
+    App screen's badge was compiled, not seen in a browser.
+- [x] 2.4 Basecamp's own box enrolls its database the same way, through its own
       Outpost.
+    Built 2026-10-24, uncommitted. `HubConfig.replicaDestinationId` (`@unique`,
+    SetNull) picks the destination on `/hub/settings/`; `/replicate` takes
+    `{ replicas, host? }` and the Outpost points `host` at
+    `OUTPOST_HOST_DB_PATH`, read back from `/list` as `host`. Only the
+    `basecamp-host` row in the destination's OWN workspace is sent it — the slug
+    is per-workspace and reserved nowhere, so a tenant could name a machine that
+    and receive the hub's key; `posture.host()` has the same gap unguarded,
+    FJS-3488. A destination holds one replica (FJS-D1505): an app's is refused to
+    the hub and the hub's to an app, 409. The pointers are written at system
+    after the scoped save, alone: HubConfig naming a tenant-owned destination
+    fails the hidden-parent check otherwise, which `backupDestinationId` through
+    `save` already did before this step, and a whole-row system write would lift
+    `@system` too. `backup.replica-lag` on the host grades *Basecamp's own
+    database* beside the apps. `fli deploy` writes
+    `basecamp-litestream.service.d/host.conf` (`ReadWritePaths=<dbDir>`, and
+    `ProtectHome=read-only` for a /home or /root one) in the same script as the
+    `OUTPOST_HOST_*` lines; the uninstall removes it; preflight warns when a
+    second Litestream (the operator's `litestone replicate`) is on the same
+    database. That script was run twice against a fake root (written, then
+    unchanged); nothing ran under systemd, and whether `ReadWritePaths` lifts
+    `ProtectHome=read-only` is the systemd docs' claim, not measured.
 
 ### Phase 3 — Restore and drill from Basecamp
 
@@ -451,6 +563,26 @@ ship, could serve the drill without a restore.
     workspace — with zero existing callers moved, and per-App schedules (1.6)
     land under it without a second shape. Amends D1488 in its tenancy line
     only; the noun, the enum's removal and the `@transient` lift stand.
+    Confidence 2.
+
+- ~~**Q7 — Where an app's Litestream key comes from.**~~ **Answered 2026-10-24 (`FJS-D1505`): A — `App.replicaDestinationId`, `@unique`, points at a `BackupDestination` the operator made with a key for that app alone. The replica path is `<prefix>/<appId>`. `BACKUPS.md` gets a recipe per vendor, and 1.8's probe adds a PUT outside the prefix that must be refused, where the vendor scopes by prefix. Snapshots keep `backupDestinationId`, whose key never leaves Basecamp.** `FJS-D1486` rules a
+  key per app; nothing says who makes it. The research is under 2.2.
+  - **A** — `App.replicaDestinationId`, `@unique`, points at a
+    `BackupDestination` the operator made with a key for that app alone. The
+    replica path is `<prefix>/<appId>`. `BACKUPS.md` gets a recipe per vendor,
+    and 1.8's probe adds a PUT outside the prefix that must be refused, where
+    the vendor scopes by prefix. Snapshots keep `backupDestinationId`, whose
+    key never leaves Basecamp.
+  - **B** — Basecamp mints a key per app through the vendor's key API (B2
+    `b2_create_key`, then R2 and AWS) and keeps it as a Secret on the App.
+    It needs a `writeKeys` key in Basecamp, close to a master key, and still
+    falls back to A at Spaces and Hetzner.
+  - **C** — The replica reuses the app's `backupDestinationId` key. That puts a
+    workspace key on every machine, which breaks D1486's revoke-alone and
+    D1485's stolen-machine bound.
+  - **Recommend A.** No new owner and no new noun. A leaked key reaches one
+    app's replica, which is what D1485 promises, and it works at all six
+    vendors. Reopen as B when operators keep getting the scope wrong.
     Confidence 2.
 
 ## See also

@@ -246,6 +246,8 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `pushActorId` | `String` | yes | — | @system |
 | `pushSecret` | `String` | yes | — | @encrypted |
 | `pushTokenHash` | `String` | yes | — | @guarded @system |
+| `replicaDestination` | `BackupDestination` | — | — | relation |
+| `replicaDestinationId` | `String` | yes | — | unique |
 | `slug` | `String` | no | — | **required on write** |
 | `source` | `Json` | no | `'{}'` | — |
 | `status` | `AppStatus` | no | `'unknown'` | @system |
@@ -516,6 +518,8 @@ table `backup_destination` · db `main` · gate `2.5` · @@softDelete
 | `name` | `String` | no | — | **required on write** |
 | `prefix` | `String` | no | `''` | — |
 | `region` | `String` | no | — | **required on write** |
+| `replicaApp` | `App` | — | — | relation |
+| `replicaHub` | `HubConfig` | — | — | relation |
 | `secret` | `String` | — | — | transient |
 | `secretId` | `String` | yes | — | @system |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
@@ -1190,6 +1194,8 @@ table `hub_config` · db `main` · gate `7`
 | `mailFromAddress` | `String` | yes | — | — |
 | `mailFromName` | `String` | yes | — | — |
 | `name` | `String` | no | `'Basecamp'` | — |
+| `replicaDestination` | `BackupDestination` | — | — | relation |
+| `replicaDestinationId` | `String` | yes | — | unique |
 | `requireTwoFactorForOwners` | `Boolean` | no | `0` | — |
 | `sessionTtlHours` | `Int` | no | `168` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
@@ -1917,6 +1923,7 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 | `providerServerId` | `String` | yes | — | — |
 | `region` | `String` | no | `'custom'` | — |
 | `registerMethod` | `String` | no | `'imported'` | — |
+| `replication` | `Json` | yes | — | — |
 | `role` | `ServerRole` | no | `'general'` | — |
 | `serverNetworks` | `ServerNetwork[]` | — | — | relation |
 | `slug` | `String` | no | — | **required on write** |

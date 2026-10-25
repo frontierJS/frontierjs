@@ -1550,7 +1550,10 @@ export const shutdown = (code = 0) => reap().finally(() => process.exit(code))
  *  renderer, where a line written past it lands inside the screen. */
 export function startServer({ quiet = false } = {}) {
   const server = createServer(route)
-  server.listen(PORT, () => {
+  // Loopback only: foreignOrigin lets a POST with no Origin through, because
+  // the console's screens send none, so on any wider address another machine
+  // could run a command here (FJS-3470).
+  server.listen(PORT, '127.0.0.1', () => {
     if (quiet) return
     console.log(`FLI server running on http://localhost:${PORT}`)
     console.log(`  GET  http://localhost:${PORT}/api/commands`)

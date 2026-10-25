@@ -53,6 +53,41 @@ export function litestreamVersion(binary) {
 const tooOld = (v) =>
   v.major < MIN_MAJOR || (v.major === MIN_MAJOR && v.minor < MIN_MINOR)
 
+/** The floor, for a caller grading a binary on another machine. */
+export const LITESTREAM_MIN = { major: MIN_MAJOR, minor: MIN_MINOR }
+
+// ─── The pinned build ─────────────────────────────────────────────────────────
+// What `fli deploy:setup` and Basecamp's fleet install put on a machine, both
+// at /usr/local/bin, so one pin is one build. FJS controls the version, never
+// the artifact (FJS-D31): the bytes are upstream's release, refused unless they
+// match the digests upstream's own checksums.txt published for it. Raising the
+// pin means copying both lines from that file, and the pin must clear the floor.
+
+export const LITESTREAM_PIN = {
+  version: '0.5.17',
+  sha256: {
+    x86_64: 'cfb371176d164437ae869f8351cfde49bd1804ae71c61923f75c9cba9c9c006d',
+    arm64:  'f8ca4a050095c1efbda2c4365172e61bf9d955ea0d9ac42f448b52e51819baa5',
+  },
+}
+
+// One line of shell with no single quote in it: deploy:setup runs it inside
+// sudo sh -c '...'. An architecture without a pinned digest refuses rather than
+// fetching something unchecked.
+export const litestreamInstall = (dir = '/usr/local/bin') => {
+  const { version: v, sha256 } = LITESTREAM_PIN
+  return [
+    'set -e',
+    `case "$(uname -m)" in x86_64) a=x86_64; s=${sha256.x86_64};; aarch64|arm64) a=arm64; s=${sha256.arm64};; *) echo "litestream: no pinned build for $(uname -m)" >&2; exit 1;; esac`,
+    't=$(mktemp -d)',
+    `curl -fsSL -o "$t/l.tgz" "https://github.com/benbjohnson/litestream/releases/download/v${v}/litestream-${v}-linux-$a.tar.gz"`,
+    'echo "$s  $t/l.tgz" | sha256sum -c - >/dev/null || { echo "litestream: checksum mismatch, refusing" >&2; rm -rf "$t"; exit 1; }',
+    'tar -xzf "$t/l.tgz" -C "$t" litestream',
+    `install -m 0755 "$t/litestream" "${dir}/litestream"`,
+    'rm -rf "$t"',
+  ].join('; ')
+}
+
 // ─── Litestream binary detection ──────────────────────────────────────────────
 
 export function findLitestream() {
@@ -158,6 +193,10 @@ export async function getReplicaFile(base, name) {
 // Litestream's config is simple enough that a string template is cleaner than
 // pulling in a YAML library. No nested unknowns here.
 
+// A JSON string is a YAML double-quoted scalar, so a key holding `:`, `#` or a
+// leading `*` reads back as the bytes it was.
+const q = v => JSON.stringify(String(v))
+
 export function buildYaml(targets, opts) {
   // l0-retention is the STORE's setting in v0.5: read at the top of the file
   // and ignored, without a word, on a replica — where it was written, which
@@ -169,22 +208,43 @@ export function buildYaml(targets, opts) {
   const lines = [
     ...(l0 ? [`l0-retention: ${l0}`] : []),
     ...(opts.retentionPeriod ? ['snapshot:', `  retention: ${opts.retentionPeriod}`] : []),
-    'dbs:',
+    // The control socket's `/list` is the one reading of how far each
+    // database's REPLICA is: `last_sync_at` stops when the bucket stops
+    // answering. The `addr` metrics count local WAL syncs, which carry on.
+    ...(opts.socket ? ['socket:', '  enabled: true', `  path: ${q(opts.socket)}`] : []),
+    targets.length ? 'dbs:' : 'dbs: []',
   ]
 
   for (const t of targets) {
     // A directory target is every file matching the pattern, and `watch`
     // covers one created after litestream started — a tenant signing up
-    // mid-run. Each file replicates to `<url>/<filename>`.
+    // mid-run. Each file replicates to `<url>/<filename>`. `meta-dir` moves
+    // each file's `.<db>-litestream` out of the directory, which is otherwise
+    // carried by anything that copies the directory whole.
     if (t.dir) {
       lines.push(`  - dir: ${t.dir}`)
       lines.push(`    pattern: "${t.pattern}"`)
       lines.push(`    watch: true`)
+      if (t.metaDir) lines.push(`    meta-dir: ${q(t.metaDir)}`)
     } else {
       lines.push(`  - path: ${t.path}`)
     }
     lines.push(`    replicas:`)
-    lines.push(`      - url: ${t.url}`)
+    // A target carrying its own `replica` holds its own key: one machine
+    // replicates several apps, and the environment holds one key.
+    if (t.replica) {
+      const r = t.replica
+      lines.push(`      - type: s3`)
+      lines.push(`        bucket: ${q(r.bucket)}`)
+      lines.push(`        path: ${q(r.path)}`)
+      lines.push(`        endpoint: ${q(r.endpoint)}`)
+      lines.push(`        region: ${q(r.region)}`)
+      lines.push(`        access-key-id: ${q(r.accessKeyId)}`)
+      lines.push(`        secret-access-key: ${q(r.secretAccessKey)}`)
+      lines.push(`        force-path-style: true`)
+    } else {
+      lines.push(`      - url: ${t.url}`)
+    }
     if (opts.syncInterval)    lines.push(`        sync-interval: ${opts.syncInterval}`)
   }
 

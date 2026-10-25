@@ -37,6 +37,8 @@ import { notifyPeople }           from '../src/core/notify.ts'
 import { createJunctionClient }   from '@frontierjs/junction/client'
 import { snapshotVariables, releaseEnv } from '../src/core/variables.ts'
 import { BACKUP_SCHEDULE, appBackupSchedule, fireBackup, restoreSchedules } from '../src/services/jobs/job-schedule.ts'
+import { replicasFor, syncReplicas, hostReplicaFor } from '../src/jobs/replicate-sync.job.ts'
+import { HOST_SLUG }              from '../src/core/host-machine.ts'
 import { startS3Sink }            from '../src/providers/storage/s3-sink.ts'
 
 // The certificate a machine's command port answers with, which enrollment pins
@@ -837,6 +839,18 @@ describe('an outpost endpoint takes a signature or nothing', () => {
     const after = await (env.system as any).server.findUnique({ where: { id: machine.id } })
     expect(after.status).toBe('online')
     expect(after.outpostVersion).toBe('0.4.1')
+  })
+
+  test('a heartbeat carrying Litestream\'s reading stores it on the row, stamped when read', async () => {
+    const replication = { apps: [{ app_id: 'a-x', status: 'replicating', last_sync_at: new Date().toISOString(), databases: 1 }] }
+    const body = { outpost_version: '0.4.1', replication }
+    const req  = env.http.post(`/servers/${machine.id}`).set('x-service-method', 'heartbeat')
+    for (const [k, v] of Object.entries(await signed(`/servers/${machine.id}`, body))) req.set(k, v)
+    expect((await req.send(body)).status).toBe(200)
+
+    const after = await (env.system as any).server.findUnique({ where: { id: machine.id } })
+    expect(after.replication.apps).toEqual(replication.apps)
+    expect(Date.now() - Date.parse(after.replication.checked_at)).toBeLessThan(60_000)
   })
 
   test('a signature does not move to another endpoint', async () => {
@@ -4562,6 +4576,110 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       const bare = await sys.backupDestination.create({ data: { workspaceId: ws.id, ...bucket(), secret: undefined } })
       await expect(take(owner, { appId: app.id, serverId: server.id, destinationId: bare.id })).rejects.toThrow(/holds no credential/)
       expect(await sys.appBackup.count({ where: { destinationId: bare.id } })).toBe(0)
+    })
+  })
+
+  // IDEAS/backups.md 2.2: each machine is sent every app on it that names a
+  // replica destination, each with that destination's own key (FJS-D1505).
+  describe('replicating to a destination of its own', () => {
+    const own = () => env.as(owner).service('backup-destinations').create({
+      name: `R2 ${tag()}`, endpoint: 'https://acct.r2.cloudflarestorage.com', region: 'auto',
+      bucket: `replica-${tag()}`, prefix: '/apps/', secret: 'AKID:se:cr/et',
+    }) as Promise<any>
+
+    test('the machine\'s list carries the key, under the prefix and the app id', async () => {
+      const dest = await own()
+      await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: dest.id })
+      const list = await replicasFor(env.app, server.id)
+      expect(list).toEqual([{
+        app_id: app.id, bucket: dest.bucket, path: `apps/${app.id}`, endpoint: dest.endpoint, region: 'auto',
+        access_key_id: 'AKID', secret_access_key: 'se:cr/et',
+      }])
+      // Another machine holds no placement of it, so its list is empty.
+      expect(await replicasFor(env.app, machine.id)).toEqual([])
+      // The stub answers and replicates nothing, and says so.
+      expect(await syncReplicas(env.app, server.id)).toMatchObject({ stub: true })
+    })
+
+    test('the App screen reads each placement\'s distance from its bucket off the machine\'s last heartbeat', async () => {
+      const dest = await own()
+      await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: dest.id })
+      const lastSync = new Date(Date.now() - 20 * 60_000).toISOString()
+      await (env.system as any).server.update({ where: { id: server.id }, data: { replication: {
+        apps: [{ app_id: app.id, status: 'replicating', last_sync_at: lastSync, databases: 1 }], checked_at: new Date().toISOString() } } })
+      const got = await env.as(owner).service('apps').get(app.id) as any
+      const here = got.placement.find((p: any) => p.serverId === server.id)
+      expect(here.replication).toMatchObject({ lastSyncAt: lastSync, late: true, error: null })
+      // The reading is the placement's, not a column of the machine's handed to the page.
+      expect(here.server.replication).toBeUndefined()
+      await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: null })
+      expect((await env.as(owner).service('apps').get(app.id) as any).placement.find((p: any) => p.serverId === server.id).replication).toBeNull()
+    })
+
+    test('a destination is one app\'s: a second app cannot point at it', async () => {
+      const dest = await own()
+      const sys  = env.system as any
+      const twin = await sys.app.create({ data: { workspaceId: ws.id, environmentId: app.environmentId, name: 'tw', slug: `tw-${tag()}` } })
+      await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: dest.id })
+      await expect(env.as(owner).service('apps').patch(twin.id, { replicaDestinationId: dest.id })).rejects.toThrow()
+    })
+
+    // IDEAS/backups.md 2.4: Basecamp's own database rides its box's list as `host`.
+    const hubRow = async () => {
+      const sys = env.system as any
+      return await sys.hubConfig.findFirst({ where: { id: 'hub' } })
+        ?? await sys.hubConfig.create({ data: { id: 'hub', name: 'Hub', baseUrl: 'https://hub.replica.test', adminEmail: 'ops@replica.test' } })
+    }
+    const pointHub = async (replicaDestinationId: string | null) =>
+      env.as(sysadmin).service('hub-config').call('save', null, { replicaDestinationId, version: (await hubRow()).version })
+
+    test('a destination is one replica\'s: an app\'s is refused to the hub, and the hub\'s to an app', async () => {
+      const mine = await own()
+      await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: mine.id })
+      await expect(pointHub(mine.id)).rejects.toThrow(new RegExp(`replicates the app '${app.slug}'`))
+      const hubs = await own()
+      await pointHub(hubs.id)
+      await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: null })
+      await expect(env.as(owner).service('apps').patch(app.id, { replicaDestinationId: hubs.id })).rejects.toThrow(/Basecamp's own database/)
+      // The pointer is written at system, and a stale form saving it alone is still a conflict.
+      await expect(env.as(sysadmin).service('hub-config').call('save', null, { replicaDestinationId: null, version: (await hubRow()).version - 1 }))
+        .rejects.toThrow(/version|conflict|stale/i)
+      await pointHub(null)
+    })
+
+    test('Basecamp\'s box is sent its own database as `host`, and only the row in the destination\'s workspace', async () => {
+      const sys  = env.system as any
+      const box  = await sys.server.findFirst({ where: { slug: HOST_SLUG, workspaceId: ws.id } })
+        ?? await sys.server.create({ data: { workspaceId: ws.id, name: 'host', slug: HOST_SLUG, status: 'pending' } })
+      const rival = await sys.workspace.create({ data: { accountId: ws.accountId, name: `Spoof ${tag()}`, slug: `spoof-${tag()}`, ownerId: ws.ownerId } })
+      const spoof = await sys.server.create({ data: { workspaceId: rival.id, name: 'spoof', slug: HOST_SLUG, status: 'pending' } })
+      expect(await hostReplicaFor(env.app, box.id)).toBeNull()
+
+      const dest = await own()
+      await pointHub(dest.id)
+      expect(await hostReplicaFor(env.app, box.id)).toEqual({
+        bucket: dest.bucket, path: 'apps/basecamp', endpoint: dest.endpoint, region: 'auto',
+        access_key_id: 'AKID', secret_access_key: 'se:cr/et',
+      })
+      // A tenant may name a server `basecamp-host`; it is not sent the key.
+      expect(await hostReplicaFor(env.app, spoof.id)).toBeNull()
+      expect(await hostReplicaFor(env.app, server.id)).toBeNull()
+      await pointHub(null)
+      expect(await hostReplicaFor(env.app, box.id)).toBeNull()
+    })
+
+    test('another workspace\'s destination is refused, and a removed one drops off the list', async () => {
+      const sys    = env.system as any
+      const rival  = await sys.workspace.create({ data: { accountId: ws.accountId, name: `Rival ${tag()}`, slug: `rival-${tag()}`, ownerId: ws.ownerId } })
+      const theirs = await sys.backupDestination.create({ data: {
+        workspaceId: rival.id, name: `t-${tag()}`, endpoint: 'https://x.example.com', region: 'auto', bucket: 'theirs', prefix: '', secretId: 'sec-x' } })
+      await expect(env.as(owner).service('apps').patch(app.id, { replicaDestinationId: theirs.id })).rejects.toThrow(/No backup destination/)
+
+      const dest = await own()
+      await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: dest.id })
+      await env.as(owner).service('backup-destinations').remove(dest.id)
+      expect(await replicasFor(env.app, server.id)).toEqual([])
+      await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: null })
     })
   })
 })

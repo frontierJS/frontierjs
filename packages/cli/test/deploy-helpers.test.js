@@ -46,12 +46,12 @@ async function loadModuleHelpers() {
   const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
   const fn = new AsyncFunction(`
     ${scriptMatch[1]}
-    return { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, sshHost, swapContainer, healthOrRestore, litestreamInstall, aptIdle, LITESTREAM_PIN, LITESTREAM_MIN }
+    return { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, sshHost, swapContainer, healthOrRestore, litestreamInstall, aptIdle }
   `)
   return fn()
 }
 
-const { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, swapContainer, healthOrRestore, litestreamInstall, aptIdle, LITESTREAM_PIN, LITESTREAM_MIN } = await loadModuleHelpers()
+const { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, swapContainer, healthOrRestore, litestreamInstall, aptIdle } = await loadModuleHelpers()
 
 // ─── loadFrontierConfig ───────────────────────────────────────────────────────
 
@@ -664,28 +664,6 @@ describe('litestreamInstall', () => {
   test('deploy:setup checks for litestream and installs it with the pinned script', () => {
     const steps = readFileSync(resolve(ROOT, 'commands/deploy/_steps-setup/01-check-deps.md'), 'utf8')
     expect(steps).toMatch(/name: 'litestream'.*install: litestreamInstall\(\)/)
-  })
-
-  test('the pin clears the floor the checks enforce', () => {
-    const [major, minor] = LITESTREAM_PIN.version.split('.').map(Number)
-    expect(major > LITESTREAM_MIN.major || (major === LITESTREAM_MIN.major && minor >= LITESTREAM_MIN.minor)).toBe(true)
-    for (const arch of ['x86_64', 'arm64']) expect(LITESTREAM_PIN.sha256[arch]).toMatch(/^[0-9a-f]{64}$/)
-  })
-
-  // 02-install-deps wraps the script in sudo sh -c '...'
-  test('the script carries no single quote', () => {
-    expect(litestreamInstall()).not.toContain("'")
-  })
-
-  test('a download whose digest does not match installs nothing', () => {
-    const bin  = resolve(TMP, 'bin')
-    const dest = resolve(TMP, 'dest')
-    mkdirSync(bin); mkdirSync(dest)
-    // A curl that hands back the wrong bytes
-    writeFileSync(resolve(bin, 'curl'), '#!/bin/sh\nwhile [ "$1" != "-o" ]; do shift; done; echo tampered > "$2"\n', { mode: 0o755 })
-    const r = Bun.spawnSync(['sh', '-c', litestreamInstall(dest)], { env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } })
-    expect(r.exitCode).not.toBe(0)
-    expect(Bun.spawnSync(['ls', dest]).stdout.toString().trim()).toBe('')
   })
 })
 

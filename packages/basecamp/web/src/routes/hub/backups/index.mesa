@@ -84,12 +84,16 @@ title: Hub backups
   // /hub/security/ cannot disagree. Attesting is a person's word: the server
   // records when and the key's digest, and a regenerated key voids it.
   let escrow    = null
+  let replica   = null
   let attesting = false
   async function loadEscrow() {
     try {
       const host = await postures.service.invoke('host', null, {})
-      escrow = host.controls.find(c => c.id === 'hub.key-escrowed') ?? null
-    } catch { escrow = null }
+      escrow  = host.controls.find(c => c.id === 'hub.key-escrowed') ?? null
+      // The box's own `backup.replica-lag`, which grades Basecamp's database
+      // beside its apps' once a replica is set.
+      replica = config?.replicaDestinationId ? host.controls.find(c => c.id === 'backup.replica-lag') ?? null : null
+    } catch { escrow = null; replica = null }
   }
   async function attest() {
     error = null; attesting = true
@@ -243,6 +247,22 @@ title: Hub backups
         {attesting ? 'Recording…' : 'I keep a copy off this box'}
       </Button>
     {/if}
+  </Card>
+{/if}
+
+{#if replica}
+  <Card id="hub-replica">
+    <div class="section-header">
+      <h3 class="h5">Continuous replica</h3>
+      <Pill tone={replica.ok === true ? 'success' : replica.ok === false ? 'danger' : 'muted'}>
+        {replica.ok === true ? 'replicating' : replica.ok === false ? 'behind' : 'unknown'}
+      </Pill>
+    </div>
+    <p class="text-sm text-muted">
+      Litestream on this box streams the database to its bucket within seconds of each write —
+      the minutes between the archives below. Set in <a href="/hub/settings/">settings</a>.
+    </p>
+    <p class="text-sm" id="hub-replica-reading">{replica.message}</p>
   </Card>
 {/if}
 

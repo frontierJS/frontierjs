@@ -72,6 +72,15 @@ export function readConfig(env = process.env) {
      *  StateDirectory, so the sandbox lets it and it exists on a box the
      *  install built. */
     backupDir:   (env.OUTPOST_BACKUP_DIR ?? '/var/lib/outpost/backups').replace(/\/$/, ''),
+    /** The Litestream unit's config, which `/replicate` rewrites whole. The
+     *  install writes it `dbs: []` and the unit reads it at start. */
+    litestreamConfig:  env.OUTPOST_LITESTREAM_CONFIG ?? '/etc/basecamp/litestream.yml',
+    /** Where each database's Litestream position is kept, outside its volume.
+     *  The unit's StateDirectory. */
+    litestreamMetaDir: (env.OUTPOST_LITESTREAM_META_DIR ?? '/var/lib/litestream').replace(/\/$/, ''),
+    /** The unit's control socket, which `/replicate` turns on and the
+     *  heartbeat reads. Under its RuntimeDirectory. */
+    litestreamSocket:  env.OUTPOST_LITESTREAM_SOCKET ?? '/run/litestream/litestream.sock',
     /** Each app's host uid, recorded once and never reused (`FJS-D1484`).
      *  Inside the unit's StateDirectory, where the sandbox lets it write. */
     uidFile:     env.OUTPOST_UID_FILE ?? '/var/lib/outpost/uids.json',

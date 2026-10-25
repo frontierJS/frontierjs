@@ -503,6 +503,7 @@ CREATE TABLE IF NOT EXISTS "server" (
   "actualSpecs" TEXT,
   "health" TEXT,
   "dockerState" TEXT,
+  "replication" TEXT,
   "labels" TEXT NOT NULL DEFAULT '{}',
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -940,6 +941,7 @@ CREATE TABLE IF NOT EXISTS "hub_config" (
   "backupEnabled" INTEGER NOT NULL DEFAULT 0,
   "backupCron" TEXT NOT NULL DEFAULT '0 2 * * *',
   "backupDestinationId" TEXT,
+  "replicaDestinationId" TEXT UNIQUE,
   "backupKeepLocalCount" INTEGER NOT NULL DEFAULT 7,
   "backupKeepLocalDays" INTEGER,
   "backupKeepRemoteCount" INTEGER NOT NULL DEFAULT 7,
@@ -950,7 +952,8 @@ CREATE TABLE IF NOT EXISTS "hub_config" (
   "mailFromName" TEXT,
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "version" INTEGER NOT NULL DEFAULT 1,
-  FOREIGN KEY ("backupDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL
+  FOREIGN KEY ("backupDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL,
+  FOREIGN KEY ("replicaDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS "alert_rule_channel" (
@@ -1065,6 +1068,7 @@ CREATE TABLE IF NOT EXISTS "app" (
   "blueprintId" TEXT,
   "backupCron" TEXT,
   "backupDestinationId" TEXT,
+  "replicaDestinationId" TEXT UNIQUE,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
@@ -1073,7 +1077,8 @@ CREATE TABLE IF NOT EXISTS "app" (
   UNIQUE ("environmentId", "slug"),
   FOREIGN KEY ("environmentId") REFERENCES "environment" ("id") ON DELETE CASCADE,
   FOREIGN KEY ("blueprintId") REFERENCES "blueprint" ("id") ON DELETE SET NULL,
-  FOREIGN KEY ("backupDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL
+  FOREIGN KEY ("backupDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL,
+  FOREIGN KEY ("replicaDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_app_workspaceId" ON "app" ("workspaceId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_app_environmentId" ON "app" ("environmentId") WHERE "deletedAt" IS NULL;

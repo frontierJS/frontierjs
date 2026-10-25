@@ -1,8 +1,9 @@
 # Backups — the operator's recipe
 
 How a Basecamp hub and every app it runs get their archives off the machine,
-with Backblaze B2 as the worked example. Any S3-compatible bucket works the same
-way: the hub speaks SigV4 through `@frontierjs/conduit`'s `storage:s3` target
+with Backblaze B2 as the worked example and the recommended default
+(`FJS-D1506`); Cloudflare R2 is the runner-up. Any S3-compatible bucket works the
+same way: the hub speaks SigV4 through `@frontierjs/conduit`'s `storage:s3` target
 and nothing here is B2-specific but the console steps and the prices.
 
 What is archived and why `VACUUM INTO` rather than a file copy is the header of
@@ -135,3 +136,29 @@ about $6/TB/month
 ([pricing](https://www.backblaze.com/cloud-storage/pricing)). A daily hub
 archive is megabytes, so seven kept locally and seven in the bucket stays
 inside the free tier until an app's volume does not.
+
+## 9. Live replicas — one key per app
+
+A snapshot leaves the machine by a URL that expires; a replica cannot, so
+Litestream on each machine holds a standing key, and every machine the app is
+placed on holds it (`FJS-D1505`). So a replica destination is **one app's**:
+`App.replicaDestinationId` is unique, and a second app pointing at the same row
+is refused. Make a destination per app, with a key that reaches no further than
+that app's objects, and set it with `apps.patch { replicaDestinationId }`.
+
+The replica lands at `<destination prefix>/<app id>/`. Litestream needs list on
+the bucket and get, put and delete on its objects
+([guide](https://litestream.io/guides/s3/)). How narrow the key can be is the
+vendor's:
+
+| Vendor | Narrowest key | How |
+| --- | --- | --- |
+| Backblaze B2 | a prefix | Application key restricted to the bucket, *File name prefix* `<prefix>/<app id>/`, the five capabilities of § 2 ([b2_create_key](https://www.backblaze.com/apidocs/b2-create-key)) |
+| AWS S3 / MinIO | a prefix | `s3:ListBucket` on the bucket with an `s3:prefix` condition, object actions on `bucket/<prefix>/<app id>/*` ([AWS](https://repost.aws/knowledge-center/s3-folder-user-access) · [MinIO](https://min.io/docs/minio/linux/administration/identity-access-management/policy-based-access-control.html)) |
+| Cloudflare R2 | a bucket | A bucket per app, and an *Object Read & Write* token on that bucket only ([tokens](https://developers.cloudflare.com/r2/api/tokens/)) |
+| DigitalOcean Spaces | a bucket | A bucket per app, and a *Read/Write/Delete* key on it; made in the control panel ([manage access](https://docs.digitalocean.com/products/spaces/how-to/manage-access/)) |
+| Hetzner | a bucket, by policy | A bucket per app with a bucket policy allowing only that key, `p<project>:<key>`; keys are made in the Console ([S3 credentials](https://docs.hetzner.com/storage/object-storage/faq/s3-credentials)) |
+
+Changing the destination's address or key, removing it, or clearing the
+pointer re-sends every machine the app is on its list, and the replica stops
+there. The key is not deleted at the vendor; revoke it there.

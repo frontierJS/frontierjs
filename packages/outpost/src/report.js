@@ -23,6 +23,7 @@ import { createVitals } from './vitals.js'
 
 export function createReporter(config, {
   inspector,
+  replicator     = null,
   fetch: doFetch = fetch,
   log            = console,
   vitals         = createVitals(),
@@ -71,6 +72,9 @@ export function createReporter(config, {
         outpost_version: config.version,
         outpost_url:     config.publicUrl,
         health:          await health(),
+        // Every heartbeat, so a stopped unit or a stalled bucket shows as lag
+        // within one interval rather than at the next posture report.
+        ...(replicator ? { replication: await replicator.status() } : {}),
       })
     },
 

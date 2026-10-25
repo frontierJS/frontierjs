@@ -77,6 +77,12 @@ title: App
   let sourceDirty = false
   let imageDraft  = ''
 
+  // `late` is the API's: past the lag `backup.replica-lag` fails at.
+  const bucketTone = (r) => r.error || (r.late && r.lagMs !== null) ? 'danger' : r.late ? 'warning' : 'success'
+  const bucketSays = (r) => r.error ? `Litestream: ${r.error}`
+    : r.lagMs === null ? 'Bucket: not synced yet'
+    : `Bucket ${r.lagMs < 60_000 ? `${Math.round(r.lagMs / 1000)}s` : ago(r.lastSyncAt)} behind`
+
   function write(name, value) { draft = { ...draft, [name]: value } }
   function writeCert(name, value) { certDraft = { ...certDraft, [name]: value } }
 
@@ -582,6 +588,11 @@ title: App
                 <a href={`/servers/${p.serverId}/`}>{p.server?.name ?? p.serverId}</a>
                 <Badge tone="muted">replica {p.replicaIndex}</Badge>
                 <Pill>{p.status}</Pill>
+                {#if p.replication}
+                  <!-- Litestream's word for how far the bucket is, read at the
+                       machine's last heartbeat. -->
+                  <Badge tone={bucketTone(p.replication)} data-replication>{bucketSays(p.replication)}</Badge>
+                {/if}
                 <Button treatment="ghost" tone="danger" disabled={busy === p.id}
                         data-confirm={`This replica stops running on ${p.server?.name ?? 'that server'}.`}
                         data-confirm-title="Unplace this replica?" data-confirm-label="Unplace"

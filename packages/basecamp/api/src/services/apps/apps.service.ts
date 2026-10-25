@@ -23,7 +23,7 @@
 // `environment_name` / `environment_tier` columns.
 
 import { randomBytes } from 'node:crypto'
-import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict, parseWhere, $ } from '@frontierjs/junction'
 import { normalizeOrderBy, type SortParam } from '@frontierjs/toolbelt/query'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
@@ -43,8 +43,10 @@ import { resolveExecutor, executorOn, isExecutor } from '../../providers/executo
 import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, isInline } from '../../core/app-source.ts'
 import { runtimeOf } from '../../core/runtime.ts'
 import { cronProblem, syncAppBackupSchedule } from '../jobs/job-schedule.ts'
+import { syncReplicasOn, syncReplicasOf, replicaHolder } from '../../jobs/replicate-sync.job.ts'
 import type { App }            from '@frontierjs/junction'
 import { keyScope } from '../api-keys/scopes.ts'
+import { replicaLag } from '../../core/posture.ts'
 
 const _WITH_ENV = { environment: true }
 
@@ -152,16 +154,27 @@ function checkRuntime(data: Record<string, unknown>, current?: Record<string, un
  * The app's schedule (`IDEAS/backups.md` 1.6). An expression the clock cannot
  * hold is refused BEFORE the write, as `hub-config.save` does, so a stored
  * schedule always registers; the bucket is read in the caller's scope, so
- * another workspace's row is refused by name and never pointed at.
+ * another workspace's row is refused by name and never pointed at. A replica
+ * destination is one replica's (`FJS-D1505`), so one already held is refused
+ * naming who holds it.
  */
-async function checkBackup(data: Record<string, unknown>): Promise<void> {
+async function checkBackup(data: Record<string, unknown>, selfId?: string): Promise<void> {
   if (typeof data.backupCron === 'string') {
     const problem = cronProblem(data.backupCron)
     if (problem) throw new BadRequest(`backupCron: ${problem}`)
   }
-  if (typeof data.backupDestinationId === 'string'
-      && !await db().backupDestination.exists({ where: { id: data.backupDestinationId } }))
-    throw new BadRequest(`No backup destination '${data.backupDestinationId}'`)
+  for (const key of ['backupDestinationId', 'replicaDestinationId']) {
+    const id = data[key]
+    if (typeof id === 'string' && !await db().backupDestination.exists({ where: { id } }))
+      throw new BadRequest(`No backup destination '${id}'`)
+  }
+  if (typeof data.replicaDestinationId === 'string') {
+    const holder = await replicaHolder($.app, data.replicaDestinationId)
+    if (holder && 'hub' in holder)
+      throw new Conflict('That destination replicates Basecamp\'s own database; give this app a destination of its own')
+    if (holder && holder.app.id !== selfId)
+      throw new Conflict(`That destination replicates '${holder.app.slug}'; give this app a destination of its own`)
+  }
 }
 
 async function assertEnvironmentInWorkspace(environmentId: string) {
@@ -206,7 +219,7 @@ async function detail(id: string) {
   // not, and its release snapshots no files. Every inline release records a
   // digest once it runs, so `builtImage` cannot tell the two apart — the
   // screen warns before Deploy ships the Source tab over the build.
-  const live = isInline(row.source) ? deployments.find(d => d.status === 'success') : null
+  const live = isInline(row.source) ? deployments.find((d: { status: string }) => d.status === 'success') : null
   const liveSnapshot = live
     ? (await db().deployment.findFirst({ where: { id: live.id }, select: { configSnapshot: true } }))?.configSnapshot as { source?: { files?: unknown[] } } | undefined
     : undefined
@@ -215,7 +228,13 @@ async function detail(id: string) {
     ...row,
     domains: (row.domains ?? []).map((d: Record<string, unknown>) => ({ ...d, ...certStatusOf(d as never) })),
     sourceLabel: describeSource(row.source),
-    placement,
+    // Each machine's Litestream reading for THIS app; the rest of that
+    // reading names other apps on the machine and stays off this answer.
+    placement: placement.map(({ server, ...p }: any) => {
+      const { replication, ...rest } = server ?? {}
+      return { ...p, server: server ? rest : server,
+        replication: row.replicaDestinationId ? replicaLag(replication, row.id, Date.now()) : null }
+    }),
     recent_deployments: deployments,
     liveBuild: !!liveSnapshot && !liveSnapshot.source?.files?.length,
     jobs,
@@ -320,6 +339,7 @@ export default createService({
     await assertEnvironmentInWorkspace(data.environmentId as string)
     const created = await db().app.create({ data })
     syncAppBackupSchedule($.app, created)
+    // Placed nowhere yet, so no machine has a list to change; `place` sends it.
     return db().app.findFirst({ where: { id: created.id }, include: WITH_DETAIL })
   },
 
@@ -330,9 +350,10 @@ export default createService({
     const patch = narrowPatch($.data as Record<string, unknown>)
     checkSource(patch, current as Record<string, unknown>)
     checkRuntime(patch, current as Record<string, unknown>)
-    await checkBackup(patch)
+    await checkBackup(patch, current.id as string)
     if (!changesNothing(patch))
       syncAppBackupSchedule($.app, await db().app.update({ where: { id: $.id as string }, data: patch }))
+    if ('replicaDestinationId' in patch) await syncReplicasOf($.app, [current.id])
 
     return db().app.findFirst({ where: { id: $.id as string }, include: WITH_DETAIL })
   },
@@ -343,12 +364,14 @@ export default createService({
     const removed = await removeScoped('app', 'App')
     // A deleted app's volume is not a thing to archive at 02:00.
     syncAppBackupSchedule($.app, { id: target.id, backupCron: null, deletedAt: null })
+    if (target.replicaDestinationId) await syncReplicasOf($.app, [target.id])
     return { ...removed, machine }
   },
 
   async restore() {
     const row = await restoreScoped('app', 'App')
     syncAppBackupSchedule($.app, row)
+    if (row.replicaDestinationId) await syncReplicasOf($.app, [row.id])
     return detail(row.id)
   },
 
@@ -497,6 +520,7 @@ export default createService({
     await $.db.asSystem().appServer.create({
       data: { appId: target.id, serverId, replicaIndex, status: 'unknown' },
     })
+    if (target.replicaDestinationId) await syncReplicasOn($.app, [serverId])
 
     return detail(target.id)
   },
@@ -519,6 +543,7 @@ export default createService({
 
     const sys = $.db.asSystem()
     for (const row of rows) await sys.appServer.delete({ where: { id: row.id } })
+    if (target.replicaDestinationId) await syncReplicasOn($.app, [serverId])
 
     return detail(target.id)
   },

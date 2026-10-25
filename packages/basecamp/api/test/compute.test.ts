@@ -755,6 +755,24 @@ describe('a machine claims its own credential', () => {
     expect(OUTPOST_VERSION).toBe(pkg.version)
   })
 
+  // It writes into every app's volume, which outpost.service cannot reach, and
+  // the config it reads is the file the Outpost rewrites. The build is the one
+  // deploy:setup installs, so Basecamp's own box and its fleet run one binary.
+  test('Litestream runs as its own sandboxed unit, on the config the Outpost writes', async () => {
+    const { installScript } = await import('../src/providers/compute/enrollment.ts')
+    const { litestreamInstall } = await import('@frontierjs/litestone/replicate')
+    const script = installScript()
+    expect(script).toContain(litestreamInstall())
+    const unit = /cat > \/etc\/systemd\/system\/basecamp-litestream\.service <<UNITEOF\n([\s\S]*?)\nUNITEOF/.exec(script)?.[1] ?? ''
+    expect(unit).toContain('ExecStart=/usr/local/bin/litestream replicate -config /etc/basecamp/litestream.yml')
+    expect(unit).toContain('ProtectSystem=strict')
+    expect(unit).toMatch(/^ReadWritePaths=.*\/var\/lib\/docker\/volumes/m)
+    expect(unit).toContain('StateDirectory=litestream')
+    expect(unit).toContain('RuntimeDirectory=litestream')
+    expect(script).toContain('systemctl enable --now basecamp-litestream.service')
+    expect(script).toMatch(/if \[ ! -f \/etc\/basecamp\/litestream\.yml \]/)
+  })
+
   // A moving `oven/bun:1` tag put the control plane on 1.4.4 while every
   // Outpost ran 1.4.2 (FJS-3443).
   test('the image runs the Bun every Outpost is installed with', async () => {

@@ -2299,6 +2299,7 @@ export interface Server {
   actualSpecs?: unknown | null
   health?: unknown | null
   dockerState?: unknown | null
+  replication?: unknown | null
   labels: unknown
   createdAt: string
   updatedAt: string
@@ -2370,6 +2371,7 @@ export interface ServerCreate {
   actualSpecs?: unknown | null
   health?: unknown | null
   dockerState?: unknown | null
+  replication?: unknown | null
   labels?: unknown
 }
 
@@ -2400,6 +2402,7 @@ export interface ServerUpdate {
   actualSpecs?: unknown | null
   health?: unknown | null
   dockerState?: unknown | null
+  replication?: unknown | null
   labels?: unknown
 }
 
@@ -2430,6 +2433,7 @@ export interface ServerWhere extends WhereBase {
   actualSpecs?: unknown | WhereOp<unknown> | null
   health?: unknown | WhereOp<unknown> | null
   dockerState?: unknown | WhereOp<unknown> | null
+  replication?: unknown | WhereOp<unknown> | null
   labels?: unknown | WhereOp<unknown> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
@@ -2877,6 +2881,7 @@ export interface App {
   blueprintId?: string | null
   backupCron?: string | null
   backupDestinationId?: string | null
+  replicaDestinationId?: string | null
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -2899,6 +2904,7 @@ export interface AppCreate {
   exposesPort?: boolean
   backupCron?: string | null
   backupDestinationId?: string | null
+  replicaDestinationId?: string | null
 }
 
 export interface AppUpdate {
@@ -2918,6 +2924,7 @@ export interface AppUpdate {
   exposesPort?: boolean
   backupCron?: string | null
   backupDestinationId?: string | null
+  replicaDestinationId?: string | null
 }
 
 export interface AppSystem {
@@ -2952,6 +2959,7 @@ export interface AppWhere extends WhereBase {
   blueprintId?: string | WhereOp<string> | null
   backupCron?: string | WhereOp<string> | null
   backupDestinationId?: string | WhereOp<string> | null
+  replicaDestinationId?: string | WhereOp<string> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
@@ -2968,6 +2976,7 @@ export interface AppRelations {
   environment: Environment | null
   blueprint: Blueprint | null
   backupDestination: BackupDestination | null
+  replicaDestination: BackupDestination | null
   appBackups: AppBackup[]
   deployments: Deployment[]
   jobs: Job[]
@@ -4420,6 +4429,8 @@ export interface BackupDestinationRelations {
   backups: Backup[]
   appBackups: AppBackup[]
   apps: App[]
+  replicaApp: App | null
+  replicaHub: HubConfig | null
   hubs: HubConfig[]
 }
 
@@ -5550,6 +5561,7 @@ export interface HubConfig {
   backupEnabled: boolean
   backupCron: string
   backupDestinationId?: string | null
+  replicaDestinationId?: string | null
   backupKeepLocalCount: number
   backupKeepLocalDays?: number | null
   backupKeepRemoteCount: number
@@ -5576,6 +5588,7 @@ export interface HubConfigCreate {
   backupEnabled?: boolean
   backupCron?: string
   backupDestinationId?: string | null
+  replicaDestinationId?: string | null
   backupKeepLocalCount?: number
   backupKeepLocalDays?: number | null
   backupKeepRemoteCount?: number
@@ -5597,6 +5610,7 @@ export interface HubConfigUpdate {
   backupEnabled?: boolean
   backupCron?: string
   backupDestinationId?: string | null
+  replicaDestinationId?: string | null
   backupKeepLocalCount?: number
   backupKeepLocalDays?: number | null
   backupKeepRemoteCount?: number
@@ -5624,6 +5638,7 @@ export interface HubConfigWhere extends WhereBase {
   backupEnabled?: boolean | WhereOp<boolean> | null
   backupCron?: string | WhereOp<string> | null
   backupDestinationId?: string | WhereOp<string> | null
+  replicaDestinationId?: string | WhereOp<string> | null
   backupKeepLocalCount?: number | WhereOp<number> | null
   backupKeepLocalDays?: number | WhereOp<number> | null
   backupKeepRemoteCount?: number | WhereOp<number> | null
@@ -5645,6 +5660,7 @@ export type HubConfigOrderBy =
 
 export interface HubConfigRelations {
   backupDestination: BackupDestination | null
+  replicaDestination: BackupDestination | null
 }
 
 // ─── Notification ────────────────────────────────────────────────

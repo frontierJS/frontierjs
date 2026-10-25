@@ -19,6 +19,7 @@ import { verifyRequest, nonceMemory } from '@frontierjs/toolbelt/signature'
 import { createDocker, createInspector, checkRunConfig } from './docker.js'
 import { createStatic } from './static.js'
 import { createIngress, hostsOf, pathsOf, redirectsOf } from './ingress.js'
+import { createReplicator } from './replicate.js'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
@@ -28,6 +29,7 @@ export function createOutpostServer(config, {
   inspector = createInspector(),
   statics   = createStatic({ staticDir: config.staticDir, staticUrl: config.staticUrl }),
   ingress   = createIngress({ admin: config.caddyAdmin }),
+  replicator = createReplicator({ configPath: config.litestreamConfig, metaDir: config.litestreamMetaDir, hostDb: config.hostFiles?.db ?? null }),
   log       = console,
 } = {}) {
 
@@ -277,6 +279,9 @@ export function createOutpostServer(config, {
     // An app's data volume, tarred into this machine's backup directory and,
     // given a pre-signed URL, uploaded from there.
     'POST /backup':        (body) => docker.backup({ appId: body.app_id, uploadUrl: body.upload_url }),
+    // Every app this machine replicates, each with its own key; the list
+    // replaces the last one whole, so an app left out stops replicating.
+    'POST /replicate':     (body) => replicator.apply({ replicas: body.replicas, host: body.host }),
     // Basecamp's *check now*: the readings come back in the answer and
     // Basecamp ingests them, rather than this posting a report beside it.
     'POST /posture':       () => inspector.posture(),

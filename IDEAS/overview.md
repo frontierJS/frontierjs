@@ -717,6 +717,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 ### partial
 
 - `frontier-cloud.md` — Frontier Cloud: paid hosting over the fleet FJS already runs
+- `third-party.md` — one register of the third parties we recommend: Provider, self-hosted, Stand-in; B2, SeaweedFS and the nouns ruled; Phase 3 moves it to `docs/`
 
 ### proposed
 

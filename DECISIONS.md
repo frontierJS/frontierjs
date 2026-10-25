@@ -8277,6 +8277,50 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1511"></a>2026-10-24 · `FJS-D1511` — 1.5 — What replaces Basecamp's `minio:latest` Blueprint row — SeaweedFS at `chrislusf/seaweedfs:4.48`, the same server the drives start (`FJS-D1507`), so the tree keeps one S3 server rather than two.
+
+Asked in [`IDEAS/third-party.md`](IDEAS/third-party.md) step 1.5. **A** was picked over **B** (RustFS: MinIO-style IAM, but at 1.0 only since October and a second S3 server) and **C** (remove the row). Versity was not offered because it needs startup arguments, and `Blueprint` has no command column.
+
+The image's default command, `weed mini`, serves S3 on 8333 and answers `/healthz` with 200, so it runs as-is. Its own help lists "small deployments" beside dev and test. Both key params are `required`, because with neither set it serves every bucket unsigned. Two things the row cannot turn off are stated in its `notes`: an Admin UI on 23646 with no password, and anonymous usage reporting once 10 GiB are stored. `n8n` and `umami` still pin `latest`, and nothing refuses a `:latest` pin.
+
+*Lives in:* `packages/basecamp/db/blueprints.js`.
+
+### <a id="fjs-d1510"></a>2026-10-24 · `FJS-D1510` — Q4 — Where the third-party register lives once ruled — `docs/THIRD-PARTY.md` beside `PORTS.md`, moved when its rows cite rulings, with the Pin column replaced by a pointer to the file that holds each pin.
+
+Asked in [`IDEAS/third-party.md`](IDEAS/third-party.md) § Open questions. **A** was picked over **B** (move it with the pins copied in, kept by hand) and **C** (stay in `IDEAS/`). A register that names where each thing is used describes the tree, and `IDEAS/` is never cited as behavior. A copied pin (`S3_IMAGE`, the Litestream version, the Blueprint images) drifts from the code the moment one is bumped, and nothing would flag it.
+
+*Lives in:* `IDEAS/third-party.md` until the move.
+
+### <a id="fjs-d1509"></a>2026-10-24 · `FJS-D1509` — Q3 — The register's nouns — **Stand-in** is blessed in the Testing realm: a local fake of a Provider that a drive starts, resets or breaks on purpose. **Sidecar** is refused, and the register's middle table is titled *Self-hosted* until Basecamp's `VISION.md` rules a noun for self-hosted third-party software.
+
+Asked in [`IDEAS/third-party.md`](IDEAS/third-party.md) § Open questions. **A** was picked over **B** (both words), **C** (Stand-in, and rule *Appliance* now) and **D** (neither). Stand-in already means one thing wherever it appears (`DRIVES.md`, `docs/PORTS.md`, `FJS-D460`). Sidecar already has two meanings: a dev listener the app started (`FJS-D460`, junction's `core/app.ts`), which is a stand-in, and a file beside the database (litestone). The register's Sidecar rows were not one kind either, since Docker is a runtime and Caddy is the front door. A *sink* is a stand-in that only receives, and needs no row of its own.
+
+*Lives in:* `VOCABULARY.md`.
+
+### <a id="fjs-d1507"></a>2026-10-24 · `FJS-D1507` — Q2 — Which S3 server the drives start — SeaweedFS, kept, with the pin moved from 4.47 to 4.48. A key scoped to a prefix is added after start by piping into `weed shell` through `docker exec -i`, which needs no mount under snap Docker.
+
+Asked in [`IDEAS/third-party.md`](IDEAS/third-party.md) § Open questions. **A** was picked over **B** (Versity S3 Gateway: lighter and has IAM, but not proved with Litestream here) and **C** (RustFS: MinIO-style IAM, but only at 1.0 since October). Garage was dropped because its PUT ignores `If-None-Match`, and the MinIO forks because the last free upstream release refused a create-only conditional PUT.
+
+The paper's recommendation, taken as written. SeaweedFS is the only candidate already green with Litestream 0.5.17, and it has every feature the list asked for. What's missing is two probes (a 412/200 on `If-None-Match: *`, and a prefix-scoped List/Read) and a signed bucket create, not a switch. The Blueprint `minio:latest` row is outside this ruling and is still open (`third-party.md` 1.5).
+
+*Lives in:* `example/web/test/verify-replicate.mjs` (`S3_IMAGE`).
+
+### <a id="fjs-d1506"></a>2026-10-24 · `FJS-D1506` — Q1 — Which vendor Basecamp recommends as the default backup destination — Backblaze B2, with Cloudflare R2 as the runner-up. A recommendation in `BACKUPS.md`, not a code default: `FJS-D1488`/`FJS-D1491` still take any S3-compatible bucket, and a vendor preset on `BackupDestination` would be a new option needing its own ruling.
+
+Asked in [`IDEAS/third-party.md`](IDEAS/third-party.md) § Open questions. **A** was picked over **B** (R2: egress is free and `If-None-Match` is documented, but it needs one bucket per app, Class A is metered, and Litestream #1171 measured about 480 PUTs an hour from an idle database) and **C** (no default).
+
+The paper's recommendation, taken as written. B2 is the cheapest (about $0.28 a month for 50 GB stored), every S3 call is free, so Litestream's request volume costs nothing, and egress is free up to 3× what is stored. Its keys scope to a prefix, and it is already proved live (`backups.md` 0.7). Two gaps are still owed:
+- **Retention:** a B2 bucket keeps every version, so retention needs the native `daysFromHidingToDeleting` rule. Only `BACKUPS.md` step 2 guards this, and nothing catches a bucket that skipped it.
+- **Conditional PUT:** `If-None-Match` is unproved on B2 (`third-party.md` 1.4).
+
+*Lives in:* `packages/basecamp/docs/BACKUPS.md`.
+
+### <a id="fjs-d1505"></a>2026-10-24 · `FJS-D1505` — Q7 — Where an app's Litestream key comes from — `App.replicaDestinationId`, `@unique`, points at a `BackupDestination` the operator made with a key for that app alone. The replica path is `<prefix>/<appId>`. `BACKUPS.md` gets a recipe per vendor, and 1.8's probe adds a PUT outside the prefix that must be refused, where the vendor scopes by prefix. Snapshots keep `backupDestinationId`, whose key never leaves Basecamp.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) § Open questions. **A** was picked over **B** (Basecamp mints a key per app through the vendor's key API (B2 `b2_create_key`, then R2 and AWS) and keeps it as a Secret on the App. It needs a `writeKeys` key in Basecamp, close to a master key, and still falls back to A at Spaces and Hetzner), **C** (The replica reuses the app's `backupDestinationId` key. That puts a workspace key on every machine, which breaks D1486's revoke-alone and D1485's stolen-machine bound).
+
+The paper's recommendation, taken as written: No new owner and no new noun. A leaked key reaches one app's replica, which is what D1485 promises, and it works at all six vendors. Reopen as B when operators keep getting the scope wrong. Confidence 2.
+
 ### <a id="fjs-d1497"></a>2026-10-23 · `FJS-D1497` — How Basecamp knows a copy of `ENCRYPTION_KEY` is kept off the box — A person attests it. `HubConfig.encryptionKeyEscrowedAt` and `encryptionKeyFingerprint` (the key's sha256, never the key) are `@system`, written by `hub-config.attestEscrow` alone, and `hub.key-escrowed` grades the attestation against the key in use: absent, or naming a key that is no longer the one in use, fails high. The development placeholder cannot be attested. The key never travels with an archive.
 
 Asked in [`IDEAS/backups.md`](IDEAS/backups.md) 1.7. **An attestation bound to the key by digest** was picked over **a control that is always unknown beside static copy** (Coolify's shape — a warning in the docs and nothing graded, which is what posture exists to replace) and **Basecamp escrowing the key itself to a second place** (1Password's Emergency Kit; the kit already exists here as the `.env` `fli deploy:setup` leaves on the operator's machine, and a second copy Basecamp writes is a second owner of credential material). GitLab is the precedent for the shape: `gitlab-secrets.json` is kept OUT of the backup and `gitlab:doctor:secrets` checks the live key still decrypts; a fingerprint match is that check without the decrypt. Confidence 2.
@@ -18393,6 +18437,14 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d1508"></a>2026-10-24 · `FJS-D1508` — What code an owner's front-matter value may carry (`FJS-3416`) — `FJS-D1250`'s grade, applied to the value: a value may hold only the tags, `{…}` and script blocks the old value held, and may not become a `javascript:`/`vbscript:` address or link.
+
+Asked through AskUserQuestion. **A** was picked over **B** (a preset key naming which values it renders as HTML, graded alone), **C** (ksite's PageHero stops rendering `title`, `hero_preheading` and its paragraphs through `{@html}`) and **D** (A, with attribute-less inline tags such as `<br>` and `<em>` let through, as WordPress's kses lets them into a post title).
+
+A needs nothing from a preset, and a key a preset forgot to name in B is the hole again. C mends one preset and turns every `<br>` a developer wrote into a title into literal text. D makes the value's rule differ from the body's. What A costs: an owner keeps a tag already in a title but cannot add one.
+
+*Lives in:* `packages/site-kit/src/editable.js` `valueRefusal`, called by `applyEdit` for `values` and by `applyField`. *Enforced by:* site-kit's `test/content.mjs`.
 
 ### <a id="fjs-d1492"></a>2026-10-23 · `FJS-D1492` — Q6 — Parakeet TDT 0.6B v3 int8 through sherpa-onnx local, whisper.cpp for a language Parakeet does not cover, Deepgram as a conduit target.
 

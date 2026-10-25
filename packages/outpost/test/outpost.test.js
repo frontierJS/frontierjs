@@ -22,8 +22,9 @@ import { createStatic }           from '../src/static.js'
 import { createStaticServer }     from '../src/serve.js'
 import { readConfig }             from '../src/config.js'
 import { ensureCert }             from '../src/cert.js'
+import { createReplicator }       from '../src/replicate.js'
 import pkg                        from '../package.json' with { type: 'json' }
-import { existsSync, mkdtempSync, statSync, writeFileSync, mkdirSync, symlinkSync, realpathSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, statSync, writeFileSync, mkdirSync, symlinkSync, realpathSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir }                 from 'node:os'
 import { join }                   from 'node:path'
 
@@ -1939,5 +1940,176 @@ describe('the command port certificate', () => {
     expect(first.cert).toStartWith('-----BEGIN CERTIFICATE-----')
     expect(statSync(first.keyPath).mode & 0o777).toBe(0o600)
     expect(ensureCert(dir).cert).toBe(first.cert)
+  })
+})
+
+// ─── /replicate ───────────────────────────────────────────────────────────────
+// The machine's Litestream config is Basecamp's list, rewritten whole, each app
+// with its own key (FJS-D1505).
+
+describe('/replicate — every app this machine replicates, each with its own key', () => {
+  const entry = (app_id, over = {}) => ({
+    app_id, bucket: 'frontier', path: `apps/${app_id}`, endpoint: 'https://s3.us-west-000.backblazeb2.com',
+    region: 'us-west-000', access_key_id: `K-${app_id}`, secret_access_key: `S-${app_id}`, ...over,
+  })
+  const replicating = (answers = {}, { hostDb = null } = {}) => {
+    const dir        = mkdtempSync(join(tmpdir(), 'outpost-replicate-'))
+    const configPath = join(dir, 'basecamp', 'litestream.yml')
+    const runner     = fakeRunner({
+      'docker volume inspect': { stdout: '/var/lib/docker/volumes/fjs-ela-data/_data\n' },
+      ...answers,
+    })
+    const server = createOutpostServer(CONFIG, {
+      docker: createDocker({ run: runner.run }), inspector: createInspector({ run: runner.run }),
+      replicator: createReplicator({ run: runner.run, configPath, metaDir: '/var/lib/litestream', hostDb }),
+      log: { warn() {}, error() {} },
+    })
+    return { server, calls: runner.calls, configPath }
+  }
+  const replicate = async (server, body) => {
+    const res = await send(server, 'POST', '/replicate', body)
+    return { status: res.status, body: await res.json() }
+  }
+
+  test('writes each app\'s volume with its own key and meta-dir outside it, 0600, and restarts the unit', async () => {
+    const { server, calls, configPath } = replicating()
+    const { status, body } = await replicate(server, { replicas: [entry('ela')] })
+    expect(status).toBe(200)
+    expect(body).toEqual({ replicating: ['ela'], skipped: [] })
+    const yml = readFileSync(configPath, 'utf8')
+    expect(yml).toContain('  - dir: /var/lib/docker/volumes/fjs-ela-data/_data\n')
+    expect(yml).toContain('    meta-dir: "/var/lib/litestream/ela"\n')
+    expect(yml).toContain('        access-key-id: "K-ela"\n')
+    expect(yml).toContain('        path: "apps/ela"\n')
+    expect(statSync(configPath).mode & 0o777).toBe(0o600)
+    expect(yml).toContain('socket:\n  enabled: true\n  path: "/run/litestream/litestream.sock"\n')
+    expect(calls.at(-1)).toEqual(['systemctl', 'restart', 'basecamp-litestream.service'])
+  })
+
+  test('the list replaces the last one: an app left out has no entry and no key here', async () => {
+    const { server, configPath } = replicating()
+    await replicate(server, { replicas: [entry('ela'), entry('crm')] })
+    expect(readFileSync(configPath, 'utf8')).toContain('K-crm')
+    await replicate(server, { replicas: [entry('ela')] })
+    expect(readFileSync(configPath, 'utf8')).not.toContain('K-crm')
+    await replicate(server, { replicas: [] })
+    expect(readFileSync(configPath, 'utf8')).toContain('dbs: []')
+  })
+
+  test('an app with no volume here is skipped, and the others are still written', async () => {
+    const { server, configPath } = replicating({ 'docker volume inspect': { exitCode: 1, stderr: 'no such volume' } })
+    const { status, body } = await replicate(server, { replicas: [entry('ela')] })
+    expect(status).toBe(200)
+    expect(body.replicating).toEqual([])
+    expect(body.skipped[0]).toMatchObject({ app_id: 'ela' })
+    expect(readFileSync(configPath, 'utf8')).toContain('dbs: []')
+  })
+
+  test('Basecamp\'s own box replicates its database as `host`; any other machine skips it', async () => {
+    const { app_id, ...host } = entry('basecamp', { path: 'apps/basecamp' })
+    const hostDb = mkdtempSync(join(tmpdir(), 'outpost-hostdb-'))
+    const box = replicating({}, { hostDb })
+    expect((await replicate(box.server, { replicas: [entry('ela')], host })).body).toEqual({ replicating: ['ela'], skipped: [], host: 'replicating' })
+    const yml = readFileSync(box.configPath, 'utf8')
+    expect(yml).toContain(`  - dir: ${hostDb}\n`)
+    expect(yml).toContain('    meta-dir: "/var/lib/litestream/_host"\n')
+    expect(yml).toContain('        access-key-id: "K-basecamp"\n')
+    // Sent without it, the host's entry and key are gone.
+    await replicate(box.server, { replicas: [entry('ela')] })
+    expect(readFileSync(box.configPath, 'utf8')).not.toContain('K-basecamp')
+
+    const other = replicating()
+    const { body } = await replicate(other.server, { replicas: [entry('ela')], host })
+    expect(body).toMatchObject({ replicating: ['ela'], host: 'skipped' })
+    expect(body.skipped[0]).toMatchObject({ host: true, reason: expect.stringContaining('OUTPOST_HOST_DB_PATH') })
+    expect(readFileSync(other.configPath, 'utf8')).not.toContain('K-basecamp')
+    const gone = replicating({}, { hostDb: join(hostDb, 'missing') })
+    expect((await replicate(gone.server, { replicas: [], host })).body.skipped[0].reason).toContain('not a directory')
+    rmSync(hostDb, { recursive: true, force: true })
+  })
+
+  test('a bad entry is refused before the file is touched', async () => {
+    for (const replicas of [undefined, [entry('../x')], [entry('ela'), entry('ela')], [entry('ela', { secret_access_key: '' })], [entry('ela', { endpoint: 'ftp://x' })]]) {
+      const { server, calls, configPath } = replicating()
+      expect((await replicate(server, { replicas })).status).toBe(500)
+      expect(existsSync(configPath)).toBe(false)
+      expect(calls).toEqual([])
+    }
+    const { server, configPath } = replicating()
+    expect((await replicate(server, { replicas: [], host: { ...entry('x'), secret_access_key: '' } })).status).toBe(500)
+    expect(existsSync(configPath)).toBe(false)
+  })
+
+  test('a list already in force is left running, unless the unit is not active', async () => {
+    const { server, calls } = replicating()
+    await replicate(server, { replicas: [entry('ela')] })
+    const before = calls.length
+    expect((await replicate(server, { replicas: [entry('ela')] })).body).toMatchObject({ replicating: ['ela'], unchanged: true })
+    expect(calls.slice(before).some(c => c[1] === 'restart')).toBe(false)
+
+    const down = replicating({ 'systemctl is-active --quiet': { exitCode: 3 } })
+    await replicate(down.server, { replicas: [entry('ela')] })
+    await replicate(down.server, { replicas: [entry('ela')] })
+    expect(down.calls.filter(c => c[1] === 'restart')).toHaveLength(2)
+  })
+
+  describe('status — each app\'s last sync, off the control socket', () => {
+    const answering = (body, init = { status: 200 }) => createReplicator({
+      fetch: async (url, opts) => { expect(opts.unix).toBe('/run/litestream/litestream.sock'); return new Response(JSON.stringify(body), init) },
+    })
+    const vol = (app, db) => `/var/lib/docker/volumes/fjs-${app}-data/_data/${db}`
+
+    test('an app is as far behind as its furthest database, and one never synced is further', async () => {
+      const r = answering({ databases: [
+        { path: vol('ela', 'a.db'), status: 'replicating', last_sync_at: '2026-10-24T10:00:05Z' },
+        { path: vol('ela', 'b.db'), status: 'replicating', last_sync_at: '2026-10-24T10:00:01Z' },
+        { path: vol('crm', 'c.db'), status: 'replicating', last_sync_at: '2026-10-24T10:00:09Z' },
+        { path: vol('crm', 'd.db'), status: 'not initialized' },
+        { path: '/srv/elsewhere.db', status: 'replicating', last_sync_at: '2026-10-24T10:00:09Z' },
+      ] })
+      expect(await r.status()).toEqual({ apps: [
+        { app_id: 'ela', status: 'replicating',     last_sync_at: '2026-10-24T10:00:01Z', databases: 2 },
+        { app_id: 'crm', status: 'not initialized', last_sync_at: null,                   databases: 2 },
+      ] })
+    })
+
+    test('the host\'s databases read as `host`, not as an app', async () => {
+      const r = createReplicator({ hostDb: '/srv/basecamp/db/', fetch: async () => new Response(JSON.stringify({ databases: [
+        { path: vol('ela', 'a.db'), status: 'replicating', last_sync_at: '2026-10-24T10:00:05Z' },
+        { path: '/srv/basecamp/db/basecamp.db', status: 'replicating', last_sync_at: '2026-10-24T10:00:04Z' },
+        { path: '/srv/basecamp/db/basecamp-jobs.db', status: 'replicating', last_sync_at: '2026-10-24T10:00:02Z' },
+      ] })) })
+      expect(await r.status()).toEqual({
+        apps: [{ app_id: 'ela', status: 'replicating', last_sync_at: '2026-10-24T10:00:05Z', databases: 1 }],
+        host: { status: 'replicating', last_sync_at: '2026-10-24T10:00:02Z', databases: 2 },
+      })
+    })
+
+    test('a socket that is not there or does not answer is an error, never a throw', async () => {
+      const missing = createReplicator({ fetch: async () => { throw Object.assign(new Error('nope'), { code: 'ENOENT' }) } })
+      expect((await missing.status()).error).toContain('is not running')
+      const hung = createReplicator({ statusTimeoutMs: 20, fetch: (_u, { signal }) => new Promise((_, no) => signal.addEventListener('abort', () => no(signal.reason))) })
+      expect((await hung.status()).error).toContain('did not answer')
+      expect((await answering({}, { status: 500 }).status()).error).toContain('answered 500')
+    })
+
+    test('the heartbeat carries it', async () => {
+      const sent = []
+      const reporter = createReporter(CONFIG, {
+        inspector: createInspector({ run: fakeRunner({}).run }), log: { warn() {} },
+        replicator: { status: async () => ({ apps: [{ app_id: 'ela', status: 'replicating', last_sync_at: '2026-10-24T10:00:01Z', databases: 1 }] }) },
+        fetch: async (url, init) => { sent.push(JSON.parse(init.body)); return new Response('{}') },
+      })
+      await reporter.heartbeat()
+      expect(sent[0].replication.apps[0].app_id).toBe('ela')
+    })
+  })
+
+  test('a unit that will not restart is an error that says the file is written', async () => {
+    const { server } = replicating({ 'systemctl restart basecamp-litestream.service': { exitCode: 1, stderr: 'Unit not found.' } })
+    const { status, body } = await replicate(server, { replicas: [entry('ela')] })
+    expect(status).toBe(500)
+    expect(body.error).toContain('is written but basecamp-litestream.service did not restart')
+    expect(body.error).toContain('Unit not found.')
   })
 })

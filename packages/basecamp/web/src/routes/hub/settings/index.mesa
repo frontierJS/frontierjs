@@ -95,7 +95,7 @@ title: Hub settings
           name: 'Basecamp', baseUrl: '', adminEmail: '',
           heartbeatTimeoutSeconds: 120, sessionTtlHours: 168,
           requireTwoFactorForOwners: false, allowApiKeyAuth: true, allowBotUsers: true,
-          backupEnabled: false, backupCron: '0 2 * * *', backupDestinationId: null,
+          backupEnabled: false, backupCron: '0 2 * * *', backupDestinationId: null, replicaDestinationId: null,
           backupKeepLocalCount: 7, backupKeepLocalDays: null, backupKeepRemoteCount: 7, backupKeepRemoteDays: null,
           mailFromAddress: '', mailFromName: '',
         }
@@ -130,6 +130,14 @@ title: Hub settings
   ]
 
   $: picked = destinations.find(d => d.id === draft.backupDestinationId) ?? null
+
+  $: replicaOptions = [
+    { value: '', label: 'None' },
+    ...destinations.map(d => ({ value: d.id, label: `${d.name} — ${d.bucket}` })),
+    ...(draft.replicaDestinationId && !destinations.some(d => d.id === draft.replicaDestinationId)
+      ? [{ value: draft.replicaDestinationId, label: 'A destination in another workspace' }]
+      : []),
+  ]
 
   function writeDest(name, value) { destDraft = { ...destDraft, [name]: value } }
 
@@ -367,6 +375,11 @@ title: Hub settings
       lowered limit applies at the next backup, not on save. A bucket keeping every version
       bills a deleted archive until its lifecycle drops old versions.
     </p>
+    <Select name="replicaDestinationId" id="cfg-replica-destination" label="Continuous replica"
+            value={draft.replicaDestinationId ?? ''} options={replicaOptions} placeholder=""
+            error={fieldErrs.replicaDestinationId}
+            hint="Litestream on this box streams the database to this bucket within seconds, under basecamp/ in its prefix. Its key sits on this box, so give it a destination of its own — one an app replicates with is refused."
+            oninput={(e) => write('replicaDestinationId', e.target.value || null)} />
   </Card>
 
   <Card id="hub-settings-mail">
