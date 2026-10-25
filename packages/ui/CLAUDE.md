@@ -18,7 +18,7 @@ this list does not name. The owners that matter on most turns:
 
 - `components/forms/Form.mesa` is the form — provides `$context.form`, owns the live-validation rule, autosave and `method="auto"` · `components/forms/FormField.mesa` is the control dispatcher · `controls.js` is where an app contributes a control (the table itself is `sierra/src/resource/field-rules.js`).
 - `components/{display,layout,overlay,feedback}/` are the rest of the kit; `components/display/Cell.mesa` is the lazy-loading example · `stores/` holds `alertStore` · `toastStore` · `commandPaletteStore`.
-- `utils.js` — `overlayHost()` for every portal, `download(blob, filename)` · `nav.js` is the `src/lib/nav.js` contract Shell draws from · `dnd.js`, `drag.js`, `rowlist.js` are `{@attach}`es · `selection.js` is `createSelection` (`FJS-D671`).
+- `utils.js` — `overlayHost()` for every portal, `download(blob | response, filename)` and `openFile(fetchFile, { name })` · `nav.js` is the `src/lib/nav.js` contract Shell draws from · `dnd.js`, `drag.js`, `rowlist.js` are `{@attach}`es · `selection.js` is `createSelection` (`FJS-D671`).
 - `test/` — `compile-all.mjs` · `render.mjs` · `attributes.mjs` · `form.mjs` · `nav.mjs` · `datetime-zone.mjs`.
 - `test/browser/` is the kit drive — `run.mjs`, `server.mjs`, `page.js`, `fixtures/*.mesa`, `specs/*.spec.mjs`; Chrome, CDP and the probes are mesa's `mesa/test/browser/{drive.mjs,probes.js}`, read by relative path.
 

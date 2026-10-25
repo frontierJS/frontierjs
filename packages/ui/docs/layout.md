@@ -34,7 +34,7 @@ rowlist.js    rowlist — the keys of a list of rows (cursor, one tab stop, open
 selection.js  createSelection — the ticked KEYS of a list, signal-backed; the
               screen composes it with Checkbox `indeterminate` and BulkBar,
               and Table stays out of it (FJS-D671)
-utils.js      shared helpers; `download(blob, filename)` saves a file
+utils.js      shared helpers; `download()` saves a file, `openFile()` shows one in a tab
 test/         compile-all.mjs · render.mjs · attributes.mjs · form.mjs ·
               nav.mjs (the nav.js contract)
 test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,

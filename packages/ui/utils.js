@@ -428,20 +428,41 @@ export function plotRuns(values) {
 const SAVE_GRACE_MS = 40_000
 
 /**
- * Hand the person `blob` as a file named `filename`.
+ * The name a response gives its file in `Content-Disposition`, or null.
+ * `filename*` wins over `filename` (RFC 6266 § 4.3), and junction's file route
+ * sends only `filename*` — a reader of `filename="…"` alone never sees its name.
+ */
+export function fileNameOf(res) {
+  const header = res.headers.get('content-disposition') ?? ''
+  const star = /filename\*\s*=\s*([^']*)'[^']*'([^;]+)/i.exec(header)
+  if (star) {
+    try { return decodeURIComponent(star[2].trim()) } catch { /* a malformed escape falls through to filename= */ }
+  }
+  const plain = /filename\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^;]+))/i.exec(header)
+  if (plain) return (plain[1]?.replace(/\\(.)/g, '$1') ?? plain[2].trim()) || null
+  return null
+}
+
+/**
+ * Hand the person a file: a `Blob` named `filename`, or a `Response` named as
+ * the server named it, `filename` when it names nothing.
  *
  *   download(new Blob([csv], { type: 'text/csv' }), 'orders.csv')
- *   download(await (await client.fetch('/exports/orders')).blob(), 'orders.csv')
+ *   await download(await client.fetch('/exports/orders'), 'orders.csv')
  *
  * The second line is the authenticated case: `client.fetch` carries the
  * session, which a link cannot (`client.fetch` in the junction client).
+ * A Blob is saved before the call returns, inside the click that asked for it;
+ * a Response is read first, so its promise settles once the save is queued.
  * The anchor goes in the document for the click: older Firefox ignores a
  * click on a detached one.
  */
-export function download(blob, filename) {
-  if (!(blob instanceof Blob)) {
-    throw new TypeError(`download: expected a Blob, got ${blob === null ? 'null' : typeof blob} — a Response is \`await res.blob()\``)
+export function download(file, filename) {
+  if (file instanceof Response) return file.blob().then(blob => download(blob, fileNameOf(file) ?? filename))
+  if (!(file instanceof Blob)) {
+    throw new TypeError(`download: expected a Blob or a Response, got ${file === null ? 'null' : typeof file}`)
   }
+  const blob = file
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -451,6 +472,32 @@ export function download(blob, filename) {
   a.click()
   a.remove()
   setTimeout(() => URL.revokeObjectURL(url), SAVE_GRACE_MS)
+}
+
+/**
+ * Show the person a file in a new tab — a PDF to read or print — or save it.
+ * `fetchFile` answers the `Response`; it is a function because the tab must
+ * open inside the click, before the first `await`, or the browser blocks it as
+ * a popup.
+ *
+ *   openFile(() => client.fetch(`/invoices/${id}/pdf`), { name: 'invoice.pdf' })
+ *
+ * A blocked popup leaves no tab, so the file is saved instead of lost, as it
+ * is with `save: true`. A failure closes the blank tab and rethrows.
+ */
+export async function openFile(fetchFile, { name, save = false } = {}) {
+  const tab = save ? null : window.open('', '_blank')
+  try {
+    const res = await fetchFile()
+    if (!tab) return await download(res, name)
+    const url = URL.createObjectURL(await res.blob())
+    tab.location.href = url
+    // The tab holds the bytes once it has loaded them; the grace covers a slow load.
+    setTimeout(() => URL.revokeObjectURL(url), SAVE_GRACE_MS)
+  } catch (e) {
+    tab?.close()
+    throw e
+  }
 }
 
 /**
