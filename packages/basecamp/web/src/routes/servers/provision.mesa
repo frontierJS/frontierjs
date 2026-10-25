@@ -9,7 +9,6 @@ title: Provision a machine
   import Select   from '@frontierjs/ui/components/forms/Select.mesa'
   import Input    from '@frontierjs/ui/components/forms/Input.mesa'
   import Callout  from '@frontierjs/ui/components/display/Callout.mesa'
-  import { money } from '../../money.js'
 
   // BUY a machine at a cloud. The sibling screen, /servers/import/, RECORDS one
   // that already exists.
@@ -115,7 +114,7 @@ title: Provision a machine
       value: s.slug,
       label: `${s.label} — ${s.vcpu} vCPU, ${Math.round(s.memoryMb / 1024)} GB, `
            + `${s.diskGb} GB`
-           + (draft.region ? ` · ${money(s.prices[draft.region], s.currency)}/mo` : ''),
+           + (draft.region ? ` · ${s.prices[draft.region]?.toMoney(s.currency)}/mo` : ''),
     }))
 
   async function save(e) {
@@ -233,7 +232,7 @@ title: Provision a machine
             <div class="alert-content">
               This creates a machine at {account?.providerKind} and starts billing:
               <strong>{chosen.label}</strong> in {draft.region} —
-              <strong>{money(chosenPrice, chosen.currency)}/month</strong>.
+              <strong>{chosenPrice.toMoney(chosen.currency)}/month</strong>.
               It boots, installs its own outpost and reports back; nothing here connects to it.
             </div>
           </article>

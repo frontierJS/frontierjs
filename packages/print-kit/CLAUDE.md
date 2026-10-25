@@ -2,7 +2,7 @@
 
 **`@frontierjs/print-kit`** — one headless Chromium render worker behind one
 seam: a document to a PDF, an element to a PNG. Sits above mesa exactly as
-`email-kit` does; imports nothing from junction.
+`email-kit` does; imports nothing from junction at runtime.
 
 `bun run test` — bun's runner over `print-kit.test.js`, which needs nothing,
 then `test/run.mjs`, which **needs Chrome and `pdftotext`**: no Chrome skips the
@@ -35,8 +35,13 @@ test/            print-kit.test.js (no browser) · run.mjs + specs/ (a real Chro
   (`FJS-2230`). The job queued behind a wedge still waits the 30 s.
 - **The print page is offline under `createNetwork`** — a template that
   fetches a font or an image from a URL gets nothing, by design. Inline it.
-- **`printer` must not import junction.** It exports the plugin
-  protocol's shape and takes its name with `app.own('printer', …)` (Invariant 5).
+- **`printer` must not import junction at runtime.** It exports the plugin
+  protocol's shape and takes its name with `app.own('printer', …)`, and
+  `index.d.ts` types it by augmenting junction's `App` (Invariant 5). Junction
+  is an optional peer and a devDependency because a `.d.ts` augmentation
+  whose module does not resolve is dropped without an error: delete the
+  devDependency and this typecheck still passes, while `app.printer` goes
+  untyped in every app.
 - **Margin boxes are text the page context draws**, so what `print.css`
   sets on `@page` is the only styling they inherit.
 

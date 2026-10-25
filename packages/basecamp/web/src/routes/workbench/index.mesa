@@ -45,7 +45,7 @@ title: Workbench
   // extra column or row grows the grid. The grid, which cell holds which
   // chat and which one is zoomed are this browser's own, kept in
   // localStorage.
-  import { ago }       from '../../datetime.js'
+  import { ago }       from '../../lib/datetime.js'
   import { markdownText } from '@frontierjs/toolbelt/markdown'
   import { slug }      from '@frontierjs/toolbelt/inflect'
   import { workbench } from '../../resources/Workbench.mesa'

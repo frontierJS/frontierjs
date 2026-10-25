@@ -6,7 +6,7 @@
   // memory figure — is per-container telemetry nothing here collects; the app's
   // own `status` column is real and is what this card shows.
   import { apps } from '../../resources/App.mesa'
-  import { at } from '../../datetime.js'
+  import { at } from '../../lib/datetime.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
   export let widget = null

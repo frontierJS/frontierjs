@@ -15,8 +15,8 @@ title: Recipes
   // by line from a fixed table; here a run row goes `pending → running →` an
   // exit code, pushed from the job, and a machine with no outpost is refused
   // at the click with the name of the machine in the sentence.
-  import { session } from '../../session.js'
-  import { ago }     from '../../datetime.js'
+  import { session } from '../../lib/session.js'
+  import { ago }     from '../../lib/datetime.js'
   import Recipe, { recipes } from '../../resources/Recipe.mesa'
   import { servers } from '../../resources/Server.mesa'
 

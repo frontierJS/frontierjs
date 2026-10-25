@@ -16,7 +16,7 @@ title: Git activity
   // three now — a repository record answers `ci`, `openPullRequests` and
   // `openIssues`, and `listPullRequests(repo)` is the second call — so what is
   // left is an adapter and a service, not an interface. The callout says which.
-  import { session } from '../../session.js'
+  import { session } from '../../lib/session.js'
   import { portal } from '../../resources/Portal.mesa'
 
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'

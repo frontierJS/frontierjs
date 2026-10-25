@@ -17,16 +17,16 @@
 //   { error: '<what>' }                  and the exit is non-zero
 
 import { createBasecampDb } from './db.ts'
-import { findHost, useHost } from './host-machine.ts'
+import { hostServer, useHost } from './host-machine.ts'
 
 const answer = (o: Record<string, unknown>) => console.log(JSON.stringify(o))
 
 try {
   const sys = (await createBasecampDb()).asSystem() as any
 
-  // One row per box: a row in ANY workspace is this machine, so it is found
-  // before a workspace is chosen for a new one.
-  const found = await findHost(sys)
+  // One row per box: the hub's pointer names it in whichever workspace it
+  // sits, so it is found before a workspace is chosen for a new one.
+  const found = await hostServer(sys)
   let workspaceId = found?.workspaceId as string | undefined
 
   if (!workspaceId) {

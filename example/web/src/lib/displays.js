@@ -1,4 +1,4 @@
-// web/src/displays.js — what this shop renders differently from the kit.
+// web/src/lib/displays.js — what this shop renders differently from the kit.
 //
 // The same rule as a contributed control (`FJS-D17`): a
 // contributed renderer is TWO registrations and one name across them.
@@ -28,8 +28,8 @@
 import { registerDisplay }          from '@frontierjs/sierra/resource'
 import { registerDisplayComponent } from '@frontierjs/ui/controls'
 
-import MoneyCell  from './components/MoneyCell.mesa'
-import StatusPill from './components/StatusPill.mesa'
+import MoneyCell  from '../components/MoneyCell.mesa'
+import StatusPill from '../components/StatusPill.mesa'
 
 registerDisplayComponent('money', MoneyCell)
 

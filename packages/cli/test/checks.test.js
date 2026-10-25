@@ -14,6 +14,7 @@ import { keyLiteral, weakLiteral, buildIndex, identifierOf, readKeyList } from '
 import { spawnSync } from 'child_process'
 import { RULES, runChecks, findApps, applyFixes, verdictOf, blindSkips,
          BASELINE_FILE, readBaseline, gradeBaseline, writeBaseline, AUTH_SERVICES } from '../core/checks.js'
+import { API_SRC_KINDS, WEB_SRC_KINDS } from '../core/checks/app.js'
 
 let ROOT
 
@@ -5457,18 +5458,17 @@ describe('app-layout grades the src/ layout (FJS-1888)', () => {
   const layout = (name, files) => only(tree(name, { ...CLEAN, ...files }), 'app-layout').findings
   const _about  = (findings, re) => findings.filter(f => re.test(f.message))
 
-  test('a clean tree, with the scaffold files loose in web/src, finds nothing', () => {
+  test('a clean tree, with the scaffold files where fli new writes them, finds nothing', () => {
     expect(layout('lay-clean', {
-      'web/src/main.js': '\n', 'web/src/App.mesa': '<p>a</p>\n', 'web/src/datetime.js': '\n', 'web/src/db.d.ts': '\n',
+      'web/src/main.js': '\n', 'web/src/App.mesa': '<p>a</p>\n', 'web/src/lib/datetime.js': '\n', 'web/src/lib/db.d.ts': '\n',
       'web/src/components/Card.mesa': '<p>c</p>\n', 'web/src/lib/money.js': '\n',
       'api/src/routes/hook.ts': "app.post('/hook', () => {})\n",
     })).toEqual([])
   })
 
-  test('a module loose in web/src that the scaffold does not write', () => {
-    const f = layout('lay-loose', { 'web/src/money.js': 'export const m = 1\n' })
-    expect(f).toHaveLength(1)
-    expect(f[0].file).toMatch(/web\/src\/money\.js$/)
+  test('a module or declaration file loose in web/src', () => {
+    const f = layout('lay-loose', { 'web/src/money.js': 'export const m = 1\n', 'web/src/db.d.ts': '\n' })
+    expect(f.map(x => x.file.replace(/.*\/web\//, 'web/')).sort()).toEqual(['web/src/db.d.ts', 'web/src/money.js'])
     expect(f[0].message).toMatch(/lib\//)
   })
 
@@ -5528,6 +5528,45 @@ describe('app-layout grades the src/ layout (FJS-1888)', () => {
     expect(f).toHaveLength(1)
     expect(f[0].file).toMatch(/core\/mine\.ts$/)
     expect(f[0].message).toMatch(/plugins\//)
+  })
+
+  // FJS-D1516: no check that finds files by kind looks inside an area folder.
+  test('a folder at the top of api/src/ that is not a kind', () => {
+    const f = layout('lay-area', {
+      'api/src/documents/compose.ts':  'export const c = 1\n',
+      'api/src/providers/telnyx/x.ts': 'export const t = 1\n',
+      'api/src/domain/billing/fee.ts': 'export const f = 1\n',
+      'api/src/app.ts':                '\n',
+    })
+    expect(f.map(x => x.file.replace(/.*\/api\//, 'api/'))).toEqual(['api/src/documents'])
+    expect(f[0].message).toMatch(/domain\/documents\//)
+  })
+
+  // FJS-D1520: a .mesa code renders sits in its area; one another .mesa imports, in components/.
+  test('a .mesa under api/src/ in the wrong place', () => {
+    const f = layout('lay-api-mesa', {
+      'api/src/domain/documents/Invoice.mesa':   "<script>\n  import Letterhead from './Letterhead.mesa'\n  import Footing from '../../components/Footing.mesa'\n</script>\n<Letterhead />\n",
+      'api/src/domain/documents/Letterhead.mesa': '<p>l</p>\n',
+      'api/src/components/Footing.mesa':         '<p>f</p>\n',
+      'api/src/components/documents/Lines.mesa': '<p>p</p>\n',
+      'api/src/routes/Receipt.mesa':             '<p>r</p>\n',
+    })
+    expect(f.map(x => x.file.replace(/.*\/api\//, 'api/')).sort())
+      .toEqual(['api/src/domain/documents/Letterhead.mesa', 'api/src/routes/Receipt.mesa'])
+    expect(f.find(x => /Letterhead/.test(x.file)).message).toMatch(/components\//)
+    expect(f.find(x => /Receipt/.test(x.file)).message).toMatch(/domain\/<area>\//)
+  })
+
+  // The kinds are the check's; README § Project Structure is where a person reads them.
+  test('README § Project Structure names every kind the check accepts', () => {
+    const readme = readFileSync(join(import.meta.dir, '../../../README.md'), 'utf8')
+    const tree   = readme.slice(readme.indexOf('## Project Structure'))
+    const block  = (from, to) => tree.slice(tree.indexOf(`\n  ${from}/`), tree.indexOf(`\n  ${to}/`))
+    const named  = text => new Set([...text.matchAll(/^ {6}(\w+)\//gm)].map(m => m[1]))
+    const api = named(block('api', 'web')), web = named(block('web', 'site'))
+    expect(api.has('services')).toBe(true)
+    expect([...API_SRC_KINDS].filter(k => !api.has(k))).toEqual([])
+    expect([...WEB_SRC_KINDS].filter(k => !web.has(k))).toEqual([])
   })
 
   // FJS-2088: a plugin function is installed by app.configure(fn), so `app` is its ONLY

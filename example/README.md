@@ -332,7 +332,7 @@ over `app.conduit.send()`. Pointing it at the real api.resend.com is a change of
 `address` and `ref` in [`api/src/app.ts`](api/src/app.ts) and nothing else — a target
 holds a credential *reference*, resolved at send time, never a key in a closure.
 
-**The email body is a `.mesa` file.** [`api/src/emails/order-confirmation.mesa`](api/src/emails/order-confirmation.mesa)
+**The email body is a `.mesa` file.** [`api/src/domain/orders/order-confirmation.mesa`](api/src/domain/orders/order-confirmation.mesa)
 is rendered by `@frontierjs/email-kit` through the same Mesa compiler the
 browser uses, at `target: 'email'` — tables, inlined CSS, an Outlook conditional
 block. Not the `mail()` line builder: that vocabulary is greeting / paragraph /

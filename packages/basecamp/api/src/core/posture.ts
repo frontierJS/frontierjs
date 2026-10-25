@@ -462,7 +462,7 @@ const HUB_CONTROLS: { id: string; group: string; severity: Severity; grade: (r: 
   // Every archive holds `Secret.data` and the fleet's secret Variables as
   // ciphertext under ENCRYPTION_KEY, which never travels with one — so a box
   // whose key has no copy elsewhere has backups that die with it. Nothing here
-  // can see that copy; a person attests it (`hub-config.attestEscrow`), and the
+  // can see that copy; a person attests it (`hubConfig.attestEscrow`), and the
   // attestation names the key by digest so a regenerated key voids it rather
   // than a stale "kept" standing. In process, like the backup control.
   { id: 'hub.key-escrowed', group: 'hub', severity: 'high', grade: (_r, host) => {

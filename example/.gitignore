@@ -12,7 +12,7 @@ db/audit/
 # first boot — `bun run reset` removes both.
 db/shops/
 db/shops-registry.db*
-api/src/emails/.preview/
+api/src/domain/orders/.preview/
 
 # Object storage for File columns — written by the seed from db/seed-media/,
 # which IS committed. Ignoring only the destination keeps the source in git and

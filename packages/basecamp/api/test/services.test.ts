@@ -624,13 +624,13 @@ describe('windowed and computed finds apply the caller\'s directives (FJS-2904)'
     env.as(as).service(name).find({}, { directives })
 
   test('notification-preferences sorts and projects the computed kinds', async () => {
-    const asc  = (await find(owner, 'notification-preferences', { orderBy: 'kind' })).data.map((r: any) => r.kind)
-    const desc = (await find(owner, 'notification-preferences', { orderBy: '-kind' })).data.map((r: any) => r.kind)
+    const asc  = (await find(owner, 'notificationPreferences', { orderBy: 'kind' })).data.map((r: any) => r.kind)
+    const desc = (await find(owner, 'notificationPreferences', { orderBy: '-kind' })).data.map((r: any) => r.kind)
     expect(asc.length).toBeGreaterThan(1)
     expect(asc).toEqual([...asc].sort())
     expect(desc).toEqual([...asc].reverse())
 
-    const picked = (await find(owner, 'notification-preferences', { select: 'kind,email' })).data
+    const picked = (await find(owner, 'notificationPreferences', { select: 'kind,email' })).data
     for (const r of picked) expect(Object.keys(r).sort()).toEqual(['email', 'kind'])
   })
 
@@ -695,7 +695,7 @@ describe('windowed and computed finds apply the caller\'s directives (FJS-2904)'
       })
     }
     const rows  = async (directives: Record<string, unknown>) => {
-      const r = await find(sysadmin, 'metrics-store', directives)
+      const r = await find(sysadmin, 'metricsStore', directives)
       return Array.isArray(r) ? r : r.data
     }
     const names = (await rows({ orderBy: '-name' })).map((r: any) => r.name)
@@ -1555,12 +1555,12 @@ describe('the registry mirror is a tenant service, unlike the catalog beside it'
 
 describe('the installation settings are one row, behind the hub tier', () => {
   test('unconfigured answers a sentence, not an invented row of defaults', async () => {
-    await expect(env.as(sysadmin).service('hub-config').call('current'))
+    await expect(env.as(sysadmin).service('hubConfig').call('current'))
       .rejects.toThrow(/no settings yet/)
   })
 
   test('the key escrow is attested by its own method, grades hub.key-escrowed, and is never written by save', async () => {
-    const hub = env.as(sysadmin).service('hub-config')
+    const hub = env.as(sysadmin).service('hubConfig')
     await expect(hub.call('attestEscrow', null, {})).rejects.toThrow(/no settings yet/)
     // `@system`: a save naming either column is refused by name, never dropped in silence.
     await expect(hub.call('save', null, {
@@ -1588,7 +1588,7 @@ describe('the installation settings are one row, behind the hub tier', () => {
   })
 
   test('save creates it, then updates it', async () => {
-    const made = await env.as(sysadmin).service('hub-config').call('save', null, {
+    const made = await env.as(sysadmin).service('hubConfig').call('save', null, {
       name: 'Acme Fleet', baseUrl: 'https://hub.acme.test', adminEmail: 'ops@acme.test',
     })
     expect(made.id).toBe('hub')
@@ -1597,12 +1597,12 @@ describe('the installation settings are one row, behind the hub tier', () => {
     // The version is required on an update — `@version` on a settings row is
     // exactly the two-administrators case, and litestone refuses a write that
     // does not carry the revision it read.
-    await expect(env.as(sysadmin).service('hub-config').call('save', null, { sessionTtlHours: 24 }))
+    await expect(env.as(sysadmin).service('hubConfig').call('save', null, { sessionTtlHours: 24 }))
       .rejects.toThrow(/Send `version`/)
 
-    await env.as(sysadmin).service('hub-config')
+    await env.as(sysadmin).service('hubConfig')
       .call('save', null, { sessionTtlHours: 24, version: made.version })
-    const now = await env.as(sysadmin).service('hub-config').call('current')
+    const now = await env.as(sysadmin).service('hubConfig').call('current')
     expect(now.sessionTtlHours).toBe(24)
     // Still one row — the failure a singleton has is a second one.
     expect(now.name).toBe('Acme Fleet')
@@ -1610,7 +1610,7 @@ describe('the installation settings are one row, behind the hub tier', () => {
   })
 
   test('the backup cron is on the clock exactly while it is enabled', async () => {
-    const svc     = env.as(sysadmin).service('hub-config')
+    const svc     = env.as(sysadmin).service('hubConfig')
     const onClock = () => env.app.jobs.nextRuns().find((r: any) => r.name === BACKUP_SCHEDULE)?.cron ?? null
 
     // Refused before the write, so a stored schedule always registers.
@@ -1631,7 +1631,7 @@ describe('the installation settings are one row, behind the hub tier', () => {
   })
 
   test('an owner of a workspace is not a sysadmin', async () => {
-    await expect(env.as(owner).service('hub-config').call('current')).rejects.toThrow()
+    await expect(env.as(owner).service('hubConfig').call('current')).rejects.toThrow()
   })
 
   // FJS-D49: the hub tier answers 404, not the gate's 403, so a workspace
@@ -1639,7 +1639,7 @@ describe('the installation settings are one row, behind the hub tier', () => {
   // thing that says it; the 7 on the gate would answer 403.
   test('the hub tier refuses a workspace owner as not found, never as a role', async () => {
     const refusals = await Promise.all([
-      env.as(owner).service('hub-config').call('current').catch((e: any) => e),
+      env.as(owner).service('hubConfig').call('current').catch((e: any) => e),
       env.as(owner).service('backups').create({}).catch((e: any) => e),
       env.as(owner).service('blueprints').create({
         name: 'Nope', slug: 'nope', category: 'Database',
@@ -1655,7 +1655,7 @@ describe('the installation settings are one row, behind the hub tier', () => {
 
 describe('a person notification preferences are their own', () => {
   test('every kind answers, defaulted, before anybody has chosen', async () => {
-    const out = await env.as(developer).service('notification-preferences').find()
+    const out = await env.as(developer).service('notificationPreferences').find()
     // The count is derived, not typed in: `kinds.ts` IS the list this screen
     // renders, and a literal here freezes at whatever it was the day it was
     // written — which is what a kind added to the enum and the files but not to
@@ -1673,10 +1673,10 @@ describe('a person notification preferences are their own', () => {
     // writes the row for the first time — and the OTHER column must come from
     // the kind's default rather than the column's, which is `true` for `inApp`
     // by coincidence here and would not be for a kind whose default is off.
-    await env.as(developer).service('notification-preferences')
+    await env.as(developer).service('notificationPreferences')
       .call('save', null, { kind: 'DeploySuccess', email: true })
 
-    const out = await env.as(developer).service('notification-preferences').find()
+    const out = await env.as(developer).service('notificationPreferences').find()
     const row = out.data.find((r: any) => r.kind === 'DeploySuccess')
     expect(row.email).toBe(true)
     expect(row.inApp).toBe(true)
@@ -1684,19 +1684,19 @@ describe('a person notification preferences are their own', () => {
 
     // And it is still the default for somebody else — the policy, not a filter
     // this service wrote.
-    const theirs = await env.as(viewer).service('notification-preferences').find()
+    const theirs = await env.as(viewer).service('notificationPreferences').find()
     expect(theirs.data.find((r: any) => r.kind === 'DeploySuccess').source).toBe('default')
   })
 
   test('reset forgets the choice rather than storing the opposite', async () => {
-    await env.as(developer).service('notification-preferences')
+    await env.as(developer).service('notificationPreferences')
       .call('reset', null, { kind: 'DeploySuccess' })
-    const out = await env.as(developer).service('notification-preferences').find()
+    const out = await env.as(developer).service('notificationPreferences').find()
     expect(out.data.find((r: any) => r.kind === 'DeploySuccess').source).toBe('default')
   })
 
   test('an unknown kind is a sentence naming the kinds', async () => {
-    await expect(env.as(developer).service('notification-preferences')
+    await expect(env.as(developer).service('notificationPreferences')
       .call('save', null, { kind: 'deploy_fail', email: true }))
       .rejects.toThrow(/kind must be one of: DeploySuccess/)
   })
@@ -1723,7 +1723,7 @@ describe('a backup is asked for by a person and run by the app', () => {
 
   test('a declared destination is accepted and recorded on the row', async () => {
     await (env.system as any).backup.deleteMany({ where: {} })
-    const dest = await env.as(owner).service('backup-destinations').create({
+    const dest = await env.as(owner).service('backupDestinations').create({
       name: `Off-box ${Math.random().toString(36).slice(2, 8)}`,
       endpoint: 'https://s3.us-west-000.backblazeb2.com', region: 'us-west-000',
       bucket: 'frontier-basecamp', prefix: 'basecamp-', secret: 'keyid:applicationkey',
@@ -1733,7 +1733,7 @@ describe('a backup is asked for by a person and run by the app', () => {
     // Written at system, so the column is what says who asked.
     expect(made.requestedBy).toBe(sysadmin.id)
     await (env.system as any).backup.deleteMany({ where: {} })
-    await env.as(owner).service('backup-destinations').remove(dest.id)
+    await env.as(owner).service('backupDestinations').remove(dest.id)
   })
 
   test('the schedule writes a scheduled row nobody asked for, and skips beside one in flight', async () => {
@@ -1790,7 +1790,7 @@ describe('a backup destination is an address, and its key is a Secret', () => {
     (await (env.app as any).conduit.list()).some((t: any) => t.id === `storage:s3:${id}`)
 
   test('create lifts the credential into a Secret and registers the target; the row never carries the key', async () => {
-    const row = await env.as(owner).service('backup-destinations').create(bucket())
+    const row = await env.as(owner).service('backupDestinations').create(bucket())
     expect(row.secretId).toBeTruthy()
     expect(row.secret).toBeUndefined()
     expect(JSON.stringify(row)).not.toContain('applicationkey')
@@ -1799,24 +1799,24 @@ describe('a backup destination is an address, and its key is a Secret', () => {
     expect(secret).toMatchObject({ kind: 'backup', name: `backup:${row.name}`, workspaceId: ws.id })
     expect(await registered(row.id)).toBe(true)
 
-    const got = await env.as(owner).service('backup-destinations').get(row.id)
+    const got = await env.as(owner).service('backupDestinations').get(row.id)
     expect(got.backup_count).toBe(0)
   })
 
   test('a key that is not id:secret is refused at create, and no credential is asked twice', async () => {
-    await expect(env.as(owner).service('backup-destinations').create(bucket({ secret: 'just-one-part' })))
+    await expect(env.as(owner).service('backupDestinations').create(bucket({ secret: 'just-one-part' })))
       .rejects.toThrow(/accessKeyId/)
-    await expect(env.as(owner).service('backup-destinations').create(bucket({ secret: undefined })))
+    await expect(env.as(owner).service('backupDestinations').create(bucket({ secret: undefined })))
       .rejects.toThrow(/needs a credential/)
   })
 
   test('patch rotates the key in the same Secret and re-registers', async () => {
-    const row = await env.as(owner).service('backup-destinations').create(bucket())
-    await env.as(owner).service('backup-destinations').patch(row.id, { secret: 'newid:newkey', region: 'eu-central-003', version: row.version })
+    const row = await env.as(owner).service('backupDestinations').create(bucket())
+    await env.as(owner).service('backupDestinations').patch(row.id, { secret: 'newid:newkey', region: 'eu-central-003', version: row.version })
     const secret = await (env.system as any).secret.findFirst({ where: { id: row.secretId } })
     expect(secret.id).toBe(row.secretId)
     expect(secret.isVerified).toBe(false)
-    const after = await env.as(owner).service('backup-destinations').get(row.id)
+    const after = await env.as(owner).service('backupDestinations').get(row.id)
     expect(after.region).toBe('eu-central-003')
     expect(after.secretId).toBe(row.secretId)
     expect(await registered(row.id)).toBe(true)
@@ -1824,23 +1824,23 @@ describe('a backup destination is an address, and its key is a Secret', () => {
 
   test('remove is refused while an archive names it, then takes the Secret and the target with it; restore brings all three back', async () => {
     const sys = env.system as any
-    const row = await env.as(owner).service('backup-destinations').create(bucket())
+    const row = await env.as(owner).service('backupDestinations').create(bucket())
     const archived = await sys.backup.create({ data: { kind: 'manual', status: 'success', destinationId: row.id } })
-    await expect(env.as(owner).service('backup-destinations').remove(row.id)).rejects.toThrow(/1 backup/)
+    await expect(env.as(owner).service('backupDestinations').remove(row.id)).rejects.toThrow(/1 backup/)
     await sys.backup.delete({ where: { id: archived.id } })
 
-    await env.as(owner).service('backup-destinations').remove(row.id)
+    await env.as(owner).service('backupDestinations').remove(row.id)
     expect(await registered(row.id)).toBe(false)
     expect((await sys.secret.findFirst({ where: { id: row.secretId }, withDeleted: true })).deletedAt).toBeTruthy()
 
-    const back = await env.as(owner).service('backup-destinations').restore(row.id)
+    const back = await env.as(owner).service('backupDestinations').restore(row.id)
     expect(back.id).toBe(row.id)
     expect((await sys.secret.findFirst({ where: { id: row.secretId } })).deletedAt).toBeNull()
     expect(await registered(row.id)).toBe(true)
   })
 
   test('the hub schedule may point only at a destination that exists', async () => {
-    await expect(env.as(sysadmin).service('hub-config').call('save', null, {
+    await expect(env.as(sysadmin).service('hubConfig').call('save', null, {
       name: 'Hub', baseUrl: 'https://hub.example', adminEmail: 'a@b.co', backupDestinationId: 'nope',
     })).rejects.toThrow(/No backup destination 'nope'/)
   })
@@ -1859,10 +1859,10 @@ describe('a backup destination is an address, and its key is a Secret', () => {
 
     test('a good key: PUT then DELETE under the prefix, nothing left behind, lastTestAt stamped, the Secret verified', async () => {
       await fetch(`${sink.url}/_sink/reset`)
-      const row = await env.as(owner).service('backup-destinations').create(atSink())
+      const row = await env.as(owner).service('backupDestinations').create(atSink())
       expect(row.lastTestAt).toBeNull()
 
-      const tested = await env.as(owner).service('backup-destinations').call('test', row.id)
+      const tested = await env.as(owner).service('backupDestinations').call('test', row.id)
       expect(tested.lastTestAt).toBeTruthy()
       expect(tested.version).toBe(row.version + 1)
       expect(JSON.stringify(tested)).not.toContain('devsecret')
@@ -1879,24 +1879,24 @@ describe('a backup destination is an address, and its key is a Secret', () => {
     test('a key the policy refuses answers forbidden, and the row is not stamped', async () => {
       // The stand-in refuses every credential under `private/`, which is what
       // separates a policy refusal from a bad key.
-      const row = await env.as(owner).service('backup-destinations').create(atSink({ prefix: 'private/' }))
-      await expect(env.as(owner).service('backup-destinations').call('test', row.id))
+      const row = await env.as(owner).service('backupDestinations').create(atSink({ prefix: 'private/' }))
+      await expect(env.as(owner).service('backupDestinations').call('test', row.id))
         .rejects.toThrow(/^forbidden: the probe write failed .*AccessDenied/)
-      const after = await env.as(owner).service('backup-destinations').get(row.id)
+      const after = await env.as(owner).service('backupDestinations').get(row.id)
       expect(after.lastTestAt).toBeNull()
     })
 
     test('a wrong secret is the credential, said with the S3 code', async () => {
-      const row = await env.as(owner).service('backup-destinations').create(atSink({ secret: 'AKIADEV:not-the-secret' }))
-      await expect(env.as(owner).service('backup-destinations').call('test', row.id))
+      const row = await env.as(owner).service('backupDestinations').create(atSink({ secret: 'AKIADEV:not-the-secret' }))
+      await expect(env.as(owner).service('backupDestinations').call('test', row.id))
         .rejects.toThrow(/SignatureDoesNotMatch/)
     })
 
     test('a clock fifteen minutes out is clock_skew, not a bad key', async () => {
-      const row = await env.as(owner).service('backup-destinations').create(atSink())
+      const row = await env.as(owner).service('backupDestinations').create(atSink())
       await fetch(`${sink.url}/_sink/arm`, { method: 'POST', body: JSON.stringify({ skew: 20 * 60 }) })
       try {
-        await expect(env.as(owner).service('backup-destinations').call('test', row.id))
+        await expect(env.as(owner).service('backupDestinations').call('test', row.id))
           .rejects.toThrow(/^clock_skew: .*fix the clock/)
       } finally {
         await fetch(`${sink.url}/_sink/reset`)
@@ -1904,7 +1904,7 @@ describe('a backup destination is an address, and its key is a Secret', () => {
     })
 
     test('the credential is verified by this test alone — secrets.verify refuses a backup Secret by name', async () => {
-      const row = await env.as(owner).service('backup-destinations').create(atSink())
+      const row = await env.as(owner).service('backupDestinations').create(atSink())
       await expect(env.as(owner).service('secrets').call('verify', row.secretId))
         .rejects.toThrow(/testing its destination/)
       const secret = await (env.system as any).secret.findFirst({ where: { id: row.secretId } })
@@ -1913,7 +1913,7 @@ describe('a backup destination is an address, and its key is a Secret', () => {
 
     test('a destination with no credential is refused before anything is sent', async () => {
       const bare = await (env.system as any).backupDestination.create({ data: { workspaceId: ws.id, ...atSink(), secret: undefined } })
-      await expect(env.as(owner).service('backup-destinations').call('test', bare.id)).rejects.toThrow(/no credential/)
+      await expect(env.as(owner).service('backupDestinations').call('test', bare.id)).rejects.toThrow(/no credential/)
     })
   })
 
@@ -2141,7 +2141,7 @@ describe('a job\'s next run is the clock\'s answer', () => {
 // (`FJS-095`). `@system` is the declaration that says so.
 describe('a column the system writes and its caller does not', () => {
   test('the mint still lands, and it lands through the SCOPED client', async () => {
-    const made: any = await env.as(owner).service('api-keys').create({
+    const made: any = await env.as(owner).service('apiKeys').create({
       name: `ci-${Math.random().toString(36).slice(2, 8)}`,
       scopes: ['servers:read'], expiresIn: '30d',
     })
@@ -2168,10 +2168,10 @@ describe('a column the system writes and its caller does not', () => {
     let minted = 0
     auth.createApiKey = (...args: any[]) => { minted++; return real(...args) }
     try {
-      await expect(env.as(owner).service('api-keys').create({
+      await expect(env.as(owner).service('apiKeys').create({
         name: 'x'.repeat(201), scopes: ['servers:read'], expiresIn: '30d',
       })).rejects.toThrow()
-      await expect(env.as(owner).service('api-keys').create({
+      await expect(env.as(owner).service('apiKeys').create({
         name: `fx-${Math.random().toString(36).slice(2, 8)}`, scopes: ['servers:read'], expiresIn: '30d',
         nonsense: 1,
       })).rejects.toThrow()
@@ -2188,7 +2188,7 @@ describe('a column the system writes and its caller does not', () => {
     // forged value never reaches the Data boundary. Asserting the outcome rather than the throw,
     // because the throw is unreachable here and a test claiming otherwise
     // would pass for a reason that is not the reason.
-    const made: any = await env.as(owner).service('api-keys').create({
+    const made: any = await env.as(owner).service('apiKeys').create({
       name: `forged-${Math.random().toString(36).slice(2, 8)}`,
       scopes: ['servers:read'], expiresIn: '30d',
       tokenHint: 'fjs_not…mine',
@@ -2240,7 +2240,7 @@ describe('a column the system writes and its caller does not', () => {
     const bot = await botIn(ws.id)
     expect(await readsUser(issuer(), bot.id)).toBe(true)
 
-    const made: any = await env.as(owner).service('api-keys').create({
+    const made: any = await env.as(owner).service('apiKeys').create({
       name: `bot-${tag()}`, scopes: ['servers:read'], expiresIn: '30d', userId: bot.id,
     })
     expect(made.userId).toBe(bot.id)
@@ -2252,7 +2252,7 @@ describe('a column the system writes and its caller does not', () => {
 
     // The model's gate is the caller's too: a developer is below it.
     const name = `bot-${tag()}`
-    await expect(env.as(developer).service('api-keys').create({
+    await expect(env.as(developer).service('apiKeys').create({
       name, scopes: ['servers:read'], expiresIn: '30d', userId: bot.id,
     })).rejects.toThrow()
     expect(await (env.system as any).apiKey.exists({ where: { workspaceId: ws.id, name } })).toBe(false)
@@ -2292,7 +2292,7 @@ describe('a column the system writes and its caller does not', () => {
     const wsRow = await (env.system as any).workspace.findUnique({ where: { id: ws.id } })
     const human = await (env.system as any).user.create({
       data: { email: `human-${Math.random().toString(36).slice(2, 8)}@x.co`, accountId: wsRow.accountId } })
-    await expect(env.as(owner).service('api-keys').create({
+    await expect(env.as(owner).service('apiKeys').create({
       name: `nope-${human.id.slice(0, 6)}`, scopes: ['servers:read'], expiresIn: '30d', userId: human.id,
     })).rejects.toThrow(/only name a bot/)
   })
@@ -2394,11 +2394,11 @@ describe('the metric store is readable, and picks its own resolution', () => {
     // These series are `@@tenant(none)` and belong to no workspace, so even a
     // workspace owner stands below them. A declared SYSADMIN and not a hook,
     // so junction refuses by the number an agent's tool list reads (FJS-D408).
-    await expect(env.as(owner).service('metrics-store').find()).rejects.toThrow(/requires level 7, caller has level 6/)
+    await expect(env.as(owner).service('metricsStore').find()).rejects.toThrow(/requires level 7, caller has level 6/)
   })
 
   test('a sysadmin lists the series, and each one says whether anything is still writing it', async () => {
-    const res  = await env.as(sysadmin).service('metrics-store').find()
+    const res  = await env.as(sysadmin).service('metricsStore').find()
     const rows = (res as any).data ?? res
     const mine = rows.find((r: any) => r.labelsKey === 'test.gaugeReading')
     expect(mine).toBeTruthy()
@@ -2408,7 +2408,7 @@ describe('the metric store is readable, and picks its own resolution', () => {
   })
 
   test('a window inside the raw retention is answered at minute resolution', async () => {
-    const r = await env.as(sysadmin).service('metrics-store')
+    const r = await env.as(sysadmin).service('metricsStore')
       .call('read', null, { name: 'test.gaugeReading', from: Date.now() - 2 * HOUR, to: Date.now() })
     expect(r.tier).toBe('raw')
     expect(r.points.length).toBe(5)
@@ -2419,7 +2419,7 @@ describe('the metric store is readable, and picks its own resolution', () => {
     // so hour rows are the only thing that exists. Asserting the TIER and not
     // just the point count is the whole point — a reader that returned an empty
     // raw list would look identical to one that had no data.
-    const r = await env.as(sysadmin).service('metrics-store')
+    const r = await env.as(sysadmin).service('metricsStore')
       .call('read', null, { name: 'test.gaugeReading', from: Date.now() - 300 * HOUR, to: Date.now() })
     expect(r.tier).toBe('hour')
     expect(r.points.length).toBe(1)
@@ -2427,7 +2427,7 @@ describe('the metric store is readable, and picks its own resolution', () => {
   })
 
   test('a series nobody ever wrote is empty rather than an error', async () => {
-    const r = await env.as(sysadmin).service('metrics-store')
+    const r = await env.as(sysadmin).service('metricsStore')
       .call('read', null, { name: 'test.neverWritten', from: Date.now() - HOUR, to: Date.now() })
     expect(r.series).toBe(null)
     expect(r.points).toEqual([])
@@ -2436,7 +2436,7 @@ describe('the metric store is readable, and picks its own resolution', () => {
   test('a backwards window is refused rather than answered with nothing', async () => {
     // An empty chart and a nonsense range look the same to a reader, so the
     // range is graded instead of being allowed to return zero rows.
-    await expect(env.as(sysadmin).service('metrics-store')
+    await expect(env.as(sysadmin).service('metricsStore')
       .call('read', null, { name: 'test.gaugeReading', from: Date.now(), to: Date.now() - HOUR }))
       .rejects.toThrow(/from must be before to/)
   })
@@ -3361,7 +3361,7 @@ describe('a service over no model is graded by the level it declares (FJS-D408)'
       .send({ token: inv.token, name: 'Pager', password: 'correct-horse' })
     const asked: Array<[string, number]> = [
       ['servers', 200], ['apps', 200], ['variables', 200], ['channels', 200], ['volumes', 200],
-      ['api-keys', 200], ['recipes', 200], ['domains', 200], ['registry', 500],
+      ['apiKeys', 200], ['recipes', 200], ['domains', 200], ['registry', 500],
     ]
     for (const [name, limit] of asked) {
       const res = await env.http.get(`/${name}?$limit=${limit}`)
@@ -3566,11 +3566,11 @@ describe('a custom method that writes as the app declares the level it needs (FJ
   const DEVELOPER = 4, ADMIN = 5
   const declared: Array<[string, string, number]> = [
     ['jobs', 'trigger', DEVELOPER], ['volumes', 'prune', ADMIN], ['posture', 'check', DEVELOPER],
-    ['channels', 'test', ADMIN], ['backup-destinations', 'test', ADMIN],
+    ['channels', 'test', ADMIN], ['backupDestinations', 'test', ADMIN],
     ['servers', 'sync', DEVELOPER], ['servers', 'catalog', DEVELOPER],
     ['servers', 'reconcile', DEVELOPER], ['servers', 'issueEnrollment', ADMIN],
     ['apps', 'place', DEVELOPER], ['apps', 'unplace', DEVELOPER], ['invitations', 'resend', ADMIN],
-    ['api-keys', 'owners', ADMIN], ['secrets', 'verify', ADMIN],
+    ['apiKeys', 'owners', ADMIN], ['secrets', 'verify', ADMIN],
   ]
 
   for (const [service, method, need] of declared) {
@@ -4352,7 +4352,7 @@ describe('a CRUD verb is graded by the model gate alone (FJS-2353)', () => {
   })
 
   test('api-keys and secrets: a developer is refused create', async () => {
-    await expect(env.as(developer).service('api-keys').create({ name: `k-${uniq()}`, scopes: ['servers:read'], expiresIn: '30d' }))
+    await expect(env.as(developer).service('apiKeys').create({ name: `k-${uniq()}`, scopes: ['servers:read'], expiresIn: '30d' }))
       .rejects.toThrow(/^Requires admin role in this workspace/)
     await expect(env.as(developer).service('secrets').create({ name: `S_${uniq()}`, kind: 'generic', data: 'x' }))
       .rejects.toThrow(/^Requires admin role in this workspace/)
@@ -4374,7 +4374,7 @@ describe('a CRUD verb is graded by the model gate alone (FJS-2353)', () => {
 // naming the field before the method reads it.
 describe('preference and ownership verbs declare their input', () => {
   test('each names a type in the seed', () => {
-    const prefs = (env.app.services.get('notification-preferences') as any).describe().inputs
+    const prefs = (env.app.services.get('notificationPreferences') as any).describe().inputs
     expect(prefs.save).toBe('NotificationPreferenceSave')
     expect(prefs.reset).toBe('NotificationPreferenceReset')
     const workspaces = (env.app.services.get('workspaces') as any).describe().inputs
@@ -4382,7 +4382,7 @@ describe('preference and ownership verbs declare their input', () => {
   })
 
   test('a kind outside the enum, or a transport that is not a boolean, is refused naming it', async () => {
-    const prefs = env.as(developer).service('notification-preferences')
+    const prefs = env.as(developer).service('notificationPreferences')
     await expect(prefs.call('save', null, { kind: 'deploy_fail', email: true })).rejects.toThrow(/kind/)
     await expect(prefs.call('save', null, { kind: 'DeploySuccess', email: 'yes' })).rejects.toThrow(/email/)
     await expect(prefs.call('reset', null, { kind: 'deploy_fail' })).rejects.toThrow(/kind/)
@@ -4489,7 +4489,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
     else process.env.BASECAMP_STUB_OUTPOST = previous
   })
 
-  const take = (who: any, body: Record<string, unknown>) => env.as(who).service('app-backups').call('take', undefined, body)
+  const take = (who: any, body: Record<string, unknown>) => env.as(who).service('appBackups').call('take', undefined, body)
 
   test('an owner takes one, and a stub that took nothing is recorded as failed', async () => {
     const row = await take(owner, { appId: app.id, serverId: server.id }) as any
@@ -4499,14 +4499,14 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
     expect(row.kind).toBe('manual')
     expect(row.durationMs).toBeGreaterThanOrEqual(0)
 
-    const listed = await env.as(owner).service('app-backups').find({ appId: app.id }) as any
+    const listed = await env.as(owner).service('appBackups').find({ appId: app.id }) as any
     expect(listed.data.map((r: any) => r.id)).toContain(row.id)
   })
 
   test('a developer is below the gate, and the base create is not offered at all', async () => {
     await expect(take(developer, { appId: app.id, serverId: server.id })).rejects.toThrow()
-    await expect(env.as(developer).service('app-backups').find()).rejects.toThrow()
-    await expect(env.as(owner).service('app-backups').create({ appId: app.id, serverId: server.id, status: 'success' }))
+    await expect(env.as(developer).service('appBackups').find()).rejects.toThrow()
+    await expect(env.as(owner).service('appBackups').create({ appId: app.id, serverId: server.id, status: 'success' }))
       .rejects.toThrow()
   })
 
@@ -4552,13 +4552,13 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
     })
 
     test('a destination of the workspace is minted for and recorded on the row, before the machine answers', async () => {
-      const dest = await env.as(owner).service('backup-destinations').create(bucket()) as any
+      const dest = await env.as(owner).service('backupDestinations').create(bucket()) as any
       const row  = await take(owner, { appId: app.id, serverId: server.id, destinationId: dest.id }) as any
       // The stub took nothing, so the row is failed — but it names the bucket it was for.
       expect(row.status).toBe('failed')
       expect(row.destinationId).toBe(dest.id)
       // ...and the destination now counts it, which is what refuses its removal.
-      await expect(env.as(owner).service('backup-destinations').remove(dest.id)).rejects.toThrow(/recorded in this destination/)
+      await expect(env.as(owner).service('backupDestinations').remove(dest.id)).rejects.toThrow(/recorded in this destination/)
     })
 
     test('another workspace\'s destination is NotFound, and nothing is asked of the machine', async () => {
@@ -4582,7 +4582,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
   // IDEAS/backups.md 2.2: each machine is sent every app on it that names a
   // replica destination, each with that destination's own key (FJS-D1505).
   describe('replicating to a destination of its own', () => {
-    const own = () => env.as(owner).service('backup-destinations').create({
+    const own = () => env.as(owner).service('backupDestinations').create({
       name: `R2 ${tag()}`, endpoint: 'https://acct.r2.cloudflarestorage.com', region: 'auto',
       bucket: `replica-${tag()}`, prefix: '/apps/', secret: 'AKID:se:cr/et',
     }) as Promise<any>
@@ -4631,7 +4631,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
         ?? await sys.hubConfig.create({ data: { id: 'hub', name: 'Hub', baseUrl: 'https://hub.replica.test', adminEmail: 'ops@replica.test' } })
     }
     const pointHub = async (replicaDestinationId: string | null) =>
-      env.as(sysadmin).service('hub-config').call('save', null, { replicaDestinationId, version: (await hubRow()).version })
+      env.as(sysadmin).service('hubConfig').call('save', null, { replicaDestinationId, version: (await hubRow()).version })
 
     test('a destination is one replica\'s: an app\'s is refused to the hub, and the hub\'s to an app', async () => {
       const mine = await own()
@@ -4642,7 +4642,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: null })
       await expect(env.as(owner).service('apps').patch(app.id, { replicaDestinationId: hubs.id })).rejects.toThrow(/Basecamp's own database/)
       // The pointer is written at system, and a stale form saving it alone is still a conflict.
-      await expect(env.as(sysadmin).service('hub-config').call('save', null, { replicaDestinationId: null, version: (await hubRow()).version - 1 }))
+      await expect(env.as(sysadmin).service('hubConfig').call('save', null, { replicaDestinationId: null, version: (await hubRow()).version - 1 }))
         .rejects.toThrow(/version|conflict|stale/i)
       await pointHub(null)
     })
@@ -4654,6 +4654,8 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       const rival = await sys.workspace.create({ data: { accountId: ws.accountId, name: `Spoof ${tag()}`, slug: `spoof-${tag()}`, ownerId: ws.ownerId } })
       const spoof = await sys.server.create({ data: { workspaceId: rival.id, name: 'spoof', slug: HOST_SLUG, status: 'pending' } })
       expect(await hostReplicaFor(env.app, box.id)).toBeNull()
+      await hubRow()
+      await sys.hubConfig.update({ where: { id: 'hub' }, data: { hostServerId: box.id } })
 
       const dest = await own()
       await pointHub(dest.id)
@@ -4664,8 +4666,35 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       // A tenant may name a server `basecamp-host`; it is not sent the key.
       expect(await hostReplicaFor(env.app, spoof.id)).toBeNull()
       expect(await hostReplicaFor(env.app, server.id)).toBeNull()
+      // Nor is a box the hub points at outside the destination's workspace.
+      await sys.hubConfig.update({ where: { id: 'hub' }, data: { hostServerId: spoof.id } })
+      expect(await hostReplicaFor(env.app, spoof.id)).toBeNull()
+      await sys.hubConfig.update({ where: { id: 'hub' }, data: { hostServerId: box.id } })
       await pointHub(null)
       expect(await hostReplicaFor(env.app, box.id)).toBeNull()
+      await sys.hubConfig.update({ where: { id: 'hub' }, data: { hostServerId: null } })
+    })
+
+    test('the host row is the one the hub points at: useHost names it, a tenant\'s slug does not, and only the hub tier may', async () => {
+      const sys = env.system as any
+      await hubRow()
+      await sys.hubConfig.update({ where: { id: 'hub' }, data: { hostServerId: null } })
+      await sys.server.findFirst({ where: { slug: HOST_SLUG, workspaceId: ws.id } })
+        ?? await sys.server.create({ data: { workspaceId: ws.id, name: 'mine', slug: HOST_SLUG, status: 'pending' } })
+      expect(await env.as(owner).service('servers').call('host', null, {})).toBeNull()
+      await expect(env.as(owner).service('servers').call('useHost', null, {})).rejects.toMatchObject({ code: 403 })
+
+      // The person /setup makes: the workspace's owner and the hub tier at once.
+      await sys.user.update({ where: { id: owner.id }, data: { isSystemAdmin: true } })
+      const hubOp = session({ id: owner.id, isSystemAdmin: true, workspaceId: ws.id })
+      const used  = await env.as(hubOp).service('servers').call('useHost', null, {})
+      expect(used.enrolled).toBe(false)
+      expect(used.server.slug).not.toBe(HOST_SLUG)
+      expect((await hubRow()).hostServerId).toBe(used.server.id)
+      expect((await env.as(hubOp).service('servers').call('useHost', null, {})).server.id).toBe(used.server.id)
+      expect((await env.as(owner).service('servers').call('host', null, {}))?.id).toBe(used.server.id)
+      await sys.hubConfig.update({ where: { id: 'hub' }, data: { hostServerId: null } })
+      await sys.user.update({ where: { id: owner.id }, data: { isSystemAdmin: false } })
     })
 
     test('another workspace\'s destination is refused, and a removed one drops off the list', async () => {
@@ -4677,7 +4706,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
 
       const dest = await own()
       await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: dest.id })
-      await env.as(owner).service('backup-destinations').remove(dest.id)
+      await env.as(owner).service('backupDestinations').remove(dest.id)
       expect(await replicasFor(env.app, server.id)).toEqual([])
       await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: null })
     })

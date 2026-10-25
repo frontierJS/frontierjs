@@ -21,7 +21,7 @@ title: Observability
   //
   // The one number this app DOES own is on /hub/, read at request time from
   // Caravan, Conduit and SQLite. It is linked rather than repeated.
-  import { session } from '../../session.js'
+  import { session } from '../../lib/session.js'
   import { portal } from '../../resources/Portal.mesa'
 
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'

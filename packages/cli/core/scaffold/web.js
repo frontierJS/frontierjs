@@ -179,9 +179,13 @@ export function makeMainJs(useApi = true) {
   return `// web/src/main.js — the app's side-effect imports. index.html loads
 // virtual:sierra, which boots the router and the client, imports this file and
 // then mounts App.mesa into #app (FJS-D1085).
+
+// Methods on the built-in types -- (1299).toMoney(). Before anything that
+// renders, so a template never meets a number without them.
+import './lib/sugar.js'
 ${useApi ? `
 // Contributed form controls, registered before any route renders.
-import './controls.js'
+import './lib/controls.js'
 ` : ''}
 // The design system. One import, no build step, no config.
 import '@frontierjs/css'
@@ -191,14 +195,14 @@ import '@frontierjs/css'
 // A stub, imported by main.js before any route renders: a control is registered
 // at startup or a generated form has already picked its own.
 export function makeControlsJs() {
-  return `// web/src/controls.js -- the form controls this app contributes, imported by
+  return `// web/src/lib/controls.js -- the form controls this app contributes, imported by
 // main.js before any route renders. A generated form asks controlFor(rule) which
 // control a column gets, and a name registered here replaces a built-in of that
 // name. Two halves, one per side of the dependency rule:
 //
 //   import { registerControl }     from '@frontierjs/sierra/resource'
 //   import { registerFormControl } from '@frontierjs/ui/controls'
-//   import Rating from './components/Rating.mesa'
+//   import Rating from '../components/Rating.mesa'
 //
 //   registerControl('rating', (rule, { field }) => (field === 'rating' ? 'rating' : null))
 //   registerFormControl('rating', Rating)
@@ -206,7 +210,7 @@ export function makeControlsJs() {
 }
 
 export function makeDatetimeJs() {
-  return `// web/src/datetime.js — when something happened, on every screen that says it.
+  return `// web/src/lib/datetime.js — when something happened, on every screen that says it.
 //
 // @frontierjs/toolbelt/datetime reads no clock and keeps no settings, so the app
 // binds both once, here, and a screen imports the words from this file. A
@@ -237,6 +241,126 @@ export function ago(instant, none = 'never') {
 `
 }
 
+// The generated file is JS inside this literal, so it builds its strings by
+// concatenation: a backtick or a dollar-brace below would be read HERE.
+export function makeSugarJs(currency = 'USD') {
+  const money = currency ? `number({ currency: '${currency}' })` : 'number()'
+  return `// web/src/lib/sugar.js -- convenience methods on the built-in types, so a template
+// writes {order.total?.toMoney()} and {user.name.initials()}. The methods are
+// @frontierjs/toolbelt/sugar's and this file installs them; main.js imports it
+// first. Delete a line to drop a group, or this file and its import to drop
+// all of them. No framework package calls these, so removing them breaks only
+// this app's own code.
+//
+// toMoney is CENTS, what a @money column stores: (1299).toMoney() is $12.99.
+// toCurrency is DOLLARS: (12.99).toCurrency() is $12.99. Read a column with ?.
+// -- a missing amount renders blank in a template, and a method called on it
+// throws.
+
+import { number, bigint, string, date, array, object, json, func } from '@frontierjs/toolbelt/sugar'
+import { dt } from './datetime.js'
+
+// A name the platform already has is refused, never replaced: a library that
+// shadowed Array.prototype.flatten made the language rename its own to flat.
+const SUGAR = Symbol.for('frontierjs.sugar')
+
+function install(Type, { proto = {}, statics = {} }) {
+  const label = Type.name || Type[Symbol.toStringTag]
+  for (const [target, methods, at] of [[Type.prototype, proto, '.prototype.'], [Type, statics, '.']]) {
+    for (const [name, value] of Object.entries(methods)) {
+      if (name in target && !target[name]?.[SUGAR]) throw new Error('sugar: ' + label + at + name + ' already exists')
+      value[SUGAR] = true
+      Object.defineProperty(target, name, { value, writable: true, configurable: true })
+    }
+  }
+}
+
+install(Number,   ${money})
+install(BigInt,   bigint())
+install(String,   string({ dt }))
+install(Date,     date(dt))
+install(Array,    array())
+install(Object,   object())
+install(JSON,     json())
+install(Function, func())
+
+// ─── extras ─────────────────────────────────────────────────────────────────
+// Timers, the network, and calls that change what they are given: not pure,
+// so not in the kit, and this copy is the app's own.
+
+install(Promise, { statics: {
+  sleep: (seconds = 1) => new Promise((resolve) => setTimeout(resolve, seconds * 1000)),
+
+  // Every call settles. A call superseded inside the window gets the result of
+  // the one that ran, where dropping its timer left its caller awaiting forever.
+  debounce(fn, delay, { leading = true } = {}) {
+    let timer, waiting = false, queued = []
+    return (...args) => new Promise((resolve, reject) => {
+      const run = () => Promise.resolve().then(() => fn(...args))
+      if (leading && !waiting) {
+        waiting = true
+        run().then(resolve, reject)
+        timer = setTimeout(() => { waiting = false }, delay)
+        return
+      }
+      clearTimeout(timer)
+      queued.push([resolve, reject])
+      timer = setTimeout(() => {
+        const settle = queued
+        queued = []
+        waiting = false
+        run().then((v) => settle.forEach(([ok]) => ok(v)), (e) => settle.forEach(([, no]) => no(e)))
+      }, delay)
+    })
+  },
+} })
+
+install(URL, {
+  proto: {
+    fetch(type = 'json') { return fetch(this).then((res) => res[type]()) },
+  },
+  statics: {
+    async exists(url) {
+      try { return (await fetch(url, { method: 'HEAD' })).ok } catch { return false }
+    },
+  },
+})
+
+install(Array, { statics: {
+  upsert(items, instance, { position = 'end' } = {}) {
+    const index = items.findIndex((item) => item.id === instance.id)
+    if (index !== -1) items[index] = instance
+    else if (typeof position === 'number') items.splice(position, 0, instance)
+    else if (position === 'start') items.unshift(instance)
+    else items.push(instance)
+    return items
+  },
+  // Reassigns the row in place so a reactive list sees it change. An id not in
+  // the list is left alone; index -1 wrote a property named '-1'.
+  reset(items, instance) {
+    const index = items.findIndex((item) => item.id === instance.id)
+    if (index !== -1) items[index] = items[index]
+    return items
+  },
+} })
+
+install(Object, { statics: {
+  // A missing step on the way is made, where the legacy copy threw on it.
+  put(path, obj, value, cb) {
+    const keys = path.split('.')
+    let at = obj
+    for (const key of keys.slice(0, -1)) at = at[key] ??= {}
+    return (at[keys.at(-1)] = cb ? cb(value) : value)
+  },
+  delete(path, obj) {
+    const keys = path.split('.')
+    const at = keys.slice(0, -1).reduce((acc, key) => acc?.[key], obj)
+    if (at != null) delete at[keys.at(-1)]
+  },
+} })
+`
+}
+
 // The nav table. The Shell draws it and `make:scaffold` appends to it, so a new
 // model's list is reachable without anyone editing the layout.
 export function makeNavJs(useAuth) {
@@ -260,6 +384,14 @@ ${useAuth ? "    { href: '/users/', label: 'Users', show: members },\n" : ''}  ]
 `
 }
 
+// The live WebSocket as a dot, last in the topbar: the word 'live' / 'offline'
+// changed width when the socket dropped and moved every control beside it.
+const LIVE_DOT = `    <Dot tone={status.connected ? 'success' : 'muted'} role="status"
+         title={status.connected ? 'Live' : 'Offline'}
+         label={status.connected ? 'Live' : 'Offline'} />
+`
+const DOT_IMPORT = "  import Dot from '@frontierjs/ui/components/display/Dot.mesa'\n"
+
 export function makeRouteModule(appName, useAuth, useApi = true) {
   if (useAuth) {
     return `---
@@ -270,7 +402,7 @@ siteName: ${appName}
   import { status, session, signOut } from '@frontierjs/sierra/resource'
   import { theme, toggleTheme } from '@frontierjs/sierra/theme'
   import Shell from '@frontierjs/ui/components/layout/Shell.mesa'
-
+${DOT_IMPORT}
   import { groups } from '../lib/nav.js'
 
   // Naming a property in a $: line is what SUBSCRIBES this component to it.
@@ -309,9 +441,6 @@ siteName: ${appName}
   {/snippet}
 
   {#snippet topbar()}
-    <span class="badge" class:success={status.connected} class:muted={!status.connected}>
-      {status.connected ? 'live' : 'offline'}
-    </span>
     <button class="btn ghost square" onclick={toggleTheme}
             aria-label={theme.value === 'theme-dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
       {theme.value === 'theme-dark' ? '☀' : '☾'}
@@ -321,7 +450,7 @@ siteName: ${appName}
     {:else}
       <a class="btn primary" href="/login/">Sign in</a>
     {/if}
-  {/snippet}
+${LIVE_DOT}  {/snippet}
 
   <slot />
 </Shell>
@@ -335,7 +464,7 @@ siteName: ${appName}
   import { isActive, page } from '@frontierjs/sierra/router'
 ${useApi ? "  import { status } from '@frontierjs/sierra/resource'\n" : ''}  import { theme, toggleTheme } from '@frontierjs/sierra/theme'
   import Shell from '@frontierjs/ui/components/layout/Shell.mesa'
-
+${useApi ? DOT_IMPORT : ''}
   import { groups } from '../lib/nav.js'
 
 ${useApi ? `  // Naming a property in a $: line is what SUBSCRIBES this component to it.
@@ -361,14 +490,11 @@ ${useApi ? `  // Naming a property in a $: line is what SUBSCRIBES this componen
   {/snippet}
 
   {#snippet topbar()}
-${useApi ? `    <span class="badge" class:success={status.connected} class:muted={!status.connected}>
-      {status.connected ? 'live' : 'offline'}
-    </span>
-` : ''}    <button class="btn ghost square" onclick={toggleTheme}
+    <button class="btn ghost square" onclick={toggleTheme}
             aria-label={theme.value === 'theme-dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
       {theme.value === 'theme-dark' ? '☀' : '☾'}
     </button>
-  {/snippet}
+${useApi ? LIVE_DOT : ''}  {/snippet}
 
   <slot />
 </Shell>
@@ -893,12 +1019,12 @@ ${withName ? `  // The password and the sessions go through client.auth, which i
   // written through the users service; db/schema.lite's @@allow(update,
   // id == auth().id || …) is what lets a person write their own.
   import { getClient, session, refresh } from '@frontierjs/sierra/resource'
-  import { at } from '../../datetime.js'` : `  // The password and the sessions go through client.auth, which is the account
+  import { at } from '../../lib/datetime.js'` : `  // The password and the sessions go through client.auth, which is the account
   // and sessions services scoped to the CALLER — nothing here names a user id,
   // because nothing there will take one. The name is not editable here: that
   // is a write to the User row, and this app has no users service to make it.
   import { getClient, session } from '@frontierjs/sierra/resource'
-  import { at } from '../../datetime.js'`}
+  import { at } from '../../lib/datetime.js'`}
 
   $: (session.user, session.checked)
 

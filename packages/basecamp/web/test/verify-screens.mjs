@@ -1362,6 +1362,18 @@ try {
              el.dispatchEvent(new Event('input',  { bubbles: true }))
              el.dispatchEvent(new Event('change', { bubbles: true }))
              return el.value })()`)
+  // A relation picker is a Combobox, whose `[name]` is its TEXT box: `pickIn`
+  // there types the id as a search, the list reads *No options* and nothing
+  // is picked (`FJS-3477`). It is opened and its row clicked instead — matched
+  // whole, since seeded names share prefixes and the first partial match is
+  // another row.
+  const choose = async (sel, label) => {
+    const row = `[...(document.querySelector(${JSON.stringify(sel)})?.closest('.fjs-combobox')?.querySelectorAll('[role=option]') ?? [])]
+                   .find(o => o.textContent.trim() === ${JSON.stringify(label)})`
+    await evaluate(`document.querySelector(${JSON.stringify(sel)})?.focus()`)
+    await until(`!!${row}`, v => v, `${sel} never offered ${label}`)
+    await evaluate(`${row}.click()`)
+  }
 
   // Flags — a variant flag can be made at all, which the create form could
   // not do: the service needs two variants and there was nowhere to type one.
@@ -1699,17 +1711,20 @@ try {
 
   // A path route is made and removed from the same screen (`FJS-3323`), not
   // only through /domain-routes. It needs an app other than the hostname's own.
-  const routeApp = (await apiGet('/apps')).body?.data?.find(a => a.id !== dnsApp?.id)
+  // The picker shows names and the seed repeats one per environment, so the
+  // route is held to the NAME picked, which is all a person can tell apart.
+  const routeApp = (await apiGet('/apps?$limit=100')).body?.data?.find(a => a.name !== dnsApp?.name)
   await goto('/dns/')
   await until(`!!document.getElementById('route-add')`, v => v, 'the DNS screen offers no way to add a path route')
   await click('#route-add')
   await until(`!!document.querySelector('#route-save')`, v => v, 'the route drawer never opened')
-  await pickIn('dialog[open] [name=domainId]', dnsRow?.id)
-  await pickIn('dialog[open] [name=appId]', routeApp?.id)
+  await choose('dialog[open] [name=domainId]', 'dns-drive.example.test')
+  await choose('dialog[open] [name=appId]', routeApp?.name)
   await typeIn('dialog[open] [name=pathPrefix]', '/api')
   await click('#route-save')
   const madeRoute = await eventually(async () => (await apiGet(`/domain-routes?domainId=${dnsRow?.id}`)).body?.data?.[0], r => !!r)
-  check('a path route is made from DNS', madeRoute?.pathPrefix === '/api' && madeRoute?.appId === routeApp?.id,
+  const routedTo = madeRoute && (await apiGet(`/apps/${madeRoute.appId}`)).body
+  check('a path route is made from DNS', madeRoute?.pathPrefix === '/api' && routedTo?.name === routeApp?.name,
     JSON.stringify(madeRoute))
   await until(`document.querySelectorAll('#route-rows tbody tr').length`, n => n > 0, 'the new route never listed')
   const routeText = await text('#route-rows')

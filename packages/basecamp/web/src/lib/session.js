@@ -1,4 +1,4 @@
-// web/src/session.js — who the caller is, and which workspace they are in.
+// web/src/lib/session.js — who the caller is, and which workspace they are in.
 //
 // WHO is no longer this file's: `@frontierjs/sierra/resource` owns the session
 // — the reactive object, the boot restore, sign in and sign out — and this

@@ -49,7 +49,7 @@ import { executorOn, isExecutor }            from '../providers/executor.ts'
 import { createSecretResolver, secretRef }   from '../core/credentials.ts'
 import { keyUnder }                          from '../providers/storage/index.ts'
 import { splitCredential }                   from '../providers/storage/s3.ts'
-import { HOST_SLUG }                         from '../core/host-machine.ts'
+import { hostServer }                        from '../core/host-machine.ts'
 import type { App }                          from '@frontierjs/junction'
 
 /** The wire entry `POST /replicate` takes — Outpost's `replicate.js` refuses any other. */
@@ -113,10 +113,10 @@ export async function replicasFor(app: App, serverId: string): Promise<ReplicaEn
 
 /**
  * The destination Basecamp's own database replicates to, when `server` is the
- * box that holds it — the `basecamp-host` row in that destination's workspace.
+ * box that holds it — the hub's host row, in that destination's workspace.
  */
-export async function hostReplicaDestination(sys: any, server: { slug: string; workspaceId: string }): Promise<any | null> {
-  if (server.slug !== HOST_SLUG) return null
+export async function hostReplicaDestination(sys: any, server: { id: string; workspaceId: string }): Promise<any | null> {
+  if ((await hostServer(sys))?.id !== server.id) return null
   const hub = await sys.hubConfig.findFirst({ where: { id: 'hub' }, select: { replicaDestinationId: true } })
   if (!hub?.replicaDestinationId) return null
   const dest = await sys.backupDestination.findFirst({ where: { id: hub.replicaDestinationId } })
@@ -126,7 +126,7 @@ export async function hostReplicaDestination(sys: any, server: { slug: string; w
 /** The `host` entry for `serverId`, or null. Throws on a key that cannot be read, as `replicasFor` does. */
 export async function hostReplicaFor(app: App, serverId: string): Promise<HostReplica | null> {
   const sys    = (app.db as any).asSystem()
-  const server = await sys.server.findFirst({ where: { id: serverId }, select: { slug: true, workspaceId: true } })
+  const server = await sys.server.findFirst({ where: { id: serverId }, select: { id: true, workspaceId: true } })
   const dest   = server ? await hostReplicaDestination(sys, server) : null
   if (!dest) return null
   const credential = dest.secretId ? await createSecretResolver(app.db as any).get(secretRef(dest.secretId)) : null
@@ -184,11 +184,10 @@ export async function syncReplicasHeldBy(app: App, destinationId: string): Promi
   else if (holder)               await syncHostReplica(app)
 }
 
-/** Queue a send to Basecamp's box. Every `basecamp-host` row is sent its list;
- *  `hostReplicaFor` gives the key to the one in the destination's workspace. */
+/** Queue a send to Basecamp's box. */
 export async function syncHostReplica(app: App): Promise<void> {
-  const hosts = await (app.db as any).asSystem().server.findMany({ where: { slug: HOST_SLUG }, select: { id: true } }) as { id: string }[]
-  await syncReplicasOn(app, hosts.map(h => h.id))
+  const host = await hostServer((app.db as any).asSystem())
+  if (host) await syncReplicasOn(app, [host.id])
 }
 
 /**

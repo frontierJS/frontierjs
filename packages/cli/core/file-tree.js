@@ -139,6 +139,7 @@ const FOLDER = {
 }
 
 const TEST_FILE = /\.(test|spec)\.[a-z]+$/i
+const SERVICE_FILE = /\.service\.[mc]?[jt]s$/
 
 const paint = (hex, s) => hex ? chalk.hex(hex)(s) : s
 
@@ -146,6 +147,7 @@ const paint = (hex, s) => hex ? chalk.hex(hex)(s) : s
 export function fileIcon(name) {
   if (BY_NAME[name]) return BY_NAME[name]
   if (TEST_FILE.test(name)) return ['🧪', '#8bc34a']
+  if (SERVICE_FILE.test(name)) return ['📡', '#26c6da']
   if (/\.snapshot\./.test(name)) return ['🧊', '#80deea']
   if (name === '.env' || name.startsWith('.env.')) return ['🔑', '#fbc02d']
   if (/\.db-(wal|shm|journal)$/.test(name)) return ['💾', '#9e9e9e']

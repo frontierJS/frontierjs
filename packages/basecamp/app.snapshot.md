@@ -22,14 +22,14 @@ text, so a body that elevates through a helper is not listed.
 
 | Method | Who may call it |
 | --- | --- |
-| `api-keys.owners` | standing 5 or above — declared `gate: 5` |
+| `apiKeys.owners` | standing 5 or above — declared `gate: 5` |
 | `apps.place` | standing 4 or above — declared `gate: 4` |
 | `apps.unplace` | standing 4 or above — declared `gate: 4` |
 | `apps.enablePush` | standing 5 or above — declared `gate: 5` |
 | `apps.disablePush` | standing 5 or above — declared `gate: 5` |
 | `channels.test` | standing 5 or above — declared `gate: 5` |
 | `edge.syncStep` | anyone, a stranger included — declared `gate: 0` |
-| `hub-config.save` | **any signed-in caller** — floor, read gate 7; standing not graded |
+| `hubConfig.save` | **any signed-in caller** — floor, read gate 7; standing not graded |
 | `infra.onboarding` | standing 2 or above — declared `gate: 2` |
 | `servers.metrics` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `servers.provision` | **any signed-in caller** — floor, read gate 2; standing not graded |
@@ -54,8 +54,8 @@ and what it does.
 | Method | Who may call it |
 | --- | --- |
 | `blueprints.categories` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `notification-preferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `notificationPreferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `notificationPreferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
 ### A service hook runs in front of the body (90)
 
@@ -72,12 +72,12 @@ name, and is as unread as the body.
 | `alerts.attachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `alerts.detachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `alerts.snooze` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `api-keys.revoke` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
-| `api-keys.scopes` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
+| `apiKeys.revoke` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
+| `apiKeys.scopes` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
 | `apps.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `apps.logs` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `apps.fromBlueprint` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `backup-destinations.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `backupDestinations.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `blueprints.setParams` | **any signed-in caller** — floor, read gate 1; standing not graded | `requireSystemAdmin` |
 | `channels.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `channels.rules` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
@@ -105,9 +105,9 @@ name, and is as unread as the body.
 | `flags.setOverride` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `flags.clearOverride` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `flags.resolve` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `hub-config.current` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
-| `hub-config.save` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
-| `hub-config.attestEscrow` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
+| `hubConfig.current` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
+| `hubConfig.save` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
+| `hubConfig.attestEscrow` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
 | `jobs.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `jobs.cancel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `jobs.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
@@ -204,10 +204,11 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 
-### `account-recovery`
+### `accountRecovery`
 
 - **methods** — `resetTotp`
 - **custom methods** — `resetTotp`
+- **also answers to** — `account-recovery`
 - **who may call** —
   - `resetTotp` — standing 1 or above — declared `gate: 1`
 
@@ -246,10 +247,11 @@ name when it declares none.
 | before | `detachChannel` | `validateInput` |
 | before | `snooze` | `validateInput` |
 
-### `api-keys` · model `ApiKey`
+### `apiKeys` · model `ApiKey`
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `revoke`, `scopes`, `owners`
 - **custom methods** — `revoke`, `scopes`, `owners`
+- **also answers to** — `api-keys`
 - **who may call** —
   - `revoke` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey`
   - `scopes` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey`
@@ -267,10 +269,11 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
-### `app-backups` · model `AppBackup`
+### `appBackups` · model `AppBackup`
 
 - **methods** — `find`, `get`, `take`
 - **custom methods** — `take`
+- **also answers to** — `app-backups`
 - **input** — `take` takes `AppBackupTake`
 - **who may call** —
   - `take` — standing 5 or above — declared `gate: 5`
@@ -287,9 +290,10 @@ name when it declares none.
 | before | `update` | `autoValidate` |
 | before | `take` | `validateInput` |
 
-### `app-editors` · model `AppEditor`
+### `appEditors` · model `AppEditor`
 
 - **methods** — `find`, `get`, `create`, `patch`, `remove`
+- **also answers to** — `app-editors`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -355,10 +359,11 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
-### `backup-destinations` · model `BackupDestination`
+### `backupDestinations` · model `BackupDestination`
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `test`
 - **custom methods** — `test`
+- **also answers to** — `backup-destinations`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `test` — standing 5 or above — declared `gate: 5`
@@ -462,9 +467,10 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
-### `conduit-targets` · model `conduit-targets`
+### `conduitTargets` · model `conduitTargets`
 
 - **methods** — `find`, `get`, `remove`
+- **also answers to** — `conduit-targets`
 - **who may call** —
   - `find` — standing 7 or above — declared `gate: 7`
   - `get` — standing 7 or above — declared `gate: 7`
@@ -571,9 +577,10 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
-### `domain-routes` · model `DomainRoute`
+### `domainRoutes` · model `DomainRoute`
 
 - **methods** — `find`, `get`, `create`, `patch`, `remove`
+- **also answers to** — `domain-routes`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -826,10 +833,11 @@ name when it declares none.
 | before | `createBot` | `validateInput` |
 | before | `setFlag` | `validateInput` |
 
-### `hub-config` · model `HubConfig`
+### `hubConfig` · model `HubConfig`
 
 - **methods** — `current`, `save`, `attestEscrow`
 - **custom methods** — `current`, `save`, `attestEscrow`
+- **also answers to** — `hub-config`
 - **who may call** —
   - `current` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`
   - `save` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`; body writes as the app
@@ -913,10 +921,11 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
-### `metrics-store` · model `metrics-store`
+### `metricsStore` · model `metricsStore`
 
 - **methods** — `find`, `read`
 - **custom methods** — `read`
+- **also answers to** — `metrics-store`
 - **who may call** —
   - `find` — standing 7 or above — declared `gate: 7`
   - `read` — standing 7 or above — declared `gate: 7`
@@ -984,10 +993,11 @@ name when it declares none.
 | before | `attach` | `validateInput` |
 | before | `detach` | `validateInput` |
 
-### `notification-preferences` · model `NotificationPreference`
+### `notificationPreferences` · model `NotificationPreference`
 
 - **methods** — `find`, `save`, `reset`
 - **custom methods** — `save`, `reset`
+- **also answers to** — `notification-preferences`
 - **input** — `reset` takes `NotificationPreferenceReset`
 - **input** — `save` takes `NotificationPreferenceSave`
 - **who may call** —
@@ -1256,7 +1266,7 @@ name when it declares none.
   - `destroyStep` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
   - `reconcile` — standing 4 or above — declared `gate: 4`
   - `issueEnrollment` — standing 5 or above — declared `gate: 5`
-  - `useHost` — standing 5 or above — declared `gate: 5`
+  - `useHost` — standing 7 or above — declared `gate: 7`
   - `host` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `localSshHosts` — standing 5 or above — declared `gate: 5`
   - `localSshProbe` — standing 5 or above — declared `gate: 5`

@@ -1,6 +1,6 @@
 <script>
   import { RouterView, beforeNavigate } from '@frontierjs/sierra/router'
-  import { session, ready } from './session.js'
+  import { session, ready } from './lib/session.js'
   import SupportBanner from '@frontierjs/sierra/components/SupportBanner'
 
   // Registered here, in component setup, on purpose. Sierra defers its boot

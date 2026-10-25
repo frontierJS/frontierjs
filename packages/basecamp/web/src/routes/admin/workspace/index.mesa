@@ -10,9 +10,9 @@ title: Workspace
   // under it is stamped with it, which is why the confirmation asks for the
   // name typed back rather than a click.
   import { goto }      from '@frontierjs/sierra/router'
-  import { session, reloadWorkspaces, switchWorkspace } from '../../../session.js'
+  import { session, reloadWorkspaces, switchWorkspace } from '../../../lib/session.js'
   import { workspaces } from '../../../resources/Workspace.mesa'
-  import { messageFor } from '../../../errors.js'
+  import { messageFor } from '../../../lib/errors.js'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
   import Card   from '@frontierjs/ui/components/layout/Card.mesa'

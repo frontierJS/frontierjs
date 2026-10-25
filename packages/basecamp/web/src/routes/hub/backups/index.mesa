@@ -28,7 +28,7 @@ title: Hub backups
   import { hubConfig }          from '../../../resources/HubConfig.mesa'
   import { backupDestinations } from '../../../resources/BackupDestination.mesa'
   import { postures }           from '../../../resources/ServerPosture.mesa'
-  import { ago }       from '../../../datetime.js'
+  import { ago }       from '../../../lib/datetime.js'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'

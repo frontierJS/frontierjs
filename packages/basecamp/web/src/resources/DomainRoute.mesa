@@ -3,13 +3,9 @@
   //
   // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18).
   // This block is module scope; the markup half below is the default form.
-  //
-  // `model:` is stated because the service path is hyphenated; the schema's
-  // labels, required list and field rules arrive from the model without
-  // restating any of them here.
   import { createResource } from '@frontierjs/sierra/resource'
 
-  export const domainRoutes = createResource('domain-routes', { model: 'DomainRoute' })
+  export const domainRoutes = createResource('domainRoutes', { model: 'DomainRoute' })
 </script>
 
 <script>

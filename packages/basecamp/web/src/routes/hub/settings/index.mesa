@@ -36,8 +36,8 @@ title: Hub settings
   // and never shown again; the row that comes back carries an address only.
   import { hubConfig }          from '../../../resources/HubConfig.mesa'
   import { backupDestinations } from '../../../resources/BackupDestination.mesa'
-  import { session }            from '../../../session.js'
-  import { at }                 from '../../../datetime.js'
+  import { session }            from '../../../lib/session.js'
+  import { at }                 from '../../../lib/datetime.js'
 
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import Callout  from '@frontierjs/ui/components/display/Callout.mesa'

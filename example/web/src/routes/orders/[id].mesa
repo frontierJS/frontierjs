@@ -16,7 +16,7 @@ title: Order
   import { payments }      from '../../resources/Payment.mesa'
   import { paymentEvents } from '../../resources/PaymentEvent.mesa'
   import { session } from '@frontierjs/sierra/resource'
-  import { day } from '@/datetime.js'
+  import { day } from '@/lib/datetime.js'
   import { page, goto } from '@frontierjs/sierra/router'
 
   import Alert          from '@frontierjs/ui/components/feedback/Alert.mesa'

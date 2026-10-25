@@ -45,8 +45,8 @@ title: Your settings
   // resetting a kind has to be able to see that it went back to a default
   // rather than to off.
   import { getClient } from '@frontierjs/sierra/resource'
-  import { session, currentWorkspace, reloadWorkspaces } from '../../session.js'
-  import { ago }       from '../../datetime.js'
+  import { session, currentWorkspace, reloadWorkspaces } from '../../lib/session.js'
+  import { ago }       from '../../lib/datetime.js'
   import { notificationPreferences as prefs } from '../../resources/NotificationPreference.mesa'
   import User, { users } from '../../resources/User.mesa'
   import { workspaces } from '../../resources/Workspace.mesa'

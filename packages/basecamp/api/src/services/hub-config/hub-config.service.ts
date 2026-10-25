@@ -52,8 +52,8 @@ async function pointed(pointers: Record<string, unknown>, row: any): Promise<any
 }
 
 export default createService({
-  name:  'hub-config',
-  scope: keyScope('hub-config'),
+  name:  'hubConfig',
+  scope: keyScope('hubConfig'),
   model: 'HubConfig',
 
   methods: ['current', 'save', 'attestEscrow'],

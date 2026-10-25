@@ -32,7 +32,7 @@ const MEM_CRITICAL         = 90
 // though it meant more (`FJS-517`).
 const DEPLOY_IN_FLIGHT = ['building']
 
-// The same words every screen prints (`web/src/datetime.js`), with the clock
+// The same words every screen prints (`web/src/lib/datetime.js`), with the clock
 // this module is handed rather than the one the screens read.
 function ago(iso, now) {
   return since(iso, now) === null ? 'at an unknown time' : relative(iso, now, { style: 'narrow' })

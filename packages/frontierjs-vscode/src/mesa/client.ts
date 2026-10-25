@@ -5,6 +5,7 @@
 //   ✓  Hover documentation    — $context, $async, directives, builtins
 //   ✓  Completions            — $, {, :, |, < trigger characters
 //   ✓  Document symbols       — outline panel (Props / State / Derived / ...)
+//   ✓  Semantic tokens        — a derived const and a fixed const in two colors
 //   ✓  Snippets               — full component structure snippets
 //
 // Unlike Litestone (which uses LSP), Mesa uses the simpler vscode API directly.
@@ -33,6 +34,14 @@ const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
 let _compile: Function | null = null
 let _compilerNotFoundShown    = false
 let _extensionPath            = ''
+
+// Diagnostics and semantic tokens both ask for the same document version, and
+// compiling it twice per keystroke is the cost of having two consumers.
+type Analysis = { ctx?: any, warnings: string[], error?: string }
+const analyses = new Map<string, { version: number, result: Promise<Analysis> }>()
+
+// One token type with two modifiers: `variable.derived`, `variable.static`.
+const legend = new vscode.SemanticTokensLegend(['variable'], ['derived', 'static'])
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -84,6 +93,7 @@ export async function startMesaClient(context: vscode.ExtensionContext) {
       if (doc.languageId !== 'mesa') return
       cancelDebounce(doc.uri.toString())
       diagnosticCollection?.delete(doc.uri)
+      analyses.delete(doc.uri.toString())
     })
   )
 
@@ -106,12 +116,19 @@ export async function startMesaClient(context: vscode.ExtensionContext) {
     vscode.languages.registerDocumentSymbolProvider('mesa', { provideDocumentSymbols })
   )
 
+  // Whether a const is derived is the compiler's transitive closure (FJS-D212);
+  // the grammar is a regex and cannot follow `const b = a` back to a `let`.
+  context.subscriptions.push(
+    vscode.languages.registerDocumentSemanticTokensProvider('mesa', { provideDocumentSemanticTokens }, legend)
+  )
+
   console.log('[FrontierJS] Mesa language support activated')
 }
 
 export async function stopMesaClient() {
   for (const timer of debounceTimers.values()) clearTimeout(timer)
   debounceTimers.clear()
+  analyses.clear()
   diagnosticCollection?.dispose()
   diagnosticCollection = null
   _compile = null
@@ -223,15 +240,12 @@ async function validate(doc: vscode.TextDocument) {
   _compilerNotFoundShown = false
   const source      = doc.getText()
   const diagnostics: vscode.Diagnostic[] = []
-  const warnings:    string[] = []
+  const { ctx, warnings, error } = await analyze(doc, compile)
 
-  let ctx: any
-  try {
-    ctx = await compile(source, { debug: false, css: false, warning: (w: any) => warnings.push(w.message ?? String(w)) })
-  } catch (err: any) {
+  if (error != null) {
     diagnostics.push(new vscode.Diagnostic(
       new vscode.Range(0, 0, 0, Number.MAX_VALUE),
-      `Mesa parse error: ${err.message}`,
+      `Mesa parse error: ${error}`,
       vscode.DiagnosticSeverity.Error
     ))
     diagnosticCollection?.set(doc.uri, diagnostics)
@@ -258,6 +272,55 @@ async function validate(doc: vscode.TextDocument) {
   }
 
   diagnosticCollection?.set(doc.uri, diagnostics)
+}
+
+function analyze(doc: vscode.TextDocument, compile: Function): Promise<Analysis> {
+  const key    = doc.uri.toString()
+  const cached = analyses.get(key)
+  if (cached && cached.version === doc.version) return cached.result
+  const warnings: string[] = []
+  const result = Promise.resolve()
+    .then(() => compile(doc.getText(), { debug: false, css: false, warning: (w: any) => warnings.push(w.message ?? String(w)) }))
+    .then((ctx: any) => ({ ctx, warnings }), (err: any) => ({ warnings, error: err.message }))
+  analyses.set(key, { version: doc.version, result })
+  return result
+}
+
+// ─── Semantic tokens ──────────────────────────────────────────────────────────
+
+async function provideDocumentSemanticTokens(doc: vscode.TextDocument) {
+  const builder = new vscode.SemanticTokensBuilder(legend)
+  const compile = await resolveCompiler(doc.uri.fsPath)
+  if (!compile) return builder.build()
+  const { ctx } = await analyze(doc, compile)
+  const script  = ctx?.scriptNodes?.[0]
+  if (!ctx?.analysis?.vars || script?.end == null) return builder.build()
+
+  // The analysis offsets are into the script AFTER slot props are spliced in,
+  // so they can sit a few characters off the file; the declaration nearest the
+  // expected offset is the one meant.
+  const source   = doc.getText()
+  const base     = script.end
+  const region   = source.slice(base, base + (script.content?.length ?? 0))
+  const tokens: { at: number, name: string, derived: boolean }[] = []
+
+  for (const v of Object.values<any>(ctx.analysis.vars)) {
+    if (v.kind !== 'const' || v.isProp || v.name.startsWith('$$') || v.nodeStart == null) continue
+    const re = new RegExp(`\\bconst\\s+(${v.name.replace(/\$/g, '\\$')})(?![\\w$])`, 'g')
+    let best = -1, m
+    while ((m = re.exec(region)) !== null) {
+      const at = m.index + m[0].length - v.name.length
+      if (best === -1 || Math.abs(at - v.nodeStart) < Math.abs(best - v.nodeStart)) best = at
+    }
+    if (best !== -1) tokens.push({ at: base + best, name: v.name, derived: !!v.isDerived })
+  }
+
+  // The builder takes tokens in document order and drops the rest silently.
+  for (const t of tokens.sort((a, b) => a.at - b.at)) {
+    const pos = doc.positionAt(t.at)
+    builder.push(pos.line, pos.character, t.name.length, 0, t.derived ? 1 : 2)
+  }
+  return builder.build()
 }
 
 // ─── Position helpers ─────────────────────────────────────────────────────────

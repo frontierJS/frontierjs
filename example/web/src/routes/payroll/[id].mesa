@@ -27,7 +27,7 @@ title: Pay run
   import { journalEntries } from '@/resources/JournalEntry.mesa'
   import { employees }     from '@/resources/Employee.mesa'
   import { session } from '@frontierjs/sierra/resource'
-  import { day, span } from '@/datetime.js'
+  import { day, span } from '@/lib/datetime.js'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../lib/money.js'
 

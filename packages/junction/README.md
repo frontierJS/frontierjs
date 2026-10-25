@@ -1983,7 +1983,7 @@ a service name types itself and no call site restates anything:
 
 ```bash
 litestone types --schema db/schema.lite --audience client \
-                --augment junction --out web/src/db.d.ts
+                --augment junction --out web/src/lib/db.d.ts
 ```
 
 That file carries the rows AND the augmentation that registers them:

@@ -8,7 +8,7 @@
 //   fleet  — every machine in the workspace, worst first, and the vulnerable
 //            dependency count; what /security/ draws
 //   host   — the box this Basecamp runs on, hub only; what /hub/security/ draws.
-//            It is the `basecamp-host` fleet row, graded with the `hub.*`
+//            It is the hub's host row (`HubConfig.hostServerId`), graded with the `hub.*`
 //            controls beside its own (FJS-D1241)
 //
 // The Outpost reports facts and `core/posture.ts` grades them (IDEAS/server-posture.md
@@ -29,7 +29,7 @@ import { encryptionKeyFingerprint } from '../../core/db.ts'
 import { notifyPeople, workspaceMembers } from '../../core/notify.ts'
 import { statusOf } from '../../core/dependencies.ts'
 import { keyScope } from '../api-keys/scopes.ts'
-import { HOST_SLUG } from '../../core/host-machine.ts'
+import { hostServer } from '../../core/host-machine.ts'
 import { hostReplicaDestination } from '../../jobs/replicate-sync.job.ts'
 
 // ─── The outpost's wire contract ───────────────────────────────────────────
@@ -243,13 +243,13 @@ export default createService({
 
   // ── host — POST /posture  X-Service-Method: host ──────────────────
   // The box this Basecamp runs on, what /hub/security/ draws: the
-  // `basecamp-host` row's own grade, staleness on read as `view` does, and the
+  // hub's host row's own grade, staleness on read as `view` does, and the
   // `hub.*` controls graded from the same report. With no host row there is
   // nothing reading the box, and `enrolled: false` says so.
   async host() {
     $.dispatch = false   // read-shaped
     const now    = Date.now()
-    const server = await sys().server.findFirst({ where: { slug: HOST_SLUG } })
+    const server = await hostServer(sys())
     const row    = server
       ? await sys().serverPosture.findFirst({ where: { serverId: server.id }, orderBy: { at: 'desc' } })
       : null

@@ -79,9 +79,14 @@ const enumOf = name => new Proxy({}, {
 
 // ─── Documents ────────────────────────────────────────────────────────────────
 
+// The client caches analysis by uri + version, so two documents at one path
+// must not share a version or the second is answered with the first's.
+let nextVersion = 1
+
 class TextDocument {
   constructor(fsPath, text, languageId = 'mesa') {
     this._text = text
+    this.version = nextVersion++
     this.languageId = languageId
     this.uri = { fsPath, scheme: 'file', path: fsPath, toString: () => `file://${fsPath}` }
     this.fileName = fsPath
@@ -122,6 +127,16 @@ class TextDocument {
   }
 }
 
+class SemanticTokensLegend {
+  constructor(tokenTypes, tokenModifiers = []) { this.tokenTypes = tokenTypes; this.tokenModifiers = tokenModifiers }
+}
+/** Keeps the pushes readable rather than delta-encoding them as the real one does. */
+class SemanticTokensBuilder {
+  constructor(legend) { this.legend = legend; this.tokens = [] }
+  push(line, char, length, type, modifiers = 0) { this.tokens.push({ line, char, length, type, modifiers }) }
+  build() { return { tokens: this.tokens } }
+}
+
 // ─── The module ───────────────────────────────────────────────────────────────
 
 function makeApi() {
@@ -131,13 +146,14 @@ function makeApi() {
   const register = (bucket, fn) => { listeners[bucket].push(fn); return { dispose() {} } }
 
   const diagnosticCollections = []
-  const providers = { hover: [], completion: [], symbol: [] }
+  const providers = { hover: [], completion: [], symbol: [], semantic: [] }
   const messages  = []
   const settings  = new Map()   // 'mesa.compilerPath' → value
 
   const api = {
     Position, Range, Diagnostic, MarkdownString, Hover,
     CompletionItem, SnippetString, DocumentSymbol,
+    SemanticTokensLegend, SemanticTokensBuilder,
     DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
     CompletionItemKind: enumOf('CompletionItemKind'),
     SymbolKind:         enumOf('SymbolKind'),
@@ -172,7 +188,8 @@ function makeApi() {
       },
       registerHoverProvider:          (sel, p) => { providers.hover.push({ sel, p }); return { dispose() {} } },
       registerCompletionItemProvider: (sel, p, ...t) => { providers.completion.push({ sel, p, triggers: t }); return { dispose() {} } },
-      registerDocumentSymbolProvider: (sel, p) => { providers.symbol.push({ sel, p }); return { dispose() {} } }
+      registerDocumentSymbolProvider: (sel, p) => { providers.symbol.push({ sel, p }); return { dispose() {} } },
+      registerDocumentSemanticTokensProvider: (sel, p, legend) => { providers.semantic.push({ sel, p, legend }); return { dispose() {} } }
     },
 
     window: {

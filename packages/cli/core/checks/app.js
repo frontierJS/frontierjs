@@ -602,10 +602,13 @@ function patternTargets(exports, subpath, pkgDir) {
 
 // ─── the src/ layout (FJS-D625, FJS-D626, FJS-D627) ───────────────────────────
 
-// Files `fli new` writes loose in web/src. A declaration file is not a module.
-const WEB_SRC_LOOSE_OK = new Set(['main.js', 'main.ts', 'datetime.js', 'controls.js'])
+// Sierra loads these by path; everything else `fli new` writes goes in lib/.
+const WEB_SRC_LOOSE_OK = new Set(['main.js', 'main.ts'])
 
-const WEB_SRC_KINDS    = new Set(['routes', 'resources', 'components'])
+export const WEB_SRC_KINDS = new Set(['routes', 'resources', 'components'])
+
+// README § Project Structure names each of these; a cli test fails when it drops one.
+export const API_SRC_KINDS = new Set(['core', 'services', 'routes', 'plugins', 'jobs', 'notifications', 'providers', 'domain', 'components'])
 
 // A surface folded into web/ is reported once already, by name, above.
 const WEB_SRC_REPORTED = new Set(['Embeds', 'harbor'])
@@ -639,7 +642,7 @@ function srcLayoutFindings(root) {
     const full = join(webSrc, name)
     let st
     try { st = statSync(full) } catch { continue }
-    if (!st.isFile() || WEB_SRC_LOOSE_OK.has(name) || name.endsWith('.d.ts')) continue
+    if (!st.isFile() || WEB_SRC_LOOSE_OK.has(name)) continue
     if (name === 'App.mesa' || extname(name) === '.mesa' || !SCRIPT_EXT.has(extname(name))) continue
     warn(rel(root, full), `a module loose in web/src/. Every JavaScript module that is not a route, resource or ` +
       `component goes in web/src/lib/<area>/ (state only the browser has: web/src/stores/). main.js and ` +
@@ -712,6 +715,29 @@ function srcLayoutFindings(root) {
     if (!/\bexport\b/.test(text) || !(typed || shaped)) continue
     warn(rel(root, file), `a core/ file that exports a plugin. core/ sets up what the framework ships; a plugin ` +
       `the app wrote goes in api/src/plugins/, which app.ts installs one by one because order matters (FJS-D625).`)
+  }
+
+  // An area at the top of api/src/ is a feature folder: no check that finds files by kind looks in it.
+  for (const name of safeRead(apiSrc)) {
+    if (API_SRC_KINDS.has(name)) continue
+    try { if (!statSync(join(apiSrc, name)).isDirectory()) continue } catch { continue }
+    warn(`api/src/${name}`, `a folder at the top of api/src/ that is not a kind. An area is a subfolder of its ` +
+      `kind: logic in api/src/domain/${name}/, a .mesa file another imports in api/src/components/${name}/ ` +
+      `(FJS-D625, FJS-D1516).`)
+  }
+
+  // A .mesa that code renders sits in the area of what renders it; one only another .mesa
+  // imports sits in components/ (FJS-D1520).
+  const apiMesa    = sources(root, ['.mesa'], 'api/src')
+  const mesaImport = new Set(apiMesa.flatMap(relativeImports))
+  for (const file of apiMesa) {
+    const kind = relative(apiSrc, file).split(/[\\/]/)[0]
+    if (kind === 'components' || (kind === 'domain' && !mesaImport.has(file))) continue
+    warn(rel(root, file), kind === 'domain'
+      ? `a .mesa file in domain/ that another .mesa file imports. A part goes in api/src/components/<area>/, ` +
+        `or at the components/ root when two areas use it (FJS-D1520).`
+      : `a .mesa file outside domain/ and components/. A .mesa file code renders goes in the ` +
+        `api/src/domain/<area>/ of what renders it; one another .mesa file imports goes in components/ (FJS-D1520).`)
   }
 
   // A surface never imports another by relative path (FJS-D627). The one exception is a

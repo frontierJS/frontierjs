@@ -85,6 +85,7 @@ describe('icons and colors', () => {
     expect(fileIcon('tsconfig.json')[0]).toBe('🔧')
     expect(fileIcon('app.test.ts')[0]).toBe('🧪')
     expect(fileIcon('ddl.snapshot.sql')[0]).toBe('🧊')
+    expect(fileIcon('invoices.service.ts')[0]).toBe('📡')
     expect(fileIcon('.env.production')[0]).toBe('🔑')
     expect(fileIcon('Makefile')[0]).toBe('📄')
   })

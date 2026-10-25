@@ -27,8 +27,8 @@ async function siteFromGit() {
 }
 
 export default createService({
-  name:    'app-editors',
-  scope:   keyScope('app-editors'),
+  name:    'appEditors',
+  scope:   keyScope('appEditors'),
   model:   'AppEditor',
   channel: workspaceChannel,
   reservedQuery: WORKSPACE_QUERY,

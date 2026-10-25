@@ -9,7 +9,7 @@ title: Local repositories
   // and the screen says so rather than drawing an empty list that reads like a
   // folder with no repositories in it.
   import { comparatorFor } from '@frontierjs/toolbelt/query'
-  import { ago }  from '../../datetime.js'
+  import { ago }  from '../../lib/datetime.js'
   import { git }  from '../../resources/Git.mesa'
   import { workbench } from '../../resources/Workbench.mesa'
 

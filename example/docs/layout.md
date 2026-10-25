@@ -25,7 +25,7 @@ example/
 │       ├── providers/stripe/index.ts      ← the Stripe connection, both directions
 │       ├── providers/stripe/sink.ts ← Stripe standing in for Stripe, on :8114
 │       ├── notifications/  ← OrderPaid (staff, inApp) + OrderConfirmation (customer, email)
-│       ├── emails/         ← order-confirmation.mesa — the body, in the email
+│       ├── domain/orders/  ← order-confirmation.mesa — the body, in the email
 │       │                     realm + preview.mjs (`bun run email:preview`)
 │       └── services/       ← one per model/domain; orders.service.ts has the order transitions
 └── web/                    ← Vite root

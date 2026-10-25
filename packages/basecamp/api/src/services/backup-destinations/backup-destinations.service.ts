@@ -104,8 +104,8 @@ async function storeCredential(name: string, value: string): Promise<string> {
 }
 
 export default createService({
-  name:  'backup-destinations',
-  scope: keyScope('backup-destinations'),
+  name:  'backupDestinations',
+  scope: keyScope('backupDestinations'),
   model: 'BackupDestination',
   paginate: { default: 20, max: 200 },
   // `test` sends real traffic to a third party under the workspace's name,

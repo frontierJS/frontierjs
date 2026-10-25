@@ -101,6 +101,7 @@
       "types": "./src/sse/sse.d.ts",
       "default": "./src/sse/sse.js"
     },
+    "./sugar": "./src/sugar/sugar.js",
     "./textbox": "./src/textbox/textbox.js",
     "./textedit": "./src/textedit/textedit.js",
     "./trace": {

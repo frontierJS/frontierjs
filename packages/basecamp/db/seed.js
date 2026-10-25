@@ -986,7 +986,7 @@ async function seedInstallation(sys, owner, users) {
 
   // ── The settings ────────────────────────────────────────────────────
   // The id is the constant the model defaults to, stated so the row this
-  // writes is the row `hub-config.current` reads.
+  // writes is the row `hubConfig.current` reads.
   await sys.hubConfig.create({
     data: {
       id:         'hub',

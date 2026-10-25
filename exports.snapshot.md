@@ -301,7 +301,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./print.css` | `src/print.css` | yes |
 | exports | `./package.json` | `package.json` | yes |
 
-- peers — `@frontierjs/mesa`: `^0.1.0`
+- peers — `@frontierjs/mesa`: `^0.1.0` · `@frontierjs/junction`: `^0.1.0`
 
 ## `@frontierjs/sierra`
 
@@ -409,6 +409,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./sigv4 (default)` | `src/sigv4/sigv4.js` | yes |
 | exports | `./sse (types)` | `src/sse/sse.d.ts` | yes |
 | exports | `./sse (default)` | `src/sse/sse.js` | yes |
+| exports | `./sugar` | `src/sugar/sugar.js` | yes |
 | exports | `./textbox` | `src/textbox/textbox.js` | yes |
 | exports | `./textedit` | `src/textedit/textedit.js` | yes |
 | exports | `./trace (types)` | `src/trace/trace.d.ts` | yes |

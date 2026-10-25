@@ -948,12 +948,14 @@ CREATE TABLE IF NOT EXISTS "hub_config" (
   "backupKeepRemoteDays" INTEGER,
   "encryptionKeyEscrowedAt" TEXT,
   "encryptionKeyFingerprint" TEXT,
+  "hostServerId" TEXT UNIQUE,
   "mailFromAddress" TEXT,
   "mailFromName" TEXT,
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "version" INTEGER NOT NULL DEFAULT 1,
   FOREIGN KEY ("backupDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL,
-  FOREIGN KEY ("replicaDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL
+  FOREIGN KEY ("replicaDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL,
+  FOREIGN KEY ("hostServerId") REFERENCES "server" ("id") ON DELETE SET NULL
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS "alert_rule_channel" (

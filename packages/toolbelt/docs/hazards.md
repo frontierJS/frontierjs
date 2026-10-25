@@ -200,7 +200,8 @@ The full hazard catalog for `@frontierjs/toolbelt`, moved out of `CLAUDE.md`. Th
 - **`formatMoney`'s amount is MAJOR units.** 28.5 is twenty-eight fifty. It does
   not guess between major and minor, because a caller storing integer cents
   knows it and a caller storing a float does not — guessing between them is how
-  a price gains two zeroes. `fromMinor`/`toMinor` are the crossing, and
+  a price gains two zeroes. `fromMinor`/`toMinor` are the crossing, `formatMinor`
+  is `fromMinor` into `formatMoney` for a screen, and
   `roundMinor`/`allocate` are on the other side of it: everything they touch is
   minor units, and neither takes a currency at all.
 - **Not a number gets THREE answers here, one per surface, and they are not an

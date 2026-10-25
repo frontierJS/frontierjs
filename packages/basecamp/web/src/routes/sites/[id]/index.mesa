@@ -24,7 +24,7 @@ title: Site
   // publishes that draft, so an editor may press it.
   import { page } from '@frontierjs/sierra/router'
   import { drafts } from '../../../resources/Draft.mesa'
-  import { ago } from '../../../datetime.js'
+  import { ago } from '../../../lib/datetime.js'
 
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Card       from '@frontierjs/ui/components/layout/Card.mesa'

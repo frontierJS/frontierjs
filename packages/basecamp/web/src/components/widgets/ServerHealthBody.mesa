@@ -17,7 +17,7 @@
   // A server with no `health` has not checked in. That is a state worth naming
   // rather than three bars at zero, which reads as a machine at rest.
   import { servers } from '../../resources/Server.mesa'
-  import { at } from '../../datetime.js'
+  import { at } from '../../lib/datetime.js'
   import Bar       from '@frontierjs/ui/components/display/Bar.mesa'
   import Sparkline from '@frontierjs/ui/components/display/Sparkline.mesa'
 

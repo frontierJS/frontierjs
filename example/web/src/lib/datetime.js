@@ -1,4 +1,4 @@
-// web/src/datetime.js — which day a date is, on every screen that shows one.
+// web/src/lib/datetime.js — which day a date is, on every screen that shows one.
 //
 // One owner because there were eight copies of the same helper, and because the
 // copies answered in the wrong calendar. Each read the date in the VIEWER's

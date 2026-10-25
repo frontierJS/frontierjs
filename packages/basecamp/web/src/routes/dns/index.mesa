@@ -13,7 +13,7 @@ title: DNS & edge
   //
   // Analytics is still a skeleton with the reason beside it: no service reads
   // it, and a zeroed figure reads as an outage rather than an absence.
-  import { session } from '../../session.js'
+  import { session } from '../../lib/session.js'
   import Domain, { domains } from '../../resources/Domain.mesa'
   import DomainRoute, { domainRoutes } from '../../resources/DomainRoute.mesa'
   import { apps } from '../../resources/App.mesa'

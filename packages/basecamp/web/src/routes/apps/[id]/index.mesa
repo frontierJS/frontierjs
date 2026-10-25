@@ -20,8 +20,8 @@ title: App
   import { domains } from '../../../resources/Domain.mesa'
   import { servers } from '../../../resources/Server.mesa'
   import { deployments, DEPLOY_TONE } from '../../../resources/Deployment.mesa'
-  import { session } from '../../../session.js'
-  import { at, ago } from '../../../datetime.js'
+  import { session } from '../../../lib/session.js'
+  import { at, ago } from '../../../lib/datetime.js'
 
   import NoRecord from '../../../components/NoRecord.mesa'
   import VariablesEditor from '../../../components/VariablesEditor.mesa'

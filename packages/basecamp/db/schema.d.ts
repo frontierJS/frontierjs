@@ -251,7 +251,7 @@ export interface DomainCertUpload {
 }
 
 /**
- * What `notification-preferences.save` accepts. That at least one transport is
+ * What `notificationPreferences.save` accepts. That at least one transport is
  * sent is the method's: a type cannot say "one of these two".
  */
 export interface NotificationPreferenceSave {
@@ -261,7 +261,7 @@ export interface NotificationPreferenceSave {
 }
 
 /**
- * What `notification-preferences.reset` accepts; no kind resets every kind.
+ * What `notificationPreferences.reset` accepts; no kind resets every kind.
  */
 export interface NotificationPreferenceReset {
   kind?: NotificationKind | null
@@ -2453,6 +2453,7 @@ export interface ServerRelations {
   volumes: Volume[]
   appServers: AppServer[]
   serverNetworks: ServerNetwork[]
+  hostHub: HubConfig | null
 }
 
 // ─── ServerEvent ─────────────────────────────────────────────────
@@ -5568,6 +5569,7 @@ export interface HubConfig {
   backupKeepRemoteDays?: number | null
   encryptionKeyEscrowedAt?: string | null
   encryptionKeyFingerprint?: string | null
+  hostServerId?: string | null
   mailFromAddress?: string | null
   mailFromName?: string | null
   updatedAt: string
@@ -5623,6 +5625,7 @@ export interface HubConfigUpdate {
 export interface HubConfigSystem {
   encryptionKeyEscrowedAt?: string | Date | null
   encryptionKeyFingerprint?: string | null
+  hostServerId?: string | null
 }
 
 export interface HubConfigWhere extends WhereBase {
@@ -5645,6 +5648,7 @@ export interface HubConfigWhere extends WhereBase {
   backupKeepRemoteDays?: number | WhereOp<number> | null
   encryptionKeyEscrowedAt?: string | Date | WhereOp<string | Date> | null
   encryptionKeyFingerprint?: string | WhereOp<string> | null
+  hostServerId?: string | WhereOp<string> | null
   mailFromAddress?: string | WhereOp<string> | null
   mailFromName?: string | WhereOp<string> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
@@ -5661,6 +5665,7 @@ export type HubConfigOrderBy =
 export interface HubConfigRelations {
   backupDestination: BackupDestination | null
   replicaDestination: BackupDestination | null
+  hostServer: Server | null
 }
 
 // ─── Notification ────────────────────────────────────────────────
@@ -6162,7 +6167,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly dependency: TableClient<Dependency, DependencyCreate, DependencyUpdate, DependencyWhere, DependencyRelations, never, 'latest' | 'deprecated' | 'advisories' | 'checkedAt' | 'checkError' | '@@gate', DependencySystem>
   readonly dependencyUse: TableClient<DependencyUse, DependencyUseCreate, DependencyUseUpdate, DependencyUseWhere, DependencyUseRelations, never, '@@gate'>
   readonly backup: TableClient<Backup, BackupCreate, BackupUpdate, BackupWhere, BackupRelations, never, '@@gate'>
-  readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere, HubConfigRelations, never, 'encryptionKeyEscrowedAt' | 'encryptionKeyFingerprint' | '@@gate', HubConfigSystem>
+  readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere, HubConfigRelations, never, 'encryptionKeyEscrowedAt' | 'encryptionKeyFingerprint' | 'hostServerId' | '@@gate', HubConfigSystem>
   readonly notification: TableClient<Notification, NotificationCreate, NotificationUpdate, NotificationWhere, NotificationRelations, never, '@@gate'>
   readonly notificationPreference: TableClient<NotificationPreference, NotificationPreferenceCreate, NotificationPreferenceUpdate, NotificationPreferenceWhere, NotificationPreferenceRelations, never, '@@gate'>
   readonly fleetByProvider: ViewClient<FleetByProvider, FleetByProviderWhere>

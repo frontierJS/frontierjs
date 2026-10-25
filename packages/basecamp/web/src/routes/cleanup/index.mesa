@@ -16,8 +16,8 @@ title: Disk cleanup
   // measured one is worse than none, because nothing on screen says which is
   // which. Where a machine has never reported, this says so rather than
   // rendering zeroes that read as "nothing to reclaim".
-  import { session } from '../../session.js'
-  import { ago }     from '../../datetime.js'
+  import { session } from '../../lib/session.js'
+  import { ago }     from '../../lib/datetime.js'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
   import { cleanup } from '../../resources/CleanupRun.mesa'
 

@@ -9,7 +9,7 @@ dependency graph on the strength of it, so breaking purity costs the standing.
 
 **One kit per subpath.** `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/docfences`, `/env`, `/frontier`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
 `/fill`, `/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/keys`, `/mailbox`, `/markdown`, `/match`, `/mime`,
-`/predicate`, `/query`, `/rank`, `/redact`, `/seal`, `/search`, `/signature`, `/sigv4`, `/sse`, `/textbox`, `/textedit`, `/trace`, `/transforms`, `/tty` and `/units` today; a caller
+`/predicate`, `/query`, `/rank`, `/redact`, `/seal`, `/search`, `/signature`, `/sigv4`, `/sse`, `/sugar`, `/textbox`, `/textedit`, `/trace`, `/transforms`, `/tty` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
 `bun run test` — `test/run.js` is the whole harness, no dependencies, runs
@@ -42,7 +42,7 @@ touching datetime, json, units, sigv4, inflect or glow.
 - **`/query`'s number rule is one line**: a string is a number only if `String(Number(v)) === v`.
 - **A JSON member is an OWN property** — `__proto__` is legal JSON, so every `/json` rebuild goes through own-key definition, and every walker REFUSES past `MAX_DEPTH` (100).
 - **`ctx.result` is an ACCESSOR and the value is not the test** — an `around` that never calls `next()` ends the pipeline with nothing run. `mergeHooks` answers a NEW map.
-- **`formatMoney` is `Intl` over a SHIPPED currency table, the host's ICU is not asked** (`FJS-745`), and its amount is MAJOR units.
+- **`formatMoney` is `Intl` over a SHIPPED currency table, the host's ICU is not asked** (`FJS-745`), and its amount is MAJOR units. `/sugar`'s `toCurrency` is that; `toMoney` is minor (`FJS-D1515`).
 - **The sigv4 canonical string is six lines, the query is the third, and the scheme signs SECONDS** — a millisecond-shaped value is refused by name (`FJS-1001`): `now` THROWS, a header ANSWERS `{ok: false}`.
 - **`inflect`'s `-ses` list and irregular table are DATA ABOUT ENGLISH**; a spelling sweep eats them, and a round trip is not a correctness test.
 - **`directives` REPORTS the `$` names it does not know** rather than passing them on as filters (`FJS-988`).

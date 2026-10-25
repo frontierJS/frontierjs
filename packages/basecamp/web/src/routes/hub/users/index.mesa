@@ -34,11 +34,11 @@ title: Hub users
   //     model, mail through conduit and a signed-out acceptance route the
   //     navigation guard lets through (`FJS-032`). Minting a human here would
   //     be an admin creating an account with a password only they know.
-  import { session } from '../../../session.js'
+  import { session } from '../../../lib/session.js'
   import { getClient, refresh } from '@frontierjs/sierra/resource'
   import { goto } from '@frontierjs/sierra/router'
   import { hub } from '../../../resources/Hub.mesa'
-  import { day } from '../../../datetime.js'
+  import { day } from '../../../lib/datetime.js'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'

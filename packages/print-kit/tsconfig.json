@@ -1,0 +1,7 @@
+{
+  // The kit is plain JS with hand-written types: checkJs is off, and what this
+  // checks is index.d.ts, including its augmentation of junction's App.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "checkJs": false },
+  "include": ["index.js", "index.d.ts", "src/**/*.js"]
+}

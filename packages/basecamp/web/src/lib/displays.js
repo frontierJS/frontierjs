@@ -1,4 +1,4 @@
-// web/src/displays.js — what this console renders differently from the kit.
+// web/src/lib/displays.js — what this console renders differently from the kit.
 //
 // One registration, and it is the RENDERING half only: `displayFor` already
 // answers `relation` for any foreign key, so there is nothing left to name
@@ -13,6 +13,6 @@
 // it could show its hostname is the failure this whole surface exists to end,
 // one column along from a price rendered in cents.
 import { registerDisplayComponent } from '@frontierjs/ui/controls'
-import RelationCell from './components/RelationCell.mesa'
+import RelationCell from '../components/RelationCell.mesa'
 
 registerDisplayComponent('relation', RelationCell)

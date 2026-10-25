@@ -1,16 +1,11 @@
 <script module>
   // src/resources/BackupDestination.mesa — the Resource layer.
   //
-  // `model:` stated: the service is `backup-destinations` and the model is
-  // `BackupDestination`, which the registry's singularization reaches only if
-  // it joins the two words, and a miss degrades to a bare make() — validation,
-  // labels and field rules all silently stop being schema-derived.
-  //
   // Workspace-owned (`FJS-D1491`), so the list is the current workspace's,
   // and the hub's schedule points at one of them by id.
   import { createResource } from '@frontierjs/sierra/resource'
 
-  export const backupDestinations = createResource('backup-destinations', {
+  export const backupDestinations = createResource('backupDestinations', {
     model: 'BackupDestination',
   })
 </script>

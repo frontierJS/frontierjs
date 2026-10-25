@@ -6,7 +6,7 @@
   // actually has, and inventing a project filter in the browser would mean
   // fetching every app first to decide which deployments to keep.
   import { deployments, DEPLOY_TONE } from '../../resources/Deployment.mesa'
-  import { at } from '../../datetime.js'
+  import { at } from '../../lib/datetime.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
   export let widget = null

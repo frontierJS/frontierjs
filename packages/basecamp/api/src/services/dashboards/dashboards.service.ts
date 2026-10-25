@@ -235,10 +235,10 @@ export default createService({
     const dashboard = await getScoped('dashboard', 'Dashboard')
     const data      = $.data as Record<string, unknown>
 
-    // The slug follows the name, because a dashboard's handle is not in
-    // anyone else's source code — unlike a flag key or a network slug, which
-    // are immutable for exactly that reason.
+    // The slug follows the name and nothing else (`FJS-D1517`): a slug sent
+    // beside no rename would leave the two disagreeing.
     const patch = narrowPatch(data)
+    delete patch.slug
     if (typeof patch.name === 'string' && patch.name !== dashboard.name) {
       patch.slug = slugify(patch.name as string)
     }

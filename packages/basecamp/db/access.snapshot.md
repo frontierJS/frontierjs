@@ -664,6 +664,7 @@ rather than refusing the row.
 | `FlowCredential` | `secret` | `@encrypted` |
 | `HubConfig` | `encryptionKeyEscrowedAt` | `@system` |
 | `HubConfig` | `encryptionKeyFingerprint` | `@system` |
+| `HubConfig` | `hostServerId` | `@system` |
 | `Invitation` | `token` | `@guarded` |
 | `Job` | `retryCount` | `@system` |
 | `Job` | `lastRunAt` | `@system` |

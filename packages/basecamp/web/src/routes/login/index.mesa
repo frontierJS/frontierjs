@@ -6,7 +6,7 @@ title: Sign in
   import Form   from '@frontierjs/ui/components/forms/Form.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
-  import { session, signIn, completeSignIn, signOut } from '../../session.js'
+  import { session, signIn, completeSignIn, signOut } from '../../lib/session.js'
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import { getClient } from '@frontierjs/sierra/resource'
 

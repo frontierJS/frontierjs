@@ -32,8 +32,8 @@ function me(): string {
 }
 
 export default createService({
-  name:  'notification-preferences',
-  scope: keyScope('notification-preferences'),
+  name:  'notificationPreferences',
+  scope: keyScope('notificationPreferences'),
   model: 'NotificationPreference',
 
   // No `channel:`. `workspaceChannel` is the only channel this app has and

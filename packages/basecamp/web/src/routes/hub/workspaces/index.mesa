@@ -14,7 +14,7 @@ title: Hub workspaces
   // hook every workspace-scoped service already runs, so a suspended tenant is
   // refused everywhere rather than merely labeled here.
   import { hub } from '../../../resources/Hub.mesa'
-  import { day } from '../../../datetime.js'
+  import { day } from '../../../lib/datetime.js'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'

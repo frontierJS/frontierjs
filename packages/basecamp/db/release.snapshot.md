@@ -1190,6 +1190,8 @@ table `hub_config` · db `main` · gate `7`
 | `encryptionKeyEscrowedAt` | `DateTime` | yes | — | @system |
 | `encryptionKeyFingerprint` | `String` | yes | — | @system |
 | `heartbeatTimeoutSeconds` | `Int` | no | `120` | — |
+| `hostServer` | `Server` | — | — | relation |
+| `hostServerId` | `String` | yes | — | unique · @system |
 | `id` | `String` | no | `'hub'` | id |
 | `mailFromAddress` | `String` | yes | — | — |
 | `mailFromName` | `String` | yes | — | — |
@@ -1908,6 +1910,7 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 | `enrollTokenHash` | `String` | yes | — | @guarded |
 | `events` | `ServerEvent[]` | — | — | relation |
 | `health` | `Json` | yes | — | — |
+| `hostHub` | `HubConfig` | — | — | relation |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `ipAddress` | `String` | yes | — | — |
 | `ipv6Address` | `String` | yes | — | — |

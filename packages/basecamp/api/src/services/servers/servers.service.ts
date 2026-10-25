@@ -187,7 +187,8 @@ export default createService({
     // of this fleet, the same weight as buying or destroying one, which are
     // `@gate(5)` moves. It is not a move, so the level is declared here.
     { method: 'issueEnrollment', gate: LEVELS.ADMINISTRATOR },
-    { method: 'useHost', gate: LEVELS.ADMINISTRATOR },
+    // The box is the installation's, and its row is what the hub grades.
+    { method: 'useHost', gate: LEVELS.SYSADMIN },
     { method: 'host', read: true },
     // The operator's own ~/.ssh/config, on a Basecamp running on their
     // machine and nowhere else (`core/local-ssh.ts`). Reads, so a keyed

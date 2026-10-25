@@ -695,6 +695,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `volumes` — hasMany `Volume`
 - relation `appServers` — hasMany `AppServer`
 - relation `serverNetworks` — hasMany `ServerNetwork`
+- relation `hostHub` — hasMany `HubConfig` · optional
 - transitions on `status` — `reboot`: online|unreachable → pending · `drain`: online → draining @5 · `undrain`: draining → online @5 · `provision`: pending → provisioning @5 · `destroy`: pending|provisioning|installing|online|unreachable|draining|stopped → destroying @5 · `checkIn`: pending|installing|unreachable → online @system · `loseContact`: online → unreachable @system · `reportProvisioned`: provisioning → installing @system @5 · `reportRunning`: pending|provisioning|installing|unreachable|stopped → online @system @5 · `reportStopped`: pending|provisioning|installing|online|unreachable|draining → stopped @system @5 · `reportRebuilding`: pending|installing|online|unreachable|draining|stopped → provisioning @system @5 · `reportDestroyed`: destroying → destroyed @system @5
 - capabilities — `Server.create` · `Server.update` · `Server.delete` · `Server.reboot` · `Server.drain` · `Server.undrain` · `Server.provision` · `Server.destroy` · read is not graded
 
@@ -1684,6 +1685,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - gate `read:7 create:7 update:7 delete:7` · version field `version` · closed (`additionalProperties: false`)
 - relation `backupDestination` — belongsTo `BackupDestination` via `backupDestinationId` · on delete SetNull · optional
 - relation `replicaDestination` — belongsTo `BackupDestination` via `replicaDestinationId` · on delete SetNull · optional
+- relation `hostServer` — belongsTo `Server` via `hostServerId` · on delete SetNull · optional
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -1706,6 +1708,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `backupKeepRemoteDays` | `integer`? | — | — | `minimum: 1` `maximum: 3650` | — |
 | `encryptionKeyEscrowedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `encryptionKeyFingerprint` | `string`? | — | — | `x-litestone-kind` | — |
+| `hostServerId` | `string`? | — | — | `x-litestone-kind` | — |
 | `mailFromAddress` | `string`? | — | — | `format: "email"` `x-transforms` | — |
 | `mailFromName` | `string`? | — | — | `minLength: 0` `maxLength: 80` `x-transforms` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |

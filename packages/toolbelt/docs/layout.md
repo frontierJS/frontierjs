@@ -218,6 +218,13 @@ src/sse/             the `text/event-stream` frame, both ways — `formatEvent`,
                      (`FJS-1581`). `data` is JSON both ways; a line that is not
                      JSON reads as its text. Ships a `.d.ts` — junction's
                      `SseEvent` extends it
+src/sugar/           methods for the built-in types as TABLES an app installs —
+                     each factory answers `{ proto, statics }` and touches no
+                     prototype; the app's `web/src/lib/sugar.js` (`fli new`'s
+                     `makeSugarJs`) is the installer. Each method is a kit
+                     here called with `this`: `toMoney` is `/units` minor,
+                     `toCurrency` major, casing is `/inflect`, dates take the
+                     app's `createDatetime` instance (`FJS-D1515`)
 src/devline/         the one line a dev server prints for the `fli dev` that
                      started it, under `FLI_DEV` — `ready` (URL, one row per
                      thing it brought up) or `warn` (a file and a message).

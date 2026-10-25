@@ -1688,6 +1688,10 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1514"></a>2026-10-24 · `FJS-D1514` — Basecamp's own box is the Server row `HubConfig.hostServerId` names, not a slug; only the hub tier enrolls it, and `/setup` writes the hub row so `fli deploy` can
+
+Asked in chat, through the question tool, closing `FJS-3488`. *As recommended* both times. **The pointer** (`@unique @system`, `SetNull`, the shape `replicaDestinationId` takes under `FJS-D1491`) was picked over **reserving the slug** and **a `@system` flag on `Server`**. Two reasons: a slug is unique per workspace and any ADMINISTRATOR may choose `basecamp-host`, and `FJS-D1191`'s *one row per box* was unenforced until now. **`/setup` writing the row** (`baseUrl` = `FRONTIER_API_URL`, `adminEmail` = the first user's) was picked over **refusing until `/hub/settings/` is saved** and **the flag after all**. With no hub row there is nowhere to put the pointer, and `fli deploy` would stop enrolling by default. Both values are facts that request holds, so the row is not invented defaults. **Where it lives:** `hostServer()` / `findHost()` / `useHost()` in `packages/basecamp/api/src/core/host-machine.ts` are the one lookup, and `posture.host`, `servers.host`, `core/enroll-host.ts` and `jobs/replicate-sync.job.ts` read through it. `servers.useHost` is gated at SYSADMIN and the *Use this Basecamp server* button shows only to the hub tier. A taken `basecamp-host` slug gets a suffix rather than being adopted. The `/setup` route is in `api/src/app.ts`.
+
 ### <a id="fjs-d1503"></a>2026-10-24 · `FJS-D1503` — Q2 — How `data` and `source` are classified — `@personal` on both in the reference, so the trail logs `[personal]`.
 
 Asked in [`IDEAS/thing.md`](IDEAS/thing.md) § Open questions. **A** was picked over **B** (the table gated owner-only, the fields unclassified), **C** (both).
@@ -4542,6 +4546,12 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d1517"></a>2026-10-25 · `FJS-D1517` — `Dashboard.slug` is not `@immutable`: a dashboard's handle is in nobody's source code, so `dashboards.patch` re-derives it from a new name. The service is its only writer: `patch` drops a slug the caller sends.
+
+Found closing `FJS-3477`: the `FJS-1393` sweep marked every slug `@immutable`, and Litestone then refused the service's own re-slug, so renaming a board answered 400 from its own screen. **A** (drop `@immutable`) was picked over **B** (keep it and stop re-slugging) and **C** (drop the column; nothing reads it but `@@unique([workspaceId, slug])`). A flag key or a network slug stays immutable, because code names those.
+
+*Lives in:* `packages/basecamp/db/schema.lite`, `packages/basecamp/api/src/services/dashboards/dashboards.service.ts`.
 
 ### <a id="fjs-d1504"></a>2026-10-24 · `FJS-D1504` — Q3 — Retention after graduating — Keep a graduated Thing forever.
 
@@ -8276,6 +8286,30 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d1518"></a>2026-10-25 · `FJS-D1518` — A service name STATED in kebab or snake folds to camelCase exactly as a filename does (`FJS-D159`), and the stated spelling stays mounted as an alias. The fold is `canonicalServiceName` in `ServiceRegistry.register` and the autoloader; a `buildService()` result handed to `register` keeps the name it was built with.
+
+This overrides `FJS-D159`'s *a DECLARED name is untouched*: that sentence left a stated kebab name as a fourth spelling no resolver agreed with. It adds aliases, so whether aliases stay at all is `FJS-D1317`'s, and a subscription made under one still hears nothing (`FJS-3124`).
+
+Found closing `FJS-3477`: basecamp's `backup-destinations.service.ts` said `name: 'backup-destinations'`, the loader honored a stated name over its filename, and sierra's `serviceNameFor('BackupDestination')` asked for `backupDestinations`, so App's two backup pickers were empty. **A** (junction folds) was picked over **B** (basecamp drops its stated names, leaving the trap for the next app) and **C** (file it). Plugins state names too — auth's `api-keys` and `account-recovery`, conduit's `conduit-targets`, the metrics plugin's `metrics-store` — and fold the same way, so a service's canonical name, its MCP tool prefix and its `$.service` all move to camel. A Set of service names compared as strings misses silently: basecamp's `OFF_LIMITS` would have let a scoped key reach `apiKeys`, and moved in the same change. A derived path list that reads only the headings drops the aliases — basecamp's `api-paths.js` reads `also answers to`, because a stranger's password reset is an HTTP call to `/account-recovery`.
+
+*Lives in:* `packages/junction/src/core/service.ts`, `packages/junction/src/core/loader.ts`; tests in `test/service-name-kebab.test.ts`.
+
+### <a id="fjs-d1515"></a>2026-10-25 · `FJS-D1515` — Methods on the built-in types are `@frontierjs/toolbelt/sugar`: pure factories answering `{ proto, statics }` tables, installed by the app's own `web/src/lib/sugar.js`, which `fli new` writes and `main.js` imports first. Two money names: `toMoney` is minor units, `toCurrency` major.
+
+Legacy frontier's `packages/web/src/preload.js` patched the prototypes from inside the framework, and the owner wanted the set standardized and on by default. The tables are in toolbelt and the installing is not, because mutating a global breaks the purity `FJS-D26` admits toolbelt on; the app file holds the one loop, and deleting a line drops a group. Timers, the network and the statics that mutate their argument (`Array.upsert`, `Object.put`) are app-file extras: a pure copy of a mutating call silently does nothing where the legacy one wrote. **Sugar** was picked over *natives* (mesa's native backend has the word), *builtins*, *coreExt* and *preload* (`<link rel=preload>`); Sugar.js is the same split, tables plus an explicit `extend()`.
+
+`toCurrency` keeps the legacy meaning, MAJOR units, so a ported call shows the amount it did; `toMoney` takes the schema's `@money` word and its MINOR units. The two differ a hundredfold and only the name says which, so every in-tree cents caller moved to `toMoney` in this change. A currency comes from `number({ currency })` at install or from the call, and a call with neither THROWS rather than guessing USD (`FJS-D1512`): basecamp installs `number()`, since it prices in EUR and USD. The installer refuses a name the platform already has (SmooshGate) and accepts its own on a second install (HMR). The legacy set was cut where the language now answers (`Object.groupBy`, `.at(-1)`, `?.`, `===`) and fixed where it was wrong — see the spec. No artefact yet stops `.toCurrency()` on a `@money` value (`FJS-3494`); a prerender loads the file before its first render (`FJS-3493`).
+
+*Lives in:* `packages/toolbelt/src/sugar/sugar.js`, `packages/cli/core/scaffold/web.js` (`makeSugarJs`).
+
+### <a id="fjs-d1512"></a>2026-10-24 · `FJS-D1512` — How a hand-written screen shows a stored `@money` amount — `formatMinor(minor, currency, { places })` in `@frontierjs/toolbelt/units`, with `<Cell value column record>` for a value that has its column. No `<Money>` component.
+
+Two app copies (basecamp `web/src/money.js` and thod `web/src/lib/money.js`) and about fifteen inline `formatMoney(fromMinor(m, c), c)` pairs across the prototypes showed a piece missing from the kit. **A** was picked over **B** (A plus a ui `<Money value field>` that reads the currency off `x-money`). B renders the same span, `tabular` digits and em dash as Cell's money branch and differs only in its props, so it would be a second display owner beside Cell.
+
+The currency has no default and a bad code throws, as `fromMinor` already does (`FJS-D556`). Not a number answers `''`, where the thod copy's `?? 0` showed a missing amount as `$0.00`. Cell's money branch calls `formatMinor`, so the two cannot drift. Nothing flags a new hand copy growing back in an app.
+
+*Lives in:* `packages/toolbelt/src/units/units.js`, `packages/ui/components/display/Cell.mesa`.
 
 ### <a id="fjs-d1511"></a>2026-10-24 · `FJS-D1511` — 1.5 — What replaces Basecamp's `minio:latest` Blueprint row — SeaweedFS at `chrislusf/seaweedfs:4.48`, the same server the drives start (`FJS-D1507`), so the tree keeps one S3 server rather than two.
 
@@ -15143,6 +15177,28 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1516"></a>2026-10-25 · `FJS-D1516` — Is an app's `api/src/documents/` an area that belongs under `domain/documents/`, or a kind `FJS-D625` should name — An area. Both apps move it to `api/src/domain/documents/`, and `app-layout` warns on any folder directly under `api/src/` that is not a kind.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (name `documents/` as a kind in `FJS-D625` and README § Project Structure). `FJS-D625` already says there is no feature folder, and B would make a kind that no loader reads and no file language decides.
+
+The kinds are `API_SRC_KINDS` in `packages/cli/core/checks/app.js`, beside `WEB_SRC_KINDS`: `core`, `services`, `routes`, `plugins`, `jobs`, `notifications`, `providers` (`FJS-D1519`), `domain` and `components` (`FJS-D1520`). A cli test fails when README § Project Structure leaves out a kind either list names, so the README cannot drift from the check. ela's `estimator/`, `field/`, `inbox/` and `surveys/` move with `documents/` in the change that adds the warning, and so do example's `emails/` and thod's templates. The other apps it flags (chatwoot, eventmark, jazzhr, page-performer, quo, transit, vaultwarden) each get an `ISSUES.md` row rather than a move under other sessions' uncommitted edits. Confidence 3.
+
+*Lives in:* `packages/cli/core/checks/app.js`, `README.md` § Project Structure.
+
+### <a id="fjs-d1519"></a>2026-10-25 · `FJS-D1519` — Is `api/src/providers/` a kind, given nothing loads it — Yes: it is where an app's adapter to a third party lives, one folder per Provider (`FJS-D06`), routes and all.
+
+Raised by `FJS-D1516`. **Kind** was picked over **area** (`domain/providers/<name>/` in every app). Eight apps reached for the folder without being told, and it is named for a framework noun rather than for one app's area. No loader reads it, so nothing checks what is inside it beyond `app-layout` accepting the folder name.
+
+*Lives in:* `packages/cli/core/checks/app.js` (`API_SRC_KINDS`), `README.md` § Project Structure.
+
+### <a id="fjs-d1520"></a>2026-10-25 · `FJS-D1520` — Where does a `.mesa` file under `api/` live — A `.mesa` file that code renders goes in the `domain/<area>/` of what renders it, wherever that code sits. A `.mesa` file only other `.mesa` files import goes in `components/<area>/`, or at the `components/` root when two or more areas use it.
+
+Raised by `FJS-D1516`. Picked over `views/<area>/` (the Rails and Laravel word, new here), keeping every template beside its renderer (Phoenix 1.7, which leaves no home for a part two areas share), and `emails/` plus `documents/` as kinds (`FJS-D1516` B). The rule is web's: a `.mesa` that something renders sits where that thing looks (`routes/` for the router, `resources/` for a Resource, the area for a service, job or route that renders a PDF or an email), and every other `.mesa` sits in `components/`. A `.mesa` in `domain/` that another `.mesa` imports is a part and moves to `components/`. Legacy ss-planner kept its parts in `api/src/services/compiler/components/` for the same reason.
+
+thod's five documents stay in `domain/documents/`, and `Letterhead`, `PricedLines` and `Footing` move to `components/documents/`. example's order confirmation is rendered by `example/api/src/notifications/OrderConfirmation.notification.ts` and goes to `domain/orders/`.
+
+*Lives in:* `packages/cli/core/checks/app.js`, `README.md` § Project Structure.
+
 ### <a id="fjs-d1501"></a>2026-10-24 · `FJS-D1501` — Q4 — The first five — The five mechanisms `ARCHITECT.md` spends the most words on, measured by section length; expected: the three realms from one schema, a `$`-directive crossing the bridge (Invariant 10), the gate ladder, the hook pipeline around a service call, the surfaces beside `db/` (Invariant 3).
 
 Asked in [`IDEAS/illustration.md`](IDEAS/illustration.md) § Open questions. **A** was picked over **B** (one figure end to end, cold-reader proof included, before five).
@@ -16258,6 +16314,8 @@ Asked in the app layout audit ([Where Code Lives](https://claude.ai/artifact/3dv
 
 *Familiarity vs. precision*: `lib/` and `stores/` take the ecosystem's shape and words where the words fit. `app-layout` grades each folder rule as a warning (`FJS-1888`).
 
+
+**Amended by [`FJS-D1520`](#fjs-d1520)**: under `api/`, a `.mesa` that code renders goes in `domain/<area>/`, not `components/`.
 ### <a id="fjs-d608"></a>2026-10-06 · `FJS-D608` — Which tooling gaps in `site-kit-parity.md` § 4 become framework owners — Wire every gap Sierra already owns (`defer-js`, `speculation`, `sierra/analytics`); fix the two filed as Sierra's (FJS-1539 head, FJS-1540 host function) in Sierra; start every gap with no owner (images, per-page JSON-LD, the lead fallback, animations) as site-kit code, and move one to Sierra when a consumer that is not a site-kit site needs it.
 
 Asked in [`IDEAS/site-kit-plan.md`](IDEAS/site-kit-plan.md) § Open questions. **A** was picked over **B** (give each of images, per-page JSON-LD and the static-host function a Sierra owner before site-kit ports it), **C** (all of it stays site-kit code, FJS-1539 and FJS-1540 included).

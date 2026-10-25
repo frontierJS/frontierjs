@@ -2,7 +2,7 @@
 title: Projects
 ---
 <script>
-  import { session } from '../../session.js'
+  import { session } from '../../lib/session.js'
   import { projects } from '../../resources/Project.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Table  from '@frontierjs/ui/components/display/Table.mesa'

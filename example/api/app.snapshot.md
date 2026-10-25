@@ -123,10 +123,11 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 
-### `account-recovery`
+### `accountRecovery`
 
 - **methods** — `resetTotp`
 - **custom methods** — `resetTotp`
+- **also answers to** — `account-recovery`
 - **who may call** —
   - `resetTotp` — standing 1 or above — declared `gate: 1`
 
@@ -134,9 +135,10 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 
-### `api-keys`
+### `apiKeys`
 
 - **methods** — `find`, `create`, `remove`
+- **also answers to** — `api-keys`
 - **who may call** —
   - `find` — standing 1 or above — declared `gate: 1`
   - `create` — standing 1 or above — declared `gate: 1`

@@ -293,7 +293,7 @@ test('db:types writes one types file per audience, and only the browser one augm
   expect(api).not.toContain('--augment')
   expect(web).toContain('--audience client')
   expect(web).toContain('--augment junction')
-  expect(web).toContain('--out web/src/db.d.ts')
+  expect(web).toContain('--out web/src/lib/db.d.ts')
 }, 60_000)
 
 // FJS-2439 — auth.ts imports db.ts, which opens db/app.db at import, so what
@@ -319,13 +319,13 @@ test('a full-stack scaffold wires a claim resolver stub and a controls stub', ()
   expect(read('api/src/core/principal.ts')).toMatch(/export const principal: PrincipalResolver\[\] = \[\]/)
   expect(read('api/src/app.ts')).toContain("from './core/principal.ts'")
   expect(read('api/src/app.ts')).toMatch(/^\s*principal,$/m)
-  expect(read('web/src/controls.js')).toContain('registerControl')
-  expect(read('web/src/main.js')).toContain("import './controls.js'")
+  expect(read('web/src/lib/controls.js')).toContain('registerControl')
+  expect(read('web/src/main.js')).toContain("import './lib/controls.js'")
 }, 60_000)
 
 test('a web-only scaffold writes neither stub, which need a schema and an API', () => {
   const app = scaffold('no-stubs', '--template', 'web-only')
-  expect(existsSync(join(app, 'web/src/controls.js'))).toBe(false)
+  expect(existsSync(join(app, 'web/src/lib/controls.js'))).toBe(false)
   expect(readFileSync(join(app, 'web/src/main.js'), 'utf8')).not.toContain('controls.js')
 }, 60_000)
 

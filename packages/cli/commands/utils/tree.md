@@ -136,7 +136,7 @@ and `node_modules`.
 ## Icons and colors
 
 Each file gets an emoji by name (`package.json` 📦, `CLAUDE.md` 🤖, `.env` 🔑),
-then by pattern (`*.test.*` 🧪, `*.snapshot.*` 🧊), then by extension (`.lite`
+then by pattern (`*.test.*` 🧪, `*.service.ts` 📡, `*.snapshot.*` 🧊), then by extension (`.lite`
 🪨, `.mesa` 🌵, `.md` 📝, `.js` 🟨, `.ts` 🟦), and its name takes that type's
 color. Generated files are dimmed. A folder is colored by its role — `db/`
 amber, `api/` cyan, the UI surfaces violet, `test/` green, `docs/` blue.

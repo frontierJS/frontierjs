@@ -424,11 +424,16 @@
       "name": "@frontierjs/print-kit",
       "version": "0.1.1",
       "devDependencies": {
+        "@frontierjs/junction": "workspace:*",
         "@frontierjs/mesa": "workspace:*",
       },
       "peerDependencies": {
+        "@frontierjs/junction": "^0.1.0",
         "@frontierjs/mesa": "^0.1.0",
       },
+      "optionalPeers": [
+        "@frontierjs/junction",
+      ],
     },
     "packages/sierra": {
       "name": "@frontierjs/sierra",

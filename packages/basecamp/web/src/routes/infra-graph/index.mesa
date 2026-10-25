@@ -24,7 +24,7 @@ title: Infrastructure graph
   // Drag-to-move and drag-to-pan. The graph scrolls inside its own box, which
   // is a scroll a keyboard and a trackpad both already know how to do; a drag
   // handler that has to be discovered is not an improvement on that.
-  import { session } from '../../session.js'
+  import { session } from '../../lib/session.js'
   import { infra } from '../../resources/Infra.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'

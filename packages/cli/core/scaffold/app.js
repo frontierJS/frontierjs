@@ -125,7 +125,7 @@ export function makePackageJson(spec) {
     // propagating (FJS-018). Only on the web file: the augmentation names
     // @frontierjs/junction/client, which is the browser's module.
     const dbTypes = ['litestone types --schema db/schema.lite --audience system --out db/schema.d.ts']
-    if (useWeb) dbTypes.push('litestone types --schema db/schema.lite --audience client --augment junction --out web/src/db.d.ts')
+    if (useWeb) dbTypes.push('litestone types --schema db/schema.lite --audience client --augment junction --out web/src/lib/db.d.ts')
     scripts['db:types'] = dbTypes.join(' && ')
   }
 

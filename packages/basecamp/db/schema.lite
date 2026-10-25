@@ -322,7 +322,7 @@ type DomainCertUpload {
   kind      String?
 }
 
-/// What `notification-preferences.save` accepts. That at least one transport is
+/// What `notificationPreferences.save` accepts. That at least one transport is
 /// sent is the method's: a type cannot say "one of these two".
 type NotificationPreferenceSave {
   kind  NotificationKind
@@ -330,7 +330,7 @@ type NotificationPreferenceSave {
   inApp Boolean?
 }
 
-/// What `notification-preferences.reset` accepts; no kind resets every kind.
+/// What `notificationPreferences.reset` accepts; no kind resets every kind.
 type NotificationPreferenceReset {
   kind NotificationKind?
 }
@@ -1292,6 +1292,7 @@ model Server {
   volumes          Volume[]
   appServers       AppServer[]
   serverNetworks   ServerNetwork[]
+  hostHub          HubConfig?   @relation("HubHost")
 
   @@gate(2.4.4.5)
 
@@ -1840,6 +1841,7 @@ model Domain {
   updatedAt     DateTime  @default(now()) @updatedAt
   deletedAt     DateTime?
 
+  @@label(hostname)
   @@gate(2.5)
   @@softDelete
   @@trail(audit)
@@ -2849,7 +2851,9 @@ model Dashboard {
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   name        String    @trim @length(1, 120)
-  slug        String    @trim @immutable
+  // Not @immutable: a dashboard's handle is in nobody's source code, so
+  // dashboards.patch re-derives it from a new name.
+  slug        String    @trim
   description String?
 
   // An emoji, so it is stored as text with a length bound rather than as a
@@ -3396,9 +3400,16 @@ model HubConfig {
   // the sha256 of the key they said it of. The key never travels with an
   // archive, and an archive without it cannot be read: `hub.key-escrowed`
   // grades red while this is null or names a key that is no longer the one in
-  // use. Written by `hub-config.attestEscrow` alone, never by `save`.
+  // use. Written by `hubConfig.attestEscrow` alone, never by `save`.
   encryptionKeyEscrowedAt   DateTime? @system
   encryptionKeyFingerprint  String?   @system
+
+  // The Server row that is the box this Basecamp runs on — what /hub/security/
+  // grades and what Basecamp's own replica key is sent to. A slug is a
+  // tenant's to choose, so it cannot say which row this is (`FJS-3488`).
+  // Written by `core/host-machine.ts` alone, never by `save`.
+  hostServerId              String?   @unique @system
+  hostServer                Server?   @relation("HubHost", fields: [hostServerId], references: [id], onDelete: SetNull)
 
   mailFromAddress           String?  @email @lower
   mailFromName              String?  @trim @length(0, 80)

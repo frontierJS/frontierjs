@@ -395,6 +395,12 @@ describe('the host row on /hub/security/', () => {
     // not the fixture renamed.
     const drifted = { machine, SECRET }
     machine = await env.system.server.create({ data: { workspaceId: ws.id, name: 'hub-host', slug: HOST_SLUG, status: 'pending' } })
+    // The slug is any administrator's to choose, so it names nothing until the hub points at the row.
+    expect((await env.as(admin).service('posture').call('host', undefined, {})).enrolled).toBe(false)
+    const sys = env.system as any
+    if (!await sys.hubConfig.exists({ where: { id: 'hub' } }))
+      await sys.hubConfig.create({ data: { id: 'hub', baseUrl: 'https://hub.posture.test', adminEmail: 'ops@posture.test' } })
+    await sys.hubConfig.update({ where: { id: 'hub' }, data: { hostServerId: machine.id } })
     const { mintEnrollToken, hashEnrollToken } = await import('../src/providers/compute/enrollment.ts')
     const token = mintEnrollToken().token
     await env.system.server.update({ where: { id: machine.id },
@@ -414,6 +420,7 @@ describe('the host row on /hub/security/', () => {
 
     // A workspace owner reaches the row through `latest`, never the hub's view.
     expect((await env.as(owner).service('posture').call('host', undefined, {}).catch((e: any) => e)).code ?? 404).toBe(404)
+    await sys.hubConfig.update({ where: { id: 'hub' }, data: { hostServerId: null } })
     ;({ machine, SECRET } = drifted)
   })
 

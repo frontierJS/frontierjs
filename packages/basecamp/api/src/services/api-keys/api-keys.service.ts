@@ -213,7 +213,7 @@ function present(row: Record<string, unknown>): Record<string, unknown> {
 }
 
 export default createService({
-  name:  'api-keys',
+  name:  'apiKeys',
   model: 'ApiKey',
   paginate: { default: 20, max: 200 },
   // The whole surface. `owners` reads the roster through the app, so no model's

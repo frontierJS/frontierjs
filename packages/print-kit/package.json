@@ -16,10 +16,15 @@
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "peerDependencies": {
-    "@frontierjs/mesa": "^0.1.0"
+    "@frontierjs/mesa": "^0.1.0",
+    "@frontierjs/junction": "^0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@frontierjs/junction": { "optional": true }
   },
   "devDependencies": {
-    "@frontierjs/mesa": "workspace:*"
+    "@frontierjs/mesa": "workspace:*",
+    "@frontierjs/junction": "workspace:*"
   },
   "files": [
     "index.js",

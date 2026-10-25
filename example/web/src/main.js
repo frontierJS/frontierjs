@@ -22,7 +22,7 @@ import './resources/ProductVariant.mesa'
 
 import { getClient }        from '@frontierjs/sierra/resource'
 import { useCartClient }    from './stores/cart.js'
-import './displays.js'
+import './lib/displays.js'
 
 // The basket takes its client rather than importing one, so that the same store
 // can run on the storefront — where importing sierra's junction module into an

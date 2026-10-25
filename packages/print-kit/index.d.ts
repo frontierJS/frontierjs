@@ -32,6 +32,12 @@ export interface PrinterOptions {
 
 export function createPrinter(opts?: PrinterOptions): Printer
 
+// Optional: these types load wherever print-kit is imported, which is not
+// proof `app.configure(printer())` ran.
+declare module '@frontierjs/junction' {
+  interface App { printer?: Printer }
+}
+
 /** The printer as a junction plugin: owned as `app.printer`; refuses to boot with no Chrome. */
 export function printer(opts?: PrinterOptions): {
   name: 'printer'

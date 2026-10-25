@@ -13,7 +13,7 @@ title: Notifications
     notifications, isUnread, titleOf, bodyOf, actionOf,
     markRead, markUnread, markAllRead, INBOX,
   } from '../../resources/Notification.mesa'
-  import { at } from '../../datetime.js'
+  import { at } from '../../lib/datetime.js'
 
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'

@@ -195,7 +195,7 @@ try {
   // owner is the system administrator — the pair.
   console.log('\n  the hub tier')
   pair('hub_setSystemAdmin', list.admin, list.owner, 'workspace admin', 'system administrator')
-  pair('conduit-targets_remove', list.admin, list.owner, 'workspace admin', 'system administrator')
+  pair('conduitTargets_remove', list.admin, list.owner, 'workspace admin', 'system administrator')
   const promote = await called(viewer, 'hub_setSystemAdmin', { id: 'x', data: { isSystemAdmin: true } })
   check('hub_setSystemAdmin called by a viewer anyway fails closed', promote.refused, promote.text.slice(0, 200))
   const hub = await called(owner, 'hub_users')

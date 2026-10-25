@@ -12,8 +12,8 @@ title: Dependencies
   // dependencies* or *never pushed*, and only the first clock can tell those
   // apart.
   import { page }    from '@frontierjs/sierra/router'
-  import { session } from '../../session.js'
-  import { ago }     from '../../datetime.js'
+  import { session } from '../../lib/session.js'
+  import { ago }     from '../../lib/datetime.js'
   import { dependencies } from '../../resources/Dependency.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'

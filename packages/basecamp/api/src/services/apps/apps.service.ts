@@ -152,7 +152,7 @@ function checkRuntime(data: Record<string, unknown>, current?: Record<string, un
 
 /**
  * The app's schedule (`IDEAS/backups.md` 1.6). An expression the clock cannot
- * hold is refused BEFORE the write, as `hub-config.save` does, so a stored
+ * hold is refused BEFORE the write, as `hubConfig.save` does, so a stored
  * schedule always registers; the bucket is read in the caller's scope, so
  * another workspace's row is refused by name and never pointed at. A replica
  * destination is one replica's (`FJS-D1505`), so one already held is refused

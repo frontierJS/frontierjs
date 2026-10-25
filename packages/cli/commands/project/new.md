@@ -158,7 +158,7 @@ const { makeApiIndexTs, makeApiAppTs, makeApiCorePrincipalTs, makeApiEnvTs, make
         makeApiCoreAuthTs, makeJunctionConfig } =
   await import(resolve(global.fliRoot, 'core/scaffold/api.js'))
 const { makeIndexHtml, makeWebManifest, makeIconSvg, makeViteConfig, makeSierraConfig, makeAppMesa,
-        makeMainJs, makeControlsJs, makeDatetimeJs, makeNavJs, makeRouteModule, makeRouteNotFound,
+        makeMainJs, makeControlsJs, makeDatetimeJs, makeSugarJs, makeNavJs, makeRouteModule, makeRouteNotFound,
         makeRouteIndex, makeRouteLogin, makeRouteReset, makeRouteVerifyEmail, makeRouteAccount,
         makeRouteRegister } =
   await import(resolve(global.fliRoot, 'core/scaffold/web.js'))
@@ -568,8 +568,9 @@ if (useWeb) {
     ['web/config/sierra.config.js',         makeSierraConfig(appName, useApi)],
     ['web/src/App.mesa',                    makeAppMesa()],
     ['web/src/main.js',                     makeMainJs(useApi)],
-    ['web/src/datetime.js',                 makeDatetimeJs()],
-    ...(useApi ? [['web/src/controls.js',   makeControlsJs()]] : []),
+    ['web/src/lib/datetime.js',             makeDatetimeJs()],
+    ['web/src/lib/sugar.js',                makeSugarJs()],
+    ...(useApi ? [['web/src/lib/controls.js', makeControlsJs()]] : []),
     ['web/src/lib/nav.js',                  makeNavJs(useAuth)],
     ['web/src/routes/_module.mesa',         makeRouteModule(appName, useAuth, useApi)],
     ['web/src/routes/index.mesa',           makeRouteIndex(appName, useApi)],

@@ -4,7 +4,7 @@ title: Orders
 <script>
   import { orders } from '../../resources/Order.mesa'
   import { prefs } from '@/stores/prefs.js'
-  import { day, today, calendarZone } from '@/datetime.js'
+  import { day, today, calendarZone } from '@/lib/datetime.js'
   import { plainDateIn, addToDate, startOfDay } from '@frontierjs/toolbelt/datetime'
   import { session } from '@frontierjs/sierra/resource'
 

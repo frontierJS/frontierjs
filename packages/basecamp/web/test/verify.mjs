@@ -513,7 +513,7 @@ check('token persisted', await hasToken(), true)
 // The socket opens only once a token is stored, so this is also the proof that
 // storing it and handing it to the client happen together.
 check('websocket live',
-  await waitFor(`document.querySelector('header .status-dot')?.getAttribute('aria-label')`, t => t === 'Live'), 'Live')
+  await waitFor(`document.querySelector('header [role=status]')?.textContent.trim()`, t => t === 'Live'), 'Live')
 
 // 3. Setup closes behind itself.
 await goto('/setup/')
@@ -598,6 +598,12 @@ async function apiCall(path, { method = 'GET', body, workspace, header, outpost 
   if (!res.ok) throw new Error(`${method} ${path} → ${res.status} ${text}`)
   return data
 }
+
+// The hub row is where `fli deploy` points the host machine (FJS-D1514), so an
+// install that skipped /hub/settings/ must still have one.
+const hubAfterSetup = await apiCall('/hub-config', { method: 'POST', header: { 'x-service-method': 'current' } })
+  .catch(e => ({ adminEmail: e.message }))
+check('setup wrote the hub settings', (hubAfterSetup?.data ?? hubAfterSetup)?.adminEmail, ACCOUNT.email.toLowerCase())
 
 const firstWs = (await apiCall('/workspaces')).data[0]
 await apiCall('/projects', { method: 'POST', workspace: firstWs.id, body: { name: 'Website', slug: 'website' } })

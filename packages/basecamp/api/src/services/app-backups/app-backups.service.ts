@@ -28,8 +28,8 @@ import { takeAppBackup }                                     from '../../jobs/ap
 import { keyScope }                                          from '../api-keys/scopes.ts'
 
 export default createService({
-  name:  'app-backups',
-  scope: keyScope('app-backups'),
+  name:  'appBackups',
+  scope: keyScope('appBackups'),
   model: 'AppBackup',
   reservedQuery: [...WORKSPACE_QUERY],
 

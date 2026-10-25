@@ -213,7 +213,7 @@
     state = 'out'
   }
 
-  // The web app's `day()` (`web/src/datetime.js`), restated because a surface
+  // The web app's `day()` (`web/src/lib/datetime.js`), restated because a surface
   // owns its own src (Invariant 3): the shop's calendar and the reader's locale.
   // UTC is the API's floor for a shop that set nothing. A plain date — a period
   // end — is already a day and is shown as itself: read as midnight UTC in the
