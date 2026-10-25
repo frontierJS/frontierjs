@@ -81,6 +81,12 @@ export function readConfig(env = process.env) {
     /** The unit's control socket, which `/replicate` turns on and the
      *  heartbeat reads. Under its RuntimeDirectory. */
     litestreamSocket:  env.OUTPOST_LITESTREAM_SOCKET ?? '/run/litestream/litestream.sock',
+    /** The binary `/replica/restore` runs; the install's `litestreamInstall`
+     *  puts the pinned one here. */
+    litestreamBin:     env.OUTPOST_LITESTREAM_BIN ?? '/usr/local/bin/litestream',
+    /** Where `/replica/restore` writes each database before it moves into a
+     *  volume. Inside the unit's StateDirectory, which a snap docker can mount. */
+    replicaStageDir:   (env.OUTPOST_REPLICA_STAGE_DIR ?? '/var/lib/outpost/replica-restore').replace(/\/$/, ''),
     /** Each app's host uid, recorded once and never reused (`FJS-D1484`).
      *  Inside the unit's StateDirectory, where the sandbox lets it write. */
     uidFile:     env.OUTPOST_UID_FILE ?? '/var/lib/outpost/uids.json',

@@ -453,12 +453,57 @@ Done when: a drill restores an app into a scratch volume and passes
 `integrity_check` and `litestone restore --verify`, and a real restore brings a
 stopped app back to a chosen timestamp, both through Basecamp on a stand-in.
 
-- [ ] 3.1 Outpost `/replica/restore`: refused while a container holds the
+- [x] 3.1 Outpost `/replica/restore`: refused while a container holds the
       volume (`FJS-D943`); `litestream restore -o` per database, optional
       timestamp.
-- [ ] 3.2 A snapshot restores from the bucket: D943 A's fetch, with a pre-signed GET.
-- [ ] 3.3 The drill: on a schedule, restore into a scratch volume, verify, record
+  - Built 2026-10-25. Probed first against Litestream 0.5.17: `restore -config`
+    answers *database not found in config* for a file inside a `dir:` target,
+    so each database is restored by its URL,
+    `s3://<bucket>/<path>/<file>?endpoint=…&region=…&force-path-style=true`,
+    the key in `LITESTREAM_*` env. Litestream cannot list a replica, so
+    `apps.restoreReplica { serverId, at?, overwrite? }` (gate 5) lists
+    `<path>/` with a delimiter (`listObjects` grew `delimiter` and `prefixes`)
+    and names the `*.db` files; the body carries the same entry `/replicate`
+    sends, so the machine holds no key it did not have.
+  - Outpost: `replicator.stage` restores each into its own directory under
+    `OUTPOST_REPLICA_STAGE_DIR`. The argv, the clamp of an `at` past the
+    replica's last write to the latest, and the error pick are litestone's
+    (`restoreArgs`, `lastWriteArgs`/`parseLastWrite`, `restoreError`, split out
+    of `restoreFile` so a caller spawning with a key in its environment runs
+    the same ones); one failing database fails the call with the volume
+    untouched.
+    `docker.restoreFiles` copies them in a no-network busybox, replacing each
+    `.db` and its own `-wal`/`-shm` and keeping every other file, owned as the
+    volume is. Unlike `/volume/restore`, overwrite does not empty the volume:
+    a replica carries no uploads.
+  - Probed: a running Litestream drops a database whose file is replaced
+    (`ensure wal exists: disk I/O error`) and never registers the new one, so
+    later writes reach no bucket. The route restarts the unit when it is
+    active (`replication: restarted | not running | restart failed`); after a
+    restart the restored file is snapshotted as the next txid, and a latest
+    restore reads the restored rows plus the writes after them.
+  - Proved: outpost suite 245/0 (7 new); a scratch drive through the signed
+    route on the real daemon, Litestream 0.5.17 and SeaweedFS 4.48 — refused
+    without overwrite and while held, a missing database fails in
+    Litestream's words with the volume untouched, an instant restores that
+    instant's rows with `integrity_check` ok, an instant past the last write
+    is the latest, the stale `-wal` gone, the upload and the uid kept.
+    Basecamp 991/0, typecheck 7, example `verify:replicate` 33/33 after the
+    litestone split. Not driven: `restoreReplica` through Basecamp against a
+    bucket (the Phase 3 exit), nothing under systemd.
+  - Open: `replicaOf` reads a soft-deleted destination as none, so an app whose
+    destination was removed cannot be restored from what is still in the
+    bucket, which is when a restore is most wanted. The `*.db` name test is
+    written twice, `replicaDatabases` and Outpost's `DB_NAME`.
+- [x] 3.2 A snapshot restores from the bucket: D943 A's fetch, with a pre-signed GET.
+      Built 2026-10-25, ruled `FJS-D1521` (amends D943 A: http(s) to any address, `sha256` required). `/volume/restore { url, sha256 }` fetches into the restore dir, checks the digest before `tar`, extracts through the one path, removes the copy. `/backup` answers `sha256`, computed by busybox `sha256sum` in the capture container: the archive is root's 0600, and a non-root Outpost could not read it back. `AppBackup.sha256` records it. `apps.restoreVolume` takes `backupId` or `path`, exactly one; `backupSource` refuses a failed backup, one whose upload never landed (its `location` is a machine path under the backup dir), and one with no digest. `mintDownload` beside `mintUpload` in `app-backup-run.job.ts`.
+      Proof: outpost 250/0 (5 url-restore cases, the capture script's digest), basecamp 992/0, typecheck 7 = baseline. Drive (scratchpad `drive-32.ts`) against real Docker and SeaweedFS on 18391 is 10/10. It covers: a real capture's digest equals the archive; a pre-signed PUT, then a pre-signed GET restore into `fjs-drv-data`; a wrong digest refused with the volume untouched; overwrite refused without the flag; a held volume refused; the fetched copy gone.
+      Not driven: the PUT from Outpost itself, because the drive is not root as the unit is. The stand-in runs with no S3 auth, so the signature was carried but never checked. Through Basecamp's executor end to end is the Phase 3 exit drive.
+- [x] 3.3 The drill: on a schedule, restore into a scratch volume, verify, record
       the result per App.
+      Built 2026-10-25, ruled `FJS-D1524` (verify on the machine, in the app's live release image) and `FJS-D1525` (an `AppDrill` model). Outpost `POST /replica/drill` stages the replica with `replicator.stage`, then `docker.verifyCopy` runs `bun x litestone restore --verify-only=/fjs-drill --json` in the release image with `--network none`, the release env by name and `--without-key` when it has no `ENCRYPTION_KEY`, and unstages either way. `--verify-only=<dir>` is new in litestone: `--verify`'s checks over files in place, each database under its own file name, left in place, with `--url`/`--at`/`--from-backup`/`--verify`/`--force` refused beside it. Basecamp: `AppDrill` (`DrillKind { manual scheduled }`), `appDrills` `find`/`get`/`run` (gate 5), `App.drillCron` on the clock beside `backupCron` (`syncAppDrillSchedule`, restored at boot), `jobs/app-drill-run.job.ts` the one asker. Refused before a row with no replica destination or no successful release; a stub executor or a missing report is a `failed` row. Seeded with one passed drill.
+      Proof: outpost 254/0, litestone 7953/0 plus the `--verify-only` smoke case, basecamp 994/0, typecheck 7 = baseline. Drive (scratchpad `drive-33.ts`) is 8/8: real Litestream 0.5.17 replicating into SeaweedFS on 18391, staged by the real replicator, and an image holding the litestone CLI and the schema run under real Docker. A good replica is verified with every row read; a row the schema refuses is `verified: false` naming it; an image with no CLI is "did not run"; the stage directory is gone each time.
+      Not driven: `appDrills.run` through Basecamp's executor to a live Outpost (the Phase 3 exit), and a real app's release image, which has to ship the litestone CLI reachable offline. Only top-level `*.db` files are staged, so a tenant database under a subdirectory is not drilled.
 - [ ] 3.4 Basecamp's own restore is a runbook (`litestone restore`) in
       `packages/basecamp/docs/`, never a button.
 

@@ -359,11 +359,31 @@ type AppUnplace {
 }
 
 /// What `apps.restoreVolume` accepts: an archive already on that server, under
-/// its Outpost's restore directory (`FJS-D943`).
+/// its Outpost's restore directory (`FJS-D943`), or one of the app's backups
+/// in a bucket, which that server fetches by a pre-signed GET (`FJS-D1521`).
+/// Exactly one of `path` and `backupId`.
 type AppVolumeRestore {
   serverId  String
-  path      String
+  path      String?
+  backupId  String?
   overwrite Boolean?
+}
+
+/// What `apps.restoreReplica` accepts: the machine whose volume takes the
+/// app's databases out of its Litestream replica, and the instant to bring
+/// them back to — the latest when absent.
+type AppReplicaRestore {
+  serverId  String
+  at        DateTime?
+  overwrite Boolean?
+}
+
+/// What `app-drills.run` accepts: the app, the machine that restores its
+/// replica into staging, and the instant, null for the latest (`FJS-D1524`).
+type AppDrillRun {
+  appId     String
+  serverId  String
+  at        DateTime?
 }
 
 /// What `apps.publish` accepts: a static build, each file as `{ path, content }`
@@ -566,6 +586,9 @@ enum ParamGenerator { random_hex_16 random_hex_32 random_hex_64 }
 // rescan met it in the bucket with no row naming it (`FJS-D1493`), so nobody
 // here asked for it. The schedule's own settings live on `HubConfig`.
 enum BackupKind        { manual scheduled found release }
+
+// How a drill was asked for; a drill is never found on a machine or run by a release.
+enum DrillKind         { manual scheduled }
 
 // Which manifest field declared a dependency — `dependencies`, `devDependencies`,
 // `peerDependencies`, `optionalDependencies`.
@@ -1720,11 +1743,17 @@ model App {
   replicaDestinationId String?  @unique
   replicaDestination   BackupDestination? @relation("AppReplica", fields: [replicaDestinationId], references: [id], onDelete: SetNull)
 
+  // When the replica is drilled (`IDEAS/backups.md` 3.3): restored beside the
+  // app and proven by its live release image, the result an `AppDrill` row.
+  // Null is no schedule; the clock follows the row as `backupCron`'s does.
+  drillCron            String?  @trim @length(1, 100)
+
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @default(now()) @updatedAt
   deletedAt     DateTime?
 
   appBackups    AppBackup[]
+  appDrills     AppDrill[]
   deployments   Deployment[]
   jobs          Job[]
   appServers    AppServer[]
@@ -1969,6 +1998,9 @@ model AppBackup {
   // says why in `error`, with `status` still `success`: the archive exists.
   location    String?   @trim @length(0, 500)
   error       String?   @length(0, 2000)
+  // The archive's sha256 as the machine wrote it; a restore from the bucket
+  // refuses an object that does not match (`FJS-D1521`).
+  sha256      String?   @length(64, 64)
 
   requestedBy String?
 
@@ -1983,6 +2015,46 @@ model AppBackup {
   @@index([appId])
   @@index([serverId])
   @@index([destinationId])
+  @@index([deploymentId])
+}
+
+// One drill of an app's replica (`FJS-D1524`, `FJS-D1525`): its databases
+// restored on a machine into a staging directory, never the app's volume, and
+// proven by the app's live release image running `litestone restore
+// --verify-only`. `success` is a copy that came back and passed; `failed` is
+// one that did not, with `error` or the failing checks in `report`. The
+// outcome columns are written at SYSTEM, as `AppBackup`'s are.
+model AppDrill {
+  id           String      @id @default(uuid())
+  appId        String
+  app          App         @relation(fields: [appId], references: [id], onDelete: Cascade)
+  serverId     String
+  server       Server      @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  // The release whose image proved it; the row outlives a pruned release.
+  deploymentId String?
+  deployment   Deployment? @relation(fields: [deploymentId], references: [id], onDelete: SetNull)
+
+  kind         DrillKind   @default(manual)
+  status       RunStatus   @default(pending)
+  // The instant asked for; null is the latest. Each database's own answer,
+  // pinned or latest, is in `databases`.
+  at           DateTime?
+  databases    Json?
+  // litestone's verify report as the image printed it.
+  report       Json?
+  error        String?     @length(0, 2000)
+
+  requestedBy  String?
+
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  durationMs   Int?
+  createdAt    DateTime    @default(now())
+
+  @@gate(5.8.8.8)
+  @@trail(audit)
+  @@index([appId])
+  @@index([serverId])
   @@index([deploymentId])
 }
 
@@ -2042,6 +2114,7 @@ model Deployment {
 
   steps                DeploymentStep[]
   appBackups           AppBackup[]
+  appDrills            AppDrill[]
 
   @@gate(2.4.4.4)
   // The release pipeline, declared once and enforced at the Data boundary

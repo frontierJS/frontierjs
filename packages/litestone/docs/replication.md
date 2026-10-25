@@ -215,6 +215,17 @@ Exit 0 only when everything graded passed; `--json` prints the report. The copy
 is removed after a pass and kept after a failure. Nothing schedules it: a cron
 line running it is the drill, and the exit code is the alarm.
 
+```bash
+litestone restore --verify-only=/fjs-drill --json
+```
+
+The same grading over a copy something else restored, where it lies: each
+declared SQLite database is looked for under its own file name (`app.db`, as
+the volume held it), a missing one fails, and the copy is left in place. No
+replica is read, so `--url`, `--at`, `--from-backup`, `--verify` and `--force`
+beside it are refused. A Basecamp drill runs it inside the app's release image
+with no network (`FJS-D1524`).
+
 ## Which Litestream
 
 **v0.5 or newer**, and `litestone replicate` refuses anything older rather than

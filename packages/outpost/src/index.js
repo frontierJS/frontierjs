@@ -23,7 +23,7 @@ const config    = readConfig()
 function serveMachine(config) {
   const docker    = createDocker({ workDir: config.workDir, restoreDir: config.restoreDir, backupDir: config.backupDir, uidFile: config.uidFile })
   const inspector = createInspector({ hostFiles: config.hostFiles })
-  const replicator = createReplicator({ configPath: config.litestreamConfig, metaDir: config.litestreamMetaDir, socketPath: config.litestreamSocket, hostDb: config.hostFiles?.db ?? null })
+  const replicator = createReplicator({ configPath: config.litestreamConfig, metaDir: config.litestreamMetaDir, litestream: config.litestreamBin, stageDir: config.replicaStageDir, socketPath: config.litestreamSocket, hostDb: config.hostFiles?.db ?? null })
   const outpost   = createOutpostServer(config, { docker, inspector, replicator })
   const reporter  = createReporter(config, { inspector, replicator })
 

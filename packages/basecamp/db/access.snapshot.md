@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-72 models · 1 view · 73 gated · 0 unrestricted
-57 with row policies · 26 with protected fields · 35 declared moves · 15 @system · 0 @seals
+73 models · 1 view · 74 gated · 0 unrestricted
+58 with row policies · 26 with protected fields · 35 declared moves · 15 @system · 0 @seals
 ```
 
 ## Gates
@@ -28,6 +28,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `ApiKey` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `App` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `AppBackup` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `AppDrill` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `AppEditor` | 1 VISITOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `AppNetwork` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `AppServer` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -167,6 +168,24 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **delete** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(destination, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(deployment, tenancy)` — "Outside your workspaceId"
+
+### `AppDrill`
+
+- deny **read** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(deployment, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(deployment, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(deployment, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(deployment, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(deployment, tenancy)` — "Outside your workspaceId"
 
 ### `AppEditor`

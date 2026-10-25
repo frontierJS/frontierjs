@@ -408,6 +408,16 @@ first admin's email question then takes it on Enter, and `--yes` needs no
 - A Primary IPv4 bills €0.50/mo plus VAT whether or not a server holds it
 - `fli eset HETZNER_TOKEN <token> --global`
 
+### Cloudflare — `CLOUDFLARE_TOKEN`
+
+- Made at https://dash.cloudflare.com/profile/api-tokens: **Create Token**, the **Edit zone DNS** template, then add two permissions, so the token holds three:
+  - Zone › DNS › Edit — the host record `basecamp:dns` writes, and every Domain's records once Basecamp holds the token
+  - Zone › Config Rules › Edit — the per-host Full (strict) rule written before a record turns proxied (`FJS-D1422`); without it `--proxied` and the flip at install are refused by Cloudflare
+  - Zone › Zone Settings › Read — reading a zone's SSL mode, where Flexible plus Caddy's HTTPS redirect is a redirect loop (zero-to-live 2.4)
+- **Zone Resources** names the zones it reaches; one zone is the narrowest, and every zone the account holds works
+- **For Basecamp too** — the same token as an edge account in Basecamp (Secrets, kind `provider_key`, provider `cloudflare`)
+- `fli eset CLOUDFLARE_TOKEN <token> --global`
+
 ## What it makes
 
 One box, marked `basecamp` at its cloud, carrying your SSH public key and

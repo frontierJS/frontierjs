@@ -17,12 +17,17 @@
  * v0.5 reads — a key on the wrong level is dropped in silence (`FJS-1396`).
  */
 
-import { mkdir, readFile, writeFile, rename, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile, rename, rm, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { buildYaml } from '@frontierjs/litestone/replicate'
+import { buildYaml, replicaUrl, lastWriteArgs, parseLastWrite, restoreArgs, restoreError } from '@frontierjs/litestone/replicate'
 import { spawnRun } from './docker.js'
 
 const APP_ID = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
+// A directory target's `*.db` is flat, so a name is a file in the volume's top.
+const DB_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\.db$/
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/
+// A database is minutes of bucket reads at a few GB.
+const RESTORE_TIMEOUT_MS = 3_600_000
 // A database's path names its app: `apply` points every entry at the
 // `fjs-<app>-data` volume's mountpoint.
 const VOLUME_DB = /\/fjs-([a-zA-Z0-9][a-zA-Z0-9._-]*)-data\/_data\//
@@ -46,6 +51,12 @@ export function createReplicator({
   hostDb     = null,
   fetch: doFetch = fetch,
   statusTimeoutMs = 3_000,
+  // `litestreamInstall`'s directory.
+  litestream = '/usr/local/bin/litestream',
+  // Where `stage` restores to before the volume is touched. Under the
+  // Outpost's own StateDirectory, which the sandbox lets it write and a snap
+  // docker can mount.
+  stageDir   = '/var/lib/outpost/replica-restore',
 } = {}) {
 
   function checkFields(r, name) {
@@ -80,6 +91,19 @@ export function createReplicator({
     const dir = await stat(hostDb).then(s => s.isDirectory(), () => false)
     if (!dir) return { reason: `${hostDb} is not a directory this process can see` }
     return { target: { dir: hostDb, pattern: '*.db', metaDir: `${metaDir}/_host`, replica: toReplica(host) } }
+  }
+
+  // Litestream reads a key from its environment, and argv is readable off `ps`.
+  const keyEnv = (r) => ({ LITESTREAM_ACCESS_KEY_ID: r.access_key_id, LITESTREAM_SECRET_ACCESS_KEY: r.secret_access_key })
+  // A directory target replicates each file to `<path>/<file>`, and a restore
+  // names it by that URL: `restore -config` finds no database inside a `dir:`.
+  const urlOf = (r, name) => {
+    const q = new URLSearchParams({ endpoint: r.endpoint, region: r.region, 'force-path-style': 'true' })
+    return `${replicaUrl(`s3://${r.bucket}/${r.path.replace(/^\/+/, '')}`, name)}?${q}`
+  }
+  async function lastWrite(r, url) {
+    const said = await run([litestream, ...lastWriteArgs(url)], { env: keyEnv(r), timeoutMs: 60_000 })
+    return said.exitCode === 0 ? parseLastWrite(said.stdout) : null
   }
 
   return {
@@ -175,6 +199,62 @@ export function createReplicator({
       if (!host) return { apps: [...apps.values()] }
       const { app_id, ...reading } = host
       return { apps: [...apps.values()], host: reading }
+    },
+
+    /** Each named database restored out of `replica` into a directory of its
+     *  own under `stageDir`, at `at` or its latest, each passing Litestream's
+     *  integrity check. Nothing in a volume is touched: `docker.restoreFiles`
+     *  moves them in, and `unstage` removes the directory either way. The
+     *  names are the caller's, read off the bucket: Litestream cannot list a
+     *  replica's databases. */
+    async stage({ appId, replica, databases, at = null }) {
+      if (typeof appId !== 'string' || !APP_ID.test(appId)) throw new Error(`app_id '${appId}' is not a plain name`)
+      if (typeof replica !== 'object' || replica === null || Array.isArray(replica)) throw new Error('replica must be one entry')
+      checkFields(replica, appId)
+      if (!Array.isArray(databases) || !databases.length) throw new Error('databases must name at least one file — the bucket lists them under the replica path')
+      for (const name of databases)
+        if (typeof name !== 'string' || !DB_NAME.test(name)) throw new Error(`'${name}' is not a database name — a plain file ending .db`)
+      if (new Set(databases).size !== databases.length) throw new Error('a database is named twice')
+      if (at !== null && !(typeof at === 'string' && ISO_INSTANT.test(at) && Number.isFinite(Date.parse(at))))
+        throw new Error(`at '${at}' is not a UTC instant (2026-10-25T18:00:00Z)`)
+
+      await mkdir(stageDir, { recursive: true, mode: 0o700 })
+      const dir = await mkdtemp(`${stageDir}/${appId}-`)
+      try {
+        const restored = []
+        for (const name of databases) {
+          const url  = urlOf(replica, name)
+          const last = at ? await lastWrite(replica, url) : null
+          const { args, pinned } = restoreArgs({ url, out: `${dir}/${name}`, at, last })
+          const said = await run([litestream, ...args], { env: keyEnv(replica), timeoutMs: RESTORE_TIMEOUT_MS })
+          if (said.exitCode !== 0)
+            throw new Error(`${name} was not restored from ${replica.bucket}/${replica.path}: ${restoreError(said.exitCode, said.stderr, said.stdout)}`)
+          const bytes = await stat(`${dir}/${name}`).then(s => s.size, () => null)
+          if (bytes === null) throw new Error(`${name}: litestream answered success and wrote no file`)
+          restored.push({ name, at: pinned ? at : 'latest', bytes })
+        }
+        return { dir, databases: restored }
+      } catch (err) {
+        await rm(dir, { recursive: true, force: true })
+        throw err
+      }
+    },
+
+    async unstage(dir) {
+      if (typeof dir === 'string' && dir.startsWith(`${stageDir}/`)) await rm(dir, { recursive: true, force: true })
+    },
+
+    /** After a restore into a replicated volume. Litestream drops a database
+     *  whose file is replaced under it (`ensure wal exists: disk I/O error`)
+     *  and never picks up the new one, so the app would read healthy and
+     *  replicate nothing; a restart registers it and snapshots it as the next
+     *  txid. Answered, never thrown: the volume is already restored. */
+    async reregister() {
+      if ((await run(['systemctl', 'is-active', '--quiet', unit])).exitCode !== 0) return { replication: 'not running' }
+      const restarted = await run(['systemctl', 'restart', unit], { timeoutMs: 60_000 })
+      if (restarted.exitCode === 0) return { replication: 'restarted' }
+      const said = (restarted.stderr || restarted.stdout || '').trim().split('\n').slice(-3).join(' ')
+      return { replication: 'restart failed', replication_error: `${unit} did not restart (exit ${restarted.exitCode}): ${said}` }
     },
   }
 }

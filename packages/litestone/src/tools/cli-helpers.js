@@ -82,7 +82,7 @@ export const KNOWN_FLAGS = new Set([
   'preview', 'purpose', 'readonly', 'reference', 'registry', 'rename', 'report',
   'retention', 'schema', 'since', 'skip-existing', 'snapshot', 'stdout',
   'strict', 'suite', 'system', 'tenant', 'token', 'url', 'v', 'vacuum', 'verbose',
-  'verify', 'version', 'visibility', 'with-deleted', 'without-key', 'zip',
+  'verify', 'verify-only', 'version', 'visibility', 'with-deleted', 'without-key', 'zip',
 ])
 
 /** The `--flags` given that no command reads, spelled as typed. */

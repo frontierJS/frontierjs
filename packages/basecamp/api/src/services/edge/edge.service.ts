@@ -165,10 +165,10 @@ async function zoneOf(accounts: EdgeAccount[], hostname: string): Promise<ZoneAt
 
 // ── push — one Domain, applied ──────────────────────────────────────
 //
-// Its App's ingress record first — an A per address the App runs at — then
-// the Domain's CNAME to it, carrying `Domain.proxied` (`FJS-D563`). In that
-// order so a CNAME never points at a name that is not there yet. Answers
-// what it wrote.
+// Its App's ingress record first — an A per address the App runs at — then,
+// for a proxied Domain, a Full (strict) rule for its host, then the Domain's
+// CNAME to it, carrying `Domain.proxied` (`FJS-D563`). In that order so a
+// CNAME never points at a name that is not there yet. Answers what it wrote.
 //
 // Every refusal is a 409 saying what to do, and is decided before anything
 // is written. None of them publishes a CNAME that resolves nowhere: not one
@@ -208,7 +208,12 @@ async function push(domain: DomainRow) {
   try {
     const ingressRecords = await ingress.connector.setRecords(ingress.send, ingress.zone.id, appMark(domain.appId),
       addresses.map(content => ({ type: 'A', name, content })))
-    const [record] = await home.connector.setRecords(home.send, home.zone.id, domainMark(domain.id),
+    // Before the CNAME, so the edge never proxies this host under a zone left
+    // at Flexible, where Caddy's HTTPS redirect loops forever (FJS-D1422 for
+    // every Domain). The zone's own setting is never read or written.
+    if (domain.proxied)
+      await home.connector.strictOrigin(home.send, home.zone.id, host, domainMark(domain.id))
+    const [record]= await home.connector.setRecords(home.send, home.zone.id, domainMark(domain.id),
       [{ type: 'CNAME', name: host, content: name, proxied: domain.proxied }])
     return { domainId: domain.id, hostname: host, record, ingress: { name, addresses, records: ingressRecords } }
   } catch (err) {

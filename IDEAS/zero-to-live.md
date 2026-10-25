@@ -67,8 +67,8 @@ step is written down.
 Done when: an FJS app answers over HTTPS at a Cloudflare hostname, released by
 Basecamp onto a droplet Basecamp created, and § 0.4's list of hand steps exists.
 
-- [ ] 0.1 The owner supplies a DigitalOcean API token and a Cloudflare zone with a token scoped to it (`FJS-1397`; nothing in the tree can do this)
-- [ ] 0.2 Fix the four `verify:outpost` loopback-bind checks (`FJS-3325`). `FJS-3183` and the missing git in the Basecamp image (`FJS-3280`) are closed
+- [x] 0.1 The owner supplies a DigitalOcean API token and a Cloudflare zone with a token scoped to it (`FJS-1397`; nothing in the tree can do this)
+- [x] 0.2 Fix the four `verify:outpost` loopback-bind checks (`FJS-3325`, closed). `FJS-3183` and the missing git in the Basecamp image (`FJS-3280`) are closed
 - [ ] 0.3 Create a real droplet through `/servers/provision/`: cloud-init runs, Outpost enrolls, the row reaches `online`. The install script (Docker, Bun, the sandboxed systemd unit, the enrollment exchange) has only been `sh -n`-parsed, and Outpost's `build`, `run` and `logs` have never met a real daemon; 0.4's release is their first (was `FJS-257`)
 - [ ] 0.4 Release one real FJS app to it with `fli basecamp:deploy` on a Cloudflare hostname, and list every step done by hand: that list is Phases 2 and 3's backlog
 - [ ] 0.5 Rewrite `packages/cli/docs/deploy.md` from what 0.3 and 0.4 actually did
@@ -95,7 +95,7 @@ Done when: Phase 0.4's app releases again from a clean Basecamp with
 - [ ] 2.1 `FJS-D1040` A: a Domain's path routes. **Engine built, `FJS-2647` closed**: `DomainRoute`, the `domain-routes` service and `ingress.js` prefix matching, proved against a real caddy:2. Left: a control for routes on the Domains screen, and routes across two machines (both Apps must sit on one today)
 - [ ] 2.2 `basecamp:deploy` finds or creates the App and its Domains from the `frontier.config.js` deploy block, so no App id is copied out of the UI
 - [ ] 2.3 An App's env reaches Basecamp seeded once from `.env.production`, the rule `FJS-D1186` set for ring 0
-- [ ] 2.4 `domain:dns` reads the zone's SSL mode and refuses anything but Full (strict): Flexible plus Caddy's HTTPS redirect is a redirect loop
+- [x] 2.4 A proxied Domain is never served under Flexible, where Caddy's HTTPS redirect loops: `domain:dns` writes a Full (strict) Configuration Rule for its host before the CNAME turns proxied, and the zone setting is never read (`FJS-D1522`, extending `FJS-D1422`)
 - [ ] 2.5 App backups on a schedule and a screen (`FJS-3179`), checkpointed before the tar (`FJS-3178`). This step must land before any client's data is on the fleet.
 
 ### Phase 3 — Basecamp from zero

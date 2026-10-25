@@ -26,6 +26,7 @@ it re-resolved when it runs. Survives a restart.
 | --- | --- | --- | --- | --- | --- | --- |
 | `alert-evaluate` | `default` | `* * * * *` | — | 3 | default | **none** |
 | `app-backup:run` | `fleet` | on dispatch | — | 1 | default | 3720000ms |
+| `app-drill:run` | `fleet` | on dispatch | — | 1 | default | 5580000ms |
 | `backup:run` | `fleet` | on dispatch | — | 2 | 30000 | 600000ms |
 | `cleanup:run` | `fleet` | on dispatch | — | 2 | 10000 | **none** |
 | `dependency-check` | `sync` | `15 6 * * *` | — | 3 | 60000, 600000 | 300000ms |
@@ -46,7 +47,7 @@ it re-resolved when it runs. Survives a restart.
 | `site:publish` | `deployments` | on dispatch | — | 1 | default | 2130000ms |
 | `weekly-digest` | `default` | `0 9 * * 1` | — | 3 | default | **none** |
 
-21 handler(s), 7 of them on a clock.
+22 handler(s), 7 of them on a clock.
 
 **13 with no timeout.** Absent means no bound, honestly — but a
 handler that never settles holds its slot for the life of the process, and on a

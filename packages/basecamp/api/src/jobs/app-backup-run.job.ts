@@ -57,20 +57,33 @@ const UPLOAD_URL_TTL_S = 3 * 3600
 
 type Target = Pick<AppRow, 'id' | 'workspaceId' | 'backupDestinationId'>
 
+/** The pre-signed GET a restore fetches by. The fetch is bounded at an hour
+ *  on the machine; the URL outlives it so a slow one does not read as a 403. */
+const DOWNLOAD_URL_TTL_S = 2 * 3600
+
 /**
- * One object key and the URL that writes it. The credential is read once,
+ * A URL for one object under a destination. The credential is read once,
  * here, and leaves only as a signature.
  */
-async function mintUpload(app: App, dest: BackupDestination, appId: string, stamp: string): Promise<{ key: string; url: string }> {
+async function presignFor(app: App, dest: BackupDestination, method: 'PUT' | 'GET', key: string, expiresIn: number): Promise<string> {
   if (!dest.secretId) throw new BadRequest(`Destination '${dest.name}' holds no credential`)
   const credential = await createSecretResolver(app.db as any).get(secretRef(dest.secretId))
   if (typeof credential !== 'string' || !credential) throw new BadRequest(`Destination '${dest.name}' has a credential nothing can read`)
-  const key = keyUnder(dest, `${appId}-${stamp}.tar.gz`)
-  const url = await presign({
-    method: 'PUT', url: `${dest.endpoint.replace(/\/$/, '')}${objectPath(dest.bucket, key)}`,
-    credential, region: dest.region, expiresIn: UPLOAD_URL_TTL_S,
+  return presign({
+    method, url: `${dest.endpoint.replace(/\/$/, '')}${objectPath(dest.bucket, key)}`,
+    credential, region: dest.region, expiresIn,
   })
-  return { key, url }
+}
+
+/** One object key and the URL that writes it. */
+async function mintUpload(app: App, dest: BackupDestination, appId: string, stamp: string): Promise<{ key: string; url: string }> {
+  const key = keyUnder(dest, `${appId}-${stamp}.tar.gz`)
+  return { key, url: await presignFor(app, dest, 'PUT', key, UPLOAD_URL_TTL_S) }
+}
+
+/** The URL that reads one backup's archive back out of its bucket (`FJS-D1521`). */
+export function mintDownload(app: App, dest: BackupDestination, key: string): Promise<string> {
+  return presignFor(app, dest, 'GET', key, DOWNLOAD_URL_TTL_S)
 }
 
 /**
@@ -139,10 +152,13 @@ export async function takeAppBackup(app: App, opts: {
   if (executor.kind === 'stub')
     return finish({ status: 'failed', error: 'stub executor — no backup was taken' })
 
-  const { path, bytes, files, uploaded, upload_error } = reply.data ?? {}
+  const { path, bytes, files, sha256, uploaded, upload_error } = reply.data ?? {}
   if (typeof path !== 'string')
     return finish({ status: 'failed', error: 'the outpost answered no archive path' })
-  const taken = { status: 'success', sizeBytes: bytes as number, fileCount: files as number }
+  const taken = {
+    status: 'success', sizeBytes: bytes as number, fileCount: files as number,
+    sha256: typeof sha256 === 'string' && /^[0-9a-f]{64}$/.test(sha256) ? sha256 : null,
+  }
   if (!upload) return finish({ ...taken, location: path, error: null })
   if (uploaded === true) return finish({ ...taken, location: upload.key, error: null })
   // The machine says why in its own words; a reply with neither is a machine

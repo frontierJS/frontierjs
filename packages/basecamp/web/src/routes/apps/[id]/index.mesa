@@ -593,6 +593,11 @@ title: App
                        machine's last heartbeat. -->
                   <Badge tone={bucketTone(p.replication)} data-replication>{bucketSays(p.replication)}</Badge>
                 {/if}
+                {#if p.drill}
+                  <Badge tone={p.drill.status === 'success' ? 'success' : 'danger'} title={p.drill.error ?? ''} data-drill>
+                    {p.drill.status === 'success' ? 'Drill passed' : 'Drill failed'} {ago(p.drill.finishedAt)}
+                  </Badge>
+                {/if}
                 <Button treatment="ghost" tone="danger" disabled={busy === p.id}
                         data-confirm={`This replica stops running on ${p.server?.name ?? 'that server'}.`}
                         data-confirm-title="Unplace this replica?" data-confirm-label="Unplace"

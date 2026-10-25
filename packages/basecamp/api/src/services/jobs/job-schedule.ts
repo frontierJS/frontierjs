@@ -14,6 +14,7 @@
 import { parseCron }        from '@frontierjs/toolbelt/cron'
 import { queueBackup }      from '../../jobs/backup-run.job.ts'
 import appBackupRun         from '../../jobs/app-backup-run.job.ts'
+import appDrillRun          from '../../jobs/app-drill-run.job.ts'
 import type { App }         from '@frontierjs/junction'
 import type { App as AppRow, HubConfig, Job } from '../../../../db/schema.d.ts'
 
@@ -172,6 +173,26 @@ export function syncAppBackupSchedule(app: App, row: Pick<AppRow, 'id' | 'backup
     app.jobs.unschedule(appBackupSchedule(row.id))
 }
 
+// ─── An app's drill ─────────────────────────────────────────────────────────
+//
+// `App.drillCron`, the same rule over the other column (`IDEAS/backups.md`
+// 3.3): the fire dispatches `app-drill:run`, which reads the row again.
+
+export const appDrillSchedule = (appId: string): string => `app:drill:${appId}`
+
+/** Make the drill's clock agree with the app row. */
+export function syncAppDrillSchedule(app: App, row: Pick<AppRow, 'id' | 'drillCron' | 'deletedAt'>): void {
+  if (row.drillCron && !row.deletedAt)
+    app.jobs.schedule(
+      appDrillSchedule(row.id),
+      row.drillCron,
+      async () => { await app.jobs.dispatch(appDrillRun, { appId: row.id }, { queue: 'fleet', priority: 5, actor: null }) },
+      { queue: 'fleet' },
+    )
+  else
+    app.jobs.unschedule(appDrillSchedule(row.id))
+}
+
 // ─── restoreSchedules ────────────────────────────────────────────────────────
 //
 // Re-register every schedule the database holds: each live scheduled job, the
@@ -230,6 +251,15 @@ export async function restoreSchedules(app: App): Promise<number> {
       restored++
     } catch (err) {
       log.error('could not restore an app backup schedule', { app_id: row.id, cron: row.backupCron, error: (err as Error).message })
+    }
+  }
+  const drilled = await db.app.findMany({ where: { drillCron: { not: null }, deletedAt: null } })
+  for (const row of drilled) {
+    try {
+      syncAppDrillSchedule(app, row)
+      restored++
+    } catch (err) {
+      log.error('could not restore an app drill schedule', { app_id: row.id, cron: row.drillCron, error: (err as Error).message })
     }
   }
   return restored

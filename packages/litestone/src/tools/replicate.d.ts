@@ -26,4 +26,8 @@ export declare function requireLitestream(): string
 export declare function litestreamVersion(binary: string): { raw: string; major: number; minor: number; patch: number } | null
 export declare const replicaUrl: (base: string, name: string) => string
 export declare function lastWrite(binary: string, url: string): number | null
+export declare const lastWriteArgs: (url: string) => string[]
+export declare function parseLastWrite(stdout: string): number | null
+export declare function restoreArgs(opts: { url: string; out: string; at?: string | null; last?: number | null; dryRun?: boolean }): { args: string[]; pinned: boolean }
+export declare function restoreError(status: number | null, stderr?: string | null, stdout?: string | null): string
 export declare function restoreFile(binary: string, opts: { url: string; out: string; at?: string | null; dryRun?: boolean }): { ok: boolean; error: string | null }

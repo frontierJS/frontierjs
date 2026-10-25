@@ -664,6 +664,14 @@ export class BasecampSeeder extends Seeder {
                       startedAt: at.toISOString(), finishedAt: new Date(at.getTime() + 4_000).toISOString(), durationMs: 4_000,
                     },
                   })
+                  // A drill that passed, so the record of one is not empty either.
+                  await sys.appDrill.create({
+                    data: {
+                      appId: app.id, serverId: host.id, kind: 'scheduled', status: 'success',
+                      databases: [{ name: 'app', at: at.toISOString() }], report: { ok: true },
+                      startedAt: at.toISOString(), finishedAt: new Date(at.getTime() + 9_000).toISOString(), durationMs: 9_000,
+                    },
+                  })
                 }
               }
 

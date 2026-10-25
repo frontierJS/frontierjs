@@ -15,8 +15,11 @@
  */
 
 import { stripVTControlCharacters } from 'node:util'
-import { mkdir, realpath, stat }   from 'node:fs/promises'
-import { readFileSync, writeFileSync, renameSync } from 'node:fs'
+import { mkdir, realpath, rename, rm, stat } from 'node:fs/promises'
+import { readFileSync, writeFileSync, renameSync, createWriteStream } from 'node:fs'
+import { createHash, randomBytes } from 'node:crypto'
+import { Readable }                from 'node:stream'
+import { pipeline }                from 'node:stream/promises'
 import { validRelativePath }       from './static.js'
 
 // Each app's container runs as a host uid of its own (`FJS-D1484`), handed out
@@ -140,6 +143,37 @@ find /data -type f -exec stat -c %s {} + | awk '{ n++; b += $1 } END { printf "%
 // A multi-GB archive is minutes of disk, and the runner's default would kill
 // it partway with the volume half written.
 const RESTORE_TIMEOUT_MS = 3_600_000
+// Databases restored from a replica, into the volume beside whatever else it
+// holds: a replica carries the `.db` files alone, so emptying the volume would
+// delete uploads nothing can bring back. Each one replaces its own file and
+// that file's -wal and -shm, which would otherwise be replayed into it. A name
+// that exists is exit 3 unless overwrite. The copy lands as `.partial`, which
+// Litestream's `*.db` does not match, and takes the volume's owner, since the
+// app may run as its own uid. The last line is `<files> <bytes>`.
+const FILES_SCRIPT = `set -e
+owner=$(stat -c %u:%g /data)
+if [ "$FJS_OVERWRITE" != 1 ]; then
+  for f in /restore/*.db; do
+    n=$(basename "$f")
+    [ ! -e "/data/$n" ] || { echo "/data/$n already exists" >&2; exit 3; }
+  done
+fi
+files=0; bytes=0
+for f in /restore/*.db; do
+  n=$(basename "$f")
+  rm -f "/data/$n" "/data/$n-wal" "/data/$n-shm"
+  cp "$f" "/data/$n.partial"
+  chown "$owner" "/data/$n.partial"
+  mv "/data/$n.partial" "/data/$n"
+  files=$((files + 1)); bytes=$((bytes + $(stat -c %s "/data/$n")))
+done
+echo "$files $bytes"`
+
+// Where a drill's copy is mounted in the app's image: a path of its own, so
+// the image's `db/` and the schema in it stay visible.
+const DRILL_MOUNT = '/fjs-drill'
+// Every row of every model read through the client; a large app is minutes.
+const VERIFY_TIMEOUT_MS = 1_800_000
 
 // ─── backup ──────────────────────────────────────────────────────────────────
 // The volume is mounted read-only and the container has no network, so the
@@ -165,11 +199,15 @@ while :; do
   [ "$tries" -lt 5 ] || { rm -f "/out/$FJS_NAME.partial"; echo "the volume kept changing under the tar" >&2; exit 4; }
 done
 mv "/out/$FJS_NAME.partial" "/out/$FJS_NAME"
-echo "$(stat -c %s "/out/$FJS_NAME") $(find /data -type f | wc -l)"`
+echo "$(stat -c %s "/out/$FJS_NAME") $(find /data -type f | wc -l) $(sha256sum "/out/$FJS_NAME" | cut -d ' ' -f 1)"`
 const BACKUP_TIMEOUT_MS = 3_600_000
 // The archive streams off disk; an hour covers a multi-GB one on a slow link,
 // and the signed URL Basecamp mints outlives both this and the tar.
 const UPLOAD_TIMEOUT_MS = 3_600_000
+
+// The fetch of an archive a restore names by URL: an hour, as the upload's.
+const FETCH_TIMEOUT_MS = 3_600_000
+const SHA256 = /^[0-9a-f]{64}$/
 
 /** What a bucket said, short enough for a row: its XML `Code` and `Message`
  *  when it answered S3's shape, the first line of the body otherwise. */
@@ -198,6 +236,23 @@ export function createDocker({
     writeFileSync(`${uidFile}.partial`, JSON.stringify(table, null, 2) + '\n', { mode: 0o600 })
     renameSync(`${uidFile}.partial`, uidFile)
     return table[appId]
+  }
+
+  function checkAppId(appId) {
+    if (typeof appId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(appId))
+      throw new Error(`app_id '${appId}' is not a plain name`)
+  }
+
+  // A container holding the volume is a SQLite writer with the file open, and
+  // a stopped one starts again onto whatever a restore left. `/stop` removes
+  // both the app and its `_replaced`.
+  async function refuseHeld(appId) {
+    const volume  = `fjs-${appId}-data`
+    const holders = await run(['docker', 'ps', '-a', '--filter', `volume=${volume}`, '--format', '{{.Names}}'])
+    if (holders.exitCode !== 0) throw new Error(`docker ps failed (exit ${holders.exitCode}): ${(holders.stderr ?? '').trim()}`)
+    const held = holders.stdout.trim().split('\n').filter(Boolean)
+    if (held.length) throw new Error(`${volume} is held by ${held.join(', ')} — stop the app before restoring into it`)
+    return volume
   }
 
   /** Whether the image declares a user other than root. An image that runs as
@@ -435,6 +490,43 @@ export function createDocker({
     } finally {
       await run(['rm', '-rf', dir])
     }
+  }
+
+  // The archive at `path` under the restore directory, extracted into the
+  // stopped volume. Both doors of `restore` end here.
+  async function extract({ appId, path, overwrite }) {
+    const relative = typeof path === 'string' && path.startsWith(`${restoreDir}/`) ? path.slice(restoreDir.length + 1) : path
+    const bad = validRelativePath(relative)
+    if (bad) throw new Error(`${bad} — name a file under ${restoreDir}`)
+
+    // The prefix check above is over the name a caller wrote; realpath is the
+    // file docker would mount, and a symlink inside the root points anywhere.
+    const root = await realpath(restoreDir).catch(() => null)
+    if (!root) throw new Error(`${restoreDir} does not exist on this machine — copy the archive there first`)
+    const archive = await realpath(`${root}/${relative}`).catch(() => null)
+    if (!archive) throw new Error(`no file '${relative}' under ${restoreDir}`)
+    if (!archive.startsWith(`${root}/`)) throw new Error(`'${relative}' resolves outside ${restoreDir}`)
+    if (!(await stat(archive)).isFile()) throw new Error(`'${relative}' is not a file`)
+    if (/[,:]/.test(archive)) throw new Error(`'${archive}' has a ':' or ',' that a mount cannot carry`)
+
+    const volume = await refuseHeld(appId)
+
+    // `--mount`, not `-v`: `-v` given a source the daemon cannot see mounts an
+    // empty directory, and the restore extracts nothing and reports success.
+    const result = await run([
+      'docker', 'run', '--rm', '--network', 'none',
+      '-e', `FJS_OVERWRITE=${overwrite === true ? 1 : 0}`,
+      '-v', `${volume}:/data`,
+      '--mount', `type=bind,src=${archive},dst=/restore,readonly`,
+      RESTORE_IMAGE, 'sh', '-c', RESTORE_SCRIPT,
+    ], { timeoutMs: RESTORE_TIMEOUT_MS })
+    if (result.exitCode === 3) throw new Error(`${volume} already holds files — send overwrite: true to replace them`)
+    if (result.exitCode !== 0) {
+      const said = (result.stderr || result.stdout || '').trim().split('\n').slice(-3).join(' ')
+      throw new Error(`restore into ${volume} failed (exit ${result.exitCode}): ${said}`)
+    }
+    const [files, bytes] = result.stdout.trim().split('\n').at(-1).split(/\s+/).map(Number)
+    return { volume, archive, files, bytes, overwrite: overwrite === true }
   }
 
   return {
@@ -675,49 +767,115 @@ export function createDocker({
      * naming `/etc/shadow` would otherwise read any file on the box into a
      * volume it can then download. The archive is put there by `scp` or
      * `rsync`, and stays, so a failed restore is run again.
+     *
+     * With `url` instead, a pre-signed GET Basecamp minted for a backup in a
+     * bucket (`FJS-D1521`), the archive is fetched into that directory, its
+     * sha256 checked against the one `/backup` answered when it was taken, and
+     * extracted the same way; the fetched copy is removed after. The check
+     * comes before `tar`, since a swapped object would otherwise be written
+     * into the volume before anything could tell.
      */
-    async restore({ appId, path, overwrite = false }) {
-      if (typeof appId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(appId))
-        throw new Error(`app_id '${appId}' is not a plain name`)
-      const relative = typeof path === 'string' && path.startsWith(`${restoreDir}/`) ? path.slice(restoreDir.length + 1) : path
-      const bad = validRelativePath(relative)
-      if (bad) throw new Error(`${bad} — name a file under ${restoreDir}`)
+    async restore({ appId, path, url, sha256, overwrite = false }) {
+      checkAppId(appId)
+      if (url === undefined) return extract({ appId, path, overwrite })
+      if (path !== undefined) throw new Error('send path or url, not both')
+      let parsed
+      try { parsed = new URL(url) } catch { throw new Error('url is not a URL') }
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error(`url is ${parsed.protocol}, not http(s)`)
+      if (typeof sha256 !== 'string' || !SHA256.test(sha256)) throw new Error('a restore by url needs the archive\'s sha256, 64 hex characters')
+      await refuseHeld(appId)
 
-      // The prefix check above is over the name a caller wrote; realpath is the
-      // file docker would mount, and a symlink inside the root points anywhere.
-      const root = await realpath(restoreDir).catch(() => null)
-      if (!root) throw new Error(`${restoreDir} does not exist on this machine — copy the archive there first`)
-      const archive = await realpath(`${root}/${relative}`).catch(() => null)
-      if (!archive) throw new Error(`no file '${relative}' under ${restoreDir}`)
-      if (!archive.startsWith(`${root}/`)) throw new Error(`'${relative}' resolves outside ${restoreDir}`)
-      if (!(await stat(archive)).isFile()) throw new Error(`'${relative}' is not a file`)
-      if (/[,:]/.test(archive)) throw new Error(`'${archive}' has a ':' or ',' that a mount cannot carry`)
+      await mkdir(restoreDir, { recursive: true, mode: 0o700 })
+      const root = await realpath(restoreDir)
+      const name = `fetched-${appId}-${randomBytes(6).toString('hex')}.tar.gz`
+      try {
+        const res = await fetchFn(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+        if (!res.ok) throw new Error(`the bucket refused the archive: ${bucketSaid(res.status, await res.text().catch(() => ''))}`)
+        const hash = createHash('sha256')
+        await pipeline(
+          Readable.fromWeb(res.body),
+          async function* (chunks) { for await (const chunk of chunks) { hash.update(chunk); yield chunk } },
+          createWriteStream(`${root}/${name}.partial`, { mode: 0o600 }),
+        )
+        const got = hash.digest('hex')
+        if (got !== sha256) throw new Error(`the archive fetched is not the one taken (sha256 ${got}, expected ${sha256}) — nothing was restored`)
+        await rename(`${root}/${name}.partial`, `${root}/${name}`)
+        return { ...await extract({ appId, path: name, overwrite }), sha256 }
+      } finally {
+        await rm(`${root}/${name}.partial`, { force: true })
+        await rm(`${root}/${name}`, { force: true })
+      }
+    },
 
-      // A container holding the volume is a SQLite writer with the file open,
-      // and a stopped one starts again onto whatever this left. `/stop` removes
-      // both the app and its `_replaced`.
-      const volume  = `fjs-${appId}-data`
-      const holders = await run(['docker', 'ps', '-a', '--filter', `volume=${volume}`, '--format', '{{.Names}}'])
-      if (holders.exitCode !== 0) throw new Error(`docker ps failed (exit ${holders.exitCode}): ${(holders.stderr ?? '').trim()}`)
-      const held = holders.stdout.trim().split('\n').filter(Boolean)
-      if (held.length) throw new Error(`${volume} is held by ${held.join(', ')} — stop the app before restoring into it`)
+    /** Refuses before a replica restore downloads anything; `restoreFiles`
+     *  asks again, since the app may have started in between. */
+    async refuseHeld({ appId }) {
+      checkAppId(appId)
+      return { volume: await refuseHeld(appId) }
+    },
 
-      // `--mount`, not `-v`: `-v` given a source the daemon cannot see mounts an
-      // empty directory, and the restore extracts nothing and reports success.
+    /**
+     * The `.db` files `replicator.stage` restored into `dir`, copied into the
+     * app's stopped volume in a throwaway container with no network. `dir` is
+     * the replicator's own staging directory, never a caller's path.
+     */
+    async restoreFiles({ appId, dir, overwrite = false }) {
+      checkAppId(appId)
+      const src = await realpath(dir)
+      if (/[,:]/.test(src)) throw new Error(`'${src}' has a ':' or ',' that a mount cannot carry`)
+      const volume = await refuseHeld(appId)
       const result = await run([
         'docker', 'run', '--rm', '--network', 'none',
         '-e', `FJS_OVERWRITE=${overwrite === true ? 1 : 0}`,
         '-v', `${volume}:/data`,
-        '--mount', `type=bind,src=${archive},dst=/restore,readonly`,
-        RESTORE_IMAGE, 'sh', '-c', RESTORE_SCRIPT,
+        '--mount', `type=bind,src=${src},dst=/restore,readonly`,
+        RESTORE_IMAGE, 'sh', '-c', FILES_SCRIPT,
       ], { timeoutMs: RESTORE_TIMEOUT_MS })
-      if (result.exitCode === 3) throw new Error(`${volume} already holds files — send overwrite: true to replace them`)
+      if (result.exitCode === 3) throw new Error(`${volume} already holds ${(result.stderr ?? '').trim().replace(/^\/data\/| already exists$/g, '')} — send overwrite: true to replace it`)
       if (result.exitCode !== 0) {
         const said = (result.stderr || result.stdout || '').trim().split('\n').slice(-3).join(' ')
         throw new Error(`restore into ${volume} failed (exit ${result.exitCode}): ${said}`)
       }
       const [files, bytes] = result.stdout.trim().split('\n').at(-1).split(/\s+/).map(Number)
-      return { volume, archive, files, bytes, overwrite: overwrite === true }
+      return { volume, files, bytes, overwrite: overwrite === true }
+    },
+
+    /**
+     * A copy of an app's databases proven by the app's own release image
+     * (`FJS-D1524`): `dir`, the replicator's staging directory, mounted at
+     * `DRILL_MOUNT` in a throwaway container with no network, running
+     * `litestone restore --verify-only`. The schema is the one the image ships
+     * and the encryption key is the release's own, passed by NAME with its
+     * value in the runner's environment, so no secret is in argv. The image
+     * runs as root: the copy is root's, and the container reaches nothing.
+     * A report that says the copy is bad is an answer; a verify that never
+     * ran is a throw.
+     */
+    async verifyCopy({ appId, dir, image, digest, env = {} }) {
+      checkAppId(appId)
+      if (typeof image !== 'string' || !image) throw new Error('a drill needs the image of the release it proves')
+      const keys = Object.keys(env ?? {})
+      const bad  = keys.find(k => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) || typeof env[k] !== 'string')
+      if (bad !== undefined) throw new Error(`env '${bad}' is not a plain name with a string value`)
+      const src = await realpath(dir)
+      if (/[,:]/.test(src)) throw new Error(`'${src}' has a ':' or ',' that a mount cannot carry`)
+      const ref = await reference(image, digest)
+      const result = await run([
+        'docker', 'run', '--rm', '--network', 'none', '--user', '0:0',
+        ...keys.flatMap(k => ['-e', k]),
+        '--mount', `type=bind,src=${src},dst=${DRILL_MOUNT}`,
+        '--entrypoint', 'bun', ref,
+        'x', 'litestone', 'restore', `--verify-only=${DRILL_MOUNT}`, '--json',
+        ...(env.ENCRYPTION_KEY ? [] : ['--without-key']),
+      ], { env, timeoutMs: VERIFY_TIMEOUT_MS })
+      const json = result.stdout.slice(result.stdout.indexOf('{'))
+      let report = null
+      try { report = json ? JSON.parse(json) : null } catch {}
+      if (!report || typeof report.ok !== 'boolean') {
+        const said = stripVTControlCharacters(result.stderr || result.stdout || '').trim().split('\n').slice(-3).join(' ')
+        throw new Error(`the verify did not run in ${ref} (exit ${result.exitCode}): ${said}`)
+      }
+      return { verified: report.ok, verify: report }
     },
 
     /**
@@ -765,9 +923,14 @@ export function createDocker({
         const said = (result.stderr || result.stdout || '').trim().split('\n').slice(-3).join(' ')
         throw new Error(`backup of ${volume} failed (exit ${result.exitCode}): ${said}`)
       }
-      const [bytes, files] = result.stdout.trim().split('\n').at(-1).split(/\s+/).map(Number)
+      // The digest is the capture container's, which wrote the archive as
+      // root under umask 077; it is what a restore by URL checks the fetched
+      // copy against (`FJS-D1521`).
+      const [size, count, digest] = result.stdout.trim().split('\n').at(-1).split(/\s+/)
+      const bytes  = Number(size), files = Number(count)
+      const sha256 = SHA256.test(digest ?? '') ? digest : null
       const path = `${root}/${name}`
-      if (uploadUrl === undefined) return { volume, path, bytes, files }
+      if (uploadUrl === undefined) return { volume, path, bytes, files, sha256 }
 
       // Answered, never thrown: the archive exists and the path is the answer.
       // A throw here would read as a backup that failed.
@@ -776,10 +939,10 @@ export function createDocker({
           method: 'PUT', body: Bun.file(path), headers: { 'content-type': 'application/gzip' },
           signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
         })
-        if (res.ok) return { volume, path, bytes, files, uploaded: true }
-        return { volume, path, bytes, files, uploaded: false, upload_error: bucketSaid(res.status, await res.text().catch(() => '')) }
+        if (res.ok) return { volume, path, bytes, files, sha256, uploaded: true }
+        return { volume, path, bytes, files, sha256, uploaded: false, upload_error: bucketSaid(res.status, await res.text().catch(() => '')) }
       } catch (err) {
-        return { volume, path, bytes, files, uploaded: false, upload_error: err?.message ?? String(err) }
+        return { volume, path, bytes, files, sha256, uploaded: false, upload_error: err?.message ?? String(err) }
       }
     },
 

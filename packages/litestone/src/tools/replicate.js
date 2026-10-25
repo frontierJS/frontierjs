@@ -440,23 +440,42 @@ export async function replicate({ targets, options, dir, verbose = true }) {
 // timestamp later than a replica's last write — which a registry that has not
 // changed since morning always is. Past the last write, the latest IS that
 // instant's state, so the timestamp is dropped rather than refused.
-export function lastWrite(binary, url) {
-  const r = spawnSync(binary, ['ltx', '-json', '-level', 'all', url], { encoding: 'utf8' })
-  if (r.status !== 0) return null
+export const lastWriteArgs = (url) => ['ltx', '-json', '-level', 'all', url]
+
+/** The newest LTX file's time off `ltx -json`, or null when it lists none. */
+export function parseLastWrite(stdout) {
   try {
-    const times = JSON.parse(r.stdout).map(f => Date.parse(f.timestamp)).filter(Number.isFinite)
+    const times = JSON.parse(stdout).map(f => Date.parse(f.timestamp)).filter(Number.isFinite)
     return times.length ? Math.max(...times) : null
   } catch { return null }
 }
 
-export function restoreFile(binary, { url, out, at = null, dryRun = false }) {
-  const args = ['restore', '-o', out]
-  const last = at ? lastWrite(binary, url) : null
-  if (at && !(last != null && Date.parse(at) >= last)) args.push('-timestamp', at)
+export function lastWrite(binary, url) {
+  const r = spawnSync(binary, lastWriteArgs(url), { encoding: 'utf8' })
+  return r.status === 0 ? parseLastWrite(r.stdout) : null
+}
+
+/** `restore`'s argv for one file. `last` is `lastWrite`'s answer, asked only
+ *  when `at` is set; `pinned` says whether `at` survived it. A caller that
+ *  spawns its own way (Outpost, with a key in the environment) runs these. */
+export function restoreArgs({ url, out, at = null, last = null, dryRun = false }) {
+  const args   = ['restore', '-o', out]
+  const pinned = Boolean(at) && !(last != null && Date.parse(at) >= last)
+  if (pinned) args.push('-timestamp', at)
   if (dryRun) args.push('-dry-run')
   else        args.push('-integrity-check', 'quick')
   args.push(url)
+  return { args, pinned }
+}
+
+/** Litestream's own reason off a failed run, its `Error:` prefix dropped. */
+export function restoreError(status, stderr, stdout) {
+  const said = `${stderr ?? ''}${stdout ?? ''}`.trim().split('\n').filter(l => /error/i.test(l)).pop()
+  return (said ?? `litestream exited ${status}`).replace(/^Error:\s*/, '')
+}
+
+export function restoreFile(binary, { url, out, at = null, dryRun = false }) {
+  const { args } = restoreArgs({ url, out, at, last: at ? lastWrite(binary, url) : null, dryRun })
   const r = spawnSync(binary, args, { encoding: 'utf8' })
-  const said = `${r.stderr ?? ''}${r.stdout ?? ''}`.trim().split('\n').filter(l => /error/i.test(l)).pop()
-  return { ok: r.status === 0, error: r.status === 0 ? null : (said ?? `litestream exited ${r.status}`).replace(/^Error:\s*/, '') }
+  return { ok: r.status === 0, error: r.status === 0 ? null : restoreError(r.status, r.stderr, r.stdout) }
 }

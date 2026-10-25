@@ -16,7 +16,7 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 | `src/vitals.js` | what the machine feels like — cpu, memory, disk, load, read from `/proc` and `statfs`. It REMEMBERS: cpu is a delta |
 | `src/report.js` | the outbound half: heartbeat, volume report, disk report — one signed POST, three callers. The heartbeat carries `replication`, Litestream's `/list` read off its control socket |
 | `src/ingress.js` | **the machine's front door** — Caddy's admin API: a route per app (`@id` `fjs-<app>`) PATCHed on deploy, on `/route` (`static: true` for an inline app) and on `/static/activate` (to the static origin, Host set to `<app_id>.localhost`), DELETEd on stop and `/static/retire`, the ingress server made on the first one. `routes()` reads it back (`POST /ingress`) for basecamp's Routes card, every writer's routes and every other http server. A `redirects: [{host, to}]` list is a SECOND route, `fjs-<app>-redirects`, a Caddy-answered 308 that needs no container; a target is an http(s) URL with no braces, because Caddy expands `{…}` in a header, and an origin-only target keeps the request's path. `paths: [{host, prefix}]` is how two apps share a hostname (`FJS-D1040`): one route per prefix, `fjs-<app>-path-<n>`, kept longest prefix first AHEAD of every whole-host route by a PATCH of the routes array after each write — Caddy answers the first match, so an appended path route would never be reached. Only the same host and prefix is refused; the prefix is kept, never stripped. A whole-host route also gets its access log (`FJS-1928`): the server's `logger_names` maps each host to the route's `@id`, and Caddy's `logging` writes `/var/log/caddy/<id>.access.log`, excluded from the default log — `edge.js`'s shape under `fjs-`. A path route's hosts are not mapped (one host, one logger), so a shared hostname logs under the app that owns the whole host |
-| `src/replicate.js` | **Litestream's config** — `/replicate`'s list becomes `/etc/basecamp/litestream.yml` and a restart; `status()` reads `/list` off the control socket. A `host` entry is Basecamp's own database, at `OUTPOST_HOST_DB_PATH`, and every other machine skips it with a reason |
+| `src/replicate.js` | **Litestream's config** — `/replicate`'s list becomes `/etc/basecamp/litestream.yml` and a restart; `status()` reads `/list` off the control socket. A `host` entry is Basecamp's own database, at `OUTPOST_HOST_DB_PATH`, and every other machine skips it with a reason. `stage()` is `/replica/restore`'s download half |
 | `src/cert.js` | the command port's self-signed certificate — made once, kept, and the argv the install script builds its own openssl line from |
 | `src/index.js` | the process: serve, start the timers, stop them on a signal |
 
@@ -133,6 +133,23 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   cannot see (a snap docker and the host's `/tmp`) mounts an empty directory,
   and the restore extracts nothing and answers success. Overwrite EMPTIES the
   volume first — a `-wal` left beside a new database is replayed into it.
+  With `url` (`FJS-D1521`) the archive is fetched INTO that directory and its
+  sha256 checked before `tar`. The digest comes from the capture container,
+  because the archive is root's 0600 and a non-root Outpost cannot read it.
+- **`/replica/restore` restores each database BY URL and replaces only the
+  `.db` files.** Litestream 0.5's `restore -config` finds no database inside a
+  `dir:` target, so each is `s3://<bucket>/<path>/<file>?endpoint=…`, the key in
+  `LITESTREAM_*` env, never argv; Litestream cannot list a replica, so Basecamp
+  names the files off a bucket listing. A replica carries databases alone, so
+  the copy keeps everything else in the volume and removes only each file's
+  own `-wal`/`-shm`. A running Litestream drops a database whose file is
+  replaced (`ensure wal exists: disk I/O error`) and never picks up the new
+  one, so the route restarts the unit after; the restored file is then
+  snapshotted as the next txid.
+- **`/replica/drill` mounts the staged copy at `/fjs-drill`, not the volume
+  path** — a mount there would hide the image's own `db/schema.lite`, the
+  schema the verify grades by. The image must ship the litestone CLI
+  (`bun x litestone`, offline); one that does not answers no report.
 - **An image with a non-root `USER` runs as the app's own uid** (`FJS-D1484`),
   handed out from `APP_UID_BASE` and recorded in `uids.json`, never reused. A
   chown of the volume does not stick by itself: docker copies the image's

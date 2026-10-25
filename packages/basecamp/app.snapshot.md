@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-56 services · 42 routes · 20 plugins · prefix (none)
+57 services · 42 routes · 20 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -290,6 +290,27 @@ name when it declares none.
 | before | `update` | `autoValidate` |
 | before | `take` | `validateInput` |
 
+### `appDrills` · model `AppDrill`
+
+- **methods** — `find`, `get`, `run`
+- **custom methods** — `run`
+- **also answers to** — `app-drills`
+- **input** — `run` takes `AppDrillRun`
+- **who may call** —
+  - `run` — standing 5 or above — declared `gate: 5`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+| before | `run` | `validateInput` |
+
 ### `appEditors` · model `AppEditor`
 
 - **methods** — `find`, `get`, `create`, `patch`, `remove`
@@ -309,11 +330,12 @@ name when it declares none.
 
 ### `apps` · model `App`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `publish`, `enablePush`, `disablePush`
-- **custom methods** — `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `publish`, `enablePush`, `disablePush`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `publish`, `enablePush`, `disablePush`
+- **custom methods** — `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `publish`, `enablePush`, `disablePush`
 - **input** — `fromBlueprint` takes `AppFromBlueprint`
 - **input** — `place` takes `AppPlace`
 - **input** — `publish` takes `AppPublish`
+- **input** — `restoreReplica` takes `AppReplicaRestore`
 - **input** — `restoreVolume` takes `AppVolumeRestore`
 - **input** — `unplace` takes `AppUnplace`
 - **who may call** —
@@ -323,6 +345,7 @@ name when it declares none.
   - `place` — standing 4 or above — declared `gate: 4`; body writes as the app
   - `unplace` — standing 4 or above — declared `gate: 4`; body writes as the app
   - `restoreVolume` — standing 5 or above — declared `gate: 5`
+  - `restoreReplica` — standing 5 or above — declared `gate: 5`
   - `publish` — standing 4 or above — declared `gate: 4`
   - `enablePush` — standing 5 or above — declared `gate: 5`; body writes as the app
   - `disablePush` — standing 5 or above — declared `gate: 5`; body writes as the app
@@ -342,6 +365,7 @@ name when it declares none.
 | before | `place` | `validateInput` |
 | before | `unplace` | `validateInput` |
 | before | `restoreVolume` | `validateInput` |
+| before | `restoreReplica` | `validateInput` |
 | before | `publish` | `validateInput` |
 
 ### `audit` · model `AuditEvent`

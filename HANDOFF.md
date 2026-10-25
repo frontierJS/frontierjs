@@ -14,6 +14,43 @@ finished.
 
 ---
 
+# Handoff — 2026-10-24 (backups go continuous, Basecamp's own database included)
+
+> **Started at `IDEAS/backups.md` 2.1 and ended with Phase 2 closed: every
+> enrolled box runs a pinned Litestream under its own unit, Basecamp sends each
+> box the list of apps to replicate, the lag reaches the App screen and
+> `backup.replica-lag`, and Basecamp's own box replicates its database through
+> its own Outpost.** The through-line: one list, one sender. Every write that
+> changes what a box replicates queues the same sync job, and the hub's own
+> database rides that list as a `host` entry rather than a second mechanism.
+
+**The order, and why.** 2.1 moved the Litestream pin and installer into
+`@frontierjs/litestone/replicate`, so `deploy:setup` and the fleet install
+cannot disagree on a build. 2.2 gave Outpost `/replicate`. 2.3 began on
+Litestream's `addr` metrics and the probe said they cannot measure bucket lag
+(0.5.17); the control socket's `GET /list` `last_sync_at` can, so the heartbeat
+carries that. The exit drive needed an S3 stand-in, MinIO's free edition is
+archived, and the owner picked SeaweedFS; it ran 10/10 from a scratch script
+(not committed). 2.4 found two things. First, `basecamp-host` is a slug unique
+per workspace and reserved nowhere, so the host entry goes only to the host row
+in the destination's own workspace; the grade's lookup has the same gap,
+`FJS-3488`. Second, a `@@tenant(none)` HubConfig naming a tenant-owned
+destination fails the hidden-parent check, which `backupDestinationId` through
+`save` already did; the pointers are now written at system, alone, after the
+scoped save.
+
+**What is NOT proved.** Nothing ran under systemd on a box: not the unit, not
+the `host.conf` drop-in (`fli deploy` writes it; run twice against a fake root),
+not whether `ReadWritePaths` lifts `ProtectHome=read-only`. The App screen's
+replication badge was compiled, never seen in a browser. `verify:screens` still
+stops at `FJS-3477`; outpost `verify:docker` was not rerun after 2.2–2.4. Which
+vendor Basecamp should recommend as the default destination was never
+researched; B2 is only the first one tested. The cli suite's four reds are
+`FJS-3479`–`FJS-3481`, already filed. Nothing from 1.5 on is committed, and the
+owner's dev `basecamp.db` still needs their `db:reset`.
+
+---
+
 # Handoff — 2026-10-23 (backups leave the box, on the day three real boxes enrolled)
 
 > **Started from `IDEAS/backups.md` with six questions open and nothing past a

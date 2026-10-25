@@ -180,10 +180,11 @@ const tag = (xml: string, name: string) => { const m = xml.match(new RegExp(`<${
 /** One page of ListObjectsV2. `nextToken` is set while the listing is truncated;
  *  pass it back as `continuationToken` until it is not. Keys come back in
  *  UTF-8 binary order, which is what a prefix-and-stamp naming sorts by. */
-export async function listObjects(send: Send, bucket: string, opts: { prefix?: string; continuationToken?: string; maxKeys?: number } = {}): Promise<{ objects?: ListedObject[]; nextToken?: string | null; error?: S3Failure }> {
+export async function listObjects(send: Send, bucket: string, opts: { prefix?: string; delimiter?: string; continuationToken?: string; maxKeys?: number } = {}): Promise<{ objects?: ListedObject[]; prefixes?: string[]; nextToken?: string | null; error?: S3Failure }> {
   const r = await send<Uint8Array | string | null>({ method: 'GET', path: `/${uriEncode(bucket)}`, query: {
     'list-type':          2,
     prefix:               opts.prefix,
+    delimiter:            opts.delimiter,
     'continuation-token': opts.continuationToken,
     'max-keys':           opts.maxKeys,
   } })
@@ -196,5 +197,7 @@ export async function listObjects(send: Send, bucket: string, opts: { prefix?: s
     etag:         tag(c, 'ETag'),
     lastModified: tag(c, 'LastModified'),
   }))
-  return { objects, nextToken: tag(xml, 'IsTruncated') === 'true' ? tag(xml, 'NextContinuationToken') : null }
+  // With a delimiter, each key's next segment once: a Litestream replica's databases.
+  const prefixes = [...xml.matchAll(/<CommonPrefixes>([\s\S]*?)<\/CommonPrefixes>/g)].map(([, c]) => tag(c, 'Prefix') ?? '')
+  return { objects, prefixes, nextToken: tag(xml, 'IsTruncated') === 'true' ? tag(xml, 'NextContinuationToken') : null }
 }

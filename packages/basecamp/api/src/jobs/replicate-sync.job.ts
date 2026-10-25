@@ -47,8 +47,8 @@ import { defineJob }                         from '@frontierjs/caravan'
 import { runsAsApp }                         from './context.ts'
 import { executorOn, isExecutor }            from '../providers/executor.ts'
 import { createSecretResolver, secretRef }   from '../core/credentials.ts'
-import { keyUnder }                          from '../providers/storage/index.ts'
-import { splitCredential }                   from '../providers/storage/s3.ts'
+import { keyUnder, sendFor }                 from '../providers/storage/index.ts'
+import { splitCredential, listObjects }      from '../providers/storage/s3.ts'
 import { hostServer }                        from '../core/host-machine.ts'
 import type { App }                          from '@frontierjs/junction'
 
@@ -89,26 +89,58 @@ export async function replicasFor(app: App, serverId: string): Promise<ReplicaEn
     orderBy: { id: 'asc' },
   }) as { id: string; slug: string; workspaceId: string; replicaDestinationId: string }[]
 
-  const secrets = createSecretResolver(app.db as any)
   const out: ReplicaEntry[] = []
   for (const a of apps) {
-    const dest = await sys.backupDestination.findFirst({ where: { id: a.replicaDestinationId } })
-    // A removed destination is a soft delete that keeps the pointer; it reads
-    // as none, and the app stops replicating with it.
-    if (!dest) continue
-    if (dest.workspaceId !== a.workspaceId)
-      throw new Error(`app '${a.slug}' points its replica at a destination outside its workspace`)
-    const credential = dest.secretId ? await secrets.get(secretRef(dest.secretId)) : null
-    if (typeof credential !== 'string' || !credential)
-      throw new Error(`app '${a.slug}': destination '${dest.name}' has no credential that can be read`)
-    const { accessKeyId, secretAccessKey } = splitCredential(credential)
-    out.push({
-      app_id: a.id, bucket: dest.bucket, path: keyUnder(dest, a.id),
-      endpoint: dest.endpoint, region: dest.region,
-      access_key_id: accessKeyId, secret_access_key: secretAccessKey,
-    })
+    const entry = await replicaOf(app, a)
+    if (entry) out.push(entry.entry)
   }
   return out
+}
+
+type ReplicatingApp = { id: string; slug: string; workspaceId: string; replicaDestinationId: string | null }
+
+/**
+ * One app's entry and its destination row, or null when it names none or a
+ * removed one — a soft delete that keeps the pointer reads as none, and the
+ * app stops replicating with it. Throws as `replicasFor` does.
+ */
+export async function replicaOf(app: App, a: ReplicatingApp): Promise<{ entry: ReplicaEntry; dest: any } | null> {
+  if (!a.replicaDestinationId) return null
+  const dest = await (app.db as any).asSystem().backupDestination.findFirst({ where: { id: a.replicaDestinationId } })
+  if (!dest) return null
+  if (dest.workspaceId !== a.workspaceId)
+    throw new Error(`app '${a.slug}' points its replica at a destination outside its workspace`)
+  const credential = dest.secretId ? await createSecretResolver(app.db as any).get(secretRef(dest.secretId)) : null
+  if (typeof credential !== 'string' || !credential)
+    throw new Error(`app '${a.slug}': destination '${dest.name}' has no credential that can be read`)
+  const { accessKeyId, secretAccessKey } = splitCredential(credential)
+  return { dest, entry: {
+    app_id: a.id, bucket: dest.bucket, path: keyUnder(dest, a.id),
+    endpoint: dest.endpoint, region: dest.region,
+    access_key_id: accessKeyId, secret_access_key: secretAccessKey,
+  } }
+}
+
+/**
+ * The databases a replica holds, read off the bucket: a directory target
+ * writes each file under `<path>/<file>/`, and Litestream itself cannot list
+ * them. Throws in the bucket's words.
+ */
+export async function replicaDatabases(app: App, dest: { id: string; name: string; bucket: string }, path: string): Promise<string[]> {
+  const send = sendFor(app, dest.id)
+  const under = `${path.replace(/\/+$/, '')}/`
+  const names: string[] = []
+  let token: string | undefined
+  do {
+    const page = await listObjects(send, dest.bucket, { prefix: under, delimiter: '/', continuationToken: token })
+    if (page.error) throw new Error(`'${dest.name}' refused the listing (${page.error.kind}${page.error.code ? `, ${page.error.code}` : ''}): ${page.error.message}`)
+    for (const p of page.prefixes!) {
+      const name = p.slice(under.length).replace(/\/$/, '')
+      if (/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.db$/.test(name)) names.push(name)
+    }
+    token = page.nextToken ?? undefined
+  } while (token)
+  return names
 }
 
 /**

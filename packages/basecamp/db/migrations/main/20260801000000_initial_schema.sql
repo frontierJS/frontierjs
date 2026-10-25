@@ -1069,6 +1069,7 @@ CREATE TABLE IF NOT EXISTS "app" (
   "backupCron" TEXT,
   "backupDestinationId" TEXT,
   "replicaDestinationId" TEXT UNIQUE,
+  "drillCron" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
@@ -1300,6 +1301,7 @@ CREATE TABLE IF NOT EXISTS "app_backup" (
   "fileCount" INTEGER,
   "location" TEXT,
   "error" TEXT,
+  "sha256" TEXT,
   "requestedBy" TEXT,
   "startedAt" TEXT,
   "finishedAt" TEXT,
@@ -1316,6 +1318,32 @@ CREATE INDEX IF NOT EXISTS "idx_app_backup_appId" ON "app_backup" ("appId");
 CREATE INDEX IF NOT EXISTS "idx_app_backup_serverId" ON "app_backup" ("serverId");
 CREATE INDEX IF NOT EXISTS "idx_app_backup_destinationId" ON "app_backup" ("destinationId");
 CREATE INDEX IF NOT EXISTS "idx_app_backup_deploymentId" ON "app_backup" ("deploymentId");
+
+CREATE TABLE IF NOT EXISTS "app_drill" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "appId" TEXT NOT NULL,
+  "serverId" TEXT NOT NULL,
+  "deploymentId" TEXT,
+  "kind" TEXT NOT NULL DEFAULT 'manual',
+  "status" TEXT NOT NULL DEFAULT 'pending',
+  "at" TEXT,
+  "databases" TEXT,
+  "report" TEXT,
+  "error" TEXT,
+  "requestedBy" TEXT,
+  "startedAt" TEXT,
+  "finishedAt" TEXT,
+  "durationMs" INTEGER,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("kind" IN ('manual', 'scheduled')),
+  CHECK ("status" IN ('pending', 'running', 'success', 'failed', 'timeout')),
+  FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("deploymentId") REFERENCES "deployment" ("id") ON DELETE SET NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_app_drill_appId" ON "app_drill" ("appId");
+CREATE INDEX IF NOT EXISTS "idx_app_drill_serverId" ON "app_drill" ("serverId");
+CREATE INDEX IF NOT EXISTS "idx_app_drill_deploymentId" ON "app_drill" ("deploymentId");
 
 CREATE TABLE IF NOT EXISTS "deployment_step" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),

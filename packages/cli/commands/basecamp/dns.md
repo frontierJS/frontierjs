@@ -3,7 +3,7 @@ title: basecamp:dns
 description: Point Basecamp's hostname at its box at Cloudflare, in a record Basecamp's own edge reads as its own
 effects: writes one DNS record at Cloudflare, and with --proxied a Configuration Rule for that host
 requires:
-  - CLOUDFLARE_TOKEN: https://dash.cloudflare.com/profile/api-tokens  Create Token, the Edit zone DNS template, then add Zone / Zone / Read
+  - CLOUDFLARE_TOKEN: https://dash.cloudflare.com/profile/api-tokens  Create Token, the Edit zone DNS template, then add Zone / Config Rules / Edit and Zone / Zone Settings / Read
 examples:
   - fli basecamp:dns 203.0.113.7
   - fli basecamp:dns 203.0.113.7 --host ops.example.com

@@ -1795,6 +1795,15 @@
           "optional": false
         },
         {
+          "field": "backupDestinations",
+          "model": "BackupDestination",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
           "field": "flags",
           "model": "FeatureFlag",
           "type": "hasMany",
@@ -2373,6 +2382,16 @@
           "x-aggregatable": "json",
           "x-sortable": "json"
         },
+        "replication": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
         "labels": {
           "default": {},
           "x-aggregatable": "json",
@@ -2581,6 +2600,15 @@
           "references": [],
           "onDelete": null,
           "optional": false
+        },
+        {
+          "field": "hostHub",
+          "model": "HubConfig",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": true
         }
       ]
     },
@@ -3281,6 +3309,48 @@
           ],
           "readOnly": true,
           "x-litestone-kind": "system"
+        },
+        "backupCron": {
+          "anyOf": [
+            {
+              "type": "string",
+              "x-transforms": [
+                "trim"
+              ],
+              "minLength": 1,
+              "maxLength": 100
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "backupDestinationId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "replicaDestinationId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "drillCron": {
+          "anyOf": [
+            {
+              "type": "string",
+              "x-transforms": [
+                "trim"
+              ],
+              "minLength": 1,
+              "maxLength": 100
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -3325,6 +3395,50 @@
           ],
           "onDelete": "SetNull",
           "optional": true
+        },
+        {
+          "field": "backupDestination",
+          "model": "BackupDestination",
+          "type": "belongsTo",
+          "fields": [
+            "backupDestinationId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "optional": true
+        },
+        {
+          "field": "replicaDestination",
+          "model": "BackupDestination",
+          "type": "belongsTo",
+          "fields": [
+            "replicaDestinationId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "optional": true
+        },
+        {
+          "field": "appBackups",
+          "model": "AppBackup",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "appDrills",
+          "model": "AppDrill",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
         },
         {
           "field": "deployments",
@@ -3605,6 +3719,7 @@
       ],
       "x-litestone-policies": true,
       "x-version": "version",
+      "x-label-field": "hostname",
       "x-identify": [
         "hostname"
       ],
@@ -3878,6 +3993,22 @@
         "serverId": {
           "type": "string"
         },
+        "destinationId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/BackupKind",
+          "default": "manual"
+        },
+        "deploymentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "status": {
           "$ref": "#/$defs/RunStatus",
           "default": "pending"
@@ -3908,6 +4039,188 @@
               "type": "null"
             }
           ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requestedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finishedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "durationMs": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "appId",
+        "serverId"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 5,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "app",
+          "model": "App",
+          "type": "belongsTo",
+          "fields": [
+            "appId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "server",
+          "model": "Server",
+          "type": "belongsTo",
+          "fields": [
+            "serverId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "destination",
+          "model": "BackupDestination",
+          "type": "belongsTo",
+          "fields": [
+            "destinationId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "optional": true
+        },
+        {
+          "field": "deployment",
+          "model": "Deployment",
+          "type": "belongsTo",
+          "fields": [
+            "deploymentId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "optional": true
+        }
+      ]
+    },
+    "AppDrill": {
+      "type": "object",
+      "title": "AppDrill",
+      "x-litestone-kind": "model",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "serverId": {
+          "type": "string"
+        },
+        "deploymentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/DrillKind",
+          "default": "manual"
+        },
+        "status": {
+          "$ref": "#/$defs/RunStatus",
+          "default": "pending"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "databases": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "report": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
         },
         "error": {
           "anyOf": [
@@ -3994,6 +4307,19 @@
           ],
           "onDelete": "Cascade",
           "optional": false
+        },
+        {
+          "field": "deployment",
+          "model": "Deployment",
+          "type": "belongsTo",
+          "fields": [
+            "deploymentId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "optional": true
         }
       ]
     },
@@ -4285,6 +4611,24 @@
         {
           "field": "steps",
           "model": "DeploymentStep",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "appBackups",
+          "model": "AppBackup",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "appDrills",
+          "model": "AppDrill",
           "type": "hasMany",
           "fields": [],
           "references": [],
@@ -5431,6 +5775,191 @@
         {
           "field": "monitors",
           "model": "MonitorChannel",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "BackupDestination": {
+      "type": "object",
+      "title": "BackupDestination",
+      "x-litestone-kind": "model",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
+        },
+        "name": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "endpoint": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "format": "uri",
+          "title": "Endpoint URL"
+        },
+        "region": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "bucket": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "minLength": 3,
+          "maxLength": 63
+        },
+        "prefix": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "minLength": 0,
+          "maxLength": 200,
+          "default": ""
+        },
+        "secretId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "secret": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 4096
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Credential",
+          "writeOnly": true,
+          "x-litestone-kind": "transient",
+          "x-aggregatable": "transient",
+          "x-sortable": "transient",
+          "x-filterable": "transient"
+        },
+        "lastTestAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "createdBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "endpoint",
+        "region",
+        "bucket"
+      ],
+      "x-litestone-policies": true,
+      "x-version": "version",
+      "x-identify": [
+        "name"
+      ],
+      "x-gate": {
+        "read": 2,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "backups",
+          "model": "Backup",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "appBackups",
+          "model": "AppBackup",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "apps",
+          "model": "App",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "replicaApp",
+          "model": "App",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": true
+        },
+        {
+          "field": "replicaHub",
+          "model": "HubConfig",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": true
+        },
+        {
+          "field": "hubs",
+          "model": "HubConfig",
           "type": "hasMany",
           "fields": [],
           "references": [],
@@ -7041,9 +7570,11 @@
           "$ref": "#/$defs/RunStatus",
           "default": "pending"
         },
-        "destination": {
-          "$ref": "#/$defs/BackupDestination",
-          "default": "local"
+        "destinationId": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "sizeBytes": {
           "type": [
@@ -7119,7 +7650,22 @@
         "create": 7,
         "update": 8,
         "delete": 7
-      }
+      },
+      "x-relations": [
+        {
+          "field": "destination",
+          "model": "BackupDestination",
+          "type": "belongsTo",
+          "fields": [
+            "destinationId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "optional": true
+        }
+      ]
     },
     "HubConfig": {
       "type": "object",
@@ -7186,9 +7732,82 @@
           "maxLength": 100,
           "default": "0 2 * * *"
         },
-        "backupDestination": {
-          "$ref": "#/$defs/BackupDestination",
-          "default": "local"
+        "backupDestinationId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "replicaDestinationId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "backupKeepLocalCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 7
+        },
+        "backupKeepLocalDays": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3650
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "backupKeepRemoteCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 7
+        },
+        "backupKeepRemoteDays": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3650
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "encryptionKeyEscrowedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "encryptionKeyFingerprint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "hostServerId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "mailFromAddress": {
           "anyOf": [
@@ -7231,7 +7850,48 @@
         "create": 7,
         "update": 7,
         "delete": 7
-      }
+      },
+      "x-relations": [
+        {
+          "field": "backupDestination",
+          "model": "BackupDestination",
+          "type": "belongsTo",
+          "fields": [
+            "backupDestinationId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "optional": true
+        },
+        {
+          "field": "replicaDestination",
+          "model": "BackupDestination",
+          "type": "belongsTo",
+          "fields": [
+            "replicaDestinationId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "optional": true
+        },
+        {
+          "field": "hostServer",
+          "model": "Server",
+          "type": "belongsTo",
+          "fields": [
+            "hostServerId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "optional": true
+        }
+      ]
     },
     "Notification": {
       "type": "object",
@@ -7542,6 +8202,7 @@
         "registry_auth",
         "tls_cert",
         "notification",
+        "backup",
         "generic"
       ],
       "title": "SecretKind"
@@ -7824,17 +8485,19 @@
       "type": "string",
       "enum": [
         "manual",
-        "scheduled"
+        "scheduled",
+        "found",
+        "release"
       ],
       "title": "BackupKind"
     },
-    "BackupDestination": {
+    "DrillKind": {
       "type": "string",
       "enum": [
-        "local",
-        "s3"
+        "manual",
+        "scheduled"
       ],
-      "title": "BackupDestination"
+      "title": "DrillKind"
     },
     "DependencyKind": {
       "type": "string",
@@ -8452,7 +9115,16 @@
           "type": "string"
         },
         "path": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "backupId": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "overwrite": {
           "type": [
@@ -8463,8 +9135,67 @@
       },
       "additionalProperties": false,
       "required": [
-        "serverId",
-        "path"
+        "serverId"
+      ]
+    },
+    "AppReplicaRestore": {
+      "type": "object",
+      "title": "AppReplicaRestore",
+      "x-litestone-kind": "type",
+      "properties": {
+        "serverId": {
+          "type": "string"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "overwrite": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "serverId"
+      ]
+    },
+    "AppDrillRun": {
+      "type": "object",
+      "title": "AppDrillRun",
+      "x-litestone-kind": "type",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "serverId": {
+          "type": "string"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "appId",
+        "serverId"
       ]
     },
     "AppPublish": {
@@ -8507,12 +9238,32 @@
         },
         "serverId": {
           "type": "string"
+        },
+        "destinationId": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false,
       "required": [
         "appId",
         "serverId"
+      ]
+    },
+    "BackupRescan": {
+      "type": "object",
+      "title": "BackupRescan",
+      "x-litestone-kind": "type",
+      "properties": {
+        "destinationId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "destinationId"
       ]
     },
     "FlagOverrideSet": {

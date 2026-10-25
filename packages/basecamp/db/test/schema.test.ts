@@ -308,7 +308,7 @@ describe('generated migration', () => {
     expect(readFileSync(join(dir, files[0]), 'utf8')).toContain(generateDDLForDatabase(r.schema, 'audit'))
   })
 
-  test('applies to a fresh database — 71 tables, FK-clean, all STRICT', () => {
+  test('applies to a fresh database — 72 tables, FK-clean, all STRICT', () => {
     const path = freshDb()
     const raw  = new Database(path)
     const tables = raw.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
@@ -354,8 +354,8 @@ describe('generated migration', () => {
     // `Dependency` and `DependencyUse`, the dependency mirror. 63 with
     // `ServerPosture`. 67 with the four monitor tables (`FJS-1557`). 68 with
     // `AppBackup`. 69 with `AppEditor` (`FJS-D1230`). 70 with `DomainRoute` (`FJS-D1040`).
-    // 71 with `BackupDestination` (`FJS-D1488`).
-    expect(tables.length).toBe(71)
+    // 71 with `BackupDestination` (`FJS-D1488`). 72 with `AppDrill` (`FJS-D1525`).
+    expect(tables.length).toBe(72)
     expect(raw.query('PRAGMA foreign_key_check').all()).toEqual([])
 
     const nonStrict = tables.filter((t: string) => {

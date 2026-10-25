@@ -1918,6 +1918,41 @@ describe('backup / replicate — the rest of db/', () => {
     queue.close()
   })
 
+  // A copy restored by something else, proven where it lies (FJS-D1524): a
+  // Basecamp drill runs this in the app's image with no network.
+  test('restore --verify-only proves a copy in place, refuses a bad row, and takes no restore flag', async () => {
+    const dir  = appFixture('layout-verify-only')
+    const copy = join(dir, 'copy')
+    mkdirSync(copy)
+    // The fixture's table is not the schema's DDL, and a drifted table is a failed check.
+    rmSync(join(dir, 'db', 'app.db'))
+    writeFileSync(join(dir, 'db', 'schema.lite'), `model Post {\n  id    Int    @id\n  title String @length(1, 20)\n}\n`, 'utf8')
+    expect((await runCli(dir, ['db', 'push'])).exit).toBe(0)
+    const app = new Database(join(dir, 'db', 'app.db'))
+    app.run(`INSERT INTO post VALUES (1, 'kept')`)
+    app.close()
+    writeFileSync(join(copy, 'app.db'), readFileSync(join(dir, 'db', 'app.db')))
+
+    const good = await runCli(dir, ['restore', `--verify-only=${copy}`, '--json'])
+    expect(good.exit).toBe(0)
+    expect(JSON.parse(good.stdout.slice(good.stdout.indexOf('{'))).ok).toBe(true)
+    expect(existsSync(join(copy, 'app.db'))).toBe(true)
+
+    const bad = new Database(join(copy, 'app.db'))
+    bad.run(`INSERT INTO post VALUES (2, '${'x'.repeat(40)}')`)
+    bad.close()
+    const refused = await runCli(dir, ['restore', `--verify-only=${copy}`, '--json'])
+    expect(refused.exit).not.toBe(0)
+    expect(JSON.parse(refused.stdout.slice(refused.stdout.indexOf('{'))).ok).toBe(false)
+
+    const named = await runCli(dir, ['restore', `--verify-only=${copy}`, '--at=2026-10-25T00:00:00Z', '--force'])
+    expect(named.exit).toBe(1)
+    expect(named.stdout + named.stderr).toContain('--at')
+    expect(named.stdout + named.stderr).toContain('--force')
+    const empty = await runCli(dir, ['restore', `--verify-only=${join(dir, 'nowhere')}`])
+    expect(empty.exit).toBe(1)
+  })
+
   test('a backup written over another is refused', async () => {
     const dir = appFixture('layout-over')
     expect((await runCli(dir, ['backup', 'out'])).exit).toBe(0)

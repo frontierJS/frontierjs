@@ -102,6 +102,8 @@ export type ParamGenerator = 'random_hex_16' | 'random_hex_32' | 'random_hex_64'
 
 export type BackupKind = 'manual' | 'scheduled' | 'found' | 'release'
 
+export type DrillKind = 'manual' | 'scheduled'
+
 export type DependencyKind = 'dependency' | 'dev' | 'peer' | 'optional'
 
 export type NotificationContext = 'Deployment' | 'AlertEvent' | 'JobRun' | 'Server' | 'Workspace' | 'Monitor'
@@ -296,12 +298,36 @@ export interface AppUnplace {
 
 /**
  * What `apps.restoreVolume` accepts: an archive already on that server, under
- * its Outpost's restore directory (`FJS-D943`).
+ * its Outpost's restore directory (`FJS-D943`), or one of the app's backups
+ * in a bucket, which that server fetches by a pre-signed GET (`FJS-D1521`).
+ * Exactly one of `path` and `backupId`.
  */
 export interface AppVolumeRestore {
   serverId: string
-  path: string
+  path?: string | null
+  backupId?: string | null
   overwrite?: boolean | null
+}
+
+/**
+ * What `apps.restoreReplica` accepts: the machine whose volume takes the
+ * app's databases out of its Litestream replica, and the instant to bring
+ * them back to — the latest when absent.
+ */
+export interface AppReplicaRestore {
+  serverId: string
+  at?: string | null
+  overwrite?: boolean | null
+}
+
+/**
+ * What `app-drills.run` accepts: the app, the machine that restores its
+ * replica into staging, and the instant, null for the latest (`FJS-D1524`).
+ */
+export interface AppDrillRun {
+  appId: string
+  serverId: string
+  at?: string | null
 }
 
 /**
@@ -2883,6 +2909,7 @@ export interface App {
   backupCron?: string | null
   backupDestinationId?: string | null
   replicaDestinationId?: string | null
+  drillCron?: string | null
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -2906,6 +2933,7 @@ export interface AppCreate {
   backupCron?: string | null
   backupDestinationId?: string | null
   replicaDestinationId?: string | null
+  drillCron?: string | null
 }
 
 export interface AppUpdate {
@@ -2926,6 +2954,7 @@ export interface AppUpdate {
   backupCron?: string | null
   backupDestinationId?: string | null
   replicaDestinationId?: string | null
+  drillCron?: string | null
 }
 
 export interface AppSystem {
@@ -2961,6 +2990,7 @@ export interface AppWhere extends WhereBase {
   backupCron?: string | WhereOp<string> | null
   backupDestinationId?: string | WhereOp<string> | null
   replicaDestinationId?: string | WhereOp<string> | null
+  drillCron?: string | WhereOp<string> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
@@ -2979,6 +3009,7 @@ export interface AppRelations {
   backupDestination: BackupDestination | null
   replicaDestination: BackupDestination | null
   appBackups: AppBackup[]
+  appDrills: AppDrill[]
   deployments: Deployment[]
   jobs: Job[]
   appServers: AppServer[]
@@ -3317,6 +3348,7 @@ export interface AppBackup {
   fileCount?: number | null
   location?: string | null
   error?: string | null
+  sha256?: string | null
   requestedBy?: string | null
   startedAt?: string | null
   finishedAt?: string | null
@@ -3336,6 +3368,7 @@ export interface AppBackupCreate {
   fileCount?: number | null
   location?: string | null
   error?: string | null
+  sha256?: string | null
   requestedBy?: string | null
   startedAt?: string | Date | null
   finishedAt?: string | Date | null
@@ -3354,6 +3387,7 @@ export interface AppBackupUpdate {
   fileCount?: number | null
   location?: string | null
   error?: string | null
+  sha256?: string | null
   requestedBy?: string | null
   startedAt?: string | Date | null
   finishedAt?: string | Date | null
@@ -3372,6 +3406,7 @@ export interface AppBackupWhere extends WhereBase {
   fileCount?: number | WhereOp<number> | null
   location?: string | WhereOp<string> | null
   error?: string | WhereOp<string> | null
+  sha256?: string | WhereOp<string> | null
   requestedBy?: string | WhereOp<string> | null
   startedAt?: string | Date | WhereOp<string | Date> | null
   finishedAt?: string | Date | WhereOp<string | Date> | null
@@ -3390,6 +3425,91 @@ export interface AppBackupRelations {
   app: App | null
   server: Server | null
   destination: BackupDestination | null
+  deployment: Deployment | null
+}
+
+// ─── AppDrill ────────────────────────────────────────────────────
+
+export interface AppDrill {
+  id: string
+  appId: string
+  serverId: string
+  deploymentId?: string | null
+  kind: DrillKind
+  status: RunStatus
+  at?: string | null
+  databases?: unknown | null
+  report?: unknown | null
+  error?: string | null
+  requestedBy?: string | null
+  startedAt?: string | null
+  finishedAt?: string | null
+  durationMs?: number | null
+  createdAt: string
+}
+
+export interface AppDrillCreate {
+  id?: string
+  appId: string
+  serverId: string
+  deploymentId?: string | null
+  kind?: DrillKind
+  status?: RunStatus
+  at?: string | Date | null
+  databases?: unknown | null
+  report?: unknown | null
+  error?: string | null
+  requestedBy?: string | null
+  startedAt?: string | Date | null
+  finishedAt?: string | Date | null
+  durationMs?: number | null
+}
+
+export interface AppDrillUpdate {
+  id?: string
+  appId?: string
+  serverId?: string
+  deploymentId?: string | null
+  kind?: DrillKind
+  status?: RunStatus
+  at?: string | Date | null
+  databases?: unknown | null
+  report?: unknown | null
+  error?: string | null
+  requestedBy?: string | null
+  startedAt?: string | Date | null
+  finishedAt?: string | Date | null
+  durationMs?: number | null
+}
+
+export interface AppDrillWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  appId?: string | WhereOp<string> | null
+  serverId?: string | WhereOp<string> | null
+  deploymentId?: string | WhereOp<string> | null
+  kind?: DrillKind | WhereOp<DrillKind> | null
+  status?: RunStatus | WhereOp<RunStatus> | null
+  at?: string | Date | WhereOp<string | Date> | null
+  databases?: unknown | WhereOp<unknown> | null
+  report?: unknown | WhereOp<unknown> | null
+  error?: string | WhereOp<string> | null
+  requestedBy?: string | WhereOp<string> | null
+  startedAt?: string | Date | WhereOp<string | Date> | null
+  finishedAt?: string | Date | WhereOp<string | Date> | null
+  durationMs?: number | WhereOp<number> | null
+  createdAt?: string | Date | WhereOp<string | Date> | null
+  AND?: AppDrillWhere[]
+  OR?:  AppDrillWhere[]
+  NOT?: AppDrillWhere
+}
+
+export type AppDrillOrderBy =
+  | { [K in keyof Omit<AppDrill, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<AppDrill, never>]?: OrderDir }>
+
+export interface AppDrillRelations {
+  app: App | null
+  server: Server | null
   deployment: Deployment | null
 }
 
@@ -3554,6 +3674,7 @@ export interface DeploymentRelations {
   triggeredByUser: User | null
   steps: DeploymentStep[]
   appBackups: AppBackup[]
+  appDrills: AppDrill[]
 }
 
 // ─── DeploymentStep ──────────────────────────────────────────────
@@ -5868,6 +5989,7 @@ export interface ServiceTypes {
   appEditors: AppEditor
   appServers: AppServer
   appBackups: AppBackup
+  appDrills: AppDrill
   appNetworks: AppNetwork
   deployments: Deployment
   deploymentSteps: DeploymentStep
@@ -5934,6 +6056,8 @@ export interface SeedTypes {
   AppPlace: AppPlace
   AppUnplace: AppUnplace
   AppVolumeRestore: AppVolumeRestore
+  AppReplicaRestore: AppReplicaRestore
+  AppDrillRun: AppDrillRun
   AppPublish: AppPublish
   AppBackupTake: AppBackupTake
   BackupRescan: BackupRescan
@@ -6097,7 +6221,7 @@ type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
 type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
-  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appBackup' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'cleanupRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardWidget' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'backup' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
+  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appBackup' | 'appDrill' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'cleanupRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardWidget' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'backup' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
   readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere, CredentialRelations, never, 'value' | 'accessToken' | 'refreshToken' | '@@gate'>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'token' | '@@gate'>
   readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere, VerificationRelations, never, 'value' | 'secret' | 'code' | '@@gate'>
@@ -6137,6 +6261,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly appEditor: TableClient<AppEditor, AppEditorCreate, AppEditorUpdate, AppEditorWhere, AppEditorRelations, never, '@@gate'>
   readonly appServer: TableClient<AppServer, AppServerCreate, AppServerUpdate, AppServerWhere, AppServerRelations, never, '@@gate'>
   readonly appBackup: TableClient<AppBackup, AppBackupCreate, AppBackupUpdate, AppBackupWhere, AppBackupRelations, never, '@@gate'>
+  readonly appDrill: TableClient<AppDrill, AppDrillCreate, AppDrillUpdate, AppDrillWhere, AppDrillRelations, never, '@@gate'>
   readonly appNetwork: TableClient<AppNetwork, AppNetworkCreate, AppNetworkUpdate, AppNetworkWhere, AppNetworkRelations, never, '@@gate'>
   readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere, DeploymentRelations, 'build' | 'succeed' | 'fail' | 'cancel' | 'rollback', 'status' | '@@gate'>
   readonly deploymentStep: TableClient<DeploymentStep, DeploymentStepCreate, DeploymentStepUpdate, DeploymentStepWhere, DeploymentStepRelations, never, '@@gate'>

@@ -36,7 +36,8 @@ import { NOTIFICATION_KINDS }     from '../src/services/notification-preferences
 import { notifyPeople }           from '../src/core/notify.ts'
 import { createJunctionClient }   from '@frontierjs/junction/client'
 import { snapshotVariables, releaseEnv } from '../src/core/variables.ts'
-import { BACKUP_SCHEDULE, appBackupSchedule, fireBackup, restoreSchedules } from '../src/services/jobs/job-schedule.ts'
+import { BACKUP_SCHEDULE, appBackupSchedule, appDrillSchedule, fireBackup, restoreSchedules } from '../src/services/jobs/job-schedule.ts'
+import { mintDownload } from '../src/jobs/app-backup-run.job.ts'
 import { replicasFor, syncReplicas, hostReplicaFor } from '../src/jobs/replicate-sync.job.ts'
 import { HOST_SLUG }              from '../src/core/host-machine.ts'
 import { startS3Sink }            from '../src/providers/storage/s3-sink.ts'
@@ -4584,6 +4585,37 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       await expect(take(owner, { appId: app.id, serverId: server.id, destinationId: bare.id })).rejects.toThrow(/holds no credential/)
       expect(await sys.appBackup.count({ where: { destinationId: bare.id } })).toBe(0)
     })
+
+    // IDEAS/backups.md 3.2: the machine fetches it back by a pre-signed GET
+    // and checks it against the digest recorded at capture (FJS-D1521).
+    test('a backup in the bucket restores by its id; one that never left, or records no digest, is refused', async () => {
+      const sys     = env.system as any
+      const dest    = await env.as(owner).service('backupDestinations').create(bucket()) as any
+      const row     = (over: Record<string, unknown>) => sys.appBackup.create({ data: {
+        appId: app.id, serverId: server.id, destinationId: dest.id, status: 'success',
+        location: `apps/${app.id}-2026.tar.gz`, sha256: 'a'.repeat(64), ...over,
+      } })
+      const restore = (who: any, body: Record<string, unknown>) => env.as(who).service('apps').call('restoreVolume', app.id, { serverId: server.id, ...body })
+
+      const good = await row({})
+      expect(await restore(owner, { backupId: good.id })).toMatchObject({ serverId: server.id })
+      await expect(restore(developer, { backupId: good.id })).rejects.toThrow()
+      await expect(restore(owner, { backupId: good.id, path: 'x.tar.gz' })).rejects.toThrow(/one of the two/)
+      await expect(restore(owner, {})).rejects.toThrow(/one of the two/)
+
+      const kept = await row({ location: '/var/lib/outpost/backups/x.tar.gz', error: 'Upload failed: 403' })
+      await expect(restore(owner, { backupId: kept.id })).rejects.toThrow(/never left its machine/)
+      const undigested = await row({ sha256: null })
+      await expect(restore(owner, { backupId: undigested.id })).rejects.toThrow(/records no sha256/)
+      const failed = await row({ status: 'failed', location: null })
+      await expect(restore(owner, { backupId: failed.id })).rejects.toThrow(/is failed/)
+
+      const stored = await sys.backupDestination.findFirst({ where: { id: dest.id } })
+      const url = new URL(await mintDownload(env.app as any, stored, good.location))
+      expect(url.pathname).toBe(`/frontier-basecamp/apps/${app.id}-2026.tar.gz`)
+      expect(url.searchParams.get('X-Amz-Signature')).toMatch(/^[0-9a-f]{64}$/)
+      expect(url.toString()).not.toContain('applicationkey')
+    })
   })
 
   // IDEAS/backups.md 2.2: each machine is sent every app on it that names a
@@ -4621,6 +4653,69 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       expect(here.server.replication).toBeUndefined()
       await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: null })
       expect((await env.as(owner).service('apps').get(app.id) as any).placement.find((p: any) => p.serverId === server.id).replication).toBeNull()
+    })
+
+    test('a replica restore is an administrator\'s, on a machine the app is placed on, out of a replica it names', async () => {
+      const restore = (who: any, body: Record<string, unknown>) => env.as(who).service('apps').call('restoreReplica', app.id, body)
+      await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: null })
+      await expect(restore(developer, { serverId: server.id })).rejects.toThrow()
+      await expect(restore(owner, { serverId: machine.id })).rejects.toThrow(/not placed on that server/)
+      await expect(restore(owner, { serverId: server.id })).rejects.toThrow(/names no replica destination/)
+    })
+
+    // IDEAS/backups.md 3.3: a drill is refused before any row when there is
+    // nothing to drill or no image to prove it with, and a drill that ran and
+    // went wrong is a failed row, never a missing one (FJS-D1525).
+    test('a drill is an administrator\'s, needs a replica and a release, and records what went wrong', async () => {
+      const sys  = env.system as any
+      const run  = (who: any, body: Record<string, unknown>) => env.as(who).service('appDrills').call('run', undefined, { appId: app.id, serverId: server.id, ...body })
+      await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: null })
+      await expect(run(developer, {})).rejects.toThrow()
+      await expect(run(outsider, {})).rejects.toThrow()
+      await expect(run(owner, { serverId: machine.id })).rejects.toThrow(/not placed/)
+      await expect(run(owner, {})).rejects.toThrow(/names no replica destination/)
+
+      // Nothing listens on port 1, so the bucket listing fails without a network.
+      const dest = await env.as(owner).service('backupDestinations').create({
+        name: `Dead ${tag()}`, endpoint: 'http://127.0.0.1:1', region: 'auto', bucket: `drill-${tag()}`, secret: 'AKID:secret',
+      }) as any
+      await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: dest.id })
+      await expect(run(owner, {})).rejects.toThrow(/no successful release/)
+      expect(await sys.appDrill.count({ where: { appId: app.id } })).toBe(0)
+
+      const release = await sys.deployment.create({ data: {
+        workspaceId: ws.id, appId: app.id, environmentId: app.environmentId, trigger: 'manual', toImage: 'registry.test/bk:1',
+      } })
+      for (const move of ['build', 'succeed']) await sys.deployment.transition(release.id, move)
+      const row = await run(owner, { at: '2026-10-25T03:00:00Z' }) as any
+      expect(row).toMatchObject({ status: 'failed', kind: 'manual', deploymentId: release.id, at: '2026-10-25T03:00:00.000Z' })
+      expect(row.error).toBeTruthy()
+      expect(row.durationMs).toBeGreaterThanOrEqual(0)
+      const listed = await env.as(owner).service('appDrills').find({ appId: app.id }) as any
+      expect(listed.data.map((r: any) => r.id)).toContain(row.id)
+      // The App screen shows it beside the placement; a developer's read leaves it out.
+      const here = (who: any) => env.as(who).service('apps').get(app.id).then((a: any) => a.placement.find((p: any) => p.serverId === server.id))
+      expect((await here(owner)).drill).toMatchObject({ id: row.id, status: 'failed' })
+      expect((await here(developer)).drill).toBeNull()
+      await expect(env.as(owner).service('appDrills').create({ appId: app.id, serverId: server.id, status: 'success' })).rejects.toThrow()
+      await env.as(owner).service('apps').patch(app.id, { replicaDestinationId: null })
+    })
+
+    test('drillCron puts the app on the clock, a restart restores it, and null or a delete takes it off', async () => {
+      const apps    = env.as(owner).service('apps')
+      const onClock = () => env.app.jobs.nextRuns().find((r: any) => r.name === appDrillSchedule(app.id))?.cron ?? null
+      await expect(apps.patch(app.id, { drillCron: 'weekly' })).rejects.toThrow(/drillCron/)
+      await apps.patch(app.id, { drillCron: '0 4 * * 0' })
+      expect(onClock()).toBe('0 4 * * 0')
+      env.app.jobs.unschedule(appDrillSchedule(app.id))
+      await restoreSchedules(env.app)
+      expect(onClock()).toBe('0 4 * * 0')
+      await apps.remove(app.id)
+      expect(onClock()).toBeNull()
+      await apps.restore(app.id)
+      expect(onClock()).toBe('0 4 * * 0')
+      await apps.patch(app.id, { drillCron: null })
+      expect(onClock()).toBeNull()
     })
 
     test('a destination is one app\'s: a second app cannot point at it', async () => {

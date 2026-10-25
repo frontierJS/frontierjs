@@ -445,6 +445,11 @@ describe('sync', () => {
     online1       = await server('one',   'online',   '203.0.113.5')
     online2       = await server('two',   'online',   '203.0.113.6')
     const drained = await server('three', 'draining', '203.0.113.7')
+    // Each move reaches `pushAppsOn` through a `$tapEvents` tap a tick later.
+    // Run late, they would find the App placed below and queue a `domain:dns`
+    // job per Domain, whose push races the sync tests' own and writes the
+    // ingress A record twice (FJS-2890, FJS-3221).
+    await new Promise(r => setImmediate(() => setImmediate(r)))
 
     const project = await sys.project.create({ data: { workspaceId: site.id, name: 'P', slug: `p-${tag()}` } })
     const e       = await sys.environment.create({ data: { workspaceId: site.id, projectId: project.id, name: 'E', slug: `e-${tag()}` } })
@@ -498,6 +503,12 @@ describe('sync', () => {
       .filter((r: any) => r.name === name)
     expect(ingress).toMatchObject([{ type: 'A', content: '203.0.113.5', mark: { fleet: 'basecamp', appId: web.id } }])
     expect((await shopRecords()).stale).toEqual([])
+
+    // Proxied under a Flexible zone, Caddy's HTTPS redirect loops (FJS-D1422).
+    const rules = await sendVia(app, `provider:cloudflare:${good.id}`)({ method: 'GET',
+      path: '/zones/zone-example/rulesets/phases/http_config_settings/entrypoint' })
+    expect((rules.data as any).result.rules).toMatchObject([{ expression: 'http.host eq "api.example.test"',
+      description: `basecamp:domain:${api.id}`, action_parameters: { ssl: 'strict' } }])
   })
 
   test('a release landing on a second machine is drift until synced, and then it is not', async () => {

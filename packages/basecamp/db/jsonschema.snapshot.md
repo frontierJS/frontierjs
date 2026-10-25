@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-148 definitions · 72 models · 1 view · 32 types · 43 enums · 0 other
+152 definitions · 73 models · 1 view · 34 types · 44 enums · 0 other
 ```
 
 ## Definitions
@@ -64,6 +64,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `AppEditor` | model |
 | `AppServer` | model |
 | `AppBackup` | model |
+| `AppDrill` | model |
 | `AppNetwork` | model |
 | `Deployment` | model |
 | `DeploymentStep` | model |
@@ -136,6 +137,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `WidgetKind` | enum |
 | `ParamGenerator` | enum |
 | `BackupKind` | enum |
+| `DrillKind` | enum |
 | `DependencyKind` | enum |
 | `NotificationContext` | enum |
 | `NotificationKind` | enum |
@@ -166,6 +168,8 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `AppPlace` | type |
 | `AppUnplace` | type |
 | `AppVolumeRestore` | type |
+| `AppReplicaRestore` | type |
+| `AppDrillRun` | type |
 | `AppPublish` | type |
 | `AppBackupTake` | type |
 | `BackupRescan` | type |
@@ -217,6 +221,7 @@ validates, and a select that silently drops an option.
 - `WidgetKind` — `server_fleet`, `server_health`, `app_status`, `deploy_feed`, `job_history`, `activity_feed`, `alert_status`, `service_health`, `stat_counter`
 - `ParamGenerator` — `random_hex_16`, `random_hex_32`, `random_hex_64`
 - `BackupKind` — `manual`, `scheduled`, `found`, `release`
+- `DrillKind` — `manual`, `scheduled`
 - `DependencyKind` — `dependency`, `dev`, `peer`, `optional`
 - `NotificationContext` — `Deployment`, `AlertEvent`, `JobRun`, `Server`, `Workspace`, `Monitor`
 - `NotificationKind` — `DeploySuccess`, `DeployFailed`, `AlertFiring`, `AlertResolved`, `ServerUnreachable`, `MonitorDown`, `MonitorUp`, `PostureFailed`, `DependencyVulnerable`, `MemberJoined`, `JobFailed`, `WeeklyDigest`
@@ -867,6 +872,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `backupDestination` — belongsTo `BackupDestination` via `backupDestinationId` · on delete SetNull · optional
 - relation `replicaDestination` — belongsTo `BackupDestination` via `replicaDestinationId` · on delete SetNull · optional
 - relation `appBackups` — hasMany `AppBackup`
+- relation `appDrills` — hasMany `AppDrill`
 - relation `deployments` — hasMany `Deployment`
 - relation `jobs` — hasMany `Job`
 - relation `appServers` — hasMany `AppServer`
@@ -900,6 +906,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `backupCron` | `string`? | — | — | `minLength: 1` `maxLength: 100` `x-transforms` | — |
 | `backupDestinationId` | `string`? | — | — | — | — |
 | `replicaDestinationId` | `string`? | — | — | — | — |
+| `drillCron` | `string`? | — | — | `minLength: 1` `maxLength: 100` `x-transforms` | — |
 
 **On create**: required — `environmentId`, `name`, `slug` · not accepted — `id`
 
@@ -1021,6 +1028,33 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `fileCount` | `integer`? | — | — | — | — |
 | `location` | `string`? | — | — | `minLength: 0` `maxLength: 500` `x-transforms` | — |
 | `error` | `string`? | — | — | `minLength: 0` `maxLength: 2000` | — |
+| `sha256` | `string`? | — | — | `minLength: 64` `maxLength: 64` | — |
+| `requestedBy` | `string`? | — | — | — | — |
+| `startedAt` | `string`? | — | — | `format: "date-time"` | — |
+| `finishedAt` | `string`? | — | — | `format: "date-time"` | — |
+| `durationMs` | `integer`? | — | — | — | — |
+
+**On create**: required — `appId`, `serverId` · not accepted — `id`
+
+### `AppDrill`
+
+- gate `read:5 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `app` — belongsTo `App` via `appId` · on delete Cascade
+- relation `server` — belongsTo `Server` via `serverId` · on delete Cascade
+- relation `deployment` — belongsTo `Deployment` via `deploymentId` · on delete SetNull · optional
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `appId` | `string` | yes | — | — | — |
+| `serverId` | `string` | yes | — | — | — |
+| `deploymentId` | `string`? | — | — | — | — |
+| `kind` | `DrillKind` = `"manual"` | — | — | — | — |
+| `status` | `RunStatus` = `"pending"` | — | — | — | — |
+| `at` | `string`? | — | — | `format: "date-time"` | — |
+| `databases` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `report` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `error` | `string`? | — | — | `minLength: 0` `maxLength: 2000` | — |
 | `requestedBy` | `string`? | — | — | — | — |
 | `startedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `finishedAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -1053,6 +1087,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `triggeredByUser` — belongsTo `User` via `triggeredBy` · optional
 - relation `steps` — hasMany `DeploymentStep`
 - relation `appBackups` — hasMany `AppBackup`
+- relation `appDrills` — hasMany `AppDrill`
 - transitions on `status` — `build`: pending → building @system · `succeed`: building → success @system · `fail`: pending|building → failed @system · `cancel`: pending|building → cancelled · `rollback`: success → rolled_back @5
 
 | Field | Type | Required | Label | Rules | Messages |
@@ -2043,10 +2078,35 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `serverId` | `string` | yes | — | — | — |
-| `path` | `string` | yes | — | — | — |
+| `path` | `string`? | — | — | — | — |
+| `backupId` | `string`? | — | — | — | — |
 | `overwrite` | `boolean`? | — | — | — | — |
 
-**On create**: required — `serverId`, `path`
+**On create**: required — `serverId`
+
+### `AppReplicaRestore`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `serverId` | `string` | yes | — | — | — |
+| `at` | `string`? | — | — | `format: "date-time"` | — |
+| `overwrite` | `boolean`? | — | — | — | — |
+
+**On create**: required — `serverId`
+
+### `AppDrillRun`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `appId` | `string` | yes | — | — | — |
+| `serverId` | `string` | yes | — | — | — |
+| `at` | `string`? | — | — | `format: "date-time"` | — |
+
+**On create**: required — `appId`, `serverId`
 
 ### `AppPublish`
 
