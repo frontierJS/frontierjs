@@ -110,6 +110,7 @@ const IMPORT_MAP = {
     '@frontierjs/ui/selection':         '/kit/selection.js',
     '@frontierjs/ui/stores/toastStore': '/kit/stores/toastStore.js',
     '@frontierjs/ui/stores/alertStore': '/kit/stores/alertStore.js',
+    '@frontierjs/css/themes.js':        '/@css/themes.js',
     // The real control table, for a fixture standing in for a resource, and
     // behind it every toolbelt kit. Each is spelled out — a bare specifier
     // with no extension gets no guessing from the browser — but the toolbelt

@@ -57,6 +57,7 @@ export const SCENES = [
   { name: 'Sheriff', slug: 'sheriff', path: '/sheriff/' },
   { name: 'Market', slug: 'market', path: '/market/' },
   { name: 'Lodge',  slug: 'lodge',  path: '/lodge/' },
+  { name: 'PostOffice', slug: 'postoffice', path: '/postoffice/' },
 ]
 
 let loader = null

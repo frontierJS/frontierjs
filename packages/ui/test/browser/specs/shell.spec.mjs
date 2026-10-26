@@ -13,8 +13,9 @@
  * The rail and the topbar draw the same table. What each changes is
  * geometry and placement: a closed rail is an icon wide and does not move
  * the page as it opens, Sign out leaves it for the bar, and a touch screen
- * gets the drawer toggle at every width; a topbar draws the groups flat,
- * puts the section bar on the Screen and wraps below md.
+ * gets the drawer toggle at every width; a topbar draws an unlabeled group
+ * flat and a labeled one as a menu, puts the section bar on the Screen, and
+ * hands its nav to the drawer below md.
  *
  * Navigation is the fixture's stand-in router: a click on a link inside is
  * taken and becomes `path` and `query`, so these are real clicks on real
@@ -238,12 +239,15 @@ export async function run(t) {
   await t.mount('shell', { user: { email: 'a@b.c' }, layout: 'topbar' })
   await t.eventually(`!!document.querySelector('#stage .shell > header.topbar nav[aria-label="Main"]')`, 'true',
     'layout="topbar" draws the nav in the bar')
-  t.ok(await t.evaluate(`return !document.querySelector('#stage .sidebar, #stage .sidebar-toggle, dialog.drawer');`),
-    'with no sidebar, no toggle and no drawer')
+  t.ok(await t.evaluate(`return !document.querySelector('#stage .sidebar') && !${visibleBox('#stage .sidebar-toggle')};`),
+    'with no sidebar, and above md no drawer toggle')
   const topCurrent = `[...document.querySelectorAll('#stage .topbar nav[aria-label="Main"] a[aria-current="page"] .navlink-text')].map(s => s.textContent).join('|')`
   t.is(await t.evaluate(`return [...document.querySelectorAll('#stage .topbar nav[aria-label="Main"] .navlink-text')].map(s => s.textContent).join('|');`),
-    'Today|Leads|Clients|Contacts|Docs', 'the groups are drawn flat, in order')
-  t.ok(await t.evaluate(`return !document.querySelector('#stage .topbar .navlist-label');`), 'and their labels dropped')
+    'Today|Leads|Clients|Contacts', 'an unlabeled group is drawn flat, in order')
+  t.ok(await t.evaluate(`return !document.querySelector('#stage .topbar .navlist-label');`), 'with no group label in the bar')
+  const helpMenu = '#stage .topbar nav[aria-label="Main"] button.navlink'
+  t.is(await t.evaluate(`const b = document.querySelector('${helpMenu}'); return b?.textContent.trim() + '|' + b?.getAttribute('aria-haspopup');`),
+    'Help ▾|menu', 'a labeled group is one menu, named by its label')
   t.is(await t.evaluate(`return ${topCurrent};`), 'Leads', 'the current page is marked')
   t.ok(await t.evaluate(`
     const right = document.querySelector('#stage .topbar > .cluster:last-child');
@@ -258,11 +262,34 @@ export async function run(t) {
   t.ok(await t.evaluate(`return !document.querySelector('#stage main.screen nav[aria-label="Section"]');`),
     'and a page in no section draws no section bar')
 
+  await t.clickAt(helpMenu)
+  t.ok(await t.evaluate(`return await waitVisible('[role=menu] a[href="/help/"]');`), 'the menu opens on its entries')
+  await t.clickAt(helpMenu)
+
+  // The menu's rows are portaled out of the stage, where the fixture's router
+  // does not reach, so the page is mounted inside the menu rather than
+  // clicked to.
+  await t.mount('shell', { user: { email: 'a@b.c' }, layout: 'topbar', path: '/help/' })
+  await t.eventually(`document.querySelector('${helpMenu}')?.getAttribute('aria-current')`, 'true',
+    'a page inside the menu marks its trigger')
+  t.is(await t.evaluate(`return ${topCurrent};`), '', 'and no flat entry')
+  await t.clickAt('#stage .topbar a[href="/leads/"]')
+  await t.eventually(`document.querySelector('${helpMenu}')?.getAttribute('aria-current') ?? 'none'`, 'none',
+    'and leaving the menu\'s pages unmarks it')
+
   await t.viewport(375)
-  await t.eventually(`[...document.querySelectorAll('#stage .topbar nav[aria-label="Main"] .navlink')].every(a => { const r = a.getBoundingClientRect(); return r.width > 0 && r.right <= innerWidth })`, 'true',
-    'below md every entry is still in the bar, inside the viewport')
-  t.ok(await t.evaluate(`return document.documentElement.scrollWidth <= innerWidth;`), 'the bar wraps rather than scrolling the page sideways')
-  t.ok(!(await t.evaluate(`return ${visibleBox('#stage .sidebar-toggle')};`)), 'and there is still no toggle')
+  await t.eventually(`!${visibleBox('#stage .topbar-nav')} && ${visibleBox('#stage .sidebar-toggle')}`, 'true',
+    'below md the bar draws the drawer toggle in place of the nav')
+  t.ok(await t.evaluate(`return document.documentElement.scrollWidth <= innerWidth;`), 'and the page does not scroll sideways')
+  await t.clickAt('#stage .sidebar-toggle')
+  await t.evaluate(`await waitFor(() => document.querySelector('dialog.drawer')?.open); return true;`)
+  t.is(await t.evaluate(`return [...document.querySelectorAll('dialog.drawer .navlist-label, dialog.drawer .navlink-text')].map(s => s.textContent).join('|');`),
+    'Today|Leads|Clients|Contacts|Help|Docs', 'the drawer writes every group out, labels included')
+  t.is(await t.evaluate(`return [...document.querySelectorAll('#stage button.btn, dialog.drawer button.btn')].filter(b => b.textContent === 'Sign out').length;`),
+    1, 'Sign out stays in the bar and only there')
+  await t.clickAt('dialog.drawer a[href="/leads/"]')
+  await t.evaluate(`await waitFor(() => !document.querySelector('dialog.drawer').open); return true;`)
+  t.ok(await t.evaluate(`return !document.querySelector('dialog.drawer').open;`), 'navigating from the drawer closes it')
 
   /* ── a guest the table offers something ─────────────────────────────── */
 

@@ -28,6 +28,7 @@ import { requiresOf }                 from './requires.js'
 import { esetHint, globalEnvPath }    from './global-env.js'
 import { execSync }     from 'node:child_process'
 import { join }         from 'node:path'
+import { MIN_CF }       from './cloudflare.js'
 import { homedir }      from 'node:os'
 
 // ─── what a machine needs ─────────────────────────────────────────────────────
@@ -52,6 +53,7 @@ export const BINARIES = [
   { name: 'ssh',     required: false, hint: 'sudo apt install openssh-client' },
   { name: 'rsync',   required: false, hint: 'sudo apt install rsync  (needed for deploy:)' },
   { name: 'docker',  required: false, hint: 'https://docs.docker.com/engine/install/' },
+  { name: 'cf',      required: false, hint: 'npm i -g cf  (needed for :dns and cloudflare:)', min: MIN_CF, upgrade: 'npm i -g cf@latest' },
 ]
 
 /**
@@ -151,7 +153,7 @@ export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf 
     // *everything is present*, and a dashboard needs the first one: a machine
     // with no docker is a working machine for everything but `deploy:`.
     //
-    // System and config ONLY. A missing `CLOUDFLARE_TOKEN` blocks `cloudflare:`
+    // System and config ONLY. A missing `GITHUB_TOKEN` blocks `github:`
     // and nothing else, so counting it here would make almost every machine
     // read as unable to run fli — which is how a summary stops being read.
     blocked: [...system, ...config].filter(c => c.level === 'error').length,
@@ -168,8 +170,11 @@ export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf 
  */
 export function requiringModules({ commands, getModule }) {
   const out = []
+  // A command's own `requires:` counts toward its namespace, or a namespace whose
+  // keys are all per command (basecamp) drops out of the doctor.
   for (const ns of [...new Set(commands.map(c => c.title.split(':')[0]))]) {
-    const requires = requiresOf(getModule(ns)?.meta).map(r => r.key)
+    const own = commands.filter(c => c.title.split(':')[0] === ns).flatMap(c => requiresOf(c))
+    const requires = [...new Set([...requiresOf(getModule(ns)?.meta), ...own].map(r => r.key))]
     if (requires.length) out.push({ ns, requires })
   }
   return out.sort((a, b) => a.ns.localeCompare(b.ns))

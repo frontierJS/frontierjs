@@ -17,7 +17,7 @@ title: Subscriptions
   // written here, where every other screen reads it off `x-transitions`.
   import Subscription, { subscriptions } from '@/resources/Subscription.mesa'
   import { prefs } from '@/stores/prefs.js'
-  import { day } from '@/datetime.js'
+  import { day } from '@/lib/datetime.js'
   import { session } from '@frontierjs/sierra/resource'
   import { money } from '../../lib/money.js'
 

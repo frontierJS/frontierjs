@@ -74,6 +74,27 @@ export const CADDY_ADMIN = 'http://127.0.0.1:2019'
  */
 export const EDGE_HOPS = 1
 
+/**
+ * Cloudflare's edge ranges (https://api.cloudflare.com/client/v4/ips). Every
+ * live record is proxied, so without these the socket address Caddy sees is a
+ * Cloudflare edge and every visitor shares one rate-limit bucket (`FJS-1841`'s
+ * shape one hop out). A peer in these ranges is believed about who it fronts,
+ * via `CF-Connecting-IP`; any other peer is the client itself.
+ */
+export const CLOUDFLARE_RANGES = [
+  '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22', '141.101.64.0/18',
+  '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20', '197.234.240.0/22', '198.41.128.0/17',
+  '162.158.0.0/15', '104.16.0.0/13', '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+  '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b500::/32', '2405:8100::/32',
+  '2a06:98c0::/29', '2c0f:f248::/32',
+]
+
+/** Caddy's trust in the peer, written to every server this deploy owns. */
+export const trustedProxies = () => ({
+  trusted_proxies:   { source: 'static', ranges: [...CLOUDFLARE_RANGES] },
+  client_ip_headers: ['CF-Connecting-IP'],
+})
+
 // A hostname, and nothing a shell or a config could read as syntax: the value
 // is interpolated into both.
 const HOSTNAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/i
@@ -128,7 +149,7 @@ export const accessLogPath = (id) => `/var/log/caddy/${id}.access.log`
  * @throws {EdgeError} when no side names a domain: Caddy routes by hostname, and
  *   a route matching every host would take over whatever else the machine serves.
  */
-export function edgeRoutes({ appId, serverPath, apiPort, web, api, paths = null, scripts = [] }) {
+export function edgeRoutes({ appId, serverPath, apiPort, web, api, paths = null, scripts = [], styles = [] }) {
   const split = Boolean(api?.domain)
   if (!web?.domain && !split)
     throw new EdgeError('deploy.web.domain is not set. Caddy routes by hostname and fetches a certificate for it, so the edge needs one.')
@@ -140,7 +161,7 @@ export function edgeRoutes({ appId, serverPath, apiPort, web, api, paths = null,
   const routes = []
   if (web?.domain) routes.push(route({
     id: routeId(appId), host: web.domain,
-    inner: [caddyGuard(serverPath, guardId(appId)), ...proxy, ...spa(serverPath, scripts)],
+    inner: [caddyGuard(serverPath, guardId(appId)), ...proxy, ...spa(serverPath, documentHeaders({ scripts, styles, api: split ? `https://${api.domain}` : null }))],
   }))
   if (split) routes.push(route({
     id: routeId(appId, 'api'), host: api.domain,
@@ -191,10 +212,15 @@ const route = ({ id, host, inner }) => ({
 
 const apiRoute = (apiPort, paths = null) => ({
   ...(paths ? { match: [{ path: paths }] } : {}),
-  // X-Forwarded-For carries the address Caddy observed and nothing a caller
-  // sent, since no proxy in front of it is trusted. EDGE_HOPS is what tells
-  // the app this one hop is there.
-  handle:   [{ handler: 'reverse_proxy', upstreams: [{ dial: `127.0.0.1:${apiPort}` }] }],
+  // X-Forwarded-For is SET, not appended: one entry, the client Caddy
+  // resolved (the socket, or what a Cloudflare peer says it fronts). Appending
+  // would hand the app a chain whose rightmost entry is the Cloudflare edge,
+  // and EDGE_HOPS = 1 would key every caller on it.
+  handle:   [{
+    handler:   'reverse_proxy',
+    upstreams: [{ dial: `127.0.0.1:${apiPort}` }],
+    headers:   { request: { set: { 'X-Forwarded-For': ['{http.vars.client_ip}'] } } },
+  }],
   terminal: true,
 })
 
@@ -228,45 +254,80 @@ const navigation = (roots) => ({
   handle: [{ handler: 'rewrite', uri: '/index.html' }],
 })
 
+const ASSET_CACHE = 'public, max-age=31536000, immutable'
+const PAGE_CACHE  = 'no-cache'
+
 // The SPA: a file that exists, else index.html. Root is read per request, so
 // the `current` symlink swap is the whole of a web release — nothing reloads.
-const spa = (serverPath, scripts) => [
+const spa = (serverPath, headers) => [
   { handle: [{ handler: 'vars', root: `${serverPath}/current` }] },
   { match:  [{ file: { try_files: ['{http.request.uri.path}', '/index.html'] } }],
     handle: [{ handler: 'rewrite', uri: '{http.matchers.file.relative}' }] },
+  // file_server sends no Cache-Control, so Cloudflare held a bundle file for its
+  // own default TTL and every browser asked again on every visit. A file under
+  // /assets is named by its content hash and can never be stale; the page is
+  // what names the current hashes, so it is checked on every load.
+  { match: [{ path: ['/assets/*'] }],
+    handle: [{ handler: 'headers', response: { set: { 'Cache-Control': [ASSET_CACHE] } } }] },
+  { match: [{ path: ['/index.html'] }],
+    handle: [{ handler: 'headers', response: { set: { 'Cache-Control': [PAGE_CACHE] } } }] },
   { handle: [
-    { handler: 'headers', response: { set: documentHeaders(scripts) } },
+    { handler: 'headers', response: { set: headers } },
     { handler: 'encode', encodings: { gzip: {} }, prefer: ['gzip'] },
     { handler: 'file_server' },
   ] },
 ]
 
+const sha256 = (text) => `'sha256-${createHash('sha256').update(text, 'utf8').digest('base64')}'`
+
 /**
- * The `'sha256-…'` source of each inline script in a built page, for the CSP's
- * `script-src` (`FJS-D1205`). A static file server cannot mint a nonce, so the
- * hash is read off the bytes being deployed and cannot drift from them. A
- * `<script src>` needs none: `'self'` already names it.
+ * The `'sha256-…'` source of each inline script in the pages being served, for
+ * the CSP's `script-src` (`FJS-D1205`). A static file server cannot mint a
+ * nonce, so the hash is read off the bytes being deployed and cannot drift
+ * from them. A `<script src>` needs none: `'self'` already names it.
  */
 export function inlineScriptHashes(html) {
   const out = []
   for (const [, attrs, body] of String(html ?? '').matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
     if (/\bsrc\s*=/i.test(attrs)) continue
-    const source = `'sha256-${createHash('sha256').update(body, 'utf8').digest('base64')}'`
+    const source = sha256(body)
     if (!out.includes(source)) out.push(source)
   }
   return out
 }
 
+/**
+ * The `'sha256-…'` source of each `style=` value in the pages being served,
+ * for `style-src-attr 'unsafe-hashes'` (`FJS-D1464`). Only prerendered HTML
+ * carries one: Mesa writes a component's styles through CSSOM, which a CSP does
+ * not gate. The browser hashes the value after parsing, so entities are decoded.
+ */
+export function inlineStyleHashes(html) {
+  const out = []
+  const markup = String(html ?? '').replace(/<script\b[\s\S]*?<\/script\s*>/gi, '')
+  for (const [, dq, sq] of markup.matchAll(/<[a-z][^>]*?\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
+    const source = sha256(decodeAttr(dq ?? sq))
+    if (!out.includes(source)) out.push(source)
+  }
+  return out
+}
+
+const decodeAttr = (v) => v.replace(/&(#x[0-9a-f]+|#\d+|quot|amp|lt|gt|apos);/gi, (m, e) => {
+  const named = { quot: '"', amp: '&', lt: '<', gt: '>', apos: "'" }[e.toLowerCase()]
+  if (named) return named
+  const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10)
+  return String.fromCodePoint(code)
+})
+
 // Caddy's file_server sends none of these, and helmet dresses only what the
 // API's router answers, so without them the page a person signs in on could be
 // framed, sniffed and run any inline script.
 //
-// The CSP is scripts only. Mesa's runtime adopts a constructed sheet per
-// component, which `style-src` does not gate (FJS-3232), but `default-src 'self'`
-// (FJS-D1192) would still refuse any `style=` attribute and `<style>` element an
-// app or a prerendered page carries; pen-testing 2.3 measures that first.
-// `'wasm-unsafe-eval'` is Litestone's SQLite in a worker, whose script is
-// served under this same policy; it compiles wasm and never evaluates a string.
+// The CSP is junction's default (FJS-D1192) with what a served page adds:
+// `'wasm-unsafe-eval'` is Litestone's SQLite in a worker, whose script is served
+// under this same policy; it compiles wasm and never evaluates a string. `data:`
+// images are helmet's default. A split API's origin is where the page's calls,
+// socket and stored files go, and `'self'` does not name it.
 //
 // `strict-origin-when-cross-origin`, not helmet's `no-referrer`: under
 // `no-referrer` a browser sends `Origin: null` on a POST, which fails CORS to
@@ -274,15 +335,20 @@ export function inlineScriptHashes(html) {
 //
 // HSTS without `includeSubDomains`: on a bare domain it would pin every other
 // site the client runs under it to https.
-const documentHeaders = (scripts = []) => ({
+const documentHeaders = ({ scripts = [], styles = [], api = null } = {}) => ({
   'Strict-Transport-Security': ['max-age=31536000'],
   'X-Content-Type-Options':  ['nosniff'],
   'Referrer-Policy':         ['strict-origin-when-cross-origin'],
   'X-Frame-Options':         ['DENY'],
   'Content-Security-Policy': [[
+    "default-src 'self'",
     `script-src ${["'self'", "'wasm-unsafe-eval'", ...scripts].join(' ')}`,
+    ...(styles.length ? [`style-src-attr 'unsafe-hashes' ${styles.join(' ')}`] : []),
+    `img-src ${["'self'", 'data:', ...(api ? [api] : [])].join(' ')}`,
+    ...(api ? [`connect-src 'self' ${api}`] : []),
     "object-src 'none'",
     "base-uri 'self'",
+    "form-action 'self'",
     "frame-ancestors 'none'",
   ].join('; ')],
 })
@@ -316,12 +382,14 @@ export function applyEdge(config, { appId, routes, plain = [] }) {
       throw new EdgeError(`${taken.join(', ')} is already routed to ${other['@id'] ?? 'a route nobody named'} on this machine`)
   }
   server.routes = [...(server.routes ?? []).filter(r => !ours.has(r['@id'])), ...routes]
+  Object.assign(server, trustedProxies())
 
   const servers = http.servers
   const kept    = (servers[PLAIN_SERVER]?.routes ?? []).filter(r => !oursPlain.has(r['@id']))
   if (kept.length || plain.length) {
     const srv  = servers[PLAIN_SERVER] ??= { listen: [`:${http.http_port ?? 80}`] }
     srv.routes = [...kept, ...plain]
+    Object.assign(srv, trustedProxies())
   } else delete servers[PLAIN_SERVER]
 
   const logs  = server.logs ??= {}

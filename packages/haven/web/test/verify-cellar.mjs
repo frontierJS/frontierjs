@@ -26,7 +26,7 @@ import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../../api/src/app.ts'
 import { ROOMS } from '../../api/src/rooms.ts'
-import { signIn } from '../../api/test/sign-in.ts'
+import { POST_KEY, signIn, stakedHome } from '../../api/test/sign-in.ts'
 import { cellOf, terminal, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
 
@@ -43,14 +43,14 @@ const check = (ok, label, evidence = '') => {
 }
 
 const samHome = mkdtempSync(join(tmpdir(), 'haven-cellar-sam-'))
-const anaHome = mkdtempSync(join(tmpdir(), 'haven-cellar-ana-'))
+const anaHome = await stakedHome('haven-cellar-ana-', 'ana')
 
 // ─── Haven ────────────────────────────────────────────────────────────
 
 const env = await createTestEnv({
   schema: join(WEB, '../db/schema.lite'),
   listen: true,
-  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-cellar', port: 0 }),
+  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-cellar', port: 0, postKey: POST_KEY }),
 })
 for (const room of ROOMS) await env.system.room.create({ data: { ...room } })
 const API = `http://localhost:${env.port}`
@@ -58,7 +58,7 @@ const sam = await signIn(env.port, 'sam')
 
 /** Ana's frame of `route`, from a HOME of her own. */
 const frameOf = (route) => new Promise((resolve) => {
-  const p = spawn('bun', [FLI, 'haven', '--frame', route, '--api', API, '--nick', 'ana'], {
+  const p = spawn('bun', [FLI, 'haven', '--frame', route, '--api', API], {
     cwd: tmpdir(), stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, HOME: anaHome },
   })
   let framed = '', err = ''

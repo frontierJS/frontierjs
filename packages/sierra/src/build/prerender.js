@@ -478,6 +478,22 @@ export async function prerenderRoutes(opts) {
     return !reason
   })
 
+  // The browser gets the app's methods on the built-in types from `main.js`,
+  // which no prerender imports, so without this a page calling `.toMoney()`
+  // works in the browser and throws here (`FJS-3493`, `FJS-D1515`). A sugar file
+  // that throws is fatal, as a companion is.
+  if (staticNodes.length) {
+    const sugarFile = join(appSrcDir(root), 'lib/sugar.js')
+    const res = await importAppModule(sugarFile)
+    if (!res.ok && res.reason === 'threw') {
+      throw new Error(
+        `[Sierra] src/lib/sugar.js threw while it was loading, before any page could prerender.\n` +
+        `  ${sugarFile}\n` +
+        `  ${explainModuleInitFailure(res.error?.message ?? String(res.error), 'src/lib/sugar.js')}`
+      )
+    }
+  }
+
   for (const node of staticNodes) {
     const pageFile = resolve(root, node.file)
     if (!existsSync(pageFile)) {

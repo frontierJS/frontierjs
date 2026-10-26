@@ -59,6 +59,12 @@ export interface LitestoneAuthOptions {
   // walks away mid-episode leaves it open for exactly this long.
   supportTtl?: string
 
+  // How long a session's proof of the password stands for the credential
+  // changes — the password, the address, the second factor, a connection, a new
+  // API key (`FJS-D1209`). Sign-in starts it and `account.reauthenticate`
+  // restarts it. Default: '1 hour'.
+  reauthenticationWindow?: string
+
   // What a new password must satisfy, graded at every door that writes one:
   // createUser, confirmPasswordReset and changePassword. `min` is a length in
   // characters. Default: { min: 8 }.

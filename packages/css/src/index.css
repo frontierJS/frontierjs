@@ -79,6 +79,8 @@
 @import './themes/field.css'    layer(themes);
 @import './themes/dracula.css'  layer(themes);
 @import './themes/twilight.css' layer(themes);
+@import './themes/expedition.css' layer(themes);
+@import './themes/catppuccin.css' layer(themes);
 
 /* Foundation — the rest of it; tokens.css is imported above */
 @import './foundation/tones.css'   layer(tones);

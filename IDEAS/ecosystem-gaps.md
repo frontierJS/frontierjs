@@ -229,7 +229,8 @@ application, and paired with item 3.
 
 **The video half is assessed 2026-10-13** in `calls-and-media.md`: capture, compose,
 record and a resumable upload as a browser kit, with a server-side participant for
-the work a browser cannot do. Images remain the open half of this row.
+the work a browser cannot do. **The audio half is `transcription.md`** (2026-10-23).
+Images remain the open half of this row.
 
 ### 10. Automated upgrades — a Laravel Shift equivalent
 

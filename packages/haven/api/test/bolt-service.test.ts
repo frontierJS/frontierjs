@@ -18,7 +18,7 @@ import { ITEMS } from '../src/inventory.ts'
 import { roomChannelName } from '../src/rooms.ts'
 import { obstacleAt, worldFor } from '../src/world.ts'
 import type { SceneWorld } from '../src/world.ts'
-import { signIn } from './sign-in.ts'
+import { POST_KEY, signIn } from './sign-in.ts'
 
 const SCHEMA = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const sleep  = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -32,7 +32,7 @@ beforeEach(async () => {
   env = await createTestEnv({
     schema: SCHEMA,
     listen: true,
-    api:    ({ db }: { db: any }) => buildHavenApp({ db, sessionKey: 'test-session-key', port: 0 }),
+    api:    ({ db }: { db: any }) => buildHavenApp({ db, sessionKey: 'test-session-key', port: 0, postKey: POST_KEY }),
   })
   sys    = env.system
   tavern = await sys.room.create({ data: { slug: 'tavern', name: 'The tavern' } })

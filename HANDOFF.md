@@ -14,6 +14,159 @@ finished.
 
 ---
 
+# Handoff — 2026-10-24 (backups go continuous, Basecamp's own database included)
+
+> **Started at `IDEAS/backups.md` 2.1 and ended with Phase 2 closed: every
+> enrolled box runs a pinned Litestream under its own unit, Basecamp sends each
+> box the list of apps to replicate, the lag reaches the App screen and
+> `backup.replica-lag`, and Basecamp's own box replicates its database through
+> its own Outpost.** The through-line: one list, one sender. Every write that
+> changes what a box replicates queues the same sync job, and the hub's own
+> database rides that list as a `host` entry rather than a second mechanism.
+
+**The order, and why.** 2.1 moved the Litestream pin and installer into
+`@frontierjs/litestone/replicate`, so `deploy:setup` and the fleet install
+cannot disagree on a build. 2.2 gave Outpost `/replicate`. 2.3 began on
+Litestream's `addr` metrics and the probe said they cannot measure bucket lag
+(0.5.17); the control socket's `GET /list` `last_sync_at` can, so the heartbeat
+carries that. The exit drive needed an S3 stand-in, MinIO's free edition is
+archived, and the owner picked SeaweedFS; it ran 10/10 from a scratch script
+(not committed). 2.4 found two things. First, `basecamp-host` is a slug unique
+per workspace and reserved nowhere, so the host entry goes only to the host row
+in the destination's own workspace; the grade's lookup has the same gap,
+`FJS-3488`. Second, a `@@tenant(none)` HubConfig naming a tenant-owned
+destination fails the hidden-parent check, which `backupDestinationId` through
+`save` already did; the pointers are now written at system, alone, after the
+scoped save.
+
+**What is NOT proved.** Nothing ran under systemd on a box: not the unit, not
+the `host.conf` drop-in (`fli deploy` writes it; run twice against a fake root),
+not whether `ReadWritePaths` lifts `ProtectHome=read-only`. The App screen's
+replication badge was compiled, never seen in a browser. `verify:screens` still
+stops at `FJS-3477`; outpost `verify:docker` was not rerun after 2.2–2.4. Which
+vendor Basecamp should recommend as the default destination was never
+researched; B2 is only the first one tested. The cli suite's four reds are
+`FJS-3479`–`FJS-3481`, already filed. Nothing from 1.5 on is committed, and the
+owner's dev `basecamp.db` still needs their `db:reset`.
+
+---
+
+# Handoff — 2026-10-23 (backups leave the box, on the day three real boxes enrolled)
+
+> **Started from `IDEAS/backups.md` with six questions open and nothing past a
+> local `backup:run`, and ended with Phase 1 closed: a hub archive and an app
+> archive each land in a bucket by a pre-signed PUT, retention prunes both
+> sides, a refused upload keeps the file and says so, and the operator's recipe
+> exists.** The through-line: every question was ruled before its step was
+> built, and every step reused a door that already existed — `backup:run`,
+> Outpost's `/backup`, `NotificationChannel`'s credential shape — so the day
+> was eleven steps rather than a design.
+
+**What is recorded where.** The six rulings are `FJS-D1485`–`FJS-D1488`,
+`FJS-D1490` (Q5: basecamp LIFTS `conduit-s3` into `providers/storage/`, since
+`FJS-D1185` rules a `link:` on the sibling out) and `FJS-D1491` (Q6:
+`BackupDestination` is workspace-owned). Five more fell out of building:
+`FJS-D1493` (a rescanned archive is `found`), `FJS-D1494` (one delete helper),
+`FJS-D1495` (`AppBackup.kind` gains `release`), `FJS-D1496` (the pre-swap
+*Back up volume* step is fatal with no opt-out) and `FJS-D1497` (a copy of
+`ENCRYPTION_KEY` off the box is a person's attestation, graded by
+`hub.key-escrowed`). The recipe is `packages/basecamp/docs/BACKUPS.md`;
+`packages/basecamp/PROJECT_STATE.md` § Backups leave the box is the build
+record. Steps 1.1–1.4 are committed (`038bce79`); 1.5–1.9 are in the
+working tree.
+
+**The same day, by hand, on real machines.** `fli basecamp:create` ran three
+times (ops, ops2, ops3) and each fresh Ubuntu 24.04 box found a failure the
+stand-ins could not: the security pass's systemd re-exec raced the Docker
+install (`FJS-3469`), the upgraded openssh left `/run/sshd` gone so `sshd -t`
+refused (`FJS-3473`), a box enrolled unpatched (`FJS-3462`), a download-only
+apt pass read as an upgrade (`FJS-3463`), the sandbox score and the static
+origin's bind (`FJS-3464`, `FJS-3465`), every app as host uid 1000
+(`FJS-3474`, ruled `FJS-D1484`: SSH and Outpost stay root, the isolation owed
+is a uid per app), and a rollback that lost the secrets directory
+(`FJS-3476`). All closed the same day. `FJS-D1481`–`FJS-D1483` settled how a
+static App built on a laptop reaches a box. Hetzner as a flag got its Phase 0
+and 1 on stand-ins (`FJS-D1478`–`FJS-D1480`); 2.1, a real token, is the
+owner's.
+
+**Also ruled that day.** `FJS-D1492`: local speech-to-text is Parakeet through
+sherpa-onnx, not whisper.cpp, off a 45-minute call measured on CPU (RTF 0.115
+against 0.65); the plan is `IDEAS/transcription.md`, Q1–Q3 open. The Frontier
+network's Haven side closed: a login is the chain (`FJS-D1476`), and a Haven
+takes nothing else (`FJS-D1477`).
+
+**The night pass, 2026-10-23/24.** `fli done` on the tree named two rows with
+an invalid status and a tracked build cache; `fli close` moved `FJS-3469` and
+`FJS-3473`, the cache is now ignored. The drives it named ran: `verify:provision`
+243/243, `verify:outpost` 48/48, `verify:pages` 24/24, outpost `verify:docker`
+54/54 — the last only ALONE, since two drives sharing Outpost's port read as 32
+failures. Seven tests red on COMMITTED main were filed rather than fixed:
+`FJS-3479` (example/desktop drifted from `make:desktop`), `FJS-3480` (`fli ask`
+at 21 of 24), `FJS-3481` (a verb-ended term candidate), `FJS-3482` (sierra's
+`composed: true` warning never fires); all four deterministic and dated to the
+10-21/22 renames.
+
+**What is NOT proved.** `verify:screens` stops at the path-route check, which
+is `FJS-3477`, filed that morning and open. The hand run against a real B2
+bucket that Phase 1's done-when asks for has not happened. The owner's dev
+`basecamp.db` predates the new tables and needs a reset. Nothing after
+`038bce79` is committed on the date above.
+
+---
+
+# Handoff — 2026-10-22 (the network ruled in a day, and the big files split by realm)
+
+> **Started from `IDEAS/frontier-network.md` with eight questions and a
+> `fli tell:` namespace, and ended with `fli frontier:*`, a post that signs
+> member rows, badges, lineage and an invite allowance — Phases 0–2 built —
+> while a second lane cut litestone's `makeTable` and the cli's two largest
+> files into modules without changing a line of behavior.** The through-line
+> of the rulings: the owner chose to OWN the identity layer rather than lean
+> on one, and every later answer followed from that.
+
+**What is recorded where.** The network's rulings are `FJS-D1444` (Q8: one
+identity layer, owned), `FJS-D1445` (a max-age stamp on the member row),
+`FJS-D1446` (*stake*), `FJS-D1447` (`frontier:`), `FJS-D1448` (Cloud, not
+yet), `FJS-D1449` (a bad invitee costs the inviter nothing), `FJS-D1466`
+(three joins per member) and `FJS-D1467` (the post's key is the Durable
+Object's own); the oath was WITHDRAWN against the recommendation
+(`FJS-D1475`). `fli`'s Basecamp commands became one `basecamp:*` namespace
+(`FJS-D1465`). Pen-testing 2.6 and 2.7 landed: a strict CSP on the SPA
+document with Mesa writing `style=` through CSSOM (`FJS-D1464`, which is what
+`FJS-3467` on table alignment then found), and no proxy limit owed
+(`FJS-D1193`).
+
+**The splits.** Nine litestone commits that evening moved the where rewrites,
+`writeData`, the `$`-introspection, the `@@extensible` pool, the state guards,
+nested writes, `groupBy`, aggregate/search and the cursor verb out of
+`makeTable` and `createClient`, each a pure move proved by the suite. The cli's
+`core/checks.js` went to `core/checks/<realm>.js` and `commands/project/new.md`
+(3,109 lines) to `core/scaffold/{app,api,web}.js`, proved by a byte-identical
+`fli new --full`. The rule the owner set, worth keeping: split by REALM or
+surface, never per rule, and leave a dense small file alone.
+
+**Connectors, in the sibling repo.** `conduit-quo` committed with 115 drive
+rows green (`5081762` there). ELA's Microsoft Graph dialect becomes
+`conduit-microsoft` (`FJS-D1463`); ELA adopting it is owed. `conduit-n8n`
+built as the owner's override of the *not a connector* row (`FJS-D1489`).
+Cloudflare's dialect got one owner (`FJS-D1468`, `FJS-D1469`). Inillucent was
+evaluated at the owner's ask and not adopted: about 6x in its own harness on
+Windows, slower than `bun:sqlite` WAL on Linux; the conditions for a re-probe
+are in the owner's memory notes, not in `IDEAS/`.
+
+**Paused, by the owner.** `IDEAS/preview-branch.md` slice 0 (gh is in,
+the CORS step is stale; a Submit over a tunnel is next).
+`IDEAS/conduit-37signals.md` at 5.2, which needs the owner's own OAuth grant
+before any code. `FJS-3387` closed and ruled `FJS-D1368` but held uncommitted
+beside other work. The two hunt-cost rows closed (`FJS-3460`, `FJS-3461`).
+
+**What is left.** The sibling repos are dirty — `conduit-connectors` holds
+the 37signals 4.1 diff, and every one of the 27 `fjs-prototypes` has
+uncommitted changes, `ela` at 324 files. The frontier network's open box is
+2.8 (a nameplate in Haven), waiting on haven Phase 22.
+
+---
+
 # Handoff — 2026-10-10 (litestone docs: the runner, then the per-file pass)
 
 > **Started from the 2026-10-09 audit memory with its ~100 per-file rows LOST

@@ -59,9 +59,10 @@ machine — with a message saying so, rather than a green deploy that ran nothin
 The install (Basecamp's `installScript()`) writes `/usr/local/sbin/outpost-uninstall`
 beside the unit, so a box carries its own way back whatever happened to the
 Basecamp that enrolled it. `sudo outpost-uninstall` removes the Outpost, its
-credential and its firewall, and leaves the apps it placed running.
-`--purge` also removes those apps and every Docker volume, `/var/lib/outpost`
-with its backups, Docker, Caddy, their apt sources and the Outpost's bun.
+credential, its firewall and its Litestream unit, and leaves the apps it placed
+running, unreplicated. `--purge` also removes those apps and every Docker
+volume, `/var/lib/outpost` with its backups, Docker, Caddy, their apt sources,
+the Litestream binary and the Outpost's bun.
 It asks you to type `purge`, or takes `--yes` when there's no terminal. Both
 end by listing what they left on purpose: the sshd drop-in (removing it can
 turn password login back on), chrony, security updates, and the Server row,
@@ -93,8 +94,10 @@ process's user, so the default is refuse and a route opts out rather than in.
 | `POST /system/prune` | `{ targets, keep_images }` → `{ freed_bytes, removed, volumes, usage }` |
 | `POST /volumes/prune` | `{ names }` → `{ removed }` |
 | `DELETE /volumes/<name>` | → `{ removed }`, or 409 with the container holding it |
-| `POST /backup` | `{ app_id }` → `{ volume, path, bytes, files }`; `fjs-<app>-data` tarred (gzip) into `OUTPOST_BACKUP_DIR` by a throwaway container holding the volume read-only. The archive stays on the machine and the answer is its path. Refused for a volume the machine does not hold |
-| `POST /volume/restore` | `{ app_id, path, overwrite? }` → `{ volume, archive, files, bytes, overwrite }`; a tar (gzip or not) under `OUTPOST_RESTORE_DIR`, extracted into `fjs-<app>-data`. Refused while any container holds the volume, and into one with files unless `overwrite: true`, which empties it first |
+| `POST /backup` | `{ app_id, upload_url? }` → `{ volume, path, bytes, files, sha256, uploaded?, upload_error? }`; `fjs-<app>-data` tarred (gzip) into `OUTPOST_BACKUP_DIR` by a throwaway container holding the volume read-only. The archive stays on the machine and the answer is its path and digest. With `upload_url`, a pre-signed PUT Basecamp minted, the archive is streamed to it from the Outpost process and `uploaded` says whether it landed, `upload_error` the bucket's words when not; the machine holds no bucket key. Refused for a volume the machine does not hold |
+| `POST /volume/restore` | `{ app_id, path \| url + sha256, overwrite? }` → `{ volume, archive, files, bytes, overwrite, sha256? }`; a tar (gzip or not) under `OUTPOST_RESTORE_DIR`, extracted into `fjs-<app>-data`. With `url`, a pre-signed GET Basecamp minted, the archive is fetched there first and refused unless its sha256 matches; the copy is removed after. Refused while any container holds the volume, and into one with files unless `overwrite: true`, which empties it first |
+| `POST /replica/restore` | `{ app_id, replica, databases, at?, overwrite? }` → `{ volume, files, bytes, overwrite, databases, replication }`; each named database restored out of the app's Litestream replica, at `at` or the latest, replacing only those `.db` files in the stopped volume; Litestream is restarted so it picks them up |
+| `POST /replica/drill` | `{ app_id, replica, databases, at?, image, digest?, env }` → `{ databases, verified, verify }`; each named database restored out of the replica into a staging directory, never the volume, then `litestone restore --verify-only` run over it in the app's own image (`--network none`, `env` passed by name); `verified: false` is a 200 with the report, and an image that answers no report is a 500 (`FJS-D1524`) |
 | `GET /health` | unsigned liveness — says nothing about the machine |
 
 **The signature is `@frontierjs/toolbelt/signature`** — the same module Conduit
@@ -135,9 +138,10 @@ The pages are written by whoever can edit an app, so anything they reach as
 same-origin is theirs — and a port is an origin, so sharing one with the signed
 command protocol would put the fleet inside every prototype. Nothing on that
 port is signed or authenticated: it is a web server for public files, and the
-only reads it can perform are inside one release directory. An app is reached by
-the first label of the Host (`shop.fleet.example.com`) or, where there is no DNS,
-by the first path segment (`/shop/`).
+only reads it can perform are inside one release directory. It binds loopback
+and Caddy fronts it by hostname (`FJS-D1459`), so an inline app with no hostname
+is reached from the machine alone. An app is reached by the first label of the
+Host (`shop.fleet.example.com`) or by the first path segment (`/shop/`).
 
 ## Testing
 

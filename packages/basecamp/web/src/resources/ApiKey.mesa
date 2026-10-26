@@ -4,12 +4,6 @@
   // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18),
   // named for the model and exporting the accessor (invariant 19). No markup:
   // everything is module scope, which is what <script module> means.
-  //
-  // `model:` is stated because the service is `api-keys` — hyphenated, so it
-  // is the URL segment the mock uses — and modelNameFor() singularizes English
-  // plurals, not kebab-case. Without it the lookup misses, warns, and degrades
-  // to a bare make(): labels, required fields and validation all silently stop
-  // being schema-derived.
   import { createResource } from '@frontierjs/sierra/resource'
 
   // `validate: false` is not a shortcut, and the reason left is ONE column.
@@ -31,7 +25,7 @@
   // validation on would refuse the commonest create. The server is where this
   // model is validated — `autoValidate` against the same schema, after the
   // hook has filled the column in.
-  export const apiKeys = createResource('api-keys', {
+  export const apiKeys = createResource('apiKeys', {
     model: 'ApiKey',
     validate: false,
   })

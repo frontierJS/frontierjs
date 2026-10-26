@@ -16,14 +16,16 @@ import { createOutpostServer }   from './server.js'
 import { createReporter }        from './report.js'
 import { createDocker, createInspector } from './docker.js'
 import { createStaticServer }         from './serve.js'
+import { createReplicator }           from './replicate.js'
 
 const config    = readConfig()
 
 function serveMachine(config) {
-  const docker    = createDocker({ workDir: config.workDir, restoreDir: config.restoreDir, backupDir: config.backupDir })
+  const docker    = createDocker({ workDir: config.workDir, restoreDir: config.restoreDir, backupDir: config.backupDir, uidFile: config.uidFile })
   const inspector = createInspector({ hostFiles: config.hostFiles })
-  const outpost   = createOutpostServer(config, { docker, inspector })
-  const reporter  = createReporter(config, { inspector })
+  const replicator = createReplicator({ configPath: config.litestreamConfig, metaDir: config.litestreamMetaDir, litestream: config.litestreamBin, stageDir: config.replicaStageDir, socketPath: config.litestreamSocket, hostDb: config.hostFiles?.db ?? null })
+  const outpost   = createOutpostServer(config, { docker, inspector, replicator })
+  const reporter  = createReporter(config, { inspector, replicator })
 
   const server = Bun.serve({
     port:  config.port,
@@ -35,10 +37,11 @@ function serveMachine(config) {
   // files anybody may read, and the pages it serves are written by whoever can
   // edit an app. Same process, because it holds no state beyond the filesystem
   // the command half writes — and a second process would need the same directory
-  // and its own supervision to gain nothing.
+  // and its own supervision to gain nothing. Loopback, because Caddy dials it
+  // by host and a raw public port answers plain HTTP around Caddy's TLS (FJS-D1459).
   const statics      = createStaticServer({ staticDir: config.staticDir })
   const staticServer = config.staticPort
-    ? Bun.serve({ port: config.staticPort, fetch: req => statics.handle(req) })
+    ? Bun.serve({ hostname: '127.0.0.1', port: config.staticPort, fetch: req => statics.handle(req) })
     : null
 
   const stopTimers = reporter.start()

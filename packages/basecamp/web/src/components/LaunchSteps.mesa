@@ -6,7 +6,7 @@
   // The server names that screen — the app a step means lives three levels
   // deep, and working out which one is a read of rows this component does not
   // hold. Hidden once all six are done: the fleet is the home screen from then.
-  import { session } from '../session.js'
+  import { session } from '../lib/session.js'
   import { infra } from '../resources/Infra.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
 

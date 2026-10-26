@@ -200,7 +200,8 @@
 /* --navlink-current-bg / -ink are a theme's: a solid fill with its own ink
    instead of the tint. Use-site fallbacks, so a token set on an ancestor
    .theme-* reaches here (a :root alias would resolve once and inherit past). */
-.navlink[aria-current="page"] {
+/* `true` is a topbar menu's trigger: the current page is one of its rows. */
+.navlink:is([aria-current="page"], [aria-current="true"]) {
   background:  var(--navlink-current-bg, color-mix(in srgb, var(--bg-mix, var(--color-primary)) 12%, var(--surface)));
   color:       var(--navlink-current-ink, var(--bg-mix, var(--color-primary)));
   font-weight: 600;

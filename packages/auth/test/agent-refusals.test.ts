@@ -91,7 +91,7 @@ describe('the projection grades every method this package ships', () => {
 
   test('the boot names none of them as graded by nothing', () => {
     const open = warnings.find(w => w.includes('graded by nothing'))
-    for (const name of ['account_', 'sessions_', 'api-keys_', 'connections_', 'account-recovery_'])
+    for (const name of ['account_', 'sessions_', 'apiKeys_', 'connections_', 'accountRecovery_'])
       expect(open ?? '').not.toContain(name)
   })
 
@@ -99,7 +99,7 @@ describe('the projection grades every method this package ships', () => {
     const p     = await person()
     const names = ((await rpc(p.token, 'tools/list')).result?.tools ?? []).map((t: { name: string }) => t.name)
     expect(names).toContain('sessions_find')
-    expect(names).toContain('api-keys_find')
+    expect(names).toContain('apiKeys_find')
   })
 
   test('a stranger is offered none of them', async () => {
@@ -109,15 +109,15 @@ describe('the projection grades every method this package ships', () => {
       body:    JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
     })
     const names = (((await res.json()) as any).result?.tools ?? []).map((t: { name: string }) => t.name)
-    expect(names.filter((n: string) => /^(account|sessions|api-keys|connections|account-recovery)_/.test(n))).toEqual([])
+    expect(names.filter((n: string) => /^(account|sessions|apiKeys|connections|accountRecovery)_/.test(n))).toEqual([])
   })
 })
 
 describe('an agent cannot change the credentials of the person it acts for', () => {
 
-  test('api-keys_create is refused, and no key exists afterwards', async () => {
+  test('apiKeys_create is refused, and no key exists afterwards', async () => {
     const p   = await person()
-    const res = await call(p.token, 'api-keys_create', { name: 'from-agent' })
+    const res = await call(p.token, 'apiKeys_create', { name: 'from-agent' })
     expect(res.isError).toBe(true)
     expect(res.content[0].text).toContain("agent's tool call")
     expect(await keyCount(p.userId)).toBe(0)
@@ -139,9 +139,9 @@ describe('an agent cannot change the credentials of the person it acts for', () 
     expect(await h.auth.verifySession(other)).not.toBeNull()
   })
 
-  test('account_changePassword is refused before the password is read', async () => {
+  test('account_changePassword is refused and the password stays', async () => {
     const p   = await person()
-    const res = await call(p.token, 'account_changePassword', { data: { currentPassword: PW, newPassword: 'pw-agent-2' } })
+    const res = await call(p.token, 'account_changePassword', { data: { newPassword: 'pw-agent-2' } })
     expect(res.isError).toBe(true)
     expect(res.content[0].text).toContain("agent's tool call")
     expect(await h.auth.login(p.email, PW)).toHaveProperty('token')
@@ -149,16 +149,16 @@ describe('an agent cannot change the credentials of the person it acts for', () 
 
   test('account_requestEmailChange is refused, and no link is minted', async () => {
     const p   = await person()
-    const res = await call(p.token, 'account_requestEmailChange', { data: { currentPassword: PW, newEmail: `moved-${p.email}` } })
+    const res = await call(p.token, 'account_requestEmailChange', { data: { newEmail: `moved-${p.email}` } })
     expect(res.isError).toBe(true)
     expect(res.content[0].text).toContain("agent's tool call")
     expect(await h.sys.verification.findMany({ where: { purpose: 'emailChange', userId: p.userId } })).toEqual([])
   })
 
-  test('api-keys_remove is refused, and the key still authenticates', async () => {
+  test('apiKeys_remove is refused, and the key still authenticates', async () => {
     const p       = await person()
     const { id, key } = await h.auth.createApiKey(p.userId, { name: 'kept' })
-    const res     = await call(p.token, 'api-keys_remove', { id })
+    const res     = await call(p.token, 'apiKeys_remove', { id })
     expect(res.isError).toBe(true)
     expect(await h.auth.verifySession(key)).not.toBeNull()
   })

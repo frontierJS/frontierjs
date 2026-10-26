@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 71 models · 2 databases
+-- 73 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -204,46 +204,6 @@ CREATE TABLE IF NOT EXISTS "blueprint" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_blueprint_category" ON "blueprint" ("category");
 
-CREATE TABLE IF NOT EXISTS "backup" (
-  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
-  "kind" TEXT NOT NULL DEFAULT 'manual',
-  "status" TEXT NOT NULL DEFAULT 'pending',
-  "destination" TEXT NOT NULL DEFAULT 'local',
-  "sizeBytes" INTEGER,
-  "location" TEXT,
-  "error" TEXT,
-  "requestedBy" TEXT,
-  "startedAt" TEXT,
-  "finishedAt" TEXT,
-  "durationMs" INTEGER,
-  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("kind" IN ('manual', 'scheduled')),
-  CHECK ("status" IN ('pending', 'running', 'success', 'failed', 'timeout')),
-  CHECK ("destination" IN ('local', 's3'))
-) STRICT;
-CREATE INDEX IF NOT EXISTS "idx_backup_status" ON "backup" ("status");
-CREATE INDEX IF NOT EXISTS "idx_backup_createdAt" ON "backup" ("createdAt");
-
-CREATE TABLE IF NOT EXISTS "hub_config" (
-  "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'hub',
-  "name" TEXT NOT NULL DEFAULT 'Basecamp',
-  "baseUrl" TEXT NOT NULL,
-  "adminEmail" TEXT NOT NULL,
-  "heartbeatTimeoutSeconds" INTEGER NOT NULL DEFAULT 120,
-  "sessionTtlHours" INTEGER NOT NULL DEFAULT 168,
-  "requireTwoFactorForOwners" INTEGER NOT NULL DEFAULT 0,
-  "allowApiKeyAuth" INTEGER NOT NULL DEFAULT 1,
-  "allowBotUsers" INTEGER NOT NULL DEFAULT 1,
-  "backupEnabled" INTEGER NOT NULL DEFAULT 0,
-  "backupCron" TEXT NOT NULL DEFAULT '0 2 * * *',
-  "backupDestination" TEXT NOT NULL DEFAULT 'local',
-  "mailFromAddress" TEXT,
-  "mailFromName" TEXT,
-  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "version" INTEGER NOT NULL DEFAULT 1,
-  CHECK ("backupDestination" IN ('local', 's3'))
-) STRICT;
-
 CREATE TABLE IF NOT EXISTS "metric_point" (
   "seriesId" TEXT NOT NULL,
   "at" INTEGER NOT NULL,
@@ -397,6 +357,7 @@ CREATE TABLE IF NOT EXISTS "session" (
   "userAgent" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "enrollmentOnly" INTEGER NOT NULL DEFAULT 0,
+  "reauthenticatedAt" TEXT,
   "impersonatingUserId" TEXT,
   "impersonationReason" TEXT,
   "impersonationEndsAt" TEXT,
@@ -482,7 +443,7 @@ CREATE TABLE IF NOT EXISTS "secret" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
-  CHECK ("kind" IN ('ssh_key', 'provider_key', 'registry_auth', 'tls_cert', 'notification', 'generic')),
+  CHECK ("kind" IN ('ssh_key', 'provider_key', 'registry_auth', 'tls_cert', 'notification', 'backup', 'generic')),
   CHECK ("providerKind" IN ('custom', 'hetzner', 'digitalocean', 'cloudflare')),
   UNIQUE ("workspaceId", "name"),
   CHECK (kind != 'provider_key' OR providerKind IS NOT NULL),
@@ -542,6 +503,7 @@ CREATE TABLE IF NOT EXISTS "server" (
   "actualSpecs" TEXT,
   "health" TEXT,
   "dockerState" TEXT,
+  "replication" TEXT,
   "labels" TEXT NOT NULL DEFAULT '{}',
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -640,6 +602,27 @@ CREATE TABLE IF NOT EXISTS "notification_channel" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_notification_channel_workspaceId" ON "notification_channel" ("workspaceId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_notification_channel_deletedAt" ON "notification_channel" ("deletedAt") WHERE "deletedAt" IS NULL;
+
+CREATE TABLE IF NOT EXISTS "backup_destination" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "workspaceId" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "endpoint" TEXT NOT NULL,
+  "region" TEXT NOT NULL,
+  "bucket" TEXT NOT NULL,
+  "prefix" TEXT NOT NULL DEFAULT '',
+  "secretId" TEXT,
+  "lastTestAt" TEXT,
+  "createdBy" TEXT,
+  "version" INTEGER NOT NULL DEFAULT 1,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "deletedAt" TEXT,
+  UNIQUE ("workspaceId", "name"),
+  FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_backup_destination_workspaceId" ON "backup_destination" ("workspaceId") WHERE "deletedAt" IS NULL;
+CREATE INDEX IF NOT EXISTS "idx_backup_destination_deletedAt" ON "backup_destination" ("deletedAt") WHERE "deletedAt" IS NULL;
 
 CREATE TABLE IF NOT EXISTS "alert_rule" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -924,6 +907,57 @@ CREATE TABLE IF NOT EXISTS "recipe_run" (
 CREATE INDEX IF NOT EXISTS "idx_recipe_run_recipeId" ON "recipe_run" ("recipeId");
 CREATE INDEX IF NOT EXISTS "idx_recipe_run_serverId" ON "recipe_run" ("serverId");
 
+CREATE TABLE IF NOT EXISTS "backup" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "kind" TEXT NOT NULL DEFAULT 'manual',
+  "status" TEXT NOT NULL DEFAULT 'pending',
+  "destinationId" TEXT,
+  "sizeBytes" INTEGER,
+  "location" TEXT,
+  "error" TEXT,
+  "requestedBy" TEXT,
+  "startedAt" TEXT,
+  "finishedAt" TEXT,
+  "durationMs" INTEGER,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("kind" IN ('manual', 'scheduled', 'found', 'release')),
+  CHECK ("status" IN ('pending', 'running', 'success', 'failed', 'timeout')),
+  FOREIGN KEY ("destinationId") REFERENCES "backup_destination" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_backup_status" ON "backup" ("status");
+CREATE INDEX IF NOT EXISTS "idx_backup_createdAt" ON "backup" ("createdAt");
+CREATE INDEX IF NOT EXISTS "idx_backup_destinationId" ON "backup" ("destinationId");
+
+CREATE TABLE IF NOT EXISTS "hub_config" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'hub',
+  "name" TEXT NOT NULL DEFAULT 'Basecamp',
+  "baseUrl" TEXT NOT NULL,
+  "adminEmail" TEXT NOT NULL,
+  "heartbeatTimeoutSeconds" INTEGER NOT NULL DEFAULT 120,
+  "sessionTtlHours" INTEGER NOT NULL DEFAULT 168,
+  "requireTwoFactorForOwners" INTEGER NOT NULL DEFAULT 0,
+  "allowApiKeyAuth" INTEGER NOT NULL DEFAULT 1,
+  "allowBotUsers" INTEGER NOT NULL DEFAULT 1,
+  "backupEnabled" INTEGER NOT NULL DEFAULT 0,
+  "backupCron" TEXT NOT NULL DEFAULT '0 2 * * *',
+  "backupDestinationId" TEXT,
+  "replicaDestinationId" TEXT UNIQUE,
+  "backupKeepLocalCount" INTEGER NOT NULL DEFAULT 7,
+  "backupKeepLocalDays" INTEGER,
+  "backupKeepRemoteCount" INTEGER NOT NULL DEFAULT 7,
+  "backupKeepRemoteDays" INTEGER,
+  "encryptionKeyEscrowedAt" TEXT,
+  "encryptionKeyFingerprint" TEXT,
+  "hostServerId" TEXT UNIQUE,
+  "mailFromAddress" TEXT,
+  "mailFromName" TEXT,
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "version" INTEGER NOT NULL DEFAULT 1,
+  FOREIGN KEY ("backupDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL,
+  FOREIGN KEY ("replicaDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL,
+  FOREIGN KEY ("hostServerId") REFERENCES "server" ("id") ON DELETE SET NULL
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS "alert_rule_channel" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "ruleId" TEXT NOT NULL,
@@ -1034,6 +1068,10 @@ CREATE TABLE IF NOT EXISTS "app" (
   "pushTokenHash" TEXT,
   "pushActorId" TEXT,
   "blueprintId" TEXT,
+  "backupCron" TEXT,
+  "backupDestinationId" TEXT,
+  "replicaDestinationId" TEXT UNIQUE,
+  "drillCron" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
@@ -1041,7 +1079,9 @@ CREATE TABLE IF NOT EXISTS "app" (
   CHECK ("status" IN ('unknown', 'stopped', 'starting', 'running', 'stopping', 'deploying', 'error')),
   UNIQUE ("environmentId", "slug"),
   FOREIGN KEY ("environmentId") REFERENCES "environment" ("id") ON DELETE CASCADE,
-  FOREIGN KEY ("blueprintId") REFERENCES "blueprint" ("id") ON DELETE SET NULL
+  FOREIGN KEY ("blueprintId") REFERENCES "blueprint" ("id") ON DELETE SET NULL,
+  FOREIGN KEY ("backupDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL,
+  FOREIGN KEY ("replicaDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_app_workspaceId" ON "app" ("workspaceId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_app_environmentId" ON "app" ("environmentId") WHERE "deletedAt" IS NULL;
@@ -1138,27 +1178,6 @@ CREATE TABLE IF NOT EXISTS "app_server" (
   FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_app_server_serverId" ON "app_server" ("serverId");
-
-CREATE TABLE IF NOT EXISTS "app_backup" (
-  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
-  "appId" TEXT NOT NULL,
-  "serverId" TEXT NOT NULL,
-  "status" TEXT NOT NULL DEFAULT 'pending',
-  "sizeBytes" INTEGER,
-  "fileCount" INTEGER,
-  "location" TEXT,
-  "error" TEXT,
-  "requestedBy" TEXT,
-  "startedAt" TEXT,
-  "finishedAt" TEXT,
-  "durationMs" INTEGER,
-  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("status" IN ('pending', 'running', 'success', 'failed', 'timeout')),
-  FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE,
-  FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE
-) STRICT;
-CREATE INDEX IF NOT EXISTS "idx_app_backup_appId" ON "app_backup" ("appId");
-CREATE INDEX IF NOT EXISTS "idx_app_backup_serverId" ON "app_backup" ("serverId");
 
 CREATE TABLE IF NOT EXISTS "app_network" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -1271,6 +1290,62 @@ CREATE TABLE IF NOT EXISTS "domain_route" (
   FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_domain_route_appId" ON "domain_route" ("appId");
+
+CREATE TABLE IF NOT EXISTS "app_backup" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "appId" TEXT NOT NULL,
+  "serverId" TEXT NOT NULL,
+  "destinationId" TEXT,
+  "kind" TEXT NOT NULL DEFAULT 'manual',
+  "deploymentId" TEXT,
+  "status" TEXT NOT NULL DEFAULT 'pending',
+  "sizeBytes" INTEGER,
+  "fileCount" INTEGER,
+  "location" TEXT,
+  "error" TEXT,
+  "sha256" TEXT,
+  "requestedBy" TEXT,
+  "startedAt" TEXT,
+  "finishedAt" TEXT,
+  "durationMs" INTEGER,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("kind" IN ('manual', 'scheduled', 'found', 'release')),
+  CHECK ("status" IN ('pending', 'running', 'success', 'failed', 'timeout')),
+  FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("destinationId") REFERENCES "backup_destination" ("id") ON DELETE RESTRICT,
+  FOREIGN KEY ("deploymentId") REFERENCES "deployment" ("id") ON DELETE SET NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_app_backup_appId" ON "app_backup" ("appId");
+CREATE INDEX IF NOT EXISTS "idx_app_backup_serverId" ON "app_backup" ("serverId");
+CREATE INDEX IF NOT EXISTS "idx_app_backup_destinationId" ON "app_backup" ("destinationId");
+CREATE INDEX IF NOT EXISTS "idx_app_backup_deploymentId" ON "app_backup" ("deploymentId");
+
+CREATE TABLE IF NOT EXISTS "app_drill" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "appId" TEXT NOT NULL,
+  "serverId" TEXT NOT NULL,
+  "deploymentId" TEXT,
+  "kind" TEXT NOT NULL DEFAULT 'manual',
+  "status" TEXT NOT NULL DEFAULT 'pending',
+  "at" TEXT,
+  "databases" TEXT,
+  "report" TEXT,
+  "error" TEXT,
+  "requestedBy" TEXT,
+  "startedAt" TEXT,
+  "finishedAt" TEXT,
+  "durationMs" INTEGER,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("kind" IN ('manual', 'scheduled')),
+  CHECK ("status" IN ('pending', 'running', 'success', 'failed', 'timeout')),
+  FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("deploymentId") REFERENCES "deployment" ("id") ON DELETE SET NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_app_drill_appId" ON "app_drill" ("appId");
+CREATE INDEX IF NOT EXISTS "idx_app_drill_serverId" ON "app_drill" ("serverId");
+CREATE INDEX IF NOT EXISTS "idx_app_drill_deploymentId" ON "app_drill" ("deploymentId");
 
 CREATE TABLE IF NOT EXISTS "deployment_step" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),

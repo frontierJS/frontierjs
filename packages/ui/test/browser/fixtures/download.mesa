@@ -1,16 +1,47 @@
 <script>
-  // download.mesa — a file built on the page, saved with `download()`, and a
-  // wrong argument, whose refusal is published to `#refused`.
-  import { download } from '@frontierjs/ui/utils'
+  // download.mesa — a file built on the page saved with `download()`, a
+  // Response saved under the server's name, `openFile()` with its popup
+  // blocked, and a wrong argument, whose refusal is published to `#refused`.
+  import { download, openFile } from '@frontierjs/ui/utils'
 
   let refused = ''
 
+  // Junction's file route names a file with `filename*` alone.
+  const answer = () => new Response('id,total\n2,200\n', {
+    headers: { 'content-disposition': "attachment; filename*=utf-8''r%C3%A9sum%C3%A9%20q3.csv" },
+  })
+
   const save = () => download(new Blob(['id,total\n1,100\n'], { type: 'text/csv' }), 'orders.csv')
+  const response = () => download(answer(), 'fallback.csv')
+  const blocked = () => {
+    const open = window.open
+    window.open = () => null
+    openFile(async () => new Response('%PDF-1.4\n'), { name: 'invoice.pdf' })
+    window.open = open
+  }
+  // A tab the drive can read: a real one is another target, out of its reach.
+  let tab = ''
+  const opened = async (fetchFile) => {
+    const open = window.open
+    const fake = { location: { href: '' }, closed: false, close() { this.closed = true } }
+    window.open = () => fake
+    const asked = openFile(fetchFile, { name: 'invoice.pdf' })
+    window.open = open
+    try { await asked } catch (e) { refused = e.message }
+    tab = fake.closed ? 'closed' : fake.location.href.slice(0, 5)
+  }
+  const shown = () => opened(async () => new Response('%PDF-1.4\n'))
+  const failed = () => opened(async () => { throw new Error('no such invoice') })
   const wrong = () => {
-    try { download(new Response('id,total'), 'orders.csv') } catch (e) { refused = e.message }
+    try { download('id,total', 'orders.csv') } catch (e) { refused = e.message }
   }
 </script>
 
 <button id="save" onclick={save}>Save</button>
+<button id="response" onclick={response}>Response</button>
+<button id="blocked" onclick={blocked}>Blocked</button>
+<button id="shown" onclick={shown}>Shown</button>
+<button id="failed" onclick={failed}>Failed</button>
 <button id="wrong" onclick={wrong}>Wrong</button>
+<output id="tab">{tab}</output>
 <output id="refused">{refused}</output>

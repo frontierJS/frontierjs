@@ -254,7 +254,7 @@ Graded: **13 of 184**.
 | A static route that produced no page fails the build where it was broken, and warns where it opted out. | **none** |
 | A server render answers every browser global as a wide desktop, so only a mobile-first branch bakes correctly. | **none** |
 | `renderComponent` reuses a compiled tree, so `<script module>` state is shared across every render in the process. | **none** |
-| In a sidebar or rail the Shell draws the nav twice, and the drawer's copy is mounted while it is closed. | **none** |
+| The Shell draws the nav twice, and the drawer's copy is mounted while it is closed. | **none** |
 
 ### Tethers and records
 

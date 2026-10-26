@@ -159,7 +159,7 @@ what they mean in any app.
   link (`FJS-D1250`), because a build runs a body's script. `{ field: { line,
   old, next } }` is the other edit: the words of the one value written on that
   line, at any depth, refused when they are no longer `old` (`FJS-D1231`). A
-  value is graded for no code (`FJS-3416`). `{ entry: { line, act } }` moves,
+  value gains no code its old value lacked (`FJS-D1508`). `{ entry: { line, act } }` moves,
   copies or removes the list item written on that line, line spans cut and
   pasted then read back (`FJS-D1404`, `FJS-D1405`), and `formOf` lists every
   entry. `arrangeCollection(files, { path, act })` is the same four acts on a

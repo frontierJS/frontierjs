@@ -22,7 +22,7 @@ export default {
   // reason this site exists — it is that package's second consumer. A subset of
   // the themes it ships.
   theme: {
-    themes:  ['theme-default', 'theme-sunset', 'theme-forest', 'theme-midnight', 'theme-dark', 'theme-elite'],
+    themes:  ['theme-default', 'theme-sunset', 'theme-expedition', 'theme-catppuccin', 'theme-dark', 'theme-elite'],
     default: 'theme-default',
     persist: true,
     key:     'fjs-theme',

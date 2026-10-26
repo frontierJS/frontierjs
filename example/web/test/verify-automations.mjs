@@ -56,10 +56,9 @@ import { SESSION_MODULE } from './lib/session.mjs'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const ROOT   = join(HERE, '../..')
-// The dev server is on the test tier, so this runs beside another project's
-// vite on 8010; the API stays, because a stored `File` ref names its origin
-// (`FJS-1271`).
-const API_PORT = process.env.API_PORT ?? String(PORTS.api)
+// Both servers on the test tier, so this runs beside a dev server somebody
+// else is holding 8010/8110 with. Both are env-overridable.
+const API_PORT = process.env.API_PORT ?? String(PORTS.apiTest)
 const UI_PORT  = process.env.UI_PORT  ?? String(PORTS.uiTest)
 const UI     = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
 const API    = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`

@@ -1,5 +1,5 @@
 -- Litestone migration
--- Created:   2026-10-22T20:31:09.706Z
+-- Created:   2026-10-23T06:50:12.326Z
 -- Changes:
 --     + Member  (new table)
 --     + Room  (new table)
@@ -18,7 +18,7 @@ BEGIN;
 CREATE TABLE IF NOT EXISTS "member" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "nick" TEXT NOT NULL UNIQUE,
-  "publicKey" TEXT NOT NULL UNIQUE,
+  "root" TEXT NOT NULL UNIQUE,
   "role" TEXT,
   "bannedAt" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))

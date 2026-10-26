@@ -32,6 +32,7 @@ export const holds = ['ports']
 
 import { spawn } from 'node:child_process'
 import { rm } from 'node:fs/promises'
+import { randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../../mesa/src/drive.js'
@@ -54,6 +55,10 @@ const BASE     = `http://localhost:${WEB_PORT}`
 // 7127 beside the test one (`docs/PORTS.md`).
 const CF_PORT  = API_PORT + 7
 const CF_SINK  = `http://localhost:${CF_PORT}/client/v4`
+// The S3 stand-in, on the slot's `5`: 8125 beside the dev API, 7125 beside
+// the test one. A SigV4 verifier, so the destination `test` below is real.
+const S3_PORT  = API_PORT + 5
+const S3_SINK  = `http://127.0.0.1:${S3_PORT}`
 const EMAIL    = 'sam@example.com'      // the seeded owner, and a sysadmin
 const PASSWORD = 'hunter2hunter2'
 
@@ -83,6 +88,10 @@ const DB      = join(SCRATCH, 'basecamp.db')
 // developer's own `db/audit/` and nothing failed either way (`FJS-633`).
 const AUDIT   = join(SCRATCH, 'audit.db')
 
+// The dev placeholder cannot be attested (it is public), and the seed and the
+// API must encrypt with the same key, so one is minted before either spawns.
+process.env.ENCRYPTION_KEY ??= randomBytes(32).toString('hex')
+
 console.log('\nBasecamp — the screens\n')
 console.log(`  seeding ${DB}`)
 
@@ -99,7 +108,7 @@ if (seedCode !== 0) fail(`db/seed.js exited ${seedCode}\n${seedErr}`)
 // A stale dev server means this drive would assert against the OTHER app's
 // build and report a pass. Vite sets strictPort, so it would die anyway; the
 // API would not.
-for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT], ['Cloudflare sink', CF_PORT]]) {
+for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT], ['Cloudflare sink', CF_PORT], ['S3 sink', S3_PORT]]) {
   const answered = await fetch(`http://localhost:${port}/`).then(() => true).catch(() => false)
   if (answered) fail(`Something already answers on :${port} (${name}). Stop it — this drive would test it instead.`)
 }
@@ -123,6 +132,10 @@ children.push(spawn('bun', ['api/src/providers/edge/cloudflare-sink.ts'], {
   cwd: PKG, stdio: 'ignore', detached: true,
   env: { ...process.env, CF_SINK_PORT: String(CF_PORT) },
 }))
+children.push(spawn('bun', ['api/src/providers/storage/s3-sink.ts'], {
+  cwd: PKG, stdio: 'ignore', detached: true,
+  env: { ...process.env, S3_SINK_PORT: String(S3_PORT) },
+}))
 children.push(spawn('bun', ['run', 'web'], {
   cwd: PKG, stdio: 'ignore', detached: true,
   env: { ...process.env, API_PORT: String(API_PORT), UI_PORT: String(WEB_PORT) },
@@ -138,6 +151,7 @@ const waitFor = async (url, label) => {
 await waitFor(`http://localhost:${API_PORT}/health`, 'the API')
 await waitFor(BASE, 'the web server')
 await waitFor(`${CF_SINK}/zones`, 'the Cloudflare stand-in')
+await waitFor(`${S3_SINK}/_sink/seen`, 'the S3 stand-in')
 
 // ─── Chrome ──────────────────────────────────────────────────────────────
 // Headless Chrome answers (hover: none) and (pointer: none), so every rule
@@ -368,6 +382,15 @@ try {
     'the rename did not survive a reload')
   ok('a save round-trips through the singleton')
 
+  // Retention is four numbers on the same form; an empty days field is no age limit.
+  await fill({ 'cfg-keep-local-count': '3' })
+  await click('#save-settings')
+  await until(`document.body.textContent`, t => t.includes('Settings saved'), 'the retention save never reported')
+  await goto('/hub/settings/')
+  const keep = await until(`[document.getElementById('cfg-keep-local-count')?.value, document.getElementById('cfg-keep-local-days')?.value]`,
+    v => v[0] === '3', 'the keep-count did not survive a reload').catch(e => [String(e.message)])
+  check('a keep-count saves and an unset age stays empty', keep[0] === '3' && keep[1] === '', JSON.stringify(keep))
+
   // The version guard, proved rather than described: a save carrying a stale
   // revision must be refused. Done through the client so the payload is exactly
   // what the screen sends, minus a correct version.
@@ -386,14 +409,67 @@ try {
     check('a save carrying a stale revision is refused', conflict !== 'accepted', conflict)
   }
 
+  // ─── A bucket, tested where the person is looking (1.8) ────────────────
+  // Adding a destination runs `test` at once — a PUT and a DELETE of a probe
+  // key through the registered target, against the SigV4 stand-in — and the
+  // answer is a line under the picker. Second bucket under `private/`, which
+  // the stand-in refuses for every key: the line has to say `forbidden`, not
+  // a bare 403, because the fix is the policy and not the credential. Nothing
+  // here is saved: the picker is left pointing at a bucket, and the page is
+  // left without `#save-settings`, so the hub schedule stays on local disk.
+  console.log('\n  /hub/settings/ — a backup destination is tested on the spot')
+  await goto('/hub/settings/')
+  await until(`!!document.getElementById('add-destination')`, v => v, 'the destination picker never rendered')
+  await click('#add-destination')
+  await until(`!!document.getElementById('dest-secret')`, v => v, 'the inline bucket form never opened')
+  await fill({ 'dest-name': 'Stand-in bucket', 'dest-endpoint': S3_SINK, 'dest-region': 'us-east-1',
+    'dest-bucket': 'frontier-basecamp', 'dest-prefix': 'basecamp-', 'dest-secret': 'AKIADEV:devsecret' })
+  await evaluate(`document.getElementById('dest-secret').form.requestSubmit()`)
+  const probed = await until(`document.getElementById('destination-test')?.textContent ?? ''`, t => t.length > 0,
+    'adding a bucket never reported its test').catch(e => String(e.message))
+  check('adding a bucket tests it, and a good key says the probe was written and deleted',
+    /written and deleted/.test(probed), probed.slice(0, 160))
+  const stamped = await text('#destination-tested')
+  check('and the picker line carries the stamp', /Last tested/.test(stamped ?? '') && !/never/.test(stamped ?? ''), (stamped ?? '').slice(0, 120))
+  const sinkSaw = await fetch(`${S3_SINK}/_sink/seen`).then(r => r.json())
+  const probeVerbs = sinkSaw.requests.filter(r => r.path.startsWith('/frontier-basecamp/basecamp-/basecamp-probe-')).map(r => `${r.method} ${r.status}`)
+  check('the stand-in saw one signed PUT and one DELETE and holds no key', probeVerbs.join(',') === 'PUT 200,DELETE 204' && sinkSaw.keys.length === 0,
+    `${probeVerbs.join(',')} · keys ${sinkSaw.keys.length}`)
+
+  await click('#add-destination')
+  await until(`!!document.getElementById('dest-secret')`, v => v, 'the inline bucket form never reopened')
+  await fill({ 'dest-name': 'Refused bucket', 'dest-endpoint': S3_SINK, 'dest-region': 'us-east-1',
+    'dest-bucket': 'frontier-basecamp', 'dest-prefix': 'private/', 'dest-secret': 'AKIADEV:devsecret' })
+  await evaluate(`document.getElementById('dest-secret').form.requestSubmit()`)
+  const refusedLine = await until(`document.getElementById('destination-test')?.textContent ?? ''`, t => /Refused bucket/.test(t),
+    'the refused bucket never reported its test').catch(e => String(e.message))
+  check('a key the policy refuses is said as forbidden with the S3 code, not as a bare 403',
+    /forbidden:/.test(refusedLine) && /AccessDenied/.test(refusedLine) && /policy/.test(refusedLine), refusedLine.slice(0, 200))
+  const refusedTone = await evaluate(`document.getElementById('destination-test')?.className ?? ''`)
+  check('and in the danger tone', /danger/.test(refusedTone), refusedTone)
+
   // ─── Hub backups ───────────────────────────────────────────────────────
   console.log('\n  /hub/backups/ — archives')
   await goto('/hub/backups/')
   await until(`!!document.getElementById('take-backup')`, v => v, 'the backups screen never rendered')
 
   const schedule = await text('#backup-schedule')
-  check('the schedule is shown with its caveat', /Nothing registers it yet/i.test(schedule ?? ''),
+  check('the schedule says what a fire does', /each fire of this expression/i.test(schedule ?? ''),
     (schedule ?? '').slice(0, 120))
+
+  // The key: the line says an archive without it cannot be read, the control
+  // reads red until a person attests a copy, and green after (1.7).
+  await until(`!!document.getElementById('key-escrow')`, v => v, 'the key line never rendered')
+  const keyLine = await text('#key-escrow')
+  check('the backups screen says an archive without its key cannot be read',
+    /cannot be read/.test(keyLine ?? '') && /not escrowed/.test(keyLine ?? ''), (keyLine ?? '').slice(0, 160))
+  await click('#attest-escrow')
+  await until(`!!document.querySelector('[role=dialog][aria-modal=false]')`, v => v, 'attesting asked nothing')
+  await evaluate(`document.querySelector('[role=dialog][aria-modal=false] .cluster button:last-child').click()`)
+  const attested = await until(`document.getElementById('key-escrow')?.textContent ?? ''`,
+    t => /was attested off this box/.test(t), 'attesting never turned the control green')
+  check('attesting a copy turns hub.key-escrowed green', /\bescrowed\b/.test(attested) && !/not escrowed/.test(attested),
+    attested.slice(0, 160))
 
   const before = await evaluate(`document.querySelectorAll('#backup-history tbody tr').length`)
   await click('#take-backup')
@@ -1168,12 +1244,13 @@ try {
   const remaining = await until(`document.getElementById('totp-remaining')?.textContent.trim()`, v => v,
     'the on state never rendered')
   check('and the card counts them', remaining === '10', remaining)
-  await fill({ 'totp-password': PASSWORD })
+  // With the factor on, confirming the session takes the code beside the password.
+  await fill({ 'totp-password': PASSWORD, 'totp-sudo-code': totp(secret, new Date()) })
   await click('#totp-disable')
   await confirmIt()
   await until(`document.getElementById('settings-totp')?.dataset.totpState`, v => v === 'off',
     'turning it off never came back off')
-  ok('and turning it off, with the password, puts it back')
+  ok('and turning it off, with the password and a code, puts it back')
 
   // Forgot password. Open while signed in, as the mail's link must be.
   await goto('/reset-password/')
@@ -1285,6 +1362,18 @@ try {
              el.dispatchEvent(new Event('input',  { bubbles: true }))
              el.dispatchEvent(new Event('change', { bubbles: true }))
              return el.value })()`)
+  // A relation picker is a Combobox, whose `[name]` is its TEXT box: `pickIn`
+  // there types the id as a search, the list reads *No options* and nothing
+  // is picked (`FJS-3477`). It is opened and its row clicked instead — matched
+  // whole, since seeded names share prefixes and the first partial match is
+  // another row.
+  const choose = async (sel, label) => {
+    const row = `[...(document.querySelector(${JSON.stringify(sel)})?.closest('.fjs-combobox')?.querySelectorAll('[role=option]') ?? [])]
+                   .find(o => o.textContent.trim() === ${JSON.stringify(label)})`
+    await evaluate(`document.querySelector(${JSON.stringify(sel)})?.focus()`)
+    await until(`!!${row}`, v => v, `${sel} never offered ${label}`)
+    await evaluate(`${row}.click()`)
+  }
 
   // Flags — a variant flag can be made at all, which the create form could
   // not do: the service needs two variants and there was nowhere to type one.
@@ -1575,7 +1664,7 @@ try {
   })).json()
 
   const kimToken = (await kimLogin()).token
-  const { secret: kimSecret } = await asKim('setupTotp', { currentPassword: PASSWORD }, kimToken)
+  const { secret: kimSecret } = await asKim('setupTotp', {}, kimToken)
   await asKim('confirmTotp', { code: totp(kimSecret, new Date()) }, kimToken)
   check('the other person has two-step sign-in on', (await asKim('totpStatus', {}, kimToken))?.enabled === true)
   check('so a password alone no longer signs them in', !(await kimLogin()).token)
@@ -1622,17 +1711,20 @@ try {
 
   // A path route is made and removed from the same screen (`FJS-3323`), not
   // only through /domain-routes. It needs an app other than the hostname's own.
-  const routeApp = (await apiGet('/apps')).body?.data?.find(a => a.id !== dnsApp?.id)
+  // The picker shows names and the seed repeats one per environment, so the
+  // route is held to the NAME picked, which is all a person can tell apart.
+  const routeApp = (await apiGet('/apps?$limit=100')).body?.data?.find(a => a.name !== dnsApp?.name)
   await goto('/dns/')
   await until(`!!document.getElementById('route-add')`, v => v, 'the DNS screen offers no way to add a path route')
   await click('#route-add')
   await until(`!!document.querySelector('#route-save')`, v => v, 'the route drawer never opened')
-  await pickIn('dialog[open] [name=domainId]', dnsRow?.id)
-  await pickIn('dialog[open] [name=appId]', routeApp?.id)
+  await choose('dialog[open] [name=domainId]', 'dns-drive.example.test')
+  await choose('dialog[open] [name=appId]', routeApp?.name)
   await typeIn('dialog[open] [name=pathPrefix]', '/api')
   await click('#route-save')
   const madeRoute = await eventually(async () => (await apiGet(`/domain-routes?domainId=${dnsRow?.id}`)).body?.data?.[0], r => !!r)
-  check('a path route is made from DNS', madeRoute?.pathPrefix === '/api' && madeRoute?.appId === routeApp?.id,
+  const routedTo = madeRoute && (await apiGet(`/apps/${madeRoute.appId}`)).body
+  check('a path route is made from DNS', madeRoute?.pathPrefix === '/api' && routedTo?.name === routeApp?.name,
     JSON.stringify(madeRoute))
   await until(`document.querySelectorAll('#route-rows tbody tr').length`, n => n > 0, 'the new route never listed')
   const routeText = await text('#route-rows')
@@ -1714,18 +1806,18 @@ try {
   await until(`location.pathname`, p => p === '/dashboards/', 'deleting a board never left it')
   check('a dashboard is deleted from its own screen', (await apiGet(`/dashboards/${board?.id}`)).status === 404)
 
-  // Backups — forgetting drops the row and says the file stays.
+  // Backups — Delete says the archive goes, then the row does (FJS-D1494).
   await goto('/hub/backups/')
-  await until(`!!document.querySelector('[aria-label^="Forget "]')`, v => v, 'no settled backup offers Forget')
+  await until(`!!document.querySelector('[aria-label^="Delete "]')`, v => v, 'no settled backup offers Delete')
   const kept = await evaluate(`document.querySelectorAll('#backup-history tbody tr').length`)
-  await evaluate(`document.querySelector('[aria-label^="Forget "]').click()`)
+  await evaluate(`document.querySelector('[aria-label^="Delete "]').click()`)
   const warned = await until(`document.querySelector('[role=dialog][aria-modal=false]')?.textContent ?? ''`, t => t,
-    'forgetting asked nothing')
-  check('forgetting a backup says the archive stays on disk', /stays on disk|from this list/.test(warned), warned.slice(0, 120))
+    'deleting asked nothing')
+  check('deleting a backup says the archive is deleted', /is deleted|from this list/.test(warned), warned.slice(0, 120))
   await evaluate(`document.querySelector('[role=dialog][aria-modal=false] .cluster button:last-child').click()`)
   const left = await until(`document.querySelectorAll('#backup-history tbody tr').length`, n => n < kept,
-    'the forgotten backup stayed listed').catch(() => kept)
-  check('and it leaves the list', left < kept, `${kept} → ${left}`)
+    'the deleted backup stayed listed').catch(() => kept)
+  check('and it leaves the list', left < kept, `${kept} → ${left} ${await text('#screen-error')}`)
 
   // Blueprints — a sysadmin adds one, gives it ordered parameters, and edits it.
   await goto('/blueprints/')
@@ -1803,9 +1895,11 @@ try {
   await until(`!!document.getElementById('deploy-breadcrumb')`, v => v, 'the deployment screen never rendered')
   check('a release links its app from the breadcrumb', await evaluate(
     `!!document.querySelector('#deploy-breadcrumb a[href="/apps/${release?.appId}/"]')`))
-  const facts = (await text('.facts'))?.replace(/\s+/g, ' ') ?? ''
-  check('and states branch, author and when it was queued',
-    /Branch/.test(facts) && /Author/.test(facts) && /Queued/.test(facts), facts.slice(0, 160))
+  const facts = (await text('.deploy-details'))?.replace(/\s+/g, ' ') ?? ''
+  // A release picked up at once has nothing to say about the queue.
+  const waited = !!release?.startedAt && Date.parse(release.startedAt) - Date.parse(release.queuedAt) > 1000
+  check('and states branch, author, and a wait for a worker only when there was one',
+    /Branch/.test(facts) && /Author/.test(facts) && /Queued/.test(facts) === waited, facts.slice(0, 160))
   check('and links the release it replaced', !release?.previousDeploymentId || await evaluate(
     `!!document.querySelector('#deploy-previous a[href="/deployments/${release?.previousDeploymentId}/"]')`))
 

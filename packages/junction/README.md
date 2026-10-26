@@ -408,7 +408,7 @@ hooks: {
 }
 ```
 
-Note: `rateLimitHook` uses an in-process counter — correct for single-instance deployments. For multi-instance, provide a custom `key` function and an external counter (Redis, etc.) via a custom hook.
+`rateLimitHook` counts in the process, so a restart resets it ([Middleware](#middleware)).
 
 **`IEventBus.onAny()`** — subscribe to all events with the event name included:
 
@@ -738,7 +738,9 @@ app.configure(csrf({ origins: ['https://myapp.com'] }))
 
 > **One id per request.** A request's correlation id is the trace id of the `traceparent` it states, else its `X-Request-ID`, else 32 hex junction mints, and the log line, the audit row, a job's row and conduit's outbound call all carry it. An inbound id that is malformed (a `traceparent` that does not parse, an `X-Request-ID` outside 1–128 characters of `[A-Za-z0-9_.:@-]`) is replaced, not refused (`FJS-D660`).
 
-> **Rate limiting is per-process.** Counters live in memory and are not shared across workers or machines. For single-process deployments this is not an issue. For multi-process deployments, apply rate limiting at the load balancer layer (nginx `limit_req`, Cloudflare, Fly.io, etc.) in addition to or instead of this middleware.
+> **Helmet sends a strict CSP by default** — `default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`, in development too (`FJS-D1192`). An inline `<script>`, a `style=` attribute and a CDN asset are refused. An app widens it with `http: { helmet: { csp: '…' } }` or drops it with `csp: false`; one page loosens only itself by setting its own `Content-Security-Policy` on the Response it returns, which helmet leaves alone, as `openapi({ ui: true })`'s docs page does.
+
+> **Every throttle counts in the process** (`FJS-D1193`): the `rateLimit` middleware, `rateLimitHook`, the `ddos` gate, the WebSocket per-address cap and auth's `/auth/*` buckets. A restart resets every counter, and N processes or machines allow N times the budget. Behind more than one process, also set the limit at the proxy (nginx `limit_req`, Cloudflare).
 
 ---
 
@@ -1964,7 +1966,8 @@ const me       = await client.auth.me()
 const sessions = await client.auth.sessions()          // where else am I signed in
 await client.auth.revokeOtherSessions()
 const { key }  = await client.auth.createApiKey({ name: 'ci' })  // the key exists once
-await client.auth.changePassword(current, next)
+await client.auth.reauthenticate(password, code)      // sudo mode: an hour of the changes below
+await client.auth.changePassword(next)                  // 403 reauthentication_required past it
 await client.auth.requestPasswordReset(email)
 await client.auth.requestMagicLink(email)
 await client.auth.signInWithMagicLink({ token })       // or { email, code } — answers what signIn does
@@ -1980,7 +1983,7 @@ a service name types itself and no call site restates anything:
 
 ```bash
 litestone types --schema db/schema.lite --audience client \
-                --augment junction --out web/src/db.d.ts
+                --augment junction --out web/src/lib/db.d.ts
 ```
 
 That file carries the rows AND the augmentation that registers them:

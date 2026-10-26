@@ -8,7 +8,7 @@
  * no answer.
  */
 
-import { formatBytes, formatMoney, BYTE_UNITS, minorUnits, isKnownCurrency, knownCurrencies, fromMinor, toMinor, roundMinor, divRound, allocate,
+import { formatBytes, formatMoney, BYTE_UNITS, minorUnits, isKnownCurrency, knownCurrencies, fromMinor, formatMinor, toMinor, roundMinor, divRound, allocate,
          MEASURE_UNITS, LENGTH_UNITS, parseLength, unitInfo, isKnownUnit, baseUnit, suggestUnit, convertUnit } from '../../src/units/units.js'
 
 /* ── The ladder ────────────────────────────────────────────────────── */
@@ -275,6 +275,19 @@ test('units: places adds digits past the currency\'s minor unit (@money(USD, pla
   assert.equal(fromMinor(25000, 'USD', 6), 0.00025)
   assert.equal(fromMinor(25000, 'JPY', 6), 0.025)
   assert.equal(formatMoney(fromMinor(25000, 'USD', 6), 'USD', { decimals: 8 }), '$0.00025000')
+})
+
+test('units: formatMinor is fromMinor then formatMoney, and nothing reads as free', function () {
+  assert.equal(formatMinor(1299, 'USD'), '$12.99')
+  assert.equal(formatMinor(1299, 'JPY'), '¥1,299')
+  assert.equal(formatMinor(1299, 'KWD'), formatMoney(1.299, 'KWD'))
+  assert.equal(formatMinor(25000, 'USD', { places: 6 }), '$0.00025000')
+  // A nullable column's missing amount is blank, where `?? 0` showed $0.00.
+  assert.equal(formatMinor(null, 'USD'), '')
+  assert.equal(formatMinor(undefined, 'USD'), '')
+  // The code is the scale, so no currency is no amount.
+  assert.throws(() => formatMinor(1299))
+  assert.throws(() => formatMinor(1299, 'UDS'))
 })
 
 test('units: toMinor ROUNDS, because 8.29 * 100 is not 829', function () {

@@ -6,7 +6,7 @@ title: Server
   import { humanize } from '@frontierjs/toolbelt/inflect'
   import Server, { servers } from '../../../resources/Server.mesa'
   import { apps } from '../../../resources/App.mesa'
-  import { at } from '../../../datetime.js'
+  import { at } from '../../../lib/datetime.js'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'

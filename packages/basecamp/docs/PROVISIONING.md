@@ -463,8 +463,8 @@ because Stripe needed it.
 and `/cloud-spend/` each carried `new Intl.NumberFormat(…).format(minor / 100)`
 under a comment saying the divisor belongs to the currency. It does —
 `minorUnits` is what says so — and a hundred is right for the euro and the
-dollar and wrong for the yen by a hundred. One owner now, `web/src/money.js`,
-over `@frontierjs/toolbelt/units`.
+dollar and wrong for the yen by a hundred. Both now call `formatMinor`
+from `@frontierjs/toolbelt/units`.
 
 ### What the second cloud is graded by
 

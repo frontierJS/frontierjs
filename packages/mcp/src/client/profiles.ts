@@ -46,7 +46,7 @@ export function fileStore(path: string): ProfileStore {
       let parsed: ProfileFile
       try { parsed = JSON.parse(readFileSync(path, 'utf8')) }
       catch { throw new Error(`${path} is not JSON — fix it or delete it and sign in again`) }
-      return { profiles: {}, ...parsed }
+      return { ...parsed, profiles: parsed.profiles ?? {} }
     },
     write(file) {
       mkdirSync(dirname(path), { recursive: true, mode: 0o700 })

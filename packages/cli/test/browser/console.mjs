@@ -15,6 +15,15 @@
  * at the same app as somebody: both frames count its tools, then Chrome
  * sees a guest offered fewer, its create refused by the app, and a member's
  * land. The agent is a stand-in `claude` that makes the MCP call it is asked.
+ * `:dns` (cloudflare-dns 2.2) reads a stand-in `cf` answering from the
+ * fixture `test/cloudflare.test.js` uses: both frames count the accounts, then
+ * the same keys walk both into a zone's records and back out. The form (3.2)
+ * adds a TXT and edits it, shows an edit's before and after, and sends to the
+ * MX Basecamp marked only past its warning; `p` flips the apex's proxy and `d`
+ * deletes the TXT (3.3), the MX's delete stopping at its warning. The stand-in
+ * keeps its writes, so each reread shows the table changed. Signed out
+ * (2.3), both show one *sign in* row, then the same device code, and the
+ * accounts again once the stand-in is approved.
  *
  * `Console.mesa` is one file compiled for two targets, and the claim the console
  * rests on is that a person at either sees the same thing. Nothing else asks
@@ -38,7 +47,7 @@
  *   app is not what `:live` grades; `fli gui --devtools-port` points it there.
  */
 import { spawn } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
@@ -112,6 +121,12 @@ else {
 }
 out({ type: 'result', subtype: 'success', is_error: false, num_turns: 2, total_cost_usd: 0 })
 `, { mode: 0o755 })
+// The token is the fixture's, so a real one in the shell is never what `:dns` grades.
+writeFileSync(join(binDir, 'cf'), `#!/bin/sh\nexec "${process.execPath}" "${join(CLI, 'test/fixtures/cf/stand-in.mjs')}" "$@"\n`, { mode: 0o755 })
+const CF_ENV = { CF_FIXTURE: join(CLI, 'test/fixtures/cf/v0.15.0.json'), CLOUDFLARE_API_TOKEN: 'project-token', CF_SIGNED_OUT: join(binDir, 'cf-signed-out'), CF_STATE: join(binDir, 'cf-state.json') }
+// The sign-in's link is opened by the server, which a real opener would do on
+// the screen of whoever runs the drive.
+for (const opener of ['xdg-open', 'open']) writeFileSync(join(binDir, opener), `#!/bin/sh\necho "$@" >> "${join(binDir, 'opened')}"\n`, { mode: 0o755 })
 
 // ─── the app `:live` reads ────────────────────────────────────────────
 //
@@ -282,6 +297,7 @@ const PANES = [
   ['call',   '7', ['methods']],
   ['data',   '8', ['models']],
   ['ask',    '9', ['tools']],
+  ['dns',    '0', ['accounts']],
 ]
 
 // The legend is the footer's last line in the terminal and `[data-legend]` in
@@ -297,7 +313,7 @@ async function legendsAgree(label, expect) {
 }
 
 // A key at both frames: the pty takes bytes, Chrome a real key event.
-const BYTES = { Enter: '\r', Escape: '\x1b' }
+const BYTES = { Enter: '\r', Escape: '\x1b', Tab: '\t', ArrowDown: '\x1b[B' }
 async function press(k) {
   pty.stdin.write(BYTES[k] ?? k)
   await (k.length === 1 ? browser.type(k) : browser.press(k))
@@ -307,7 +323,7 @@ async function press(k) {
 // ─── the terminal frame: `fli gui` under a pty ────────────────────────
 
 const pty = spawn('script', ['-qfec', `stty rows ${ROWS} cols ${COLS}; bun ${FLI} gui --port ${PORT} --devtools-port ${DEVTOOLS}`, '/dev/null'], {
-  cwd: REPO, stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, TERM: 'xterm-256color', PATH: `${binDir}:${process.env.PATH}` },
+  cwd: REPO, stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, ...CF_ENV, TERM: 'xterm-256color', PATH: `${binDir}:${process.env.PATH}` },
 })
 let out = ''
 pty.stdout.on('data', (d) => { out += d })
@@ -349,7 +365,7 @@ try {
 
   // ─── the keys: the legend, then a filter typed into both ───────────
 
-  await legendsAgree(':run', ['1–9 the panes', ': go to a pane', '/ filter', 'r read again'])
+  await legendsAgree(':run', ['1–0 the panes', ': go to a pane', '/ filter', 'r read again'])
 
   const TERM = 'drive'
   for (const k of ['/', ...TERM, 'Enter']) await press(k)
@@ -372,14 +388,20 @@ try {
     await press(digit)
     for (const part of parts) {
       await browser.waitFor(`/\\d/.test(document.querySelector('[data-part="${part}"] .bar span')?.textContent ?? '')`, { ms: 120000 })
-      const web = squash(await browser.evaluate(`return document.querySelector('[data-part="${part}"] .bar span').textContent`))
       // No space is promised after the title: the terminal paints no flex gap.
       const line = () => screen(out).find((l) => l.startsWith(part) && /^\s*\d/.test(l.slice(part.length)))
       check(await until(line, 120000), `:${pane} paints its ${part} in the terminal`, screen(out).slice(0, 40).join('\n'))
-      const term = squash(line()?.slice(part.length) ?? '')
-      check(firstNumber(term) !== null && firstNumber(term) === firstNumber(web), `:${pane} — both frames count the same ${part} (${firstNumber(web)})`, `terminal ${JSON.stringify(term)} ≠ browser ${JSON.stringify(web)}`)
+      // A pane paints a count before its last read lands (`:ship` drops its
+      // ci step until ci answers), and each frame reads on its own clock.
+      let web = '', term = ''
+      const agree = async () => {
+        web  = squash(await browser.evaluate(`return document.querySelector('[data-part="${part}"] .bar span').textContent`))
+        term = squash(line()?.slice(part.length) ?? '')
+        return firstNumber(term) !== null && firstNumber(term) === firstNumber(web)
+      }
+      check(await until(agree, 10000), `:${pane} — both frames count the same ${part} (${firstNumber(web)})`, `terminal ${JSON.stringify(term)} ≠ browser ${JSON.stringify(web)}`)
     }
-    await legendsAgree(`:${pane}`, ['1–9 the panes', pane === 'check' ? 'r check again' : 'r read again'])
+    await legendsAgree(`:${pane}`, ['1–0 the panes', pane === 'check' ? 'r check again' : 'r read again'])
   }
 
   // ─── :call, as a member and as nobody (Chrome) ────────────────────
@@ -495,6 +517,157 @@ try {
   check(talk.tool.length === 1 && !talk.refused.length && talk.text.includes('done'), ':ask — the same create as a member lands', JSON.stringify(talk))
   check(await until(async () => (await (await fetch(`http://127.0.0.1:${DEVTOOLS}/api/data/Note?as=ann%40x.test`)).json()).rows?.some((r) => r.body === 'from :ask'), 5000),
     ':ask — the member agent\'s note is in the app')
+
+  // ─── :dns, walked by keys in both frames ──────────────────────────
+  //
+  // Two profiles and the token row reach four accounts; the cursor starts on
+  // the first, default · Own account, whose one zone holds two records, the
+  // MX marked by Basecamp.
+
+  await press('0')
+  const dnsCount = async (part) => {
+    const web  = await browser.evaluate(`return document.querySelector('[data-part="${part}"] .bar span')?.textContent ?? ''`)
+    const line = screen(out).find((l) => l.startsWith(part) && /^\s*\d/.test(l.slice(part.length)))
+    return { web: firstNumber(web), term: firstNumber(line?.slice(part.length) ?? '') }
+  }
+  const dnsAgree = async (part, n, label) => {
+    let seen = {}
+    check(await until(async () => { seen = await dnsCount(part); return seen.web === String(n) && seen.term === String(n) }, 20000),
+      `:dns — ${label}: both frames count ${n} ${part}`, JSON.stringify(seen) + '\n' + screen(out).slice(0, 30).join('\n'))
+  }
+  await dnsAgree('accounts', 4, 'two profiles and the token row')
+  check(await browser.evaluate(`return !!document.querySelector('[data-profile="CLOUDFLARE_API_TOKEN"][data-account="acc-project"]')`), ':dns — the env token is an account row, named by the variable')
+  await press('Enter')
+  await dnsAgree('zones', 1, 'Enter walks into default · Own account')
+  await legendsAgree(':dns zones', ['<Esc> back', 'r read again'])
+  await press('Enter')
+  await dnsAgree('records', 2, 'Enter walks into own.example')
+  check(await until(() => browser.evaluate(`return document.querySelector('[data-record="rec-mx"] [data-mark]')?.textContent.trim() === 'basecamp' && !document.querySelector('[data-record="rec-apex"] [data-mark]')`), 5000),
+    ':dns — the record Basecamp marked carries the badge, the other does not')
+  check(screen(out).some((l) => l.includes('mx.own.example') && l.includes('basecamp')), ':dns — the terminal draws the badge on the MX row')
+
+  // The form (3.2) and the table's own writes (3.3), by the same keys in both
+  // frames. The stand-in keeps each write, so a reread is the table changed.
+  const bothShow = async (sel, text, label) => {
+    const want = squash(text)
+    let web = ''
+    check(await until(async () => {
+      web = squash(await browser.evaluate(`return document.querySelector('${sel}')?.textContent ?? ''`))
+      return web.includes(want) && screen(out).some((l) => squash(l).includes(want))
+    }, 10000), `:dns — ${label}`, `want ${JSON.stringify(want)}\nbrowser ${JSON.stringify(web)}\n` + screen(out).slice(0, 40).join('\n'))
+  }
+  const rowShows = async (id, has, label) => {
+    let web = ''
+    check(await until(async () => {
+      web = squash(await browser.evaluate(`return document.querySelector('[data-record="${id}"]')?.textContent ?? ''`))
+      return has.every((h) => web.includes(h)) && screen(out).some((l) => has.every((h) => l.includes(h)))
+    }, 10000), `:dns — ${label}`, `browser ${JSON.stringify(web)}\n` + screen(out).slice(0, 40).join('\n'))
+  }
+  const typeKeys = async (text) => { for (const k of text) await press(k) }
+  await legendsAgree(':dns records', ['a add', 'e edit', 'd delete', 'p proxy off'])
+  await press('a')
+  await bothShow('[data-part="form"]', 'add a record to own.example', 'a opens the add form in both frames')
+  await legendsAgree(':dns form', ['<CR> show the change', '<Tab> next field', '<Esc> close the form'])
+  for (let i = 0; i < 3; i++) await press('ArrowDown')
+  await bothShow('[data-field="content"]', 'text', 'Down three times picks TXT, whose content is text')
+  check(await browser.evaluate(`return !document.querySelector('[data-field="proxied"]') && !document.querySelector('[data-field="priority"]')`),
+    ':dns — a TXT offers neither proxied nor priority')
+  await press('Tab')
+  await typeKeys('_drive')
+  await press('Tab')
+  await typeKeys('hello')
+  await press('Enter')
+  await bothShow('[data-after]', '+ _drive.own.example TXT hello ttl auto', 'Enter shows the record it would add, the name under the zone')
+  await legendsAgree(':dns review', ['<CR> send'])
+  await press('Enter')
+  await bothShow('[data-said-write]', 'added _drive.own.example TXT hello ttl auto', 'a second Enter sends it, and the form closes')
+  await dnsAgree('records', 3, 'the records are read again after the write, the TXT among them')
+  await legendsAgree(':dns records on a TXT', ['d delete'])
+  check(!(await webLegend()).includes('proxy'), ':dns — a TXT is offered no proxy flip', await webLegend())
+
+  // The TXT sorts first, so the cursor is on it.
+  await press('e')
+  await bothShow('[data-part="form"]', 'edit _drive.own.example TXT', 'e opens the TXT just added')
+  for (let i = 0; i < 3; i++) await press('Tab')
+  await typeKeys('note')
+  await press('Enter')
+  await bothShow('[data-after]', '+ _drive.own.example TXT hello ttl auto # note', 'its edit shows the comment it would gain')
+  await press('Enter')
+  await bothShow('[data-said-write]', 'edited _drive.own.example TXT hello ttl auto # note', 'Enter sends the edit')
+  await rowShows('rec-created', ['_drive.own.example', 'note'], 'the reread draws the TXT with its comment in both frames')
+
+  await press('j')
+  await press('e')
+  await bothShow('[data-part="form"]', 'edit own.example A', 'j then e opens the apex A')
+  for (let i = 0; i < 4; i++) await press('Tab')
+  await typeKeys('hand')
+  await press('Enter')
+  await bothShow('[data-before]', '- own.example A 192.0.2.10 ttl auto proxied', 'an edit shows the record as it is')
+  await bothShow('[data-after]', '+ own.example A 192.0.2.10 ttl auto proxied # hand', 'beside the record as it would be')
+  await press('Escape')
+  check(await until(async () => await browser.evaluate(`return !document.querySelector('[data-part="form"]')`) && !screen(out).some((l) => l.includes('edit own.example A')), 10000),
+    ':dns — Esc closes the form in both frames, nothing sent')
+
+  await press('p')
+  await bothShow('[data-said-write]', 'edited own.example A 192.0.2.10 ttl auto', 'p flips the proxy in one press')
+  await rowShows('rec-apex', ['192.0.2.10', 'off'], 'the reread draws the apex unproxied in both frames')
+  await legendsAgree(':dns records after the flip', ['p proxy on'])
+
+  await press('j')
+  await press('e')
+  await bothShow('[data-part="form"]', 'edit own.example MX', 'j then e opens the MX Basecamp marked')
+  for (let i = 0; i < 3; i++) await press('Tab')
+  await typeKeys('0')
+  await press('Enter')
+  await bothShow('[data-after]', '+ own.example MX 10 mx.own.example ttl 36000 # basecamp', 'the MX shows its priority and the new ttl')
+  await press('Enter')
+  await bothShow('[data-warning]', "own.example MX is Basecamp's (basecamp)", 'sending to a marked record answers the warning first')
+  await legendsAgree(':dns warned', ['<CR> send anyway'])
+  await press('Enter')
+  await bothShow('[data-said-write]', 'edited own.example MX 10 mx.own.example ttl 36000 # basecamp', 'Enter again sends it with confirm')
+
+  // The MX's delete stops at the warning, and Esc keeps it.
+  await press('d')
+  await bothShow('[data-asked]', '- own.example MX 10 mx.own.example ttl 36000 # basecamp', 'd shows the record it would delete')
+  await legendsAgree(':dns delete', ['<CR> delete', '<Esc> keep it'])
+  await press('Enter')
+  await bothShow('[data-part="confirm"] [data-warning]', "own.example MX is Basecamp's (basecamp)", 'deleting the marked MX answers the warning first')
+  await press('Escape')
+  check(await until(async () => await browser.evaluate(`return !document.querySelector('[data-part="confirm"]')`) && !screen(out).some((l) => l.includes('- own.example MX')), 10000),
+    ':dns — Esc keeps the MX, in both frames')
+  await dnsAgree('records', 3, 'nothing deleted')
+
+  await press('k')
+  await press('k')
+  await press('d')
+  await bothShow('[data-asked]', '- _drive.own.example TXT hello ttl auto # note', 'k k then d asks to delete the TXT')
+  await press('Enter')
+  await bothShow('[data-said-write]', 'deleted _drive.own.example TXT hello ttl auto # note', 'Enter deletes it')
+  await dnsAgree('records', 2, 'the reread no longer has the TXT')
+  await press('k')
+  await press('Escape')
+  await dnsAgree('zones', 1, 'Esc walks back to the zones')
+  await press('Escape')
+  await dnsAgree('accounts', 4, 'Esc again walks back to the accounts')
+
+  // Signed out, the token row stays and the sign-in row is first. The stand-in
+  // waits on its file as `cf` waits on the person, so deleting it approves.
+  writeFileSync(CF_ENV.CF_SIGNED_OUT, '')
+  await press('r')
+  await dnsAgree('accounts', 2, 'signed out: the sign-in row and the token row')
+  check(await browser.evaluate(`return document.querySelector('[data-part="accounts"] tr[aria-current="true"]')?.hasAttribute('data-sign-in')`), ':dns — the cursor starts on the sign-in row')
+  await press('Enter')
+  const CODE = 'FRDWWLAT'
+  check(await until(async () => await browser.evaluate(`return [...document.querySelectorAll('[data-part="sign-in"] [data-said]')].some((n) => n.textContent.trim() === '${CODE}')`)
+    && screen(out).some((l) => l.includes(CODE)), 20000),
+    ':dns — both frames show cf auth login\'s device code', screen(out).slice(0, 30).join('\n'))
+  await legendsAgree(':dns signing in', ['<Esc> stop signing in'])
+  check(await until(() => existsSync(join(binDir, 'opened')), 5000) && readFileSync(join(binDir, 'opened'), 'utf8').trim() === 'https://dash.cloudflare.com/oauth2/device/verify',
+    ':dns — the server opened the device link once for both frames', existsSync(join(binDir, 'opened')) ? readFileSync(join(binDir, 'opened'), 'utf8') : 'not opened')
+  rmSync(CF_ENV.CF_SIGNED_OUT)
+  await dnsAgree('accounts', 4, 'approved: the accounts are read again')
+  check(await browser.evaluate(`return !document.querySelector('[data-part="sign-in"]')`) && !screen(out).some((l) => l.includes(CODE)),
+    ':dns — the device code is gone from both frames once signed in')
 
   // `:` and a unique prefix, back to the first pane.
   for (const k of [':', 'r', 'u', 'Enter']) await press(k)

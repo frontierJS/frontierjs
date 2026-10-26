@@ -322,7 +322,7 @@ type DomainCertUpload {
   kind      String?
 }
 
-/// What `notification-preferences.save` accepts. That at least one transport is
+/// What `notificationPreferences.save` accepts. That at least one transport is
 /// sent is the method's: a type cannot say "one of these two".
 type NotificationPreferenceSave {
   kind  NotificationKind
@@ -330,7 +330,7 @@ type NotificationPreferenceSave {
   inApp Boolean?
 }
 
-/// What `notification-preferences.reset` accepts; no kind resets every kind.
+/// What `notificationPreferences.reset` accepts; no kind resets every kind.
 type NotificationPreferenceReset {
   kind NotificationKind?
 }
@@ -359,18 +359,56 @@ type AppUnplace {
 }
 
 /// What `apps.restoreVolume` accepts: an archive already on that server, under
-/// its Outpost's restore directory (`FJS-D943`).
+/// its Outpost's restore directory (`FJS-D943`), or one of the app's backups
+/// in a bucket, which that server fetches by a pre-signed GET (`FJS-D1521`).
+/// Exactly one of `path` and `backupId`.
 type AppVolumeRestore {
   serverId  String
-  path      String
+  path      String?
+  backupId  String?
   overwrite Boolean?
+}
+
+/// What `apps.restoreReplica` accepts: the machine whose volume takes the
+/// app's databases out of its Litestream replica, and the instant to bring
+/// them back to — the latest when absent.
+type AppReplicaRestore {
+  serverId  String
+  at        DateTime?
+  overwrite Boolean?
+}
+
+/// What `app-drills.run` accepts: the app, the machine that restores its
+/// replica into staging, and the instant, null for the latest (`FJS-D1524`).
+type AppDrillRun {
+  appId     String
+  serverId  String
+  at        DateTime?
+}
+
+/// What `apps.publish` accepts: a static build, each file as `{ path, content }`
+/// or `{ path, content_base64 }`, which Outpost bounds and names-checks.
+type AppPublish {
+  files     Json
+  trigger   String?
+  commitSha String?
+  branch    String?
 }
 
 /// What `app-backups.take` accepts: the app, and the machine whose copy of
 /// its data volume is taken (`FJS-D679`).
 type AppBackupTake {
-  appId    String
-  serverId String
+  appId         String
+  serverId      String
+  // A destination of the app's own workspace; absent, the archive stays on
+  // the machine. No default: the hub's bucket is another workspace's row.
+  destinationId String?
+}
+
+/// What `backups.rescan` accepts: the destination whose prefix is listed for
+/// archives no row names (`FJS-D1493`).
+type BackupRescan {
+  destinationId String
 }
 
 /// What `flags.setOverride` and `flags.clearOverride` accept. A rollout outside
@@ -405,7 +443,7 @@ type ServerProvisionStep {
   enrollToken String?
 }
 
-enum SecretKind     { ssh_key provider_key registry_auth tls_cert notification generic }
+enum SecretKind     { ssh_key provider_key registry_auth tls_cert notification backup generic }
 enum ServerStatus   { pending provisioning installing online unreachable draining stopped destroying destroyed }
 enum ServerRole     { general build database gateway worker }
 
@@ -544,14 +582,13 @@ enum WidgetKind {
 // each name means; the browser is told which one applies.
 enum ParamGenerator { random_hex_16 random_hex_32 random_hex_64 }
 
-// A backup is taken by hand or by the schedule. Nothing else distinguishes
-// them, and the schedule's own settings live on `HubConfig`.
-enum BackupKind        { manual scheduled }
+// How an archive came to have a row: by hand, by the schedule, or `found` — a
+// rescan met it in the bucket with no row naming it (`FJS-D1493`), so nobody
+// here asked for it. The schedule's own settings live on `HubConfig`.
+enum BackupKind        { manual scheduled found release }
 
-// Where the archive was written. `local` is the machine basecamp runs on,
-// which is a backup of a disk onto the same disk — honest, and the reason the
-// screen nudges towards the second one.
-enum BackupDestination { local s3 }
+// How a drill was asked for; a drill is never found on a machine or run by a release.
+enum DrillKind         { manual scheduled }
 
 // Which manifest field declared a dependency — `dependencies`, `devDependencies`,
 // `peerDependencies`, `optionalDependencies`.
@@ -871,6 +908,7 @@ model Workspace {
   alertRules  AlertRule[]
   monitors    Monitor[]
   channels    NotificationChannel[]
+  backupDestinations BackupDestination[]
   flags       FeatureFlag[]
   auditEvents AuditEvent[]
 
@@ -1261,6 +1299,12 @@ model Server {
   actualSpecs      Json?
   health           Json?
   dockerState      Json?
+  // What this machine's Litestream says, as the heartbeat carried it:
+  // `{ apps: [{ app_id, status, last_sync_at, databases }] }` or `{ error }`
+  // (`IDEAS/backups.md` 2.3). Here and not on each App, because the
+  // heartbeat already writes this row and a column per app would be a second
+  // trailed write per app every thirty seconds. `checked_at` is when it was read.
+  replication      Json?
   labels           Json         @default("{}")
 
   createdAt        DateTime     @default(now())
@@ -1271,6 +1315,7 @@ model Server {
   volumes          Volume[]
   appServers       AppServer[]
   serverNetworks   ServerNetwork[]
+  hostHub          HubConfig?   @relation("HubHost")
 
   @@gate(2.4.4.5)
 
@@ -1678,10 +1723,37 @@ model App {
   blueprintId   String?     @system @immutable
   blueprint     Blueprint?  @relation(fields: [blueprintId], references: [id], onDelete: SetNull)
 
+  // The app's own archive schedule (`IDEAS/backups.md` 1.6). Null is no
+  // schedule, as `Job.cronExpression` reads; the clock follows the row through
+  // `job-schedule.ts`, so a patch replaces the registration and a soft delete
+  // ends it. The service refuses an expression the clock cannot hold BEFORE
+  // the write. `SetNull` as on `HubConfig`, not `AppBackup`'s `Restrict`: a
+  // schedule pointer holds no object key, so losing the bucket drops the next
+  // archive to the machine's disk rather than refusing the bucket's removal.
+  backupCron          String?  @trim @length(1, 100)
+  backupDestinationId String?
+  backupDestination   BackupDestination? @relation("AppBackups", fields: [backupDestinationId], references: [id], onDelete: SetNull)
+
+  // Where Litestream replicates this app's SQLite (`IDEAS/backups.md` 2.2). A
+  // second pointer, not the one above: a snapshot leaves the machine by a
+  // pre-signed URL, so that bucket's key never leaves Basecamp, and this key
+  // sits on every machine the app is placed on. Unique, because the key is
+  // the app's alone (`FJS-D1505`): a second app on one destination would put
+  // one app's key beside another's replica. Null is no replica.
+  replicaDestinationId String?  @unique
+  replicaDestination   BackupDestination? @relation("AppReplica", fields: [replicaDestinationId], references: [id], onDelete: SetNull)
+
+  // When the replica is drilled (`IDEAS/backups.md` 3.3): restored beside the
+  // app and proven by its live release image, the result an `AppDrill` row.
+  // Null is no schedule; the clock follows the row as `backupCron`'s does.
+  drillCron            String?  @trim @length(1, 100)
+
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @default(now()) @updatedAt
   deletedAt     DateTime?
 
+  appBackups    AppBackup[]
+  appDrills     AppDrill[]
   deployments   Deployment[]
   jobs          Job[]
   appServers    AppServer[]
@@ -1798,6 +1870,7 @@ model Domain {
   updatedAt     DateTime  @default(now()) @updatedAt
   deletedAt     DateTime?
 
+  @@label(hostname)
   @@gate(2.5)
   @@softDelete
   @@trail(audit)
@@ -1904,11 +1977,30 @@ model AppBackup {
   serverId    String
   server      Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
+  // Where the machine sent the archive, by a pre-signed PUT Basecamp minted
+  // (`FJS-D1485`); null is the machine's own disk. `Restrict` as on `Backup`:
+  // a row whose `location` is an object key must keep the bucket it names.
+  destinationId String?
+  destination   BackupDestination? @relation(fields: [destinationId], references: [id], onDelete: Restrict)
+
+  // How the archive came to be — `BackupKind`, the hub's word for the same
+  // thing. `release` is the copy a fleet `/deploy` takes before the swap, and
+  // `deploymentId` names that release; the row outlives a pruned release.
+  kind          BackupKind  @default(manual)
+  deploymentId  String?
+  deployment    Deployment? @relation(fields: [deploymentId], references: [id], onDelete: SetNull)
+
   status      RunStatus @default(pending)
   sizeBytes   Int?
   fileCount   Int?
+  // A path on the machine, or an object key under the destination's prefix
+  // when the upload landed. An upload that failed leaves the path here and
+  // says why in `error`, with `status` still `success`: the archive exists.
   location    String?   @trim @length(0, 500)
   error       String?   @length(0, 2000)
+  // The archive's sha256 as the machine wrote it; a restore from the bucket
+  // refuses an object that does not match (`FJS-D1521`).
+  sha256      String?   @length(64, 64)
 
   requestedBy String?
 
@@ -1922,6 +2014,48 @@ model AppBackup {
   @@trail(audit)
   @@index([appId])
   @@index([serverId])
+  @@index([destinationId])
+  @@index([deploymentId])
+}
+
+// One drill of an app's replica (`FJS-D1524`, `FJS-D1525`): its databases
+// restored on a machine into a staging directory, never the app's volume, and
+// proven by the app's live release image running `litestone restore
+// --verify-only`. `success` is a copy that came back and passed; `failed` is
+// one that did not, with `error` or the failing checks in `report`. The
+// outcome columns are written at SYSTEM, as `AppBackup`'s are.
+model AppDrill {
+  id           String      @id @default(uuid())
+  appId        String
+  app          App         @relation(fields: [appId], references: [id], onDelete: Cascade)
+  serverId     String
+  server       Server      @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  // The release whose image proved it; the row outlives a pruned release.
+  deploymentId String?
+  deployment   Deployment? @relation(fields: [deploymentId], references: [id], onDelete: SetNull)
+
+  kind         DrillKind   @default(manual)
+  status       RunStatus   @default(pending)
+  // The instant asked for; null is the latest. Each database's own answer,
+  // pinned or latest, is in `databases`.
+  at           DateTime?
+  databases    Json?
+  // litestone's verify report as the image printed it.
+  report       Json?
+  error        String?     @length(0, 2000)
+
+  requestedBy  String?
+
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  durationMs   Int?
+  createdAt    DateTime    @default(now())
+
+  @@gate(5.8.8.8)
+  @@trail(audit)
+  @@index([appId])
+  @@index([serverId])
+  @@index([deploymentId])
 }
 
 model AppNetwork {
@@ -1979,6 +2113,8 @@ model Deployment {
   updatedAt            DateTime     @default(now()) @updatedAt
 
   steps                DeploymentStep[]
+  appBackups           AppBackup[]
+  appDrills            AppDrill[]
 
   @@gate(2.4.4.4)
   // The release pipeline, declared once and enforced at the Data boundary
@@ -2474,6 +2610,69 @@ model NotificationChannel {
   @@index([workspaceId])
 }
 
+// A bucket an archive is sent to — S3's protocol at any vendor (`FJS-D1488`).
+//
+// Workspace-owned like `NotificationChannel`, because the credential is a
+// `Secret` and a `Secret` has a workspace (`FJS-D1491`); the hub's own schedule
+// points at one from above through `HubConfig.backupDestinationId`. A
+// Litestream replica is a continuous backup, so a replica's bucket is this same
+// row and not a second noun.
+//
+// `endpoint` carries no bucket: the connector addresses path-style
+// (`<endpoint>/<bucket>/<key>`), which every vendor accepts where the
+// virtual-hosted form is AWS's and R2's. `region` is what SigV4 signs with and
+// is read off the endpoint at B2 (`s3.us-west-004.backblazeb2.com` →
+// `us-west-004`). `prefix` is where a key scoped to an object-name prefix
+// stops refusing: at B2 an application key restricted to `basecamp-` makes
+// every unprefixed PUT `AccessDenied`, so the prefix here must equal the key's.
+model BackupDestination {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  name        String    @trim @length(1, 200)
+  endpoint    String    @trim @url @label("Endpoint URL")
+  region      String    @trim @length(1, 64)
+  bucket      String    @trim @length(3, 63)
+  // Object keys are written under it; empty means the bucket root.
+  prefix      String    @default("") @trim @length(0, 200)
+
+  // Bare id, no @relation — the same shape as NotificationChannel.secretId.
+  secretId    String?   @system
+
+  // `<accessKeyId>:<secretAccessKey>` on the wire and nowhere else — at B2 the
+  // application key's keyID and applicationKey, never the master key. The
+  // service lifts it into a Secret row (@encrypted) and keeps `secretId`; the
+  // one reader is conduit's resolver, at send time, and it splits on the first
+  // colon because that is what the connector's `splitCredential` reads.
+  secret      String?   @transient @length(3, 4096) @label("Credential")
+
+  lastTestAt  DateTime? @system
+  createdBy   String?   @immutable
+
+  version     Int       @version
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+  deletedAt   DateTime?
+
+  backups     Backup[]
+  appBackups  AppBackup[]
+  // `@keep`: an app outlives its bucket — the pointer is `SetNull`, the
+  // schedule drops to the machine's disk, and nothing about the app is retired.
+  apps        App[] @relation("AppBackups") @keep
+  // The one app, or the hub, replicating with this key — never both
+  // (`FJS-D1505`); `replicaHolder` in its service is the one reader.
+  replicaApp  App?  @relation("AppReplica") @keep
+  replicaHub  HubConfig? @relation("HubReplica") @keep
+  hubs        HubConfig[] @relation("HubBackups")
+
+  @@gate(2.5)
+  @@softDelete
+  @@trail(audit)
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+}
+
 model AlertRule {
   id          String    @id @default(uuid())
   workspaceId String
@@ -2725,7 +2924,9 @@ model Dashboard {
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   name        String    @trim @length(1, 120)
-  slug        String    @trim @immutable
+  // Not @immutable: a dashboard's handle is in nobody's source code, so
+  // dashboards.patch re-derives it from a new name.
+  slug        String    @trim
   description String?
 
   // An emoji, so it is stored as text with a length bound rather than as a
@@ -3144,13 +3345,23 @@ model Backup {
 
   kind         BackupKind        @default(manual)
   status       RunStatus         @default(pending)
-  destination  BackupDestination @default(local)
+
+  // Where the archive was sent. Null is `local`: the machine basecamp runs on,
+  // which is a backup of a disk onto the same disk — honest, and the reason the
+  // screen nudges towards a destination (`FJS-D1488`). `Restrict`, because a
+  // row that turned `local` while its `location` is an object key would claim
+  // a file this disk never held. Two paths, two owners: the FK blocks a hard
+  // delete, and the destination is @@softDelete, so its service answers 409
+  // on `remove` while an archive names it — an UPDATE the FK never sees.
+  destinationId String?
+  destination   BackupDestination? @relation(fields: [destinationId], references: [id], onDelete: Restrict)
 
   // Absent until it finishes. Bytes.
   sizeBytes    Int?
 
-  // Where the archive landed — a path for `local`, an object key for `s3`.
-  // Never a URL with a credential in it.
+  // Where the archive landed — a path when `destinationId` is null, an object
+  // key under the destination's `prefix` otherwise. Never a URL with a
+  // credential in it.
   location     String?           @trim @length(0, 500)
   error        String?           @length(0, 2000)
 
@@ -3169,6 +3380,7 @@ model Backup {
   @@trail(audit)
   @@index([status])
   @@index([createdAt])
+  @@index([destinationId])
 
   // @@tenant(none) — a backup is of the whole installation, every workspace in it
   @@tenant(none)
@@ -3228,7 +3440,49 @@ model HubConfig {
   // and unregistered when it stops being true — `app.jobs.unschedule`.
   backupEnabled             Boolean  @default(false)
   backupCron                String   @default("0 2 * * *") @trim @length(1, 100)
-  backupDestination         BackupDestination @default(local)
+
+  // Where the scheduled archive goes; null is the local disk. A workspace's
+  // row, pointed at from the hub tier (`FJS-D1491`): deleting that workspace
+  // drops the schedule to local, which is what posture grades red rather than
+  // a schedule that fails at 02:00.
+  backupDestinationId       String?
+  backupDestination         BackupDestination? @relation("HubBackups", fields: [backupDestinationId], references: [id], onDelete: SetNull)
+
+  // Where Litestream replicates Basecamp's own database, from the Outpost on
+  // its box (`IDEAS/backups.md` 2.4, `FJS-D1486`): the same path an app's
+  // takes, so this key sits on that box. Unique for the reason
+  // `App.replicaDestinationId` is, and a destination an app replicates with
+  // is refused here.
+  replicaDestinationId      String?  @unique
+  replicaDestination        BackupDestination? @relation("HubReplica", fields: [replicaDestinationId], references: [id], onDelete: SetNull)
+
+  // Retention, local and remote apart. An archive goes when it is outside the
+  // newest `Count` of its kind OR older than `Days`; null days is no age limit.
+  // The newest successful archive is never pruned, so a count of 0 would mean
+  // what 1 means and is refused. Remote counts per destination, so a bucket
+  // the hub stopped pointing at is still pruned. Applied after each backup
+  // finishes — a lowered limit waits for the next one.
+  backupKeepLocalCount      Int      @default(7) @gte(1) @lte(1000)
+  backupKeepLocalDays       Int?     @gte(1) @lte(3650)
+  backupKeepRemoteCount     Int      @default(7) @gte(1) @lte(1000)
+  backupKeepRemoteDays      Int?     @gte(1) @lte(3650)
+
+  // A copy of ENCRYPTION_KEY kept OFF this box, attested by a person. Nothing
+  // here can see that copy — `fli deploy:setup` leaves it in the operator's
+  // local `.env` — so the row holds only when somebody said they kept it and
+  // the sha256 of the key they said it of. The key never travels with an
+  // archive, and an archive without it cannot be read: `hub.key-escrowed`
+  // grades red while this is null or names a key that is no longer the one in
+  // use. Written by `hubConfig.attestEscrow` alone, never by `save`.
+  encryptionKeyEscrowedAt   DateTime? @system
+  encryptionKeyFingerprint  String?   @system
+
+  // The Server row that is the box this Basecamp runs on — what /hub/security/
+  // grades and what Basecamp's own replica key is sent to. A slug is a
+  // tenant's to choose, so it cannot say which row this is (`FJS-3488`).
+  // Written by `core/host-machine.ts` alone, never by `save`.
+  hostServerId              String?   @unique @system
+  hostServer                Server?   @relation("HubHost", fields: [hostServerId], references: [id], onDelete: SetNull)
 
   mailFromAddress           String?  @email @lower
   mailFromName              String?  @trim @length(0, 80)

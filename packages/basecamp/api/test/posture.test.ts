@@ -20,9 +20,9 @@ import { GatePlugin }  from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor }         from '../src/core/capabilities.ts'
-import { declaredFor, gradeHub, gradePosture, HUB_CONTROL_IDS, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/core/posture.ts'
+import { declaredFor, gradeHub, gradePosture, gradeReplication, HUB_CONTROL_IDS, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/core/posture.ts'
 import { HOST_SLUG } from '../src/core/host-machine.ts'
-import type { PostureReadings } from '../src/core/posture.ts'
+import type { HostDeclared, PostureReadings } from '../src/core/posture.ts'
 import { prunePosture } from '../src/jobs/retention.job.ts'
 
 const NOW = Date.parse('2026-10-13T12:00:00Z')
@@ -259,7 +259,11 @@ describe('a report lands', () => {
     } })
     const stale = await env.as(owner).service('posture').call('latest', lone.id, {})
     expect(stale.stale).toBe(true)
-    expect(stale.controls.every((c: any) => c.ok === 'unknown')).toBe(true)
+    // The replica control is read off the heartbeat, which an old report does not age.
+    const [replica, reported] = [stale.controls.filter((c: any) => c.id === 'backup.replica-lag'),
+                                 stale.controls.filter((c: any) => c.id !== 'backup.replica-lag')]
+    expect(reported.every((c: any) => c.ok === 'unknown')).toBe(true)
+    expect(replica.map((c: any) => c.ok)).toEqual([true])
   })
 
   test('retention keeps each machine\'s newest however old', async () => {
@@ -274,11 +278,48 @@ describe('a report lands', () => {
 
 // ─── the box a Basecamp runs on (FJS-2714) ─────────────────────────────────
 
+describe('the replica grader', () => {
+  const APPS  = [{ id: 'a1', slug: 'shop' }, { id: 'a2', slug: 'blog' }]
+  const ago   = (ms: number) => new Date(NOW - ms).toISOString()
+  const read  = (apps: any[], extra: object = {}) => ({ apps, checked_at: ago(10_000), ...extra })
+  const synced = (id: string, ms: number | null) => ({ app_id: id, status: 'replicating', last_sync_at: ms === null ? null : ago(ms), databases: 1 })
+
+  test('every app a few seconds behind passes; nothing to replicate passes', () => {
+    expect(gradeReplication(read([synced('a1', 2_000), synced('a2', 4_000)]), APPS, NOW).ok).toBe(true)
+    expect(gradeReplication(null, [], NOW).ok).toBe(true)
+  })
+
+  test('a stalled bucket, a never-synced app and a missing app each fail by name', () => {
+    const c = gradeReplication(read([synced('a1', 10 * 60_000), synced('a2', null)]), APPS, NOW)
+    expect(c.ok).toBe(false)
+    expect(c.message).toContain('shop is 10 min behind')
+    expect(c.message).toContain('blog has never synced')
+    expect(gradeReplication(read([synced('a1', 1_000)]), APPS, NOW).message).toContain('blog is not replicating here')
+  })
+
+  test('Litestream not answering fails; no reading, or an old one, is unknown', () => {
+    expect(gradeReplication({ error: 'Litestream is not running', checked_at: ago(1_000) }, APPS, NOW).ok).toBe(false)
+    expect(gradeReplication(null, APPS, NOW).ok).toBe('unknown')
+    expect(gradeReplication(read([synced('a1', 1_000), synced('a2', 1_000)], { checked_at: ago(20 * 60_000) }), APPS, NOW).ok).toBe('unknown')
+  })
+
+  test('on Basecamp\'s box its own database is graded beside the apps', () => {
+    const host = (ms: number | null) => ({ host: { status: 'replicating', last_sync_at: ms === null ? null : ago(ms), databases: 2 } })
+    const ok = gradeReplication(read([], host(3_000)), [], NOW, true)
+    expect(ok).toMatchObject({ ok: true, message: expect.stringContaining('Basecamp\'s own database replicating') })
+    expect(gradeReplication(read([], host(9 * 60_000)), [], NOW, true).message).toContain('Basecamp\'s own database is 9 min behind')
+    expect(gradeReplication(read([synced('a1', 1_000)]), [APPS[0]], NOW, true).message).toContain('OUTPOST_HOST_DB_PATH')
+    // A machine not asked to replicate it ignores a reading of it.
+    expect(gradeReplication(read([], host(9 * 60_000)), [], NOW).ok).toBe(true)
+  })
+})
+
 describe('the hub grader', () => {
   const FILES = { db: { path: '/srv/basecamp/db', mode: '700', owner: 'root', group: 'root' },
                   env: { path: '/srv/basecamp/.env', mode: '600', owner: 'root', group: 'root' } }
-  const hub  = (r: PostureReadings | null, lastBackupAt: string | null, at: number = NOW) =>
-    Object.fromEntries(gradeHub(r, { lastBackupAt }, { at, now: NOW }).map(c => [c.id, c]))
+  const KEY  = 'a'.repeat(64)
+  const hub  = (r: PostureReadings | null, lastBackupAt: string | null, at: number = NOW, host: Partial<HostDeclared> = {}) =>
+    Object.fromEntries(gradeHub(r, { lastBackupAt, keyFingerprint: KEY, keyEscrow: null, ...host }, { at, now: NOW }).map(c => [c.id, c]))
 
   test('no backup ever is failing, and a recent one passes', () => {
     expect(hub({ ...CLEAN, host_files: FILES }, null)['hub.backup-recent'].ok).toBe(false)
@@ -303,13 +344,26 @@ describe('the hub grader', () => {
     expect(hub({ ...CLEAN, host_files: { ...FILES, key: null } }, null)['hub.env-mode'].ok).toBe(true)
   })
 
-  test('the backup is graded with no report or a stale one; the files are unknown', () => {
+  test('the backup and the key are graded with no report or a stale one; the files are unknown', () => {
     const none  = hub(null, null)
     expect(none['hub.backup-recent'].ok).toBe(false)
+    expect(none['hub.key-escrowed'].ok).toBe(false)
     expect(none['hub.env-mode'].ok).toBe('unknown')
     const stale = hub({ ...CLEAN, host_files: FILES }, null, NOW - 3 * POSTURE_INTERVAL_MS)
     expect(stale['hub.backup-recent'].ok).toBe(false)
+    expect(stale['hub.key-escrowed'].ok).toBe(false)
     expect(stale['hub.db-mode'].ok).toBe('unknown')
+  })
+
+  test('the key is escrowed when the attestation names the key in use, and not before, after a change, or on the placeholder', () => {
+    const at = '2026-10-23T10:00:00.000Z'
+    const grade = (host: Partial<HostDeclared>) => hub({ ...CLEAN, host_files: FILES }, null, NOW, host)['hub.key-escrowed']
+    expect(grade({})).toMatchObject({ ok: false, message: expect.stringContaining('unreadable without it') })
+    expect(grade({ keyEscrow: { at, fingerprint: KEY } })).toMatchObject({ ok: true, message: expect.stringContaining('2026-10-23') })
+    expect(grade({ keyEscrow: { at, fingerprint: 'b'.repeat(64) } })).toMatchObject({ ok: false, message: expect.stringContaining('key changed') })
+    // The message names keys by a prefix of the digest, never the digest whole.
+    expect(grade({ keyEscrow: { at, fingerprint: KEY } }).message).not.toContain(KEY)
+    expect(grade({ keyFingerprint: null, keyEscrow: { at, fingerprint: KEY } })).toMatchObject({ ok: false, message: expect.stringContaining('placeholder') })
   })
 
   test('only the hub controls: the fleet ones are the host row\'s own', () => {
@@ -332,6 +386,7 @@ describe('the host row on /hub/security/', () => {
     const c    = Object.fromEntries(view.controls.map((x: any) => [x.id, x]))
     expect([view.enrolled, view.reported]).toEqual([false, false])
     expect(c['hub.backup-recent'].ok).toBe(false)
+    expect(c['hub.key-escrowed']).toMatchObject({ ok: false, message: expect.stringContaining('No copy of ENCRYPTION_KEY') })
     expect(c['hub.db-mode'].ok).toBe('unknown')
   })
 
@@ -340,6 +395,12 @@ describe('the host row on /hub/security/', () => {
     // not the fixture renamed.
     const drifted = { machine, SECRET }
     machine = await env.system.server.create({ data: { workspaceId: ws.id, name: 'hub-host', slug: HOST_SLUG, status: 'pending' } })
+    // The slug is any administrator's to choose, so it names nothing until the hub points at the row.
+    expect((await env.as(admin).service('posture').call('host', undefined, {})).enrolled).toBe(false)
+    const sys = env.system as any
+    if (!await sys.hubConfig.exists({ where: { id: 'hub' } }))
+      await sys.hubConfig.create({ data: { id: 'hub', baseUrl: 'https://hub.posture.test', adminEmail: 'ops@posture.test' } })
+    await sys.hubConfig.update({ where: { id: 'hub' }, data: { hostServerId: machine.id } })
     const { mintEnrollToken, hashEnrollToken } = await import('../src/providers/compute/enrollment.ts')
     const token = mintEnrollToken().token
     await env.system.server.update({ where: { id: machine.id },
@@ -359,6 +420,7 @@ describe('the host row on /hub/security/', () => {
 
     // A workspace owner reaches the row through `latest`, never the hub's view.
     expect((await env.as(owner).service('posture').call('host', undefined, {}).catch((e: any) => e)).code ?? 404).toBe(404)
+    await sys.hubConfig.update({ where: { id: 'hub' }, data: { hostServerId: null } })
     ;({ machine, SECRET } = drifted)
   })
 

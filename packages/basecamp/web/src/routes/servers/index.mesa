@@ -3,8 +3,8 @@ title: Servers
 ---
 <script>
   import { page, goto } from '@frontierjs/sierra/router'
-  import { session }    from '../../session.js'
-  import { ago }        from '../../datetime.js'
+  import { session }    from '../../lib/session.js'
+  import { ago }        from '../../lib/datetime.js'
   import { servers }    from '../../resources/Server.mesa'
   import Button         from '@frontierjs/ui/components/forms/Button.mesa'
   import Input          from '@frontierjs/ui/components/forms/Input.mesa'
@@ -211,8 +211,10 @@ title: Servers
   $: session.workspaceId, () => loadSelf()
 
   // Offered until the machine has checked in once — a row whose command was
-  // never run is still a box that is not in the fleet.
-  $: offerSelf = !self?.lastHeartbeatAt
+  // never run is still a box that is not in the fleet — and to the hub tier
+  // alone, which is all `useHost` answers.
+  $: session.user
+  $: offerSelf = !!session.user?.isSystemAdmin && !self?.lastHeartbeatAt
 
   async function enrollSelf() {
     selfError = null; selfCmd = null; enrolling = true; busySelf = true

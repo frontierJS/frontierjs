@@ -21,6 +21,7 @@ import { dirname, join, resolve } from 'node:path'
 import { tokenize, TK } from '@frontierjs/toolbelt/predicate'
 import { splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 import { PARSABLE, typeScriptAt, functionName } from './functions.js'
+import { REGISTER_FILES } from './registers.js'
 
 /** A row this long shows what is inside it; a shorter one is read whole. */
 export const EXPAND_AT = 150
@@ -397,4 +398,71 @@ export function readRefusal(path, lines, outline) {
     `Read the range you need: \`fli outline ${path} <name|a.b|line>\` prints one row (a line number picks the row holding it), ` +
       'or Read with offset and limit. A Read with a limit is never refused, so ask for the whole file that way when you mean to.',
   ].join('\n')
+}
+
+// ─── the road past a hunt ─────────────────────────────────────────────────────
+//
+// The outline gate above refuses a WIDE read. The reads it lets through are
+// where the volume went next (`FJS-3461`): an `rg` over `ISSUES.md`, a narrow
+// `sed` into `DECISIONS.md` for one row, a `cat` of a plan to find its one
+// open box, an `rg` over `packages/` for where an export lives. Each has a
+// command that answers in a line — `fli find`, `fli plan`, `fli sig` — and the
+// read is made because nothing at the moment of the read names it. This names
+// it, as context beside the read and never a refusal: a hint that is wrong
+// costs a line, a refusal that is wrong costs the turn.
+
+const REGISTER = new RegExp(`(?:^|[\\s'"/])(${REGISTER_FILES.filter(f => f.endsWith('.md')).map(f => f.replace('.', '\\.')).join('|')})(?=$|[\\s'":])`)
+const PLAN     = /(?:^|[\s'"])(\/?(?:[\w.-]+\/)*(?:IDEAS\/[\w.-]+\.md|PLAN\.md))(?=$|[\s'":])/
+const SEARCH   = /(?:^|[\s;&|(])(?:rg|grep)\s+((?:-{1,2}[\w=-]*\s+)*)(?:'([^']*)'|"([^"]*)"|(\S+))/
+const IDENT    = /^(?:\\b)?([A-Za-z_$][\w$]*)(?:\\b)?$/
+const ID       = /^[A-Z]{2,5}-D?\d{1,5}$/
+
+/** The words of a search pattern a register answers by, regex syntax dropped. */
+const termsOf = pattern => pattern.replace(/\\[bBwWsSdD]/g, ' ').split(/[^\w-]+/).filter(t => t.length > 1).slice(0, 4)
+
+/**
+ * A read that a command answers better, `{ kind, path?, terms?, name? }` —
+ * `register` for a search or window into an issue or decision register,
+ * `plan` for any read of a plan, `symbol` for an `rg` whose pattern is one
+ * identifier over the tree — or null. `wideRead` decides whether the read is
+ * refused; this only decides what the reader is told beside it.
+ */
+export function hintedRead({ tool_name, tool_input } = {}) {
+  if (tool_name === 'Read') {
+    const path = String(tool_input?.file_path ?? '')
+    const plan = path.match(PLAN)
+    if (plan) return { kind: 'plan', path: plan[1] }
+    return REGISTER.test(path) ? { kind: 'register', terms: [] } : null
+  }
+  if (tool_name !== 'Bash') return null
+  const command = String(tool_input?.command ?? '')
+  const search  = command.match(SEARCH)
+  const pattern = search ? (search[2] ?? search[3] ?? search[4] ?? '') : null
+  const plan    = command.match(PLAN)
+  if (plan) return { kind: 'plan', path: plan[1] }
+  if (REGISTER.test(command)) {
+    if (!search && !/\b(?:sed|cat|head|tail|awk)\b/.test(command)) return null
+    return { kind: 'register', terms: pattern ? termsOf(pattern) : [] }
+  }
+  if (!search) return null
+  const name = pattern.match(IDENT)?.[1]
+  const dir  = command.slice(search.index + search[0].length).trim().split(/\s+/)[0] ?? ''
+  if (!name || name.length < 4 || (dir && !/^(?:packages|\.|src)\b/.test(dir))) return null
+  return { kind: 'symbol', name }
+}
+
+/** The context given beside a hinted read. */
+export function readHint(hint) {
+  if (hint.kind === 'plan') {
+    return `${hint.path} is a plan: \`fli plan ${hint.path}\` prints its first open box and what blocks it, ` +
+      `\`fli outline ${hint.path} <heading>\` one section, \`--all\` every step.`
+  }
+  if (hint.kind === 'symbol') {
+    return `\`fli sig ${hint.name}\` names where an export is declared, the lines it spans and its import line, without a hunt; ` +
+      '`fli outline <file>` lists what one file holds.'
+  }
+  const terms = hint.terms.filter(t => !ID.test(t))
+  const id    = hint.terms.find(t => ID.test(t))
+  const ask   = id ? `\`fli find ${id} --show\` prints that row whole` : terms.length ? `\`fli find ${terms.join(' ')}\` lists every row and ruling holding those words, open first` : '`fli find <terms>` lists every row and ruling holding the words, open first'
+  return `${ask}; \`fli find <id> --show\` is one row, so no row is read by line number. An rg over a register costs thousands of chars a hit.`
 }

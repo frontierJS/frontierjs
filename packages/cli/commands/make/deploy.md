@@ -59,7 +59,9 @@ const makeDockerfile = (appId, needs = {}) => `# FrontierJS API — ${appId}
 # before they build. A bare \`docker build\` from a clean tree has none of it —
 # run \`fli deploy:vendor\` first.
 
-FROM oven/bun:1 AS base
+# Bun is the version fli ran under when this file was written, so the image
+# runs what the app was developed on. Move both FROM lines together.
+FROM oven/bun:${Bun.version} AS base
 WORKDIR /app
 
 # Dependencies first, so a source edit does not re-resolve the tree. The manifest
@@ -97,7 +99,7 @@ ${needs.webSrc ? `
 COPY web/src ./web/src
 ` : ''}
 # Runtime image
-FROM oven/bun:1-slim
+FROM oven/bun:${Bun.version}-slim
 WORKDIR /app
 ${needs.chrome ? `
 # ${needs.chrome} drives a headless Chrome, and its first launch fails
@@ -122,8 +124,9 @@ COPY --from=base /app .
 # one with no pause in it. Put it beside DATABASE_URL. The deploy asks the running
 # app where its jobs database is before the swap, and says so when it is not here.
 #
-# The process runs as \`${IMAGE_USER.name}\`, not root, so the directory is handed to it here and
-# the HOST directory bound over it must belong to the same uid -- \`fli deploy:setup\`
+# The process runs as \`${IMAGE_USER.name}\`, not root, so the directory is handed to it here.
+# On a server the deploy starts it with --user as the app's own host user instead,
+# and the HOST directory bound over /db belongs to that user -- \`fli deploy:setup\`
 # creates it so, and \`fli deploy:doctor --remote\` says when it is not.
 RUN mkdir -p /db && chown ${IMAGE_USER.name}:${IMAGE_USER.name} /db
 

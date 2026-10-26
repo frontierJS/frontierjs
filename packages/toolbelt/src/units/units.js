@@ -124,9 +124,10 @@ function moneyFormatter(locale, code, digits) {
  * convention is the point (an invoice, a statement).
  *
  * The amount is a NUMBER of major units — 28.5 is twenty-eight fifty, not
- * twenty-eight and a half cents. This kit does not do minor units, because a
+ * twenty-eight and a half cents. It does not guess at minor units, because a
  * caller storing integer cents knows it and a caller storing a float does not,
- * and guessing between them is how a price gains two zeroes.
+ * and guessing between them is how a price gains two zeroes. A stored `@money`
+ * integer goes through `formatMinor` below, which says which it is by name.
  *
  * Not a number answers `''`, for `formatBytes`'s reason: `Number(null)` is 0,
  * and *nothing was answered* must not read as *free*.
@@ -291,6 +292,29 @@ export function fromMinor(minor, currency, places = 0) {
   const scale = 10 ** (minorUnits(currency) + places)
   if (!Number.isFinite(n)) return NaN
   return n / scale
+}
+
+/**
+ * A stored `@money` amount → the text a screen shows: `fromMinor` then
+ * `formatMoney`, with the digits `places` adds carried into the formatter.
+ *
+ * Every screen that showed a price wrote this pair by hand, and the copies
+ * drifted — `?? 0` in one rendered a missing amount as `$0.00`, a hand `/ 100`
+ * in another was wrong for the yen. Not a number answers `''` through
+ * `formatMoney`; the currency has no default and a bad code throws, because the
+ * code is what says where the decimal point goes (`FJS-D556`).
+ *
+ * @param {number} minor     a whole number of minor units, e.g. 1299
+ * @param {string} currency  ISO 4217
+ * @param {{ places?: number, locale?: string }} [opts]  `places` from `@money(USD, places: n)`
+ * @returns {string}  e.g. '$12.99'
+ */
+export function formatMinor(minor, currency, opts = {}) {
+  const places = opts.places ?? 0
+  return formatMoney(fromMinor(minor, currency, places), currency, {
+    locale:   opts.locale,
+    decimals: places ? minorUnits(currency) + places : undefined,
+  })
 }
 
 /**

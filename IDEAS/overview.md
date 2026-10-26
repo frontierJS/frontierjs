@@ -717,6 +717,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 ### partial
 
 - `frontier-cloud.md` — Frontier Cloud: paid hosting over the fleet FJS already runs
+- `third-party.md` — one register of the third parties we recommend: Provider, self-hosted, Stand-in; B2, SeaweedFS and the nouns ruled; Phase 3 moves it to `docs/`
 
 ### proposed
 
@@ -728,6 +729,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `calls-and-media.md` — a huddle, a screen share and a recording from seams the app already has; no SFU, mesh behind one adapter
 - `changes-retirement.md` — Retire CHANGES.md: history is git, lessons go where they are read
 - `claim-checking.md` — Claim checking: a compiler for the prose in a repo
+- `cloudflare-dns.md` — Cloudflare DNS in the console: pick an account, pick a zone, edit its records, over the `cf` CLI's login
 - `command-views.md` — a command's output written as a Mesa view, rendered once as terminal text
 - `content-collections.md` — Content collections: words that are not rows
 - `controlled-language.md` — a controlled language: the vocabulary, given verbs and sentence shapes, as the thing an app is described in
@@ -737,6 +739,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `external-field-cache.md` — a field whose value is fetched from a third party and cached
 - `failure-handling.md` — failure handling: one fault, read the same way by every layer that may try again
 - `field-workforce.md` — Field workforce coordination: the stressor that completes a loop example already half-owns
+- `illustration.md` — a paragraph and one picture in place of a page: the brief Claude fills before drawing, three kinds of figure with their owners, a cold-reader proof
 - `kernel-and-projections.md` — Kernel and projections: the structure the seed thesis implies
 - `keys.md` — one keymap engine under the terminal, the browser and the desktop; the vim box as one `.mesa`
 - `maintainability-signals.md` — the register and the loop log read as a map of where the code hurts: a seam segment, env rows with proof, drives that declare what they hold
@@ -746,8 +749,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `mesa-kit-primitives.md` — the primitives the Mesa kit keeps re-writing
 - `mirror-apps.md` — a mirror app: an FJS app whose truth lives in a Provider, on purpose; Mattermost as the test case
 - `conduit-37signals.md` — Basecamp over conduit for Kobami, built in halves: send first, then the event feed; Mattermost's Phase 2 as the shape
-- `pony-express.md` — the pony express: a letter from any shell to anyone with `fli`; V1 one Cloudflare Worker and Durable Object, Haven later
-- `frontier-network.md` — the Frontier network: one nick and one chain for every `fli` surface; `fli frontier:stake`, tell's identity verbs and pony-express Phase 6 move under it, Haven drops its own key
+- `frontier-network.md` — the Frontier network: one nick and one chain for every `fli` surface; `fli frontier:stake`, tell's identity verbs and the member numbers that began as pony-express Phase 6 move under it, Haven drops its own key
 - `app-peering.md` — app peering: FJS apps that recognize each other's calls; identity is ours, reachability is a commodity; Basecamp and chat first
 - `no-port-app.md` — the app with no port: vendor-hosted and never-deployed as release artifact kinds
 - `on-page-editing.md` — the ask panel's next four moves, ranked by what on-page editors love; § Prompt economy is what a pick sends the model
@@ -764,6 +766,8 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `specifications.md` — Specifications: the truths FrontierJS is one implementation of
 - `stressor-questions.md` — The stressor questions, as one catalog
 - `tenant-authored-workflows.md` — A state machine the TENANT fills in, still enforced at the Data boundary
+- `thing.md` — Thing: input held before its model is known, graduated to a real model once its keys settle
+- `transcription.md` — a stored recording in, a transcript record out: one caravan job over a `File`, lifted out of calls-and-media 4.3
 - `tunnel.md` — `fli tunnel <port>`: a dev port on a public URL with the visitor's address intact; Bun refuses PROXY protocol, so the own relay is `ssh -R` into Outpost's Caddy
 - `ui-ontology.md` — the UI realm's primitives: what a screen is made of, read against fifty years of naming it
 - `version-compatibility.md` — Version compatibility: what a version number here promises

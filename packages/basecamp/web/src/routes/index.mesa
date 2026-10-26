@@ -6,7 +6,7 @@ title: Home
   // without a session, so there is no loading state for the session itself.
   // Everything below the header is scoped to the workspace named in it, and
   // switching that header control re-scopes the page.
-  import { session } from '../session.js'
+  import { session } from '../lib/session.js'
   import { projects } from '../resources/Project.mesa'
   import { servers } from '../resources/Server.mesa'
   import { deployments } from '../resources/Deployment.mesa'
@@ -14,7 +14,7 @@ title: Home
   import { dashboards } from '../resources/Dashboard.mesa'
   import ActionQueue from '../components/ActionQueue.mesa'
   import LaunchSteps from '../components/LaunchSteps.mesa'
-  import { computeNotices } from '../notices.js'
+  import { computeNotices } from '../lib/notices.js'
   import { infra } from '../resources/Infra.mesa'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
   import StatCard from '@frontierjs/ui/components/display/StatCard.mesa'

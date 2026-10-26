@@ -87,7 +87,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/css`
 
-`packages/css` · ships `AGENTS.md` `LICENSE` `README.md` `dist/` `package.json` `src/` `vocabulary.js` `vocabulary.json`
+`packages/css` · ships `AGENTS.md` `LICENSE` `README.md` `dist/` `package.json` `src/` `themes.js` `vocabulary.js` `vocabulary.json`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -96,7 +96,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./utilities.css` | `src/utilities.css` | yes |
 | exports | `./print.css` | `src/print.css` | yes |
 | exports | `./foundation/*.css` | `src/foundation/*.css` | 6 files |
-| exports | `./themes/*.css` | `src/themes/*.css` | 12 files |
+| exports | `./themes/*.css` | `src/themes/*.css` | 14 files |
 | exports | `./components/*.css` | `src/components/*.css` | 20 files |
 | exports | `./patterns/*.css` | `src/patterns/*.css` | 12 files |
 | exports | `./a11y/*.css` | `src/a11y/*.css` | 2 files |
@@ -104,6 +104,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./bundle.min.css` | `dist/frontier.min.css` | yes |
 | exports | `./vocabulary.json` | `vocabulary.json` | yes |
 | exports | `./vocabulary.js` | `vocabulary.js` | yes |
+| exports | `./themes.js` | `themes.js` | yes |
 | main | `main` | `src/index.css` | yes |
 
 ## `@frontierjs/email-kit`
@@ -301,7 +302,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./print.css` | `src/print.css` | yes |
 | exports | `./package.json` | `package.json` | yes |
 
-- peers — `@frontierjs/mesa`: `^0.1.0`
+- peers — `@frontierjs/mesa`: `^0.1.0` · `@frontierjs/junction`: `^0.1.0`
 
 ## `@frontierjs/sierra`
 
@@ -371,6 +372,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./fill (default)` | `src/fill/fill.js` | yes |
 | exports | `./gate (types)` | `src/gate/gate.d.ts` | yes |
 | exports | `./gate (default)` | `src/gate/gate.js` | yes |
+| exports | `./frontier` | `src/frontier/frontier.js` | yes |
 | exports | `./geo (types)` | `src/geo/geo.d.ts` | yes |
 | exports | `./geo (default)` | `src/geo/geo.js` | yes |
 | exports | `./docfences` | `src/docfences/docfences.js` | yes |
@@ -408,6 +410,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./sigv4 (default)` | `src/sigv4/sigv4.js` | yes |
 | exports | `./sse (types)` | `src/sse/sse.d.ts` | yes |
 | exports | `./sse (default)` | `src/sse/sse.js` | yes |
+| exports | `./sugar` | `src/sugar/sugar.js` | yes |
 | exports | `./textbox` | `src/textbox/textbox.js` | yes |
 | exports | `./textedit` | `src/textedit/textedit.js` | yes |
 | exports | `./trace (types)` | `src/trace/trace.d.ts` | yes |
@@ -429,7 +432,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./rowlist` | `rowlist.js` | yes |
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 90 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 92 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

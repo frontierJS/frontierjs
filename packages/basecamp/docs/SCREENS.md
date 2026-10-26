@@ -1089,7 +1089,7 @@ because the six checks it needs are a read across five accessors and belong with
 | --- | --- | --- | --- |
 | `blueprints` | `Blueprint` | find · get · create · patch · remove · categories · setParams | no |
 | `registry` | `RegistryImage` | find · get · repositories | **yes** |
-| `backups` | `Backup` | find · get · create · remove | no |
+| `backups` | `Backup` | find · get · create · remove · rescan | no |
 | `hub-config` | `HubConfig` | current · save | no |
 | `notification-preferences` | `NotificationPreference` | find · save · reset | no |
 
@@ -1143,12 +1143,19 @@ invented. And deleting a mirror row deletes nothing — the tag is still there a
 the next sync brings it back — so the button would report a success that did not
 happen. Closing both means widening `IRegistry` first.
 
-**`backups` writes `local` only.** `s3` is a declared value with nothing behind
-it, and it is refused at `create` rather than queued to fail, because a row that
-is going to fail for a reason already known makes the person come back to find
-out. The job itself is real: `VACUUM INTO`, which is SQLite's own consistent
-online backup — a file copy of a live WAL database silently omits whatever is
-still in the `-wal`.
+**`backups` writes to the disk or to a `BackupDestination`.** A destination
+that does not exist or holds no credential is refused at `create` rather than
+queued to fail. The job itself is real: `VACUUM INTO`, which is SQLite's own
+consistent online backup — a file copy of a live WAL database silently omits
+whatever is still in the `-wal`. Retention runs after each success, local and
+per-bucket apart, and `remove` deletes the archive before the row through the
+same helper (`FJS-D1494`); `rescan` gives a `found` row to an archive in the
+bucket no row names (`FJS-D1493`). A destination is tested where it is typed:
+`/hub/settings/` runs `backup-destinations.test` — a PUT and a DELETE of a
+probe key through the registered target — as a bucket is added, and a *Test
+bucket* button repeats it for the picked one; the answer under the picker is
+the connector's failure kind in words, because a 403 is a wrong key, a policy
+refusal or a clock fifteen minutes out, and only the first is the credential.
 
 ### Seed rows followed the same day
 
@@ -1170,13 +1177,6 @@ what a screen has to be able to show:
 `brandColor` is set on one of the eight. The other four the mock colored took it
 from its own theme object, which is a design-system token rather than a vendor's
 brand.
-
-### Still open
-
-No screens. `HubConfig.backupCron` is stored and nothing registers a schedule
-from it — a schedule that comes from a ROW needs re-registering at boot and
-`unschedule` when the row stops being true, which is `job-schedule.ts`'s pattern
-and a separate piece of work.
 
 ---
 
@@ -1243,6 +1243,12 @@ job with the process stopped, and the most dangerous control this app could
 have. There is no download either: the archive is a path on the machine and
 nothing serves it.
 
+**The backups screen says an archive without its key cannot be read**, and
+whether a copy of `ENCRYPTION_KEY` is kept off the box is `hub.key-escrowed`,
+read as the control it is rather than restated: a person attests the copy
+(`hub-config.attestEscrow`), the row keeps the key's digest, and a regenerated
+key voids it (`FJS-D1497`).
+
 **The hub settings screen has none of the mock's four credentials**, and the
 copy on the page explains why rather than leaving somebody hunting: they are
 read at boot before any database, rotating one is a deploy, and `Secret` already
@@ -1261,8 +1267,6 @@ the difference.
 
 `OnboardingView` — six checks across five accessors, which belongs with
 `InfraGraphView`'s derived read rather than on its own.
-`HubConfig.backupCron` is still registered by nothing, and both screens that
-mention it say so.
 The notification rows are stored and **no delivery path consults them**.
 
 ---

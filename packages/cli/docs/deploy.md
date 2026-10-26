@@ -85,7 +85,7 @@ database; `--keep-data` leaves the database and env file), `fli deploy:journal`,
 `fli deploy:plan`, `fli deploy:vendor`. `fli make:deploy` scaffolds the
 Dockerfile, deploy block, and health endpoint hint.
 
-`fli deploy:basecamp --app <id>` is the other door: the app runs on a Basecamp
+`fli basecamp:deploy --app <id>` is the other door: the app runs on a Basecamp
 fleet rather than on a server this pipeline owns. It vendors and builds here as
 `deploy:local` does, loads the image onto each machine the App is placed on by
 `docker save | ssh docker load`, and makes a Basecamp release naming the image

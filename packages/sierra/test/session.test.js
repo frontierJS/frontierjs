@@ -250,7 +250,7 @@ describe('an OAuth refusal on the URL', () => {
     await s.ready
     await s.completeSignIn('123456')
 
-    expect(client.calls).toEqual(['completeSignIn:123456', 'me'])
+    expect(client.calls).toEqual(['completeSignIn:123456'])
     expect(s.session.user.email).toBe('a@b.c')
     expect(s.session.awaitingCode).toBeNull()
   })
@@ -334,7 +334,7 @@ describe('signing in', () => {
 
     await s.signIn('a@b.c', 'pw')
 
-    expect(client.calls).toEqual(['signIn:a@b.c:pw', 'me'])
+    expect(client.calls).toEqual(['signIn:a@b.c:pw'])
     expect(s.session.user.email).toBe('a@b.c')
   })
 
@@ -399,7 +399,7 @@ describe('signing in with a second factor', () => {
     await s.completeSignIn('123456')
 
     // The ticket is the wire client's — nothing here threaded it through a page.
-    expect(client.calls).toEqual(['signIn:a@b.c:pw', 'completeSignIn:123456', 'me'])
+    expect(client.calls).toEqual(['signIn:a@b.c:pw', 'completeSignIn:123456'])
     expect(s.session.user.email).toBe('a@b.c')
     expect(s.session.awaitingCode).toBeNull()
   })
@@ -445,7 +445,7 @@ describe('signing in with a second factor', () => {
     await s.ready
 
     await s.verifyEmail('reg-tok')
-    expect(client.calls).toEqual(['verifyEmail:reg-tok', 'me'])
+    expect(client.calls).toEqual(['verifyEmail:reg-tok'])
     expect(s.session.user.email).toBe('a@b.c')
   })
 

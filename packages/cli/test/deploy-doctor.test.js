@@ -78,7 +78,7 @@ describe('the Dockerfile make:deploy writes', () => {
         encoding: 'utf8', cwd: app, env: { ...process.env, NO_COLOR: '1' },
       })
       expect(r.status).toBe(0)
-      const runtime = readFileSync(join(app, 'deploy', 'Dockerfile'), 'utf8').split('FROM oven/bun:1-slim')[1]
+      const runtime = readFileSync(join(app, 'deploy', 'Dockerfile'), 'utf8').split(`FROM oven/bun:${Bun.version}-slim`)[1]
       expect(runtime).toMatch(/^USER bun$/m)
       expect(runtime).toMatch(/chown bun:bun \/db/)
       // the user line comes after every RUN, which needs root, and before CMD

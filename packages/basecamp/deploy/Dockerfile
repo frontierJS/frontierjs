@@ -28,7 +28,7 @@
 # Both FROM lines name BUN_VERSION (api/src/providers/compute/enrollment.ts), the
 # Bun every Outpost in the fleet runs; a moving tag ran 1.4.4 beside 1.4.2
 # (FJS-3443). compute.test.ts holds them together.
-FROM oven/bun:1.4.2 AS build
+FROM oven/bun:1.4.4 AS build
 WORKDIR /app
 
 # Dependencies first, so a source edit does not re-resolve the tree. The
@@ -67,7 +67,7 @@ COPY app.snapshot.md ./
 RUN bun run build:web
 
 # ─── runtime ─────────────────────────────────────────────────────────────────
-FROM oven/bun:1.4.2-slim
+FROM oven/bun:1.4.4-slim
 WORKDIR /app
 
 COPY --from=build /app /app

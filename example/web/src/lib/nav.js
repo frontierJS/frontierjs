@@ -26,7 +26,10 @@ export const groups = [
     { href: '/subscriptions/', label: 'Billing', sub: 'Plans, subscriptions and invoices',
       match: under('/subscriptions/', '/plans/', '/invoices/') },
     { href: '/cart/', label: 'Basket' },
-
+  ] },
+  // Labeled, so a topbar draws it as one menu: these are the back office, and
+  // spelled out beside the shop's screens they wrap the bar onto a second line.
+  { label: 'Staff', entries: [
     { href: '/inventory/', label: 'Inventory', sub: 'On hand, held, and the ledger', show: staff },
     // The one-audience half of this app. Every model behind it reads at 5, so
     // the level is not narrowing an audience — it is the whole audience there is.
@@ -42,7 +45,8 @@ export const groups = [
     // staff, whom db/schema.lite lets draft a flow; a shopper grades the same 4
     // and may not (FJS-1169). Activating is the move at 5.
     { href: '/automations/', label: 'Automations', show: ({ user }) => !!user?.isStaff },
-
+  ] },
+  { label: null, entries: [
     { href: '/settings/', label: 'Settings' },
     { href: '/account/', label: 'Account', sub: 'Two-step sign-in and recovery codes', show: ({ user }) => !!user },
   ] },

@@ -14,7 +14,7 @@ FrontierJS is pre-alpha. **Prefer evolving existing designs over preserving them
 
 Only two things are binding: the **Invariants** below, and rulings in `DECISIONS.md`. **Preserve the mental model, not the mechanism.** Where docs disagree, assume different stages of a pre-alpha design and reconcile.
 
-**A change that turns on a judgment call runs `decision-rules`** (`.claude/skills/`). It fires on the ACT rather than on the doubt: adding an option, coining a noun, restating something already stated, choosing between two designs, or finding the code and a document disagree.
+**A change that turns on a judgment call runs `decision-rules`** (`.claude/skills/`). It fires on the ACT rather than on the doubt: adding an option, coining a noun, choosing between two designs, or finding the code and a document disagree.
 
 **This file is only what is live**, and a line here earns its place by changing what someone does in the next hour. History is git, open defects in `ISSUES.md`, settled arguments in `DECISIONS.md`.
 
@@ -56,11 +56,11 @@ Don't violate without an explicit decision; record it in `DECISIONS.md` if you d
 
 **Which drive proves a change is `fli proves`** (`--from main` on a branch): it reads the diff against `DRIVES.md` and names each drive the change needs and what to start first. A change is not proved until those drives have run; **`fli prove` runs them**, each after its *Start first* steps. **`fli done` says whether it is finished** — run it before calling a change complete and clear what it lists, or say in a sentence why an item stays.
 
-**A dev server serves the code it started with**, and a port that answers is not evidence the right process holds it (`FJS-740`). Start the server the run will test and refuse a port that already answers. Backgrounding a server from a tool call is unreliable here; a script that spawns it, polls, asserts and kills it works — `example/web/test/verify-build.mjs` is the shape. Detail: `docs/TESTING.md` § Dev servers.
+**A dev server serves the code it started with** (`FJS-740`): start the one the run will test, refuse a port that already answers, and drive it from a script that spawns, polls, asserts and kills — `docs/TESTING.md` § Dev servers.
 
 **Search a tree with `rg`** — it skips `node_modules` and gitignored build output. A `PreToolUse` hook in `.claude/settings.json` refuses a recursive `grep`; `grep` on a named file or a pipe is fine.
 
-**Ports: `port = env*1000 + category*100 + project*10 + service`** (env 7 test · 8 dev · 9 prod). `packages/cli/core/ports.js` is the schema; `fli dev` hands each app root a slot as `FRONTIER_PORT_*`; global fli tooling has no project and so no env: 5500–5509, a 5 where the env digit goes. **Every vite config sets `strictPort`** — vite otherwise hops ports in silence and one app's drive tests another app. The table and its exceptions: `docs/PORTS.md`.
+**Every vite config sets `strictPort`** — vite otherwise hops ports in silence and one app's drive tests another app. The port formula, the table and its exceptions: `docs/PORTS.md`.
 
 ---
 
@@ -71,7 +71,7 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 - **No semicolons**, single quotes, 2-space indent. TypeScript in junction, auth, caravan, conduit and every `conduit-*` connector (`FJS-D890`), notifications, mcp and testing; plain ESM JavaScript in every other package.
 - **A comment explains the failure, not the mechanism, and must be load-bearing.** Edit history, dates and narration of your own change belong in `DECISIONS.md` and git (`FJS-D675`).
 - **A comment inside a template literal uses plain words or `--` quoting** — a backtick there closes the literal and the file fails to parse.
-- **American spelling** in prose and identifiers (`FJS-D192`); `cancelled`, a persisted enum value, is the one exception, and `fli check` grades it.
+- **American spelling** in prose and identifiers (`FJS-D192`); `cancelled`, a persisted enum value, is the one exception.
 - **A document an agent reads is written by `doc-hygiene`** (`.claude/skills/`). **A section a parser reads moves only with its parser** — modules read this file's Invariants, Packages table and Bridge index by path.
 - **A plan is Phases of Steps**: Phase 0 comes first, a step is cited `2.3` and its number is never reused, and the next step is the first open box. This holds in a `PLAN.md`, in `IDEAS/` and in chat; the shape is `doc-hygiene` § A plan's shape (`FJS-D927`).
 - **A new defect gets an `FJS-###` in `ISSUES.md`**; a ruling closes an `FJS-D##` in `DECISIONS.md`. Check a new `.gitignore` rule against `git status --porcelain`.
@@ -90,8 +90,6 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 
 **Repo** hazards belong to no realm:
 
-- **A `file:` dependency (jetty's `file:../mesa`) installs a COPY under `node_modules/.bun/`, not a symlink**, so an edit to mesa is invisible to it until reinstall. In-repo tests import workspace source by relative path.
-- **Nested directories are invisible to the `packages/*` glob** — uninstalled, untested, unrunnable. `oracle/mockup` is the one named allowance; a second shows up as a CI note naming the path.
 - **`bun test` runs in UTC whatever the host is set to.** A test that means local time sets `TZ` itself and builds every `Date` after setting it. Everything STORED is UTC.
 - **Publishing a package silences every loose peer range that names it**, and below 1.0 a caret pins the MINOR. `fli ws:exports` commits the published surface to `exports.snapshot.md`, and the `snapshots` phase fails a stale one. **What SHIPS is not what is REACHED**: `surface.snapshot.md` (`fli ws:surface`) lists every entry and export no file outside its package imports or names, and `--also ../fjs-prototypes` asks the linked prototypes — a removal here breaks them at boot.
 
@@ -99,10 +97,10 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 
 ## Packages
 
-**Every package has its own `CLAUDE.md`, loaded when you read a file in that package** — what it owns, a file-by-file layout map, its traps, and which drive proves a change. History is git, state its `PROJECT_STATE.md`, open items `ISSUES.md`. This table is the one-line version. **Ring** is the order a newcomer reads them in, center out, and `fli ws:atlas --as=rings` draws it from this column — a package with none lands in *unplaced*.
+**Every package has its own `CLAUDE.md`, loaded when you read a file in that package** — what it owns, a file-by-file layout map, its traps, and which drive proves a change. History is git, state its `PROJECT_STATE.md`, open items `ISSUES.md`. `fli ws:atlas --as=rings` draws every package with its realm, state and ring, center out.
 
+<!-- Packages table. repo-map.js and repo-rings.js parse it by path, so it moves only with them; a block comment costs no context. No separator row: a comment holds no double dash.
 | Package | Realm/Domain | What it is | State | Ring |
-| --- | --- | --- | --- | --- |
 | litestone | Data / D2 | `.lite` language + parser, SQLite client, gates and policies, migrations, tenants, Litestone Studio; **the Testing realm's Data half** | Shipped. **It runs in a browser, and two seams are what make that one codebase** (`FJS-D305`): `#sql-engine` (`src/core/engine.js`) picks what runs the SQL — `bun:sqlite` on a server, SQLite's own wasm over `opfs-sahpool` in a worker — and `#host` (`src/host/`) picks everything else the runtime provides. | spine |
 | junction | API / D8 | Services, hook pipeline, HTTP/WS transport, channels, browser client; batteries (mail, cache, scheduler, webhooks, AI, the transactional outbox, the backfill, the governed extract) | Shipped. **Bun-only and no version of it is not** — `Bun.serve` is the transport, `Bun.file` is logging and static, `bun:sqlite` is cache and database. | spine |
 | sierra | UI meta | File-tree routing → route table + Vite build; `createResource`; postbuild/deploy; **the theme switch** | Shipped. Four targets: `spa`, `static`, `widget`, and the extension surface jetty serves. | spine |
@@ -129,13 +127,15 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 | basecamp | D7 / app | **Fleet operations app. An FJS application, not a library** — the largest dogfooding surface | Working. All three realms real, zero raw SQL, and every model declares `@@gate`. | frontier |
 | haven | D7 / app | **A place in the terminal** — `fli haven` walks into a hosted FJS app; the first one with strangers on it (`FJS-D976`–`FJS-D979`) | Schema only (`IDEAS/haven.md` 1.1). **A ban is a row policy, so a banned member reads an empty room** rather than a 403 — a refusal would tell a spammer when to mint a new key. | frontier |
 | oracle | Data / modeling | The step before `db/schema.lite`: a catalog of canonical entities, the checks a model's answer must pass, and an emitter from that answer to `.lite` — no model inside (`FJS-D601`) | Working, private. **Access is derived, never written**: a row policy is assembled from who the answer says reaches a row, so a signed-in level with no policy cannot be emitted by accident. `mockup/` is the old React recognizer, kept as reference. | tooling |
+-->
 
 ---
 
 ## Bridge index — the named cross-package handoffs
 
-**The entries are the `bridge-index` skill** (`.claude/skills/`); this is the KEY LIST, so *is there an owner for this already* is answerable without loading the skill. A name below is a promise the skill explains it — reach for them before grepping.
+**Before adding a cross-package handoff, or grepping for one, load `bridge-index`** (`.claude/skills/`) — it names the owner of each seam: a gate copy, an error mapper, the result envelope, a directive, a schema keyword, a broadcast, a tether.
 
+<!-- Bridge index key list. seams.js, register-check.js (seam:) and checks/repo.js (seam-listed) parse it by path; every seam the skill explains is named here.
 **Data → API** — `$setAuth(user)` / `asSystem()` · `$tapEvents(fn)` · `withLitestoneDb(db)` · `gateAuth()` + `autoValidate()` · `validateInput(type)` · `customMethodGrade(method, declared, levels)` · `needsBackfill` · `sessionGateLevel(user)` · `toDataPrincipal(user)` · `bearerClaim()` / `BEARER` / `bearerOf()` · `bearerClaim(...).mint()` / `.redeem()` · `resolveTenancy(schema)` / `registry.tenantFor({host, headers, principal})` · `accessorCandidates()` · `db.$checkWhere(accessor, where)` · `db.$checkOrderBy(accessor, orderBy)` · `db.$readAs(accessor, row, principal)` · `db.$checkWrite(accessor, op, row, changes?)` · `db.$levelOf(accessor, principal)` · `db.$primaryKey(accessor)` · `db.$mirrorKey(accessor)` · `db.$protectedFields(accessor)` · `db.$claimsFor(principal)`
 
 **Schema → API/UI** — `generateJsonSchema(schema)` · `ctx.system` · `ctx.transients` · `ServiceTypes` · `@label` · `buildFieldRules()` / `validateAgainstFields()` / `coerceToSchema()` / `normalizeBlanks()` · `controlFor(rule, {field, model})` / `formFieldList(fields, {only, except, model})` · `labelFieldInfo(fields, fallback, declared)` · `x-values` · `resource.options(field)` · `toFieldErrors(err)` · `$context.form` · `buildRelations()` / `buildGate()` / `canAtLevel()` · `x-version` · `x-rank` · `retryable` · `buildTransitions()` / `transitionsAt()` · `buildCommitments()` / `commitmentsAt()` · `modelNameFor()` / `schemaFor()` · `authUserModel(db)` / `authMachineryModels(db)` · `extend model X { … }` · `attachments`
@@ -147,7 +147,7 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 **API → UI** — `client.setCallHeader(name, value)` + `config.http.callHeaders` · `x-fjs-build` · `wsSend()` / `flushSendQueue()` · **A broadcast is GRADED per recipient, in cohorts** · `announce()` · **Transport: WebSocket when one is connected, HTTP as the fallback.** · `createJunctionClient()` / `client.resource(name)` · `connectApp()` / `createResource(name, { app })` · `relay` → `client.forward(call)` / `client.receive(frame)` · `resource.save(data, { mode })` · `resource.move(id, { after, before, into })` · `client.auth.*` · `signIn` → `completeSignIn(code)` · `client.auth.providers()` + `OAUTH_ERRORS` / `session.oauthMessage` · `tokenStorage` · `client.entries` / `resource.record(id)` · `matchesQuery(fields, record, query)` · `$after` / `endCursor` / `tethered().more()` · `comparatorFor(orderBy)`
 
 **UI** — `*.mount.js` · `page.query` / `page.directives` · `watchProxy()` / `createSignal()` / `createRoot(fn)` · `mount(label, Component, {props, root})` · `renderComponent(src, opts)` · `appSrcDir(root)` / `appAliasPlugin()` · `swapInstances(entries, newFn, newSetMark, label)` · `island(anchor, Comp, props, block, meta)` · **The theme is a class on `<html>` and Sierra owns the switch** · **There is no cross-package reactivity registry.**
-
+-->
 ---
 
 ## Where to look

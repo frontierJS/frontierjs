@@ -1,0 +1,30 @@
+<script>
+  // theme-picker.mesa — one swatch per theme, and a picker over them.
+  //
+  // The page wears theme-default, so a dark theme's chip computing a dark
+  // color-scheme can only be the chip's own class winning.
+  import ThemeSwatch from '../../../components/display/ThemeSwatch.mesa'
+  import ThemePicker from '../../../components/display/ThemePicker.mesa'
+
+  let picked = 'theme-forest'
+  let calls  = 0
+</script>
+
+<div id="swatch-default"><ThemeSwatch name="theme-dracula" /></div>
+<div id="swatch-bare"><ThemeSwatch name="theme-dracula" label="" blurb="" /></div>
+<div id="swatch-unknown"><ThemeSwatch name="theme-house" /></div>
+
+<div id="picker">
+  <ThemePicker
+    themes={['theme-default', 'theme-forest', 'theme-dracula']}
+    value={picked}
+    onchange={(n) => { picked = n; calls++ }}
+  />
+</div>
+
+<div id="picker-system">
+  <ThemePicker label="System theme" themes={['theme-default', 'theme-dark']} value="system" />
+</div>
+
+<output id="picked">{picked}</output>
+<output id="calls">{calls}</output>

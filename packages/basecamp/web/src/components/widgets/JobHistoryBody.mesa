@@ -6,7 +6,7 @@
   // is one read rather than a run query per job — the same pair the jobs screen
   // renders in its table.
   import { jobs } from '../../resources/Job.mesa'
-  import { at } from '../../datetime.js'
+  import { at } from '../../lib/datetime.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
 

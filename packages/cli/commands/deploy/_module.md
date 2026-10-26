@@ -15,10 +15,11 @@ defaults:
 
 <script>
 const { loadFrontierConfig, dockerfileScripts } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
-const { vendorWorkspacePackages, linkedDeps, GENERATED_DIR } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
+const { vendorApp, linkedDeps, GENERATED_DIR } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
 const { createMachine, shQuote } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
 const { dockerLogArgs } = await import(new URL('file://' + global.fliRoot + '/core/docker-logging.js'))
 const { apiContainerName } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
+const { appUser, appUserIds } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
 const { EDGE_HOPS, edgeNames: edgeNamesOf } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
 const { crossOrigins } = await import(new URL('file://' + global.fliRoot + '/core/shell-origins.js'))
 
@@ -42,6 +43,19 @@ const apiFiles = (deployConf, serverPath) => ({
   envFile:    deployConf?.api?.env ?? `${serverPath}/.env.production`,
   secretsDir: `${serverPath}/secrets`,
 })
+
+// The `--user` an app's container starts with: its own user on a box
+// (`FJS-D1484`), made by `deploy:setup`, and nothing on localhost, where the
+// image's user runs. Asked before any container is touched, so a box set up
+// before the user existed is refused while the running release still serves.
+const runAs = (machine, appId) => {
+  if (machine.local) return []
+  const user = appUser(appId)
+  const ids  = String(machine.capture(appUserIds(user)) ?? '').trim()
+  if (!/^\d+:\d+$/.test(ids)) throw new Error(
+    `${user} is not a user on this box, so the API has no uid of its own to run as -- run fli deploy:setup, which makes it and hands it ${appId}'s db directory, then deploy again`)
+  return [`--user ${ids}`]
+}
 
 // Where the API container sees the secrets directory: Docker's own path for a
 // secret, which `<KEY>_FILE` then names.
@@ -87,7 +101,7 @@ const machineFor = ($, host, path = null, transport = null) => createMachine({
 // ─── enrollOutpost ────────────────────────────────────────────────────────────
 // The API's box joined to the app's own fleet (`FJS-D1191`), for a deploy block
 // saying `outpost: true`. Two callers: `08b-outpost` after a release, and
-// `deploy:outpost` alone, which `fli provision:install` runs once `/setup` has
+// `deploy:outpost` alone, which `fli basecamp:install` runs once `/setup` has
 // made the workspace — the deploy step meets an empty database on a fresh box
 // and answers `skip`.
 //
@@ -151,12 +165,31 @@ const enrollOutpost = (machine, { appId, deployConf, path, host, log }) => {
     `OUTPOST_HOST_ENV_PATH=${files.envFile}`,
     `OUTPOST_HOST_KEY_PATH=${files.secretsDir}/ENCRYPTION_KEY`,
   ]
-  // Prints `unchanged`, `written` or `no-env`; the lines are always written
-  // in this order, so the grep is compared as one string.
+  // basecamp-litestream.service writes only the app volumes, so the hub's own
+  // replica (the Outpost's `host` entry) needs this directory too; ProtectHome
+  // hides a /home or /root one entirely and read-only is what a ReadWritePaths
+  // under it can lift. Written before the `unchanged` exit: a box enrolled
+  // after its first deploy has the lines and not the drop-in.
+  const dropIn = ['[Service]', `ReadWritePaths=${files.dbDir}`,
+    ...(/^\/(home|root)(\/|$)/.test(files.dbDir) ? ['ProtectHome=read-only'] : [])]
+  // Prints `unchanged`, `written` or `no-env` last; the lines are always
+  // written in this order, so the grep is compared as one string.
   const script = [
     SUDO,
     'F=/etc/basecamp/outpost.env',
     'sudo test -f "$F" || { echo no-env; exit 0; }',
+    'D=/etc/systemd/system/basecamp-litestream.service.d',
+    'if sudo test -f /etc/systemd/system/basecamp-litestream.service; then',
+    `  WANTD=$(printf '%s\\n' ${dropIn.map(sq).join(' ')})`,
+    '  HAVED=$(sudo cat "$D/host.conf" 2>/dev/null || true)',
+    '  if [ "$WANTD" != "$HAVED" ]; then',
+    '    sudo mkdir -p "$D"',
+    `    printf '%s\\n' ${dropIn.map(sq).join(' ')} | sudo tee "$D/host.conf" >/dev/null`,
+    '    sudo systemctl daemon-reload',
+    '    sudo systemctl try-restart basecamp-litestream.service',
+    '    echo litestream-written',
+    '  fi',
+    'fi',
     `WANT=$(printf '%s\\n' ${lines.map(sq).join(' ')})`,
     `HAVE=$(sudo grep -E '^OUTPOST_HOST_(DB|ENV|KEY)_PATH=' "$F" || true)`,
     '[ "$WANT" = "$HAVE" ] && { echo unchanged; exit 0; }',
@@ -166,41 +199,14 @@ const enrollOutpost = (machine, { appId, deployConf, path, host, log }) => {
     'echo written',
   ].join('\n')
   try {
-    const said = String(machine.capture(script) ?? '').trim().split('\n').pop()
+    const out  = String(machine.capture(script) ?? '').trim().split('\n')
+    const said = out.at(-1)
+    if (out.includes('litestream-written')) log.info(`Litestream: may now replicate ${files.dbDir}, and restarted`)
     if (said === 'written')     log.info('Outpost: told where the database and env file are, and restarted')
     else if (said === 'no-env') log.warn('Outpost: no /etc/basecamp/outpost.env on this box — /hub/security/ cannot grade its database or env file')
   } catch (err) {
     log.warn(`Outpost: the database and env file paths were not written — ${err.message.split('\n')[0]}`)
   }
-  return result
-}
-
-// ─── vendorApp ────────────────────────────────────────────────────────────────
-// Write the build context the Dockerfile installs from: deploy/generated/, with
-// a manifest and — for an app depending on the framework by `link:` or
-// `workspace:` — a packed copy of every one of those packages beside it.
-//
-// Runs on EVERY build, not only a linked one. With nothing linked it copies the
-// manifest and the lockfile, which is what lets one Dockerfile serve both source
-// modes; making it conditional here would move the condition into a template
-// nobody regenerates when the source mode changes.
-//
-// It throws on anything it cannot finish. A half-vendored context installs the
-// rest from npm and produces an image running two trees at once, which does not
-// have to fail to be wrong.
-//
-// It does NOT prune devDependencies, and the reason is worth stating because
-// pruning them looks free: the image builds nothing — it copies `api/` and
-// `db/` and runs `db:migrate` then `start` — and **`bun install --production`
-// resolves devDependencies anyway**, only skipping their install, so one dev
-// tool that 404s fails an image that would never have run it. The `transform`
-// hook can drop them; a manifest that no longer matches the lockfile beside it
-// then fails `--frozen-lockfile` outright, which is the worse trade. An
-// unresolvable devDependency is a publish problem and belongs upstream.
-const vendorApp = (root, log) => {
-  const result = vendorWorkspacePackages({ appRoot: root, log: (m) => log.detail(m) })
-  const n = result.vendored.length
-  if (n) log.success(`Vendored ${n} workspace ${n === 1 ? 'dependency' : 'dependencies'} from ${result.packagesDir}`)
   return result
 }
 
@@ -336,15 +342,14 @@ const resolveSide = (deployConf, target, side) => {
 // the replica stayed empty. Demonstrated, not theorised: v0.3.4 does exactly
 // this today.
 //
-// LITESTREAM_MIN is a hand copy of litestone's own floor in
-// `src/tools/replicate.js` — change one, change both. This side cannot import
-// it: litestream reaches the server as a binary and litestone reaches it as a
-// dependency of the app, neither of which the CLI can resolve from here.
+// The floor, the pinned build and its install are litestone's, which this
+// package depends on for them: Basecamp's fleet install puts the same build on
+// every machine it enrolls.
 //
 // `run` takes a shell script and returns its stdout as a string — pass
 // `machine.capture`, so this stays a question about litestream rather than about
 // how a command reaches the box.
-const LITESTREAM_MIN = { major: 0, minor: 5 }
+const { LITESTREAM_MIN, litestreamInstall } = await import('@frontierjs/litestone/replicate')
 
 const litestreamStatus = (run) => {
   const pid = (run(`pgrep -x litestream 2>/dev/null || echo ''`) ?? '').trim()
@@ -367,37 +372,6 @@ const litestreamStatus = (run) => {
 }
 
 const LITESTREAM_MIN_LABEL = `v${LITESTREAM_MIN.major}.${LITESTREAM_MIN.minor}`
-
-// The build `deploy:setup` installs. A distro package or an unpinned `latest`
-// is whatever the day hands out, and 0.3.x is still what apt serves — the build
-// that replicates nothing. FJS controls the version, never the artifact
-// (`FJS-D31`): the bytes are upstream's release, refused unless they match the
-// digests upstream's own checksums.txt published for it. Raising the pin means
-// copying both lines from that file, and the pin must clear LITESTREAM_MIN.
-const LITESTREAM_PIN = {
-  version: '0.5.17',
-  sha256: {
-    x86_64: 'cfb371176d164437ae869f8351cfde49bd1804ae71c61923f75c9cba9c9c006d',
-    arm64:  'f8ca4a050095c1efbda2c4365172e61bf9d955ea0d9ac42f448b52e51819baa5',
-  },
-}
-
-// A shell script with no single quote in it — 02-install-deps runs it inside
-// `sudo sh -c '…'`. An architecture without a pinned digest refuses rather than
-// fetching something unchecked.
-const litestreamInstall = (dir = '/usr/local/bin') => {
-  const { version: v, sha256 } = LITESTREAM_PIN
-  return [
-    'set -e',
-    `case "$(uname -m)" in x86_64) a=x86_64; s=${sha256.x86_64};; aarch64|arm64) a=arm64; s=${sha256.arm64};; *) echo "litestream: no pinned build for $(uname -m)" >&2; exit 1;; esac`,
-    't=$(mktemp -d)',
-    `curl -fsSL -o "$t/l.tgz" "https://github.com/benbjohnson/litestream/releases/download/v${v}/litestream-${v}-linux-$a.tar.gz"`,
-    'echo "$s  $t/l.tgz" | sha256sum -c - >/dev/null || { echo "litestream: checksum mismatch, refusing" >&2; rm -rf "$t"; exit 1; }',
-    'tar -xzf "$t/l.tgz" -C "$t" litestream',
-    `install -m 0755 "$t/litestream" "${dir}/litestream"`,
-    'rm -rf "$t"',
-  ].join('; ')
-}
 
 // ─── aptIdle ──────────────────────────────────────────────────────────────────
 // A fresh droplet answers ssh while cloud-init and then unattended-upgrades are
@@ -675,10 +649,11 @@ const lockRefusal = async (lock, { verb = 'deploy' } = {}) => {
 // the env file or the configuration set is refused by the app at boot, which
 // here would stop the running container and then restore it, so it is refused
 // before anything is touched.
-const swapContainer = ($, { host, container, image, apiPort, dbPath, envFile, secretsDir = null, build, deployConf, configuration = {}, corsOrigins = [], log }) => {
+const swapContainer = ($, { host, appId, container, image, apiPort, dbPath, envFile, secretsDir = null, build, deployConf, configuration = {}, corsOrigins = [], log }) => {
   const machine  = machineFor($, host)
   const replaced = `${container}_replaced`
 
+  const user    = runAs(machine, appId)
   const secrets = secretsDir ? secretNames(machine, secretsDir, log) : []
   if (secrets.length) {
     const inEnv = machine.capture(`for k in ${secrets.join(' ')}; do grep -qs "^$k=" ${envFile} && echo "$k"; done; true`)
@@ -709,6 +684,7 @@ fi`)
     'docker run -d',
     `--name ${container}`,
     '--restart unless-stopped',
+    ...user,
     `-p 127.0.0.1:${apiPort}:3000`,
     `--volume ${dbPath}:${CONTAINER_DB_DIR}`,
     `--env-file ${envFile}`,
@@ -888,17 +864,19 @@ fi`
 //
 // `{ routes, plain, paths }`, or `{ error }` for an EdgeError. `plain` is the
 // :80 refusals for the API's paths. `paths` null means no
-// snapshot, and the routes fall back to `/api/`. `html` is the `index.html` the
-// route will serve, read off the target: its inline scripts are hashed into the
-// CSP, and a page whose hash is missing has its theme and service worker refused.
+// snapshot, and the routes fall back to `/api/`. `html` is every page the route
+// will serve, prerendered ones included, read off the target: its inline scripts
+// and `style=` values are hashed into the CSP, and a page whose hash is missing
+// has its theme and service worker, or that style, refused.
 const edgeRoutesFor = async ({ root, appId, serverPath, apiPort, edge, html = '' }) => {
-  const { edgeRoutes, plainRoutes, apiPaths, inlineScriptHashes, EdgeError } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
+  const { edgeRoutes, plainRoutes, apiPaths, inlineScriptHashes, inlineStyleHashes, EdgeError } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
   const { readAppSnapshot } = await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
   const paths   = apiPaths(readAppSnapshot(root))
   const scripts = inlineScriptHashes(html)
+  const styles  = inlineStyleHashes(html)
   try {
     return {
-      routes: edgeRoutes({ appId, serverPath, apiPort, web: edge.web, api: edge.api, paths, scripts }),
+      routes: edgeRoutes({ appId, serverPath, apiPort, web: edge.web, api: edge.api, paths, scripts, styles }),
       plain:  plainRoutes({ appId, web: edge.web, api: edge.api, paths }),
       paths,
     }
@@ -1322,9 +1300,9 @@ fli deploy:run <cmd>    ← run a one-off command inside the running container
 fli deploy:rollback     ← roll back to the previous release
 fli deploy:setup        ← first-time server setup walkthrough
 fli deploy:retire       ← take the app off its server — routes, Outpost, container, images, files
-
-fli deploy:basecamp --app <id> ← build here, load onto the App's Basecamp machines, release that digest
 ```
+
+An app Basecamp runs is released with `fli basecamp:deploy --app <id>` instead.
 
 ## Getting started
 

@@ -42,7 +42,7 @@ import { createTestEnv } from '@frontierjs/testing'
 import { openChrome } from '../../../mesa/src/drive.js'
 import { buildHavenApp } from '../../api/src/app.ts'
 import { ROOMS } from '../../api/src/rooms.ts'
-import { signIn } from '../../api/test/sign-in.ts'
+import { POST_KEY, signIn } from '../../api/test/sign-in.ts'
 import { COLUMN } from '../src/lib/games/booth.js'
 import { cells } from '../src/lib/scene/cells.js'
 import { cellOf, terminal, until } from './terminal.mjs'
@@ -75,7 +75,7 @@ const BEAS = 'bea 🙂 中文 👍🏽 👩‍💻 🇯🇵'
 const env = await createTestEnv({
   schema: join(WEB, '../db/schema.lite'),
   listen: true,
-  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-emoji', port: 0 }),
+  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-emoji', port: 0, postKey: POST_KEY }),
 })
 for (const room of ROOMS) await env.system.room.create({ data: { ...room } })
 const API = `http://localhost:${env.port}`
@@ -201,7 +201,8 @@ check(await until(() => term.screen().includes('j/k moves, Enter opens')), 'the 
 term.write('\r')
 check(await until(() => at(sx, sy) === '@' && term.screen().includes('1 here')), 'Sam walks into the square', term.screen())
 
-await browser.navigate(`${WEB_ORIGIN}/?nick=bea`)
+const beaIn = await signIn(env.port, 'bea')
+await browser.navigate(`${WEB_ORIGIN}/#session=${beaIn.token}`)
 check(await until(async () => (await tabText()).includes('2 here')), "Bea's tab walks in", await tabText())
 
 // Bea six cells left of the spawn and Sam three rows up from it, so the two

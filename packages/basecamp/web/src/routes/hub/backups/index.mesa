@@ -18,16 +18,17 @@ title: Hub backups
   //   running app is the most dangerous control this app could have.
   //   DOWNLOAD. The archive is a path on the machine, not a route — nothing
   //   serves it, and a link that 404s is worse than no link.
-  //   S3 CREDENTIALS. The destination is refused at create until there is an
-  //   adapter, so a form for its keys would collect them for nothing.
+  //   S3 CREDENTIALS. A bucket is a `BackupDestination`, declared once in
+  //   settings with its key lifted into a Secret; this screen names the one
+  //   the schedule points at and asks for nothing.
   //
-  // What IS here is the schedule, read from the settings row — and it is shown
-  // with the caveat that nothing registers it yet, because a cron on screen
-  // that no timer honors is the failure this app has already had twice
-  // (`FJS-327`, `FJS-328`).
-  import { backups }   from '../../../resources/Backup.mesa'
-  import { hubConfig } from '../../../resources/HubConfig.mesa'
-  import { ago }       from '../../../datetime.js'
+  // What IS here is the schedule, read from the settings row; `job-schedule.ts`
+  // keeps the clock agreeing with it.
+  import { backups }            from '../../../resources/Backup.mesa'
+  import { hubConfig }          from '../../../resources/HubConfig.mesa'
+  import { backupDestinations } from '../../../resources/BackupDestination.mesa'
+  import { postures }           from '../../../resources/ServerPosture.mesa'
+  import { ago }       from '../../../lib/datetime.js'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -41,6 +42,9 @@ title: Hub backups
 
   let rows     = []
   let config   = null
+  // The schedule's destination, by name. Null is the local disk; a row this
+  // workspace cannot see shows as its id rather than as local.
+  let destination = null
   let error    = null
   let loading  = true
   let asking   = false
@@ -57,6 +61,11 @@ title: Hub backups
         // on a fresh installation and not an error on this screen.
         config = null
       }
+      destination = null
+      if (config?.backupDestinationId) {
+        try { destination = await backupDestinations.service.get(config.backupDestinationId) } catch {}
+      }
+      await loadEscrow()
     } catch (e) {
       error = e.message
     } finally {
@@ -65,6 +74,39 @@ title: Hub backups
   }
 
   load()
+
+  // ─── The key every archive turns on ────────────────────────────────────
+  //
+  // An archive holds `Secret.data` and the fleet's secret Variables as
+  // ciphertext under ENCRYPTION_KEY, which never travels with it. Whether a
+  // copy is kept off this box is `hub.key-escrowed`, graded by the one grader
+  // (`core/posture.ts`) and read here as the control it is, so this line and
+  // /hub/security/ cannot disagree. Attesting is a person's word: the server
+  // records when and the key's digest, and a regenerated key voids it.
+  let escrow    = null
+  let replica   = null
+  let attesting = false
+  async function loadEscrow() {
+    try {
+      const host = await postures.service.invoke('host', null, {})
+      escrow  = host.controls.find(c => c.id === 'hub.key-escrowed') ?? null
+      // The box's own `backup.replica-lag`, which grades Basecamp's database
+      // beside its apps' once a replica is set.
+      replica = config?.replicaDestinationId ? host.controls.find(c => c.id === 'backup.replica-lag') ?? null : null
+    } catch { escrow = null; replica = null }
+  }
+  async function attest() {
+    error = null; attesting = true
+    try {
+      await hubConfig.service.invoke('attestEscrow', null, {})
+      toasts.success('Attested. The control turns green while this key is the one in use.')
+      await loadEscrow()
+    } catch (e) {
+      error = e.message
+    } finally {
+      attesting = false
+    }
+  }
 
   // ─── This screen POLLS, and it is the only one here that does ──────────
   //
@@ -90,7 +132,7 @@ title: Hub backups
   async function takeOne() {
     error = null; asking = true
     try {
-      await backups.service.create({})
+      await backups.service.create({ destinationId: config?.backupDestinationId ?? null })
       toasts.success('Backup queued. The row fills in as the job runs.')
       await load()
       // `inFlight` is derived from the rows `load()` just fetched, so the watch
@@ -108,19 +150,35 @@ title: Hub backups
     }
   }
 
-  // `remove` forgets the ROW and leaves the file, because the file sits on the
-  // disk the live database is on and an unlink there can take the wrong one.
-  // The button says Forget rather than Delete for that reason.
-  async function forget(b) {
+  // `remove` deletes the archive — its directory here or its object in the
+  // bucket — and then the row (`FJS-D1494`); a refused delete is a 409 that
+  // keeps both, and arrives as the screen error.
+  async function drop(b) {
     error = null; busy = b.id
     try {
-      const gone = await backups.service.remove(b.id)
-      toasts.success(gone?.note ? `Backup forgotten. ${gone.note}` : 'Backup forgotten')
+      await backups.service.remove(b.id)
+      toasts.success('Backup deleted')
       await load()
     } catch (e) {
       error = e.message
     } finally {
       busy = null
+    }
+  }
+
+  // An archive in the bucket that no row names is invisible to this list and to
+  // retention until a rescan gives it a `found` row (`FJS-D1493`).
+  let rescanning = false
+  async function rescan() {
+    error = null; rescanning = true
+    try {
+      const { listed, found } = await backups.service.invoke('rescan', null, { destinationId: config.backupDestinationId })
+      toasts.success(found ? `${found} archive${found === 1 ? '' : 's'} found in the bucket` : `Nothing new — ${listed} listed`)
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      rescanning = false
     }
   }
 
@@ -166,6 +224,48 @@ title: Hub backups
   There is no download either: the archive is a path on the machine and nothing serves it.
 </Callout>
 
+{#if escrow}
+  <Card id="key-escrow">
+    <div class="section-header">
+      <h3 class="h5">Encryption key</h3>
+      <Pill tone={escrow.ok === true ? 'success' : escrow.ok === false ? 'danger' : 'muted'}>
+        {escrow.ok === true ? 'escrowed' : escrow.ok === false ? 'not escrowed' : 'unknown'}
+      </Pill>
+    </div>
+    <p class="text-sm text-muted">
+      Every archive carries this installation's secrets as ciphertext under <code>ENCRYPTION_KEY</code>,
+      and the key never travels with one — an archive without its key cannot be read. The key is
+      <code>secrets/ENCRYPTION_KEY</code> on this box and the copy <code>fli deploy:setup</code> left in the
+      operator's local <code>.env</code>. Nothing here can see that copy, so a person attests it.
+    </p>
+    <p class="text-sm" id="key-escrow-reading">{escrow.message}</p>
+    {#if escrow.ok !== true}
+      <Button treatment="outlined" id="attest-escrow" disabled={attesting}
+              data-confirm="Only attest a copy you have read back from somewhere that is not this machine. A wrong answer here costs every archive the day this box is lost."
+              data-confirm-title="A copy of the key is kept off this box?" data-confirm-label="Attest"
+              onclick={attest}>
+        {attesting ? 'Recording…' : 'I keep a copy off this box'}
+      </Button>
+    {/if}
+  </Card>
+{/if}
+
+{#if replica}
+  <Card id="hub-replica">
+    <div class="section-header">
+      <h3 class="h5">Continuous replica</h3>
+      <Pill tone={replica.ok === true ? 'success' : replica.ok === false ? 'danger' : 'muted'}>
+        {replica.ok === true ? 'replicating' : replica.ok === false ? 'behind' : 'unknown'}
+      </Pill>
+    </div>
+    <p class="text-sm text-muted">
+      Litestream on this box streams the database to its bucket within seconds of each write —
+      the minutes between the archives below. Set in <a href="/hub/settings/">settings</a>.
+    </p>
+    <p class="text-sm" id="hub-replica-reading">{replica.message}</p>
+  </Card>
+{/if}
+
 {#if config}
   <Card id="backup-schedule">
     <div class="section-header">
@@ -175,15 +275,22 @@ title: Hub backups
           {config.backupEnabled ? 'enabled' : 'off'}
         </Pill>
         <Badge tone="muted"><code>{config.backupCron}</code></Badge>
-        <Badge tone="muted">{config.backupDestination}</Badge>
+        <Badge tone="muted">
+          {config.backupDestinationId ? (destination ? `${destination.name} — ${destination.bucket}` : config.backupDestinationId) : 'local'}
+        </Badge>
       </span>
     </div>
     <p class="text-sm text-muted">
-      Stored on the settings row, and <strong>nothing registers it yet</strong> — a schedule that
-      comes from a database row has to be re-registered at every boot and unregistered when the
-      row stops being true. Until that exists, every archive below is one somebody asked for.
-      Edit it in <a href="/hub/settings/">settings</a>.
+      While enabled, each fire of this expression takes an archive to the destination shown,
+      marked <em>scheduled</em> below; a fire while another archive is still running is skipped.
+      After each one finishes, archives past the keep limits are deleted, the newest always kept.
+      Edit both in <a href="/hub/settings/">settings</a>.
     </p>
+    {#if config.backupDestinationId}
+      <Button treatment="outlined" id="rescan-bucket" disabled={rescanning} onclick={rescan}>
+        {rescanning ? 'Listing…' : 'Rescan the bucket'}
+      </Button>
+    {/if}
   </Card>
 {/if}
 
@@ -210,12 +317,12 @@ title: Hub backups
         <td class="text-sm text-muted"><code>{b.location ?? '—'}</code></td>
         <td>
           {#if SETTLED.has(b.status)}
-            <Button treatment="ghost" disabled={busy === b.id} aria-label={`Forget the backup taken ${ago(b.finishedAt ?? b.startedAt ?? b.createdAt)}`}
+            <Button treatment="ghost" disabled={busy === b.id} aria-label={`Delete the backup taken ${ago(b.finishedAt ?? b.startedAt ?? b.createdAt)}`}
                     data-confirm={b.location
-                      ? `The row goes from this list. The archive at ${b.location} stays on disk — delete that yourself.`
+                      ? `The archive at ${b.location} is deleted ${b.location.startsWith('/') ? 'from this disk' : 'from the bucket'}, then the row.`
                       : 'The row goes from this list.'}
-                    data-confirm-title="Forget this backup?" data-confirm-label="Forget" data-confirm-tone="warning"
-                    onclick={() => forget(b)}>Forget</Button>
+                    data-confirm-title="Delete this backup?" data-confirm-label="Delete" data-confirm-tone="danger"
+                    onclick={() => drop(b)}>Delete</Button>
           {/if}
         </td>
       </tr>

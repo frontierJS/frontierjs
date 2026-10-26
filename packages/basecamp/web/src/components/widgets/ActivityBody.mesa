@@ -11,7 +11,7 @@
   // inches wide should not — this is the catch-up glance, and the screen is the
   // narrative.
   import { audit } from '../../resources/AuditEvent.mesa'
-  import { clock } from '../../datetime.js'
+  import { clock } from '../../lib/datetime.js'
   import Pill from '@frontierjs/ui/components/display/Pill.mesa'
 
 

@@ -12,7 +12,7 @@
 // `mail().greeting().line().invoke()` is a small vocabulary — greeting,
 // paragraph, button — and it is the right one for "your password was reset".
 // An order confirmation is a RECEIPT: it has a table of facts, and the table is
-// the message. So the body is `api/src/emails/order-confirmation.mesa`,
+// the message. So the body is `api/src/domain/orders/order-confirmation.mesa`,
 // rendered by `@frontierjs/email-kit` through the same Mesa compiler the
 // browser uses, at `target: 'email'` — table-based, CSS inlined, Outlook-safe.
 //
@@ -49,7 +49,7 @@ export function asRecipient(customer: { name: string; email: string }): Recipien
   return { email: customer.email, name: customer.name }
 }
 
-const TEMPLATE = new URL('../emails/order-confirmation.mesa', import.meta.url).pathname
+const TEMPLATE = new URL('../domain/orders/order-confirmation.mesa', import.meta.url).pathname
 
 export default defineNotification<Confirmation>({
   via: () => ['email'],

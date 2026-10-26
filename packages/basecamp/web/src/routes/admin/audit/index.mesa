@@ -18,9 +18,9 @@ title: Audit trail
   //
   // It was `service.find(…, { limit: 50 })` — a hard cap with nothing saying
   // rows were missing, which reads exactly like a trail that only has 50.
-  import { session } from '../../../session.js'
+  import { session } from '../../../lib/session.js'
   import { audit } from '../../../resources/AuditEvent.mesa'
-  import { at } from '../../../datetime.js'
+  import { at } from '../../../lib/datetime.js'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
   import Table  from '@frontierjs/ui/components/display/Table.mesa'

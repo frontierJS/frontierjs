@@ -68,6 +68,12 @@ const GENERATED = {
     title: 'New Order', heading: 'New Order', submitLabel: 'Create Order',
     backLabel: 'Back to list', basePath, imports, res: 'orders', form: 'Order',
   }),
+  // The admin's create page gates on session.level and is handed no session
+  // module of its own, so it is the one that shipped reading `session` unbound.
+  'admin:generate — create page': createPage({
+    title: 'New Order', heading: 'New Order', submitLabel: 'Create Order',
+    backLabel: 'All orders', basePath, imports, res: 'orders', form: 'Order', gate: true,
+  }),
   'make:scaffold — edit page': editPage({
     title: 'Order', heading: 'Order', submitLabel: 'Save',
     backLabel: 'All orders', deleteLabel: 'Delete', basePath, imports, res: 'orders', form: 'Order',
@@ -80,6 +86,8 @@ const GENERATED = {
     childRoutesImport: "import { childRoutes } from '../_routes.js'",
   }),
   'make:resource — resource file': resourceFile('Order', 'orders'),
+  // admin:generate's: a kebab-cased service is a filename, never a binding.
+  'admin:generate — resource file': resourceFile('ShippingMethod', 'shipping-methods', 'shippingMethods'),
   // `fli make:route <path> --resource Order`, one per shape the path can name.
   'make:route — list':   resourceRoutePage({ path: 'orders', model: 'Order', service: 'orders' }).content,
   'make:route — create': resourceRoutePage({ path: 'orders/create', model: 'Order', service: 'orders' }).content,
@@ -100,6 +108,25 @@ describe('what the generators write', () => {
       expect(() => parseJs(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' }), what).not.toThrow()
     })
   }
+
+  // A free name compiles: `session.level` in an admin create page with no
+  // import of it passed every test above and threw on the page's first render.
+  test('a generated page that reads session imports it', () => {
+    for (const [what, source] of Object.entries(GENERATED)) {
+      if (!/(?<![\w$.])session\./.test(source)) continue
+      expect(source, `${what} reads session and never imports it`).toMatch(/import \{[^}]*\bsession\b[^}]*\} from/)
+    }
+  })
+
+  // Every command that writes a Resource writes its default form, which is what
+  // a create or an edit page renders. A Resource with no markup half drew every
+  // admin edit page with no field and no Save.
+  test('every generated resource file carries the default form', () => {
+    for (const [what, source] of Object.entries(GENERATED)) {
+      if (!what.endsWith('resource file')) continue
+      expect(source, what).toContain('<Form {resource}')
+    }
+  })
 
   // The specific regression, named so it cannot come back quietly.
   //

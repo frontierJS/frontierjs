@@ -410,7 +410,7 @@ call. A row of parts with one separator is an array `.join(chalk.dim(' · '))`.
 `echo` is a tag as well as a call, and the template prints verbatim, so every
 leading space in the source is output and a body line starts at column 0.
 `echo` adds the final newline, so the closing backtick on its own line leaves
-one blank line after the block. `commands/provision/index.md` is the reference:
+one blank line after the block. `commands/basecamp/create.md` is the reference:
 
 ```js
 const block = `Host ${made.name}
@@ -613,6 +613,28 @@ fli deploy:logs <TAB>      # --production, --stage, --follow, --tail …
 The script calls `fli completion:query` on every Tab press, against a disk cache
 at `~/.fli/cache/registry-<key>.json` that rebuilds when any command file changes.
 `completion:generate` prints the script; `completion:refresh` forces a rebuild.
+
+---
+
+## The Frontier network
+
+`fli frontier:*` makes this machine a member of the Frontier network: one nick
+and one chain of machines, staked with an invite at the project's post,
+`network.frontierjs.com`. The verbs and what a machine keeps are
+`commands/frontier/_module.md`. These are the network's rules for nicks:
+
+- **A nick is unique on the post and first come.** Whoever stakes it with an
+  invite holds it. It is 2 to 16 lower-case letters, digits, `-` and `_`.
+- **A nick never changes**, and neither does the number drawn with it
+  (`FJS-D1451`).
+- **Some nicks are reserved**, the ones that read as the post, the project or
+  everyone speaking — `admin`, `support`, `frontier`, `all` and the rest of
+  `RESERVED` in `core/tell-worker.js`. `stake` refuses one and says why.
+- **Squatting is against the rules.** Squatting is staking a nick to hold it
+  rather than use it, or to pass as a person or project it is not, as npm's
+  [dispute policy](https://docs.npmjs.com/policies/disputes) defines it. The
+  post's owner may take back a squatted nick (`FJS-D1450`, `FJS-D1475`).
+  No verb does that yet; it is built when the first case comes.
 
 ---
 

@@ -8,7 +8,7 @@
   // Esc puts it away, stopping a question still being answered. While it is
   // open an `/ask` is a follow-up: the first is handed what the pane shows, a
   // report's included, and each after resumes that session. Esc or a
-  // `/report` ends the thread. Tab and Shift+Tab step through the counts a
+  // `/report` ends the thread, and `/rerun` runs the report on the pane again. Tab and Shift+Tab step through the counts a
   // report keys (`filtersOf`), cutting its lists to the items each counts,
   // and past the last back to all; a follow-up `/ask` is handed the cut.
   // Each linked item is numbered, and `/snooze <n> [when]` puts it away until
@@ -190,13 +190,14 @@
 
   /**
    * Open the pane on `label` and draw what `job(signal)` answers; a newer job,
-   * or Esc, wins. `back` is the pane as it was, which Esc goes back to.
+   * or Esc, wins. `back` is the pane as it was, which Esc goes back to, and
+   * `keep` rides on the reply whatever it answers.
    */
-  async function show(label, job, back = null) {
+  async function show(label, job, back = null, keep = {}) {
     stop?.abort()
     const mineStop = stop = new AbortController()
     open()
-    reply = { asking: label, at: Date.now(), back }
+    reply = { asking: label, at: Date.now(), back, ...keep }
     now = reply.at
     offset = 0
     cursor = 0
@@ -207,10 +208,10 @@
     try {
       const said = await job(mineStop.signal)
       if (stop !== mineStop) return ''
-      reply = said ? { question: label, back, ...said } : { question: label, back, failed: 'a desk in a browser asks nobody -- walk in with fli haven' }
+      reply = said ? { question: label, back, ...keep, ...said } : { question: label, back, ...keep, failed: 'a desk in a browser asks nobody -- walk in with fli haven' }
       thread = said?.session ?? null
     } catch (e) {
-      if (stop === mineStop && e.name !== 'AbortError') reply = { question: label, back, failed: e.message }
+      if (stop === mineStop && e.name !== 'AbortError') reply = { question: label, back, ...keep, failed: e.message }
     }
     if (stop === mineStop) stop = null
     return ''
@@ -253,7 +254,14 @@
   function report({ args }) {
     if (!mine) return refused()
     const name = (args ?? '').trim()
-    return show(name ? `report ${name}` : 'reports', (signal) => deskReport(name, { signal }))
+    return show(name ? `report ${name}` : 'reports', (signal) => deskReport(name, { signal }), null, { report: name })
+  }
+
+  // An `/ask` is not rerun: it would spend a model's turn to say the same.
+  function rerun() {
+    if (!mine) return refused()
+    if (reply?.report == null) return 'nothing to rerun -- /rerun runs the report on the desk again'
+    return report({ args: reply.report })
   }
 
   const WHEN = 'tomorrow, fri, 3d, 2w, 10/24 or 2026-10-24'
@@ -407,6 +415,7 @@
     const reach = { x: chair.x, y: chair.y, within: REACH }
     $.onDestroy(verbs.add({ word: 'ask', help: '/ask <question>', reach, run: ask }))
     $.onDestroy(verbs.add({ word: 'report', help: '/report [name]', reach, run: report }))
+    $.onDestroy(verbs.add({ word: 'rerun', help: '/rerun', reach, run: rerun }))
     $.onDestroy(verbs.add({ word: 'snooze', help: '/snooze [n] [when]', reach, run: snooze }))
     $.onDestroy(verbs.add({ word: 'unsnooze', help: '/unsnooze <n>', reach, run: unsnooze }))
   }

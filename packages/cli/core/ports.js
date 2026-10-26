@@ -671,9 +671,15 @@ export function slotFor(appRoot, { env = 'dev', lockFile = LOCK_FILE } = {}) {
  * question asked: would this surface follow a slot, or bind its literal.
  * Comments are blanked first: a config that only MENTIONS the variable still
  * binds its literal.
+ *
+ * An API on junction never spells the variable: junction reads
+ * `FRONTIER_PORT_BE` itself (`config/index.ts`). Judged by text alone every
+ * scaffolded app was pinned to slot 0, which is how six came to share it. A
+ * surface whose manifest depends on junction follows the slot.
  */
 export function readsPortVar(appRoot, row, { limit = 2000 } = {}) {
   if (!row.env) return true
+  if (row.env === 'FRONTIER_PORT_BE' && dependsOnJunction(appRoot, row.surface)) return true
   const SKIP = new Set(['node_modules', 'dist', 'public', '.git', 'test', 'tests'])
   const stack = [join(appRoot, row.surface)]
   let seen = 0
@@ -691,6 +697,16 @@ export function readsPortVar(appRoot, row, { limit = 2000 } = {}) {
   return false
 }
 
+function dependsOnJunction(appRoot, surface) {
+  for (const dir of [join(appRoot, surface), appRoot]) {
+    try {
+      const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+      if (pkg.dependencies?.['@frontierjs/junction'] || pkg.devDependencies?.['@frontierjs/junction']) return true
+    } catch { /* no manifest here -- the parent may have one */ }
+  }
+  return false
+}
+
 /**
  * Take this app's dev slot and record it.
  *
@@ -700,7 +716,8 @@ export function readsPortVar(appRoot, row, { limit = 2000 } = {}) {
  *
  * An app `PROJECTS` names is always slot 0 — its numbers are written into its
  * configs and drives. So is an app whose surfaces ignore their variable.
- * Otherwise: the slot this root had last time, or the lowest one no other app
+ * Otherwise: the slot this root had last time, unless an older claim of another
+ * app also remembers it (`keepsSlot`); else the lowest one no other app
  * remembers and nothing is listening on, or — all ten remembered — the one
  * whose app ran longest ago, if nothing is listening on it now.
  *
@@ -735,7 +752,7 @@ export async function claimSession(appRoot, opts = {}) {
       if (projectId === PROJECTS.scaffold && parent?.env === env && Number.isInteger(parent.slot)) slot = parent.slot
       branch = Number.isInteger(mine?.branch) && mine.branch > 0 ? mine.branch : freeBranch(sessions, appRoot, tree, worktreeExists)
     } else if (projectId === PROJECTS.scaffold && moves) {
-      slot = mine?.env === env && Number.isInteger(mine.slot)
+      slot = keepsSlot(sessions, appRoot, mine, env)
         ? mine.slot
         : await freeSlot(sessions, appRoot, env, rowsAt, busy)
     }
@@ -763,6 +780,75 @@ export async function claimSession(appRoot, opts = {}) {
   } finally {
     try { unlinkSync(guard) } catch {}
   }
+}
+
+/**
+ * The scaffold apps in a main checkout that remember `slot` in `env`, keyed by
+ * root. A branch entry is left out: a worktree shares its parent's slot by
+ * design (§ Branches), so it is not a second owner.
+ */
+function slotHolders(sessions, env, slot, exceptRoot = null) {
+  return Object.entries(sessions)
+    .filter(([root, s]) => root !== exceptRoot && s.env === env && s.slot === slot
+      && s.projectId === PROJECTS.scaffold && !(Number.isInteger(s.branch) && s.branch > 0))
+    .map(([root, s]) => ({ root, ...s }))
+}
+
+/**
+ * Whether a remembered slot is still this app's to come back to.
+ *
+ * Once, a slot was reused on the strength of the memory alone, and the lock
+ * grew six apps on slot 0 — each refused at 8000 by whichever of the others was
+ * running. A slot another app also remembers is kept by a holder that is RUNNING,
+ * else by the one that last started longest ago; the newcomer is reallocated.
+ */
+function keepsSlot(sessions, appRoot, mine, env) {
+  if (!(mine?.env === env && Number.isInteger(mine.slot))) return false
+  const others = slotHolders(sessions, env, mine.slot, appRoot)
+  if (!others.length) return true
+  if (others.some(o => isProcessAlive(o.pid))) return false
+  const since = s => String(s.startedAt ?? '')
+  return others.every(o => since(mine) < since(o))
+}
+
+/**
+ * Slots more than one app remembers — `fli ps` reports these so the lock cannot
+ * rot in silence again. `[{ env, slot, apps: [{ root, name, pid, startedAt }] }]`.
+ */
+export function slotConflicts(sessions) {
+  const seen = new Map()
+  for (const [root, s] of Object.entries(sessions)) {
+    if (s.projectId !== PROJECTS.scaffold || !Number.isInteger(s.slot)) continue
+    if (Number.isInteger(s.branch) && s.branch > 0) continue
+    const key = `${s.env}:${s.slot}`
+    if (!seen.has(key)) seen.set(key, { env: s.env, slot: s.slot, apps: [] })
+    seen.get(key).apps.push({ root, name: s.name, pid: s.pid, startedAt: s.startedAt })
+  }
+  return [...seen.values()].filter(c => c.apps.length > 1)
+}
+
+/**
+ * Who holds a port, for a refusal that can name them rather than guess.
+ *
+ * Each listening pid is matched to a dev slot by its working directory: a vite
+ * or an API started from an app runs in that app's tree, whether `fli dev`
+ * started it or somebody ran `bun run dev` by hand. `own` says the holder runs
+ * from `appRoot` itself — an earlier run of the same app, which is the one
+ * `db:reset` cannot get past.
+ *
+ * `[{ pid, cmd, cwd, own, session }]` — empty when nothing can be asked.
+ */
+export function whoHolds(port, appRoot, { lockFile = LOCK_FILE } = {}) {
+  const sessions = readLock(lockFile)
+  const roots    = Object.keys(sessions).sort((a, b) => b.length - a.length)
+  const under    = (dir, root) => dir === root || dir.startsWith(root + '/')
+  return pidsOnPort(port).map(pid => {
+    const cwd     = processCwd(pid)
+    const root    = cwd && roots.find(r => under(cwd, r))
+    const session = root ? { root, ...sessions[root] } : null
+    const own     = Boolean(cwd && appRoot && under(cwd, appRoot))
+    return { pid: Number(pid), cmd: describeProcess(pid), cwd, own, session }
+  })
 }
 
 async function freeSlot(sessions, appRoot, env, rowsAt, busy) {

@@ -11,8 +11,8 @@ import { describe, test, expect } from 'bun:test'
 import { readFileSync } from 'fs'
 import { createHash } from 'crypto'
 import {
-  edgeNames, apiOrigin, edgeRoutes, plainRoutes, applyEdge, routeId, accessLogPath, INGRESS_SERVER, PLAIN_SERVER,
-  parseConfigRead, parseConfigWrite, writeConfigScript, EdgeError, inlineScriptHashes,
+  edgeNames, apiOrigin, edgeRoutes, plainRoutes, applyEdge, routeId, accessLogPath, INGRESS_SERVER, PLAIN_SERVER, CLOUDFLARE_RANGES,
+  parseConfigRead, parseConfigWrite, writeConfigScript, EdgeError, inlineScriptHashes, inlineStyleHashes,
 } from '../core/edge.js'
 import { guardId } from '../core/pause.js'
 
@@ -163,6 +163,19 @@ describe('applyEdge', () => {
     const again = applyEdge(out, { appId: 'shop', routes })
     expect(again.logging.logs.default.exclude).toEqual([`http.log.access.${routeId('shop')}`])
   })
+
+  // Every live record is proxied, so the socket peer is a Cloudflare edge; a
+  // server that trusted nobody keyed every visitor on that one address.
+  test('trusts Cloudflare about the client it fronts, and hands the API one hop', () => {
+    const split = routesFor({ web: { domain: 'app.shop.example' }, api: { domain: 'api.shop.example' } })
+    const out   = applyEdge(withOutpost, { appId: 'shop', routes: split, plain: plainRoutes({ appId: 'shop', web: { domain: 'app.shop.example' }, api: { domain: 'api.shop.example' } }) })
+    for (const name of [INGRESS_SERVER, PLAIN_SERVER]) {
+      const srv = out.apps.http.servers[name]
+      expect(srv.trusted_proxies).toEqual({ source: 'static', ranges: CLOUDFLARE_RANGES })
+      expect(srv.client_ip_headers).toEqual(['CF-Connecting-IP'])
+    }
+    expect(JSON.stringify(split)).toContain('"X-Forwarded-For":["{http.vars.client_ip}"]')
+  })
 })
 
 // FJS-3210: Caddy's automatic http→https redirect covers every host it routes,
@@ -300,6 +313,14 @@ describe('the document the web route serves', () => {
     expect(h['Content-Security-Policy'][0]).toContain("frame-ancestors 'none'")
   })
 
+  test('a hashed bundle file is immutable for a year and the page is checked every load', () => {
+    const [r] = routesFor({ web: { domain: 'shop.example' } })
+    const cacheOf = (path) => inner(r).find(x => x.match?.[0]?.path?.[0] === path)
+      ?.handle[0].response.set['Cache-Control']
+    expect(cacheOf('/assets/*')).toEqual(['public, max-age=31536000, immutable'])
+    expect(cacheOf('/index.html')).toEqual(['no-cache'])
+  })
+
   test('pins the origin to https for a year, and no subdomain with it', () => {
     const [r] = routesFor({ web: { domain: 'shop.example' } })
     expect(headersOf(r)['Strict-Transport-Security']).toEqual(['max-age=31536000'])
@@ -314,6 +335,37 @@ describe('the document the web route serves', () => {
     expect(csp).not.toContain('unsafe-inline')
   })
 
+  // FJS-D1192's default, so a page refused under junction is refused here too.
+  test('falls back to its own origin for everything it does not name', () => {
+    const [r] = routesFor({ web: { domain: 'shop.example' } })
+    const csp = headersOf(r)['Content-Security-Policy'][0]
+    expect(csp).toStartWith("default-src 'self'; ")
+    expect(csp).toContain("form-action 'self'")
+    expect(csp).toContain("img-src 'self' data:;")
+    expect(csp).not.toContain('connect-src')
+    expect(csp).not.toContain('style-src')
+  })
+
+  test('names a split API origin for the calls and stored files the page fetches', () => {
+    const [r] = routesFor({ web: { domain: 'app.shop.example' }, api: { domain: 'api.shop.example' } })
+    const csp = headersOf(r)['Content-Security-Policy'][0]
+    expect(csp).toContain("connect-src 'self' https://api.shop.example")
+    expect(csp).toContain("img-src 'self' data: https://api.shop.example")
+  })
+
+  // A prerendered page is the one place a style= reaches the browser as markup
+  // (FJS-D1464); the browser hashes the value after decoding its entities.
+  test('allows each style= a served page carries, by hash, and no other', () => {
+    const page = '<div style="height: 120vh" aria-hidden="true"></div>' +
+      `<p style='font-family: &quot;Inter&quot;'>x</p><div style="height: 120vh"></div>` +
+      '<script>el.innerHTML = \'<b style="color: red">\'</script>'
+    expect(inlineStyleHashes(page)).toEqual([sha('height: 120vh'), sha('font-family: "Inter"')])
+    expect(inlineStyleHashes(html)).toEqual([])
+    const names = edgeNames({ web: { domain: 'shop.example' } })
+    const [r] = edgeRoutes({ appId: 'shop', serverPath: '/apps/shop', apiPort: 3000, ...names, styles: inlineStyleHashes(page) })
+    expect(headersOf(r)['Content-Security-Policy'][0]).toContain(`style-src-attr 'unsafe-hashes' ${sha('height: 120vh')} ${sha('font-family: "Inter"')}`)
+  })
+
   // The headers are the SPA's: a response the API sends is helmet's to dress.
   test('sit after the proxy, so the API\'s own responses keep their headers', () => {
     const [r] = routesFor({ web: { domain: 'shop.example' } })
@@ -323,8 +375,8 @@ describe('the document the web route serves', () => {
     expect(JSON.stringify(api)).not.toContain('Content-Security-Policy')
   })
 
-  test('both steps that write the routes hash the index.html being served', () => {
-    expect(src('_steps-docker/07b-edge.md')).toMatch(/index\.html/)
-    expect(src('_steps-setup/05-caddy.md')).toMatch(/index\.html/)
+  test('both steps that write the routes hash every page being served', () => {
+    expect(src('_steps-docker/07b-edge.md')).toMatch(/-name '\*\.html'/)
+    expect(src('_steps-setup/05-caddy.md')).toMatch(/-name '\*\.html'/)
   })
 })

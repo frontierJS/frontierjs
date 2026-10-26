@@ -10,6 +10,9 @@ const { host, serverPath, appId, edge, edgeWritten } = $.config
 
 log.success(`\nSetup complete for ${appId}`)
 echo('')
+// `fli basecamp:create` and `:install` point the DNS and deploy right after, so
+// a checklist telling the person to do both reads as work left undone.
+if (!$.flag['next-steps']) return
 
 // ─── Checklist ────────────────────────────────────────────────────────────────
 echo('─── Next steps ──────────────────────────────────────────────────────')

@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/outpost",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "description": "The process a fleet server runs — Basecamp's hands on a machine",
   "type": "module",
   "bin": {
@@ -25,6 +25,7 @@
     "bun": ">=1.4.0"
   },
   "dependencies": {
+    "@frontierjs/litestone": "workspace:*",
     "@frontierjs/toolbelt": "workspace:*"
   },
   "files": [

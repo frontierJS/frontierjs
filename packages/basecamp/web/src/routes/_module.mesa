@@ -4,9 +4,10 @@ siteName: Basecamp
 <script>
   import { page, goto, isActive } from '@frontierjs/sierra/router'
   import { status } from '@frontierjs/sierra/resource'
-  import { session, signOut, switchWorkspace } from '../session.js'
+  import { session, signOut, switchWorkspace } from '../lib/session.js'
 
   import Badge          from '@frontierjs/ui/components/display/Badge.mesa'
+  import Dot            from '@frontierjs/ui/components/display/Dot.mesa'
   import Button         from '@frontierjs/ui/components/forms/Button.mesa'
   import Select         from '@frontierjs/ui/components/forms/Select.mesa'
   import CommandPalette from '@frontierjs/ui/components/overlay/CommandPalette.mesa'
@@ -26,7 +27,7 @@ siteName: Basecamp
   import { jobs }        from '../resources/Job.mesa'
   import { notifications, INBOX, isUnread, titleOf, bodyOf, actionOf, markRead, markAllRead }
     from '../resources/Notification.mesa'
-  import { computeNotices } from '../notices.js'
+  import { computeNotices } from '../lib/notices.js'
   import { primary, groups, elsewhere } from '../lib/nav.js'
   import { paletteItems, visible } from '@frontierjs/ui/nav'
 
@@ -419,10 +420,10 @@ siteName: Basecamp
            width between 'live' and 'offline' shifted every control after it.
            It opens only once a token is stored, so offline before sign-in is
            correct. -->
-      <span class="status-dot hide-sm {status.connected ? 'success' : 'muted'}"
-            role="status"
-            title={status.connected ? 'Live' : 'Offline'}
-            aria-label={status.connected ? 'Live' : 'Offline'}></span>
+      <Dot class="hide-sm" tone={status.connected ? 'success' : 'muted'}
+           role="status"
+           title={status.connected ? 'Live' : 'Offline'}
+           label={status.connected ? 'Live' : 'Offline'} />
     </span>
   </header>
   {/if}
@@ -535,14 +536,6 @@ siteName: Basecamp
     transition:          transform var(--motion-fast);
   }
   .nav-group[open] .nav-chevron { transform: none; }
-
-  .status-dot {
-    inline-size:   0.5rem;
-    block-size:    0.5rem;
-    border-radius: 9999px;
-    background:    var(--bg-mix, var(--color-muted));
-    flex-shrink:   0;
-  }
 
   /* The topbar below 767px is the drawer button, the name, search, the bell
      and the account menu. The rest is in the drawer or one search away. */

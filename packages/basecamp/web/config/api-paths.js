@@ -93,8 +93,14 @@ function derive(md) {
   if (prefix !== '(none)') return [prefix]
 
   // Every service, including the ones a plugin registered — a service heading
-  // is `### \`name\` · model \`Model\``.
-  const services = [...md.matchAll(/^### `([^`]+)`/gm)].map(m => '/' + m[1])
+  // is `### \`name\` · model \`Model\``. A kebab spelling is an alias under it
+  // (`- **also answers to** — \`account-recovery\``), and a stranger's password
+  // reset is an HTTP call to exactly that path.
+  const services = [
+    ...[...md.matchAll(/^### `([^`]+)`/gm)].map(m => '/' + m[1]),
+    ...[...md.matchAll(/^- \*\*also answers to\*\* — (.+)$/gm)]
+      .flatMap(m => [...m[1].matchAll(/`([^`]+)`/g)].map(a => '/' + a[1])),
+  ]
 
   // Every hand-registered or plugin-registered route — `| GET | \`/health\` | raw |`.
   const raw = [...md.matchAll(/^\| \S+ \| `([^`]+)` \| raw \|$/gm)]

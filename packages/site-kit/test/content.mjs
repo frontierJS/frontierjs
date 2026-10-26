@@ -343,6 +343,14 @@ try {
     codeRefused('a component tag is refused', coded + '<Button text="Go" />\n', /<Button/)
     codeRefused('a markdown link to javascript: is refused', coded + '[tap](javascript:alert(1))\n', /javascript:/)
     codeRefused('a reference link to javascript: is refused', coded + '[tap]\n\n[tap]: javascript:alert(1)\n', /javascript:/)
+    // FJS-D1508: a value is graded as a body is, since a preset may {@html} it.
+    refused('a tag in a value is refused', { values: { title: '<img src=x onerror=alert(1)>' } }, /<img.*developer's/)
+    refused('an expression in a value is refused', { values: { title: 'Hi {process.env.HOME}' } }, /\{process/)
+    refused('a script address in a value is refused', { values: { title: 'java\tscript:alert(1)' } }, /runs script/)
+    const tagged = file.replace('title: Welcome', 'title: Welcome<br>home')
+    check('a value keeps a tag it already held',
+      applyEdit(tagged, { values: { title: 'Hello<br>home' } }).text !== undefined,
+      applyEdit(tagged, { values: { title: 'Hello<br>home' } }).refused)
     check('prose with no code reads as none, and an autolink is not a tag',
       applyEdit('Plain.\n', { body: 'See <https://example.com> for 2 < 3.\n' }).text !== undefined)
 
@@ -358,6 +366,7 @@ try {
     const fieldRefused = (label, out, pattern) => check(label, pattern.test(out.refused ?? ''), out.refused ?? out.text)
     fieldRefused('words the line no longer holds are refused', set(12, 'House', 'Start'), /menu\.0\.name has changed/)
     fieldRefused('a line with no value is refused', set(11, 'Home', 'Start'), /no value is written on that line/)
+    fieldRefused('a tag in an inline save is refused', set(12, 'Home', '<img src=x onerror=alert(1)>'), /<img.*developer's/)
     fieldRefused('a locked key is refused', set(3, 'muted', 'danger'), /tone decides/)
     fieldRefused('a number is not words', set(5, '5', 'five'), /stars is a number, not words/)
     fieldRefused('a folded value is not changed in place', set(8, 'two lines folded', 'one'), /spans several lines/)

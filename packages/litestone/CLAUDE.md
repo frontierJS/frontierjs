@@ -8,68 +8,59 @@ tests, and **a feature is incomplete while only one of those paths knows about i
 
 ## Rules a change must keep
 
-Each names its pin. The failure behind each is `docs/internals.md`.
+Each names its pin; the full form, with the failure behind each, is
+`docs/hazards.md` § Rules, and the reasoning `docs/internals.md`.
 
-- **Litestone's edge is what is true about a row** (`FJS-D635`): its shape, who
-  may read and write it, what moves it may make, how its shape changes. Object
-  storage, replication, transform and Studio are batteries behind a subpath
-  (`./storage`, `./replicate`, `./transform`); no axis directory imports one or
-  anything under `tools/`, and the main entry re-exports none.
-  `test/edge.test.ts` classifies every `src/` directory, so a new one names its
-  axis or is a battery.
-- **Every path that reaches a row applies every rule that guards it**, in
-  `READ_RULES`'s order (`src/core/client.js`, inside `makeTable`) — global
-  filter, plugin read filters, soft-delete, templates, the effective window, the
-  caller's where, the policy — because positional binds make the order the
-  correctness (`FJS-262`, `FJS-216`). A verb folds them through `visibleWhere`
-  and a verb the registry does not place is refused at build.
-  `test/verbs-rules.test.ts` is the independent oracle.
-- **An aggregate strips what `read()` strips**, and a name that is not a column
-  is refused (`FJS-202`, `FJS-273`). `test/aggregate-expressions.test.ts`.
-- **A row is shaped only by `read()`.** Anything assembling one itself leaks
-  `@guarded` and `@encrypted` values (`FJS-223`); a write path re-reads `@from`
-  with `read(row, { hydrateFrom: true })`, since RETURNING cannot carry one.
-- **A relation joins on every column of its key.** A relation entry carries
-  `foreignKeys`/`referencedKeys`, index-aligned, and `pairsOn`/`keyIn`/`tupleOf`
-  in `query.js` are the spellings; joined on the first pair, `(scheduleId,
-  personId)` answers whichever row shares a scheduleId — in an include, a
-  cascade, and a policy path grading the wrong row (`FJS-377`, `FJS-2790`).
-  `test/from-correlation.test.ts`, `test/composite-relation.test.ts`.
-- **A protected column cannot be named in a `where` or `orderBy`** by a
-  non-system caller; a strip alone is recovered one `startsWith` at a time
-  (`FJS-393`). `test/guarded-filter.test.ts`.
-- **A row policy compiles twice and both halves agree** — SQL for read and
-  update, JS for create and the post-update check. The JS half compares with
-  SQLite's affinity, not `===` (`FJS-713`); a create policy cannot name a value
-  SQLite computes (`FJS-719`). A new form gets a row in
-  `test/policy-interpreters.test.ts`.
-- **`upsertMany` is a create and an update at once**, policed by both rules
-  (`FJS-720`). A bulk write keeps ragged row shapes, and a transitions field is
-  refused in a bulk update by name (`FJS-D182`, `test/bulk-transitions.test.ts`).
-- **A write event states `row` or `collection` in `scope`**, never inferred from
-  `result` (`FJS-307`, `test/write-events.test.ts`). A zero-row write announces
-  nothing; a cross-process announcement stores ids, never the row (`FJS-D173`,
-  `test/cross-process.test.ts`).
-- **`$transaction` decides nesting by async context**, not depth — a nested call
-  takes a SAVEPOINT, a concurrent request waits (`FJS-244`). One client per
-  database file per process (`FJS-569`, `test/busy-timeout.test.ts`).
-- **A value bound into `bun:sqlite` is a primitive.** A plain object voids every
-  positional binding in the statement, with no error (`FJS-199`).
-- **Anything that writes `.lite` reads back to a fixed point** through `parse()`
-  — `test/introspect-roundtrip.test.ts`.
-- **A migration drops only what litestone named** (`FJS-183`); a generated
-  column is read with `table_xinfo` (`test/generated-rebuild.test.ts`).
-- **`@@unique(where:)` never gets `@@softDelete`'s clause and `@@index(where:)`
-  always does**; they are named `uniq_` and `idx_`, and the prefix is the
-  ownership test (`FJS-614`, `test/index-predicates.test.ts`).
-- **`@values` is checked through the caller's accessor**, never `asSystem()` —
-  `test/valuesets.test.ts`.
-- **An expected verdict is never derived from the code it grades**, and a
-  mutant dies only by a verdict disagreement, or by a loader refusal while the
-  original builds (`FJS-597`).
-- **An unsupported combination is refused by name** —
-  `test/matrix.test.ts`. SQLite reads an unknown identifier as a string literal
-  and matches nothing, so silence here is a wrong answer.
+- **Litestone's edge is what is true about a row** (`FJS-D635`); storage, replication, transform and Studio are batteries behind a subpath, and `test/edge.test.ts` classifies every `src/` directory.
+- **Every path that reaches a row applies every rule that guards it**, in `READ_RULES`'s order (`src/core/client.js`, `makeTable`) — positional binds make the order the correctness (`FJS-262`, `FJS-216`). A verb the registry does not place is refused at build; `test/verbs-rules.test.ts` is the oracle.
+- **An aggregate strips what `read()` strips**, and a non-column name is refused (`FJS-202`, `FJS-273`).
+- **A row is shaped only by `read()`** (`FJS-223`); a write path re-reads `@from` with `read(row, { hydrateFrom: true })`.
+- **A relation joins on every column of its key** — `foreignKeys`/`referencedKeys` index-aligned, `pairsOn`/`keyIn`/`tupleOf` in `query.js` (`FJS-377`, `FJS-2790`).
+- **A protected column cannot be named in a `where` or `orderBy`** by a non-system caller (`FJS-393`).
+- **A row policy compiles twice and both halves agree** — SQL and JS; the JS half compares with SQLite's affinity (`FJS-713`, `FJS-719`). A new form gets a row in `test/policy-interpreters.test.ts`.
+- **`upsertMany` is a create and an update at once** (`FJS-720`); a transitions field is refused in a bulk update by name (`FJS-D182`).
+- **A write event states `row` or `collection` in `scope`** (`FJS-307`); a zero-row write announces nothing; cross-process stores ids, never the row (`FJS-D173`).
+- **`$transaction` decides nesting by async context**, not depth (`FJS-244`). One client per database file per process (`FJS-569`).
+- **A value bound into `bun:sqlite` is a primitive** — a plain object voids every positional binding, silently (`FJS-199`).
+- **Anything that writes `.lite` reads back to a fixed point** through `parse()`.
+- **A migration drops only what litestone named** (`FJS-183`); a generated column is read with `table_xinfo`.
+- **`@@unique(where:)` never gets `@@softDelete`'s clause and `@@index(where:)` always does**; `uniq_`/`idx_` is the ownership test (`FJS-614`).
+- **`@values` is checked through the caller's accessor**, never `asSystem()`.
+- **An expected verdict is never derived from the code it grades** (`FJS-597`).
+- **An unsupported combination is refused by name** — SQLite reads an unknown identifier as a string literal and matches nothing (`test/matrix.test.ts`).
+
+## Where things are
+
+`docs/layout.md` is the file-by-file map; read it when a change touches a file
+this list does not name. The owners that matter on most turns:
+
+- `src/core/parser.js` `.lite` to AST · `catalog.js` every word a `.lite` file can hold · `schema-maps.js` the schema read once into the maps the client runs on · `ddl.js` AST to CREATE.
+- `src/core/client.js` is `createClient`, `makeTable` and the flavors; the verbs sit beside it — `aggregate.js`, `search.js`, `group-by.js`, `find-many-cursor.js`, `upsert-many.js`, `restore.js` — a write's halves in `write-data.js`, `where-rewrite.js`, `state-guards.js`, `nested-writes.js`, `write-events.js`, `trail-entries.js`, `ledger-notes.js`, `extensible.js`, and its refusals in SQLite's words in `constraint-refusals.js`.
+- `src/core/query.js` buildWhere/buildOrderBy · `policy.js` `@@allow`/`@@deny` to SQL and JS · `args.js` what a verb may be passed · `errors.js` every error the client throws (junction builds them by name).
+- `src/core/migrate.js` + `migrations.js` + `operations.js` are the three-schema migration story · `introspect.js` the `$`-introspection surface · `transaction.js`, `locks.js`, `pragmas.js`, `databases.js` the connection story.
+- `src/core/engine.js` is `#sql-engine`; `engines/bun-sqlite.js` alone names `bun:sqlite`; `host/`, `browser/`, `drivers/` are the other side of the seams.
+- `src/plugins/gate.js`, `capability.js`, `reach.js` · `src/tools/cli.js` + `cli-helpers.js` (`KNOWN_FLAGS`) · `src/testing.js`, `testdb.js`, `seeder.js`, `fake.js` the `./testing` subpath.
+
+## What bites here
+
+The traps that bite most; the full catalog is `docs/hazards.md`, read it before
+touching the client, a policy, a migration or a seam.
+
+- **`parseFile` resolves imports and `parse` does not** — a schema from a PATH goes through `parseFile` (`FJS-264`).
+- **`createClient({ db })` overrides MAIN and nothing else**; `databases: ':memory:'` > `databases: { main }` > `db` > the declaration.
+- **`$setAuth(user)` RETURNS a scoped client.** `asSystem()` bypasses the gate, policies, `@guarded` and a move's `@gate`/`@system`, and lifts nothing else — not soft-delete, templates, checks, `@immutable` or the `@@transitions` machine (`FJS-D502`, `FJS-D470`). Lift the gate alone with `system: ['@@gate']`, never through `ctx.isSystem` (`FJS-D575`).
+- **Raw SQL keeps the policies only inside a where**; `db.sql` throws once a schema declares access rules; stored text that may not write goes through `sql.read` (`FJS-2412`).
+- **The clock is `now()`** — `datetime('now')` compares wrong against ISO-8601 TEXT and is refused by name (`FJS-226`).
+- **A bare array in a `where` is membership**; `{ equals: [...] }` is equality.
+- **`undefined` is omitted and only `null` clears.** A single-row write returns the row, a bulk write `{ count }`.
+- **`getLevel()` is synchronous and clamped to 0–7.** `@@allow` holds only on TRUE, `@@deny` fires on TRUE or UNKNOWN, an absent claim is UNKNOWN.
+- **Protection refuses by name rather than dropping.** `@guarded` is system-only both ways; `@encrypted` hides and stays writable.
+- **Three schemas, and a migration question compares two** — declared, shadow, live (`FJS-D123`); a rename is a drop plus an add unless `migrate create` was told (`--rename`, `src/core/operations.js`, `FJS-D603`).
+- **A `jsonl` model has no update, delete, migration or FTS**; `findManyCursor` pages it.
+- **A bare `@computed` function widens its read to `SELECT *`**; declare `needs` to narrow it, and a computed field cannot be sorted (the fence is `docs/hazards.md` § Computed fields).
+- **A cache keyed on the ctx answers the first caller's value to everybody** (`FJS-722`) — key on `ctx._flavor ?? ctx`.
+- **A hook that reads another row reads it through `ctx.tables`** (`FJS-1358`), never a client captured at install.
+- **An engine answering promises is refused at registration** — `.get()`/`.all()` are called from ~270 sites that do not await.
 
 ## Proving a change
 
@@ -101,7 +92,7 @@ Then, because every other package sits on this one: `example` and `basecamp`
 | a read method | `test/litestone.test.ts` § *every read applies the filter, the policy and the gate*, and `test/verbs-rules.test.ts` |
 | a column kind or an operation | its row or column in `test/matrix.test.ts` — a missing cell fails |
 | an aggregate argument naming a field | `test/litestone.test.ts` § *an aggregate names a column* |
-| a write method | `test/write-events.test.ts`; `test/valuesets.test.ts` derives its list from `client.js` |
+| a write method | `test/write-events.test.ts`; `test/valuesets.test.ts` derives its list from `src/core` |
 | a policy form | `test/policy-interpreters.test.ts` — both compilers, same rows |
 | an access rule | one row admitted and one refused, through a real scoped client |
 | a `@map`-sensitive path | `test/column-mapping.test.ts` — mapped and unmapped, compared |
@@ -111,59 +102,6 @@ Then, because every other package sits on this one: `example` and `basecamp`
 | a `src/` directory, or an axis import of a battery | `test/edge.test.ts` — classified, or a ruling |
 | a runtime global in `src/` | `HOST_GLOBALS` in `test/undeclared-names.test.ts` — by name, never all of lib.dom |
 | a use of `process`, `Buffer`, `Bun` or `setImmediate` in a module the browser graph reaches | `CEILING` in `test/audit-browser-globals.test.ts` — a new use fails, a beaten ceiling must be lowered (`FJS-2404`) |
-
-## What the default gets wrong
-
-- **`parseFile` resolves imports and `parse` does not.** A schema loaded from a
-  PATH goes through `parseFile` (`FJS-264`); `parse` is for text with no file.
-- **`createClient({ db })` overrides MAIN and nothing else.** Precedence:
-  `databases: ':memory:'` > `databases: { main }` > `db` > the declaration.
-- **`$setAuth(user)` RETURNS a scoped client.** `asSystem()` bypasses the gate,
-  `@@allow`/`@@deny`, `@guarded` and a move's `@gate`/`@system`, and does not lift
-  the soft-delete or template filters, a `@check`/`@@check`/`@@arc`, `@immutable`,
-  or the `@@transitions` machine — its moves, its compare-and-swap, and a create
-  starting at the `@default` (`FJS-D502`, `FJS-D470`). A write that needs the gate
-  alone lifted names it: `system: ['@@gate']`, graded per call and never through
-  `ctx.isSystem` (`FJS-D575`).
-- **Raw SQL keeps the policies only inside a where** —
-  ``where: { $raw: sql`price > ${min}` }``. `db.sql` throws once a schema declares
-  access rules; `db.asSystem().sql` is the deliberate bypass. `sql` routes on the
-  statement's first word, so stored text that may not write goes through
-  `sql.read(text, params)` (`FJS-2412`).
-- **The clock is `now()`.** A `DateTime` is ISO-8601 TEXT, so `datetime('now')`
-  compares wrong for today and is refused by name (`FJS-226`).
-- **A bare array in a `where` is membership**; `{ equals: [...] }` is equality.
-- **A key set to `undefined` is omitted and only `null` clears.** A single-row
-  write returns the row (`null` under `select: false`), a bulk write `{ count }`.
-- **`getLevel()` is synchronous and clamped to 0–7.** A schema declaring any
-  `@@gate` installs `GatePlugin` itself. `@@allow` holds only on TRUE, `@@deny`
-  fires on TRUE or UNKNOWN, and an absent claim is UNKNOWN.
-- **Protection refuses by name rather than dropping.** `@guarded` is system-only
-  both ways and takes no level; `@encrypted` hides a value and stays writable.
-- **Three schemas, and a migration question compares two** — declared, shadow,
-  live (`FJS-D123`, `test/migration-history.test.ts`). A column leaving the schema
-  is refused without `acceptDataLoss`, because a rename is a drop plus an add
-  unless `migrate create` was told it was one (`--rename`, `--operations`;
-  `src/core/operations.js`, `FJS-D603`).
-- **A `jsonl` model has no update, delete, migration or FTS** — append-only, and
-  `findManyCursor` pages it.
-
-### Computed fields
-
-```js
-// computed.js — passed as createClient({ computed }), declared `fullName String @computed`
-export default {
-  User: {
-    fullName: row => [row.firstName, row.lastName].filter(Boolean).join(' '),
-    initials: {                              // declared inputs narrow the SELECT,
-      needs:   ['firstName', 'lastName'],    // and reading anything else throws
-      compute: row => `${row.firstName[0]}${row.lastName[0]}`,
-    },
-  },
-}
-```
-
-A bare function widens its read to `SELECT *`. A computed field cannot be sorted.
 
 ## The context in this package
 
@@ -211,89 +149,28 @@ same code on either runtime (`FJS-D305`), and `test/engine-seam.test.ts` grades 
 | What a `.lite` word means, accepts, and where it is legal | `docs/reference.snapshot.md` · `litestone explain @word` · `catalog.snapshot.md` groups every word and holds the visibility table |
 | How a feature is used | `docs/README.md`, one file per feature; `docs/cli.md`; `docs/testing.md` |
 | Why the code is shaped this way | `docs/internals.md`, by path |
+| Which file owns what | `docs/layout.md` |
+| Every trap, verbatim | `docs/hazards.md` |
 | Correct-but-surprising behavior at the Data boundary | the `data-hazards` skill |
 | Who owns a cross-package seam | the `bridge-index` skill |
 | Open defects, rulings, proposals | `ISSUES.md` · `DECISIONS.md` · `IDEAS/` |
 
-<!--
-The layout below is for `fli done`'s layout-named check, which reads this file raw.
-Claude Code strips a block-level HTML comment before injecting the file, so an
-agent pays nothing for it. It must stay outside a code fence, since a comment
-inside one is kept.
-
-src/
-  index.js · index.d.ts — public API re-exports, no battery · the hand-written declarations
-  core/
-    parser.js — .lite to AST; the lexer and condition grammar are toolbelt/predicate's
-    catalog.js — every word a .lite file can hold; what explain, Studio and the reference read
-    advise.js — legal-and-WRONG combinations; every rule in it parses
-    opportunities.js — legal-and-MISSING: a word that would have said it better
-    schema-maps.js — the schema read once into the maps the client runs on
-    ddl.js — AST to CREATE TABLE / INDEX / TRIGGER; isStoredField, isUpdatedAtField
-    client.js — createClient, makeTable, every verb, the flavors
-    args.js — what a verb may be passed: argument names, where/orderBy/aggregate keys, @guarded on the way in
-    databases.js — the database registry, and the handles over a connection: statement cache, @big, @map
-    transaction.js — $transaction: nesting by async context, read routing while one is open
-    locks.js — $lock / $locks: the advisory-lock primitive over the _locks table
-    stamps.js — what a write fills in: generated defaults, @createdBy/@updatedBy, @sequence
-    computed.js — @computed: load, normalize, apply to a read row
-    field-policy.js — field @allow(read) applied to read rows
-    include.js — include, and @from on a path that builds its own SQL
-    hooks.js — the hooks, onEvent, onQuery and announce options
-    audit-log.js — @trail/@@trail: the entry, and the fire-and-forget write of it
-    errors.js — every error the client throws; junction builds them by name
-    engine.js — the SQL engine seam
-    pragmas.js — busy_timeout, the one owner
-    db-path.js — where a relative database path lands
-    backup.js — how a live file is copied, for $backup and migrate apply
-    query.js — buildWhere, buildOrderBy, coercion
-    policy.js — @@allow / @@deny / field @allow to SQL (compileSql) and JS (evalJs)
-    plugin.js — LitestonePlugin, PluginRunner, AccessDeniedError
-    validate.js — field validators, ValidationError, EXACT_INT_MAX
-    valuesets.js — @values, enforced through the caller's accessor
-    capabilities.js — what a capability IS, derived from the schema (FJS-D139)
-    cardinality.js — @minItems/@maxItems on a relation, graded at the outermost commit (FJS-D347)
-    commitment.js — @@commitment due times, in SQL and in JS, graded against each other
-    seal.js — which states of a machine are sealed, derived from @seals
-    personal.js — @personal's closed categories and their regimes, which models are people (FJS-D657)
-    three-way.js — @@sync(field)'s per-column merge (FJS-D334)
-    cross-process.js — announce crossProcess (FJS-642)
-    encryption.js — @encrypted/@hashed + comparisonEncoderFor: value to stored bytes, one owner
-    vector.js — float32 layout and the JS half of comparing two (FJS-1193, FJS-D331)
-    ids.js — who assigns an @id; the generators are toolbelt/ids
-    migrate.js — introspect, buildPristine, diffSchemas, residue
-    migrations.js — file migrations, buildShadow, historyGap, autoMigrate
-    tenancy.js — resolveTenancy + tenantFrom; four readers, one answer
-    retention.js — the database block's retention: the SQLite sweep and the jsonl compaction
-    watch.js — under bun --watch/--hot, imports each file parseFile read so a schema edit restarts the process (FJS-1235)
-  plugins/
-    gate.js — GatePlugin
-    capability.js — the capability grid, ANDed with the gate as its floor (FJS-D146)
-    reach.js — which models a call touches beyond the one it names
-    external-ref.js — ExternalRefPlugin base
-  engines/ — bun-sqlite.js · sqlite-wasm.js · none.js
-  host/ — node.js · browser.js
-  browser/ — worker.js · client.js
-  drivers/ — jsonl.js · jsonl-index.js (the sidecar index AND the write lock, FJS-D180)
-  storage/ — the ./storage battery: index.js · file-storage.js (FileStorage) · ref-url.js (the one builder of a ref's public URL, FJS-1094) · sigv4.js (the clock and the signing-key cache for toolbelt's `/sigv4`, FJS-D892) · providers/s3.js · providers/local.js
-  import/ — index.js · prisma.js · rails.js · sql.js · frappe.js · tiers.js · polymorphic.js · wide-int.js
-  tools/ — cli.js · cli-helpers.js (what the commands share) · studio.js (Studio's server) · studio-queries.js (its saved queries, a sidecar) · studio.html · repl.js · introspect.js · typegen.js · replicate.js (./replicate) ·
-           assistant.js · eject.js · ddl-snapshot.js · jsonschema-snapshot.js · catalog-snapshot.js ·
-           catalog-reference.js · principal.js (who `--as` names, for every tool that boots as somebody)
-  transform/ — the ./transform battery: framework.js · runner.js · run.js · split-worker.js · split-worker.source.js
-  access.js — the declared access surface as data and prose
-  release.js — the release surface; classifyPivot and classifyAccess
-  mutate.js — schema mutation testing
-  device-schema.js — the schema a DEVICE gets
-  validate-rows.js — which STORED rows the schema would now refuse
-  export.js — @@export, the governed extract (FJS-D228)
-  tenant.js — createTenantRegistry
-  jsonschema.js — generateJsonSchema
-  testing.js · testing.d.ts — the ./testing subpath
-  testdb.js — the migrated template every test copies
-  seeder.js · fake.js — Factory/Seeder · the seeded value catalog
-  tmp-dirs.js — temp directories a run cannot remove itself
-references/ — one .lite per common model, never shipped or imported
-test/ — one file per concern; fixtures/scale/openmrp.lite is the 188-model scale fixture
-bench/ — scale-schema.mjs · ablation.mjs, timed and asserting nothing
+<!-- layout-named: the file names fli done grades a new module against, kept here because done.js reads this file by path. The map itself is docs/layout.md.
+ablation.mjs access.js advise.js aggregate.js args.js assistant.js audit-log.js backup.js 
+browser.js bun-sqlite.js capabilities.js capability.js cardinality.js cases.mjs 
+catalog-reference.js catalog-snapshot.js catalog.js cli-helpers.js cli.js client.js 
+commitment.js computed.js cross-process.js databases.js db-path.js ddl-snapshot.js ddl.js 
+device-schema.js eject.js encryption.js engine.js errors.js export.js extensible.js 
+external-ref.js fake.js field-policy.js file-storage.js find-many-cursor.js framework.js 
+frappe.js gate.js group-by.js hooks.js ids.js include.js index.d.ts index.js introspect.js 
+jsonl-index.js jsonl.js jsonschema-snapshot.js jsonschema.js local.js locks.js migrate.js 
+migrations.js mutate.js nested-writes.js node.js none.js operations.js opportunities.js 
+parser.js personal.js plugin.js policy.js polymorphic.js pragmas.js principal.js prisma.js 
+query.js rails.js reach.js ref-url.js release.js repl.js replicate.js restore.js retention.js run.js 
+runner.js s3.js scale-schema.mjs schema-maps.js seal.js search.js seeder.js sigv4.js 
+split-worker.js split-worker.source.js sql.js sqlite-wasm.js stamps.js state-guards.js 
+statements.mjs studio-queries.js studio.html studio.js tenancy.js tenant.js testdb.js 
+testing.d.ts testing.js three-way.js tiers.js tmp-dirs.js transaction.js typegen.js upsert-many.js 
+validate-rows.js validate.js valuesets.js vector.js watch.js where-rewrite.js wide-int.js 
+worker.js write-data.js write-events.js 
 -->

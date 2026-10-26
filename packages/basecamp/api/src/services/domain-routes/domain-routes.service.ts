@@ -42,8 +42,8 @@ async function guard(domainId: string, appId: string) {
 }
 
 export default createService({
-  name:  'domain-routes',
-  scope: keyScope('domain-routes'),
+  name:  'domainRoutes',
+  scope: keyScope('domainRoutes'),
   model: 'DomainRoute',
   methods: ['find', 'get', 'create', 'patch', 'remove'],
   channel: workspaceChannel,

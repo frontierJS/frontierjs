@@ -10,8 +10,8 @@
 // transports and the browser client for free (DECISIONS.md § API design).
 //
 //   account    GET  /account/me            who this token is
-//              POST /account/me            X-Service-Method: changePassword ·
-//                                          requestEmailChange
+//              POST /account/me            X-Service-Method: reauthenticate ·
+//                                          changePassword · requestEmailChange
 //   sessions   GET  /sessions              where else am I signed in
 //              DEL  /sessions/{id}         end one of them
 //              POST /sessions              X-Service-Method: revokeOthers
@@ -107,27 +107,47 @@ export function refuseDelegated(ctx: { transport?: string; user?: unknown }, use
   )
 }
 
-export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions = {}): ServiceDefinition[] {
-
+/**
+ * A session as the browser reads it: the SessionContext plus the two opt-in
+ * gradings. `level` is absent by default — the app owns the role→level mapping
+ * (its own getLevel), and a default answer here would be a SECOND mapping that
+ * disagrees with the one every request is graded by. `standing` is the answer
+ * with no tenant in play; the browser's buttons read `level`, and an app
+ * graded per tenant has no honest `level` to give.
+ *
+ * ONE owner. `account.get('me')` answers this, and so does every route that
+ * produces a session (`respond` in plugin.ts) — a sign-in that did not carry it
+ * cost the browser a second round trip to ask `me` for two numbers it could
+ * have had with the token.
+ */
+export function gradeForWire(opts: Pick<AuthServicesOptions, 'level' | 'standingLevel'> = {}) {
   const level = asPrincipal(opts.level)
   // Recovery grades the operator AND the person, which `account.me`'s level
   // need not answer — an app whose level is per tenant has none for a bare
   // session, and `account.me` is what a browser gates its buttons on.
   const standingLevel = asPrincipal(opts.standingLevel) ?? level
+  const grade = (user: SessionContext) => ({
+    ...user,
+    ...(level         ? { level: level(user) }            : {}),
+    ...(standingLevel ? { standing: standingLevel(user) } : {}),
+  })
+  return Object.assign(grade, { level, standingLevel })
+}
 
-  // ─── The password, asked again ─────────────────────────────────────────
+export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions = {}): ServiceDefinition[] {
+
+  const grade = gradeForWire(opts)
+  const { level, standingLevel } = grade
+
+  // ─── A guess inside a live session ─────────────────────────────────────
   //
-  // Every method that verifies the CURRENT password is an oracle for it, to
+  // `reauthenticate` checks the password and `confirmTotp` a code, each for
   // whoever holds the session — and a stolen session is exactly the caller
-  // these methods exist to stop. `/auth/login` is limited and these were not,
-  // so the side door answered as many guesses as it was sent (four doors, one
-  // bucket, or a guesser spreads the attempts across them).
-  //
-  // Keyed by the account, which is the limiter's own default for a caller with
-  // a session. The default is login's own budget, so this is no wider than the
-  // front door. The sweep timer lives as long as the services, which is
-  // junction's stated position for a service-level limiter.
-  const reauthenticate = rateLimitHook(opts.reauthenticationRateLimit ?? {
+  // they exist to stop, so unbounded each is an oracle. One bucket, or a
+  // guesser spreads the attempts across both. Keyed by the account, which is
+  // the limiter's own default for a caller with a session; the default is
+  // login's own budget, so this is no wider than the front door.
+  const limitGuesses = rateLimitHook(opts.reauthenticationRateLimit ?? {
     max:     10,
     window:  '15 minutes',
     message: 'Too many password attempts on this account. Wait a few minutes and try again.',
@@ -328,6 +348,16 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     return { operator, person }
   }
 
+  /**
+   * Sudo mode (`FJS-D1209`): the session asking proved the password within the
+   * provider's window, or a 403 whose `data.reason` is
+   * `reauthentication_required`. A provider without the check refuses every
+   * change behind it, by name, rather than letting one through unasked.
+   */
+  async function fresh(user: SessionContext): Promise<void> {
+    await need('requireReauthenticated')(user.id, user.sessionId)
+  }
+
   const services: ServiceDefinition[] = []
 
   // ─── account ──────────────────────────────────────────────────────────────
@@ -344,7 +374,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       // the session it already presented (`FJS-D916`).
       { method: 'get', gate: LEVELS.VISITOR, scope: false },
       ...signedIn(
-        'changePassword', 'requestEmailChange',
+        'reauthenticate', 'changePassword', 'requestEmailChange',
         // The second factor. On `account` rather than a service of its own for the
         // reason `changePassword` is here: it is a credential this account
         // authenticates with, not a collection the account owns — which is what
@@ -369,50 +399,55 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       if (ctx.id !== 'me' && String(ctx.id) !== user.id) {
         throw new NotFound(`No account '${ctx.id}' — this service answers for the caller ('me')`)
       }
-      // `level` is opt-in and absent by default. The app owns the role→level
-      // mapping (its own getLevel), and a default answer here would be a
-      // SECOND mapping that disagrees with the one every request is graded by.
-      // `standing` is the answer with no tenant in play, which a caller asking
-      // whether this PERSON may do something reads — the browser's buttons read
-      // `level`, and an app graded per tenant has no honest `level` to give.
-      return {
-        ...user,
-        ...(level         ? { level: level(user) }            : {}),
-        ...(standingLevel ? { standing: standingLevel(user) } : {}),
-      }
+      return grade(user)
     },
 
-    // The current password is sent and verified, so a stolen session cannot
-    // become a stolen account. IAuth does the verifying — the check belongs
-    // beside the hash it compares against.
+    /**
+     * Prove the password again — and the code, where a second factor is live —
+     * so the changes below go through for the provider's window. Answers when
+     * it closes. Refused when delegated: an operator or an agent proving
+     * somebody's password is a credential that is not theirs.
+     */
+    async reauthenticate(ctx: ServiceContext) {
+      const user = caller(ctx)
+      refuseDelegated(ctx, user, 'confirm a password')
+      const { password, code } = (ctx.data ?? {}) as Record<string, unknown>
+      if (typeof password !== 'string' || !password) throw new BadRequest('password is required')
+      if (code != null && typeof code !== 'string') throw new BadRequest('code must be a string')
+      if (!user.sessionId) throw new Forbidden('Only a session can be confirmed — sign in to do it.')
+
+      limitGuesses(ctx)
+      return need('reauthenticate')(user.id, user.sessionId, { password, ...(code ? { code } : {}) })
+    },
+
+    // A stolen session cannot become a stolen account: the session asking
+    // proved the password inside the window, and every other one ends.
     async changePassword(ctx: ServiceContext) {
       const user = caller(ctx)
       refuseDelegated(ctx, user, 'change a password')
-      const { currentPassword, newPassword } = (ctx.data ?? {}) as Record<string, string>
-      if (!currentPassword) throw new BadRequest('currentPassword is required')
-      if (!newPassword)     throw new BadRequest('newPassword is required')
+      const { newPassword } = (ctx.data ?? {}) as Record<string, string>
+      if (!newPassword) throw new BadRequest('newPassword is required')
 
-      reauthenticate(ctx)
-      await need('changePassword')(user.id, currentPassword, newPassword, { exceptSessionId: user.sessionId })
+      await fresh(user)
+      await need('changePassword')(user.id, newPassword, { exceptSessionId: user.sessionId })
       return { ok: true }
     },
 
     // Mails the new address and changes nothing yet — the link it carries is
     // spent at `/auth/email/verify`, the route a verification link already
-    // lands on. The password is asked for the reason `changePassword` asks it:
-    // the address is where a reset goes, so moving it is taking the account.
+    // lands on. Fresh for the reason `changePassword` is: the address is where
+    // a reset goes, so moving it is taking the account.
     async requestEmailChange(ctx: ServiceContext) {
       const user = caller(ctx)
       refuseDelegated(ctx, user, 'change an email address')
-      const { currentPassword, newEmail } = (ctx.data ?? {}) as Record<string, string>
-      if (!currentPassword) throw new BadRequest('currentPassword is required')
+      const { newEmail } = (ctx.data ?? {}) as Record<string, string>
       if (typeof newEmail !== 'string' || !newEmail.trim()) throw new BadRequest('newEmail is required')
       if (newEmail.trim().toLowerCase() === String(user.email).toLowerCase()) {
         throw new BadRequest('That is already the address on this account')
       }
 
-      reauthenticate(ctx)
-      await need('requestEmailChange')(user.id, currentPassword, newEmail)
+      await fresh(user)
+      await need('requestEmailChange')(user.id, newEmail)
       return { ok: true }
     },
 
@@ -420,10 +455,10 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     //
     // Every method here is named exactly as the provider names it, so there is
     // no translation to keep in step — `need()` reads the same key a caller
-    // typed. The three that change what the account REQUIRES take the password
-    // again and are refused inside a support episode; reading whether it is on
-    // is neither, for `sessions.find`'s reason: seeing what somebody sees is
-    // what an episode is for.
+    // typed. The writes are refused inside a support episode and the three
+    // that change what the account REQUIRES ask `fresh` first; reading whether
+    // it is on is neither, for `sessions.find`'s reason: seeing what somebody
+    // sees is what an episode is for.
 
     /** Is it on, and how many ways back are left. What a settings screen reads. */
     async totpStatus(ctx: ServiceContext) {
@@ -440,17 +475,15 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     async setupTotp(ctx: ServiceContext) {
       const user = caller(ctx)
       refuseDelegated(ctx, user, 'enroll a second factor')
-      const { currentPassword } = (ctx.data ?? {}) as Record<string, string>
-      if (!currentPassword) throw new BadRequest('currentPassword is required')
 
-      reauthenticate(ctx)
-      return need('setupTotp')(user.id, currentPassword)
+      await fresh(user)
+      return need('setupTotp')(user.id)
     },
 
     /**
      * Prove the enrollment works, and switch it on. Answers the recovery codes.
      *
-     * Refused in a support episode although it takes no password: the SUBJECT
+     * Refused in a support episode although it asks no freshness: the SUBJECT
      * may have an enrollment in flight, and an operator finishing it would be
      * putting a factor on an account it outlives the episode on.
      *
@@ -463,19 +496,17 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       const { code } = (ctx.data ?? {}) as Record<string, string>
       if (!code) throw new BadRequest('code is required')
 
-      reauthenticate(ctx)
-      return need('confirmTotp')(user.id, code)
+      limitGuesses(ctx)
+      return need('confirmTotp')(user.id, code, { exceptSessionId: user.sessionId })
     },
 
     /** Switch it off and forget the secret and every recovery code. */
     async disableTotp(ctx: ServiceContext) {
       const user = caller(ctx)
       refuseDelegated(ctx, user, 'disable a second factor')
-      const { currentPassword } = (ctx.data ?? {}) as Record<string, string>
-      if (!currentPassword) throw new BadRequest('currentPassword is required')
 
-      reauthenticate(ctx)
-      await need('disableTotp')(user.id, currentPassword)
+      await fresh(user)
+      await need('disableTotp')(user.id, { exceptSessionId: user.sessionId })
       return { ok: true }
     },
 
@@ -483,11 +514,9 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     async regenerateRecoveryCodes(ctx: ServiceContext) {
       const user = caller(ctx)
       refuseDelegated(ctx, user, 'regenerate recovery codes')
-      const { currentPassword } = (ctx.data ?? {}) as Record<string, string>
-      if (!currentPassword) throw new BadRequest('currentPassword is required')
 
-      reauthenticate(ctx)
-      return need('regenerateRecoveryCodes')(user.id, currentPassword)
+      await fresh(user)
+      return need('regenerateRecoveryCodes')(user.id, { exceptSessionId: user.sessionId })
     },
   }))
 
@@ -557,6 +586,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       if (expiresAt != null && (typeof expiresAt !== 'string' || Number.isNaN(Date.parse(expiresAt))))
         throw new BadRequest('expiresAt must be an ISO 8601 date string')
 
+      await fresh(user)
       // Scopes NARROW: a key authenticates as its owner and a scope list is
       // subtractive at the app's own check. A caller cannot mint themselves
       // standing they do not have by asking for it here, because no key
@@ -602,6 +632,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       // Detaching a provider is a way somebody signs in, so it is the same
       // class as the two above it.
       refuseDelegated(ctx, user, 'remove a connection')
+      await fresh(user)
       // The caller's own id, never one from the payload — the same rule the
       // three services above hold to.
       return need('removeConnection')(user.id, String(ctx.id))

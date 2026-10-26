@@ -10,14 +10,14 @@
 # deployment that builds this image without the data gets a site with no
 # products and an exit code of 0.
 
-FROM oven/bun:1 AS build
+FROM oven/bun:1.4.4 AS build
 WORKDIR /app
 COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile || bun install
 COPY . .
 RUN cd site && bunx vite build -c config/vite.config.js
 
-FROM oven/bun:1-slim
+FROM oven/bun:1.4.4-slim
 WORKDIR /app
 COPY --from=build /app/site/dist ./site/dist
 COPY --from=build /app/site/deploy ./site/deploy

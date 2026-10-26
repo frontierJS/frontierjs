@@ -11,7 +11,7 @@ import { test, expect, describe } from 'bun:test'
 import { spawnSync }              from 'node:child_process'
 import { readFileSync }           from 'node:fs'
 import { resolve }                from 'node:path'
-import { parsePlan, renderPlan, reissued, phaseOf, tickStep } from '../core/plan.js'
+import { parsePlan, renderPlan, renderNext, reissued, phaseOf, tickStep } from '../core/plan.js'
 
 const REPO = resolve(import.meta.dir, '../../..')
 
@@ -132,6 +132,17 @@ describe('parsePlan', () => {
     expect(rows).toMatch(/\? Q1 — Which axis\? \S+:q1-which-axis/)
     expect(rows).not.toMatch(/Q2 — Settled\? \S+:/)
     expect(rows).toContain('blocked by 1 open question')
+  })
+
+  test('the short form is one line a phase and the next step alone, with what blocks it', () => {
+    const rows = renderNext(plan).join('\n')
+    expect(rows).toContain('next ☐ 2.2 Rotate and flip')
+    expect(rows).toMatch(/blocked by \? Q1 — Which axis\? \S+:q1-which-axis/)
+    expect(rows).not.toContain('2.1 Crop')
+    expect(rows).not.toContain('Touch drags')
+    expect(rows).toContain('--all prints every step')
+    expect(rows.length).toBeLessThan(renderPlan(plan).join('\n').length / 2)
+    expect(renderNext({ ...plan, next: null, blocking: [] }).join('\n')).toContain('every box is closed')
   })
 })
 

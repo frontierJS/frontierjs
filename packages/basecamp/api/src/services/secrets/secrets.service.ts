@@ -186,6 +186,11 @@ export default createService({
   // gets read as evidence it is not.
   async verify() {
     const secret    = await getScoped('secret', 'Secret')
+    // A backup credential has one verifier, `backup-destinations.test`, which
+    // writes and deletes a probe key and sets this flag only then. Asserted
+    // here it would read as evidence a bucket was never asked for.
+    if (secret.kind === 'backup')
+      throw new BadRequest('A backup credential is verified by testing its destination — use the Test bucket action on /hub/settings/')
     const connector = secret.kind === 'provider_key'
       ? accountConnectorFor(secret.providerKind as ProviderKind | null)
       : null

@@ -2,10 +2,10 @@
 title: Members
 ---
 <script>
-  import { session, reloadWorkspaces } from '../../session.js'
+  import { session, reloadWorkspaces } from '../../lib/session.js'
   import { workspaces }  from '../../resources/Workspace.mesa'
   import { invitations } from '../../resources/Invitation.mesa'
-  import { day }         from '../../datetime.js'
+  import { day }         from '../../lib/datetime.js'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'

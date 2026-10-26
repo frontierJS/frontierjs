@@ -24,7 +24,7 @@ title: Deployments
   // by `columns()` for that reason, and `example` cannot ask the question at
   // all: it runs `tenancy { strategy database }` and has no such column on any
   // model.
-  import { session } from '../../session.js'
+  import { session } from '../../lib/session.js'
   import { deployments } from '../../resources/Deployment.mesa'
   import Button    from '@frontierjs/ui/components/forms/Button.mesa'
   import Cell      from '@frontierjs/ui/components/display/Cell.mesa'
@@ -54,7 +54,7 @@ title: Deployments
   // The service includes app → environment and the deployment's own
   // environment, so a row names what it deployed and where without a second
   // request per row. `RelationCell` is what reads them back
-  // (`web/src/displays.js`).
+  // (`web/src/lib/displays.js`).
   //
   // That is why this list is COMPOSED. The job pushes `deployments patched` on
   // every step of a release, and a push carries the row without its includes —

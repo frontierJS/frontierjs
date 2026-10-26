@@ -24,8 +24,8 @@ title: Registry
   // newest version tag are one image and the registry stores those layers once,
   // so summing per tag overstates the disk by however many aliases there are.
   // That is exactly the number somebody uses to decide what to delete.
-  import { session } from '../../session.js'
-  import { ago }     from '../../datetime.js'
+  import { session } from '../../lib/session.js'
+  import { ago }     from '../../lib/datetime.js'
   import { registry } from '../../resources/RegistryImage.mesa'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
 

@@ -1,0 +1,148 @@
+<script>
+  // PostOffice.mesa — the post office, through the house with the sign east
+  // of the well (`IDEAS/haven.md` 22.4): the wall of P.O. boxes on the left,
+  // the counter along the back with the clerk in the middle window, the
+  // sorting table, the parcel scale, sacks waiting to go out, the pillar box
+  // by the door, and a cat. It is a picture so far: what the boxes and the
+  // clerk say comes with the letters themselves (22.1–22.3), and the boxes
+  // are where `IDEAS/frontier-network.md` 2.8 hangs the members. The scene
+  // names `lamplight`, so the lanterns pool on the floor under them. The
+  // picture this draws is `postoffice.frame.txt`, which `scenes.test.js` pins.
+  import Scene from '@/components/Scene.mesa'
+  import { INDOORS } from '@/lib/scene/stage.js'
+  import Piece from '@/components/Piece.mesa'
+  import Row   from '@/components/Row.mesa'
+  import Door  from '@/components/Door.mesa'
+  import Pacer from '@/components/Pacer.mesa'
+  import { piece, inked } from '@/pieces/index.js'
+  import { frame }   from '@/pieces/frame.js'
+  import { lantern } from '@/pieces/lantern.js'
+  import { bench }   from '@/pieces/bench.js'
+  import { crates }  from '@/pieces/storage.js'
+
+  const BOXES = String.raw`
+.--------------------------------.
+|[01][02][03][04][05][06][07][08]|
+|[09][10][11][12][13][14][15][16]|
+|[17][18][19][20][21][22][23][24]|
+|[25][26][27][28][29][30][31][32]|
+'--------------------------------'
+`
+  const boxes = piece('boxes', BOXES, inked(BOXES, 'u', { '[': 'b', ']': 'b', ...digits('q') }))
+
+  const CLOCK = String.raw`
+ .---.
+/ 12  \
+|9 + 3|
+\  6  /
+ '---'
+`
+  const clock = piece('clock', CLOCK, inked(CLOCK, 'u', { '+': 'b', ...digits('i') }))
+
+  // The middle window is open and the clerk is in it; the two either side
+  // are barred.
+  const COUNTER = String.raw`
+.---------------------------------------------.
+|     ~ P O S T   &   T E L E G R A P H ~     |
+|---------------------------------------------|
+|  .---------.    .---------.    .---------.  |
+|  |#|#|#|#|#|    |  _____  |    |#|#|#|#|#|  |
+|  |#|#|#|#|#|    | ( o o ) |    |#|#|#|#|#|  |
+|  |#|_____|#|    |__|___|__|    |#|_____|#|  |
+|==[ STAMPS  ]====[ LETTERS ]====[ PARCELS ]==|
+'---------------------------------------------'
+`
+  const counter = piece('counter', COUNTER, paintCounter(COUNTER), {
+    spots: { clerk: { dx: 23, dy: 5 } },
+  })
+
+  const TABLE = String.raw`
+.------------------------.
+| [x] [=]  [=] [x]  [=]  |
+|  [=] [x]   [=]   [x]   |
+'--.------------------.--'
+   |                  |
+`
+  const table = piece('sorting-table', TABLE, inked(TABLE, 'u', { '[': 'p', ']': 'p', x: 'k', '=': 'p' }))
+
+  const SCALE = String.raw`
+  _|_
+ /   \
+[=====]
+`
+  const scale = piece('scale', SCALE, inked(SCALE, 'b'))
+
+  const SACK = String.raw`
+ _)(_
+/MAIL\
+\____/
+`
+  const sack = piece('sack', SACK, inked(SACK, 'n', { M: 'k', A: 'k', I: 'k', L: 'k' }))
+
+  const PILLAR = String.raw`
+ .--.
+(____)
+|====|
+|POST|
+|    |
+[____]
+`
+  const pillar = piece('pillar-box', PILLAR, inked(PILLAR, 'r', { P: 's', O: 's', S: 's', T: 's' }))
+
+  function digits(letter) {
+    return Object.fromEntries([...'0123456789'].map((d) => [d, letter]))
+  }
+
+  // Wood but for the sign's letters, the grilles' brass and the clerk.
+  function paintCounter(art) {
+    return art.split('\n').map((row, y) => y === 2
+      ? inked(row, 'w', { '~': 's', ...letters('s') })
+      : inked(row, 'w', { '#': 'b', '(': 'p', ')': 'p', o: 'p', _: y === 5 ? 'Q' : 'w', ...letters('s') })
+    ).join('\n')
+  }
+
+  function letters(letter) {
+    return Object.fromEntries([...'ABCDEFGHIJKLMNOPQRSTUVWXYZ&'].map((c) => [c, letter]))
+  }
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    d: { fg: '#92400e' },
+    u: { fg: '#78350f' },
+    w: { fg: '#a16207' },
+    b: { fg: '#d4a017' },
+    q: { fg: '#e7e5e4' },
+    i: { fg: '#f5f5f4' },
+    s: { fg: '#fbbf24' },
+    p: { fg: '#f5f0e1' },
+    k: { fg: '#b91c1c' },
+    n: { fg: '#a8a29e' },
+    r: { fg: '#dc2626' },
+    Q: { fg: '#475569' },
+    e: { fg: '#a16207' },
+    l: { fg: '#9ca3af' },
+  }
+</script>
+
+<Scene slug="postoffice" layers={[...INDOORS, 'lamplight']} palette={PALETTE} spawn={{ x: 48, y: 24 }}>
+  <Piece of={frame} />
+  <Door  x={48} y={25} to="/" />
+  <Piece of={boxes}   x={3}  y={1} />
+  <Piece of={clock}   x={38} y={1} />
+  <Piece of={counter} x={46} y={1} />
+  <Piece of={lantern} x={20} y={8} />
+  <Piece of={lantern} x={70} y={12} />
+  <Piece of={table}   x={5}  y={12} />
+  <Piece of={scale}   x={34} y={13} />
+  <Piece of={crates}  x={80} y={12} />
+  <Piece of={crates}  x={86} y={16} />
+  <Row   of={sack}    x={58} y={18} n={3} step={8} />
+  <Piece of={pillar}  x={40} y={19} />
+  <Piece of={bench}   x={10} y={21} />
+  <Piece of={bench}   x={22} y={21} />
+  <Pacer name="cat" y={24} from={56} to={92} ms={420} rest={120} flee={30} fg="#f59e0b"
+    right={["=^.^=_/", "=^.^=_|"]}
+    left={["\\_=^.^=", "|_=^.^="]}
+    sit={["=^.^=_/", "=^.^=_/", "=-.-=_/ z", "=-.-=_/ zZ"]} />
+  <slot />
+</Scene>

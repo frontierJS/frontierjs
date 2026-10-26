@@ -23,7 +23,7 @@ title: Subscription
   import { planVersions }  from '@/resources/PlanVersion.mesa'
   import { invoices }      from '@/resources/Invoice.mesa'
   import { session } from '@frontierjs/sierra/resource'
-  import { day, span } from '@/datetime.js'
+  import { day, span } from '@/lib/datetime.js'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../lib/money.js'
 

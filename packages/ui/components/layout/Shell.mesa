@@ -32,9 +32,11 @@
   // without it the sign-in page draws the members' nav.
   //
   // `layout` is `sidebar`, `rail` (frame.css's `.sidebar.rail.peek`, the
-  // icons alone until hovered or focused) or `topbar` (the groups drawn flat in
-  // the bar, wrapping below md, with no drawer). It may change while
-  // mounted: collapsing a sidebar to a rail for good is the app flipping it.
+  // icons alone until hovered or focused) or `topbar` (an unlabeled group's
+  // entries drawn flat in the bar, a labeled group as one menu named by its
+  // label, and the drawer in place of the bar's nav below md). It may change
+  // while mounted: collapsing a sidebar to a rail for good is the app
+  // flipping it.
   // `foot(where)` is told `'sidebar'`, `'rail'`, `'drawer'` or `'topbar'`.
   //
   // `collapsible` puts a fold control at the head of a `sidebar` and
@@ -46,7 +48,9 @@
 
   import { sectionFor, visible } from '../../nav.js'
   import { uid } from '../../utils.js'
-  import Drawer from '../overlay/Drawer.mesa'
+  import Drawer       from '../overlay/Drawer.mesa'
+  import DropdownItem from '../overlay/DropdownItem.mesa'
+  import DropdownMenu from '../overlay/DropdownMenu.mesa'
 
   export let groups    = []
   export let sections  = []
@@ -138,6 +142,27 @@
   {/if}
 {/snippet}
 
+<!-- frame.css shows this below md only, and at every width on a touch
+     screen beside a rail, which no hover ever opens; opening the drawer is
+     ours. -->
+{#snippet drawerToggle()}
+  <button class="btn ghost square sidebar-toggle" type="button"
+          aria-label="Open navigation" aria-expanded={navOpen}
+          onclick={() => navOpen = true}>
+    <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+      <path d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 5.25a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 10Zm0 5.25a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z"/>
+    </svg>
+  </button>
+{/snippet}
+
+{#snippet drawer()}
+  <Drawer side="left" bind:open={navOpen} title="Navigation">
+    <nav class="stack" aria-label="Main">
+      {@render navigation('drawer')}
+    </nav>
+  </Drawer>
+{/snippet}
+
 {#snippet navigation(where)}
   {#if collapsible && shape === 'sidebar' && where !== 'drawer'}
     <button class="btn ghost square shell-fold" type="button"
@@ -167,7 +192,7 @@
     </div>
   {/each}
   {@render foot?.(where)}
-  {#if !railed && onsignout && user}
+  {#if !railed && shape !== 'topbar' && onsignout && user}
     <div>{@render signOutButton()}</div>
   {/if}
 {/snippet}
@@ -194,18 +219,40 @@
   <!-- The restore is in flight: drawing the signed-out frame now is a flash
        of the wrong page on every cold load. -->
 {:else if framed && shape === 'topbar'}
-  <!-- No drawer: the bar wraps below md, as every topbar app in the survey
-       does. The groups are drawn flat and their labels dropped, and the
-       section bar heads the Screen, because the bar is the nav's now. -->
+  <!-- A labeled group is one menu, so a table of a dozen screens still fits
+       one line; below md the bar's nav gives way to the drawer, which writes
+       every group out. The section bar heads the Screen, because the bar is
+       the nav's now.
+
+       The trigger's aria-current is drawn inside DropdownMenu and not in the
+       {#each} row's effect, so it reads (path, query) first or it is set once
+       at mount. -->
   <div class="shell" {class} {...$attributes}>
     <a class="skip-link" href="#screen">Skip to content</a>
 
     <header class="topbar">
       <div class="cluster">
+        {@render drawerToggle()}
         {@render brand?.()}
-        <nav class="cluster" aria-label="Main">
+        <nav class="cluster topbar-nav" aria-label="Main">
           {#each shown as group}
-            {#each group.entries as entry}{@render entryLink(entry)}{/each}
+            {#if group.label}
+              <DropdownMenu>
+                {#snippet trigger()}
+                  <button class="navlink" type="button"
+                          aria-current={(path, query, group.entries.some(current)) ? 'true' : null}
+                  >{group.label} ▾</button>
+                {/snippet}
+                {#each group.entries as entry}
+                  <DropdownItem href={entry.href} aria-current={current(entry) ? 'page' : null}>
+                    {entry.label}
+                    {#snippet trailing()}{@render badge?.(entry)}{/snippet}
+                  </DropdownItem>
+                {/each}
+              </DropdownMenu>
+            {:else}
+              {#each group.entries as entry}{@render entryLink(entry)}{/each}
+            {/if}
           {/each}
         </nav>
       </div>
@@ -223,6 +270,8 @@
       <slot />
     </main>
   </div>
+
+  {@render drawer()}
 {:else if framed}
   <div class="shell sidebar-first" {class} {...$attributes}>
     <a class="skip-link" href="#screen">Skip to content</a>
@@ -233,16 +282,7 @@
 
     <header class="topbar">
       <div class="cluster">
-        <!-- frame.css shows this below md only, and at every width on a
-             touch screen beside a rail, which no hover ever opens; opening
-             the drawer is ours. -->
-        <button class="btn ghost square sidebar-toggle" type="button"
-                aria-label="Open navigation" aria-expanded={navOpen}
-                onclick={() => navOpen = true}>
-          <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <path d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 5.25a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 10Zm0 5.25a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z"/>
-          </svg>
-        </button>
+        {@render drawerToggle()}
         {@render sectionBar()}
       </div>
       {#if topbar || (railed && onsignout && user)}
@@ -258,11 +298,7 @@
     </main>
   </div>
 
-  <Drawer side="left" bind:open={navOpen} title="Navigation">
-    <nav class="stack" aria-label="Main">
-      {@render navigation('drawer')}
-    </nav>
-  </Drawer>
+  {@render drawer()}
 {:else}
   <main class="screen" id="screen" {class} {...$attributes}>
     <div class="container narrow">

@@ -35,6 +35,74 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1470"></a>2026-10-23 · `FJS-D1470` — Q3 — The pane's name — `:dns`.
+
+Asked in [`IDEAS/cloudflare-dns.md`](IDEAS/cloudflare-dns.md) § Open questions. **A** was picked over **B** (`:cloudflare`), **C** (`:edge`, basecamp's word for the adapter kind).
+
+The paper's recommendation, taken as written: the screens and keys are DNS's and the provider is the breadcrumb's first crumb; `:edge` is a fleet noun and this has no fleet.
+
+### <a id="fjs-d1477"></a>2026-10-23 · `FJS-D1477` — A Haven takes only a Frontier member's machine: a login with no chain is refused (401), the key login and `~/.fli/haven/key.json` go, and a browser holds no key — `fli haven --browser` hands it the session in the address.
+
+Asked through AskUserQuestion, building `IDEAS/frontier-network.md` 3.2. The browser question was ruled **hand-off from fli**, as recommended. The two rejected options were a browser that signs its own chain login and a browser key a member links into the chain. A browser keeps no key and is no machine, so neither a WebCrypto key in IndexedDB nor a chain link was needed. The agents question (Ace and Charles, who sign in with keys of their own under `~/.fli/haven/agents/`) was put off by the owner until the rest was built. Asked then, with a Haven-listed agent key (`HAVEN_AGENTS`, after Matrix appservice registration) recommended, the owner answered **leave them out for now**. `bun run agents` is refused at its first login, the live halves of `agents.test.js` are skipped, and `machineKeys` stays in `sign-in.js` for them alone until their way in is ruled ([FJS-3471](ISSUES.md#fjs-3471)).
+
+- **The login.** `POST /haven/login` with no `links` is a 401 that names `fli frontier:stake` and `fli frontier:link`. `{ publicKey, nick }` is gone, and so is the first-come nick of `FJS-D981`. A nick held here by another chain is 409, and a nick naming one of the voices is refused as held.
+- **The door.** `fli haven` refuses before it signs anything on a machine with no `frontier.nick`, naming how a machine joins. `--nick` goes, because the nick is the post's row (`FJS-D1451`).
+- **The browser.** `fli haven --browser` signs in on the terminal and opens the page at `#session=<token>`. The page reads it in `sessionToken()`, wipes it with `history.replaceState`, and the token is then the Junction client's, kept by `tokenStorage` under `junction.tokenKey` like any app's session, so a reload is the same member. A fragment never reaches a server. From a checkout the page is `bun run web`'s on `GLOBAL.havenWeb`, which the door refuses to start for you, because an API fli started dies when fli exits.
+- **Tests.** Every test haven pins a test post (`postKey: POST_KEY`, `api/test/sign-in.ts`). A drive's `fli haven` walks from `stakedHome()`, a HOME as `fli frontier:stake` leaves one, with a row fresh enough that the post is never asked.
+
+What is left open: the URL that `fli haven --browser` opens carries the token, so it can sit in the browser's history from the navigation before the wipe. It also sits in the opener's argv while that runs, and in whatever the user pastes it into from the printed fallback. It is a session, not a key, and dies with the session.
+
+The nine:
+- **One origin.** One login shape. The session store is Junction's `tokenStorage`, not a second one.
+- **No new concept.** A session hand-over already exists as `HAVEN_TOKEN` for the terminal, and `#session=` is the same hand-over for a page.
+- **Complexity** falls: one login shape, and no browser crypto.
+- **Predictability.** A terminal and a browser both walk in on a session fli minted.
+- **Derived.** The nick derives from the row, and the browser's identity from the terminal's.
+- **Owner.** `api/src/login.ts` owns the refusal, `walk.md` the hand-off, and `tokenStorage` the kept token.
+- **At the boundary.** A machine in no chain learns how to join from the refusal itself.
+- **The failure** is a refusal at both ends, never a warning, because a key in no chain is a stranger.
+- **On silence**, what must stay true is that a key in no chain never makes a member. What fails when that stops: `login.test.ts` § a key in no chain is refused, and `verify:explore` § a machine in no Frontier chain.
+
+These answers were written after the build (late), from the ruling asked before it. The adjudication is *preservation vs. evolution*: the key login, `--nick` and the browser key go with no alias. Tier: Register.
+
+### <a id="fjs-d1465"></a>2026-10-22 · `FJS-D1465` — fli's Basecamp commands are one `basecamp:*` namespace, named for what is on the other end of the wire: `fli basecamp` lists, `basecamp:create`, `basecamp:install`, `basecamp:dns`, `basecamp:stop`, `basecamp:destroy` take Basecamp's own box through its life, and `basecamp:deploy` releases an app through a running Basecamp. `deploy:outpost` stays in `deploy:*`, because it is `fli deploy`'s own step.
+
+Asked in chat, after `fli provi<Tab>` listed seven `provision:*` commands that act on one thing, Basecamp, under a verb. **The table as written** was picked over the other arrangements and words offered. As recommended. This supersedes the name in `IDEAS/zero-to-live.md` 3.1 (`fli provision`, 2026-10-20), and a bare `fli basecamp` no longer buys a droplet, so the command that costs money has to be named in full. `provision:off` became `basecamp:stop`, the opposite of the verb `create`. There is no alias for any old spelling (root `CLAUDE.md` § Evolution policy).
+
+A command may now declare its own `requires:`, read beside its namespace's (`packages/cli/core/runtime.js`), because `basecamp:deploy`, `install` and `dns` need no DigitalOcean token while `create`, the list, `stop` and `destroy` do. Under the namespace-wide list, `install` and `dns` used to demand one. `vendorApp` moved to `core/vendor.js`, so the `deploy` and `basecamp` namespaces share one owner rather than a module script each.
+
+The nine: one origin, since each command lives in one file and the old files were moved rather than copied; no new concept, since a namespace and `requires:` already exist; complexity is removed, because `deploy:basecamp` no longer sits beside SSH deploys it shares nothing with; predictability improves, because a namespace names a counterpart, as `deploy:*` names a server this pipeline owns; nothing is derived; the owner is the module, and `vendorApp`'s is `core/vendor.js`; at the boundary, a caller no longer has to know that `install` does not use the token it was asked for; the failure stays a refusal at the runtime naming the key; on silence, `parseCommands` and the cli suite fail a command that does not compile, but nothing fails a stale `provision:` in prose. Answered after the edit.
+
+### <a id="fjs-d1476"></a>2026-10-22 · `FJS-D1476` — A Haven login is the Frontier chain: `POST /haven/login` takes `{ publicKey, links, row }`, read offline against `HAVEN_POST_KEY`, the member is the chain's root, and the nick is the row's. The chain's code is `@frontierjs/toolbelt/frontier`.
+
+Asked through AskUserQuestion, building `IDEAS/frontier-network.md` 3.1. There were four questions, and each followed the recommendation:
+
+- **Where the chain code lives**: it moves from cli's `core/frontier-chain.js` to toolbelt as `/frontier`. Copying it into Haven was rejected, and so was making Haven depend on cli. Haven depends on no cli, and the Worker, fli and the login read the same code.
+- **How a Haven knows the post**: through the `HAVEN_POST_KEY` env var. Without it, a chain login is refused (503) with a message that names the var. Asking the post at boot was rejected, because a Haven would then trust whatever a DNS answer handed it. `fli haven` in a checkout gives the API it starts the key this machine pinned as `frontier.postKey`.
+- **Who the member is**: the chain root. `Member.publicKey` is now `Member.root`, so every machine in a chain is one figure. Keying by machine was rejected because a second laptop would be a stranger.
+- **What the body carries**: the links and the row, verified with no call to the post. A login that makes the Haven fetch the row was rejected, because the post would then hear of every login.
+
+A login with no `links` keeps the old key login, with first-come nick, until 3.2 refuses it. The browser and the agents still sign in that way. So the "first-come nick goes" of 3.1 holds for a chain login only. The rest of it goes with the key login in 3.2.
+
+The nine:
+- **One origin.** The chain code moved, so it was not copied.
+- **No new concept.** A chain, a row and a root already exist, and `root` replaces a column rather than adding one.
+- **Complexity** rises for a while: two login shapes until 3.2.
+- **Predictability.** Every reader of a member row grades it with the same `readRow`.
+- **Derived.** The nick derives from the row.
+- **Owner.** `api/src/login.ts` owns the translation, and toolbelt owns the grade.
+- **At the boundary.** A caller learns its refusal by name: a stale row names its age (`FJS-D1445`), a foreign key, a forged row, another root.
+- **The failure** is a 401 that names its reason.
+- **On silence**, what must stay true is that a Haven with no `HAVEN_POST_KEY` takes no chain login rather than taking one unchecked. What fails when that stops: none in the repo. The scratch drive and probe proved it once, and Haven adds no test while its owner is experimenting.
+
+These answers were written after the build (late), from the four rulings asked before it. The adjudications are *preservation vs. evolution*, so `publicKey` is renamed with no alias and the key login stays only as 3.1's staging before 3.2, and *ergonomics vs. strictness*, so a stale row is refused rather than warned, because an identity is the costly failure. Tier: Register.
+
+### <a id="fjs-d1475"></a>2026-10-22 · `FJS-D1475` — The oath is withdrawn: `frontier:stake` asks nothing to accept, and the squatting line is a written rule no verb prints.
+
+Asked in chat; the owner's call. `IDEAS/frontier-network.md` 2.9 is withdrawn, and 4.2 keeps the npm-style squatting line of `FJS-D1450` as a rule written in the cli README's Frontier section rather than a line the oath printed. **Keep it as a written rule** was picked over **A** (drop the line with the oath) and **C** (print it only when `stake` refuses a nick). Against the recommendation, which was A (confidence 2): while every member arrives by invite, the invite is the gate. The line stays because an owner reclaiming a nick can point to it. This amends `FJS-D1450`'s "the squatting line" to mean the written rule.
+
+The nine: one origin, the README section 4.2 writes, with the paper citing it rather than restating it; no new concept, since the oath was the would-be one and it goes; complexity falls, since `stake` loses a prompt; predictability holds, since no other `frontier:` verb asks for consent; nothing derived; the owner is the cli README; at the boundary, a staker needs to know nothing more than before; the failure is unchanged, a reserved or taken nick is still refused at the post (4.1); on silence, what must stay true is that the rule exists once 4.2 is built, and nothing fails when it is missing — `none`. Adjudication: none in tension. Tier: Register for the ruling, Assessment for the plan. Answered after the edit.
+
 ### <a id="fjs-d1451"></a>2026-10-22 · `FJS-D1451` — Q6 — Whether a nick can change — Never. The nick is the name, and the number never changes either.
 
 Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (renamable, with the old nick held back for a period).
@@ -1620,6 +1688,44 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1514"></a>2026-10-24 · `FJS-D1514` — Basecamp's own box is the Server row `HubConfig.hostServerId` names, not a slug; only the hub tier enrolls it, and `/setup` writes the hub row so `fli deploy` can
+
+Asked in chat, through the question tool, closing `FJS-3488`. *As recommended* both times. **The pointer** (`@unique @system`, `SetNull`, the shape `replicaDestinationId` takes under `FJS-D1491`) was picked over **reserving the slug** and **a `@system` flag on `Server`**. Two reasons: a slug is unique per workspace and any ADMINISTRATOR may choose `basecamp-host`, and `FJS-D1191`'s *one row per box* was unenforced until now. **`/setup` writing the row** (`baseUrl` = `FRONTIER_API_URL`, `adminEmail` = the first user's) was picked over **refusing until `/hub/settings/` is saved** and **the flag after all**. With no hub row there is nowhere to put the pointer, and `fli deploy` would stop enrolling by default. Both values are facts that request holds, so the row is not invented defaults. **Where it lives:** `hostServer()` / `findHost()` / `useHost()` in `packages/basecamp/api/src/core/host-machine.ts` are the one lookup, and `posture.host`, `servers.host`, `core/enroll-host.ts` and `jobs/replicate-sync.job.ts` read through it. `servers.useHost` is gated at SYSADMIN and the *Use this Basecamp server* button shows only to the hub tier. A taken `basecamp-host` slug gets a suffix rather than being adopted. The `/setup` route is in `api/src/app.ts`.
+
+### <a id="fjs-d1503"></a>2026-10-24 · `FJS-D1503` — Q2 — How `data` and `source` are classified — `@personal` on both in the reference, so the trail logs `[personal]`.
+
+Asked in [`IDEAS/thing.md`](IDEAS/thing.md) § Open questions. **A** was picked over **B** (the table gated owner-only, the fields unclassified), **C** (both).
+
+The paper's recommendation, taken as written: an instance that holds less loosens it; one that holds more is covered by default, and staff can still sort Things. Confidence 2.
+
+### <a id="fjs-d1484"></a>2026-10-23 · `FJS-D1484` — Who a Basecamp box runs as — SSH and the Outpost stay root; the isolation owed is a host uid per app ([FJS-3474](ISSUES.md#fjs-3474)), not a deploy user.
+
+Asked in chat, set against Laravel Forge's `forge` user. **A** (root, plus a uid per app) was picked over **B** (root, and nothing else filed), **C** (a Forge-style `frontier` user with the docker group and NOPASSWD sudo, with root login turned off), and **D** (C and A together). As recommended. **Forge needs its user because PHP-FPM runs the site on the host**, and here an app runs in a container as `USER bun` (`FJS-D1120`). A deploy user would have to be in the docker group, and every unattended step would need NOPASSWD sudo, and each of those is root by another name. That is the argument the Outpost unit already makes for its own `User=`. What C buys is `PermitRootLogin no` over a login that is already key-only (`ssh.root-key-only`), a sudo log, and some protection against a person's typo, and every install, deploy and retire step would pay for it. **The part of Forge worth taking is its per-site isolation.** Every app on a box is host uid 1000 today, so an app that escapes its container reads every other app's db dir. Precedent (from memory, not re-checked): Kamal's `ssh.user` defaults to root, Coolify's non-root mode is marked experimental, and Dokku's `dokku` user is limited to a forced command. Where it lives: `basecamp:create` (`root@ip`), `Server.sshUser @default("root")`, and the comment on the Outpost unit in `packages/basecamp/api/src/providers/compute/enrollment.ts`.
+
+### <a id="fjs-d1461"></a>2026-10-23 · `FJS-D1461` — Q10 — Whether the owner's view shows letter text — Never: count, oldest, bytes, and sealed or plain. *Synapse's* admin API lists rooms and whether each is encrypted, and returns encrypted content still encrypted ([rooms](https://github.com/dklimpel/synapse_archive/blob/119b137cfa72e5e24c700eb5c5c060e62728597d/docs/admin_api/rooms.md), [FAQ](https://git.sharpetronics.com/sharpetronics/synapse/raw/branch/develop/docs/usage/administration/admin_faq.md)).
+
+Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (show plain bodies, for debugging V1).
+
+The paper's recommendation, taken as written: (confidence 3) — sealed letters cannot be opened anyway, so A treats both kinds the same, and B reads mail the members never agreed to have read.
+
+### <a id="fjs-d1460"></a>2026-10-23 · `FJS-D1460` — Q9 — Who holds superuser on the post — The owner only: member one (`OWNER_KEY`/`OWNER_NICK`), with no role table. *Mastodon's* Owner role bypasses every permission check ([roles](https://docs.joinmastodon.org/admin/roles/)), and its Admin, Moderator and custom roles serve a staff of several.
+
+Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (Owner and Moderator roles now, Mastodon's current shape), **C** (no role: the owner reads the object's storage from Cloudflare, and nothing is built).
+
+The paper's recommendation, taken as written: (confidence 3) — four members leave nobody to give a Moderator role to, and B reopens when a second person needs one.
+
+### <a id="fjs-d1467"></a>2026-10-22 · `FJS-D1467` — The post's signing key — Made by the Durable Object on first use and kept in its own storage; a client pins its public half on first sight.
+
+Asked while building [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) 2.4. **A** was picked over **B** (the owner's machine makes the pair, `fli ws:post` uploads the private half as a Worker secret, and the public half is a constant in `fli` beside `POST_ORIGIN` — Certificate Transparency's log keys shipped in browsers, Keybase's hard-coded server key) and **C** (A now, and the public half committed into `fli` once the live post has one).
+
+The recommendation, taken (confidence 2): no second secret on anybody's laptop, and the pin happens on a call the member already trusts — the join, or the first row fetched. *Memory:* SSH host keys, made on the host and pinned on first contact. The operator can read the key either way, since a Worker secret is readable by the code the operator deploys, so B buys no trust against `THREATS.md` B19; what it buys is a first reader that never trusted first contact, and that is the reopen path. The pin is `frontier.postKey` in `~/.fli/config.json`, and a row under another key is refused rather than re-pinned.
+
+### <a id="fjs-d1466"></a>2026-10-22 · `FJS-D1466` — The invite allowance — Three joins per member, a code not yet spent counted as one, and the owner uncounted.
+
+Asked while building [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) 2.3. **A** (the owner uncapped) was picked over **B** (the owner capped too, raising the number and redeploying for more seats) and **C** (a second var for the owner's count).
+
+The recommendation, taken: joining is by invite only (`FJS-D1415`), so the owner is the network's one open door, and a cap at the root stalls it. A join counts for good and a live code until it expires, so a code nobody spends gives its seat back. The number is `INVITE_ALLOWANCE` beside `INVITE_SECONDS` in `core/tell-worker.js`, not a Worker var: `fli ws:post` writes the wrangler config from code on every run, so a var would be the same constant stated in a second file. A member from before numbers (`FJS-D1394`'s V1) has a blank `invitedBy`, so a join it vouched for then is not counted.
+
 ### <a id="fjs-d1449"></a>2026-10-22 · `FJS-D1449` — Q4 — What a bad invitee costs the inviter — Nothing: the tree is public, and that alone is the accountability.
 
 Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (the inviter's unspent allowance is withdrawn), **C** (the Lobsters rule: the inviter can lose access).
@@ -1640,85 +1746,85 @@ The paper's recommendation, taken as written: (confidence 2) — B does not remo
 
 ### <a id="fjs-d1421"></a>2026-10-22 · `FJS-D1421` — Q19 — How a peer knows the post did not forge or hide a member's machines — Every link signed by a machine, so the post can write none; the post countersigns the chain's head into 6.4's member row, a peer refuses a chain shorter than one it has seen, and every sealed letter carries its sender's head (Keybase's sigchain; WhatsApp's in-chat device consistency).
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (A, plus a public append-only log of every chain (WhatsApp key transparency, iMessage Contact Key Verification, the did:plc audit log)), **C** (the post serves the list and is believed).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (A, plus a public append-only log of every chain (WhatsApp key transparency, iMessage Contact Key Verification, the did:plc audit log)), **C** (the post serves the list and is believed).
 
 The paper's recommendation, taken as written: (confidence 2) — B's log is a second service to run and audit for a network of invited members, and A's rollback refusal catches the hidden revoke B would; B is the reopen path.
 
 ### <a id="fjs-d1420"></a>2026-10-22 · `FJS-D1420` — Q18 — Whether there is a paper key — Opt-in: a printed key that is one more machine in the chain, able to link and revoke, and nothing held by the post (Keybase's paper key).
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (none: a second machine is the only backup (Signal)), **C** (A, printed at every join).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (none: a second machine is the only backup (Signal)), **C** (A, printed at every join).
 
 The paper's recommendation, taken as written: (confidence 2) — the post holds nothing, so it is not the recovery code `FJS-D1409` turned down; C makes every member keep a sheet.
 
 ### <a id="fjs-d1419"></a>2026-10-22 · `FJS-D1419` — Q17 — How a lost or stolen machine is removed — Any linked machine signs a revoke into the chain and rotates the member's sealing key (Keybase device revocation and per-user key).
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (A, with machines ranked by link order and a higher one able to undo a lower one's revoke for 72 hours (did:plc rotation keys)), **C** (the machine list expires and is re-signed, and a lost machine falls off (WhatsApp's signed device list, 35 days)).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (A, with machines ranked by link order and a higher one able to undo a lower one's revoke for 72 hours (did:plc rotation keys)), **C** (the machine list expires and is re-signed, and a lost machine falls off (WhatsApp's signed device list, 35 days)).
 
 The paper's recommendation, taken as written: (confidence 2) — the race B settles is a thief beating the owner to the revoke, rare among invited members; B is the reopen path.
 
 ### <a id="fjs-d1418"></a>2026-10-22 · `FJS-D1418` — Q16 — How a link is approved — The new machine prints eight PGP words, they are typed on a machine already linked, and both sign the link (Keybase's `reverse_sig`, WhatsApp's account and device signatures).
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (a QR code the old machine scans (Signal's linked devices)), **C** (short words shown on both and confirmed as matching (Matrix SAS)).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (a QR code the old machine scans (Signal's linked devices)), **C** (short words shown on both and confirmed as matching (Matrix SAS)).
 
 The paper's recommendation, taken as written: (confidence 2) — a terminal has no camera and SSH has no second channel; typing works in both, and two signatures mean neither machine is added without the other.
 
 ### <a id="fjs-d1417"></a>2026-10-22 · `FJS-D1417` — Q15 — Which machines may link a new one — Any machine already in the member's chain (Keybase device provisioning, SSB fusion identity, Matrix's self-signing key).
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (the first machine only (Signal's and WhatsApp's primary device)).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (the first machine only (Signal's and WhatsApp's primary device)).
 
 The paper's recommendation, taken as written: (confidence 3) — with the first machine lost, B leaves the backup unable to link the next one, which is the case `FJS-D1409` exists for.
 
 ### <a id="fjs-d1416"></a>2026-10-22 · `FJS-D1416` — Q14 — What the fingerprint words cover once a member has several machines — The member's chain root: the hash of its first link, every later machine and the sealing key signed into the chain (Keybase's sigchain, Matrix's master key, iMessage Contact Key Verification).
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **C** was picked over **A** (one member key copied to every machine (Signal's linked devices, SSB fusion identity): 4.2 stands, but a stolen copy cannot be removed without new words for everyone), **B** (the set of device keys (WhatsApp's security code): any link or revoke changes the words and every peer checks again).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **C** was picked over **A** (one member key copied to every machine (Signal's linked devices, SSB fusion identity): 4.2 stands, but a stolen copy cannot be removed without new words for everyone), **B** (the set of device keys (WhatsApp's security code): any link or revoke changes the words and every peer checks again).
 
 The paper's recommendation, taken as written: (confidence 3) — words fixed across a device change, and only a reset or a forged chain warns; 4.2's digest is redone over the root.
 
 ### <a id="fjs-d1415"></a>2026-10-22 · `FJS-D1415` — Q13 — Who may join the one post — By invite until a stated point, then anyone; the point is a question of its own.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **C** was picked over **A** (by invite only, with 6.3's allowance), **B** (anyone: `tell:join` with no code).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **C** was picked over **A** (by invite only, with 6.3's allowance), **B** (anyone: `tell:join` with no code).
 
 Against the recommendation (**A**): the owner wants the network to open eventually: invites keep the early numbers vouched-for and the door shut to spam while the network is small, and the point at which it opens is ruled on its own when it is near.
 
 ### <a id="fjs-d1414"></a>2026-10-22 · `FJS-D1414` — Q12 — How many posts there are — One: the project's post, its origin built into `fli`; `tell:setup` becomes how the maintainers deploy it, and `tell:join` takes a bare code.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (one by default, and `tell:setup` stays for anyone who wants a private post whose numbers count for nothing outside it), **C** (many, federated: posts relay to each other and a nick holds across them).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (one by default, and `tell:setup` stays for anyone who wants a private post whose numbers count for nothing outside it), **C** (many, federated: posts relay to each other and a nick holds across them).
 
 The paper's recommendation, taken as written: one network is the ask, and a private post is two kinds of post to explain and test; B is the reopen path when somebody asks.
 
 ### <a id="fjs-d1413"></a>2026-10-22 · `FJS-D1413` — Q9 — Where the numbers live — On the project's post: a number is the member row's number there, and a member of it is on no other post (1.3's one post per machine).
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (a registry apart from the mail: `fli tell:claim` signs with the tell key to a list the project runs, and mail stays on any post).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (a registry apart from the mail: `fli tell:claim` signs with the tell key to a list the project runs, and mail stays on any post).
 
 The paper's recommendation, taken as written: (confidence 2) — one table and no new noun; the one-post rule bites only once private posts are common, and B is the reopen path.
 
 ### <a id="fjs-d1410"></a>2026-10-22 · `FJS-D1410` — Q5 — A second machine — Linking: one machine signs another's key into the same member.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (none: a new machine is a new member).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (none: a new machine is a new member).
 
 Against the recommendation (**B**): ruled with Q10: a member number is tied to a key, so a second machine signed into the same member is also the backup for a lost key, and that makes it worth building before numbers go out rather than after somebody asks twice.
 
 ### <a id="fjs-d1409"></a>2026-10-22 · `FJS-D1409` — Q10 — What a lost key does to a number — Linking (Q5's A) before numbers go out: a second machine signed into the same member is also the backup.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (a recovery code printed at join, which the post trades once for a new key under the same number), **C** (nothing: a lost key is a lost number, and the member starts again).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (a recovery code printed at join, which the post trades once for a new key under the same number), **C** (nothing: a lost key is a lost number, and the member starts again).
 
 The paper's recommendation, taken as written: (confidence 2) — it answers Q5 too, and a recovery code is a password the member must keep somewhere, which the keys exist to avoid. This reverses Q5's *B for now*, since a number is what makes a second machine worth asking for.
 
 ### <a id="fjs-d1395"></a>2026-10-22 · `FJS-D1395` — Q3 — What reading does — Delete on open: a letter is read once.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (a read flag: `inbox` shows history).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (a read flag: `inbox` shows history).
 
 The paper's recommendation, taken as written: the host keeps nothing it does not need, and 3.3's env values must be read once anyway; a member who wants a copy keeps the printed line.
 
 ### <a id="fjs-d1394"></a>2026-10-22 · `FJS-D1394` — Q8 — How a person joins — An invite code: `fli tell:invite` mints a one-use code, `fli tell:join <code>` spends it, and the server keeps a members table.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **B** was picked over **A** (the owner adds their key: `fli tell:key` prints it, the owner pastes it into the Worker's member list and redeploys).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **B** was picked over **A** (the owner adds their key: `fli tell:key` prints it, the owner pastes it into the Worker's member list and redeploys).
 
 Against the recommendation (**A**): the owner wants joining to be one command a person runs, not a key pasted and a redeploy.
 
 ### <a id="fjs-d1393"></a>2026-10-22 · `FJS-D1393` — Q7 — Whether V1 seals — Plaintext V1: requests signed so no sender is faked, text readable on the owner's account; the seal is Phase 3 and changes no route.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (sealed from the first letter: a second key per member and the seal kit before anything sends).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (sealed from the first letter: a second key per member and the seal kit before anything sends).
 
 The paper's recommendation, taken as written: four friends on the owner's own account, and `--env`, the one case that needs it, waits for Phase 3.
 
@@ -2211,7 +2317,7 @@ Decided while building `FJS-1450` and `FJS-1749` together, the two gaps most app
 
 The nine (§ V): one origin — key, purpose, model and column stated once and read by the resolver, the mint and the redeem; no new noun — *mint* and *redeem* are the verbs nine apps and `FJS-D340` already use, `signature` the kind `FJS-D522` asked for; the complexity is the problem's (a clicked link must die); predictable — `system:` admits a third column kind by the rule the first two follow; derived — the cookie name from `from: cookie()`, the link purpose from the purpose; the owners already exist (litestone's write refusals, junction's resolver); typed and tested at both boundaries; a dead link is one sentence (`FJS-D696`) and a misnamed column is refused by name; silence — a token in a broadcast is asserted absent, and a stale `exports.snapshot.md` fails CI. Adjudication: *paved road vs. the workaround* — the same workaround in nine places is a measurement of the road. Tier: Register.
 
-*Lives in:* `packages/litestone/src/core/client.js` (`refuseGuardedWrite`, `refuseSystemEntries`) · `packages/litestone/references/Grant.lite` · `packages/junction/src/core/bearer.ts` (`bearerClaim`, `bearerOf`) · `packages/junction/src/core/litestone.ts` (`checkPrincipalSetting`, `describedOf`) · `packages/junction/test/bearer-claim.test.ts` · `packages/junction/test/principal-list.test.ts` · `packages/litestone/test/references.test.ts`.
+*Lives in:* `packages/litestone/src/core/write-data.js` (`refuseGuardedWrite`, `refuseSystemEntries`) · `packages/litestone/references/Grant.lite` · `packages/junction/src/core/bearer.ts` (`bearerClaim`, `bearerOf`) · `packages/junction/src/core/litestone.ts` (`checkPrincipalSetting`, `describedOf`) · `packages/junction/test/bearer-claim.test.ts` · `packages/junction/test/principal-list.test.ts` · `packages/litestone/test/references.test.ts`.
 
 ### <a id="fjs-d801"></a>2026-10-09 · `FJS-D801` — Does the redirect URI get scaffolded — Derived as in A, and also printed: boot states each provider's exact redirect URI, so the string pasted into the provider console is the one the app sends.
 
@@ -3307,7 +3413,8 @@ write never reaches — so without a warning of its own the system path would ha
 been the one silent bypass of the two.
 
 *Lives in:* `packages/litestone/src/core/errors.js` (`BulkTransitionError`) ·
-`src/core/client.js` (`_bulkTransitionField`, `updateMany`, `upsertMany`) ·
+`src/core/state-guards.js` (`_bulkTransitionField`) · `src/core/client.js` (`updateMany`) ·
+`src/core/upsert-many.js` (`upsertMany`) ·
 `src/access.js` (the per-verb sentence) · `test/bulk-transitions.test.ts` ·
 `FJS-671` · closes `F16` of the foundation audit
 
@@ -4439,6 +4546,24 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d1517"></a>2026-10-25 · `FJS-D1517` — `Dashboard.slug` is not `@immutable`: a dashboard's handle is in nobody's source code, so `dashboards.patch` re-derives it from a new name. The service is its only writer: `patch` drops a slug the caller sends.
+
+Found closing `FJS-3477`: the `FJS-1393` sweep marked every slug `@immutable`, and Litestone then refused the service's own re-slug, so renaming a board answered 400 from its own screen. **A** (drop `@immutable`) was picked over **B** (keep it and stop re-slugging) and **C** (drop the column; nothing reads it but `@@unique([workspaceId, slug])`). A flag key or a network slug stays immutable, because code names those.
+
+*Lives in:* `packages/basecamp/db/schema.lite`, `packages/basecamp/api/src/services/dashboards/dashboards.service.ts`.
+
+### <a id="fjs-d1504"></a>2026-10-24 · `FJS-D1504` — Q3 — Retention after graduating — Keep a graduated Thing forever.
+
+Asked in [`IDEAS/thing.md`](IDEAS/thing.md) § Open questions. **A** was picked over **B** (a job deletes graduated Things after N days, as Rails Action Mailbox does with `incinerate_after` ([Incineratable](https://api.rubyonrails.org/classes/ActionMailbox/InboundEmail/Incineratable.html))).
+
+The paper's recommendation, taken as written: the Thing is the before-image of what it became, and the trail already ages out on its own policy. Confidence 3.
+
+### <a id="fjs-d1502"></a>2026-10-24 · `FJS-D1502` — Q1 — The `Tree` trait or a hand-written `parentId` — `@@trait(Tree)`; every Thing carries `parentId` and the trait's required `rank`.
+
+Asked in [`IDEAS/thing.md`](IDEAS/thing.md) § Open questions. **A** was picked over **B** (a hand-written `parentId`, no rank).
+
+The paper's recommendation, taken as written: one tree shape in the house, and an email's children have an order; a root Thing's rank costs one column. Confidence 2.
 
 ### <a id="fjs-d1368"></a>2026-10-21 · `FJS-D1368` — What language does `@from(…, where:)` take, and how does a screen ask for a draft's computed columns — The expression language only, as every other `where:` (`@required`, `@@unique`, `@@index`) already is; a quoted string is refused at parse with the rewrite named. The AST reaches the client in `x-litestone-from` beside `rel`, the list field holding the children, and `resource.preview(draft)` — one verb, replacing `FJS-D1112`'s `generated(draft)` — answers each previewable `@generated` and each aggregate `@from` over `draft[rel]`, a child's own `@generated` answered first. Django's conditional aggregate is the same shape: `Sum('amount', filter=Q(...))` takes an ORM expression, not `RawSQL`.
 
@@ -8161,6 +8286,166 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d1528"></a>2026-10-26 · `FJS-D1528` — `conduit-zapier` — Built, Tier B, in the connectors workspace: the owner's override of `IDEAS/conduit-connectors.md`'s *Zapier is not a connector* row, on slack's incoming-webhook shape and not a host-pinned one.
+
+Asked in session when the owner asked for a `conduit-zapier`. `decision-rules` ran first against **A** as proposed (one target with `https://hooks.zapier.com` pinned as its address, the pasted URL's path riding as `path`, a `parseHookUrl` restating Zapier's path grammar), **B** (keep the row: outbound is `plugins/webhooks`, inbound is `inbound-integrations.md` half B) and **C** (an app-owned `providers/zapier.ts` in the maidtech prototype first, the Stripe shape). It recommended **A reshaped** — slack's `webhook` target: `address_from: 'request'`, `auth: none`, `destinations` off in production, any https public URL carried — and that was built. As recommended. Confidence 2.
+
+What the run found. A as proposed failed three of the nine: the complexity was ours (pinning the host narrows a field the two legacy apps ship as GENERIC — maid.tech's `Form.svelte` and ELA's `Integrations.svelte` say *Send form responses to Zapier, IFTTT, or any other webhook*), `parseHookUrl` restated a grammar Zapier owns and changes, and a host-pinned post was a second *POST JSON to a pasted URL* beside slack's target (Invariant 4). B was wrong on its own evidence: `plugins/webhooks` signs and subscribes, and a pasted Catch Hook URL is neither — the two apps POST to it with a raw `fetch`, 203 and 222 references. C repeated `FJS-D1489`'s rejected path with ELA already the second app. Precedent from the domain: Tally and Jotform ship one generic webhook field with Zapier guides on top; Supabase ships webhooks and Zapier built the app.
+
+What is Zapier's in the package: how the answer is read — 404 `off` (the Zap is off; Zapier answers 200 for hours after the switch, so it is late and final), 410 `gone` (the REST Hook unsubscribed; the row is dead) — the documented reverse unsubscribe (`DELETE <target_url>`, `replayable: true`; a replay finding it gone answers `already: true`, the state asked for), and `subscriptionFrom(body)`, which DOES pin the host, because a forged subscribe naming a LAN `target_url` would have the app post inside its own network on every trigger. A post is unkeyed and never replayed; a lost one is `indeterminate` with no resolving read (slack's C6 amendment; no new one). Sink-only, 17 rows; the receipt body's fields, the trailing-slash tolerance and the 404/410 bodies are unverified against Zapier.
+
+**Not changed by this ruling:** `plugins/webhooks` stays the one signed-and-subscribed deliverer. The Actions API (*Powered by Zapier*, a partner contract, OAuth scope `external`, `idempotency_id` collapsing a run for 72 hours) is not built and is the reopen path for a host-pinned target, being the first call that needs a vendor address. Zapier MCP is an MCP client, not a conduit target.
+
+*Lives in:* `../conduit-connectors/packages/conduit-zapier/`; `IDEAS/conduit-connectors.md` § Tier B row 13.
+
+### <a id="fjs-d1518"></a>2026-10-25 · `FJS-D1518` — A service name STATED in kebab or snake folds to camelCase exactly as a filename does (`FJS-D159`), and the stated spelling stays mounted as an alias. The fold is `canonicalServiceName` in `ServiceRegistry.register` and the autoloader; a `buildService()` result handed to `register` keeps the name it was built with.
+
+This overrides `FJS-D159`'s *a DECLARED name is untouched*: that sentence left a stated kebab name as a fourth spelling no resolver agreed with. It adds aliases, so whether aliases stay at all is `FJS-D1317`'s, and a subscription made under one still hears nothing (`FJS-3124`).
+
+Found closing `FJS-3477`: basecamp's `backup-destinations.service.ts` said `name: 'backup-destinations'`, the loader honored a stated name over its filename, and sierra's `serviceNameFor('BackupDestination')` asked for `backupDestinations`, so App's two backup pickers were empty. **A** (junction folds) was picked over **B** (basecamp drops its stated names, leaving the trap for the next app) and **C** (file it). Plugins state names too — auth's `api-keys` and `account-recovery`, conduit's `conduit-targets`, the metrics plugin's `metrics-store` — and fold the same way, so a service's canonical name, its MCP tool prefix and its `$.service` all move to camel. A Set of service names compared as strings misses silently: basecamp's `OFF_LIMITS` would have let a scoped key reach `apiKeys`, and moved in the same change. A derived path list that reads only the headings drops the aliases — basecamp's `api-paths.js` reads `also answers to`, because a stranger's password reset is an HTTP call to `/account-recovery`.
+
+*Lives in:* `packages/junction/src/core/service.ts`, `packages/junction/src/core/loader.ts`; tests in `test/service-name-kebab.test.ts`.
+
+### <a id="fjs-d1515"></a>2026-10-25 · `FJS-D1515` — Methods on the built-in types are `@frontierjs/toolbelt/sugar`: pure factories answering `{ proto, statics }` tables, installed by the app's own `web/src/lib/sugar.js`, which `fli new` writes and `main.js` imports first. Two money names: `toMoney` is minor units, `toCurrency` major.
+
+Legacy frontier's `packages/web/src/preload.js` patched the prototypes from inside the framework, and the owner wanted the set standardized and on by default. The tables are in toolbelt and the installing is not, because mutating a global breaks the purity `FJS-D26` admits toolbelt on; the app file holds the one loop, and deleting a line drops a group. Timers, the network and the statics that mutate their argument (`Array.upsert`, `Object.put`) are app-file extras: a pure copy of a mutating call silently does nothing where the legacy one wrote. **Sugar** was picked over *natives* (mesa's native backend has the word), *builtins*, *coreExt* and *preload* (`<link rel=preload>`); Sugar.js is the same split, tables plus an explicit `extend()`.
+
+`toCurrency` keeps the legacy meaning, MAJOR units, so a ported call shows the amount it did; `toMoney` takes the schema's `@money` word and its MINOR units. The two differ a hundredfold and only the name says which, so every in-tree cents caller moved to `toMoney` in this change. A currency comes from `number({ currency })` at install or from the call, and a call with neither THROWS rather than guessing USD (`FJS-D1512`): basecamp installs `number()`, since it prices in EUR and USD. The installer refuses a name the platform already has (SmooshGate) and accepts its own on a second install (HMR). The legacy set was cut where the language now answers (`Object.groupBy`, `.at(-1)`, `?.`, `===`) and fixed where it was wrong — see the spec. No artefact yet stops `.toCurrency()` on a `@money` value (`FJS-3494`); a prerender loads the file before its first render (`FJS-3493`).
+
+*Lives in:* `packages/toolbelt/src/sugar/sugar.js`, `packages/cli/core/scaffold/web.js` (`makeSugarJs`).
+
+### <a id="fjs-d1512"></a>2026-10-24 · `FJS-D1512` — How a hand-written screen shows a stored `@money` amount — `formatMinor(minor, currency, { places })` in `@frontierjs/toolbelt/units`, with `<Cell value column record>` for a value that has its column. No `<Money>` component.
+
+Two app copies (basecamp `web/src/money.js` and thod `web/src/lib/money.js`) and about fifteen inline `formatMoney(fromMinor(m, c), c)` pairs across the prototypes showed a piece missing from the kit. **A** was picked over **B** (A plus a ui `<Money value field>` that reads the currency off `x-money`). B renders the same span, `tabular` digits and em dash as Cell's money branch and differs only in its props, so it would be a second display owner beside Cell.
+
+The currency has no default and a bad code throws, as `fromMinor` already does (`FJS-D556`). Not a number answers `''`, where the thod copy's `?? 0` showed a missing amount as `$0.00`. Cell's money branch calls `formatMinor`, so the two cannot drift. Nothing flags a new hand copy growing back in an app.
+
+*Lives in:* `packages/toolbelt/src/units/units.js`, `packages/ui/components/display/Cell.mesa`.
+
+### <a id="fjs-d1511"></a>2026-10-24 · `FJS-D1511` — 1.5 — What replaces Basecamp's `minio:latest` Blueprint row — SeaweedFS at `chrislusf/seaweedfs:4.48`, the same server the drives start (`FJS-D1507`), so the tree keeps one S3 server rather than two.
+
+Asked in [`IDEAS/third-party.md`](IDEAS/third-party.md) step 1.5. **A** was picked over **B** (RustFS: MinIO-style IAM, but at 1.0 only since October and a second S3 server) and **C** (remove the row). Versity was not offered because it needs startup arguments, and `Blueprint` has no command column.
+
+The image's default command, `weed mini`, serves S3 on 8333 and answers `/healthz` with 200, so it runs as-is. Its own help lists "small deployments" beside dev and test. Both key params are `required`, because with neither set it serves every bucket unsigned. Two things the row cannot turn off are stated in its `notes`: an Admin UI on 23646 with no password, and anonymous usage reporting once 10 GiB are stored. `n8n` and `umami` still pin `latest`, and nothing refuses a `:latest` pin.
+
+*Lives in:* `packages/basecamp/db/blueprints.js`.
+
+### <a id="fjs-d1510"></a>2026-10-24 · `FJS-D1510` — Q4 — Where the third-party register lives once ruled — `docs/THIRD-PARTY.md` beside `PORTS.md`, moved when its rows cite rulings, with the Pin column replaced by a pointer to the file that holds each pin.
+
+Asked in [`IDEAS/third-party.md`](IDEAS/third-party.md) § Open questions. **A** was picked over **B** (move it with the pins copied in, kept by hand) and **C** (stay in `IDEAS/`). A register that names where each thing is used describes the tree, and `IDEAS/` is never cited as behavior. A copied pin (`S3_IMAGE`, the Litestream version, the Blueprint images) drifts from the code the moment one is bumped, and nothing would flag it.
+
+*Lives in:* `IDEAS/third-party.md` until the move.
+
+### <a id="fjs-d1509"></a>2026-10-24 · `FJS-D1509` — Q3 — The register's nouns — **Stand-in** is blessed in the Testing realm: a local fake of a Provider that a drive starts, resets or breaks on purpose. **Sidecar** is refused, and the register's middle table is titled *Self-hosted* until Basecamp's `VISION.md` rules a noun for self-hosted third-party software.
+
+Asked in [`IDEAS/third-party.md`](IDEAS/third-party.md) § Open questions. **A** was picked over **B** (both words), **C** (Stand-in, and rule *Appliance* now) and **D** (neither). Stand-in already means one thing wherever it appears (`DRIVES.md`, `docs/PORTS.md`, `FJS-D460`). Sidecar already has two meanings: a dev listener the app started (`FJS-D460`, junction's `core/app.ts`), which is a stand-in, and a file beside the database (litestone). The register's Sidecar rows were not one kind either, since Docker is a runtime and Caddy is the front door. A *sink* is a stand-in that only receives, and needs no row of its own.
+
+*Lives in:* `VOCABULARY.md`.
+
+### <a id="fjs-d1507"></a>2026-10-24 · `FJS-D1507` — Q2 — Which S3 server the drives start — SeaweedFS, kept, with the pin moved from 4.47 to 4.48. A key scoped to a prefix is added after start by piping into `weed shell` through `docker exec -i`, which needs no mount under snap Docker.
+
+Asked in [`IDEAS/third-party.md`](IDEAS/third-party.md) § Open questions. **A** was picked over **B** (Versity S3 Gateway: lighter and has IAM, but not proved with Litestream here) and **C** (RustFS: MinIO-style IAM, but only at 1.0 since October). Garage was dropped because its PUT ignores `If-None-Match`, and the MinIO forks because the last free upstream release refused a create-only conditional PUT.
+
+The paper's recommendation, taken as written. SeaweedFS is the only candidate already green with Litestream 0.5.17, and it has every feature the list asked for. What's missing is two probes (a 412/200 on `If-None-Match: *`, and a prefix-scoped List/Read) and a signed bucket create, not a switch. The Blueprint `minio:latest` row is outside this ruling and is still open (`third-party.md` 1.5).
+
+*Lives in:* `example/web/test/verify-replicate.mjs` (`S3_IMAGE`).
+
+### <a id="fjs-d1506"></a>2026-10-24 · `FJS-D1506` — Q1 — Which vendor Basecamp recommends as the default backup destination — Backblaze B2, with Cloudflare R2 as the runner-up. A recommendation in `BACKUPS.md`, not a code default: `FJS-D1488`/`FJS-D1491` still take any S3-compatible bucket, and a vendor preset on `BackupDestination` would be a new option needing its own ruling.
+
+Asked in [`IDEAS/third-party.md`](IDEAS/third-party.md) § Open questions. **A** was picked over **B** (R2: egress is free and `If-None-Match` is documented, but it needs one bucket per app, Class A is metered, and Litestream #1171 measured about 480 PUTs an hour from an idle database) and **C** (no default).
+
+The paper's recommendation, taken as written. B2 is the cheapest (about $0.28 a month for 50 GB stored), every S3 call is free, so Litestream's request volume costs nothing, and egress is free up to 3× what is stored. Its keys scope to a prefix, and it is already proved live (`backups.md` 0.7). Two gaps are still owed:
+- **Retention:** a B2 bucket keeps every version, so retention needs the native `daysFromHidingToDeleting` rule. Only `BACKUPS.md` step 2 guards this, and nothing catches a bucket that skipped it.
+- **Conditional PUT:** `If-None-Match` is unproved on B2 (`third-party.md` 1.4).
+
+*Lives in:* `packages/basecamp/docs/BACKUPS.md`.
+
+### <a id="fjs-d1505"></a>2026-10-24 · `FJS-D1505` — Q7 — Where an app's Litestream key comes from — `App.replicaDestinationId`, `@unique`, points at a `BackupDestination` the operator made with a key for that app alone. The replica path is `<prefix>/<appId>`. `BACKUPS.md` gets a recipe per vendor, and 1.8's probe adds a PUT outside the prefix that must be refused, where the vendor scopes by prefix. Snapshots keep `backupDestinationId`, whose key never leaves Basecamp.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) § Open questions. **A** was picked over **B** (Basecamp mints a key per app through the vendor's key API (B2 `b2_create_key`, then R2 and AWS) and keeps it as a Secret on the App. It needs a `writeKeys` key in Basecamp, close to a master key, and still falls back to A at Spaces and Hetzner), **C** (The replica reuses the app's `backupDestinationId` key. That puts a workspace key on every machine, which breaks D1486's revoke-alone and D1485's stolen-machine bound).
+
+The paper's recommendation, taken as written: No new owner and no new noun. A leaked key reaches one app's replica, which is what D1485 promises, and it works at all six vendors. Reopen as B when operators keep getting the scope wrong. Confidence 2.
+
+### <a id="fjs-d1497"></a>2026-10-23 · `FJS-D1497` — How Basecamp knows a copy of `ENCRYPTION_KEY` is kept off the box — A person attests it. `HubConfig.encryptionKeyEscrowedAt` and `encryptionKeyFingerprint` (the key's sha256, never the key) are `@system`, written by `hub-config.attestEscrow` alone, and `hub.key-escrowed` grades the attestation against the key in use: absent, or naming a key that is no longer the one in use, fails high. The development placeholder cannot be attested. The key never travels with an archive.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) 1.7. **An attestation bound to the key by digest** was picked over **a control that is always unknown beside static copy** (Coolify's shape — a warning in the docs and nothing graded, which is what posture exists to replace) and **Basecamp escrowing the key itself to a second place** (1Password's Emergency Kit; the kit already exists here as the `.env` `fli deploy:setup` leaves on the operator's machine, and a second copy Basecamp writes is a second owner of credential material). GitLab is the precedent for the shape: `gitlab-secrets.json` is kept OUT of the backup and `gitlab:doctor:secrets` checks the live key still decrypts; a fingerprint match is that check without the decrypt. Confidence 2.
+
+The nine, before any edit: 1 origin — the attestation is the sole origin of a fact only a person knows; the fingerprint is derived from the live key at write and at grade · 2 concept — no new noun; two columns and one control · 3 complexity — the problem's, named by three platforms · 4 predictability — a regenerated key turns the control red with a sentence naming both digests' prefixes · 5 derived — who attested is the audit trail's (`@@trail(audit)`), so no `escrowedBy` · 6 owner — `core/posture.ts` grades, `hub-config` writes, `core/db.ts` is the one reader of the key beside `createClient` · 7 boundary — `@system` columns, `requireSystemAdmin`, the placeholder refused · 8 failure — a `high` control, never a refusal on a backup · 9 silence — `posture.test.ts` § the hub grader (absent, match, mismatch, placeholder; the message never carries the digest whole) and `services.test.ts` § the installation settings (a forged `save` is a 403 by name, a stamp grades green, a changed key grades red).
+
+Found on the way: `/hub/settings/` echoed the whole row on save, which names the two `@system` columns and so was a 403 the moment they existed; the form now sends only what it changed, as `narrowPatch`'s own comment says a drop would hide.
+
+Adjudication: *ergonomics vs. strictness* — strictness follows what a mistake destroys, here every archive, so a digest match rather than a checkbox. Tier: Register.
+
+*Lives in:* `packages/basecamp/db/schema.lite` (`HubConfig`) · `packages/basecamp/api/src/core/posture.ts` (`hub.key-escrowed`, `HostDeclared`) · `packages/basecamp/api/src/core/db.ts` (`encryptionKeyFingerprint`) · `packages/basecamp/api/src/services/hub-config/hub-config.service.ts` (`attestEscrow`) · `packages/basecamp/web/src/routes/hub/backups/index.mesa`.
+
+### <a id="fjs-d1496"></a>2026-10-23 · `FJS-D1496` — The `Back up volume` step is fatal, has no opt-out, and no-ops on a first release — A release of an app whose snapshot `runtime.volumePath` is set runs `Back up volume` before `Start container`, read off the release's `configSnapshot` so a rollback copies too. It takes one archive through `takeAppBackup` with `kind: release` and the deployment's id on the row; an archive that fails fails the release, an archive still in flight fails it with the 409's sentence, and a release with no `previousDeploymentId` passes with *first release — no volume on the machine yet*. A stub executor records its `failed` row and the step passes saying no backup was taken: a stub is a development stand-in, not a machine.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) 1.6. **Fatal, no flag** was picked over **optional as ring-0 `05-backup.md`** (`optional: true`, skipped by `deployConf.db?.backup === false` — the ring-0 step copies a database the next image does not alter) and **an `App.backupBeforeDeploy` toggle** (an option whose off position bites at the one moment it matters, and `PHILOSOPHY.md` § IV prices every option). The departure is the reason: the new image migrates the volume forward, and the copy is the only way back. A `BackupDestination` is not required — with none, the archive is on the machine's disk and `location` says where. Confidence 3.
+
+### <a id="fjs-d1495"></a>2026-10-23 · `FJS-D1495` — `AppBackup.kind` reuses `BackupKind`, which gains `release` — `AppBackup` gets `kind BackupKind @default(manual)` and `deploymentId String?` (`SetNull`); `BackupKind` is `manual · scheduled · found · release`. `release` on a hub `Backup` row is unwritten rather than unsayable.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) 1.6. **Reuse** was picked over **a new `AppBackupKind`** (two enums answering one question — who asked — with three values in common) and **`deploymentId` alone, no kind** (a scheduled row and a person's row would then read the same). The column that says who asked is the same column on both backup rows; the pointer says which release. Confidence 3.
+
+### <a id="fjs-d1494"></a>2026-10-23 · `FJS-D1494` — `backups.remove` deletes the archive, through the helper retention prunes with — A local archive goes as `backups/<basename(location)>`, refused unless the name is `basecamp-*`; a remote one as a `deleteObject` on its destination, the object first and the row after, so a failed delete keeps the row and the next prune retries it.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) 1.4. **Yes** was picked over *remove stays row-only*: once retention deletes files, a row-only remove leaves a directory nothing will ever find again, because rescan lists the remote prefix and not the disk. The old docstring's reason — a delete that unlinks a stored path can unlink the wrong one — is answered by deriving the path rather than reading it. Confidence 3.
+
+### <a id="fjs-d1493"></a>2026-10-23 · `FJS-D1493` — A rescanned archive is `BackupKind.found` — An object `basecamp-*.tar.gz` under a destination's prefix that no `Backup` row names gets a row of kind `found`: `startedAt` from the name's stamp, `sizeBytes` from the listing, `requestedBy` null, and it counts toward retention like any other.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) 1.4. **`found`** was picked over **`imported`** (Cloudron's word, but it says bytes were copied in and none were), **reuse `manual`** (claims a person asked for an archive Basecamp never took), and **report only** (retention cannot count what has no row, so the orphan is billed forever). The rows stay the index; rescan closes the gap between them and the bucket rather than adding a second one. Confidence 2.
+
+### <a id="fjs-d1491"></a>2026-10-23 · `FJS-D1491` — Q6 — Who owns a `BackupDestination` — `BackupDestination` is workspace-owned like `NotificationChannel`, and `HubConfig.backupDestinationId` points at one across the tier, `onDelete: SetNull`. Deleting that workspace drops the hub to `local`, so posture (1.7) grades *hub destination is local* red. Dokploy's destinations are per organization with the server's own backup picking one; Coolify's S3 storages are per team.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) § Open questions. **B** was picked over **A** (`Secret.workspaceId` becomes nullable, null meaning the installation. One column with two meanings, the unique index stops holding under NULL, and `verifyTenantIsolation()` learns an exception), **C** (The credential is an `@encrypted` column on the destination row, no `Secret`. A second owner of credential material, the move `HubConfig`'s own comment refused).
+
+The paper's recommendation, taken as written: It is `FJS-1020`'s precedent — a vendor key lives in a workspace — with zero existing callers moved, and per-App schedules (1.6) land under it without a second shape. Amends D1488 in its tenancy line only; the noun, the enum's removal and the `@transient` lift stand. Confidence 2.
+
+### <a id="fjs-d1490"></a>2026-10-23 · `FJS-D1490` — Q5 — How basecamp obtains `conduit-s3` — Basecamp's own `providers/storage/s3.ts`, a LIFT of the connector's `signer.ts` and `index.ts` (target builder, put/get/head/delete/list, presign) importing `@frontierjs/toolbelt/sigv4`, the compute pattern. When D1185 flips the swap is an import line.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) § Open questions. **C** was picked over **A** (Publish `@frontierjs/conduit-s3` to npm and depend on it. One `bun add`; the first connector shipped from the sibling, at 0.0.1 with one live vendor behind it, and a loose peer range silenced by the publish), **B** (Promote `conduit-s3` into `packages/`. It owns a protocol, not a vendor (`FJS-D889`), and SigV4 already lives in toolbelt — but it reverses D1185 for one package while the owner is not ready to commit the rest).
+
+The paper's recommendation, taken as written: It is the sanctioned copy — `FJS-D1253`'s condition names basecamp's `providers/` as a connector's one permitted twin — and a reader finds the same shape beside it. No SigV4 is copied, so Invariant 4 holds; what is copied is dialect. Reopen as B when the connectors workspace is committed. Confidence 2.
+
+### <a id="fjs-d1489"></a>2026-10-23 · `FJS-D1489` — `conduit-n8n` — Built, Tier B, in the connectors workspace: the owner's override of `IDEAS/conduit-connectors.md`'s *n8n is not a connector* row.
+
+Asked in session when the owner asked for a `conduit-n8n`. `decision-rules` ran first and recommended **B** (keep the ruling, amend the row: name intake's deploy tool as the one REST caller and the reopen trigger) over **A** (build it) and **C** (an app-owned `providers/` file in intake first, the Stripe shape). **A** was picked, against the recommendation, by the owner; the run is kept here so the next audit does not re-derive it.
+
+What the run found. Outbound to n8n is `plugins/webhooks` — signed, retried, a subscription row n8n owns. The credential pair `N8N_URL`/`N8N_API_KEY` is junction `attachments`' own worked example (`packages/junction/AGENTS.md`, `test/attachments.test.ts`). The REST client is one header and JSON; intake's whole client is ten lines in `tools/n8n-deploy.mjs`. The nine: fails 3 (complexity is ours), 6 (a second deliverer beside `plugins/webhooks`, Invariant 4) and the paper's test two. Precedent on the recommendation's side: Supabase ships generic signed webhooks and n8n ships the Supabase node — the host builds the node, the framework ships webhooks; n8n's Webhook node has no HMAC, so the receiving ring belongs on our side. Confidence 3.
+
+What building it bought that the run did not price. A live run against n8n 2.44.6 in docker found three facts no doc states: `activate` is idempotent, so it is `replayable` and a lost one is retried by conduit; a delete right after a deactivate is refused with *still being unpublished* and no wait named (`unpublishing`, C3's *not now* case, the connector names the wait); and the `no_trigger` and `not_registered` sentences, now verbatim in the sink.
+
+The shape. `n8nTargets({ address, ref?, hook? }) → { api, hook }`: two listeners on one origin, the API behind `X-N8N-API-KEY`, the webhook listener behind the Webhook node's own auth (none, or a header) and never the API key — the drive proves no hook call carried it. No vendor address; the builder refuses to guess one. Workflows and executions reads and writes, `trigger`. `createWorkflow` and `trigger` are unkeyed and `indeterminate` when lost; `executions({ workflowId, limit: 1 })` is the read that resolves a trigger (C6). The README's first paragraph says when `plugins/webhooks` is the tool instead, which is the boundary this ruling keeps.
+
+**Not changed by this ruling:** `plugins/webhooks` stays the one outbound deliverer and `attachments` the one credential origin; the connector takes `address` as an argument and reads no environment (C1). A second vendor wrapper around the webhooks battery is still refused by the same nine.
+
+*Lives in:* `../conduit-connectors/packages/conduit-n8n/`; `IDEAS/conduit-connectors.md` § Tier B row 12.
+
+### <a id="fjs-d1488"></a>2026-10-23 · `FJS-D1488` — Q4 — The storage destination's noun — `BackupDestination`, a model. The enum goes; both columns become relations, a null one meaning local. The credential follows `NotificationChannel`: a bare `secretId`, a `@transient` plaintext the service lifts into a `Secret` row. A Litestream replica is a continuous backup, so it is the same noun.
+
+*Amended 2026-10-23 by `FJS-D1491`:* the credential's `Secret` row needs a workspace, so the destination is workspace-owned and the hub's `HubConfig` points at one; the noun, the enum's removal and the `@transient` lift stand.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) § Open questions. **A** was picked over **B** (`Destination`, unprefixed. Too loose where deploys and notifications also have destinations), **C** (Another word: `StorageTarget` (`Target` is Conduit's, `FJS-D681`), `Bucket` (`bucket.bucket`, and rows sharing a bucket differ by prefix), `Repository` (collides with `RegistryImage.repository`)).
+
+The paper's recommendation, taken as written: The fields already say it, `NotificationChannel` is the sibling shape, and the precedent agrees: Dokploy's *Destinations* ([docs](https://docs.dokploy.com/docs/core/cloud-storage)), Velero's `BackupStorageLocation` ([docs](https://velero.io/docs/v1.17/api-types/backupstoragelocation)); Coolify's *S3 Storage* names the protocol. Reopen as `Destination` if a non-backup consumer (`@file` storage) ever wants the same place. Confidence 2.
+
+### <a id="fjs-d1487"></a>2026-10-23 · `FJS-D1487` — Q3 — Which first — Snapshots off the box first: it reuses `backup:run` and `/backup`, covers non-`.db` files and Basecamp itself, and brings the schedule and the pre-deploy copy.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) § Open questions. **A** was picked over **B** (Litestream first: seconds of loss sooner, the rest uncovered longer).
+
+The paper's recommendation, taken as written: The machine-loss gap is total today and A closes it with code that exists. Confidence 3.
+
+### <a id="fjs-d1486"></a>2026-10-23 · `FJS-D1486` — Q2 — Where Litestream runs for a fleet app — One systemd unit per machine, run by Outpost; each app an entry with its own key, scoped to a bucket or a prefix as the provider allows, so an app is revoked or moved alone.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) § Open questions. **A** was picked over **B** (One unit per machine and one key per machine), **C** (A sidecar container per app), **D** (No Litestream on the fleet; snapshots only).
+
+The paper's recommendation, taken as written: One process however many client apps a machine holds, `deploy-plane.md`'s "on the host", and the same path for Basecamp's own box. Per-app keys buy revocation and moves, not isolation: root on a shared box reads every volume already, so a client that needs a hard boundary gets its own machine. Confidence 2.
+
+### <a id="fjs-d1485"></a>2026-10-23 · `FJS-D1485` — Q1 — How a fleet machine reaches the bucket — Snapshots through a pre-signed PUT/GET Basecamp mints per transfer, so no key stays on the machine; Litestream through a standing key scoped to its own bucket or prefix, the one thing that cannot run on a pre-signed URL.
+
+Asked in [`IDEAS/backups.md`](IDEAS/backups.md) § Open questions. **A** was picked over **B** (One standing scoped key per machine for both), **C** (Basecamp carries the bytes: no key on any machine, but the archive crosses the command port (`FJS-D679` refused it) and there is no Litestream on a fleet machine).
+
+The paper's recommendation, taken as written: It holds D6 for everything but the one consumer that needs a key, and a stolen machine reaches only its own replicas. Confidence 2.
 
 ### <a id="fjs-d1428"></a>2026-10-22 · `FJS-D1428` — How `:ask`'s declared standing reaches the app's `/mcp` — Devtools relays as whom: `/api/mcp?as=&tenant=` runs `actAs` (`:call`'s principal lookup) and hands the request to `app.mcp.answer(request, user)`, which `mcp()` owns beside its route; refused outside development.
 
@@ -12308,6 +12593,46 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d1530"></a>2026-10-26 · `FJS-D1530` — A theme's label, blurb and light/dark are data in `@frontierjs/css/themes.js`, keyed by class; the guide's table moved there.
+
+Proposed beside `FJS-D1529`. thod and serpgrid each held the same hand table of labels and blurbs; eventmark held a set of dark themes that called `theme-expedition` and `theme-catppuccin` light; the guide's own `THEMES` had no `theme-field`. Options were **A** — a new `themes.js` export, **B** — a table in `vocabulary.js`, **C** — front-matter in each `.css` parsed at build. `decision-rules` passed A only once the guide's table MOVED into it rather than gaining a sibling: B files Style under the Structure register, C is a second definition of a format `build-vocabulary.js` refuses to parse.
+
+Built: `export const THEMES = { 'theme-dracula': { label, blurb, scheme: 'light' | 'dark' }, … }`, keyed by the class sierra's `themes()` returns; fields are `label`/`blurb` and the guide renamed its `name`/`description` reads. `scheme` restates the file's `color-scheme`, so `meta.spec.js` fails on a theme file with no entry, an entry with no file, or a `scheme` the computed `color-scheme` disagrees with. Blurbs are the picker-length ones the apps used; the guide's longer descriptions are gone. thod, serpgrid and eventmark read it.
+
+**Not ruled:** whether an app may relabel a theme — eventmark still calls `theme-default` *Light*. Sierra's default OS pair deriving from `scheme` would make sierra read css data, and waits on a dependency-direction check.
+
+*Lives in:* `packages/css/themes.js`; `guide/guide.js`; `test/specs/meta.spec.js`, `test/run.js`.
+
+### <a id="fjs-d1529"></a>2026-10-26 · `FJS-D1529` — `'system'` is a theme pick: `setTheme('system')` follows the OS pair again, and `theme.preference` says what was chosen.
+
+Asked in session after `FJS-3510`: two apps' account pages read and cleared the bare `theme` key that `persisted()` stores under the app's prefix, because Sierra had no way to un-pick. Options were **A** — `'system'` is a value `setTheme` takes and stores as itself, plus `theme.preference` (`'system'` | name) beside the resolved `theme.value` — and **B** — `setTheme('system')` clears the key. Built **A**: under a config whose `default` names a theme, clearing the key falls back to that theme rather than the OS, so B means two things depending on config. Cost: the `<head>` script carries the OS query whenever it reads storage, and the spa bundle rose 15 bytes brotli. The owner said *fix the system bug*, which is A as recommended.
+
+**Not changed:** `setScheme` stays unpersisted and leaves `preference` alone — it is a host's answer, not a pick. A `ThemePicker` in `@frontierjs/ui` and theme labels as data in `@frontierjs/css` are proposed in the same session, not ruled.
+
+*Lives in:* `packages/sierra/src/theme/index.js` + `script.js`; `test/prefetch-theme.test.js`.
+
+### <a id="fjs-d1527"></a>2026-10-26 · `FJS-D1527` — A topbar that does not fit one line: a labeled group is one menu, and below md the drawer takes the nav. Amends `FJS-D972`'s "wraps below md, with no drawer".
+
+Asked in chat over example's thirteen-entry bar, which wrapped onto a second line at 1100px. **Dropdown groups and a drawer** was picked over **a drawer below md only** (phones fixed, 768–1100px still wraps), **example moves to `layout="sidebar"`** (no kit change, every drive scoped again) and **a measured More… overflow menu** (`FJS-D972` kept portal's out; a ResizeObserver and no terminal story).
+
+The group's `label` is the signal and there is no new option: no topbar caller in this tree or in `fjs-prototypes` labels a group, so nothing that drew flat before draws a menu now. The trigger is a `button.navlink` carrying `aria-current="true"` while the page is one of its rows, which `nav.css` now styles as it styles `"page"`. The drawer's copy is mounted while closed, as a sidebar's always was, and a topbar keeps Sign out in the bar only.
+
+*Lives in:* `packages/ui/components/layout/Shell.mesa`; `packages/css/src/components/frame.css` (`.topbar-nav`, hidden in the same `@media` that shows `.sidebar-toggle`, so one owner holds both halves of the switch); `packages/css/src/patterns/nav.css`; example's `web/src/lib/nav.js` (the Staff group); the drive is `packages/ui/test/browser/specs/shell.spec.mjs` § layout="topbar".
+
+### <a id="fjs-d1513"></a>2026-10-24 · `FJS-D1513` — A file a raw route answers is handed to the person by `@frontierjs/ui/utils`: `download` takes a `Response` and saves it under the server's `Content-Disposition` name, and `openFile(() => Promise<Response>, { name, save })` shows it in a tab. Neither goes on the client.
+
+Five app copies (thod `web/src/lib/print.js`, three in transit, serpgrid `web/src/lib/download.js`) each turned a Response into a saved file, and four read only `filename="…"`. Junction's file route sends only `filename*=utf-8''…`, so every copy fell back to its own name without saying so. **A** (grow `download`, add `openFile`) was picked over **B** (`client.open(path)` / `client.download(path)` on the junction client) and **C** (leave it in apps). B would put a second fetch beside `client.fetch` and cannot serve a share-link `fetch` (transit `shared.file`) or a hand-built one (serpgrid). The half that varies is the fetch, so the half that is lifted is Response → file.
+
+`openFile` takes a function because the tab must open inside the click, before the first `await`, or the browser blocks the popup. A blocked popup saves the file under `name` instead of losing it. A failure closes the blank tab and rethrows. Both object URLs are revoked after FileSaver.js's 40 s grace. A Blob is still saved before `download` returns.
+
+*Lives in:* `packages/ui/utils.js` (`fileNameOf`, `download`, `openFile`); the drive is `packages/ui/test/browser/specs/download.spec.mjs`.
+
+### <a id="fjs-d1464"></a>2026-10-23 · `FJS-D1464` — Q12 — What `edge.js`'s CSP does about a `style=` attribute (step 2.6) — The policy stays strict, and Mesa conforms, as it did for `<style>` in `FJS-3232`. The compiler takes a literal `style=` out of the template string and writes it with `style.cssText` after the clone, which is the path a bound style already takes. React likewise applies every style through CSSOM. For prerendered HTML, `edge.js` hashes each `style=` value it serves into `style-src-attr 'unsafe-hashes'`. That is the same read of the deployed bytes as the script hashes (`FJS-D1205`). `'unsafe-hashes'` works in Chrome 69, Firefox 109 and Safari 15.4. A compiler test parses the output and shows no literal `style="` reaches a template string (Invariant 15).
+
+Asked in [`IDEAS/pen-testing.md`](IDEAS/pen-testing.md) § Open questions. **C** was picked over **A** (junction's default unchanged. Each app moves its literal `style=` to a class (73 in the tree), and a `fli check` rule flags a new one. The cost is the edits, plus a Firefox-only break the rule has to catch), **B** (junction's default plus `style-src-attr 'unsafe-inline'`, in junction's `helmet()` and in `edge.js` alike. Only attributes are allowed: `<style>` and stylesheets stay `'self'`, and a `url()` in an attribute is still held by `img-src`. helmet.js's own default is wider, `style-src 'self' https: 'unsafe-inline'` ([helmet 8.1.0](https://unpkg.com/helmet@8.1.0/index.mjs)). `style-src-attr` works in Chrome 75, Firefox 108 and Safari 15.4 (MDN browser-compat-data). An older browser falls back to `default-src` and refuses, which is the safe direction).
+
+The paper's recommendation, taken as written: confidence 2. It matches the Mesa sibling: `FJS-3232` changed the runtime so `style-src` could stay strict, rather than loosening the policy. It moves no app's code, and the hashes cannot drift from the bytes. B is the cheap path, has helmet behind it, and its risk is small. It is the reopen path if C's prerender half costs more than a step.
+
 ### <a id="fjs-d1423"></a>2026-10-22 · `FJS-D1423` — The terminal draws `@frontierjs/css`'s tones and surfaces: a tone is one of the terminal's own 16 colors from `@frontierjs/toolbelt/tty`, a surface is a bordered box unless its variant clears the border, `muted` is dim, and a text field is underlined.
 
 Asked in chat, after basecamp's `/login/` on a terminal read as unstyled text with an invisible password field. **Tones + structure** was picked over **structure only, no color** (border, underline and dim now, tones waiting for the table) and **basecamp only** (restyle one page with markup the terminal already draws). As recommended.
@@ -12330,7 +12655,7 @@ Where it lives: ui `Textbox`'s `idle` (no key, no mode, the control types; Haven
 
 ### <a id="fjs-d1402"></a>2026-10-22 · `FJS-D1402` — Q11 — What the seal covers — Every letter: a `tell` to a member who has published a sealing key goes sealed, and `--env` is that path plus read-once; to a member with none, a plain letter goes as V1's plaintext with a printed note and `--env` is refused.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (seal only `--env`, and reword Phase 3's done-when) and **C** (seal every letter and refuse any `tell` to a member with no sealing key).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (seal only `--env`, and reword Phase 3's done-when) and **C** (seal every letter and refuse any `tell` to a member with no sealing key).
 
 The paper's recommendation, taken as written: Phase 3's done-when already says the Durable Object holds only ciphertext after a `tell`, sealing costs the same for every letter, and one path is one path. Until Phase 4.1 a host that serves its own key still reads what is sealed to it, so the claim after Phase 3 is "the host cannot read a letter unless it lies about a key". Confidence 2.
 
@@ -14890,6 +15215,146 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1526"></a>2026-10-25 · `FJS-D1526` — Whether `fli deploy` grows a pull-a-digest mode, and whether that is the same mode ring 0 uses to install Basecamp from an image — One mode: `fli deploy --image <digest>` replaces `02-pull` and the two build steps with a fetch of that digest, then runs `04c-journal` onward unchanged, and ring 0 installs Basecamp through the same flag.
+
+Asked in [`IDEAS/deploy-plane.md`](IDEAS/deploy-plane.md) § Open questions. **A** was picked over **B** (Two: build-once stays `deploy.builder`, and ring 0 gets its own `fli basecamp:install` that pulls a published image), **C** (Neither: ring 0 keeps building Basecamp from source on the target).
+
+As recommended: A is where ring 0 goes, not built yet: until it is, ring 0 keeps building Basecamp from a framework checkout, because a checkout is the thing the owner can change and rerun while the real-box path is still being worked out. The quickstart page names the npm install as the goal and says it still needs a checkout today.
+
+### <a id="fjs-d1522"></a>2026-10-25 · `FJS-D1522` — How a proxied app Domain avoids Flexible's redirect loop (`zero-to-live.md` 2.4) — `FJS-D1422`'s per-host Configuration Rule, for every Domain: `edge` `push` writes a Full (strict) rule for the Domain's host before its CNAME turns proxied. The zone's SSL setting is never read or written.
+
+Step 2.4 was written before `FJS-D1422` and said *read the zone's SSL mode and refuse anything but Full (strict)*. That contradicts the ruling: a zone made safe by per-host rules would be refused, and the only way past the refusal is the zone flip `FJS-D1422` turned down. Asked through the question tool. **A** (per-host rule) was picked as recommended, over **B** (refuse unless the host's EFFECTIVE mode is strict: re-derives Cloudflare's precedence and needs *Zone Settings* read) and **C** (2.4 as written).
+
+`EdgeConnector.strictOrigin` already said it is *asked before a record turns proxied*, so this gives that owner its second caller (`core/host-record.ts` is the first). A token without *Zone › Config Rules › Edit* is refused before any proxied CNAME is written. An origin that has no certificate yet answers a 526 that names itself, where Flexible gave a silent loop.
+
+Left open: a deleted Domain leaves its rule behind, since `unpush` does not remove it. That is harmless clutter. A Domain created proxied before Caddy has its certificate is `FJS-D1380`'s cert-before-proxy order, which so far covers Basecamp's own host only.
+
+*Lives in:* `packages/basecamp/api/src/services/edge/edge.service.ts` (`push`) · `packages/basecamp/api/src/providers/edge/cloudflare.ts` (`strictOrigin`) · `packages/basecamp/api/test/edge.test.ts`.
+
+### <a id="fjs-d1524"></a>2026-10-25 · `FJS-D1524` — Where a drill proves a replica, and with whose schema and key — On the machine that restores it, by the app's live release image: `POST /replica/drill { app_id, replica, databases, at?, image, digest?, env }` stages every database out of the bucket into a scratch directory, runs `bun x litestone restore --verify-only=/fjs-drill --json` in that image with `--network none`, the copy bind-mounted at `/fjs-drill` and the release's environment passed by name, and removes the staging directory. The app's volume is never touched, so a drill needs no stopped app.
+
+Asked of the owner while building `IDEAS/backups.md` 3.3. **Machine, app image** was picked over a verify on Basecamp's host (the replica's key and every app's schema on the hub, and a copy of each database across the network) and a verify with Outpost's own litestone (a schema and key the release never ran, so a pass would prove a copy the app might not open). `--verify-only=<dir>` is new: `restore --verify`'s checks over files already in place, looked up by each declared database's own file name, and left in place. An image that does not ship the litestone CLI answers no report, and the drill is recorded failed with the verify's output. Only top-level `*.db` files are staged, so a tenant database under a subdirectory is not drilled. Reopen if that matters.
+
+*Lives in:* `packages/outpost/src/docker.js` (`verifyCopy`), `packages/outpost/src/server.js` (`/replica/drill`), `packages/litestone/src/tools/cli.js` (`verifyInPlace`), `packages/basecamp/api/src/jobs/app-drill-run.job.ts`.
+
+### <a id="fjs-d1525"></a>2026-10-25 · `FJS-D1525` — What records a drill — Its own model, `AppDrill`: the app, the machine, the release whose image proved it, `kind`, `status`, the instant asked for, each database's answer and litestone's report. It is read and run through `appDrills` (`find`, `get`, `run` at ADMINISTRATOR), and `App.drillCron` puts one on the clock beside `backupCron`.
+
+Asked of the owner while building `IDEAS/backups.md` 3.3. **A new model** was picked over a `kind: drill` row on `AppBackup` (a backup row with no archive, whose `location`, `sizeBytes` and destination would all be null and whose list would mix two questions) and a `lastDrill` Json column on `App` (one answer, no history, and a write to the app row on every drill). It is refused before a row is written when the app names no replica destination or has no successful release. A drill that ran and went wrong is a `failed` row, including a stub executor's, never a missing one.
+
+*Lives in:* `packages/basecamp/db/schema.lite` (`AppDrill`, `App.drillCron`), `packages/basecamp/api/src/services/app-drills/app-drills.service.ts`, `packages/basecamp/api/src/services/jobs/job-schedule.ts` (`syncAppDrillSchedule`).
+
+### <a id="fjs-d1521"></a>2026-10-25 · `FJS-D1521` — What a restore by URL accepts, now that Basecamp mints the URL — `POST /volume/restore { app_id, url, sha256, overwrite? }`: `url` is http(s) to any address, `sha256` is required with it, and `path` beside it is refused. The machine fetches into its restore directory, checks the digest before `tar` runs, extracts through D943's one path, and removes the copy. `/backup` answers the archive's `sha256`, computed in the capture container, and `AppBackup.sha256` records it. `apps.restoreVolume` takes `backupId` or `path`, exactly one, and mints a pre-signed GET for the backup's object key.
+
+This amends `FJS-D943` A's *https only, private addresses refused*. That guard was for a URL a caller states. Under `FJS-D1485` Basecamp mints the URL and sends it over the signed route, the same as `/backup`'s `upload_url` and `/replicate`, which already take http(s) to any address. A signed caller already has `/exec`. A self-hosted bucket and the Phase 3 stand-in are on private addresses. The digest stays because a restore empties a volume, and a machine holding a standing key to its own bucket prefix (`FJS-D1505`) could swap the object behind a GET. A swapped object is refused with the volume untouched. **B** was picked over **A** (D943's text as written, which blocks the stand-in drive and self-hosted buckets) and **C** (no digest, which would let a wrong restore go through silently). Reopen toward C if the bucket comes to vouch for content itself (object lock, a checksum header).
+
+*Lives in:* `packages/outpost/src/docker.js` (`restore`, `BACKUP_SCRIPT`), `packages/basecamp/api/src/services/apps/apps.service.ts` (`backupSource`), `packages/basecamp/api/src/jobs/app-backup-run.job.ts` (`mintDownload`), `IDEAS/backups.md` 3.2.
+
+### <a id="fjs-d1516"></a>2026-10-25 · `FJS-D1516` — Is an app's `api/src/documents/` an area that belongs under `domain/documents/`, or a kind `FJS-D625` should name — An area. Both apps move it to `api/src/domain/documents/`, and `app-layout` warns on any folder directly under `api/src/` that is not a kind.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (name `documents/` as a kind in `FJS-D625` and README § Project Structure). `FJS-D625` already says there is no feature folder, and B would make a kind that no loader reads and no file language decides.
+
+The kinds are `API_SRC_KINDS` in `packages/cli/core/checks/app.js`, beside `WEB_SRC_KINDS`: `core`, `services`, `routes`, `plugins`, `jobs`, `notifications`, `providers` (`FJS-D1519`), `domain` and `components` (`FJS-D1520`). A cli test fails when README § Project Structure leaves out a kind either list names, so the README cannot drift from the check. ela's `estimator/`, `field/`, `inbox/` and `surveys/` move with `documents/` in the change that adds the warning, and so do example's `emails/` and thod's templates. The other apps it flags (chatwoot, eventmark, jazzhr, page-performer, quo, transit, vaultwarden) each get an `ISSUES.md` row rather than a move under other sessions' uncommitted edits. Confidence 3.
+
+*Lives in:* `packages/cli/core/checks/app.js`, `README.md` § Project Structure.
+
+### <a id="fjs-d1519"></a>2026-10-25 · `FJS-D1519` — Is `api/src/providers/` a kind, given nothing loads it — Yes: it is where an app's adapter to a third party lives, one folder per Provider (`FJS-D06`), routes and all.
+
+Raised by `FJS-D1516`. **Kind** was picked over **area** (`domain/providers/<name>/` in every app). Eight apps reached for the folder without being told, and it is named for a framework noun rather than for one app's area. No loader reads it, so nothing checks what is inside it beyond `app-layout` accepting the folder name.
+
+*Lives in:* `packages/cli/core/checks/app.js` (`API_SRC_KINDS`), `README.md` § Project Structure.
+
+### <a id="fjs-d1520"></a>2026-10-25 · `FJS-D1520` — Where does a `.mesa` file under `api/` live — A `.mesa` file that code renders goes in the `domain/<area>/` of what renders it, wherever that code sits. A `.mesa` file only other `.mesa` files import goes in `components/<area>/`, or at the `components/` root when two or more areas use it.
+
+Raised by `FJS-D1516`. Picked over `views/<area>/` (the Rails and Laravel word, new here), keeping every template beside its renderer (Phoenix 1.7, which leaves no home for a part two areas share), and `emails/` plus `documents/` as kinds (`FJS-D1516` B). The rule is web's: a `.mesa` that something renders sits where that thing looks (`routes/` for the router, `resources/` for a Resource, the area for a service, job or route that renders a PDF or an email), and every other `.mesa` sits in `components/`. A `.mesa` in `domain/` that another `.mesa` imports is a part and moves to `components/`. Legacy ss-planner kept its parts in `api/src/services/compiler/components/` for the same reason.
+
+thod's five documents stay in `domain/documents/`, and `Letterhead`, `PricedLines` and `Footing` move to `components/documents/`. example's order confirmation is rendered by `example/api/src/notifications/OrderConfirmation.notification.ts` and goes to `domain/orders/`.
+
+*Lives in:* `packages/cli/core/checks/app.js`, `README.md` § Project Structure.
+
+### <a id="fjs-d1501"></a>2026-10-24 · `FJS-D1501` — Q4 — The first five — The five mechanisms `ARCHITECT.md` spends the most words on, measured by section length; expected: the three realms from one schema, a `$`-directive crossing the bridge (Invariant 10), the gate ladder, the hook pipeline around a service call, the surfaces beside `db/` (Invariant 3).
+
+Asked in [`IDEAS/illustration.md`](IDEAS/illustration.md) § Open questions. **A** was picked over **B** (one figure end to end, cold-reader proof included, before five).
+
+The paper's recommendation, taken as written: 1.1 measures, so a wrong guess costs one line; five is the smallest set a § Diagrams section can be written from (Q3). Confidence 2.
+
+### <a id="fjs-d1500"></a>2026-10-24 · `FJS-D1500` — Q3 — A brand graphic language for diagrams now — Draw five figures, then write the section from what held.
+
+Asked in [`IDEAS/illustration.md`](IDEAS/illustration.md) § Open questions. **B** was picked over **A** (write `brand/README.md` § Diagrams before the first figure).
+
+The paper's recommendation, taken as written: it is `brand/README.md` § Later's own rule: a section only once there is a real asset to show. Confidence 3.
+
+### <a id="fjs-d1499"></a>2026-10-24 · `FJS-D1499` — Q2 — Renderer for a mechanism figure in committed docs — Hand SVG up to about eight parts, D2-to-SVG above that, committed as `.svg` beside the doc; Mermaid only where the reader is GitHub's renderer (a `README.md`).
+
+Asked in [`IDEAS/illustration.md`](IDEAS/illustration.md) § Open questions. **A** was picked over **B** (Mermaid fences everywhere, rendered by GitHub), **C** (D2 source at every size, SVG committed).
+
+The paper's recommendation, taken as written: an `.svg` takes the brand's graphic language and `currentColor`, and SVGenius says hand-authoring holds only at small sizes. No `.svg` or Mermaid fence exists in this repo's markdown yet, so there is no caller to move; B is the reopen path if GitHub readers come to dominate. Confidence 2.
+
+### <a id="fjs-d1498"></a>2026-10-24 · `FJS-D1498` — Q1 — Where the brief lives — A skill `illustrate` in `.claude/skills/`, owning § 5 and pointing at `brand/IMAGERY.md`, `artifact-diagramming` and `dataviz` by kind.
+
+Asked in [`IDEAS/illustration.md`](IDEAS/illustration.md) § Open questions. **A** was picked over **B** (a section in `brand/IMAGERY.md`).
+
+The paper's recommendation, taken as written: IMAGERY.md is a kit for one kind of picture and is read by a person pasting prompts; the brief is run by an agent on every kind. The precedent is `decision-rules` and `doc-hygiene`: a check an agent runs before an act lives in a skill. Confidence 3.
+
+### <a id="fjs-d1483"></a>2026-10-23 · `FJS-D1483` — Outpost takes a path segment that starts with `_`. A leading `.` is still refused.
+
+Asked through AskUserQuestion, building the static-App path of `fli basecamp:deploy`. As recommended. The first build sent from `example/` was refused at `assets/_flowId_-….js`, because Rollup names the chunk for a `[param]` route after its parameter and SvelteKit writes `_app/`. A static release could not carry any app with a param route. A dotfile (`.env`, `.htaccess`) stays outside the allow-list. The rule is `validRelativePath` in `packages/outpost/src/static.js`. A machine running Outpost 0.1.5 or earlier refuses these paths until it is released past that version.
+
+### <a id="fjs-d1482"></a>2026-10-23 · `FJS-D1482` — A static App built on the laptop bakes the checkout's own `.env`, not the App's Basecamp Variables.
+
+Asked through AskUserQuestion. Against the recommendation (**A**): the pick gave no reason beyond its option text, *less code, like the image path builds from the local tree*. A was a Basecamp read method that filters the App's Variables to the bundle prefixes, shared with Freeze. `fli basecamp:deploy` (`packages/cli/commands/basecamp/deploy.md`) runs `vite build` in `web/` with the shell's environment, and Vite reads `web/.env*` itself. Overrides `decision-rules` § V question 1: the bundle's env has a second source, and the gap is unenforced. A Freeze build and a laptop build of one App can bake different values, and the Variables page states only Freeze's (`FJS-3475`).
+
+### <a id="fjs-d1481"></a>2026-10-23 · `FJS-D1481` — `fli basecamp:deploy` releases an inline App: it builds `web/` into a temp directory, or sends `--dist <dir>` as it is, and hands the files to `apps.publish`. That method relays them to Outpost's `/static/publish` and releases the digest as a Deployment.
+
+Asked through AskUserQuestion about `--dist`. Against the recommendation (**leave it out** until an app asks for a pre-built folder): the pick gave no reason beyond its option text, *skips the build and ships that folder as-is*. The flag is refused on an App that is not inline, and `--server` is refused on an App that is. `apps.publish` (`packages/basecamp/api/src/services/apps/apps.service.ts`, gate `USER`, the Deployment create level, input `AppPublish`) is the one owner of publish-and-release, and Freeze calls it too. The caller never holds `OUTPOST_SECRET`, and the files never enter a row. The build goes to a temp directory because `vite build` empties its outDir and `web/dist` may belong to something else. Limits: Outpost takes 500 files, 4 MB each and 24 MB in all. Basecamp's body cap is 10 MB of JSON, and base64 adds a third to a binary file, so the body cap is the one a large site reaches first.
+
+### <a id="fjs-d1480"></a>2026-10-23 · `FJS-D1480` — Q3 — The address that outlives a Hetzner box (`--reserved-ip`) — A Primary IPv4 with `auto_delete: false`, given to the server at create (`public_net.ipv4`). It IS the server's own address, so outbound traffic already leaves from it and Hetzner needs no egress script. Reuse means the hostname's record holds a Primary IP in the same location that no server holds.
+
+Asked in [`IDEAS/hetzner-host.md`](IDEAS/hetzner-host.md) § Open questions. **A** was picked over **B** (A Floating IP plus an egress script, the same arrangement as on DigitalOcean. Hetzner also needs the address configured inside the box before the box receives anything on it), **C** (No held address on Hetzner: `--reserved-ip` is refused there).
+
+The paper's recommendation, taken as written: It is Hetzner's own mechanism for keeping an address across a rebuild, and it removes a script rather than porting one. Confidence 2: the Primary IP's price, and whether it is bound to a location or a datacenter, are from memory and not fetched, so 1.1 checks them against Hetzner's API docs.
+
+### <a id="fjs-d1479"></a>2026-10-23 · `FJS-D1479` — Q2 — The name of the token key — `HETZNER_TOKEN`, named like `DIGITALOCEAN_TOKEN`.
+
+Asked in [`IDEAS/hetzner-host.md`](IDEAS/hetzner-host.md) § Open questions. **A** was picked over **B** (`HCLOUD_TOKEN`, the key that Hetzner's `hcloud` CLI and its Terraform provider already read).
+
+The paper's recommendation, taken as written: Match the siblings: the tree's keys are `<VENDOR>_TOKEN`, and `CLOUDFLARE_TOKEN` already departs from Cloudflare's own `CLOUDFLARE_API_TOKEN`. Basecamp's env has `HETZNER_URL` beside it too, so a person who knows one key can predict the next. B is the reopen path if reusing an existing `hcloud` setup turns out to matter. Confidence 2.
+
+### <a id="fjs-d1478"></a>2026-10-23 · `FJS-D1478` — Q1 — How the cloud is chosen — The same flag, but its default comes from the tokens in the global fli env. With exactly one cloud's token, use that cloud. With both, ask at a terminal and refuse without one. With neither, ask at a terminal which cloud to use, then ask for its token. Bare `basecamp` lists the boxes at every cloud that has a token, and `stop`/`destroy <id>` look the id up among the fleet-tagged boxes at each cloud.
+
+Asked in [`IDEAS/hetzner-host.md`](IDEAS/hetzner-host.md) § Open questions. **B** was picked over **A** (Every `basecamp:*` command that calls a vendor takes `--cloud <kind>`, which defaults to `digitalocean`), **C** (A, plus a stored default (`fli eset FLI_CLOUD hetzner --global`)).
+
+The paper's recommendation, taken as written: It is the flag the owner asked for, and there is nothing else to set, because the token a person has already says which cloud they use. C stores the same answer in a second place, and it can disagree with the token. Confidence 2: an account with both tokens has to answer the question every time. The flag is called `--cloud` rather than `--provider` because its values are only the compute kinds of `ProviderKind` (`digitalocean`, `hetzner`), and `cloudflare` is a Provider too.
+
+### <a id="fjs-d1473"></a>2026-10-23 · `FJS-D1473` — Q6 — Which env name fli keeps for a token — Rename fli's to `CLOUDFLARE_API_TOKEN`: one name, `cf` reads it with no mapping, and the module only has to DELETE it for a profile row.
+
+Asked in [`IDEAS/cloudflare-dns.md`](IDEAS/cloudflare-dns.md) § Open questions. **A** was picked over **B** (keep `CLOUDFLARE_TOKEN` and map it onto `CLOUDFLARE_API_TOKEN` on the spawn).
+
+The paper's recommendation, taken as written: two spellings of one secret is the duplication the evolution policy forbids, and nothing has shipped; B keeps a mapping forever for a name only fli knows.
+
+### <a id="fjs-d1472"></a>2026-10-23 · `FJS-D1472` — Q5 — Pane or standalone — A console pane, `fli dns` an alias into `fli gui`.
+
+Asked in [`IDEAS/cloudflare-dns.md`](IDEAS/cloudflare-dns.md) § Open questions. **A** was picked over **B** (a command that mounts `Dns.mesa` with no server, functions as props).
+
+The paper's recommendation, taken as written: the mount, loader, legend, keys and the two-target drive exist once; B is a second mount path and loses the browser.
+
+### <a id="fjs-d1471"></a>2026-10-23 · `FJS-D1471` — Q4 — A Basecamp-marked record — Warn and go ahead.
+
+Asked in [`IDEAS/cloudflare-dns.md`](IDEAS/cloudflare-dns.md) § Open questions. **A** was picked over **B** (refuse, as the connector refuses unmarked ones), **C** (hide them).
+
+The paper's recommendation, taken as written: the connector's refusal protects a stranger's record from a sync; a person at the keyboard is not the sync, and the sync puts its record back, so the write is reversible by the thing that owns it.
+
+### <a id="fjs-d1462"></a>2026-10-23 · `FJS-D1462` — Q11 — Where the view lives — `fli frontier:post` with `--json` as the one reader, and a `:post` pane in `fli gui` that draws it (`project:map` and `:map`).
+
+Asked in [`IDEAS/frontier-network.md`](IDEAS/frontier-network.md) § Open questions. **A** was picked over **B** (the command only), **C** (an `/admin` page on the Worker: a second login, at a URL a stranger can find).
+
+The paper's recommendation, taken as written: (confidence 2) — one reader with two presentations is `FJS-D223`, and the pane costs one spawn.
+
+### <a id="fjs-d1459"></a>2026-10-22 · `FJS-D1459` — The Outpost's static origin binds `127.0.0.1` and the install's firewall does not open it; Caddy is the only way in.
+
+Asked in chat over bct's posture report, where `net.unexpected-listener` named 8181. **A** was picked over **B** (posture expects 8181 on every box, so the public listener stays and stops being flagged) and **C** (`OUTPOST_STATIC_PORT=0` on bct only). As recommended.
+
+Every Activate and every `/route` with `static: true` already dials `127.0.0.1:8181` (`ingress.js`), so the public bind served nobody Caddy did not, and it answered plain HTTP around Caddy's TLS on every enrolled box. `FJS-D565` and `FJS-D930` already put a container's published port on loopback; this extends that rule to the Outpost's own listener. The cost is that an inline app with no hostname can no longer be reached at `<ip>:8181/<slug>` from outside the machine. `declaredFor()` stops expecting 8181, and enrollment's input rule loses it.
+
 ### <a id="fjs-d1422"></a>2026-10-22 · `FJS-D1422` — Q3 — How the flip to proxied makes the edge strict for Basecamp's host — A per-host Configuration Rule, marked like a record, written before the record turns proxied; the zone setting is never touched. The token needs *Zone › Config Rules › Edit*.
 
 Asked in [`IDEAS/zero-to-live.md`](IDEAS/zero-to-live.md) § Open questions. **A** was picked over **B** (flip only when the zone is already Full (strict), and otherwise stay DNS-only and say why. Never changes the zone; needs *Zone Settings* read), **C** (set the zone to Full (strict), as `FJS-D1380` is written).
@@ -14908,7 +15373,7 @@ The nine, answered before the first edit: 1 origin — the key written once, loc
 
 Adjudication: none in tension. Tier: Register here; Map in `packages/cli/CLAUDE.md` (`env-preflight.js`).
 
-*Lives in:* `packages/cli/core/env-preflight.js` (`fillKey`) · `packages/cli/commands/deploy/_steps-setup/03-directories.md` · `packages/cli/commands/deploy/_steps-setup/05-caddy.md` · `packages/cli/commands/provision/index.md` · `packages/basecamp/.env.example`.
+*Lives in:* `packages/cli/core/env-preflight.js` (`fillKey`) · `packages/cli/commands/deploy/_steps-setup/03-directories.md` · `packages/cli/commands/deploy/_steps-setup/05-caddy.md` · `packages/cli/commands/basecamp/create.md` · `packages/basecamp/.env.example`.
 
 ### <a id="fjs-d1380"></a>2026-10-21 · `FJS-D1380` — Q1 — Proxied or DNS-only for Basecamp's own hostname — DNS-only: step 3.4's script makes Basecamp's Domain row without naming `proxied`, so it takes the schema's `false` (`FJS-D563`, `Domain.proxied` in `packages/basecamp/db/schema.lite`); the A record points straight at the droplet and Caddy's HTTP-01 certificate is what the browser sees. The command's last step then verifies HTTPS answers at the hostname with a valid certificate, and at a terminal offers the flip to proxied — which sets the zone to Full (strict) first (step 2.4), since the origin now has the certificate strict mode needs.
 **Amended 2026-10-22 by [`FJS-D1422`](#fjs-d1422):** the flip sets Full (strict) for Basecamp's host alone, as a Configuration Rule, and never the zone.
@@ -15173,6 +15638,8 @@ The nine were answered before the first edit. *Origin*: the list lives once in `
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked as the recommendation qualifies it (*B first, A as the add-on*) over **A** (the machine fetches: body `{ app_id, url, sha256, overwrite? }`; Outpost streams the URL into `tar -x` inside a throwaway container mounting the volume, checks the digest, and returns file count and bytes. Nothing large crosses Basecamp or the signed command port (the prior art's shape, `paas-parity.md` item 4). Costs an outbound fetch of a URL a caller states, so the route must refuse non-https and private addresses, and `s3://` needs a credential on the machine (`fleet-ingress.md` D6 refused one for DNS)), **C** (stream the tar as the request body to `POST /volume/restore?app_id=…`: the one route here whose body is bytes, signed over a digest header. Works from anywhere with no URL or path, but the 4.6 GB passes through whatever holds the stream, and the signature scheme (`server.js` recomputes it from the raw URL and JSON body) needs a bytes variant. - **Either way** — the App must be stopped (a container holds the volume: refuse naming it) and a non-empty volume is refused unless `overwrite: true`, which `D679` need not settle).
 
 B is the smallest piece that unblocks ELA and serves the FJS-D679 restore with no new attack surface; A's URL fetch follows later as a step in front of the same extract, without changing the route's other parameters.
+
+**Amended by [`FJS-D1521`](#fjs-d1521)**: the URL is Basecamp's pre-signed GET, http(s) to any address; `sha256` stays required.
 
 ### <a id="fjs-d942"></a>2026-10-16 · `FJS-D942` — Does FJS-2646 close by the load route (FJS-2645), with the git build's Dockerfile path left to FJS-2123, or does the git build learn to vendor — The image is built where the workspace is: `fli` vendors and builds (Kamal's model) and ships the image to the machine, and the release names its digest, which `pull` already returns without pulling when the machine holds it (FJS-2645, closed 2026-10-13). How the image reaches the machine (`docker save | ssh docker load`, or a load route) is the build's own step, owed. A git source's subdirectory is already its context (FJS-2123, closed); a `source.dockerfile` is added only for a repo with no out-of-repo dependency. FJS-2646 closes when the image path is built.
 
@@ -15921,6 +16388,8 @@ Asked in the app layout audit ([Where Code Lives](https://claude.ai/artifact/3dv
 
 *Familiarity vs. precision*: `lib/` and `stores/` take the ecosystem's shape and words where the words fit. `app-layout` grades each folder rule as a warning (`FJS-1888`).
 
+
+**Amended by [`FJS-D1520`](#fjs-d1520)**: under `api/`, a `.mesa` that code renders goes in `domain/<area>/`, not `components/`.
 ### <a id="fjs-d608"></a>2026-10-06 · `FJS-D608` — Which tooling gaps in `site-kit-parity.md` § 4 become framework owners — Wire every gap Sierra already owns (`defer-js`, `speculation`, `sierra/analytics`); fix the two filed as Sierra's (FJS-1539 head, FJS-1540 host function) in Sierra; start every gap with no owner (images, per-page JSON-LD, the lead fallback, animations) as site-kit code, and move one to Sierra when a consumer that is not a site-kit site needs it.
 
 Asked in [`IDEAS/site-kit-plan.md`](IDEAS/site-kit-plan.md) § Open questions. **A** was picked over **B** (give each of images, per-page JSON-LD and the static-host function a Sierra owner before site-kit ports it), **C** (all of it stays site-kit code, FJS-1539 and FJS-1540 included).
@@ -17273,6 +17742,12 @@ opposite of what the file is for.
 
 ### <a id="fjs-d192"></a>2026-09-03 · `FJS-D192` — house style is American spelling, not British. The rule flipped; the words did too, except where a word is data.
 
+**Amended 2026-10-22: the owner retired the grader.** `fli check`'s
+`american-spelling` is gone, so CI no longer reports a British spelling. The
+house style is still American; a drift is now fixed when someone sees it,
+rather than by a CI warning. The amendment below explains why the grader was
+added in the first place.
+
 **Amended 2026-09-07: it re-drifted, because nothing graded it.** Four days after
 the flip the repo held **1,131 British occurrences across 285 files** — the first
 sweep had reached the words it went looking for and the ruling had no artefact
@@ -18103,6 +18578,42 @@ the file puts the judgement where judgement lives.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d1508"></a>2026-10-24 · `FJS-D1508` — What code an owner's front-matter value may carry (`FJS-3416`) — `FJS-D1250`'s grade, applied to the value: a value may hold only the tags, `{…}` and script blocks the old value held, and may not become a `javascript:`/`vbscript:` address or link.
+
+Asked through AskUserQuestion. **A** was picked over **B** (a preset key naming which values it renders as HTML, graded alone), **C** (ksite's PageHero stops rendering `title`, `hero_preheading` and its paragraphs through `{@html}`) and **D** (A, with attribute-less inline tags such as `<br>` and `<em>` let through, as WordPress's kses lets them into a post title).
+
+A needs nothing from a preset, and a key a preset forgot to name in B is the hole again. C mends one preset and turns every `<br>` a developer wrote into a title into literal text. D makes the value's rule differ from the body's. What A costs: an owner keeps a tag already in a title but cannot add one.
+
+*Lives in:* `packages/site-kit/src/editable.js` `valueRefusal`, called by `applyEdit` for `values` and by `applyField`. *Enforced by:* site-kit's `test/content.mjs`.
+
+### <a id="fjs-d1492"></a>2026-10-23 · `FJS-D1492` — Q6 — Parakeet TDT 0.6B v3 int8 through sherpa-onnx local, whisper.cpp for a language Parakeet does not cover, Deepgram as a conduit target.
+
+Asked in [`IDEAS/calls-and-media.md`](IDEAS/calls-and-media.md) § Open questions. **A** was picked over **B** (whisper.cpp local only: one engine, 99 languages, about 29 minutes per 45-minute call on CPU).
+
+The paper's recommendation, taken as written: measured 2026-10-23 on an i7-8850H, one 44.5-min English call, 6 threads: RTF 0.115 against `small.en-q5_1`'s 0.65 and `large-v3-turbo`'s 1.7. The engine is a config string; ffmpeg to 16 kHz mono and a spawned binary are the same job either way.
+
+### <a id="fjs-d1474"></a>2026-10-23 · `FJS-D1474` — How a connector with more than one target spells its builder and its bind — Quo's bundle: one `<name>Targets`, one `bind<Name>`, and every call picks its own role.
+
+Asked in chat after an audit of the 25 connectors in the sibling workspace (`FJS-D1185`) found three spellings of one thing: google-maps, quo, 37signals and microsoft returned a record of descriptors from one builder; mattermost, oidc, slack and push exported a builder per target; and quo alone bound a bundle (`bindQuo → { v1, dated, files }`) while the rest bound one target at a time. **A** (quo's bundle) was picked over **B** (a plural builder, but `bindSend` per target with a call checking `send.spends`) and **C** (rule only the builder; binding left to each connector).
+
+The recommendation, taken as written: a call that picks its own role off the bundle cannot be handed the wrong target, which oidc and microsoft each guarded at runtime and mattermost did not guard at all. The rule, with its two refinements from mattermost's consumer (a credential choice made at bind; a per-user target keeps its own builder), is the workspace's `CONTRACT.md` § Amendments, *C1 — the bundle*, and is not restated here. Nothing grades it: the workspace has no check runner. Seven connectors moved in the same change, with `fjs-prototypes/chat` as mattermost's one caller.
+
+### <a id="fjs-d1469"></a>2026-10-23 · `FJS-D1469` — Q2 — One dialect owner — The flag commands move onto `core/cloudflare.js` and `cfApi` is deleted.
+
+Asked in [`IDEAS/cloudflare-dns.md`](IDEAS/cloudflare-dns.md) § Open questions. **A** was picked over **B** (`cfApi` stays for the flag commands, `cf` for the pane).
+
+The paper's recommendation, taken as written: two spellings of one call drift (`commands/cloudflare/dns.md` and basecamp's connector already disagree on which types take `proxied`); the evolution policy says move every caller in one change.
+
+### <a id="fjs-d1468"></a>2026-10-23 · `FJS-D1468` — Q1 — Where an account comes from — Both, a token shown as a row.
+
+Asked in [`IDEAS/cloudflare-dns.md`](IDEAS/cloudflare-dns.md) § Open questions. **C** was picked over **A** (`cf`'s profiles and login; fli stores no credential and adds no token store), **B** (fli's own named tokens (`CLOUDFLARE_TOKEN_<NAME>`), one per account, no `cf`).
+
+Against the recommendation (**A**): owner: a token-only machine (CI, a client who hands over one token) is a real account and must show as a row; cf profiles answer the login case and the env token answers the other, and neither needs a fli credential store.
+
+### <a id="fjs-d1463"></a>2026-10-23 · `FJS-D1463` — Does ELA's Microsoft Graph mail code become a connector? — Yes: `@frontierjs/conduit-microsoft` in the connectors workspace; the DIALECT moves, the sync ENGINE stays ELA's
+
+Reverses the line in [`IDEAS/conduit-connectors.md`](IDEAS/conduit-connectors.md) § Tier B that "the Graph read stays ELA's own", and ELA `PLAN.md` ruling 96 that leaned on it. Both read the Graph provider as a sync engine, and a sync engine is out of conduit. Looked at after three months live (one mailbox since 2026-07-22), `api/src/providers/microsoft/` is two things: a DIALECT — three conduit http targets, the delegated grant with its rotating refresh token and a cross-process compare-and-set lock, the delta primitive, the change-notification handshake and clientState check, drafts, replies, send, move, the MIME send — and an ENGINE — which folders a sync walks, the Message-Id re-match (ELA ruling 108), the mail-row mapping and the writeback rules. The dialect is what `FJS-D889`/`FJS-D890` say a connector contains and nothing in it knows a mail row; the engine stays in ELA. The package follows `conduit-gmail`, which made the same cut for Google. It lives in the sibling repo per `FJS-D1185` and is proved by its own drive against a sink lifted from ELA's stand-in (33 rows). The validationToken handshake is the one piece that cannot ride `app.conduit.receive()` (the receiver answers its own body), so it is a pure `handshake(url)` the app mounts ahead of the receiver — `FJS-1804`'s case, named in the package's `PROJECT_STATE.md`. ELA's adoption of the package is owed, not part of this ruling.
+
 ### <a id="fjs-d1425"></a>2026-10-22 · `FJS-D1425` — Q27 — What the spend limit is (4.1) — Per run only: the $2 `--max-budget-usd`, plus whatever monthly cap the key's Console workspace carries. Basecamp keeps no total.
 
 Asked in [`IDEAS/owner-editing.md`](IDEAS/owner-editing.md) § Open questions. **A** was picked over **B** (per run, plus a monthly dollar cap on the App (`askMonthlyUsd`, null = no cap). Each run's cost goes in a status file beside `<appId>.previews.json`; an ask is refused once this calendar month's (UTC) total reaches the cap. Lost with the disk, so a cap can reset silently), **C** (as B, but each run is a row (`SiteAsk`: app, draft, who, request, cost, state `running|ready|saved|discarded|refused`, the commit a save made). The row is the cap's ledger and 4.3's record of the run in one).
@@ -18169,19 +18680,19 @@ The nine for 3.1, which builds this ruling and `FJS-D1404`/`FJS-D1405`, consider
 
 ### <a id="fjs-d1400"></a>2026-10-22 · `FJS-D1400` — Q2 — The sealing key — A second, X25519 pair beside the Ed25519 one, published signed.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (derive X25519 from the Ed25519 key, as age does).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (derive X25519 from the Ed25519 key, as age does).
 
 The paper's recommendation, taken as written: WebCrypto does it with no dependency, and a browser member's IndexedDB key cannot be converted.
 
 ### <a id="fjs-d1398"></a>2026-10-22 · `FJS-D1398` — Q4 — The notice line's reach — Every `fli` command checks on an interval.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (only `fli tell:*` commands and a shell prompt hook a member opts into).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (only `fli tell:*` commands and a shell prompt hook a member opts into).
 
 The paper's recommendation, taken as written: the point is mail you notice without asking; the interval bounds the cost, and it stays silent with no key.
 
 ### <a id="fjs-d1392"></a>2026-10-22 · `FJS-D1392` — Q6 — Where V1's server runs — One Cloudflare Worker and one Durable Object: SQLite and the live sockets in one object, the free plan, deployed with wrangler.
 
-Asked in [`IDEAS/pony-express.md`](IDEAS/pony-express.md) § Open questions. **A** was picked over **B** (Val Town: one file edited in the browser, SQLite built in, no deploy step; live delivery likely a poll), **C** (Haven's API: identity and a host already there, but V1 waits on Haven being hosted).
+Asked in the pony-express paper § Open questions (deleted 2026-10-22, last committed at `364f38d9`). **A** was picked over **B** (Val Town: one file edited in the browser, SQLite built in, no deploy step; live delivery likely a poll), **C** (Haven's API: identity and a host already there, but V1 waits on Haven being hosted).
 
 The paper's recommendation, taken as written: the only one with live delivery and no wait; B is the reopen path if wrangler is the friction.
 

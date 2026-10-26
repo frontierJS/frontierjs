@@ -35,9 +35,9 @@ async function person(pw = 'pw-old-1') {
   return { email, login }
 }
 
-const change = (token: string, currentPassword: string, newPassword: string) =>
+const change = (token: string, newPassword: string) =>
   request(app).post('/account/me').set('x-service-method', 'changePassword').auth(token)
-    .send({ currentPassword, newPassword })
+    .send({ newPassword })
 
 const me = (token: string) => request(app).get('/account/me').auth(token)
 
@@ -49,7 +49,7 @@ describe('changing the password ends the other sessions', () => {
     const b = await u.login()
     expect((await me(b)).status).toBe(200)
 
-    expect((await change(a, 'pw-old-1', 'pw-new-1')).status).toBe(200)
+    expect((await change(a, 'pw-new-1')).status).toBe(200)
 
     // The session that asked keeps working — a person who changed their
     // password is not signed out of the tab they did it in.
@@ -64,7 +64,7 @@ describe('changing the password ends the other sessions', () => {
     const a = await u.login()
     await u.login()
     await u.login()
-    expect((await change(a, 'pw-old-1', 'pw-new-2')).status).toBe(200)
+    expect((await change(a, 'pw-new-2')).status).toBe(200)
     const user = await h.sys.user.findFirst({ where: { email: u.email } })
     const rows = await h.sys.session.findMany({ where: { userId: user.id } })
     expect(rows.length).toBe(1)

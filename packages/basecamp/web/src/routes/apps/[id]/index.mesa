@@ -20,8 +20,8 @@ title: App
   import { domains } from '../../../resources/Domain.mesa'
   import { servers } from '../../../resources/Server.mesa'
   import { deployments, DEPLOY_TONE } from '../../../resources/Deployment.mesa'
-  import { session } from '../../../session.js'
-  import { at, ago } from '../../../datetime.js'
+  import { session } from '../../../lib/session.js'
+  import { at, ago } from '../../../lib/datetime.js'
 
   import NoRecord from '../../../components/NoRecord.mesa'
   import VariablesEditor from '../../../components/VariablesEditor.mesa'
@@ -76,6 +76,12 @@ title: App
   let files       = []
   let sourceDirty = false
   let imageDraft  = ''
+
+  // `late` is the API's: past the lag `backup.replica-lag` fails at.
+  const bucketTone = (r) => r.error || (r.late && r.lagMs !== null) ? 'danger' : r.late ? 'warning' : 'success'
+  const bucketSays = (r) => r.error ? `Litestream: ${r.error}`
+    : r.lagMs === null ? 'Bucket: not synced yet'
+    : `Bucket ${r.lagMs < 60_000 ? `${Math.round(r.lagMs / 1000)}s` : ago(r.lastSyncAt)} behind`
 
   function write(name, value) { draft = { ...draft, [name]: value } }
   function writeCert(name, value) { certDraft = { ...certDraft, [name]: value } }
@@ -430,6 +436,10 @@ title: App
   $: rollbackIt  = latest ? deployments.transitions(latest, session.level).find(m => m.name === 'rollback') : null
   $: canRetry    = latest && (latest.status === 'failed' || latest.status === 'cancelled')
   $: primaryHost = app?.domains?.find(d => d.isPrimary)?.hostname ?? null
+  // Deploy ships the Source tab, so over a sent build the site goes back to those files.
+  $: overBuild   = app?.liveBuild
+    ?'The live site is a build sent from outside this page — a Freeze or fli basecamp:deploy. Deploy replaces it with the files on the Source tab.'
+    : null
 
   function whoShipped(d) {
     return d.author ? ` by ${d.author}` : ''
@@ -492,7 +502,8 @@ title: App
       {#if primaryHost}
         <Button treatment="outlined" href={`https://${primaryHost}`} target="_blank" rel="noopener" id="app-visit">Visit</Button>
       {/if}
-      <Button tone="primary" id="app-deploy" disabled={!!busy} onclick={deploy}>
+      <Button tone="primary" id="app-deploy" disabled={!!busy} onclick={deploy}
+              data-confirm={overBuild} data-confirm-title="Replace the live build?" data-confirm-label="Deploy">
         {busy === 'deploy' ? 'Deploying…' : 'Deploy'}
       </Button>
       <DropdownMenu placement="bottom-end">
@@ -577,6 +588,16 @@ title: App
                 <a href={`/servers/${p.serverId}/`}>{p.server?.name ?? p.serverId}</a>
                 <Badge tone="muted">replica {p.replicaIndex}</Badge>
                 <Pill>{p.status}</Pill>
+                {#if p.replication}
+                  <!-- Litestream's word for how far the bucket is, read at the
+                       machine's last heartbeat. -->
+                  <Badge tone={bucketTone(p.replication)} data-replication>{bucketSays(p.replication)}</Badge>
+                {/if}
+                {#if p.drill}
+                  <Badge tone={p.drill.status === 'success' ? 'success' : 'danger'} title={p.drill.error ?? ''} data-drill>
+                    {p.drill.status === 'success' ? 'Drill passed' : 'Drill failed'} {ago(p.drill.finishedAt)}
+                  </Badge>
+                {/if}
                 <Button treatment="ghost" tone="danger" disabled={busy === p.id}
                         data-confirm={`This replica stops running on ${p.server?.name ?? 'that server'}.`}
                         data-confirm-title="Unplace this replica?" data-confirm-label="Unplace"
@@ -742,6 +763,11 @@ title: App
           These files are the app. There is no build step — a page that loads its libraries from a
           CDN runs as it is written. <code>index.html</code> is what the address serves.
         </p>
+        {#if overBuild}
+          <article class="alert warning" id="app-source-over-build">
+            <div class="alert-content">{overBuild}</div>
+          </article>
+        {/if}
 
         {#if !files.length}
           <!-- The action is a SNIPPET: a button written as a child lands in
@@ -771,7 +797,8 @@ title: App
 
         <div class="cluster">
           <Button onclick={() => saveSource({ deploy: true })} disabled={busy || !files.length}
-                  id="app-source-deploy">
+                  id="app-source-deploy"
+                  data-confirm={overBuild} data-confirm-title="Replace the live build?" data-confirm-label="Deploy">
             {busy === 'deploy' ? 'Deploying…' : 'Save and deploy'}
           </Button>
           <Button treatment="outlined" onclick={() => saveSource()} disabled={busy || !files.length}

@@ -45,6 +45,9 @@ It is the only place that scheme is written down.
 
 ## What bites here
 
+- **`file:../mesa` installs a COPY under `node_modules/.bun/`, not a symlink**, so an
+  edit to mesa is invisible here until reinstall. In-repo tests import workspace
+  source by relative path.
 - **An app gets this package as the `extension/` surface** — a sub-project at the
   app root beside `api/`, `web/` and `widgets/`, with the same six folders
   (Invariant 3). `fli make:extension` writes it; `fli extension:{dev,build,audit}`

@@ -21,7 +21,7 @@ const SCHEMA = join(import.meta.dir, '..', 'schema.lite')
 let db, sys, sam, ana, rex, mod, square
 
 async function member (nick, data = {}) {
-  return sys.member.create({ data: { nick, publicKey: `key-${nick}`, ...data } })
+  return sys.member.create({ data: { nick, root: `root-${nick}`, ...data } })
 }
 
 const bannedAt = async (m) => (await sys.member.findFirst({ where: { id: m.id }, select: { bannedAt: true } })).bannedAt
@@ -84,8 +84,8 @@ describe('a member', () => {
     await as(rex).member.update({ where: { id: rex.id }, data: { bannedAt: null } })
     expect(await bannedAt(rex)).not.toBeNull()
     await expect(as(sam).member.update({ where: { id: sam.id }, data: { role: 'mod' } })).rejects.toThrow(/role/)
-    await expect(as(sam).member.update({ where: { id: sam.id }, data: { publicKey: 'other' } })).rejects.toThrow(/publicKey/)
-    await expect(as(sam).member.create({ data: { nick: 'twin', publicKey: 'k2' } })).rejects.toThrow(/Member/)
+    await expect(as(sam).member.update({ where: { id: sam.id }, data: { root: 'other' } })).rejects.toThrow(/root/)
+    await expect(as(sam).member.create({ data: { nick: 'twin', root: 'r2' } })).rejects.toThrow(/Member/)
   })
 
   test('cannot lay out a room', async () => {

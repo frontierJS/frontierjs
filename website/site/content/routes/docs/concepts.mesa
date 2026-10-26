@@ -15,7 +15,7 @@ render: static
   <section>
     <h2>Three nouns</h2>
     <p>Model, Service and Resource: what the app knows, how it is reached, how it is shown. Then Release and Suite, the two that sit beside them.</p>
-    <p class="from">From: <a href="https://github.com/frontierjs/frontierjs/blob/main/ARCHITECT.md">ARCHITECT.md</a> · <a href="/the-story/">The story</a></p>
+    <p class="from">From: <a href="https://github.com/frontierjs/frontierjs/blob/main/ARCHITECT.md">ARCHITECT.md</a> · <a href="/direction/story/">The story</a></p>
   </section>
   <section>
     <h2>Access lives on the model</h2>

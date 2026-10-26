@@ -27,7 +27,7 @@ import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../../api/src/app.ts'
 import { ROOMS } from '../../api/src/rooms.ts'
-import { signIn } from '../../api/test/sign-in.ts'
+import { POST_KEY, signIn } from '../../api/test/sign-in.ts'
 import { terminal, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
 import { arrival } from '../src/lib/scene/stage.js'
@@ -49,7 +49,7 @@ const check = (ok, label, evidence = '') => {
 const env = await createTestEnv({
   schema: join(WEB, '../db/schema.lite'),
   listen: true,
-  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-townhall', port: 0 }),
+  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-townhall', port: 0, postKey: POST_KEY }),
 })
 for (const room of ROOMS) await env.system.room.create({ data: { ...room } })
 const API = `http://localhost:${env.port}`

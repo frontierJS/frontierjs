@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-146 definitions · 71 models · 1 view · 30 types · 44 enums · 0 other
+152 definitions · 73 models · 1 view · 34 types · 44 enums · 0 other
 ```
 
 ## Definitions
@@ -64,6 +64,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `AppEditor` | model |
 | `AppServer` | model |
 | `AppBackup` | model |
+| `AppDrill` | model |
 | `AppNetwork` | model |
 | `Deployment` | model |
 | `DeploymentStep` | model |
@@ -77,6 +78,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `FeatureFlag` | model |
 | `FlagOverride` | model |
 | `NotificationChannel` | model |
+| `BackupDestination` | model |
 | `AlertRule` | model |
 | `AlertRuleChannel` | model |
 | `AlertEvent` | model |
@@ -135,7 +137,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `WidgetKind` | enum |
 | `ParamGenerator` | enum |
 | `BackupKind` | enum |
-| `BackupDestination` | enum |
+| `DrillKind` | enum |
 | `DependencyKind` | enum |
 | `NotificationContext` | enum |
 | `NotificationKind` | enum |
@@ -166,7 +168,11 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `AppPlace` | type |
 | `AppUnplace` | type |
 | `AppVolumeRestore` | type |
+| `AppReplicaRestore` | type |
+| `AppDrillRun` | type |
+| `AppPublish` | type |
 | `AppBackupTake` | type |
+| `BackupRescan` | type |
 | `FlagOverrideSet` | type |
 | `FlagOverrideClear` | type |
 | `ServerProvision` | type |
@@ -190,7 +196,7 @@ validates, and a select that silently drops an option.
 - `UserStatus` — `pending_verification`, `active`, `suspended`
 - `WorkspaceStatus` — `active`, `suspended`
 - `ProvisionStepName` — `start`, `create`, `poll`, `timeout`
-- `SecretKind` — `ssh_key`, `provider_key`, `registry_auth`, `tls_cert`, `notification`, `generic`
+- `SecretKind` — `ssh_key`, `provider_key`, `registry_auth`, `tls_cert`, `notification`, `backup`, `generic`
 - `ServerStatus` — `pending`, `provisioning`, `installing`, `online`, `unreachable`, `draining`, `stopped`, `destroying`, `destroyed`
 - `ServerRole` — `general`, `build`, `database`, `gateway`, `worker`
 - `ServerEventKind` — `created`, `removed`, `reboot_requested`, `drain_started`, `drain_cancelled`, `provision_requested`, `provision_created`, `provision_ready`, `provision_timeout`, `destroy_requested`, `destroy_finished`, `enrollment_issued`, `sync_requested`, `status_synced`, `status_sync_ignored`, `sync_failed`, `sync_no_account`, `sync_unsupported`, `sync_unrecognized`, `came_online`, `unreachable`, `recipe_ran`, `recipe_failed`, `cleanup_queued`, `cleanup_ran`, `cleanup_failed`, `volume_removed`, `volumes_pruned`, `posture_failed`, `posture_restored`
@@ -214,8 +220,8 @@ validates, and a select that silently drops an option.
 - `FlagType` — `boolean`, `variant`
 - `WidgetKind` — `server_fleet`, `server_health`, `app_status`, `deploy_feed`, `job_history`, `activity_feed`, `alert_status`, `service_health`, `stat_counter`
 - `ParamGenerator` — `random_hex_16`, `random_hex_32`, `random_hex_64`
-- `BackupKind` — `manual`, `scheduled`
-- `BackupDestination` — `local`, `s3`
+- `BackupKind` — `manual`, `scheduled`, `found`, `release`
+- `DrillKind` — `manual`, `scheduled`
 - `DependencyKind` — `dependency`, `dev`, `peer`, `optional`
 - `NotificationContext` — `Deployment`, `AlertEvent`, `JobRun`, `Server`, `Workspace`, `Monitor`
 - `NotificationKind` — `DeploySuccess`, `DeployFailed`, `AlertFiring`, `AlertResolved`, `ServerUnreachable`, `MonitorDown`, `MonitorUp`, `PostureFailed`, `DependencyVulnerable`, `MemberJoined`, `JobFailed`, `WeeklyDigest`
@@ -259,6 +265,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `ipAddress` | `string`? | — | — | — | — |
 | `userAgent` | `string`? | — | — | — | — |
 | `enrollmentOnly` | `boolean` = `false` | — | — | — | — |
+| `reauthenticatedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `impersonatingUserId` | `string`? | — | — | — | — |
 | `impersonationReason` | `string`? | — | — | — | — |
 | `impersonationEndsAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -586,6 +593,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `alertRules` — hasMany `AlertRule`
 - relation `monitors` — hasMany `Monitor`
 - relation `channels` — hasMany `NotificationChannel`
+- relation `backupDestinations` — hasMany `BackupDestination`
 - relation `flags` — hasMany `FeatureFlag`
 - relation `auditEvents` — hasMany `AuditEvent`
 
@@ -692,6 +700,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `volumes` — hasMany `Volume`
 - relation `appServers` — hasMany `AppServer`
 - relation `serverNetworks` — hasMany `ServerNetwork`
+- relation `hostHub` — hasMany `HubConfig` · optional
 - transitions on `status` — `reboot`: online|unreachable → pending · `drain`: online → draining @5 · `undrain`: draining → online @5 · `provision`: pending → provisioning @5 · `destroy`: pending|provisioning|installing|online|unreachable|draining|stopped → destroying @5 · `checkIn`: pending|installing|unreachable → online @system · `loseContact`: online → unreachable @system · `reportProvisioned`: provisioning → installing @system @5 · `reportRunning`: pending|provisioning|installing|unreachable|stopped → online @system @5 · `reportStopped`: pending|provisioning|installing|online|unreachable|draining → stopped @system @5 · `reportRebuilding`: pending|installing|online|unreachable|draining|stopped → provisioning @system @5 · `reportDestroyed`: destroying → destroyed @system @5
 - capabilities — `Server.create` · `Server.update` · `Server.delete` · `Server.reboot` · `Server.drain` · `Server.undrain` · `Server.provision` · `Server.destroy` · read is not graded
 
@@ -722,6 +731,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `actualSpecs` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `health` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `dockerState` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `replication` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `labels` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 
 **On create**: required — `name`, `slug` · not accepted — `id`
@@ -859,6 +869,10 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - gate `read:2 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
 - relation `environment` — belongsTo `Environment` via `environmentId` · on delete Cascade
 - relation `blueprint` — belongsTo `Blueprint` via `blueprintId` · on delete SetNull · optional
+- relation `backupDestination` — belongsTo `BackupDestination` via `backupDestinationId` · on delete SetNull · optional
+- relation `replicaDestination` — belongsTo `BackupDestination` via `replicaDestinationId` · on delete SetNull · optional
+- relation `appBackups` — hasMany `AppBackup`
+- relation `appDrills` — hasMany `AppDrill`
 - relation `deployments` — hasMany `Deployment`
 - relation `jobs` — hasMany `Job`
 - relation `appServers` — hasMany `AppServer`
@@ -889,6 +903,10 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `pushSecret` | `string`? | — | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` `x-litestone-kind` | — |
 | `pushActorId` | `string`? | — | — | `x-litestone-kind` | — |
 | `blueprintId` | `string`? | — | — | `x-litestone-kind` | — |
+| `backupCron` | `string`? | — | — | `minLength: 1` `maxLength: 100` `x-transforms` | — |
+| `backupDestinationId` | `string`? | — | — | — | — |
+| `replicaDestinationId` | `string`? | — | — | — | — |
+| `drillCron` | `string`? | — | — | `minLength: 1` `maxLength: 100` `x-transforms` | — |
 
 **On create**: required — `environmentId`, `name`, `slug` · not accepted — `id`
 
@@ -994,16 +1012,48 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - gate `read:5 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
 - relation `app` — belongsTo `App` via `appId` · on delete Cascade
 - relation `server` — belongsTo `Server` via `serverId` · on delete Cascade
+- relation `destination` — belongsTo `BackupDestination` via `destinationId` · on delete Restrict · optional
+- relation `deployment` — belongsTo `Deployment` via `deploymentId` · on delete SetNull · optional
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `appId` | `string` | yes | — | — | — |
 | `serverId` | `string` | yes | — | — | — |
+| `destinationId` | `string`? | — | — | — | — |
+| `kind` | `BackupKind` = `"manual"` | — | — | — | — |
+| `deploymentId` | `string`? | — | — | — | — |
 | `status` | `RunStatus` = `"pending"` | — | — | — | — |
 | `sizeBytes` | `integer`? | — | — | — | — |
 | `fileCount` | `integer`? | — | — | — | — |
 | `location` | `string`? | — | — | `minLength: 0` `maxLength: 500` `x-transforms` | — |
+| `error` | `string`? | — | — | `minLength: 0` `maxLength: 2000` | — |
+| `sha256` | `string`? | — | — | `minLength: 64` `maxLength: 64` | — |
+| `requestedBy` | `string`? | — | — | — | — |
+| `startedAt` | `string`? | — | — | `format: "date-time"` | — |
+| `finishedAt` | `string`? | — | — | `format: "date-time"` | — |
+| `durationMs` | `integer`? | — | — | — | — |
+
+**On create**: required — `appId`, `serverId` · not accepted — `id`
+
+### `AppDrill`
+
+- gate `read:5 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `app` — belongsTo `App` via `appId` · on delete Cascade
+- relation `server` — belongsTo `Server` via `serverId` · on delete Cascade
+- relation `deployment` — belongsTo `Deployment` via `deploymentId` · on delete SetNull · optional
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `appId` | `string` | yes | — | — | — |
+| `serverId` | `string` | yes | — | — | — |
+| `deploymentId` | `string`? | — | — | — | — |
+| `kind` | `DrillKind` = `"manual"` | — | — | — | — |
+| `status` | `RunStatus` = `"pending"` | — | — | — | — |
+| `at` | `string`? | — | — | `format: "date-time"` | — |
+| `databases` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `report` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `error` | `string`? | — | — | `minLength: 0` `maxLength: 2000` | — |
 | `requestedBy` | `string`? | — | — | — | — |
 | `startedAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -1036,6 +1086,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `environment` — belongsTo `Environment` via `environmentId` · optional
 - relation `triggeredByUser` — belongsTo `User` via `triggeredBy` · optional
 - relation `steps` — hasMany `DeploymentStep`
+- relation `appBackups` — hasMany `AppBackup`
+- relation `appDrills` — hasMany `AppDrill`
 - transitions on `status` — `build`: pending → building @system · `succeed`: building → success @system · `fail`: pending|building → failed @system · `cancel`: pending|building → cancelled · `rollback`: success → rolled_back @5
 
 | Field | Type | Required | Label | Rules | Messages |
@@ -1300,6 +1352,33 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `name`, `kind` · accepted and never stored — `secret` · not accepted — `id`, `version`
+
+### `BackupDestination`
+
+- gate `read:2 create:5 update:5 delete:5` · version field `version` · closed (`additionalProperties: false`)
+- relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
+- relation `backups` — hasMany `Backup`
+- relation `appBackups` — hasMany `AppBackup`
+- relation `apps` — hasMany `App`
+- relation `replicaApp` — hasMany `App` · optional
+- relation `replicaHub` — hasMany `HubConfig` · optional
+- relation `hubs` — hasMany `HubConfig`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
+| `endpoint` | `string` | yes | Endpoint URL | `format: "uri"` `x-transforms` | — |
+| `region` | `string` | yes | — | `minLength: 1` `maxLength: 64` `x-transforms` | — |
+| `bucket` | `string` | yes | — | `minLength: 3` `maxLength: 63` `x-transforms` | — |
+| `prefix` | `string` = `""` | — | — | `minLength: 0` `maxLength: 200` `x-transforms` | — |
+| `secretId` | `string`? | — | — | `x-litestone-kind` | — |
+| `lastTestAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `createdBy` | `string`? | — | — | — | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `name`, `endpoint`, `region`, `bucket` · accepted and never stored — `secret` · not accepted — `id`, `version`
 
 ### `AlertRule`
 
@@ -1618,13 +1697,14 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 ### `Backup`
 
 - gate `read:7 create:7 update:8 delete:7` · closed (`additionalProperties: false`)
+- relation `destination` — belongsTo `BackupDestination` via `destinationId` · on delete Restrict · optional
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `kind` | `BackupKind` = `"manual"` | — | — | — | — |
 | `status` | `RunStatus` = `"pending"` | — | — | — | — |
-| `destination` | `BackupDestination` = `"local"` | — | — | — | — |
+| `destinationId` | `string`? | — | — | — | — |
 | `sizeBytes` | `integer`? | — | — | — | — |
 | `location` | `string`? | — | — | `minLength: 0` `maxLength: 500` `x-transforms` | — |
 | `error` | `string`? | — | — | `minLength: 0` `maxLength: 2000` | — |
@@ -1638,6 +1718,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 ### `HubConfig`
 
 - gate `read:7 create:7 update:7 delete:7` · version field `version` · closed (`additionalProperties: false`)
+- relation `backupDestination` — belongsTo `BackupDestination` via `backupDestinationId` · on delete SetNull · optional
+- relation `replicaDestination` — belongsTo `BackupDestination` via `replicaDestinationId` · on delete SetNull · optional
+- relation `hostServer` — belongsTo `Server` via `hostServerId` · on delete SetNull · optional
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -1652,7 +1735,15 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `allowBotUsers` | `boolean` = `true` | — | — | — | — |
 | `backupEnabled` | `boolean` = `false` | — | — | — | — |
 | `backupCron` | `string` = `"0 2 * * *"` | — | — | `minLength: 1` `maxLength: 100` `x-transforms` | — |
-| `backupDestination` | `BackupDestination` = `"local"` | — | — | — | — |
+| `backupDestinationId` | `string`? | — | — | — | — |
+| `replicaDestinationId` | `string`? | — | — | — | — |
+| `backupKeepLocalCount` | `integer` = `7` | — | — | `minimum: 1` `maximum: 1000` | — |
+| `backupKeepLocalDays` | `integer`? | — | — | `minimum: 1` `maximum: 3650` | — |
+| `backupKeepRemoteCount` | `integer` = `7` | — | — | `minimum: 1` `maximum: 1000` | — |
+| `backupKeepRemoteDays` | `integer`? | — | — | `minimum: 1` `maximum: 3650` | — |
+| `encryptionKeyEscrowedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `encryptionKeyFingerprint` | `string`? | — | — | `x-litestone-kind` | — |
+| `hostServerId` | `string`? | — | — | `x-litestone-kind` | — |
 | `mailFromAddress` | `string`? | — | — | `format: "email"` `x-transforms` | — |
 | `mailFromName` | `string`? | — | — | `minLength: 0` `maxLength: 80` `x-transforms` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
@@ -1987,10 +2078,48 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `serverId` | `string` | yes | — | — | — |
-| `path` | `string` | yes | — | — | — |
+| `path` | `string`? | — | — | — | — |
+| `backupId` | `string`? | — | — | — | — |
 | `overwrite` | `boolean`? | — | — | — | — |
 
-**On create**: required — `serverId`, `path`
+**On create**: required — `serverId`
+
+### `AppReplicaRestore`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `serverId` | `string` | yes | — | — | — |
+| `at` | `string`? | — | — | `format: "date-time"` | — |
+| `overwrite` | `boolean`? | — | — | — | — |
+
+**On create**: required — `serverId`
+
+### `AppDrillRun`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `appId` | `string` | yes | — | — | — |
+| `serverId` | `string` | yes | — | — | — |
+| `at` | `string`? | — | — | `format: "date-time"` | — |
+
+**On create**: required — `appId`, `serverId`
+
+### `AppPublish`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `files` | `json` | yes | — | — | — |
+| `trigger` | `string`? | — | — | — | — |
+| `commitSha` | `string`? | — | — | — | — |
+| `branch` | `string`? | — | — | — | — |
+
+**On create**: required — `files`
 
 ### `AppBackupTake`
 
@@ -2000,8 +2129,19 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `appId` | `string` | yes | — | — | — |
 | `serverId` | `string` | yes | — | — | — |
+| `destinationId` | `string`? | — | — | — | — |
 
 **On create**: required — `appId`, `serverId`
+
+### `BackupRescan`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `destinationId` | `string` | yes | — | — | — |
+
+**On create**: required — `destinationId`
 
 ### `FlagOverrideSet`
 

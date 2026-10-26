@@ -11,7 +11,7 @@ examples:
 flags:
   account:
     type: string
-    description: Account ID (defaults to CLOUDFLARE_ACCOUNT_ID)
+    description: Account ID (defaults to CLOUDFLARE_ACCOUNT_ID; needed when the login reaches more than one)
     defaultValue: ''
   create:
     type: string
@@ -33,10 +33,9 @@ flags:
     type: string
     description: Trigger a new deployment for a project
     defaultValue: ''
-  token:
+  profile:
     type: string
-    description: Override CLOUDFLARE_TOKEN for this run
-    defaultValue: ''
+    description: cf profile to run as (default CLOUDFLARE_API_TOKEN, else cf's active login)
   json:
     char: j
     type: boolean
@@ -44,22 +43,20 @@ flags:
     defaultValue: false
 ---
 
-<script>
-const accountId = ($) => $.flag.account || process.env.CLOUDFLARE_ACCOUNT_ID
-</script>
-
 Manage Cloudflare Pages projects — list, create, check deployments, and
-trigger new deploys. Requires a token with **Cloudflare Pages / Edit** scope.
+trigger new deploys. Requires a login with **Cloudflare Pages / Edit**.
 
 ```js
-const acct = accountId($)
-if (!acct) { log.error('No account ID — set CLOUDFLARE_ACCOUNT_ID or use --account'); return }
+const { profileFor, pagesProjects, createPagesProject, pagesDeployments, deployPages } =
+  await import(new URL('file://' + global.fliRoot + '/core/cloudflare.js'))
+const profile = profileFor(flag.profile)
+const acct = flag.account || undefined
 
 // ── CREATE ────────────────────────────────────────────────────────────────────
 if (flag.create) {
   if (!flag.repo) { log.error('--create requires --repo owner/repo'); return }
   const [owner, repo] = flag.repo.split('/')
-  const payload = {
+  const body = {
     name:              flag.create,
     production_branch: flag.branch,
     source: {
@@ -69,19 +66,19 @@ if (flag.create) {
   }
   log.info(`Creating Pages project: ${flag.create}`)
   log.info(`Repo:   ${flag.repo}  ·  branch: ${flag.branch}`)
-  if (flag.dry) { log.dry(`POST /accounts/${acct}/pages/projects`); return }
-  const project = await cfApi($, 'POST', `/accounts/${acct}/pages/projects`, payload)
+  if (flag.dry) { log.dry(`cf pages projects create --body '${JSON.stringify(body)}'`); return }
+  const project = await createPagesProject(profile, acct, body)
   log.success(`Created: ${project.name}`)
   echo(`  subdomain: ${project.subdomain}`)
-  echo(`  dashboard: https://dash.cloudflare.com/${acct}/pages/view/${project.name}`)
+  if (acct) echo(`  dashboard: https://dash.cloudflare.com/${acct}/pages/view/${project.name}`)
   return
 }
 
 // ── DEPLOY ────────────────────────────────────────────────────────────────────
 if (flag.deploy) {
   log.info(`Triggering deployment for: ${flag.deploy}`)
-  if (flag.dry) { log.dry(`POST /accounts/${acct}/pages/projects/${flag.deploy}/deployments`); return }
-  const deployment = await cfApi($, 'POST', `/accounts/${acct}/pages/projects/${flag.deploy}/deployments`)
+  if (flag.dry) { log.dry(`cf pages projects deployments create ${flag.deploy}`); return }
+  const deployment = await deployPages(profile, acct, flag.deploy)
   log.success(`Deployment triggered: ${deployment.id}`)
   echo(`  url:    ${deployment.url || 'pending…'}`)
   echo(`  status: ${deployment.latest_stage?.name || 'queued'}`)
@@ -90,7 +87,7 @@ if (flag.deploy) {
 
 // ── STATUS ────────────────────────────────────────────────────────────────────
 if (flag.status) {
-  const deployments = await cfApi($, 'GET', `/accounts/${acct}/pages/projects/${flag.status}/deployments?per_page=5`)
+  const deployments = await pagesDeployments(profile, acct, flag.status, 5)
   echo('')
   echo(`  ${flag.status} — last ${deployments.length} deployments\n`)
   for (const d of deployments) {
@@ -105,7 +102,7 @@ if (flag.status) {
 }
 
 // ── LIST ──────────────────────────────────────────────────────────────────────
-const projects = await cfApi($, 'GET', `/accounts/${acct}/pages/projects?per_page=50`)
+const projects = await pagesProjects(profile, acct)
 if (flag.json) { echo(JSON.stringify(projects, null, 2)); return }
 
 echo('')

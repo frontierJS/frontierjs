@@ -31,6 +31,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { glow } from '@frontierjs/toolbelt/glow';
 import { findChrome } from '../../mesa/src/drive.js';
+import { THEMES } from '../themes.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkg = join(here, '..');
@@ -327,6 +328,7 @@ const page = `<!doctype html>
 <body>
 <script>window.__FJS_SHIPPED_CSS__ = ${JSON.stringify(shippedCss)};</script>
 <script>window.__FJS_VOCAB_JSON__ = ${JSON.stringify(vocabularyJsonState)};</script>
+<script>window.__FJS_THEMES__ = ${JSON.stringify(THEMES)};</script>
 <script>window.__FJS_GLOW__ = ${JSON.stringify(glowSamples)};</script>
 <script>window.__FJS_DEMO_HTML__ = ${escapeForInlineScript(JSON.stringify(demoHtml))};</script>
 <!--

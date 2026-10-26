@@ -10,6 +10,7 @@
 import { join } from 'node:path'
 import { watch, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { ServiceDefinition, ServiceRegistry } from './service.ts'
+import { canonicalServiceName } from './service.ts'
 import { diagnostic }       from './diagnostics.ts'
 
 // ─── Loader ───────────────────────────────────────────────────────────────
@@ -65,7 +66,7 @@ export async function autoloadServices(opts: LoaderOptions): Promise<void> {
         continue
       }
 
-      const name = def.name ?? deriveName(filename)
+      const name = def.name ? canonicalServiceName(def.name) : deriveName(filename)
       if (!registry.has(name)) {
         // The filename's own spelling stays reachable — a URL and an
         // `app.service(…)` written against it are not the app's mistake. Only
@@ -73,7 +74,8 @@ export async function autoloadServices(opts: LoaderOptions): Promise<void> {
         // declaring 'metrics-store' is a different word, and aliasing it claims
         // 'metrics' for a service that never answered to it.
         const raw = rawStem(filename)
-        registry.register({ ...def, name }, raw !== name && deriveName(filename) === name ? [raw] : [])
+        const said = def.name && def.name !== name ? [def.name] : []
+        registry.register({ ...def, name }, raw !== name && deriveName(filename) === name ? [...said, raw] : said)
         registeredBy.set(name, file)
         // An inventory line, not news — `GET /manifest` answers the same
         // question on demand, and an app with 21 services printed 21 of these
@@ -217,8 +219,7 @@ function definitionOf(mod: Record<string, unknown>): ServiceDefinition | null {
  * `app.service('product-variants')` keep working — nothing on the wire moves.
  */
 export function deriveName(filename: string): string {
-  const stem = filename.replace(/\.service\.(ts|js|mts|mjs)$/, '')
-  return stem.replace(/[-_]+([a-zA-Z0-9])/g, (_, c: string) => c.toUpperCase())
+  return canonicalServiceName(filename.replace(/\.service\.(ts|js|mts|mjs)$/, ''))
 }
 
 /** The filename's own spelling, for the alias — `product-variants`. */

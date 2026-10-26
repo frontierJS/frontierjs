@@ -110,6 +110,7 @@
       },
       "dependencies": {
         "@frontierjs/css": "workspace:*",
+        "@frontierjs/litestone": "workspace:*",
         "@frontierjs/mesa": "workspace:*",
         "@frontierjs/toolbelt": "workspace:*",
         "@frontierjs/ui": "workspace:*",
@@ -410,11 +411,12 @@
     },
     "packages/outpost": {
       "name": "@frontierjs/outpost",
-      "version": "0.1.3",
+      "version": "0.1.5",
       "bin": {
         "outpost": "./src/index.js",
       },
       "dependencies": {
+        "@frontierjs/litestone": "workspace:*",
         "@frontierjs/toolbelt": "workspace:*",
       },
     },
@@ -422,11 +424,16 @@
       "name": "@frontierjs/print-kit",
       "version": "0.1.1",
       "devDependencies": {
+        "@frontierjs/junction": "workspace:*",
         "@frontierjs/mesa": "workspace:*",
       },
       "peerDependencies": {
+        "@frontierjs/junction": "^0.1.0",
         "@frontierjs/mesa": "^0.1.0",
       },
+      "optionalPeers": [
+        "@frontierjs/junction",
+      ],
     },
     "packages/sierra": {
       "name": "@frontierjs/sierra",

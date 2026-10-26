@@ -2,9 +2,9 @@
 title: Jobs
 ---
 <script>
-  import { session } from '../../session.js'
+  import { session } from '../../lib/session.js'
   import Job, { jobs } from '../../resources/Job.mesa'
-  import { at } from '../../datetime.js'
+  import { at } from '../../lib/datetime.js'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Drawer from '@frontierjs/ui/components/overlay/Drawer.mesa'

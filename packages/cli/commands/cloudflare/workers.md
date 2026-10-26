@@ -1,6 +1,6 @@
 ---
 title: cloudflare:workers
-description: List Workers scripts in your Cloudflare account
+description: List the Workers in your Cloudflare account
 alias: cf:workers
 examples:
   - fli cf:workers
@@ -9,16 +9,15 @@ examples:
 flags:
   account:
     type: string
-    description: Account ID (defaults to CLOUDFLARE_ACCOUNT_ID)
+    description: Account ID (defaults to CLOUDFLARE_ACCOUNT_ID; needed when the login reaches more than one)
     defaultValue: ''
   status:
     type: string
     description: Show details for a specific worker
     defaultValue: ''
-  token:
+  profile:
     type: string
-    description: Override CLOUDFLARE_TOKEN for this run
-    defaultValue: ''
+    description: cf profile to run as (default CLOUDFLARE_API_TOKEN, else cf's active login)
   json:
     char: j
     type: boolean
@@ -26,52 +25,48 @@ flags:
     defaultValue: false
 ---
 
-<script>
-const accountId = ($) => $.flag.account || process.env.CLOUDFLARE_ACCOUNT_ID
-</script>
-
-Lists all Workers scripts in your account. Use `--status <name>` to see
-bindings, cron triggers, and routes for a specific worker.
+Lists the Workers in the account. `--status <name>` shows one Worker's
+domains and the bindings of the version serving its traffic. Cron triggers are
+not shown — `cf` has no verb that reads them.
 
 ```js
-const acct = accountId($)
-if (!acct) { log.error('No account ID — set CLOUDFLARE_ACCOUNT_ID or use --account'); return }
+const { profileFor, workers, worker, activeVersion } = await import(new URL('file://' + global.fliRoot + '/core/cloudflare.js'))
+const profile = profileFor(flag.profile)
+const acct = flag.account || undefined
 
 // ── STATUS ────────────────────────────────────────────────────────────────────
 if (flag.status) {
-  const [worker, bindings, schedules] = await Promise.all([
-    cfApi($, 'GET', `/accounts/${acct}/workers/scripts/${flag.status}`).catch(() => null),
-    cfApi($, 'GET', `/accounts/${acct}/workers/scripts/${flag.status}/bindings`).catch(() => []),
-    cfApi($, 'GET', `/accounts/${acct}/workers/scripts/${flag.status}/schedules`).catch(() => ({ schedules: [] })),
+  const [w, version] = await Promise.all([
+    worker(profile, acct, flag.status),
+    activeVersion(profile, acct, flag.status),
   ])
 
   echo('')
-  echo(`  ${flag.status}`)
-  if (worker) {
-    echo(`  modified: ${new Date(worker.modified_on || worker.created_on).toLocaleString()}`)
+  echo(`  ${w.name}`)
+  echo(`  deployed: ${w.deployed_on ? new Date(w.deployed_on).toLocaleString() : 'never'}`)
+  const domains = w.references?.domains ?? []
+  if (domains.length) {
+    echo(`\n  domains:`)
+    for (const d of domains) echo(`    ${d.hostname}`)
   }
+  const bindings = version?.bindings ?? []
   if (bindings.length) {
-    echo(`\n  bindings:`)
-    for (const b of bindings) echo(`    ${b.type.padEnd(12)} ${b.name}`)
-  }
-  const crons = schedules?.schedules || []
-  if (crons.length) {
-    echo(`\n  cron triggers:`)
-    for (const c of crons) echo(`    ${c.cron}`)
+    echo(`\n  bindings (version ${version.number}):`)
+    for (const b of bindings) echo(`    ${b.type.padEnd(16)} ${b.name}`)
   }
   echo('')
   return
 }
 
 // ── LIST ──────────────────────────────────────────────────────────────────────
-const workers = await cfApi($, 'GET', `/accounts/${acct}/workers/scripts`)
-if (flag.json) { echo(JSON.stringify(workers, null, 2)); return }
+const all = await workers(profile, acct)
+if (flag.json) { echo(JSON.stringify(all, null, 2)); return }
 
 echo('')
-echo(`  ${workers.length} worker(s)\n`)
-for (const w of workers) {
-  const modified = w.modified_on ? new Date(w.modified_on).toLocaleString() : ''
-  echo(`  ·  ${w.id.padEnd(40)} ${modified}`)
+echo(`  ${all.length} worker(s)\n`)
+for (const w of all) {
+  const updated = w.updated_on ? new Date(w.updated_on).toLocaleString() : ''
+  echo(`  ·  ${w.name.padEnd(40)} ${updated}`)
 }
 echo('')
 ```

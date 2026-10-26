@@ -3577,8 +3577,8 @@ function machineRow(m) {
   return {
     scope:    'this machine',
     rule:     m.blocked ? 'fli cannot run here' : 'setup',
-    // `blocked` is system and config only. A missing `CLOUDFLARE_TOKEN` blocks
-    // `cloudflare:` and nothing else, and grading that as an error would make
+    // `blocked` is system and config only. A missing `GITHUB_TOKEN` blocks
+    // `github:` and nothing else, and grading that as an error would make
     // almost every machine read as broken.
     severity: m.blocked ? 'error' : 'warn',
     file:     null,

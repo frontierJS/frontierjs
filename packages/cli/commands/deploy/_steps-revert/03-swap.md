@@ -13,6 +13,7 @@ const { host, serverPath, deployConf, appId, apiPort, revertImage } = $.config
 // copy that had drifted would be discovered mid-incident.
 const { container, replaced } = swapContainer($, {
   host,
+  appId,
   container: apiContainer(appId, deployConf),
   image:     revertImage,
   apiPort,

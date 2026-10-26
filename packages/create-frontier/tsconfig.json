@@ -1,0 +1,8 @@
+{
+  // Plain JS: checkJs is off, because on it reports hundreds of implicit-any
+  // parameters (FJS-3496 measured). What this checks is that every file
+  // parses, and any .ts added here is checked for real.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "checkJs": false },
+  "include": ["index.js"]
+}

@@ -11,6 +11,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'fs'
 import { join, resolve, dirname } from 'path'
 import { tmpdir } from 'os'
 import { fileURLToPath } from 'url'
+import { makeNavJs, makeRouteLogin, makeRouteReset, makeRouteVerifyEmail } from '../core/scaffold/web.js'
 
 const CLI = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -114,7 +115,7 @@ describe('a generated page styles with the vocabulary, never a literal', () => {
 // one Sierra's session already holds rather than a stub fixed at 7 that nothing
 // wires.
 describe('admin:generate writes screens in the vocabulary and reads the real session', () => {
-  const WROTE = ['_module.mesa', 'index.mesa', 'leads/index.mesa', 'leads/[id].mesa']
+  const WROTE = ['_module.mesa', 'index.mesa', 'leads/index.mesa', 'leads/create.mesa', 'leads/[id].mesa']
 
   test('no literal color or size in the layout or the dashboard', async () => {
     const root = makeApp(LEAD_SERVICE)
@@ -143,6 +144,23 @@ describe('admin:generate writes screens in the vocabulary and reads the real ses
         if (!/\bsession\b/.test(src)) continue
         expect(src, f).toMatch(/import \{[^}]*\bsession\b[^}]*\} from '@frontierjs\/sierra\/resource'/)
         expect(src, f).not.toMatch(/_session|session\.js/)
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 30000)
+
+  // The pages render <ResourceForm />, the Resource's markup half. The Resource
+  // this command wrote where none existed had no markup half, so every edit
+  // page drew no field and dropped Save, and every create page drew nothing.
+  test('a Resource it writes carries the default form, as make:model --resource does', async () => {
+    const root = makeApp(LEAD_SERVICE)
+    try {
+      await run(root, 'admin:generate', [], {})
+      await run(root, 'make:model', ['Invoice'], { resource: true })
+      for (const f of ['Lead.mesa', 'Invoice.mesa']) {
+        const src = await Bun.file(join(root, 'web/src/resources', f)).text()
+        expect(src, f).toContain('<Form {resource}')
       }
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -187,13 +205,9 @@ describe('a generated link names the URL its directory is served at', () => {
 // make:scaffold ended on *Add a nav link to your layout* and nothing added one,
 // so in 0 of 21 apps the Charter stressor generated did the page after sign-up
 // reach a model's list (`FJS-1808`). The table here is the one `fli new`
-// writes, read out of new.md, so a change to it is graded too.
+// writes, so a change to it is graded too.
 describe('make:scaffold lists the model in the nav table fli new writes', () => {
-  const NEW_MD = Bun.file(join(CLI, 'commands/project/new.md')).text()
-  const navOf = async (useAuth) => {
-    const src = (await NEW_MD).match(/\nfunction makeNavJs\(useAuth\) \{[\s\S]*?\n\}\n/)[0]
-    return new Function(`${src}\nreturn makeNavJs`)()(useAuth)
-  }
+  const navOf = async (useAuth) => makeNavJs(useAuth)
   const SCHEMA = { 'db/schema.lite': 'model SearchIndex { id Int @id  name String }\n' }
   const NAV = 'web/src/lib/nav.js'
 
@@ -273,11 +287,7 @@ describe('a generator finds a service by the name its file derives', () => {
 // FJS-2696 — the sign-in page is a form a password manager can read, and its
 // dev hint does not tell a visitor with an account that nobody has one.
 describe('the scaffold sign-in page', () => {
-  const loginOf = async () => {
-    const text = await Bun.file(join(CLI, 'commands/project/new.md')).text()
-    const src = text.match(/\nfunction makeRouteLogin\(\) \{[\s\S]*?\n\}\n/)[0]
-    return new Function('sc', `${src}\nreturn makeRouteLogin`)('</' + 'script>')()
-  }
+  const loginOf = async () => makeRouteLogin()
 
   test('is a form whose inputs a password manager can key on', async () => {
     const page = await loginOf()
@@ -351,13 +361,16 @@ describe('no command writes a Prisma schema', () => {
 // FJS-2486 — the verification mail links to a web page that posts the token
 // (GET /auth/email/verify is gone), so `fli new --auth` has to write that page.
 describe('the scaffold verification link lands on a page fli new writes', () => {
-  const newMd = () => Bun.file(join(CLI, 'commands/project/new.md')).text()
+  // The links are in the api/ templates; the list of files written is the command's.
+  const apiScaffold = () => Bun.file(join(CLI, 'core/scaffold/api.js')).text()
+  const newMd       = () => Bun.file(join(CLI, 'commands/project/new.md')).text()
 
   test('every route the auth callbacks link to is in the file list', async () => {
-    const text = await newMd()
-    const links = [...text.matchAll(/\$\{env\.FRONTIER_APP_URL\}\/([a-z-]+)\/#token=/g)].map(m => m[1])
+    const api = await apiScaffold()
+    const links = [...api.matchAll(/\$\{env\.FRONTIER_APP_URL\}\/([a-z-]+)\/#token=/g)].map(m => m[1])
     expect(links).toContain('verify-email')
     expect(links).toContain('reset')
+    const text = await newMd()
     for (const route of links) {
       expect(text).toContain(`'web/src/routes/${route}/index.mesa'`)
       expect(text).toContain(`'web/src/routes/${route}'`)
@@ -383,20 +396,15 @@ describe('the scaffold verification link lands on a page fli new writes', () => 
   // FJS-3205 / FJS-D1311 — a token in the query string is read by the analytics
   // tag from location.href; a fragment never leaves the browser.
   test('no link carries the token in the query, and both token pages read the fragment', async () => {
-    const text = await newMd()
-    expect(text).not.toMatch(/\$\{env\.FRONTIER_APP_URL\}\/[a-z-]+\/\?token=/)
-    for (const make of ['makeRouteReset', 'makeRouteVerifyEmail']) {
-      const src = text.match(new RegExp(`\\nfunction ${make}\\(\\) \\{[\\s\\S]*?\\n\\}\\n`))[0]
-      const page = new Function('sc', `${src}\nreturn ${make}`)('</' + 'script>')()
+    expect(await apiScaffold()).not.toMatch(/\$\{env\.FRONTIER_APP_URL\}\/[a-z-]+\/\?token=/)
+    for (const page of [makeRouteReset(), makeRouteVerifyEmail()]) {
       expect(page).toContain('page.hash')
       expect(page).not.toContain('page.query')
     }
   })
 
   test('the page spends the token from a button and moves on signed in', async () => {
-    const text = await newMd()
-    const src = text.match(/\nfunction makeRouteVerifyEmail\(\) \{[\s\S]*?\n\}\n/)[0]
-    const page = new Function('sc', `${src}\nreturn makeRouteVerifyEmail`)('</' + 'script>')()
+    const page = makeRouteVerifyEmail()
     // sierra's verifyEmail, which loads the session a registration's link signs in (FJS-D1310).
     expect(page).toContain("import { session, verifyEmail } from '@frontierjs/sierra/resource'")
     expect(page).toContain('await verifyEmail(token())')

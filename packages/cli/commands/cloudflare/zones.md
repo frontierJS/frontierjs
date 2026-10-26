@@ -5,11 +5,11 @@ alias: cf:zones
 examples:
   - fli cf:zones
   - fli cf:zones --json
+  - fli cf:zones --profile client
 flags:
-  token:
+  profile:
     type: string
-    description: Override CLOUDFLARE_TOKEN for this run
-    defaultValue: ''
+    description: cf profile to run as (default CLOUDFLARE_API_TOKEN, else cf's active login)
   json:
     char: j
     type: boolean
@@ -17,19 +17,21 @@ flags:
     defaultValue: false
 ---
 
-Lists all zones in your account with their status, plan, and nameservers.
+Lists every zone the login reaches, across its accounts, with status, plan,
+account and nameservers. `~` is a zone not yet active — nameservers not moved.
 
 ```js
-const zones = await cfApi($, 'GET', '/zones?per_page=50&status=active')
+const { profileFor, zones } = await import(new URL('file://' + global.fliRoot + '/core/cloudflare.js'))
+const all = await zones(profileFor(flag.profile))
 
-if (flag.json) { echo(JSON.stringify(zones, null, 2)); return }
+if (flag.json) { echo(JSON.stringify(all, null, 2)); return }
 
 echo('')
-echo(`  ${zones.length} zone(s)\n`)
-for (const z of zones) {
+echo(`  ${all.length} zone(s)\n`)
+for (const z of all) {
   const status = z.status === 'active' ? '✓' : '~'
   echo(`  ${status}  ${z.name.padEnd(40)} ${z.id}`)
-  echo(`       plan: ${z.plan?.name || 'free'}  ·  ${z.name_servers?.join(', ') || ''}`)
+  echo(`       plan: ${z.plan?.name || 'free'}  ·  ${z.account?.name || ''}  ·  ${z.name_servers?.join(', ') || ''}`)
 }
 echo('')
 ```

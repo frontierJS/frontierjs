@@ -224,6 +224,7 @@ try {
       OUTPOST_STATIC_DIR:   join(scratch, 'static'),
       OUTPOST_RESTORE_DIR:  restoreDir,
       OUTPOST_BACKUP_DIR:   backupDir,
+      OUTPOST_UID_FILE:     join(scratch, 'uids.json'),
       OUTPOST_CADDY_ADMIN:  ADMIN,
     },
   })

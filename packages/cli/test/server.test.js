@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -984,4 +984,120 @@ describe('POST /api/ask-claude · POST /api/ask-claude/stop', () => {
     expect(idle.status).toBe(409)
   })
 
+})
+
+// The pane's reads over the stand-in `cf` that `cloudflare.test.js` drives the
+// module with — the server answers the module's shape, so this asserts the
+// routing and the statuses, not the shape again.
+describe('/api/dns', () => {
+  const CF = resolve(__dir, 'fixtures', 'cf')
+  const KEYS = ['PATH', 'CLOUDFLARE_API_TOKEN', 'CF_FIXTURE', 'CF_SIGNED_OUT']
+  let saved, bin
+
+  beforeAll(() => {
+    saved = Object.fromEntries(KEYS.map(k => [k, process.env[k]]))
+    bin = mkdtempSync(join(tmpdir(), 'fli-cf-'))
+    writeFileSync(join(bin, 'cf'), `#!/bin/sh\nexec "${process.execPath}" "${join(CF, 'stand-in.mjs')}" "$@"\n`, { mode: 0o755 })
+    // The sign-in's link is opened by the server; a real opener would put a
+    // browser on the screen of whoever runs the suite.
+    for (const opener of ['xdg-open', 'open']) writeFileSync(join(bin, opener), `#!/bin/sh\necho "$@" >> "${join(bin, 'opened')}"\n`, { mode: 0o755 })
+    process.env.PATH = `${bin}:${saved.PATH}`
+    process.env.CF_FIXTURE = join(CF, 'v0.15.0.json')
+    delete process.env.CLOUDFLARE_API_TOKEN
+  })
+
+  afterAll(() => {
+    for (const k of KEYS) saved[k] === undefined ? delete process.env[k] : (process.env[k] = saved[k])
+    rmSync(bin, { recursive: true, force: true })
+  })
+
+  const get = async (path) => {
+    const r = await fetch(`${base}/api/dns/${path}`)
+    return { status: r.status, body: await r.json() }
+  }
+
+  test('accounts, zones and records walk down by id', async () => {
+    const accounts = await get('accounts')
+    expect(accounts.status).toBe(200)
+    expect(accounts.body.accounts.map(r => r.profile.name)).toEqual(['default', 'client'])
+    const zones = await get('zones?profile=default&account=acc-own')
+    expect(zones.body.zones.map(z => z.id)).toEqual(['zone-own'])
+    const records = await get('records?profile=default&zone=zone-own')
+    expect(records.status).toBe(200)
+    expect(records.body.records).toHaveLength(2)
+  })
+
+  test('a refusal is cf\'s own words at 502, and no zone is a 400', async () => {
+    const foreign = await get('records?profile=client&zone=zone-own')
+    expect(foreign.status).toBe(502)
+    expect(foreign.body.error).toStartWith('cf dns records list: ')
+    expect((await get('records?profile=default')).status).toBe(400)
+    expect((await get('zones?profile=CLOUDFLARE_API_TOKEN')).status).toBe(502)
+  })
+
+  test('a sign-in streams cf\'s words, opens the link here, and a second stream joins the one waiting', async () => {
+    process.env.CF_SIGNED_OUT = join(bin, 'signed-out')
+    writeFileSync(process.env.CF_SIGNED_OUT, '')
+    expect((await get('accounts')).body.accounts).toEqual([])
+    const r = await fetch(`${base}/api/dns/login`, { method: 'POST' })
+    expect(r.status).toBe(200)
+    const reader = r.body.getReader()
+    let said = ''
+    while (!said.includes('FRDWWLAT')) said += new TextDecoder().decode((await reader.read()).value)
+    const joined = await fetch(`${base}/api/dns/login`, { method: 'POST' })
+    rmSync(process.env.CF_SIGNED_OUT)
+    const also = await joined.text()
+    expect(also).toContain('FRDWWLAT')
+    expect(also).toContain('"type":"done","ok":true')
+    for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) said += new TextDecoder().decode(chunk.value)
+    expect(said).toContain('"type":"done","ok":true')
+    // The opener is detached, so its line can land after the stream ends.
+    for (let i = 0; i < 50 && !existsSync(join(bin, 'opened')); i++) await Bun.sleep(20)
+    expect(readFileSync(join(bin, 'opened'), 'utf8').trim()).toBe('https://dash.cloudflare.com/oauth2/device/verify')
+    expect((await get('accounts')).body.accounts.map(r => r.profile.name)).toEqual(['default', 'client'])
+  })
+
+  test('a sign-in from a foreign page is refused', async () => {
+    const r = await fetch(`${base}/api/dns/login`, { method: 'POST', headers: { Origin: 'https://elsewhere.example' } })
+    expect(r.status).toBe(403)
+  })
+
+  const write = async (method, path, body, headers = {}) => {
+    const r = await fetch(`${base}/api/dns/${path}`, { method, headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) })
+    return { status: r.status, body: await r.json() }
+  }
+
+  test('a record is added, edited and deleted over the module', async () => {
+    const made = await write('POST', 'records', { profile: 'default', zone: 'zone-own', record: { type: 'TXT', name: 'note.own.example', content: 'hi', ttl: 1 } })
+    expect(made.status).toBe(201)
+    expect(made.body.record).toMatchObject({ id: 'rec-created', type: 'TXT', content: 'hi' })
+    const edited = await write('PUT', 'records/rec-apex', { profile: 'default', zone: 'zone-own', changes: { proxied: true } })
+    expect(edited.status).toBe(200)
+    expect(edited.body.record).toMatchObject({ id: 'rec-apex', proxied: true })
+    const gone = await write('DELETE', 'records/rec-apex', { profile: 'default', zone: 'zone-own' })
+    expect(gone).toEqual({ status: 200, body: { deleted: 'rec-apex' } })
+  })
+
+  test('a Basecamp record answers a warning until the write is confirmed', async () => {
+    const at = { profile: 'default', zone: 'zone-own' }
+    for (const [method, body] of [['PUT', { ...at, changes: { content: 'mx2.own.example' } }], ['DELETE', at]]) {
+      const warned = await write(method, 'records/rec-mx', body)
+      expect(warned.status).toBe(409)
+      expect(warned.body.warning).toContain('Basecamp\'s (basecamp)')
+      expect((await write(method, 'records/rec-mx', { ...body, confirm: true })).status).toBe(200)
+    }
+    const claiming = await write('POST', 'records', { ...at, record: { type: 'A', name: 'x.own.example', content: '192.0.2.1', comment: 'basecamp:app:x' } })
+    expect(claiming.status).toBe(409)
+    expect(claiming.body.warning).toContain('hands this record to Basecamp')
+    expect((await write('PUT', 'records/rec-apex', { ...at, changes: { comment: 'by hand' } })).status).toBe(200)
+  })
+
+  test('a write names what is missing, refuses a foreign page and passes cf\'s refusal at 502', async () => {
+    expect((await write('POST', 'records', { profile: 'default', record: {} })).status).toBe(400)
+    expect((await write('PUT', 'records/rec-apex', { profile: 'default', zone: 'zone-own' })).status).toBe(400)
+    expect((await write('DELETE', 'records/rec-apex', { profile: 'default', zone: 'zone-own' }, { Origin: 'https://elsewhere.example' })).status).toBe(403)
+    const foreign = await write('DELETE', 'records/rec-apex', { profile: 'client', zone: 'zone-own' })
+    expect(foreign.status).toBe(502)
+    expect(foreign.body.error).toStartWith('cf dns records get: ')
+  })
 })

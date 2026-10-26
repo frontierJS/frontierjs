@@ -1,0 +1,467 @@
+---
+title: "Basecamp quickstart — FrontierJS"
+description: "Name a hostname and get the one command that buys a box at DigitalOcean, installs Basecamp on it, points Cloudflare at it and makes its first admin — and what that command will print."
+render: static
+---
+<!--
+  The Basecamp quickstart: a hostname and an optional email in, the command
+  out, and the run it starts.
+
+  Every terminal line below is lifted from packages/cli/commands/basecamp
+  (create.md and _module.md) with the reader's values put in, NOT a recorded
+  run; the caption says so. A folded line stands for a child fli run whose own
+  output is not reproduced. Change a line here only by copying it again from
+  the command, or the page describes a run that does not happen.
+
+  There is no password field. The run asks for one at the reader's own
+  terminal or generates one, and a web page is the wrong place to type it.
+  The island fills the [data-v] spans and replays the lines; with no script
+  the page is the whole run for basecamp.example.com.
+-->
+<script>
+  import QuickstartBuilder from '../../islands/QuickstartBuilder.mesa'
+
+  // What a page with no script shows, and what the island starts from.
+  const V = {
+    host:  'basecamp.example.com',
+    name:  'basecamp',
+    zone:  'example.com',
+    admin: '‹your email›',
+    ip:    '203.0.113.10',
+  }
+
+  const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+  // A `$name` is a value the island fills; a `‹…›` is one only the cloud knows.
+  const fill = (t = '') => t.split(/(\$[a-z]+|‹[^›]*›)/).filter(Boolean).map((s) =>
+    s[0] === '$' ? `<span class="v" data-v="${s.slice(1)}">${esc(V[s.slice(1)])}</span>`
+    : s[0] === '‹' ? `<span class="ph warning">${esc(s)}</span>`
+    : esc(s)).join('')
+  const dim  = (t) => t ? `<span class="dim">${fill(t)}</span>` : ''
+  const bold = (t) => t ? `<b>${fill(t)}</b>` : ''
+
+  // tty.keys draws a choice as `[Y]es`, the key Enter picks upper-cased.
+  const key = (k, rest) => `<span class="dim">[</span><b>${k}</b><span class="dim">]</span>${rest}`
+  const CHOICES = { yes: `${key('Y', 'es')} ${key('n', 'o')}`, no: `${key('N', 'o')} ${key('y', 'es')}` }
+
+  const DRAW = {
+    cmd:   () => `<span class="ps success">$</span> <span class="typed" data-qs-typed>fli basecamp:create --domain ${esc(V.host)}</span>`,
+    blank: () => ' ',
+    title: (l) => `  ${bold(l.t)}  ${dim(l.d)}`,
+    zone:  (l) => `  <span class="success">✓</span> ${dim(l.t)}`,
+    ask:   (l) => `<span class="info">?</span> ${bold(l.q)}  ${dim(l.h)}`,
+    ans:   (l) => `  <span class="info">›</span> ${fill(l.t)}`,
+    yn:    (l) => `<span class="info">?</span> ${bold(l.q)}${l.d ? ` ${dim(l.d)}` : ''} ${CHOICES[l.c]} <b>yes</b>`,
+    row:   (l) => `  <span class="dim">${l.label.padEnd(9)}</span> ${bold(l.b)}${fill(l.t)}${dim(l.d)}`,
+    ok:    (l) => `<span class="success">✓</span> ${fill(l.t)}`,
+    info:  (l) => `<span class="dim">·</span> ${fill(l.t)}${l.d ? ` ${dim(l.d)}` : ''}`,
+    fold:  (l) => `<span class="dim">┆</span> <span class="child">${fill(l.t)}</span>  ${dim(l.d)}`,
+    text:  (l) => fill(l.t),
+    end:   () => `<span class="ps success">$</span> <span class="cursor success" aria-hidden="true"></span>`,
+  }
+
+  const OUTPOST_QUESTION = 'Make the box an Outpost too, so apps can run beside Basecamp on it?'
+
+  // `when` is which form of the command prints the line: with --admin the
+  // install and the email are not asked. A demo, not a transcript: summary
+  // rows, the box's cloud-only row, child-run flags and the closing deploy
+  // hint are left out, and the caption says lines are trimmed. A `d` is the
+  // same line's tail drawn dim, never words the command does not print.
+  const LINES = [
+    { k: 'cmd',   step: 0 },
+    { k: 'title', t: 'fli basecamp:create', d: 'a box at DigitalOcean for Basecamp', step: 1 },
+    { k: 'zone',  t: '$zone is at Cloudflare', step: 1 },
+    { k: 'ask',   q: 'Server name', h: 'Enter: $name', step: 2 },
+    { k: 'ans',   t: '', step: 2 },
+    { k: 'yn',    q: 'Add Host $name to ~/.ssh/config once it has an address?', c: 'yes', step: 2 },
+    { k: 'yn',    q: 'Install Basecamp on it once it is up?', c: 'no', when: 'no-email', step: 2 },
+    { k: 'ask',   q: "First admin's email", h: 'required', when: 'no-email', step: 2 },
+    { k: 'ans',   t: '$admin', when: 'no-email', step: 2 },
+    { k: 'yn',    q: OUTPOST_QUESTION, c: 'yes', step: 2 },
+    { k: 'ask',   q: 'Password for $admin', h: 'Enter generates one', step: 2 },
+    { k: 'ans',   t: '', step: 2 },
+    { k: 'blank', step: 2 },
+    { k: 'row',   label: 'hostname', t: '$host', step: 2 },
+    { k: 'row',   label: 'server',   b: '$name', d: ' · DigitalOcean · 4gb', step: 2 },
+    { k: 'row',   label: 'admin',    t: '$admin ', d: '— password generated', step: 2 },
+    { k: 'blank', step: 2 },
+    { k: 'yn',    q: 'Buy the box at DigitalOcean?', c: 'yes', step: 2 },
+    { k: 'info',  t: 'Creating $name at DigitalOcean (4gb)', d: '— about a minute', step: 3 },
+    { k: 'row',   label: 'ip',       b: '$ip', d: ' reserved', step: 3 },
+    { k: 'ok',    t: 'Added Host $name to ~/.ssh/config — ssh $name', step: 3 },
+    { k: 'info',  t: 'Waiting for ssh on root@$ip', d: '— a fresh box answers in about a minute', step: 4 },
+    { k: 'fold',  t: 'fli deploy:setup', d: 'docker and caddy on the box', step: 4 },
+    { k: 'fold',  t: 'fli deploy', d: 'build the image, ship it, start Basecamp', step: 4 },
+    { k: 'ok',    t: 'Basecamp is on $name ($ip)', step: 4 },
+    { k: 'ok',    t: '$host → $ip in $zone, DNS-only', step: 5 },
+    { k: 'info',  t: "Waiting for https://$host to answer on Caddy's certificate", d: '— up to three minutes', step: 6 },
+    { k: 'ok',    t: 'https://$host answers on a valid certificate', step: 6 },
+    { k: 'yn',    q: "Put $host behind Cloudflare's proxy?", d: 'The edge then verifies this certificate (Full (strict), this host only)', c: 'yes', step: 6 },
+    { k: 'ok',    t: "$host is behind Cloudflare's proxy, Full (strict) for this host", step: 6 },
+    { k: 'text',  t: '  admin    $admin', step: 7 },
+    { k: 'text',  t: '  password ‹generated›   shown once — change it after you sign in', step: 7 },
+    { k: 'fold',  t: 'fli deploy:outpost', d: 'the box joins its own fleet', step: 7 },
+    { k: 'end' },
+  ].map((l) => ({ ...l, html: DRAW[l.k](l), step: l.k === 'end' ? 8 : l.step }))
+
+  const STEPS = [
+    { n: 1, t: 'The zone, before anything else',
+      b: "The hostname is checked against your Cloudflare token first. A token that opens no zone holding it refuses here — nothing asked, nothing bought. The zone is the longest one the token opens that the hostname ends with." },
+    { n: 2, t: 'Every question, then the bill',
+      b: 'Server name, the ssh Host, the Outpost, the password — all asked before the box is bought, so the minute it takes is one you can walk away from. The summary is the last stop before money is spent.' },
+    { n: 3, t: 'The box',
+      b: 'A 4gb box at DigitalOcean carrying your SSH public key and nothing else, on a reserved IP that a replacement box keeps. Its Host block goes into ~/.ssh/config unless one of that name is already there.' },
+    { n: 4, t: 'Ring 0, on your terminal',
+      b: 'Once ssh answers, fli deploy:setup puts docker and caddy on the box and fli deploy builds Basecamp, ships it and starts it. Each is a full fli run of its own — what it asks, it asks you.' },
+    { n: 5, t: 'The record',
+      b: "One A record, DNS-only, carrying Basecamp's fleet mark, so the Basecamp on the box manages it later. A record somebody made by hand at that name is refused, never overwritten." },
+    { n: 6, t: 'The certificate, then the proxy',
+      b: "It waits for Caddy's certificate, then offers Cloudflare's proxy with Full (strict) for this host alone. The zone's own SSL mode is never changed — it covers every other host in the zone." },
+    { n: 7, t: 'The first admin, and the Outpost',
+      b: 'The first admin and its workspace are made on the box; a generated password is printed once. Then fli deploy:outpost enrolls the box in its own fleet, so apps can run beside Basecamp.' },
+  ]
+
+  // One block per step, so the terminal's rail and the overview number the
+  // same lines; the command and the closing prompt sit outside every step.
+  const HEAD   = LINES.filter((l) => l.step === 0)
+  const PHASES = STEPS.map((s) => ({ ...s, lines: LINES.filter((l) => l.step === s.n) }))
+  const TAIL   = LINES.filter((l) => l.step === 8)
+
+  const SETUP =`git clone https://github.com/frontierjs/frontierjs && cd frontierjs
+bun install
+(cd packages/cli && bun link)      # fli on PATH, pointed at this tree
+
+fli eset DIGITALOCEAN_TOKEN <token> --global
+fli eset CLOUDFLARE_TOKEN <token> --global`
+</script>
+
+<!-- ─── The pitch ──────────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="container">
+    <p class="eyebrow">Start · Basecamp</p>
+    <h1>One command. A box, Basecamp on it, and <span class="mono success">https://</span> answering.</h1>
+    <p class="lede">
+      Type the hostname you want Basecamp on. You get the command to run, and a
+      preview of everything it does: buys the box, installs Basecamp, writes the DNS
+      record, waits for the certificate and makes your first admin.
+    </p>
+  </div>
+</section>
+
+<!-- ─── Your values in, the command out ────────────────────────────────── -->
+<section id="command">
+  <div class="container builder">
+    <div class="term theme-dark" data-qs-form>
+      <div class="bar"><i class="dot danger"></i><i class="dot warning"></i><i class="dot success"></i><span class="where">~/frontierjs</span></div>
+      <div class="fields">
+        <label class="field">
+          <span class="flag info">--domain</span>
+          <input name="host" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" required placeholder="basecamp.example.com" aria-describedby="host-hint" />
+          <span class="hint" id="host-hint">required · the zone must be at Cloudflare</span>
+        </label>
+        <label class="field">
+          <span class="flag info">--admin</span>
+          <input name="email" type="email" autocomplete="email" spellcheck="false" placeholder="you@example.com" aria-describedby="email-hint" />
+          <span class="hint" id="email-hint">optional · leave it empty and the run asks</span>
+        </label>
+      </div>
+      <div class="cmd">
+        <code class="line"><span class="ps success">$</span> <span data-qs-cmd>fli basecamp:create --domain basecamp.example.com</span></code>
+        <button type="button" class="copy" data-qs-copy aria-label="Copy the command">copy</button>
+      </div>
+      <p class="refusal danger" data-qs-refusal aria-live="polite" hidden></p>
+      <p class="nopw">No password box here. The run asks for it at your own terminal, or generates one when you press Enter.</p>
+    </div>
+
+    <div class="needs">
+      <h2>Before you run it</h2>
+      <div class="goal">
+        <p class="goal-head"><span class="badge warning">not yet</span> Where this is going</p>
+        <p class="goal-cmd"><span class="success">$</span> npm i -g @frontierjs/cli</p>
+        <p>That one install, then the command above, with no checkout. Today <code>basecamp:create</code> runs Basecamp from the framework's own source, so it needs a checkout beside <code>fli</code>. Basecamp is to ship as an image the box pulls by digest (<a href="https://github.com/frontierjs/frontierjs/blob/main/DECISIONS.md#fjs-d1526">FJS-D1526</a>); until it does, this is the path:</p>
+      </div>
+      <ul>
+        <li><b>A frontierjs checkout</b> with Bun. The install runs from its <code>packages/basecamp</code>.</li>
+        <li><b>An SSH key</b> at <code>~/.ssh/id_ed25519.pub</code> (or <code>id_rsa.pub</code>, or <code>--key</code>).</li>
+        <li><b>DIGITALOCEAN_TOKEN</b> — the box is billed to its account.</li>
+        <li><b>CLOUDFLARE_TOKEN</b> — Zone › DNS › Edit, Zone › Config Rules › Edit, Zone › Zone Settings › Read.</li>
+      </ul>
+      <pre class="code">{SETUP}</pre>
+      <p class="small">Either token missing on a first run at a terminal: the run opens the page that makes it and takes the paste.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ─── What it prints ─────────────────────────────────────────────────── -->
+<section id="run">
+  <div class="container">
+    <h2>What happens when you run it</h2>
+    <p class="lede">The run, start to finish, with your values in it. Questions answered with Enter take the default shown.</p>
+
+    <div class="run">
+      <figure class="term theme-dark preview">
+        <div class="bar"><i class="dot danger"></i><i class="dot warning"></i><i class="dot success"></i><span class="where">fli basecamp:create</span><button type="button" class="replay" data-qs-replay>replay</button></div>
+        <div class="screen qs-screen" data-qs-screen>
+          {#each HEAD as l}
+            <div class="ln" data-k={l.k} data-step={l.step}>{@html l.html}</div>
+          {/each}
+          {#each PHASES as p}
+            <div class="phase" data-step={p.n}>
+              <span class="rail" aria-hidden="true"><span class="n">{p.n}</span></span>
+              <div class="body">
+                {#each p.lines as l}
+                  <div class="ln" data-k={l.k} data-step={l.step} data-when={l.when} hidden={l.when === 'email'}>{@html l.html}</div>
+                {/each}
+              </div>
+            </div>
+          {/each}
+          {#each TAIL as l}
+            <div class="ln" data-k={l.k} data-step={l.step}>{@html l.html}</div>
+          {/each}
+        </div>
+        <figcaption>
+          Lines lifted from <a href="https://github.com/frontierjs/frontierjs/tree/main/packages/cli/commands/basecamp">packages/cli/commands/basecamp</a> with your values put in, and trimmed — not a recorded run.
+          The numbers in the margin are the steps beside it. <span class="ph warning">‹…›</span> is what your cloud answers; <span class="dim">┆</span> is a child fli run, whose own output is folded.
+        </figcaption>
+      </figure>
+
+      <ol class="steps" data-qs-steps>
+        {#each STEPS as s}
+          <li data-step={s.n}>
+            <span class="n">{s.n}</span>
+            <div>
+              <h3>{s.t}</h3>
+              <p>{s.b}</p>
+            </div>
+          </li>
+        {/each}
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- ─── After ──────────────────────────────────────────────────────────── -->
+<section id="after">
+  <div class="container after">
+    <div>
+      <h2>Afterwards</h2>
+      <p>Sign in at your hostname with the admin it made, and change the password. A later deploy runs from <code>packages/basecamp</code>, with the line the run printed. Want the box without Basecamp yet? Answer no to the install — it prints the <code>fli basecamp:install</code> line that finishes the job later.</p>
+    </div>
+    <div class="cluster">
+      <a class="btn outlined" href="/start/">Start</a>
+      <a class="btn outlined" href="/start/tutorial/">The tutorial</a>
+    </div>
+  </div>
+</section>
+
+<QuickstartBuilder client:load />
+
+<style>
+  section { padding: var(--space-5xl) 0; }
+  section + section { border-top: 1px solid var(--rule); }
+  .hero { padding-bottom: var(--space-3xl); }
+
+  h1 { font-size: var(--text-4xl); line-height: var(--leading-display); letter-spacing: -.02em; margin: 0; max-width: 24ch; }
+  h2 { letter-spacing: -.01em; }
+  .eyebrow { text-transform: uppercase; letter-spacing: .08em; font-size: var(--text-2xs); color: var(--ink-mute); margin: 0 0 var(--space-sm); }
+  .lede { color: var(--ink-soft); line-height: var(--leading-relaxed); max-width: 68ch; }
+  .mono { font-family: var(--font-mono); }
+  .small { font-size: var(--text-xs); color: var(--ink-mute); }
+
+  /* ── The terminal frame ─────────────────────────────────────────────── */
+  /* .theme-dark on the frame keeps it a dark terminal under every site
+     theme, and every color in it is still a token. */
+  .term {
+    margin: 0;
+    background: var(--surface-sunken);
+    color: var(--ink);
+    border: 1px solid var(--rule-strong);
+    border-radius: var(--card-radius);
+    box-shadow: var(--shadow-lg), 0 0 0 1px color-mix(in srgb, var(--color-success) 12%, transparent);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    overflow: hidden;
+    min-inline-size: 0;
+  }
+  .bar {
+    display: flex; align-items: center; gap: var(--space-xs);
+    padding: var(--space-sm) var(--space-lg);
+    background: var(--surface);
+    border-bottom: 1px solid var(--rule);
+  }
+  .dot { width: .7rem; height: .7rem; border-radius: 50%; display: inline-block; }
+  .dot.danger  { background: var(--color-danger); }
+  .dot.warning { background: var(--color-warning); }
+  .dot.success { background: var(--color-success); }
+  .where { margin-left: var(--space-sm); font-size: var(--text-xs); color: var(--ink-mute); }
+
+  /* A tone as text is --tone-ink, which .theme-dark clamps light; the raw
+     --color-* would stay clamped for the page's light surface. A badge
+     is a fill, not text: tone-ink there paints the word the fill's color. */
+  :is(.success, .info, .warning, .danger):not(.badge) { color: var(--tone-ink); }
+  .dim { color: var(--ink-mute); }
+  .ps  { font-weight: 700; }
+  b    { font-weight: 700; color: var(--ink); }
+
+  /* ── The builder ────────────────────────────────────────────────────── */
+  .builder { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4xl); align-items: start; }
+  @media (min-width: 64rem) { .builder { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); } }
+
+  .fields { display: grid; gap: var(--space-lg); padding: var(--space-2xl) var(--space-2xl) var(--space-lg); }
+  .field { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); align-items: center; gap: var(--space-2xs) var(--space-lg); }
+  .field input {
+    font: inherit; color: var(--ink);
+    background: transparent;
+    border: 0; border-bottom: 1px dashed var(--rule-strong);
+    padding: var(--space-xs) 0;
+    outline: none;
+    caret-color: var(--color-success);
+    min-inline-size: 0;
+  }
+  .field input::placeholder { color: var(--ink-mute); opacity: .6; }
+  .field input:focus { border-bottom: 1px solid var(--color-success); }
+  .field input[aria-invalid="true"] { border-bottom-color: var(--color-danger); }
+  .hint { grid-column: 2; font-size: var(--text-2xs); color: var(--ink-mute); }
+  @media (max-width: 30rem) { .field { grid-template-columns: 4.5rem minmax(0, 1fr); } .fields, .nopw { padding-inline: var(--space-lg); } .cmd { margin-inline: var(--space-lg); } }
+
+  .cmd {
+    display: flex; align-items: center; gap: var(--space-lg);
+    margin: var(--space-sm) var(--space-2xl) 0;
+    padding: var(--space-lg) var(--space-xl);
+    background: color-mix(in srgb, var(--color-success) 7%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
+    border-radius: calc(var(--card-radius) * .66);
+  }
+  .cmd .line {
+    flex: 1; min-inline-size: 0; overflow-x: auto;
+    white-space: pre-wrap; overflow-wrap: anywhere; background: none; padding: 0; font-size: inherit; color: var(--ink);
+  }
+  .copy, .replay {
+    font: inherit; font-size: var(--text-xs); cursor: pointer;
+    color: var(--ink-soft); background: var(--surface-raised);
+    border: 1px solid var(--rule-strong); border-radius: 999px;
+    padding: var(--space-3xs) var(--space-lg);
+  }
+  .copy:hover, .replay:hover { color: var(--ink); border-color: var(--color-success); }
+  .copy.is-done { border-color: var(--color-success); }
+  .replay { margin-left: auto; }
+
+  .refusal { margin: var(--space-sm) var(--space-2xl) 0; white-space: pre-line; }
+  .refusal[hidden] { display: none; }
+  .nopw { margin: var(--space-lg) var(--space-2xl) var(--space-2xl); font-size: var(--text-xs); color: var(--ink-mute); }
+
+  .needs h2 { margin-top: 0; }
+  .needs ul { padding-left: 1.1rem; display: grid; gap: var(--space-sm); color: var(--ink-soft); }
+  .needs li b { color: var(--ink); }
+  .needs pre { margin: var(--space-xl) 0 var(--space-sm); }
+
+  /* The goal is not a sample: no copy affordance, no <pre>, so nobody pastes
+     an install that cannot run the command yet. */
+  .goal {
+    margin: 0 0 var(--space-2xl);
+    padding: var(--space-lg) var(--space-xl);
+    border: 1px dashed var(--rule-strong);
+    border-radius: var(--card-radius);
+    color: var(--ink-soft);
+    font-size: var(--text-sm);
+  }
+  .goal p { margin: 0; line-height: var(--leading-relaxed); }
+  .goal-head { display: flex; align-items: center; gap: var(--space-sm); font-weight: 600; color: var(--ink); }
+  .goal-cmd {
+    font-family: var(--font-mono); color: var(--ink-mute);
+    margin: var(--space-sm) 0 !important;
+  }
+
+  /* ── The run ─────────────────────────────────────────────────────────── */
+  .run { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4xl); align-items: start; margin-top: var(--space-3xl); }
+  @media (min-width: 72rem) { .run { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); } }
+
+  .screen {
+    padding: var(--space-xl) var(--space-2xl);
+    font-size: var(--text-xs);
+    line-height: 1.75;
+    overflow: auto;
+    min-height: 12rem;
+    max-height: 36rem;
+    scroll-behavior: smooth;
+    position: relative;
+  }
+
+  /* A step's lines share a rail numbered like its card: info while it runs,
+     success once done. During a replay a finished step fades and one not
+     reached is absent; a clicked card fades every other step. */
+  .phase {
+    display: grid; grid-template-columns: 1.75rem minmax(0, 1fr); gap: 0 var(--space-md);
+    margin: var(--space-md) 0 0;
+    padding: var(--space-2xs) var(--space-xs) var(--space-2xs) 0;
+    border-radius: calc(var(--card-radius) * .5);
+    transition: opacity .25s ease, background .25s ease;
+  }
+  .rail { display: flex; flex-direction: column; align-items: center; gap: var(--space-2xs); }
+  .rail::after { content: ''; flex: 1; width: 2px; border-radius: 1px; background: var(--rule); }
+  .phase.is-live { background: color-mix(in srgb, var(--color-info) 8%, transparent); }
+  .phase.is-live .rail::after { background: var(--color-info); }
+  .phase.is-done .rail::after { background: color-mix(in srgb, var(--color-success) 50%, transparent); }
+  .screen[data-mode] .phase.is-done,
+  .screen[data-mode="focus"] .phase.is-ahead { opacity: .4; }
+  .screen[data-mode="play"] .phase.is-ahead { display: none; }
+  /* pre-wrap: a terminal wraps a long line rather than hiding its end. The
+     margin answers the site's flow spacing between siblings. */
+  .ln { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; padding-left: 2ch; text-indent: -2ch; }
+  .ln[hidden] { display: none; }
+  .ln.is-pending { display: none; }
+  .ln.is-now { background: color-mix(in srgb, var(--color-info) 14%, transparent); }
+  /* A line's spans arrive through {@html}, which the scoping never reaches. */
+  :global(.qs-screen :is(.success, .info, .warning, .danger)) { color: var(--tone-ink); }
+  :global(.qs-screen .dim)   { color: var(--ink-mute); }
+  :global(.qs-screen .ps)    { font-weight: 700; }
+  :global(.qs-screen b)      { font-weight: 700; color: var(--ink); }
+  :global(.qs-screen .v)     { color: var(--ink); text-decoration: underline dotted color-mix(in srgb, var(--color-success) 60%, transparent); text-underline-offset: .25em; }
+  :global(.qs-screen .child) { color: var(--ink-soft); font-style: italic; }
+  :global(.qs-screen .cursor) {
+    display: inline-block; width: .55em; height: 1.05em; vertical-align: text-bottom;
+    background: var(--tone-ink);
+    animation: qs-blink 1s steps(1) infinite;
+  }
+  :global(.qs-screen .typed.is-typing::after) { content: '▌'; color: var(--ink-soft); }
+  @keyframes qs-blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { :global(.qs-screen .cursor) { animation: none; } }
+
+  figcaption {
+    padding: var(--space-lg) var(--space-2xl);
+    border-top: 1px solid var(--rule);
+    font-size: var(--text-2xs); color: var(--ink-mute);
+    font-family: var(--font-sans, inherit);
+    line-height: var(--leading-relaxed);
+  }
+  figcaption a { color: var(--ink-soft); }
+
+  .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-sm); }
+  @media (min-width: 72rem) { .steps { position: sticky; top: 5rem; } }
+  .steps li {
+    display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: var(--space-lg);
+    padding: var(--space-lg) var(--space-xl);
+    border: 1px solid var(--rule); border-radius: var(--card-radius);
+    background: var(--surface-raised);
+    transition: border-color .2s ease, background .2s ease, opacity .2s ease;
+    cursor: pointer;
+  }
+  /* The card's number and the terminal's rail number are one badge. */
+  .n {
+    font-family: var(--font-mono); font-weight: 700; color: var(--ink-mute);
+    border: 1px solid var(--rule-strong); border-radius: 50%;
+    width: 1.75rem; height: 1.75rem; display: grid; place-items: center; font-size: var(--text-xs);
+    flex: none;
+    transition: background .2s ease, border-color .2s ease;
+  }
+  .is-live .n { color: var(--ink); border-color: var(--color-info); background: color-mix(in srgb, var(--color-info) 22%, transparent); }
+  .is-done .n { color: var(--ink); border-color: var(--color-success); background: color-mix(in srgb, var(--color-success) 12%, transparent); }
+  .steps h3 { margin: 0; font-size: var(--text-sm); }
+  .steps p  { margin: var(--space-2xs) 0 0; font-size: var(--text-xs); color: var(--ink-soft); line-height: var(--leading-relaxed); }
+  .steps li.is-live { border-color: var(--color-info); background: color-mix(in srgb, var(--color-info) 8%, var(--surface-raised)); }
+  .steps li.is-ahead { opacity: .55; }
+
+  .after { display: flex; flex-wrap: wrap; gap: var(--space-2xl); align-items: center; justify-content: space-between; }
+  .after h2 { margin-top: 0; }
+  .after p { color: var(--ink-soft); max-width: 70ch; }
+</style>

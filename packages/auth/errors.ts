@@ -64,6 +64,19 @@ export class ReauthenticationFailedError extends AuthError {
   readonly status = 403
 }
 
+/**
+ * A credential change asked of a session that has not proved the password
+ * within `reauthenticationWindow` (`FJS-D1209`). The answer is
+ * `account.reauthenticate`, then the same call again; `data.reason` is what a
+ * screen reads to ask for the password rather than show an error. 403, for
+ * `ReauthenticationFailedError`'s reason: the session is fine. → 403
+ */
+export class ReauthenticationRequiredError extends AuthError {
+  constructor(message = 'Confirm your password to continue') { super(message) }
+  readonly status = 403
+  readonly data   = { reason: 'reauthentication_required' }
+}
+
 /** createUser() against an email that already exists. → 409 */
 export class EmailTakenError extends AuthError {
   constructor(message = 'Email already registered') { super(message) }

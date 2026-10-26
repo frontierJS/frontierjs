@@ -25,6 +25,10 @@
   <output>{typed}</output>
 </div>
 
+<div id="locked">
+  <Combobox name="customerId" value="c-2" options={OPTIONS} disabled />
+</div>
+
 <div id="multi">
   <MultiSelect name="customerId" value="c-2" options={OPTIONS} onchange={(v) => multi = wire(v)} />
   <output>{multi}</output>

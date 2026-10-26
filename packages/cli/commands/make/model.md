@@ -38,7 +38,7 @@ flags:
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { resolve } from 'path'
 
-const { servicePlural, existingServiceFile } = await import(resolve(global.fliRoot, 'core/resource-template.js'))
+const { servicePlural, existingServiceFile, resourceFile } = await import(resolve(global.fliRoot, 'core/resource-template.js'))
 const { schemaApplyStep }   = await import(resolve(global.fliRoot, 'core/schema-apply.js'))
 
 // ─── The stanza ───────────────────────────────────────────────────────────────
@@ -99,28 +99,6 @@ export default createService({
 `
 }
 
-// ─── The Resource ─────────────────────────────────────────────────────────────
-// A plain module, not a component. Same template make:resource writes.
-
-const makeResourceFile = (model, plural) => `<script module>
-// src/resources/${model}.mesa — the Resource layer.
-//
-// A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18):
-// the data half in <script module>, and markup below it — optional — is the
-// model's default form.
-//
-// Read this next to db/schema.lite. Nothing here restates anything there: no
-// field list, no types, no enum values, no required list, no relations.
-
-import { createResource } from '@frontierjs/sierra/resource'
-
-export const ${plural} = createResource('${plural}', {
-  // Stated rather than inferred, so an irregular plural cannot quietly resolve
-  // to nothing.
-  model: '${model}',
-})
-</script>
-`
 </script>
 
 Appends one model to `db/schema.lite`. `--service` and `--resource` also write
@@ -194,7 +172,8 @@ if (flag.resource) {
     log.dry(`Would create ${resourcePath}`)
   } else {
     mkdirSync(resourcesDir, { recursive: true })
-    writeFileSync(resourcePath, makeResourceFile(model, plural), 'utf8')
+    // make:resource's template, so the file carries the model's default form.
+    writeFileSync(resourcePath, resourceFile(model, plural), 'utf8')
     log.success(`Created ${resourcePath}`)
     created.push(resourcePath)
   }

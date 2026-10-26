@@ -29,7 +29,7 @@ title: Invoice
   import { invoices } from '@/resources/Invoice.mesa'
   import { subscriptions } from '@/resources/Subscription.mesa'
   import { session } from '@frontierjs/sierra/resource'
-  import { day, span, today } from '@/datetime.js'
+  import { day, span, today } from '@/lib/datetime.js'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../lib/money.js'
 

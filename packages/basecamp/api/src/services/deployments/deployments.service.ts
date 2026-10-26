@@ -19,7 +19,7 @@ import deploymentRun from '../../jobs/deployment-run.job.ts'
 import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow } from '../../core/release-record.ts'
 import { isInline, isGit, imageOf, inlineFilesFor } from '../../core/app-source.ts'
 import { snapshotVariables } from '../../core/variables.ts'
-import { runtimeOf } from '../../core/runtime.ts'
+import { runtimeOf, type Runtime } from '../../core/runtime.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 // `environment` is the DEPLOYMENT's own, which is not the app's: an app has a
@@ -59,23 +59,30 @@ const WITH_APP = { app: { include: { environment: true } }, environment: true }
  * one call (`core/site-publish.ts`), so it has one step past Validate. Its
  * release records a commit and no image, so `rollback` refuses one; a site
  * goes back by a revert on its branch (`IDEAS/owner-editing.md` 1.5).
+ *
+ * A container release of an app with a data volume copies it before the swap
+ * (`Back up volume`, `IDEAS/backups.md` 1.6, `FJS-D1496`): the new image's
+ * entrypoint migrates the volume forward, so the copy is the way back. Read
+ * off the release's own runtime snapshot, as every other step is — a rollback
+ * puts back a release whose snapshot differs from the app.
  */
-function buildInitialSteps(target: { type: string; source?: unknown }, built = false): string[] {
+function buildInitialSteps(target: { type: string; source?: unknown; runtime?: Runtime }, built = false): string[] {
   if (target.type === 'static' && isGit(target.source)) return ['Validate', 'Build and deploy']
   if (isInline(target.source))
     return inlineFilesFor(target.source).length
       ? ['Validate', 'Upload files', 'Activate', 'Health check']
       : ['Validate', 'Activate', 'Health check']
+  const copy = target.runtime?.volumePath ? ['Back up volume'] : []
   if ((target.type === 'container' || target.type === 'function') && isGit(target.source))
     return built
-      ? ['Validate', 'Start container', 'Health check']
-      : ['Validate', 'Build image', 'Start container', 'Health check']
+      ? ['Validate', ...copy, 'Start container', 'Health check']
+      : ['Validate', 'Build image', ...copy, 'Start container', 'Health check']
   // An image somebody else built has nothing to build, and a list that says
   // otherwise sends no /pull at all and reports the build as done. A database is
   // a container too: a blueprint app carries an image source, and a list of its
   // own reached Outpost as command-less /exec calls, acknowledged with nothing
   // started and the App marked running (`FJS-1764`).
-  return ['Validate', 'Pull image', 'Start container', 'Health check']
+  return ['Validate', 'Pull image', ...copy, 'Start container', 'Health check']
 }
 
 
@@ -128,7 +135,7 @@ async function queueRelease(target: { id: string; environmentId: string; type: s
   const deployment = await db().deployment.create({ data })
 
   await db().deploymentStep.createMany({
-    data: buildInitialSteps({ type: target.type, source: (data.configSnapshot as any).source }, built).map((name, position) => ({
+    data: buildInitialSteps({ type: target.type, ...(data.configSnapshot as { source: unknown; runtime: Runtime }) }, built).map((name, position) => ({
       deploymentId: deployment.id, position, name, status: 'pending',
     })),
   })
@@ -215,7 +222,7 @@ export default createService({
     // builds nothing. An inline one is a preview's Freeze, so its snapshot
     // holds no files: the app's own would be uploaded over the digest, and a
     // rollback to it would put back the app's files rather than the bytes that
-    // served. A container one is an image `fli deploy:basecamp` built where
+    // served. A container one is an image `fli basecamp:deploy` built where
     // the workspace is and loaded onto the machine (`FJS-D942`): building the
     // app's git source instead would ship the branch, not those bytes.
     const named = data.builtImage != null
@@ -403,7 +410,11 @@ export default createService({
       // The step list the TARGET's source needs, not the app's current one.
       // An app switched from inline to a container since that release would
       // otherwise be rolled back through a pipeline its old bytes cannot run.
-      data: buildInitialSteps({ type: into.type, source: (target.configSnapshot as any)?.source ?? into.source }, true).map((name, position) => ({
+      data: buildInitialSteps({
+        type:    into.type,
+        source:  (target.configSnapshot as any)?.source ?? into.source,
+        runtime: (target.configSnapshot as any)?.runtime ?? runtimeOf(into),
+      }, true).map((name, position) => ({
         deploymentId: replacement.id, position, name, status: 'pending',
       })),
     })

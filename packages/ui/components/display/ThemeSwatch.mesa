@@ -1,0 +1,72 @@
+<script>
+  // ThemeSwatch.mesa
+  // One theme, drawn IN that theme: a chip of its surface, ink and accents,
+  // with its name and a line about it.
+  //
+  // The chip carries the theme's class, and a theme is inheriting tokens that
+  // nest, so every var() inside the chip resolves against the theme it shows
+  // rather than the page's. Nothing here names a color.
+  //
+  // The name and the line default to `@frontierjs/css/themes.js`, keyed by the
+  // same class sierra's themes() returns; `label=""` or `blurb=""` draws none.
+  //
+  // Usage:
+  //   <ThemeSwatch name="theme-dracula" />
+  //   <ThemeSwatch name={theme.value} blurb="" />
+  //   <ThemeSwatch name="theme-press" label="Print" blurb="What a PDF looks like" />
+
+  import { THEMES } from '@frontierjs/css/themes.js'
+
+  export let name  = ''         // a theme-* class
+  // `undefined` is "not stated" and `''` is "none, deliberately", as in RadioGroup.
+  export let label = undefined
+  export let blurb = undefined
+
+  const known         = THEMES[name]
+  const resolvedLabel = label ?? known?.label ?? name
+  const resolvedBlurb = blurb ?? known?.blurb ?? ''
+</script>
+
+<span class="fjs-theme-swatch" {class} {...$attributes}>
+  <span class="fjs-theme-chip {name}" aria-hidden="true">
+    <span class="fjs-theme-type">Aa</span>
+    <span class="fjs-theme-dots">
+      <span class="fjs-theme-dot" style:background="var(--color-primary)"></span>
+      <span class="fjs-theme-dot" style:background="var(--color-secondary)"></span>
+      <span class="fjs-theme-dot" style:background="var(--color-success)"></span>
+    </span>
+  </span>
+  {#if resolvedLabel || resolvedBlurb}
+    <span class="fjs-theme-text">
+      {#if resolvedLabel}<span class="fjs-theme-label">{resolvedLabel}</span>{/if}
+      {#if resolvedBlurb}<span class="fjs-theme-blurb">{resolvedBlurb}</span>{/if}
+    </span>
+  {/if}
+</span>
+
+<style>
+  /* Spans throughout: a swatch sits inside a <label> in ThemePicker, which
+     takes phrasing content only. */
+  .fjs-theme-swatch {
+    display:        flex;
+    flex-direction: column;
+    gap:            var(--space-xs);
+  }
+  .fjs-theme-chip {
+    display:         flex;
+    align-items:     center;
+    justify-content: space-between;
+    padding:         var(--space-sm);
+    background:      var(--surface);
+    color:           var(--ink);
+    border:          var(--border-width) solid var(--rule);
+    border-radius:   var(--card-radius);
+    font-family:     var(--font-display, var(--font-primary));
+  }
+  .fjs-theme-type { font-size: var(--text-lg); font-weight: var(--btn-font-weight) }
+  .fjs-theme-dots { display: flex; gap: var(--space-2xs) }
+  .fjs-theme-dot  { inline-size: var(--space-sm); block-size: var(--space-sm); border-radius: 50% }
+  .fjs-theme-text  { display: flex; flex-direction: column; gap: var(--space-3xs) }
+  .fjs-theme-label { font-weight: var(--label-font-weight) }
+  .fjs-theme-blurb { font-size: var(--text-xs); color: var(--ink-mute) }
+</style>

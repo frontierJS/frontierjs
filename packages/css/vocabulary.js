@@ -685,6 +685,7 @@ const ANATOMY = {
     parts: [
       ['.sidebar-footer', 'The last block of the Sidebar, pinned to the bottom of a full-height one: the signed-in person, sign out. A Sidebar holding one lays out as a column', 'optional'],
       ['.sidebar-toggle','The control that reveals the Sidebar below 768px. The Shell decides when it exists; opening it is the app’s job', 'optional'],
+      ['.topbar-nav',    'A Shell with no Sidebar: the nav drawn in the Topbar itself, hidden below 768px where the .sidebar-toggle takes its place and the drawer holds the links', 'optional'],
     ],
   },
 
@@ -756,6 +757,7 @@ const NOT_ANATOMY = {
   'theme-basecamp': 'A theme', 'theme-notebook': 'A theme',
   'theme-press': 'A theme', 'theme-field': 'A theme',
   'theme-dracula': 'A theme', 'theme-twilight': 'A theme',
+  'theme-expedition': 'A theme', 'theme-catppuccin': 'A theme',
 };
 
 /*

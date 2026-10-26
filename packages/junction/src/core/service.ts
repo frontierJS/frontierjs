@@ -3103,6 +3103,11 @@ export function buildService(def: ServiceDefinition): Service {
 
 // ─── Service registry ─────────────────────────────────────────────────────
 
+/** `product-variants` → `productVariants`: the one spelling a service has. */
+export function canonicalServiceName(name: string): string {
+  return name.replace(/[-_]+([a-zA-Z0-9])/g, (_, c: string) => c.toUpperCase())
+}
+
 export class ServiceRegistry {
 
   private _map:      Map<string, Service> = new Map()
@@ -3163,6 +3168,14 @@ export class ServiceRegistry {
   register(def: ServiceDefinition | Service, aliases: string[] = []): Service {
     if (!def.name)
       throw new Error(`a service registered by hand needs a name — createService({ name: 'posts', … })`)
+    // A STATED kebab name is the same fourth spelling a kebab filename was
+    // (`FJS-D159`): sierra asks for `backupDestinations` and a service held as
+    // 'backup-destinations' left every picker onto it empty (`FJS-3477`).
+    const name = canonicalServiceName(def.name)
+    if (name !== def.name && !isBuiltService(def)) {
+      aliases = [def.name, ...aliases]
+      def     = { ...def, name } as ServiceDefinition
+    }
     const service = buildService(def as ServiceDefinition)
     // HERE, because this is the first place a built service and the schema meet:
     // a service module is imported before any client exists. Before the warm

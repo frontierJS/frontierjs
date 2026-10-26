@@ -40,7 +40,7 @@ import { PORTS } from './lib/preflight.mjs'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const ROOT   = join(HERE, '../..')
-const API_PORT = process.env.API_PORT ?? String(PORTS.api)
+const API_PORT = process.env.API_PORT ?? String(PORTS.apiTest)
 const UI_PORT  = process.env.UI_PORT  ?? String(PORTS.ui)
 const UI     = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
 const API    = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`

@@ -12,14 +12,13 @@
  * frame is up, and his screen is read after it has gone.
  */
 import { spawn } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../../api/src/app.ts'
-import { signIn } from '../../api/test/sign-in.ts'
+import { POST_KEY, signIn, stakedHome } from '../../api/test/sign-in.ts'
 import { TUI, cellOf, screen, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
 
@@ -36,13 +35,13 @@ const check = (ok, label, evidence = '') => {
 const env = await createTestEnv({
   schema: join(WEB, '../db/schema.lite'),
   listen: true,
-  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-nameplate', port: 0 }),
+  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-nameplate', port: 0, postKey: POST_KEY }),
 })
 for (const [slug, name] of [['square', 'The square'], ['tavern', 'The tavern'], ['road', 'The road'], ['woods', 'The woods'], ['docks', 'The docks']]) {
   await env.system.room.create({ data: { slug, name } })
 }
 const sam = await signIn(env.port, 'sam')
-const anaHome = mkdtempSync(join(tmpdir(), 'haven-ana-'))
+const anaHome = await stakedHome('haven-ana-', 'ana')
 const API = `http://localhost:${env.port}`
 
 const shell = spawn('script', ['-qfec', `stty rows 30 cols 100; bun ${TUI} --api ${API}`, '/dev/null'], {
@@ -59,7 +58,7 @@ await until(() => at(sx, sy) === '@' && screen(out).includes('1 here'))
 
 /** `fli haven --frame /` held open by `--keep`-less polling: started now, answered once it exits. */
 function frame() {
-  const p = spawn('bun', [FLI, 'haven', '--frame', '/', '--api', API, '--nick', 'ana'], {
+  const p = spawn('bun', [FLI, 'haven', '--frame', '/', '--api', API], {
     cwd: tmpdir(), stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, HOME: anaHome },
   })
   let framed = ''

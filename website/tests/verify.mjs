@@ -395,22 +395,22 @@ const bodyOf = (n) => {
 const countIn = (n, re) => (bodyOf(n).match(re) ?? []).length
 
 t('demos.prerendered', {
-  showroom:   countIn('showroom',  /class="ln[ "]/g),        // the seed, line by line
-  showroom2:  countIn('showroom2', /class="panel[ "]/g),     // fifteen walkthrough steps
-  showroom3:  countIn('showroom3', /class="hop\b/g),         // eighteen seams
-  showroom4:  countIn('showroom4', /phasepanel/g),           // six phases
-  showroom5:  countIn('showroom5', /role="tab"/g),           // every feature row
-  seams:      countIn('seams',     /class="ex[ "]/g),        // seventeen explanations
-  landscape:  countIn('landscape', /class="entry[ "]/g),     // twenty-seven projects
-  tutor:      countIn('tutor',     /class="card lesson[ "]/g), // the four lessons
+  showroom:   countIn('tour/derived',  /class="ln[ "]/g),        // the seed, line by line
+  showroom2:  countIn('tour/walkthrough', /class="panel[ "]/g),     // fifteen walkthrough steps
+  showroom3:  countIn('tour/ripple', /class="hop\b/g),         // eighteen seams
+  showroom4:  countIn('tour/loop', /phasepanel/g),           // six phases
+  showroom5:  countIn('drafts/showroom5', /role="tab"/g),           // every feature row
+  seams:      countIn('tour/seams',     /class="ex[ "]/g),        // seventeen explanations
+  landscape:  countIn('why/landscape', /class="entry[ "]/g),     // twenty-seven projects
+  tutor:      countIn('start/tutorial',     /class="card lesson[ "]/g), // the four lessons
 }, counted)
 
 // The map's lettering is pixels, so the words are the list under it: one entry
 // per hotspot, and every hotspot a link to its own entry.
 t('map.prerendered', {
-  hotspots: countIn('map', /class="territory[ "]/g),
-  entries:  countIn('map', /class="entry[ "]/g),
-  linked:   (bodyOf('map').match(/href="#[a-z-]+" data-id=/g) ?? []).length,
+  hotspots: countIn('drafts/map', /class="territory[ "]/g),
+  entries:  countIn('drafts/map', /class="entry[ "]/g),
+  linked:   (bodyOf('drafts/map').match(/href="#[a-z-]+" data-id=/g) ?? []).length,
   image:    existsSync(join(DIST, 'map', 'territory.webp')) ? 1 : 0,
 }, (v) => v.hotspots > 0 && v.hotspots === v.entries && v.entries === v.linked && v.image === 1)
 
@@ -419,16 +419,16 @@ t('map.prerendered', {
 // one thing on this site that has never been executed — these two strings come
 // out of a real lesson and a real refusal.
 t('tutor.transcripts', {
-  probe:   bodyOf('tutor').includes('the row is in db/app.db'),
+  probe:   bodyOf('start/tutorial').includes('the row is in db/app.db'),
   // Asked without the step number: glow marks `01-` as a token of its own, so
   // the literal line is not one contiguous string in the HTML.
-  refusal: bodyOf('tutor').includes('preflight refused'),
+  refusal: bodyOf('start/tutorial').includes('preflight refused'),
 })
 
 // landscape used to fetch its data on load, so the page a crawler read said
 // "Loading…". The file it reads now is checked into the repo beside the route.
 t('demos.noRuntimeFetch',
-  !bodyOf('landscape').includes('Loading') && !bodyOf('landscape').includes('projects.json'))
+  !bodyOf('why/landscape').includes('Loading') && !bodyOf('why/landscape').includes('projects.json'))
 
 // ─── the server ───────────────────────────────────────────────────────────
 const head = async (p) => {
@@ -711,7 +711,7 @@ try {
   // Prerendered content is half the claim; the other half is that the widget
   // still does what it did. Each of these was 8–20 kB of imperative DOM code.
 
-  await goto(`${ORIGIN}/showroom/`)
+  await goto(`${ORIGIN}/tour/derived/`)
   t('demo.showroom', await evaluate(`
     const chips = [...document.querySelectorAll('[data-chips] .btn')];
     const before = document.querySelector('.panel.is-shown')?.dataset.id;
@@ -722,7 +722,7 @@ try {
     return { moved: before !== after, lit: document.querySelectorAll('.ln.on').length };
   `))
 
-  await goto(`${ORIGIN}/showroom2/`)
+  await goto(`${ORIGIN}/tour/walkthrough/`)
   t('demo.walkthrough', await evaluate(`
     const next = document.querySelector('[data-next]');
     next.click(); next.click(); await sleep(120);
@@ -731,7 +731,7 @@ try {
              railNow: document.querySelectorAll('.stepbtn.now').length };
   `))
 
-  await goto(`${ORIGIN}/showroom4/`)
+  await goto(`${ORIGIN}/tour/loop/`)
   t('demo.loop', await evaluate(`
     const tabs = [...document.querySelectorAll('.phase')];
     tabs[3].click(); await sleep(120);
@@ -739,7 +739,7 @@ try {
     return { id: on?.dataset.id, terminalLines: on?.querySelectorAll('.term span').length ?? 0 };
   `))
 
-  await goto(`${ORIGIN}/seams/`)
+  await goto(`${ORIGIN}/tour/seams/`)
   t('demo.seams', await evaluate(`
     // The connectors are measured, so they exist only once the island has run.
     await waitFor(() => document.querySelectorAll('[data-wires] path').length > 0);
@@ -754,7 +754,7 @@ try {
   // Read back from the layers, never from the panel. The cloud decks run their
   // own copy of the tour, and one left on another clock zooms toward a
   // different spot than the land under it, which no single frame shows.
-  await goto(`${ORIGIN}/splash-tune/`)
+  await goto(`${ORIGIN}/drafts/splash-tune/`)
   t('demo.tuner', await evaluate(`
     const frame = document.querySelector('[data-frame]');
     const bd = await waitFor(() => frame.contentDocument?.querySelector('.splash .backdrop')?.style.getPropertyValue('--stop0-zoom') && frame.contentDocument.querySelector('.splash .backdrop'));
@@ -783,7 +783,7 @@ try {
              printed: out.includes('--stop2-zoom: 2.5;') && out.includes('--low-opacity: 0.3;') };
   `))
 
-  await goto(`${ORIGIN}/landscape/`)
+  await goto(`${ORIGIN}/why/landscape/`)
   t('demo.landscape', await evaluate(`
     // The cloud is packed by measurement — nothing in the file, everything at mount.
     await waitFor(() => document.querySelectorAll('[data-cloud] a').length > 0);
@@ -811,7 +811,7 @@ try {
              filtered: visible, cloudAfter: document.querySelectorAll('[data-cloud] a').length };
   `))
 
-  await goto(`${ORIGIN}/map/`)
+  await goto(`${ORIGIN}/drafts/map/`)
   t('demo.map', await evaluate(`
     await waitFor(() => document.querySelector('[data-map][data-ready]'));
     const svg   = document.querySelector('[data-map] svg');
@@ -853,7 +853,7 @@ try {
   const stack = {}
   for (const width of [1280, 390]) {
     await cmd('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false })
-    await goto(`${ORIGIN}/tutor/`)
+    await goto(`${ORIGIN}/start/tutorial/`)
     stack[width] = await evaluate(`
       document.documentElement.style.scrollBehavior = 'auto';
       window.scrollTo(0, 2000); await sleep(50);
@@ -876,7 +876,7 @@ try {
   // pages each have a grid that floors at its widest code sample.
   await cmd('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true })
   const wide = []
-  for (const path of ['/', '/start/', '/docs/', '/packages/', '/why/', '/journey/', '/pitch/', '/tutor/', '/seams/', '/showroom/', '/specs/', '/packages/litestone/', '/packages/vscode/']) {
+  for (const path of ['/', '/start/', '/docs/', '/packages/', '/why/', '/journey/', '/pitch/', '/start/tutorial/', '/tour/', '/tour/seams/', '/tour/derived/', '/direction/specs/', '/drafts/', '/packages/litestone/', '/packages/vscode/']) {
     await goto(`${ORIGIN}${path}`)
     const sw = await evaluate(`return document.documentElement.scrollWidth`)
     if (sw > 390) wide.push(`${path} ${sw}px`)

@@ -585,19 +585,34 @@ if (flag.remote) {
           fail()
         }
 
-        // /db is bound over this directory and the container runs as the image's
-        // user, so a directory owned by anyone else fails the first migration.
-        const { IMAGE_USER } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
+        // /db is bound over this directory, so a directory owned by anyone but
+        // the uid the container runs as fails the first migration: on a box the
+        // app's own user (FJS-D1484), graded by name, and on localhost the image's.
+        const { IMAGE_USER, appUser, appUserIds } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))
         const { dbDir } = apiFiles(deployConf, path)
-        const dbOwner = ask(`stat -c %u ${dbDir} 2>/dev/null`)
-        if (dbOwner === String(IMAGE_USER.uid)) {
-          renderCheck(`${dbDir} owned by uid ${IMAGE_USER.uid}`, 'pass')
+        const runsAs  = machine.local || !appId ? null : appUser(appId)
+        const userIds = runsAs ? ask(appUserIds(runsAs)) : null
+        const want    = runsAs ?? String(IMAGE_USER.uid)
+        const chownTo = runsAs ? `${runsAs}:${runsAs}` : `${IMAGE_USER.uid}:${IMAGE_USER.gid}`
+        const dbOwner = ask(`stat -c ${runsAs ? '%U' : '%u'} ${dbDir} 2>/dev/null`)
+        if (runsAs && !userIds) {
+          renderCheck(`user ${runsAs}`, 'fail', `absent, so a deploy is refused — fix: fli deploy:setup  (makes it and hands it ${dbDir})`)
+          fail()
+        } else if (dbOwner === want) {
+          renderCheck(`${dbDir} owned by ${runsAs ?? `uid ${want}`}`, 'pass')
         } else if (dbOwner) {
-          renderCheck(`${dbDir} owned by uid ${dbOwner}`, 'fail',
-            `the container runs as uid ${IMAGE_USER.uid} and cannot open it — fix: ${machine.local ? '' : `ssh ${host} `}sudo chown -R ${IMAGE_USER.uid}:${IMAGE_USER.gid} ${dbDir}`)
+          renderCheck(`${dbDir} owned by ${runsAs ? dbOwner : `uid ${dbOwner}`}`, 'fail',
+            `the container runs as ${runsAs ?? `uid ${want}`} and cannot open it — fix: ${machine.local ? '' : `ssh ${host} `}sudo chown -R ${chownTo} ${dbDir}`)
           fail()
         } else {
-          renderCheck(`${dbDir}`, 'fail', `fix: fli deploy:setup  (creates it owned by uid ${IMAGE_USER.uid})`)
+          renderCheck(`${dbDir}`, 'fail', `fix: fli deploy:setup  (creates it owned by ${runsAs ?? `uid ${want}`})`)
+          fail()
+        }
+        // SQLite's files are 644, so a world-readable directory hands them to
+        // every other app's uid on the box.
+        const dbMode = runsAs && dbOwner ? ask(`stat -c %a ${dbDir} 2>/dev/null`) : ''
+        if (/^[0-7]{3,4}$/.test(dbMode) && (Number.parseInt(dbMode, 8) & 0o007) !== 0) {
+          renderCheck(`${dbDir} mode ${dbMode}`, 'fail', `readable by every other app on the box — fix: ssh ${host} sudo chmod 750 ${dbDir}`)
           fail()
         }
 
@@ -608,6 +623,16 @@ if (flag.remote) {
           renderCheck(`${container}`, 'info', `not running — first deploy will create it`)
         } else if (containerStatus === 'running') {
           renderCheck(`${container} status`, 'pass', containerStatus)
+          // A container started before its user existed runs as the image's
+          // uid, which every such app on the box shares.
+          if (userIds) {
+            const user = ask(`docker inspect ${container} --format '{{.Config.User}}' 2>/dev/null`)
+            if (user === userIds) renderCheck(`${container} runs as ${runsAs}`, 'pass', userIds)
+            else {
+              renderCheck(`${container} runs as ${user || IMAGE_USER.name}`, 'fail', `not ${runsAs} (${userIds}) — fix: fli deploy`)
+              fail()
+            }
+          }
         } else {
           renderCheck(`${container} status`, 'warn', containerStatus)
           warn()

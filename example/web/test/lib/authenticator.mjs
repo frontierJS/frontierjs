@@ -65,11 +65,11 @@ export async function enrolledAccount(api, email, password) {
     return json
   }
   const { token }         = await post('/auth/register', { email, password, name: 'Two Step' })
-  const { secret }        = await post('/account/me', { currentPassword: password }, token, 'setupTotp')
+  const { secret }        = await post('/account/me', {}, token, 'setupTotp')
   const { recoveryCodes } = await post('/account/me', { code: authenticator(secret, -1) }, token, 'confirmTotp')
   return {
     email, secret, recoveryCodes, token,
-    /** Switch it off again, as the account itself would. */
-    disable: (withToken = token) => post('/account/me', { currentPassword: password }, withToken, 'disableTotp'),
+    /** Switch it off again, as the account itself would — inside the hour its sign-in started. */
+    disable: (withToken = token) => post('/account/me', {}, withToken, 'disableTotp'),
   }
 }

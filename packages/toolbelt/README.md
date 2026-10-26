@@ -17,6 +17,7 @@ import { glow } from '@frontierjs/toolbelt/glow'
 | `/directives` | the `$` convention — filters vs directives | shipping |
 | `/gate` | the access ladder — levels, `levelPasses`, `gradeStanding`, `canAtLevel` | shipping |
 | `/history` | the key naming one occurrence of change | shipping |
+| `/frontier` | a Frontier member's chain of machines, and the post's signed row for it | shipping |
 | `/hooks` | the four-phase resource pipeline | shipping |
 | `/json` | reading and editing a JSON document nothing describes | shipping |
 | `/jsonschema` | follow a `$ref`; what a blank record looks like | shipping |

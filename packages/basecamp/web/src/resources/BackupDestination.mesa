@@ -1,0 +1,11 @@
+<script module>
+  // src/resources/BackupDestination.mesa — the Resource layer.
+  //
+  // Workspace-owned (`FJS-D1491`), so the list is the current workspace's,
+  // and the hub's schedule points at one of them by id.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const backupDestinations = createResource('backupDestinations', {
+    model: 'BackupDestination',
+  })
+</script>

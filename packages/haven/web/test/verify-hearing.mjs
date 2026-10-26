@@ -15,7 +15,6 @@
  * listening.
  */
 import { spawn } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -23,7 +22,7 @@ import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../../api/src/app.ts'
 import { EARSHOT } from '../../api/src/hearing.ts'
-import { signIn } from '../../api/test/sign-in.ts'
+import { POST_KEY, signIn, stakedHome } from '../../api/test/sign-in.ts'
 import { TUI, cellOf, screen, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
 
@@ -41,7 +40,7 @@ const check = (ok, label, evidence = '') => {
 const env = await createTestEnv({
   schema: join(WEB, '../db/schema.lite'),
   listen: true,
-  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-hearing', port: 0 }),
+  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-hearing', port: 0, postKey: POST_KEY }),
 })
 for (const [slug, name] of [['square', 'The square'], ['tavern', 'The tavern'], ['road', 'The road'], ['woods', 'The woods'], ['docks', 'The docks']]) {
   await env.system.room.create({ data: { slug, name } })
@@ -96,9 +95,10 @@ check(await until(() => ana.screen().includes('(psst: meet me)')), 'and it is on
 
 // A terminal at the spawn reads the room's history, which holds every line
 // said aloud and none of a whisper it is not a party to.
+const beaHome = await stakedHome('haven-bea-', 'bea')
 const bea = await new Promise((resolve) => {
-  const p = spawn('bun', [FLI, 'haven', '--frame', '/', '--api', API, '--nick', 'bea'], {
-    cwd: tmpdir(), stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, HOME: mkdtempSync(join(tmpdir(), 'haven-bea-')) },
+  const p = spawn('bun', [FLI, 'haven', '--frame', '/', '--api', API], {
+    cwd: tmpdir(), stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, HOME: beaHome },
   })
   let framed = ''
   p.stdout.on('data', (d) => { framed += d })
@@ -120,9 +120,10 @@ check(await until(() => ana.screen().includes('(again)')), 'walking back within 
 // test of distance keeps it off the screen of a figure Sam has walked from.
 await sam.walk(OUT)
 await until(() => ana.at(sx + OUT, sy) === 'S', 3000)
+const catHome = await stakedHome('haven-cat-', 'cat')
 const left = await new Promise((resolve) => {
-  const p = spawn('bun', [FLI, 'haven', '--frame', '/', '--api', API, '--nick', 'cat'], {
-    cwd: tmpdir(), stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, HOME: mkdtempSync(join(tmpdir(), 'haven-cat-')) },
+  const p = spawn('bun', [FLI, 'haven', '--frame', '/', '--api', API], {
+    cwd: tmpdir(), stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, HOME: catHome },
   })
   let framed = ''
   p.stdout.on('data', (d) => { framed += d })

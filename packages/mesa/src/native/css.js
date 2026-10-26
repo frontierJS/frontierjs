@@ -45,6 +45,23 @@ export function list(s) {
   return out
 }
 
+/** `s` with each `:global(x)` replaced by `x`. A regex stops at the first
+ *  `)`, so `:global(a:not(:has(.b))::before)` came out unbalanced and the
+ *  browser dropped the rule. */
+export function unwrapGlobal(s) {
+  let out = '', i = 0
+  for (let at; (at = s.indexOf(':global(', i)) !== -1;) {
+    let j = at + 8, depth = 1
+    for (; j < s.length && depth; j++) {
+      if (s[j] === '(') depth++
+      else if (s[j] === ')') depth--
+    }
+    out += s.slice(i, at) + s.slice(at + 8, depth ? j : j - 1)
+    i = j
+  }
+  return out + s.slice(i)
+}
+
 // Each type selector in `sel`, as a match whose group 2 is the tag. Strings,
 // attribute brackets and a non-selector pseudo's argument are blanked to the
 // same length first, so `[type=text]` and `:nth-child(odd)` name no tag and
@@ -83,7 +100,7 @@ export function cssOffense(prelude) {
     const name = prelude.slice(1).match(/^[\w-]+/)?.[0].toLowerCase()
     return AT_RULES.has(name) ? { what: `@${name}`, shape: `@${name}` } : null
   }
-  const bare = prelude.replace(/:global\(([^)]*)\)/g, '$1').replace(/"[^"]*"|'[^']*'/g, '""')
+  const bare = unwrapGlobal(prelude).replace(/"[^"]*"|'[^']*'/g, '""')
   for (const sel of list(bare)) {
     const pseudo = sel.match(PSEUDO)?.[0]
     if (pseudo) return { what: pseudo, shape: pseudo }

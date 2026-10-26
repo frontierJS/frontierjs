@@ -6,8 +6,9 @@ title: Environment
   import Environment, { environments } from '../../../resources/Environment.mesa'
   import { apps } from '../../../resources/App.mesa'
   import { projects } from '../../../resources/Project.mesa'
+  import { servers } from '../../../resources/Server.mesa'
   import { deployments, DEPLOY_TONE } from '../../../resources/Deployment.mesa'
-  import { at } from '../../../datetime.js'
+  import { at } from '../../../lib/datetime.js'
   import Pill from '@frontierjs/ui/components/display/Pill.mesa'
   import { goto } from '@frontierjs/sierra/router'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
@@ -114,30 +115,56 @@ title: Environment
   // ── Apps ──────────────────────────────────────────────────────────────
   // An App belongs to exactly one environment, so it is created here rather
   // than on a screen of its own — there is no useful "all apps" form.
-  let newApp  = { name: '', slug: '', type: 'container' }
+  // `serverId: null` is "not chosen", which means the one online machine when
+  // there is exactly one; '' is "Place it later", chosen.
+  const blankApp = () => ({ name: '', type: 'container', serverId: null })
+  let newApp  = blankApp()
   let adding  = false
 
-  $: (newApp.name, newApp.slug, newApp.type)
+  $: (newApp.name, newApp.type, newApp.serverId)
 
   // The type list comes from `enum AppType` in db/schema.lite, through the
   // JSON Schema the build generated. Adding a type to the schema adds it here.
   $: appTypes = apps.fields?.type?.enum ?? ['container', 'worker', 'cron', 'static']
 
+  // Only an online machine is offered: `place` refuses a stopped or destroyed
+  // one, and a machine still provisioning would take a placement no release
+  // can reach yet.
+  const srvList = servers.tethered({ state: 'local', all: true })
+  $: srvOptions = srvList.rows.filter(s => s.status === 'online').map(s => ({ value: s.id, label: s.name }))
+  $: placeOn    = newApp.serverId ?? (srvOptions.length === 1 ? srvOptions[0].value : '')
+
+  // Two writes, as the blueprints screen makes them: `place` is the one writer
+  // of AppServer, so creating an app never places it.
   async function addApp() {
     error = null; adding = true
+    let made = null
     try {
-      await apps.service.create({
+      made = await apps.service.create({
         environmentId: environment.id,
         name:          newApp.name,
-        slug:          newApp.slug || slugify(newApp.name),
+        slug:          slugify(newApp.name),
         type:          newApp.type,
       })
-      newApp  = { name: '', slug: '', type: 'container' }
     } catch (e) {
       error = e.message
-    } finally {
       adding = false
+      return
     }
+    newApp = blankApp()
+    if (placeOn) {
+      try {
+        await apps.service.invoke('place', made.id, { serverId: placeOn })
+      } catch (e) {
+        // The app exists, so the reason goes to its screen rather than back to
+        // a form whose retry would make a second one.
+        toasts.error(`${made.name} was created, but not placed: ${e.message}`)
+        adding = false
+        goto(`/apps/${made.id}/`)
+        return
+      }
+    }
+    adding = false
   }
 
   function slugify(v) {
@@ -295,6 +322,9 @@ title: Environment
       <Select label="Type" name="app-type" id="app-type" placeholder=""
               options={appTypes} value={newApp.type}
               onchange={(e) => newApp.type = e.target.value} />
+      <Select label="Run it on" name="app-server" id="app-server" placeholder="Place it later"
+              options={srvOptions} value={placeOn}
+              onchange={(e) => newApp.serverId = e.target.value} />
     </div>
     <div class="cluster">
       <Button tone="primary" type="submit" disabled={adding}>

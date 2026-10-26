@@ -167,7 +167,8 @@
         "mesa": "html"
       },
       "[mesa]": {
-        "emmet.showExpandedAbbreviation": "always"
+        "emmet.showExpandedAbbreviation": "always",
+        "editor.semanticHighlighting.enabled": true
       },
       "editor.tokenColorCustomizations": {
         "textMateRules": [
@@ -214,6 +215,13 @@
             }
           },
           {
+            "comment": "Mesa: static const name \u2014 fixed at mount (grey)",
+            "scope": "variable.other.static.mesa",
+            "settings": {
+              "foreground": "#8a8a9e"
+            }
+          },
+          {
             "comment": "Mesa: immutable prop name",
             "scope": "variable.other.immutable.prop.mesa",
             "settings": {
@@ -229,7 +237,30 @@
           }
         ]
       }
-    }
+    },
+    "semanticTokenModifiers": [
+      {
+        "id": "derived",
+        "description": "A Mesa const that recomputes when something it reads moves"
+      },
+      {
+        "id": "static",
+        "description": "A Mesa const fixed at mount \u2014 nothing it reads can move"
+      }
+    ],
+    "semanticTokenScopes": [
+      {
+        "language": "mesa",
+        "scopes": {
+          "variable.derived": [
+            "variable.other.derived.mesa"
+          ],
+          "variable.static": [
+            "variable.other.static.mesa"
+          ]
+        }
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run build && npm run bundle",

@@ -102,10 +102,10 @@
         "stat",
         "-c",
         "%Y",
-        "/var/log/unattended-upgrades/unattended-upgrades.log"
+        "/var/lib/apt/periodic/upgrade-stamp"
       ],
       "exitCode": 0,
-      "stdout": "1791831165\n",
+      "stdout": "1792674776\n",
       "stderr": ""
     },
     "unattended.log": {

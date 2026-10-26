@@ -26,18 +26,17 @@
 import { createService, BadRequest, Conflict, NotFound, $ } from '@frontierjs/junction'
 import { requireSystemAdmin, getPagination }                from '../../core/hooks.ts'
 import { db, actor, callerOrder, callerSelect }               from '../../core/resource.ts'
-import backupRun                                            from '../../jobs/backup-run.job.ts'
+import { queueBackup, SETTLED }                             from '../../jobs/backup-run.job.ts'
+import { deleteArchive, rescanDestination }                 from '../../jobs/backup-archives.ts'
+import { LEVELS }                                           from '@frontierjs/litestone'
 import { keyScope } from '../api-keys/scopes.ts'
-
-/** Terminal states — anything else is still in flight. */
-const SETTLED = ['success', 'failed', 'timeout']
 
 export default createService({
   name:  'backups',
   scope: keyScope('backups'),
   model: 'Backup',
 
-  methods: ['find', 'get', 'create', 'remove'],
+  methods: ['find', 'get', 'create', 'remove', { method: 'rescan', gate: LEVELS.SYSADMIN, input: 'BackupRescan' }],
 
   async find() {
     const { limit, offset } = getPagination()
@@ -57,55 +56,34 @@ export default createService({
     return row
   },
 
-  /**
-   * Ask for one now.
-   *
-   * Refuses while another is in flight. Two concurrent `VACUUM INTO`s on one
-   * database are not a corruption risk — SQLite serializes them — but they are
-   * two archives of the same bytes taken a second apart, and the second one
-   * doubles how long the first takes for no reason anybody would want.
-   */
+  /** Ask for one now. Refuses while another is in flight (`queueBackup`). */
   async create() {
     const data = ($.data ?? {}) as Record<string, unknown>
 
-    const inFlight = await db().backup.findFirst({
-      where: { status: { notIn: SETTLED } }, orderBy: { createdAt: 'desc' },
-    })
-    if (inFlight) throw new Conflict(
-      `A backup is already ${inFlight.status} (started ${inFlight.startedAt ?? 'just now'}). ` +
+    // Null is the local disk. A destination is a row in some workspace, read
+    // at system because a sysadmin's own standing may be elsewhere; one that
+    // does not exist is refused here by name rather than queued to fail,
+    // because a row that is going to fail for a reason already known is a
+    // worse answer than a refusal — the person has to come back to find out.
+    const destinationId = (data.destinationId ?? null) as string | null
+    if (destinationId !== null) {
+      const found = await db().asSystem().backupDestination.findFirst({ where: { id: destinationId } })
+      if (!found) throw new BadRequest(`No backup destination '${destinationId}'`)
+      if (!found.secretId) throw new BadRequest(`Destination '${found.name}' holds no credential — rotate one in first`)
+    }
+
+    const queued = await queueBackup($.app, { kind: 'manual', destinationId, requestedBy: actor() })
+    if ('inFlight' in queued) throw new Conflict(
+      `A backup is already ${queued.inFlight.status} (started ${queued.inFlight.startedAt ?? 'just now'}). ` +
       `Wait for it to finish.`)
-
-    // `s3` is a declared value with nothing behind it. Refused by name here
-    // rather than accepted and failed by the job, because a queued row that
-    // is going to fail for a reason already known is a worse answer than a
-    // refusal — the person has to come back to find out.
-    const destination = String(data.destination ?? 'local')
-    if (destination !== 'local') throw new BadRequest(
-      `Only 'local' backups are implemented. '${destination}' needs an outbound ` +
-      `adapter this app does not have (FJS-153).`)
-
-    const backup = await db().backup.create({
-      data: { kind: 'manual', status: 'pending', destination, requestedBy: actor() },
-    })
-
-    // `actor: null` — see the header. A hub action has no tenant, so the
-    // handler declares `runsAsApp` and this says so rather than letting
-    // caravan inherit a principal the handler would then refuse.
-    await $.app.jobs.dispatch(backupRun, { backupId: backup.id },
-      { queue: 'fleet', priority: 5, actor: null })
-
-    return backup
+    return queued.backup
   },
 
   /**
-   * Forget an archive.
-   *
-   * The ROW only. The file it names is not deleted, and that is deliberate
-   * while `location` is a path on a disk this process shares with the live
-   * database: a delete that unlinks a file is a delete that can unlink the
-   * wrong one, and the failure mode is losing the backup you were about to
-   * restore from. Pruning the files is an operator's job until there is a
-   * destination that owns its own lifecycle.
+   * Delete an archive: its directory on this disk or its object in the bucket,
+   * then the row (`FJS-D1494`), through the one delete retention uses. A
+   * delete the vendor refuses keeps the row and answers 409 with why, so the
+   * archive is never left in the bucket with nothing listing it.
    */
   async remove() {
     const id  = $.id as string
@@ -114,8 +92,19 @@ export default createService({
     if (!SETTLED.includes(row.status)) throw new Conflict(
       `That backup is still ${row.status} — wait for it to finish.`)
 
-    await db().backup.delete({ where: { id } })
-    return { ...row, note: row.location ? `The archive at ${row.location} was left in place` : null }
+    const done = await deleteArchive($.app, row)
+    if ('kept' in done) throw new Conflict(`The backup was kept: ${done.kept}`)
+    return row
+  },
+
+  // ── rescan — POST /backups  X-Service-Method: rescan ──
+  /** Give a `found` row to each archive in the destination's prefix that no
+   *  row names, so retention counts it (`FJS-D1493`). */
+  async rescan() {
+    const destinationId = (($.data ?? {}) as Record<string, unknown>).destinationId as string
+    const result = await rescanDestination($.app, destinationId)
+    if ('error' in result) throw new BadRequest(result.error)
+    return result
   },
 
   hooks: {

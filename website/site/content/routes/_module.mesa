@@ -27,56 +27,27 @@
     <div id="site-menu" class="sitemenu" popover>
       <nav class="navset" aria-label="Site">
         <a href="/start/">Start</a>
+        <a href="/tour/">Tour</a>
         <a href="/docs/">Docs</a>
         <a href="/packages/">Packages</a>
         <a href="/why/">Why</a>
         <a href="/journey/">Journey</a>
         <!-- A <details>, so the menu opens and closes with no script on the page.
-             Linked from the launch pages, kept out of the top row. -->
+             Direction is where the site says what is coming; drafts are pages
+             kept whole until each is folded into a door. Nothing is deleted. -->
         <details class="popover-anchor navmenu">
-          <summary>Explore</summary>
+          <summary>More</summary>
           <div class="popover align-end">
+            <div class="navlist-label">Direction</div>
             <ul class="navlist">
+              <li><a class="navlink" href="/direction/">Where this is going</a></li>
+              <li><a class="navlink" href="/direction/story/">The story</a></li>
+              <li><a class="navlink" href="/direction/specs/">Specifications</a></li>
+            </ul>
+            <div class="navlist-label">Drafts</div>
+            <ul class="navlist">
+              <li><a class="navlink" href="/drafts/">All drafts</a></li>
               <li><a class="navlink" href="/pitch/">The pitch</a></li>
-              <li><a class="navlink" href="/tutor/">Tutorial</a></li>
-              <li><a class="navlink" href="/seams/">The seams</a></li>
-              <li><a class="navlink" href="/showroom/">Showroom</a></li>
-              <li><a class="navlink" href="/before-after/">Before &amp; after</a></li>
-              <li><a class="navlink" href="/the-story/">The story</a></li>
-              <li><a class="navlink" href="/backbone/">The backbone</a></li>
-              <li><a class="navlink" href="/specs/">Specifications</a></li>
-            </ul>
-          </div>
-        </details>
-        <!-- Pages to fold into a launch page or cut before launch. A page leaves
-             this menu when it is merged or deleted. -->
-        <details class="popover-anchor navmenu">
-          <summary>Drafts</summary>
-          <div class="popover align-end">
-            <div class="navlist-label">Folding into Why</div>
-            <ul class="navlist">
-              <li><a class="navlink" href="/comparisons/">Comparisons</a></li>
-              <li><a class="navlink" href="/vs-laravel/">vs Laravel</a></li>
-              <li><a class="navlink" href="/landscape/">Landscape</a></li>
-            </ul>
-            <div class="navlist-label">Design rounds</div>
-            <ul class="navlist">
-              <li><a class="navlink" href="/showroom2/">Walkthrough</a></li>
-              <li><a class="navlink" href="/showroom3/">The ripple</a></li>
-              <li><a class="navlink" href="/showroom4/">The loop</a></li>
-              <li><a class="navlink" href="/showroom5/">The stack</a></li>
-              <li><a class="navlink" href="/flow/">The flow</a></li>
-              <li><a class="navlink" href="/map/">The map</a></li>
-              <li><a class="navlink" href="/allegory/">The allegory</a></li>
-            </ul>
-            <div class="navlist-label">Hero drafts</div>
-            <ul class="navlist">
-              <li><a class="navlink" href="/index2/">Round one</a></li>
-              <li><a class="navlink" href="/index3/">Round two</a></li>
-            </ul>
-            <div class="navlist-label">Tools</div>
-            <ul class="navlist">
-              <li><a class="navlink" href="/splash-tune/">Splash tuner</a></li>
             </ul>
           </div>
         </details>
@@ -114,6 +85,16 @@
      the bar's contents change, and the bar slides over whatever is pinned. */
   :global(:root) { --sticky-offset: 4rem; }
   :global(body) { background: var(--surface); color: var(--ink); }
+  /* Depth a reader feels rather than sees: light pooled behind the heading and
+     a fainter counter-glow low on the far side, tinted from the theme so every
+     swatch keeps it. Fixed, so it stays put while the page scrolls past it.
+     The splash paints its own light and would double up. */
+  :global(body:not(:has(.splash))::before) {
+    content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(55rem 38rem at 22% -8%, color-mix(in oklab, var(--color-primary) 9%, transparent), transparent 70%),
+      radial-gradient(45rem 34rem at 92% 105%, color-mix(in oklab, var(--color-primary) 5%, transparent), transparent 70%);
+  }
   /* html:root outranks a theme class on <html>, so every swatch keeps the face. */
   :global(html:root) { --font-display: 'Rubik Dirt', system-ui, sans-serif; }
 

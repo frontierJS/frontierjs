@@ -19,7 +19,7 @@ flags:
 `fli deploy`'s `08b-outpost` step on its own, against the container already
 serving — for a deploy block saying `outpost: true` (`FJS-D1191`). A fresh
 Basecamp has no workspace until `/setup`, so the deploy that installed it
-answered *no workspace yet*; `fli provision:install` runs this once the admin
+answered *no workspace yet*; `fli basecamp:install` runs this once the admin
 is made, and so can a person, from the app's directory.
 
 A box already in the fleet is answered as such and only its `outpost.env` paths

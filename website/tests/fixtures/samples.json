@@ -10,7 +10,7 @@
   "# scaffold a new app\n$ npx @frontierjs/cli@<range> new my-app\n$ cd my-app\n\n# add a model, apply it, run both halves\n$ fli scaffold Note --fields \"title:string done:boolean\"\n$ fli db:push\n$ bun run dev\n\n  → api :3000   web :5173",
   "# or add pieces to an existing project\n$ npm i @frontierjs/litestone   # Data\n$ npm i @frontierjs/junction    # API\n$ npm i @frontierjs/sierra      # UI\n\n# batteries, when you want them\n$ npm i @frontierjs/auth @frontierjs/caravan"
  ],
- "vs-laravel": [
+ "why/vs-laravel": [
   "Schema::create('leads', function (Blueprint $table) {\n    $table->id();\n    $table->foreignId('owner_id')->constrained('users');\n    $table->string('name', 200);\n    $table->string('email')->unique();\n    $table->decimal('value', 10, 2);\n    $table->timestamps();\n});",
   "class Lead extends Model {\n    protected $fillable = ['name', 'email', 'value'];\n    protected $casts    = ['value' => 'decimal:2'];\n\n    public function owner() { return $this->belongsTo(User::class); }\n}",
   "public function rules(): array {\n    return [\n        'name'  => ['required', 'string', 'max:200'],\n        'email' => ['required', 'email', 'unique:leads'],\n        'value' => ['required', 'numeric', 'min:0'],\n    ];\n}",
@@ -21,7 +21,7 @@
   "// name  ← this filename   ('leads.service.ts' → /api/leads)\n// model ← the service name ('leads' → db.lead)\n// db    ← app.db, scoped per request to the calling user\n// CRUD · 401s · 400s ← the Model\n\nexport default createService({})",
   "<script>\n  const leads = createResource('leads')\n  await leads.find({ $limit: 20 })\n</script>\n\n<table class=\"table\">\n  {#each leads.data as lead}\n    <tr><td>{lead.name}</td><td>{lead.email}</td></tr>\n  {/each}\n</table>\n\n{#if leads.can('delete')}\n  <button class=\"btn danger\">Delete</button>\n{/if}"
  ],
- "flow": [
+ "tour/field": [
   "enum LeadStatus { new  contacted  won  lost }\n\nmodel Lead {\n  id        Int        @id\n  name      String     @length(1, 120) @trim\n  email     String     @email @unique @lower\n  status    LeadStatus @default(new)\n  value     Float      @gte(0)\n  ownerId   Int\n  createdAt DateTime   @default(now())\n\n  // Gate — the ordinal level check, per operation\n  @@gate(2.4.4.5)\n\n  // Policy — a row predicate, compiled into the SQL\n  @@allow(read, ownerId == auth().id)\n}",
   "// name  ← the filename      ('leads.service.ts' → /api/leads)\n// model ← the service name  ('leads' → db.lead)\n// db    ← app.db, scoped per call to the caller\n\nexport default createService({})",
   "export default createService({\n  hooks: {\n    around: { all:    [timing] },        // wraps the whole call\n    before: { create: [stampOwner] },    // may mutate ctx.data or halt\n    after:  { create: [queueWelcome] },  // sees ctx.result\n    error:  { all:    [report] },        // sees ctx.error\n  },\n})\n\nfunction stampOwner(ctx) {\n  ctx.data.ownerId = ctx.user.id   // who, from the Context\n}",
@@ -32,12 +32,12 @@
   "<script>\n  import { Input, Select, Button } from '@frontierjs/ui'\n\n  const leads = createResource('leads')\n  let draft = leads.make()          // shaped by the Model\n\n  // validate() returns [{ field, message }] — the components want a map\n  $: errors = Object.fromEntries(\n    leads.validate(draft, 'create').map(e => [e.field, e.message])\n  )\n</script>\n\n<Input  label=\"Email\" name=\"email\" type=\"email\"\n        bind:value={draft.email} {errors} />\n\n<Input  label=\"Name\"  name=\"name\"  bind:value={draft.name}  {errors} />\n<Select label=\"Status\" name=\"status\" options={leads.fields.status.enum}\n        bind:value={draft.status} {errors} />\n\n<Button onclick={() => leads.service.create(draft)}>Save</Button>",
   "# the Model\ndb/schema.lite            16 lines\n\n# the Service\nleads.service.ts          3 lines\n\n# the UI\nleads/index.mesa          the form you wanted"
  ],
- "index2": [
+ "drafts/index2": [
   "// package.json\n\"prisma\",          // data\n\"zod\",             // validation, again\n\"casl\",            // authorization, again\n\"next-auth\",       // identity\n\"express\",         // transport\n\"socket.io\",       // realtime\n\"bullmq\",          // jobs\n\"node-cron\",       // schedule\n\"nodemailer\",      // mail\n\"react-email\",     // mail, again\n\"swagger-jsdoc\",   // the API, described again\n\"react\",           // ui\n\"react-hook-form\", // the fields, again\n\"tailwindcss\"      // style\n\n// + the glue between all fourteen",
   "// package.json\n\"@frontierjs/litestone\", // Data\n\"@frontierjs/junction\",  // API\n\"@frontierjs/sierra\",    // UI\n\"@frontierjs/css\"        // style\n\n// batteries, when you want them\n\"@frontierjs/auth\"\n\"@frontierjs/caravan\"    // jobs + cron\n\"@frontierjs/notifications\"\n\n// the glue is the framework",
   "// db/schema.lite\nmodel Lead {\n  + value  Float  @gte(0)\n}"
  ],
- "index3": [
+ "drafts/index3": [
   "my-app/\n├── db/              the seed — one schema, above both consumers\n│   └── schema.lite\n├── api/             API realm\n│   ├── config/  src/  public/\n│   └── test/    dist/ deploy/\n└── web/             UI realm\n    ├── config/  src/  public/\n    └── test/    dist/ deploy/\n\n# the same six folders in every sub-project,\n# so nothing has to be looked up twice",
   "// package.json\n\"prisma\",          // data\n\"zod\",             // validation, again\n\"casl\",            // authorization, again\n\"next-auth\",       // identity\n\"express\",         // transport\n\"socket.io\",       // realtime\n\"bullmq\",          // jobs\n\"node-cron\",       // schedule\n\"nodemailer\",      // mail\n\"react-email\",     // mail, again\n\"swagger-jsdoc\",   // the API, described again\n\"react\",           // ui\n\"react-hook-form\", // the fields, again\n\"tailwindcss\"      // style\n\n// + the glue between all fourteen",
   "// package.json\n\"@frontierjs/litestone\", // Data\n\"@frontierjs/junction\",  // API\n\"@frontierjs/sierra\",    // UI\n\"@frontierjs/css\"        // style\n\n// batteries, when you want them\n\"@frontierjs/auth\"\n\"@frontierjs/caravan\"    // jobs + cron\n\"@frontierjs/notifications\"\n\n// the glue is the framework",
@@ -46,7 +46,7 @@
   "{lead.ownerId === session.user.id && (\n  <EditButton />   // a third opinion, in a third language\n)}",
   "model Lead {\n  @@allow(read, ownerId == auth().id)\n}\n\n// the query is filtered, the API returns 403,\n// and resource.can('read', lead) knows in the browser"
  ],
- "before-after": [
+ "why/before-after": [
   "CREATE POLICY lead_owner ON leads\n  FOR SELECT USING (owner_id = current_setting('app.user')::int);",
   "router.get('/leads', requireAuth, async (req, res) => {\n  const rows = await db.lead.findMany({\n    where: { ownerId: req.user.id },  // don't forget this\n  })\n  res.json(rows)\n})",
   "{lead.ownerId === session.user.id && (\n  <EditButton />  // a third opinion, in a third language\n)}",

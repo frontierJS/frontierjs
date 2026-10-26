@@ -7,15 +7,15 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": false,
+      "preset": "none",
       "correctness": {
-        "recommended": true,
+        "preset": "recommended",
         "noUnusedVariables": "warn",
         "noUnusedFunctionParameters": "off"
       },
-      "security": { "recommended": true },
+      "security": { "preset": "recommended" },
       "suspicious": {
-        "recommended": true,
+        "preset": "recommended",
         "noExplicitAny": "off",
         "useIterableCallbackReturn": { "level": "error", "options": { "checkForEach": false } },
         "noAssignInExpressions": "off",
@@ -24,13 +24,13 @@
         "noImplicitAnyLet": "off"
       },
       "a11y": {
-        "recommended": true,
+        "preset": "recommended",
         "noSvgWithoutTitle": "off",
         "useKeyWithClickEvents": "off"
       },
-      "complexity": { "recommended": false },
-      "style": { "recommended": false },
-      "performance": { "recommended": false }
+      "complexity": { "preset": "none" },
+      "style": { "preset": "none" },
+      "performance": { "preset": "none" }
     }
   },
   "files": {

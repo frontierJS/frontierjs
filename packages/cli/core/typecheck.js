@@ -59,7 +59,7 @@ export function findTsc(startDir) {
 const isForeign = (file) => file.startsWith('..') || file.includes('node_modules')
 
 /**
- * @returns {{ status: 'ok'|'no-tsc'|'spawn-failed', own: string[], ownCount: number,
+ * @returns {{ status: 'ok'|'no-tsc'|'spawn-failed'|'tsc-failed', own: string[], ownCount: number,
  *             foreign: string[], foreignCount: number, message?: string }}
  */
 export function runTypecheck({ dir = process.cwd(), tscArgs = [] } = {}) {
@@ -80,6 +80,18 @@ export function runTypecheck({ dir = process.cwd(), tscArgs = [] } = {}) {
   }
 
   const lines = `${result.stdout ?? ''}${result.stderr ?? ''}`.split('\n').filter(Boolean)
+
+  // tsc with no tsconfig.json prints its usage and exits 1, and a bad flag or
+  // an unreadable config does the same — zero diagnostics from a run that
+  // checked nothing, which counted as clean (FJS-3496). A failing exit is only
+  // a check when it carries a diagnostic.
+  if (result.status !== 0 && !lines.some(l => DIAGNOSTIC.test(l))) {
+    const noConfig = !existsSync(join(dir, 'tsconfig.json')) && !tscArgs.some(a => a === '-p' || a === '--project')
+    const first    = lines.find(l => !/^\s*$/.test(l))?.trim()
+    return empty('tsc-failed', noConfig
+      ? `no tsconfig.json in ${dir} — tsc checked nothing`
+      : `tsc exited ${result.status ?? result.signal} without a diagnostic — nothing was checked${first ? `: ${first}` : ''}`)
+  }
 
   const own          = []
   const foreignLines = []

@@ -13,7 +13,7 @@
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import { goto } from '@frontierjs/sierra/router'
-  import { PRIORITY_TONE } from '../notices.js'
+  import { PRIORITY_TONE } from '../lib/notices.js'
 
   export let notices  = []
   export let max      = 3     // the shell shows the top few; the full list is the queue

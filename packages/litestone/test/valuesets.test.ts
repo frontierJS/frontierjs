@@ -14,11 +14,14 @@
 //      own source rather than hand-listed.
 
 import { describe, it, expect } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createClient } from '../src/index.js'
 
-const SRC = readFileSync(fileURLToPath(new URL('../src/core/client.js', import.meta.url)), 'utf8')
+// Every file in src/core, not client.js alone: a verb may live in its own file
+// beside makeTable (upsert-many.js) is still a write path.
+const CORE = fileURLToPath(new URL('../src/core/', import.meta.url))
+const SRC = readdirSync(CORE).filter(f => f.endsWith('.js')).map(f => readFileSync(CORE + f, 'utf8')).join('\n')
 
 const SCHEMA = `
 model Tag {

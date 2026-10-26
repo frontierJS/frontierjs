@@ -25,6 +25,8 @@ it re-resolved when it runs. Survives a restart.
 | Job | Queue | Schedule | Zone | Attempts | Retry delay | Timeout |
 | --- | --- | --- | --- | --- | --- | --- |
 | `alert-evaluate` | `default` | `* * * * *` | — | 3 | default | **none** |
+| `app-backup:run` | `fleet` | on dispatch | — | 1 | default | 3720000ms |
+| `app-drill:run` | `fleet` | on dispatch | — | 1 | default | 5580000ms |
 | `backup:run` | `fleet` | on dispatch | — | 2 | 30000 | 600000ms |
 | `cleanup:run` | `fleet` | on dispatch | — | 2 | 10000 | **none** |
 | `dependency-check` | `sync` | `15 6 * * *` | — | 3 | 60000, 600000 | 300000ms |
@@ -35,6 +37,7 @@ it re-resolved when it runs. Survives a restart.
 | `orion.run` | `orion` | on dispatch | — | 3 | default | **none** |
 | `orion.sweep` | `orion` | `* * * * *` | — | 3 | default | **none** |
 | `recipe:run` | `fleet` | on dispatch | — | 2 | 10000 | **none** |
+| `replicate:sync` | `fleet` | on dispatch | — | 5 | 10000, 60000 | 240000ms |
 | `retention` | `default` | `0 4 * * *` | — | 3 | default | **none** |
 | `server-reachability` | `default` | `* * * * *` | — | 3 | default | **none** |
 | `server:destroy` | `fleet` | on dispatch | — | 3 | 10000, 60000 | **none** |
@@ -44,7 +47,7 @@ it re-resolved when it runs. Survives a restart.
 | `site:publish` | `deployments` | on dispatch | — | 1 | default | 2130000ms |
 | `weekly-digest` | `default` | `0 9 * * 1` | — | 3 | default | **none** |
 
-19 handler(s), 7 of them on a clock.
+22 handler(s), 7 of them on a clock.
 
 **13 with no timeout.** Absent means no bound, honestly — but a
 handler that never settles holds its slot for the life of the process, and on a

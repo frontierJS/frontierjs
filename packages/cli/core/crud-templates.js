@@ -340,7 +340,10 @@ ${gateFootnote}
  * @param {boolean} [o.gate]           render the gate notice
  */
 export function createPage(o) {
-  const session = o.sessionImport ? `  ${o.sessionImport}\n` : ''
+  // The gate notice reads session.level, so a gated page imports it the way the
+  // list and the edit page do. Importing it only when `sessionImport` was handed
+  // over left every admin create page throwing on its first render.
+  const session = o.gate || o.sessionImport ? sessionLine(o) : ''
   const watch   = o.gate ? '\n  $: session.level\n' : ''
 
   return `---

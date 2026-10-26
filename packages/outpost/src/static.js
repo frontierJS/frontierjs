@@ -66,7 +66,8 @@ export function validRelativePath(path) {
   for (const segment of path.split('/')) {
     if (!segment)                                     return `path '${path}' has an empty segment`
     if (segment === '.' || segment === '..')          return `path '${path}' walks the directory tree`
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment)) return `path '${path}' has a segment that is not a plain file name`
+    // A leading `_` is Rollup's chunk for a `[param]` route and SvelteKit's `_app/`; a leading `.` stays out.
+    if (!/^[A-Za-z0-9_][A-Za-z0-9._-]*$/.test(segment)) return `path '${path}' has a segment that is not a plain file name`
   }
   return null
 }

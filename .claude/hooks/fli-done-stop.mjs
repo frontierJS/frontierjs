@@ -19,6 +19,13 @@
 // `FLI_DONE_STOP=off` in the environment skips it whole. `scripts/headless.mjs`
 // sets it: the fix and frame skills run `fli done` themselves as a step.
 //
+// One report at a time. `fli done` fans out into the surface check, the
+// typecheck and the cli suite, and several sessions stopping together ran
+// three of them at once and pinned every core. `<state dir>/.lock` holds the
+// pid of the run in progress; a stop that finds a live one skips, and answers
+// nothing, rather than queue. A lock whose pid is gone, or older than the
+// longest run should take, is stale and taken over.
+//
 // A session that has edited a file under `packages/haven/` is skipped as well.
 // Haven makes new files on most steps, each a `layout-named` item, so every stop
 // there was a fresh report and a block for one more turn; a Haven session runs
@@ -31,6 +38,21 @@ import { isAbsolute, join }                                                 from
 import { pathToFileURL }                                                    from 'node:url'
 
 const KEEP_MS = 24 * 60 * 60 * 1000
+const LOCK_MS = 15 * 60 * 1000
+
+const alive = pid => { try { process.kill(pid, 0); return true } catch (e) { return e.code === 'EPERM' } }
+
+// True when this process now holds the lock; false when a live run holds it.
+function takeLock(lock) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try { writeFileSync(lock, String(process.pid), { flag: 'wx' }); return true } catch {}
+    let pid = NaN, age = Infinity
+    try { pid = Number(readFileSync(lock, 'utf8')); age = Date.now() - statSync(lock).mtimeMs } catch { continue }
+    if (alive(pid) && age < LOCK_MS) return false
+    try { rmSync(lock) } catch {}
+  }
+  return false
+}
 
 try {
   if (process.env.FLI_DONE_STOP === 'off') process.exit(0)
@@ -68,11 +90,16 @@ try {
 
   if (!stopVerdict({ state, head, fingerprint, edited }).run) process.exit(0)
 
-  const verdict = stopVerdict({ state, head, fingerprint, edited, report: await runDone(root) })
   mkdirSync(stateDir, { recursive: true })
+  const lock = join(stateDir, '.lock')
+  if (!takeLock(lock)) process.exit(0)
+  let report
+  try { report = await runDone(root) } finally { try { rmSync(lock) } catch {} }
+  const verdict = stopVerdict({ state, head, fingerprint, edited, report })
   writeFileSync(stateFile, JSON.stringify(verdict.state))
   for (const name of readdirSync(stateDir)) {
     const f = join(stateDir, name)
+    if (name === '.lock') continue
     try { if (Date.now() - statSync(f).mtimeMs > KEEP_MS) rmSync(f) } catch {}
   }
   if (verdict.block) process.stdout.write(JSON.stringify({ decision: 'block', reason: verdict.reason }))

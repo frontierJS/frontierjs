@@ -21,6 +21,7 @@ import { htmlEntitiesToText } from './entities.js'
 import { buildHost, hostRefusal } from './host/emit.js'
 import { TARGETS } from './host/targets.js'
 import { WINDOW_BINDS } from './window-binds.js'
+import { unwrapGlobal } from './native/css.js'
 
 /**
  * Names a component function may not take. Reserved words are a parse error;
@@ -4590,7 +4591,7 @@ function _scopeSelector(sel, cssId) {
 
   // :global(inner) — strip wrapper, emit inner unscoped
   if (sel.includes(':global(')) {
-    return sel.replace(/:global\(([^)]*)\)/g, '$1').trim()
+    return unwrapGlobal(sel).trim()
   }
 
   // Already scoped
@@ -5655,6 +5656,7 @@ export function buildBlock(data, option = {}) {
         const el = xNode.node({ name: n.name })
         tpl.push(el)
         labelRequest?.set(el)
+        const firstBind = binds.body.length
         n.attributes.forEach((p) => {
           if (p._skip) return
 
@@ -5673,7 +5675,8 @@ export function buildBlock(data, option = {}) {
           }
 
           const b = ctx.bindProp(p, n, el)
-          if (b?.bind) binds.push(b.bind)
+          if (b?.first) binds.body.splice(firstBind, 0, b.bind)
+          else if (b?.bind) binds.push(b.bind)
         })
         n.classes.forEach((c) => el.class.add(c))
         // An element that arrives already stamped came out of Markdown, whose
@@ -7759,6 +7762,20 @@ export function bindProp(prop, node, element) {
       // outcome this whole mechanism is arranged to avoid.
       bind: xNode('bindAttribute', { el: element.bindName(), name, exp }, (w, n) => {
         w.writeLine(`$$runtime.bindAttribute(${n.el}, '${n.name}', () => (${n.exp}));`)
+      })
+    }
+  }
+
+  // A literal `style` reaches the element through CSSOM, never the template
+  // string. Under a CSP with no 'unsafe-inline', Firefox refuses a style the
+  // template's innerHTML parsed and blanks it, while Chromium applies the clone,
+  // so the page broke in one browser only (FJS-D1464). `first`: a `style:` or a
+  // spread on the same element must land after it, not be wiped by it.
+  if (prop.name === 'style' && prop.value) {
+    return {
+      first: true,
+      bind: xNode('staticStyle', { el: element.bindName(), value: htmlEntitiesToText(prop.value) }, (w, n) => {
+        w.writeLine(`$$runtime.set_attribute(${n.el}, 'style', ${JSON.stringify(n.value)});`)
       })
     }
   }

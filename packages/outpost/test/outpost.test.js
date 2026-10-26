@@ -22,9 +22,11 @@ import { createStatic }           from '../src/static.js'
 import { createStaticServer }     from '../src/serve.js'
 import { readConfig }             from '../src/config.js'
 import { ensureCert }             from '../src/cert.js'
+import { createReplicator }       from '../src/replicate.js'
 import pkg                        from '../package.json' with { type: 'json' }
-import { existsSync, mkdtempSync, statSync, writeFileSync, mkdirSync, symlinkSync, realpathSync } from 'node:fs'
+import { existsSync, mkdtempSync, statSync, writeFileSync, mkdirSync, symlinkSync, realpathSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir }                 from 'node:os'
+import { createHash }             from 'node:crypto'
 import { join }                   from 'node:path'
 
 const CONFIG = {
@@ -47,6 +49,9 @@ function fakeRunner(answers = {}) {
     // a test canning `docker inspect` for port bindings would otherwise read as
     // a container that never came up.
     if (argv.includes('{{.State.Running}}')) return { exitCode: 0, stdout: 'true\n', stderr: '', ...answers.running }
+    // An image that declares no USER runs as root and keeps it, so a case
+    // about anything else is not handed a uid table to write.
+    if (argv.includes('{{json .Config.User}}')) return { exitCode: 0, stdout: '""\n', stderr: '', ...answers.user }
     const key = argv.slice(0, 3).join(' ')
     const canned = Object.entries(answers).find(([prefix]) => key.startsWith(prefix))?.[1]
     return { exitCode: 0, stdout: '', stderr: '', ...(canned ?? {}) }
@@ -175,6 +180,50 @@ describe('what the machine is asked to do', () => {
     expect(argv).not.toContain('docker rm -f fjs-app-1')
   })
 
+  // FJS-D1484: each app on a box is a host uid of its own, so one that
+  // escapes its container is a stranger to every other app's volume.
+  describe('an image with a USER runs as the app\'s own uid', () => {
+    const release = async (docker, app_id, config = { port: 3000, volumePath: '/db' }) => {
+      const server = createOutpostServer(CONFIG, { docker, inspector: createInspector({ run: async () => ({ exitCode: 0, stdout: '', stderr: '' }) }) })
+      return send(server, 'POST', '/deploy', { deployment_id: `dep-${app_id}`, app_id, image: DIGEST, config })
+    }
+    const machine = (user = '"bun"\n') => {
+      const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'docker run': { stdout: 'c-1\n' }, user: { stdout: user } })
+      const uidFile = join(mkdtempSync(join(tmpdir(), 'outpost-uids-')), 'uids.json')
+      return { fake, uidFile, docker: createDocker({ run: fake.run, workDir: CONFIG.workDir, uidFile }) }
+    }
+    const runs = (fake) => fake.calls.map(c => c.join(' ')).filter(c => c.startsWith('docker run'))
+
+    test('the volume is handed to the uid after the old container stops, and the run keeps the copy from undoing it', async () => {
+      const m = machine()
+      expect((await release(m.docker, 'app-1')).status).toBe(200)
+      const argv = m.fake.calls.map(c => c.join(' '))
+      const [chown, app] = runs(m.fake)
+      expect(chown).toBe(`docker run --rm --user 0:0 --entrypoint chown --mount type=volume,src=fjs-app-1-data,dst=/db ${DIGEST} -R 400000:400000 /db`)
+      expect(argv.indexOf(chown)).toBeGreaterThan(argv.indexOf('docker stop -t 10 fjs-app-1_replaced'))
+      expect(app).toContain('--user 400000:400000')
+      expect(app).toContain('--mount type=volume,src=fjs-app-1-data,dst=/db,volume-nocopy')
+    })
+
+    test('a uid is recorded once per app and never shared', async () => {
+      const m = machine()
+      await release(m.docker, 'app-1')
+      await release(m.docker, 'app-2')
+      await release(m.docker, 'app-1')
+      expect(JSON.parse(readFileSync(m.uidFile, 'utf8'))).toEqual({ 'app-1': 400000, 'app-2': 400001 })
+      expect(runs(m.fake).filter(c => !c.includes('chown')).map(c => /--user (\S+)/.exec(c)[1])).toEqual(['400000:400000', '400001:400001', '400000:400000'])
+    })
+
+    test('an image that runs as root is left as root, and no uid is handed out', async () => {
+      for (const user of ['""\n', '"root"\n', '"0:0"\n']) {
+        const m = machine(user)
+        await release(m.docker, 'app-1')
+        expect(runs(m.fake).some(c => c.includes('--user') || c.includes('chown'))).toBe(false)
+        expect(existsSync(m.uidFile)).toBe(false)
+      }
+    })
+  })
+
   // A draft's review build (FJS-D1251): the repository's code runs in
   // throwaway containers, and the token reaches only the upload's.
   describe('a site preview', () => {
@@ -206,7 +255,7 @@ describe('what the machine is asked to do', () => {
       expect(body).toEqual({ commit_sha: 'c0ffee', url: 'https://spring-harbor.kobami.workers.dev',
         version_url: 'https://0a1b2c3d-harbor.kobami.workers.dev' })
       const runs = argv().filter(c => c.startsWith('docker run --rm'))
-      expect(runs.map(c => c.split(' oven/bun:1.4.2 ')[1])).toEqual([
+      expect(runs.map(c => c.split(` oven/bun:${Bun.version} `)[1])).toEqual([
         'bun install --frozen-lockfile', 'bun x site-kit build . --preview', 'bun x site-kit deploy . --preview spring',
       ])
       expect(runs[0]).toContain('-w /src ')
@@ -311,7 +360,7 @@ describe('what the machine is asked to do', () => {
       expect(res.status).toBe(200)
       expect(await res.json()).toEqual({ commit_sha: COMMIT, url: 'https://harbor.kobami.workers.dev' })
       const runs = argv().filter(c => c.startsWith('docker run --rm'))
-      expect(runs.map(c => c.split(' oven/bun:1.4.2 ')[1])).toEqual([
+      expect(runs.map(c => c.split(` oven/bun:${Bun.version} `)[1])).toEqual([
         'bun install --frozen-lockfile', 'bun x site-kit build .', 'bun x site-kit deploy .',
       ])
       expect(runs.every(c => c.includes(`--mount type=bind,source=${workDir}/app-1.release,target=/src`))).toBe(true)
@@ -779,13 +828,289 @@ describe('what the machine is asked to do', () => {
     })
   })
 
+  describe('/volume/restore with a url — a backup out of its bucket (FJS-D1521)', () => {
+    const restoreDir = join(mkdtempSync(join(tmpdir(), 'outpost-fetch-')), 'restore')
+    const archive    = 'the archive bytes'
+    const digest     = createHash('sha256').update(archive).digest('hex')
+    const url        = 'http://127.0.0.1:8333/bucket/apps/ela-2026.tar.gz?X-Amz-Signature=abc'
+
+    const fetching = (answers = {}, fetch = async () => new Response(archive)) => {
+      const runner = fakeRunner(answers)
+      const seen   = []
+      // What the extract was handed, read while it is still on disk.
+      const run = async (argv) => {
+        const bind = argv.find(a => a.startsWith('type=bind,src='))
+        if (bind) seen.push(readFileSync(bind.slice('type=bind,src='.length).split(',')[0], 'utf8'))
+        return runner.run(argv)
+      }
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ run, restoreDir, fetch }), inspector: createInspector({ run: runner.run }),
+        log: { warn() {}, error() {} },
+      })
+      return { server, calls: runner.calls, seen }
+    }
+    const restore = async (server, body) => {
+      const res = await send(server, 'POST', '/volume/restore', body)
+      return { status: res.status, body: await res.json() }
+    }
+
+    test('fetched into the restore directory, checked, extracted, and removed after', async () => {
+      const gets = []
+      const { server, calls, seen } = fetching({ 'docker run --rm': { stdout: '2 17\n' } }, async (u) => { gets.push(u); return new Response(archive) })
+      const { status, body } = await restore(server, { app_id: 'ela', url, sha256: digest })
+      expect(status).toBe(200)
+      expect(body).toMatchObject({ volume: 'fjs-ela-data', files: 2, bytes: 17, sha256: digest, overwrite: false })
+      expect(gets).toEqual([url])
+      expect(seen).toEqual([archive])
+      expect(calls.find(a => a[1] === 'run')).toEqual(expect.arrayContaining(['--network', 'none', 'FJS_OVERWRITE=0']))
+      expect(readdirSync(restoreDir)).toEqual([])
+    })
+
+    test('an object that is not the archive taken is refused before tar runs', async () => {
+      const { server, calls } = fetching({}, async () => new Response('another object'))
+      const { status, body } = await restore(server, { app_id: 'ela', url, sha256: digest })
+      expect(status).toBe(500)
+      expect(body.error).toContain('not the one taken')
+      expect(calls.some(a => a[1] === 'run')).toBe(false)
+      expect(readdirSync(restoreDir)).toEqual([])
+    })
+
+    test('a bucket that refuses is answered in its words', async () => {
+      const xml = '<Error><Code>AccessDenied</Code><Message>Request has expired</Message></Error>'
+      const { server, calls } = fetching({}, async () => new Response(xml, { status: 403 }))
+      const { status, body } = await restore(server, { app_id: 'ela', url, sha256: digest })
+      expect(status).toBe(500)
+      expect(body.error).toContain('403 AccessDenied: Request has expired')
+      expect(calls.some(a => a[1] === 'run')).toBe(false)
+    })
+
+    test('a held volume is refused before anything is fetched', async () => {
+      const { server } = fetching({ 'docker ps -a': { stdout: 'fjs-ela\n' } }, async () => { throw new Error('must not be fetched') })
+      const { status, body } = await restore(server, { app_id: 'ela', url, sha256: digest })
+      expect(status).toBe(500)
+      expect(body.error).toContain('held by fjs-ela')
+    })
+
+    test('a url needs a digest, a URL, http(s), and no path beside it', async () => {
+      for (const extra of [{}, { sha256: 'abc' }, { sha256: digest, url: 'ftp://x/y' }, { sha256: digest, url: 'not a url' }, { sha256: digest, path: 'ela.tar.gz' }]) {
+        const { server, calls } = fetching({}, async () => { throw new Error('must not be fetched') })
+        const { status } = await restore(server, { app_id: 'ela', url, ...extra })
+        expect({ extra, status }).toEqual({ extra, status: 500 })
+        expect(calls).toEqual([])
+      }
+    })
+  })
+
+  describe('/replica/restore — an app\'s databases out of its replica, into a stopped app', () => {
+    const replica = {
+      bucket: 'frontier', path: 'apps/ela', endpoint: 'https://s3.us-west-000.backblazeb2.com',
+      region: 'us-west-000', access_key_id: 'K-ela', secret_access_key: 'S-ela',
+    }
+    // `litestream restore -o` writes its file, which `stage` stats; `ltx`
+    // answers the replica's last write.
+    const restoring = (answers = {}, { lastWrite = '2026-10-25T12:00:00Z', fails = {} } = {}) => {
+      const stageDir = mkdtempSync(join(tmpdir(), 'outpost-replica-'))
+      const runner   = fakeRunner({ 'docker run --rm': { stdout: '2 8192\n' }, 'systemctl is-active --quiet': {}, ...answers })
+      const envs     = []
+      const run = async (argv, opts = {}) => {
+        if (argv[0] !== '/usr/local/bin/litestream') return runner.run(argv, opts)
+        runner.calls.push(argv); envs.push(opts.env)
+        if (argv[1] === 'ltx') return { exitCode: 0, stdout: JSON.stringify([{ timestamp: lastWrite }]), stderr: '' }
+        const name = argv[argv.indexOf('-o') + 1].split('/').pop()
+        if (fails[name]) return { exitCode: 1, stdout: '', stderr: `Error: ${fails[name]}\n` }
+        writeFileSync(argv[argv.indexOf('-o') + 1], 'SQLite format 3\0')
+        return { exitCode: 0, stdout: '', stderr: '' }
+      }
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ run }), inspector: createInspector({ run }),
+        replicator: createReplicator({ run, configPath: join(stageDir, 'litestream.yml'), stageDir }),
+        log: { warn() {}, error() {} },
+      })
+      return { server, calls: runner.calls, envs, stageDir }
+    }
+    const restore = async (server, body) => {
+      const res = await send(server, 'POST', '/replica/restore', body)
+      return { status: res.status, body: await res.json() }
+    }
+    const body = (over = {}) => ({ app_id: 'ela', replica, databases: ['main.db', 'jobs.db'], ...over })
+
+    test('restores each database by its URL, the key in the environment, then copies into the volume and restarts Litestream', async () => {
+      const { server, calls, envs, stageDir } = restoring()
+      const { status, body: said } = await restore(server, body())
+      expect(status).toBe(200)
+      expect(said).toMatchObject({ volume: 'fjs-ela-data', files: 2, bytes: 8192, overwrite: false, replication: 'restarted' })
+      expect(said.databases).toEqual([{ name: 'main.db', at: 'latest', bytes: 16 }, { name: 'jobs.db', at: 'latest', bytes: 16 }])
+
+      const restores = calls.filter(a => a[1] === 'restore')
+      expect(restores.map(a => a.at(-1))).toEqual([
+        's3://frontier/apps/ela/main.db?endpoint=https%3A%2F%2Fs3.us-west-000.backblazeb2.com&region=us-west-000&force-path-style=true',
+        's3://frontier/apps/ela/jobs.db?endpoint=https%3A%2F%2Fs3.us-west-000.backblazeb2.com&region=us-west-000&force-path-style=true',
+      ])
+      expect(restores[0]).toEqual(expect.arrayContaining(['-integrity-check', 'quick']))
+      // argv is readable off `ps`.
+      expect(calls.flat().join(' ')).not.toContain('S-ela')
+      expect(envs[0]).toEqual({ LITESTREAM_ACCESS_KEY_ID: 'K-ela', LITESTREAM_SECRET_ACCESS_KEY: 'S-ela' })
+
+      const copy = calls.find(a => a[1] === 'run')
+      expect(copy).toEqual(expect.arrayContaining(['--network', 'none', '-v', 'fjs-ela-data:/data', 'FJS_OVERWRITE=0']))
+      expect(copy.find(a => a.startsWith('type=bind'))).toMatch(new RegExp(`^type=bind,src=${realpathSync(stageDir)}/ela-[^,]+,dst=/restore,readonly$`))
+      expect(calls.at(-1)).toEqual(['systemctl', 'restart', 'basecamp-litestream.service'])
+      // The staging directory goes, success or not.
+      expect(readdirSync(stageDir).filter(f => f.startsWith('ela-'))).toEqual([])
+    })
+
+    test('an instant before the last write is pinned; one after it is the latest', async () => {
+      const before = restoring()
+      const { body: pinned } = await restore(before.server, body({ databases: ['main.db'], at: '2026-10-25T09:00:00Z' }))
+      expect(before.calls.find(a => a[1] === 'restore')).toEqual(expect.arrayContaining(['-timestamp', '2026-10-25T09:00:00Z']))
+      expect(pinned.databases[0].at).toBe('2026-10-25T09:00:00Z')
+
+      const after = restoring()
+      const { body: latest } = await restore(after.server, body({ databases: ['main.db'], at: '2026-10-25T15:00:00Z' }))
+      expect(after.calls.find(a => a[1] === 'restore')).not.toContain('-timestamp')
+      expect(latest.databases[0].at).toBe('latest')
+    })
+
+    test('a database the replica cannot restore fails the whole call in its words, and the volume is not touched', async () => {
+      const { server, calls, stageDir } = restoring({}, { fails: { 'jobs.db': 'no matching backup files available' } })
+      const { status, body: said } = await restore(server, body())
+      expect(status).toBe(500)
+      expect(said.error).toBe('jobs.db was not restored from frontier/apps/ela: no matching backup files available')
+      expect(calls.some(a => a[1] === 'run')).toBe(false)
+      expect(readdirSync(stageDir).filter(f => f.startsWith('ela-'))).toEqual([])
+    })
+
+    test('a container holding the volume is refused before anything is downloaded', async () => {
+      const { server, calls } = restoring({ 'docker ps -a': { stdout: 'fjs-ela\n' } })
+      const { status, body: said } = await restore(server, body())
+      expect(status).toBe(500)
+      expect(said.error).toContain('held by fjs-ela')
+      expect(calls.some(a => a[0] === '/usr/local/bin/litestream')).toBe(false)
+    })
+
+    test('a database already in the volume is refused unless overwrite is stated', async () => {
+      const { server } = restoring({ 'docker run --rm': { exitCode: 3, stderr: '/data/main.db already exists\n' } })
+      const { status, body: said } = await restore(server, body())
+      expect(status).toBe(500)
+      expect(said.error).toBe('fjs-ela-data already holds main.db — send overwrite: true to replace it')
+
+      const again = restoring()
+      await restore(again.server, body({ overwrite: true }))
+      expect(again.calls.find(a => a[1] === 'run')).toContain('FJS_OVERWRITE=1')
+    })
+
+    test('names, instants and keys a caller could bend are refused before anything runs', async () => {
+      for (const over of [
+        { databases: ['../etc/passwd.db'] }, { databases: ['sub/main.db'] }, { databases: ['main.sqlite'] },
+        { databases: [] }, { databases: ['main.db', 'main.db'] }, { at: 'yesterday' }, { at: '2026-10-25 09:00' },
+        { replica: { ...replica, secret_access_key: '' } }, { replica: { ...replica, endpoint: 'file:///etc' } },
+        { app_id: '../ela' },
+      ]) {
+        const { server, calls } = restoring()
+        const { status } = await restore(server, body(over))
+        expect({ over, status }).toEqual({ over, status: 500 })
+        expect(calls.filter(a => a[0] === '/usr/local/bin/litestream' || a[1] === 'run')).toEqual([])
+      }
+    })
+
+    test('a Litestream that is not running is left stopped, and a failed restart is answered, not thrown', async () => {
+      const idle = restoring({ 'systemctl is-active --quiet': { exitCode: 3 } })
+      const { body: off } = await restore(idle.server, body())
+      expect(off.replication).toBe('not running')
+      expect(idle.calls.some(a => a[1] === 'restart')).toBe(false)
+
+      const broken = restoring({ 'systemctl restart basecamp-litestream.service': { exitCode: 1, stderr: 'Job failed.' } })
+      const { status, body: said } = await restore(broken.server, body())
+      expect(status).toBe(200)
+      expect(said).toMatchObject({ files: 2, replication: 'restart failed' })
+      expect(said.replication_error).toContain('Job failed.')
+    })
+  })
+
+  describe('/replica/drill — a replica restored beside the app and proven by its own image (FJS-D1524)', () => {
+    const replica = {
+      bucket: 'frontier', path: 'apps/ela', endpoint: 'https://s3.us-west-000.backblazeb2.com',
+      region: 'us-west-000', access_key_id: 'K-ela', secret_access_key: 'S-ela',
+    }
+    const good = { ok: true, dir: '/fjs-drill', newestLag: null, files: [{ name: 'main', checks: { integrity: null }, rows: 12 }], notChecked: [] }
+    const drilling = (verify = { stdout: JSON.stringify(good, null, 2) + '\n' }) => {
+      const stageDir = mkdtempSync(join(tmpdir(), 'outpost-drill-'))
+      const runner   = fakeRunner({ 'docker run --rm': verify })
+      const envs     = []
+      const run = async (argv, opts = {}) => {
+        if (argv[0] !== '/usr/local/bin/litestream') { if (argv[1] === 'run') envs.push(opts.env); return runner.run(argv, opts) }
+        runner.calls.push(argv)
+        if (argv[1] === 'ltx') return { exitCode: 0, stdout: JSON.stringify([{ timestamp: '2026-10-25T12:00:00Z' }]), stderr: '' }
+        writeFileSync(argv[argv.indexOf('-o') + 1], 'SQLite format 3\0')
+        return { exitCode: 0, stdout: '', stderr: '' }
+      }
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ run }), inspector: createInspector({ run }),
+        replicator: createReplicator({ run, configPath: join(stageDir, 'litestream.yml'), stageDir }),
+        log: { warn() {}, error() {} },
+      })
+      return { server, calls: runner.calls, envs, stageDir }
+    }
+    const drill = async (server, body) => {
+      const res = await send(server, 'POST', '/replica/drill', body)
+      return { status: res.status, body: await res.json() }
+    }
+    const body = (over = {}) => ({ app_id: 'ela', replica, databases: ['app.db'], image: 'ghcr.io/x/ela:1', env: { ENCRYPTION_KEY: 'k-secret', LOG_LEVEL: 'info' }, ...over })
+
+    test('the copy is mounted into the app\'s image with no network, the key by name, and the report answered', async () => {
+      const { server, calls, envs, stageDir } = drilling()
+      const { status, body: said } = await drill(server, body())
+      expect(status).toBe(200)
+      expect(said).toMatchObject({ verified: true, verify: { ok: true, files: [{ name: 'main', rows: 12 }] } })
+      expect(said.databases).toEqual([{ name: 'app.db', at: 'latest', bytes: 16 }])
+      const argv = calls.find(a => a[1] === 'run')
+      expect(argv).toEqual(expect.arrayContaining(['--network', 'none', '-e', 'ENCRYPTION_KEY', '-e', 'LOG_LEVEL', 'ghcr.io/x/ela:1', '--verify-only=/fjs-drill', '--json']))
+      expect(argv).not.toContain('--without-key')
+      expect(argv.find(a => a.startsWith('type=bind'))).toMatch(/,dst=\/fjs-drill$/)
+      // The app's own volume is never named.
+      expect(argv.join(' ')).not.toContain('fjs-ela-data')
+      expect(argv.join(' ')).not.toContain('k-secret')
+      expect(envs.at(-1)).toEqual({ ENCRYPTION_KEY: 'k-secret', LOG_LEVEL: 'info' })
+      expect(calls.some(a => a[0] === 'systemctl')).toBe(false)
+      expect(readdirSync(stageDir).filter(f => f.startsWith('ela-'))).toEqual([])
+    })
+
+    test('a copy the schema refuses is an answer, not a failure', async () => {
+      const bad = { ...good, ok: false, files: [{ name: 'main', checks: { rows: '3 row(s) the schema would refuse' } }] }
+      const { server } = drilling({ exitCode: 1, stdout: JSON.stringify(bad) })
+      const { status, body: said } = await drill(server, body())
+      expect(status).toBe(200)
+      expect(said).toMatchObject({ verified: false, verify: { ok: false } })
+    })
+
+    test('no key is said so, and a verify that never ran is a failure in the image\'s words', async () => {
+      const keyless = drilling()
+      await drill(keyless.server, body({ env: {} }))
+      expect(keyless.calls.find(a => a[1] === 'run')).toContain('--without-key')
+
+      const { server, stageDir } = drilling({ exitCode: 1, stdout: '', stderr: 'error: could not determine executable to run for package litestone\n' })
+      const { status, body: said } = await drill(server, body())
+      expect(status).toBe(500)
+      expect(said.error).toContain('could not determine executable')
+      expect(readdirSync(stageDir).filter(f => f.startsWith('ela-'))).toEqual([])
+    })
+
+    test('no image, or an env name that is not plain, is refused before the container runs', async () => {
+      for (const over of [{ image: undefined }, { env: { 'A B': 'x' } }, { env: { A: 1 } }]) {
+        const { server, calls } = drilling()
+        expect((await drill(server, body(over))).status).toBe(500)
+        expect(calls.some(a => a[1] === 'run')).toBe(false)
+      }
+    })
+  })
+
   describe('/backup — an app\'s volume, tarred onto the machine (FJS-1782)', () => {
     const backupDir = join(mkdtempSync(join(tmpdir(), 'outpost-backups-')), 'backups')
 
-    const backing = (answers = {}) => {
+    const backing = (answers = {}, fetch) => {
       const runner = fakeRunner(answers)
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ run: runner.run, backupDir }), inspector: createInspector({ run: runner.run }),
+        docker: createDocker({ run: runner.run, backupDir, fetch }), inspector: createInspector({ run: runner.run }),
         log: { warn() {}, error() {} },
       })
       return { server, calls: runner.calls }
@@ -796,10 +1121,12 @@ describe('what the machine is asked to do', () => {
     }
 
     test('tars the volume read-only in a throwaway container, into the backup directory', async () => {
-      const { server, calls } = backing({ 'docker run --rm': { stdout: '4096 3\n' } })
+      const { server, calls } = backing({ 'docker run --rm': { stdout: `4096 3 ${'f'.repeat(64)}\n` } })
       const { status, body } = await backup(server, { app_id: 'ela' })
       expect(status).toBe(200)
       expect(body).toMatchObject({ volume: 'fjs-ela-data', bytes: 4096, files: 3 })
+      // What a restore by URL checks the fetched copy against.
+      expect(body.sha256).toBe('f'.repeat(64))
       expect(body.path.startsWith(`${realpathSync(backupDir)}/ela-`)).toBe(true)
       expect(body.path.endsWith('.tar.gz')).toBe(true)
       const argv = calls.find(a => a[1] === 'run')
@@ -826,6 +1153,54 @@ describe('what the machine is asked to do', () => {
       const { status, body } = await backup(server, { app_id: 'ela' })
       expect(status).toBe(500)
       expect(body.error).toContain('no space left on device')
+    })
+
+    // The upload leaves the box by a pre-signed PUT (FJS-D1485): streamed from
+    // this process, after the tar, and a refusal is answered beside the path.
+    describe('with an upload_url', () => {
+      const tarred = { 'docker run --rm': { stdout: '4096 3\n' } }
+      const url    = 'https://s3.example.test/bucket/apps/ela-2026.tar.gz?X-Amz-Signature=abc'
+
+      test('the finished archive is PUT to the URL from this process, and the answer says so', async () => {
+        const puts = []
+        const fetch = async (u, init) => { puts.push({ u, init }); return new Response(null, { status: 200 }) }
+        const { server, calls } = backing(tarred, fetch)
+        const { status, body } = await backup(server, { app_id: 'ela', upload_url: url })
+        expect(status).toBe(200)
+        expect(body).toMatchObject({ volume: 'fjs-ela-data', bytes: 4096, files: 3, uploaded: true })
+        expect(body.upload_error).toBeUndefined()
+        expect(puts).toHaveLength(1)
+        expect(puts[0].u).toBe(url)
+        expect(puts[0].init.method).toBe('PUT')
+        expect(puts[0].init.headers['content-type']).toBe('application/gzip')
+        // The body is the file the tar wrote, streamed, not read into memory.
+        expect(puts[0].init.body.name).toBe(body.path)
+        // The capture container still has no network: the upload is this process's.
+        expect(calls.find(a => a[1] === 'run')).toEqual(expect.arrayContaining(['--network', 'none']))
+      })
+
+      test('a bucket that refuses is answered in its words, with the path, never as a failed backup', async () => {
+        const xml = '<?xml version="1.0"?><Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>'
+        const { server } = backing(tarred, async () => new Response(xml, { status: 403 }))
+        const { status, body } = await backup(server, { app_id: 'ela', upload_url: url })
+        expect(status).toBe(200)
+        expect(body).toMatchObject({ uploaded: false, upload_error: '403 AccessDenied: Access Denied', bytes: 4096 })
+        expect(body.path.endsWith('.tar.gz')).toBe(true)
+      })
+
+      test('a network that drops the PUT is the same shape', async () => {
+        const { server } = backing(tarred, async () => { throw new Error('connect ECONNREFUSED') })
+        const { status, body } = await backup(server, { app_id: 'ela', upload_url: url })
+        expect(status).toBe(200)
+        expect(body).toMatchObject({ uploaded: false, upload_error: 'connect ECONNREFUSED' })
+      })
+
+      test('a URL that is not http(s) is refused before anything is tarred', async () => {
+        const { server, calls } = backing(tarred, async () => { throw new Error('must not be called') })
+        expect((await backup(server, { app_id: 'ela', upload_url: 'ftp://x/y' })).status).toBe(500)
+        expect((await backup(server, { app_id: 'ela', upload_url: 'not a url' })).status).toBe(500)
+        expect(calls.some(a => a[1] === 'run')).toBe(false)
+      })
     })
 
     // The script itself, run by the host's sh over temp directories, with a
@@ -861,6 +1236,9 @@ exec "${realTar}" "$@"
         const { done, out, data } = capture({ writes: 1 })
         expect(done.exitCode).toBe(0)
         expect(await walIn(out)).toBe(await Bun.file(join(data, 'app.db-wal')).text())
+        // The last line's third word is the digest of the archive as written.
+        const digest = done.stdout.toString().trim().split('\n').at(-1).split(' ')[2]
+        expect(digest).toBe(createHash('sha256').update(readFileSync(join(out, 'a.tar.gz'))).digest('hex'))
       })
 
       test('a volume that never holds still is refused, and no archive is left that reads as finished', () => {
@@ -1844,5 +2222,176 @@ describe('the command port certificate', () => {
     expect(first.cert).toStartWith('-----BEGIN CERTIFICATE-----')
     expect(statSync(first.keyPath).mode & 0o777).toBe(0o600)
     expect(ensureCert(dir).cert).toBe(first.cert)
+  })
+})
+
+// ─── /replicate ───────────────────────────────────────────────────────────────
+// The machine's Litestream config is Basecamp's list, rewritten whole, each app
+// with its own key (FJS-D1505).
+
+describe('/replicate — every app this machine replicates, each with its own key', () => {
+  const entry = (app_id, over = {}) => ({
+    app_id, bucket: 'frontier', path: `apps/${app_id}`, endpoint: 'https://s3.us-west-000.backblazeb2.com',
+    region: 'us-west-000', access_key_id: `K-${app_id}`, secret_access_key: `S-${app_id}`, ...over,
+  })
+  const replicating = (answers = {}, { hostDb = null } = {}) => {
+    const dir        = mkdtempSync(join(tmpdir(), 'outpost-replicate-'))
+    const configPath = join(dir, 'basecamp', 'litestream.yml')
+    const runner     = fakeRunner({
+      'docker volume inspect': { stdout: '/var/lib/docker/volumes/fjs-ela-data/_data\n' },
+      ...answers,
+    })
+    const server = createOutpostServer(CONFIG, {
+      docker: createDocker({ run: runner.run }), inspector: createInspector({ run: runner.run }),
+      replicator: createReplicator({ run: runner.run, configPath, metaDir: '/var/lib/litestream', hostDb }),
+      log: { warn() {}, error() {} },
+    })
+    return { server, calls: runner.calls, configPath }
+  }
+  const replicate = async (server, body) => {
+    const res = await send(server, 'POST', '/replicate', body)
+    return { status: res.status, body: await res.json() }
+  }
+
+  test('writes each app\'s volume with its own key and meta-dir outside it, 0600, and restarts the unit', async () => {
+    const { server, calls, configPath } = replicating()
+    const { status, body } = await replicate(server, { replicas: [entry('ela')] })
+    expect(status).toBe(200)
+    expect(body).toEqual({ replicating: ['ela'], skipped: [] })
+    const yml = readFileSync(configPath, 'utf8')
+    expect(yml).toContain('  - dir: /var/lib/docker/volumes/fjs-ela-data/_data\n')
+    expect(yml).toContain('    meta-dir: "/var/lib/litestream/ela"\n')
+    expect(yml).toContain('        access-key-id: "K-ela"\n')
+    expect(yml).toContain('        path: "apps/ela"\n')
+    expect(statSync(configPath).mode & 0o777).toBe(0o600)
+    expect(yml).toContain('socket:\n  enabled: true\n  path: "/run/litestream/litestream.sock"\n')
+    expect(calls.at(-1)).toEqual(['systemctl', 'restart', 'basecamp-litestream.service'])
+  })
+
+  test('the list replaces the last one: an app left out has no entry and no key here', async () => {
+    const { server, configPath } = replicating()
+    await replicate(server, { replicas: [entry('ela'), entry('crm')] })
+    expect(readFileSync(configPath, 'utf8')).toContain('K-crm')
+    await replicate(server, { replicas: [entry('ela')] })
+    expect(readFileSync(configPath, 'utf8')).not.toContain('K-crm')
+    await replicate(server, { replicas: [] })
+    expect(readFileSync(configPath, 'utf8')).toContain('dbs: []')
+  })
+
+  test('an app with no volume here is skipped, and the others are still written', async () => {
+    const { server, configPath } = replicating({ 'docker volume inspect': { exitCode: 1, stderr: 'no such volume' } })
+    const { status, body } = await replicate(server, { replicas: [entry('ela')] })
+    expect(status).toBe(200)
+    expect(body.replicating).toEqual([])
+    expect(body.skipped[0]).toMatchObject({ app_id: 'ela' })
+    expect(readFileSync(configPath, 'utf8')).toContain('dbs: []')
+  })
+
+  test('Basecamp\'s own box replicates its database as `host`; any other machine skips it', async () => {
+    const { app_id, ...host } = entry('basecamp', { path: 'apps/basecamp' })
+    const hostDb = mkdtempSync(join(tmpdir(), 'outpost-hostdb-'))
+    const box = replicating({}, { hostDb })
+    expect((await replicate(box.server, { replicas: [entry('ela')], host })).body).toEqual({ replicating: ['ela'], skipped: [], host: 'replicating' })
+    const yml = readFileSync(box.configPath, 'utf8')
+    expect(yml).toContain(`  - dir: ${hostDb}\n`)
+    expect(yml).toContain('    meta-dir: "/var/lib/litestream/_host"\n')
+    expect(yml).toContain('        access-key-id: "K-basecamp"\n')
+    // Sent without it, the host's entry and key are gone.
+    await replicate(box.server, { replicas: [entry('ela')] })
+    expect(readFileSync(box.configPath, 'utf8')).not.toContain('K-basecamp')
+
+    const other = replicating()
+    const { body } = await replicate(other.server, { replicas: [entry('ela')], host })
+    expect(body).toMatchObject({ replicating: ['ela'], host: 'skipped' })
+    expect(body.skipped[0]).toMatchObject({ host: true, reason: expect.stringContaining('OUTPOST_HOST_DB_PATH') })
+    expect(readFileSync(other.configPath, 'utf8')).not.toContain('K-basecamp')
+    const gone = replicating({}, { hostDb: join(hostDb, 'missing') })
+    expect((await replicate(gone.server, { replicas: [], host })).body.skipped[0].reason).toContain('not a directory')
+    rmSync(hostDb, { recursive: true, force: true })
+  })
+
+  test('a bad entry is refused before the file is touched', async () => {
+    for (const replicas of [undefined, [entry('../x')], [entry('ela'), entry('ela')], [entry('ela', { secret_access_key: '' })], [entry('ela', { endpoint: 'ftp://x' })]]) {
+      const { server, calls, configPath } = replicating()
+      expect((await replicate(server, { replicas })).status).toBe(500)
+      expect(existsSync(configPath)).toBe(false)
+      expect(calls).toEqual([])
+    }
+    const { server, configPath } = replicating()
+    expect((await replicate(server, { replicas: [], host: { ...entry('x'), secret_access_key: '' } })).status).toBe(500)
+    expect(existsSync(configPath)).toBe(false)
+  })
+
+  test('a list already in force is left running, unless the unit is not active', async () => {
+    const { server, calls } = replicating()
+    await replicate(server, { replicas: [entry('ela')] })
+    const before = calls.length
+    expect((await replicate(server, { replicas: [entry('ela')] })).body).toMatchObject({ replicating: ['ela'], unchanged: true })
+    expect(calls.slice(before).some(c => c[1] === 'restart')).toBe(false)
+
+    const down = replicating({ 'systemctl is-active --quiet': { exitCode: 3 } })
+    await replicate(down.server, { replicas: [entry('ela')] })
+    await replicate(down.server, { replicas: [entry('ela')] })
+    expect(down.calls.filter(c => c[1] === 'restart')).toHaveLength(2)
+  })
+
+  describe('status — each app\'s last sync, off the control socket', () => {
+    const answering = (body, init = { status: 200 }) => createReplicator({
+      fetch: async (url, opts) => { expect(opts.unix).toBe('/run/litestream/litestream.sock'); return new Response(JSON.stringify(body), init) },
+    })
+    const vol = (app, db) => `/var/lib/docker/volumes/fjs-${app}-data/_data/${db}`
+
+    test('an app is as far behind as its furthest database, and one never synced is further', async () => {
+      const r = answering({ databases: [
+        { path: vol('ela', 'a.db'), status: 'replicating', last_sync_at: '2026-10-24T10:00:05Z' },
+        { path: vol('ela', 'b.db'), status: 'replicating', last_sync_at: '2026-10-24T10:00:01Z' },
+        { path: vol('crm', 'c.db'), status: 'replicating', last_sync_at: '2026-10-24T10:00:09Z' },
+        { path: vol('crm', 'd.db'), status: 'not initialized' },
+        { path: '/srv/elsewhere.db', status: 'replicating', last_sync_at: '2026-10-24T10:00:09Z' },
+      ] })
+      expect(await r.status()).toEqual({ apps: [
+        { app_id: 'ela', status: 'replicating',     last_sync_at: '2026-10-24T10:00:01Z', databases: 2 },
+        { app_id: 'crm', status: 'not initialized', last_sync_at: null,                   databases: 2 },
+      ] })
+    })
+
+    test('the host\'s databases read as `host`, not as an app', async () => {
+      const r = createReplicator({ hostDb: '/srv/basecamp/db/', fetch: async () => new Response(JSON.stringify({ databases: [
+        { path: vol('ela', 'a.db'), status: 'replicating', last_sync_at: '2026-10-24T10:00:05Z' },
+        { path: '/srv/basecamp/db/basecamp.db', status: 'replicating', last_sync_at: '2026-10-24T10:00:04Z' },
+        { path: '/srv/basecamp/db/basecamp-jobs.db', status: 'replicating', last_sync_at: '2026-10-24T10:00:02Z' },
+      ] })) })
+      expect(await r.status()).toEqual({
+        apps: [{ app_id: 'ela', status: 'replicating', last_sync_at: '2026-10-24T10:00:05Z', databases: 1 }],
+        host: { status: 'replicating', last_sync_at: '2026-10-24T10:00:02Z', databases: 2 },
+      })
+    })
+
+    test('a socket that is not there or does not answer is an error, never a throw', async () => {
+      const missing = createReplicator({ fetch: async () => { throw Object.assign(new Error('nope'), { code: 'ENOENT' }) } })
+      expect((await missing.status()).error).toContain('is not running')
+      const hung = createReplicator({ statusTimeoutMs: 20, fetch: (_u, { signal }) => new Promise((_, no) => signal.addEventListener('abort', () => no(signal.reason))) })
+      expect((await hung.status()).error).toContain('did not answer')
+      expect((await answering({}, { status: 500 }).status()).error).toContain('answered 500')
+    })
+
+    test('the heartbeat carries it', async () => {
+      const sent = []
+      const reporter = createReporter(CONFIG, {
+        inspector: createInspector({ run: fakeRunner({}).run }), log: { warn() {} },
+        replicator: { status: async () => ({ apps: [{ app_id: 'ela', status: 'replicating', last_sync_at: '2026-10-24T10:00:01Z', databases: 1 }] }) },
+        fetch: async (url, init) => { sent.push(JSON.parse(init.body)); return new Response('{}') },
+      })
+      await reporter.heartbeat()
+      expect(sent[0].replication.apps[0].app_id).toBe('ela')
+    })
+  })
+
+  test('a unit that will not restart is an error that says the file is written', async () => {
+    const { server } = replicating({ 'systemctl restart basecamp-litestream.service': { exitCode: 1, stderr: 'Unit not found.' } })
+    const { status, body } = await replicate(server, { replicas: [entry('ela')] })
+    expect(status).toBe(500)
+    expect(body.error).toContain('is written but basecamp-litestream.service did not restart')
+    expect(body.error).toContain('Unit not found.')
   })
 })

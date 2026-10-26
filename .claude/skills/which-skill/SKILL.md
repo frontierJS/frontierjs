@@ -56,6 +56,7 @@ The shape is adapted from Matt Pocock's `ask-matt` ([mattpocock/skills](https://
 - **Something is broken.** `VERIFYING.md` first: reproduce with one command that goes red on this defect, before theorizing. Then the realm's hazard skill, since half of what reads as a bug is correct-but-surprising behavior already written down there.
 - **A screen needs styling.** `ui-hazards`, then `packages/css/README.md` for the vocabulary — a tone and a treatment, never a color (Invariant 13).
 - **A document an agent reads is growing.** `doc-hygiene` before adding, since the cut is usually a pointer rather than a paragraph.
+- **A page needs a picture, or a long page might become a paragraph and one.** `illustrate` fills the brief first and routes by kind — a painted image to `brand/IMAGERY.md`, a mechanism to an `.svg`, a chart to `dataviz`.
 
 ## At a phase boundary
 

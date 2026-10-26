@@ -1,0 +1,48 @@
+/*
+ * catppuccin.css
+ * Catppuccin Mocha — soft pastel accents on a deep, blue-violet charcoal.
+ * Palette follows upstream Mocha; semantic tokens map those colors to UI roles.
+ */
+
+.theme-catppuccin {
+  /* Native controls, scrollbars, and selects should follow dark surfaces. */
+  color-scheme: dark;
+
+  /* Tone utilities clamp semantic colors when used as text. */
+  --tone-l-min: 0.74;
+  --tone-l-max: 1;
+
+  /* ── Accents: Catppuccin Mocha ───────────────────────────────────── */
+  --color-primary:   #cba6f7; /* mauve */
+  --color-secondary: #f5c2e7; /* pink */
+  --color-muted:     #9399b2; /* overlay2, lifted for semantic use */
+  --color-info:      #89dceb; /* sky */
+  --color-success:   #a6e3a1; /* green */
+  --color-warning:   #f9e2af; /* yellow */
+  --color-danger:    #f38ba8; /* red */
+
+  /* ── Surfaces ────────────────────────────────────────────────────── */
+  --app-bg:          #11111b; /* crust */
+  --surface:         #1e1e2e; /* base */
+  --surface-raised:  #313244; /* surface0 */
+  --surface-sunken:  #181825; /* mantle */
+
+  --topbar-bg:       #181825;
+  --sidebar-bg:      #181825;
+  --dialog-bg:       #242438;
+
+  /* ── Text ────────────────────────────────────────────────────────── */
+  --ink:             #cdd6f4; /* text */
+  --ink-soft:        #bac2de; /* subtext1 */
+  --ink-mute:        #a6adc8; /* subtext0; readable for small supporting text */
+
+  /* ── Dividers ────────────────────────────────────────────────────── */
+  --rule:            #45475a; /* surface1 */
+  --rule-strong:     #585b70; /* between surface1 and surface2 */
+
+  /* ── Elevation ───────────────────────────────────────────────────── */
+  --surface-shadow:  0 1px 2px rgba(0, 0, 0, 0.22);
+  --shadow-sm:       0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md:       0 2px 6px rgba(0, 0, 0, 0.40), 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-lg:       0 8px 28px rgba(0, 0, 0, 0.48), 0 0 0 1px rgba(205, 214, 244, 0.035);
+}

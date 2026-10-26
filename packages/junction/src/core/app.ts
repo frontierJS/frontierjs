@@ -25,6 +25,7 @@ import { resolveBuildId } from './build-id.ts'
 import { mergeHookMaps, type HookMap } from './hooks.ts'
 import { NotFound, toFrameworkError, type ErrorMapper } from './errors.ts'
 import { helmet, cors, csrf, bodyLimit, correlationId, requestLogger, rateLimit } from '../transport/middleware.ts'
+import type { HelmetOptions } from '../transport/middleware.ts'
 import { defaultConfig, deepMerge, loadConfig, unknownKeys, unknownSections } from '../config/index.ts'
 import type { DeepPartial }                     from '../config/index.ts'
 import { createLogger }             from './logger.ts'
@@ -2473,7 +2474,7 @@ function applyConfiguredMiddleware(app: App, written: AppConfig): void {
   const config = withDerivedOrigins(written, process.env.FRONTIER_CORS_ORIGINS)
   const http = (config.http ?? {}) as Record<string, unknown>
 
-  if (http.helmet !== false) helmet()(app)
+  if (http.helmet !== false) helmet(typeof http.helmet === 'object' ? http.helmet as HelmetOptions : {})(app)
 
   applyConfiguredCors(app, config)
 

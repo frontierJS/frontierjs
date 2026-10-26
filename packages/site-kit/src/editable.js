@@ -151,6 +151,8 @@ export function applyEdit(source, { body, values = {}, field, entry } = {}) {
       if (!isScalar(value) || (before[key] !== null && typeof value !== typeof before[key])) {
         return { refused: `${key} is ${kindOf(before[key])}, not ${kindOf(value)}` }
       }
+      const coded = valueRefusal(before[key], value)
+      if (coded) return { refused: coded }
       const { line, comment } = at.get(key)
       const text = written(value)
       lines[line] = `${key}:${text === '' ? '' : ' ' + text}${comment}${lines[line].endsWith('\r') ? '\r' : ''}`
@@ -199,6 +201,8 @@ function applyField(source, { line, old, next }) {
   if (words(was) !== words(old)) return { refused: `${name} has changed since the page was built` }
   const text = words(next)
   if (!text) return { refused: 'the new text is empty' }
+  const coded = valueRefusal(was, text)
+  if (coded) return { refused: coded }
 
   const out = source.slice(0, at.start) + frontmatterValue(text) + source.slice(at.end)
   let after
@@ -506,6 +510,23 @@ function codeOf(body) {
   }
   if (depth > 0) out.push(rest.slice(start))
   return out
+}
+
+// A preset may render a value through {@html} or into an href (ksite's PageHero
+// does the first with `title`), so a value is graded as a body is (FJS-D1508).
+// A browser drops tabs and newlines from a URL, so `java\tscript:` runs too.
+const SCRIPT_URL = /^[\s\0-\x1f]*(?:java|vb)script:/i
+
+/** Why `next` may not replace `was` as a front-matter value, or null. */
+function valueRefusal(was, next) {
+  if (typeof next !== 'string') return null
+  const held = typeof was === 'string' ? was : ''
+  const added = codeAdded(held, next)
+  if (added) return `${added} is code or markup, so it is the developer's — an owner edits the words around it`
+  const bare = (s) => s.replace(/[\t\n\r]/g, '')
+  if (SCRIPT_URL.test(bare(next)) && !SCRIPT_URL.test(bare(held))) return `${next.trim().slice(0, 12)}… runs script, so it is refused`
+  if (SCRIPT_LINK.test(next) && !SCRIPT_LINK.test(held)) return `a link to ${SCRIPT_LINK.exec(next)[1]}… runs script, so it is refused`
+  return null
 }
 
 /** The first piece of code `after` holds more often than `before`, or null. */

@@ -6251,6 +6251,14 @@ export function set_attribute(el, name, value) {
     return
   }
 
+  // CSSOM, which a CSP does not gate: `setAttribute('style', …)` is refused
+  // under any `style-src` without 'unsafe-inline' (FJS-D1464).
+  if (name === 'style' && el.style) {
+    if (value == null || value === false) el.removeAttribute('style')
+    else el.style.cssText = '' + value
+    return
+  }
+
   // `aria-expanded={false}` must WRITE "false" rather than remove the attribute.
   // These four are the ARIA states whose default is **undefined**, not false,
   // so absent and "false" are different statements: absent says *this is not

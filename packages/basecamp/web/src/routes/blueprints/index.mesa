@@ -29,7 +29,7 @@ title: Blueprints
   // and its own screen is where it gets placed. A failure after the app exists
   // lands on that screen with the reason, rather than leaving a person to
   // wonder whether pressing Deploy again makes a second one.
-  import { session } from '../../session.js'
+  import { session } from '../../lib/session.js'
   import { goto } from '@frontierjs/sierra/router'
   import Blueprint, { blueprints } from '../../resources/Blueprint.mesa'
   import { apps }         from '../../resources/App.mesa'

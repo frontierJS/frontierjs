@@ -1,0 +1,7 @@
+# Built by `fli extension:build` — one directory per browser, loaded
+# unpacked from there. Never committed.
+dist/
+
+# The entries the build generates from what it discovered. Regenerated every
+# time; committing it is committing a compiler's scratch directory.
+.jetty-cache/

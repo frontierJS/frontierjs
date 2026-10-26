@@ -22,13 +22,12 @@ title: Cloud spend
   //
   // Named for the job rather than the vendor, for the same reason /dns/ is:
   // whichever provider gains an adapter first, this is the screen it fills.
-  import { session } from '../../session.js'
+  import { session } from '../../lib/session.js'
   import { servers } from '../../resources/Server.mesa'
   import { fleet }   from '../../resources/Fleet.mesa'
   import { volumes } from '../../resources/Volume.mesa'
   import { portal } from '../../resources/Portal.mesa'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
-  import { money }               from '../../money.js'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -234,7 +233,7 @@ title: Cloud spend
       <div class="tile-label">Committed, at list price</div>
       <div class="tile-value">
         {committed.lines.length
-          ? committed.lines.map(([cur, minor]) => money(minor, cur)).join(' + ')
+          ? committed.lines.map(([cur, minor]) => minor.toMoney(cur)).join(' + ')
           : '—'}
       </div>
       <div class="tile-delta muted">
@@ -291,7 +290,7 @@ title: Cloud spend
             <td class="text-sm text-muted">
               {s.plan?.vcpu ?? '—'} vCPU · {s.plan?.ramGb ?? '—'} GB · {s.plan?.diskGb ?? '—'} GB
               {#if s.plan?.priceMinor != null && s.plan?.currency}
-                · {money(s.plan.priceMinor, s.plan.currency)}/mo
+                · {s.plan.priceMinor?.toMoney(s.plan.currency)}/mo
               {/if}
             </td>
             <td><Badge tone={STATUS_TONE[s.status] ?? 'muted'}>{s.status}</Badge></td>

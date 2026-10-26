@@ -15,8 +15,8 @@ title: Volumes
   // through the outpost and fail in words when nothing answers. The screen never
   // pre-empts that refusal by disabling itself: the decision is the server's.
   import { page }    from '@frontierjs/sierra/router'
-  import { session } from '../../session.js'
-  import { ago }     from '../../datetime.js'
+  import { session } from '../../lib/session.js'
+  import { ago }     from '../../lib/datetime.js'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
   import { volumes } from '../../resources/Volume.mesa'
 

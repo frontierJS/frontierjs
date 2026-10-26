@@ -146,7 +146,7 @@ describe('token shape and entropy', () => {
 describe('the second factor', () => {
   const enroll = async (name: string) => {
     const u = await fresh(name)
-    const { secret } = await h.auth.setupTotp!(u.userId, u.password)
+    const { secret } = await h.auth.setupTotp!(u.userId)
     // Confirm with the code for the CURRENT step; that step is then spent.
     const { recoveryCodes } = await h.auth.confirmTotp!(u.userId, hotp(secret, totpStep(now), 6))
     return { ...u, secret, recoveryCodes }
@@ -203,7 +203,7 @@ describe('the second factor', () => {
   // `setupTotp` (FJS-1838).
   test('confirmTotp has a ceiling on wrong codes', async () => {
     const u = await fresh('confirm-ceiling')
-    await h.auth.setupTotp!(u.userId, u.password)
+    await h.auth.setupTotp!(u.userId)
     let refusedByCeiling = false
     for (let i = 0; i < 50; i++) {
       try {

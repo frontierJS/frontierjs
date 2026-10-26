@@ -31,7 +31,7 @@ render: static
   <section>
     <h2>How they fit</h2>
     <p>The dependency direction, Litestone to Junction to Sierra, drawn once.</p>
-    <p class="from">From: <a href="/map/">The map</a> · <a href="/showroom5/">The stack</a></p>
+    <p class="from">From: <a href="/drafts/map/">The map</a> · <a href="/drafts/showroom5/">The stack</a></p>
   </section>
 </StubPage>
 

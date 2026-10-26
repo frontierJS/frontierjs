@@ -68,6 +68,7 @@ export interface HeartbeatData {
   specs?:        Record<string, unknown>
   docker?:       Record<string, unknown>
   outpost_url?:    string
+  replication?:  { apps?: { app_id: string; status: string | null; last_sync_at: string | null; databases: number }[]; error?: string }
 }
 
 // What a provider's own word for a state means here, as a NAMED MOVE rather
@@ -186,7 +187,8 @@ export default createService({
     // of this fleet, the same weight as buying or destroying one, which are
     // `@gate(5)` moves. It is not a move, so the level is declared here.
     { method: 'issueEnrollment', gate: LEVELS.ADMINISTRATOR },
-    { method: 'useHost', gate: LEVELS.ADMINISTRATOR },
+    // The box is the installation's, and its row is what the hub grades.
+    { method: 'useHost', gate: LEVELS.SYSADMIN },
     { method: 'host', read: true },
     // The operator's own ~/.ssh/config, on a Basecamp running on their
     // machine and nowhere else (`core/local-ssh.ts`). Reads, so a keyed
@@ -553,6 +555,10 @@ export default createService({
     if (!chosen)
       throw new BadRequest(
         `'${size}' is not a size ${connector.label} offers this account`)
+    // An app image is built amd64 on the laptop that releases it, and an Arm
+    // box enrolls and then cannot run one.
+    if (chosen.arch !== 'x86')
+      throw new BadRequest(`'${size}' is an Arm size; the fleet runs x86 only`)
     // What it costs THERE. A size is priced per region at Hetzner and once at
     // DigitalOcean, so this is the same read for both — and a null is *not
     // sold in that region*, which is the availability answer as well as the
@@ -1081,6 +1087,9 @@ export default createService({
         // COALESCE(?, col) for exactly this.
         ...(data.specs  ? { actualSpecs: data.specs  } : {}),
         ...(data.docker ? { dockerState: data.docker } : {}),
+        // An Outpost too old to read Litestream leaves the last reading, whose
+        // `checked_at` then ages into unknown on the posture screen.
+        ...(data.replication ? { replication: { ...data.replication, checked_at: now } } : {}),
       },
     })
 
@@ -1178,10 +1187,12 @@ export default createService({
       conduit.register({ ...known, last_seen_at: Date.now() }).catch(() => {})
     }
 
-    // The system client's row carries every column, @guarded ones included;
-    // the wire drops them with a warning, so leave them out here.
-    const hidden = sys.$protectedFields('server') as Record<string, string>
-    return Object.fromEntries(Object.entries(updated).filter(([k]) => !(k in hidden)))
+    // The system client's row carries every column, so the reply would hand
+    // back the @guarded enrollTokenHash for junction to strip with a warning
+    // (`FJS-3444`). Asked of the schema so a column protected later drops too.
+    const reply = { ...updated }
+    for (const field of Object.keys(sys.$protectedFields('server') ?? {})) delete reply[field]
+    return reply
   },
 
 

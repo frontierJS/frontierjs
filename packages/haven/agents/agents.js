@@ -1,11 +1,11 @@
 // agents/agents.js — Ace and Charles, two members who live in Haven's square
 // (`IDEAS/haven.md` 14.9), run from the owner's machine by `bun run agents`.
 //
-// Each is an ordinary member: its own Ed25519 key (`FJS-D981`) under
-// `~/.fli/haven/agents/<nick>/`, apart from the owner's `~/.fli/haven/key.json`
-// so the owner never walks in as one of them, signed in through the same
-// `POST /haven/login` a terminal uses, standing in the square on a socket of
-// its own and stepping about near its spot so it is seen to be there.
+// Each signs in with an Ed25519 key of its own under
+// `~/.fli/haven/agents/<nick>/` through the `POST /haven/login` a terminal
+// uses, which refuses a key in no chain (`FJS-D1477`): until an agent's way in
+// is ruled, `bun run agents` is refused at its first login. Signed in, each
+// stands in the square on a socket of its own and steps about near its spot.
 //
 // It answers a line only from a mod (`FJS-D1017`), so the bill is the owner's
 // and a stranger has no prompt to inject. A client cannot read a speaker's

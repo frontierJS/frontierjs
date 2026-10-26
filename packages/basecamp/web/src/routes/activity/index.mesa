@@ -24,11 +24,11 @@ title: Activity
   // here, by time, because an operator reading "what happened" does not care
   // which table it came from — and a drain followed by the outpost confirming it
   // only reads as one story if they sit next to each other.
-  import { session }    from '../../session.js'
+  import { session }    from '../../lib/session.js'
   import { audit }      from '../../resources/AuditEvent.mesa'
   import { workspaces } from '../../resources/Workspace.mesa'
   import { servers }    from '../../resources/Server.mesa'
-  import { at }         from '../../datetime.js'
+  import { at }         from '../../lib/datetime.js'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'

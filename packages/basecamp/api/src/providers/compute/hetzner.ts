@@ -34,7 +34,7 @@ import type { TargetDescriptor }  from '@frontierjs/conduit'
 import { FLEET, keyBody }         from './index.ts'
 import type {
   ComputeConnector, ComputeCatalog, ComputeMachine, MachineState,
-  ComputeRegion, ComputeSize, ComputeImage, MachineSpec, MachineMark,
+  ComputeRegion, ComputeSize, ComputeImage, MachineSpec, MachineMark, ReservedIp, ReservedIps,
 } from './index.ts'
 
 /** Where Hetzner Cloud is, when `HETZNER_URL` does not point somewhere else. */
@@ -108,6 +108,8 @@ function toSize(t: Row): ComputeSize {
     diskGb:   num(t.disk),
     currency: CURRENCY,
     prices,
+    // An architecture this file has never seen is not offered as x86.
+    arch:     str(t.architecture) === 'x86' ? 'x86' : 'arm',
   }
 }
 
@@ -192,7 +194,9 @@ function toMachine(server: Row, fallbackId = ''): ComputeMachine {
     status:           STATES[str(server.status)] ?? 'unknown',
     ipAddress:        publicIp(server),
     region:           locationOf(server),
+    name:             str(server.name) || null,
     serverId:         markedServer(server),
+    createdAt:        str(server.created) || null,
   }
 }
 
@@ -208,6 +212,60 @@ const said = (res: { error?: { kind: string; message?: string }; status?: number
     + (reason ? ` — ${reason}` : '')
 }
 
+// ─── Primary IPs ─────────────────────────────────────────────────────────
+// Bound to a LOCATION, and €0.50 a month whether or not a server holds it.
+// `auto_delete: false` is what makes it outlive the server; the address a
+// server gets when it is given none is auto-deleted with it.
+
+function toReserved(p: Row): ReservedIp {
+  return {
+    id:        String(p.id ?? ''),
+    ip:        str(p.ip),
+    region:    str((p.location as Row | undefined)?.name),
+    machineId: p.assignee_id == null ? null : String(p.assignee_id),
+  }
+}
+
+const v4 = (list: Row[]) => list.filter(p => str(p.type) === 'ipv4').map(toReserved).filter(r => r.id && r.ip)
+
+const reservedIps: ReservedIps = {
+  async list(send) {
+    const res = await send({ method: 'GET', path: `/v1/primary_ips?per_page=${PER_PAGE}` })
+    if (res.error) throw new Error(said(res))
+    return v4(rows(res.data, 'primary_ips'))
+  },
+
+  async get(send, ip) {
+    const res = await send({ method: 'GET', path: `/v1/primary_ips?ip=${encodeURIComponent(ip)}` })
+    if (res.error) throw new Error(said(res))
+    return v4(rows(res.data, 'primary_ips'))[0] ?? null
+  },
+
+  async reserve(send, region) {
+    const res = await send({ method: 'POST', path: '/v1/primary_ips', body: {
+      // Unique per project, and nothing reads it back.
+      name:        `${FLEET}-${region}-${Date.now().toString(36)}`,
+      type:        'ipv4',
+      location:    region,
+      auto_delete: false,
+      labels:      { [FLEET]: '' },
+    }})
+    if (res.error) throw new Error(`Hetzner refused the Primary IP — ${said(res)}`)
+    const row = (res.data as Row | null)?.primary_ip as Row | undefined
+    if (!row || !str(row.ip)) throw new Error('Hetzner made a Primary IP and answered no address')
+    return toReserved(row)
+  },
+
+  // No `assign`: Hetzner assigns only to a server that is off, so the address
+  // goes in the create's `public_net`.
+
+  async release(send, held) {
+    const res = await send({ method: 'DELETE', path: `/v1/primary_ips/${encodeURIComponent(held.id)}` })
+    if (res.status === 404) return
+    if (res.error) throw new Error(said(res))
+  },
+}
+
 // ─── The connector ───────────────────────────────────────────────────────
 
 export const hetzner: ComputeConnector = {
@@ -218,6 +276,10 @@ export const hetzner: ComputeConnector = {
   // import, and a test pointing this at a stand-in afterwards would be talking
   // to the real Hetzner.
   get address() { return env.HETZNER_URL || HZ_API },
+
+  // Ashburn keeps the box in the US, as DigitalOcean's nyc3 does.
+  defaults: { region: 'ash', image: 'ubuntu-24.04' },
+  reservedIps,
 
   descriptor({ accountId, ref, address }): TargetDescriptor {
     return {
@@ -280,6 +342,7 @@ export const hetzner: ComputeConnector = {
       user_data:   spec.userData,
       ssh_keys:    spec.sshKeys,
       labels:      markLabels(spec.mark),
+      ...(spec.reservedIp ? { public_net: { ipv4: Number(spec.reservedIp.id) } } : {}),
       // Hetzner will hand back a root password for a machine created without
       // an SSH key unless it is told to start on its own. There is nothing here
       // to receive one — the machine installs itself from `user_data` and

@@ -49,9 +49,15 @@ async function makeUser(env: Harness = h) {
 /** A user with a CONFIRMED second factor, and the secret to answer with. */
 async function makeUserWithTotp(env: Harness = h) {
   const u = await makeUser(env)
-  const { secret } = await env.auth.setupTotp!(u.userId, PASSWORD)
+  const { secret } = await env.auth.setupTotp!(u.userId)
   const { recoveryCodes } = await env.auth.confirmTotp!(u.userId, totp(secret, new Date()))
   return { ...u, secret, recoveryCodes }
+}
+
+/** The id of a fresh session for a user with no factor — what `reauthenticate` stamps. */
+async function sessionOf(env: Harness, email: string): Promise<string> {
+  const { token } = signedIn(await env.auth.login(email, PASSWORD))
+  return (await env.auth.verifySession(token))!.sessionId!
 }
 
 /** A code for an instant far enough from now that it is not the confirming one. */
@@ -70,7 +76,7 @@ describe('enrollment — setup proves nothing, confirm is what switches it on', 
 
   test('setupTotp answers a secret and a URI naming the account and the issuer', async () => {
     const u = await makeUser()
-    const { secret, qr } = await h.auth.setupTotp!(u.userId, PASSWORD)
+    const { secret, qr } = await h.auth.setupTotp!(u.userId)
 
     expect(secret).toMatch(/^[A-Z2-7]{32}$/)
     expect(qr).toContain('otpauth://totp/Test%20Shop:')
@@ -84,7 +90,7 @@ describe('enrollment — setup proves nothing, confirm is what switches it on', 
     // successfully produced, so a wrong clock or a mis-scanned QR costs the
     // account rather than a retry.
     const u = await makeUser()
-    await h.auth.setupTotp!(u.userId, PASSWORD)
+    await h.auth.setupTotp!(u.userId)
 
     const result = await h.auth.login(u.email, PASSWORD)
     expect('token' in result).toBe(true)
@@ -93,7 +99,7 @@ describe('enrollment — setup proves nothing, confirm is what switches it on', 
 
   test('confirmTotp enables it, and answers ten recovery codes', async () => {
     const u = await makeUser()
-    const { secret } = await h.auth.setupTotp!(u.userId, PASSWORD)
+    const { secret } = await h.auth.setupTotp!(u.userId)
     const { recoveryCodes } = await h.auth.confirmTotp!(u.userId, totp(secret, new Date()))
 
     expect(recoveryCodes).toHaveLength(10)
@@ -103,7 +109,7 @@ describe('enrollment — setup proves nothing, confirm is what switches it on', 
 
   test('a wrong code confirms nothing — paired with the right one enabling it', async () => {
     const u = await makeUser()
-    const { secret } = await h.auth.setupTotp!(u.userId, PASSWORD)
+    const { secret } = await h.auth.setupTotp!(u.userId)
 
     await rejectsWith(() => h.auth.confirmTotp!(u.userId, '000000'), ReauthenticationFailedError)
     expect((await h.auth.totpStatus!(u.userId)).enabled).toBe(false)
@@ -118,17 +124,30 @@ describe('enrollment — setup proves nothing, confirm is what switches it on', 
     expect(err.status).toBe(404)
   })
 
-  test('the wrong password enrolls nothing — paired with the right one', async () => {
+  test('the wrong password does not reauthenticate — paired with the right one', async () => {
     const u = await makeUser()
-    await rejectsWith(() => h.auth.setupTotp!(u.userId, 'not-the-password'), ReauthenticationFailedError)
-    await h.auth.setupTotp!(u.userId, PASSWORD)   // the pair: one character apart
+    const sessionId = await sessionOf(h, u.email)
+    await rejectsWith(() => h.auth.reauthenticate!(u.userId, sessionId, { password: 'not-the-password' }), ReauthenticationFailedError)
+    await h.auth.reauthenticate!(u.userId, sessionId, { password: PASSWORD })   // the pair: one character apart
+  })
+
+  test('with the factor on, reauthenticate owes the code too — paired with a live one', async () => {
+    const u = await makeUserWithTotp(w)
+    const { challenge } = await w.auth.login(u.email, PASSWORD) as any
+    const { token } = await w.auth.completeLogin!(challenge, codeAt(u.secret, 1)) as any
+    const sessionId = (await w.auth.verifySession(token))!.sessionId!
+
+    await rejectsWith(() => w.auth.reauthenticate!(u.userId, sessionId, { password: PASSWORD }), ReauthenticationFailedError)
+    await rejectsWith(() => w.auth.reauthenticate!(u.userId, sessionId, { password: PASSWORD, code: '000000' }), ReauthenticationFailedError)
+    await rejectsWith(() => w.auth.reauthenticate!(u.userId, sessionId, { password: 'wrong', code: codeAt(u.secret, 2) }), ReauthenticationFailedError)
+    await w.auth.reauthenticate!(u.userId, sessionId, { password: PASSWORD, code: codeAt(u.secret, 2) })
   })
 
   test('enrolling twice is refused rather than overwriting the live secret', async () => {
     // Overwriting would invalidate the authenticator the person holds while the
     // next login still demands a code from it — locked out by a 200.
     const u = await makeUserWithTotp()
-    const err = await rejectsWith(() => h.auth.setupTotp!(u.userId, PASSWORD), TotpAlreadyEnabledError)
+    const err = await rejectsWith(() => h.auth.setupTotp!(u.userId), TotpAlreadyEnabledError)
     expect(err.status).toBe(409)
 
     // And the factor still works afterwards, which is what says the refusal cost
@@ -139,8 +158,8 @@ describe('enrollment — setup proves nothing, confirm is what switches it on', 
 
   test('a second setupTotp supersedes an unconfirmed one — the old secret stops confirming', async () => {
     const u = await makeUser()
-    const first  = await h.auth.setupTotp!(u.userId, PASSWORD)
-    const second = await h.auth.setupTotp!(u.userId, PASSWORD)
+    const first  = await h.auth.setupTotp!(u.userId)
+    const second = await h.auth.setupTotp!(u.userId)
     expect(second.secret).not.toBe(first.secret)
 
     await rejectsWith(() => h.auth.confirmTotp!(u.userId, totp(first.secret, new Date())), ReauthenticationFailedError)
@@ -148,10 +167,13 @@ describe('enrollment — setup proves nothing, confirm is what switches it on', 
     expect((await h.auth.totpStatus!(u.userId)).enabled).toBe(true)
   })
 
-  test('an account with no password cannot enroll, and pays the comparison anyway', async () => {
+  test('an account with no password cannot reauthenticate, and pays the comparison anyway', async () => {
     const email = nextEmail()
     const user  = await h.sys.user.create({ data: { email, name: 'No Password' } })
-    await rejectsWith(() => h.auth.setupTotp!(String(user.id), PASSWORD), NoPasswordCredentialError)
+    const session = await h.sys.session.create({
+      data: { userId: String(user.id), token: `planted-${seq++}`, expiresAt: new Date(Date.now() + 3_600_000) },
+    })
+    await rejectsWith(() => h.auth.reauthenticate!(String(user.id), String(session.id), { password: PASSWORD }), NoPasswordCredentialError)
   })
 })
 
@@ -243,7 +265,7 @@ describe('completeLogin — the session, and the five ways it refuses', () => {
 
   test('the code that confirmed enrollment is already spent', async () => {
     const u = await makeUser()
-    const { secret } = await h.auth.setupTotp!(u.userId, PASSWORD)
+    const { secret } = await h.auth.setupTotp!(u.userId)
     const confirming = totp(secret, new Date())
     await h.auth.confirmTotp!(u.userId, confirming)
 
@@ -275,7 +297,7 @@ describe('completeLogin — the session, and the five ways it refuses', () => {
     const u = await makeUserWithTotp()
     const { challenge } = await h.auth.login(u.email, PASSWORD) as any
 
-    await h.auth.disableTotp!(u.userId, PASSWORD)
+    await h.auth.disableTotp!(u.userId)
 
     const err = await rejectsWith(() => h.auth.completeLogin!(challenge, codeAt(u.secret, 1)), InvalidSecondFactorError)
     expect(err.retryable).toBe(false)
@@ -366,7 +388,7 @@ describe('recovery codes — the way back, spent on use', () => {
 
   test('regenerate replaces every code — the old ones stop, the new ones work', async () => {
     const u = await makeUserWithTotp()
-    const { recoveryCodes: fresh } = await h.auth.regenerateRecoveryCodes!(u.userId, PASSWORD)
+    const { recoveryCodes: fresh } = await h.auth.regenerateRecoveryCodes!(u.userId)
 
     expect(fresh).toHaveLength(10)
     expect(fresh).not.toEqual(u.recoveryCodes)
@@ -379,12 +401,9 @@ describe('recovery codes — the way back, spent on use', () => {
     expect((await h.auth.completeLogin!(b.challenge, fresh[0])).token).toBeTruthy()
   })
 
-  test('regenerate needs the password, and needs the factor to be on', async () => {
-    const u = await makeUserWithTotp()
-    await rejectsWith(() => h.auth.regenerateRecoveryCodes!(u.userId, 'wrong'), ReauthenticationFailedError)
-
+  test('regenerate needs the factor to be on', async () => {
     const plain = await makeUser()
-    await rejectsWith(() => h.auth.regenerateRecoveryCodes!(plain.userId, PASSWORD), NotFoundError)
+    await rejectsWith(() => h.auth.regenerateRecoveryCodes!(plain.userId), NotFoundError)
   })
 })
 
@@ -394,7 +413,7 @@ describe('disableTotp — off means off, and takes the codes with it', () => {
 
   test('the next login is a session again', async () => {
     const u = await makeUserWithTotp()
-    await h.auth.disableTotp!(u.userId, PASSWORD)
+    await h.auth.disableTotp!(u.userId)
 
     expect(await h.auth.totpStatus!(u.userId)).toEqual({ enabled: false, recoveryCodesRemaining: 0 })
     expect(signedIn(await h.auth.login(u.email, PASSWORD)).token).toBeTruthy()
@@ -402,22 +421,28 @@ describe('disableTotp — off means off, and takes the codes with it', () => {
 
   test('the recovery codes go with it — one outliving the factor is a second password', async () => {
     const u = await makeUserWithTotp()
-    await h.auth.disableTotp!(u.userId, PASSWORD)
+    await h.auth.disableTotp!(u.userId)
     expect(await h.sys.credential.count({ where: { userId: u.userId, type: 'recoveryCode' } })).toBe(0)
   })
 
-  test('the wrong password disables nothing — paired with the right one', async () => {
-    const u = await makeUserWithTotp()
-    await rejectsWith(() => h.auth.disableTotp!(u.userId, 'wrong'), ReauthenticationFailedError)
-    expect((await h.auth.totpStatus!(u.userId)).enabled).toBe(true)
+  test('disable ends every other session and keeps the one that asked', async () => {
+    const u = await makeUserWithTotp(w)
+    const signIn = async (step: number) => {
+      const { challenge } = await w.auth.login(u.email, PASSWORD) as any
+      return (await w.auth.completeLogin!(challenge, codeAt(u.secret, step)) as any).token as string
+    }
+    const asking = await signIn(1), other = await signIn(2)
+    const sessionId = (await w.auth.verifySession(asking))!.sessionId!
 
-    await h.auth.disableTotp!(u.userId, PASSWORD)
-    expect((await h.auth.totpStatus!(u.userId)).enabled).toBe(false)
+    await w.auth.disableTotp!(u.userId, { exceptSessionId: sessionId })
+    expect((await w.auth.totpStatus!(u.userId)).enabled).toBe(false)
+    expect(await w.auth.verifySession(asking)).toBeTruthy()
+    expect(await w.auth.verifySession(other)).toBeFalsy()
   })
 
   test('disabling what is not on is a 404 rather than a quiet success', async () => {
     const u = await makeUser()
-    await rejectsWith(() => h.auth.disableTotp!(u.userId, PASSWORD), NotFoundError)
+    await rejectsWith(() => h.auth.disableTotp!(u.userId), NotFoundError)
   })
 
   test('an outstanding ticket dies with the factor', async () => {
@@ -425,7 +450,7 @@ describe('disableTotp — off means off, and takes the codes with it', () => {
     await h.auth.login(u.email, PASSWORD)
     expect(await h.sys.loginChallenge.count({ where: { userId: u.userId } })).toBe(1)
 
-    await h.auth.disableTotp!(u.userId, PASSWORD)
+    await h.auth.disableTotp!(u.userId)
     expect(await h.sys.loginChallenge.count({ where: { userId: u.userId } })).toBe(0)
   })
 })
@@ -472,7 +497,7 @@ describe('what a half-finished login records', () => {
     try {
       const email = `stage-${Date.now()}@example.com`
       const user  = await own.auth.createUser({ email, password: PASSWORD })
-      const { secret } = await own.auth.setupTotp!(user.id, PASSWORD)
+      const { secret } = await own.auth.setupTotp!(user.id)
       await own.auth.confirmTotp!(user.id, totp(secret, new Date()))
 
       await rejectsWith(() => own.auth.login(email, 'wrong'), InvalidCredentialsError)
@@ -496,7 +521,7 @@ describe('what a half-finished login records', () => {
     try {
       const email = `locked-${Date.now()}@example.com`
       const user  = await own.auth.createUser({ email, password: PASSWORD })
-      const { secret } = await own.auth.setupTotp!(user.id, PASSWORD)
+      const { secret } = await own.auth.setupTotp!(user.id)
       await own.auth.confirmTotp!(user.id, totp(secret, new Date()))
 
       const res = await own.auth.login(email, PASSWORD) as any

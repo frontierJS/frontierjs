@@ -2,7 +2,9 @@
 //
 // AUDIT 2026-10-05 — the `reauthenticate` bucket: which methods it covers,
 // whether a success spends it, and that `confirmTotp` — a six-digit oracle
-// reachable from any session — sits outside it.
+// reachable from any session — sits inside it. Since sudo mode (`FJS-D1209`)
+// the bucket is `reauthenticate` + `confirmTotp`, the two that check a secret;
+// the changes that ride a fresh session check none and spend nothing.
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createTestApp, request } from '@frontierjs/junction'
@@ -39,31 +41,39 @@ const call = (token: string, method: string, data: unknown) =>
 
 describe('the bucket', () => {
 
-  test('changePassword, setupTotp, disableTotp, regenerateRecoveryCodes share it', async () => {
+  test('reauthenticate and confirmTotp share it — guesses spread across both are one budget', async () => {
     const u = await person()
-    for (let i = 0; i < MAX; i++) expect((await call(u.token, 'changePassword', { currentPassword: 'wrong', newPassword: 'x' })).status).toBe(403)
-    expect((await call(u.token, 'setupTotp', { currentPassword: 'wrong' })).status).toBe(429)
-    expect((await call(u.token, 'disableTotp', { currentPassword: 'wrong' })).status).toBe(429)
-    expect((await call(u.token, 'regenerateRecoveryCodes', { currentPassword: 'wrong' })).status).toBe(429)
-    expect((await call(u.token, 'changePassword', { currentPassword: PW, newPassword: 'x' })).status).toBe(429)
+    expect((await call(u.token, 'setupTotp', {})).status).toBe(200)
+    for (let i = 0; i < MAX - 1; i++) expect((await call(u.token, 'reauthenticate', { password: 'wrong' })).status).toBe(403)
+    expect((await call(u.token, 'confirmTotp', { code: '000000' })).status).toBe(403)
+
+    expect((await call(u.token, 'reauthenticate', { password: PW })).status).toBe(429)
+    expect((await call(u.token, 'confirmTotp', { code: '000001' })).status).toBe(429)
+  })
+
+  test('the changes that check no secret are outside it — an empty bucket still changes the password', async () => {
+    const u = await person()
+    for (let i = 0; i < MAX; i++) expect((await call(u.token, 'reauthenticate', { password: 'wrong' })).status).toBe(403)
+    expect((await call(u.token, 'reauthenticate', { password: PW })).status).toBe(429)
+
+    // The session is fresh from its sign-in, so these ride that proof.
+    expect((await call(u.token, 'changePassword', { newPassword: `${PW}-next` })).status).toBe(200)
+    expect((await call(u.token, 'setupTotp', {})).status).toBe(200)
+    expect((await call(u.token, 'disableTotp', {})).status).not.toBe(429)
+    expect((await call(u.token, 'regenerateRecoveryCodes', {})).status).not.toBe(429)
   })
 
   test('a SUCCESSFUL reauth spends the bucket too', async () => {
-    // Observation, not a secure-behavior assertion: a person rotating their
-    // password MAX times in the window locks themselves out of the four.
+    // Observation, not a secure-behavior assertion: a person confirming their
+    // password MAX times in the window is refused the next confirm.
     const u = await person()
-    let pw = PW
-    for (let i = 0; i < MAX; i++) {
-      const next = `${PW}-${i}`
-      expect((await call(u.token, 'changePassword', { currentPassword: pw, newPassword: next })).status).toBe(200)
-      pw = next
-    }
-    expect((await call(u.token, 'changePassword', { currentPassword: pw, newPassword: 'pw-final' })).status).toBe(429)
+    for (let i = 0; i < MAX; i++) expect((await call(u.token, 'reauthenticate', { password: PW })).status).toBe(200)
+    expect((await call(u.token, 'reauthenticate', { password: PW })).status).toBe(429)
   })
 
   test('confirmTotp is behind a limit: wrong codes are not answered without bound', async () => {
     const u = await person()
-    expect((await call(u.token, 'setupTotp', { currentPassword: PW })).status).toBe(200)
+    expect((await call(u.token, 'setupTotp', {})).status).toBe(200)
     const seen: number[] = []
     for (let i = 0; i < 25; i++) {
       seen.push((await call(u.token, 'confirmTotp', { code: String(i).padStart(6, '0') })).status)
@@ -78,7 +88,7 @@ describe('the bucket', () => {
     // `login.failed` records a wrong password at the front door; the same
     // guess through a stolen session answers 403 and writes nothing.
     const u = await person()
-    await call(u.token, 'changePassword', { currentPassword: 'wrong', newPassword: 'x' })
+    expect((await call(u.token, 'reauthenticate', { password: 'wrong' })).status).toBe(403)
     await new Promise(r => setImmediate(r))
     const rows = await h.sys.auditTrail.findMany({ where: { actorId: u.userId } })
     const ops  = rows.map((r: any) => String(r.operation))
@@ -87,7 +97,7 @@ describe('the bucket', () => {
 
   test('a failed confirmTotp is in the trail', async () => {
     const u = await person()
-    await call(u.token, 'setupTotp', { currentPassword: PW })
+    await call(u.token, 'setupTotp', {})
     await call(u.token, 'confirmTotp', { code: '000000' })
     await new Promise(r => setImmediate(r))
     const rows = await h.sys.auditTrail.findMany({ where: { actorId: u.userId } })

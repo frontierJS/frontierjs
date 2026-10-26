@@ -50,6 +50,10 @@ export interface ComputeSize {
   currency:  string
   /** Region slug → the monthly price there, in minor units. */
   prices:    Record<string, number>
+  /** Hetzner sells Arm beside x86 and its Arm types are the cheapest per GB,
+   *  so a pick by memory alone buys a box the amd64 image `basecamp:deploy`
+   *  ships cannot run on. */
+  arch:      'x86' | 'arm'
 }
 
 export interface ComputeRegion { slug: string; label: string; available: boolean }
@@ -107,12 +111,17 @@ export interface ComputeMachine {
   status:           MachineState
   ipAddress:        string | null
   region:           string | null
+  /** The name the vendor shows for it — the droplet's or server's own. */
+  name:             string | null
   /** The `Server` this machine SAYS it is, read back off the mark this app
    *  wrote when it created it. Null where nothing marked it, which is what
    *  somebody else's machine looks like. It is reconciliation's thread: an
    *  orphan carrying a server id is a row that was deleted on this side, and
    *  one carrying none was never ours. */
   serverId:         string | null
+  /** When the vendor made it, ISO 8601. Not when it last booted: neither
+   *  vendor says that, so a box powered off and on keeps its first date. */
+  createdAt:        string | null
 }
 
 /**
@@ -125,9 +134,10 @@ export interface ComputeMachine {
  * nobody here knows about, billing forever, and the mark is the only thread
  * back to it. Every connector must send it.
  *
- * Basecamp's OWN box is the one machine with no `userData` and with `sshKeys`
- * (`FJS-D1253`): `install.sh` is served by a Basecamp, so the box it will run
- * on cannot boot from it, and `fli deploy` reaches that box over SSH instead.
+ * Basecamp's OWN box is the one machine with `sshKeys` and no install in its
+ * `userData` (`FJS-D1253`): `install.sh` is served by a Basecamp, so the box it
+ * will run on cannot boot from it, and `fli deploy` reaches that box over SSH
+ * instead. Its `userData` is at most the reserved IP's egress route.
  */
 export interface MachineSpec {
   name:      string
@@ -137,7 +147,46 @@ export interface MachineSpec {
   userData?: string
   /** What `sshKey()` answered — the vendor's own handle for each key. */
   sshKeys?:  string[]
+  /** An address the machine takes as its own at create. Only a connector
+   *  whose `reservedIps` has no `assign` reads it; one with `assign` attaches
+   *  the address after boot instead. */
+  reservedIp?: ReservedIp
   mark:      MachineMark
+}
+
+// ─── Reserved IPs ────────────────────────────────────────────────────────
+
+/**
+ * An address the account holds apart from any machine, so a hostname pointed
+ * at it outlives the box. DigitalOcean's reserved IP sits beside the droplet on
+ * an anchor and is attached after boot; Hetzner's Primary IP IS the server's
+ * own address and can only be given at create or to a server that is off
+ * (`FJS-D1480`).
+ */
+export interface ReservedIp {
+  /** The vendor's handle: DigitalOcean's is the address, Hetzner's a number. */
+  id:        string
+  ip:        string
+  region:    string
+  /** The machine holding it, or null for a spare. */
+  machineId: string | null
+}
+
+export interface ReservedIps {
+  /** Every IPv4 one at the account. */
+  list(send: AccountSend): Promise<ReservedIp[]>
+  get(send: AccountSend, ip: string): Promise<ReservedIp | null>
+  /** A new spare in the region, billed from this moment. */
+  reserve(send: AccountSend, region: string): Promise<ReservedIp>
+  /** Attach it to a running machine. Accepted before the address routes, so
+   *  the caller reads `get` until the machine holds it. Absent where the vendor
+   *  takes it at create through `MachineSpec.reservedIp`. */
+  assign?(send: AccountSend, held: ReservedIp, machineId: string): Promise<void>
+  /** Only a spare: a vendor refuses, or worse, unassigns one a box holds. */
+  release(send: AccountSend, held: ReservedIp): Promise<void>
+  /** Cloud-init a box needs before its outbound traffic leaves from the
+   *  address. Absent where it already does. */
+  egress?: string
 }
 
 /** The send half, bound to one ACCOUNT's target. Handed to a connector so a
@@ -171,6 +220,11 @@ export interface ComputeConnector {
   label:   string
   /** Where the vendor is, when nothing overrides it. */
   address: string
+  /** What `fli basecamp:create` asks for when it is not told: a US region and
+   *  the Ubuntu the enrollment script supports. */
+  defaults: { region: string; image: string }
+  /** Held addresses, where this app can hold one at this vendor. */
+  reservedIps?: ReservedIps
   /** The descriptor this account registers as. The credential is a REF the
    *  resolver reads at send time; the material never reaches the registry. */
   descriptor(opts: { accountId: string; ref: string; address?: string }): TargetDescriptor

@@ -14,14 +14,13 @@
  * square's picture. The fade takes minutes and is `steps.test.js`'s.
  */
 import { spawn } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../../api/src/app.ts'
-import { signIn } from '../../api/test/sign-in.ts'
+import { POST_KEY, signIn, stakedHome } from '../../api/test/sign-in.ts'
 import { TUI, cellOf, screen, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
 
@@ -39,7 +38,7 @@ const check = (ok, label, evidence = '') => {
 const env = await createTestEnv({
   schema: join(WEB, '../db/schema.lite'),
   listen: true,
-  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-steps', port: 0 }),
+  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-steps', port: 0, postKey: POST_KEY }),
 })
 for (const [slug, name] of [['square', 'The square'], ['tavern', 'The tavern'], ['road', 'The road'], ['woods', 'The woods'], ['docks', 'The docks']]) {
   await env.system.room.create({ data: { slug, name } })
@@ -87,9 +86,9 @@ check(await until(() => dots(ana.at) === '...' && ana.at(sx + WALK, sy) === 'S',
   "Ana's screen has the same footprints, laid from his moves as she saw them, and Sam at the end of them", ana.screen())
 
 // Rex was not in the room: what he sees was handed to him by the server.
-const rexHome = mkdtempSync(join(tmpdir(), 'haven-rex-'))
+const rexHome = await stakedHome('haven-rex-', 'rex')
 const rex = await new Promise((r) => {
-  const p = spawn('bun', [FLI, 'haven', '--frame', '/', '--api', API, '--nick', 'rex'], {
+  const p = spawn('bun', [FLI, 'haven', '--frame', '/', '--api', API], {
     cwd: tmpdir(), stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, HOME: rexHome },
   })
   let framed = '', err = ''

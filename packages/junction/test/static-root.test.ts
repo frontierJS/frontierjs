@@ -31,6 +31,7 @@ beforeAll(() => {
   mkdirSync(shared,  { recursive: true })
 
   writeFileSync(join(root, 'assets', 'real.css'),  'body { color: red }')
+  writeFileSync(join(root, 'assets', 'index-B3kd9Qz2.js'), 'export {}')
   writeFileSync(join(outside, 'secret.txt'),       'TOP SECRET')
   writeFileSync(join(shared, 'logo.svg'),          '<svg/>')
   // An image and an unlisted type, for the two controls an allow-list needs.
@@ -116,6 +117,19 @@ describe('no root is not a root', () => {
 //
 // `nosniff` is the half that is safe for BOTH populations. It is not the whole
 // answer and the rows below say which half is still missing.
+
+describe('what a cache may keep', () => {
+  it('a content-hashed bundle file is immutable for a year', async () => {
+    const res = await ask('/assets/index-B3kd9Qz2.js')
+    expect(res?.status).toBe(200)
+    expect(res!.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
+  })
+
+  it('an unhashed file keeps the short, revalidating default', async () => {
+    const res = await ask('/assets/real.css')
+    expect(res!.headers.get('cache-control')).toBe('public, max-age=60, must-revalidate')
+  })
+})
 
 describe('the declared content type binds', () => {
   it('every served response carries nosniff', async () => {

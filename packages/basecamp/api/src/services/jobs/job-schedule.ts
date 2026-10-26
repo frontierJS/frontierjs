@@ -11,8 +11,12 @@
 // knows a job changed and the APP is what restores them at boot; a shared
 // module is what keeps the caravan name from being spelled in two places.
 
+import { parseCron }        from '@frontierjs/toolbelt/cron'
+import { queueBackup }      from '../../jobs/backup-run.job.ts'
+import appBackupRun         from '../../jobs/app-backup-run.job.ts'
+import appDrillRun          from '../../jobs/app-drill-run.job.ts'
 import type { App }         from '@frontierjs/junction'
-import type { Job }         from '../../../../db/schema.d.ts'
+import type { App as AppRow, HubConfig, Job } from '../../../../db/schema.d.ts'
 
 /**
  * The caravan registration name for a job's schedule.
@@ -102,9 +106,97 @@ export function syncSchedule(
   else            unscheduleJob(app, job.id)
 }
 
+// ─── The hub's backup ───────────────────────────────────────────────────────
+//
+// The same rule over a different row: `HubConfig.backupCron` is on the clock
+// while `backupEnabled` is true. One name, because there is one settings row.
+
+export const BACKUP_SCHEDULE = 'hub:backup'
+
+/** The refusal for an expression the clock cannot hold, or null. Asked before
+ *  the settings row is written, so a save never stores a schedule that then
+ *  fails to register. */
+export function cronProblem(expr: string): string | null {
+  try { parseCron(expr); return null }
+  catch (err) { return (err as Error).message }
+}
+
+/**
+ * Take one scheduled archive. The destination is read from the settings row at
+ * FIRE time, so changing it needs no re-registration.
+ *
+ * A fire that finds an archive still in flight skips rather than queues behind
+ * it — the next one is a whole interval away, and two back to back are the
+ * same bytes twice.
+ */
+export async function fireBackup(app: App): Promise<void> {
+  const log = app.logger.child('job-schedule')
+  const config = await app.db!.asSystem().hubConfig.findFirst({ where: { id: 'hub' } })
+  if (!config?.backupEnabled) return
+
+  const queued = await queueBackup(app, {
+    kind: 'scheduled', destinationId: config.backupDestinationId ?? null, requestedBy: null,
+  })
+  if ('inFlight' in queued) log.warn('scheduled backup skipped', { in_flight: queued.inFlight.status })
+}
+
+/** Make the clock agree with the settings row. */
+export function syncBackupSchedule(app: App, config: Pick<HubConfig, 'backupEnabled' | 'backupCron'>): void {
+  if (config.backupEnabled && config.backupCron)
+    app.jobs.schedule(BACKUP_SCHEDULE, config.backupCron, () => fireBackup(app), { queue: 'fleet' })
+  else
+    app.jobs.unschedule(BACKUP_SCHEDULE)
+}
+
+// ─── An app's backup ────────────────────────────────────────────────────────
+//
+// `App.backupCron` is on the clock while it is set and the app is not deleted
+// (`IDEAS/backups.md` 1.6). One name per app, derived from the row id as a
+// Job's is, so a patch replaces the registration. The fire dispatches
+// `app-backup:run`, which reads the row again — the bucket, the cron and the
+// deletion are all fire-time facts, so changing any of them needs no
+// re-registration but clearing the cron, which `syncAppBackupSchedule` does.
+
+export const appBackupSchedule = (appId: string): string => `app:backup:${appId}`
+
+/** Make the clock agree with the app row. */
+export function syncAppBackupSchedule(app: App, row: Pick<AppRow, 'id' | 'backupCron' | 'deletedAt'>): void {
+  if (row.backupCron && !row.deletedAt)
+    app.jobs.schedule(
+      appBackupSchedule(row.id),
+      row.backupCron,
+      // `actor: null`: nobody asked, and the handler declares `runsAsApp`.
+      async () => { await app.jobs.dispatch(appBackupRun, { appId: row.id }, { queue: 'fleet', priority: 5, actor: null }) },
+      { queue: 'fleet' },
+    )
+  else
+    app.jobs.unschedule(appBackupSchedule(row.id))
+}
+
+// ─── An app's drill ─────────────────────────────────────────────────────────
+//
+// `App.drillCron`, the same rule over the other column (`IDEAS/backups.md`
+// 3.3): the fire dispatches `app-drill:run`, which reads the row again.
+
+export const appDrillSchedule = (appId: string): string => `app:drill:${appId}`
+
+/** Make the drill's clock agree with the app row. */
+export function syncAppDrillSchedule(app: App, row: Pick<AppRow, 'id' | 'drillCron' | 'deletedAt'>): void {
+  if (row.drillCron && !row.deletedAt)
+    app.jobs.schedule(
+      appDrillSchedule(row.id),
+      row.drillCron,
+      async () => { await app.jobs.dispatch(appDrillRun, { appId: row.id }, { queue: 'fleet', priority: 5, actor: null }) },
+      { queue: 'fleet' },
+    )
+  else
+    app.jobs.unschedule(appDrillSchedule(row.id))
+}
+
 // ─── restoreSchedules ────────────────────────────────────────────────────────
 //
-// Re-register every live scheduled job from the database.
+// Re-register every schedule the database holds: each live scheduled job, the
+// hub's backup, and each app's.
 //
 // A cron registration is in-process in both caravan and junction, so it does not
 // survive a restart on its own — and the only place a Job's schedule was ever
@@ -137,6 +229,37 @@ export async function restoreSchedules(app: App): Promise<number> {
       log.error('could not restore schedule', {
         job_id: job.id, cron: job.cronExpression, error: (err as Error).message,
       })
+    }
+  }
+
+  const config = await db.hubConfig.findFirst({ where: { id: 'hub' } })
+  if (config?.backupEnabled) {
+    try {
+      syncBackupSchedule(app, config)
+      restored++
+    } catch (err) {
+      log.error('could not restore the backup schedule', { cron: config.backupCron, error: (err as Error).message })
+    }
+  }
+
+  // The system client reads past `@@softDelete`, so the deleted are filtered
+  // here: a deleted app's schedule would otherwise fire at 02:00.
+  const apps = await db.app.findMany({ where: { backupCron: { not: null }, deletedAt: null } })
+  for (const row of apps) {
+    try {
+      syncAppBackupSchedule(app, row)
+      restored++
+    } catch (err) {
+      log.error('could not restore an app backup schedule', { app_id: row.id, cron: row.backupCron, error: (err as Error).message })
+    }
+  }
+  const drilled = await db.app.findMany({ where: { drillCron: { not: null }, deletedAt: null } })
+  for (const row of drilled) {
+    try {
+      syncAppDrillSchedule(app, row)
+      restored++
+    } catch (err) {
+      log.error('could not restore an app drill schedule', { app_id: row.id, cron: row.drillCron, error: (err as Error).message })
     }
   }
   return restored

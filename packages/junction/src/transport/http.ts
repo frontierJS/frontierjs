@@ -541,7 +541,7 @@ export class HttpTransport {
     const security = this._securityHeaders
     if (!security) return response
     const headers = new Headers(response.headers)
-    for (const [k, v] of Object.entries(security)) headers.set(k, v)
+    for (const [k, v] of Object.entries(security)) if (!response.headers.has(k)) headers.set(k, v)
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
   }
 
@@ -1098,7 +1098,9 @@ export class HttpTransport {
     }
 
     if (cors)        for (const [k, v] of Object.entries(cors))        headers.set(k, v)
-    if (security)    for (const [k, v] of Object.entries(security))    headers.set(k, v)
+    // The handler's word stands, as it does for Cache-Control: a page that
+    // states its own CSP is the way one route loosens the app's
+    if (security)    for (const [k, v] of Object.entries(security))    if (!response.headers.has(k)) headers.set(k, v)
     if (rateLimit)   for (const [k, v] of Object.entries(rateLimit))   headers.set(k, v)
     if (correlation) for (const [k, v] of Object.entries(correlation)) headers.set(k, v)
     if (this._opts.powered && canDecorate)

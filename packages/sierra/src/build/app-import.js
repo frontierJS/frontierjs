@@ -1,7 +1,8 @@
 // ─── app-import.js — importing the app's own modules at build time ───────────
 //
-// A static build imports code the app wrote, from two doors: the Litestone
-// client `config.db` names, and a route's `.meta.js` companion. Both used to
+// A static build imports code the app wrote, from three doors: the Litestone
+// client `config.db` names, a route's `.meta.js` companion, and `src/lib/sugar.js`
+// (`FJS-3493`). The first two used to
 // `catch { return null }`, and that is `FJS-551`: the one truthful error a
 // build ever gets is thrown away, and what is left is a downstream TDZ.
 //

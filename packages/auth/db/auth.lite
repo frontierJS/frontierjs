@@ -91,6 +91,12 @@ model Session {
   /// enrollment three while it is set; `confirmTotp` clears it.
   enrollmentOnly  Boolean  @default(false)
 
+  /// When this session last proved the password (and the code, where a second
+  /// factor is live): at sign-in, and again at `account.reauthenticate`. The
+  /// credential changes refuse past `reauthenticationWindow` (`FJS-D1209`).
+  /// Null is never fresh.
+  reauthenticatedAt  DateTime?
+
   /// SUPPORT MODE — this session is an operator's, and while these are set it
   /// resolves to somebody else.
   ///

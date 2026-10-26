@@ -1,7 +1,8 @@
 // api/test/login.test.ts
-// The signed login: a key makes a member once and is that member every time
-// after; the token it answers is a session on both transports; and a login the
-// key did not sign — forged, tampered, replayed, stale — makes nothing. Each
+// The signed login: a member's chain makes a Haven member once and is that
+// member every time after; the token it answers is a session on both
+// transports; and a key in no chain, or a login the key did not sign —
+// forged, tampered, replayed, stale — makes nothing. Each
 // refusal sits beside a row count, since a 401 that still wrote a member would
 // read the same from the response alone.
 
@@ -14,7 +15,7 @@ import { generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { buildHavenApp } from '../src/app.ts'
 import { createHavenAuth } from '../src/auth.ts'
 import { CRIER } from '../src/crier.ts'
-import { signIn, signedLogin, postLogin } from './sign-in.ts'
+import { POST_KEY, chainOf, member, signIn, signedLogin, postLogin } from './sign-in.ts'
 
 const SCHEMA = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const KEY    = 'test-session-key'
@@ -30,7 +31,7 @@ async function start () {
   env = await createTestEnv({
     schema: SCHEMA,
     listen: true,
-    api:    ({ db }: { db: any }) => buildHavenApp({ db, sessionKey: KEY, port: 0, mods }),
+    api:    ({ db }: { db: any }) => buildHavenApp({ db, sessionKey: KEY, port: 0, postKey: POST_KEY, mods }),
   })
   sys = env.system
   await sys.room.create({ data: { slug: 'square', name: 'The square' } })
@@ -48,9 +49,9 @@ async function whoami (token: string): Promise<{ status: number, rows: any }> {
   return { status: res.status, rows: await res.json().catch(() => null) }
 }
 
-describe('a key walks in', () => {
+describe('a member walks in', () => {
   test('the first login makes the member, and its token reads as them over HTTP', async () => {
-    const sam = await signIn(env.port, 'Sam')
+    const sam = await signIn(env.port, 'sam')
     expect(sam.nick).toBe('sam')
     expect(await members()).toEqual(['sam'])
 
@@ -59,9 +60,9 @@ describe('a key walks in', () => {
     expect(JSON.stringify(seen.rows)).toContain('"nick":"sam"')
   })
 
-  test('the same key later is the same member, with a new session and no nick needed', async () => {
+  test('the same chain later is the same member, with a new session', async () => {
     const first = await signIn(env.port, 'sam')
-    const { status, json } = await postLogin(env.port, await signedLogin(first.keys, {}))
+    const { status, json } = await postLogin(env.port, await signedLogin(first.member.keys, chainOf(first.member)))
     expect(status).toBe(200)
     expect(json.member).toEqual({ id: first.id, nick: 'sam', role: null })
     expect(json.token).not.toBe(first.token)
@@ -82,27 +83,29 @@ describe('a key walks in', () => {
     expect(code).toBe(4001)
   })
 
-  test('a nick already walking under another key is refused, and the key makes nothing', async () => {
+  test('a nick held here by another chain is refused, and the row makes nothing', async () => {
     await signIn(env.port, 'sam')
-    const other = await generateSigningKeys()
-    const { status, json } = await postLogin(env.port, await signedLogin(other, { nick: 'SAM' }))
+    const other = await member('sam')
+    const { status, json } = await postLogin(env.port, await signedLogin(other.keys, chainOf(other)))
     expect(status).toBe(409)
-    expect(json.message).toContain('taken')
+    expect(json.message).toContain('held')
     expect(await members()).toEqual(['sam'])
   })
 
   test('the keyless voices cannot be walked in as, before their rows exist or after', async () => {
-    for (const voice of ['crier', 'DICE']) {
-      const { status, json } = await postLogin(env.port, await signedLogin(await generateSigningKeys(), { nick: voice }))
+    for (const voice of ['crier', 'dice']) {
+      const m = await member(voice)
+      const { status, json } = await postLogin(env.port, await signedLogin(m.keys, chainOf(m)))
       expect(status).toBe(409)
-      expect(json.message).toContain('taken')
+      expect(json.message).toContain('held')
     }
   })
 
-  test('a first login with no nick is told to name one', async () => {
+  test('a key in no chain is refused, naming how a machine joins', async () => {
     const keys = await generateSigningKeys()
-    const { status } = await postLogin(env.port, await signedLogin(keys, {}))
-    expect(status).toBe(400)
+    const { status, json } = await postLogin(env.port, await signedLogin(keys, { nick: 'sam' }))
+    expect(status).toBe(401)
+    expect(json.message).toContain('no Frontier chain')
     expect(await members()).toEqual([])
   })
 })
@@ -120,11 +123,11 @@ describe('a mod', () => {
 
     // The list is the standing: struck from it, the next login is a member's.
     // The database outlives the restart, as it does across a deploy.
-    const again = await buildHavenApp({ db: env.db, sessionKey: KEY, port: 0, mods: ['ana'] })
+    const again = await buildHavenApp({ db: env.db, sessionKey: KEY, port: 0, postKey: POST_KEY, mods: ['ana'] })
     await (again as any)._startForTest()
     ;(again as any).http.start(0)
     try {
-      const { json } = await postLogin((again as any).http.port, await signedLogin(sam.keys, {}))
+      const { json } = await postLogin((again as any).http.port, await signedLogin(sam.member.keys, chainOf(sam.member)))
       expect(json.member.role).toBeNull()
       expect(await roleOf('sam')).toBeNull()
     } finally { await (again as any).http.stop() }
@@ -146,9 +149,9 @@ describe('a mod', () => {
 describe('a login the key did not sign', () => {
   test('signed by another key, naming this one, makes nothing', async () => {
     const victim = await generateSigningKeys()
-    const forger = await generateSigningKeys()
-    const req = await signedLogin(forger, { nick: 'mallory' })
-    const lie = { ...req, body: req.body.replace(forger.publicKey, victim.publicKey) }
+    const forger = await member('mallory')
+    const req = await signedLogin(forger.keys, chainOf(forger))
+    const lie = { ...req, body: req.body.replace(forger.keys.publicKey, victim.publicKey) }
     const { status, json } = await postLogin(env.port, lie)
     expect(status).toBe(401)
     expect(json.message).toContain('does not match')
@@ -156,16 +159,16 @@ describe('a login the key did not sign', () => {
   })
 
   test('a body changed after signing is refused', async () => {
-    const keys = await generateSigningKeys()
-    const req  = await signedLogin(keys, { nick: 'sam' })
+    const sam = await member('sam')
+    const req = await signedLogin(sam.keys, chainOf(sam))
     const { status } = await postLogin(env.port, { ...req, body: req.body.replace('"sam"', '"ana"') })
     expect(status).toBe(401)
     expect(await members()).toEqual([])
   })
 
   test('replayed, the second is refused and mints no second session', async () => {
-    const keys = await generateSigningKeys()
-    const req  = await signedLogin(keys, { nick: 'sam' })
+    const sam = await member('sam')
+    const req = await signedLogin(sam.keys, chainOf(sam))
     expect((await postLogin(env.port, req)).status).toBe(200)
     const again = await postLogin(env.port, req)
     expect(again.status).toBe(401)
@@ -174,14 +177,14 @@ describe('a login the key did not sign', () => {
   })
 
   test('outside the window, and unsigned, are refused by name', async () => {
-    const keys  = await generateSigningKeys()
-    const stale = await postLogin(env.port, await signedLogin(keys, { nick: 'sam' }, Math.floor(Date.now() / 1000) - 3600))
+    const sam   = await member('sam')
+    const stale = await postLogin(env.port, await signedLogin(sam.keys, chainOf(sam), Math.floor(Date.now() / 1000) - 3600))
     expect(stale.status).toBe(401)
     expect(stale.json.message).toContain('out')
 
     const res = await fetch(`http://localhost:${env.port}/haven/login`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ publicKey: keys.publicKey, nick: 'sam' }),
+      body: JSON.stringify({ publicKey: sam.keys.publicKey, ...chainOf(sam) }),
     })
     expect(res.status).toBe(401)
     expect(await members()).toEqual([])

@@ -11,15 +11,17 @@
  * fresh test database. A bare `oven/bun` container on the host network then
  * runs `bunx @frontierjs/cli haven --frame /` against it, so `fli` comes from
  * the registry, asks the server which Haven it runs, installs that, signs in
- * with a key it makes, and prints the square with its own figure on it.
+ * as the Frontier member its HOME was staked as (`FJS-D1477`), and prints the
+ * square with its own figure on it.
  *
  * Traps:
  * - Haven is `private: true` so that no publish can take it to npm before
  *   its owner says so. The copy packed here has the field removed, and only
  *   that copy.
  * - Docker here may be a snap, which reads no file outside the user's home,
- *   `/tmp` included. So nothing is mounted: Verdaccio's config travels in an
- *   environment variable and the registry's port is Docker's choice.
+ *   `/tmp` included. So nothing is mounted: Verdaccio's config and the staked
+ *   member's files travel in environment variables and the registry's port is
+ *   Docker's choice.
  * - `bun pm pack` is what rewrites `workspace:*` to a version, so every
  *   package is packed from its own directory and never copied.
  */
@@ -32,6 +34,7 @@ import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../api/src/app.ts'
 import { isVoice } from '../api/src/keyless.ts'
+import { POST_KEY, member } from '../api/test/sign-in.ts'
 import { VIEW } from '../web/src/lib/scene/stage.js'
 
 const HAVEN    = join(import.meta.dir, '..')
@@ -140,20 +143,33 @@ try {
   env = await createTestEnv({
     schema: join(HAVEN, 'db/schema.lite'),
     listen: true,
-    api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-fresh', port: 0 }),
+    api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-fresh', port: 0, postKey: POST_KEY }),
   })
   await env.system.room.create({ data: { slug: 'square', name: 'The square' } })
   const api = `http://127.0.0.1:${env.port}`
 
   // ─── a machine with no checkout walks in ────────────────────────────
 
+  // The machine is a member already, as `fli frontier:stake` leaves one; its
+  // post never answers, and a fresh row is not refreshed.
+  const staked = await member(NICK)
+  const stake = 'mkdir -p /root/.fli/frontier'
+    + ' && printf "%s" "$STAKE_KEY" > /root/.fli/frontier/key.json'
+    + ' && printf "%s" "$STAKE_CHAIN" > /root/.fli/frontier/chain.json'
+    + ' && printf "%s" "$STAKE_ROW" > /root/.fli/frontier/member.json'
+    + ' && printf "%s" "$STAKE_CONFIG" > /root/.fli/config.json'
+
   // Spawned, never spawnSync: the API answering it runs in this process.
   const walk = Bun.spawn(['docker', 'run', '--rm', '--network', 'host',
     '-e', `NPM_CONFIG_REGISTRY=${registry}`, '-e', `BUN_CONFIG_REGISTRY=${registry}`,
+    '-e', 'FLI_FRONTIER_POST=http://127.0.0.1:9',
+    '-e', `STAKE_KEY=${JSON.stringify(staked.keys)}`, '-e', `STAKE_CHAIN=${JSON.stringify(staked.links)}`,
+    '-e', `STAKE_ROW=${JSON.stringify(staked.row)}`,
+    '-e', `STAKE_CONFIG=${JSON.stringify({ frontier: { nick: NICK, postKey: POST_KEY } })}`,
     BUN, 'sh', '-c',
-    // Twice in one container: the second run finds the version installed and
-    // the key made, and must still be the same member.
-    `bunx @frontierjs/cli haven --api ${api} --nick ${NICK} --frame / && echo ---second--- && bunx @frontierjs/cli haven --api ${api} --frame / && echo ---versions--- && ls -d /root/.fli/haven/*/`,
+    // Twice in one container: the second run finds the version installed, and
+    // must still be the same member.
+    `${stake} && bunx @frontierjs/cli haven --api ${api} --frame / && echo ---second--- && bunx @frontierjs/cli haven --api ${api} --frame / && echo ---versions--- && ls -d /root/.fli/haven/*/`,
   ], { stdout: 'pipe', stderr: 'pipe' })
   const timer = setTimeout(() => walk.kill(), 600_000)
   const [stdout, stderr, status] = await Promise.all([new Response(walk.stdout).text(), new Response(walk.stderr).text(), walk.exited])

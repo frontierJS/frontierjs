@@ -1031,11 +1031,18 @@ export class AuthClient {
    * when the account owes a second factor, finished by `completeSignIn`.
    * Confirming or changing an existing account's address signs nobody in and
    * answers `{ ok: true }`. Discriminate on `'user' in result`.
+   *
+   * The session this client holds rides along as a header rather than as its
+   * credential: a confirmed change of address ends every OTHER session and
+   * keeps the one that posted the click (`FJS-D1208`), and a 401 here is about
+   * the link, which must not sign the person out.
    */
   async verifyEmail(token: string): Promise<SignInResult | EmailVerified> {
     this._pendingChallenge = null
+    const held = this._c.token
     const raw = await this._c._request(
-      'POST', `${this._prefix}/email/verify`, { token }, { skipAuth: true }
+      'POST', `${this._prefix}/email/verify`, { token },
+      { skipAuth: true, ...(held ? { header: { Authorization: `Bearer ${held}` } } : {}) }
     ) as Record<string, unknown> | null
     if (raw?.ok === true) return { ok: true }
     return this._signedIn(raw)
@@ -1048,21 +1055,32 @@ export class AuthClient {
     return this._c.service(this._names.account).get('me') as Promise<Record<string, unknown>>
   }
 
-  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
-    await this._c.service(this._names.account).invoke('changePassword', 'me', { currentPassword, newPassword })
+  /**
+   * SUDO MODE. Prove the password again — and the code, where a second factor
+   * is on — so the credential changes below go through until `until`. Each of
+   * them answers 403 with `data.reason === 'reauthentication_required'` past
+   * it; a screen asks for the password then, calls this, and retries.
+   */
+  async reauthenticate(password: string, code?: string): Promise<{ until: string }> {
+    return this._c.service(this._names.account).invoke('reauthenticate', 'me', { password, ...(code ? { code } : {}) }) as Promise<{ until: string }>
+  }
+
+  async changePassword(newPassword: string): Promise<void> {
+    await this._c.service(this._names.account).invoke('changePassword', 'me', { newPassword })
   }
 
   /** Mail a link to `newEmail`; the address changes when that link is opened. */
-  async requestEmailChange(currentPassword: string, newEmail: string): Promise<void> {
-    await this._c.service(this._names.account).invoke('requestEmailChange', 'me', { currentPassword, newEmail })
+  async requestEmailChange(newEmail: string): Promise<void> {
+    await this._c.service(this._names.account).invoke('requestEmailChange', 'me', { newEmail })
   }
 
   // ── The second factor — also the account's ────────────────────────
   //
   // The method names are the provider's, so the header a screen sends is the
-  // key `need()` reads on the server. Three of the four writes re-ask for the
-  // password: they change what the account requires to sign in, and a session
-  // left open on a shared machine is not the account holder.
+  // key `need()` reads on the server. Three of the four writes need a session
+  // that reauthenticated within the window: they change what the account
+  // requires to sign in, and a session left open on a shared machine is not
+  // the account holder.
 
   /** Whether signing in owes a code, and how many ways back remain. */
   async totpStatus(): Promise<TotpStatus> {
@@ -1074,8 +1092,8 @@ export class AuthClient {
    * authenticator scans; drawing that as a QR code is the screen's. Nothing is
    * required of a sign-in until `confirmTotp` proves the device holds it.
    */
-  async setupTotp(currentPassword: string): Promise<{ secret: string; qr: string }> {
-    return this._c.service(this._names.account).invoke('setupTotp', 'me', { currentPassword }) as Promise<{ secret: string; qr: string }>
+  async setupTotp(): Promise<{ secret: string; qr: string }> {
+    return this._c.service(this._names.account).invoke('setupTotp', 'me', {}) as Promise<{ secret: string; qr: string }>
   }
 
   /** Prove the device, switch the factor on. The recovery codes are shown ONCE, here. */
@@ -1083,13 +1101,13 @@ export class AuthClient {
     return this._c.service(this._names.account).invoke('confirmTotp', 'me', { code }) as Promise<{ recoveryCodes: string[] }>
   }
 
-  async disableTotp(currentPassword: string): Promise<void> {
-    await this._c.service(this._names.account).invoke('disableTotp', 'me', { currentPassword })
+  async disableTotp(): Promise<void> {
+    await this._c.service(this._names.account).invoke('disableTotp', 'me', {})
   }
 
   /** Replaces every unused recovery code. The old ones stop working at once. */
-  async regenerateRecoveryCodes(currentPassword: string): Promise<{ recoveryCodes: string[] }> {
-    return this._c.service(this._names.account).invoke('regenerateRecoveryCodes', 'me', { currentPassword }) as Promise<{ recoveryCodes: string[] }>
+  async regenerateRecoveryCodes(): Promise<{ recoveryCodes: string[] }> {
+    return this._c.service(this._names.account).invoke('regenerateRecoveryCodes', 'me', {}) as Promise<{ recoveryCodes: string[] }>
   }
 
   /** Every live session of this caller's, the one making the request marked `current`. */
@@ -1399,7 +1417,25 @@ export class JunctionClient extends EventEmitter {
    * resolved the old principal (`FJS-2651`).
    */
   _principalChanged(): void {
+    this._identityChanged()
     this._noteCredential(CREDENTIAL_CHANGED)
+  }
+
+  // Bumped on every change of who this client is. A read sent under one value
+  // and answered under another is the previous caller's row.
+  private _identity = 0
+  private _identityViews: Set<() => void> = new Set()
+
+  /**
+   * Every row this client holds was read as somebody else: emptied before
+   * anything hears of the change, so a `record(id)` asked for in a `token`
+   * listener fetches rather than answering the previous caller's row
+   * (`FJS-3388`). A view still open reads again as the new caller.
+   */
+  private _identityChanged(): void {
+    this._identity++
+    this.entries.clear()
+    for (const reread of [...this._identityViews]) reread()
   }
 
   private _noteServerBuild(id: unknown): void {
@@ -1574,6 +1610,7 @@ export class JunctionClient extends EventEmitter {
     if (!changed) return
     // Who this client is has changed. Anything cached as the previous caller
     // — Sierra's prefetch, an app's own store — is now somebody else's data.
+    this._identityChanged()
     this.emit('token', token)
     if (this._ws && this._ws.readyState < 2) {
       // Cycle existing socket so upgrade carries the new token
@@ -2210,21 +2247,34 @@ export class JunctionClient extends EventEmitter {
         reread = setTimeout(() => { reread = null; void fetch() }, Math.random() * 2000)
       })
 
+      // The caller changed under an open view. The entry is already empty;
+      // gone and the failure were answers to the previous caller (`FJS-3388`).
+      const onIdentity = (): void => {
+        gone = false
+        failure = null
+        if (composed) { own = null; emit(null) }
+        void fetch()
+      }
+      this._identityViews.add(onIdentity)
+
       // `shared` is the cold first read only. A refresh asks for newer than
       // anything in flight, so it never joins one.
       const read = async (shared: boolean): Promise<T | null> => {
         if (composed) return readComposed()
         const wasGone = gone
+        const asked = this._identity
         try {
           const row = ropts.load
             ? await ropts.load()
             : shared
-            ? await coldRead(entry, () => svc.get(id as string | number))
+            ? await coldRead(entry, asked, () => svc.get(id as string | number))
             : await svc.get(id as string | number)
+          if (asked !== this._identity) return value()
           if (row != null) registry.write(model, row, key)
           failure = null
           return row ?? null
         } catch (e) {
+          if (asked !== this._identity) return value()
           // A refused or missing row is not a crash here: the view answers
           // whatever it last knew, and the caller awaiting `ready` sees null
           // with `error()` saying why. Subscribers hear it too, since a push
@@ -2253,6 +2303,7 @@ export class JunctionClient extends EventEmitter {
         // `watch` is itself the hold, so letting it go is what starts the TTL.
         release:   () => {
           offEntry(); offGone(); offChanged(); offReconnected()
+          this._identityViews.delete(onIdentity)
           if (reread) clearTimeout(reread)
           reread = null
           subs.clear()
@@ -3374,13 +3425,14 @@ export interface RecordResult<T extends Record<string, unknown> = Record<string,
 // the warm-entry skip only helps after the first read lands. The in-flight
 // promise is held per entry so the second view waits on it; each view still
 // writes the entry and records its own failure from what the promise settles.
-const _coldReads = new WeakMap<object, Promise<unknown>>()
+// A read in flight for the previous caller is not joined (`FJS-3388`).
+const _coldReads = new WeakMap<object, { asked: number; p: Promise<unknown> }>()
 
-function coldRead<R>(entry: object, load: () => Promise<R>): Promise<R> {
+function coldRead<R>(entry: object, asked: number, load: () => Promise<R>): Promise<R> {
   const held = _coldReads.get(entry)
-  if (held) return held as Promise<R>
-  const p = load().finally(() => { _coldReads.delete(entry) })
-  _coldReads.set(entry, p)
+  if (held?.asked === asked) return held.p as Promise<R>
+  const p = load().finally(() => { if (_coldReads.get(entry)?.p === p) _coldReads.delete(entry) })
+  _coldReads.set(entry, { asked, p })
   return p
 }
 

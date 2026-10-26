@@ -113,17 +113,19 @@ export const BLUEPRINTS = [
     ],
   },
   {
-    slug: 'minio', name: 'MinIO', category: 'Storage', icon: '🪣', brandColor: null,
-    description: 'High-performance S3-compatible object storage.',
-    version: 'latest', image: 'quay.io/minio/minio:latest',
-    appType: 'container', port: 9000,
-    volumePath: '/data', healthCheck: '/minio/health/live',
+    // The drives' S3 server too (`FJS-D1507`). Both keys are required because
+    // with neither set it serves every bucket to anyone, unsigned.
+    slug: 'seaweedfs', name: 'SeaweedFS', category: 'Storage', icon: '🪣', brandColor: null,
+    description: 'S3-compatible object storage in one container.',
+    version: '4.48', image: 'chrislusf/seaweedfs:4.48',
+    appType: 'container', port: 8333,
+    volumePath: '/data', healthCheck: '/healthz',
     cpuLimit: 0.5, memLimitMb: 512,
-    notes: 'Console available on port 9001. S3-compatible API on port 9000. Use in your apps with the AWS SDK pointed at this host.',
-    links: [{ label: 'Docs', url: 'https://min.io/docs' }],
+    notes: 'S3 API on port 8333, path-style. The image runs `weed mini`, which also starts an Admin UI on 23646 with no password, so never publish that port. Once 10 GiB are stored it reports anonymous usage to telemetry.seaweedfs.com.',
+    links: [{ label: 'Docs', url: 'https://github.com/seaweedfs/seaweedfs/wiki/Amazon-S3-API' }],
     params: [
-      { key: 'MINIO_ROOT_USER',     label: 'Root user', defaultValue: 'minioadmin', required: true },
-      { key: 'MINIO_ROOT_PASSWORD', label: 'Root password', required: true, secret: true, generate: 'random_hex_16' },
+      { key: 'AWS_ACCESS_KEY_ID',     label: 'Access key', required: true, generate: 'random_hex_16' },
+      { key: 'AWS_SECRET_ACCESS_KEY', label: 'Secret key', required: true, secret: true, generate: 'random_hex_32' },
     ],
   },
   {

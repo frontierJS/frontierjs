@@ -45,7 +45,7 @@ describe('the default minimum is 8 characters', () => {
 
   test('changePassword refuses a short new password and keeps the old one', async () => {
     const made = await h.auth.createUser({ email: 'change@example.test', password: 'long-enough-1' })
-    await rejectsWith(() => h.auth.changePassword!(made.id, 'long-enough-1', 'short'), WeakPasswordError)
+    await rejectsWith(() => h.auth.changePassword!(made.id, 'short'), WeakPasswordError)
     expect(await h.auth.login('change@example.test', 'long-enough-1')).toBeTruthy()
   })
 

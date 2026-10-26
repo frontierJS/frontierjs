@@ -4,7 +4,7 @@ title: Project
 <script>
   import { page, goto } from '@frontierjs/sierra/router'
   import { projects } from '../../../resources/Project.mesa'
-  import { messageFor } from '../../../errors.js'
+  import { messageFor } from '../../../lib/errors.js'
   import { environments } from '../../../resources/Environment.mesa'
   import Alert    from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'

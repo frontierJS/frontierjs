@@ -26,33 +26,33 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3826 source file(s) read
-234 entry point(s), 37 imported by nothing outside their package, 15 emitted
-1571 value export(s), 620 reached by nothing outside, 166 emitted
-450 type export(s), 346 reached by nothing outside
+26 package(s) · 3894 source file(s) read
+237 entry point(s), 35 imported by nothing outside their package, 15 emitted
+1609 value export(s), 620 reached by nothing outside, 166 emitted
+451 type export(s), 343 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `litestone` | 26 | 6 | 252 | 131 | 37 | 1 | 1 |
-| `junction` | 26 | 4 | 264 | 122 | 13 | 267 | 211 |
+| `litestone` | 26 | 5 | 259 | 132 | 35 | 1 | 1 |
+| `junction` | 26 | 4 | 264 | 120 | 12 | 267 | 211 |
 | `mesa` | 18 | 4 | 286 | 100 | 70 | 0 | 0 |
-| `sierra` | 25 | 6 | 196 | 82 | 21 | 0 | 0 |
-| `auth` | 6 | 1 | 51 | 36 | 3 | 15 | 13 |
-| `jetty` | 7 | 4 | 43 | 29 | 0 | 0 | 0 |
-| `ui` | 9 | 0 | 51 | 33 | 4 | 0 | 0 |
-| `toolbelt` | 59 | 1 | 263 | 30 | 11 | 0 | 0 |
-| `conduit` | 4 | 2 | 26 | 15 | 1 | 59 | 44 |
+| `sierra` | 25 | 6 | 197 | 82 | 22 | 0 | 0 |
+| `auth` | 6 | 1 | 52 | 37 | 3 | 15 | 13 |
+| `ui` | 9 | 0 | 53 | 35 | 3 | 0 | 0 |
+| `jetty` | 7 | 4 | 43 | 29 | 3 | 0 | 0 |
+| `toolbelt` | 61 | 0 | 289 | 28 | 11 | 0 | 0 |
+| `conduit` | 4 | 2 | 26 | 15 | 1 | 59 | 40 |
 | `site-kit` | 9 | 4 | 38 | 12 | 1 | 0 | 0 |
 | `mcp` | 5 | 1 | 24 | 8 | 0 | 36 | 21 |
 | `outpost` | 7 | 1 | 15 | 7 | 0 | 0 | 0 |
-| `notifications` | 2 | 0 | 11 | 5 | 0 | 24 | 19 |
+| `notifications` | 2 | 0 | 11 | 5 | 0 | 25 | 20 |
 | `email-kit` | 3 | 0 | 10 | 4 | 1 | 0 | 0 |
 | `oracle` | 1 | 0 | 19 | 3 | 2 | 0 | 0 |
 | `print-kit` | 4 | 1 | 6 | 1 | 1 | 0 | 0 |
 | `testing` | 2 | 1 | 10 | 1 | 0 | 16 | 13 |
 | `caravan` | 1 | 0 | 4 | 1 | 1 | 24 | 21 |
-| `css` | 13 | 1 | 0 | 0 | 0 | 0 | 0 |
+| `css` | 14 | 1 | 1 | 0 | 0 | 0 | 0 |
 | `basecamp` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `cli` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `config` | 3 | 0 | 0 | 0 | 0 | 0 | 0 |
@@ -63,13 +63,13 @@ surface gains an unreached export or loses its last caller, and not on every imp
 
 ## `@frontierjs/auth`
 
-`packages/auth` · 6 entry point(s) · 51 value, 15 type export(s)
+`packages/auth` · 6 entry point(s) · 52 value, 15 type export(s)
 
 **Entries imported by nothing outside (1):** `./schema`
 
 **Entries not source (2, not graded):** `./schema.lite` `./user.lite`
 
-**Unreached values (36):** `AuthConfigError` `AuthError` `base32Decode` `base32Encode` `beginFlow` `constantTimeEqual` `createAuthServices` `EmailTakenError` `exchangeCode` `fetchIdentity` `generateRecoveryCode` `generateRecoveryCodes` `generateTotpSecret` `generateVerifier` `hotp` `InvalidCredentialsError` `InvalidExpiryError` `InvalidSecondFactorError` `InvalidTokenError` `isAllowedReturnTo` `LastCredentialError` `NoPasswordCredentialError` `normalizeRecoveryCode` `OAUTH_STATE_COOKIE` `OAuthError` `otpauthUri` `ReauthenticationFailedError` `RECOVERY_CODE_COUNT` `retargetDb` `stateMatches` `SupportEpisodeError` `TOTP_DIGITS` `TOTP_STEP_SEC` `TotpAlreadyEnabledError` `UserNotFoundError` `WeakPasswordError`
+**Unreached values (37):** `AuthConfigError` `AuthError` `base32Decode` `base32Encode` `beginFlow` `constantTimeEqual` `createAuthServices` `EmailTakenError` `exchangeCode` `fetchIdentity` `generateRecoveryCode` `generateRecoveryCodes` `generateTotpSecret` `generateVerifier` `hotp` `InvalidCredentialsError` `InvalidExpiryError` `InvalidSecondFactorError` `InvalidTokenError` `isAllowedReturnTo` `LastCredentialError` `NoPasswordCredentialError` `normalizeRecoveryCode` `OAUTH_STATE_COOKIE` `OAuthError` `otpauthUri` `ReauthenticationFailedError` `ReauthenticationRequiredError` `RECOVERY_CODE_COUNT` `retargetDb` `stateMatches` `SupportEpisodeError` `TOTP_DIGITS` `TOTP_STEP_SEC` `TotpAlreadyEnabledError` `UserNotFoundError` `WeakPasswordError`
 
 **Emitted (3):** `authMachineryModels` `authUserModel` `PROVIDER_PRESETS`
 
@@ -107,7 +107,7 @@ Every entry is imported and every name reached.
 
 **Emitted (1):** `withCache`
 
-**Unreached types (44):** `BreakerState` `BrokerFraming` `BrokerGap` `BrokerHandler` `BrokerHealth` `BrokerKeepalive` `BrokerLink` `BrokerMessage` `BrokerReceiver` `ClaimedModel` `ConduitChunk` `ConduitError` `ConduitErrorKind` `ConduitErrorResponse` `ConduitObservers` `ConduitRequest` `ConduitResponse` `ConduitResult` `ConduitStats` `ConduitStore` `CredentialCaller` `CredentialRefusal` `FrameDialect` `IConduit` `MirrorClaim` `MirrorModel` `MirrorRow` `MirrorVerb` `ReceiveResult` `RefusedAnswer` `ResilienceOptions` `ResponseMeta` `ResponseValidator` `Signer` `SignInput` `SignOutput` `StubMocks` `TargetAuth` `TargetKind` `TargetResilience` `TestConduit` `TestConduitOptions` `TraceContextOptions` `VerifyContext`
+**Unreached types (40):** `BreakerState` `BrokerFraming` `BrokerGap` `BrokerHandler` `BrokerHealth` `BrokerKeepalive` `BrokerLink` `BrokerMessage` `BrokerReceiver` `ClaimedModel` `ConduitChunk` `ConduitErrorKind` `ConduitErrorResponse` `ConduitObservers` `ConduitResponse` `ConduitStats` `ConduitStore` `CredentialCaller` `CredentialRefusal` `FrameDialect` `IConduit` `MirrorClaim` `MirrorModel` `MirrorRow` `MirrorVerb` `ReceiveResult` `RefusedAnswer` `ResilienceOptions` `ResponseMeta` `ResponseValidator` `SignInput` `SignOutput` `StubMocks` `TargetAuth` `TargetKind` `TargetResilience` `TestConduit` `TestConduitOptions` `TraceContextOptions` `VerifyContext`
 
 ## `@frontierjs/config`
 
@@ -125,7 +125,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/css`
 
-`packages/css` · 13 entry point(s) · 0 value, 0 type export(s)
+`packages/css` · 14 entry point(s) · 1 value, 0 type export(s)
 
 **Entries imported by nothing outside (1):** `./vocabulary.js`
 
@@ -163,6 +163,8 @@ Every entry is imported and every name reached.
 
 **Unreached values (29):** `_resetPermissionsCache` `bootstrapUnoMirror` `buildRegistration` `closePier` `defineDock` `defineOptions` `definePier` `formatAuditReport` `getActivePort` `getConnectionSignals` `httpOrigin` `injectPageScript` `isFreePermission` `makePageBridge` `makePortName` `onConnectionChange` `openOptions` `openPier` `parsePortName` `PERMISSION_CATALOG` `permissionFor` `PORT_NAME_PATTERN` `readPageNonce` `registerAllIslands` `registerIsland` `reloadIslandTabs` `runAudit` `scanSource` `unregisterIsland`
 
+**Emitted (3):** `_registerActivePort` `connectHarbor` `runIsland`
+
 ## `@frontierjs/junction`
 
 `packages/junction` · 26 entry point(s) · 264 value, 267 type export(s)
@@ -171,23 +173,23 @@ Every entry is imported and every name reached.
 
 **Entries not source (3, not graded):** `./outbox.lite` `./backfill.lite` `./metrics.lite`
 
-**Unreached values (122):** `accessorIfModel` `AIBuilder` `announcementPayload` `assertBackfillField` `assertPublicUrl` `AuthClient` `autoloadServices` `autoSort` `backfillSchemaFragment` `bearerOf` `bodyLimit` `BULK_FAILURES` `CacheValueError` `checkPrincipalSetting` `checkUnknownKeys` `circuitBreaker` `collectMethodInputs` `collectMethodOutputs` `collectMetrics` `combineOrigins` `COMMITMENT_SWEEP_JOB` `consoleWriter` `createChannelManager` `createEventBus` `createLitestoneBase` `createMemoryCache` `createMessage` `createSchema` `createSmtpMailer` `createSqliteCache` `createStats` `cronMatcher` `currentCall` `customMethodNames` `dataRealmFacts` `declaredCallHeaders` `declaredTransitionMethods` `declaresNoSoftDelete` `decodeValue` `deriveModelName` `describeDataRealm` `describedOf` `describePrincipalRealm` `encodeValue` `errorResponse` `extractIP` `fieldError` `fromStatusCode` `generateEnvExample` `inAfterCommitDrain` `installLogContext` `installMadeAt` `installQueryTelemetry` `isCrudGatedMethod` `isCustomMethod` `isDeclaredTransition` `isDerivedHook` `isMethodAllowed` `isServiceResult` `jsonResponse` `jsonSchemaToJunctionSchema` `JunctionClient` `liftReservedQuery` `loadServiceFile` `logTiming` `markDerived` `mergeHookMaps` `methodEntryName` `methodGateBasis` `MethodNotAllowed` `mirrorClaimFor` `multiWriter` `nextDelayMs` `noopLogger` `NotImplemented` `outboxSchemaFragment` `parseAggregate` `parseBody` `parseCookies` `parseLitestoneQuery` `parseQuery` `partitionBulk` `PaymentRequired` `printEnvExample` `PublicUrlError` `READ_ONLY_METHODS` `readGateLevel` `readReplyTag` `redirectResponse` `REFUSE` `refuseStream` `registerAuditMetrics` `renderPrometheus` `replyAddress` `requestLogger` `requiredScope` `resetAnnouncementWarnings` `resetReservedQueryChecks` `resolveAccessor` `resolveDefsKey` `resolveMethodSelection` `resolvePipelines` `ResultShapeError` `runPipeline` `serializeHookMap` `serveStatic` `SERVICE_OPTION_KEYS` `SERVICE_RUNTIME_KEYS` `ServiceProxy` `ServiceRegistry` `splitAddress` `TENANT_CLIENT_OBSERVERS` `TENANT_REGISTRY` `tenantClaimGuard` `toBulkFailure` `toMime` `traceIdOf` `unknownKeys` `unwrapResult` `validateInput` `watchFilterReads` `withTenantDb`
+**Unreached values (120):** `accessorIfModel` `AIBuilder` `announcementPayload` `assertBackfillField` `assertPublicUrl` `AuthClient` `autoloadServices` `autoSort` `backfillSchemaFragment` `bearerOf` `bodyLimit` `BULK_FAILURES` `CacheValueError` `checkPrincipalSetting` `checkUnknownKeys` `circuitBreaker` `collectMethodInputs` `collectMethodOutputs` `collectMetrics` `combineOrigins` `COMMITMENT_SWEEP_JOB` `consoleWriter` `createChannelManager` `createEventBus` `createLitestoneBase` `createMemoryCache` `createMessage` `createSchema` `createSmtpMailer` `createSqliteCache` `createStats` `cronMatcher` `currentCall` `customMethodNames` `dataRealmFacts` `declaredCallHeaders` `declaredTransitionMethods` `declaresNoSoftDelete` `decodeValue` `deriveModelName` `describeDataRealm` `describedOf` `describePrincipalRealm` `encodeValue` `errorResponse` `extractIP` `fieldError` `fromStatusCode` `generateEnvExample` `inAfterCommitDrain` `installLogContext` `installMadeAt` `installQueryTelemetry` `isCrudGatedMethod` `isCustomMethod` `isDeclaredTransition` `isDerivedHook` `isMethodAllowed` `isServiceResult` `jsonResponse` `jsonSchemaToJunctionSchema` `JunctionClient` `liftReservedQuery` `loadServiceFile` `logTiming` `markDerived` `mergeHookMaps` `methodEntryName` `methodGateBasis` `mirrorClaimFor` `multiWriter` `nextDelayMs` `noopLogger` `NotImplemented` `outboxSchemaFragment` `parseAggregate` `parseBody` `parseCookies` `parseLitestoneQuery` `parseQuery` `partitionBulk` `PaymentRequired` `printEnvExample` `PublicUrlError` `READ_ONLY_METHODS` `readGateLevel` `readReplyTag` `redirectResponse` `REFUSE` `refuseStream` `registerAuditMetrics` `renderPrometheus` `replyAddress` `requiredScope` `resetAnnouncementWarnings` `resetReservedQueryChecks` `resolveAccessor` `resolveDefsKey` `resolveMethodSelection` `resolvePipelines` `ResultShapeError` `runPipeline` `serializeHookMap` `serveStatic` `SERVICE_OPTION_KEYS` `SERVICE_RUNTIME_KEYS` `ServiceProxy` `ServiceRegistry` `splitAddress` `TENANT_CLIENT_OBSERVERS` `TENANT_REGISTRY` `tenantClaimGuard` `toBulkFailure` `toMime` `traceIdOf` `unknownKeys` `unwrapResult` `validateInput` `watchFilterReads` `withTenantDb`
 
-**Emitted (13):** `allowedMethodNames` `appJsonSchema` `assertContentId` `assertMailbox` `BEARER` `createSqliteWebhookStore` `describeShape` `fireDue` `generateOpenAPI` `LOCAL_PART_MAX` `otlp` `serviceMethodNames` `SUBSCRIPTION_PATH`
+**Emitted (12):** `allowedMethodNames` `appJsonSchema` `assertContentId` `assertMailbox` `createSqliteWebhookStore` `describeShape` `fireDue` `generateOpenAPI` `LOCAL_PART_MAX` `otlp` `serviceMethodNames` `SUBSCRIPTION_PATH`
 
 **Unreached types (211):** `AnnounceFn` `AnyMethod` `AppAI` `AppCache` `AppCommitments` `AppMail` `AppManifest` `AppMeta` `AppOptions` `AppOutbox` `AppScheduler` `AppWebhooks` `AroundHook` `AuthChallenge` `AuthResult` `AuthServiceNames` `BackfillApi` `BackfillDefinition` `BackfillOptions` `BackfillPluginOptions` `BackfillRow` `BearerSource` `BridgeHook` `BulkFailure` `CacheDeclaration` `CacheStats` `CallContext` `CallStartEvent` `ChannelClaimsFn` `ChannelManifest` `ChunkResult` `CircuitBreakerOptions` `CombinedOrigins` `CommitmentAround` `CommitmentHook` `CommitmentHookContext` `CommitmentsApi` `CommitmentsPluginOptions` `CommitmentSweepResult` `CompiledSchema` `ConnectionEntry` `CorrelationIdOptions` `CorsOptions` `CredentialAnswer` `CredentialSource` `CsrfOptions` `CustomMethodGrade` `DeepPartial` `DeliverOptions` `DeliverResult` `DeliveryStatus` `DescribedResolver` `DevService` `DevtoolsOptions` `EmailVerified` `EnqueueOnOptions` `EnqueueOptions` `EnqueueRef` `EnvFieldSpec` `EnvOutput` `EnvSpec` `ErrorMapper` `EventEntry` `EventHandler` `ExportPluginOptions` `FieldDef` `FieldError` `FieldErrorBuilder` `FireDueOptions` `FireDueResult` `FireOutcome` `FirePayload` `GateOp` `GradableUser` `GradedUrl` `HealthPluginOptions` `HealthResponse` `HelmetOptions` `HookManifest` `HookMap` `HookTelemetryEvent` `HttpMethod` `IAIModel` `ICache` `IEventBus` `IWebhookStore` `JobFn` `JobsView` `JunctionCaravanConfig` `JunctionClientOptions` `JunctionConfig` `JunctionMiddlewareConfig` `JunctionPluginsConfig` `KnownMethod` `KnownService` `ListResult` `LitestoneClientApi` `LitestoneJsonSchema` `LitestoneQueryEvent` `LitestoneServiceOptions` `LitestoneWriteEvent` `LoggerOptions` `LogLevel` `LogWriter` `ManifestPluginOptions` `MembershipClaimOptions` `MemoryCacheOptions` `MethodAnswer` `MethodContext` `MethodEntry` `MethodSelection` `MetricsApi` `MetricsPluginOptions` `MetricsResponse` `MiddlewareFn` `MintedGrant` `NoClaim` `OAuthConnection` `OpenAPIOptions` `OriginList` `OtlpOptions` `OtlpStats` `OutboxApi` `OutboxCounts` `OutboxPluginOptions` `OutboxRow` `PaginateResponse` `ParsedQuery` `PinnedRequest` `PluginFn` `PresenceMember` `PrincipalClaims` `PrincipalDescription` `PrincipalRealm` `PrincipalSetting` `QueryDirectives` `RateLimitOptions` `RawRequest` `ReceivedMail` `ReceivedWebhook` `ReceiveHandler` `ReceiveOutcome` `RecordError` `RecordOptions` `RecordResult` `RedeemContext` `RedeemOptions` `RegistrationPending` `RelayedCall` `ReplyReading` `RequestEntry` `RequestMeta` `ResendOptions` `ResolvedBearer` `ResolvedPipeline` `ResolvedTenancy` `ResourceOptions` `ResourceResult` `ResultKind` `RouteHandler` `RouteManifest` `ScalarOptions` `SchedulerStats` `SchemaOptions` `SearchHit` `SearchServiceOptions` `SeedTypeName` `SelfDescribedResolver` `ServiceContextLocals` `ServiceDefinitionValue` `ServiceEvent` `ServiceManifest` `ServiceMethod` `ServiceMethods` `ServiceResult` `ServiceSchemas` `ServiceScope` `SessionVerifier` `SignedRequestOptions` `SignInResult` `SingleResult` `SmtpMailerOptions` `SqliteCacheOptions` `SseEvent` `SseSendFn` `StubUser` `TelemetryEvent` `TenantRegistryLike` `TenantResolution` `TestApp` `TestAppOptions` `TestRequest` `TestResponse` `TetherBinding` `TokenStore` `TotpStatus` `TransportStats` `UnwrapOptions` `ValidationResult` `WebhookDelivery` `WebhookDeliveryResult` `WebhookManager` `WebhookOptions` `WebhookReceipt` `WebhookRegistration` `WebhookSubscription` `WindowResult` `WsContext` `WsHandlerSet` `WSMessage` `WsRouteOptions`
 
 ## `@frontierjs/litestone`
 
-`packages/litestone` · 26 entry point(s) · 252 value, 1 type export(s)
+`packages/litestone` · 26 entry point(s) · 259 value, 1 type export(s)
 
-**Entries imported by nothing outside (6):** `./engines/sqlite-wasm` `./device-schema` `./import` `./replicate` `./transform` `./external-ref`
+**Entries imported by nothing outside (5):** `./engines/sqlite-wasm` `./device-schema` `./import` `./transform` `./external-ref`
 
 **Entries not source (7, not graded):** `.` `./migrations` `./testing` `./storage` `./replicate` `./transform` `./references/*`
 
-**Unreached values (131):** `appliedMigrations` `arcDefaultMessage` `blockedRefusal` `buildEdgeMap` `buildFKGraph` `buildNamedAggExpr` `buildPristine` `buildPristineForDatabase` `buildShadow` `buildWindowCols` `buildYaml` `BulkTransitionError` `canStoreBesideReplica` `clearEngine` `collectEdges` `columnDefaultExpr` `columnMapFor` `compactJsonl` `compileFormat` `createForDatabase` `createProvider` `createSearchIndex` `createSqliteWasmEngine` `currentEngine` `declarationCollisions` `declaredRedactColumns` `deriveAccess` `detectFormat` `detectM2MPairs` `driftAgainstLive` `expectedVerdict` `ExternalRefPlugin` `extractNamedAggs` `fakeFor` `fileHeader` `findLitestream` `ForeignKeyError` `gateLadder` `generateEdgeSideTableDDL` `generateFactory` `generateGateMatrix` `generateJoinTableDDL` `generateLiteSchema` `generateMigrationSQL` `generateModelDDL` `generateTableDDL` `generateValidationCases` `generateViewDDL` `getReplicaFile` `gradedKinds` `historyGap` `indexPredicate` `inlineImportsFromDisk` `introspectSQL` `isNamedAgg` `isSearchModel` `isSoftDeleteCascade` `isStrict` `isUpdatedAtField` `jsRefusal` `labelColumn` `layoutManifest` `litestreamVersion` `loadSource` `lossRefusal` `mapIdentifiers` `migrationStatements` `mutationScore` `nextMigrationName` `normalizeTableDdl` `normalizeTriggerSql` `ON_DELETE_ACTIONS` `openDatabase` `OverlapConflictError` `parseChecks` `parseCollations` `parseDuration` `parseGateString` `parseGeneratedColumns` `parseIndexColumns` `parseIndexSorts` `parseLayoutManifest` `parseLimit` `parseRef` `parseScales` `parseSize` `planEdgeStorage` `PluginRunner` `pointColumns` `pointDefaultMessage` `putReplicaFile` `REACHABLE_LEVELS` `readScaleConstraint` `renameCandidates` `renderAccessSnapshot` `REPEATABLE_FIELD_ATTRS` `REPEATABLE_MODEL_ATTRS` `requireLitestream` `resolveAllRowCounts` `resolveRedactColumns` `resolveRowCount` `restoreFile` `runSqliteRetention` `scaleConstraintName` `schemaForDatabase` `schemaMutants` `searchBackfillSql` `searchColumnsFor` `searchModels` `searchTriggerNames` `shadowRefusal` `SoftDeletedUniqueError` `stripParens` `summarizeDiff` `SYNC_NEEDS_VERSION` `tenantAdmission` `TIERS` `TRAIT_FORBIDDEN_FIELD_ATTRS` `TRAIT_FORBIDDEN_MODEL_ATTRS` `TransitionConflictError` `TransitionSystemError` `TYPE_DEFAULT_FORBIDDEN_KINDS` `TYPE_FORBIDDEN_FIELD_ATTRS` `TYPE_FORBIDDEN_FIELD_TYPES` `unacceptedLoss` `unmatchedMigrationFiles` `unresolvedBlocks` `updatedAtFields` `useStorage` `ValueSetExtendError` `VersionRequiredError`
+**Unreached values (132):** `appliedMigrations` `arcDefaultMessage` `blockedRefusal` `buildEdgeMap` `buildFKGraph` `buildNamedAggExpr` `buildPristine` `buildPristineForDatabase` `buildShadow` `buildWindowCols` `BulkTransitionError` `canStoreBesideReplica` `clearEngine` `collectEdges` `columnDefaultExpr` `columnMapFor` `compactJsonl` `compileFormat` `createForDatabase` `createProvider` `createSearchIndex` `createSqliteWasmEngine` `currentEngine` `declarationCollisions` `declaredRedactColumns` `deriveAccess` `detectFormat` `detectM2MPairs` `driftAgainstLive` `expectedVerdict` `ExternalRefPlugin` `extractNamedAggs` `fakeFor` `fileHeader` `findLitestream` `ForeignKeyError` `gateLadder` `generateEdgeSideTableDDL` `generateFactory` `generateGateMatrix` `generateJoinTableDDL` `generateLiteSchema` `generateMigrationSQL` `generateModelDDL` `generateTableDDL` `generateValidationCases` `generateViewDDL` `getReplicaFile` `gradedKinds` `historyGap` `indexPredicate` `inlineImportsFromDisk` `introspectSQL` `isNamedAgg` `isSearchModel` `isSoftDeleteCascade` `isStrict` `isUpdatedAtField` `jsRefusal` `labelColumn` `layoutManifest` `LITESTREAM_MIN` `LITESTREAM_PIN` `litestreamVersion` `loadSource` `lossRefusal` `mapIdentifiers` `migrationStatements` `mutationScore` `nextMigrationName` `normalizeTableDdl` `normalizeTriggerSql` `ON_DELETE_ACTIONS` `openDatabase` `OverlapConflictError` `parseChecks` `parseCollations` `parseDuration` `parseGateString` `parseGeneratedColumns` `parseIndexColumns` `parseIndexSorts` `parseLayoutManifest` `parseLimit` `parseRef` `parseScales` `parseSize` `planEdgeStorage` `PluginRunner` `pointColumns` `pointDefaultMessage` `putReplicaFile` `REACHABLE_LEVELS` `readScaleConstraint` `renameCandidates` `renderAccessSnapshot` `REPEATABLE_FIELD_ATTRS` `REPEATABLE_MODEL_ATTRS` `requireLitestream` `resolveAllRowCounts` `resolveRedactColumns` `resolveRowCount` `restoreFile` `runSqliteRetention` `scaleConstraintName` `schemaForDatabase` `schemaMutants` `searchBackfillSql` `searchColumnsFor` `searchModels` `searchTriggerNames` `shadowRefusal` `SoftDeletedUniqueError` `stripParens` `summarizeDiff` `SYNC_NEEDS_VERSION` `tenantAdmission` `TIERS` `TRAIT_FORBIDDEN_FIELD_ATTRS` `TRAIT_FORBIDDEN_MODEL_ATTRS` `TransitionConflictError` `TransitionSystemError` `TYPE_DEFAULT_FORBIDDEN_KINDS` `TYPE_FORBIDDEN_FIELD_ATTRS` `TYPE_FORBIDDEN_FIELD_TYPES` `unacceptedLoss` `unmatchedMigrationFiles` `unresolvedBlocks` `updatedAtFields` `useStorage` `ValueSetExtendError` `VersionRequiredError`
 
-**Emitted (37):** `ALLOWED_TOKENIZERS` `arcCheckExpr` `checksum` `COLLATIONS` `defineFactory` `describeSkipped` `factoryFrom` `fieldToColumnName` `FORMATS` `FrontierGateGetLevel` `generateIndexDDL` `isIndexExpression` `isSoftDelete` `isStoredField` `LAYOUT_FILE` `levelLabel` `loadFixture` `makeTestClient` `mapCol` `mapExprCols` `maskStrategies` `modelToTableName` `normalizeDdl` `pointColumnNames` `policyExprToString` `predicateToLite` `replicaUrl` `rescaleUpdate` `SEARCH_COLUMNS` `SEARCH_TABLE` `SEARCH_WEIGHTS` `searchRankExpr` `setEngine` `sqlType` `SYNC_POLICIES` `typedAttr` `VIEW_COLUMN_ATTRS`
+**Emitted (35):** `ALLOWED_TOKENIZERS` `arcCheckExpr` `COLLATIONS` `defineFactory` `describeSkipped` `factoryFrom` `fieldToColumnName` `FORMATS` `FrontierGateGetLevel` `generateIndexDDL` `isIndexExpression` `isSoftDelete` `isStoredField` `LAYOUT_FILE` `levelLabel` `loadFixture` `makeTestClient` `mapCol` `mapExprCols` `maskStrategies` `modelToTableName` `normalizeDdl` `pointColumnNames` `policyExprToString` `predicateToLite` `rescaleUpdate` `SEARCH_COLUMNS` `SEARCH_TABLE` `SEARCH_WEIGHTS` `searchRankExpr` `setEngine` `sqlType` `SYNC_POLICIES` `typedAttr` `VIEW_COLUMN_ATTRS`
 
 **Unreached types (1):** `CursorResult`
 
@@ -217,13 +219,13 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/notifications`
 
-`packages/notifications` · 2 entry point(s) · 11 value, 24 type export(s)
+`packages/notifications` · 2 entry point(s) · 11 value, 25 type export(s)
 
 **Entries not source (1, not graded):** `./schema.lite`
 
 **Unreached values (5):** `generateVapidKeys` `NotificationDeliveryError` `NotificationDriverNotFoundError` `NotificationRecipientError` `webPush`
 
-**Unreached types (19):** `BuiltInTransport` `Formatter` `InAppAction` `InAppMessage` `MailLine` `NotificationDefinition` `NotificationDriver` `NotificationFactory` `NotificationRecord` `NotificationsPluginOptions` `OutgoingMail` `PushMessage` `PushRequest` `PushSubscription` `PushSubscriptions` `SendableNotification` `TransportError` `VapidKeys` `WebPushOptions`
+**Unreached types (20):** `BuiltInTransport` `Formatter` `InAppAction` `InAppMessage` `MailLine` `NotificationDefinition` `NotificationDriver` `NotificationFactory` `NotificationReceipts` `NotificationRecord` `NotificationsPluginOptions` `OutgoingMail` `PushMessage` `PushRequest` `PushSubscription` `PushSubscriptions` `SendableNotification` `TransportError` `VapidKeys` `WebPushOptions`
 
 ## `@frontierjs/oracle`
 
@@ -265,7 +267,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/sierra`
 
-`packages/sierra` · 25 entry point(s) · 196 value, 0 type export(s)
+`packages/sierra` · 25 entry point(s) · 197 value, 0 type export(s)
 
 **Entries imported by nothing outside (6):** `./scanner` `./fetch` `./components/RouterView` `./components/ChainRenderer` `./check` `./tui`
 
@@ -273,7 +275,7 @@ Every entry is imported and every name reached.
 
 **Unreached values (82):** `_deepMerge` `_findCatchAll` `_resetInternals` `_resetMcpApp` `_resetPage` `_resetPresenceHolders` `_scrollMemoryHas` `_scrollMemorySize` `afterNavigate` `allSchemas` `appFailed` `applyHostContext` `buildCommitments` `buildGate` `buildLayoutMap` `buildRelations` `buildTransitions` `buildVersion` `ChainRenderer` `columnList` `commitmentsAt` `COMMITTED_MESSAGE` `COMPATIBILITY_DATE` `configureFetch` `createMemoryHistory` `defaultControlFor` `defaultDisplayFor` `followLink` `fromFor` `generatedFor` `generateRouteTable` `getComponents` `getDirection` `getLayoutChainForNode` `hasFileComponent` `hasSchemas` `hmrInvalidate` `isLegalTag` `isPublicRoute` `isSameDocumentOrigin` `isStaleWrite` `labelFieldInfo` `linkHrefOf` `loadLayoutChain` `mountIsland` `mountView` `normalizeBlanks` `oauthErrorMessage` `offlineStatus` `PAGE_RESERVED` `pathAliases` `pickFilter` `readEvents` `readFrontmatter` `refusedFor` `registeredDisplays` `registerFileComponent` `registerModule` `renderRouteTable` `resolveHtmlClass` `ResourceHookError` `runPostBuild` `scanAndWrite` `seedDetermined` `setScheme` `sierraFetch` `siteEntry` `STALE_WRITE_MESSAGE` `stampedPage` `stripReadOnly` `submitInPlace` `suggestModel` `toConflict` `toolAnswer` `toolCall` `transitionsAt` `unregisterDisplay` `updateParams` `whenReady` `WORKER_ENTRY` `workerName` `WRANGLER_CONFIG`
 
-**Emitted (21):** `_setStaticPage` `buildThemeScript` `columnLabel` `configureAnalytics` `configureLocalDb` `connectApp` `CSS_MARK` `generateSchemas` `hmrReload` `hydrateIslands` `initAnalytics` `initRouter` `INTERACTION_TASKS` `mcpApp` `paletteSource` `pendingQueue` `registerSchemas` `remountKey` `resolveChain` `resourceIn` `startView`
+**Emitted (22):** `_setStaticPage` `buildThemeScript` `columnLabel` `configureAnalytics` `configureLocalDb` `connectApp` `CSS_MARK` `generateSchemas` `hmrReload` `hydrateIslands` `initAnalytics` `initRouter` `INTERACTION_TASKS` `mcpApp` `modelNameFor` `paletteSource` `pendingQueue` `registerSchemas` `remountKey` `resolveChain` `resourceIn` `startView`
 
 ## `@frontierjs/site-kit`
 
@@ -299,22 +301,20 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/toolbelt`
 
-`packages/toolbelt` · 59 entry point(s) · 263 value, 0 type export(s)
-
-**Entries imported by nothing outside (1):** `./seal`
+`packages/toolbelt` · 61 entry point(s) · 289 value, 0 type export(s)
 
 **Entries not source (20, not graded):** `./bearer` `./cells` `./cron` `./datetime` `./devline` `./directives` `./fill` `./gate` `./geo` `./env` `./hooks` `./ids` `./mailbox` `./mime` `./query` `./rank` `./redact` `./sigv4` `./sse` `./trace`
 
-**Unreached values (30):** `assertValues` `baseUnit` `canonicalQuery` `canonicalRequest` `canonicalUri` `centroid` `CONTENT_TYPES` `DIGITS` `divRound` `encodePairs` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `generateSealingKeys` `getIn` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `resolveWall` `RUNNABLE_LANGS` `SECRET_KEY_NAMES` `TRANSFORM_NAMES`
+**Unreached values (28):** `assertValues` `baseUnit` `canonicalRequest` `centroid` `CONTENT_TYPES` `DIGITS` `divRound` `encodePairs` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `resolveWall` `RUNNABLE_LANGS` `SECRET_KEY_NAMES` `signMessage` `TRANSFORM_NAMES`
 
 **Emitted (11):** `CRON_FIELDS` `dayHeader` `formatChord` `fromWall` `inBoxes` `OPERATORS` `parseRow` `pointInPolygon` `polygonArea` `renderRow` `SIGNATURE_VERSION`
 
 ## `@frontierjs/ui`
 
-`packages/ui` · 9 entry point(s) · 51 value, 0 type export(s)
+`packages/ui` · 9 entry point(s) · 53 value, 0 type export(s)
 
 **Entries emitted (5):** `./utils` `./dnd` `./drag` `./selection` `./rowlist`
 
-**Unreached values (33):** `bandIndex` `createSelection` `defaultControlProps` `defaultDisplayProps` `defaultFilterProps` `displayComponent` `filePreviews` `filterComponent` `formControl` `lockedBy` `nativeValidationGuard` `optionsNote` `overlayHost` `placeAgainst` `plotRuns` `plotValue` `RECENT_GROUP` `registeredDisplayComponents` `registeredFilterComponents` `registeredFormControls` `resolveError` `resolveRule` `REST_GROUP` `ruleLabel` `sectionFor` `SHADOW_ITEM_MARKER` `SHADOW_PLACEHOLDER_ITEM_ID` `splitRecent` `truncationNote` `unregisterDisplayComponent` `unregisterFilterComponent` `unregisterFormControl` `withheldBy`
+**Unreached values (35):** `bandIndex` `createSelection` `defaultControlProps` `defaultDisplayProps` `defaultFilterProps` `displayComponent` `fileNameOf` `filePreviews` `filterComponent` `formControl` `lockedBy` `nativeValidationGuard` `openFile` `optionsNote` `overlayHost` `placeAgainst` `plotRuns` `plotValue` `RECENT_GROUP` `registeredDisplayComponents` `registeredFilterComponents` `registeredFormControls` `resolveError` `resolveRule` `REST_GROUP` `ruleLabel` `sectionFor` `SHADOW_ITEM_MARKER` `SHADOW_PLACEHOLDER_ITEM_ID` `splitRecent` `truncationNote` `unregisterDisplayComponent` `unregisterFilterComponent` `unregisterFormControl` `withheldBy`
 
-**Emitted (4):** `dndzone` `registerFilterComponent` `registerFormControl` `rowlist`
+**Emitted (3):** `dndzone` `registerFilterComponent` `rowlist`

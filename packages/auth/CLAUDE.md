@@ -6,376 +6,38 @@ and the `/auth/*` route plugin. `bun run test` (bun).
 
 ---
 
-## Layout
+## Where things are
 
-```
-auth.ts      the IAuth implementation — sessions, login, verification
-oauth.ts     the OAuth flow engine — the URL, the code-for-token trade, the
-             normalized identity. No HTTP, no database, no session — plugin.ts
-             owns the routes and auth.ts decides who the identity is
-plugin.ts    auth() — mounts /auth/*, declares the cookie mode,
-             and registers the three services at boot()
-services.ts  account / sessions / api-keys — the half that is NOT a route
-tenancy.ts   what the app's tenancy block says about a person — the claim,
-             and the column on User a tenant is written to
-db/user.lite      model User — the app's. Appended into its schema.lite
-db/auth.lite      Credential / Session / Verification / LoginChallenge /
-                  OauthFlow — imported, and adjusted at the app end with
-                  `extend model`, never pasted
-schema.ts    reads those two: authUserModel / authMachineryModels /
-             authSchemaFragments (both) / retargetDb
-crypto.ts    hashing / token generation
-totp.ts      RFC 6238 codes, base32, recovery codes — clockless, `at` is a
-             parameter (`FJS-D261`). Published as `@frontierjs/auth/totp` so a
-             seed or drive types a code with this copy, not its own HOTP.
-cleanup.ts   expired-row pruning — `auth.cleanup` on the instance, started in
-             the plugin's work() and stopped at shutdown
-errors.ts    the auth error classes (each carries its own `status`)
-types.ts     the public types
-index.ts     public API
-```
+`docs/layout.md` is the file-by-file map; read it when a change touches a file
+this list does not name. The owners that matter on most turns:
 
----
+- `auth.ts` is the `IAuth` implementation — sessions, login, verification; `firstFactorProven()` is the one tail every first factor ends at, `issueSession` the one place a session is minted, `toContext()` the one place a session context is built, `credentialChanged()` the one credential observer.
+- `plugin.ts` is `auth()` — mounts `/auth/*` (the raw routes, with their own body reader `BODY_FIELDS`), declares the cookie mode, registers the three services at `boot()`.
+- `services.ts` is `account` / `sessions` / `api-keys` — the half that is NOT a route; `refuseDelegated` and `fresh()` guard every credential write.
+- `oauth.ts` is the flow engine — URL, code-for-token trade, normalized identity; no HTTP, no database, no session.
+- `db/user.lite` is `model User`, APPENDED into the app's `schema.lite`; `db/auth.lite` is the machinery (`Credential` / `Session` / `Verification` / `LoginChallenge` / `OauthFlow`), IMPORTED and `extend model`ed; `schema.ts` reads both (`retargetDb` is `--db`).
+- `tenancy.ts` reads the app's `tenancy` block · `totp.ts` is RFC 6238, clockless, shipped as `@frontierjs/auth/totp` · `cleanup.ts` is the expired-row sweep · `crypto.ts` hashing and `expiresAt(ttl, now)` · `errors.ts` carries each error's `status`.
 
 ## What bites here
 
-- **A route ESTABLISHES a session; everything after it is a service.** Login
-  cannot be gated by login, so register / login / logout / password-reset /
-  email-verify are raw routes and always will be. The line is whether the call
-  can be REFUSED for want of a session: `me`, the caller's other sessions, their
-  API keys and their password all can, so they are ordinary services and get the
-  hook pipeline, the audit trail, validation and both transports. `GET /auth/me`
-  is `account.get('me')` (`FJS-D20`, `DECISIONS.md` § API design).
-- **A password is not the whole answer, and `login()` says so in its TYPE.** It
-  returns a session OR `{ challenge, expiresAt }` (`FJS-D261`), so every caller
-  discriminates on `'challenge' in result` — which is what found basecamp's three
-  call sites rather than a browser finding them. **A `totp` credential EXISTING is
-  what makes a login owe a code**, which is why enrollment writes `totpPending`
-  and only `confirmTotp` promotes it: there is no state where an unproven secret
-  gates a sign-in, and a wrong clock costs a retry instead of the account. Three
-  credential types carry the factor — `totp`, `totpPending`, `recoveryCode` — and
-  `Credential.totpLastStep` is the replay guard, compared with `<=` so the whole
-  past closes rather than one code. The code that CONFIRMED enrollment is spent by
-  that same rule, which is the one request where it is certainly still on screen.
-- **`requireSecondFactor` issues a session and holds it, rather than refusing the login** (`FJS-D1008`, `FJS-2554`). `firstFactorProven` is the one place that decides, so every first factor honors it; `Session.enrollmentOnly` rides `verifySession` onto the context and the plugin's `before` hook refuses all but `account.totpStatus/setupTotp/confirmTotp`. A new door that issues a session without `firstFactorProven` is a way past it. `test/require-second-factor.test.ts`.
-- **A new password is graded in ONE place, `requireStrongPassword`, and three doors call it first:** `createUser`, `confirmPasswordReset` and `changePassword` (`FJS-2349`). It runs before the token is spent or a row is read, so a refusal (`WeakPasswordError`, 400) leaves a reset link usable. `password: { min }` defaults to 8; an app does not restate the length in front of `createUser`. A password-less `createUser` (an invitation) skips it, an empty string does not. `test/harness.ts` sets `min: 1` so fixtures can sign in with `pw-1` -- `password-policy.test.ts` passes `password: undefined` to grade the real default.
-- **A refused proof inside a live session is 403, never 401.** A 401 is what the
-  browser client reads as *this credential is not a session*, and sierra signs
-  the person out on it — so a wrong current password or a wrong enrollment code
-  answering 401 cost the session that typed it (`FJS-1088`). The line is whether
-  the caller HOLDS a session: `login()` and `completeLogin` have none to lose and
-  keep 401; everything reached through a service throws
-  `ReauthenticationFailedError`.
-- **Every method that checks the CURRENT password is rate-limited per account,
-  as one bucket.** `changePassword`, `setupTotp`, `disableTotp` and
-  `regenerateRecoveryCodes` each verify the password for whoever holds the
-  session, so unbounded they are a guessing oracle for a stolen session.
-  `reauthenticationRateLimit` defaults to login's own budget. A fifth method
-  that takes `currentPassword` calls `reauthenticate(ctx)` before the provider
-  or it is a door the others do not share.
-- **`verifyTotp` does not consume the step and `completeLogin` does.** Not an
-  inconsistency: consuming in both refuses a person who signs in and immediately
-  opens settings with the code still on their screen, and what it would buy is a
-  replay by somebody who already holds the session. State it before changing it.
-- **The second factor's caller-facing half is on `account`, not a service of its
-  own.** Five methods beside `changePassword`, named exactly as the provider names
-  them so `need()` reads the key a caller typed. Four are `refuseDelegated` and
-  `totpStatus` is not — a read is what an episode is FOR, and the pair is asserted
-  both ways. `confirmTotp` refuses at 403 before the provider is reached: a 404
-  there would tell an operator whether the subject has an enrollment in flight,
-  through a call that was meant to be refused.
-- **A sequence of logins is inexpressible at the shipped drift, so the TOTP tests
-  run two harnesses.** `totpDrift: 1` means three valid steps and `confirmTotp`
-  spends one, so a user can finish exactly one more login. `test/totp-login.test.ts`
-  declares `totpDrift: 10` for the rows that need several. The rejected
-  alternative was an injectable clock — a seam on the login path that exists only
-  for tests, and a forgeable one the day it reaches a caller. **Never give a code
-  check a caller-supplied `at`.**
-- **Every service method is scoped to the caller, and the ownership is in the
-  WHERE.** No method takes a user id; the id a caller supplies names a row, never
-  an owner. `revokeSession` and `revokeApiKey` put `userId` into the delete
-  rather than checking after a read — the id is what a UI hands back from a list,
-  and matching on it alone ends anyone's session whose id can be guessed.
-- **A support operator and an agent over `/mcp` are refused the same writes.**
-  `refuseDelegated(ctx, user, what)` throws for `user.support` and for
-  `ctx.transport === 'mcp'`: every credential change outlives the episode or the
-  session it came from, and a key minted by an agent is the session ceiling
-  escaped (`FJS-1795`, `FJS-D628`). A new method that changes a credential calls
-  it; a read does not. The tools stay LISTED to an agent and refuse when called.
-- **Every service says `model: null`, and every method `gate: VISITOR`.** The
-  names are not models — `sessions` reaches this package's own `Session` and
-  `account` an app's `Account` — and a name that reaches a model is graded by its
-  `@@gate`, which refuses a declared level on a CRUD verb (`GET /sessions`
-  answered 500). Without the gates `/mcp` lists every method `ungraded` and the
-  boot warning names them in every app that mounts it.
-- **The three names are options, and a collision is refused at BOOT.** The
-  registry is a Map, so the alternative is one of the two silently replacing the
-  other depending on registration order — basecamp has its own `api-keys` (a
-  workspace's, not a person's) and turns auth's off by name. Registration is in
-  `boot()` rather than `register()` because autoload runs first, so a collision
-  is visible from there whichever order the two were written in.
-- **`services: { level }` is opt-in and absent by default.** The app owns the
-  role→level mapping — whatever it passed to `GatePlugin({ getLevel })` — and a
-  default answer on `account.me` would be a SECOND mapping that disagrees with
-  the one every request is graded by, silently, and only near a gate boundary.
-- **An app IMPORTS `db/auth.lite` and says the rest with `extend model`.** Three
-  things it needs are ones this package cannot know: a relation back to the
-  app's own `User`, `@@trail(audit)`, and `@@tenant(none)` under row tenancy. Until
-  litestone had `extend model` the only way to say them was to paste the models
-  in and edit them, which basecamp did for four models — and one of them ended up
-  with `@guarded` where this file writes `@secret`, so a basecamp that
-  turned OAuth on would have stored every provider access and refresh token
-  unencrypted, with 137 green tests either side of the divergence. Nothing
-  anywhere compares a copy to its original. `User` is the exception and always
-  was: it is APPENDED, to be extended and edited, which is the split the gate
-  already states.
-- **The two `.lite` files are the source; `schema.ts` reads them and the CLI
-  reads them.** `fli auth:install` carried a hand copy of these models and it
-  drifted three times, because two walls held it up: `fli` is global so the
-  package is not beside it, and `fli` runs on **node** while this file is
-  TypeScript, so even resolved it could not be imported. Bytes get past both
-  (`FJS-038`). The split is by owner, and the gate already states it — `User` is
-  `@@gate(4.4.4.5)` with policies an app changes, so it is APPENDED into the
-  app's own `schema.lite`; the other four are `8`, so they are a file the app
-  imports and an upgrade reaches without a re-inject.
-- **A shipped `.lite` spells `@@db(main)` although an absent `@@db` already means
-  main.** The literal is redundant to the parser and load-bearing to
-  `retargetDb`, which is how `--db` works at all; tidy it out and the flag
-  silently stops. The substitution is **line-anchored** because both files
-  discuss the attribute in their own headers, and a bare `replaceAll` rewrote
-  that prose into a lie. That rule is the one thing the CLI still restates — it
-  cannot import this file — so `test/schema-accessors.test.ts` lifts its arrow
-  out of `install.md` and runs it against the shipped bytes.
-- **`cookieAuth: true` works end to end** — the plugin declares the mode via
-  `app.http.setAuthCookie('session')` and Junction reads it (FJS-002).
-- **`User` is `@@gate(4.4.4.5)` and the level is not what makes it safe.** A
-  gate is per MODEL, so that alone says *any signed-in caller may write any user
-  row*. The fragment ships the two declarations that bound it:
-  `@@allow(update, id == auth().id || auth().isAdmin)` for whose row, and
-  `@allow(write, auth().isAdmin)` on `role` and `emailVerified`, the columns
-  a resolver grades on, and on `email`, which a password reset is keyed by — a
-  column the caller can write is not a column a level can be graded from. An
-  app's tenant column is the app's, and polices itself the same way. Nothing in this package writes the row as a caller,
-  so a missing one shows first in an app's profile form
-  (`test/user-policy.test.ts`, `FJS-1591`). `8` stays on `Credential` / `Session` / `Verification` /
-  `OauthFlow` / `LoginChallenge`, which is what 8 is for: a model nothing
-  outside `asSystem()` has anything to say to. Ruled in `DECISIONS.md` § Access control.
-- **An app says what `'admin'` means once, in `sessionFields`.** The policies
-  read `auth().isAdmin` — the same standing `FrontierGateGetLevel` and
-  `sessionGateLevel()` grade ADMINISTRATOR(5) from — so an app whose resolver
-  keys on a role string must project it (`{ isAdmin: user.role === 'admin' }`)
-  or the level and the policy disagree, silently, because a policy filters
-  rather than refuses. Both scaffolds and `example/api/src/app.ts` do this.
-- **This package owns `model User`; apps EXTEND it, and their columns reach the
-  session through `sessionFields` — nothing else.** `toContext()` is the single
-  place every issued session is built, so the hook covers login,
-  `verifySession`, an API key and `createUser` at once. It is spread LAST, so an
-  app that states a field wins; adding a key above it would otherwise silently
-  override what an app asked for. **Do not tell an app to wrap `verifySession`
-  and re-read the user** — that is a third query on the hottest path in that
-  app, forever, for a row `toContext()` already holds, and it is the thing this
-  option exists to remove. **`sessionFields` is synchronous and a promise from
-  it is refused by name**: an async one spread to nothing and took `isAdmin` with
-  it (`FJS-1251`). A value on ANOTHER row — the caller's `Employee` — is the
-  schema's, `claim siteId from Employee(userId).siteId`, read per request by
-  junction.
-- **`onCredentialChanged` is the one OBSERVER, and it is written through one
-  helper.** `credentialChanged()` in `auth.ts` writes the audit entry and tells
-  the app, so a new credential write that calls `audit()` directly records the
-  change and tells nobody — `test/credential-events.test.ts` fails on it. A new
-  kind of change is a name in `CREDENTIAL_EVENTS` and a call through the helper.
-- **A handoff code is a `handoff` Credential storing the HMAC of code and PKCE challenge together** (`FJS-D1357`), so a wrong verifier finds no row. `redeemHandoff` spends it by delete and answers who, the audience and the scopes; the app mints what it grants. The hourly sweep clears lapsed ones by `tokenExpiresAt`, since Credential declares no window (`test/expiry.test.ts` § a handoff code).
-- **`Credential (type, value)` is unique for every type except the four whose `value` is not an identity** (`FJS-2658`): `password`, `totp`, `totpPending`, `recoveryCode`, listed in `auth.lite`'s partial `@@unique` because `.lite` has no prefix test to say `oauth:`. **A new credential type whose `value` is a hash or a secret joins that list** or two users holding it are refused. `oauthResolve` treats the refusal as a lost race and re-reads branch 1.
-- **`account-recovery` is the one service that takes somebody else's id, and its
-  floor is SYSADMIN(7) with no option** (`FJS-D264`). It grades both people with
-  `services.standingLevel`, else `services.level`, and refuses without one or on
-  any answer that is not a finite number (`FJS-D550`) — `level` alone is also
-  `account.me`'s, which an app graded per tenant cannot answer for a session. Every refusal is asserted
-  with the person's factor re-read afterwards, since answering 403 after the
-  delete is the worst thing it can do. **`/auth/support/start` asks the same
-  grader**, after the app's `canStartSupport`: a subject above the operator is
-  refused, a peer is not (`FJS-D574`).
-- **This package declares no tenant column; the app's `tenancy` block names
-  it** (`FJS-D1117`). `tenancy.ts`'s `userTenancy(db)` is the one reading:
-  where row tenancy's column is on the app's `User`, `createUser({ tenant })`,
-  an invitation and `fli auth:create-user --tenant` write it, and `toContext()`
-  puts it on every session as the tenancy's claim. A tenant with no such column
-  — no row tenancy, or a membership app — is REFUSED (`AuthConfigError`), since
-  a person placed nowhere signs in to nothing. A column that is not the tenant
-  (basecamp's fleet `accountId`) reaches the session through `sessionFields`.
-- **`people` reaches a person only in the operator's tenant, and asks the app
-  which tenant that is** (`FJS-D1116`). `sessionFor` reads with no tenant in
-  play, so `aim()` re-resolves the person with `app.runAs(id, { tenant:
-  app.tenant() })` + `app.withDb`, and compares the claim `db.$tenancy` names —
-  an `accountId` column and a membership row answer through the same line, and
-  the person comes back graded at their role HERE. A miss and another tenant's
-  person are the same 404. `remove` deletes the whole `User`, so a person with a
-  membership in another tenant (read off the resolver's `describe()`, through
-  the app's ROOT client, since a scoped client's `asSystem()` keeps the tenant)
-  is refused below SYSADMIN. No tenant in scope is no scoping.
-- **Every callback takes ONE event object and states its tier** (`FJS-D1332`,
-  `FJS-D06`); the table is `README.md` § Callbacks. **Four Hooks, awaited, and A
-  THROW REFUSES** — `onLogin`, `onLoginFailed`, `onLogout`, `onRegistered`
-  (`FJS-042`); `canStartSupport` is the one Guard. There is no `onRegister`:
-  `onRegistered` refuses by throwing inside the write, so a pre-write gate was a
-  second door to the same refusal. **`onPasswordResetRequested` is an Observer**: it runs after `requestPasswordReset` has answered and a throw is
-  logged, because awaiting the mail put a known address on the clock
-  (`FJS-1832`) — tests wait on `h.requestReset()` / `h.nextReset()` for the
-  token. Single handlers, not a bus, because each is
-  a decision and a decision has one owner. A second listener that wants to
-  OBSERVE belongs on Junction's `app.events`, which is a separate question and
-  is not answered here. The cost is stated rather than hidden: an app handler is
-  now a failure mode on the login path, and a slow one slows every sign-in.
-- **A magic link is a FIRST factor** (`FJS-D888`). `verifyMagicLink` ends at
-  `firstFactorProven()`, the tail `login()` shares, so a `totp` account owes its
-  code after the click. A new first factor goes through that function, not
-  `issueSession`, or it is a way past the second. **So is an OAuth sign-in**
-  (`FJS-D915`): every branch of `oauthResolve` and `confirmOAuthLink` ends
-  there, and the callback answers a challenge as `?oauth_error=code_required`
-  plus `oauth_expires` and the `login_challenge` cookie, finished at
-  `POST /auth/login/challenge`. The magic-link flow exists only where
-  `onMagicLinkRequested` is set, which, like `onPasswordResetRequested`, runs
-  after the request answers. The six-digit code is compared against the row
-  the ADDRESS names and is never used to find one, and `Verification.attempts`
-  counts misses up to `loginChallengeAttempts`. An unknown address gets its
-  account at the click, through `onRegistered`, never at the request. **So is a
-  registration's verification click** (`FJS-D1310`): IAuth's `verifyEmail` is
-  what `POST /auth/email/verify` calls, and for a `registration` token it ends at
-  `firstFactorProven` and answers `{ signedIn }`; for the other two purposes it
-  answers `{ verified }` and issues no session.
-- **Only a `kind: user` signs in, and `issueSession` is where that is refused** (`FJS-D1198`). A `bot` or a `peer` holds API keys only. `toContext` states the kind as `userType`, never the role, and it is the trail's `actorType`. A way to mint a session that does not end in `issueSession` lets a bot sign in.
-- **`Credential.linked` is how "a provider made this account" is told from "the mailbox made it and a provider joined later"** (`FJS-D1011`). `oauthResolve` § 4 and `confirmOAuthLink` write the `oauth:*` row onto an EXISTING account with `linked: true`; § 3 and the proof path's new-user branch write it unmarked. `securedByProvider(creds)` counts only an unmarked `oauth:*` row, and `providerOnly` (magic link) and `confirmPasswordReset` both call it. A new place that attaches a provider to an existing account sets the flag, or that account loses magic-link sign-in and reset (`FJS-2545`).
-- **`onRegistered({ user, db })` runs INSIDE the registration** (`FJS-D520`,
-  `FJS-1458`): after the row and its credential, before the commit, at every
-  door that makes an account, through `registerUser()`. It is where a row-tenanted app creates the Account and
-  writes the tenant column; `createUser` passes no column but `email`, `name`,
-  `role` and a stated `tenant`. `db` is the transaction's client — an app write through its own
-  client falls outside it and survives a rollback.
-- **One ordering rule: a hook runs BEFORE the thing it can refuse.** So none is
-  handed what its refusal would have prevented — `onLogin` has no session id —
-  because a hook that both refuses a thing and reports its result cannot exist;
-  `onRegistered` holds the row only because its throw rolls the row back. **The hook is the gate, `db.$audit` is the
-  record.** Get this backwards and a refusal leaves behind exactly what it
-  refused: a session for a login that never happened, a user for a registration
-  that was blocked. The suite asserts the absence, not just the throw.
-- **A refusal is recorded before the hook can change it.** `login.failed` is
-  written first, then `onLoginFailed` runs — so a hook that swaps the 401 for a
-  429 cannot also erase the attempt from the trail. `onLogin` throwing records
-  `reason: 'refused-by-app'` with the message: a veto that leaves no trace is
-  the class of defect `FJS-277` was.
-- **Auth records events through `db.$audit`, beside the `@@trail(audit)` rows
-  rather than instead of them.** `login.succeeded`, `login.failed`,
-  `login.challenged`, `totp.confirm.failed`, `logout`, `session.revoked`, `password.reset.refused`,
-  the `oauth.*` events (`oauth.signin`, `oauth.registered`, `oauth.refused`,
-  `oauth.link.refused`), `magiclink.registered` and the `support.*` pair (`support.started`,
-  `support.ended`) — `@@trail` covers writes, so it covered the sign-in (`create:session`, with
-  `actorId: null`, because an `asSystem()` write names no principal) and missed
-  the failed attempt entirely, which is the one an app rate-limits on
-  (`FJS-276`, `FJS-277`). The `create:session` row records the WRITE and cannot
-  name the actor; this one records the EVENT and does.
-- **Two softenings on the login path, both deliberate.** An app is not required
-  to declare a trail database — auth's own fragment does, but an app may bring
-  its own `User`, and a login that throws because there is nowhere to write the
-  record is a worse failure than the missing record. And a failed audit WRITE
-  does not fail the request; it is reported, not swallowed. An app wanting a
-  sign-in refused when it cannot be recorded has to say so itself. The
-  `hasAuditLog` guard is not redundant with the `try`/`catch`: without it every
-  such app gets a warning on every sign-in, forever, and the suite stays green —
-  which is why the test asserts the QUIET, not just the success.
-- **Every login refusal answers the same error and records a different
-  `reason`.** Telling a caller whether an address exists is an enumeration
-  oracle, so the three branches are distinguishable in the trail and nowhere
-  else — **including on the clock.** The two branches that never reach the
-  password comparison pay its cost anyway (`payPasswordCost`), because an early
-  return answered in a millisecond against ~220ms and read off which addresses
-  have accounts through a message that says nothing (`FJS-063`). A new refusal
-  branch added above the bcrypt has to pay it too. The attempted address IS
-  recorded — a spray across many addresses is
-  invisible without it, and it is the only identifier an attempt on an unknown
-  user has. The attempted password never is.
-- **A raw route has no validator in front of it, so `plugin.ts` carries its
-  own.** `autoValidate` is derived from the model and runs in a service
-  pipeline; these eight routes are upstream of every service, and `ctx.body` is
-  `unknown` — whatever a caller posted. One reader checks it: a declared field is
-  a string or the request is a 400 naming it, and an undeclared key does not
-  travel. Without it `{ "email": { "contains": "@" } }` reached
-  `findFirst({ where: { email } })` as a where-operator and the address was a
-  FILTER (`FJS-296`). **A new route reads its body through that reader**; a new
-  field is a line in `BODY_FIELDS`.
-- **Register is verify-first wherever the app mails a verification** (`FJS-D1310`). `requestRegistration` exists only when `onEmailVerificationRequested` is set; the route then answers 202 `{ ok: true }` before the lookup, a free address gets a `registration` `Verification` row (the password HASH in `secret`, the name in `registrant`) and the link, and the `User` row is made at the click by `confirmRegistration` -- never at the request, or a stranger pre-registers a victim's address under a password of their own. A held address is told its owner as `registration.attempted`. Without the callback the route is `createUser` + `login`, 201/409. A test that registers over HTTP just to have a user mounts the plugin over `withoutRegistrationMail(h.auth)`, because the harness always wires the callback.
-- **`verifyEmail` spends three purposes, `emailVerify`, `emailChange` and `registration`.** A
-  change of address is the same proof of the same mailbox, so it reuses the
-  route, the mail callback and the app's landing page rather than a second set.
-  The `emailChange` row's identifier is the NEW address, which names nobody, so
-  `Verification.userId` carries the account. `email.changed` is told to the OLD
-  address — `credentialChanged`'s `address` argument, because the row read after
-  the write already holds the new one.
-- **A route that spends a single-use token is a POST, and the mailed link lands
-  on a web page that posts it** (`FJS-1839`, `FJS-D616`). `POST /auth/email/verify`
-  takes the token in the body; a GET there is a 405.
-  A mail scanner's prefetch burned the link before the person clicked it, and the
-  old answer was the whole SessionContext. The body reader refuses a non-string
-  token, which is what closed `?token[gt]=` verifying a stranger (`FJS-1002`). The
-  OAuth query reads keep `String()` on purpose: they are inside a redirect flow
-  that has to end on a failure PAGE, so a thrown 400 is the wrong shape there.
-- **A session is graded, not trusted.** `sessionGateLevel()` (in Junction) turns
-  a `SessionContext` into Litestone's 0–7 scale, and `toDataPrincipal()` turns it
-  into the principal `auth()` reads. Absent ≠ null: an app with no verification
-  flow must not grade down.
-- **Ids are uuids, not ints, and that now includes the machinery's own.** The
-  audit trail's `actorId` is `Any` for exactly this reason; a STRICT INTEGER column
-  throws on the first audited write. The deciding one inside `auth.lite` is
-  `Credential.id`: `connections()` hands it to the browser and `removeConnection`
-  takes it back, so a sequential integer is enumerable and publishes how many
-  credentials the whole installation holds.
-- **Four models declare a window, so a DELETE has to say what it means.**
-  `Session`, `Verification`, `LoginChallenge` and `OauthFlow` carry
-  `@@expires(expiresAt)`, and the window filters writes as well as reads
-  (`FJS-D351`). A delete keyed on a person or a purpose therefore means the rows
-  IN FORCE: *sign out everywhere* would leave the lapsed ones behind, and
-  `revokeSession` on a session that lapsed while its owner read the screen would
-  answer `No session with id …`. Every such delete spreads the `PURGE` const —
-  one name, fourteen call sites — and a delete of a row just read as in force
-  stays bare. **`completeLogin` is the one READ that states `withExpired`**,
-  because *this ticket ran out* and *no such ticket* are different lines in the
-  trail. A new delete that narrows by anything other than a row just read is a
-  purge and takes the const.
-- **Auth reads ONE clock, the client's: `sys.$now()`, never `new Date()`.**
-  `crypto.ts`'s `expiresAt(ttl, now)` takes it, the TOTP step reads it, and the
-  support episode and API-key expiry compare against it — because the four
-  windows grade on it, and a deadline minted from the host's clock lapses on a
-  different clock from the one that reads it. `test/expiry.test.ts` starts its
-  clock in 2031 so a `Date.now()` mint is born lapsed and reds three rows. The
-  one wall-clock read left is the challenge cookie's `maxAge` in `plugin.ts`,
-  which is a duration a BROWSER counts down.
-- **`cleanup.ts`'s predicate is named, and `sweepNow()` is why.** A scheduled
-  body lives in a closure the scheduler exposes no way to reach, so an inline
-  `deleteMany` in a timer can only be graded by a test restating it — and a test
-  holding its own copy of a rule agrees with the copy, including once the
-  shipped rule has moved. `sweepNow()` runs the same two functions the timers
-  call, so the tests grade the shipped predicate: measured, dropping the word
-  or reading `createdAt` instead reds both sweep rows. The predicate is
-  `{ onlyExpired: true }` — written as a hand-rolled `expiresAt < now` it would
-  be ANDed with the window and match nothing, silently. It is also
-  what an operator draining these tables ahead of the hour wants.
-- **`start()` restarts rather than refuses, and says so.** Assigning over a live
-  `JobHandle` orphans it — nothing holds the old timer, so `stop()` halts only
-  the newest pair and the first sweep runs for the life of the process
-  (`FJS-1000`, measured at 6 further sweeps in 2.5s). A throw would be the house
-  answer for an unknown option and is the wrong one here: this is reached from a
-  plugin's `boot()`, where the failure a throw creates is larger than the one it
-  reports. The stop path is a CLOSURE and not `this.stop()`, because the handle's
-  methods are ordinary shorthand and a caller who destructures `{ start }` has no
-  `this`.
-- **Junction is imported by SPECIFIER — `@frontierjs/junction`, never a relative
-  path.** `../junction/index.ts` resolves inside the workspace and nowhere else,
-  so the tarball imported nothing and said so only on install. `files` in
-  `package.json` is `["*.ts", "db", "README.md", "LICENSE"]`: a new source file
-  at the package root ships, a new directory besides `db` does not.
-- **It is shippable — its peer is published.** A `bun add` of the
-  auth tarball into an empty project resolves `@frontierjs/junction@^0.1.0` from
-  the registry and imports. Its typecheck baseline is
-  non-zero; see `scripts/typecheck-baselines.json`.
+The fifteen that bite most; the full catalog is `docs/hazards.md`, read it before
+touching a login path, a credential write, a `.lite` fragment or a callback.
+
+- **A route ESTABLISHES a session; everything after it is a service** (`FJS-D20`). Login cannot be gated by login; `me`, sessions, keys and the password can be refused and so get the hook pipeline.
+- **`login()` returns a session OR `{ challenge, expiresAt }`** (`FJS-D261`); every caller discriminates on `'challenge' in result`. A `totp` credential EXISTING is what makes a login owe a code; enrollment writes `totpPending` and only `confirmTotp` promotes it.
+- **Every first factor ends at `firstFactorProven()`** — password, magic link (`FJS-D888`), OAuth (`FJS-D915`), a registration click (`FJS-D1310`). A new door that reaches `issueSession` directly is a way past the second factor; `requireSecondFactor` holds an `enrollmentOnly` session rather than refusing (`FJS-D1008`).
+- **Only a `kind: user` signs in, and `issueSession` is where that is refused** (`FJS-D1198`). A bot or peer holds API keys only.
+- **A refused proof inside a live session is 403, never 401** (`FJS-1088`) — sierra signs the person out on a 401. `login()` and `completeLogin` hold no session and keep 401.
+- **A credential change asks whether the SESSION proved a password recently** (`FJS-D1209`): `fresh(user)` after `refuseDelegated` on every method that changes how the account signs in, and such a change ends every OTHER session through `endOtherSessions` (`FJS-D1208`).
+- **A support operator and an agent over `/mcp` are refused the same writes** — `refuseDelegated(ctx, user, what)` on every credential write, never on a read (`FJS-1795`, `FJS-D628`).
+- **Ownership is in the WHERE.** No service method takes a user id; `revokeSession` and `revokeApiKey` put `userId` into the delete, never check after a read.
+- **A new password is graded in ONE place, `requireStrongPassword`**, before a token is spent (`FJS-2349`); `test/harness.ts` sets `min: 1`.
+- **An app IMPORTS `db/auth.lite` and says the rest with `extend model`**, never pastes — a pasted copy drifted `@secret` to `@guarded` with 137 green tests either side. `User` alone is APPENDED (`@@gate(4.4.4.5)`, the other models `8`); `@@db(main)` in the shipped `.lite` is load-bearing to `retargetDb` (`FJS-038`).
+- **`User`'s gate is per MODEL; the `@@allow`/`@allow` policies are what bound it** (`FJS-1591`), and they read `auth().isAdmin`, so an app projects it in `sessionFields` — which is synchronous, spread LAST, and a promise from it is refused by name (`FJS-1251`).
+- **Every callback takes ONE event object and states its tier** (`FJS-D1332`): four Hooks that refuse by throwing, run BEFORE the thing they can refuse; `onRegistered({ user, db })` runs INSIDE the registration (`FJS-D520`); `onPasswordResetRequested` and `onMagicLinkRequested` are Observers that run after the answer (`FJS-1832`).
+- **Every login refusal answers the same error, records a different `reason`, and pays the bcrypt cost** (`payPasswordCost`, `FJS-063`); `login.failed` is written before `onLoginFailed` can change it (`FJS-277`). A failed audit write is reported, never fatal.
+- **A raw route reads its body through `plugin.ts`'s own reader** (`FJS-296`, `FJS-1002`); a token-spending route is a POST (`FJS-1839`, `FJS-D616`); register is verify-first wherever the app mails (`FJS-D1310`).
+- **Auth reads ONE clock, `sys.$now()`, never `new Date()`**, and four models carry `@@expires`, so a delete that narrows by anything but a row just read spreads `PURGE` (`FJS-D351`); `cleanup.ts`'s predicate is `{ onlyExpired: true }` and `sweepNow()` is how tests grade it (`FJS-1000`).
 
 ## Proving a change
 
@@ -385,3 +47,8 @@ factor — `totp.ts`, `completeLogin`, the challenge route, the `account` TOTP
 methods, `account-recovery`, `onCredentialChanged` — also runs `example`:
 `verify:users`, the only place the two-step login crosses a real app and the
 only place a notification is read back out of an outbox.
+
+<!-- layout-named: the file names fli done grades a new module against, kept here because done.js reads this file by path. The map itself is docs/layout.md.
+auth.ts cleanup.ts crypto.ts errors.ts index.ts oauth.ts package.json plugin.ts schema.ts 
+services.ts tenancy.ts totp.ts types.ts 
+-->

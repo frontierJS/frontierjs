@@ -15,7 +15,7 @@ title: Getting started
   //
   // So the only thing this screen can do about a step is take you to where the
   // work happens. Coming back is what completes it.
-  import { session } from '../../session.js'
+  import { session } from '../../lib/session.js'
   import { infra } from '../../resources/Infra.mesa'
 
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'

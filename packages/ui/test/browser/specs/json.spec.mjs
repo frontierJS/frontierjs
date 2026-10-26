@@ -160,9 +160,9 @@ export async function run(t) {
   // the recipe here, which would assert only that this spec agrees with itself.
   const band = await t.evaluate(`
     const tree = document.querySelector('#editor-tree');
-    const rules = [...document.styleSheets]
+    const rules = [...document.styleSheets, ...(document.adoptedStyleSheets || [])]
       .flatMap(sh => { try { return [...sh.cssRules] } catch { return [] } })
-      .filter(r => r.selectorText && r.selectorText.includes('fjs-json-row:hover'));
+      .filter(r => r.selectorText && /\\.fjs-json-row(\\.[\\w-]+)*:hover/.test(r.selectorText));
     if (!rules.length) return { found: false };
     const probe = document.createElement('span');
     probe.style.cssText = rules[0].style.cssText;

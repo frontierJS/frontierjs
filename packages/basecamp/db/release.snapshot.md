@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-71 model(s) · 44 enum(s) · 2 database(s)
+73 model(s) · 44 enum(s) · 2 database(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -27,13 +27,13 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `AlertSubject` | `series` · `server` · `volume` |
 | `AppStatus` | `deploying` · `error` · `running` · `starting` · `stopped` · `stopping` · `unknown` |
 | `AppType` | `container` · `cron` · `daemon` · `database` · `function` · `static` · `worker` |
-| `BackupDestination` | `local` · `s3` |
-| `BackupKind` | `manual` · `scheduled` |
+| `BackupKind` | `found` · `manual` · `release` · `scheduled` |
 | `Capability` | `Environment.create` · `Environment.delete` · `Environment.update` · `Server.create` · `Server.delete` · `Server.destroy` · `Server.drain` · `Server.provision` · `Server.reboot` · `Server.undrain` · `Server.update` · `Variable.create` · `Variable.delete` · `Variable.update` |
 | `ChannelKind` | `chat` · `email` · `pagerduty` · `slack` · `webhook` |
 | `ComparisonOp` | `gt` · `gte` · `lt` · `lte` |
 | `DependencyKind` | `dependency` · `dev` · `optional` · `peer` |
 | `DeployStatus` | `building` · `cancelled` · `failed` · `pending` · `rolled_back` · `success` |
+| `DrillKind` | `manual` · `scheduled` |
 | `EditorRole` | `edit` · `publish` |
 | `EnvironmentTier` | `development` · `preview` · `production` · `staging` · `test` |
 | `FlagType` | `boolean` · `variant` |
@@ -52,7 +52,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `ProviderKind` | `cloudflare` · `custom` · `digitalocean` · `hetzner` |
 | `ProvisionStepName` | `create` · `poll` · `start` · `timeout` |
 | `RunStatus` | `failed` · `pending` · `running` · `success` · `timeout` |
-| `SecretKind` | `generic` · `notification` · `provider_key` · `registry_auth` · `ssh_key` · `tls_cert` |
+| `SecretKind` | `backup` · `generic` · `notification` · `provider_key` · `registry_auth` · `ssh_key` · `tls_cert` |
 | `ServerEventKind` | `came_online` · `cleanup_failed` · `cleanup_queued` · `cleanup_ran` · `created` · `destroy_finished` · `destroy_requested` · `drain_cancelled` · `drain_started` · `enrollment_issued` · `posture_failed` · `posture_restored` · `provision_created` · `provision_ready` · `provision_requested` · `provision_timeout` · `reboot_requested` · `recipe_failed` · `recipe_ran` · `removed` · `status_sync_ignored` · `status_synced` · `sync_failed` · `sync_no_account` · `sync_requested` · `sync_unrecognized` · `sync_unsupported` · `unreachable` · `volume_removed` · `volumes_pruned` |
 | `ServerRole` | `build` · `database` · `gateway` · `general` · `worker` |
 | `ServerStatus` | `destroyed` · `destroying` · `draining` · `installing` · `online` · `pending` · `provisioning` · `stopped` · `unreachable` |
@@ -218,8 +218,13 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
+| `appBackups` | `AppBackup[]` | — | — | relation |
+| `appDrills` | `AppDrill[]` | — | — | relation |
 | `appNetworks` | `AppNetwork[]` | — | — | relation |
 | `appServers` | `AppServer[]` | — | — | relation |
+| `backupCron` | `String` | yes | — | — |
+| `backupDestination` | `BackupDestination` | — | — | relation |
+| `backupDestinationId` | `String` | yes | — | — |
 | `blueprint` | `Blueprint` | — | — | relation |
 | `blueprintId` | `String` | yes | — | @system |
 | `containerPort` | `Int` | yes | — | — |
@@ -230,6 +235,7 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `deployOnPush` | `Boolean` | no | `0` | @system |
 | `domainRoutes` | `DomainRoute[]` | — | — | relation |
 | `domains` | `Domain[]` | — | — | relation |
+| `drillCron` | `String` | yes | — | — |
 | `editors` | `AppEditor[]` | — | — | relation |
 | `environment` | `Environment` | — | — | relation |
 | `environmentId` | `String` | no | — | **required on write** |
@@ -243,6 +249,8 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `pushActorId` | `String` | yes | — | @system |
 | `pushSecret` | `String` | yes | — | @encrypted |
 | `pushTokenHash` | `String` | yes | — | @guarded @system |
+| `replicaDestination` | `BackupDestination` | — | — | relation |
+| `replicaDestinationId` | `String` | yes | — | unique |
 | `slug` | `String` | no | — | **required on write** |
 | `source` | `Json` | no | `'{}'` | — |
 | `status` | `AppStatus` | no | `'unknown'` | @system |
@@ -273,31 +281,95 @@ table `app_backup` · db `main` · gate `5.8.8.8`
 | `app` | `App` | — | — | relation |
 | `appId` | `String` | no | — | **required on write** |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `deployment` | `Deployment` | — | — | relation |
+| `deploymentId` | `String` | yes | — | — |
+| `destination` | `BackupDestination` | — | — | relation |
+| `destinationId` | `String` | yes | — | — |
 | `durationMs` | `Int` | yes | — | — |
 | `error` | `String` | yes | — | — |
 | `fileCount` | `Int` | yes | — | — |
 | `finishedAt` | `DateTime` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `kind` | `BackupKind` | no | `'manual'` | — |
 | `location` | `String` | yes | — | — |
 | `requestedBy` | `String` | yes | — | — |
 | `server` | `Server` | — | — | relation |
 | `serverId` | `String` | no | — | **required on write** |
+| `sha256` | `String` | yes | — | — |
 | `sizeBytes` | `Int` | yes | — | — |
 | `startedAt` | `DateTime` | yes | — | — |
 | `status` | `RunStatus` | no | `'pending'` | — |
 
 ```
 @@index(appId)
+@@index(deploymentId)
+@@index(destinationId)
 @@index(serverId)
 @@deny(create, !check(app, tenancy))
+@@deny(create, !check(deployment, tenancy))
+@@deny(create, !check(destination, tenancy))
 @@deny(create, !check(server, tenancy))
 @@deny(delete, !check(app, tenancy))
+@@deny(delete, !check(deployment, tenancy))
+@@deny(delete, !check(destination, tenancy))
 @@deny(delete, !check(server, tenancy))
 @@deny(postUpdate, !check(app, tenancy))
+@@deny(postUpdate, !check(deployment, tenancy))
+@@deny(postUpdate, !check(destination, tenancy))
 @@deny(postUpdate, !check(server, tenancy))
 @@deny(read, !check(app, tenancy))
+@@deny(read, !check(deployment, tenancy))
+@@deny(read, !check(destination, tenancy))
 @@deny(read, !check(server, tenancy))
 @@deny(update, !check(app, tenancy))
+@@deny(update, !check(deployment, tenancy))
+@@deny(update, !check(destination, tenancy))
+@@deny(update, !check(server, tenancy))
+```
+
+### `AppDrill`
+
+table `app_drill` · db `main` · gate `5.8.8.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `app` | `App` | — | — | relation |
+| `appId` | `String` | no | — | **required on write** |
+| `at` | `DateTime` | yes | — | — |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `databases` | `Json` | yes | — | — |
+| `deployment` | `Deployment` | — | — | relation |
+| `deploymentId` | `String` | yes | — | — |
+| `durationMs` | `Int` | yes | — | — |
+| `error` | `String` | yes | — | — |
+| `finishedAt` | `DateTime` | yes | — | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `kind` | `DrillKind` | no | `'manual'` | — |
+| `report` | `Json` | yes | — | — |
+| `requestedBy` | `String` | yes | — | — |
+| `server` | `Server` | — | — | relation |
+| `serverId` | `String` | no | — | **required on write** |
+| `startedAt` | `DateTime` | yes | — | — |
+| `status` | `RunStatus` | no | `'pending'` | — |
+
+```
+@@index(appId)
+@@index(deploymentId)
+@@index(serverId)
+@@deny(create, !check(app, tenancy))
+@@deny(create, !check(deployment, tenancy))
+@@deny(create, !check(server, tenancy))
+@@deny(delete, !check(app, tenancy))
+@@deny(delete, !check(deployment, tenancy))
+@@deny(delete, !check(server, tenancy))
+@@deny(postUpdate, !check(app, tenancy))
+@@deny(postUpdate, !check(deployment, tenancy))
+@@deny(postUpdate, !check(server, tenancy))
+@@deny(read, !check(app, tenancy))
+@@deny(read, !check(deployment, tenancy))
+@@deny(read, !check(server, tenancy))
+@@deny(update, !check(app, tenancy))
+@@deny(update, !check(deployment, tenancy))
 @@deny(update, !check(server, tenancy))
 ```
 
@@ -457,7 +529,8 @@ table `backup` · db `main` · gate `7.7.8.7`
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
-| `destination` | `BackupDestination` | no | `'local'` | — |
+| `destination` | `BackupDestination` | — | — | relation |
+| `destinationId` | `String` | yes | — | — |
 | `durationMs` | `Int` | yes | — | — |
 | `error` | `String` | yes | — | — |
 | `finishedAt` | `DateTime` | yes | — | — |
@@ -471,7 +544,47 @@ table `backup` · db `main` · gate `7.7.8.7`
 
 ```
 @@index(createdAt)
+@@index(destinationId)
 @@index(status)
+```
+
+### `BackupDestination`
+
+table `backup_destination` · db `main` · gate `2.5` · @@softDelete
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `appBackups` | `AppBackup[]` | — | — | relation |
+| `apps` | `App[]` | — | — | relation |
+| `backups` | `Backup[]` | — | — | relation |
+| `bucket` | `String` | no | — | **required on write** |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `createdBy` | `String` | yes | — | — |
+| `deletedAt` | `DateTime` | yes | — | — |
+| `endpoint` | `String` | no | — | **required on write** |
+| `hubs` | `HubConfig[]` | — | — | relation |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `lastTestAt` | `DateTime` | yes | — | @system |
+| `name` | `String` | no | — | **required on write** |
+| `prefix` | `String` | no | `''` | — |
+| `region` | `String` | no | — | **required on write** |
+| `replicaApp` | `App` | — | — | relation |
+| `replicaHub` | `HubConfig` | — | — | relation |
+| `secret` | `String` | — | — | transient |
+| `secretId` | `String` | yes | — | @system |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `version` | `Int` | no | `1` | — |
+| `workspace` | `Workspace` | — | — | relation |
+| `workspaceId` | `String` | no | — | **required on write** |
+
+```
+@@unique(name, workspaceId)
+@@index(workspaceId)
+@@deny(create, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
+@@deny(delete, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
+@@deny(postUpdate, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
+@@deny(read, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
+@@deny(update, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
 ```
 
 ### `Blueprint`
@@ -727,6 +840,8 @@ table `deployment` · db `main` · gate `2.4.4.4`
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `app` | `App` | — | — | relation |
+| `appBackups` | `AppBackup[]` | — | — | relation |
+| `appDrills` | `AppDrill[]` | — | — | relation |
 | `appId` | `String` | no | — | **required on write** |
 | `author` | `String` | yes | — | — |
 | `branch` | `String` | yes | — | — |
@@ -1115,14 +1230,25 @@ table `hub_config` · db `main` · gate `7`
 | `allowApiKeyAuth` | `Boolean` | no | `1` | — |
 | `allowBotUsers` | `Boolean` | no | `1` | — |
 | `backupCron` | `String` | no | `'0 2 * * *'` | — |
-| `backupDestination` | `BackupDestination` | no | `'local'` | — |
+| `backupDestination` | `BackupDestination` | — | — | relation |
+| `backupDestinationId` | `String` | yes | — | — |
 | `backupEnabled` | `Boolean` | no | `0` | — |
+| `backupKeepLocalCount` | `Int` | no | `7` | — |
+| `backupKeepLocalDays` | `Int` | yes | — | — |
+| `backupKeepRemoteCount` | `Int` | no | `7` | — |
+| `backupKeepRemoteDays` | `Int` | yes | — | — |
 | `baseUrl` | `String` | no | — | **required on write** |
+| `encryptionKeyEscrowedAt` | `DateTime` | yes | — | @system |
+| `encryptionKeyFingerprint` | `String` | yes | — | @system |
 | `heartbeatTimeoutSeconds` | `Int` | no | `120` | — |
+| `hostServer` | `Server` | — | — | relation |
+| `hostServerId` | `String` | yes | — | unique · @system |
 | `id` | `String` | no | `'hub'` | id |
 | `mailFromAddress` | `String` | yes | — | — |
 | `mailFromName` | `String` | yes | — | — |
 | `name` | `String` | no | `'Basecamp'` | — |
+| `replicaDestination` | `BackupDestination` | — | — | relation |
+| `replicaDestinationId` | `String` | yes | — | unique |
 | `requireTwoFactorForOwners` | `Boolean` | no | `0` | — |
 | `sessionTtlHours` | `Int` | no | `168` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
@@ -1835,6 +1961,7 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 | `enrollTokenHash` | `String` | yes | — | @guarded |
 | `events` | `ServerEvent[]` | — | — | relation |
 | `health` | `Json` | yes | — | — |
+| `hostHub` | `HubConfig` | — | — | relation |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `ipAddress` | `String` | yes | — | — |
 | `ipv6Address` | `String` | yes | — | — |
@@ -1850,6 +1977,7 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 | `providerServerId` | `String` | yes | — | — |
 | `region` | `String` | no | `'custom'` | — |
 | `registerMethod` | `String` | no | `'imported'` | — |
+| `replication` | `Json` | yes | — | — |
 | `role` | `ServerRole` | no | `'general'` | — |
 | `serverNetworks` | `ServerNetwork[]` | — | — | relation |
 | `slug` | `String` | no | — | **required on write** |
@@ -1978,6 +2106,7 @@ table `session` · db `main` · gate `8`
 | `impersonationEndsAt` | `DateTime` | yes | — | — |
 | `impersonationReason` | `String` | yes | — | — |
 | `ipAddress` | `String` | yes | — | — |
+| `reauthenticatedAt` | `DateTime` | yes | — | — |
 | `token` | `String` | no | — | unique · @guarded · **required on write** |
 | `user` | `User` | — | — | relation |
 | `userAgent` | `String` | yes | — | — |
@@ -2149,6 +2278,7 @@ table `workspace` · db `main` · gate `1.1.5.6` · @@softDelete(cascade)
 | `alertRules` | `AlertRule[]` | — | — | relation |
 | `apiKeys` | `ApiKey[]` | — | — | relation |
 | `auditEvents` | `AuditEvent[]` | — | — | relation |
+| `backupDestinations` | `BackupDestination[]` | — | — | relation |
 | `channels` | `NotificationChannel[]` | — | — | relation |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |

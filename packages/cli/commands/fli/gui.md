@@ -4,10 +4,16 @@ description: Start the console — in this terminal, or in the browser with --op
 alias: gui
 examples:
   - fli gui
+  - fli gui :dns
+  - fli gui :dns --open
   - fli gui --test
   - fli gui --port 8080
   - fli gui --open
   - fli gui --devtools-port 7503
+args:
+  -
+    name: pane
+    description: The pane to open on — `:dns`, or any unique start of a pane's name
 flags:
   port:
     char: p
@@ -47,6 +53,10 @@ env — 8500 dev, 7500 with `--test`, 9500 with `--production` for project 0.
 A scaffolded app adds its `fli dev` slot, so the app on 8001 has its GUI on
 8501. Outside a project there is no env, and it is the global 5500.
 
+A pane, `fli gui :dns`, opens the console on it in either target; with
+`--open` the browser gets `/console/#dns`, since `/` is the older page and
+has no panes.
+
 ```js
 const { guiPort, claimSession, slotFor, projectIdFor, PROJECTS } = await import(resolve(global.fliRoot, 'core/ports.js'))
 // The flag's declared default is the global port, so whether --port was typed
@@ -66,6 +76,8 @@ if (!typed && inApp && !flag.dry) {
 const port     = typed ? flag.port : guiPort(inApp ? $.paths.root : null, { env })
 const url      = `http://localhost:${port}`
 const terminal = !flag.open && !!process.stdin.isTTY && !!process.stdout.isTTY
+const pane     = String(arg.pane ?? '').replace(/^:/, '')
+const page     = pane ? `${url}/console/#${pane}` : url
 
 // Set via env so server.js picks them up
 process.env.FLI_PORT = String(port)
@@ -76,15 +88,15 @@ log.info(`Project: ${$.paths.root}`)
 
 if (flag.dry) {
   log.dry(`Would start server on port ${port}`)
-  if (flag.open) log.dry(`Would open ${url} in browser`)
-  if (terminal) log.dry('Would draw the console in this terminal')
+  if (flag.open) log.dry(`Would open ${page} in browser`)
+  if (terminal) log.dry(`Would draw the console in this terminal${pane ? ` on :${pane}` : ''}`)
   return
 }
 
 // Open browser if requested (non-blocking)
 if (flag.open) {
   const { openUrl } = await import(resolve(global.fliRoot, 'core/open-url.js'))
-  setTimeout(() => openUrl(url), 800)
+  setTimeout(() => openUrl(page), 800)
 }
 
 // Start the server — import from fliRoot so it always finds core/server.js
@@ -98,7 +110,7 @@ if (terminal) {
     await new Promise((ok, fail) => { server.once('listening', ok); server.once('error', fail) })
     const { runTerminalConsole } = await import(resolve(global.fliRoot, 'core/console.js'))
     const { openUrl } = await import(resolve(global.fliRoot, 'core/open-url.js'))
-    await runTerminalConsole({ api: url, openUrl })
+    await runTerminalConsole({ api: url, pane, openUrl })
   } catch (e) {
     log.error(e.code === 'EADDRINUSE' ? `Port ${port} already answers — another console holds it; --port picks another` : e.message)
     await shutdown(1)

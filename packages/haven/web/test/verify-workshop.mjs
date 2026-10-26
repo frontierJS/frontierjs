@@ -36,7 +36,7 @@ import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../../api/src/app.ts'
 import { ROOMS } from '../../api/src/rooms.ts'
-import { signIn } from '../../api/test/sign-in.ts'
+import { POST_KEY, signIn, stakedHome } from '../../api/test/sign-in.ts'
 import { blank, cellOf, terminal, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
 import { follow } from '../src/lib/scene/stage.js'
@@ -61,7 +61,7 @@ const check = (ok, label, evidence = '') => {
 // ─── Sam's machine ────────────────────────────────────────────────────
 
 const samHome = mkdtempSync(join(tmpdir(), 'haven-sam-'))
-const anaHome = mkdtempSync(join(tmpdir(), 'haven-ana-'))
+const anaHome = await stakedHome('haven-ana-', 'ana')
 const WORKERS = join(samHome, '.fli/haven/workers')
 
 /** One event through the hook Claude Code runs, as session `id`. */
@@ -97,7 +97,7 @@ check(readWorkers({ dir: WORKERS }).map((w) => w.bench).join() === [nearest, nea
 const env = await createTestEnv({
   schema: join(WEB, '../db/schema.lite'),
   listen: true,
-  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-workshop', port: 0 }),
+  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-workshop', port: 0, postKey: POST_KEY }),
 })
 for (const room of ROOMS) await env.system.room.create({ data: { ...room } })
 const API = `http://localhost:${env.port}`
@@ -192,7 +192,7 @@ check(await until(() => readout('aaaa').startsWith(READ) && /\d+s ago$/.test(rea
 // ─── Ana, another terminal in the room ───────────────────────────────
 
 const frame = await new Promise((resolve) => {
-  const p = spawn('bun', [FLI, 'haven', '--frame', '/workshop/', '--api', API, '--nick', 'ana'], {
+  const p = spawn('bun', [FLI, 'haven', '--frame', '/workshop/', '--api', API], {
     cwd: tmpdir(), stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, HOME: anaHome },
   })
   let framed = '', err = ''

@@ -19,12 +19,13 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { createClient }  from '@frontierjs/litestone'
 import { createApp, createService } from '@frontierjs/junction'
+import type { App } from '@frontierjs/junction'
 import { createStubAuth } from '@frontierjs/junction/testing'
 import { mcp } from '../src/plugin.ts'
 
 const SCHEMA = readFileSync(new URL('./fixtures/shop.lite', import.meta.url), 'utf8')
 
-let app:  { stop?: () => Promise<void>; http: { port?: number } } & Record<string, never>
+let app:  App
 let base: string
 
 beforeAll(async () => {

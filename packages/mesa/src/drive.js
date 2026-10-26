@@ -269,7 +269,13 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
 
   const wsUrl = await new Promise((resolve, reject) => {
     let buf = ''
-    const timer = setTimeout(() => reject(new Error('Chrome never announced a DevTools port')), 15000)
+    // What Chrome printed is the only account of why it did not start — a
+    // sandbox, a profile directory, a missing library — so it travels with
+    // the refusal rather than being dropped with the process.
+    const timer = setTimeout(() => {
+      const said = buf.trim().split('\n').slice(-12).join('\n')
+      reject(new Error(`Chrome never announced a DevTools port${said ? ` — it printed:\n${said}` : ' and printed nothing'}`))
+    }, 15000)
     chrome.on('error', (e) => { clearTimeout(timer); reject(new Error(`could not launch ${exe}: ${e.message}`)) })
     chrome.stderr.on('data', (d) => {
       buf += d

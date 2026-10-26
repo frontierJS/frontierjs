@@ -397,6 +397,11 @@
   .sidebar-toggle {
     display: revert;
   }
+  /* A topbar's own nav gives way to the toggle at the same width, so no
+     width shows both or neither. */
+  .topbar-nav {
+    display: none;
+  }
 }
 
 /*

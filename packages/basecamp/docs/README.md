@@ -13,8 +13,13 @@ These pages are read in different situations rather than in order.
   this is what wiring one costs — the decisions already made, and which drive
   assertions go red the day you do. **Start here if you are picking up a
   third party**
+- [BACKUPS.md](BACKUPS.md) — the operator's recipe for archives that leave the box:
+  a B2 bucket and key, the destination form and what each refusal means,
+  retention, `location`, the key escrow, and a restore by hand
 - [PROVISIONING.md](PROVISIONING.md) — buying a machine at a cloud: the compute
   connector boundary, the spend guard, cloud-init and enrollment, phase by phase
+- [layout.md](layout.md) — the file-by-file map of the package, out of `CLAUDE.md`
+- [hazards.md](hazards.md) — every hazard, the full `What bites here`
 
 The package root keeps the standard four (`README`, `CLAUDE`, `PROJECT_STATE`,
 `CHANGES`); everything here is the depth behind them, per Invariant 17.

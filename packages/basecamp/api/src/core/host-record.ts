@@ -1,13 +1,16 @@
 // api/src/core/host-record.ts — Basecamp's own hostname, pointed at its box at Cloudflare.
 //
-// `fli provision:dns` runs it from this checkout, with the token in the
+// `fli basecamp:dns` runs it from this checkout, with the token in the
 // environment so it never sits in a process listing:
 //
 //   CLOUDFLARE_TOKEN=… bun api/src/core/host-record.ts '{"host":"ops.example.com","ip":"203.0.113.7"}'
 //
-// `{"host":…,"check":true}` finds the zone and writes nothing: `fli provision`
+// `{"host":…,"check":true}` finds the zone and writes nothing: `fli basecamp:create`
 // asks it before buying a box, so a token that cannot reach the name is found
-// while nothing has been spent.
+// while nothing has been spent, and answers the address Basecamp's record there
+// holds now, which create reuses when it is a reserved IP. `{"find":"<ip>"}` writes nothing either: every
+// A record in every zone the token opens that still holds the address, which
+// `fli basecamp:destroy` names once the box it pointed at is gone.
 //
 // The record is written by providers/edge/cloudflare.ts and carries the fleet's
 // mark, so Basecamp's own edge reads it as its own: a run that finds one moves
@@ -21,7 +24,8 @@
 //
 // The last line of stdout is one JSON object, which is fli's whole contract:
 //   { host, ip, zone, record, proxied }
-//   { host, zone }                      under check
+//   { host, zone, points }              under check; points is null with no record
+//   { records: [{ zone, name, id, proxied, marked }] }  under find
 //   { error: '<what>' }                 and the exit is non-zero
 
 import { cloudflare }  from '../providers/edge/cloudflare.ts'
@@ -39,6 +43,21 @@ const input = (() => {
 const token = process.env.CLOUDFLARE_TOKEN
 if (!token) fail('CLOUDFLARE_TOKEN is not set')
 
+if (typeof input.find === 'string') {
+  try {
+    const send  = bearerSend(cloudflare.address, token!)
+    const found = []
+    for (const zone of await cloudflare.zones(send))
+      for (const r of await cloudflare.records(send, zone.id))
+        if (r.type === 'A' && r.content === input.find)
+          found.push({ zone: zone.name, name: r.name, id: r.id, proxied: !!r.proxied, marked: !!r.mark })
+    answer({ records: found })
+    process.exit(0)
+  } catch (e) {
+    fail((e as Error).message)
+  }
+}
+
 const host = String(input.host ?? '').trim().toLowerCase().replace(/\.$/, '')
 const ip   = String(input.ip ?? '').trim()
 if (!host.includes('.')) fail(`'${host}' is not a hostname`)
@@ -53,7 +72,11 @@ try {
     .filter(z => host === z.name || host.endsWith(`.${z.name}`))
     .sort((a, b) => b.name.length - a.name.length)[0]
   if (!zone) fail(`no zone this token opens holds ${host}: give it Zone Read and DNS Edit on that zone`)
-  if (input.check) { answer({ host, zone: zone.name }); process.exit(0) }
+  if (input.check) {
+    const ours = (await cloudflare.records(send, zone.id)).find(r => r.type === 'A' && r.name === host && r.mark)
+    answer({ host, zone: zone.name, points: ours?.content ?? null })
+    process.exit(0)
+  }
 
   // Unstated keeps what the record holds, so a reinstall does not take a host
   // back off the proxy somebody put it behind.

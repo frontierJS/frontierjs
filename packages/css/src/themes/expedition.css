@@ -1,0 +1,54 @@
+/*
+ * expedition.css
+ * Expedition — field equipment and trail infrastructure: charcoal, sage,
+ * brass, slate, and parchment. Rugged, restrained, built for long sessions.
+ * Tokens only; no selectors beyond the theme scope.
+ */
+
+.theme-expedition {
+  /* Native controls, scrollbars, and selects follow dark surfaces. */
+  color-scheme: dark;
+
+  /* Tone utilities clamp semantic colors when used as text. */
+  --tone-l-min: 0.72;
+  --tone-l-max: 1;
+
+  /* ── Accents: field markers, brass, and surveyor's inks ──────────── */
+  --color-primary:   #a8b58a; /* sage */
+  --color-secondary: #d0ad6f; /* aged brass */
+  --color-muted:     #a0a18f; /* weathered stone */
+  --color-info:      #8faeb5; /* dusty slate */
+  --color-success:   #a3b58c; /* evergreen */
+  --color-warning:   #e0b36c; /* ochre */
+  --color-danger:    #d98270; /* faded vermilion */
+
+  /* ── Grounds: charcoal with a green-brown undertone ──────────────── */
+  --app-bg:          #151815;
+  --surface:         #1d211d;
+  --surface-raised:  #292e28;
+  --surface-sunken:  #111410;
+
+  --topbar-bg:       #171a16;
+  --sidebar-bg:      #171a16;
+  --dialog-bg:       #232821;
+
+  /* ── Ink: parchment, not white ───────────────────────────────────── */
+  --ink:             #e2ddca;
+  --ink-soft:        #c0bba7;
+  --ink-mute:        #a19e8d;
+
+  /* ── Rules: quiet at rest, clear when emphasized ─────────────────── */
+  --rule:            #3a4037;
+  --rule-strong:     #50594b;
+
+  /* ── Elevation: subtle lift, no glossy glow ──────────────────────── */
+  --surface-shadow:  0 1px 2px rgba(0, 0, 0, 0.24);
+  --shadow-sm:       0 1px 2px rgba(0, 0, 0, 0.38);
+  --shadow-md:       0 1px 3px rgba(0, 0, 0, 0.42), 0 4px 10px rgba(0, 0, 0, 0.18);
+  --shadow-lg:       0 2px 6px rgba(0, 0, 0, 0.46), 0 12px 28px rgba(0, 0, 0, 0.26);
+
+  /* ── Shape: field gear, clean edges ───────────────────────────────── */
+  --btn-radius:   3px;
+  --card-radius:  4px;
+  --field-radius: 3px;
+}

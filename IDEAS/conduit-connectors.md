@@ -184,9 +184,10 @@ needs building first.
 | 9   | `conduit-oidc`                  | Unchanged from row 6 above, now with callers: serpgrid needs Google OAuth with a delegated GBP grant (one agency grant serving many clients), ELA signs into Microsoft for Outlook, and `third-party-credentials.md` leg one is the credential it mints. It is the protocol connector; the GBP, Graph and Sheets calls that follow are the apps' own |
 | 10  | `conduit-push` (APNs + FCM)     | Unchanged from row 4. SSTime is a time clock on a phone and ELA's crews are in the field; `notifications/drivers/` still holds `email.ts` and `inapp.ts` and nothing else. Toggl/Kimai (#36) and Connecteam (#2) need it on day one |
 | —   | Service Autopilot               | **The biggest real call volume in the three live apps** — 282,075 of ELA's 305,760 recorded actions are polls of it, and maid.tech polls it too. Fails test one (field-service CRM) and is a sync engine with a cursor, which § *What is deliberately not on it* rules out of conduit. The right shape is a THIRD-PARTY connector, `@kobami/conduit-serviceautopilot`, carried by both ports, over a caravan cursor — the shape `FJS-D153`'s `@scope/` naming rule exists for. Jobber is the same case at a tenth the volume |
-| —   | Microsoft Graph (Outlook mail)  | ELA reads a mailbox. Mail-as-data is a sync engine, out of conduit by the rule above; `inbound-email.md` is the framework answer, its noun still an open question there, over a provider's inbound webhook rather than a mailbox poll. The port should take that door, and the Graph read stays ELA's own if it survives |
+| 11  | `conduit-microsoft`             | **Built (`FJS-D1463`), in the connectors workspace.** ELA's Graph provider split in two: the DIALECT — three targets (`graph`, `mime`, `login`), the rotating-refresh grant resolver with a cross-process lock, delta, change notifications with the clientState check, drafts/replies/send/move, MIME send, and the sink lifted from ELA's stand-in — is the package; the sync ENGINE (folders, Message-Id re-match, mail rows, writeback) stays ELA's, as `conduit-gmail` cut it for Google. `inbound-email.md` is still the door for a mailbox an app owns; this is for one it does not. ELA's adoption is owed |
 | —   | QuickBooks                      | maid.tech. Accounting is the named sync-engine exclusion. Its own noun when wanted; not a connector |
-| —   | n8n / Zapier                    | maid.tech (203 references) and ELA (222) push events out to automation. That is not a connector in either direction: outbound is junction's webhooks battery, inbound is `inbound-integrations.md` half B. The `third-party/zapier/` app maid.tech ships is a developer-API product (#29), and `prompt-to-app.md` already rules payments out of that shape |
+| 12  | `conduit-n8n`                   | **Built (`FJS-D1489`), in the connectors workspace — the owner's override of this row, which said *not a connector*.** The decision-rules run stands in the ruling: outbound to n8n is junction's webhooks battery, the `N8N_URL`/`N8N_API_KEY` pair is `attachments`' own example, and the REST client is one header. What the package is for is the other direction — an app that READS its n8n (workflows, executions) or starts one and wants the reply: `n8nTargets({ address, hook? })` → `{ api, hook }`, two listeners on one origin, the key never on the hook. Proved against n8n 2.44.6 in docker, which found `no_trigger`, `unpublishing` and that activate is idempotent. No runtime caller yet; intake's `tools/n8n-deploy.mjs` is a deploy script and stays one |
+| 13  | `conduit-zapier`                | **Built (`FJS-D1528`), in the connectors workspace — the owner's override of this row, which said *not a connector*.** The decision-rules run reshaped it: not a host-pinned target but slack's incoming-webhook shape, because the field maid.tech's `Form.svelte` and ELA's `Integrations.svelte` ship is GENERIC ("Zapier, IFTTT, or any other webhook") and posts to a pasted URL with a raw `fetch` — which `plugins/webhooks` cannot do, since a Catch Hook is unsigned and the row is the app's. What is Zapier's: 404 `off`, 410 `gone`, the reverse `DELETE <target_url>`, and `subscriptionFrom` with the host pinned. The `third-party/zapier/` app maid.tech ships is a Zapier CLI integration (Zapier calls the app's API, which junction serves) and stays one; the Actions API is a partner contract and the reopen path for a vendor address. **Open, not built (2026-10-26):** (a) no Zapier app — triggers, actions and searches with the app's subscribe, unsubscribe, sample and auth-test routes; maid.tech's `third-party/zapier/` is the prior art, and a schema-derived one needs a paper and `decision-rules` first; (b) a lost post is lost — no job-queued retry and no event id in the payload for the Zap to dedupe on, so a 5xx or 429 drops a form's lead; (c) nothing acts on `off` or `gone` — no owner notice, no row delete, no refusal count before the reverse unsubscribe, and no last-delivered, last-error or test-send on ELA's `webhook` model; (d) unadopted, since both apps still use raw `fetch`, and never run against live Zapier |
 | —   | 3CX, Attentive.ai, Radar, Cloudinary, ATTOM, DataForSEO | One app each. App-owned `providers/` files, following the Stripe shape. Named so the next audit does not count them as gaps |
 
 ### Tier C — every app will want it, no port is waiting
@@ -228,43 +229,15 @@ Ruled 2026-10-10, before step A:
   import `conduit-s3`.
 ---
 
-## Prototyped 2026-10-11 — state of each
+## Prototyped 2026-10-11
 
 Every connector in the order above exists as a prototype package in the sibling
 workspace `conduit-connectors/` (its own git repo, beside `frontierjs/`; nothing
-is under `packages/` here). Each follows `FJS-D890` — target builder, payload
-types, error mapping, sink, drive, verifier where the vendor sends webhooks —
-against a `CONTRACT.md` written after Tier A and amended by Tier B and C.
-**Audited 2026-10-13 by running every drive: 20 of 20 green**, every one against
-its own sink only. No vendor was called, no key exists, no docker, so a row
-that names a fixture names one wired to `FIXTURE_URL` and never run.
-
-| Connector | Tier | How it was built | Drive | Fixture (`FJS-D889`) | Waits on |
-| --- | --- | --- | --- | --- | --- |
-| stripe | A | extracted from `example/api/src/providers/stripe/` | 16 rows | — | nothing; the shape the others copied |
-| resend | A | extracted from junction's mail battery | 12 | — | nothing; closes the `FJS-D153` inversion |
-| s3 | A | extracted from litestone `storage/`; SigV4 imported, not copied; region is `auth.params` | 12 | MinIO, SeaweedFS **unproved** | `FJS-2543` SigV4 to toolbelt; a docker run |
-| telnyx | A | written new (quo not on this machine) | 10 | — | error codes checked against an account; `FJS-2571` |
-| cloudflare | A | extracted from basecamp edge | 12 | — | nothing; purge-cache has no caller so is not built |
-| digitalocean | A | extracted from basecamp compute | 11 | — | nothing; promote with hetzner |
-| hetzner | A | extracted from basecamp compute | 12 | — | nothing |
-| google-maps | B | new; two hosts, one key; `?key=` via `query` on `api_key` (`FJS-D940`) | 22 | — | Google wording unverified; Nominatim named, not built |
-| oidc | B | new; `origins` on the target (`FJS-D939`), two targets for two credentials (`FJS-D933`) | 38 | **panva oidc-provider proved in-process**; Dex unproved | Apple `client_secret_basic` unverified |
-| push | B | new (APNs + FCM); APNs 403 is a refusal predicate (`FJS-D941`); the FCM exchange is a send through its own target | 23 | — | APNs h2 unmeasured |
-| gmail | B | new; per-user OAuth over `per_caller` | 41 | — | after oidc; batch endpoint waits on `FJS-2700` |
-| mattermost | C | new; the mirror app's connector (`mirror-apps.md` 2.1–2.3): two bearer targets, service and `per_caller` user, the `mirror` claim (`FJS-D1125`), the backfill reads, the outgoing-webhook and slash-command Dialects (`FJS-D899`) with `respond()`, the socket as a `broker` target with a `FrameDialect` (`FJS-D1127`); `pending_post_id` the one key, in the body | 40 | — | `MirrorClaim` type moves into conduit at 2.4; webhook `Authorization: Token` and the socket's header-vs-challenge auth unverified on a real server; socket resume not built |
-| 37signals | C | new; `conduit-37signals.md` 2.1–3.1: `basecampTargets()` → `{ api, token }`, the account as the address's path, `translate`, the reads (`walk` by `Link` with one `ETag` per page, `recording` typed or by its envelope), five verbs whose rich text is `{ text }` or `{ html }` (C9), and `findCreated` reading a lost create's parent list (C6); the sink's chaos (a 429 refuses a create, a 500 leaves it `indeterminate`); `basecampTokenResolver`, one refresh per expiry under `withCache`, sent once; `pollEvents`, one feed page per call, re-entry by the failure's `code`; Kobami's scrubbed fixtures in `test/fixtures/` | 58 | 0.2's bodies, GET only; no write, refresh or filtered poll has reached Basecamp | its plan's 3.2 onward |
-| anthropic | C | new | 22 | — | nothing; streams through `conduit.stream()` (`FJS-D934`) |
-| openai | C | new, protocol connector; streams | 23 | Ollama, llama.cpp **unproved** | a local model server |
-| twilio | C | new; the built-in Basic signer (`FJS-D933`) | 12 | — | nothing |
-| postmark | C | new; inbound over a URL credential — **shaped for `packages/conduit-postmark` 2026-10-16, held in this workspace until committed** | 11 | — | nothing |
-| mailgun | C | **shaped for `packages/conduit-mailgun` 2026-10-16, held in this workspace until committed**; new; the raw-MIME inbound (`fromMime` over postal-mime, `FJS-D784`), signature over `timestamp + token` with the token as nonce; `Dialect.parse` async for it | 13 | — | nothing; event webhooks, attachments on a send not built |
-| turnstile | C | new; secret-in-body signer | 12 | — | nothing |
-| slack | C | new; bot token + incoming webhook | 26 | — | nothing; `files.uploadV2`, `conversations.history` not built |
-| plausible | C | new; the replayable read | 8 | Plausible CE **unproved** | a docker run |
-| tax | C | new over conduit-stripe by relative import | 10 | — | promote after stripe |
-| shipping | C | new (EasyPost) | 15 | — | nothing |
-| quo | C | receiving extracted from `fjs-prototypes/quo`, sending and webhook management new; two targets for two API generations on one origin (send is v1-only); both webhook signatures as Dialects | 17 | — | a real Quo key; MMS and retry not built |
+is under `packages/` here, `FJS-D1185`). Each follows `FJS-D890` — target builder,
+payload types, error mapping, sink, drive, verifier where the vendor sends
+webhooks — against a `CONTRACT.md` written after Tier A and amended by Tier B and C.
+**The state of each — drive rows, fixtures, open gaps — is that workspace's
+`PROJECT_STATE.md`**, and `bun run drive` at its root re-proves it.
 
 **What the prototypes found in conduit** — ten rows, `FJS-2721`–`FJS-2730`.
 Eight are closed by rulings of 2026-10-12/13: `FJS-D933` (Basic is the one
@@ -288,9 +261,7 @@ adapter the connector exports beside it, as `example`'s `stripeDialect` does.
 turnstile · twilio · cloudflare · digitalocean + hetzner · postmark · slack,
 plausible, shipping, tax · anthropic + openai · google-maps · oidc · gmail ·
 push · then the ones with something still in front of them — telnyx
-(`FJS-2571`), s3 (`FJS-2543`, docker). Promotion turns the two
-relative imports (s3 → litestone's `sigv4.js`, tax → conduit-stripe) into
-workspace dependencies and adds each package's row to the root `CLAUDE.md`
+(`FJS-2571`), s3 (docker). Promotion adds each package's row to the root `CLAUDE.md`
 Packages table with ring `batteries`. `alongside/conduit-connectors.md` is the
 lane.
 

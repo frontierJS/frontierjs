@@ -50,8 +50,8 @@ const MAX_POINTS    = 5_000
 const sys = (): any => $.app.db!.asSystem()
 
 export default createService({
-  name: 'metrics-store',
-  scope: keyScope('metrics-store'),
+  name: 'metricsStore',
+  scope: keyScope('metricsStore'),
   // `methods:` is a LIST of names and not the implementations — without it a
   // base service answers every CRUD verb it was never given, which on a
   // service with no model is a 500 rather than a refusal (infra.service.ts

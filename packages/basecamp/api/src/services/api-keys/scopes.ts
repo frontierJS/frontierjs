@@ -23,9 +23,9 @@ import { resolveWorkspaceId } from '../../core/hooks.ts'
 const OFF_LIMITS = new Set([
   // A key that can mint keys can escalate past its own scopes, and there is no
   // use for one that a session does not cover.
-  'api-keys',
+  'apiKeys',
   // Conduit's own management service — operational, not a workspace resource.
-  'conduit-targets',
+  'conduitTargets',
   // A key acts unattended, and a send here runs Claude Code on the operator's
   // machine with every permission bypassed.
   'workbench',

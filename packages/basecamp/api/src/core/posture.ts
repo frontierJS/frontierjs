@@ -75,7 +75,6 @@ export interface Declared {
 export const POSTURE_INTERVAL_MS = 6 * 60 * 60_000
 
 const OUTPOST_COMMAND_PORT = 8180
-export const OUTPOST_STATIC_PORT = 8181
 const CADDY_ADMIN_PORT     = 2019
 
 // ─── declared ─────────────────────────────────────────────────────────────
@@ -83,10 +82,11 @@ const CADDY_ADMIN_PORT     = 2019
 /**
  * The expected set, derived and never typed in.
  *
- * 8181 is the static origin, which only an inline app needs; everything else on
- * a public address is an app that declared `exposesPort` (`FJS-D930`). An app
- * with no hostname that does not declare it is an unexpected listener, because
- * until every published port binds loopback that is what it is.
+ * The static origin on 8181 binds loopback and Caddy fronts it (`FJS-D1459`),
+ * so it is never expected; everything else on a public address is an app that
+ * declared `exposesPort` (`FJS-D930`). An app with no hostname that does not
+ * declare it is an unexpected listener, because until every published port
+ * binds loopback that is what it is.
  */
 export function declaredFor(input: {
   sshPort:   number | null | undefined
@@ -97,7 +97,6 @@ export function declaredFor(input: {
     .filter(a => a.exposesPort && typeof a.port === 'number')
     .map(a => a.port as number)
   const expected = new Set([input.sshPort || 22, 80, 443, OUTPOST_COMMAND_PORT, ...exposed])
-  if (input.apps.some(a => a.type === 'static')) expected.add(OUTPOST_STATIC_PORT)
 
   return {
     expectedPorts: [...expected].sort((a, b) => a - b),
@@ -231,7 +230,7 @@ const CONTROLS: { id: string; group: string; severity: Severity; hardenedAtInsta
       : { ok: false, message: `Caddy's admin API listens on ${admin.filter(l => !isLoopback(l.address)).map(l => l.address).join(', ')}` }
   } },
 
-  { id: 'patch.security-pending', group: 'patching', severity: 'medium', grade: (r) => {
+  { id: 'patch.security-pending', group: 'patching', severity: 'medium', hardenedAtInstall: true, grade: (r) => {
     if (!r.updates) return unknown('Pending updates could not be read')
     return r.updates.security === 0
       ? { ok: true,  message: `No security updates pending (${r.updates.pending} other)` }
@@ -358,6 +357,79 @@ export function gradePosture(
   })
 }
 
+// ─── replication ──────────────────────────────────────────────────────────
+// Graded on READ from `Server.replication`, which every heartbeat rewrites, so
+// a stopped unit is red within one beat of this window rather than at the
+// next six-hourly report. `last_sync_at` is Litestream's own, and it stops
+// when the bucket stops answering: Litestream's `addr` metrics count local
+// WAL syncs, which carry on while nothing reaches the bucket.
+
+/** Behind by more than this is failing. A healthy app reads about one heartbeat behind. */
+export const REPLICA_MAX_LAG_MS = 5 * 60_000
+
+export interface ReplicationReading {
+  apps?:       { app_id: string; status: string | null; last_sync_at: string | null; databases?: number }[]
+  // Basecamp's own database, on its box only.
+  host?:       { status: string | null; last_sync_at: string | null; databases?: number }
+  error?:      string
+  checked_at?: string
+}
+
+/** One app's distance from its bucket, as the App screen draws it; a null
+ *  `appId` is Basecamp's own, as `/hub/backups/` does. */
+export function replicaLag(reading: ReplicationReading | null | undefined, appId: string | null, now: number):
+  { lastSyncAt: string | null; lagMs: number | null; late: boolean; status: string | null; error: string | null; checkedAt: string | null } {
+  const entry = (appId === null ? reading?.host : reading?.apps?.find(a => a.app_id === appId)) ?? null
+  const at    = entry?.last_sync_at ? Date.parse(entry.last_sync_at) : NaN
+  const lagMs = Number.isFinite(at) ? Math.max(0, now - at) : null
+  return {
+    lastSyncAt: entry?.last_sync_at ?? null,
+    lagMs,
+    late:       lagMs === null || lagMs > REPLICA_MAX_LAG_MS,
+    status:     entry?.status ?? null,
+    error:      reading?.error ?? null,
+    checkedAt:  reading?.checked_at ?? null,
+  }
+}
+
+const minutes = (ms: number) => Math.round(ms / 60_000)
+
+/** `backup.replica-lag`: every app placed here that names a replica, and
+ *  Basecamp's own database when `host`, is within `REPLICA_MAX_LAG_MS`. */
+export function gradeReplication(
+  reading: ReplicationReading | null | undefined,
+  apps:    { id: string; slug: string }[],
+  now:     number,
+  host     = false,
+): Control {
+  const control = (g: Grade): Control => ({ id: 'backup.replica-lag', group: 'backup', severity: 'high', ...g })
+  if (!apps.length && !host) return control({ ok: true, message: 'No app on this machine replicates' })
+  const checked = reading?.checked_at ? Date.parse(reading.checked_at) : NaN
+  if (!Number.isFinite(checked)) return control(unknown('This machine has not reported Litestream — an Outpost too old to read it, or no heartbeat yet'))
+  if (now - checked > REPLICA_MAX_LAG_MS) return control(unknown(`The last Litestream reading is ${minutes(now - checked)} min old`))
+  if (reading?.error) return control({ ok: false, message: reading.error })
+
+  const behind: string[] = []
+  let worst = 0
+  const expected = [
+    ...apps.map(a => ({ id: a.id as string | null, name: a.slug, listed: !!reading?.apps?.some(r => r.app_id === a.id),
+      why: 'no volume yet, or the list has not reached this machine' })),
+    ...(host ? [{ id: null, name: 'Basecamp\'s own database', listed: !!reading?.host,
+      why: 'the list has not reached this machine, or its Outpost has no OUTPOST_HOST_DB_PATH' }] : []),
+  ]
+  for (const e of expected) {
+    const { lagMs } = replicaLag(reading, e.id, now)
+    if (!e.listed) behind.push(`${e.name} is not replicating here (${e.why})`)
+    else if (lagMs === null) behind.push(`${e.name} has never synced`)
+    else if (lagMs > REPLICA_MAX_LAG_MS) behind.push(`${e.name} is ${minutes(lagMs)} min behind its bucket`)
+    else worst = Math.max(worst, lagMs)
+  }
+  const what = [apps.length ? `${apps.length} app(s)` : '', host ? 'Basecamp\'s own database' : ''].filter(Boolean).join(' and ')
+  return behind.length
+    ? control({ ok: false, message: behind.join('; ') })
+    : control({ ok: true,  message: `${what} replicating, at most ${Math.round(worst / 1000)}s behind` })
+}
+
 // ─── the box a Basecamp runs on ───────────────────────────────────────────
 
 // The default `backupCron` is daily, so two days is one missed run and a grace.
@@ -375,6 +447,9 @@ function fileControl(what: string, stat: FileStat | null | undefined): Grade {
     : { ok: true,  message: `${stat.path} is mode ${stat.mode}` }
 }
 
+/** How much of a key's sha256 a sentence shows: enough to tell two keys apart, never the key. */
+export const shortFingerprint = (hex: string) => hex.slice(0, 12)
+
 const HUB_CONTROLS: { id: string; group: string; severity: Severity; grade: (r: PostureReadings | null, host: HostDeclared, now: number) => Grade }[] = [
   // Graded in process from the Backup rows, so a stale report does not hide it.
   { id: 'hub.backup-recent', group: 'hub', severity: 'high', grade: (_r, host, now) => {
@@ -383,6 +458,21 @@ const HUB_CONTROLS: { id: string; group: string; severity: Severity; grade: (r: 
     return age <= BACKUP_MAX_AGE_DAYS
       ? { ok: true,  message: age === 0 ? 'Last backup finished today' : `Last backup finished ${age} day(s) ago` }
       : { ok: false, message: `Last backup finished ${age} days ago` }
+  } },
+  // Every archive holds `Secret.data` and the fleet's secret Variables as
+  // ciphertext under ENCRYPTION_KEY, which never travels with one — so a box
+  // whose key has no copy elsewhere has backups that die with it. Nothing here
+  // can see that copy; a person attests it (`hubConfig.attestEscrow`), and the
+  // attestation names the key by digest so a regenerated key voids it rather
+  // than a stale "kept" standing. In process, like the backup control.
+  { id: 'hub.key-escrowed', group: 'hub', severity: 'high', grade: (_r, host) => {
+    if (!host.keyFingerprint) return { ok: false, message: 'ENCRYPTION_KEY is the development placeholder — a copy of it protects nothing' }
+    const live = shortFingerprint(host.keyFingerprint)
+    if (!host.keyEscrow) return { ok: false, message: `No copy of ENCRYPTION_KEY ${live} is attested off this box — every archive is unreadable without it` }
+    const kept = shortFingerprint(host.keyEscrow.fingerprint)
+    return host.keyEscrow.fingerprint === host.keyFingerprint
+      ? { ok: true,  message: `A copy of ENCRYPTION_KEY ${live} was attested off this box on ${host.keyEscrow.at.slice(0, 10)}` }
+      : { ok: false, message: `The attested copy is of key ${kept}, not the key in use ${live} — the key changed since ${host.keyEscrow.at.slice(0, 10)}` }
   } },
   { id: 'hub.db-mode',  group: 'hub', severity: 'high', grade: (r) => fileControl('database volume', r?.host_files?.db) },
   { id: 'hub.env-mode', group: 'hub', severity: 'high', grade: (r) => envControl(r?.host_files) },
@@ -404,17 +494,24 @@ function envControl(files: PostureReadings['host_files']): Grade {
 
 export const HUB_CONTROL_IDS = HUB_CONTROLS.map(c => c.id)
 
+/** Graded from Basecamp's own rows, so a missing or stale report does not hide them. */
+const IN_PROCESS = new Set(['hub.backup-recent', 'hub.key-escrowed'])
+
 /** What the box a Basecamp runs on should look like, beyond any fleet machine. */
 export interface HostDeclared {
   /** `finishedAt` of the newest successful Backup; null when none has. */
-  lastBackupAt: string | null
+  lastBackupAt:   string | null
+  /** sha256 hex of the key in use; null on the development placeholder. */
+  keyFingerprint: string | null
+  /** The standing attestation — when, and the sha256 of the key it was made for; null when none. */
+  keyEscrow:      { at: string; fingerprint: string } | null
 }
 
 /**
  * The `hub.*` controls, graded from the host row's newest report. The fleet
  * controls are that row's own (`gradePosture`), so these are only what the box
- * holding `ENCRYPTION_KEY` adds. `hub.backup-recent` reads rows, never the
- * report, so it is graded whether or not the report is stale.
+ * holding `ENCRYPTION_KEY` adds. `hub.backup-recent` and `hub.key-escrowed`
+ * read rows, never the report, so they are graded whether or not it is stale.
  */
 export function gradeHub(
   readings: PostureReadings | null | undefined,
@@ -424,7 +521,7 @@ export function gradeHub(
   const taken = typeof at === 'number' ? at : Date.parse(at)
   const stale = !Number.isFinite(taken) || now - taken > 2 * intervalMs
   return HUB_CONTROLS.map(({ id, group, severity, grade }) => {
-    if (id !== 'hub.backup-recent' && (stale || !readings))
+    if (!IN_PROCESS.has(id) && (stale || !readings))
       return { id, group, severity, ok: 'unknown' as const, message: stale ? 'The last report is stale' : 'No report' }
     let g: Grade
     try { g = grade(readings ?? null, host, now) }

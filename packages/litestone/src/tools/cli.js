@@ -206,6 +206,7 @@ const HELP = `
     ${dim('  --from-backup=<dir>')}                     every db from a litestone backup ${dim('(with --url/--at/--verify: jsonl/trail only)')}
     ${dim('  --force')}                                 replace files that exist (stop the app first)
     ${dim('  --verify=<dir>')}                          restore into <dir> instead and prove the copy is good
+    ${dim('  --verify-only=<dir>')}                     prove a copy already in <dir> is good, and leave it
     ${dim('  --without-key')}                           verify with no ENCRYPTION_KEY, encrypted columns unchecked
     ${cyan('litestone rsync')} <dest>              sync all SQLite DBs to a destination via sqlite3_rsync
     ${cyan('litestone transform')} [config.js]      run a transform pipeline (DSL)
@@ -4341,6 +4342,14 @@ async function cmdRestore(cfg) {
   const fromBackup  = getFlag('from-backup')
   const force       = flag('force')
   const verifyDir   = getFlag('verify') ? resolve(getFlag('verify')) : null
+  const checkDir    = getFlag('verify-only') ? resolve(getFlag('verify-only')) : null
+
+  if (checkDir) {
+    // Each of these names a restore, and this one restores nothing.
+    const stated = ['url', 'at', 'from-backup', 'verify', 'force'].filter(flag)
+    if (stated.length) fatal(`${cyan('--verify-only')} reads a copy already restored, so ${stated.map(f => cyan(`--${f}`)).join(', ')} has nothing to do.`)
+    return verifyInPlace(parseResult, cfg, checkDir, onlyDb)
+  }
 
   // A backup and no replica word on the line: everything comes from the backup.
   // `replicate.url` in the config does not count — a developer putting back a
@@ -4664,6 +4673,24 @@ async function confirmKeyless(parseResult) {
   if (answer !== 'y' && answer !== 'yes') fatal(`Not verified. Set ${cyan('ENCRYPTION_KEY')} and run it again.`)
 }
 
+// ─── restore --verify-only ────────────────────────────────────────────────────
+// The same proof over files something else restored, where they lie: a
+// Basecamp drill runs it in the app's own image, with the copy mounted and no
+// network, so there is no replica to read and nothing to remove (`FJS-D1524`).
+// Each declared SQLite database is looked for under its own file name, as the
+// volume held it; one that is not there is a failure, not a skip.
+
+async function verifyInPlace(parseResult, cfg, dir, onlyDb) {
+  if (!existsSync(dir)) fatal(`${cyan('--verify-only')} checks a directory a restore wrote, and ${rel(dir)} does not exist.`)
+  await confirmKeyless(parseResult)
+  const targets = await copyTargets(parseResult, cfg, onlyDb)
+  const jobs = targets.sqlite.map(t => ({ kind: 'declared', name: t.name, url: null, dest: join(dir, basename(t.path)) }))
+  if (!jobs.length) fatal(`No SQLite databases are declared${onlyDb ? ` matching --db=${onlyDb}` : ''}, so there is nothing to verify.`)
+  const missing = jobs.filter(j => !existsSync(j.dest))
+  if (missing.length) fatal(`Not restored: ${missing.map(j => cyan(rel(j.dest))).join(', ')}`)
+  await verifyRestored({ parseResult, cfg, jobs, other: [], files: null, dir, binary: null, keep: true })
+}
+
 // ─── restore --verify ─────────────────────────────────────────────────────────
 // A restored copy is proven by what the schema can say about it, not by the
 // app's suite, which arranges its own rows and cannot run on real ones
@@ -4674,7 +4701,7 @@ async function confirmKeyless(parseResult) {
 // named as not checked — a warning, never a pass (`FJS-D498`). With it, a value
 // written under a different key is a failure, which is the lost-key case.
 
-async function verifyRestored({ parseResult, cfg, jobs, other, files, dir, binary }) {
+async function verifyRestored({ parseResult, cfg, jobs, other, files, dir, binary, keep = false }) {
   const { lastWrite }        = await import('./replicate.js')
   const { validateRows }     = await import('../validate-rows.js')
   const { createClient }     = await import('../core/client.js')
@@ -4738,7 +4765,7 @@ async function verifyRestored({ parseResult, cfg, jobs, other, files, dir, binar
 
   for (const j of jobs) {
     const r = { name: j.name, path: j.dest, checks: pragmas(j.dest), lag: null, rows: null }
-    const last = lastWrite(binary, j.url)
+    const last = j.url ? lastWrite(binary, j.url) : null
     r.lag = last == null ? null : Math.max(0, Math.round((Date.now() - last) / 1000))
     if (j.kind !== 'registry' && j.kind !== 'layout') r.checks.schema = drift(j.dest, j.kind === 'tenant' ? sqliteNames : [j.name])
     results.push(r)
@@ -4818,11 +4845,11 @@ async function verifyRestored({ parseResult, cfg, jobs, other, files, dir, binar
     }
     if (report.newestLag != null) console.log(`  ${dim('newest write in the replica:')} ${ago(report.newestLag)} ago\n`)
     console.log(report.ok
-      ? `  ${green(bold('✓  the copy is good'))}  ${dim('— removed')}\n`
+      ? `  ${green(bold('✓  the copy is good'))}  ${dim(keep ? '— left in place' : '— removed')}\n`
       : `  ${red(bold(`✗  ${failed.length} of ${results.length} failed`))}  ${dim(`— the copy is kept at ${where(dir)}`)}\n`)
   }
 
-  if (report.ok) rmSync(dir, { recursive: true, force: true })
+  if (report.ok && !keep) rmSync(dir, { recursive: true, force: true })
   process.exitCode = report.ok ? 0 : 1
 }
 

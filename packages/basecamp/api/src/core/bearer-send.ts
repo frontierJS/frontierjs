@@ -1,5 +1,5 @@
 // api/src/core/bearer-send.ts — an AccountSend over a plain fetch, for the scripts
-// `fli provision` runs from a laptop.
+// `fli basecamp:create` runs from a laptop.
 //
 // Not conduit: conduit's send needs a registered target, and those scripts
 // boot no app to hold a registry. The vendor's envelope stays the connector's

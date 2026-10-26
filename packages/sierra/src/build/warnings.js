@@ -44,6 +44,9 @@ export function warnUnexportedSnippets(source, id, routesDir, emit) {
   for (const name of snippetNames) {
     // Suppress if: exported, passed via provideSlot(), or has a sierra-ignore comment
     if (exportedNames.has(name) || providedNames.has(name)) continue
+    // A snippet the page renders or passes on itself is a local helper, and
+    // the advice below — export it to the layout — would be wrong for it.
+    if (usedLocally(source, name)) continue
     const ignoreRe = new RegExp(
       `<!--\\s*sierra-ignore\\s+unexported-snippet\\b[^>]*-->|` +
       `/\\*\\s*sierra-ignore\\s+unexported-snippet\\b[^*]*\\*/`
@@ -115,6 +118,19 @@ function extractTopLevelSnippets(source) {
   }
 
   return names
+}
+
+/**
+ * Is a snippet rendered in its own file, or handed to a component as a prop?
+ *
+ * @param {string} source
+ * @param {string} name
+ * @returns {boolean}
+ */
+function usedLocally(source, name) {
+  return new RegExp(
+    `\\{@render\\s+${name}\\s*\\(|=\\{\\s*${name}\\s*\\}`
+  ).test(source.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ''))
 }
 
 /**

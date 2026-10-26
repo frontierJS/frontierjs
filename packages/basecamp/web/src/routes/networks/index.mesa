@@ -5,7 +5,7 @@ title: Networking
   // The mock's NetworkingView, over the three models that had no API until
   // 2026-08-06. A network is a name and a CIDR; what an operator needs is who
   // is ON it, so the membership list is the screen rather than a sub-page.
-  import { session } from '../../session.js'
+  import { session } from '../../lib/session.js'
   import Network, { networks } from '../../resources/Network.mesa'
   import { servers } from '../../resources/Server.mesa'
 

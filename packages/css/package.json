@@ -30,13 +30,15 @@
     "./bundle.css": "./dist/frontier.css",
     "./bundle.min.css": "./dist/frontier.min.css",
     "./vocabulary.json": "./vocabulary.json",
-    "./vocabulary.js": "./vocabulary.js"
+    "./vocabulary.js": "./vocabulary.js",
+    "./themes.js": "./themes.js"
   },
   "files": [
     "src",
     "dist",
     "vocabulary.js",
     "vocabulary.json",
+    "themes.js",
     "AGENTS.md"
   ],
   "devDependencies": {

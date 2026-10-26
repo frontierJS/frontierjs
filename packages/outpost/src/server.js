@@ -19,6 +19,7 @@ import { verifyRequest, nonceMemory } from '@frontierjs/toolbelt/signature'
 import { createDocker, createInspector, checkRunConfig } from './docker.js'
 import { createStatic } from './static.js'
 import { createIngress, hostsOf, pathsOf, redirectsOf } from './ingress.js'
+import { createReplicator } from './replicate.js'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
@@ -28,6 +29,7 @@ export function createOutpostServer(config, {
   inspector = createInspector(),
   statics   = createStatic({ staticDir: config.staticDir, staticUrl: config.staticUrl }),
   ingress   = createIngress({ admin: config.caddyAdmin }),
+  replicator = createReplicator({ configPath: config.litestreamConfig, metaDir: config.litestreamMetaDir, litestream: config.litestreamBin, stageDir: config.replicaStageDir, hostDb: config.hostFiles?.db ?? null }),
   log       = console,
 } = {}) {
 
@@ -272,10 +274,37 @@ export function createOutpostServer(config, {
     'POST /system/prune':  (body) => inspector.prune({ targets: body.targets, keepImages: body.keep_images })
       .then(async result => ({ ...result, usage: await inspector.disk() })),
     'POST /volumes/prune': (body) => inspector.pruneVolumes(body.names ?? []),
-    // An archive already on the machine, into the app's stopped volume.
-    'POST /volume/restore': (body) => docker.restore({ appId: body.app_id, path: body.path, overwrite: body.overwrite }),
-    // An app's data volume, tarred into this machine's backup directory.
-    'POST /backup':        (body) => docker.backup({ appId: body.app_id }),
+    // An archive on the machine, or a backup fetched by a pre-signed GET, into the app's stopped volume.
+    'POST /volume/restore': (body) => docker.restore({ appId: body.app_id, path: body.path, url: body.url, sha256: body.sha256, overwrite: body.overwrite }),
+    // An app's databases out of its Litestream replica, at an instant or the
+    // latest, into its stopped volume. The key rides in the body like
+    // `/replicate`'s, so the machine holds nothing it was not already handed.
+    // A drill: the same restore into a staging directory, proven by the app's
+    // own image, never touching the app's volume (`FJS-D1524`).
+    'POST /replica/drill': async (body) => {
+      const staged = await replicator.stage({ appId: body.app_id, replica: body.replica, databases: body.databases, at: body.at ?? null })
+      try {
+        const verified = await docker.verifyCopy({ appId: body.app_id, dir: staged.dir, image: body.image, digest: body.digest, env: body.env })
+        return { databases: staged.databases, ...verified }
+      } finally { await replicator.unstage(staged.dir) }
+    },
+    'POST /replica/restore': async (body) => {
+      const appId = body.app_id
+      await docker.refuseHeld({ appId })
+      const staged = await replicator.stage({ appId, replica: body.replica, databases: body.databases, at: body.at ?? null })
+      try {
+        const restored = await docker.restoreFiles({ appId, dir: staged.dir, overwrite: body.overwrite === true })
+        return { ...restored, databases: staged.databases, ...await replicator.reregister() }
+      } finally {
+        await replicator.unstage(staged.dir)
+      }
+    },
+    // An app's data volume, tarred into this machine's backup directory and,
+    // given a pre-signed URL, uploaded from there.
+    'POST /backup':        (body) => docker.backup({ appId: body.app_id, uploadUrl: body.upload_url }),
+    // Every app this machine replicates, each with its own key; the list
+    // replaces the last one whole, so an app left out stops replicating.
+    'POST /replicate':     (body) => replicator.apply({ replicas: body.replicas, host: body.host }),
     // Basecamp's *check now*: the readings come back in the answer and
     // Basecamp ingests them, rather than this posting a report beside it.
     'POST /posture':       () => inspector.posture(),

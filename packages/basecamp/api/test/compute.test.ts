@@ -619,6 +619,14 @@ describe('a machine claims its own credential', () => {
     expect(script).toContain('APT::Periodic::Unattended-Upgrade "1";')
     expect(script).toContain('Unattended-Upgrade::Automatic-Reboot "false";')
     expect(script).toContain('codename=${distro_codename}-security')
+    // FJS-3462: the timer's first pass can be a day after enrollment.
+    expect(script).toMatch(/^timeout \d+ systemctl start apt-daily-upgrade\.service/m)
+    // FJS-3469: a systemd upgrade inside that pass ends systemctl's wait early,
+    // and a systemctl call that lands in the re-exec is refused by the bus; the
+    // wrapper retries it, and the wait runs under bash so it inherits the wrapper.
+    expect(script).toMatch(/^systemctl\(\) \{$/m)
+    expect(script).toContain('export -f systemctl')
+    expect(script).toMatch(/^timeout \d+ bash -c 'while \[ "\$\(systemctl show -P ActiveState apt-daily-upgrade\.service\)" = activating \]/m)
     expect(script).toContain('/etc/ssh/sshd_config.d/10-basecamp.conf')
     expect(script).toContain('PasswordAuthentication no')
     expect(script).toContain('PermitRootLogin prohibit-password')
@@ -644,7 +652,7 @@ describe('a machine claims its own credential', () => {
     expect(ruleset).toMatch(/^\s*ct status dnat drop$/m)
 
     // The ruleset loads in a real nft, in a network namespace of its own.
-    const filled = ruleset.replaceAll('$SSH_PORTS', '22').replaceAll('${OUTPOST_STATIC_PORT}', '8181').replaceAll('$OUTPOST_PORT', '8180')
+    const filled = ruleset.replaceAll('$SSH_PORTS', '22').replaceAll('$OUTPOST_PORT', '8180')
     const probe  = Bun.spawnSync(['unshare', '-rn', 'nft', '-c', '-f', '-'], { stdin: new TextEncoder().encode(filled) })
     if (probe.exitCode === null || /not found|Operation not permitted|unshare failed/i.test(probe.stderr.toString())) return
     expect(probe.stderr.toString()).toBe('')
@@ -664,6 +672,10 @@ describe('a machine claims its own credential', () => {
     expect(unit).toMatch(/^ReadWritePaths=.*\/var\/lib\/outpost/m)
     expect(unit).toMatch(/^ReadWritePaths=.*\/etc\/basecamp/m)
     expect(unit).toMatch(/^ReadWritePaths=.*\$BUN_INSTALL/m)
+    // These carried bct's systemd-analyze score from 7.9 to 5.3, under SANDBOX_MAX.
+    for (const directive of ['ProtectKernelLogs=yes', 'ProtectClock=yes', 'PrivateDevices=yes', 'RestrictNamespaces=yes', 'SystemCallArchitectures=native'])
+      expect(unit).toContain(directive)
+    expect(unit).toMatch(/^RestrictAddressFamilies=.*AF_NETLINK/m)
   })
 
   test('the install is a script bash can parse', async () => {
@@ -713,6 +725,20 @@ describe('a machine claims its own credential', () => {
     expect(BUN_VERSION).toMatch(/^\d+\.\d+\.\d+$/)
   })
 
+  // A published port with the proxy on is a nat rule and a docker-proxy
+  // process, and the forward chain grades only the rule. The file goes in
+  // before the install so no daemon ever starts without it.
+  test('the install turns the docker userland proxy off before docker is installed', async () => {
+    const { installScript } = await import('../src/providers/compute/enrollment.ts')
+    const script = installScript()
+    const daemon = script.indexOf('/etc/docker/daemon.json')
+    const install = script.indexOf('apt_install docker-ce')
+    expect(daemon).toBeGreaterThan(-1)
+    expect(install).toBeGreaterThan(daemon)
+    const json = script.slice(daemon).match(/<<'DOCKEREOF'\n([\s\S]*?)\nDOCKEREOF/)![1]
+    expect(JSON.parse(json)).toEqual({ 'userland-proxy': false })
+  })
+
   // Basecamp's own box already holds the Caddy keyring from `fli deploy:setup`,
   // and gpg asks before overwriting it on a tty the install has none of.
   test('the install overwrites a keyring without asking', async () => {
@@ -729,13 +755,32 @@ describe('a machine claims its own credential', () => {
     expect(OUTPOST_VERSION).toBe(pkg.version)
   })
 
-  // FJS-3443: the image is the other half of one fleet, and a moving tag
-  // (oven/bun:1) ran 1.4.4 beside an Outpost on 1.4.2.
-  test('the image runs the Bun the Outpost is pinned to', async () => {
+  // It writes into every app's volume, which outpost.service cannot reach, and
+  // the config it reads is the file the Outpost rewrites. The build is the one
+  // deploy:setup installs, so Basecamp's own box and its fleet run one binary.
+  test('Litestream runs as its own sandboxed unit, on the config the Outpost writes', async () => {
+    const { installScript } = await import('../src/providers/compute/enrollment.ts')
+    const { litestreamInstall } = await import('@frontierjs/litestone/replicate')
+    const script = installScript()
+    expect(script).toContain(litestreamInstall())
+    const unit = /cat > \/etc\/systemd\/system\/basecamp-litestream\.service <<UNITEOF\n([\s\S]*?)\nUNITEOF/.exec(script)?.[1] ?? ''
+    expect(unit).toContain('ExecStart=/usr/local/bin/litestream replicate -config /etc/basecamp/litestream.yml')
+    expect(unit).toContain('ProtectSystem=strict')
+    expect(unit).toMatch(/^ReadWritePaths=.*\/var\/lib\/docker\/volumes/m)
+    expect(unit).toContain('StateDirectory=litestream')
+    expect(unit).toContain('RuntimeDirectory=litestream')
+    expect(script).toContain('systemctl enable --now basecamp-litestream.service')
+    expect(script).toMatch(/if \[ ! -f \/etc\/basecamp\/litestream\.yml \]/)
+  })
+
+  // A moving `oven/bun:1` tag put the control plane on 1.4.4 while every
+  // Outpost ran 1.4.2 (FJS-3443).
+  test('the image runs the Bun every Outpost is installed with', async () => {
     const { BUN_VERSION } = await import('../src/providers/compute/enrollment.ts')
     const dockerfile = await Bun.file(new URL('../../deploy/Dockerfile', import.meta.url)).text()
     const tags = [...dockerfile.matchAll(/^FROM oven\/bun:(\S+)/gm)].map(m => m[1])
-    expect(tags).toEqual([BUN_VERSION, `${BUN_VERSION}-slim`])
+    expect(tags.length).toBeGreaterThan(0)
+    for (const tag of tags) expect(tag.replace(/-slim$/, '')).toBe(BUN_VERSION)
   })
 
   // The enrollment answer is the machine's key. Over plain http to anything

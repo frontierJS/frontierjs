@@ -8,8 +8,10 @@
 // with `X-Service-Method`, never a path segment:
 //   place · unplace — which machines the app runs on
 //   logs           — what the container is saying, read through the executor
-//   restoreVolume  — an archive on the machine, extracted into the app's data volume
+//   restoreVolume  — an archive on the machine or a backup in a bucket, extracted into the app's data volume
+//   restoreReplica — the app's databases out of its Litestream replica, at an instant
 //   fromBlueprint  — an app made out of a catalog entry and its parameters
+//   publish        — a static build handed in, sent to the machine and released
 //
 // The table is `app`, not `service`. The old header here said "table name in
 // DB: service (legacy — kept for migration continuity)"; that name was the
@@ -22,15 +24,15 @@
 // `environment_name` / `environment_tier` columns.
 
 import { randomBytes } from 'node:crypto'
-import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict, parseWhere, $ } from '@frontierjs/junction'
 import { normalizeOrderBy, type SortParam } from '@frontierjs/toolbelt/query'
-import { LEVELS } from '@frontierjs/litestone'
+import { LEVELS, AccessDeniedError } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, ws, actor,
+import { db, getScoped, removeScoped, restoreScoped, deriveSlug, narrowPatch, changesNothing, ws, actor,
          slugify, }
   from '../../core/resource.ts'
 import { env }      from '../../core/env.ts'
-import { mintPush } from '../../core/push.ts'
+import { mintPush } from '../../plugins/push.ts'
 // The ONE definition of a certificate's condition, imported rather than
 // recomputed: an include returns raw Domain rows, so without this the app
 // detail screen received hostnames with no cert_status at all and every one of
@@ -39,16 +41,23 @@ import { certStatusOf } from '../domains/domains.service.ts'
 import { resolveExecutor, executorOn, isExecutor } from '../../providers/executor.ts'
 // The one reader of `App.source`. A service that parsed the blob itself would
 // be the second, and the two would disagree the first time a kind was added.
-import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit } from '../../core/app-source.ts'
+import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, isInline } from '../../core/app-source.ts'
 import { runtimeOf } from '../../core/runtime.ts'
+import { mintDownload } from '../../jobs/app-backup-run.job.ts'
+import { cronProblem, syncAppBackupSchedule, syncAppDrillSchedule } from '../jobs/job-schedule.ts'
+import { syncReplicasOn, syncReplicasOf, replicaHolder, replicaOf, replicaDatabases } from '../../jobs/replicate-sync.job.ts'
 import type { App }            from '@frontierjs/junction'
 import { keyScope } from '../api-keys/scopes.ts'
+import { replicaLag } from '../../core/posture.ts'
 
 const _WITH_ENV = { environment: true }
 
 /** Outpost bounds the extract at an hour; a multi-GB archive sent at conduit's
  *  10s default reads as a failure while the machine is still writing it. */
 const VOLUME_RESTORE_TIMEOUT_MS = 61 * 60_000
+
+/** A build is up to 24 MB written file by file; conduit's 10s default fails it mid-write. */
+const STATIC_PUBLISH_TIMEOUT_MS = 120_000
 
 /** A value for a parameter that says how to mint one. The number is BYTES,
  *  read the way `openssl rand -hex 32` reads it — so `random_hex_32` is 64
@@ -143,6 +152,51 @@ function checkRuntime(data: Record<string, unknown>, current?: Record<string, un
     throw new BadRequest(`A health check is asked of the published port, so '${path}' needs a port`)
 }
 
+/**
+ * The app's schedules (`IDEAS/backups.md` 1.6, 3.3). An expression the clock cannot
+ * hold is refused BEFORE the write, as `hubConfig.save` does, so a stored
+ * schedule always registers; the bucket is read in the caller's scope, so
+ * another workspace's row is refused by name and never pointed at. A replica
+ * destination is one replica's (`FJS-D1505`), so one already held is refused
+ * naming who holds it.
+ */
+async function checkBackup(data: Record<string, unknown>, selfId?: string): Promise<void> {
+  for (const key of ['backupCron', 'drillCron']) {
+    const problem = typeof data[key] === 'string' && cronProblem(data[key] as string)
+    if (problem) throw new BadRequest(`${key}: ${problem}`)
+  }
+  for (const key of ['backupDestinationId', 'replicaDestinationId']) {
+    const id = data[key]
+    if (typeof id === 'string' && !await db().backupDestination.exists({ where: { id } }))
+      throw new BadRequest(`No backup destination '${id}'`)
+  }
+  if (typeof data.replicaDestinationId === 'string') {
+    const holder = await replicaHolder($.app, data.replicaDestinationId)
+    if (holder && 'hub' in holder)
+      throw new Conflict('That destination replicates Basecamp\'s own database; give this app a destination of its own')
+    if (holder && holder.app.id !== selfId)
+      throw new Conflict(`That destination replicates '${holder.app.slug}'; give this app a destination of its own`)
+  }
+}
+
+/**
+ * What a machine fetches one of the app's backups by: a GET minted for its
+ * object key, and the digest recorded when it was taken. A backup whose upload
+ * failed is a path on the machine it was taken on, under the backup directory
+ * rather than the restore one, so it is refused here naming where it is.
+ */
+async function backupSource(appId: string, backupId: string): Promise<{ url: string; sha256: string }> {
+  const backup = await db().appBackup.findFirst({ where: { id: backupId, appId } })
+  if (!backup) throw new NotFound(`No backup '${backupId}' of this app`)
+  if (backup.status !== 'success') throw new BadRequest(`Backup '${backupId}' is ${backup.status}, so there is no archive to restore`)
+  if (!backup.destinationId || !backup.location || backup.location.startsWith('/'))
+    throw new BadRequest(`Backup '${backupId}' never left its machine (${backup.location ?? 'no archive'}) — copy it under the restore directory and restore by path`)
+  if (!backup.sha256) throw new BadRequest(`Backup '${backupId}' records no sha256, so the machine has nothing to check the fetched copy against`)
+  const dest = await db().backupDestination.findFirst({ where: { id: backup.destinationId } })
+  if (!dest) throw new NotFound(`No backup destination '${backup.destinationId}'`)
+  return { url: await mintDownload($.app, dest, backup.location), sha256: backup.sha256 }
+}
+
 async function assertEnvironmentInWorkspace(environmentId: string) {
   const env = await db().environment.findFirst({ where: { id: environmentId, workspaceId: ws() } })
   if (!env) throw new NotFound(`Environment '${environmentId}' not found in this workspace`)
@@ -180,15 +234,52 @@ async function detail(id: string) {
     }),
     db().job.findMany({ where: { appId: row.id }, orderBy: { createdAt: 'desc' }, limit: 10 }),
   ])
+  const drills = await lastDrills(row.id)
+
+  // A Freeze or `fli basecamp:deploy` serves a build the app's own files are
+  // not, and its release snapshots no files. Every inline release records a
+  // digest once it runs, so `builtImage` cannot tell the two apart — the
+  // screen warns before Deploy ships the Source tab over the build.
+  const live = isInline(row.source) ? deployments.find((d: { status: string }) => d.status === 'success') : null
+  const liveSnapshot = live
+    ? (await db().deployment.findFirst({ where: { id: live.id }, select: { configSnapshot: true } }))?.configSnapshot as { source?: { files?: unknown[] } } | undefined
+    : undefined
 
   return {
     ...row,
     domains: (row.domains ?? []).map((d: Record<string, unknown>) => ({ ...d, ...certStatusOf(d as never) })),
     sourceLabel: describeSource(row.source),
-    placement,
+    // Each machine's Litestream reading for THIS app; the rest of that
+    // reading names other apps on the machine and stays off this answer.
+    placement: placement.map(({ server, ...p }: any) => {
+      const { replication, ...rest } = server ?? {}
+      return { ...p, server: server ? rest : server,
+        replication: row.replicaDestinationId ? replicaLag(replication, row.id, Date.now()) : null,
+        drill: drills.get(p.serverId) ?? null }
+    }),
     recent_deployments: deployments,
+    liveBuild: !!liveSnapshot && !liveSnapshot.source?.files?.length,
     jobs,
   }
+}
+
+// The newest finished drill on each machine (`FJS-D1525`). `AppDrill` reads at
+// ADMINISTRATOR, and a developer's detail screen leaves the badge out rather
+// than failing the whole read.
+async function lastDrills(appId: string): Promise<Map<string, unknown>> {
+  const latest = new Map<string, unknown>()
+  try {
+    const rows = await db().appDrill.findMany({
+      where:   { appId, status: { in: ['success', 'failed'] } },
+      select:  { id: true, serverId: true, status: true, error: true, finishedAt: true },
+      orderBy: { createdAt: 'desc' },
+      limit:   20,
+    })
+    for (const r of rows as { serverId: string }[]) if (!latest.has(r.serverId)) latest.set(r.serverId, r)
+  } catch (err) {
+    if (!(err instanceof AccessDeniedError)) throw err
+  }
+  return latest
 }
 
 /**
@@ -235,6 +326,9 @@ export default createService({
     { method: 'unplace', gate: LEVELS.USER, input: 'AppUnplace' },
     // Replaces what a database holds, so the level that may prune a volume.
     { method: 'restoreVolume', gate: LEVELS.ADMINISTRATOR, input: 'AppVolumeRestore' },
+    { method: 'restoreReplica', gate: LEVELS.ADMINISTRATOR, input: 'AppReplicaRestore' },
+    // A Deployment's create level, asked before the bytes reach the machine.
+    { method: 'publish', gate: LEVELS.USER, input: 'AppPublish' },
     // Both write @system columns as the app; the level is stated for that.
     // `enablePush` hands a standing to the push receiver, so it is a release's.
     { method: 'enablePush',  gate: LEVELS.ADMINISTRATOR },
@@ -283,8 +377,12 @@ export default createService({
     const data = $.data as Record<string, unknown>
     checkSource(data)
     checkRuntime(data)
+    await checkBackup(data)
     await assertEnvironmentInWorkspace(data.environmentId as string)
     const created = await db().app.create({ data })
+    syncAppBackupSchedule($.app, created)
+    syncAppDrillSchedule($.app, created)
+    // Placed nowhere yet, so no machine has a list to change; `place` sends it.
     return db().app.findFirst({ where: { id: created.id }, include: WITH_DETAIL })
   },
 
@@ -295,8 +393,13 @@ export default createService({
     const patch = narrowPatch($.data as Record<string, unknown>)
     checkSource(patch, current as Record<string, unknown>)
     checkRuntime(patch, current as Record<string, unknown>)
-    if (!changesNothing(patch))
-      await db().app.update({ where: { id: $.id as string }, data: patch })
+    await checkBackup(patch, current.id as string)
+    if (!changesNothing(patch)) {
+      const updated = await db().app.update({ where: { id: $.id as string }, data: patch })
+      syncAppBackupSchedule($.app, updated)
+      syncAppDrillSchedule($.app, updated)
+    }
+    if ('replicaDestinationId' in patch) await syncReplicasOf($.app, [current.id])
 
     return db().app.findFirst({ where: { id: $.id as string }, include: WITH_DETAIL })
   },
@@ -305,7 +408,19 @@ export default createService({
     const target  = await getScoped('app', 'App')
     const machine = await retireFromMachine($.app, target)
     const removed = await removeScoped('app', 'App')
+    // A deleted app's volume is not a thing to archive at 02:00.
+    syncAppBackupSchedule($.app, { id: target.id, backupCron: null, deletedAt: null })
+    syncAppDrillSchedule($.app, { id: target.id, drillCron: null, deletedAt: null })
+    if (target.replicaDestinationId) await syncReplicasOf($.app, [target.id])
     return { ...removed, machine }
+  },
+
+  async restore() {
+    const row = await restoreScoped('app', 'App')
+    syncAppBackupSchedule($.app, row)
+    syncAppDrillSchedule($.app, row)
+    if (row.replicaDestinationId) await syncReplicasOf($.app, [row.id])
+    return detail(row.id)
   },
 
 
@@ -453,6 +568,7 @@ export default createService({
     await $.db.asSystem().appServer.create({
       data: { appId: target.id, serverId, replicaIndex, status: 'unknown' },
     })
+    if (target.replicaDestinationId) await syncReplicasOn($.app, [serverId])
 
     return detail(target.id)
   },
@@ -475,6 +591,7 @@ export default createService({
 
     const sys = $.db.asSystem()
     for (const row of rows) await sys.appServer.delete({ where: { id: row.id } })
+    if (target.replicaDestinationId) await syncReplicasOn($.app, [serverId])
 
     return detail(target.id)
   },
@@ -483,23 +600,88 @@ export default createService({
   //
   // Adopting a running app: its SQLite files, tarred, copied onto the machine
   // by scp, extracted into `fjs-<app>-data` before the first release starts a
-  // container on it (`FJS-D943`). The SERVER is named because the volume is
-  // per machine, and a replica elsewhere is handed nothing. Outpost refuses a
-  // path off its restore directory, a volume a container holds, and one with
-  // files in it unless `overwrite` is stated, each in its own words.
+  // container on it (`FJS-D943`). Or one of the app's backups in a bucket:
+  // the machine fetches it by a pre-signed GET minted here, and refuses an
+  // object whose sha256 is not the one recorded when it was taken
+  // (`FJS-D1521`). The SERVER is named because the volume is per machine, and
+  // a replica elsewhere is handed nothing. Outpost refuses a path off its
+  // restore directory, a volume a container holds, and one with files in it
+  // unless `overwrite` is stated, each in its own words.
   async restoreVolume() {
+    const data   = $.data as Record<string, unknown>
+    const target = await getScoped('app', 'App')
+    if ((data.path == null) === (data.backupId == null)) throw new BadRequest('Name a path on the server or a backupId, one of the two')
+    const placed = await db().appServer.findFirst({ where: { appId: target.id, serverId: data.serverId as string }, include: { server: true } })
+    if (!placed) throw new NotFound('This app is not placed on that server — place it there first')
+
+    const from = data.path != null ? { path: data.path } : await backupSource(target.id, data.backupId as string)
+    const executor = await executorOn($.app, placed.serverId, placed.server?.name)
+    if (!isExecutor(executor)) throw new BadRequest(executor.reason)
+    const reply = await executor.call('/volume/restore', {
+      app_id: target.id, ...from, overwrite: data.overwrite === true,
+    }, { timeoutMs: VOLUME_RESTORE_TIMEOUT_MS })
+    if (reply.error) throw new BadRequest(`The volume was not restored: ${reply.error.message}`)
+    return { serverId: placed.serverId, ...(reply.data ?? {}) }
+  },
+
+  // ── restoreReplica — POST /apps/:id  X-Service-Method: restoreReplica ──
+  //
+  // A stopped app brought back to an instant out of its own replica: every
+  // database the bucket lists under the app's path, restored on the named
+  // machine into `fjs-<app>-data`. The key goes in the body the way
+  // `/replicate` already sends it to that machine. Only the `.db` files are
+  // replaced — a replica carries nothing else — and Outpost refuses a held
+  // volume, and a database already there unless `overwrite`.
+  async restoreReplica() {
     const data   = $.data as Record<string, unknown>
     const target = await getScoped('app', 'App')
     const placed = await db().appServer.findFirst({ where: { appId: target.id, serverId: data.serverId as string }, include: { server: true } })
     if (!placed) throw new NotFound('This app is not placed on that server — place it there first')
 
+    const replica = await replicaOf($.app, target).catch((err: Error) => { throw new BadRequest(err.message) })
+    if (!replica) throw new BadRequest(`App '${target.name}' names no replica destination, so there is nothing to restore from`)
+    const databases = await replicaDatabases($.app, replica.dest, replica.entry.path)
+      .catch((err: Error) => { throw new BadRequest(`The replica could not be listed: ${err.message}`) })
+    if (!databases.length) throw new BadRequest(`The replica at ${replica.dest.bucket}/${replica.entry.path} holds no database yet`)
+
     const executor = await executorOn($.app, placed.serverId, placed.server?.name)
     if (!isExecutor(executor)) throw new BadRequest(executor.reason)
-    const reply = await executor.call('/volume/restore', {
-      app_id: target.id, path: data.path, overwrite: data.overwrite === true,
+    const { app_id, ...entry } = replica.entry
+    const reply = await executor.call('/replica/restore', {
+      app_id, replica: entry, databases,
+      ...(data.at != null ? { at: new Date(data.at as string).toISOString() } : {}),
+      overwrite: data.overwrite === true,
     }, { timeoutMs: VOLUME_RESTORE_TIMEOUT_MS })
-    if (reply.error) throw new BadRequest(`The volume was not restored: ${reply.error.message}`)
+    if (reply.error) throw new BadRequest(`The replica was not restored: ${reply.error.message}`)
     return { serverId: placed.serverId, ...(reply.data ?? {}) }
+  },
+
+  // ── publish — POST /apps/:id  X-Service-Method: publish ──────────
+  //
+  // A static build made somewhere else — a preview's Freeze, `fli
+  // basecamp:deploy` on a laptop — sent to the App's machine, then released
+  // by the digest it answers. The caller never holds the Outpost secret, and
+  // the files never enter a row: a build runs to hundreds of files and
+  // megabytes, and every row here is in the audit trail.
+  async publish() {
+    const data   = $.data as Record<string, unknown>
+    const target = await getScoped('app', 'App')
+    if (sourceKindOf(target.source) !== 'inline')
+      throw new BadRequest(`App '${target.name}' is not inline — only an App served as files takes a build`)
+    if (!Array.isArray(data.files) || !data.files.length)
+      throw new BadRequest('files is the build: a list of { path, content } or { path, content_base64 }')
+
+    const executor = await resolveExecutor($.app, target.id)
+    if (!isExecutor(executor)) throw new BadRequest(executor.reason)
+    const reply = await executor.call('/static/publish', { app_id: target.id, files: data.files }, { timeoutMs: STATIC_PUBLISH_TIMEOUT_MS })
+    if (reply.error) throw new BadRequest(`The machine refused the build: ${reply.error.message}`)
+    const digest = String((reply.data as { digest?: unknown })?.digest ?? '')
+    if (!/^sha256:[0-9a-f]{64}$/.test(digest)) throw new Error('The machine wrote the build and reported no digest')
+
+    return $.app.service('deployments').create({
+      appId: target.id, builtImage: digest,
+      ...Object.fromEntries(['trigger', 'commitSha', 'branch'].filter(k => data[k] != null).map(k => [k, data[k]])),
+    })
   },
 
   // ── enablePush · disablePush — deploy on push (FJS-D884) ─────────
@@ -516,6 +698,7 @@ export default createService({
     await $.db.asSystem().app.update({
       where: { id: target.id },
       data:  { deployOnPush: true, pushSecret: secret, pushTokenHash: tokenHash, pushActorId: actor() },
+      system: ['deployOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId'],
     })
     // The answer holds the credentials, so the announcement states the row
     // instead and the workspace's other tabs never see them.
@@ -529,6 +712,7 @@ export default createService({
     await $.db.asSystem().app.update({
       where: { id: target.id },
       data:  { deployOnPush: false, pushSecret: null, pushTokenHash: null, pushActorId: null },
+      system: ['deployOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId'],
     })
     return detail(target.id)
   },

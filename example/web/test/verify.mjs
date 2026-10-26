@@ -7,10 +7,10 @@
  * a browser ends up showing after a router, a compiler, a JSON Schema registry
  * and an HTTP round trip have all had their turn. So this clicks.
  *
- * Both servers must already be running:
+ * Starts its own servers — the API on :7110 and vite on :7010, the test tier,
+ * so it runs beside a dev server somebody else is holding 8010 with — and
+ * stops them on every exit. A port that already answers is refused, not joined.
  *
- *   bun run api     # terminal 1 — Junction + Litestone on :8110
- *   bun run web     # terminal 2 — Sierra + Vite on :8010
  *   node web/test/verify.mjs
  *
  * Needs Chrome on PATH or $FJS_CHROME, same as the css package's harness.
@@ -26,23 +26,89 @@
 // What `fli prove` queues on: this checkout's ports and its dev database.
 export const holds = ['ports', 'db']
 
-import { requireServers, PORTS } from './lib/preflight.mjs'
+import { PORTS } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
 import { watchReloads } from './lib/reload.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
-import { execFileSync } from 'node:child_process'
+import { spawn, execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+
+const ROOT = fileURLToPath(new URL('../../', import.meta.url))
 
 // The drive reprices PRO and changes SUB-3001's seats, which opens a window and
 // issues an invoice on the seeded rows every run. Past fifty of either the
 // pages stop listing the one it waits for, so the seed that stood them up puts
 // them back (`FJS-1708`), on a pass and on a throw alike.
-const putSeedBack = () => execFileSync('bun', ['run', 'db/seed.ts'], {
-  cwd: fileURLToPath(new URL('../../', import.meta.url)), stdio: 'ignore',
-})
+const putSeedBack = () => execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 
-const UI     = process.env.UI_URL  ?? `http://localhost:${PORTS.ui}`
-const API    = process.env.FRONTIER_API_URL ?? `http://localhost:${PORTS.api}`
+// Both servers on the test tier, so this runs beside a dev server somebody
+// else is holding 8010/8110 with. Both are env-overridable.
+const API_PORT = process.env.API_PORT ?? String(PORTS.apiTest)
+const UI_PORT  = process.env.UI_PORT  ?? String(PORTS.uiTest)
+const UI     = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
+const API    = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
+
+// ─── Servers ───────────────────────────────────────────────────────────────
+
+const procs = []
+// `detached` is what makes stopAll work. `npx vite` is a launcher: SIGTERM to
+// the process this holds kills the launcher and leaves vite itself on the port,
+// so the NEXT drive refuses it and says a dev server is running from an
+// earlier run — which it is, and nothing said which run. Detached puts each
+// server in its own process group, and stopAll signals the group.
+function start(cmd, args, name, env) {
+  const p = spawn(cmd, args, {
+    cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
+    env: { ...process.env, ...env },
+  })
+  p.stdout.on('data', () => {})
+  p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
+  procs.push(p)
+  return p
+}
+const stopAll = () => {
+  for (const p of procs) {
+    // The GROUP, negative pid. Falls back to the process itself where the
+    // group is already gone, so a second call is not an error.
+    try { process.kill(-p.pid, 'SIGTERM') } catch { try { p.kill('SIGTERM') } catch {} }
+  }
+}
+process.on('exit', stopAll)
+process.on('SIGINT', () => { stopAll(); process.exit(130) })
+
+async function waitFor(url, label, tries = 120) {
+  for (let i = 0; i < tries; i++) {
+    try { if ((await fetch(url)).ok) return true } catch {}
+    await new Promise(r => setTimeout(r, 250))
+  }
+  console.error(`${label} never answered on ${url}`)
+  return false
+}
+
+// Refuse a port that already answers rather than joining it. A dev server
+// serves the code it STARTED with, so a leftover from an earlier run would be
+// tested instead of this checkout — and it would pass, against the old build.
+for (const [port, what] of [[API_PORT, 'the API'], [UI_PORT, 'the dev server']]) {
+  let busy = false
+  try { await fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(500) }); busy = true } catch {}
+  if (busy) {
+    console.error(`port ${port} already answers — ${what} is still running from an earlier run.\n` +
+                  `stop it first (\`bun run stop\`); this drive starts its own.`)
+    process.exit(1)
+  }
+}
+
+// Seeding is a step, not a boot side effect, so this drive takes it. Against an
+// empty database every assertion below fails as "the row is not there", which
+// reads as a regression in whatever was just changed.
+putSeedBack()
+
+const PORT_ENV = { API_PORT, UI_PORT }
+start('bun', ['run', 'api/index.ts'], 'api', PORT_ENV)
+start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web', PORT_ENV)
+
+if (!await waitFor(`${API}/api/health`, 'api')) { stopAll(); process.exit(1) }
+if (!await waitFor(UI, 'web'))                  { stopAll(); process.exit(1) }
 
 // A product minted per run, and the reason is a live hazard rather than
 // tidiness: `Product.name` and `Product.slug` are both `@unique` and the model
@@ -71,11 +137,6 @@ async function ledger(path) {
   })).json())?.token
   return fetch(`${API}/api${path}`, { headers: { authorization: `Bearer ${_staff}` } })
 }
-
-// ─── preflight ────────────────────────────────────────────────────────────
-// A 502 from Vite because the API is down produces a page full of plausible
-// empty tables, which reads as a product failure. Say which process is missing.
-await requireServers([['api (bun run api)', `${API}/api/health`], ['web (bun run web)', UI]])
 
 // ─── CDP ──────────────────────────────────────────────────────────────────
 
@@ -215,8 +276,8 @@ try {
   await goto('/')
   t('home.heading', await evaluate(`return document.querySelector('h1').textContent.trim()`))
   t('home.signedOutAlert', await evaluate(`return !!byText('.alert.info', 'Signed out')`))
-  t('nav.links', await evaluate(`return [...document.querySelectorAll('nav .navlink')].map(a => a.textContent.trim())`))
-  t('nav.current', await evaluate(`return document.querySelector('nav [aria-current="page"]').textContent.trim()`))
+  t('nav.links', await evaluate(`return [...document.querySelectorAll('header nav .navlink')].map(a => a.textContent.trim())`))
+  t('nav.current', await evaluate(`return document.querySelector('header nav [aria-current="page"]').textContent.trim()`))
 
   // 2 ─ public reads work with no session
   await goto('/products/')

@@ -15,7 +15,7 @@
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import { goto } from '@frontierjs/sierra/router'
-  import { PRIORITY_TONE, noticeCounts } from '../notices.js'
+  import { PRIORITY_TONE, noticeCounts } from '../lib/notices.js'
 
   export let notices = []
   export let fold    = 6      // how many before the fold
@@ -29,6 +29,8 @@
   $: hidden  = live.length - visible.length
 
   function dismiss(id) { dismissed = [...dismissed, id] }
+  function dismissAll() { dismissed = [...dismissed, ...live.map(n => n.id)] }
+  function restore()    { dismissed = [] }
 </script>
 
 <Card>
@@ -41,6 +43,9 @@
       {#if counts.warning}
         <Badge tone="warning" id="notice-warning">{counts.warning} warning</Badge>
       {/if}
+      {#if live.length}
+        <Button treatment="ghost" id="notice-dismiss-all" onclick={dismissAll}>Acknowledge all</Button>
+      {/if}
     </span>
   </div>
 
@@ -48,6 +53,9 @@
     <div class="queue-empty">
       <EmptyState title="All clear">No issues detected in this workspace.</EmptyState>
     </div>
+    {#if notices.length}
+      <Button treatment="ghost" id="notice-restore" onclick={restore}>Show recent ({notices.length})</Button>
+    {/if}
   {:else}
     <ul class="stack" id="notice-rows">
       {#each visible as n}

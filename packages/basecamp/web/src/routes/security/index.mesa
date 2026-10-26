@@ -10,7 +10,7 @@ title: Security
   // or whose last report is older than twice its interval reads as such, never
   // as clean: `posture.fleet` grades staleness on read and sorts worst first.
   import { postures } from '../../resources/ServerPosture.mesa'
-  import { ago }      from '../../datetime.js'
+  import { ago }      from '../../lib/datetime.js'
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
 

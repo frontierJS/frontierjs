@@ -282,7 +282,8 @@ export function virtualSierraPlugin(config, sierraContext) {
     // from the entry — and mounts the app before main.js has run. In dev the
     // entry's src is rewritten to the URL Vite serves a virtual id at: left as
     // written, the browser reads `virtual:` as a URL scheme, fetches nothing
-    // and reports nothing, and the page stays empty.
+    // and reports nothing, and the page stays empty. Vite's hook runs first and
+    // appends `?t=` after an HMR update, so the query is kept.
     transformIndexHtml(html) {
       if (/<script[^>]*\ssrc=["']\/?src\/main\.js["']/.test(html)) {
         throw refusal(
@@ -291,7 +292,7 @@ export function virtualSierraPlugin(config, sierraContext) {
           `Write <script type="module" src="virtual:sierra"></script> in its place.`)
       }
       if (command !== 'serve') return html
-      return html.replace(/(<script[^>]*\ssrc=)(["'])virtual:sierra\2/g, `$1$2${base}@id/${VIRTUAL_ID}$2`)
+      return html.replace(/(<script[^>]*\ssrc=)(["'])virtual:sierra(\?[^"']*)?\2/g, `$1$2${base}@id/${VIRTUAL_ID}$3$2`)
     },
   }
 }

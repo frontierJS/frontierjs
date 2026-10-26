@@ -51,20 +51,24 @@ export function buildThemeScript(config = {}, { prefix = '' } = {}) {
   const dark  = config.system?.dark  ?? themes[1] ?? themes[0]
 
   // A persisted value this app no longer offers is ignored, matching
-  // resolveTheme(): otherwise a reader who once picked a since-removed theme
+  // preferenceOf(): otherwise a reader who once picked a since-removed theme
   // gets a class with no stylesheet behind it, before paint, for ever.
   const known = JSON.stringify(themes)
 
-  const fallback = defaultTheme === 'system'
-    ? `window.matchMedia('(prefers-color-scheme: dark)').matches?${JSON.stringify(dark)}:${JSON.stringify(light)}`
-    : JSON.stringify(themes.includes(defaultTheme) ? defaultTheme : themes[0])
+  const fallback = JSON.stringify(
+    defaultTheme === 'system' || themes.includes(defaultTheme) ? defaultTheme : themes[0])
 
-  // Generate a self-contained IIFE
-  // Minified for inline use — must be valid JS with no external deps
+  // A stored 'system' follows the OS under a named default too, so the query
+  // is left out only when nothing can resolve to 'system'.
+  const os = persist || defaultTheme === 'system'
+    ? `p==="system"?(window.matchMedia('(prefers-color-scheme: dark)').matches?${JSON.stringify(dark)}:${JSON.stringify(light)}):`
+    : ''
+
   return `(function(){` +
     `var k=${known};` +
     `var s=${persist ? `localStorage.getItem(${JSON.stringify(key)})` : 'null'};` +
-    `var t=k.indexOf(s)>-1?s:(${fallback});` +
+    `var p=s==="system"||k.indexOf(s)>-1?s:${fallback};` +
+    `var t=${os}p;` +
     `var e=document.documentElement;` +
     (apply === 'attribute'
       ? `e.setAttribute(${JSON.stringify(attribute)},t);`

@@ -24,6 +24,7 @@ import { createClient }  from '@frontierjs/litestone'
 import { parse } from '@frontierjs/litestone/parser'
 import { generateJsonSchema } from '@frontierjs/litestone/jsonschema'
 import { createApp, createService, $ } from '@frontierjs/junction'
+import type { App } from '@frontierjs/junction'
 import { createStubAuth } from '@frontierjs/junction/testing'
 import { mcp } from '../src/plugin.ts'
 import type { McpOptions } from '../src/plugin.ts'
@@ -40,13 +41,13 @@ const ORDER_HTML = '<!doctype html><html><body><form data-model="Order"></form><
 writeFileSync(join(VIEWS, 'Order.html'),    ORDER_HTML)
 writeFileSync(join(VIEWS, 'Customer.html'), '<!doctype html><html><body>Customer</body></html>')
 
-let app:  { stop?: () => Promise<void>; http: { port?: number } } & Record<string, never>
+let app:  App
 let base: string
 // What the app's `narrow` answers, swapped per test. Absent is every tool, so
 // every other describe here grades the list with the guard allowing all.
 let narrowBy: McpOptions['narrow'] | null = null
 // What a `customers.find` hook last saw as the call's transport.
-let seenTransport: string | null = null
+let seenTransport = null as string | null
 // What an `orders.patch` hook last saw as the call's `base`.
 let seenBase: unknown = undefined
 
@@ -64,8 +65,8 @@ beforeAll(async () => {
       { id: 'shopper' },                  // USER — 4
       { id: 'reader',  isAdmin: true, scopes: ['orders:read'] },   // staff's standing, a key's reach
       // The other rungs a session can stand on, for the ladder the views are swept over.
-      { id: 'unverified',  verifiedAt: null },        // VISITOR — 1
-      { id: 'unactivated', activatedAt: null },       // READER — 2
+      { id: 'unverified',  verifiedAt: null as never },        // VISITOR — 1
+      { id: 'unactivated', activatedAt: null as never },       // READER — 2
       { id: 'roleless',    role: '' },                // CREATOR — 3
       { id: 'owner',       isOwner: true },           // OWNER — 6
       { id: 'sysadmin',    isSystemAdmin: true },     // SYSADMIN — 7
@@ -142,7 +143,7 @@ async function rpc(method: string, params: unknown, token?: string) {
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
   })
   const text = await res.text()
-  let body: Record<string, never> = {} as never
+  let body: Record<string, any> = {}
   try { body = JSON.parse(text) } catch { /* left empty; the status is the finding */ }
   return { status: res.status, text, body }
 }
@@ -230,7 +231,7 @@ describe('the tool list is the caller\'s, not the app\'s', () => {
 // `@system`. `settlements` writes the method that lifts it, as `example`'s
 // `invoices.settle` does.
 describe('a @system transition is offered only where a method lifts it (FJS-1925)', () => {
-  let own:   { stop?: () => Promise<void>; http: { port?: number } } & Record<string, never>
+  let own:   App
   let url:   string
   let store: Record<string, { create(a: unknown): Promise<unknown>; findFirst(a: unknown): Promise<{ status: string }> }>
 
@@ -357,7 +358,7 @@ describe('a scoped key is offered what its scopes reach, with no narrow (FJS-D91
 
 describe('a one-row answer carries its breadcrumbs', () => {
 
-  const result = (r: { body: Record<string, never> }) =>
+  const result = (r: { body: Record<string, unknown> }) =>
     (r.body as { result?: { content?: Array<{ text: string }>; _meta?: Record<string, any> } }).result ?? {}
 
   test('in _meta, and as a second text block — the transitions the row allows at THIS caller, and the row it points at', async () => {
@@ -394,7 +395,7 @@ describe('a one-row answer carries its breadcrumbs', () => {
 
 describe('the answer is structured: the object a view reads is the text an agent reads', () => {
 
-  const result = (r: { body: Record<string, never> }) =>
+  const result = (r: { body: Record<string, unknown> }) =>
     (r.body as { result?: { content?: Array<{ text: string }>; structuredContent?: Record<string, unknown> } }).result ?? {}
 
   test('a get carries the row, and it is the first text block parsed', async () => {
@@ -423,7 +424,7 @@ describe('the answer is structured: the object a view reads is the text an agent
     expect(r.result?.isError).toBe(true)
     expect(r.result?.structuredContent).toEqual(wire)
     expect(r.result?.structuredContent?.code).toBe(http.status)
-    expect(r.result?.content?.[0].text).toBe(wire.message)
+    expect(r.result?.content?.[0].text).toBe(wire.message as string)
     // The half `toFieldErrors` reads: without it the message lands on the form, not under the field.
     expect(r.result?.structuredContent?.data).toEqual([expect.objectContaining({ path: ['reference'] })])
   })
@@ -508,7 +509,7 @@ describe('a tool call is a call from outside (FJS-D609, FJS-D613)', () => {
     // list offered it (FJS-1817).
     seenTransport = null
     await callTool('customers_find', {}, 'shopper')
-    expect(seenTransport).toBe('mcp')
+    expect(seenTransport as string | null).toBe('mcp')
   })
 
   // A hit/miss pair over a @guarded column: answered at all, the two counts

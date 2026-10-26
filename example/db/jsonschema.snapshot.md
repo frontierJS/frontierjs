@@ -188,6 +188,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `ipAddress` | `string`? | — | — | — | — |
 | `userAgent` | `string`? | — | — | — | — |
 | `enrollmentOnly` | `boolean` = `false` | — | — | — | — |
+| `reauthenticatedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `impersonatingUserId` | `string`? | — | — | — | — |
 | `impersonationReason` | `string`? | — | — | — | — |
 | `impersonationEndsAt` | `string`? | — | — | `format: "date-time"` | — |

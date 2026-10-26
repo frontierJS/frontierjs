@@ -10,7 +10,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir }                 from 'node:os'
 import { join, resolve }          from 'node:path'
 import { typeScriptAt }           from '../core/functions.js'
-import { entryPoints, collectExports, matchSymbol, renderSymbol, importFrom } from '../core/signatures.js'
+import { entryPoints, collectExports, matchSymbol, renderSymbol, importFrom, whereOf } from '../core/signatures.js'
 
 const REPO = resolve(import.meta.dir, '../../..')
 const ts   = await typeScriptAt(REPO)
@@ -92,7 +92,7 @@ describe('collectExports (fixture)', () => {
 
   test('the rendered row leads with where it is and how it is imported', () => {
     const out = renderSymbol(by('grant')).split('\n')
-    expect(out[0]).toBe('# grant · function · packages/demo/core.ts:3')
+    expect(out[0]).toBe('# grant · function · packages/demo/core.ts:3-5')
     expect(out[1]).toBe("# import { grant } from '@frontierjs/demo'")
     expect(out).toContain('// Grants a token.')
     rmSync(root, { recursive: true, force: true })
@@ -106,6 +106,9 @@ describe('the real workspace', () => {
     const r = rows.find(x => x.name === 'bearerClaim')
     expect(r.text).toBe('export function bearerClaim(opts: BearerClaimOptions): BearerResolver')
     expect(r.file).toBe('packages/junction/src/core/bearer.ts')
+    // The span is what a Read lands on; a one-liner would print no end.
+    expect(r.end).toBeGreaterThan(r.line)
+    expect(whereOf(r)).toBe(`${r.file}:${r.line}-${r.end}`)
     expect(importFrom(r)).toBe("import { bearerClaim } from '@frontierjs/junction/bearer'")
   })
 

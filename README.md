@@ -276,9 +276,14 @@ my-app/
       core/                  ← setup of what the framework ships: env, db, auth, gate,
                                channels, mailer, conduit targets, the claim resolver
       services/              ← *.service.ts, autoloaded at boot
+      jobs/                  ← *.job.ts, autoloaded by caravan
+      notifications/         ← *.notification.ts
       routes/                ← a file's path is the URL it answers; its GET/POST/… exports are the handlers
       plugins/               ← plugins the app wrote; app.ts installs each, in order
-      domain/<area>/         ← logic spanning models; a service calls it with the caller's db
+      providers/<name>/      ← the app's adapter to one third party, routes and all
+      domain/<area>/         ← logic spanning models; a service calls it with the caller's db,
+                               and a .mesa it renders to an email or a PDF
+      components/<area>/     ← a .mesa another .mesa imports; at the root when two areas share it
     test/
 
   web/                       ← UI realm — Sierra + Mesa (the Vite root)

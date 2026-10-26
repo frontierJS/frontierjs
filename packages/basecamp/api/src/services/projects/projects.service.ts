@@ -14,6 +14,7 @@ import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '
 import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing }
   from '../../core/resource.ts'
 import { retireAppsIn }         from '../apps/apps.service.ts'
+import { syncReplicasOf }       from '../../jobs/replicate-sync.job.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 export default createService({
@@ -58,6 +59,7 @@ export default createService({
     const envs    = await db().environment.findMany({ where: { projectId: project.id }, select: { id: true } })
     const apps    = await retireAppsIn($.app, envs.map((e: { id: string }) => e.id))
     const removed = await removeScoped('project', 'Project')
+    await syncReplicasOf($.app, apps.map(a => a.id))
     return { ...removed, apps }
   },
 

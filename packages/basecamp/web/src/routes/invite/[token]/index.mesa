@@ -11,7 +11,7 @@ title: Invitation
   // (unknown, expired, workspace gone, workspace suspended) arrive as messages
   // that are already sentences, so they are shown rather than translated.
   import { page, goto } from '@frontierjs/sierra/router'
-  import { session, previewInvitation, acceptInvitation, signOut } from '../../../session.js'
+  import { session, previewInvitation, acceptInvitation, signOut } from '../../../lib/session.js'
   import Form   from '@frontierjs/ui/components/forms/Form.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'

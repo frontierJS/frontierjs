@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-71 models · 1 view · 72 gated · 0 unrestricted
-56 with row policies · 24 with protected fields · 35 declared moves · 15 @system · 0 @seals
+73 models · 1 view · 74 gated · 0 unrestricted
+58 with row policies · 26 with protected fields · 35 declared moves · 15 @system · 0 @seals
 ```
 
 ## Gates
@@ -28,12 +28,14 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `ApiKey` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `App` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `AppBackup` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `AppDrill` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `AppEditor` | 1 VISITOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `AppNetwork` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `AppServer` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `AuditEvent` | 5 ADMINISTRATOR | 8 SYSTEM | 9 LOCKED | 9 LOCKED |
 | `AuditTrail` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Backup` | 7 SYSADMIN | 7 SYSADMIN | 8 SYSTEM | 7 SYSADMIN |
+| `BackupDestination` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Blueprint` | 1 VISITOR | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN |
 | `BlueprintParam` | 1 VISITOR | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN |
 | `CleanupRun` | 2 READER | 4 USER | 8 SYSTEM | 8 SYSTEM |
@@ -149,14 +151,42 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 - deny **read** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(destination, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(deployment, tenancy)` — "Outside your workspaceId"
 - deny **create** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(destination, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(deployment, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(destination, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(deployment, tenancy)` — "Outside your workspaceId"
 - deny **postUpdate** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **postUpdate** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(destination, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(deployment, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(app, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(destination, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(deployment, tenancy)` — "Outside your workspaceId"
+
+### `AppDrill`
+
+- deny **read** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(deployment, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(deployment, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(deployment, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(deployment, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(deployment, tenancy)` — "Outside your workspaceId"
 
 ### `AppEditor`
 
@@ -192,6 +222,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 
 ### `AuditEvent`
+
+- deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **postUpdate** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
+
+### `BackupDestination`
 
 - deny **read** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted` — "Outside your workspaceId"
@@ -627,6 +665,8 @@ rather than refusing the row.
 | `App` | `pushTokenHash` | `@guarded @system` |
 | `App` | `pushActorId` | `@system` |
 | `App` | `blueprintId` | `@system` |
+| `BackupDestination` | `secretId` | `@system` |
+| `BackupDestination` | `lastTestAt` | `@system` |
 | `Credential` | `value` | `@guarded` |
 | `Credential` | `accessToken` | `@secret` |
 | `Credential` | `refreshToken` | `@secret` |
@@ -641,6 +681,9 @@ rather than refusing the row.
 | `Domain` | `certExpiresAt` | `@system` |
 | `Flow` | `currentVersion` | `@allow(write, status == null || status != 'active')` |
 | `FlowCredential` | `secret` | `@encrypted` |
+| `HubConfig` | `encryptionKeyEscrowedAt` | `@system` |
+| `HubConfig` | `encryptionKeyFingerprint` | `@system` |
+| `HubConfig` | `hostServerId` | `@system` |
 | `Invitation` | `token` | `@guarded` |
 | `Job` | `retryCount` | `@system` |
 | `Job` | `lastRunAt` | `@system` |

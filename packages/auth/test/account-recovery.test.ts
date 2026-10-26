@@ -42,7 +42,7 @@ async function person(role = 'user', factor = true) {
   const { id: userId } = await h.auth.createUser({ email, password: PW, role })
   let token = ''
   if (factor) {
-    const { secret } = await h.auth.setupTotp!(userId, PW)
+    const { secret } = await h.auth.setupTotp!(userId)
     await h.auth.confirmTotp!(userId, totp(secret, new Date(Date.now() - 5 * TOTP_STEP_SEC * 1000)))
     const { challenge } = await h.auth.login(email, PW) as any
     token = (await h.auth.completeLogin!(challenge, totp(secret, new Date())) as any).token

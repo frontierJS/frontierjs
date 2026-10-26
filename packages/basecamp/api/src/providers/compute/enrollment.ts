@@ -29,14 +29,14 @@
 
 import { randomBytes, createHash, timingSafeEqual, X509Certificate } from 'node:crypto'
 import { OPENSSL_CERT_ARGS } from '@frontierjs/outpost/cert'
-import { OUTPOST_STATIC_PORT } from '../../core/posture.ts'
+import { litestreamInstall } from '@frontierjs/litestone/replicate'
 
 /** What the install runs on a machine, held here so two machines provisioned a
  *  week apart run the same thing. The Outpost is pinned to the version this
  *  workspace carries (a test holds the two together); Docker and Caddy come
  *  from signed apt repositories. */
-export const BUN_VERSION     = '1.4.2'
-export const OUTPOST_VERSION = '0.1.3'
+export const BUN_VERSION     = '1.4.4'
+export const OUTPOST_VERSION = '0.1.5'
 
 /** How long a machine has to enroll. A cloud-init run is seconds; fifteen
  *  minutes is room for a slow image pull and nothing like room for a leaked
@@ -174,6 +174,25 @@ set -euo pipefail
 # set -e exits without a word, and over ssh only this line says where.
 trap 'echo "install stopped at line $LINENO: $BASH_COMMAND" >&2' ERR
 
+# The security pass below can upgrade systemd, which re-executes it, and a
+# systemctl call that lands in the re-exec is refused by the bus rather than
+# queued (FJS-3469). A refusal is retried for two minutes; any other failure is
+# the call's own.
+systemctl() {
+  local n=0 out
+  until out=$(command systemctl "$@" 2>&1); do
+    case $out in
+      *"message bus"*|*"Connection reset"*|*"Transport endpoint"*|*"Failed to connect to bus"*) ;;
+      *) printf '%s\\n' "$out" >&2; return 1 ;;
+    esac
+    n=$((n + 1))
+    [ $n -lt 24 ] || { printf '%s\\n' "$out" >&2; return 1; }
+    sleep 5
+  done
+  printf '%s' "$out"
+}
+export -f systemctl
+
 : "$BASECAMP_URL"   # where this machine reports to
 : "$SERVER_ID"      # which row it is
 : "$ENROLL_TOKEN"   # single-use, short-lived, and the only secret here
@@ -237,6 +256,18 @@ Unattended-Upgrade::Automatic-Reboot "false";
 APTEOF
 systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
 
+# The timer's first pass can be a day out, and an image ships weeks of security
+# updates behind, so the box would enroll exposed. The pass the timer runs, run
+# now, so its stamp is the last run posture reports. A failed or slow pass
+# leaves the box to the timer; patch.security-pending says so.
+# posture: patch.security-pending
+timeout 1800 systemctl start apt-daily-upgrade.service \
+  || echo "the first security-update pass did not finish; apt-daily-upgrade.timer will retry" >&2
+# A pass that upgrades systemd re-executes it, which ends the wait above while
+# unattended-upgrade still holds dpkg's lock, and every apt call below then
+# spends its lock timeout on it (FJS-3469).
+timeout 1800 bash -c 'while [ "$(systemctl show -P ActiveState apt-daily-upgrade.service)" = activating ]; do sleep 5; done' || true
+
 # sshd takes the first value it reads and the drop-ins are read in name order,
 # so 10- wins over the 50-cloud-init.conf that turns passwords back on. A box
 # no key can reach keeps its password rather than locking its owner out, and
@@ -250,6 +281,10 @@ KbdInteractiveAuthentication no
 PermitRootLogin prohibit-password
 MaxAuthTries 3
 SSHEOF
+  # Where ssh is socket-activated, a security pass that upgraded openssh leaves
+  # ssh.service stopped until the next login, and its /run/sshd with it, so
+  # sshd -t and sshd -T refuse a config that is fine.
+  install -d -m 0755 /run/sshd
   sshd -t
   systemctl try-reload-or-restart ssh.service
 else
@@ -286,7 +321,7 @@ table inet basecamp {
     iif lo accept
     meta l4proto { icmp, ipv6-icmp } accept
     udp dport { 68, 546 } accept
-    tcp dport { $SSH_PORTS, 80, 443, $OUTPOST_PORT, ${OUTPOST_STATIC_PORT} } accept
+    tcp dport { $SSH_PORTS, 80, 443, $OUTPOST_PORT } accept
     udp dport 443 accept
   }
   chain forward {
@@ -327,6 +362,17 @@ chmod a+r /etc/apt/keyrings/docker.asc
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/$ID $VERSION_CODENAME stable" \\
   > /etc/apt/sources.list.d/docker.list
 apt_update
+# Written before the install so the daemon's first start reads it. With the
+# proxy on, a published port is a nat rule AND a docker-proxy process, and the
+# firewall above grades only the rule. Off, it is the one rule, a loopback
+# publish included: dockerd sets route_localnet on docker0 and drops spoofed
+# 127/8 itself.
+install -d -m 0755 /etc/docker
+cat > /etc/docker/daemon.json <<'DOCKEREOF'
+{
+  "userland-proxy": false
+}
+DOCKEREOF
 apt_install docker-ce docker-ce-cli containerd.io
 
 # Caddy, the machine's ingress (FJS-D564). The Outpost is the only thing that
@@ -348,6 +394,66 @@ systemctl disable --now caddy.service
 # which --resume would load back beside every route the Outpost writes.
 systemctl is-enabled --quiet caddy-api.service || rm -f /var/lib/caddy/.config/caddy/autosave.json
 systemctl enable --now caddy-api.service
+
+# Litestream, which replicates every app's SQLite to its bucket: litestone's
+# pinned, checksum-verified build, the one fli deploy:setup installs. Its own
+# unit, outside the Outpost's sandbox, because it writes into every app's
+# volume. The Outpost rewrites the config from Basecamp's list and restarts the
+# unit; until then it names no database, which 0.5 logs and runs on through.
+# It holds every app's bucket key and reads every app's database, so it is
+# sandboxed like the Outpost: it writes the volumes and /var/lib/litestream,
+# where each database's meta-dir goes so a /backup tar does not carry it. Its
+# control socket is under /run/litestream, which the Outpost reads each
+# heartbeat for every app's last sync.
+${litestreamInstall()}
+# A second install keeps the Outpost's entries: the file holds every app's key.
+if [ ! -f /etc/basecamp/litestream.yml ]; then
+  cat > /etc/basecamp/litestream.yml <<'LSEOF'
+socket:
+  enabled: true
+  path: "/run/litestream/litestream.sock"
+dbs: []
+LSEOF
+fi
+chmod 0600 /etc/basecamp/litestream.yml
+cat > /etc/systemd/system/basecamp-litestream.service <<UNITEOF
+[Unit]
+Description=Basecamp Litestream replication
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/litestream replicate -config /etc/basecamp/litestream.yml
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=-/var/lib/docker/volumes
+StateDirectory=litestream
+RuntimeDirectory=litestream
+RuntimeDirectoryMode=0700
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+PrivateDevices=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
+UNITEOF
+systemctl daemon-reload
+systemctl enable --now basecamp-litestream.service
 
 # Bun, which the Outpost is written for, at the version Basecamp holds.
 curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}"
@@ -407,6 +513,10 @@ chmod 0600 /etc/basecamp/outpost.env
 # from gaining privilege. It is root still, because Docker access is
 # root-equivalent and a non-root User= would buy nothing. The /exec route leaves
 # the unit through systemd-run (FJS-D602), so a recipe is not confined by it.
+# posture() grades this unit's own systemd-analyze score against 7, so a
+# directive dropped here fails outpost.sandbox on every box. AF_NETLINK stays:
+# posture reads ss and nft over it. No MemoryDenyWriteExecute: bun's JIT
+# needs writable executable pages.
 # StateDirectory creates /var/lib/outpost before the namespace is built: a
 # ReadWritePaths entry that does not exist yet fails the start on a fresh box.
 # ExecStart is bun x, never bunx: bun's installer writes the bun binary alone,
@@ -434,6 +544,14 @@ ProtectKernelTunables=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+PrivateDevices=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
 [Install]
 WantedBy=multi-user.target
@@ -455,11 +573,12 @@ systemctl enable --now outpost.service
  * `/usr/local/sbin/outpost-uninstall`, which is the only way it is run.
  *
  * Bare, it takes off the Outpost and what exists only for it: the unit, the
- * machine's credential and certificate, and the firewall, whose forward chain
- * drops a published port nothing refills the exposed set for once the Outpost
- * is gone. The apps it placed keep running. `--purge` takes the rest: those
- * apps and their volumes, `/var/lib/outpost` with its backups, Docker, Caddy
- * with every route and certificate, the Docker and Caddy apt sources and the
+ * machine's credential and certificate, the Litestream unit whose config the
+ * Outpost wrote, and the firewall, whose forward chain drops a published port
+ * nothing refills the exposed set for once the Outpost is gone. The apps it
+ * placed keep running. `--purge` takes the rest: those apps and their volumes,
+ * `/var/lib/outpost` with its backups, Docker, Caddy with every route and
+ * certificate, the Docker and Caddy apt sources, the Litestream binary and the
  * Outpost's bun.
  *
  * What would be worse undone stays, and the script ends by naming it: the sshd
@@ -508,12 +627,14 @@ fi
 
 # The agent first: a running Outpost refills the exposed set and rewrites routes.
 systemctl disable --now outpost.service 2>/dev/null || true
+systemctl disable --now basecamp-litestream.service 2>/dev/null || true
 systemctl disable --now basecamp-firewall.service 2>/dev/null || true
 nft delete table inet basecamp 2>/dev/null || true
-rm -f $UNIT /etc/systemd/system/basecamp-firewall.service
+rm -f $UNIT /etc/systemd/system/basecamp-litestream.service /etc/systemd/system/basecamp-firewall.service
+rm -rf /etc/systemd/system/basecamp-litestream.service.d
 rm -rf /etc/basecamp
 systemctl daemon-reload
-echo "Outpost removed: its unit, its credential and its firewall."
+echo "Outpost removed: its unit, its credential, its firewall and its Litestream, so no app here replicates."
 
 # The 80/20 line: what is cheap to keep and worse to undo is named, not undone.
 left() {
@@ -541,14 +662,15 @@ rm -rf /var/lib/outpost
 systemctl disable --now caddy-api.service 2>/dev/null || true
 export DEBIAN_FRONTEND=noninteractive
 apt-get purge -yqq caddy docker-ce docker-ce-cli containerd.io >/dev/null 2>&1 || true
-rm -rf /var/lib/docker /var/lib/containerd /var/lib/caddy /etc/caddy
+rm -rf /var/lib/docker /var/lib/containerd /etc/docker /var/lib/caddy /etc/caddy
 rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.asc
 rm -f /etc/apt/sources.list.d/caddy-stable.list /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 rm -f /etc/apt/apt.conf.d/52basecamp-unattended-upgrades
+rm -rf /usr/local/bin/litestream /var/lib/litestream
 
 [ -n "$BUN_DIR" ] && [ "$BUN_DIR" != /usr/local ] && rm -rf "$BUN_DIR"
 rm -f /usr/local/sbin/outpost-uninstall
-echo "Purged: apps, volumes, Docker, Caddy, /var/lib/outpost and the Outpost's bun."
+echo "Purged: apps, volumes, Docker, Caddy, Litestream, /var/lib/outpost and the Outpost's bun."
 left
 `
 }

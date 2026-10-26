@@ -31,14 +31,34 @@
 // it refuses without a TENANT, and a hub action has no workspace. There is no
 // membership to re-resolve and no scoped parent read to confine anything, so
 // the app owns this work and who asked is a column on the row (`FJS-384`).
+//
+// ─── Leaving the box ──────────────────────────────────────────────────────
+//
+// A row naming a destination tars the archive and sends it as ONE `putObject`
+// to `<prefix>/basecamp-<stamp>.tar.gz`, which becomes `location`; the local
+// directory stays until the next backup finishes. A failed or refused upload
+// keeps the local directory, finishes `success` and says why in `error` — the
+// archive exists, it is only on the disk it was meant to leave,
+// and a `failed` row would read as no archive at all. After a success the
+// retention in `backup-archives.ts` runs. The connector has no
+// multipart and holds the body in memory, so above `MAX_UPLOAD_BYTES` the job
+// refuses rather than discovering the limit at the vendor or in the heap.
 
 import { defineJob }        from '@frontierjs/caravan'
 import { Database }         from 'bun:sqlite'
-import { cpSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
-import { dirname, join }    from 'node:path'
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import { runsAsApp }        from './context.ts'
 import { jobsDatabasePath } from '../core/db.ts'
+import { keyUnder, sendFor } from '../providers/storage/index.ts'
+import { backupDir, dropWarmCopies, pruneBackups } from './backup-archives.ts'
+import { putObject }        from '../providers/storage/s3.ts'
 import type { App }         from '@frontierjs/junction'
+import type { Backup, RunStatus } from '../../../db/schema.d.ts'
+
+/** One PUT, held in memory. B2 and S3 cap a single PUT at 5 GB; this is lower
+ *  because the whole body is a buffer in the API process. */
+export const MAX_UPLOAD_BYTES = 1024 ** 3
 
 /** Only for Caravan's queue, which no schema names and `app.db.$backup` cannot
  *  reach. Bound as a parameter and never interpolated (Invariant 8). Its own
@@ -81,14 +101,43 @@ async function archiveAll(app: App, dest: string): Promise<void> {
   if (existsSync(jobs)) vacuumInto(jobs, join(dest, 'jobs.db'))
 }
 
-/** Where an archive lands — `backups/` beside the live database, so a bind
- *  mount that carries the data volume carries these with it. */
-function backupDir(app: App): string {
-  const live = app.sqlite.filename
-  // `:memory:` has no directory. A test env would otherwise write `backups/`
-  // into the process CWD, which is somebody's repository.
-  if (!live || live === ':memory:') return ''
-  return join(dirname(live), 'backups')
+/** `<dir>.tar.gz` beside `dir`, with `dir`'s own name as its one top entry. */
+async function tarball(dir: string): Promise<string> {
+  const out  = `${dir}.tar.gz`
+  const proc = Bun.spawn(['tar', '-czf', out, '-C', dirname(dir), basename(dir)], { stderr: 'pipe' })
+  const code = await proc.exited
+  if (code !== 0) throw new Error(`tar exited ${code}: ${(await new Response(proc.stderr).text()).trim()}`)
+  return out
+}
+
+/**
+ * Send the archive at `dir` to the row's destination. Answers the object key,
+ * or the warning that goes in `error` with the local copy left in place.
+ */
+async function upload(app: App, destinationId: string, dir: string): Promise<{ key: string; bytes: number } | { warning: string }> {
+  const kept = `The archive is on this disk at ${dir}.`
+  const dest = await app.db!.asSystem().backupDestination.findFirst({ where: { id: destinationId } })
+  if (!dest) return { warning: `Destination '${destinationId}' is gone; nothing was uploaded. ${kept}` }
+  if (!('conduit' in app)) return { warning: `This process has no conduit; nothing was uploaded. ${kept}` }
+
+  let tar: string | null = null
+  try {
+    tar = await tarball(dir)
+    const bytes = statSync(tar).size
+    if (bytes > MAX_UPLOAD_BYTES) return {
+      warning: `The archive is ${bytes} bytes, over the ${MAX_UPLOAD_BYTES}-byte single-upload limit; nothing was uploaded. ${kept}`,
+    }
+    const key = keyUnder(dest, `${basename(dir)}.tar.gz`)
+    const { error } = await putObject(sendFor(app, destinationId), dest.bucket, key,
+      new Uint8Array(await Bun.file(tar).arrayBuffer()), { contentType: 'application/gzip' })
+    if (error) return { warning: `Upload to '${dest.name}' failed (${error.kind}${error.code ? `, ${error.code}` : ''}): ${error.message}. ${kept}` }
+    return { key, bytes }
+  } catch (err) {
+    return { warning: `Upload to '${dest.name}' failed: ${(err as Error).message}. ${kept}` }
+  } finally {
+    // The tarball is a transfer copy; the directory beside it is the local archive.
+    if (tar) rmSync(tar, { force: true })
+  }
 }
 
 export async function takeBackup(app: App, backupId: string): Promise<void> {
@@ -127,9 +176,20 @@ export async function takeBackup(app: App, backupId: string): Promise<void> {
   try {
     await archiveAll(app, path)
 
-    const size = treeSize(path)
-    await finish({ status: 'success', sizeBytes: size, location: path, error: null })
-    log.info('backup complete', { id: backupId, path, bytes: size })
+    if (row.destinationId) {
+      const sent = await upload(app, row.destinationId, path)
+      if ('key' in sent) {
+        await finish({ status: 'success', sizeBytes: sent.bytes, location: sent.key, error: null })
+        log.info('backup uploaded', { id: backupId, destination_id: row.destinationId, key: sent.key, bytes: sent.bytes })
+      } else {
+        await finish({ status: 'success', sizeBytes: treeSize(path), location: path, error: sent.warning })
+        log.warn('backup kept local', { id: backupId, destination_id: row.destinationId, warning: sent.warning })
+      }
+    } else {
+      const size = treeSize(path)
+      await finish({ status: 'success', sizeBytes: size, location: path, error: null })
+      log.info('backup complete', { id: backupId, path, bytes: size })
+    }
   } catch (err) {
     const message = (err as Error).message
     await finish({ status: 'failed', error: message, location: null })
@@ -138,6 +198,16 @@ export async function takeBackup(app: App, backupId: string): Promise<void> {
     // minute ago may not be.
     throw err
   }
+
+  // Outside the try: the archive is written and its row says so, and a prune
+  // that throws must not rewrite that row as `failed`. A failed run never
+  // reaches here, so it prunes nothing.
+  try {
+    await dropWarmCopies(app, backupId)
+    const { pruned, kept } = await pruneBackups(app)
+    if (pruned.length) log.info('backups pruned', { id: backupId, pruned })
+    for (const k of kept) log.warn('backup kept past retention', { id: k.id, why: k.why })
+  } catch (err) { log.warn('retention did not run', { id: backupId, error: String(err) }) }
 }
 
 // ── The job ───────────────────────────────────────────────────────
@@ -145,7 +215,7 @@ export async function takeBackup(app: App, backupId: string): Promise<void> {
 // held by something long-running); a database that cannot be read is not going
 // to become readable on the second try, and the row says why either way.
 
-export default defineJob<{ backupId: string }>({
+const backupRun = defineJob<{ backupId: string }>({
   name:        'backup:run',
   queue:       'fleet',
   maxAttempts: 2,
@@ -161,3 +231,42 @@ export default defineJob<{ backupId: string }>({
     await takeBackup(app, ctx.data.backupId)
   },
 })
+
+export default backupRun
+
+// ── Asking for one ────────────────────────────────────────────────
+
+/** Terminal states — anything else is still in flight. */
+export const SETTLED: RunStatus[] = ['success', 'failed', 'timeout']
+
+/**
+ * Write a `pending` row and dispatch the run — the one door a person
+ * (`backups.create`) and the schedule (`job-schedule.ts`) both come through.
+ *
+ * Answers the archive still in flight instead, when there is one. Two
+ * concurrent `VACUUM INTO`s are not a corruption risk, but they are two
+ * archives of the same bytes a second apart, and the second doubles how long
+ * the first takes.
+ */
+export async function queueBackup(
+  app:  App,
+  data: { kind: 'manual' | 'scheduled'; destinationId: string | null; requestedBy: string | null },
+): Promise<{ backup: Backup } | { inFlight: Backup }> {
+  const sys = app.db!.asSystem()
+
+  const inFlight = await sys.backup.findFirst({
+    where: { status: { notIn: SETTLED } }, orderBy: { createdAt: 'desc' },
+  })
+  if (inFlight) return { inFlight }
+
+  // At system: `Backup` has no tenant and `BackupDestination` has one, so a
+  // caller-context write cannot see the parent it names and litestone refuses
+  // the FK as hidden. Who asked is the column.
+  const backup = await sys.backup.create({ data: { ...data, status: 'pending' } })
+
+  // `actor: null` — the handler declares `runsAsApp` (see the header), and an
+  // inherited principal is one it would then refuse.
+  await app.jobs.dispatch(backupRun, { backupId: backup.id }, { queue: 'fleet', priority: 5, actor: null })
+
+  return { backup }
+}

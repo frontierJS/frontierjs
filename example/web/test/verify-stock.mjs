@@ -42,11 +42,9 @@ import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
-// The dev server moves to the test tier, so this runs beside another project's
-// vite on 8010. The API does not move: its origin is written into rows that
-// outlive the process — a `File` ref stores the `publicBase` it was uploaded
-// against (`FJS-1271`). Both are env-overridable.
-const API_PORT = process.env.API_PORT ?? String(PORTS.api)
+// Both servers on the test tier, so this runs beside a dev server somebody
+// else is holding 8010/8110 with. Both are env-overridable.
+const API_PORT = process.env.API_PORT ?? String(PORTS.apiTest)
 const UI_PORT  = process.env.UI_PORT  ?? String(PORTS.uiTest)
 const API  = process.env.FRONTIER_API_URL ?? `http://localhost:${API_PORT}`
 const UI   = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`

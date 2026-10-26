@@ -1,6 +1,6 @@
 <script>
   import { RouterView } from '@frontierjs/sierra/router'
-  import { loadShopCalendar } from './datetime.js'
+  import { loadShopCalendar } from './lib/datetime.js'
 
   // Which calendar the shop keeps, before anything renders a date in it — a
   // date that re-rendered once the answer arrived would show the wrong day

@@ -182,6 +182,18 @@ export class Entry<T extends Record<string, unknown> = Record<string, unknown>>
     for (const fn of this._subs) fn(v)
   }
 
+  /**
+   * Hold nothing, in place. An overlay goes too, so a mutation the previous
+   * caller submitted cannot settle its row in here when it comes back.
+   */
+  _forget(): void {
+    if (this._value === null && this._overlays.size === 0) return
+    this._value = null
+    this._overlays.clear()
+    this._viewFresh = false
+    for (const fn of this._subs) fn(null)
+  }
+
 }
 
 /**
@@ -269,10 +281,19 @@ export class EntryRegistry {
     return n
   }
 
-  /** Drop everything, held or not. A sign-out is the caller that wants this. */
+  /**
+   * Forget every row — the caller changed, and each one was read as somebody
+   * else (`FJS-3388`). A held entry is emptied rather than dropped: a view
+   * holds it by reference, and a dropped one is a view no later write reaches.
+   */
   clear(): void {
-    this._models.clear()
-    this._stopSweeping()
+    for (const rows of [...this._models.values()]) {
+      for (const entry of [...rows.values()]) {
+        if (entry.held) entry._forget()
+        else this._drop(entry)
+      }
+    }
+    if (this.size === 0) this._stopSweeping()
   }
 
   /** An entry's last hold went away. */

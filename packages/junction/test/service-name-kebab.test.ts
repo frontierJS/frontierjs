@@ -105,4 +105,21 @@ describe('the loader aliases a spelling of the name, not a different word', () =
     expect(r.has('metrics-store')).toBe(true)
     expect(r.has('metrics')).toBe(false)
   })
+
+  // `FJS-3477`: a stated kebab name kept its spelling, so sierra's
+  // `serviceNameFor('BackupDestination')` found nothing and the picker was empty.
+  test('a STATED kebab name folds like a filename and keeps its spelling as an alias', async () => {
+    const r = await load('backup-destinations.service.ts', 'backup-destinations')
+    expect(r.list()).toEqual(['backupDestinations'])
+    expect(r.aliasesOf('backupDestinations')).toEqual(['backup-destinations'])
+  })
+})
+
+describe('a definition registered by hand folds the same way', () => {
+  test('its canonical name is camelCase, and the stated spelling still resolves', () => {
+    const r   = new ServiceRegistry()
+    const svc = r.register({ name: 'backup-destinations', find: async () => [] })
+    expect(svc.name).toBe('backupDestinations')
+    expect(r.get('backup-destinations')).toBe(svc)
+  })
 })

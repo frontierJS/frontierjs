@@ -38,11 +38,13 @@ import { createBasecampDb, jobsDatabasePath } from './core/db.ts'
 import { openSqlite }                    from './core/sqlite.ts'
 import { createSecretResolver }          from './core/credentials.ts'
 import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts'
-import { registerPushReceivers } from './core/push.ts'
+import { registerPushReceivers } from './plugins/push.ts'
 import { dependencyTargets }  from './core/dependencies.ts'
 import { accountMail }         from './core/account-mail.ts'
 import { isPreviewOrigin }      from './core/site-preview.ts'
 import { registerAllAccounts } from './providers/compute/accounts.ts'
+import { registerAllDestinations } from './providers/storage/index.ts'
+import { S3_SIGNER, s3Signer }    from './providers/storage/s3.ts'
 import { enrollTokenMatches, mintOutpostSecret, installScript, isCertificate } from './providers/compute/enrollment.ts'
 import { notifications }  from '@frontierjs/notifications'
 import { basecampAuditLog, basecampAuditPreImage, outpostCredential, outpostScope, workspaceOrKeys } from './core/hooks.ts'
@@ -54,6 +56,7 @@ import { basecampGateLevel, roleForLevel } from './core/gate.ts'
 import { basecampNodes }                  from './plugins/automations.ts'
 import { restoreSchedules }          from './services/jobs/job-schedule.ts'
 import { pushAppsOn }                from './jobs/domain-dns.job.ts'
+import { syncReplicasOn }            from './jobs/replicate-sync.job.ts'
 import { workspaceChannelName, workspaceIdFromChannel, notificationChannelName } from './core/channels.ts'
 
 import type { App }         from '@frontierjs/junction'
@@ -355,6 +358,10 @@ export async function buildBasecampApp(
     // channels put theirs in a Secret (@encrypted), so the ref is `secret:<id>`
     // and the material never leaves the send path — see core/credentials.ts.
     credentials: createSecretResolver(db),
+    // The one signed scheme this app speaks: SigV4 for a `BackupDestination`'s
+    // bucket. The region rides each target's `auth.params`, so one signer
+    // serves every destination (providers/storage/s3.ts).
+    signers:     { [S3_SIGNER]: s3Signer },
     // Conduit refuses to register management routes without an explicit access
     // decision — GET|DELETE /conduit-targets is an operational endpoint.
     //
@@ -776,6 +783,12 @@ export async function buildBasecampApp(
           data: { workspaceId: workspace.id, userId: user.id, role: 'owner',
                   capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString() },
         })
+        // The hub's settings, from the two facts this request holds: the URL
+        // this API was started to answer on and the person setting it up.
+        // `fli deploy` enrolls the box into a pointer on this row, so an
+        // install that saved no settings would enroll nothing (`FJS-3488`).
+        if (!await tx.hubConfig.exists({ where: { id: 'hub' } }))
+          await tx.hubConfig.create({ data: { id: 'hub', baseUrl: env.FRONTIER_API_URL, adminEmail: email.trim() } })
         return { account, workspace }
       })
 
@@ -956,8 +969,20 @@ export async function buildBasecampApp(
     },
   })
 
+  // ── Backup destinations as Conduit targets ────────────────────────────
+  // A `BackupDestination` row is a bucket, registered on write by its service
+  // and re-registered for every existing row here, the accounts pattern.
+  app.configure({
+    name:     'basecamp-backup-destinations',
+    requires: ['conduit'],
+    boot:     async () => {
+      const n = await registerAllDestinations(app, db)
+      if (n) logger.info('conduit: backup destinations registered', { count: n })
+    },
+  })
+
   // ── A git push starts a release ───────────────────────────────────────
-  // The forge's door: two conduit Receivers (`core/push.ts`, `FJS-D884`).
+  // The forge's door: two conduit Receivers (`plugins/push.ts`, `FJS-D884`).
   app.configure({
     name:     'basecamp-push',
     requires: ['conduit'],
@@ -981,6 +1006,9 @@ export async function buildBasecampApp(
         if (e.event !== 'transition' || e.model !== 'Server') return
         if ((e.from === 'online') === (e.to === 'online')) return
         const row = e.record as { id: string; updatedAt?: string }
+        // A machine back online may be a re-enrolled one, whose Litestream
+        // config the install wrote as an empty list.
+        if (e.to === 'online') void syncReplicasOn(app, [row.id])
         return pushAppsOn(app, row.id, String(e.to), String(row.updatedAt ?? Date.now()))
           .catch(err => logger.warn('dns: fleet move not pushed', { serverId: row.id, error: (err as Error).message }))
       })

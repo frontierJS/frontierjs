@@ -191,3 +191,18 @@ export function applySequences(data, modelName, seqs, writeDb, stamped = null) {
   }
   return out
 }
+
+// The row as the auth stamps will leave it, for a create policy to grade on
+// the batch paths, which stamp later inside the transaction. Graded bare,
+// `ownerId @default(auth().id)` under `ownerId == auth().id` refuses every
+// create omitting the column (FJS-1402); a stamp fills only an absent key, so
+// what the caller sent is still graded as sent.
+/**
+ * @param {Row} row
+ * @param {string} modelName
+ * @param {any} ctx
+ */
+export function authStamped(row, modelName, ctx) {
+  const shape = ctx.shapes[modelName]
+  return stampFromAuth(applyAuthDefaults(row, shape.authDefaults, ctx.auth), shape.createdBy, ctx.auth)
+}

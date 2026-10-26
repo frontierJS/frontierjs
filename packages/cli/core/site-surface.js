@@ -304,14 +304,16 @@ export function siteDockerfile({ servePort = 8700 } = {}) {
 # A bucket and a CDN is the usual answer and needs no image at all; this is for
 # the deployments that want one process per surface.
 
-FROM oven/bun:1 AS build
+# Bun is the version fli ran under when this file was written, so the image
+# runs what the app was developed on. Move both FROM lines together.
+FROM oven/bun:${Bun.version} AS build
 WORKDIR /app
 COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile || bun install
 COPY . .
 RUN cd site && bunx vite build -c config/vite.config.js
 
-FROM oven/bun:1-slim
+FROM oven/bun:${Bun.version}-slim
 WORKDIR /app
 COPY --from=build /app/site/dist ./site/dist
 COPY --from=build /app/site/deploy ./site/deploy

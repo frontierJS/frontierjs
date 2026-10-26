@@ -43,16 +43,18 @@
   import Call     from './Call.mesa'
   import Data     from './Data.mesa'
   import Ask      from './Ask.mesa'
+  import Dns      from './Dns.mesa'
 
   export let api      = ''
   export let pane     = 'run'
   export let legendAt = null   // (read) => void, read: () => { rows, status }
 
-  const PANES = ['run', 'check', 'decide', 'ship', 'map', 'live', 'call', 'data', 'ask']
+  const PANES = ['run', 'check', 'decide', 'ship', 'map', 'live', 'call', 'data', 'ask', 'dns']
 
-  // No `<Mod-…>` is bound anywhere here, so `mac` changes no row.
+  // No `<Mod-…>` is bound anywhere here, so `mac` changes no row. The tenth
+  // pane is `0`, where the digit row puts it.
   const CONSOLE = keymap({
-    ...Object.fromEntries(PANES.map((p, i) => [String(i + 1), `:${p}`])),
+    ...Object.fromEntries(PANES.map((p, i) => [String((i + 1) % 10), `:${p}`])),
     ':': 'go to a pane',
     '/': 'filter',
   })
@@ -73,7 +75,8 @@
 
   $: rows    = own[pane] ?? []
   $: paneMap = rows.length ? keymap(Object.fromEntries(rows.map(a => [a.keys, a.label]))) : null
-  $: maps    = field ? [FIELD[field]] : [paneMap, filter ? UNFILTER : null, CONSOLE].filter(Boolean)
+  // A filter is cleared before a pane hears Esc: `:dns` walks back on it.
+  $: maps    = field ? [FIELD[field]] : [filter ? UNFILTER : null, paneMap, CONSOLE].filter(Boolean)
   $: legend  = folded(bindings({ active: maps, mac: false, text: false }))
   $: status  = note || (filter ? `filtered by /${filter}` : '')
   const [legendNow, setLegend] = createSignal({ rows: [], status: '' })
@@ -82,9 +85,10 @@
   // terminal at the eighth, and the strip already says which pane a digit is
   // by its place in it.
   function folded(rows) {
-    const digits = rows.filter(r => /^\d$/.test(r.keys))
+    const row = '1234567890'
+    const digits = rows.filter(r => /^\d$/.test(r.keys)).sort((a, b) => row.indexOf(a.keys) - row.indexOf(b.keys))
     if (digits.length < 2) return rows
-    const at = rows.indexOf(digits[0])
+    const at = Math.min(...digits.map(d => rows.indexOf(d)))
     const rest = rows.filter(r => !digits.includes(r))
     return [...rest.slice(0, at), { keys: `${digits[0].keys}–${digits.at(-1).keys}`, action: 'the panes' }, ...rest.slice(at)]
   }
@@ -134,12 +138,24 @@
   }
 
   // A unique prefix is enough, as k9s takes `:po` for pods.
+  function named(name) {
+    const hits = PANES.filter(p => p.startsWith(name))
+    return hits.length === 1 ? hits[0] : null
+  }
+  const unknown = (name) => `no pane :${name} — ${PANES.map(p => `:${p}`).join(' ')}`
+
   function command() {
     const name = text.trim().replace(/^:/, '')
-    const hits = PANES.filter(p => p.startsWith(name))
     close()
-    if (name && hits.length === 1) return go(hits[0])
-    if (name) note = `no pane :${name} — ${PANES.map(p => `:${p}`).join(' ')}`
+    if (name && named(name)) return go(named(name))
+    if (name) note = unknown(name)
+  }
+
+  // `fli gui :dn` names its pane the way `:` does; an unknown one opens on
+  // `:run` and says so, since Tabs shows no panel for an id it lacks.
+  if (!PANES.includes(pane)) {
+    note = named(pane) ? '' : unknown(pane)
+    pane = named(pane) ?? 'run'
   }
 
   function fieldKey(action) {
@@ -190,6 +206,7 @@
       <Tab id="call">:call</Tab>
       <Tab id="data">:data</Tab>
       <Tab id="ask">:ask</Tab>
+      <Tab id="dns">:dns</Tab>
     </TabList>
     <TabPanel id="run" unmount><Run {api} {shown} keyed={keyedFor('run')} /></TabPanel>
     <TabPanel id="check" unmount><Check {api} {shown} keyed={keyedFor('check')} /></TabPanel>
@@ -200,6 +217,7 @@
     <TabPanel id="call" unmount><Call {api} {shown} keyed={keyedFor('call')} /></TabPanel>
     <TabPanel id="data" unmount><Data {api} {shown} keyed={keyedFor('data')} /></TabPanel>
     <TabPanel id="ask" unmount><Ask {api} {shown} keyed={keyedFor('ask')} /></TabPanel>
+    <TabPanel id="dns" unmount><Dns {api} {shown} {home} keyed={keyedFor('dns')} /></TabPanel>
   </Tabs>
 
   {#if !legendAt}

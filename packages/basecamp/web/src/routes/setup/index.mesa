@@ -3,7 +3,7 @@ title: First run
 ---
 <script>
   import { goto } from '@frontierjs/sierra/router'
-  import { completeSetup } from '../../session.js'
+  import { completeSetup } from '../../lib/session.js'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
 

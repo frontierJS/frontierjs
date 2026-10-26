@@ -49,11 +49,21 @@ async function makeUser() {
   return { email, userId: user.id }
 }
 
+/** A signed-in session of the user's — what `reauthenticate` stamps. */
+async function sessionOf(email: string, userId: string): Promise<string> {
+  await h.auth.login(email, PASSWORD)
+  const row = await h.sys.session.findFirst({ where: { userId } })
+  return String(row.id)
+}
+
+// Signed in BEFORE the factor, and kept through the confirm that ends every
+// other session, so the tests below have a session to reauthenticate.
 async function withFactor() {
   const u = await makeUser()
-  const { secret } = await h.auth.setupTotp!(u.userId, PASSWORD)
-  const { recoveryCodes } = await h.auth.confirmTotp!(u.userId, totp(secret, new Date(Date.now() - 3 * TOTP_STEP_SEC * 1000)))
-  return { ...u, secret, recoveryCodes }
+  const sessionId = await sessionOf(u.email, u.userId)
+  const { secret } = await h.auth.setupTotp!(u.userId)
+  const { recoveryCodes } = await h.auth.confirmTotp!(u.userId, totp(secret, new Date(Date.now() - 3 * TOTP_STEP_SEC * 1000)), { exceptSessionId: sessionId })
+  return { ...u, sessionId, secret, recoveryCodes }
 }
 
 /** What this act told the observer, and nothing from before it. */
@@ -67,11 +77,13 @@ async function tell(act: () => Promise<unknown>): Promise<CredentialChange[]> {
 
 describe('each change to how an account signs in tells the person', () => {
 
-  test('password.changed — and a wrong current password tells nobody', async () => {
+  test('password.changed — and a wrong password at reauthenticate tells nobody, nor does the right one', async () => {
     const u = await makeUser()
-    expect(await tell(() => rejectsWith(() => h.auth.changePassword!(u.userId, 'wrong', 'new-pw-1'), ReauthenticationFailedError))).toEqual([])
+    const sessionId = await sessionOf(u.email, u.userId)
+    expect(await tell(() => rejectsWith(() => h.auth.reauthenticate!(u.userId, sessionId, { password: 'wrong' }), ReauthenticationFailedError))).toEqual([])
+    expect(await tell(() => h.auth.reauthenticate!(u.userId, sessionId, { password: PASSWORD }))).toEqual([])
 
-    const [change, ...rest] = await tell(() => h.auth.changePassword!(u.userId, PASSWORD, 'new-pw-1'))
+    const [change, ...rest] = await tell(() => h.auth.changePassword!(u.userId, 'new-pw-1', { exceptSessionId: sessionId }))
     expect(rest).toEqual([])
     expect(change).toMatchObject({ event: 'password.changed', userId: u.userId, email: u.email, actorId: u.userId })
     expect(Number.isNaN(Date.parse(change!.at))).toBe(false)
@@ -90,7 +102,7 @@ describe('each change to how an account signs in tells the person', () => {
   test('email.changed tells the OLD address — and the request, which moves nothing, tells nobody', async () => {
     const u  = await makeUser()
     const to = `moved-${u.email}`
-    expect(await tell(() => h.auth.requestEmailChange!(u.userId, PASSWORD, to))).toEqual([])
+    expect(await tell(() => h.auth.requestEmailChange!(u.userId, to))).toEqual([])
 
     const changes = await tell(() => h.auth.verifyEmail!(h.verifyToken()))
     expect(changes.map(c => c.event)).toEqual(['email.changed'])
@@ -111,17 +123,18 @@ describe('each change to how an account signs in tells the person', () => {
   test('totp.enabled on confirm — and setup, which enables nothing, tells nobody', async () => {
     const u = await makeUser()
     let secret = ''
-    expect(await tell(async () => { secret = (await h.auth.setupTotp!(u.userId, PASSWORD)).secret })).toEqual([])
+    expect(await tell(async () => { secret = (await h.auth.setupTotp!(u.userId)).secret })).toEqual([])
 
     const changes = await tell(() => h.auth.confirmTotp!(u.userId, totp(secret, new Date())))
     expect(changes.map(c => c.event)).toEqual(['totp.enabled'])
   })
 
-  test('recoveryCodes.regenerated — and a wrong password tells nobody', async () => {
+  test('recoveryCodes.regenerated — and a reauthenticate without the code tells nobody', async () => {
     const u = await withFactor()
-    expect(await tell(() => rejectsWith(() => h.auth.regenerateRecoveryCodes!(u.userId, 'wrong'), ReauthenticationFailedError))).toEqual([])
-    expect((await tell(() => h.auth.regenerateRecoveryCodes!(u.userId, PASSWORD))).map(c => c.event))
-      .toEqual(['recoveryCodes.regenerated'])
+    expect(await tell(() => rejectsWith(() => h.auth.reauthenticate!(u.userId, u.sessionId, { password: PASSWORD }), ReauthenticationFailedError))).toEqual([])
+    const changes = await tell(() => h.auth.regenerateRecoveryCodes!(u.userId, { exceptSessionId: u.sessionId }))
+    expect(changes.map(c => c.event)).toEqual(['recoveryCodes.regenerated'])
+    expect(changes[0]!.meta).toMatchObject({ sessionsRevoked: 0 })
   })
 
   test('recovery.used — the sign-in a person with their phone never makes; a bad code tells nobody', async () => {
@@ -140,10 +153,10 @@ describe('each change to how an account signs in tells the person', () => {
     expect(await tell(() => h.auth.completeLogin!(challenge, totp(u.secret, new Date(Date.now() + 3 * TOTP_STEP_SEC * 1000))))).toEqual([])
   })
 
-  test('totp.disabled — and a wrong password tells nobody', async () => {
+  test('totp.disabled — and a wrong password at reauthenticate tells nobody', async () => {
     const u = await withFactor()
-    expect(await tell(() => rejectsWith(() => h.auth.disableTotp!(u.userId, 'wrong'), ReauthenticationFailedError))).toEqual([])
-    expect((await tell(() => h.auth.disableTotp!(u.userId, PASSWORD))).map(c => c.event)).toEqual(['totp.disabled'])
+    expect(await tell(() => rejectsWith(() => h.auth.reauthenticate!(u.userId, u.sessionId, { password: 'wrong', code: totp(u.secret, new Date()) }), ReauthenticationFailedError))).toEqual([])
+    expect((await tell(() => h.auth.disableTotp!(u.userId, { exceptSessionId: u.sessionId }))).map(c => c.event)).toEqual(['totp.disabled'])
   })
 
   test('totp.reset names the OPERATOR as actor and the person as the recipient', async () => {
@@ -212,7 +225,7 @@ describe('a throw from the observer refuses nothing', () => {
     const u = await withFactor()
     throwing = true
     try {
-      const changes = await tell(() => h.auth.disableTotp!(u.userId, PASSWORD))
+      const changes = await tell(() => h.auth.disableTotp!(u.userId))
       expect(changes.map(c => c.event)).toEqual(['totp.disabled'])
     } finally {
       throwing = false
@@ -224,11 +237,11 @@ describe('a throw from the observer refuses nothing', () => {
     const u = await makeUser()
     const secrets: string[] = [PASSWORD]
     const all = await tell(async () => {
-      const { secret } = await h.auth.setupTotp!(u.userId, PASSWORD)
+      const { secret } = await h.auth.setupTotp!(u.userId)
       secrets.push(secret)
       const { recoveryCodes } = await h.auth.confirmTotp!(u.userId, totp(secret, new Date()))
       secrets.push(...recoveryCodes)
-      secrets.push(...(await h.auth.regenerateRecoveryCodes!(u.userId, PASSWORD)).recoveryCodes)
+      secrets.push(...(await h.auth.regenerateRecoveryCodes!(u.userId)).recoveryCodes)
       secrets.push((await h.auth.createApiKey(u.userId)).key)
     })
     expect(all.map(c => c.event)).toEqual(['totp.enabled', 'recoveryCodes.regenerated', 'apikey.created'])

@@ -21,7 +21,7 @@ import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../../api/src/app.ts'
 import { BOLT_MS } from '../../api/src/bolt.ts'
-import { signIn } from '../../api/test/sign-in.ts'
+import { POST_KEY, signIn } from '../../api/test/sign-in.ts'
 import { TUI, cellOf, screen, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
 
@@ -38,7 +38,7 @@ const check = (ok, label, evidence = '') => {
 const env = await createTestEnv({
   schema: join(WEB, '../db/schema.lite'),
   listen: true,
-  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-bolt', port: 0 }),
+  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-bolt', port: 0, postKey: POST_KEY }),
 })
 for (const [slug, name] of [['square', 'The square'], ['tavern', 'The tavern'], ['road', 'The road'], ['woods', 'The woods'], ['docks', 'The docks']]) {
   await env.system.room.create({ data: { slug, name } })

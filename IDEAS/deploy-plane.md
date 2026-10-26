@@ -391,8 +391,7 @@ was written to apply.
     A ships and needs no new infrastructure. B is a registry under another name, so
     when a store is owed, the existing one (`registry:2`) is the cheaper concept and
     the Outpost's `/pull` already speaks it.
-- **Whether `fli deploy` grows a pull-a-digest mode, and whether that is the same
-  mode ring 0 uses to install Basecamp from an image.** It knows one mode today —
+- ~~**Whether `fli deploy` grows a pull-a-digest mode, and whether that is the same mode ring 0 uses to install Basecamp from an image.**~~ **Answered 2026-10-25 (`FJS-D1526`): A — One mode: `fli deploy --image <digest>` replaces `02-pull` and the two build steps with a fetch of that digest, then runs `04c-journal` onward unchanged, and ring 0 installs Basecamp through the same flag.** It knows one mode today —
   build on the target — and both build-once and ring 0 want the other one. Doing it
   once is the whole argument; doing it twice is what happens if nobody asks.
   - **A** — One mode: `fli deploy --image <digest>` replaces `02-pull` and the two

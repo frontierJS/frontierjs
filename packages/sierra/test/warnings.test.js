@@ -92,6 +92,16 @@ describe('warnUnexportedSnippets', () => {
     expect(warnings[0]).toContain("Snippet 'sidebar'")
   })
 
+  test('no warning for a snippet the page renders or passes on itself', () => {
+    const source = `
+{#snippet pill(s)}<span>{s}</span>{/snippet}
+{#snippet cell(r)}<td>{r}</td>{/snippet}
+{#each rows as r}{@render pill(r.sev)}{/each}
+<Table rows={rows} row={cell} />
+`
+    expect(collectWarnings(source)).toHaveLength(0)
+  })
+
   test('warns for each unexported snippet individually', () => {
     const source = `
 {#snippet sidebar()}

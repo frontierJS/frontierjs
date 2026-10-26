@@ -64,7 +64,7 @@ describe('actions on the subject that outlive the episode', () => {
 
   test('account-recovery.resetTotp inside an episode is refused and the factor stays', async () => {
     const op = await person(), sub = await person(), third = await person()
-    const { secret } = await h.auth.setupTotp!(third.userId, PW)
+    const { secret } = await h.auth.setupTotp!(third.userId)
     await h.auth.confirmTotp!(third.userId, totp(secret, new Date(Date.now() - 5 * TOTP_STEP_SEC * 1000)))
     await start(op.token, sub.userId)
     const res = await request(app).post(`/account-recovery/${third.userId}`).set('x-service-method', 'resetTotp')
