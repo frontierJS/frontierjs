@@ -15,12 +15,12 @@ import { findTsc, runTypecheck, formatTypecheck } from '../core/typecheck.js'
 
 // runTypecheck shells out, so the classification is tested through a stub tsc
 // that prints a fixed transcript. Same code path, no compiler.
-function withStubTsc(output, fn) {
+function withStubTsc(output, fn, { exit = 0 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'fli-typecheck-'))
   const bin = join(dir, 'node_modules', '.bin')
   mkdirSync(bin, { recursive: true })
   const script = join(bin, 'tsc')
-  writeFileSync(script, `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(output)})\n`, { mode: 0o755 })
+  writeFileSync(script, `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(output)})\nprocess.exit(${exit})\n`, { mode: 0o755 })
   try { return fn(dir) } finally { rmSync(dir, { recursive: true, force: true }) }
 }
 
@@ -108,6 +108,22 @@ describe('finding tsc', () => {
       mkdirSync(nested, { recursive: true })
       expect(findTsc(nested)).toBe(join(dir, 'node_modules', '.bin', 'tsc'))
     })
+  })
+
+  test('a failing exit with no diagnostic is a run that did not happen', () => {
+    // FJS-3496 — tsc with no tsconfig.json prints its usage and exits 1, and
+    // five packages read that as clean.
+    withStubTsc('Version 5.9.3\ntsc: The TypeScript Compiler\n', dir => {
+      const result = runTypecheck({ dir })
+      expect(result.status).toBe('tsc-failed')
+      expect(result.message).toContain('no tsconfig.json')
+    }, { exit: 1 })
+  })
+
+  test('a failing exit WITH diagnostics is an ordinary failed check', () => {
+    withStubTsc(TRANSCRIPT, dir => {
+      expect(runTypecheck({ dir }).status).toBe('ok')
+    }, { exit: 2 })
   })
 
   test('no tsc is a distinct status, not zero errors', () => {

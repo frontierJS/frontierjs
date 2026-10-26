@@ -15177,6 +15177,12 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1526"></a>2026-10-25 · `FJS-D1526` — Whether `fli deploy` grows a pull-a-digest mode, and whether that is the same mode ring 0 uses to install Basecamp from an image — One mode: `fli deploy --image <digest>` replaces `02-pull` and the two build steps with a fetch of that digest, then runs `04c-journal` onward unchanged, and ring 0 installs Basecamp through the same flag.
+
+Asked in [`IDEAS/deploy-plane.md`](IDEAS/deploy-plane.md) § Open questions. **A** was picked over **B** (Two: build-once stays `deploy.builder`, and ring 0 gets its own `fli basecamp:install` that pulls a published image), **C** (Neither: ring 0 keeps building Basecamp from source on the target).
+
+As recommended: A is where ring 0 goes, not built yet: until it is, ring 0 keeps building Basecamp from a framework checkout, because a checkout is the thing the owner can change and rerun while the real-box path is still being worked out. The quickstart page names the npm install as the goal and says it still needs a checkout today.
+
 ### <a id="fjs-d1522"></a>2026-10-25 · `FJS-D1522` — How a proxied app Domain avoids Flexible's redirect loop (`zero-to-live.md` 2.4) — `FJS-D1422`'s per-host Configuration Rule, for every Domain: `edge` `push` writes a Full (strict) rule for the Domain's host before its CNAME turns proxied. The zone's SSL setting is never read or written.
 
 Step 2.4 was written before `FJS-D1422` and said *read the zone's SSL mode and refuse anything but Full (strict)*. That contradicts the ruling: a zone made safe by per-host rules would be refused, and the only way past the refusal is the zone flip `FJS-D1422` turned down. Asked through the question tool. **A** (per-host rule) was picked as recommended, over **B** (refuse unless the host's EFFECTIVE mode is strict: re-derives Cloudflare's precedence and needs *Zone Settings* read) and **C** (2.4 as written).

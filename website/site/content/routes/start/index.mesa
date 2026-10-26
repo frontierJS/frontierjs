@@ -31,6 +31,11 @@ render: static
     <p class="from">From: <a href="/start/tutorial/">The tutorial</a> · <a href="https://github.com/frontierjs/frontierjs/blob/main/docs/QUICKSTART.md">docs/QUICKSTART.md</a></p>
   </section>
   <section>
+    <h2>Put Basecamp on a box</h2>
+    <p>Name a hostname and get the one command that buys a box at DigitalOcean, installs Basecamp, points Cloudflare at it and makes your first admin, with a preview of everything it prints.</p>
+    <p class="from">From: <a href="/start/basecamp/">The Basecamp quickstart</a></p>
+  </section>
+  <section>
     <h2>Where next</h2>
     <p>Doors out to <a href="/docs/">Docs</a>, <a href="/packages/">Packages</a> and <a href="/why/">Why</a>.</p>
   </section>

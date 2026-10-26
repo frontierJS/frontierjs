@@ -112,6 +112,7 @@ Secrets, and its own box `online` in its fleet.
 - [ ] 3.4 `FJS-D1254`: a script in the container (the `enroll-host.ts` shape) stores the DigitalOcean and Cloudflare tokens as the first workspace's Secrets, makes the Domain row for Basecamp's host, and runs `edge.sync`. **Blocked as ruled** (Q2): `edge.sync` cannot push Basecamp's own host on a fresh box. **Interim, owner 2026-10-21**: `fli basecamp:dns <ip>` (run by `fli basecamp:create` and `basecamp:install` themselves once Basecamp is up, owner 2026-10-22; the command alone is for a record that could not be written then) runs `api/src/core/host-record.ts` from the checkout, the `provision-host.ts` shape, and writes `A <web.domain> → <ip>` DNS-only through `providers/edge/cloudflare.ts` under the fleet's mark, so Basecamp reads the record as its own; a hand-made record at that name is refused. `CLOUDFLARE_TOKEN` is acquired at a terminal like `DIGITALOCEAN_TOKEN`. Proved against the Cloudflare stand-in only. Left: the tokens as Secrets and the ingress zone (Q2)
 - [ ] 3.5 Grade the host on the real box: `/hub/security/` shows `hub.db-mode` and `hub.env-mode` graded rather than unknown, beside the `basecamp-host` row's fleet controls (built under `FJS-2714`)
 - [ ] 3.6 `FJS-D1380`, `FJS-D1422`: once Basecamp is up, `fli basecamp:create` and `basecamp:install` write the record DNS-only, fetch `https://<host>` until it answers on a valid certificate, and at a terminal offer the flip: a Configuration Rule sets Full (strict) for that host alone, then the record turns proxied (`strictOrigin` in `providers/edge/cloudflare.ts`, `"proxied":true` to `core/host-record.ts`, `fli basecamp:dns --proxied` alone). A rerun keeps the record's proxy state. No terminal, or a no, leaves it DNS-only. **Built**; proved against the Cloudflare stand-in. Left: the flip on a real zone, with a token holding *Zone › Config Rules › Edit*
+- [ ] 3.7 [`FJS-D1526`](../DECISIONS.md#fjs-d1526): Basecamp published as an image and installed by digest through `fli deploy --image`, with the cloud and DNS calls `provisionScript()` runs from the checkout moved into the cli, so `npm i -g @frontierjs/cli` alone runs `basecamp:create`. Done when it does, from a machine with no checkout. Then remove the not-yet note and the checkout block from `website/site/content/routes/start/basecamp.mesa`.
 
 ### Phase 4 — Continuous
 
@@ -162,9 +163,10 @@ a restore drill with no hand SSH.
   - **B** — flip only when the zone is already Full (strict), and otherwise stay DNS-only and say why. Never changes the zone; needs *Zone Settings* read.
   - **C** — set the zone to Full (strict), as `FJS-D1380` is written.
   - **Recommend A** — strict for exactly the host whose certificate was just proven, and nothing else in the zone moves. Confidence 3.
-- Basecamp's own distribution (a checkout, or a published image) stays
-  `deploy-plane.md`'s question. It matters only once someone outside this repo
-  installs Basecamp.
+- Basecamp's own distribution is `FJS-D1526`: a published image pulled by
+  digest, through the same `fli deploy` mode build-once uses. Not built; until
+  it is, ring 0 runs from a framework checkout, and an npm-installed `fli`
+  cannot run `basecamp:create`.
 
 ## See also
 

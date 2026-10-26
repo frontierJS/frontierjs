@@ -1,0 +1,189 @@
+<!--
+  The Basecamp quickstart's inputs, its command and the run it replays.
+
+  Every line of the run is in the prerendered file, filled for
+  basecamp.example.com. This writes the reader's values into the [data-v]
+  spans, keeps the lines that only an emailless run prints in step with the
+  email box, and replays the lines once the terminal is on screen.
+-->
+<script>
+  $.onMount(() => {
+    const form   = document.querySelector('[data-qs-form]')
+    const screen = document.querySelector('[data-qs-screen]')
+    if (!form || !screen) return
+
+    const host    = form.querySelector('input[name="host"]')
+    const email   = form.querySelector('input[name="email"]')
+    const cmd     = form.querySelector('[data-qs-cmd]')
+    const refusal = form.querySelector('[data-qs-refusal]')
+    const copy    = form.querySelector('[data-qs-copy]')
+    const replayB = document.querySelector('[data-qs-replay]')
+    const typed   = screen.querySelector('[data-qs-typed]')
+    const lines   = [...screen.querySelectorAll('.ln')]
+    const steps   = [...document.querySelectorAll('[data-qs-steps] li')]
+    const phases  = [...screen.querySelectorAll('.phase')]
+
+    const HOST  = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
+    const EMAIL = /^[^\s@]+@[^\s@]+$/
+    const SAMPLE = 'basecamp.example.com'
+    // An address with a quote or a `$` in it would be read by the shell.
+    const shellWord = (s) => /^[\w.@+%-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`
+
+    let command = ''
+
+    const update = () => {
+      const h = host.value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/[/:].*$/, '')
+      const e = email.value.trim()
+      const hostBad  = !!h && !HOST.test(h)
+      const emailBad = !!e && !EMAIL.test(e)
+
+      host.setAttribute('aria-invalid', String(hostBad))
+      email.setAttribute('aria-invalid', String(emailBad))
+      // The command's own refusals, word for word.
+      const said = [
+        hostBad  && `✗ "${h}" is not a hostname: letters, digits, dots and dashes`,
+        emailBad && `✗ "${e}" is not an email address`,
+      ].filter(Boolean)
+      refusal.hidden = !said.length
+      refusal.textContent = said.join('\n')
+
+      const domain = h && !hostBad ? h : SAMPLE
+      const admin  = e && !emailBad ? e : ''
+      const labels = domain.split('.')
+      // The run takes the longest zone the token opens; the last two labels
+      // are that for most hostnames, and the overview says how it is chosen.
+      const v = {
+        host:  domain,
+        name:  labels[0],
+        zone:  labels.slice(-2).join('.'),
+        admin: admin || '‹your email›',
+        ip:    '203.0.113.10',
+      }
+      for (const el of screen.querySelectorAll('[data-v]')) {
+        el.textContent = v[el.dataset.v]
+        if (el.dataset.v === 'admin') for (const c of ['ph', 'warning']) el.classList.toggle(c, !admin)
+      }
+      for (const l of lines) {
+        if (l.dataset.when === 'no-email') l.hidden = !!admin
+        if (l.dataset.when === 'email')    l.hidden = !admin
+      }
+
+      command = `fli basecamp:create --domain ${domain}${admin ? ` --admin ${shellWord(admin)}` : ''}`
+      cmd.textContent = command
+      if (!typed.classList.contains('is-typing')) typed.textContent = command
+    }
+
+    // ─── The replay ───────────────────────────────────────────────────────
+    const PAUSE = { blank: 60, title: 300, zone: 500, ask: 450, ans: 350, yn: 650, row: 80, info: 900, fold: 1300, ok: 380, text: 160, later: 160 }
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches
+    let run = 0
+    let timer = 0
+
+    // A card and its block in the terminal carry the same state, so the
+    // step you read is the lines you see.
+    const mark = (step) => {
+      for (const el of [...steps, ...phases]) {
+        const n = Number(el.dataset.step)
+        el.classList.toggle('is-live',  n === step)
+        el.classList.toggle('is-done',  n < step)
+        el.classList.toggle('is-ahead', n > step)
+      }
+    }
+    const showAll = () => {
+      run++
+      clearTimeout(timer)
+      delete screen.dataset.mode
+      typed.classList.remove('is-typing')
+      typed.textContent = command
+      for (const l of lines) l.classList.remove('is-pending', 'is-now')
+    }
+
+    const replay = () => {
+      showAll()
+      if (still) return mark(99)
+      const id = run
+      const shown = lines.filter((l) => !l.hidden)
+      for (const l of shown) l.classList.add('is-pending')
+      screen.dataset.mode = 'play'
+      mark(0)
+      let i = 0
+
+      const next = () => {
+        if (id !== run) return
+        shown[i - 1]?.classList.remove('is-now')
+        if (i >= shown.length) { delete screen.dataset.mode; return mark(99) }
+        const l = shown[i++]
+        l.classList.remove('is-pending')
+        l.classList.add('is-now')
+        if (l.dataset.step) mark(Number(l.dataset.step))
+        screen.scrollTop = screen.scrollHeight
+        if (l.dataset.k !== 'cmd') { timer = setTimeout(next, PAUSE[l.dataset.k] ?? 200); return }
+
+        typed.classList.add('is-typing')
+        let c = 0
+        const key = () => {
+          if (id !== run) return
+          typed.textContent = command.slice(0, ++c)
+          if (c < command.length) timer = setTimeout(key, 24)
+          else { typed.classList.remove('is-typing'); timer = setTimeout(next, 450) }
+        }
+        key()
+      }
+      next()
+    }
+
+    // A card stops the run and spotlights its block; the same card again
+    // brings every step back.
+    const onStep = (e) => {
+      const li = e.target.closest('li[data-step]')
+      if (!li) return
+      const again = screen.dataset.mode === 'focus' && li.classList.contains('is-live')
+      showAll()
+      if (again) return mark(99)
+      const n = Number(li.dataset.step)
+      screen.dataset.mode = 'focus'
+      mark(n)
+      const phase = phases.find((p) => Number(p.dataset.step) === n)
+      if (phase) screen.scrollTop = phase.offsetTop - 8
+    }
+
+    const onCopy = async () => {
+      try {
+        await navigator.clipboard.writeText(command)
+        copy.textContent = 'copied'
+        copy.classList.add('is-done', 'success')
+      } catch {
+        getSelection()?.selectAllChildren(cmd)
+        copy.textContent = 'selected'
+      }
+      setTimeout(() => { copy.textContent = 'copy'; copy.classList.remove('is-done', 'success') }, 1500)
+    }
+
+    const stepList = steps[0]?.parentElement
+    host.addEventListener('input', update)
+    email.addEventListener('input', update)
+    copy.addEventListener('click', onCopy)
+    replayB?.addEventListener('click', replay)
+    stepList?.addEventListener('click', onStep)
+
+    update()
+
+    const seen = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return
+      seen.disconnect()
+      replay()
+    }, { threshold: 0.25 })
+    seen.observe(screen)
+
+    return () => {
+      run++
+      clearTimeout(timer)
+      seen.disconnect()
+      host.removeEventListener('input', update)
+      email.removeEventListener('input', update)
+      copy.removeEventListener('click', onCopy)
+      replayB?.removeEventListener('click', replay)
+      stepList?.removeEventListener('click', onStep)
+    }
+  })
+</script>

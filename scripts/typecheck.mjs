@@ -54,7 +54,7 @@ if (result.status === 'no-tsc') {
   console.error('[typecheck] could not find tsc — run `bun install` at the workspace root')
   process.exit(2)
 }
-if (result.status === 'spawn-failed') {
+if (result.status !== 'ok') {
   console.error(`[typecheck] ${result.message}`)
   process.exit(2)
 }
