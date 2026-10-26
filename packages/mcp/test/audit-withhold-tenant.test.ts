@@ -18,12 +18,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createTenantRegistry } from '@frontierjs/litestone'
 import { createApp, createService, $ } from '@frontierjs/junction'
+import type { App } from '@frontierjs/junction'
 import { createStubAuth } from '@frontierjs/junction/testing'
 import { mcp } from '../src/plugin.ts'
 
 const SHOP = readFileSync(new URL('./fixtures/shop.lite', import.meta.url), 'utf8')
 
-let app:  { stop?: () => Promise<void>; http: { port?: number } } & Record<string, never>
+let app:  App
 let base: string
 
 beforeAll(async () => {

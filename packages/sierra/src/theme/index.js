@@ -2,8 +2,8 @@
  * src/theme/index.js — theme management
  *
  * Exposes:
- *   theme         — plain object: { value: '<theme name>' }
- *   setTheme(v)   — set + persist
+ *   theme         — plain object: { value: '<theme name>', preference: 'system' | '<theme name>' }
+ *   setTheme(v)   — set + persist; 'system' follows the OS pair again
  *   toggleTheme() — advance to the next configured theme
  *   setScheme(s)  — 'light' | 'dark' from a window owner; maps onto theme.system
  *
@@ -65,9 +65,12 @@ import { persisted, colorScheme } from '@frontierjs/mesa/browser'
  *   $: theme.value
  *   <button onclick={() => setTheme('theme-dark')}>{theme.value}</button>
  *
- * @property {string} value  the resolved theme name — never 'system'
+ * @property {string} value       the resolved theme name — never 'system'
+ * @property {string} preference  what was chosen: 'system' or a theme name. A
+ *   picker reads this, not localStorage — the stored key carries the app's
+ *   prefix, so an app reading the bare key reads nothing.
  */
-export const theme = { value: '' }
+export const theme = { value: '', preference: '' }
 
 // The writer's handle. Every mutation goes through it so path watches fire —
 // assigning `theme.value` directly updates the object and notifies nobody
@@ -119,6 +122,11 @@ function normalize(config) {
     )
   }
 
+  // 'system' is the un-pick, so a theme by that name could never be stored.
+  if (themes.includes('system')) {
+    console.warn(`[Sierra] theme.themes names 'system', which setTheme reads as "follow the OS". Rename that theme.`)
+  }
+
   return {
     themes,
     default:   config.default   ?? 'system',
@@ -165,8 +173,10 @@ export function initTheme(config = {}) {
   // not take it back.
   const follow = () => {
     if (_scheme) return
-    const next = resolveTheme()
+    const pref = preferenceOf()
+    const next = resolveTheme(pref)
     untrack(() => {
+      _w().preference = pref
       _w().value = next
       applyTheme(next)
     })
@@ -186,7 +196,10 @@ export function themes() {
 }
 
 /**
- * Set the theme explicitly.
+ * Set the theme explicitly, or `'system'` to follow the OS pair again.
+ *
+ * `'system'` is stored as itself rather than by clearing the key, so it means
+ * the OS under a config whose `default` names a theme too.
  *
  * An unknown name is refused by NAME and the configured list is printed with
  * it: the failure otherwise is a call that returns normally and changes
@@ -195,16 +208,18 @@ export function themes() {
  * @param {string} value  one of the configured theme names
  */
 export function setTheme(value) {
-  if (!_config.themes.includes(value)) {
+  if (value !== 'system' && !_config.themes.includes(value)) {
     console.warn(
       `[Sierra] setTheme: '${value}' is not one of this app's themes ` +
-      `(${_config.themes.join(', ')}). Declare it in sierra.config.js under theme.themes.`,
+      `(${_config.themes.join(', ')}) or 'system'. Declare it in sierra.config.js under theme.themes.`,
     )
     return
   }
 
-  _w().value = value
-  applyTheme(value)
+  const next = resolveTheme(value)
+  _w().preference = value
+  _w().value = next
+  applyTheme(next)
   if (_pref) _pref.value = value
 }
 
@@ -251,19 +266,20 @@ export function setScheme(scheme) {
 
 // ─── Internal ─────────────────────────────────────────────────────────────────
 
-function resolveTheme() {
-  // 1. Persisted user preference — only if this app still offers it. A theme
-  //    removed from the config would otherwise be restored from storage for
-  //    every reader who had ever selected it, with no stylesheet behind it.
+function preferenceOf() {
+  // A stored theme this app no longer offers would otherwise be restored for
+  // every reader who had ever picked it, with no stylesheet behind it.
   const stored = _pref?.value
-  if (stored && _config.themes.includes(stored)) return stored
+  if (stored === 'system' || _config.themes.includes(stored)) return stored
 
-  // 2. Config default. With no OS preference to read, 'system' is its light theme.
-  if (_config.default === 'system') {
-    return _os?.value === 'dark' ? _config.system.dark : _config.system.light
-  }
+  const d = _config.default
+  return d === 'system' || _config.themes.includes(d) ? d : _config.themes[0]
+}
 
-  return _config.themes.includes(_config.default) ? _config.default : _config.themes[0]
+// With no OS preference to read, 'system' is the light theme.
+function resolveTheme(pref) {
+  if (pref !== 'system') return pref
+  return _os?.value === 'dark' ? _config.system.dark : _config.system.light
 }
 
 function applyTheme(value) {

@@ -1354,8 +1354,10 @@ test:installable` holds the grader against Chrome's own `Page.getInstallabilityE
 import { theme, setTheme, toggleTheme } from '@frontierjs/sierra'
 ```
 
-`theme` is a plain object — `{ value: 'theme-dark' }`, the resolved class name, never
-`'system'` — like `page` and `status`. Watch it to make it reactive:
+`theme` is a plain object — `{ value: 'theme-dark', preference: 'system' }` — like `page`
+and `status`. `value` is the resolved class name, never `'system'`; `preference` is what
+was chosen, `'system'` or a name, and is what a picker marks as checked. Watch it to make
+it reactive:
 
 ```html
 <script>
@@ -1380,7 +1382,9 @@ The preference is a `persisted()` value from `@frontierjs/mesa/browser`, stored 
 `<prefix>:<key>` — `key` defaults to `theme` and the prefix is the app's (`prefix` in
 `sierra.config.js`, else its `package.json` name), so `key` never carries the app's name.
 A pick made in one tab reaches the app's other open tabs. Under `default: 'system'` the
-theme follows the OS scheme (`colorScheme()`) until somebody picks one.
+theme follows the OS scheme (`colorScheme()`) until somebody picks one, and
+`setTheme('system')` follows it again — under a named default too. An app never reads or
+clears the key itself: the stored name carries the prefix, so the bare key reads nothing.
 
 `setScheme('light' | 'dark')` is for a page whose window somebody else owns — an MCP
 host handing a view its `hostContext.theme`. It maps onto the pair `theme.system` names,

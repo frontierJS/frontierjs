@@ -66,6 +66,31 @@ test('meta: every shipped stylesheet is reachable from index.css', function () {
   );
 });
 
+test('meta: themes.js names every shipped theme, and only those, with its color-scheme', function () {
+  /*
+   * themes.js is what a picker reads for a theme's label and whether it is
+   * dark. An entry the stylesheet has no file for is a card that paints
+   * nothing; a file with no entry is a theme no picker labels; a wrong
+   * scheme files a dark theme under Light.
+   */
+  var data = window.__FJS_THEMES__;
+  assert.ok(data, 'the runner injected no themes.js');
+  var files = window.__FJS_SHIPPED_CSS__
+    .filter(function (f) { return f.indexOf('themes/') === 0; })
+    .map(function (f) { return 'theme-' + f.slice(7, -4); });
+
+  var unnamed = files.filter(function (c) { return !data[c]; });
+  var fileless = Object.keys(data).filter(function (c) { return files.indexOf(c) < 0; });
+  assert.equal(unnamed.length, 0, 'shipped with no themes.js entry: ' + unnamed.join(', '));
+  assert.equal(fileless.length, 0, 'in themes.js with no stylesheet: ' + fileless.join(', '));
+
+  files.forEach(function (c) {
+    var computed = style(el('<div class="' + c + '"></div>'), 'color-scheme');
+    var dark = /\bdark\b/.test(computed) ? 'dark' : 'light';
+    assert.equal(data[c].scheme, dark, c + ' computes color-scheme "' + computed + '"');
+  });
+});
+
 test('meta: assertions fail when they should', function () {
   assert.throws(function () { assert.ok(false); }, 'assert.ok accepted false');
   assert.throws(function () { assert.equal(1, 2); }, 'assert.equal accepted a mismatch');

@@ -301,7 +301,7 @@ export function parseArgs(cmd: Command, argv: string[], opts: ParseOptions = {})
   // Brackets go through the wire's own reader, then a filter's leaves are typed
   // by the column — `--status[in][] paid` is a list of that column's values.
   if (bracketPairs.length) {
-    const parsed = parseParams(bracketPairs.map(([, k, v]) => [k, v])) as Record<string, unknown>
+    const parsed = parseParams(bracketPairs.map(([, k, v]): [string, unknown] => [k, v])) as Record<string, unknown>
     for (const [name, v] of Object.entries(parsed)) {
       const flag = byName.get(name)!
       slots[flag.slot][name] = flag.filter && typeof v === 'object' && v !== null && !Array.isArray(v)

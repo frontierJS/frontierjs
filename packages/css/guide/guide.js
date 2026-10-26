@@ -33,6 +33,7 @@
  * root, and over file:// the path simply resolves.
  */
 import { glow } from '../../toolbelt/src/glow/glow.js'
+import { THEMES as PACKAGE_THEMES } from '../themes.js'
 
 /* ══════════════════════════════════════════════════════════════════════
    1. Data
@@ -195,24 +196,13 @@ const BTN_VARS = [
  * unreadable in a theme whose stylesheet is correct. notebook's copy was one
  * color and the word "Testing".
  *
- * Only what the stylesheet cannot say lives here: the display name and the
- * one-line description.
+ * What the stylesheet cannot say — label, blurb, scheme — is the package's
+ * themes.js, which apps read too. The guide keys it by the bare name its
+ * state and data-theme carry.
  */
-const THEMES = {
-  default:  { name: 'Default',  description: 'Blue brand, neutral surfaces.' },
-  sunset:   { name: 'Sunset',   description: 'Warm oranges, earthy accents.' },
-  forest:   { name: 'Forest',   description: 'Green primary, cool neutrals.' },
-  midnight: { name: 'Midnight', description: 'Purple accent, deep contrast.' },
-  dark:     { name: 'Dark',     description: 'Inverted neutrals, same brand colors.' },
-  elite:    { name: 'Elite',    description: 'Navy + lime, uppercase, sharp corners.' },
-  basecamp: { name: 'Basecamp', description: 'Deep blue-black, cool neutrals, six accent hues.' },
-  notebook: { name: 'Notebook', description: 'Muted ink on warm paper.' },
-  press:    { name: 'Press',    description: 'Newsprint: serif headlines, mono body, hard shadows.' },
-  dracula:  { name: 'Dracula',  description: 'Violet and pink on blue-black, six vivid accents.' },
-  twilight: { name: 'Twilight', description: 'Warm sand on near-black, muted olive and clay.' },
-  expedition: { name: 'Expedition', description: 'Charcoal, sage and brass, parchment ink.' },
-  catppuccin: { name: 'Catppuccin', description: 'Catppuccin Mocha: pastel accents on blue-violet charcoal.' },
-}
+const THEMES = Object.fromEntries(
+  Object.entries(PACKAGE_THEMES).map(([cls, t]) => [cls.replace(/^theme-/, ''), t])
+)
 
 /*
  * A theme's own value for one token, straight from its rule. Falls back to
@@ -2423,8 +2413,8 @@ function themesPage() {
               themeToken(key, '--color-primary')
             }"></span>
             <span class="item-text">
-              <span class="item-title">${t.name}</span>
-              <span class="item-sub">${t.description}</span>
+              <span class="item-title">${t.label}</span>
+              <span class="item-sub">${t.blurb}</span>
             </span>
           </button>`
             )
@@ -5834,7 +5824,7 @@ function cheatSheetPage() {
               themeToken(key, '--color-primary')
             }"></span>
             <code class="sg-cheat-name">.theme-${key}</code>
-            <span class="sg-cheat-theme-desc">${t.description}</span>
+            <span class="sg-cheat-theme-desc">${t.blurb}</span>
           </div>`
             )
             .join('')}
@@ -12210,7 +12200,7 @@ function topbar() {
               <span class="sg-theme-trigger-swatch" style="background: ${
                 themeToken(state.theme, '--color-primary')
               }"></span>
-              ${theme.name}
+              ${theme.label}
               <span class="sg-theme-trigger-arrow" aria-hidden="true">⌄</span>
             </button>
             <div hidden data-theme-dropdown>
@@ -12226,8 +12216,8 @@ function topbar() {
                     themeToken(key, '--color-primary')
                   }"></span>
                   <span class="item-text">
-                    <span class="item-title sg-theme-option-name">${t.name}</span>
-                    <span class="item-sub">${t.description}</span>
+                    <span class="item-title sg-theme-option-name">${t.label}</span>
+                    <span class="item-sub">${t.blurb}</span>
                   </span>
                   ${key === state.theme ? `<span class="sg-theme-option-check" aria-hidden="true">✓</span>` : ''}
                 </button>`

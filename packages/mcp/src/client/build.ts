@@ -70,7 +70,7 @@ export async function buildCli({ root, targets = [] }: BuildOptions): Promise<Bu
     const result  = await Bun.build({
       entrypoints: [entry, ...routes.map(r => r.file)],
       splitting:   true,
-      compile:     target ? { outfile, target: target as Bun.Build.Target } : { outfile },
+      compile:     target ? { outfile, target: target as Bun.Build.CompileTarget } : { outfile },
       define:      { 'process.env.FJS_CLI_ROUTES': JSON.stringify(String(routes.length)) },
     })
     if (!result.success)

@@ -139,12 +139,10 @@ export default {
   // switch in the topbar. Sierra writes the class on <html> from a <head> script,
   // before first paint — anything the app ran itself would flash the default
   // first. Add any other theme-* class the package ships to the list and the
-  // switch cycles through it. The key is per app because every scaffold serves
-  // on localhost:8000, and one origin is one localStorage.
+  // switch cycles through it.
   theme: {
     themes:  ['theme-default', 'theme-dark'],
     default: 'system',
-    key:     '${appName}_theme',
   },
 ${useApi ? `
   junction: {

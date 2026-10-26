@@ -87,7 +87,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/css`
 
-`packages/css` · ships `AGENTS.md` `LICENSE` `README.md` `dist/` `package.json` `src/` `vocabulary.js` `vocabulary.json`
+`packages/css` · ships `AGENTS.md` `LICENSE` `README.md` `dist/` `package.json` `src/` `themes.js` `vocabulary.js` `vocabulary.json`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -104,6 +104,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./bundle.min.css` | `dist/frontier.min.css` | yes |
 | exports | `./vocabulary.json` | `vocabulary.json` | yes |
 | exports | `./vocabulary.js` | `vocabulary.js` | yes |
+| exports | `./themes.js` | `themes.js` | yes |
 | main | `main` | `src/index.css` | yes |
 
 ## `@frontierjs/email-kit`
@@ -431,7 +432,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./rowlist` | `rowlist.js` | yes |
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 90 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 92 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

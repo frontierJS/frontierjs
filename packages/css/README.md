@@ -112,10 +112,16 @@ inheritance.
 </body>
 ```
 
-`theme-default` · `theme-sunset` · `theme-forest` · `theme-midnight` ·
-`theme-dark` · `theme-elite` · `theme-basecamp` · `theme-notebook` ·
-`theme-press` · `theme-field` · `theme-dracula` · `theme-twilight` ·
-`theme-expedition` · `theme-catppuccin`
+The themes are the files in `src/themes/`. What a picker shows for each —
+its label, a one-line blurb, and whether it is `light` or `dark` — is data:
+
+```js
+import { THEMES } from '@frontierjs/css/themes.js'
+THEMES['theme-dracula'] // { label: 'Dracula', blurb: 'Violet and pink on dark', scheme: 'dark' }
+```
+
+The suite fails when a theme file has no entry or its `scheme` disagrees with
+the class's `color-scheme`, so group by `scheme` rather than keeping a list.
 
 A theme overrides tokens, not just colors. **A theme ships no selector** —
 that is the contract, and it decides what a look can be: if a design needs a

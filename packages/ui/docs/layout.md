@@ -15,7 +15,8 @@ components/
   display/    Table · Badge · Pill · Tag · Stat · StatCard · Steps · Pagination ·
               Breadcrumbs · Callout · EmptyState · Avatar(+Group) · Sparkline ·
               Json · Markdown · HtmlFrame · TemplatePreview · SignatureView · BulkBar ·
-              Transcript · Message · Composer (chat) · …
+              Transcript · Message · Composer (chat) · ThemeSwatch · ThemePicker
+              (real radios over swatches; sierra's setTheme is the caller's) · …
   layout/     Card · Tabs (Tabs/TabList/Tab/TabPanel) · Accordion(+Item) ·
               Shell (the app frame, drawn from a nav.js table; Sierra's
               page, session and isActive arrive as props)

@@ -323,6 +323,13 @@ describe('virtual:sierra, the entry (FJS-D1085)', () => {
     expect(build.transformIndexHtml(tag)).toBe(tag)
   })
 
+  test('dev keeps the ?t= Vite adds after an HMR update', () => {
+    const dev = virtualSierraPlugin({})
+    dev.configResolved({ root: '/app', command: 'serve', base: '/' })
+    expect(dev.transformIndexHtml('<script type="module" src="virtual:sierra?t=1793042865566"></script>'))
+      .toBe('<script type="module" src="/@id/virtual:sierra?t=1793042865566"></script>')
+  })
+
   test('an index.html naming /src/main.js is refused', () => {
     const plugin = virtualSierraPlugin({})
     plugin.configResolved({ root: '/app', command: 'serve' })

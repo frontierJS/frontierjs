@@ -520,7 +520,7 @@ function register(server: McpServer, app: App, tool: Tool, user: unknown, call: 
     ...(tool.input.schema ? { inputSchema: fromJsonSchema(tool.input.schema as never) } : {}),
   }
   const handler = async (args: unknown, ctx: HandlerCtx) => run(app, tool, args, user, call, ctx)
-  if (view === null) server.registerTool(tool.name, config, handler)
+  if (view === null) server.registerTool(tool.name, config, handler as never)
   else registerAppTool(server, tool.name, { ...config, _meta: { ui: { resourceUri: view } } }, handler as never)
 }
 
@@ -561,7 +561,7 @@ const VERB: Record<string, string> = {
  * scope, which in a plugin route is the app's own.
  */
 async function run(app: App, tool: Tool, args: unknown, user: unknown, call: CallScope, ctx?: HandlerCtx): Promise<CallResult> {
-  const caller = app.service(tool.service) as Record<string, (...a: unknown[]) => Promise<unknown>>
+  const caller = app.service(tool.service) as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>
   const a      = (args ?? {}) as Record<string, unknown>
   // `'mcp'`, never the `'internal'` an in-process caller defaults to: an agent
   // is outside, and an *is this call from inside* check must say so (`FJS-D609`).
@@ -583,7 +583,7 @@ async function run(app: App, tool: Tool, args: unknown, user: unknown, call: Cal
     const raw    = await invoke(caller, tool, a, opts)
     const appDb  = (app as { db?: unknown }).db
     const withhold = (db: unknown) => withholdProtected(raw, setCallDb({
-      model: tool.model ?? undefined, service: tool.service,
+      model: (tool.model ?? undefined) as string, service: tool.service,
     }, db))
     const result = appDb ? withhold(appDb) : await app.withDb(withhold)
     await recordCall(app, call.trail, tool, a, user, { outcome: 'done', result })

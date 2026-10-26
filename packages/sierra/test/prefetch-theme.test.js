@@ -48,12 +48,12 @@ describe('buildThemeScript', () => {
     expect(script).toContain('"theme-dark"')
   })
 
-  test('uses a fixed value when default names a theme', () => {
-    const light = buildThemeScript({ default: 'theme-default' })
+  test('uses a fixed value when default names a theme and nothing is stored', () => {
+    const light = buildThemeScript({ default: 'theme-default', persist: false })
     expect(light).not.toContain('matchMedia')
     expect(light).toContain('"theme-default"')
 
-    const dark = buildThemeScript({ default: 'theme-dark' })
+    const dark = buildThemeScript({ default: 'theme-dark', persist: false })
     expect(dark).toContain('"theme-dark"')
     expect(dark).not.toContain('matchMedia')
   })
@@ -258,6 +258,39 @@ describe('in a tab', () => {
     expect(theme.value).toBe('theme-default')
   })
 
+  // The account pages that read the bare key read nothing, because the key
+  // carries the prefix; then cleared the wrong key, so the OS never won again.
+  test("setTheme('system') hands the theme back to the OS, and preference says so", () => {
+    setPrefix('app')
+    initTheme({ ...pair, default: 'system' })
+    expect(theme.preference).toBe('system')
+    setTheme('theme-default')
+    expect(theme.preference).toBe('theme-default')
+    tab.flip(true)
+    expect(theme.value).toBe('theme-default')
+
+    setTheme('system')
+    expect(theme.preference).toBe('system')
+    expect(theme.value).toBe('theme-dark')
+    expect(tab.store.get('app:theme')).toBe('system')
+    tab.flip(false)
+    expect(theme.value).toBe('theme-forest')
+  })
+
+  test("a stored 'system' follows the OS under a named default, at boot and in the <head> script", () => {
+    os.matches = true
+    tab.store.set('theme', 'system')
+    const config = { ...pair, default: 'theme-default' }
+    initTheme(config)
+    expect(theme.preference).toBe('system')
+    expect(theme.value).toBe('theme-dark')
+
+    const classes = new Set()
+    const document = { documentElement: { classList: { add: (c) => classes.add(c), remove: (c) => classes.delete(c) } } }
+    new Function('localStorage', 'document', 'window', buildThemeScript(config))(tab.localStorage, document, globalThis.window)
+    expect([...classes]).toEqual(['theme-dark'])
+  })
+
   test('maps a stated scheme onto the pair theme.system declares, not onto a name', () => {
     initTheme({ ...pair, default: 'theme-default' })
     setScheme('dark');  expect(theme.value).toBe('theme-dark')
@@ -381,6 +414,13 @@ describe('theme state', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     initTheme({ attribute: 'data-theme' })
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("apply: 'attribute'"))
+    warnSpy.mockRestore()
+  })
+
+  test("warns when a theme is named 'system', which is the un-pick", () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    initTheme({ themes: ['system', 'theme-dark'] })
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("names 'system'"))
     warnSpy.mockRestore()
   })
 

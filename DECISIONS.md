@@ -8287,6 +8287,18 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1528"></a>2026-10-26 · `FJS-D1528` — `conduit-zapier` — Built, Tier B, in the connectors workspace: the owner's override of `IDEAS/conduit-connectors.md`'s *Zapier is not a connector* row, on slack's incoming-webhook shape and not a host-pinned one.
+
+Asked in session when the owner asked for a `conduit-zapier`. `decision-rules` ran first against **A** as proposed (one target with `https://hooks.zapier.com` pinned as its address, the pasted URL's path riding as `path`, a `parseHookUrl` restating Zapier's path grammar), **B** (keep the row: outbound is `plugins/webhooks`, inbound is `inbound-integrations.md` half B) and **C** (an app-owned `providers/zapier.ts` in the maidtech prototype first, the Stripe shape). It recommended **A reshaped** — slack's `webhook` target: `address_from: 'request'`, `auth: none`, `destinations` off in production, any https public URL carried — and that was built. As recommended. Confidence 2.
+
+What the run found. A as proposed failed three of the nine: the complexity was ours (pinning the host narrows a field the two legacy apps ship as GENERIC — maid.tech's `Form.svelte` and ELA's `Integrations.svelte` say *Send form responses to Zapier, IFTTT, or any other webhook*), `parseHookUrl` restated a grammar Zapier owns and changes, and a host-pinned post was a second *POST JSON to a pasted URL* beside slack's target (Invariant 4). B was wrong on its own evidence: `plugins/webhooks` signs and subscribes, and a pasted Catch Hook URL is neither — the two apps POST to it with a raw `fetch`, 203 and 222 references. C repeated `FJS-D1489`'s rejected path with ELA already the second app. Precedent from the domain: Tally and Jotform ship one generic webhook field with Zapier guides on top; Supabase ships webhooks and Zapier built the app.
+
+What is Zapier's in the package: how the answer is read — 404 `off` (the Zap is off; Zapier answers 200 for hours after the switch, so it is late and final), 410 `gone` (the REST Hook unsubscribed; the row is dead) — the documented reverse unsubscribe (`DELETE <target_url>`, `replayable: true`; a replay finding it gone answers `already: true`, the state asked for), and `subscriptionFrom(body)`, which DOES pin the host, because a forged subscribe naming a LAN `target_url` would have the app post inside its own network on every trigger. A post is unkeyed and never replayed; a lost one is `indeterminate` with no resolving read (slack's C6 amendment; no new one). Sink-only, 17 rows; the receipt body's fields, the trailing-slash tolerance and the 404/410 bodies are unverified against Zapier.
+
+**Not changed by this ruling:** `plugins/webhooks` stays the one signed-and-subscribed deliverer. The Actions API (*Powered by Zapier*, a partner contract, OAuth scope `external`, `idempotency_id` collapsing a run for 72 hours) is not built and is the reopen path for a host-pinned target, being the first call that needs a vendor address. Zapier MCP is an MCP client, not a conduit target.
+
+*Lives in:* `../conduit-connectors/packages/conduit-zapier/`; `IDEAS/conduit-connectors.md` § Tier B row 13.
+
 ### <a id="fjs-d1518"></a>2026-10-25 · `FJS-D1518` — A service name STATED in kebab or snake folds to camelCase exactly as a filename does (`FJS-D159`), and the stated spelling stays mounted as an alias. The fold is `canonicalServiceName` in `ServiceRegistry.register` and the autoloader; a `buildService()` result handed to `register` keeps the name it was built with.
 
 This overrides `FJS-D159`'s *a DECLARED name is untouched*: that sentence left a stated kebab name as a fourth spelling no resolver agreed with. It adds aliases, so whether aliases stay at all is `FJS-D1317`'s, and a subscription made under one still hears nothing (`FJS-3124`).
@@ -12580,6 +12592,32 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 `core/errors.ts`.
 
 ## UI substrate (Mesa)
+
+### <a id="fjs-d1530"></a>2026-10-26 · `FJS-D1530` — A theme's label, blurb and light/dark are data in `@frontierjs/css/themes.js`, keyed by class; the guide's table moved there.
+
+Proposed beside `FJS-D1529`. thod and serpgrid each held the same hand table of labels and blurbs; eventmark held a set of dark themes that called `theme-expedition` and `theme-catppuccin` light; the guide's own `THEMES` had no `theme-field`. Options were **A** — a new `themes.js` export, **B** — a table in `vocabulary.js`, **C** — front-matter in each `.css` parsed at build. `decision-rules` passed A only once the guide's table MOVED into it rather than gaining a sibling: B files Style under the Structure register, C is a second definition of a format `build-vocabulary.js` refuses to parse.
+
+Built: `export const THEMES = { 'theme-dracula': { label, blurb, scheme: 'light' | 'dark' }, … }`, keyed by the class sierra's `themes()` returns; fields are `label`/`blurb` and the guide renamed its `name`/`description` reads. `scheme` restates the file's `color-scheme`, so `meta.spec.js` fails on a theme file with no entry, an entry with no file, or a `scheme` the computed `color-scheme` disagrees with. Blurbs are the picker-length ones the apps used; the guide's longer descriptions are gone. thod, serpgrid and eventmark read it.
+
+**Not ruled:** whether an app may relabel a theme — eventmark still calls `theme-default` *Light*. Sierra's default OS pair deriving from `scheme` would make sierra read css data, and waits on a dependency-direction check.
+
+*Lives in:* `packages/css/themes.js`; `guide/guide.js`; `test/specs/meta.spec.js`, `test/run.js`.
+
+### <a id="fjs-d1529"></a>2026-10-26 · `FJS-D1529` — `'system'` is a theme pick: `setTheme('system')` follows the OS pair again, and `theme.preference` says what was chosen.
+
+Asked in session after `FJS-3510`: two apps' account pages read and cleared the bare `theme` key that `persisted()` stores under the app's prefix, because Sierra had no way to un-pick. Options were **A** — `'system'` is a value `setTheme` takes and stores as itself, plus `theme.preference` (`'system'` | name) beside the resolved `theme.value` — and **B** — `setTheme('system')` clears the key. Built **A**: under a config whose `default` names a theme, clearing the key falls back to that theme rather than the OS, so B means two things depending on config. Cost: the `<head>` script carries the OS query whenever it reads storage, and the spa bundle rose 15 bytes brotli. The owner said *fix the system bug*, which is A as recommended.
+
+**Not changed:** `setScheme` stays unpersisted and leaves `preference` alone — it is a host's answer, not a pick. A `ThemePicker` in `@frontierjs/ui` and theme labels as data in `@frontierjs/css` are proposed in the same session, not ruled.
+
+*Lives in:* `packages/sierra/src/theme/index.js` + `script.js`; `test/prefetch-theme.test.js`.
+
+### <a id="fjs-d1527"></a>2026-10-26 · `FJS-D1527` — A topbar that does not fit one line: a labeled group is one menu, and below md the drawer takes the nav. Amends `FJS-D972`'s "wraps below md, with no drawer".
+
+Asked in chat over example's thirteen-entry bar, which wrapped onto a second line at 1100px. **Dropdown groups and a drawer** was picked over **a drawer below md only** (phones fixed, 768–1100px still wraps), **example moves to `layout="sidebar"`** (no kit change, every drive scoped again) and **a measured More… overflow menu** (`FJS-D972` kept portal's out; a ResizeObserver and no terminal story).
+
+The group's `label` is the signal and there is no new option: no topbar caller in this tree or in `fjs-prototypes` labels a group, so nothing that drew flat before draws a menu now. The trigger is a `button.navlink` carrying `aria-current="true"` while the page is one of its rows, which `nav.css` now styles as it styles `"page"`. The drawer's copy is mounted while closed, as a sidebar's always was, and a topbar keeps Sign out in the bar only.
+
+*Lives in:* `packages/ui/components/layout/Shell.mesa`; `packages/css/src/components/frame.css` (`.topbar-nav`, hidden in the same `@media` that shows `.sidebar-toggle`, so one owner holds both halves of the switch); `packages/css/src/patterns/nav.css`; example's `web/src/lib/nav.js` (the Staff group); the drive is `packages/ui/test/browser/specs/shell.spec.mjs` § layout="topbar".
 
 ### <a id="fjs-d1513"></a>2026-10-24 · `FJS-D1513` — A file a raw route answers is handed to the person by `@frontierjs/ui/utils`: `download` takes a `Response` and saves it under the server's `Content-Disposition` name, and `openFile(() => Promise<Response>, { name, save })` shows it in a tab. Neither goes on the client.
 

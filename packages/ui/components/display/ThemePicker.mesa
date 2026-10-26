@@ -1,0 +1,90 @@
+<script>
+  // ThemePicker.mesa
+  // A grid of ThemeSwatch cards, one per theme, picking one.
+  //
+  // Each card is a <label> around a real radio, as in RadioGroup: the platform
+  // gives the group its arrow keys and one tab stop. A <button role="radio">
+  // grid gets neither, and a keyboard user tabs through every theme.
+  //
+  // The picker holds no theme state. sierra's `theme` is written through
+  // setTheme() only — a bind:value would assign `theme.preference` and notify
+  // nobody — so a caller hands both in:
+  //
+  //   import { theme, themes, setTheme } from '@frontierjs/sierra/theme'
+  //   $: theme.preference
+  //   <ThemePicker themes={themes()} value={theme.preference} onchange={setTheme} />
+  //
+  // A `value` of 'system' (or any name not offered) checks no card; a
+  // "Match system" control is the caller's, beside the picker.
+  //
+  // Lives in display/, not forms/: it is not a schema column's control and
+  // takes no `name` from a <Form>.
+
+  import ThemeSwatch from './ThemeSwatch.mesa'
+  import { THEMES } from '@frontierjs/css/themes.js'
+  import { uid } from '../../utils.js'
+
+  export let themes   = Object.keys(THEMES)  // theme-* classes, in order
+  export let value    = ''
+  export let label    = 'Theme'              // the group's accessible name
+  export let disabled = false
+  export let min      = '10rem'              // a card's narrowest width
+  export let onchange = undefined            // (name) => void
+
+  const group = uid('theme')
+
+  function pick(e) {
+    value = e.target.value
+    onchange?.(value)
+  }
+</script>
+
+<div
+  role="radiogroup"
+  aria-label={label || null}
+  class="grid fjs-theme-picker"
+  style:--grid-min={min}
+  {class}
+  {...$attributes}
+>
+  {#each themes as t (t)}
+    <label class="fjs-theme-option">
+      <input
+        type="radio"
+        class="visually-hidden"
+        name={group}
+        value={t}
+        checked={value === t}
+        {disabled}
+        onchange={pick}
+      />
+      <ThemeSwatch name={t} />
+    </label>
+  {/each}
+</div>
+
+<style>
+  .fjs-theme-picker { gap: var(--space-sm) }
+  .fjs-theme-option {
+    padding:       var(--space-xs);
+    border:        var(--border-width) solid var(--rule);
+    border-radius: var(--card-radius);
+    cursor:        pointer;
+  }
+  .fjs-theme-option:hover { border-color: var(--rule-strong) }
+  /* The radio is visually hidden, so its focus ring is drawn on the card. */
+  .fjs-theme-option:has(input:focus-visible) {
+    outline:        var(--ring-width) var(--ring-style) var(--ring-color);
+    outline-offset: var(--ring-offset);
+  }
+  /* Selected from the checked input, not a class, so the look and the state
+     cannot drift apart. */
+  .fjs-theme-option:has(input:checked) {
+    border-color: var(--color-primary);
+    box-shadow:   inset 0 0 0 var(--border-width) var(--color-primary);
+  }
+  .fjs-theme-option:has(input:disabled) {
+    opacity: 0.55;
+    cursor:  not-allowed;
+  }
+</style>

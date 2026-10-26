@@ -276,8 +276,8 @@ try {
   await goto('/')
   t('home.heading', await evaluate(`return document.querySelector('h1').textContent.trim()`))
   t('home.signedOutAlert', await evaluate(`return !!byText('.alert.info', 'Signed out')`))
-  t('nav.links', await evaluate(`return [...document.querySelectorAll('nav .navlink')].map(a => a.textContent.trim())`))
-  t('nav.current', await evaluate(`return document.querySelector('nav [aria-current="page"]').textContent.trim()`))
+  t('nav.links', await evaluate(`return [...document.querySelectorAll('header nav .navlink')].map(a => a.textContent.trim())`))
+  t('nav.current', await evaluate(`return document.querySelector('header nav [aria-current="page"]').textContent.trim()`))
 
   // 2 ─ public reads work with no session
   await goto('/products/')

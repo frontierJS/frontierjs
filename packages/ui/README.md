@@ -101,7 +101,7 @@ compose freely, so Button takes each as its own prop:
 **display** — `Badge` `Pill` `Tag` `Dot` `Kbd` `Mono` `Divider` `Breadcrumbs`
 `Pagination` `Steps` `SectionHeader` `Callout` `EmptyState` `CopyButton` `Code`
 `Avatar` `AvatarGroup` `Stat` `StatCard` `Table` `Bar` `Sparkline`
-`AccountStatus` `SignatureView` `Json` (read, or `editable`)
+`AccountStatus` `SignatureView` `Json` (read, or `editable`) `ThemeSwatch` `ThemePicker`
 
 **layout** — `Card` `Accordion` `AccordionItem` `Tabs` `TabList` `Tab` `TabPanel`
 

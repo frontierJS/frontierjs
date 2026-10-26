@@ -195,7 +195,7 @@ if (flag.check) {
       chalk.dim('appear to do nothing while it lives.') + ' fli kill <port> ' + chalk.dim('stops it.'))
     if (otherApp) lines.push(
       chalk.dim('Another app has this slot. Stop it, or forget this app\'s slot with'),
-      chalk.dim(`\`fli ps --clean ${manifest.name ?? ''}\`.trim() and run again for a free one.`))
+      chalk.dim(`\`${`fli ps --clean ${manifest.name ?? ''}`.trim()}\` and run again for a free one.`))
     if (!ownRun && !otherApp) lines.push(chalk.dim('fli ps 8000 ') + chalk.dim('asks about a port by number.'))
     lines.push('')
     echo.lines(lines, { indent: 2 })

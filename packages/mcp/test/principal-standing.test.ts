@@ -17,6 +17,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createClient, GatePlugin } from '@frontierjs/litestone'
 import { createApp, createService, membershipClaim } from '@frontierjs/junction'
+import type { App } from '@frontierjs/junction'
 import { createStubAuth } from '@frontierjs/junction/testing'
 import { mcp } from '../src/plugin.ts'
 
@@ -43,10 +44,10 @@ const SCHEMA = `
 // The app's own mapping, as basecamp writes it: the role on the membership row,
 // never anything the session carries.
 const ROLE_LEVEL: Record<string, number> = { admin: 5, viewer: 4 }
-const getLevel = (user?: { memberRole?: string } | null) =>
-  !user ? 0 : ROLE_LEVEL[user.memberRole ?? ''] ?? 1
+const getLevel = (user: object | null) =>
+  !user ? 0 : ROLE_LEVEL[(user as { memberRole?: string }).memberRole ?? ''] ?? 1
 
-let app:  { stop?: () => Promise<void>; http: { port?: number } } & Record<string, never>
+let app:  App
 let base: string
 
 beforeAll(async () => {
