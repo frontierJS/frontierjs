@@ -144,7 +144,9 @@ const enrollOutpost = (machine, { appId, deployConf, path, host, log }) => {
     log.info('Outpost: this box is in the fleet already')
     result = { outcome: 'enrolled' }
   } else {
-    // The command is written for a person with sudo.
+    // The command is written for a person with sudo. Its output is held, and
+    // a fresh image's first security pass is minutes of silence after this.
+    log.info('Installing the Outpost — on a fresh box its security updates take several minutes')
     try {
       machine.run(`${SUDO}\n${answer.command}`)
       log.success('Outpost installed — the box joins the fleet at its first heartbeat')

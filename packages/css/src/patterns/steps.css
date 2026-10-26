@@ -263,7 +263,7 @@
 .steps.vertical .step {
   flex-direction: row;
   align-items:    flex-start;
-  gap:            var(--space-lg);
+  gap:            var(--space-xs) var(--space-lg);
   text-align:     start;
   /* No top padding: the marker sits flush with the step's top edge, which
      is what lets the connector below land exactly on the next marker. */
@@ -328,5 +328,106 @@
   flex-basis:          100%;
   margin-inline-start: calc(var(--step-marker-size) + 0.75rem);
   padding-block-start: var(--space-3xs);
+}
+/* An action beside the label (a button after the hint) otherwise starts
+   under the marker, left of the text it belongs to. */
+.steps.vertical .step > :not(.step-marker, .step-label, .step-hint) {
+  margin-inline-start: calc(var(--step-marker-size) + 0.75rem);
+}
+
+/*
+ * ── Narrow ───────────────────────────────────────────────────────────
+ *
+ * The horizontal tracks are equal, so six steps at phone width are six
+ * 50px columns and every label breaks a letter at a time. Under the `sm`
+ * step the strip turns vertical, and a box named
+ * `container: fjs / inline-size` turns it under 30rem — the opt-in and
+ * threshold facts.css uses. Both blocks are .vertical above, written again
+ * because neither query can share a body with a class.
+ */
+@media (max-width: 639px) {
+  .steps {
+    flex-direction: column;
+    align-items:    stretch;
+    gap:            0;
+
+    & .step {
+      flex-direction: row;
+      flex-wrap:      wrap;
+      align-items:    flex-start;
+      gap:            var(--space-xs) var(--space-lg);
+      text-align:     start;
+      padding-block:  0 var(--space-3xl);
+    }
+    & .step:last-child { padding-block-end: 0; }
+    & .step + .step::before { content: none; }
+    & .step:not(:last-child)::after {
+      content:            "";
+      position:           absolute;
+      z-index:            0;
+      inset-inline-start: calc(var(--step-marker-size) / 2);
+      translate:          -1px 0;
+      inline-size:        2px;
+      inset-block-start:  calc(var(--step-marker-size) / 2);
+      inset-block-end:    0;
+      background:         var(--rule);
+    }
+    & .step.complete::after { background: var(--step-accent); }
+    & .step-label {
+      flex:                1;
+      padding-block-start: 0.3125rem;
+    }
+    & .step-hint {
+      flex-basis:          100%;
+      padding-block-start: var(--space-3xs);
+    }
+    & .step-hint,
+    & .step > :not(.step-marker, .step-label, .step-hint) {
+      margin-inline-start: calc(var(--step-marker-size) + 0.75rem);
+    }
+  }
+}
+
+@container fjs (inline-size < 30rem) {
+  .steps {
+    flex-direction: column;
+    align-items:    stretch;
+    gap:            0;
+
+    & .step {
+      flex-direction: row;
+      flex-wrap:      wrap;
+      align-items:    flex-start;
+      gap:            var(--space-xs) var(--space-lg);
+      text-align:     start;
+      padding-block:  0 var(--space-3xl);
+    }
+    & .step:last-child { padding-block-end: 0; }
+    & .step + .step::before { content: none; }
+    & .step:not(:last-child)::after {
+      content:            "";
+      position:           absolute;
+      z-index:            0;
+      inset-inline-start: calc(var(--step-marker-size) / 2);
+      translate:          -1px 0;
+      inline-size:        2px;
+      inset-block-start:  calc(var(--step-marker-size) / 2);
+      inset-block-end:    0;
+      background:         var(--rule);
+    }
+    & .step.complete::after { background: var(--step-accent); }
+    & .step-label {
+      flex:                1;
+      padding-block-start: 0.3125rem;
+    }
+    & .step-hint {
+      flex-basis:          100%;
+      padding-block-start: var(--space-3xs);
+    }
+    & .step-hint,
+    & .step > :not(.step-marker, .step-label, .step-hint) {
+      margin-inline-start: calc(var(--step-marker-size) + 0.75rem);
+    }
+  }
 }
 

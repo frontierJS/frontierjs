@@ -261,6 +261,7 @@ systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
 # now, so its stamp is the last run posture reports. A failed or slow pass
 # leaves the box to the timer; patch.security-pending says so.
 # posture: patch.security-pending
+echo "Applying pending security updates: several minutes on a fresh image"
 timeout 1800 systemctl start apt-daily-upgrade.service \
   || echo "the first security-update pass did not finish; apt-daily-upgrade.timer will retry" >&2
 # A pass that upgrades systemd re-executes it, which ends the wait above while
@@ -699,11 +700,10 @@ ${script}`
 /**
  * What a person pastes on a machine they already own.
  *
- * The script is fetched unauthenticated and carries nothing; the token rides as
- * an environment variable rather than in the URL, so it stays out of access logs
- * and out of any proxy in between. `sudo env` and not `sudo` alone: sudo drops
- * the environment by default, and the script would then fail on its first line
- * rather than halfway through an install.
+ * The script is fetched unauthenticated and carries nothing. The four inputs go
+ * ahead of it on bash's stdin, never in the URL (an access log, a proxy) and
+ * never in sudo's argv, which sudo writes to the system journal; `echo` is a
+ * shell builtin, so no process argv holds the token either.
  */
 export function installCommand(opts: {
   serverId:    string
@@ -712,9 +712,10 @@ export function installCommand(opts: {
   outpostPort: number
 }): string {
   assertEnrollsOverTls(opts.basecampUrl)
-  return `curl -fsSL ${opts.basecampUrl}/install.sh | sudo env `
+  return `{ echo export `
     + `BASECAMP_URL=${opts.basecampUrl} `
     + `SERVER_ID=${opts.serverId} `
     + `ENROLL_TOKEN=${opts.token} `
-    + `OUTPOST_PORT=${opts.outpostPort} bash`
+    + `OUTPOST_PORT=${opts.outpostPort}; `
+    + `curl -fsSL ${opts.basecampUrl}/install.sh; } | sudo bash`
 }

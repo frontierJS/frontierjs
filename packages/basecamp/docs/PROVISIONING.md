@@ -512,11 +512,10 @@ product entirely and stays a person's recovery path.
 
 **One install script, two ways of arriving.** A provisioned machine receives it
 as `user_data` with its four inputs baked in; an imported machine receives it as
-a command with the four on the command line. `GET /install.sh` serves it,
-unauthenticated, and that is safe because the script carries no credential at
-all — the token rides as an environment variable, so it stays out of access
-logs, out of any proxy between, and out of the shell history of whoever pasted
-it. Two copies of an install is two things to keep in step and the one nobody
+a command that puts the four ahead of the script on bash's stdin. `GET
+/install.sh` serves it, unauthenticated, and that is safe because the script
+carries no credential at all — the token stays out of access logs, out of any
+proxy between, and out of sudo's argv, which the journal records (`FJS-3511`). Two copies of an install is two things to keep in step and the one nobody
 runs is the one that rots, which is `FJS-758` one surface over.
 
 **And the fleet key stopped being an authentication input.** `outpostSecretFor`

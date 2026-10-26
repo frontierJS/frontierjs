@@ -1902,12 +1902,12 @@ try {
     'the install command never appeared')
   const command = await text('#enroll-command')
   check('and hands over one command to run on it',
-    /curl -fsSL .*\/install\.sh \| sudo env /.test(command ?? ''), command?.trim()?.slice(0, 120))
-  // The token is an env var, never in the URL: a URL puts it in an access log,
-  // a proxy's, and the shell history of whoever pasted it.
-  check('…carrying the token as an environment variable, not in the URL',
-    /ENROLL_TOKEN=bcen_[0-9a-f]{64}/.test(command ?? '')
-    && !/install\.sh\?/.test(command ?? ''), command?.trim()?.slice(0, 160))
+    /curl -fsSL .*\/install\.sh; \} \| sudo bash$/.test(command?.trim() ?? ''), command?.trim()?.slice(0, 120))
+  // A URL puts the token in an access log and a proxy's; sudo's argv puts it in
+  // the system journal (FJS-3511). Only bash's stdin carries it.
+  check('…carrying the token on stdin, not in the URL or sudo\'s argv',
+    /^\{ echo export .*ENROLL_TOKEN=bcen_[0-9a-f]{64}/.test(command?.trim() ?? '')
+    && !/install\.sh\?/.test(command ?? '') && !/sudo env/.test(command ?? ''), command?.trim()?.slice(0, 160))
 
   check('with a button that copies it',
     await evaluate(`[...document.querySelectorAll('#needs-enrollment button')].some(b => /Copy command/.test(b.textContent))`))
