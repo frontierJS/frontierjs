@@ -24,6 +24,7 @@ title: App
   import { at, ago } from '../../../lib/datetime.js'
 
   import NoRecord from '../../../components/NoRecord.mesa'
+  import LaptopRelease from '../../../components/LaptopRelease.mesa'
   import VariablesEditor from '../../../components/VariablesEditor.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -578,6 +579,8 @@ title: App
         {/if}
       </Card>
 
+      {#if !latest}<LaptopRelease app={app} />{/if}
+
       <Card>
         <h2 class="h4">Placement</h2>
         <p class="text-sm text-muted">Which machines run this app. A release with no placement is refused — there is nothing to send it to.</p>
@@ -907,6 +910,7 @@ title: App
   {/if}
 
   {#if tab === 'releases'}
+    <LaptopRelease app={app} />
     {#if !app.recent_deployments?.length}
       <EmptyState title="Never released">This app has no deployment history.</EmptyState>
     {:else}

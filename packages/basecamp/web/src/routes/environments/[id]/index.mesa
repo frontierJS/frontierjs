@@ -125,7 +125,18 @@ title: Environment
 
   // The type list comes from `enum AppType` in db/schema.lite, through the
   // JSON Schema the build generated. Adding a type to the schema adds it here.
-  $: appTypes = apps.fields?.type?.enum ?? ['container', 'worker', 'cron', 'static']
+  // A type the map does not name still shows, bare.
+  const typeHints = {
+    container: 'a long-running service on a port',
+    worker:    'works a job queue, no port',
+    database:  'a data store with its own volume',
+    daemon:    'always running, takes no traffic',
+    cron:      'runs on a schedule, then exits',
+    static:    'files served as-is',
+    function:  'runs per request',
+  }
+  $: appTypes = (apps.fields?.type?.enum ?? ['container', 'worker', 'cron', 'static'])
+    .map(t => ({ value: t, label: typeHints[t] ? `${t} — ${typeHints[t]}` : t }))
 
   // Only an online machine is offered: `place` refuses a stopped or destroyed
   // one, and a machine still provisioning would take a placement no release

@@ -1,0 +1,62 @@
+<script>
+  // LaptopRelease.mesa — how to release this App with fli basecamp:deploy, and
+  // the key that command needs.
+  //
+  // The key is the step people miss: the command reads BASECAMP_API_KEY from
+  // the environment and refuses without it, and nothing else on the App page
+  // says a key is involved. The link opens API keys with the four scopes the
+  // command calls already picked, so the key is neither short a scope nor
+  // issued whole.
+  //
+  // The origin is this page's own: the API answers on it in production behind
+  // Caddy and in dev behind Vite's proxy.
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
+
+  export let app = null
+
+  // A static App's release writes its files through apps.publish, so it needs
+  // apps:write; an image release only reads the App.
+  $: inline  = app?.source?.kind === 'inline'
+  $: scopes  = ['apps:read', ...(inline ? ['apps:write'] : []), 'deployments:write', 'deployments:read']
+  $: keyHref = `/api-keys/?new=1&name=${encodeURIComponent(`Deploy ${app?.name ?? 'app'}`)}&scopes=${scopes.join(',')}`
+
+  // basecamp:deploy reaches a placed machine at the Server row's ipAddress and
+  // refuses one with none, which is what an imported Basecamp host is. A
+  // static App's files go through Basecamp instead and --server is refused.
+  $: needsSsh = !inline && (app?.placement ?? []).some(p => p.server && !p.server.ipAddress)
+
+  $: command = [
+    `BASECAMP_URL=${typeof location === 'undefined' ? 'https://…' : location.origin} \\`,
+    'BASECAMP_API_KEY=… \\',
+    `fli basecamp:deploy --app ${app?.id ?? '…'}`
+      + (inline ? ' --dist <built folder>' : '')
+      + (needsSsh ? ' --server <ssh alias>' : ''),
+  ].join('\n')
+</script>
+
+<Card id="laptop-release">
+  <h2 class="h4">Release it from your laptop</h2>
+  <ol class="stack text-sm">
+    <li>
+      Make a key for the command. It reads <code>BASECAMP_API_KEY</code> from the
+      environment, never from a flag.
+      <span class="cluster">
+        <Button href={keyHref} treatment="outlined" size="sm" id="laptop-release-key">New deploy key</Button>
+        <span class="text-muted">{scopes.join(' · ')}</span>
+      </span>
+    </li>
+    <li>
+      From the app's directory:
+      <pre><code id="laptop-release-command">{command}</code></pre>
+      <CopyButton text={command} label="Copy command" treatment="outlined" />
+      {#if inline}
+        <p class="text-muted">Leave out <code>--dist</code> to build <code>web/</code> here first.</p>
+      {/if}
+      {#if needsSsh}
+        <p class="text-muted">A machine this App is placed on records no address, so name it as ssh reaches it.</p>
+      {/if}
+    </li>
+  </ol>
+</Card>

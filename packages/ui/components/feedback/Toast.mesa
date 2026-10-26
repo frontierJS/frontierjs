@@ -115,12 +115,11 @@
   }
   .fjs-toast-row {
     display:     flex;
-    align-items: flex-start;
+    align-items: center;
     gap:         0.75rem;
     padding:     0.75rem 1rem;
   }
   .fjs-toast-action {
-    align-self:  center;
     font-size:   0.8125rem;
     white-space: nowrap;
   }

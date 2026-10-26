@@ -46,13 +46,22 @@ title: API keys
   let loading  = true
   let busy     = null
   let creating = page.query?.new !== undefined
-  // ⌘K's New … entries land here with ?new, on this route or from another.
-  $: page.query, () => { if (page.query?.new !== undefined) creating = true }
   let filter   = 'all'
   let picked   = []
   let expiry   = 'never'
   let minted   = null
   let draft    = apiKeys.make()
+  // ⌘K's New … entries land here with ?new, on this route or from another;
+  // an App's laptop-release card adds ?name= and ?scopes= for the key its
+  // command needs.
+  function openFromQuery(q) {
+    if (q?.new === undefined) return
+    creating = true
+    if (typeof q.name === 'string') draft = { ...draft, name: q.name }
+    if (typeof q.scopes === 'string') picked = q.scopes.split(',').filter(Boolean)
+  }
+  openFromQuery(page.query)
+  $: page.query, () => openFromQuery(page.query)
   let bots     = []        // this workspace's bot members — who else a key may belong to
 
   // The kit's controls take a value and hand back an event; they are NOT bound
@@ -123,6 +132,7 @@ title: API keys
       minted   = created
       creating = false
       picked   = []
+      scopeQuery = ''
       expiry   = 'never'
       draft    = apiKeys.make()
       await load()
@@ -158,10 +168,22 @@ title: API keys
     }
   }
 
+  // The filter only hides checkboxes; a picked scope it hides stays picked.
+  let scopeQuery = ''
+  $: needle = scopeQuery.trim().toLowerCase()
+  $: shown  = needle
+    ? scopes.filter(s => [s.id, s.label, s.group].some(t => t?.toLowerCase().includes(needle)))
+    : scopes
+  // Toggle-all covers what the filter shows, so "deploy" then all is one grant.
+  $: allShown = shown.length > 0 && shown.every(s => picked.includes(s.id))
+  function toggleShown(on) {
+    const ids = shown.map(s => s.id)
+    picked = on ? [...new Set([...picked, ...ids])] : picked.filter(s => !ids.includes(s))
+  }
   // Grouped for the picker the way the server groups them: by the service the
   // scope names. `admin` is its own group and reads as the exception it is.
   $: groups = Object.entries(
-    scopes.reduce((acc, s) => ({ ...acc, [s.group]: [...(acc[s.group] ?? []), s] }), {})
+    shown.reduce((acc, s) => ({ ...acc, [s.group]: [...(acc[s.group] ?? []), s] }), {})
   )
 
   $: active   = rows.filter(r => r.status === 'active')
@@ -259,7 +281,25 @@ title: API keys
           A key with no scopes is refused. Read is <code>find</code> and <code>get</code>;
           everything else — including actions like drain and deploy — is write.
         </p>
+        <!-- No `name`: the form must not collect it. Enter here would submit
+             the form and mint a key. -->
+        <label class="visually-hidden" for="scope-search">Filter scopes</label>
+        <Input id="scope-search" type="search" placeholder="Filter scopes…"
+               value={scopeQuery} oninput={(e) => scopeQuery = e.target.value}
+               onkeydown={(e) => { if (e.key === 'Enter') e.preventDefault() }} />
+        {#if shown.length}
+          <Checkbox id="scope-all"
+                    label={needle ? `All ${shown.length} matching` : `All ${shown.length} scopes`}
+                    checked={allShown}
+                    onchange={(on) => toggleShown(on)} />
+        {/if}
+        {#if picked.length}
+          <p class="text-sm text-muted" id="scope-picked">{picked.length} picked: {picked.join(', ')}</p>
+        {/if}
         <div id="scope-picker" class="stack">
+          {#if !groups.length}
+            <p class="text-sm text-muted">No scope matches “{scopeQuery}”.</p>
+          {/if}
           {#each groups as [group, items]}
             <div class="stack" style:gap="0.25rem">
               <span class="text-2xs text-muted">{group}</span>

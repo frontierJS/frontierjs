@@ -15215,6 +15215,10 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1531"></a>2026-10-26 · `FJS-D1531` — Where Basecamp tells a developer how to release an App from a laptop, and that it needs an API key — One card, `LaptopRelease.mesa`: on the App's Overview while it has never been released, and always on its Releases tab. It links to API keys with `?new=1&name=&scopes=` prefilled with the scopes `fli basecamp:deploy` calls, and prints the command with this origin, the App's id, `--dist` for an inline App and `--server` when a placed machine records no address.
+
+Asked through the question tool after the first real `basecamp:create` (ops1): the command reads `BASECAMP_API_KEY` and nothing on the App page said a key was involved. **A** was picked as recommended, over **B** (the Releases tab only: someone who just made the App may never open it) and **C** (a *From your laptop…* entry in the Deploy menu: hidden until the menu is opened). Precedent: the Dependencies page's empty state prints its own `fli ws:deps --push` command.
+
 ### <a id="fjs-d1526"></a>2026-10-25 · `FJS-D1526` — Whether `fli deploy` grows a pull-a-digest mode, and whether that is the same mode ring 0 uses to install Basecamp from an image — One mode: `fli deploy --image <digest>` replaces `02-pull` and the two build steps with a fetch of that digest, then runs `04c-journal` onward unchanged, and ring 0 installs Basecamp through the same flag.
 
 Asked in [`IDEAS/deploy-plane.md`](IDEAS/deploy-plane.md) § Open questions. **A** was picked over **B** (Two: build-once stays `deploy.builder`, and ring 0 gets its own `fli basecamp:install` that pulls a published image), **C** (Neither: ring 0 keeps building Basecamp from source on the target).
