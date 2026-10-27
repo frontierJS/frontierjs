@@ -14,7 +14,7 @@ import { S3Provider }     from './providers/s3.js'
 import { LocalProvider }  from './providers/local.js'
 import { refAddress, refUrlUnder } from './ref-url.js'
 
-export { FileStorage, fromPath } from './file-storage.js'
+export { FileStorage, fromPath, FILES_ENV } from './file-storage.js'
 
 // ─── Provider factory ─────────────────────────────────────────────────────────
 

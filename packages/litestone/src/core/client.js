@@ -7,7 +7,7 @@
 
 import { currentEngine } from './engine.js'
 import { validateBusyTimeout } from './pragmas.js'
-import { resolve, join, dirname, mkdirSync, rmSync, AsyncLocalStorage, processId } from '#host'
+import { resolve, join, dirname, mkdirSync, rmSync, AsyncLocalStorage, processId, hasFilesystem } from '#host'
 import { resolveAnchor } from './db-path.js'
 import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField, pointColumns, 
          SEARCH_TABLE, searchModels, searchRankExpr } from './ddl.js'
@@ -6303,6 +6303,18 @@ export async function createClient({
     effectivePlugins = [...effectivePlugins, new CapabilityPlugin()]
   }
 
+  // ── File storage ──────────────────────────────────────────────────────────
+  // And again: a File column nothing stores refuses its first upload, which in
+  // production is in front of a customer. So a client with a disk installs
+  // FileStorage itself, and one configured by nothing keeps the bytes beside the
+  // database (`FJS-D1549`). A browser has no disk: it installs nothing, and the
+  // notice below is still what it says.
+  const _anyFiles = schema.models.some(m => m.fields.some(f => f.type?.name === 'File'))
+  if (_anyFiles && hasFilesystem && !effectivePlugins.some(p => p?.fieldType === 'File')) {
+    const { FileStorage } = await import('../storage/file-storage.js')
+    effectivePlugins = [...effectivePlugins, FileStorage()]
+  }
+
   // Plugin runner — orchestrates all installed plugins
   const pluginRunner = new PluginRunner(effectivePlugins)
 
@@ -6403,6 +6415,13 @@ export async function createClient({
         .filter(([, v]) => v.driver === 'trail' || (v.driver !== 'jsonl' && v.trailModel))
         .map(([k, v]) => [k, { trailModel: v.trailModel, kind: v.driver === 'trail' ? 'jsonl' : 'sql' }])
     ),
+    // Where a local FileStorage keeps bytes when nothing says otherwise: under
+    // the main database's directory, which a deploy mounts and backs up
+    // (`FJS-D493`). An in-memory database has none, and the store keeps its own
+    // default.
+    filesRoot: dbRegistry.main?.absPath && dbRegistry.main.absPath !== ':memory:'
+      ? join(dirname(dbRegistry.main.absPath), 'files')
+      : null,
   }
 
   // Init plugins — runs onInit for all plugins with schema + ctx
@@ -8316,7 +8335,7 @@ export async function createClient({
     return result
   }
 
-  const rootOwnProps = ['$close', '$attached', '$schema', '$search', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
+  const rootOwnProps = ['$close', '$attached', '$schema', '$search', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$files', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
   clientProxy = new Proxy({ sql, query, $transaction, $search: (q, opts) => $searchWith(scopedTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
     get(target, prop) {
       if (typeof prop === 'symbol')   return undefined
@@ -8439,6 +8458,9 @@ export async function createClient({
       if (prop === '$locks')          return lockPrimitive.$locks
       if (prop === '$enums')          return Object.fromEntries(schema.enums.map(e => [e.name, [...e.values.map(v => v.name)]]))
       if (prop === '$plugins')        return pluginRunner.names
+      // The plugin that stores File columns, or null — what junction serves a
+      // local store's directory from (`FJS-D1549`).
+      if (prop === '$files')          return effectivePlugins.find(p => p?.fieldType === 'File') ?? null
       if (prop === '$tenancy')        return tenancyInfo()
       throw new Error(`"${prop}" is not a table in this schema. Tables: ${Object.keys(scopedTables).join(', ')}`)
     },

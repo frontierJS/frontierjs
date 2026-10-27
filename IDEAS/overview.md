@@ -759,6 +759,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `orion-decision-step.md` — A decision step for orion: lookup tables and a stated reason
 - `orion-port.md` — Porting orion's mockup onto FrontierJS
 - `owed-rulings.md` — Rulings owed
+- `portable-install.md` — the portable install: an app's packages compiled into one binary, its own files beside it, onto a Linux desktop from a thumb drive; prototyped on clean Ubuntu, seven walls, source verbatim
 - `server-render-without-dom.md` — a server render as a host target over a plain node tree, so a prerender stops paying happy-dom per row
 - `preview-branch.md` — a preview branch: a client edits the UI on live data and submits it for review
 - `reference-library.md` — a reference library: whole schemas, chosen because somebody solved that domain

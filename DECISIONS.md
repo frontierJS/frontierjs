@@ -4547,6 +4547,12 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d1549"></a>2026-10-27 · `FJS-D1549` — Should FileStorage default to local disk in production, persisted beside the database and served by junction, when no provider is bound — A (confidence 2).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked as the recommendation qualifies it (*A (confidence 2)*) over **B** (A, but opt-in: `provider: 'local'` in production means the db directory and the junction route, not the container's cwd, and the no-provider case keeps refusing. The fix is the same as A's, but an app has to choose it), **C** (keep refusing, and make it loud before production: `deploy:doctor` and `envCheck` refuse a deploy whose schema has a File column and whose env binds no provider, and the ui's file input renders disabled with the reason when no FileStorage is installed. Nothing is stored locally, and object storage stays the only production answer), **D** (as it is: a boot warning nobody reads in a container log, and an upload refused in front of the customer).
+
+A whole, ruled by Jordan 2026-10-27: the implicit local default under db/files, the client's own install, the framework-owned FILES_* names, and a deploy preflight that warns on every deploy until FILES_PROVIDER is set explicitly.
+
 ### <a id="fjs-d1517"></a>2026-10-25 · `FJS-D1517` — `Dashboard.slug` is not `@immutable`: a dashboard's handle is in nobody's source code, so `dashboards.patch` re-derives it from a new name. The service is its only writer: `patch` drops a slug the caller sends.
 
 Found closing `FJS-3477`: the `FJS-1393` sweep marked every slug `@immutable`, and Litestone then refused the service's own re-slug, so renaming a board answered 400 from its own screen. **A** (drop `@immutable`) was picked over **B** (keep it and stop re-slugging) and **C** (drop the column; nothing reads it but `@@unique([workspaceId, slug])`). A flag key or a network slug stays immutable, because code names those.
@@ -8286,6 +8292,10 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d1550"></a>2026-10-27 · `FJS-D1550` — A machine's output reaches a Basecamp screen as it is written through one general pipe: an Outpost route may answer `text/event-stream`, `Executor.stream()` sits beside `call()` over `conduit.stream()`, and `WS /ws/stream/{source}/{id}` relays one source per row of a table. A container's log (`/logs/follow`) is the first source.
+
+Asked in chat, through the question tool, while adding Follow to the logs tab. **A true stream** was picked over **a Follow toggle that polls `since=`** and **no tail**. Then **the general pipe, logs first** (recommended) was picked over **a logs-only path**, because build output, pull and deploy progress, `/exec` output and backup progress all want the same pipe. Who may watch is the row's `$readAs` under the caller's workspace claim (`workspaceClaim` in `core/gate.ts`, now shared with the channel claims), so it is the schema's gate and tenancy. Each open stream holds a process on the machine, so Outpost caps them at 16 and kills the command when the reader leaves. The apps screen's *never on a timer* rule stands for reads; Follow is one socket the operator opened, closed on leaving the tab.
 
 ### <a id="fjs-d1542"></a>2026-10-27 · `FJS-D1542` — Q6 — After 24 hours — Gone, with a "keep it" link that is `frontier-cloud.md`'s conversion.
 

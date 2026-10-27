@@ -138,6 +138,11 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           Every spawn the API makes takes junction's `childEnv(env)`, never `...process.env`:
           a git hook, an ssh ProxyCommand and a vite config are not handed
           ENCRYPTION_KEY or the `_FILE` that holds it (`FJS-3359`).
+          plugins/machine-stream.ts is `/ws/stream/{source}/{id}`: a machine's
+          output as it is written, relayed from an Outpost `text/event-stream`
+          route through `Executor.stream()`. One SOURCES row per stream (`logs`
+          is `/logs/follow`), the row graded by `$readAs` under the caller's
+          `workspaceClaim` (`FJS-D1550`).
           plugins/workbench-terminal.ts is the Terminal tab: `/ws/terminal/{pin}`
           (under /ws/ because both proxies forward that prefix as a socket),
           Bun's own PTY in the pin's folder, xterm.js in web/src/components/

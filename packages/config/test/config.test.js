@@ -77,16 +77,16 @@ describe('biome', () => {
   test('the linter carries no style opinions', () => {
     // With the formatter refused, a linter that argues about style is a
     // formatter that cannot fix anything.
-    expect(biome.linter.rules.recommended).toBe(false)
-    expect(biome.linter.rules.style.recommended).toBe(false)
-    expect(biome.linter.rules.complexity.recommended).toBe(false)
-    expect(biome.linter.rules.performance.recommended).toBe(false)
+    expect(biome.linter.rules.preset).toBe('none')
+    expect(biome.linter.rules.style.preset).toBe('none')
+    expect(biome.linter.rules.complexity.preset).toBe('none')
+    expect(biome.linter.rules.performance.preset).toBe('none')
   })
 
   test('it keeps the groups that catch bugs', () => {
-    expect(biome.linter.rules.correctness.recommended).toBe(true)
-    expect(biome.linter.rules.security.recommended).toBe(true)
-    expect(biome.linter.rules.suspicious.recommended).toBe(true)
+    expect(biome.linter.rules.correctness.preset).toBe('recommended')
+    expect(biome.linter.rules.security.preset).toBe('recommended')
+    expect(biome.linter.rules.suspicious.preset).toBe('recommended')
   })
 
   test('node_modules is excluded, so a nested config is never discovered', () => {

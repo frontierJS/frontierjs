@@ -49,6 +49,18 @@ export interface Executor {
   /** Present only for `outpost`, and it is the Conduit target, not a URL. */
   target:    string | null
   call(path: string, body: Record<string, unknown>, opts?: { timeoutMs?: number }): Promise<ExecutorReply>
+  /**
+   * A route that answers as it goes — `docker logs --follow`, later a build.
+   * One `{ event, data }` per server-sent event, `event` being `message` for
+   * an item and `end` or `error` for the last one. `signal` is what ends it
+   * early, and the machine stops the command when it does.
+   */
+  stream(path: string, body: Record<string, unknown>, opts: { signal: AbortSignal }): AsyncIterable<StreamEvent>
+}
+
+export interface StreamEvent {
+  event: string
+  data:  unknown
 }
 
 export interface NoExecutor {
@@ -84,6 +96,10 @@ function stubExecutor(serverId: string): Executor {
     async call(path) {
       return { data: { stubbed: true, healthy: true, digest: null, note: `stub executor — no ${path} was issued` } }
     },
+    async *stream(path) {
+      yield { event: 'message', data: { stream: 'stdout', text: `stub executor — no ${path} was issued` } }
+      yield { event: 'end', data: {} }
+    },
   }
 }
 
@@ -102,6 +118,18 @@ function outpostExecutor(app: App, serverId: string, target: string): Executor {
       })
       if (!sent.error) return { data: sent.data as Record<string, unknown> }
       return { error: { message: machineSaid(sent.error.raw) ?? sent.error.message } }
+    },
+    async *stream(path, body, { signal }) {
+      try {
+        for await (const chunk of app.conduit.stream({ target, method: 'POST', path, body, signal })) {
+          const ev = chunk.data as { event?: string, data?: unknown }
+          yield { event: ev.event ?? 'message', data: ev.data }
+        }
+      } catch (err) {
+        if (signal.aborted) return
+        const said = (err as { conduit?: { raw?: unknown, message?: string } }).conduit
+        yield { event: 'error', data: { error: machineSaid(said?.raw) ?? said?.message ?? (err as Error).message } }
+      }
     },
   }
 }

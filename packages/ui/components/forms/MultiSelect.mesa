@@ -545,12 +545,16 @@
         />
       {/if}
 
-      <!-- Trailing controls -->
+      <!--
+        Trailing controls, laid out as Combobox's. The × is out of the tab
+        order; each chip's own × is the keyboard's way to remove.
+      -->
       <span class="fjs-multiselect-actions">
         {#if clearable && selectedValues.size > 0 && !readonly && !resolvedDisabled}
           <button
             type="button"
-            class="btn ghost square"
+            class="btn ghost square fjs-multiselect-clear"
+            tabindex="-1"
             aria-label="Clear all"
             onclick|stopPropagation={clearAll}
           >
@@ -558,6 +562,7 @@
               <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z"/>
             </svg>
           </button>
+          <span class="fjs-multiselect-divider" aria-hidden="true"></span>
         {/if}
         <svg
           class="icon text-muted"
@@ -691,6 +696,19 @@
     gap:                 0.25rem;
     margin-inline-start: auto;
     flex-shrink:         0;
+    align-self:          stretch;
+    color:               var(--ink-mute);
+  }
+  .fjs-multiselect-clear {
+    padding: 0.25em;
+    color:   inherit;
+  }
+  .fjs-multiselect-clear:hover { color: var(--ink); }
+  .fjs-multiselect-divider {
+    align-self:   stretch;
+    inline-size:  1px;
+    margin-block: 0.25rem;
+    background:   var(--rule-strong);
   }
 
   .fjs-multiselect-panel {

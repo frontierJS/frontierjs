@@ -153,3 +153,19 @@ export const SYSTEM = {
 export function actsAsApp(user: unknown): boolean {
   return user == null || (user as { id?: unknown }).id === SYSTEM.id
 }
+
+/**
+ * The claim a connection carries for one workspace, which a request gets from
+ * `membershipClaim` off its header. A socket has no header, so it reads the
+ * membership itself: a member removed mid-session stops at the next read, and
+ * `memberRole` reaches the grade or the caller stands at VISITOR.
+ */
+export async function workspaceClaim(db: any, workspaceId: string, userId: string | undefined) {
+  if (!workspaceId || !userId) return null
+  const member = await db.asSystem().workspaceMember.findFirst({
+    where:  { workspaceId, userId },
+    select: { role: true, capabilities: true },
+  })
+  if (!member) return null
+  return { workspaceId, memberRole: member.role as string, capabilities: (member.capabilities ?? []) as string[] }
+}

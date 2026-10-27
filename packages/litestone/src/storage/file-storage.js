@@ -31,6 +31,7 @@
 
 import { ExternalRefPlugin } from '../plugins/external-ref.js'
 import { createProvider }     from './index.js'
+import { LocalProvider }      from './providers/local.js'
 import { refUrlUnder }        from './ref-url.js'
 import { contentTypeFor, sniff, baseType, extensionFor, sameType } from '@frontierjs/toolbelt/mime'
 import { buildWhere }         from '../core/query.js'
@@ -282,6 +283,12 @@ class FileStoragePlugin extends ExternalRefPlugin {
     this._provider = null
   }
 
+  // The directory a local store writes under, which is what junction serves;
+  // null for every provider whose bytes live elsewhere.
+  get localRoot() {
+    return this._provider instanceof LocalProvider ? this._provider._root : null
+  }
+
 
   // Extract per-field options from schema (keepVersions, accept)
   _fieldOptions(field) {
@@ -306,17 +313,23 @@ class FileStoragePlugin extends ExternalRefPlugin {
       )
     }
 
+    // A plugin is shared by every client a tenant registry builds, so the
+    // config is settled by the first and the rest keep it.
+    if (this._provider) return
+
+    // What code leaves unsaid the environment says, under the framework's own
+    // names, so a deploy can read the same ones (`FJS-D1549`). With no provider
+    // named either way, the bytes go to disk beside the database — the one
+    // directory a deploy keeps and backs up (`FJS-D493`) — and junction serves
+    // them. A config here is never refused for naming no provider: that refusal
+    // was a production upload failing in front of a customer.
     const cfg = { ...this.config }
-    if (!cfg.provider && !cfg.endpoint) {
-      if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
-        cfg.provider = 'local'
-      } else {
-        throw new Error(
-          'FileStorage: no provider or endpoint configured. ' +
-          'Pass provider: \'r2\' | \'s3\' | \'local\' or set NODE_ENV=development to use local storage.'
-        )
-      }
+    for (const [option, name] of Object.entries(FILES_ENV)) {
+      if (cfg[option] == null && process.env[name]) cfg[option] = process.env[name]
     }
+    if (!cfg.provider && !cfg.endpoint) cfg.provider = 'local'
+    if (cfg.provider === 'local' && !cfg.localPath && ctx?.filesRoot) cfg.localPath = ctx.filesRoot
+    this.config = cfg
     // Every provider but local signs its requests, and the signer reads the secret
     // on the first upload -- so a missing one surfaced there as a TypeError about
     // `secret.length`, long after the app built.
@@ -526,6 +539,17 @@ class FileStoragePlugin extends ExternalRefPlugin {
     }
   }
 }
+
+// The environment names a deploy reads too (`FJS-D1549`), keyed by the option
+// each one fills. An option passed in code wins over its name.
+export const FILES_ENV = Object.freeze({
+  provider:        'FILES_PROVIDER',
+  bucket:          'FILES_BUCKET',
+  endpoint:        'FILES_ENDPOINT',
+  accessKeyId:     'FILES_KEY',
+  secretAccessKey: 'FILES_SECRET',
+  publicBase:      'FILES_PUBLIC_BASE',
+})
 
 export function FileStorage(config) {
   return new FileStoragePlugin({ autoResolve: true, ...config })

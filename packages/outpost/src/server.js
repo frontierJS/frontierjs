@@ -24,6 +24,43 @@ import { createReplicator } from './replicate.js'
 const JSON_HEADERS = { 'content-type': 'application/json' }
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
 
+// Each open stream holds a process on this machine for as long as somebody
+// watches, so the count is capped here rather than trusted to the caller.
+const MAX_STREAMS = 16
+// Bun.serve closes a connection idle for 10s, and a quiet container writes
+// nothing for minutes. A comment line keeps it open and SSE readers drop it.
+const KEEPALIVE_MS = 5_000
+
+/**
+ * An async sequence as `text/event-stream`: one `data:` event per item, then
+ * `event: end`, or `event: error` with the machine's sentence. The sequence is
+ * pulled, so a slow reader slows the source rather than filling memory here.
+ */
+function eventStream(events, abort, done) {
+  const enc = new TextEncoder()
+  const it  = events[Symbol.asyncIterator]()
+  let ping  = null, closed = false
+  const finish = () => { if (closed) return; closed = true; clearInterval(ping); abort.abort(); done() }
+
+  return new Response(new ReadableStream({
+    start(controller) {
+      ping = setInterval(() => { try { controller.enqueue(enc.encode(': keepalive\n\n')) } catch {} }, KEEPALIVE_MS)
+    },
+    async pull(controller) {
+      try {
+        const next = await it.next()
+        if (!next.done) return controller.enqueue(enc.encode(`data: ${JSON.stringify(next.value)}\n\n`))
+        controller.enqueue(enc.encode('event: end\ndata: {}\n\n'))
+      } catch (err) {
+        controller.enqueue(enc.encode(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`))
+      }
+      finish()
+      controller.close()
+    },
+    cancel() { finish(); it.return?.() },
+  }), { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-store' } })
+}
+
 export function createOutpostServer(config, {
   docker    = createDocker({ workDir: config.workDir, restoreDir: config.restoreDir, backupDir: config.backupDir }),
   inspector = createInspector(),
@@ -310,6 +347,15 @@ export function createOutpostServer(config, {
     'POST /posture':       () => inspector.posture(),
   }
 
+  // Routes that answer a STREAM rather than a body: `(body, signal)` returns
+  // an async sequence, and `signal` aborts when the caller goes away.
+  const streams = {
+    'POST /logs/follow': (body, signal) => docker.follow({
+      appId: body.app_id, tail: body.tail, since: body.since, signal,
+    }),
+  }
+  let streaming = 0
+
   async function handle(req) {
     const url  = new URL(req.url)
     const path = url.pathname
@@ -351,6 +397,20 @@ export function createOutpostServer(config, {
       }
     }
 
+    const opener = streams[`${req.method} ${path}`]
+    if (opener) {
+      if (streaming >= MAX_STREAMS) return json({ error: `this machine already serves ${MAX_STREAMS} streams` }, 429)
+      const abort = new AbortController()
+      req.signal?.addEventListener('abort', () => abort.abort(), { once: true })
+      streaming++
+      try {
+        return eventStream(opener(payload, abort.signal), abort, () => { streaming-- })
+      } catch (err) {
+        streaming--
+        return json({ error: err.message }, 500)
+      }
+    }
+
     const route = routes[`${req.method} ${path}`]
     if (!route) return json({ error: `no such route: ${req.method} ${path}` }, 404)
 
@@ -364,5 +424,5 @@ export function createOutpostServer(config, {
     }
   }
 
-  return { handle, routes: Object.keys(routes) }
+  return { handle, routes: [...Object.keys(routes), ...Object.keys(streams)] }
 }

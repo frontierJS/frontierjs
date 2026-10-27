@@ -13,12 +13,19 @@ export interface FileStorageOptions {
   region?:          string
   // provider: 'local' — read by storage/providers/local.js and undeclared
   // here, so the local branch of every dev config was a type error.
-  localPath?:       string   // default: './storage'
+  localPath?:       string   // default: <main database's directory>/files, or './storage' in memory (FJS-D1549)
   localUrl?:        string   // default: http://localhost:<localPort>/storage
   localPort?:       number   // default: 3001
 }
 
-export declare function FileStorage(options?: FileStorageOptions): LitestonePlugin
+export declare function FileStorage(options?: FileStorageOptions): LitestonePlugin & {
+  /** The directory a local store writes under, which junction serves; null for any other provider. */
+  readonly localRoot: string | null
+  /** The settled options, the environment's FILES_* names included. `publicBase` is read at every resolve. */
+  config: FileStorageOptions
+}
+/** The environment names an option falls back to, keyed by that option (FJS-D1549). */
+export declare const FILES_ENV: Readonly<Record<'provider' | 'bucket' | 'endpoint' | 'accessKeyId' | 'secretAccessKey' | 'publicBase', string>>
 /** A File column value read from the server's disk. A string is never read as a path. */
 export declare function fromPath(path: string): { readonly path: string }
 export declare function fileUrl(ref: FileRef | string | null | undefined): string | null

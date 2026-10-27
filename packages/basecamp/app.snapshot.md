@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-57 services · 42 routes · 20 plugins · prefix (none)
+57 services · 42 routes · 21 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -1547,10 +1547,11 @@ In configure order, which is what `requires:` is checked against.
 11. `enrollmentRoutes`
 12. `installRoute`
 13. `terminalRoute`
-14. `staticRoutes`
-15. `basecamp-cloud-accounts`
-16. `basecamp-backup-destinations`
-17. `basecamp-push`
-18. `basecamp-dns-follows-fleet`
-19. `basecamp-cleanup`
-20. `corsPlugin`
+14. `machineStreamRoute`
+15. `staticRoutes`
+16. `basecamp-cloud-accounts`
+17. `basecamp-backup-destinations`
+18. `basecamp-push`
+19. `basecamp-dns-follows-fleet`
+20. `basecamp-cleanup`
+21. `corsPlugin`

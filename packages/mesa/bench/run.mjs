@@ -240,11 +240,14 @@ async function sample(page, origin, fixture, [, setup, action, throttle = 1]) {
 
 async function heap(page) {
   await page.cmd('HeapProfiler.collectGarbage')
+  await page.cmd('HeapProfiler.collectGarbage')
   return (await page.cmd('Runtime.getHeapUsage')).usedSize
 }
 
 async function memory(page, origin, fixture) {
   await load(page, origin, fixture)
+  await page.evaluate(`return await window.__bench.step('#run');`)
+  await page.evaluate(`return await window.__bench.step('#clear');`)
   const idle = await heap(page)
   await page.evaluate(`return await window.__bench.step('#run');`)
   const rows = await heap(page)

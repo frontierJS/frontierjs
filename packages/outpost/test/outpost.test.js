@@ -1879,6 +1879,73 @@ describe('reading a container log', () => {
     expect((await res.json()).error).toMatch(/permission denied/)
   })
 
+  // A fake process whose pipes the test writes to, and which records a kill.
+  function fakeStream() {
+    const pipes = {}
+    const proc = {
+      argv: null, killed: false,
+      stdout: new ReadableStream({ start: c => { pipes.out = c } }),
+      stderr: new ReadableStream({ start: c => { pipes.err = c } }),
+      kill() { if (proc.killed) return; proc.killed = true; try { pipes.out.close() } catch {} try { pipes.err.close() } catch {} },
+    }
+    const enc = new TextEncoder()
+    return {
+      proc,
+      out: (t) => pipes.out.enqueue(enc.encode(t)),
+      err: (t) => pipes.err.enqueue(enc.encode(t)),
+      end: () => { pipes.out.close(); pipes.err.close() },
+      spawn: (argv) => { proc.argv = argv; return proc },
+    }
+  }
+  const followServer = (fs) => createOutpostServer(CONFIG, {
+    docker: createDocker({ run: fakeRunner({}).run, stream: fs.spawn, workDir: CONFIG.workDir }),
+  })
+  async function readEvents(res, until) {
+    const reader = res.body.getReader(), dec = new TextDecoder()
+    let text = ''
+    while (!until(text)) {
+      const { value, done } = await reader.read()
+      if (done) break
+      text += dec.decode(value)
+    }
+    return { text, reader }
+  }
+
+  test('/logs/follow streams each line as an event, from both pipes, then `end`', async () => {
+    const fs  = fakeStream()
+    const res = await send(followServer(fs), 'POST', '/logs/follow', { app_id: 'app-1', tail: 10 })
+    expect(res.headers.get('content-type')).toBe('text/event-stream')
+    expect(fs.proc.argv).toEqual(['docker', 'logs', '--follow', '--tail', '10', 'fjs-app-1'])
+
+    // A line split across two writes arrives once, whole.
+    fs.out('listening on ')
+    fs.out('3000\n')
+    fs.err('warn: slow\n')
+    fs.end()
+    const { text } = await readEvents(res, t => t.includes('event: end'))
+    expect(text).toContain('data: {"stream":"stdout","text":"listening on 3000"}')
+    expect(text).toContain('data: {"stream":"stderr","text":"warn: slow"}')
+    expect(text).toContain('event: end')
+  })
+
+  test('a reader that goes away kills the process', async () => {
+    // An abandoned `docker logs -f` runs until the container stops.
+    const fs  = fakeStream()
+    const res = await send(followServer(fs), 'POST', '/logs/follow', { app_id: 'app-1' })
+    fs.out('one\n')
+    const { reader } = await readEvents(res, t => t.includes('one'))
+    await reader.cancel()
+    await Bun.sleep(0)
+    expect(fs.proc.killed).toBe(true)
+  })
+
+  test('/logs/follow is signed like every other route', async () => {
+    const fs  = fakeStream()
+    const res = await send(followServer(fs), 'POST', '/logs/follow', { app_id: 'app-1' }, { secret: null })
+    expect(res.status).toBe(401)
+    expect(fs.proc.argv).toBe(null)
+  })
+
   test('stdout and stderr stay apart', async () => {
     // That is how the container wrote them; joining them here would invent an
     // interleaving that is not the one that happened.

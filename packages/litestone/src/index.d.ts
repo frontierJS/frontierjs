@@ -874,6 +874,13 @@ export interface LitestoneClient {
    * inherit an acknowledgement made for a different one.
    */
   $rotateKey(newKey: string, opts?: { orphan?: string[] }): Promise<Record<string, { rows: number; fields: number }>>
+  /**
+   * The plugin storing File columns, or null — installed by the client itself
+   * when the schema has one and the app installs none (FJS-D1549). `localRoot`
+   * is the directory a local store writes under; `config.publicBase` is read at
+   * every resolve.
+   */
+  readonly $files: (LitestonePlugin & { readonly localRoot: string | null; config: { publicBase?: string } & Record<string, unknown> }) | null
   $lock<T>(key: string, fn: () => Promise<T>, opts?: LockOptions): Promise<T>
   $locks: {
     acquire(key: string, opts?: LockOptions): Promise<{ release(): Promise<void>; heartbeat(): Promise<void> }>

@@ -239,7 +239,7 @@ const mailbox = []
 //
 // It is not asked to be a good outpost — no HMAC verification, no real disk. What
 // it proves is that the request was MADE, and with which name.
-const outpostSaw = { deleted: [], pruned: [], ran: [], swept: [], deploy: [], routed: [], docker: [] }
+const outpostSaw = { deleted: [], pruned: [], ran: [], swept: [], deploy: [], routed: [], docker: [], followKilled: 0 }
 
 // Set to a sentence and the machine's Caddy refuses every route with it — the
 // way a release meets a Caddy that is down. Only `route`: Outpost's `unroute`
@@ -279,6 +279,29 @@ const buildOutpost = (secret) => createOutpostServer(
         if (argv.slice(0, 3).join(' ') === 'docker image inspect') return { exitCode: 0, stdout: SINK_DIGEST, stderr: '' }
         if (argv.slice(0, 2).join(' ') === 'docker inspect')       return { exitCode: 0, stdout: 'true', stderr: '' }
         return { exitCode: 0, stdout: '', stderr: '' }
+      },
+      // `docker logs --follow`: two lines, then open until the reader leaves,
+      // when the kill is counted — a follow nobody stops runs forever.
+      stream: (argv) => {
+        outpostSaw.docker.push(argv.join(' '))
+        const enc = new TextEncoder()
+        const pipes = {}
+        const proc = {
+          stdout: new ReadableStream({ start: c => {
+            pipes.out = c
+            c.enqueue(enc.encode('{"level":"error","message":"follow canary","time":"2026-01-01T00:00:00.000Z"}\n\x1b[32mready\x1b[0m\n'))
+          } }),
+          stderr: new ReadableStream({ start: c => { pipes.err = c } }),
+          killed: false,
+          kill() {
+            if (proc.killed) return
+            proc.killed = true
+            outpostSaw.followKilled++
+            try { pipes.out.close() } catch {}
+            try { pipes.err.close() } catch {}
+          },
+        }
+        return proc
       },
     }),
     // Caddy is the machine's, and `outpost`'s own verify:docker drives a real
@@ -361,6 +384,23 @@ const buildOutpost = (secret) => createOutpostServer(
         }))
         res.statusCode = answer.status
         return res.end(await answer.text())
+      }
+      // A stream, passed through as it arrives: buffering it would hold a
+      // follow forever. The caller leaving cancels the read, which is what
+      // reaches the Outpost as the kill.
+      if (req.method === 'POST' && req.url === '/logs/follow' && realOutpost) {
+        const answer = await realOutpost.handle(new Request(`http://localhost:${OUTPOST_PORT}${req.url}`, {
+          method: 'POST', headers: req.headers, body,
+        }))
+        res.writeHead(answer.status, Object.fromEntries(answer.headers))
+        const reader = answer.body.getReader()
+        res.on('close', () => reader.cancel().catch(() => {}))
+        for (;;) {
+          const { value, done } = await reader.read().catch(() => ({ done: true }))
+          if (done) break
+          res.write(value)
+        }
+        return res.end()
       }
       if (req.method === 'POST' && req.url === '/volumes/prune') {
         const names = (JSON.parse(body || '{}').names ?? [])
@@ -1223,6 +1263,36 @@ check('a pushed patch moves the list without a navigation',
   t => t !== rowBefore)
 check('…and the app cell still names the app after the push',
   await evaluate(deployCell('appId')), appCellBefore)
+
+// ── 11b-ii. Following the log, on the machine that ran the release ──────
+// The socket path end to end: the page opens /ws/stream/logs, the API grades
+// the row and asks the Outpost over conduit, the Outpost runs `docker logs
+// --follow` and streams it back. Stopping must reach the machine as a kill.
+await goto(`${appDetailPath}?tab=logs`)
+await sleep(600)
+await evaluate(`document.getElementById('app-logs-follow').click()`)
+check('Follow streams the container log onto the screen',
+  // The screen's error rides along, so a refused socket fails naming why.
+  await waitFor(`(document.getElementById('app-logs-stdout')?.textContent ?? '')
+    + (document.getElementById('screen-error')?.textContent ?? '')`,
+    t => t.includes('follow canary') && t.includes('ready'), 10_000),
+  t => t.includes('follow canary') && t.includes('ready'))
+check('…asked of the machine as a follow',
+  outpostSaw.docker.some(c => c.startsWith('docker logs --follow')), true)
+check('…toned: the error line is marked, and the ANSI escape is drawn rather than printed',
+  await evaluate(`(() => {
+    const box = document.getElementById('app-logs-stdout')
+    return JSON.stringify({
+      error: !!box.querySelector('.log-line[data-level="danger"]'),
+      green: box.querySelector('.tone-success')?.textContent ?? null,
+      raw:   box.textContent.includes('[32m'),
+    })
+  })()`),
+  '{"error":true,"green":"ready","raw":false}')
+await evaluate(`document.getElementById('app-logs-follow').click()`)
+check('Stop following ends the command on the machine',
+  await waitFor(`0`, () => outpostSaw.followKilled > 0, 5_000).then(() => outpostSaw.followKilled),
+  n => n > 0)
 
 // ── 9f. A pasted app ─────────────────────────────────────────────────
 //

@@ -1,0 +1,52 @@
+<script>
+  // LogView.mesa — a container's log, toned. The parsing is lib/logLines.js;
+  // this draws its parts as spans, never as HTML, because a log line is
+  // whatever the app chose to print.
+  import { logLines, stripAnsi } from '../lib/logLines.js'
+
+  export let text   = ''
+  export let raw    = false
+  export let id     = null
+  export let follow = false   // keep the newest line in view while the reader is at the bottom
+
+  let box    = null
+  let pinned = true
+
+  $: lines = raw ? [] : logLines(text)
+  // Scrolled up to read something, the reader stays where they are.
+  $: { if (follow && box && pinned && (lines || text)) requestAnimationFrame(() => { box.scrollTop = box.scrollHeight }) }
+
+  function onscroll() {
+    pinned = box.scrollHeight - box.scrollTop - box.clientHeight < 32
+  }
+</script>
+
+{#if raw}
+  <pre class="log" {id} bind:this={box} {onscroll}><code>{stripAnsi(text)}</code></pre>
+{:else}
+  <pre class="log" {id} bind:this={box} {onscroll}><code>{#each lines as line}<div class="log-line" data-level={line.level}>{#each line.parts as p}<span class="tone-{p.tone}" class:bold={p.bold} class:dim={p.dim} title={p.title}>{p.text}</span>{/each}</div>{/each}</code></pre>
+{/if}
+
+<style>
+  .log {
+    white-space:   pre-wrap;
+    overflow-wrap: anywhere;
+    font-family:   var(--font-mono);
+    font-size:     var(--text-sm);
+    line-height:   1.5;
+    max-height:    70vh;
+    overflow-y:    auto;
+  }
+  .log-line { padding-inline-start: 0.5rem; border-inline-start: 2px solid transparent; }
+  .log-line:hover { background: var(--color-surface-2, rgb(127 127 127 / 0.08)); }
+  .log-line[data-level='danger']  { border-inline-start-color: var(--color-danger); }
+  .log-line[data-level='warning'] { border-inline-start-color: var(--color-warning); }
+
+  .tone-danger  { color: var(--color-danger); }
+  .tone-warning { color: var(--color-warning); }
+  .tone-success { color: var(--color-success); }
+  .tone-info    { color: var(--color-info); }
+  .tone-muted   { color: var(--color-muted); }
+  .bold { font-weight: 600; }
+  .dim  { opacity: 0.65; }
+</style>

@@ -135,7 +135,7 @@ access.snapshot.md account-mail.ts accounts.ts ADAPTERS.md alert-evaluate.job.ts
 ApiKey.mesa api-paths.js App.mesa app.snapshot.md app-source.ts app.ts automations.ts 
 bearer-send.ts build.mjs capabilities.ts cli.config.js credentials.ts db.ts delivery.ts 
 dependencies.ts domain-dns.job.ts executor.ts gate.ts generate.js hooks.ts host-record.ts index.ts 
-job-run.job.ts job-schedule.ts kinds.ts litestone.config.js local-git.ts local-ssh.ts mailer.ts 
+job-run.job.ts job-schedule.ts kinds.ts litestone.config.js local-git.ts local-ssh.ts machine-stream.ts mailer.ts 
 main.js monitor-sweep.job.ts NoRecord.mesa notices.js notify.ts outpost-dev.ts outpost-run.ts 
 outpost.ts package.json probe.ts provision-host.ts PROVISIONING.md push.ts README.md 
 registers.ts release-record.ts runtime.ts schema.d.ts schema.lite scopes.ts SCREENS.md seed.js 

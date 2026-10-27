@@ -82,6 +82,55 @@ export async function spawnRun(argv, { timeoutMs = 600_000, cwd, env } = {}) {
   return { exitCode, stdout, stderr }
 }
 
+/** The streaming runner: argv only, both pipes handed back unread. */
+export function spawnStream(argv) {
+  const proc = Bun.spawn(argv, { stdout: 'pipe', stderr: 'pipe' })
+  return { stdout: proc.stdout, stderr: proc.stderr, exited: proc.exited, kill: () => { try { proc.kill() } catch {} } }
+}
+
+/**
+ * A process's two pipes as one sequence of `{ stream, text }` lines, in the
+ * order each line ARRIVED. Ends when both pipes close or `signal` aborts, and
+ * kills the process either way: an abandoned `docker logs -f` runs until the
+ * container stops, which on a healthy app is never.
+ */
+export async function* followLines(proc, signal) {
+  const queue = []
+  let wake = null, open = 2
+  const push = (item) => { queue.push(item); wake?.(); wake = null }
+
+  const pump = async (pipe, stream) => {
+    // A character split across two reads must not become two U+FFFDs.
+    const decoder = new TextDecoder()
+    let held = ''
+    try {
+      for await (const bytes of pipe) {
+        held += decoder.decode(bytes, { stream: true })
+        const lines = held.split('\n')
+        held = lines.pop()
+        for (const text of lines) push({ stream, text })
+      }
+      held += decoder.decode()
+      if (held) push({ stream, text: held })
+    } catch {} finally { open--; push(null) }
+  }
+  pump(proc.stdout, 'stdout')
+  pump(proc.stderr, 'stderr')
+
+  const stop = () => { proc.kill(); push(null) }
+  signal?.addEventListener('abort', stop, { once: true })
+  try {
+    while (!signal?.aborted) {
+      while (queue.length) { const item = queue.shift(); if (item) yield item }
+      if (open === 0) break
+      await new Promise(resolve => { wake = resolve })
+    }
+  } finally {
+    signal?.removeEventListener('abort', stop)
+    proc.kill()
+  }
+}
+
 // ─── logArgs ─────────────────────────────────────────────────────────────────
 // The `--log-*` flags for a started container. Mirrors the CLI's
 // `core/docker-logging.js`; see the note at its call site for why it is a copy.
@@ -219,7 +268,7 @@ function bucketSaid(status, text) {
 }
 
 export function createDocker({
-  run = spawnRun, fetch: fetchFn = globalThis.fetch, workDir = '/var/lib/outpost/apps', health = HEALTH,
+  run = spawnRun, stream = spawnStream, fetch: fetchFn = globalThis.fetch, workDir = '/var/lib/outpost/apps', health = HEALTH,
   restoreDir = '/var/lib/outpost/restore', backupDir = '/var/lib/outpost/backups',
   uidFile = '/var/lib/outpost/uids.json',
 } = {}) {
@@ -712,6 +761,21 @@ export function createDocker({
         throw new Error(result.stderr?.trim() || `docker logs exited ${result.exitCode}`)
 
       return { running: true, tail: lines, since, stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
+    },
+
+    /**
+     * The container's log as it is written — `docker logs --follow`, a line at
+     * a time, for as long as the caller holds the stream. `tail` is the same
+     * clamp `logs` applies, so the backlog a follow opens with is bounded too.
+     * A container that is not there arrives as docker's own stderr line and
+     * the end of the stream.
+     */
+    follow({ appId, tail = 200, since = null, signal } = {}) {
+      const lines = Math.min(Math.max(Number.parseInt(tail, 10) || 200, 0), MAX_LOG_LINES)
+      const argv  = ['docker', 'logs', '--follow', '--tail', String(lines)]
+      if (since != null && String(since).trim() !== '') argv.push('--since', String(since))
+      argv.push(`fjs-${appId}`)
+      return followLines(stream(argv), signal)
     },
 
     async stop({ appId }) {

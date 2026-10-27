@@ -29,6 +29,7 @@ import { env }                       from './core/env.ts'
 import { buildProviders }            from './providers/index.ts'
 import { createWorkbench }           from './domain/workbench/workbench.ts'
 import { workbenchTerminal }         from './plugins/workbench-terminal.ts'
+import { machineStream }             from './plugins/machine-stream.ts'
 import { LEVELS }                                from '@frontierjs/litestone'
 import { apply }                                 from '@frontierjs/litestone/migrations'
 import type { WriteEvent }                       from '@frontierjs/litestone'
@@ -52,7 +53,7 @@ import { grantsFor } from './core/capabilities.ts'
 import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
 import { agentGuard, apiKeyGuard, apiKeyUsage, narrowForAgent } from './domain/api-key/scopes.ts'
 import { slugify }                        from './core/resource.ts'
-import { basecampGateLevel, roleForLevel, SYSTEM } from './core/gate.ts'
+import { basecampGateLevel, roleForLevel, SYSTEM, workspaceClaim } from './core/gate.ts'
 import { basecampNodes }                  from './plugins/automations.ts'
 import { restoreSchedules }          from './domain/job/job-schedule.ts'
 import { pushAppsOn }                from './jobs/domain-dns.job.ts'
@@ -539,17 +540,8 @@ export async function buildBasecampApp(
     // A person in two workspaces is one principal on one socket and holds a
     // different tenant in each, which is why this is per channel and cannot be
     // put on the connection.
-    claims: async (channelName, conn) => {
-      const workspaceId = workspaceIdFromChannel(channelName)
-      const userId      = (conn.user as { id?: string } | null | undefined)?.id
-      if (!workspaceId || !userId) return null
-      const member = await db.asSystem().workspaceMember.findFirst({
-        where:  { workspaceId, userId },
-        select: { role: true, capabilities: true },
-      })
-      if (!member) return null
-      return { workspaceId, memberRole: member.role, capabilities: member.capabilities ?? [] }
-    },
+    claims: (channelName, conn) =>
+      workspaceClaim(db, workspaceIdFromChannel(channelName) ?? '', (conn.user as { id?: string } | null | undefined)?.id),
   }))
 
   // ── Services ──────────────────────────────────────────────────────────
@@ -949,6 +941,10 @@ export async function buildBasecampApp(
   // The workbench's Terminal tab — a shell in a pinned checkout, behind the
   // same refusal as the workbench service (plugins/workbench-terminal.ts).
   app.configure(function terminalRoute() { workbenchTerminal(app) })
+
+  // A machine's output as it is written — a container's log today
+  // (plugins/machine-stream.ts).
+  app.configure(function machineStreamRoute() { machineStream(app) })
 
   app.configure(function staticRoutes(a) {
     a.get('/', () => Bun.file(new URL('../../web/index.html', import.meta.url).pathname))

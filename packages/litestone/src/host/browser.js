@@ -200,3 +200,6 @@ export function sleepSync(ms) {
 // No pid to read, and the caller's random suffix is what tells two contexts
 // apart, so the prefix only has to say where it came from.
 export const processId = () => 'browser'
+
+// No disk, so nothing that keeps bytes on one is installed here.
+export const hasFilesystem = false

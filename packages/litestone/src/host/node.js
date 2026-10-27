@@ -64,3 +64,6 @@ export const sleepSync = (ms) => { Atomics.wait(SLEEP, 0, 0, ms) }
 // A name for this process in a lock owner or a cross-process writer id, so a
 // row says whose it is. The random suffix stays with the caller.
 export const processId = () => String(process.pid)
+
+// A disk, so a File column's bytes can be kept on it (FJS-D1549).
+export const hasFilesystem = true

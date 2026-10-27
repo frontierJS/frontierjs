@@ -207,6 +207,8 @@
   let containerEl
   var _clickHandler = null
 
+  const showClear = clearable && !resolvedDisabled && (value != null || !!query)
+
   // Derived — filter options by query
   // The server already applied the query where it answered one, so filtering
   // its rows again would drop every row whose LABEL column is not the one the
@@ -358,14 +360,15 @@
 {#snippet control()}
   <div bind:this={containerEl} class="fjs-combobox">
     <!--
-      .field-row joins the input to its trailing controls; the clear button
-      is a real .btn so it gets the shared focus ring rather than its own.
+      The × and the chevron sit inside the input's border, not beside it as
+      .field-row addons — three boxes read as three controls. The input stays
+      the .field, so focus, :user-invalid and :disabled are still its own.
     -->
-    <div class="field-row">
+    <div class="fjs-combobox-control" data-clear={showClear || null}>
       <input
         bind:this={inputEl}
         bind:value={query}
-        class="field"
+        class="field fjs-combobox-input"
         id={inputId}
         name={name || undefined}
         type="text"
@@ -389,18 +392,25 @@
         {...$attributes}
       />
 
-      {#if clearable && !resolvedDisabled && (value != null || query)}
-        <button type="button" class="btn ghost square" aria-label="Clear" onclick={clear}>
-          <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z"/>
-          </svg>
-        </button>
-      {/if}
-
-      <span class="field-addon" aria-hidden="true">
+      <span class="fjs-combobox-trail">
+        <!--
+          Out of the tab order (react-select, Atlassian): a stop between the
+          input and the next field is one more Tab on every pass, and the
+          keyboard already clears by emptying the text.
+        -->
+        {#if showClear}
+          <button type="button" class="btn ghost square fjs-combobox-clear" tabindex="-1" aria-label="Clear" onclick={clear}>
+            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z"/>
+            </svg>
+          </button>
+          <span class="fjs-combobox-divider" aria-hidden="true"></span>
+        {/if}
         <svg
+          class="icon fjs-combobox-chevron"
           viewBox="0 0 20 20"
           fill="currentColor"
+          aria-hidden="true"
           style:transform={open ? 'rotate(180deg)' : null}
           style:transition="transform 120ms"
         >
@@ -499,6 +509,35 @@
 
 <style>
   .fjs-combobox { position: relative; }
+  .fjs-combobox-control { position: relative; }
+  /* Room for the chevron, and for the × and its divider when they draw, so
+     a long label never runs under them. */
+  .fjs-combobox-input { padding-inline-end: 2.25rem; }
+  .fjs-combobox-control[data-clear] .fjs-combobox-input { padding-inline-end: 4.25rem; }
+  /* Pointer-transparent except the ×: a click on the chevron lands on the
+     input under it, which is what opens the list. */
+  .fjs-combobox-trail {
+    position:          absolute;
+    inset-block:       0;
+    inset-inline-end:  0.5rem;
+    display:           flex;
+    align-items:       center;
+    gap:               0.25rem;
+    color:             var(--ink-mute);
+    pointer-events:    none;
+  }
+  .fjs-combobox-clear {
+    pointer-events: auto;
+    padding:        0.25em;
+    color:          inherit;
+  }
+  .fjs-combobox-clear:hover { color: var(--ink); }
+  .fjs-combobox-divider {
+    align-self:   stretch;
+    inline-size:  1px;
+    margin-block: 0.5rem;
+    background:   var(--rule-strong);
+  }
   /* .popover is absolute by default; this only anchors and sizes it. */
   .fjs-combobox-panel {
     inset-inline:      0;

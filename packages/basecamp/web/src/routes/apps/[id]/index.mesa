@@ -16,6 +16,7 @@ title: App
   // environment, its domains, where its replicas landed, its last ten releases
   // and its jobs. The alternative was five round trips for one question.
   import { page, goto } from '@frontierjs/sierra/router'
+  import { getClient } from '@frontierjs/sierra/resource'
   import App, { apps } from '../../../resources/App.mesa'
   import { domains } from '../../../resources/Domain.mesa'
   import { servers } from '../../../resources/Server.mesa'
@@ -26,6 +27,7 @@ title: App
   import NavIcon from '../../../components/NavIcon.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
   import LaptopRelease from '../../../components/LaptopRelease.mesa'
+  import LogView from '../../../components/LogView.mesa'
   import VariablesEditor from '../../../components/VariablesEditor.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -182,14 +184,15 @@ title: App
   }
 
   // ─── Logs ───────────────────────────────────────────────────────────────
-  // Read on DEMAND and never on a timer. A console that polls every app's
-  // container is a fleet-wide `docker logs` on a loop, and the operator asking
-  // is the signal — `fli deploy:logs --follow` is the other shape and it holds
-  // one ssh connection open on purpose.
+  // Read on DEMAND and never on a timer: a console that polled every app's
+  // container would be a fleet-wide `docker logs` on a loop. Follow is the
+  // other shape — one socket the operator opened, for one app, closed when
+  // they leave the tab (api/src/plugins/machine-stream.ts).
   let logs      = null
   let logsBusy  = false
   let logsTail  = 200
   let logsSince = ''
+  let logsRaw   = false
 
   async function loadLogs() {
     error = null; logsBusy = true
@@ -205,6 +208,73 @@ title: App
       logsBusy = false
     }
   }
+
+  // A followed log keeps its newest lines; an afternoon of a chatty container
+  // would otherwise be re-parsed whole on every flush.
+  const FOLLOW_KEEP = 5000
+  let follow      = null    // the socket, while following
+  let followState = ''      // '' · connecting · open · ended
+  let followHeld  = { stdout: [], stderr: [] }
+  let flushTimer  = null
+
+  const keep = (text, more) => {
+    const lines = (text ? text.split('\n') : []).concat(more)
+    return lines.slice(-FOLLOW_KEEP).join('\n')
+  }
+
+  // Lines arrive one frame each; drawing per frame re-renders per line.
+  function flush() {
+    flushTimer = null
+    const { stdout, stderr } = followHeld
+    followHeld = { stdout: [], stderr: [] }
+    if (!stdout.length && !stderr.length) return
+    logs = { ...logs, stdout: stdout.length ? keep(logs.stdout, stdout) : logs.stdout,
+                      stderr: stderr.length ? keep(logs.stderr, stderr) : logs.stderr }
+  }
+
+  function startFollow() {
+    stopFollow()
+    error = null
+    logs  = { running: true, stdout: '', stderr: '' }
+    followState = 'connecting'
+    const client = getClient()
+    const q = new URLSearchParams({ workspace: session.workspaceId ?? '', tail: String(logsTail) })
+    if (logsSince) q.set('since', logsSince)
+    const url = `${(client.origin || location.origin).replace(/^http/, 'ws')}/ws/stream/logs/${encodeURIComponent(app.id)}?${q}`
+    const ws = new WebSocket(url, client.token ? ['fjs', `fjs.bearer.${client.token}`] : ['fjs'])
+    follow = ws
+    ws.onopen    = () => { followState = 'open' }
+    ws.onmessage = (e) => {
+      let frame
+      try { frame = JSON.parse(e.data) } catch { return }
+      if (frame.event === 'error') error = frame.data?.error ?? 'The stream failed'
+      if (frame.event !== 'message' || !frame.data) return
+      ;(frame.data.stream === 'stderr' ? followHeld.stderr : followHeld.stdout).push(frame.data.text ?? '')
+      flushTimer ??= setTimeout(flush, 150)
+    }
+    ws.onclose = (e) => {
+      if (follow !== ws) return
+      flush()
+      follow = null
+      followState = 'ended'
+      // 4xxx is the API refusing, with its own sentence.
+      if (e.code >= 4000 && e.reason) error = e.reason
+    }
+  }
+
+  function stopFollow() {
+    if (!follow) return
+    const ws = follow
+    follow = null
+    ws.onclose = null
+    ws.close()
+    clearTimeout(flushTimer)
+    flush()
+    followState = 'ended'
+  }
+
+  $: { if (tab !== 'logs') stopFollow() }
+  $.onDestroy(() => stopFollow())
 
   // Placement — POST /apps/:id with X-Service-Method. The row it writes is
   // `@@gate(2.8)`, so the service does it through asSystem() after checking
@@ -948,12 +1018,24 @@ title: App
       <p class="text-sm text-muted">
         Read from the machine when you ask, through the same executor a release goes through.
         Nothing is stored here — this is the container's own log, bounded by the lines you ask for.
+        Follow keeps the log open and adds lines as the container writes them, until you stop or leave this tab.
       </p>
+      {#if followState === 'connecting' || followState === 'open'}
+        <p class="text-sm" aria-live="polite" id="app-logs-following">
+          <Pill tone={followState === 'open' ? 'success' : ''}>{followState === 'open' ? 'live' : 'connecting'}</Pill>
+        </p>
+      {/if}
       <div class="cluster" id="app-logs-controls">
         <Input type="number" label="Lines" bind:value={logsTail} id="app-logs-tail" />
         <Input label="Since" placeholder="10m, 1h, or a timestamp" bind:value={logsSince} id="app-logs-since" />
-        <Button onclick={loadLogs} disabled={logsBusy} id="app-logs-load">
+        <Button onclick={loadLogs} disabled={logsBusy || !!follow} id="app-logs-load">
           {logsBusy ? 'Reading…' : 'Read log'}
+        </Button>
+        <Button treatment="outlined" tone={follow ? 'danger' : ''} onclick={() => follow ? stopFollow() : startFollow()} id="app-logs-follow">
+          {follow ? 'Stop following' : 'Follow'}
+        </Button>
+        <Button treatment="ghost" onclick={() => logsRaw = !logsRaw} id="app-logs-raw">
+          {logsRaw ? 'Toned' : 'Raw'}
         </Button>
       </div>
     </Card>
@@ -967,7 +1049,7 @@ title: App
     {#if logs && logs.stdout}
       <Card>
         <h3 class="h5">stdout</h3>
-        <pre class="scroll-x" style:white-space="pre-wrap" style:overflow-wrap="anywhere" id="app-logs-stdout"><code>{logs.stdout}</code></pre>
+        <LogView text={logs.stdout} raw={logsRaw} follow={!!follow} id="app-logs-stdout" />
       </Card>
     {/if}
 
@@ -976,11 +1058,11 @@ title: App
            joining them here would invent an interleaving that never happened. -->
       <Card>
         <h3 class="h5">stderr</h3>
-        <pre class="scroll-x" style:white-space="pre-wrap" style:overflow-wrap="anywhere" id="app-logs-stderr"><code>{logs.stderr}</code></pre>
+        <LogView text={logs.stderr} raw={logsRaw} follow={!!follow} id="app-logs-stderr" />
       </Card>
     {/if}
 
-    {#if logs && logs.running && !logs.stdout && !logs.stderr}
+    {#if logs && logs.running && !logs.stdout && !logs.stderr && !follow}
       <EmptyState title="Nothing in the window" id="app-logs-empty">
         The container is running and wrote nothing in the range you asked for.
       </EmptyState>

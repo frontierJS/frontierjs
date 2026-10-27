@@ -210,5 +210,6 @@ rewritten.
 
 - `IDEAS/homestead.md` — **the engine and its build order**, lifted out of this paper
 - `IDEAS/rigs.md` — rigs contributing to a release is the shared open question
+- `IDEAS/portable-install.md` — the single binary kind, prototyped 2026-10-27: a real app installed from a folder on clean Ubuntu, and the seven walls it hit
 - `PHILOSOPHY.md` — the axioms these constraints should be reconciled against
 - `packages/jetty/` — the existing offline-shell + relay prior art
