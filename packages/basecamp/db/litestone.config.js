@@ -1,9 +1,7 @@
 // db/litestone.config.js
-// Litestone configuration — db path, schema source, and migrations output.
-// The schema parser reads this when running:
-//   bun run litestone          (generate client + DDL)
-//   bun run litestone:audit    (schema audit report)
-//   bun run litestone studio   (schema browser UI)
+// The litestone CLI's paths — `bunx litestone <command>` from the package root
+// finds this file in ./db/. The app itself reads the database path from
+// `database main` in schema.lite, not from here.
 
 export default {
   db:         './basecamp.db',

@@ -1,10 +1,10 @@
-// db/repl.js — the shop's own console commands
+// db/repl.js — Basecamp's own console commands
 //
-//   fli db:repl --tenant flagship
-//   flagship · anonymous(0) > .resetPasswords
+//   fli db:repl
+//   > .resetPasswords [password]
 //
-// Each command runs against the tenant the console opened, so a reset reaches
-// one shop's accounts and not the fleet's.
+// The reset reaches every password credential in the database the console
+// opened, and is refused under NODE_ENV=production without --force.
 
 import { resetPasswords } from '@frontierjs/auth/console'
 

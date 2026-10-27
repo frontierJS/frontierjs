@@ -58,7 +58,8 @@ export async function buildApp() {
   const app = createApp({
     db,
     auth:   createStubAuth({ users: [{ id: '1', role: 'member' }, { id: '2', role: 'member' }] }),
-    system: { id: 'app', role: 'system' },
+    // Basecamp declares none, and sys must still be every gate off there.
+    system: process.env.NO_SYSTEM ? undefined : { id: 'app', role: 'system' },
   })
   app.services.register(createService({
     name: 'notes', model: 'Note',
@@ -228,10 +229,11 @@ describe('junction call -e', () => {
   describe('the trail names who was at the keyboard on a sys write', () => {
     // Read off the file, because the trail model answers `asSystem()` alone and
     // the app's own principal is not that.
-    const lastEntry = (write: string, ...args: string[]) => {
+    const lastEntry = (write: string, ...args: string[]) => lastEntryWith({}, write, ...args)
+    const lastEntryWith = (env: Record<string, string>, write: string, ...args: string[]) => {
       const r = spawnSync(process.execPath, [join(ROOT, 'tools/cli.ts'), 'call', '--app', 'app.ts', '-e',
         `await ${write}; await new Promise(r => setTimeout(r, 50))`, ...args], {
-        cwd: dir, encoding: 'utf8', env: { ...process.env, USER: 'op-test', NODE_ENV: 'development' },
+        cwd: dir, encoding: 'utf8', env: { ...process.env, USER: 'op-test', NODE_ENV: 'development', ...env },
       })
       expect(r.stderr).not.toContain('Error')
       expect(r.status).toBe(0)
@@ -253,6 +255,14 @@ describe('junction call -e', () => {
 
     it('a sys write under --as still files the operator, never the standing', () => {
       const row = lastEntry(`sys.ledger.create({ data: { entry: 'by hand' } })`, '--as', 'ann@x.test')
+      expect(row.actorId).toBe('op-test')
+      expect(row.actorType).toBe('repl')
+    }, 60_000)
+
+    // On yuma `sys.featureFlag.create` was refused at level 0: `runAs(null)` is
+    // graded as `createApp({ system })`, and with none declared that is nobody.
+    it('a sys write passes the gate in an app that declares no system principal', () => {
+      const row = lastEntryWith({ NO_SYSTEM: '1' }, `sys.ledger.create({ data: { entry: 'no system' } })`)
       expect(row.actorId).toBe('op-test')
       expect(row.actorType).toBe('repl')
     }, 60_000)

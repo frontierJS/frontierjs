@@ -131,3 +131,25 @@ export function roleForLevel(level: number): string | null {
   }
   return best
 }
+
+/**
+ * Who Basecamp is when it acts on its own behalf: `createApp({ system })`, so
+ * `runAs(null)` — a cron fire, a job nobody enqueued, the prompt's `sys(fn)` —
+ * is graded SYSADMIN rather than STRANGER(0) (`FJS-3517`). Not a User row; the
+ * id is no UUID, so no session or membership can ever name it.
+ */
+export const SYSTEM = {
+  id:            'basecamp',
+  userType:      'service',
+  isSystemAdmin: true,
+  authMethod:    'created' as const,
+}
+
+/**
+ * The app acting, not a person: no principal, or `SYSTEM`. A branch that reads
+ * `$.user` as *is somebody here* takes the person's path for `SYSTEM` and
+ * scopes to a workspace the app does not belong to.
+ */
+export function actsAsApp(user: unknown): boolean {
+  return user == null || (user as { id?: unknown }).id === SYSTEM.id
+}

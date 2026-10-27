@@ -3,10 +3,6 @@
 --
 -- GENERATED FROM db/schema.lite. Do not edit by hand.
 -- Regenerate:  bun db/generate.js
---
--- The previous hand-written SQL is kept at db/legacy-sql/ for reference.
--- It used snake_case columns and INTEGER epoch-ms timestamps; Litestone
--- emits camelCase columns and ISO-8601 TEXT, so the two are NOT compatible.
 -- ============================================================
 
 PRAGMA foreign_keys = ON;

@@ -16,10 +16,6 @@
 // schema DECLARING `database main` puts its migrations in; a file directly
 // under migrations/ is read by createTestEnv and invisible to `migrate apply`,
 // so the suite was green against a database no deploy could build.
-//
-// Once Basecamp is a workspace member with a package.json, this becomes
-// `bun run db:ddl`. It has no dependencies beyond the workspace's litestone
-// source, so it runs today, uninstalled.
 
 import { parseFile, generateDDLForDatabase } from '../../litestone/src/index.js'
 
@@ -36,10 +32,6 @@ const HEADER = `-- ============================================================
 --
 -- GENERATED FROM db/schema.lite. Do not edit by hand.
 -- Regenerate:  bun db/generate.js
---
--- The previous hand-written SQL is kept at db/legacy-sql/ for reference.
--- It used snake_case columns and INTEGER epoch-ms timestamps; Litestone
--- emits camelCase columns and ISO-8601 TEXT, so the two are NOT compatible.
 -- ============================================================
 
 `

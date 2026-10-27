@@ -52,7 +52,7 @@ import { grantsFor } from './core/capabilities.ts'
 import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
 import { agentGuard, apiKeyGuard, apiKeyUsage, narrowForAgent } from './services/api-keys/scopes.ts'
 import { slugify }                        from './core/resource.ts'
-import { basecampGateLevel, roleForLevel } from './core/gate.ts'
+import { basecampGateLevel, roleForLevel, SYSTEM } from './core/gate.ts'
 import { basecampNodes }                  from './plugins/automations.ts'
 import { restoreSchedules }          from './services/jobs/job-schedule.ts'
 import { pushAppsOn }                from './jobs/domain-dns.job.ts'
@@ -228,6 +228,10 @@ export async function buildBasecampApp(
     // services/, jobs/, notifications/ beside this file, ../config above (`FJS-D1080`).
     root: import.meta.url,
     config, auth, db, logger,
+    // `runAs(null)` runs as this, graded SYSADMIN. It also means a webhook
+    // registered with no subscriber would be graded SYSADMIN, not the stranger
+    // `FJS-D193` falls back to, should this app ever take the webhooks plugin.
+    system: SYSTEM,
     credentials: [outpostCredential({ db, logger })],
     principal: membershipClaim({
       tenantFrom:  workspaceOrKeys,

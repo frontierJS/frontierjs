@@ -5,6 +5,7 @@
 import { BadRequest, Forbidden, NotFound, Unauthorized, applyClaims, MEMBERSHIP, signedRequest, serviceAccessor, accessorCandidates, resultData, $ } from '@frontierjs/junction'
 import { authenticate } from '@frontierjs/junction/hooks'
 import type { App, Hook, ILogger, ServiceContext, CredentialVerifier, InboundRequest }  from '@frontierjs/junction'
+import { actsAsApp } from './gate.ts'
 import { REDACTED }                       from '@frontierjs/toolbelt/redact'
 import { workspaceChannelName }       from './channels.ts'
 import type { BasecampDb }                 from './db.ts'
@@ -206,7 +207,7 @@ export function scopeToWorkspace(): Hook {
     const userId      = userOf(ctx)?.id
     const workspaceId = ctx.locals.workspaceId as string | undefined
 
-    if (!userId || !workspaceId) return
+    if (!userId || actsAsApp(userOf(ctx)) || !workspaceId) return
 
     const member = memberOf(ctx)
 
@@ -251,7 +252,7 @@ export function requireWorkspaceRole(...roles: string[]): Hook {
     const userId      = userOf(ctx)?.id
     const workspaceId = ctx.locals.workspaceId as string | undefined
 
-    if (!userId || !workspaceId) return
+    if (!userId || actsAsApp(userOf(ctx)) || !workspaceId) return
 
     // No re-read: the request's own resolution already ran against this
     // workspace, and the one case where a service addresses a DIFFERENT one

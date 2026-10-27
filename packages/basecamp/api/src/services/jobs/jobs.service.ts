@@ -13,6 +13,7 @@ import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, w
 import { syncSchedule, unscheduleJob, nextRunAt } from './job-schedule.ts'
 import jobRun from '../../jobs/job-run.job.ts'
 import { announce } from '../../core/channels.ts'
+import { actsAsApp } from '../../core/gate.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 /** Five fields: min hour dom month dow. */
@@ -41,7 +42,7 @@ const sys = () => $.db.asSystem() as any
  * what `runsAsApp` in the handler declares.
  */
 async function jobInScope(jobId: string) {
-  const client = $.user ? db() : sys()
+  const client = actsAsApp($.user) ? sys() : db()
   const row    = await client.job.findUnique({ where: { id: jobId } })
   if (!row) throw new NotFound(`Job '${jobId}' not found`)
   return row as Record<string, any>

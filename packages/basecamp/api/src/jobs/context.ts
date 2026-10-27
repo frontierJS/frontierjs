@@ -44,6 +44,7 @@
 
 import type { JobContext }  from '@frontierjs/caravan'
 import type { App }         from '@frontierjs/junction'
+import { actsAsApp }         from '../core/gate.ts'
 
 export function appFrom(ctx: JobContext<unknown>, job: string): App {
   if (!ctx.app) throw new Error(
@@ -81,7 +82,7 @@ export interface AppJob {
  */
 export function runsAsCaller(ctx: JobContext<unknown>, job: string): CallerJob {
   const app    = appFrom(ctx, job)
-  const actor  = app.principal()?.id
+  const actor  = actsAsApp(app.principal()) ? undefined : app.principal()!.id
   const tenant = app.tenant()
 
   if (!actor || !tenant) throw new Error(
@@ -107,7 +108,7 @@ export function runsAsCaller(ctx: JobContext<unknown>, job: string): CallerJob {
  */
 export function runsAsApp(ctx: JobContext<unknown>, job: string): AppJob {
   const app   = appFrom(ctx, job)
-  const actor = app.principal()?.id
+  const actor = actsAsApp(app.principal()) ? undefined : app.principal()!.id
 
   if (actor) throw new Error(
     `[${job}] declares runsAsApp and the queue recorded actor '${actor}'. Somebody asked ` +
@@ -124,7 +125,7 @@ export function runsAsApp(ctx: JobContext<unknown>, job: string): AppJob {
  * discovering which one it is in the middle of its work.
  */
 export function runsEitherWay(ctx: JobContext<unknown>, job: string): CallerJob | AppJob {
-  return appFrom(ctx, job).principal()?.id
-    ? runsAsCaller(ctx, job)
-    : runsAsApp(ctx, job)
+  return actsAsApp(appFrom(ctx, job).principal())
+    ? runsAsApp(ctx, job)
+    : runsAsCaller(ctx, job)
 }

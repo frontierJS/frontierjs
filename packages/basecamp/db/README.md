@@ -346,17 +346,6 @@ round trip is symmetric). `Secret.data` still predates the fix: it is
 projects, servers, secrets and jobs live — Litestone warns about exactly this,
 and the warning is worth keeping at zero.
 
-## `db/legacy-sql/` — the superseded hand-written SQL
-
-Kept for reference only; nothing reads it. It is **not** compatible with the
-generated schema: it used snake_case columns (`workspace_id`, `created_at`) and
-`INTEGER` epoch-ms timestamps, and its tables were not `STRICT`.
-
-Note that `002_server_agent.sql` never worked — `ALTER TABLE … ADD COLUMN IF NOT
-EXISTS` is not valid SQLite (confirmed: `near "EXISTS": syntax error`), and both
-columns it adds already exist in `001`. The migration chain would have thrown on
-first boot.
-
 ## Downstream
 
 When this schema was regenerated it broke every service at once: they queried

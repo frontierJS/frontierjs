@@ -37,6 +37,7 @@ import { LEVELS }                 from '@frontierjs/litestone'
 import { sessionScope, internalOnly, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws }                 from '../../core/resource.ts'
 import { servingAddresses }       from '../../core/runtime.ts'
+import { actsAsApp }              from '../../core/gate.ts'
 import { edgeConnectorFor, edgeProviders, appMark, domainMark } from '../../providers/edge/index.ts'
 import { targetFor }              from '../../providers/compute/index.ts'
 import { sendVia }                from '../../providers/compute/accounts.ts'
@@ -389,7 +390,7 @@ export default createService({
   // holds the newcomer's CNAME by the time this runs.
   async syncStep() {
     const id     = String($.id)
-    const caller = !!$.user
+    const caller = !actsAsApp($.user)
     const domain = await (caller ? db() : $.app.db!.asSystem()).domain.findFirst({
       where: caller ? { id, workspaceId: ws() } : { id }, withDeleted: true,
     }) as (DomainRow & { workspaceId: string; deletedAt: string | null }) | null
@@ -409,7 +410,7 @@ export default createService({
       // no session to authenticate — so it is scoped only when a caller IS
       // there, and `internalOnly` keeps it off the wire either way.
       all: [sessionScope({ except: ['syncStep'] })],
-      syncStep: [internalOnly(), function scopedWhenACaller(ctx) { return ctx.user ? scoped(ctx) : undefined }],
+      syncStep: [internalOnly(), function scopedWhenACaller(ctx) { return actsAsApp(ctx.user) ? undefined : scoped(ctx) }],
     },
   },
 })

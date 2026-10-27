@@ -12,6 +12,7 @@
 
 import { NotFound, $, findWindow, serviceAccessor, accessorCandidates } from '@frontierjs/junction'
 import type { ServiceContext } from '@frontierjs/junction'
+import { actsAsApp } from './gate.ts'
 import { generateJsonSchema } from '@frontierjs/litestone'
 import { normalizeOrderBy, normalizeSelect, comparatorFor, type SortParam, type SelectParam } from '@frontierjs/toolbelt/query'
 
@@ -46,7 +47,7 @@ export function ws(): string {
 
 /** The acting user's id, or 'system' for job and outpost paths. */
 export function actor(): string {
-  return ($.me as { id?: string } | null | undefined)?.id ?? 'system'
+  return actsAsApp($.me) ? 'system' : ($.me as { id?: string } | null | undefined)?.id ?? 'system'
 }
 
 export function slugify(s: string): string {

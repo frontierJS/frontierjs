@@ -30,7 +30,7 @@
     "db:seed": "bun db/seed.js",
     "db:seed:admin": "bun db/seed-dev-admin.js",
     "db:tables": "sqlite3 db/basecamp.db '.schema'",
-    "db:reset": "bun run stop; rm -rf db/basecamp.db db/basecamp.db-shm db/basecamp.db-wal db/basecamp-jobs.db db/basecamp-jobs.db-shm db/basecamp-jobs.db-wal db/audit .outpost",
+    "db:reset": "bun run stop; rm -rf db/basecamp.db db/basecamp.db-shm db/basecamp.db-wal db/basecamp-jobs.db db/basecamp-jobs.db-shm db/basecamp-jobs.db-wal db/audit.db db/audit.db-shm db/audit.db-wal .outpost",
     "verify:screens": "bun web/test/verify-screens.mjs",
     "verify:provision": "bun web/test/verify-provision.mjs",
     "verify:pages": "bun web/test/verify-pages.mjs",

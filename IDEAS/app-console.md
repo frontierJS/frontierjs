@@ -258,7 +258,7 @@ Done when: `fli app:repl` opens on `example`, and `fli deploy:repl --as dev@knig
     with it a no-match `deleteMany` → `{ count: 0 }`. Under a pty the prompt
     opens as `alex@shop.test · flagship >`, `db.product.count()` → 13,
     `.exit` → 0.
-- [ ] 2.2 `fli deploy:repl [--as] [--tenant] [--production|--stage]` is
+- [x] 2.2 `fli deploy:repl [--as] [--tenant] [--production|--stage]` is
   `deploy:run` with the argv of 2.1, `-t` dropped under `-e` (0.1), resolved
   inside the container: the module `callArgv` names — `--app` as a container
   path, else the local snapshot header relative to the app root, else the
@@ -273,6 +273,9 @@ Done when: `fli app:repl` opens on `example`, and `fli deploy:repl --as dev@knig
     its junction's status, and that junction predates Phase 1: `-e` →
     `Unknown flag --eval`, the prompt → `Name a method`, exit 1. Open until a
     Basecamp deploy carries the new junction.
+  - 2026-10-27, after the owner's Basecamp deploy: `-e 'db.workspace.count()' --as
+    vlad@kobami.com` printed `1` and shut down clean; the bare command opened
+    `PRODUCTION · vlad@kobami.com >` with tab completion over `db.` and `sys.`.
 
 - [x] 2.3 A `sys` write from either prompt files the operator as the trail's
   actor (`FJS-D1534`), through support mode's `operatorId`/`operatorType` seam.
@@ -291,6 +294,18 @@ Done when: `fli app:repl` opens on `example`, and `fli deploy:repl --as dev@knig
     `op-test`), red on the first and third with `operator` dropped from
     `asApp`; two in `attested-by.test.ts`; one in `litestone/test/repl.test.ts`
     through the real CLI. Not run on yuma: it rides 2.2's deploy.
+  - 2026-10-27, on yuma after the deploy: `sys.featureFlag.create` was refused,
+    `requires level 4, user has level 0`. The `sys` client was the one
+    `runAs(null)` scopes, graded as `createApp({ system })`, and Basecamp
+    declares none; the example fixture does, which is why the rows held.
+    `sys.<model>` now takes `asSystem()` inside `asApp`, as `db:repl`'s does,
+    and the operator still reaches the trail. A fourth row, the fixture with
+    no `system`, is red with the old client on the same message yuma gave.
+    `sys(fn)` cannot take `asSystem()`, since a service builds its own client:
+    `FJS-3517`. Yuma's proof waits on one more Basecamp deploy.
+  - 2026-10-27: `FJS-3517` closed by Basecamp declaring `createApp({ system })`
+    (owner chose B). `sys(fn)` now runs as SYSADMIN: `servers.find` under
+    `--tenant` answers through it, and is refused with the declaration out.
 
 ### Phase 3 — Docs, drive, ruling
 

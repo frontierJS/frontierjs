@@ -147,18 +147,25 @@ if (prompting) {
   // hold no client: each `<model>.<method>(…)` opens one inside `run`, the way
   // `rowsAs` does.
   type Run = <T>(fn: () => Promise<T>) => Promise<T>
-  const clientAt = (name: string, run: Run, mayWrite: boolean, path: string[] = []): unknown =>
+  // `sys` is `asSystem()`, not the client `runAs(null)` scopes: that one is graded
+  // as `createApp({ system })`, and an app that declares none — Basecamp — is
+  // graded a stranger, so `sys.featureFlag.create` was refused at level 0.
+  const clientAt = (name: string, run: Run, mayWrite: boolean, system: boolean, path: string[] = []): unknown =>
     new Proxy(() => {}, {
       get: (_, key) => {
         if (key === 'then') return undefined
         // Printed or coerced, a path would otherwise call itself as `toString`.
         if (typeof key === 'symbol' || key === 'toString' || key === 'valueOf' || key === 'toJSON')
           return () => `${[name, ...path].join('.')} — call a method on it`
-        return clientAt(name, run, mayWrite, [...path, key])
+        return clientAt(name, run, mayWrite, system, [...path, key])
       },
       apply: (_, __, args) => !mayWrite && (path.length !== 2 || path[0].startsWith('$') || WRITE_VERBS.has(path[1]))
         ? Promise.reject(needsForce(`${[name, ...path].join('.')}() may write`))
-        : run(() => app.withDb(async (db: unknown) => {
+        : run(() => app.withDb(async (scoped: any) => {
+            // `in` first: a Litestone client throws on a property it lacks. A db
+            // with no `asSystem` is refused, not run scoped under the name `sys`.
+            if (system && !('asSystem' in scoped)) throw new TypeError(`${name} needs a Litestone client; this app's db has no asSystem()`)
+            const db = system ? scoped.asSystem() : scoped
             const owner = path.slice(0, -1).reduce<any>((o, k) => o?.[k], db)
             const fn    = owner?.[path.at(-1)!]
             if (typeof fn !== 'function') throw new TypeError(`${[name, ...path].join('.')} is not a method`)
@@ -170,8 +177,8 @@ if (prompting) {
   // standing: `--as customer@x` is whose view this is, not who wrote (`FJS-D1534`).
   const operator = replOperator()
   const asApp = <T>(fn: () => Promise<T>) => app.runAs(null, { ...scope(), operator }, fn)
-  const db    = clientAt('db', atSession, true)
-  const sysDb = clientAt('sys', asApp, !unforced)
+  const db    = clientAt('db', atSession, true, false)
+  const sysDb = clientAt('sys', asApp, !unforced, true)
   // `sys(fn)` runs `fn` as the app; `sys.order.count()` is `db:repl`'s `sys`.
   const sys   = new Proxy(sysDb as (fn: () => unknown) => unknown, {
     apply: (_, __, [fn]) => typeof fn !== 'function'
