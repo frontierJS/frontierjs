@@ -209,6 +209,9 @@ const child = spawn(process.execPath, [entry], {
     OUTPOST_RESTORE_DIR: join(HOME, 'restore'),
     // Where `app-backups.take` has the machine write an archive.
     OUTPOST_BACKUP_DIR:  join(HOME, 'backups'),
+    // Each App's clone key; the machine's default is under /var/lib, which a
+    // laptop's user cannot write.
+    OUTPOST_DEPLOY_KEY_DIR: join(HOME, 'deploy-keys'),
   },
 })
 

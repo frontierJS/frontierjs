@@ -225,6 +225,7 @@ try {
       OUTPOST_RESTORE_DIR:  restoreDir,
       OUTPOST_BACKUP_DIR:   backupDir,
       OUTPOST_UID_FILE:     join(scratch, 'uids.json'),
+      OUTPOST_DEPLOY_KEY_DIR: join(scratch, 'deploy-keys'),
       OUTPOST_CADDY_ADMIN:  ADMIN,
     },
   })

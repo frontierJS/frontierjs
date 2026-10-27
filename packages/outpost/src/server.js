@@ -17,7 +17,7 @@
 
 import { verifyRequest, nonceMemory } from '@frontierjs/toolbelt/signature'
 import { createDocker, createInspector, checkRunConfig } from './docker.js'
-import { createStatic } from './static.js'
+import { createStatic, validName } from './static.js'
 import { createIngress, hostsOf, pathsOf, redirectsOf } from './ingress.js'
 import { createReplicator } from './replicate.js'
 
@@ -62,7 +62,7 @@ function eventStream(events, abort, done) {
 }
 
 export function createOutpostServer(config, {
-  docker    = createDocker({ workDir: config.workDir, restoreDir: config.restoreDir, backupDir: config.backupDir }),
+  docker    = createDocker({ workDir: config.workDir, restoreDir: config.restoreDir, backupDir: config.backupDir, deployKeyDir: config.deployKeyDir }),
   inspector = createInspector(),
   statics   = createStatic({ staticDir: config.staticDir, staticUrl: config.staticUrl }),
   ingress   = createIngress({ admin: config.caddyAdmin }),
@@ -99,8 +99,19 @@ export function createOutpostServer(config, {
       const built = await docker.build({
         appId: body.app_id, source: body.source, image: body.image ?? `fjs-${body.app_id}`,
       })
-      return { digest: built.digest, commit_sha: built.commitSha }
+      return { digest: built.digest, commit_sha: built.commitSha, dockerfile: built.dockerfile }
     },
+    // Asked when the App is made, so its public half is on screen to add at the
+    // forge before the first build needs it. The id names a key file.
+    'POST /deploy-key': async (body) => {
+      const bad = validName(body.app_id, 'app_id')
+      if (bad) throw new Error(bad)
+      const { publicKey } = await docker.deployKey({ appId: body.app_id })
+      return { app_id: body.app_id, public_key: publicKey }
+    },
+    // A file off the app's clone, so a private repository's Dockerfile can be
+    // seeded onto the App after its first build (`apps.importDockerfile`).
+    'POST /source/file': (body) => docker.sourceFile({ appId: body.app_id, path: body.path }),
     // A static site's branch as a review build, uploaded as a Worker version
     // and never deployed; nothing on this machine serves it afterwards.
     'POST /site/preview': async (body) => {

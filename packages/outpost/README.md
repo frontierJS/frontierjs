@@ -36,7 +36,9 @@ default — `OUTPOST_PORT` (8180 dev, 7180 test — the number comes from
 `OUTPOST_HEARTBEAT_MS`, `OUTPOST_REPORT_MS`, `OUTPOST_WORK_DIR`,
 `OUTPOST_RESTORE_DIR` (`/var/lib/outpost/restore`, the one directory
 `/volume/restore` reads an archive from), `OUTPOST_BACKUP_DIR`
-(`/var/lib/outpost/backups`, where `/backup` writes one), and the four
+(`/var/lib/outpost/backups`, where `/backup` writes one),
+`OUTPOST_DEPLOY_KEY_DIR` (`/var/lib/outpost/deploy-keys`, each app's deploy
+key, made once and never sent; `FJS-D1555`), and the four
 that belong to the static half — `OUTPOST_STATIC_DIR`, `OUTPOST_STATIC_PORT`
 (8181 dev, 7181 test; `0` turns it off) and `OUTPOST_STATIC_URL` — and
 `OUTPOST_CADDY_ADMIN`, the machine's Caddy admin API (`http://127.0.0.1:2019`),
@@ -78,6 +80,9 @@ process's user, so the default is refuse and a route opts out rather than in.
 | --- | --- |
 | `POST /pull` | `{ image }` → `{ digest }` |
 | `POST /deploy` | `{ deployment_id, app_id, image, digest, source, config }` → `{ containerId, digest, commit_sha }`; `config` is `port`, `containerPort`, `volumePath`, `cpuLimit` (`--cpus`), `memLimitMb` (`--memory`), `env` and `logs` |
+| `POST /build` | `{ app_id, source, image }` → `{ digest, commit_sha, dockerfile }`; cloned with the app's deploy key, built with `source.dockerfile` (the App's stored copy) when given, else `deploy/Dockerfile`, else `Dockerfile`; a `deploy/Dockerfile` with no `deploy/generated/` is refused naming `fli deploy:vendor` (`FJS-D942`) |
+| `POST /deploy-key` | `{ app_id }` → `{ app_id, public_key }`; the app's ed25519 key made on the first ask and kept. Every heartbeat carries all of them as `deploy_keys: [{ app_id, public_key }]` |
+| `POST /source/file` | `{ app_id, path }` → `{ path, content }`; one file (64 KB at most) off the app's last clone, `content: null` when the clone has no such file; refused for an app never built here and for a path or symlink leading outside the clone |
 | `POST /stop` | `{ app_id }` → `{ stopped, unrouted }` |
 | `POST /site/preview` | `{ app_id, source, branch, alias, cloudflare: { token, account_id } }` → `{ commit_sha, url, version_url }`; the branch's head installed, built with `site-kit build --preview` and uploaded as a Worker version aliased `alias`, each step in a throwaway container, the checkout removed after; `commit_sha` is what was built, which may be newer than the caller saw |
 | `POST /site/publish` | `{ app_id, source, branch, commit, cloudflare: { token, account_id } }` → `{ commit_sha, url }`; the same steps with `site-kit build` and `site-kit deploy`, the live site; refused when `branch` is no longer at `commit` |

@@ -12,6 +12,8 @@
 //   restoreReplica — the app's databases out of its Litestream replica, at an instant
 //   fromBlueprint  — an app made out of a catalog entry and its parameters
 //   publish        — a static build handed in, sent to the machine and released
+//   mintDeployKey · importDockerfile — the machine's deploy key, and its clone's Dockerfile (FJS-D1555)
+//   readRepoDockerfile · dockerfileTemplate — the two seeds the create form offers
 //
 // The table is `app`, not `service`. The old header here said "table name in
 // DB: service (legacy — kept for migration continuity)"; that name was the
@@ -42,6 +44,7 @@ import { resolveExecutor, executorOn, isExecutor } from '../../providers/executo
 // The one reader of `App.source`. A service that parsed the blob itself would
 // be the second, and the two would disagree the first time a kind was added.
 import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, isInline } from '../../domain/release/app-source.ts'
+import { fjsDockerfileTemplate, readRepoDockerfile, DOCKERFILE_PATHS } from '../../domain/release/dockerfile-template.ts'
 import { runtimeOf } from '../../domain/release/runtime.ts'
 import { mintDownload } from '../../jobs/app-backup-run.job.ts'
 import { cronProblem, syncAppBackupSchedule, syncAppDrillSchedule } from '../../domain/job/job-schedule.ts'
@@ -77,6 +80,76 @@ function mint(generator: string): string {
 const WITH_DETAIL = { environment: true, domains: true }
 
 export type MachineAnswer = { ok: true } | { ok: false, why: string }
+
+/**
+ * A server in the caller's workspace that can hold work. A destroyed server
+ * still has a row, and placing on one produces a deployment that can never
+ * resolve an executor. Asked before anything is written, so a caller making
+ * several rows refuses the server before the first of them.
+ */
+export async function placeableServer(serverId: string) {
+  const server = await db().server.findFirst({ where: { id: serverId, workspaceId: ws() } })
+  if (!server) throw new NotFound(`Server '${serverId}' not found in this workspace`)
+  if (['destroyed', 'stopped'].includes(server.status))
+    throw new BadRequest(`Cannot place an app on a ${server.status} server`)
+  return server
+}
+
+/**
+ * One replica of an App on a server — `apps.place` and `projects.fromRepo`.
+ * `AppServer` is `@@gate(2.8)`, a system context's to write, so the caller has
+ * already proved it may see the App and the server; the replica stated wins,
+ * otherwise the next free index, so placing twice adds a replica rather than
+ * failing on the @@unique.
+ */
+export async function placeApp(
+  app: App,
+  target: { id: string, replicaDestinationId?: string | null },
+  server: { id: string, name: string },
+  stated?: number,
+): Promise<void> {
+  const existing = await db().appServer.findMany({ where: { appId: target.id, serverId: server.id } })
+  const replicaIndex = stated ?? existing.reduce((n: number, p: any) => Math.max(n, p.replicaIndex + 1), 0)
+  if (existing.some((p: any) => p.replicaIndex === replicaIndex))
+    throw new BadRequest(`Replica ${replicaIndex} of this app is already on '${server.name}'`)
+
+  await $.db.asSystem().appServer.create({
+    data: { appId: target.id, serverId: server.id, replicaIndex, status: 'unknown' },
+  })
+  if (target.replicaDestinationId) await syncReplicasOn(app, [server.id])
+}
+
+/** An SSH public key as a machine reports one. Never trusted further than
+ *  that: a value carrying a private block is refused rather than shown. */
+export function asPublicKey(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const key = raw.trim()
+  if (key.length > 4096 || /PRIVATE/i.test(key)) return null
+  return /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/=]+( [^\n]*)?$/.test(key) ? key : null
+}
+
+/**
+ * Ask the machine holding this App for its deploy key and write the public
+ * half (FJS-D1555). The machine makes the key on first ask and answers the
+ * same one after. A machine that is offline, a stub, or an Outpost too old to
+ * know the route leaves the column as it was and says why: the key is shown
+ * for a person to add at the forge, and an App with none yet is still an App.
+ */
+export async function mintDeployKey(app: App, appId: string, serverId?: string): Promise<{ deployPublicKey: string | null, note?: string }> {
+  const executor = serverId ? await executorOn(app, serverId) : await resolveExecutor(app, appId)
+  if (!isExecutor(executor)) return { deployPublicKey: null, note: executor.reason }
+  if (executor.kind === 'stub') return { deployPublicKey: null, note: 'stub executor — no machine made a deploy key' }
+
+  const reply = await executor.call('/deploy-key', { app_id: appId })
+  if (reply.error) return { deployPublicKey: null, note: `The machine made no deploy key: ${reply.error.message}` }
+  const key = asPublicKey(reply.data?.public_key)
+  if (!key || reply.data?.app_id !== appId) return { deployPublicKey: null, note: 'The machine answered without a public key for this app' }
+
+  await $.db.asSystem().app.update({
+    where: { id: appId }, data: { deployPublicKey: key }, system: ['deployPublicKey'],
+  })
+  return { deployPublicKey: key }
+}
 
 /**
  * An App off its machine — the one owner of *deleting an app retires it*.
@@ -333,6 +406,13 @@ export default createService({
     // `enablePush` hands a standing to the push receiver, so it is a release's.
     { method: 'enablePush',  gate: LEVELS.ADMINISTRATOR },
     { method: 'disablePush', gate: LEVELS.ADMINISTRATOR },
+    // Writes an @system column as the app, at the level that may place it.
+    { method: 'mintDeployKey',    gate: LEVELS.USER },
+    { method: 'importDockerfile', gate: LEVELS.USER, read: true },
+    // The create form's two seeds. Neither names an App, so they are reads
+    // of the collection, at the level that may create one.
+    { method: 'readRepoDockerfile', gate: LEVELS.USER, read: true, input: 'AppRepoDockerfile' },
+    { method: 'dockerfileTemplate', gate: LEVELS.USER, read: true },
   ],
   // Announced by the service DEFINITION, not by an after hook: `callService`
   // is junction's one announcement point and it excludes `find`/`get` by name,
@@ -546,30 +626,7 @@ export default createService({
     const serverId = data.serverId as string
 
     const target = await getScoped('app', 'App')
-
-    // Same workspace, and it must be a machine that can hold work. A
-    // destroyed server still has a row, and placing on one produces a
-    // deployment that can never resolve an executor.
-    const server = await db().server.findFirst({ where: { id: serverId, workspaceId: ws() } })
-    if (!server) throw new NotFound(`Server '${serverId}' not found in this workspace`)
-    if (['destroyed', 'stopped'].includes(server.status))
-      throw new BadRequest(`Cannot place an app on a ${server.status} server`)
-
-    // The replica this placement is. Stated wins; otherwise the next free
-    // index on this server, so placing twice adds a replica rather than
-    // failing on the @@unique.
-    const existing = await db().appServer.findMany({ where: { appId: target.id, serverId } })
-    const replicaIndex = (data.replicaIndex as number | undefined)
-      ?? existing.reduce((n: number, p: any) => Math.max(n, p.replicaIndex + 1), 0)
-
-    if (existing.some((p: any) => p.replicaIndex === replicaIndex))
-      throw new BadRequest(`Replica ${replicaIndex} of this app is already on '${server.name}'`)
-
-    await $.db.asSystem().appServer.create({
-      data: { appId: target.id, serverId, replicaIndex, status: 'unknown' },
-    })
-    if (target.replicaDestinationId) await syncReplicasOn($.app, [serverId])
-
+    await placeApp($.app, target, await placeableServer(serverId), data.replicaIndex as number | undefined)
     return detail(target.id)
   },
 
@@ -715,6 +772,43 @@ export default createService({
       system: ['deployOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId'],
     })
     return detail(target.id)
+  },
+
+  // ── mintDeployKey · importDockerfile — FJS-D1555 ─────────────────
+  async mintDeployKey() {
+    const target = await getScoped('app', 'App')
+    if (!isGit(target.source))
+      throw new BadRequest(`App '${target.name}' is not built from a git repository, so it clones nothing`)
+    const minted = await mintDeployKey($.app, target.id)
+    return { deployPublicKey: minted.deployPublicKey ?? target.deployPublicKey ?? null, ...(minted.note ? { note: minted.note } : {}) }
+  },
+
+  // The App's machine reads its own clone, which is how a PRIVATE repository's
+  // file is reached: Basecamp holds no key to it. Answers the file for the
+  // editor and writes nothing; saving it is `patch` with `source.dockerfile`.
+  async importDockerfile() {
+    const target = await getScoped('app', 'App')
+    if (!isGit(target.source))
+      throw new BadRequest(`App '${target.name}' is not built from a git repository`)
+    const executor = await resolveExecutor($.app, target.id)
+    if (!isExecutor(executor)) return { path: null, content: null, note: executor.reason }
+    // A machine that has never built this app holds no clone and refuses the
+    // route by name; that reason is the note, not a 500.
+    for (const path of DOCKERFILE_PATHS) {
+      const reply = await executor.call('/source/file', { app_id: target.id, path })
+      const content = reply.data?.content
+      if (!reply.error && typeof content === 'string' && content.trim()) return { path, content }
+    }
+    return { path: null, content: null, note: 'The machine has no Dockerfile in its clone of this app, or cannot read one yet' }
+  },
+
+  async readRepoDockerfile() {
+    const data = $.data as { repo: string, branch?: string }
+    return (await readRepoDockerfile({ repo: data.repo, branch: data.branch })) ?? { path: null, content: null }
+  },
+
+  async dockerfileTemplate() {
+    return { content: fjsDockerfileTemplate() }
   },
 
   hooks: {

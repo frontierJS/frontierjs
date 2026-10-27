@@ -3,9 +3,11 @@
   //
   // One editor for both scopes, because they are one model: `appId` given is
   // that app's own, otherwise the environment's (`appId: null`). A secret's
-  // value is `@encrypted` and never in the response, so it cannot be shown or
-  // revealed — only replaced.
-  import { variables } from '../resources/Variable.mesa'
+  // value is `@encrypted` and never in the response: it is replaced, or an
+  // administrator reveals it on demand (`variables.reveal`, filed in the trail).
+  import { variables, revealVariable } from '../resources/Variable.mesa'
+  import { session } from '../lib/session.js'
+  import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import Input    from '@frontierjs/ui/components/forms/Input.mesa'
   import Checkbox from '@frontierjs/ui/components/forms/Checkbox.mesa'
@@ -23,6 +25,27 @@
   let busyId    = null
   let editId    = null
   let editValue = ''
+  let shown     = {}     // id -> revealed value; held in memory only, gone on reload
+
+  // The gate is the service's (administrator). This is the affordance: a role
+  // that is known and below admin hides the button, an unknown one shows it, and
+  // the server answers 403 either way.
+  $: (session.workspaces, session.workspaceId)
+  $: myRole    = session.workspaces.find(w => w.id === session.workspaceId)?.role
+  $: mayReveal = !myRole || myRole === 'admin' || myRole === 'owner'
+
+  async function reveal(v) {
+    error = null; busyId = v.id
+    try {
+      const r = await revealVariable(v.id)
+      shown = { ...shown, [v.id]: r.value ?? '' }
+    } catch (e) {
+      error = e.message
+    } finally {
+      busyId = null
+    }
+  }
+  function hide(v) { const { [v.id]: _gone, ...rest } = shown; shown = rest }
 
   $: scope = appId ? { appId } : { environmentId, appId: null }
 
@@ -109,6 +132,12 @@
               <Button type="submit" tone="primary" disabled={busyId === v.id}>Save</Button>
               <Button treatment="ghost" onclick={() => editId = null}>Cancel</Button>
             </form>
+          {:else if v.secret && v.id in shown}
+            <span class="cluster">
+              <code data-revealed>{shown[v.id]}</code>
+              <CopyButton text={shown[v.id]} label="Copy" treatment="outlined" size="sm" />
+              <Button treatment="ghost" onclick={() => hide(v)}>Hide</Button>
+            </span>
           {:else if v.secret}
             <span class="text-muted">secret · set</span>
           {:else}
@@ -116,6 +145,10 @@
           {/if}
         </td>
         <td class="cluster">
+          {#if v.secret && mayReveal && !(v.id in shown) && editId !== v.id}
+            <Button treatment="ghost" data-reveal disabled={busyId === v.id}
+                    onclick={() => reveal(v)}>Reveal</Button>
+          {/if}
           {#if editId !== v.id}
             <Button treatment="ghost" onclick={() => startEdit(v)}>{v.secret ? 'Replace' : 'Edit'}</Button>
           {/if}

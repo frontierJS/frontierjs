@@ -747,7 +747,9 @@ preview link shows it, Publish ships it, and the commit carries their name.
     0.3's token too.
 - [ ] 1.6 A deploy key per repository (`FJS-D1228`, deferred by
   `FJS-D1247`), so a private repository clones and pushes without the
-  host's own credential.
+  host's own credential. Ruled `FJS-D1555`: per App, made by the Outpost,
+  the public half on the App's screen. The clone side is built there; the
+  PUSH side (`site-checkout.ts` on Basecamp's host) is still owed.
 
 ### Phase 2 — On the page
 

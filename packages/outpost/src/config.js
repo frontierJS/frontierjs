@@ -90,6 +90,10 @@ export function readConfig(env = process.env) {
     /** Each app's host uid, recorded once and never reused (`FJS-D1484`).
      *  Inside the unit's StateDirectory, where the sandbox lets it write. */
     uidFile:     env.OUTPOST_UID_FILE ?? '/var/lib/outpost/uids.json',
+    /** Each app's deploy key, `<app_id>` and `<app_id>.pub` (`FJS-D1555`).
+     *  Inside the unit's StateDirectory, where the sandbox lets it write. A
+     *  key lost here is a key re-added at every forge that trusted it. */
+    deployKeyDir: (env.OUTPOST_DEPLOY_KEY_DIR ?? '/var/lib/outpost/deploy-keys').replace(/\/$/, ''),
     /** Where published static releases live. One directory per app, one
      *  subdirectory per digest, plus the `hosts/` links the server resolves. */
     staticDir:   env.OUTPOST_STATIC_DIR ?? '/var/lib/outpost/static',

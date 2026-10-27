@@ -15,6 +15,18 @@
   // Service `apps` → model `App`. The schema renames it from the obvious
   // `Service` because the API realm owns that noun (db/README.md).
   export const apps = createResource('apps')
+
+  // A git app's Dockerfile and deploy key (FJS-D1555). The two collection reads
+  // take no id; `invoke(method, null, body)` is how a collection method is called.
+  /** `{ path, content }` — both null when the repository has no Dockerfile. */
+  export const readRepoDockerfile = (repo, branch) =>
+    apps.service.invoke('readRepoDockerfile', null, { repo, ...(branch ? { branch } : {}) })
+  /** `{ content }` — the FrontierJS template. */
+  export const dockerfileTemplate = () => apps.service.invoke('dockerfileTemplate', null, {})
+  /** `{ path, content }`, or `{ path: null, content: null, note }`. */
+  export const importDockerfile = (id) => apps.service.invoke('importDockerfile', id, {})
+  /** `{ deployPublicKey, note? }` */
+  export const mintDeployKey = (id) => apps.service.invoke('mintDeployKey', id, {})
 </script>
 
 <script>

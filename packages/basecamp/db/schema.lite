@@ -348,6 +348,28 @@ type AppFromBlueprint {
   values        Json?
 }
 
+/// What `projects.fromRepo` accepts: a project, its production environment
+/// and one App built from a repository, made together (`FJS-D1555`). `port` is
+/// the host port the App is published on; `dockerfile` is the App's own copy,
+/// blank for the repository's.
+type ProjectFromRepo {
+  name       String
+  slug       String?
+  repo       String
+  branch     String?
+  dockerfile String?
+  serverId   String?
+  hostname   String?
+  port       Int
+}
+
+/// What `apps.readRepoDockerfile` accepts: a public repository and the branch
+/// whose Dockerfile the create form offers as a seed.
+type AppRepoDockerfile {
+  repo   String
+  branch String?
+}
+
 type AppPlace {
   serverId     String
   replicaIndex Int?
@@ -1713,6 +1735,13 @@ model App {
   pushSecret    String?     @encrypted @system
   pushTokenHash String?     @guarded @system
   pushActorId   String?     @system
+
+  // The public half of the key this App's machine clones its repository with
+  // (`FJS-D1555`); the private half never leaves the Outpost. Written by the
+  // heartbeat and by `apps.mintDeployKey` only: a person who could write it
+  // could show a key of their own on the App's screen, and the forge would
+  // be told to trust a key the machine does not hold.
+  deployPublicKey String?   @system
 
   // The catalog entry this app was made from, or null for one a person
   // described by hand. A record of origin and never a live link: what the

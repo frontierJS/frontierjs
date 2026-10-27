@@ -3,10 +3,16 @@ title: New project
 ---
 <script>
   import { goto } from '@frontierjs/sierra/router'
-  import { projects } from '../../resources/Project.mesa'
+  import { projects, fromRepo } from '../../resources/Project.mesa'
+  import { readRepoDockerfile, dockerfileTemplate } from '../../resources/App.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore'
+  import { servers } from '../../resources/Server.mesa'
   import { ResourceValidationError } from '@frontierjs/sierra/resource'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
+  import Select from '@frontierjs/ui/components/forms/Select.mesa'
+  import Switch from '@frontierjs/ui/components/forms/Switch.mesa'
+  import Textarea from '@frontierjs/ui/components/forms/Textarea.mesa'
 
   // make() builds the record from the SCHEMA's defaults — status 'active',
   // tags [], metadata {} — so this file does not restate them. What it adds is
@@ -32,6 +38,68 @@ title: New project
     draft.slug  = e.target.value
   }
 
+  // ─── From a repository (FJS-D1555) ──────────────────────────────────────
+  // One call makes the project, its environment and a git app. The Dockerfile
+  // box starts EMPTY on purpose: `dockerfile` is sent only when a person filled
+  // or seeded it, because an absent key is what lets the server seed from the
+  // repository's own file, then the template. A blank string would instead mean
+  // "build the repository's file as it is, keep no copy".
+  let fromRepoOn = false
+  let repo       = ''
+  let branch     = 'main'
+  let port       = ''
+  let serverId   = ''
+  let hostname   = ''
+  let dockerfile = ''
+  let seedSays   = ''
+  let seeding    = false
+
+  // Online machines only. The select is a convenience; the server grades the choice.
+  const fleetList = servers.tethered({ state: 'local', all: true })
+  let online = []
+  $: { online = fleetList.rows.filter(s => s.status === 'online') }
+  $: { if (!serverId && online.length === 1) serverId = online[0].id }
+
+  async function seedRepo() {
+    seedSays = ''; seeding = true
+    try {
+      const r = await readRepoDockerfile(repo.trim(), branch.trim() || undefined)
+      if (r.path) { dockerfile = r.content; seedSays = `Filled from ${r.path} in the repository.` }
+      else seedSays = 'No Dockerfile found in the repository (looked for deploy/Dockerfile and Dockerfile).'
+    } catch (err) {
+      seedSays = err.message
+    } finally {
+      seeding = false
+    }
+  }
+
+  async function seedTemplate() {
+    seedSays = ''; seeding = true
+    try {
+      dockerfile = (await dockerfileTemplate()).content
+      seedSays = 'Filled with the FrontierJS template.'
+    } catch (err) {
+      seedSays = err.message
+    } finally {
+      seeding = false
+    }
+  }
+
+  async function saveFromRepo() {
+    const input = {
+      name: draft.name, slug: draft.slug || undefined,
+      repo: repo.trim(), branch: branch.trim() || undefined,
+      port: Number(port),
+      ...(serverId ? { serverId } : {}),
+      ...(hostname.trim() ? { hostname: hostname.trim() } : {}),
+      ...(dockerfile.trim() ? { dockerfile } : {}),
+    }
+    const r = await fromRepo(input)
+    // The app's toasts are the flash store, and it outlives the navigation.
+    if (r.note) toasts.warning(r.note, 20000)
+    goto(`/apps/${r.app.id}/`)
+  }
+
   const problem = (field) => errors.find(e => e.field === field)?.message
 
   async function save(e) {
@@ -42,8 +110,9 @@ title: New project
       // it readOnly, so `make()` does not seed it and the Data boundary fills
       // it from the principal. A client-supplied workspace is a client choosing
       // its own tenant.
-      const created = await projects.service.create(draft)
-      goto(`/projects/${created.id}/`)
+      if (fromRepoOn) { await saveFromRepo(); return }
+      const made = await projects.service.create(draft)
+      goto(`/projects/${made.id}/`)
     } catch (err) {
       // ResourceValidationError is the schema answering before the request went
       // out; anything else is the server's answer, including a 409 on a slug
@@ -84,8 +153,50 @@ title: New project
     <Input label="Description" name="description" id="description"
            value={draft.description} oninput={(e) => draft.description = e.target.value} />
 
+    <Switch id="from-repo" label="From a repository"
+            description="Also make an app that is built from a git repository."
+            checked={fromRepoOn} onchange={(on) => fromRepoOn = on} />
+
+    {#if fromRepoOn}
+      <fieldset class="stack" id="from-repo-fields">
+        <legend class="h4">From a repository</legend>
+        <Input label="Repository" name="repo" id="repo" required value={repo}
+               placeholder="git@github.com:org/app.git"
+               oninput={(e) => repo = e.target.value} />
+        <div class="field-row">
+          <Input label="Branch" name="branch" id="branch" value={branch}
+                 oninput={(e) => branch = e.target.value} />
+          <Input label="Port" name="port" id="port" type="number" required min="1" max="65535" value={port}
+                 hint="The host port the app publishes on."
+                 oninput={(e) => port = e.target.value} />
+        </div>
+        <Select label="Server" name="serverId" id="serverId" value={serverId}
+                placeholder="No server yet"
+                options={online.map(s => ({ value: s.id, label: s.name }))}
+                oninput={(e) => serverId = e.target.value}
+                onchange={(e) => serverId = e.target.value} />
+        <Input label="Hostname" name="hostname" id="hostname" value={hostname}
+               hint="Optional. Needs an administrator and a server with Caddy. Left blank on this laptop, the app answers on localhost:<port>."
+               oninput={(e) => hostname = e.target.value} />
+
+        <div class="stack">
+          <div class="cluster">
+            <Button treatment="outlined" size="sm" id="seed-repo" disabled={seeding || !repo.trim()}
+                    onclick={seedRepo}>Use the repository's</Button>
+            <Button treatment="outlined" size="sm" id="seed-template" disabled={seeding}
+                    onclick={seedTemplate}>Use the FrontierJS template</Button>
+          </div>
+          <Textarea label="Dockerfile" name="dockerfile" id="dockerfile" rows={12} value={dockerfile}
+                    hint="Leave empty and the repository's own Dockerfile is built."
+                    oninput={(e) => dockerfile = e.target.value} />
+          {#if seedSays}<p class="text-sm text-muted" id="seed-says" role="status">{seedSays}</p>{/if}
+          <p class="text-sm text-muted">The template clones frontierjs from GitHub at build — for an app whose deps are <code>link:</code>.</p>
+        </div>
+      </fieldset>
+    {/if}
+
     <div class="cluster">
-      <Button tone="primary" type="submit" disabled={saving}>
+      <Button tone="primary" type="submit" id="create-submit" disabled={saving}>
         {saving ? 'Creating…' : 'Create project'}
       </Button>
       <Button treatment="ghost" href="/projects/">Cancel</Button>

@@ -9,7 +9,8 @@
 //
 // Three kinds, one discriminant:
 //
-//   git    — a repository this app is built from, on the machine that runs it
+//   git    — a repository this app is built from, on the machine that runs it,
+//            with the App's own Dockerfile when it carries one (FJS-D1555)
 //   image  — a container image somebody else built
 //   inline — the files themselves. No build, no registry, no container: an
 //            HTML page that pulls its libraries from a CDN is a whole app, and
@@ -35,7 +36,7 @@ export interface InlineFile {
 }
 
 export type AppSource =
-  | { kind: 'git';    repo: string; branch?: string; path?: string }
+  | { kind: 'git';    repo: string; branch?: string; path?: string; dockerfile?: string }
   | { kind: 'image';  image: string }
   | { kind: 'inline'; files: InlineFile[] }
 
@@ -53,6 +54,10 @@ export const INLINE_LIMITS = {
 /** The entry point every inline release must have. The name is not a choice —
  *  it is what a web server serves for `/`, on this machine and every other. */
 export const ENTRY_FILE = 'index.html'
+
+/** A Dockerfile is a page of text; one over this is a paste of something else,
+ *  and it rides on every release snapshot and every /build. */
+export const DOCKERFILE_BYTES = 64 * 1024
 
 const KINDS: AppSourceKind[] = ['git', 'image', 'inline']
 
@@ -137,11 +142,16 @@ export function parseAppSource(raw: unknown): AppSource | null {
   if (kind === 'git') {
     if (typeof source.repo !== 'string' || !source.repo.trim())
       throw new BadRequest('A git source needs a repo')
+    // Blank is the repository's own Dockerfile, so it is absent rather than ''.
+    const dockerfile = typeof source.dockerfile === 'string' ? source.dockerfile.trim() : ''
+    if (byteLength(dockerfile) > DOCKERFILE_BYTES)
+      throw new BadRequest(`source.dockerfile is ${byteLength(dockerfile)} bytes, over the ${DOCKERFILE_BYTES} a Dockerfile may be`)
     return {
       kind: 'git',
       repo: source.repo.trim(),
       ...(typeof source.branch === 'string' && source.branch ? { branch: source.branch } : {}),
       ...(typeof source.path   === 'string' && source.path   ? { path:   source.path   } : {}),
+      ...(dockerfile ? { dockerfile } : {}),
     }
   }
 
@@ -208,13 +218,17 @@ export function describeSource(raw: unknown): string {
  * An inline app's files are its source, and a fleet screen listing fifty apps
  * would otherwise send fifty pasted pages — megabytes, on a request that draws
  * a table of names and statuses. So a list answers what the source IS and the
- * detail read answers what it SAYS.
+ * detail read answers what it SAYS. A git app's `dockerfile` is the same case.
  *
- * `content` is REMOVED rather than blanked. An absent key is a client reading
+ * `content` and `dockerfile` are REMOVED rather than blanked. An absent key is a client reading
  * `undefined` and rendering nothing; an empty string is a client rendering an
  * empty editor over a file that has a page in it, and saving that back.
  */
 export function summarizeSource(raw: unknown): unknown {
+  if (isGit(raw) && typeof (raw as { dockerfile?: unknown }).dockerfile === 'string') {
+    const { dockerfile, ...rest } = raw as { dockerfile: string }
+    return { ...rest, dockerfileBytes: byteLength(dockerfile) }
+  }
   if (!isInline(raw)) return raw
   return {
     kind:  'inline',

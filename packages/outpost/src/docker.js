@@ -15,12 +15,13 @@
  */
 
 import { stripVTControlCharacters } from 'node:util'
-import { mkdir, realpath, rename, rm, stat } from 'node:fs/promises'
-import { readFileSync, writeFileSync, renameSync, createWriteStream } from 'node:fs'
+import { mkdir, readFile, realpath, rename, rm, stat } from 'node:fs/promises'
+import { existsSync, readFileSync, writeFileSync, renameSync, createWriteStream } from 'node:fs'
 import { createHash, randomBytes } from 'node:crypto'
 import { Readable }                from 'node:stream'
 import { pipeline }                from 'node:stream/promises'
-import { validRelativePath }       from './static.js'
+import { validRelativePath, validName } from './static.js'
+import { ensureDeployKey }         from './deploy-key.js'
 
 // Each app's container runs as a host uid of its own (`FJS-D1484`), handed out
 // from here up and never reused: a retired app's volume keeps its files, and a
@@ -51,6 +52,10 @@ function uploadErrors(said) {
 // What a site preview builds in: the Bun this Outpost runs, and the `node`
 // wrangler is run under.
 const PREVIEW_IMAGE = `oven/bun:${Bun.version}`
+
+// The largest file `POST /source/file` answers. A Dockerfile is a few KB; the
+// answer is a JSON body Basecamp stores on the App.
+const SOURCE_FILE_MAX = 64 * 1024
 
 // The most lines `POST /logs` will read off a container in one answer. A cap
 // rather than a default, because the caller is on another machine and the cost
@@ -270,7 +275,7 @@ function bucketSaid(status, text) {
 export function createDocker({
   run = spawnRun, stream = spawnStream, fetch: fetchFn = globalThis.fetch, workDir = '/var/lib/outpost/apps', health = HEALTH,
   restoreDir = '/var/lib/outpost/restore', backupDir = '/var/lib/outpost/backups',
-  uidFile = '/var/lib/outpost/uids.json',
+  uidFile = '/var/lib/outpost/uids.json', deployKeyDir = '/var/lib/outpost/deploy-keys',
 } = {}) {
 
   /** The app's host uid, made and recorded on its first ask. Read, chosen and
@@ -327,14 +332,45 @@ export function createDocker({
   /** Run git, or throw with what it said. A clone that failed and was ignored
    *  built whatever the work directory last held, or nothing, and reported the
    *  release as built. */
-  async function git(args) {
-    const result = await run(['git', ...args], { timeoutMs: 600_000 })
+  async function git(args, { env } = {}) {
+    const result = await run(['git', ...args], { timeoutMs: 600_000, ...(env ? { env } : {}) })
     if (result.exitCode !== 0) {
       const said = (result.stderr || result.stdout || '').trim().split('\n').slice(-3).join(' ')
       const verb = args[0] === '-C' ? args[2] : args[0]
       throw new Error(`git ${verb} failed (exit ${result.exitCode}): ${said}`)
     }
     return result.stdout
+  }
+
+  /** git's environment for an app's clone. No prompt: a key the forge refuses
+   *  would otherwise wait on a terminal this process does not have until the
+   *  timeout. A host key is taken on first sight and pinned after. */
+  function gitEnv(keyPath) {
+    if (keyPath.includes("'")) throw new Error(`deploy key path ${keyPath} contains a quote`)
+    return {
+      GIT_SSH_COMMAND:     `ssh -i '${keyPath}' -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new`,
+      GIT_TERMINAL_PROMPT: '0',
+    }
+  }
+
+  /** Which Dockerfile a build uses, relative to the context. The App's stored
+   *  copy wins (`FJS-D1555`); without one, `deploy/Dockerfile`, else the root's.
+   *  A workspace's `deploy/Dockerfile` with no `deploy/generated/` beside it
+   *  names `link:` packages nothing on this machine holds (`FJS-D942`), and
+   *  its build fails deep inside `bun install` with no hint why. */
+  function chooseDockerfile(context, stored) {
+    if (typeof stored === 'string' && stored.trim()) {
+      try { writeFileSync(`${context}/Dockerfile.basecamp`, stored) } catch (err) {
+        throw new Error(`could not write the App's Dockerfile into ${context}: ${err.message}`)
+      }
+      return 'Dockerfile.basecamp'
+    }
+    if (!existsSync(`${context}/deploy/Dockerfile`)) return 'Dockerfile'
+    if (!existsSync(`${context}/deploy/generated`))
+      throw new Error('deploy/Dockerfile is here but deploy/generated/ is not, so its link: dependencies cannot build on this machine. '
+        + 'Run fli deploy:vendor and commit deploy/generated/, deploy from the workspace with fli basecamp:deploy --app <slug>, '
+        + 'or store a Dockerfile on the App')
+    return 'deploy/Dockerfile'
   }
 
   /** How to name the bytes on the command line.
@@ -581,6 +617,9 @@ export function createDocker({
   return {
     digestOf,
 
+    /** The app's deploy key, made on the first ask (`FJS-D1555`). */
+    deployKey: ({ appId }) => ensureDeployKey(deployKeyDir, appId, { run }),
+
     /** Pull an image that already exists somewhere else. A release that names
      *  a digest this machine holds has nothing to fetch: an image built or
      *  loaded here has no registry, and pulling its tag fails with *pull access
@@ -609,6 +648,10 @@ export function createDocker({
         const bad = validRelativePath(source.path)
         if (bad) throw new Error(`source path: ${bad}`)
       }
+      // Before the clone: a private repository answers nothing to a machine
+      // whose key the forge was never given (`FJS-D1555`).
+      const { keyPath } = await ensureDeployKey(deployKeyDir, appId, { run })
+      const env = gitEnv(keyPath)
       const dir = `${workDir}/${appId}`
       await run(['mkdir', '-p', dir])
 
@@ -616,16 +659,49 @@ export function createDocker({
       // process's working directory.
       const exists = await run(['test', '-d', `${dir}/.git`])
       if (exists.exitCode === 0) {
-        await git(['-C', dir, 'fetch', '--depth', '1', 'origin', source.branch ?? 'main'])
-        await git(['-C', dir, 'reset', '--hard', 'FETCH_HEAD'])
+        await git(['-C', dir, 'fetch', '--depth', '1', 'origin', source.branch ?? 'main'], { env })
+        await git(['-C', dir, 'reset', '--hard', 'FETCH_HEAD'], { env })
       } else {
         // `--` so a repo that begins with a dash is a repository and never an option.
-        await git(['clone', '--depth', '1', '--branch', source.branch ?? 'main', '--', source.repo, dir])
+        await git(['clone', '--depth', '1', '--branch', source.branch ?? 'main', '--', source.repo, dir], { env })
       }
 
-      const sha = (await git(['-C', dir, 'rev-parse', 'HEAD'])).trim()
-      await docker(['build', '-t', image, source.path != null ? `${dir}/${source.path}` : dir], { timeoutMs: 1_800_000 })
-      return { digest: await digestOf(image), commitSha: sha }
+      const sha     = (await git(['-C', dir, 'rev-parse', 'HEAD'], { env })).trim()
+      const context = source.path != null ? `${dir}/${source.path}` : dir
+      const dockerfile = chooseDockerfile(context, source.dockerfile)
+      await docker(['build', '-t', image, ...(dockerfile === 'Dockerfile' ? [] : ['-f', `${context}/${dockerfile}`]), context],
+        { timeoutMs: 1_800_000 })
+      return { digest: await digestOf(image), commitSha: sha, dockerfile }
+    },
+
+    /**
+     * One file off the app's last clone, for Basecamp to seed the App's stored
+     * Dockerfile from a private repository (`FJS-D1555`). The checkout is the
+     * repository's code, so a symlink in it points anywhere this process can
+     * read: the path is allow-listed, then the file the kernel would open is
+     * `realpath`'d and held inside the clone, `serve.js`'s two steps.
+     */
+    async sourceFile({ appId, path }) {
+      const badId = validName(appId, 'app_id')
+      if (badId) throw new Error(badId)
+      const badPath = validRelativePath(path)
+      if (badPath) throw new Error(`source path: ${badPath}`)
+
+      const root = await realpath(`${workDir}/${appId}`).catch(() => null)
+      if (!root || !existsSync(`${root}/.git`))
+        throw new Error(`${appId} has not been built on this machine, so there is no clone to read ${path} from`)
+
+      const real = await realpath(`${root}/${path}`).catch(err => {
+        if (err.code === 'ENOENT') return null
+        throw err
+      })
+      if (real === null) return { path, content: null }
+      if (!real.startsWith(`${root}/`)) throw new Error(`${path} leads outside the clone`)
+
+      const info = await stat(real)
+      if (!info.isFile()) throw new Error(`${path} is not a file`)
+      if (info.size > SOURCE_FILE_MAX) throw new Error(`${path} is ${info.size} bytes, over the ${SOURCE_FILE_MAX}-byte limit`)
+      return { path, content: await readFile(real, 'utf8') }
     },
 
     /** A draft's review build, uploaded as an aliased version and never deployed. */

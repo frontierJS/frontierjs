@@ -3173,6 +3173,44 @@ const AUDIT = `(() => {
   return out
 })()`
 
+// ── 13g. A project from a repository (FJS-D1555) ──────────────────────
+// Through the form, against whatever executor this run has: no clone is made
+// here, so the Dockerfile is seeded from the template button rather than from
+// the repository, and the stored copy is what the App page must show back.
+await goto('/projects/create/')
+await fill({ name: 'Repo App' })
+await evaluate(`document.querySelector('#from-repo input[type=checkbox], input#from-repo').click()`)
+await waitFor(`!!document.getElementById('repo')`, Boolean, 5_000)
+check('the from-repository section opens with the Dockerfile box empty',
+  await evaluate(`document.getElementById('dockerfile')?.value`), '')
+const repoFormIssues = await evaluate(AUDIT)
+check('a11y: the from-repository form', Array.isArray(repoFormIssues) ? repoFormIssues.join(' | ') : String(repoFormIssues), '')
+await fill({ repo: 'git@github.com:acme/repo-app.git', port: '18080' })
+await click('Use the FrontierJS template')
+check('the template seeds the box',
+  await waitFor(`document.getElementById('dockerfile')?.value ?? ''`, t => t.length > 0),
+  t => t.includes('FROM'))
+await evaluate(`document.getElementById('create-submit').click()`)
+await waitFor(`location.pathname`, p => p.startsWith('/apps/'), 20_000)
+await sleep(1500)
+check('fromRepo lands on the App page', await path(), p => p.startsWith('/apps/'))
+check('the Deploy key card is present',
+  await evaluate(`!!document.getElementById('app-deploy-key')`), true)
+check('the Dockerfile card shows the stored content',
+  await waitFor(`document.getElementById('app-dockerfile-body')?.value ?? ''`, t => t.length > 0),
+  t => t.includes('FROM'))
+
+// The ENCRYPTION_KEY the call minted is a secret variable; an administrator reveals it.
+await evaluate(`[...document.querySelectorAll('#app-tabs button')].find(b => b.textContent.trim() === 'config').click()`)
+await waitFor(`document.getElementById('app-var-rows')?.textContent ?? ''`, t => t.includes('ENCRYPTION_KEY'))
+check('ENCRYPTION_KEY is listed as a secret, value unseen',
+  await evaluate(`document.querySelector('#app-var-rows tr[data-key="ENCRYPTION_KEY"]')?.textContent ?? ''`),
+  t => t.includes('secret · set'))
+await click('Reveal', { row: 'ENCRYPTION_KEY' })
+check('Reveal returns a 64-hex value for the administrator',
+  await waitFor(`document.querySelector('[data-revealed]')?.textContent.trim() ?? ''`, t => t.length > 0),
+  t => /^[0-9a-f]{64}$/.test(t))
+
 for (const route of [appDetailPath, boardPath, '/', '/dashboards/', '/projects/', '/projects/create/', '/servers/', '/servers/provision/', '/servers/import/',
                      '/deployments/', '/jobs/', '/networks/', '/volumes/', '/cleanup/', '/recipes/',
                      '/alerts/', '/channels/', '/flags/', '/secrets/',

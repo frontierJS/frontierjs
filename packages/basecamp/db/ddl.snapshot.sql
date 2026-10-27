@@ -1067,6 +1067,7 @@ CREATE TABLE IF NOT EXISTS "app" (
   "pushSecret" TEXT,
   "pushTokenHash" TEXT,
   "pushActorId" TEXT,
+  "deployPublicKey" TEXT,
   "blueprintId" TEXT,
   "backupCron" TEXT,
   "backupDestinationId" TEXT,
