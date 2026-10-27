@@ -288,4 +288,26 @@ describe('call-result tier', () => {
   test('a local function is never reported', async () => {
     expect(await callWarn(`<script>function f() { return { a: 1 } }</script><p>{f().a}</p>`)).toEqual([])
   })
+
+  // The read is kept in an effect, so it updates — the warning described a
+  // hoist that never happened.
+  test('an #each item argument renders live, so it is silent', async () => {
+    expect(await callWarn(`<script>${S}\nconst rows = []</script>{#each rows as o}<p>{media(o).matches}</p>{/each}`)).toEqual([])
+  })
+
+  test('a snippet parameter argument is silent', async () => {
+    expect(await callWarn(`<script>${S}</script>{#snippet row(o)}<p>{media(o).matches}</p>{/snippet}`)).toEqual([])
+  })
+
+  test("a member off a const holding a call's result is silent", async () => {
+    expect(await callWarn(`<script>${S}\nimport { offers } from './r.js'\nconst list = offers.tethered({})</script><p>{media(list.rows).matches}</p>`)).toEqual([])
+  })
+
+  test('a block header is read in an effect, so it is silent', async () => {
+    expect(await callWarn(`<script>${S}</script>{#if media('(a)').matches}<b>x</b>{/if}{#each media('(a)').list as x}<i>{x}</i>{/each}`)).toEqual([])
+  })
+
+  test('a plain const argument still hoists, so it warns', async () => {
+    expect(await callWarn(`<script>${S}\nconst q = { a: 1 }</script><p>{media(q.a).matches}</p>`)).toHaveLength(1)
+  })
 })

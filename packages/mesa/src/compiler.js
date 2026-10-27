@@ -7900,8 +7900,12 @@ function _domUsesClass(body) {
 // If the module isn't described at all we say nothing, because we genuinely
 // can't tell a signal from a constant.
 
-/** Pull expression source strings out of the template AST. */
-function _collectTemplateExpressions(body, out = []) {
+/**
+ * Pull expression source strings out of the template AST. `headers: false`
+ * leaves out block headers (`#if`, `#each`, `#key`, `#await`): each is read
+ * inside the block's own effect and is never hoisted.
+ */
+function _collectTemplateExpressions(body, out = [], headers = true) {
   if (!body || typeof body !== 'object') return out
   const nodes = Array.isArray(body) ? body : [body]
   for (const node of nodes) {
@@ -7935,19 +7939,19 @@ function _collectTemplateExpressions(body, out = []) {
       if (!part || typeof part !== 'object') continue
       if (typeof part.value === 'string') {
         const m = part.value.match(/^[#:/](?:if|else if|key|await)\s+([\s\S]+)$/)
-        if (m) out.push(m[1].trim())
+        if (m && headers) out.push(m[1].trim())
       }
-      _collectTemplateExpressions(part.body, out)
+      _collectTemplateExpressions(part.body, out, headers)
     }
-    if (typeof node.value === 'string' && (node.type === 'each' || node.type === 'key' || node.type === 'await')) {
+    if (headers && typeof node.value === 'string' && (node.type === 'each' || node.type === 'key' || node.type === 'await')) {
       const m = node.value.match(/^[#:/](?:each|key|await)\s+([\s\S]+?)(?:\s+as\s+[\s\S]+)?$/)
       if (m) out.push(m[1].trim())
     }
 
-    _collectTemplateExpressions(node.body,      out)
-    _collectTemplateExpressions(node.mainBlock, out)
-    _collectTemplateExpressions(node.elsePart,  out)
-    _collectTemplateExpressions(node.elseBlock, out)
+    _collectTemplateExpressions(node.body,      out, headers)
+    _collectTemplateExpressions(node.mainBlock, out, headers)
+    _collectTemplateExpressions(node.elsePart,  out, headers)
+    _collectTemplateExpressions(node.elseBlock, out, headers)
   }
   return out
 }
@@ -8310,14 +8314,22 @@ function _checkExternalReactivity(ctx, imports) {
   // reactive local to the expression, the whole read hoists static and renders
   // once (`FJS-3096`). Strict only: a factory and a plain function are
   // indistinguishable here, as with the path tier.
+  //
+  // Reactive here is what `_renderGroup` keeps in an effect: a name the
+  // template binds — an `#each` item or index, a snippet parameter, an
+  // `{@const}` — is emitted as an accessor call, and a `const` holding a call's
+  // result is opaque when reached through a member. Counting neither warned on
+  // `{#each rows as o}{priceOf(o).money}{/each}`, which renders live.
   if (!strict) return
-  const reactiveLocal = (n) => {
+  const opaque = new Set(ctx.analysis.opaqueValues ?? [])
+  const reactiveLocal = ([n, read]) => {
     const v = vars?.[n]
-    return !!v && (v.kind !== 'const' || v.isDerived || v.isProp || v.isWritableDerived)
+    if (!v) return !bindings.has(n) && !(n in globalThis) && !/^(window|document|location|history|localStorage|sessionStorage)$/.test(n)
+    return v.kind !== 'const' || v.isDerived || v.isProp || v.isWritableDerived || (opaque.has(n) && read.member != null)
   }
-  for (const expr of _collectTemplateExpressions(ctx.DOM.body)) {
+  for (const expr of _collectTemplateExpressions(ctx.DOM.body, [], false)) {
     const calls = _callResultReads(expr)
-    if (!calls.length || [..._valueReads(expr).keys()].some(reactiveLocal)) continue
+    if (!calls.length || [..._valueReads(expr)].some(reactiveLocal)) continue
     for (const { callee, member } of calls) {
       const b = bindings.get(callee)
       if (!b || b.isNamespace || b.source.endsWith('.mesa') || vars?.[callee]) continue
