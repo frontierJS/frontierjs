@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 // tools/call.ts
 // One service method, once, as somebody — then exit. With no method word, a
-// prompt over the same booted app (`FJS-D1532`).
+// prompt over the same booted app (`FJS-D1532`): a second boot beside any
+// serving process, never attached to it (`FJS-D1535`), graded by the app's own
+// gate, so there is no `--gate` (`FJS-D1536`).
 //
 //   junction call --app src/app.ts orders.find '{"status":"paid","$limit":5}' --as alex@shop.test --tenant flagship
 //   junction call --app src/app.ts orders.patch 12 '{"note":"late"}' --as alex@shop.test --tenant flagship

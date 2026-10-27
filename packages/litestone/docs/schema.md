@@ -466,8 +466,8 @@ real `@relation` with a real `onDelete`, and the only thing the attribute adds i
 the rule that exactly one of them is set — emitted as a table CHECK counting the
 non-null members. So it holds where every constraint in this section holds:
 against a job on `db.`, a migration, a seed, an atomic operator, and against
-`asSystem()`, which drops the gate, every row policy and `@@softDelete` and
-cannot drop a CHECK.
+`asSystem()`, which drops the gate and every row policy and cannot drop a
+CHECK.
 
 ```lite
 model Tag     { id Int @id  attachments Attachment[] }

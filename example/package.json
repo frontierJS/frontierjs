@@ -66,6 +66,7 @@
     "verify:employment": "bun web/test/verify-employment.mjs",
     "verify:custom-fields": "bun web/test/verify-custom-fields.mjs",
     "verify:payrun": "bun web/test/verify-payrun.mjs",
+    "verify:repl": "bun web/test/verify-repl.mjs",
     "verify:batch": "bun web/test/verify-batch.mjs",
     "verify:retro": "bun web/test/verify-retro.mjs",
     "verify:payroll": "bun web/test/verify-payroll.mjs",

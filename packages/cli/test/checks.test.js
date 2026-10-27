@@ -5530,6 +5530,25 @@ describe('app-layout grades the src/ layout (FJS-1888)', () => {
     expect(f[0].message).toMatch(/plugins\//)
   })
 
+  // FJS-3518: basecamp's core/ held 45 files, 18 of them nothing app.ts reaches.
+  test('a core/ file app.ts never reaches, directly or through core/', () => {
+    const f = layout('lay-core-reach', {
+      'api/src/app.ts':           "import { db } from './core/db.ts'\nimport { auth } from './core/auth.ts'\nimport { principal } from './core/principal'\n",
+      'api/src/core/db.ts':       "import { gate } from './gate.ts'\nexport const db = gate\n",
+      'api/src/core/gate.ts':     'export const gate = 1\n',
+      'api/src/core/principal/index.ts': 'export const principal = 1\n',
+      'api/src/core/types.d.ts':  'export type T = 1\n',
+      'api/src/core/uptime.ts':   'export const uptime = 1\n',
+      'api/src/jobs/sweep.job.ts': "import { uptime } from '../core/uptime.ts'\n",
+    })
+    expect(f.map(x => x.file.replace(/.*\/api\//, 'api/'))).toEqual(['api/src/core/uptime.ts'])
+    expect(f[0].message).toMatch(/domain\/<area>\//)
+  })
+
+  test('an app.ts that reaches no core/ file grades none of them', () => {
+    expect(layout('lay-core-noapp', { 'api/src/core/uptime.ts': 'export const uptime = 1\n' })).toEqual([])
+  })
+
   // FJS-D1516: no check that finds files by kind looks inside an area folder.
   test('a folder at the top of api/src/ that is not a kind', () => {
     const f = layout('lay-area', {

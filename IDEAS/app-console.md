@@ -316,13 +316,20 @@ Done when: `fli app:repl` opens on `example`, and `fli deploy:repl --as dev@knig
 Goal: the next reader finds it where they look first.
 Done when: `fli done` is clean and `fli proves` names the drive.
 
-- [ ] 3.1 `db:repl.md` § *What it is not, yet* points here; `docs/deploy.md`
+- [x] 3.1 `db:repl.md` § *What it is not, yet* points here; `docs/deploy.md`
   gets the box line; `DRIVES.md` gets the row: as a member a row, as nobody
   a refusal, under `sys` the row with the operator as actor (Q3).
   - 2026-10-26: the `db:repl.md` pointer and the `docs/deploy.md` line are
     in. The drive row was blocked on `FJS-D1534`, built at 2.3; the row is
     owed, and no drive script exists for it yet.
-- [ ] 3.2 Rulings from 0.3 cited from each file they live in.
+  - 2026-10-27: `example`: `verify:repl`, five rows, green in 5s. With the
+    operator dropped from `asApp`, both `sys` rows go red and file
+    `system`/`service`. The fifth row answers the yuma question: `sys.remove()`
+    keeps a tombstone, `delete()` is hard for every principal. `DRIVES.md`
+    has the drive row and the *which drive proves* row.
+- [x] 3.2 Rulings from 0.3 cited from each file they live in.
+  - 2026-10-27: D1532–D1534 already were. D1535 and D1536 added to
+    `tools/call.ts`'s header, `app:repl.md` and `deploy:repl.md`.
 
 ---
 

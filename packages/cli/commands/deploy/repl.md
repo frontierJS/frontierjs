@@ -120,7 +120,8 @@ process.exitCode = run?.status ?? 0
 `app:repl`'s argv. The box needs nothing it does not already hold — the image
 carries junction and litestone.
 
-The names in scope, `.help`, `-e`'s contract and `--force` are `app:repl`'s.
+The names in scope, `.help`, `-e`'s contract and `--force` are `app:repl`'s,
+and so is the gate: the booted app's own, with no `--gate` (`FJS-D1536`).
 The container runs under `NODE_ENV=production`, so the prompt line opens with
 `PRODUCTION` and a `sys` write needs `--force` (`FJS-D1533`).
 

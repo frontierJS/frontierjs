@@ -18269,6 +18269,8 @@ and every service route is a 404 (`FJS-458`). `fli new` never hit it because its
 every scaffolded app and load-bearing for every hand-written one. Both examples
 declare it now; the default is still wrong and the issue is open.
 
+**Amended by [`FJS-D625`](#fjs-d625)**: the app's domain modules go in `api/src/domain/<area>/`, not loose beside `app.ts`; `example`'s `inventory.ts` is `domain/shop/inventory.ts`. `core/` sets up what the framework ships (`FJS-3518`).
+
 
 ### <a id="fjs-d114"></a>2026-08-22 · `FJS-D114` — A Resource is the model's whole client-side surface, and `save()` owns the write.
 

@@ -68,7 +68,9 @@ process.exitCode = run.status ?? 1
 ## What it is
 
 `fli call` kept open. The app boots once in this process, the way `app:call`
-boots it, and a prompt runs over it at the standing `--as` names:
+boots it — a second boot beside any dev server, not attached to it, so a write
+here reaches none of that server's sockets (`FJS-D1535`) — and a prompt runs
+over it at the standing `--as` names:
 
 ```
 $ fli app:repl --as alex@shop.test --tenant flagship
@@ -114,6 +116,7 @@ A `call` or `db` write is the standing's (`FJS-D1534`).
 
 **Not `db:repl`.** That one reads the schema and grades with a resolver it is
 handed (`--gate`); this one boots the app, so gate, tenancy and the principal
-lookup are the app's own (`FJS-D1532`).
+lookup are the app's own, and there is no `--gate` to pass (`FJS-D1532`,
+`FJS-D1536`).
 
 **Needs bun.** Junction is Bun-only, and this runs the app's own `junction call`, resolved the way its imports resolve it.

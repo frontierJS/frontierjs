@@ -717,6 +717,32 @@ function srcLayoutFindings(root) {
       `the app wrote goes in api/src/plugins/, which app.ts installs one by one because order matters (FJS-D625).`)
   }
 
+  // core/ is what app.ts is built from. A file app.ts never reaches, directly or through
+  // another core/ file, is imported only by services, jobs or a script, and no other rule
+  // looks inside core/ for it. Domain logic app.ts does import passes: telling that apart
+  // from setup reads what the code means.
+  const appFile = ['app.ts', 'app.js'].map(name => join(apiSrc, name)).find(existsSync)
+  const coreJs  = apiJs.filter(file => inside(join(apiSrc, 'core'), file) && !file.endsWith('.d.ts'))
+  if (appFile && coreJs.length) {
+    const byStem  = new Map(coreJs.map(file => [stem(file), file]))
+    const reached = new Set()
+    for (const queue = [appFile]; queue.length;) {
+      for (const target of relativeImports(queue.shift())) {
+        const file = byStem.get(stem(target)) ?? byStem.get(join(target, 'index'))
+        if (!file || reached.has(file)) continue
+        reached.add(file)
+        queue.push(file)
+      }
+    }
+    // An app.ts reaching none is assembled some way this does not follow, and every file would fire.
+    for (const file of reached.size ? coreJs : []) {
+      if (reached.has(file)) continue
+      warn(rel(root, file), `a core/ file app.ts never reaches. core/ sets up what the framework ships and app.ts ` +
+        `assembles it; a module only services, jobs or a script import is domain logic and moves to ` +
+        `api/src/domain/<area>/, or beside its one importer when that is a loader's folder (FJS-D625).`)
+    }
+  }
+
   // An area at the top of api/src/ is a feature folder: no check that finds files by kind looks in it.
   for (const name of safeRead(apiSrc)) {
     if (API_SRC_KINDS.has(name)) continue
