@@ -137,7 +137,7 @@ export function gradeForWire(opts: Pick<AuthServicesOptions, 'level' | 'standing
 export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions = {}): ServiceDefinition[] {
 
   const grade = gradeForWire(opts)
-  const { level, standingLevel } = grade
+  const { standingLevel } = grade
 
   // ─── A guess inside a live session ─────────────────────────────────────
   //

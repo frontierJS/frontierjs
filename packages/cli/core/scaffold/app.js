@@ -238,7 +238,7 @@ export function makeReadme(spec) {
 
   return `# ${name}
 
-A FrontierJS application — ${surface.join(' + ')}${useDb ? ' over one \`db/schema.lite\`' : ''}.
+A FrontierJS application — ${surface.join(' + ')}${useDb ? ' over one `db/schema.lite`' : ''}.
 
 ## What's included
 

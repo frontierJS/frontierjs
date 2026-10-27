@@ -14652,7 +14652,7 @@ Found on the way and fixed with it: the `FJS-D597` re-check asked `$readReach` f
 
 *The nine were answered after the code, not before* — named late per `decision-rules`. The owner question failed on the first draft (the second walker) and was fixed rather than overridden.
 
-*Lives in:* `packages/litestone/src/core/client.js` (`tenantPath`, `tenantsOf`, `announceFor`) · `packages/junction/src/core/litestone.ts` (`sendToChannel`, `regrade`, `dependentsOf`) · `packages/junction/src/transport/channels.ts` (`ChannelFn`, `sendGraded`) · `write-events.test.ts` § FJS-1741 · `data-write-announcement.test.ts` § FJS-1741 · serpgrid's api/test/live.test.ts · notion's probes/q2/out.txt run 7.
+*Lives in:* `packages/litestone/src/core/write-events.js` (`tenantPath`, `tenantsOf`, `announceFor`) · `packages/junction/src/core/litestone.ts` (`sendToChannel`, `regrade`, `dependentsOf`) · `packages/junction/src/transport/channels.ts` (`ChannelFn`, `sendGraded`) · `write-events.test.ts` § FJS-1741 · `data-write-announcement.test.ts` § FJS-1741 · serpgrid's api/test/live.test.ts · notion's probes/q2/out.txt run 7.
 
 ### <a id="fjs-d952"></a>2026-10-13 · `FJS-D952` — What does an app shell own, and is it the kit's — A paper first: `IDEAS/app-shell.md` surveys the six nav shapes and proposes a `nav.js` contract (groups, section tabs, bare prefixes, drawer copy), then a kit `Shell` over `frame.css` that reads it.
 

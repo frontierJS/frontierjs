@@ -10,7 +10,7 @@ import { checkAnnounce, defer } from './hooks.js'
 import { ident, keyIn, tuplesOf } from './query.js'
 
 export function makeWriteEvents(shape, ctx, deps) {
-  const { tableName, modelName } = shape
+  const { modelName } = shape
   const { emitter, tx, readDb, idField, _modelToTable, read } = deps
 
   // ── Write event emitter ───────────────────────────────────────────────────

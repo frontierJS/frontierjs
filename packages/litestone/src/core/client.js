@@ -9,50 +9,44 @@ import { currentEngine } from './engine.js'
 import { validateBusyTimeout } from './pragmas.js'
 import { resolve, join, dirname, mkdirSync, rmSync, AsyncLocalStorage, processId } from '#host'
 import { resolveAnchor } from './db-path.js'
-import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField, pointColumns, fieldToColumnName,
+import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField, pointColumns, 
          SEARCH_TABLE, searchModels, searchRankExpr } from './ddl.js'
 import { buildSealMap } from './seal.js'
 import { buildValueSetMap, enforceValueSets } from './valuesets.js'
-import { buildEdgeMap, arcCheckExpr, arcDefaultMessage, columnMapFor, mapExprCols,
-         pointDefaultMessage } from './ddl.js'
+import { buildEdgeMap, columnMapFor, } from './ddl.js'
 import {
-  buildWhere, buildOrderBy, buildRelationOrderBy, buildWindowCols, windowColumnNames, rawClause, isNamedAgg,
-  buildNamedAggExpr, extractNamedAggs, parseSelectArg, trimAllToSelect, vectorOrderPlan,
+  buildWhere, buildOrderBy, buildRelationOrderBy, buildWindowCols, windowColumnNames, rawClause, isNamedAgg,extractNamedAggs, parseSelectArg, trimAllToSelect, vectorOrderPlan,
   orderByAfterVector, vectorQueryBytes, deserializeRow, coerceBooleans,
-  booleanBind, encodeCursor, decodeCursor, normalizeOrderBy, buildCursorWhere,
-  extractCursorValues, cursorOrderSql, filterableKeysFor,
-  aggregatableKeysFor, LIKE_SQL, likePattern, ftsWords, identifyingKeysFor, inList, keyIn, tupleOf, tuplesOf, pairsOn, blobKeyClauses,
+  booleanBind, encodeCursor, normalizeOrderBy, 
+  extractCursorValues, filterableKeysFor,
+  aggregatableKeysFor, LIKE_SQL, likePattern, ftsWords, identifyingKeysFor, inList, keyIn, tupleOf, tuplesOf, pairsOn, 
   sqlFragment, ident, quoteIdent, and, join as sqlJoin, pageSql } from './query.js'
 import { scoreByDistance, DISTANCE_FIELD } from './vector.js'
-import { validate, hasTransforms, transformValue, buildValidationMap, validateJsonPatch, typeMemberDefault, ValidationError } from './validate.js'
+import { hasTransforms, buildValidationMap, validateJsonPatch, typeMemberDefault, ValidationError } from './validate.js'
 import { createCardinalityLedger, refuseChildlessCreate } from './cardinality.js'
 import { createExclusionLedger } from './exclusion.js'
 import { makeLedgerNotes } from './ledger-notes.js'
 import { PluginRunner, AccessDeniedError } from './plugin.js'
 import { GatePlugin, FrontierGateGetLevel, levelPasses } from '../plugins/gate.js'
-import { CapabilityPlugin, requireGrantSubset } from '../plugins/capability.js'
+import { CapabilityPlugin, } from '../plugins/capability.js'
 import { capabilityDeclarations } from './capabilities.js'
 import {
-  buildPolicyMap, buildScopeMap, compileScope, compileStatic,
-  buildPolicyFilter, checkCreatePolicy, checkPostUpdatePolicy, policyVerdict, evalJs,
+  buildPolicyMap, buildScopeMap, compileStatic,
+  buildPolicyFilter, checkPostUpdatePolicy, policyVerdict, 
   compileFieldPredicate, delegationProblems, buildClaimSet, checkFieldPolicies,
   authClaimsUsed } from './policy.js'
 import {
-  encryptField, decryptField, encryptDeterministic, normalizeKey,
-  comparisonEncoderFor, makeKeyring, legacyForm } from './encryption.js'
+  encryptField, decryptField, encryptDeterministic, normalizeKey,makeKeyring, } from './encryption.js'
 import { backupSqliteTo, readBackupStamp, clearBackupStamp } from './backup.js'
 import { makeJsonlTable } from '../drivers/jsonl.js'
 import { runSqliteRetention, compactJsonl, RETENTION_BATCH } from './retention.js'
 import { ensureEventsTable, makeEventRecorder, createEventWatcher } from './cross-process.js'
-import {
-  TransitionViolationError, TransitionConflictError, VersionRequiredError,
+import {TransitionConflictError, VersionRequiredError,
   VersionConflictError, SyncConflictError,
-  TransitionNotFoundError, BulkTransitionError, SoftDeletedUniqueError,
-  UniqueConflictError, uniqueConflictColumns, checkViolationExpr, isCheckViolation,
-  datatypeMismatch, isDatatypeMismatch, isUniqueConflict, ForeignKeyError, isForeignKeyFailure, CapabilityNotDeclaredError } from './errors.js'
+  TransitionNotFoundError, BulkTransitionError, SoftDeletedUniqueError,isUniqueConflict, CapabilityNotDeclaredError } from './errors.js'
 import { threeWay } from './three-way.js'
 import { buildCommitmentMap, dueSql, readBy, LATEST_DAY } from './commitment.js'
-import { dueAt, offsetSpans, partsIn, plainDateIn } from '@frontierjs/toolbelt/datetime'
+import { dueAt, } from '@frontierjs/toolbelt/datetime'
 import { spread as rankSpread } from '@frontierjs/toolbelt/rank'
 import {
   buildAutoIdMap, buildGeneratedDefaultMap, buildAuthDefaultMap, buildLiteralDefaultMap, buildSelfRelationMap,
@@ -95,7 +89,7 @@ import { fromSelectExpr, resolveFromRowRefs, coerceEdgeValue, resolveIncludes } 
 import { gatedFromFields } from './from-gate.js'
 import { refuseUntrustedSchema } from './untrusted.js'
 import {
-  checkAnnounce, emitQuery, queryTapped, buildHookRunner, installHooks, buildEventEmitter, defer } from './hooks.js'
+  checkAnnounce, emitQuery, queryTapped, buildHookRunner, installHooks, buildEventEmitter, } from './hooks.js'
 import { makeLoggerAutoModel, trailModelName, buildLogMap, buildLogEntry, trailRowValues, drainPendingLogs } from './audit-log.js'
 // buildRelationMap is part of this module's published surface — junction and the
 // tools import it from here.
@@ -141,11 +135,7 @@ function rawSqlRefusal(surface) {
 }
 
 
-// The operators a Json column takes on its WHOLE value. A `where` on an
-// extensible column carrying one of these is comparing the document, not
-// reaching into it.
 const RECURSIVE_KEYS = ['direction', 'maxDepth', 'nested', 'via']
-const JSON_WHOLE_OPS = new Set(['equals', 'not', 'in', 'notIn', 'isNull', 'isNotNull'])
 
 // ─── The flavor of client a call is running as ────────────────────────────
 //
@@ -361,7 +351,6 @@ function makeTable(readDb, writeDb, shape, ctx) {
     tableName,                       // SQL table name ("user" — used in FROM/INTO clauses)
     modelName,                       // Model name as declared ("User")
     jsonFields,
-    generatedFields,
     computedFields,
     softDelete,
     ftsFields,
@@ -966,8 +955,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
   const idField = shape.model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
 
   const {
-    fireEvent, hasAudience, hasLocalAudience, emitTransitionEvent,
-    fireRowEvent, fireCollectionEvent, tenantPath, tenantsOf, announceFor, announceBulk,
+    hasAudience, hasLocalAudience, emitTransitionEvent,
+    fireRowEvent, tenantPath, announceFor, announceBulk,
   } = makeWriteEvents(shape, ctx, {
     emitter, tx, readDb, idField, _modelToTable,
     // Hoisted function, reached only at call time.
@@ -1982,8 +1971,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return Object.keys(out).length ? out : null
   })()
   const {
-    expandScopes, buildWhereWithEncryption, whereFragment,
-    rewriteExtensibleWhere, rewriteTransformedWhere, rewriteEncryptedWhere,
+    buildWhereWithEncryption, whereFragment, rewriteTransformedWhere,
   } = makeWhereRewrite(shape, ctx, {
     edgeOrRelFilter, col, _hasScopes, _extensible, _extTenantCol, extTenant, extScope,
     _extDeclarations, _transformed, _fromExprMap, _fromExprMapAliased, _typedJsonMap, _pointMap,

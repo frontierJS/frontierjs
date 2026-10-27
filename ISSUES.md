@@ -456,6 +456,7 @@ cell cannot hold options, so they go in the paper its Detail links.
 
 | Id | Area | Question | Detail |
 | --- | --- | --- | --- |
+| <a id="fjs-d1549"></a>FJS-D1549 | litestone · junction · cli | **Should FileStorage default to local disk in production, persisted beside the database and served by junction, when no provider is bound?** | Found in ela's production deploy: Account.logo is a File column, FILES_PROVIDER is unbound, so the Account form's upload is refused · [file-storage.js](packages/litestone/src/storage/file-storage.js) · [local.js](packages/litestone/src/storage/providers/local.js) · [05-backup.md](packages/cli/commands/deploy/_steps-docker/05-backup.md) · near FJS-D1544 · [IDEAS/owed-rulings.md](IDEAS/owed-rulings.md) |
 | <a id="fjs-d1544"></a>FJS-D1544 | outpost · basecamp · cli | **Where does a fleet box keep its files — one name under the FHS split, one root folder, or as it is — and does app data move from Docker volumes to bind mounts?** | Found deploying website/ to yuma · [IDEAS/owed-rulings.md](IDEAS/owed-rulings.md) |
 | <a id="fjs-d1458"></a>FJS-D1458 | jetty | **How does an island ask to be injected on the toolbar click (activeTab) instead of registered by matches?** | Found fixing FJS-3386 · [IDEAS/owed-rulings.md](IDEAS/owed-rulings.md) |
 | <a id="fjs-d1457"></a>FJS-D1457 | orion | **How does a flow act on an absence — a flow.wait timeout that takes a branch, an absence trigger on a model, or neither?** | Found fixing FJS-2086 · [IDEAS/owed-rulings.md](IDEAS/owed-rulings.md) |

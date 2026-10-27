@@ -51,7 +51,7 @@ async function loadModuleHelpers() {
   return fn()
 }
 
-const { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, swapContainer, healthOrRestore, litestreamInstall, aptIdle } = await loadModuleHelpers()
+const { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, swapContainer, healthOrRestore, aptIdle } = await loadModuleHelpers()
 
 // ─── loadFrontierConfig ───────────────────────────────────────────────────────
 

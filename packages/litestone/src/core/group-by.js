@@ -35,7 +35,7 @@ export function makeGroupBy(shape, ctx, deps) {
   const { tableName, modelName } = shape
   const {
     readDb, plugins, refuseRecursive, refuseAggregateKeys, namedAggFields, refuseCountShape,
-    refuseMixedCurrency, col, visibleWhere, _derivedSql, _aggCol, T, needsTiming, fireQuery,
+    refuseMixedCurrency, col, visibleWhere, _derivedSql, _aggCol, needsTiming, fireQuery,
     hydrateCols, exactSum, buildWhereWithEncryption,
   } = deps
 
