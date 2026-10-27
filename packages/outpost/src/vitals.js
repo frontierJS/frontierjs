@@ -20,7 +20,7 @@
  * asserted against whatever the test machine happened to be doing.
  *
  * The keys are the OUTPOST's vocabulary. Basecamp keeps three of them as
- * series (`core/server-metrics.ts`); the rest land in `Server.health` and are
+ * series (`domain/host/server-metrics.ts`); the rest land in `Server.health` and are
  * read on the server's own screen. `load` is deliberately in the second group:
  * it is not comparable between machines without a core count, so it is a number
  * to look at and not one to draw a threshold across.

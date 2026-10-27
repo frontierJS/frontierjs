@@ -114,7 +114,7 @@ because SSR and hydration fail apart, both of `example`: `bun run verify` and
 
 <!-- layout-named: the file names fli done grades a new module against, kept here because done.js reads this file by path. The map itself is docs/layout.md.
 baseline.json browser.d.ts build-vendor.mjs cases.mjs client.js client-source.js clock.js 
-compiler.js compiler-md.js corpus.mjs css-inliner.js css.js data.js devtools.html drive.js 
+compiler.js compiler-md.js corpus.mjs css-inliner.js css.js data.js datetime.js devtools.html drive.js 
 emit.js entities.js hmr.js host.js host-tree.js hotkey.js index.html index.js inspect-client.js 
 ir.js keys.js media.js optional-peer.js package.json persisted.js portability.js prefix.js 
 render-component.js render.js result.js run.mjs runtime.js runtime-native.js 

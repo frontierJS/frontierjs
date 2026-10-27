@@ -1,5 +1,5 @@
 -- Litestone migration
--- Created:   2026-10-19T21:49:05.824Z
+-- Created:   2026-10-27T09:03:40.762Z
 -- Changes:
 --     + Credential  (new table)
 --     + Session  (new table)
@@ -99,6 +99,8 @@ CREATE TABLE IF NOT EXISTS "session" (
   "ipAddress" TEXT,
   "userAgent" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "enrollmentOnly" INTEGER NOT NULL DEFAULT 0,
+  "reauthenticatedAt" TEXT,
   "impersonatingUserId" TEXT,
   "impersonationReason" TEXT,
   "impersonationEndsAt" TEXT
@@ -734,6 +736,7 @@ CREATE TABLE IF NOT EXISTS "payment" (
 CREATE INDEX IF NOT EXISTS "idx_payment_orderId" ON "payment" ("orderId");
 CREATE INDEX IF NOT EXISTS "idx_payment_invoiceId" ON "payment" ("invoiceId");
 CREATE INDEX IF NOT EXISTS "idx_payment_paymentMethodId" ON "payment" ("paymentMethodId");
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_payment_orderId" ON "payment" ("orderId") WHERE ("status" = 'pending' OR "status" = 'requiresAction');
 
 -- Every event the provider has delivered, once each. Append-only.
 -- 

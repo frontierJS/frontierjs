@@ -234,6 +234,31 @@ export async function run(t) {
   await t.eventually(`document.querySelector('#stage .shell > nav.sidebar').classList.contains('rail')`, 'false', 'a second click opens it again')
   await t.eventually(railWidth, String(15 * rem), 'to --sidebar-width')
 
+  /* ── groups that fold ───────────────────────────────────────────────── */
+
+  // Promoted, the labeled groups are Admin then Help: the first starts open
+  // and the other closed, and arriving on a page in a closed group opens it,
+  // over the reader's own choice to close it.
+  await t.mount('shell', { user: { email: 'a@b.c' }, level: 5, foldable: true })
+  const folds = `[...document.querySelectorAll('#stage .sidebar details')].map(d => d.querySelector('summary').textContent + (d.open ? '+' : '-')).join('|')`
+  await t.eventually(folds, 'Admin+|Help-', 'the first labeled group starts open and the rest closed')
+  t.ok(await t.evaluate(`
+    const summary = [...document.querySelectorAll('#stage .sidebar summary.navlist-label')].find(s => s.textContent === 'Help');
+    return summary.nextElementSibling.getAttribute('aria-labelledby') === summary.id;
+  `), 'a folding label still names its list')
+  t.is(await t.evaluate(`return document.querySelectorAll('#stage .sidebar .navlist-label:not(summary)').length;`), 0,
+    'and an unlabeled group draws flat')
+
+  await t.clickAt('#stage .sidebar details:first-of-type > summary')
+  await t.eventually(folds, 'Admin-|Help-', 'a click on a label closes its group')
+  await t.clickAt('#stage #to-help')
+  await t.eventually(folds, 'Admin-|Help+', 'arriving on a page in a closed group opens it')
+  await t.eventually(current, 'Docs', 'with its link marked')
+  await t.clickAt('#stage .sidebar details:last-of-type > summary')
+  await t.eventually(folds, 'Admin-|Help-', 'the reader may close the current group')
+  await t.clickAt('#stage .sidebar details:first-of-type > summary')
+  await t.eventually(folds, 'Admin+|Help-', 'and open another')
+
   /* ── layout="topbar" ────────────────────────────────────────────────── */
 
   await t.mount('shell', { user: { email: 'a@b.c' }, layout: 'topbar' })

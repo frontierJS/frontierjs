@@ -141,7 +141,7 @@ export default createService({
    * A person says a copy of ENCRYPTION_KEY is kept off this box.
    *
    * Nothing here can check that, so the row records WHEN and OF WHICH KEY —
-   * its sha256, never the key — and `hub.key-escrowed` (`core/posture.ts`)
+   * its sha256, never the key — and `hub.key-escrowed` (`domain/host/posture.ts`)
    * grades the attestation against the key in use: a regenerated key voids it
    * on its own. Both columns are `@system`, so `save` cannot forge one. The
    * development placeholder is refused: it is in the repo, and attesting a

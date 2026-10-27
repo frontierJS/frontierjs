@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3897 source file(s) read
+26 package(s) · 3899 source file(s) read
 239 entry point(s), 35 imported by nothing outside their package, 15 emitted
-1615 value export(s), 623 reached by nothing outside, 166 emitted
+1618 value export(s), 623 reached by nothing outside, 166 emitted
 451 type export(s), 343 reached by nothing outside
 ```
 
@@ -36,7 +36,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `litestone` | 28 | 5 | 264 | 134 | 35 | 1 | 1 |
 | `junction` | 26 | 4 | 265 | 121 | 12 | 267 | 211 |
-| `mesa` | 18 | 4 | 286 | 100 | 70 | 0 | 0 |
+| `mesa` | 18 | 4 | 289 | 100 | 70 | 0 | 0 |
 | `sierra` | 25 | 6 | 197 | 82 | 22 | 0 | 0 |
 | `auth` | 6 | 1 | 52 | 37 | 3 | 15 | 13 |
 | `ui` | 9 | 0 | 53 | 35 | 3 | 0 | 0 |
@@ -205,7 +205,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/mesa`
 
-`packages/mesa` · 18 entry point(s) · 286 value, 0 type export(s)
+`packages/mesa` · 18 entry point(s) · 289 value, 0 type export(s)
 
 **Entries imported by nothing outside (4):** `./render` `./css-inliner` `./vite/client` `./vite/hmr`
 

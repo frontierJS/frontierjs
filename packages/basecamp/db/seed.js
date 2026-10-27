@@ -818,7 +818,7 @@ export class BasecampSeeder extends Seeder {
         // Graded by the app's own grader, so the controls are what a real
         // report would store. The first machine has drifted; the last has never
         // reported, the state /security/ must not read as clean.
-        const { gradePosture, declaredFor } = await import('../api/src/core/posture.ts')
+        const { gradePosture, declaredFor } = await import('../api/src/domain/host/posture.ts')
         for (const [index, server] of servers.slice(0, Math.max(1, servers.length - 1)).entries()) {
           const drifted  = index === 0
           const at       = new Date(Date.now() - 2 * 3_600_000).toISOString()

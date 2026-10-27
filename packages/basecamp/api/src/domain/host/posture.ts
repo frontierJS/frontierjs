@@ -1,4 +1,4 @@
-// src/core/posture.ts — the one grader of a machine's security posture.
+// src/domain/host/posture.ts — the one grader of a machine's security posture.
 //
 // The Outpost reports FACTS (`inspector.posture()` in packages/outpost) and this
 // file decides what they mean. What a machine SHOULD look like is derived from

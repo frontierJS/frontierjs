@@ -1,4 +1,4 @@
-// src/core/site-checkout.ts — basecamp's checkout of a static site's repository,
+// src/domain/site/site-checkout.ts — basecamp's checkout of a static site's repository,
 // where an owner's draft is written (`FJS-D1227`, `FJS-D1228`).
 //
 // A bare clone per App under `SITES_DIR` (default ~/.config/basecamp/sites),
@@ -33,7 +33,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { childEnv } from '@frontierjs/junction'
-import { env } from './env.ts'
+import { env } from '../../core/env.ts'
 
 export interface GitSite {
   id:      string

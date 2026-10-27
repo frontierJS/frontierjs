@@ -141,7 +141,7 @@ deploy something different from what the file says.
    It touches `App`, `AppServer` and Outpost, and it is where half of every catalog is.
    Compose already describes this, which is the strongest argument for the file shape.
 5. **`build:` and CapRover's `dockerfileLines`, last.** Possibly the `inline` source kind
-   in `api/src/core/app-source.ts` plus FJS-1496's build.
+   in `api/src/domain/release/app-source.ts` plus FJS-1496's build.
 
 ## Open questions
 

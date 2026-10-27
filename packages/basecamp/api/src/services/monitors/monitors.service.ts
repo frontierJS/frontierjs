@@ -5,7 +5,7 @@
 //   history · pause · resume · attachChannel · detachChannel
 //
 // This is the service, not the prober. What decides a monitor is down is
-// `jobs/monitor-sweep.job.ts` and `core/probe.ts`: a monitor's state is written
+// `jobs/monitor-sweep.job.ts` and `domain/monitor/probe.ts`: a monitor's state is written
 // by the sweep, so none of `status`, `failStreak` or the stamps is a column a
 // caller can set (`@system`), and `status` moves only by `@@transitions`.
 // `MonitorCheck` and `MonitorEvent` are written by the system and read here.

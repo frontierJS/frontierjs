@@ -10,14 +10,14 @@
 // `@@transitions` move so a monitor an operator paused mid-probe stays paused,
 // an event row, and a notification only after the move landed. The two
 // judgments — did this request count, and what does it do to the monitor — are
-// `core/probe.ts`, which may not be re-derived here.
+// `domain/monitor/probe.ts`, which may not be re-derived here.
 
 import { defineJob }      from '@frontierjs/caravan'
 import { gradePublicUrl, pinTo, type PublicUrlOptions } from '@frontierjs/junction/public-url'
 import { runsAsApp }      from './context.ts'
-import { gradeProbe, nextState, type ProbeOutcome } from '../core/probe.ts'
-import { fanOutToChannels } from '../core/delivery.ts'
-import { notifyPeople, workspaceMembers } from '../core/notify.ts'
+import { gradeProbe, nextState, type ProbeOutcome } from '../domain/monitor/probe.ts'
+import { fanOutToChannels } from '../domain/notify/delivery.ts'
+import { notifyPeople, workspaceMembers } from '../domain/notify/notify.ts'
 import type { App }         from '@frontierjs/junction'
 
 /** Probes in flight at once. A sweep of a hundred slow URLs is bounded by the
@@ -25,7 +25,7 @@ import type { App }         from '@frontierjs/junction'
 const CONCURRENCY = 16
 
 export interface MonitorSweepOptions {
-  /** The instant to pick and schedule at. A parameter for `core/reachability.ts`'s
+  /** The instant to pick and schedule at. A parameter for `domain/host/reachability.ts`'s
    *  reason: the clock is what a test cannot otherwise stand still. */
   at?:        number
   /** One monitor rather than every due one. */

@@ -26,7 +26,7 @@ import { basecampGateLevel }       from '../src/core/gate.ts'
 import { buildBasecampApp }        from '../src/app.ts'
 import { grantsFor }               from '../src/core/capabilities.ts'
 import { gradeReachability, HEARTBEAT_GRACE_MS, heartbeatGraceMs,
-         DEFAULT_HEARTBEAT_TIMEOUT_S } from '../src/core/reachability.ts'
+         DEFAULT_HEARTBEAT_TIMEOUT_S } from '../src/domain/host/reachability.ts'
 import { sweepUnreachable }        from '../src/jobs/server-reachability.job.ts'
 
 const MINUTE = 60_000

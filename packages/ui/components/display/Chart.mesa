@@ -1,6 +1,6 @@
 <script>
   // Chart.mesa
-  // One series over a category axis, as columns or a line, in pure SVG.
+  // One measure over a category axis, as columns, bars or a line, in pure SVG.
   //
   // Pure SVG and no measuring, on purpose: the same component renders on
   // screen, on the server for a PDF, and through a headless screenshot for an
@@ -8,19 +8,25 @@
   // out. It draws into a fixed viewBox and scales with its container, text
   // included.
   //
-  // One series: a second measure is a second chart, never a second axis, and
-  // a breakdown by category wants a legend and a validated categorical
-  // palette this does not have yet. The title beside it names the series, so
-  // it draws no legend.
+  // One measure and one axis. `compare` is the SAME measure again — last year,
+  // the plan — in the same unit, so it shares the axis and a lighter step of
+  // the same tone; a second measure is a second chart. A breakdown by category
+  // wants a validated categorical palette this does not have yet. One series
+  // draws no legend, since the title beside it names it; a compared pair draws
+  // one, so which mark is which never rests on lightness alone.
   //
   // Usage:
   //   <Chart rows={months} x="month" y="revenue" label="Paid revenue by month" format={money} />
   //   <Chart rows={days} x="day" y="signups" type="line" tone="success" label="Signups per day" />
+  //   <Chart rows={top} x="customer" y="sales" orientation="horizontal" label="Sales by customer" />
+  //   <Chart rows={months} x="month" y="revenue" compare="lastYear" compareLabel="Last year" label="This year" />
+  //   <Chart rows={weeks} x="week" y="stock" type="line" reference={item.reorderLevel} referenceLabel="Reorder at" />
   //
   // Color is the tone, through currentColor, as in Sparkline: a themed subtree
-  // recolors it. Text wears the ink tokens, never the series color. Hovering
-  // or focusing a mark shows its category and value; every value is also in
-  // the mark's <title> and should be in a table beside the chart, because a
+  // recolors it. Text wears the ink tokens, never the series color, and the
+  // reference rule is ink too, because a threshold is not data. Hovering or
+  // focusing a mark shows its category and value; every value is also in the
+  // mark's <title> and should be in a table beside the chart, because a
   // tooltip may enhance and never gate.
 
   import { tone as toTone, cx, plotValue, plotRuns } from '../../utils.js'
@@ -28,30 +34,66 @@
   export let rows    = []       // object[] — one per category, in axis order
   export let x       = 'x'      // the field naming each category
   export let y       = 'y'      // the numeric field drawn
-  export let type    = 'bar'    // 'bar' (columns) | 'line'
-  export let label   = ''       // what is plotted, for assistive tech; required in practice
+  export let type    = 'bar'    // 'bar' | 'line'
+  export let orientation = 'vertical' // 'vertical' (columns) | 'horizontal' (bars beside their names); a line is always vertical
+  export let compare = ''       // a second field holding the same measure — last year, the plan — drawn beside it, lighter
+  export let compareLabel = ''  // what `compare` is, in the legend and the readout; defaults to the field
+  export let reference = null   // a value drawn as a dashed rule across the plot — a target, a reorder level
+  export let referenceLabel = '' // what the rule is, beside its value
+  export let label   = ''       // what is plotted, for assistive tech and the legend; required in practice
   export let format  = (v) => Number(v).toLocaleString('en-US')   // a y value → text
   export let formatX = (v) => String(v)                            // a category → text
   export let formatTick = null  // a y tick → text; defaults to `format`. Pass a compact one for long values
   export let tone    = ''       // one of the 7 css tones; '' is primary
-  export let height  = 280      // viewBox height
+  export let height  = null     // viewBox height; 280 for columns and lines, grown from the rows for horizontal bars
   export let width   = 960      // viewBox width; the drawing scales to its container, text with it
 
   const W = width
-  const M = { top: 28, right: 16, bottom: 28, left: 64 }
+  const CHAR = 6.5
 
   const t = toTone(tone)
+
+  // Horizontal is for bars only: a line across categories that run down the
+  // page reads as a profile, not a trend.
+  const flip = orientation === 'horizontal' && type !== 'line'
 
   // A missing value is a gap — no column, a break in the line, "no data" —
   // never a zero the data did not state.
   const values = rows.map(r => plotValue(r?.[y]))
-  const plotted = values.filter(v => v != null)
+  const prior  = compare ? rows.map(r => plotValue(r?.[compare])) : []
+  const ref    = plotValue(reference)
+  const plotted = [...values, ...prior, ref].filter(v => v != null)
   const runs = plotRuns(values)
+  const priorRuns = plotRuns(prior)
+
+  const seriesName  = label || y
+  const compareName = compareLabel || compare
+  const valueText = (v) => v == null ? 'no data' : format(v)
+  const tickText  = (v) => (formatTick ?? format)(v)
+
+  // Horizontal bars carry their names in a left gutter and every value at its
+  // tip, so the margins are estimated from the longest of each, as the x ticks
+  // are below: nothing measures.
+  const longest  = rows.reduce((n, r) => Math.max(n, formatX(r[x]).length), 0)
+  const longestV = values.reduce((n, v) => v == null ? n : Math.max(n, format(v).length), 0)
+  const gutter   = Math.min(280, Math.max(64, longest * CHAR + 16))
+  const tipRoom  = Math.min(160, Math.max(32, longestV * CHAR + 12))
+  const negative = plotted.some(v => v < 0)
+  const legendH  = compare ? 24 : 0
+
+  const M = flip
+    ? { top: 12 + legendH, right: tipRoom, bottom: ref != null ? 28 : 12, left: gutter + (negative ? tipRoom : 0) }
+    : { top: 28 + legendH, right: 16, bottom: 28, left: 64 }
+
+  const pitch = compare ? 40 : 28
+  const H = height ?? (flip ? Math.max(120, M.top + M.bottom + rows.length * pitch) : 280)
   const innerW = W - M.left - M.right
-  const innerH = height - M.top - M.bottom
+  const innerH = H - M.top - M.bottom
 
   // Clean ticks over a domain that always holds zero, so a column grows from a
-  // real baseline and a line's height is never a truncated axis's.
+  // real baseline and a line's height is never a truncated axis's. The
+  // compared series and the reference are inside it, or either could be drawn
+  // off the plot.
   const scale = (() => {
     const lo = Math.min(0, ...plotted)
     const hi = Math.max(0, ...plotted)
@@ -65,65 +107,97 @@
     for (let v = min; v <= max + step / 2; v += step) ticks.push(Math.round(v / step) * step)
     return { min, max, ticks }
   })()
-  const yAt = (v) => M.top + (1 - (v - scale.min) / (scale.max - scale.min)) * innerH
-  const zero = yAt(0)
 
-  const band = rows.length ? innerW / rows.length : innerW
-  const xAt  = (i) => M.left + band * (i + 0.5)
-  const barW = Math.max(2, Math.min(24, band * 0.6))
+  // `at` places a value on the value axis and `mid` a category on the other;
+  // which screen axis each one is depends only on `flip`.
+  const at = (v) => flip
+    ? M.left + (v - scale.min) / (scale.max - scale.min) * innerW
+    : M.top + (1 - (v - scale.min) / (scale.max - scale.min)) * innerH
+  const zero = at(0)
 
-  // A column: square at the baseline, a 4px round on its data end.
-  function columnPath(i) {
-    const v = values[i]
+  const span = flip ? innerH : innerW
+  const band = rows.length ? span / rows.length : span
+  const mid  = (i) => (flip ? M.top : M.left) + band * (i + 0.5)
+
+  // A compared pair is two marks a band, the compared one second, with a 2px
+  // surface gap between them rather than a stroke around either.
+  const barW = compare
+    ? Math.max(2, Math.min(18, (band * 0.7 - 2) / 2))
+    : Math.max(2, Math.min(24, band * 0.6))
+  const offset = compare ? (barW + 2) / 2 : 0
+  const ownAt   = (i) => mid(i) - offset
+  const priorAt = (i) => mid(i) + offset
+
+  // A bar: square at the baseline, a 4px round on its data end, in either
+  // orientation. `c` is its center across the category axis.
+  function barPath(c, v) {
     if (v == null) return ''
-    const x0 = xAt(i) - barW / 2, x1 = x0 + barW
-    const yv = yAt(v)
-    const h = Math.abs(zero - yv)
+    const a = c - barW / 2, b = a + barW
+    const e = at(v)
+    const h = Math.abs(e - zero)
     if (h < 0.5) return ''
     const r = Math.min(4, barW / 2, h)
-    if (v >= 0)
-      return `M${x0},${zero} V${yv + r} Q${x0},${yv} ${x0 + r},${yv} H${x1 - r} Q${x1},${yv} ${x1},${yv + r} V${zero} Z`
-    return `M${x0},${zero} V${yv - r} Q${x0},${yv} ${x0 + r},${yv} H${x1 - r} Q${x1},${yv} ${x1},${yv - r} V${zero} Z`
+    const s = Math.sign(e - zero)
+    if (flip)
+      return `M${zero},${a} H${e - s * r} Q${e},${a} ${e},${a + r} V${b - r} Q${e},${b} ${e - s * r},${b} H${zero} Z`
+    return `M${a},${zero} V${e - s * r} Q${a},${e} ${a + r},${e} H${b - r} Q${b},${e} ${b},${e - s * r} V${zero} Z`
   }
 
   // One subpath per run. A run of one point repeats it, so the round cap
   // draws a dot where a bare moveto would draw nothing.
-  const runPath = (run) => run.concat(run.length === 1 ? run : [])
-    .map((i, k) => `${k ? 'L' : 'M'}${xAt(i)},${yAt(values[i])}`).join(' ')
-  const linePath = runs.map(runPath).join(' ')
-  const areaPath = runs
-    .map(run => `${runPath(run)} L${xAt(run[run.length - 1])},${zero} L${xAt(run[0])},${zero} Z`)
+  const runPath = (run, vs) => run.concat(run.length === 1 ? run : [])
+    .map((i, k) => `${k ? 'L' : 'M'}${mid(i)},${at(vs[i])}`).join(' ')
+  const linePath  = runs.map(run => runPath(run, values)).join(' ')
+  const priorPath = priorRuns.map(run => runPath(run, prior)).join(' ')
+  const areaPath  = runs
+    .map(run => `${runPath(run, values)} L${mid(run[run.length - 1])},${zero} L${mid(run[0])},${zero} Z`)
     .join(' ')
 
-  const tickText = (v) => (formatTick ?? format)(v)
-  const valueText = (v) => v == null ? 'no data' : format(v)
   // A value label at either end anchors inward, so it never hangs off the plot.
-  const anchorAt = (i) => xAt(i) > W - M.right - 40 ? 'end' : xAt(i) < M.left + 40 ? 'start' : 'middle'
-  const labelX   = (i) => anchorAt(i) === 'end' ? xAt(i) + barW / 2 : anchorAt(i) === 'start' ? xAt(i) - barW / 2 : xAt(i)
+  const anchorAt = (i) => mid(i) > W - M.right - 40 ? 'end' : mid(i) < M.left + 40 ? 'start' : 'middle'
+  const labelX   = (i) => anchorAt(i) === 'end' ? ownAt(i) + barW / 2 : anchorAt(i) === 'start' ? ownAt(i) - barW / 2 : ownAt(i)
 
-  // Label selectively: the largest value and the last, never every mark.
+  // Label selectively: the largest value and the last, never every mark. A
+  // horizontal bar is the exception — a ranked list is read by its values, one
+  // row each, so every bar carries its own at the tip and the value axis
+  // draws no ticks it would only repeat.
   const labelled = (() => {
     if (!plotted.length) return new Set()
+    if (flip) return new Set(values.map((v, i) => v == null ? -1 : i).filter(i => i >= 0))
     let top = null, last = null
     values.forEach((v, i) => {
       if (v == null) return
       if (top == null || v > values[top]) top = i
       last = i
     })
-    return new Set([top, last])
+    return new Set([top, last].filter(i => i != null))
   })()
 
-  // Nothing measures, so a tick's width is estimated from its length. A slot
-  // is the longest label's width clamped to 48..80 units; as many labels as
-  // fit one slot each are drawn, evenly skipped, and a label wider than its
-  // slot is cut to an ellipsis. The tooltip, the <title> and the aria-label
-  // read the whole category, so what assistive tech hears is never the cut.
-  const CHAR = 6.5
-  const longest = rows.reduce((n, r) => Math.max(n, formatX(r[x]).length), 0)
+  // Nothing measures, so a tick's width is estimated from its length. Down the
+  // page every name has its row and is cut to the gutter. Across, a slot is
+  // the longest label's width clamped to 48..80 units; as many labels as fit
+  // one slot each are drawn, evenly skipped, and a label wider than its slot
+  // is cut to an ellipsis. The tooltip, the <title> and the aria-label read
+  // the whole category, so what assistive tech hears is never the cut.
   const slot  = Math.min(80, Math.max(48, longest * CHAR + 8))
-  const every = Math.max(1, Math.ceil(rows.length / Math.floor(innerW / slot)))
-  const room  = Math.max(1, Math.floor((band * every - 8) / CHAR))
+  const every = flip ? 1 : Math.max(1, Math.ceil(rows.length / Math.floor(innerW / slot)))
+  const room  = flip
+    ? Math.max(1, Math.floor((gutter - 16) / CHAR))
+    : Math.max(1, Math.floor((band * every - 8) / CHAR))
   const tickX = (v) => { const s = formatX(v); return s.length > room ? s.slice(0, Math.max(1, room - 1)) + '…' : s }
+
+  const refText = ref == null ? '' : referenceLabel ? `${referenceLabel} ${format(ref)}` : format(ref)
+
+  // The legend: a key per series, its width estimated from its text.
+  const keys = compare ? [
+    { name: seriesName,  x: M.left, cls: 'fjs-chart-key' },
+    { name: compareName, x: M.left + seriesName.length * CHAR + 40, cls: 'fjs-chart-key fjs-chart-key-compare' },
+  ] : []
+
+  const named = (i) => {
+    const own = `${formatX(rows[i][x])}: ${valueText(values[i])}`
+    return compare ? `${own}, ${compareName}: ${valueText(prior[i])}` : own
+  }
 
   // The mark under the pointer or the keyboard, and its tooltip's box. The
   // width is estimated from the text, since nothing here measures.
@@ -135,8 +209,9 @@
   let stop = 0
   const stopAt = Math.min(Math.max(0, stop), Math.max(0, rows.length - 1))
   function step(e, i) {
-    const to = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1
-      : e.key === 'Home' ? 0 : e.key === 'End' ? rows.length - 1 : null
+    const k = e.key
+    const to = k === 'ArrowRight' || k === 'ArrowDown' ? i + 1 : k === 'ArrowLeft' || k === 'ArrowUp' ? i - 1
+      : k === 'Home' ? 0 : k === 'End' ? rows.length - 1 : null
     if (to == null || to < 0 || to >= rows.length) return
     e.preventDefault()
     e.currentTarget.parentNode.querySelectorAll('.fjs-chart-hit')[to]?.focus()
@@ -146,15 +221,21 @@
     if (active == null || !rows[active]) return null
     const value = valueText(values[active])
     const cat   = formatX(rows[active][x])
-    const w = Math.max(value.length * 8, cat.length * 6.5) + 20
-    const cx_ = Math.min(Math.max(xAt(active), M.left + w / 2), W - M.right - w / 2)
-    const top = Math.max(2, Math.min(yAt(values[active] ?? 0), zero) - 52)
-    return { value, cat, w, x: cx_ - w / 2, y: top }
+    const then  = compare ? `${compareName}: ${valueText(prior[active])}` : ''
+    const w = Math.max(value.length * 8, cat.length * CHAR, then.length * CHAR) + 20
+    const h = then ? 58 : 42
+    if (flip) {
+      const end = Math.max(at(values[active] ?? 0), at(prior[active] ?? 0), zero)
+      return { value, cat, then, w, h, x: Math.min(end + 12, W - w - 2), y: Math.min(Math.max(2, mid(active) - h / 2), H - h - 2) }
+    }
+    const cx_ = Math.min(Math.max(mid(active), M.left + w / 2), W - M.right - w / 2)
+    const top = Math.max(2, Math.min(at(values[active] ?? 0), at(prior[active] ?? values[active] ?? 0), zero) - h - 10)
+    return { value, cat, then, w, h, x: cx_ - w / 2, y: top }
   })()
 </script>
 
 <svg
-  viewBox="0 0 {W} {height}"
+  viewBox="0 0 {W} {H}"
   xmlns="http://www.w3.org/2000/svg"
   class={cx('fjs-chart', t)}
   role="group"
@@ -163,63 +244,105 @@
   {...$attributes}
 >
   {#if !rows.length}
-    <text class="fjs-chart-empty" x={W / 2} y={height / 2} text-anchor="middle">Nothing to plot</text>
+    <text class="fjs-chart-empty" x={W / 2} y={H / 2} text-anchor="middle">Nothing to plot</text>
   {:else}
-    <!-- Recessive grid and ticks: hairline, solid, behind the data. -->
-    {#each scale.ticks as v (v)}
-      <line class="fjs-chart-grid" class:fjs-chart-zero={v === 0} x1={M.left} x2={W - M.right} y1={yAt(v)} y2={yAt(v)} />
-      <text class="fjs-chart-tick" x={M.left - 8} y={yAt(v)} text-anchor="end" dominant-baseline="middle">{tickText(v)}</text>
-    {/each}
+    <!-- Recessive grid and ticks: hairline, solid, behind the data. Horizontal
+         bars label every tip, so they keep only the zero rule. -->
+    {#if flip}
+      <line class="fjs-chart-grid fjs-chart-zero" x1={zero} x2={zero} y1={M.top} y2={H - M.bottom} />
+    {:else}
+      {#each scale.ticks as v (v)}
+        <line class="fjs-chart-grid" class:fjs-chart-zero={v === 0} x1={M.left} x2={W - M.right} y1={at(v)} y2={at(v)} />
+        <text class="fjs-chart-tick" x={M.left - 8} y={at(v)} text-anchor="end" dominant-baseline="middle">{tickText(v)}</text>
+      {/each}
+    {/if}
 
     {#each rows as r, i}
-      {#if i % every === 0}
-        <text class="fjs-chart-tick" x={xAt(i)} y={height - M.bottom + 18} text-anchor="middle">{tickX(r[x])}</text>
+      {#if flip}
+        <text class="fjs-chart-tick fjs-chart-name" x={gutter - 8} y={mid(i)} text-anchor="end" dominant-baseline="middle">{tickX(r[x])}</text>
+      {:else if i % every === 0}
+        <text class="fjs-chart-tick" x={mid(i)} y={H - M.bottom + 18} text-anchor="middle">{tickX(r[x])}</text>
       {/if}
     {/each}
 
-    {#if type === 'line'}
+    {#each keys as k}
+      <g class={k.cls}>
+        {#if type === 'line' && !flip}
+          <line class="fjs-chart-key-mark" x1={k.x} x2={k.x + 16} y1="14" y2="14" />
+        {:else}
+          <rect class="fjs-chart-key-mark" x={k.x} y="9" width="10" height="10" rx="2" />
+        {/if}
+        <text class="fjs-chart-key-text" x={k.x + (type === 'line' && !flip ? 22 : 16)} y="14" dominant-baseline="middle">{k.name}</text>
+      </g>
+    {/each}
+
+    {#if type === 'line' && !flip}
       <path class="fjs-chart-area" d={areaPath} />
+      {#if compare}
+        <path class="fjs-chart-line fjs-chart-compare" d={priorPath} />
+      {/if}
       <path class="fjs-chart-line" d={linePath} />
       {#each values as v, i}
         {#if v != null && (labelled.has(i) || active === i)}
-          <circle class="fjs-chart-dot" cx={xAt(i)} cy={yAt(v)} r="4" />
+          <circle class="fjs-chart-dot" cx={mid(i)} cy={at(v)} r="4" />
         {/if}
       {/each}
     {:else}
       {#each values as v, i}
-        <path class="fjs-chart-bar" class:fjs-chart-active={active === i} d={columnPath(i)} />
+        <path class="fjs-chart-bar" class:fjs-chart-active={active === i} d={barPath(ownAt(i), v)} />
+        {#if compare}
+          <path class="fjs-chart-bar fjs-chart-compare" class:fjs-chart-active={active === i} d={barPath(priorAt(i), prior[i])} />
+        {/if}
       {/each}
+    {/if}
+
+    {#if ref != null}
+      <line class="fjs-chart-reference"
+        x1={flip ? at(ref) : M.left} x2={flip ? at(ref) : W - M.right}
+        y1={flip ? M.top : at(ref)}  y2={flip ? H - M.bottom : at(ref)} />
+      <text class="fjs-chart-reference-text"
+        x={flip ? at(ref) : W - M.right} y={flip ? H - M.bottom + 16 : at(ref) - 6}
+        text-anchor={flip ? 'middle' : 'end'}>{refText}</text>
     {/if}
 
     {#each values as v, i}
       {#if labelled.has(i) && active !== i}
-        <text class="fjs-chart-value" x={labelX(i)} y={v >= 0 ? yAt(v) - 8 : yAt(v) + 16} text-anchor={anchorAt(i)}>{format(v)}</text>
+        {#if flip}
+          <text class="fjs-chart-value" x={v >= 0 ? at(v) + 6 : at(v) - 6} y={ownAt(i)} text-anchor={v >= 0 ? 'start' : 'end'} dominant-baseline="middle">{format(v)}</text>
+        {:else}
+          <text class="fjs-chart-value" x={labelX(i)} y={v >= 0 ? at(v) - 8 : at(v) + 16} text-anchor={anchorAt(i)}>{format(v)}</text>
+        {/if}
       {/if}
     {/each}
 
     <!-- The hit targets: a whole band each, bigger than any mark, focusable,
          and each carrying its own category and value for a reader that never
-         hovers. -->
+         hovers. Down the page the band runs the full width, so pointing at a
+         name reads its bar. -->
     {#each rows as r, i}
       <rect
         class="fjs-chart-hit"
-        x={M.left + band * i} y={M.top} width={band} height={innerH}
+        x={flip ? 0 : M.left + band * i} y={flip ? M.top + band * i : M.top}
+        width={flip ? W : band} height={flip ? band : innerH}
         tabindex={i === stopAt ? 0 : -1}
-        aria-label={`${formatX(r[x])}: ${valueText(values[i])}`}
+        aria-label={named(i)}
         data-index={i}
         onpointerenter={() => { active = i }}
         onpointerleave={() => { if (active === i) active = null }}
         onfocus={() => { active = i; stop = i }}
         onkeydown={(e) => step(e, i)}
         onblur={() => { if (active === i) active = null }}
-      ><title>{formatX(r[x])}: {valueText(values[i])}</title></rect>
+      ><title>{named(i)}</title></rect>
     {/each}
 
     {#if tip}
       <g class="fjs-chart-tip" pointer-events="none">
-        <rect x={tip.x} y={tip.y} width={tip.w} height="42" rx="6" />
+        <rect x={tip.x} y={tip.y} width={tip.w} height={tip.h} rx="6" />
         <text class="fjs-chart-tip-value" x={tip.x + 10} y={tip.y + 18}>{tip.value}</text>
         <text class="fjs-chart-tip-label" x={tip.x + 10} y={tip.y + 34}>{tip.cat}</text>
+        {#if tip.then}
+          <text class="fjs-chart-tip-label fjs-chart-tip-compare" x={tip.x + 10} y={tip.y + 50}>{tip.then}</text>
+        {/if}
       </g>
     {/if}
   {/if}
@@ -244,8 +367,27 @@
   .fjs-chart-active { opacity: 0.75; }
   .fjs-chart-line  { fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
   .fjs-chart-area  { fill: currentColor; opacity: 0.1; }
+  /* The compared series is a lighter step of the same tone, and a line is
+     dashed as well, so the pair stays two marks in print and to a reader who
+     cannot tell the two lightnesses apart. */
+  .fjs-chart-bar.fjs-chart-compare  { opacity: 0.4; }
+  .fjs-chart-bar.fjs-chart-compare.fjs-chart-active { opacity: 0.3; }
+  .fjs-chart-line.fjs-chart-compare { opacity: 0.55; stroke-dasharray: 6 4; }
   /* The ring in the surface color keeps a dot legible where it crosses the line. */
   .fjs-chart-dot   { fill: currentColor; stroke: var(--surface); stroke-width: 2; }
+  /* A threshold is dashed and in ink: a dash is what reads as "a line to
+     compare against", which is why the grid itself is never dashed. Its label
+     carries a surface halo, so a bar under it never swallows the text. */
+  .fjs-chart-reference { stroke: var(--ink-mute); stroke-width: 1; stroke-dasharray: 4 4; }
+  .fjs-chart-reference-text {
+    fill: var(--ink-soft); font-size: var(--text-2xs); font-weight: 600;
+    paint-order: stroke; stroke: var(--surface); stroke-width: 3; stroke-linejoin: round;
+  }
+  rect.fjs-chart-key-mark { fill: currentColor; }
+  line.fjs-chart-key-mark { stroke: currentColor; stroke-width: 2; }
+  .fjs-chart-key-compare .fjs-chart-key-mark { opacity: 0.4; }
+  .fjs-chart-key-compare line.fjs-chart-key-mark { opacity: 0.55; stroke-dasharray: 6 4; }
+  .fjs-chart-key-text { fill: var(--ink-soft); font-size: var(--text-2xs); }
   .fjs-chart-hit   { fill: transparent; outline: none; }
   .fjs-chart-hit:focus-visible { stroke: var(--ink-mute); stroke-width: 1; }
   .fjs-chart-tip rect   { fill: var(--surface-raised); stroke: var(--rule); }

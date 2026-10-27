@@ -290,7 +290,7 @@ type MonitorChannelRef {
 }
 
 /// What `alerts.snooze` accepts. The 1..MAX_SNOOZE_MINUTES bound is the
-/// method's, since the ceiling lives in core/alerting.ts.
+/// method's, since the ceiling lives in domain/alert/alerting.ts.
 type AlertSnooze {
   minutes Int
 }
@@ -480,7 +480,7 @@ enum ServerEventKind {
   recipe_ran recipe_failed cleanup_queued cleanup_ran cleanup_failed
   // Disks.
   volume_removed volumes_pruned
-  // A posture control moving between passing and failing (`core/posture.ts`).
+  // A posture control moving between passing and failing (`domain/host/posture.ts`).
   posture_failed posture_restored
 }
 enum ProviderKind   { custom hetzner digitalocean cloudflare }
@@ -1678,7 +1678,7 @@ model App {
   source        Json        @default("{}")
 
   // How the machine starts the container: each column is a `docker run` flag,
-  // built into the release by `core/runtime.ts`, the one reader. Columns and not
+  // built into the release by `domain/release/runtime.ts`, the one reader. Columns and not
   // a `Json` config (`FJS-D227`): the blob they replaced was read by the machine
   // to decide `-p` and `-v`, while `port` sat beside it unread and a blueprint's
   // limits were copied into it and applied by nothing (`FJS-1605`).
@@ -2403,7 +2403,7 @@ model DiskUsage {
 
 // One posture report from a machine's Outpost: what the box said about its own
 // security (`readings`, the Outpost's snake_case facts) and what
-// `core/posture.ts` graded them as when they arrived (`controls`). OBSERVED,
+// `domain/host/posture.ts` graded them as when they arrived (`controls`). OBSERVED,
 // like DiskUsage, and a row per report rather than one per machine, because
 // *when did this stop holding* is read off the ServerEvents a control moving
 // writes, and the report that moved it has to still be here to show.
@@ -2819,7 +2819,7 @@ model Monitor {
   retries          Int  @default(2)     @gte(0) @lte(10)
   retryIntervalSec Int  @default(120)   @gte(60)
   timeoutMs        Int  @default(10000) @gte(1000) @lte(60000)
-  // `200-299,301`: parsed by `core/probe.ts`, which is the one owner of what
+  // `200-299,301`: parsed by `domain/monitor/probe.ts`, which is the one owner of what
   // counts as a failure.
   acceptedStatus   String @default("200-299") @trim @length(3, 200)
   maxRedirects     Int  @default(10)    @gte(0) @lte(20)
@@ -3480,7 +3480,7 @@ model HubConfig {
   // The Server row that is the box this Basecamp runs on — what /hub/security/
   // grades and what Basecamp's own replica key is sent to. A slug is a
   // tenant's to choose, so it cannot say which row this is (`FJS-3488`).
-  // Written by `core/host-machine.ts` alone, never by `save`.
+  // Written by `domain/host/host-machine.ts` alone, never by `save`.
   hostServerId              String?   @unique @system
   hostServer                Server?   @relation("HubHost", fields: [hostServerId], references: [id], onDelete: SetNull)
 

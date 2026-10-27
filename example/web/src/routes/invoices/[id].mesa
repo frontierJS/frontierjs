@@ -53,8 +53,6 @@ title: Invoice
   let error   = null
   let busy    = false
 
-  const TONE = { issued: 'warning', paid: 'success', void: 'muted' }
-
   const columns = [
     { name: 'description', label: 'Item' },
     { name: 'period',      label: 'For' },

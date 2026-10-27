@@ -1,4 +1,4 @@
-// src/core/reachability.ts — has this machine gone away, and how would we know.
+// src/domain/host/reachability.ts — has this machine gone away, and how would we know.
 //
 // `ServerStatus.unreachable` was the target of NO transition: it appeared five
 // times as a from-state and nowhere as a to-state, so the machine could leave a

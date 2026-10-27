@@ -8,7 +8,7 @@
  */
 
 import { test, expect, describe } from 'bun:test'
-import { gradeProbe, nextState, parseStatusRanges, type StateSubject } from '../src/core/probe.ts'
+import { gradeProbe, nextState, parseStatusRanges, type StateSubject } from '../src/domain/monitor/probe.ts'
 
 const NOW = Date.parse('2026-10-14T12:00:00.000Z')
 

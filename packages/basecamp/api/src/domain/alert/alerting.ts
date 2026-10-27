@@ -1,4 +1,4 @@
-// src/core/alerting.ts — has this rule been breached?
+// src/domain/alert/alerting.ts — has this rule been breached?
 //
 // Pure. No database, no clock of its own, no app — the caller hands over the
 // points it read and the instant it read them at. That is what makes the
@@ -15,7 +15,7 @@
 // breach* for a series nobody is writing is the silence the store was built to
 // break.
 
-import type { ComparisonOp } from '../../../db/schema.d.ts'
+import type { ComparisonOp } from '../../../../db/schema.d.ts'
 
 /** One reading. `at` is epoch ms — `MetricPoint.at`'s own units. */
 export interface Reading { at: number; value: number }

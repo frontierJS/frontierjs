@@ -24,6 +24,7 @@ title: Subscription
   import { invoices }      from '@/resources/Invoice.mesa'
   import { session } from '@frontierjs/sierra/resource'
   import { day, span } from '@/lib/datetime.js'
+  import { toneFor } from '@/lib/status-tone.js'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../lib/money.js'
 
@@ -75,8 +76,6 @@ title: Subscription
   let toVersion = null
   let toSeats   = null
   let fields    = {}      // per-control messages, from the service's 400
-
-  const TONE = { trialing: 'info', active: 'success', pastDue: 'warning', cancelled: 'muted' }
 
   // The lifecycle as the schema states it. `cancelled` is off the ladder for
   // the reason `Order`'s screen leaves `cancelled` off its own: it is not
@@ -395,8 +394,7 @@ title: Subscription
     {#snippet row(inv)}
       <tr data-invoice={inv.id} data-number={inv.number}>
         <td><a href={'/invoices/' + inv.id + '/'}><Mono size="xs">{inv.number}</Mono></a></td>
-        <td><Pill tone={inv.status === 'paid' ? 'success' : inv.status === 'void' ? 'muted' : 'warning'}
-                  data-status={inv.status}>{inv.status}</Pill></td>
+        <td><Pill tone={toneFor(inv.status)} data-status={inv.status}>{inv.status}</Pill></td>
         <td class="text-muted">{span(inv.periodStart, inv.periodEnd)}</td>
         <td class="text-right" data-total={inv.total}>{money(inv.total)}</td>
         <td class="text-muted">{day(inv.dueOn)}</td>

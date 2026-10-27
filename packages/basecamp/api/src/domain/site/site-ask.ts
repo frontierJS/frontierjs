@@ -1,4 +1,4 @@
-// src/core/site-ask.ts — an owner asks a model for a change across their
+// src/domain/site/site-ask.ts — an owner asks a model for a change across their
 // draft (`IDEAS/owner-editing.md` 4.1, `FJS-D1242`).
 //
 // **The run is the ask panel's.** `askArgv({ edit })` and the stream reader are
@@ -32,8 +32,8 @@ import { childEnv } from '@frontierjs/junction'
 import type { App } from '@frontierjs/junction'
 import { LOCKED_KEYS, changeRefusal } from '@frontierjs/site-kit/editable'
 import { exportDraftContent, filesUnder, sitesDir, treeFromExport, type Asked, type GitSite } from './site-checkout.ts'
-import { isGit } from './app-source.ts'
-import { env } from './env.ts'
+import { isGit } from '../release/app-source.ts'
+import { env } from '../../core/env.ts'
 
 export interface AskStatus {
   /** `queued` and `running` are on their way; `ready` left a tree, `failed` says why it did not; `kept` and `undone` are the owner's. */

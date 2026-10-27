@@ -1,4 +1,4 @@
-// src/core/server-metrics.ts — a machine's readings, kept.
+// src/domain/host/server-metrics.ts — a machine's readings, kept.
 //
 // `Server.health` is a snapshot: one Json column, one row per machine,
 // overwritten on every check-in. So *what was this box doing on Tuesday* was

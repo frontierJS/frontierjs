@@ -27,7 +27,7 @@ import { mcp }         from '@frontierjs/mcp'
 
 import { env }                       from './core/env.ts'
 import { buildProviders }            from './providers/index.ts'
-import { createWorkbench }           from './core/workbench.ts'
+import { createWorkbench }           from './domain/workbench/workbench.ts'
 import { workbenchTerminal }         from './plugins/workbench-terminal.ts'
 import { LEVELS }                                from '@frontierjs/litestone'
 import { apply }                                 from '@frontierjs/litestone/migrations'
@@ -41,7 +41,7 @@ import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts
 import { registerPushReceivers } from './plugins/push.ts'
 import { dependencyTargets }  from './core/dependencies.ts'
 import { accountMail }         from './core/account-mail.ts'
-import { isPreviewOrigin }      from './core/site-preview.ts'
+import { isPreviewOrigin }      from './domain/site/site-preview.ts'
 import { registerAllAccounts } from './providers/compute/accounts.ts'
 import { registerAllDestinations } from './providers/storage/index.ts'
 import { S3_SIGNER, s3Signer }    from './providers/storage/s3.ts'
@@ -400,7 +400,7 @@ export async function buildBasecampApp(
   // ── Orion — a workspace's automations ─────────────────────────────────
   // AFTER Caravan: a run is one job, and its handler has to be registered
   // before the queue starts. `basecamp.page` is how a flow reaches a
-  // NotificationChannel — through `core/delivery.ts`, not a copy of it.
+  // NotificationChannel — through `domain/notify/delivery.ts`, not a copy of it.
   app.configure(orion({ plugins: [basecampNodes(app)] }))
 
   // ── Mail ──────────────────────────────────────────────────────────────
@@ -419,7 +419,7 @@ export async function buildBasecampApp(
   // AFTER the mailer, because the email transport resolves `app.mail` at
   // registration and junction checks plugin order at startup rather than at the
   // first send. Where there is NO provider the transport is not declared at all
-  // and `core/notify.ts` drops `email` per recipient — a person who asked for it
+  // and `domain/notify/notify.ts` drops `email` per recipient — a person who asked for it
   // on an app that cannot mail must still get their in-app copy, and `notify()`
   // throws on an undeliverable transport before delivering any of them.
   app.configure(notifications({

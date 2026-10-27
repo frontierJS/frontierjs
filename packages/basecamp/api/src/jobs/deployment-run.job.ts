@@ -49,15 +49,15 @@
 import { defineJob }       from '@frontierjs/caravan'
 import { resolveExecutor, isExecutor, PULL_TIMEOUT_MS, BUILD_TIMEOUT_MS, DEPLOY_TIMEOUT_MS } from '../providers/executor.ts'
 import type { Executor }    from '../providers/executor.ts'
-import { notifyPeople, workspaceMembers } from '../core/notify.ts'
+import { notifyPeople, workspaceMembers } from '../domain/notify/notify.ts'
 import { runsAsCaller }         from './context.ts'
 import domainDns                from './domain-dns.job.ts'
 import { syncReplicasOn }       from './replicate-sync.job.ts'
-import { isInline, isGit, inlineFilesFor } from '../core/app-source.ts'
-import { siteBranch } from '../core/site-checkout.ts'
-import { releaseSite } from '../core/site-publish.ts'
-import { releaseEnv } from '../core/variables.ts'
-import { runtimeOf, routedHosts, routedPaths, routedRedirects, markRunning, type Runtime } from '../core/runtime.ts'
+import { isInline, isGit, inlineFilesFor } from '../domain/release/app-source.ts'
+import { siteBranch } from '../domain/site/site-checkout.ts'
+import { releaseSite } from '../domain/site/site-publish.ts'
+import { releaseEnv } from '../domain/release/variables.ts'
+import { runtimeOf, routedHosts, routedPaths, routedRedirects, markRunning, type Runtime } from '../domain/release/runtime.ts'
 import { takeAppBackup, destinationFor } from './app-backup-run.job.ts'
 import type { App }         from '@frontierjs/junction'
 import type { StepStatus } from '../../../db/schema.d.ts'
@@ -492,7 +492,7 @@ function runner(app: App) {
     return { output: `step '${step.name}' needs no work for an inline app`, digest }
   }
 
-  // A static site built from git (`core/site-publish.ts`): the site's branch
+  // A static site built from git (`domain/site/site-publish.ts`): the site's branch
   // at its head, built and deployed by the machine in one call, and the
   // commit it built recorded — what an owner's next publish measures from.
   async function runSiteStep(

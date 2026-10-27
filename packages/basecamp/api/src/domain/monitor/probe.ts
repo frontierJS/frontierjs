@@ -1,9 +1,9 @@
-// src/core/probe.ts — is this URL up, and what does the answer do to the monitor.
+// src/domain/monitor/probe.ts — is this URL up, and what does the answer do to the monitor.
 //
 // Pure: no database, no clock, no fetch. `jobs/monitor-sweep.job.ts` makes the
 // request and writes the rows; the two judgments live here so a test can stand
-// at a chosen status code and streak (`core/alerting.ts` and
-// `core/reachability.ts` are the same split).
+// at a chosen status code and streak (`domain/alert/alerting.ts` and
+// `domain/host/reachability.ts` are the same split).
 //
 // ─── Two judgments, and they are separate ────────────────────────────────
 //

@@ -26,7 +26,7 @@
 
 import { test, expect, describe } from 'bun:test'
 import { createVitals }           from '../../../outpost/src/vitals.js'
-import { SERVER_READINGS, SERVER_UNKEPT } from '../src/core/server-metrics.ts'
+import { SERVER_READINGS, SERVER_UNKEPT } from '../src/domain/host/server-metrics.ts'
 
 /** A machine that is up and answering — the ordinary case, where every reading
  *  this app keeps must be present. The numbers do not matter here; the KEYS

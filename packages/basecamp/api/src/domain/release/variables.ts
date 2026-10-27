@@ -1,4 +1,4 @@
-// src/core/variables.ts
+// src/domain/release/variables.ts
 // What a container's environment is, and the one place a secret value is read.
 //
 // A release records its variables when it is CREATED and the machine gets them
@@ -6,7 +6,7 @@
 // puts back what shipped. A secret is recorded as the id of its `Variable`,
 // because the snapshot is on every release read and must never hold the value.
 
-import type { BasecampDb } from './db.ts'
+import type { BasecampDb } from '../../core/db.ts'
 
 interface VariableRow { id: string; key: string; appId: string | null; secret: boolean; value: string | null }
 

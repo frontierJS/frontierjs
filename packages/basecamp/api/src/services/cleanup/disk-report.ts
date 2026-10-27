@@ -15,7 +15,7 @@
 // It is also where the disk picture is KEPT over time. The row is a snapshot —
 // `@@unique([serverId])`, overwritten every report — so the trend has to be
 // written at the same moment from the same numbers, or the two answer
-// differently about the same instant. `core/server-metrics.ts` owns what the
+// differently about the same instant. `domain/host/server-metrics.ts` owns what the
 // series are called; this file owns when they are written.
 
 // ─── The outpost's wire contract ───────────────────────────────────────────
@@ -31,7 +31,7 @@ export interface DiskReport {
   build_cache?: { size_bytes?: number; reclaimable_bytes?: number }
 }
 
-import { recordDiskUsage } from '../../core/server-metrics.ts'
+import { recordDiskUsage } from '../../domain/host/server-metrics.ts'
 import type { App }         from '@frontierjs/junction'
 
 const int = (n: unknown): number => Math.max(0, Math.round(Number(n) || 0))

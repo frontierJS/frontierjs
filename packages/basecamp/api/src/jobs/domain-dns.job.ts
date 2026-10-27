@@ -43,8 +43,8 @@
 import { defineJob }     from '@frontierjs/caravan'
 import { runsEitherWay } from './context.ts'
 import { executorOn, isExecutor } from '../providers/executor.ts'
-import { routedHosts, routedPaths, routedRedirects } from '../core/runtime.ts'
-import { isInline }      from '../core/app-source.ts'
+import { routedHosts, routedPaths, routedRedirects } from '../domain/release/runtime.ts'
+import { isInline }      from '../domain/release/app-source.ts'
 import type { App }         from '@frontierjs/junction'
 
 const domainDns = defineJob<{ domainId: string }>({

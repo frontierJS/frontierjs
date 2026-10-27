@@ -1,4 +1,4 @@
-// src/core/host-machine.ts — the box this Basecamp runs on, as a fleet machine.
+// src/domain/host/host-machine.ts — the box this Basecamp runs on, as a fleet machine.
 //
 // Two callers make it one: the *Use this Basecamp server* button
 // (`servers.useHost`, as the person) and `fli deploy` (`api/src/core/enroll-host.ts`,
@@ -16,8 +16,8 @@
 
 import { randomUUID }         from 'node:crypto'
 import { Conflict, NotFound } from '@frontierjs/junction'
-import { mintEnrollToken, installCommand, ENROLL_WINDOW_MS, OUTPOST_PORT } from '../providers/compute/enrollment.ts'
-import { env } from './env.ts'
+import { mintEnrollToken, installCommand, ENROLL_WINDOW_MS, OUTPOST_PORT } from '../../providers/compute/enrollment.ts'
+import { env } from '../../core/env.ts'
 
 export const HOST_SLUG = 'basecamp-host'
 const HUB = 'hub'

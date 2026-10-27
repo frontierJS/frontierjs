@@ -4,7 +4,7 @@
 //
 // Mounted at /variables. `?environmentId=<id>&appId=null` is an environment's
 // own; `?appId=<id>` is one app's. What a release merges from the two is
-// `core/variables.ts`.
+// `domain/release/variables.ts`.
 //
 // A secret's value is written to `secretValue`, which is `@encrypted` and so
 // absent from every read here. A secret is replaced, never read back.

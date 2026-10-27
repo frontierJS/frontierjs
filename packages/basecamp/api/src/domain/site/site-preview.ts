@@ -1,4 +1,4 @@
-// src/core/site-preview.ts — a draft's review link: the branch built with
+// src/domain/site/site-preview.ts — a draft's review link: the branch built with
 // `--preview` and uploaded as a version of the site's Worker, aliased by the
 // draft's name (`IDEAS/owner-editing.md` 1.3, `FJS-D1221`, `FJS-D1222`).
 //
@@ -29,13 +29,13 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { draftBranch, listDrafts, sitesDir, type GitSite } from './site-checkout.ts'
-import { createSecretResolver } from './credentials.ts'
-import { resolveExecutor, isExecutor, BUILD_TIMEOUT_MS } from '../providers/executor.ts'
-import { edgeConnectorFor } from '../providers/edge/index.ts'
-import { targetFor } from '../providers/compute/index.ts'
-import { sendVia, tokenRef } from '../providers/compute/accounts.ts'
-import { isGit } from './app-source.ts'
-import { env } from './env.ts'
+import { createSecretResolver } from '../../core/credentials.ts'
+import { resolveExecutor, isExecutor, BUILD_TIMEOUT_MS } from '../../providers/executor.ts'
+import { edgeConnectorFor } from '../../providers/edge/index.ts'
+import { targetFor } from '../../providers/compute/index.ts'
+import { sendVia, tokenRef } from '../../providers/compute/accounts.ts'
+import { isGit } from '../release/app-source.ts'
+import { env } from '../../core/env.ts'
 import type { App } from '@frontierjs/junction'
 
 export interface PreviewStatus {

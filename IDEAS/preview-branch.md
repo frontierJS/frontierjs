@@ -38,7 +38,7 @@ source, live data, and a PR as the gate. The combination is the ask.
 | --- | --- | --- |
 | Click an element, ask Claude to change it, hot-reload, Undo | the ask panel, steps 1–3 built | [`on-page-editing.md`](on-page-editing.md), `packages/cli/core/vite-ask.js`, `ask-claude.js` |
 | An edit run that can write ONLY under one directory | `askArgv({ edit })` — `Edit(<dir>/**)`, `dontAsk`, every settings source dropped | `packages/cli/core/ask-claude.js` |
-| A branch in its own worktree, pinned, with its own chat, diff panel, checks strip and reviewer | the Workbench's Fork (slice A built) | [`workbench-branches.md`](workbench-branches.md), `packages/basecamp/core/workbench-branch.ts` |
+| A branch in its own worktree, pinned, with its own chat, diff panel, checks strip and reviewer | the Workbench's Fork (slice A built) | [`workbench-branches.md`](workbench-branches.md), `packages/basecamp/domain/workbench/workbench-branch.ts` |
 | A port block for a second checkout of an app | `FJS-D841` — N×10000 on every port, `claimSession` owns it | `packages/cli/core/ports.js` |
 | A SPA that talks to an API on another origin | `VITE_API_URL` at build or dev, and the API's CORS allow-list | `packages/sierra/README.md` § the API's origin |
 | A UI build that cannot escalate against the API it talks to | Invariant 6 — gates enforced at the Data boundary, `x-gate` is an affordance | — |

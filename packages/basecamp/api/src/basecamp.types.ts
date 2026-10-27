@@ -2,7 +2,7 @@
 // The provider interfaces, and the slots this app adds to junction's App.
 
 import type { BasecampDb } from './core/db.ts'
-import type { Workbench }  from './core/workbench.ts'
+import type { Workbench }  from './domain/workbench/workbench.ts'
 
 // ─── Provider interfaces ──────────────────────────────────────────────────────
 // Junction covers: cache, events, scheduler, workers, mail, ai

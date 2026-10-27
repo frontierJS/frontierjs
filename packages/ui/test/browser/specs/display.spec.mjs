@@ -130,6 +130,83 @@ export async function run(t) {
   t.ok(!gapLine.line.split(/[ML ]+/).filter(Boolean).some(p => Math.abs(Number(p.split(',')[1]) - gapLine.zero) < 0.5),
     'and no point of the line sits on the zero line')
 
+  // Horizontal bars grow rightward from the zero rule and a negative one hangs
+  // left of it, every name sits whole in the gutter clear of the bars, and
+  // every bar carries its value, so the value axis draws no ticks.
+  const h = await t.evaluate(`
+    const svg = document.querySelector('#probe-chart-h svg');
+    const box = el => { const b = el.getBBox(); return { l: b.x, r: b.x + b.width, h: b.height } };
+    return {
+      bars:   [...svg.querySelectorAll('.fjs-chart-bar')].map(box),
+      zero:   Number(svg.querySelector('.fjs-chart-zero').getAttribute('x1')),
+      names:  [...svg.querySelectorAll('.fjs-chart-name')].map(n => ({ text: n.textContent, ...box(n) })),
+      values: [...svg.querySelectorAll('.fjs-chart-value')].map(v => v.textContent),
+      ticks:  svg.querySelectorAll('.fjs-chart-tick:not(.fjs-chart-name)').length,
+      ds:     [...svg.querySelectorAll('.fjs-chart-bar')].map(p => p.getAttribute('d')).join(' '),
+    };
+  `)
+  t.ok(!/NaN|Infinity/.test(h.ds), 'a horizontal bar has no NaN in its path')
+  t.ok(Math.abs(h.bars[0].l - h.zero) < 0.5 && h.bars[0].r > h.zero, 'a positive horizontal bar grows right from the zero rule')
+  t.ok(Math.abs(h.bars[2].r - h.zero) < 0.5 && h.bars[2].l < h.zero, 'a negative one hangs left of it')
+  t.ok(h.bars.every(b => b.h <= 24), 'no horizontal bar is thicker than 24 units')
+  t.is(JSON.stringify(h.names.map(n => n.text)), JSON.stringify(['Acme Valve Supply', 'Bolt', 'Corrigan Industrial']), 'every name is drawn whole in the gutter')
+  t.ok(Math.max(...h.names.map(n => n.r)) < Math.min(...h.bars.map(b => b.l)), 'and no name runs into a bar')
+  t.is(JSON.stringify(h.values), JSON.stringify(['40 u', '25 u', '-5 u']), 'every horizontal bar is labeled at its tip')
+  t.is(h.ticks, 0, 'so the value axis draws no ticks')
+  await t.clickAt('#probe-chart-h .fjs-chart-hit[data-index="0"]')
+  await t.press('ArrowDown')
+  t.is(await t.evaluate(`return document.querySelector('#probe-chart-h .fjs-chart-tip-label')?.textContent ?? null`), 'Bolt', 'the down arrow moves the readout to the next bar')
+
+  // A compared pair: two marks a band with a surface gap between them, the
+  // compared value inside the scale even where it is the largest, and a legend
+  // because two series are never told apart by lightness alone.
+  const cmp = await t.evaluate(`
+    const svg = document.querySelector('#probe-chart-cmp svg');
+    const box = el => { const b = el.getBBox(); return { l: b.x, r: b.x + b.width, top: b.y } };
+    return {
+      own:   [...svg.querySelectorAll('.fjs-chart-bar:not(.fjs-chart-compare)')].map(box),
+      prior: [...svg.querySelectorAll('.fjs-chart-bar.fjs-chart-compare')].map(box),
+      top:   Math.min(...[...svg.querySelectorAll('.fjs-chart-grid')].map(l => Number(l.getAttribute('y1')))),
+      keys:  [...svg.querySelectorAll('.fjs-chart-key-text')].map(k => k.textContent),
+      name:  svg.querySelector('.fjs-chart-hit[data-index="0"]').getAttribute('aria-label'),
+    };
+  `)
+  t.ok(cmp.own.length === 2 && cmp.prior.length === 2, 'a compared chart draws two bars a band')
+  t.ok(cmp.own.every((b, i) => cmp.prior[i].l - b.r >= 1.5), 'the compared bar sits after its own, a surface gap apart')
+  t.ok(cmp.prior[0].top >= cmp.top - 0.5, 'the largest compared value is inside the scale')
+  t.is(JSON.stringify(cmp.keys), JSON.stringify(['This year', 'Last year']), 'the legend names both series')
+  t.is(cmp.name, 'Jan: 10, Last year: 30', 'a mark is announced with its compared value')
+  await t.clickAt('#probe-chart-cmp .fjs-chart-hit[data-index="0"]')
+  t.is(await t.evaluate(`return document.querySelector('#probe-chart-cmp .fjs-chart-tip-compare')?.textContent ?? null`), 'Last year: 30', 'the readout carries the compared value')
+
+  const cmpLine = await t.evaluate(`
+    const svg = document.querySelector('#probe-chart-cmp-line svg');
+    const prior = svg.querySelector('.fjs-chart-line.fjs-chart-compare');
+    return { d: prior?.getAttribute('d') ?? '', dash: prior ? getComputedStyle(prior).strokeDasharray : 'none' };
+  `)
+  t.ok(cmpLine.d && !/NaN|Infinity/.test(cmpLine.d), 'a compared line is drawn, with no NaN')
+  t.ok(cmpLine.dash && cmpLine.dash !== 'none', 'and dashed, so it is not told apart by lightness alone')
+
+  // A reference above every value is still inside the plot, in both
+  // orientations, and its label names it with its value.
+  const ref = await t.evaluate(`
+    const one = sel => {
+      const svg = document.querySelector(sel + ' svg');
+      const line = svg.querySelector('.fjs-chart-reference');
+      const vb = svg.viewBox.baseVal;
+      return {
+        x: Number(line.getAttribute('x1')), y: Number(line.getAttribute('y1')), w: vb.width,
+        top: Math.min(...[...svg.querySelectorAll('.fjs-chart-grid')].map(l => Number(l.getAttribute('y1')))),
+        text: svg.querySelector('.fjs-chart-reference-text').textContent,
+      };
+    };
+    return { v: one('#probe-chart-ref'), h: one('#probe-chart-ref-h') };
+  `)
+  t.ok(ref.v.y >= ref.v.top - 0.5, 'a reference above every column is inside the scale')
+  t.is(ref.v.text, 'Target 50', 'and labeled with its name and value')
+  t.ok(ref.h.x > 0 && ref.h.x < ref.h.w, 'a horizontal reference is inside the plot')
+  t.is(ref.h.text, 'Reorder at 50', 'and labeled too')
+
   const sparkGap = await t.evaluate(`
     const pts = sel => [...document.querySelectorAll(sel + ' polyline')].map(p => p.getAttribute('points'));
     return { undef: pts('#probe-sparkline-undef'), nul: pts('#probe-sparkline-null') };

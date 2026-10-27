@@ -2166,7 +2166,7 @@ describe('what the machine feels like', () => {
   })
 
   test('the heartbeat carries the three keys basecamp keeps as series', async () => {
-    // `core/server-metrics.ts`'s KEPT list is `cpu`/`memory`/`disk`, and for as
+    // `domain/host/server-metrics.ts`'s KEPT list is `cpu`/`memory`/`disk`, and for as
     // long as this reporter sent `load` and `memory` two of the three series
     // were never written and the card drew one bar (`FJS-1027`).
     const sent = []

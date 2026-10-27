@@ -80,7 +80,7 @@ title: Hub backups
   // An archive holds `Secret.data` and the fleet's secret Variables as
   // ciphertext under ENCRYPTION_KEY, which never travels with it. Whether a
   // copy is kept off this box is `hub.key-escrowed`, graded by the one grader
-  // (`core/posture.ts`) and read here as the control it is, so this line and
+  // (`domain/host/posture.ts`) and read here as the control it is, so this line and
   // /hub/security/ cannot disagree. Attesting is a person's word: the server
   // records when and the key's digest, and a regenerated key voids it.
   let escrow    = null

@@ -5460,7 +5460,7 @@ describe('app-layout grades the src/ layout (FJS-1888)', () => {
 
   test('a clean tree, with the scaffold files where fli new writes them, finds nothing', () => {
     expect(layout('lay-clean', {
-      'web/src/main.js': '\n', 'web/src/App.mesa': '<p>a</p>\n', 'web/src/lib/datetime.js': '\n', 'web/src/lib/db.d.ts': '\n',
+      'web/src/main.js': '\n', 'web/src/App.mesa': '<p>a</p>\n', 'web/src/lib/sugar.js': '\n', 'web/src/lib/db.d.ts': '\n',
       'web/src/components/Card.mesa': '<p>c</p>\n', 'web/src/lib/money.js': '\n',
       'api/src/routes/hook.ts': "app.post('/hook', () => {})\n",
     })).toEqual([])

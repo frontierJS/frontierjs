@@ -236,6 +236,59 @@
 }
 
 /*
+ * A group that folds: the label is the <summary> of a <details> that holds
+ * the group's list, so open and closed, the keyboard and the announcement
+ * are the platform's (a Shell's `foldable`). The caret is disclosure.css's,
+ * drawn in the label's own ink, and the list opens the way a .disclosure's
+ * body does.
+ *
+ *   <details open>
+ *     <summary class="navlist-label">Sales</summary>
+ *     <ul class="navlist">…</ul>
+ *   </details>
+ */
+summary.navlist-label {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  gap:             var(--space-sm);
+  border-radius:   var(--btn-radius);
+  cursor:          pointer;
+  user-select:     none;
+  list-style:      none;
+  transition:      color var(--motion-fast);
+}
+summary.navlist-label::-webkit-details-marker {
+  display: none;
+}
+summary.navlist-label:hover {
+  color: var(--ink);
+}
+summary.navlist-label::after {
+  content:       "";
+  inline-size:   0.35rem;
+  block-size:    0.35rem;
+  border-right:  2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform:     rotate(-45deg);
+  transition:    transform var(--motion-base) var(--motion-ease);
+  flex-shrink:   0;
+}
+details[open] > summary.navlist-label::after {
+  transform: rotate(45deg);
+}
+details:has(> summary.navlist-label)::details-content {
+  block-size: 0;
+  overflow:   hidden;
+  transition:
+    block-size         var(--motion-base) var(--motion-ease),
+    content-visibility var(--motion-base) allow-discrete;
+}
+details[open]:has(> summary.navlist-label)::details-content {
+  block-size: auto;
+}
+
+/*
  * ── Nav in a rail ───────────────────────────────────────────────────
  *
  * frame.css owns .sidebar.rail, what it is and when it opens; what it does

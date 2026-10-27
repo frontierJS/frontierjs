@@ -33,13 +33,13 @@
 //   POST /drafts  redeem  { appId, code, verifier } — that code, for a key reaching only drafts
 //
 // Opening a draft and every save that changes a file queue its preview
-// (`core/site-preview.ts`), and `list` answers each draft's last one, and
-// its last ask (`core/site-ask.ts`): a model's run over a copy of the draft's
+// (`domain/site/site-preview.ts`), and `list` answers each draft's last one, and
+// its last ask (`domain/site/site-ask.ts`): a model's run over a copy of the draft's
 // content, which leaves a tree and commits nothing until the owner keeps it.
 //
 // Publish writes a `Deployment` through asSystem() — the publisher may be a
 // member of nothing, so the release is the app's, confined by the grant read
-// here — and `core/site-publish.ts` runs it. Every refusal past the grant is
+// here — and `domain/site/site-publish.ts` runs it. Every refusal past the grant is
 // a failed step on that release, so `list` answers the site's last publish.
 //
 // What an owner may write is site-kit's rule (`FJS-D1226`), asked here by
@@ -58,7 +58,7 @@
 //
 // A photo is a front-matter value naming one of the site's raster photos
 // (`FJS-D1407`), its words the path's `?text=` (`FJS-D1406`). An upload is
-// re-encoded here (`core/site-photo.ts`, `FJS-D1408`) and lands in the folder
+// re-encoded here (`domain/site/site-photo.ts`, `FJS-D1408`) and lands in the folder
 // of the photo it replaces, named for the upload; the old file stays, since
 // another page or a template may still name it.
 //
@@ -83,19 +83,19 @@ import { parseFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 import { splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 import { locateText } from '@frontierjs/toolbelt/textedit'
 import { db } from '../../core/resource.ts'
-import { isGit } from '../../core/app-source.ts'
+import { isGit } from '../../domain/release/app-source.ts'
 import {
   CheckoutError, StaleDraft, commitTree, diffTree, draftFiles, listDrafts, openDraft, readDraftFile, readDraftFolder,
   revertDraft, revertOnDraft, saveDraftFile, saveDraftFiles, shipped, type Author, type FileChange, type GitSite,
-} from '../../core/site-checkout.ts'
-import { PhotoRefused, reencodePhoto } from '../../core/site-photo.ts'
-import { isSitePreviewOrigin, markPreview, previewStatuses } from '../../core/site-preview.ts'
+} from '../../domain/site/site-checkout.ts'
+import { PhotoRefused, reencodePhoto } from '../../domain/site/site-photo.ts'
+import { isSitePreviewOrigin, markPreview, previewStatuses } from '../../domain/site/site-preview.ts'
 import { dispatchPreview } from '../../jobs/site-preview.job.ts'
 import { dispatchAsk } from '../../jobs/site-ask.job.ts'
-import { ASK_MAX_REQUEST, NO_KEY, askBusy, askStatuses, dropAsk, markAsk, queueAsk, type AskStatus } from '../../core/site-ask.ts'
+import { ASK_MAX_REQUEST, NO_KEY, askBusy, askStatuses, dropAsk, markAsk, queueAsk, type AskStatus } from '../../domain/site/site-ask.ts'
 import { env } from '../../core/env.ts'
 import { dispatchPublish } from '../../jobs/site-publish.job.ts'
-import { PUBLISH_STEPS, type PublishSnapshot } from '../../core/site-publish.ts'
+import { PUBLISH_STEPS, type PublishSnapshot } from '../../domain/site/site-publish.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 import { maskToken } from '../api-keys/api-keys.service.ts'
 

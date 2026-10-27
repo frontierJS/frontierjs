@@ -1,4 +1,4 @@
-// src/core/app-source.ts
+// src/domain/release/app-source.ts
 // What `App.source` MEANS — the one place that reads the blob.
 //
 // The column is `Json @default("{}")`, so until now it was whatever the thing

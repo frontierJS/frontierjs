@@ -72,7 +72,7 @@ WORKDIR /app
 
 COPY --from=build /app /app
 
-# core/site-checkout.ts runs git for every draft read and save, and an ssh
+# domain/site/site-checkout.ts runs git for every draft read and save, and an ssh
 # remote needs the ssh client; the slim base ships neither, so /drafts fails
 # only once deployed. The build itself runs on the App's machine (FJS-D1251).
 RUN apt-get update \

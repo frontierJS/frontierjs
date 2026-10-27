@@ -23,7 +23,7 @@ replace it. What that takes is below, and most of it already exists.
 | --- | --- | --- |
 | Machine liveness: `lastHeartbeatAt`, sweep to `unreachable`, `server_unreachable` notification | `basecamp/api/src/jobs/server-reachability.job.ts` | **the shape of the probe job**: a cron, `@@transitions`-guarded state change, an event row, `notifyPeople` after the move |
 | Threshold alerting over a metric series, with `no-data` ≠ resolved | `jobs/alert-evaluate.job.ts`, `metrics` (`FJS-956`) | latency alerts, unchanged — a probe writes `monitor.latencyMs{monitorId}` |
-| Delivery: `NotificationChannel` (`slack pagerduty email webhook`) + per-person `NotificationPreference` | schema + `services/notification-preferences/kinds.ts` | down/up delivery, via a `MonitorChannel` join shaped like `AlertRuleChannel` |
+| Delivery: `NotificationChannel` (`slack pagerduty email webhook`) + per-person `NotificationPreference` | schema + `domain/notify/kinds.ts` | down/up delivery, via a `MonitorChannel` join shaped like `AlertRuleChannel` |
 | A one-shot app health probe | Outpost `POST /health-check`, called once by `deployment-run.job.ts:278` | nothing: that path is for deciding whether a deploy succeeded, and it asks from inside the box |
 | `service_health` widget | `services/dashboards/kinds.ts` | superseded for URLs by an `uptime` widget |
 
@@ -123,7 +123,7 @@ carries Kuma's `monitor_tag` over by name.
   `status != paused AND nextCheckAt <= now` across workspaces via `asSystem()`,
   bounded concurrency (~16), with a per-probe `AbortSignal.timeout(timeoutMs)`.
 - **The grader is pure and exported**, `gradeProbe(monitor, response|error) → {ok, message}`,
-  with no DB and no clock, as `core/alerting.ts` already is. It owns status-range
+  with no DB and no clock, as `domain/alert/alerting.ts` already is. It owns status-range
   parsing (`200-299,301`), invert and redirects. It is the one owner of *is this a
   failure* (Invariant 4) and it is where the unit tests go.
 - **State machine**: `ok` resets `failStreak` and moves `down → up`. A failure
@@ -144,7 +144,7 @@ carries Kuma's `monitor_tag` over by name.
 
 ### Delivery
 
-Two new kinds in `notification-preferences/kinds.ts`, `monitor_down` and
+Two new kinds in `domain/notify/kinds.ts`, `monitor_down` and
 `monitor_up`. The same two-addressee split as `alert-evaluate`: the monitor's
 channels page the workspace, and members get a `Notification` they can mute.
 `resendEvery > 0` re-sends while down.
@@ -178,7 +178,7 @@ before Kuma is turned off.
    *Proves:* a monitor on a URL that returns 502 goes down after N retries and
    the channel gets one message, then one on recovery.
    - [x] 1.1 Schema (`Monitor`, `MonitorCheck`, `MonitorEvent`, `MonitorChannel`),
-     `core/probe.ts` (`gradeProbe`, `nextState`), `jobs/monitor-sweep.job.ts`,
+     `domain/monitor/probe.ts` (`gradeProbe`, `nextState`), `jobs/monitor-sweep.job.ts`,
      `monitor_down`/`monitor_up`, the `monitors` service. Proved by
      `api/test/probe.test.ts`, `api/test/monitor-sweep.test.ts` (a real
      listener: 502 → retries → one page → recovery) and `services.test.ts`.

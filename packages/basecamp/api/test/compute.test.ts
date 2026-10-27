@@ -604,7 +604,7 @@ describe('a machine claims its own credential', () => {
   // step it never ran.
   test('every control hardened at install names a marker in the script, and no marker is without one', async () => {
     const { installScript } = await import('../src/providers/compute/enrollment.ts')
-    const { HARDENED_AT_INSTALL, CONTROL_IDS } = await import('../src/core/posture.ts')
+    const { HARDENED_AT_INSTALL, CONTROL_IDS } = await import('../src/domain/host/posture.ts')
     const script  = installScript()
     const markers = [...script.matchAll(/^# posture: (\S+)$/gm)].map(m => m[1])
     expect(HARDENED_AT_INSTALL.length).toBeGreaterThan(0)
@@ -1885,7 +1885,7 @@ describe('the hostnames a release routes', () => {
   // so the read is graded against the real schema: a deleted row, a redirect
   // and another app's name must not reach the machine.
   test('are the app\'s live, non-redirecting Domains, and nothing else', async () => {
-    const { routedHosts } = await import('../src/core/runtime.ts')
+    const { routedHosts } = await import('../src/domain/release/runtime.ts')
     const sys  = env.system as any
     const tag  = Math.random().toString(36).slice(2, 8)
     const proj = await sys.project.create({ data: { workspaceId: ws.id, name: 'P', slug: `p-${tag}` } })
@@ -1905,7 +1905,7 @@ describe('the hostnames a release routes', () => {
 
     expect(await routedHosts(app.db, web.id)).toEqual([`shop-${tag}.test`, `store-${tag}.test`])
     // The redirect is sent beside them (FJS-1615), a bare hostname read as https.
-    const { routedRedirects } = await import('../src/core/runtime.ts')
+    const { routedRedirects } = await import('../src/domain/release/runtime.ts')
     await domain(web.id, 'bare', { redirectTo: `shop-${tag}.test` })
     expect(await routedRedirects(app.db, web.id)).toEqual([
       { host: `bare-${tag}.test`, to: `https://shop-${tag}.test` },

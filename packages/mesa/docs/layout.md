@@ -105,7 +105,10 @@ src/
                          first, so of two `<Esc>` the newest answers until
                          disposed; a chord a browser takes first (toolbelt's
                          `browserOwned`) throws there and at keys()'s attach.
-                         result.js is the
+                         datetime.js is dt/at/ago, toolbelt's createDatetime
+                         over the zone the module loads in; no host rule, so
+                         a terminal reads its own zone and a server render
+                         the server's (`FJS-D1543`). result.js is the
                          one { ok, via, reason } an action returns;
                          browser.d.ts states each server answer
   keys.js              — @frontierjs/mesa/keys: `keys(() => ({ active, on }))`,

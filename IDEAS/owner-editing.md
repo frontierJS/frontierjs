@@ -24,7 +24,7 @@ Framer's and Webflow Editor's case, with the layout locked and a publish step.
 - **It is a module of `packages/basecamp`** (`FJS-D921`), which already holds
   the Cloudflare account, the DNS writes, the release record and an App whose
   `source` can be `{ kind: 'git', repo, branch, path }`
-  (`api/src/core/app-source.ts`).
+  (`api/src/domain/release/app-source.ts`).
 - **A preview build stamps `data-fjs-loc`** (`FJS-D838`), and a preview deploy
   is a Version URL on the site's own Worker, named by its git branch
   (`FJS-D1221`, `FJS-D1222`).
@@ -453,7 +453,7 @@ Basecamp itself lists drafts and history and holds the grants.
 - ~~**Q26 — Where a site's Anthropic key lives (4.1).**~~ **Answered 2026-10-22 (`FJS-D1424`): B — one `ANTHROPIC_API_KEY` in basecamp's env for every site, billed to whoever runs basecamp. Not per site.** `FJS-D1242` rules "an
   API key and a spend limit per site in basecamp". The run is `claude -p`
   (`askArgv({ edit })`), which takes a key as `ANTHROPIC_API_KEY` in its
-  env. The sibling in this module is `cloudflareFor` (`core/site-preview.ts`):
+  env. The sibling in this module is `cloudflareFor` (`domain/site/site-preview.ts`):
   a workspace Secret, `provider_key` with `providerKind: cloudflare`, picked by
   the column that names it or by being the only one. Prior art meters AI per
   account, not per site: Webflow pools AI credits per Workspace across its
@@ -628,7 +628,7 @@ preview link shows it, Publish ships it, and the commit carries their name.
     built from git, so `app_editor` is in `NOT_SEEDED` until 1.2 seeds one.
 - [x] 1.2 Edit a file's prose and its content keys in a form. A save commits to
   the draft branch (Q3, Q4).
-  **Built 2026-10-18.** `core/site-checkout.ts` keeps a bare clone per App
+  **Built 2026-10-18.** `domain/site/site-checkout.ts` keeps a bare clone per App
   under `SITES_DIR` and fetches it before every read and save. A draft is
   `draft/<slug>`, opened by name (Q11), and each save is one commit built
   through a temporary index and pushed (Q9), authored and committed as the
@@ -661,7 +661,7 @@ preview link shows it, Publish ships it, and the commit carries their name.
   removes the checkout. It answers the commit it built and the aliased URL.
   The token (Q15) reaches only the upload's container, named by `-e` and
   valued in the docker client's environment, never argv. Basecamp's
-  `core/site-preview.ts` picks the workspace's Cloudflare account (the one its
+  `domain/site/site-preview.ts` picks the workspace's Cloudflare account (the one its
   ingress zone names, else its only one), reads the account id off that zone,
   sends the build to the App's placement, and keeps each draft's last preview
   in `<SITES_DIR>/<appId>.previews.json`. The `site:preview` job is
@@ -692,7 +692,7 @@ preview link shows it, Publish ships it, and the commit carries their name.
   or undeployed commits (Q5) each refuse by name.
   **Built 2026-10-20.** `drafts.publish` (the `publish` grant) writes a
   `Deployment` through asSystem() with trigger `publish` and four steps, and
-  the `site:publish` job (`core/site-publish.ts`, as the app) runs them:
+  the `site:publish` job (`domain/site/site-publish.ts`, as the app) runs them:
   **Validate** refuses with no release recorded (Q16, `FJS-D1339`) and names
   every commit on the site's branch the last release did not ship, with its
   author (Q5); **Merge** is a three-way merge through a temporary index and
@@ -705,7 +705,7 @@ preview link shows it, Publish ships it, and the commit carries their name.
   gets `deploy_failed` naming it, and `/sites/[id]/` shows it on a Last publish
   card. Q16's developer path: a static `git` App's Deploy is `Validate`,
   `Build and deploy` over the same `releaseSite`, recording the commit. The
-  release's writes moved to `core/release-record.ts`, shared with
+  release's writes moved to `domain/release/release-record.ts`, shared with
   `deployments.startRun`/`stepStatus`/`finishRun`.
   - Proved by outpost's `test/outpost.test.js` § a site publish (3), basecamp's
     `api/test/drafts.test.ts` § publishing a draft (the grant, Q16, Q5 naming
@@ -973,7 +973,7 @@ Done when: an owner adds a review, reorders a menu and swaps a photo.
   (`Field.mesa`) shows a thumbnail, a file picker and "What the photo shows"
   instead of a text box. A file chosen is shrunk in the page to 2560 px
   (`src/editor/photo.js`), sent with its words to the new `drafts.photo`,
-  decoded and encoded again by Bun.Image in basecamp (`core/site-photo.ts`),
+  decoded and encoded again by Bun.Image in basecamp (`domain/site/site-photo.ts`),
   which refuses what does not decode and drops the EXIF, then committed beside
   the old photo, named for the upload (`photoName`, `-2` past a taken name),
   with the key's line rewritten by `applyPhoto` — new address, `?text=` the
@@ -1023,7 +1023,7 @@ shows them, reviews the diff and saves it to their draft.
     `treeFromExport` hashes what moved into the clone and writes a tree on the
     head the run read. Nothing commits; 4.2 grades the tree and 4.3 commits it.
   - `drafts.ask { appId, draft, request }` queues the `site:ask` job, which runs
-    `core/site-ask.ts`. Each draft's last ask is in `<SITES_DIR>/<appId>.asks.json`
+    `domain/site/site-ask.ts`. Each draft's last ask is in `<SITES_DIR>/<appId>.asks.json`
     and on `drafts.list`, as its preview is: state, reply, cost, files, tree.
     One ask per draft at a time. A run that hits its cap fails and its edits
     are dropped.

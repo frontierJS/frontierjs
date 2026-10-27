@@ -1,4 +1,4 @@
-// src/core/runtime.ts
+// src/domain/release/runtime.ts
 // How the machine starts an app's container — the one reader of `App`'s
 // runtime columns, and so the one place a column becomes a `docker run` flag.
 //

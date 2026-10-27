@@ -11,7 +11,7 @@
 // throws.
 
 import { number, bigint, string, date, array, object, json, func } from '@frontierjs/toolbelt/sugar'
-import { dt } from './datetime.js'
+import { dt } from '@frontierjs/mesa/browser'
 
 // A name the platform already has is refused, never replaced: a library that
 // shadowed Array.prototype.flatten made the language rename its own to flat.
@@ -92,6 +92,7 @@ install(Array, { statics: {
   // the list is left alone; index -1 wrote a property named '-1'.
   reset(items, instance) {
     const index = items.findIndex((item) => item.id === instance.id)
+    // biome-ignore lint/correctness/noSelfAssign: the self-assign is how a Mesa list learns a row changed
     if (index !== -1) items[index] = items[index]
     return items
   },

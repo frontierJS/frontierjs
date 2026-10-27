@@ -1,7 +1,7 @@
 // src/jobs/site-preview.job.ts — a draft's preview, built on the machine the
 // App is placed on and uploaded to its Worker (`IDEAS/owner-editing.md` 1.3).
 // Dispatched as `site:preview` by `drafts.open`, `drafts.save` and
-// `drafts.preview`; the work is `core/site-preview.ts`.
+// `drafts.preview`; the work is `domain/site/site-preview.ts`.
 //
 // The app's own work, dispatched `actor: null`: an editor holds a grant and no
 // membership, so there is no standing to run it as, and the grant was read by
@@ -12,7 +12,7 @@
 
 import { defineJob }         from '@frontierjs/caravan'
 import { runsAsApp }         from './context.ts'
-import { buildDraftPreview } from '../core/site-preview.ts'
+import { buildDraftPreview } from '../domain/site/site-preview.ts'
 import { BUILD_TIMEOUT_MS }  from '../providers/executor.ts'
 
 const sitePreview = defineJob<{ appId: string; draft: string }>({

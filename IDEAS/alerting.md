@@ -28,7 +28,7 @@ record keeps them apart, and where they meet is named.
 
 ## What already exists — alerting
 
-**The evaluator is built, and it is pure.** `packages/basecamp/api/src/core/alerting.ts`
+**The evaluator is built, and it is pure.** `packages/basecamp/api/src/domain/alert/alerting.ts`
 takes the points the caller read and the instant they read them at: no database,
 no clock of its own, no app. Its `Verdict` names four answers, and the three
 that are *not breached* are separated rather than collapsed — `no-data`,
@@ -127,5 +127,5 @@ next.
 - `IDEAS/metric-store.md` — the store this reads
 - `IDEAS/traffic-analysis.md` — the same two-questions-called-one opening, one
   record along
-- `packages/basecamp/api/src/core/alerting.ts` — the evaluator, and the four
+- `packages/basecamp/api/src/domain/alert/alerting.ts` — the evaluator, and the four
   reasons a window is not breached

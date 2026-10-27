@@ -1,4 +1,4 @@
-// src/core/workbench-diff.ts — a pinned checkout's working tree against HEAD,
+// src/domain/workbench/workbench-diff.ts — a pinned checkout's working tree against HEAD,
 // or a branch's against the commit it was cut from, for the workbench's diff
 // panel; and the commit made off it.
 //
@@ -17,7 +17,7 @@ import { execFileSync }                   from 'node:child_process'
 import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs'
 import { join }                           from 'node:path'
 import { childEnv }                       from '@frontierjs/junction'
-import { env }                            from './env.ts'
+import { env }                            from '../../core/env.ts'
 import { treeOf }                         from './workbench-branch.ts'
 
 export type DiffLine = { kind: 'add' | 'del' | 'ctx', text: string, old: number | null, new: number | null }

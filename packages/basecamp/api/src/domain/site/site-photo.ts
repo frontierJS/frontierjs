@@ -1,4 +1,4 @@
-// src/core/site-photo.ts — an owner's uploaded photo, as the bytes a draft
+// src/domain/site/site-photo.ts — an owner's uploaded photo, as the bytes a draft
 // commits (`FJS-D1408`).
 //
 // Whatever the page sent is decoded and encoded again here: a file that is not

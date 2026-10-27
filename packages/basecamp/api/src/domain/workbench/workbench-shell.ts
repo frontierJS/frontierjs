@@ -1,4 +1,4 @@
-// src/core/workbench-shell.ts — which shell a pin's Terminal tab attaches to.
+// src/domain/workbench/workbench-shell.ts — which shell a pin's Terminal tab attaches to.
 //
 // One spelling of the tmux session, read by the socket that attaches to it
 // (plugins/workbench-terminal.ts) and by Unpin and Archive, which end it: a shell

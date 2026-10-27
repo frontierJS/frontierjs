@@ -16,10 +16,10 @@ import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_
 import { db, getScoped, narrowPatch, changesNothing, ws, actor, callerOrder } from '../../core/resource.ts'
 import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
-import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow } from '../../core/release-record.ts'
-import { isInline, isGit, imageOf, inlineFilesFor } from '../../core/app-source.ts'
-import { snapshotVariables } from '../../core/variables.ts'
-import { runtimeOf, type Runtime } from '../../core/runtime.ts'
+import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow } from '../../domain/release/release-record.ts'
+import { isInline, isGit, imageOf, inlineFilesFor } from '../../domain/release/app-source.ts'
+import { snapshotVariables } from '../../domain/release/variables.ts'
+import { runtimeOf, type Runtime } from '../../domain/release/runtime.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 // `environment` is the DEPLOYMENT's own, which is not the app's: an app has a
@@ -56,7 +56,7 @@ const WITH_APP = { app: { include: { environment: true } }, environment: true }
  * holds, named by digest — a preview's Freeze publishes its build itself.
  *
  * A static git app is a site the machine builds and deploys to its Worker in
- * one call (`core/site-publish.ts`), so it has one step past Validate. Its
+ * one call (`domain/site/site-publish.ts`), so it has one step past Validate. Its
  * release records a commit and no image, so `rollback` refuses one; a site
  * goes back by a revert on its branch (`IDEAS/owner-editing.md` 1.5).
  *
@@ -115,8 +115,8 @@ async function deployInScope(id: string) {
  */
 async function queueRelease(target: { id: string; environmentId: string; type: string; source?: unknown }, data: Record<string, unknown>, { held = false, built = false } = {}) {
   // What the app looked like at release time: how its container starts
-  // (`core/runtime.ts`) and its variables — plain values copied, secrets by
-  // id (`core/variables.ts`).
+  // (`domain/release/runtime.ts`) and its variables — plain values copied, secrets by
+  // id (`domain/release/variables.ts`).
   data.configSnapshot = {
     source: held ? { kind: 'inline', files: [] } : target.source ?? {}, runtime: runtimeOf(target),
     ...await snapshotVariables(db(), target),
@@ -439,7 +439,7 @@ export default createService({
   // itself. It runs as whoever asked for the deploy now (`FJS-384`), and the
   // confinement is `deployInScope` — a release in another workspace answers
   // nothing, where an id off the payload used to be written wherever it
-  // pointed. The writes are `core/release-record.ts`'s, which a site
+  // pointed. The writes are `domain/release/release-record.ts`'s, which a site
   // publish shares.
   //
   // All four are `internalOnly`: a person moving a release through its own

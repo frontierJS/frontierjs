@@ -1,4 +1,4 @@
-// src/core/workbench.ts — Claude Code sessions in the checkouts the operator pinned.
+// src/domain/workbench/workbench.ts — Claude Code sessions in the checkouts the operator pinned.
 //
 // The sibling of `core/local-git.ts`, behind the same refusal: a pinned checkout
 // is a folder on the operator's own machine, and a run is `claude -p` started in
@@ -28,7 +28,7 @@
 // and Fork is the way to run two at once.
 //
 // A branch is a pin like any other, plus where it came from: Fork snapshots the
-// parent's tree (`core/workbench-branch.ts`), cuts `wb/<slug>` from it into a
+// parent's tree (`domain/workbench/workbench-branch.ts`), cuts `wb/<slug>` from it into a
 // worktree and pins that; Land applies the branch's work back to the parent's
 // tree, uncommitted; Archive removes the worktree and keeps the branch.
 // A new branch is SET UP before its first message: the gitignored paths the
@@ -46,11 +46,11 @@
 // are `core/preview.ts`'s, written by the service as the caller.
 //
 // The Run tab starts what the checkout declares — `fli dev` per app, and its
-// package.json scripts (`core/workbench-run.ts`) — detached, each with a log
+// package.json scripts (`domain/workbench/workbench-run.ts`) — detached, each with a log
 // of its own and its pid on the pin, like a run. Unpin and Archive stop them.
 //
 // When a run ends with nothing queued behind it, two follow-ups may start:
-// the CHECKS — the checkout's own `fli done` (`core/workbench-check.ts`), only
+// the CHECKS — the checkout's own `fli done` (`domain/workbench/workbench-check.ts`), only
 // where the checkout carries one — and, where the pin asks for it, a REVIEW: a
 // fresh read-only `claude -p` over the tree. Each is stamped with when it
 // started, and a follow-up that started before the latest message is stale and
@@ -95,10 +95,10 @@ import {
 import { homedir }                     from 'node:os'
 import { basename, join, posix }       from 'node:path'
 import { fileURLToPath }               from 'node:url'
-import { resolveRoot }                 from './local-git.ts'
+import { resolveRoot }                 from '../../core/local-git.ts'
 import { commitFiles, readDiff }       from './workbench-diff.ts'
 import { addWorktree, branchName, copyIgnored, land as landBranch, pendingFiles, removeWorktree, snapshot } from './workbench-branch.ts'
-import { previewLabelRefusal, previewSettings, type Opened, type PreviewSettings } from './preview.ts'
+import { previewLabelRefusal, previewSettings, type Opened, type PreviewSettings } from '../../core/preview.ts'
 import { inventory, resolveArgv, servedBy, tail, type RunRecord, type Served } from './workbench-run.ts'
 import { endShell }                    from './workbench-shell.ts'
 
@@ -150,7 +150,7 @@ export type Pin = {
   preview:  PreviewSettings | null
   /** On a preview branch: its web port from the cut, and what Open made. */
   opened:   ({ port: number } & Partial<Omit<Opened, 'port'>>) | null
-  /** What the Run tab started here, by row id (`core/workbench-run.ts`). */
+  /** What the Run tab started here, by row id (`domain/workbench/workbench-run.ts`). */
   runs:     Record<string, RunRecord>
   /** The plans this checkout works through, in the order they were added. */
   plans:    PlanRecord[]

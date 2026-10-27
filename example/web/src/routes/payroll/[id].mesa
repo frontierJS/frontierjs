@@ -28,6 +28,7 @@ title: Pay run
   import { employees }     from '@/resources/Employee.mesa'
   import { session } from '@frontierjs/sierra/resource'
   import { day, span } from '@/lib/datetime.js'
+  import { toneFor } from '@/lib/status-tone.js'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../lib/money.js'
 
@@ -60,8 +61,6 @@ title: Pay run
   let openedRow = null
   let unwatchOpen = null
   let runNames = new Map()     // payRunId → reference, for the adjustment lines
-
-  const TONE = { draft: 'muted', calculated: 'info', approved: 'warning', paid: 'success' }
 
   const slipColumns = [
     { name: 'reference',  label: 'Payslip' },
@@ -182,7 +181,7 @@ title: Pay run
   <SectionHeader title={run.reference} level={1}>
     {#snippet action()}
       <div class="cluster">
-        <Pill tone={TONE[run.status] ?? 'muted'} data-status={run.status}>{run.status}</Pill>
+        <Pill tone={toneFor(run.status)} data-status={run.status}>{run.status}</Pill>
         <Badge tone="muted">{span(run.periodStart, run.periodEnd)}</Badge>
         {#if run.approvedBy}<Badge tone="info" data-approved>approved by {run.approvedBy}</Badge>{/if}
       </div>

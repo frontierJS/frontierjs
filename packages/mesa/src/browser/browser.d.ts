@@ -4,6 +4,7 @@
  * Each wrapper's doc comment states its server-render answer, since a page
  * prerenders that value and hydrates to the live one.
  */
+import type { Datetime, InstantInput } from '@frontierjs/toolbelt/datetime'
 
 /** What an action resolves to. `via` names the path that ran — `'clipboard'`,
  *  `'execCommand'`, `'share'`, `'copy'` — and an absent API is
@@ -110,3 +111,21 @@ export function hotkey(
   fn: (e?: KeyboardEvent) => void,
   options?: { scope?: Element, when?: () => boolean },
 ): () => void
+
+/**
+ * The viewer's date binding: toolbelt's `createDatetime` over the zone this
+ * module loaded in and `Date.now`. Every host — no browser API is read, so a
+ * terminal reads its process zone and nothing throws. Server render: the
+ * SERVER's zone, so a prerendered date is the build machine's and hydration
+ * rewrites it. A date that belongs to a place is formatted in that place's
+ * zone with toolbelt's `format`, not with this.
+ */
+export const dt: Readonly<Datetime>
+
+/** 'Sep 14, 2026, 4:05 PM' in the viewer's zone; `none` (default '—') for a
+ *  falsy instant. Server render: the server's zone. Every host. */
+export function at(instant: InstantInput | null | undefined, none?: string): string
+
+/** '5 minutes ago', 'now' under a minute; `none` (default 'never') for a falsy
+ *  instant. Read once — under `now()` to keep it moving. Every host. */
+export function ago(instant: InstantInput | null | undefined, none?: string): string

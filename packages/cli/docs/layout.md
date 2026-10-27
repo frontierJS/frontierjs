@@ -168,7 +168,7 @@ core/
                 records items as shown for the person's own session too. Not
                 `ask.js`, which resolves a question against the registers.
                 WORK mode is the other end — every permission, a budget, hooks
-                optional — for basecamp's workbench (`core/workbench.ts` there),
+                optional — for basecamp's workbench (`domain/workbench/workbench.ts` there),
                 which reads this file's argv and event reader by import. Its
                 REVIEWER is the read-only default with `reviewPrompt`, a fresh
                 session rather than the builder's resumed one. AGENT mode is

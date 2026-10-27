@@ -12,7 +12,7 @@
 // it does not answer is WHICH part moved, and that is the only parse here.
 
 import type { App }         from '@frontierjs/junction'
-import { notifyPeople, workspaceMembers } from './notify.ts'
+import { notifyPeople, workspaceMembers } from '../domain/notify/notify.ts'
 
 // ─── Targets ─────────────────────────────────────────────────────────────
 // Declared at boot beside the mail provider. Public APIs with no credential;

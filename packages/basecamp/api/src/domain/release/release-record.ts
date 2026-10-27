@@ -1,9 +1,9 @@
-// src/core/release-record.ts — the writes that move a Deployment through its
+// src/domain/release/release-record.ts — the writes that move a Deployment through its
 // run: started, each step, finished. One owner for two callers.
 //
 // `deployments.startRun`/`stepStatus`/`finishRun` call these at the CALLER's
 // standing, after `deployInScope` has confined the row to their workspace. A
-// site publish (`core/site-publish.ts`) calls them as the app: its publisher
+// site publish (`domain/site/site-publish.ts`) calls them as the app: its publisher
 // holds a grant on one site and need be a member of nothing (`FJS-D1230`),
 // so there is no standing to read the row at, and the grant read by
 // `drafts.publish` is what confined it. Either way the writes are system:
@@ -11,7 +11,7 @@
 // what the machine reported.
 
 import type { App } from '@frontierjs/junction'
-import { announce } from './channels.ts'
+import { announce } from '../../core/channels.ts'
 
 /**
  * The step that replaces what is serving. A release that stopped at or before

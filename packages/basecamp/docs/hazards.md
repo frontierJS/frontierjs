@@ -288,7 +288,7 @@ The full hazard catalog for `@frontierjs/basecamp`, moved out of `CLAUDE.md`. Th
   release of an inline app that has a Domain rather than leaving it unrouted.
 - **An App's source is a KIND, and `inline` means the files ARE the release**
   (`FJS-D345`). `git`, `image`, `inline`, read in one place —
-  `api/src/core/app-source.ts` — and a source naming no kind is REFUSED rather
+  `api/src/domain/release/app-source.ts` — and a source naming no kind is REFUSED rather
   than inferred from which keys happen to be present. Three things follow and
   each is a place a later change will want to shortcut. **`inline` forces
   `type: static`**, because inline bytes through the container pipeline fail
@@ -406,7 +406,7 @@ The full hazard catalog for `@frontierjs/basecamp`, moved out of `CLAUDE.md`. Th
   WORKSPACE is paged.** Both go out when an alert fires and collapsing them
   gives you either a pager anybody can silence for everyone or a bell menu
   nobody can turn down. The preference lives in `NotificationPreference` and is
-  resolved in ONE place, `core/notify.ts` — a sender that decided for itself is
+  resolved in ONE place, `domain/notify/notify.ts` — a sender that decided for itself is
   a screen honoured by some callers and ignored by others (`FJS-967`). Three
   things about it bite:
   **the absence of a row is the kind's DEFAULT, never silence** (`kinds.ts`
@@ -430,7 +430,7 @@ The full hazard catalog for `@frontierjs/basecamp`, moved out of `CLAUDE.md`. Th
   (`FJS-D227`). It is `operator`/`threshold`/`forMinutes` now. The rule the
   ruling generalizes: **`Json` is right where nothing joins, queries or
   interprets the value; the moment something reads INTO it to decide, it is a
-  language and belongs in the schema.** Beside it, `core/delivery.ts` is the only
+  language and belongs in the schema.** Beside it, `domain/notify/delivery.ts` is the only
   place that knows how a `NotificationChannel` is reached — it takes its client
   and its conduit as arguments rather than reading `$`, because a cron has no
   ambient call context, and a per-kind table in two places is a kind added to one

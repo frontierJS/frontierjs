@@ -35,7 +35,7 @@ import { dirname, join, resolve, sep } from 'node:path'
 // ─── Limits ──────────────────────────────────────────────────────────────────
 //
 // The MACHINE's refusal, not the editor's. Basecamp holds a tighter set for
-// what a paste box accepts (`api/src/core/app-source.ts`); these are here so an
+// what a paste box accepts (`api/src/domain/release/app-source.ts`); these are here so an
 // Outpost is not talked into filling its disk by a control plane that has been
 // taken, and so the failure is a named 500 rather than ENOSPC halfway through.
 

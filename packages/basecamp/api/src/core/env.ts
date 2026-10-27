@@ -168,11 +168,11 @@ export const env = defineEnv({
   ALLOW_CLOUD_SPEND: {},
 
   // Where basecamp keeps its clone of each static site an owner edits
-  // (`core/site-checkout.ts`), default ~/.config/basecamp/sites. A cache: every
+  // (`domain/site/site-checkout.ts`), default ~/.config/basecamp/sites. A cache: every
   // draft save is pushed, so losing it costs a clone and no work.
   SITES_DIR: {},
 
-  // The key an owner's ask runs `claude -p` with (`core/site-ask.ts`), one for
+  // The key an owner's ask runs `claude -p` with (`domain/site/site-ask.ts`), one for
   // every site and billed to whoever runs basecamp (`FJS-D1424`). Unset, asking
   // a model is off. Declared, so `childEnv` keeps it from every other child —
   // a workbench run stays on the host's own `claude` login.
@@ -186,7 +186,7 @@ export const env = defineEnv({
   // sets it.
   LOCAL_MACHINE: {},
 
-  // The workbench (`core/workbench.ts`) — its pins and run logs, and the
+  // The workbench (`domain/workbench/workbench.ts`) — its pins and run logs, and the
   // Claude Code binary each run starts. Behind LOCAL_MACHINE like the rest of
   // this block; the directory is outside db/ so `db:reset` keeps every chat.
   WORKBENCH_DIR: {},

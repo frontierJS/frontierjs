@@ -49,7 +49,7 @@ import { executorOn, isExecutor }            from '../providers/executor.ts'
 import { createSecretResolver, secretRef }   from '../core/credentials.ts'
 import { keyUnder, sendFor }                 from '../providers/storage/index.ts'
 import { splitCredential, listObjects }      from '../providers/storage/s3.ts'
-import { hostServer }                        from '../core/host-machine.ts'
+import { hostServer }                        from '../domain/host/host-machine.ts'
 import type { App }                          from '@frontierjs/junction'
 
 /** The wire entry `POST /replicate` takes — Outpost's `replicate.js` refuses any other. */

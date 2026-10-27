@@ -41,14 +41,14 @@ import { certStatusOf } from '../domains/domains.service.ts'
 import { resolveExecutor, executorOn, isExecutor } from '../../providers/executor.ts'
 // The one reader of `App.source`. A service that parsed the blob itself would
 // be the second, and the two would disagree the first time a kind was added.
-import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, isInline } from '../../core/app-source.ts'
-import { runtimeOf } from '../../core/runtime.ts'
+import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, isInline } from '../../domain/release/app-source.ts'
+import { runtimeOf } from '../../domain/release/runtime.ts'
 import { mintDownload } from '../../jobs/app-backup-run.job.ts'
 import { cronProblem, syncAppBackupSchedule, syncAppDrillSchedule } from '../jobs/job-schedule.ts'
 import { syncReplicasOn, syncReplicasOf, replicaHolder, replicaOf, replicaDatabases } from '../../jobs/replicate-sync.job.ts'
 import type { App }            from '@frontierjs/junction'
 import { keyScope } from '../api-keys/scopes.ts'
-import { replicaLag } from '../../core/posture.ts'
+import { replicaLag } from '../../domain/host/posture.ts'
 
 const _WITH_ENV = { environment: true }
 

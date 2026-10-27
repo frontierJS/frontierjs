@@ -207,38 +207,6 @@ export function makeControlsJs() {
 `
 }
 
-export function makeDatetimeJs() {
-  return `// web/src/lib/datetime.js — when something happened, on every screen that says it.
-//
-// @frontierjs/toolbelt/datetime reads no clock and keeps no settings, so the app
-// binds both once, here, and a screen imports the words from this file. A
-// screen that formats a date itself gets whatever order the browser's locale
-// writes, so one column reads 9/14/2026 for one person and 14/09/2026 for the
-// next, and 3/4 is either month.
-//
-// Everything here reads in the VIEWER's zone. A date that belongs to a place —
-// the day an invoice is for, the hour a store opens — is that place's: call the
-// kit's format(instant, pattern, { timeZone }) with the zone from its config.
-
-import { createDatetime } from '@frontierjs/toolbelt/datetime'
-
-export const dt = createDatetime({
-  timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-  now:      Date.now,
-})
-
-/** 'Sep 14, 2026, 4:05 PM' — or none, for a row with no time. */
-export function at(instant, none = '—') {
-  return instant ? dt.format(instant, 'MMM D, YYYY, h:mm aa') : none
-}
-
-/** '5 minutes ago', 'now' under a minute — or none, for a row with no time. */
-export function ago(instant, none = 'never') {
-  return instant ? dt.relativeToNow(instant) : none
-}
-`
-}
-
 // The generated file is JS inside this literal, so it builds its strings by
 // concatenation: a backtick or a dollar-brace below would be read HERE.
 export function makeSugarJs(currency = 'USD') {
@@ -256,7 +224,7 @@ export function makeSugarJs(currency = 'USD') {
 // throws.
 
 import { number, bigint, string, date, array, object, json, func } from '@frontierjs/toolbelt/sugar'
-import { dt } from './datetime.js'
+import { dt } from '@frontierjs/mesa/browser'
 
 // A name the platform already has is refused, never replaced: a library that
 // shadowed Array.prototype.flatten made the language rename its own to flat.
@@ -337,6 +305,7 @@ install(Array, { statics: {
   // the list is left alone; index -1 wrote a property named '-1'.
   reset(items, instance) {
     const index = items.findIndex((item) => item.id === instance.id)
+    // biome-ignore lint/correctness/noSelfAssign: the self-assign is how a Mesa list learns a row changed
     if (index !== -1) items[index] = items[index]
     return items
   },
@@ -1017,12 +986,12 @@ ${withName ? `  // The password and the sessions go through client.auth, which i
   // written through the users service; db/schema.lite's @@allow(update,
   // id == auth().id || …) is what lets a person write their own.
   import { getClient, session, refresh } from '@frontierjs/sierra/resource'
-  import { at } from '../../lib/datetime.js'` : `  // The password and the sessions go through client.auth, which is the account
+  import { at } from '@frontierjs/mesa/browser'` : `  // The password and the sessions go through client.auth, which is the account
   // and sessions services scoped to the CALLER — nothing here names a user id,
   // because nothing there will take one. The name is not editable here: that
   // is a write to the User row, and this app has no users service to make it.
   import { getClient, session } from '@frontierjs/sierra/resource'
-  import { at } from '../../lib/datetime.js'`}
+  import { at } from '@frontierjs/mesa/browser'`}
 
   $: (session.user, session.checked)
 

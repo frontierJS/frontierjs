@@ -43,10 +43,10 @@
 import { defineJob }        from '@frontierjs/caravan'
 import { isStale }          from '@frontierjs/junction'
 import { runsAsApp }        from './context.ts'
-import { evaluateWindow, describeBreach, isSnoozed } from '../core/alerting.ts'
-import { fanOutToChannels } from '../core/delivery.ts'
-import { notifyPeople, workspaceMembers } from '../core/notify.ts'
-import type { Message }     from '../core/delivery.ts'
+import { evaluateWindow, describeBreach, isSnoozed } from '../domain/alert/alerting.ts'
+import { fanOutToChannels } from '../domain/notify/delivery.ts'
+import { notifyPeople, workspaceMembers } from '../domain/notify/notify.ts'
+import type { Message }     from '../domain/notify/delivery.ts'
 import type { App }         from '@frontierjs/junction'
 
 /** How far back a rule with no duration still looks. A `forMinutes: 0` rule is

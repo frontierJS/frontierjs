@@ -45,6 +45,14 @@
   // open again under the pointer that just closed it. Remembering the choice
   // is the app's, as the key is its own: `bind:collapsed` and a
   // localStorage line.
+  //
+  // `foldable` draws each labeled group of a sidebar, and of the drawer, as a
+  // <details> its label opens and closes. The first labeled group starts
+  // open and every other closed, and the group holding the current page
+  // opens on arrival, over a choice to close it: a page whose link is folded
+  // away has no "you are here". A rail does not fold, as its icons are the
+  // group, and a topbar's bar does not, as its group is already one menu;
+  // its drawer does.
 
   import { sectionFor, visible } from '../../nav.js'
   import { uid } from '../../utils.js'
@@ -66,6 +74,7 @@
   export let layout    = 'sidebar'
   export let collapsible = false
   export let collapsed   = false
+  export let foldable    = false
 
   export let brand     = null   // snippet ()
   export let icon      = null   // snippet (name)
@@ -104,6 +113,23 @@
   // navigation too.
   let navOpen = false
   $: path, query, () => { navOpen = false }
+
+  // A group's label → open, for each group the reader opened or closed.
+  // Every other group is open when it is the first labeled one or holds the
+  // current page.
+  let chosen = {}
+  $: lead = shown.find(group => group.label)
+
+  function isOpen(group, lead, chosen) {
+    return chosen[group.label] ?? (group === lead || group.entries.some(current))
+  }
+  function choose(group, open) {
+    if (isOpen(group, lead, chosen) !== open) chosen = { ...chosen, [group.label]: open }
+  }
+  $: path, query, () => {
+    const here = shown.find(group => group.label && group.entries.some(current))
+    if (here && chosen[here.label] === false) chosen = { ...chosen, [here.label]: true }
+  }
 
   let signingOut = false
   async function signOut() {
@@ -180,16 +206,30 @@
   {/if}
   {@render brand?.()}
   {#each shown as group, gi}
-    <div>
-      {#if group.label}
-        <div class="navlist-label" id="{ids}-{where}-{gi}">{group.label}</div>
-      {/if}
-      <ul class="navlist" aria-labelledby={group.label ? `${ids}-${where}-${gi}` : null}>
-        {#each group.entries as entry}
-          <li>{@render entryLink(entry)}</li>
-        {/each}
-      </ul>
-    </div>
+    {#if foldable && group.label && where !== 'rail'}
+      <!-- The open state is read with (path, query) first, for the same
+           reason as a topbar trigger's aria-current below. -->
+      <details open={(path, query, isOpen(group, lead, chosen))}
+               ontoggle={event => choose(group, event.currentTarget.open)}>
+        <summary class="navlist-label" id="{ids}-{where}-{gi}">{group.label}</summary>
+        <ul class="navlist" aria-labelledby="{ids}-{where}-{gi}">
+          {#each group.entries as entry}
+            <li>{@render entryLink(entry)}</li>
+          {/each}
+        </ul>
+      </details>
+    {:else}
+      <div>
+        {#if group.label}
+          <div class="navlist-label" id="{ids}-{where}-{gi}">{group.label}</div>
+        {/if}
+        <ul class="navlist" aria-labelledby={group.label ? `${ids}-${where}-${gi}` : null}>
+          {#each group.entries as entry}
+            <li>{@render entryLink(entry)}</li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
   {/each}
   {@render foot?.(where)}
   {#if !railed && shape !== 'topbar' && onsignout && user}

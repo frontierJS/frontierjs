@@ -34,7 +34,7 @@ import { RECLAIM_TARGET_NAMES } from '../../api/src/services/cleanup/targets.ts'
 // The hub's copy of the two status vocabularies. It exists so a bad value is
 // refused by name at the API rather than by a CHECK constraint message; this
 // import is what keeps it a copy of the schema rather than a second opinion.
-import { NOTIFICATION_KIND_NAMES } from '../../api/src/services/notification-preferences/kinds.ts'
+import { NOTIFICATION_KIND_NAMES } from '../../api/src/domain/notify/kinds.ts'
 import { grantsFor } from '../../api/src/core/capabilities.ts'
 
 const SCHEMA     = join(import.meta.dir, '..', 'schema.lite')

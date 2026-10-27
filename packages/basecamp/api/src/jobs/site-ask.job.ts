@@ -1,6 +1,6 @@
 // src/jobs/site-ask.job.ts — an owner's ask on a draft, run as a model's edit
 // of a copy of its content (`IDEAS/owner-editing.md` 4.1). Dispatched as
-// `site:ask` by `drafts.ask`; the work is `core/site-ask.ts`.
+// `site:ask` by `drafts.ask`; the work is `domain/site/site-ask.ts`.
 //
 // The app's own work, dispatched `actor: null`, for `site:preview`'s reason:
 // an editor holds a grant and no membership. One attempt — a retry would spend
@@ -9,7 +9,7 @@
 
 import { defineJob }      from '@frontierjs/caravan'
 import { runsAsApp }      from './context.ts'
-import { ASK_TIMEOUT_MS, askDraft } from '../core/site-ask.ts'
+import { ASK_TIMEOUT_MS, askDraft } from '../domain/site/site-ask.ts'
 
 const siteAsk = defineJob<{ appId: string; draft: string }>({
   name: 'site:ask',

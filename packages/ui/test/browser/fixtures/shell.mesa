@@ -22,6 +22,7 @@
   export let layout  = 'sidebar'
   export let guests  = false
   export let collapsible = false
+  export let foldable    = false
 
   let collapsed = false
 
@@ -87,13 +88,14 @@
   <button type="button" id="sign-in" onclick={() => user = { email: 'a@b.c' }}>Sign in</button>
   <button type="button" id="promote" onclick={() => level = 5}>Promote</button>
   <button type="button" id="more" onclick={() => unread++}>More</button>
+  <button type="button" id="to-help" onclick={() => path = '/help/'}>Help</button>
   <button type="button" id="collapse" onclick={() => layout = layout === 'rail' ? 'sidebar' : 'rail'}>Collapse</button>
   <output id="signouts">{signouts}</output>
 </div>
 
 <div id="app" onclick={go}>
   <Shell {groups} {sections} {path} {query} title="Leads"
-         {user} {level} {checked} {isActive} {layout} {collapsible} bind:collapsed onsignout={out}>
+         {user} {level} {checked} {isActive} {layout} {collapsible} {foldable} bind:collapsed onsignout={out}>
     {#snippet brand()}<a href="/" data-brand>Acme</a>{/snippet}
     {#snippet icon(name)}<svg class="icon" data-icon={name} viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6" /></svg>{/snippet}
     {#snippet badge(entry)}{#if entry.href === '/leads/'}<span class="badge" data-unread>{unread}</span>{/if}{/snippet}

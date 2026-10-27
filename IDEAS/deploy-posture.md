@@ -27,7 +27,7 @@ Every grader below exists. What is missing is a deploy that asks them.
 | Dependency posture — `bun audit` filtered to what a published package's runtime closure reaches | `scripts/ci.mjs` `advisories()` | No. It grades this framework's packages and never an app's. |
 | Dependency check — OSV per installed version, notifies on new advisory (`FJS-2715`) | `packages/basecamp/api/src/core/dependencies.ts`, `dependency-check.job.ts` | No. Basecamp-managed apps only, and it runs after the fact. |
 | `fli npm:audit` | `packages/cli/commands/npm/audit.md` | No. It runs `npm audit`, which a bun app with no `package-lock.json` probably cannot answer (unprobed, 0.1). |
-| Machine posture — firewall, sshd, updates (`FJS-2712`) | `packages/basecamp/api/src/core/posture.ts` | No. A deploy never reads the target's grade. |
+| Machine posture — firewall, sshd, updates (`FJS-2712`) | `packages/basecamp/api/src/domain/host/posture.ts` | No. A deploy never reads the target's grade. |
 
 **Not covered anywhere:**
 

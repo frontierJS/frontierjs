@@ -36,7 +36,7 @@ import { createService, NotFound, BadRequest, BadGateway, Conflict, $ } from '@f
 import { LEVELS }                 from '@frontierjs/litestone'
 import { sessionScope, internalOnly, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws }                 from '../../core/resource.ts'
-import { servingAddresses }       from '../../core/runtime.ts'
+import { servingAddresses }       from '../../domain/release/runtime.ts'
 import { actsAsApp }              from '../../core/gate.ts'
 import { edgeConnectorFor, edgeProviders, appMark, domainMark } from '../../providers/edge/index.ts'
 import { targetFor }              from '../../providers/compute/index.ts'

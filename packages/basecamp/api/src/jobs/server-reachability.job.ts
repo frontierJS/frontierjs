@@ -15,15 +15,15 @@
 // will. A sweep reads the rows it grades, so it is correct on its first fire
 // after any restart.
 //
-// The verdict is `core/reachability.ts` and may not be re-derived here: the
+// The verdict is `domain/host/reachability.ts` and may not be re-derived here: the
 // three answers that are NOT *it went away* are the whole content, and a sweep
 // that inlined `isStale` would have the interesting half in a WHERE clause
 // nothing can test at a chosen instant.
 
 import { defineJob }      from '@frontierjs/caravan'
 import { runsAsApp }      from './context.ts'
-import { gradeReachability, heartbeatGraceMs } from '../core/reachability.ts'
-import { notifyPeople, workspaceMembers }        from '../core/notify.ts'
+import { gradeReachability, heartbeatGraceMs } from '../domain/host/reachability.ts'
+import { notifyPeople, workspaceMembers }        from '../domain/notify/notify.ts'
 import type { App }         from '@frontierjs/junction'
 
 export interface SweepOptions {

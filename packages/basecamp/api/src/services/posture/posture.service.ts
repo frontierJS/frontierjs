@@ -11,7 +11,7 @@
 //            It is the hub's host row (`HubConfig.hostServerId`), graded with the `hub.*`
 //            controls beside its own (FJS-D1241)
 //
-// The Outpost reports facts and `core/posture.ts` grades them (IDEAS/server-posture.md
+// The Outpost reports facts and `domain/host/posture.ts` grades them (IDEAS/server-posture.md
 // § Outpost reads, Basecamp grades). **A failing control never refuses a
 // deploy**: it is a ServerEvent, a metric and a notification, because refusing
 // releases over an sshd setting turns a hygiene finding into an outage.
@@ -23,13 +23,13 @@ import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { requireSystemAdmin, sessionScope, workspaceChannel } from '../../core/hooks.ts'
 import { db, ws }   from '../../core/resource.ts'
-import { declaredFor, gradeHub, gradePosture, gradeReplication, postureChanges, postureRank, POSTURE_INTERVAL_MS } from '../../core/posture.ts'
-import type { Control, HostDeclared, PostureReadings } from '../../core/posture.ts'
+import { declaredFor, gradeHub, gradePosture, gradeReplication, postureChanges, postureRank, POSTURE_INTERVAL_MS } from '../../domain/host/posture.ts'
+import type { Control, HostDeclared, PostureReadings } from '../../domain/host/posture.ts'
 import { encryptionKeyFingerprint } from '../../core/db.ts'
-import { notifyPeople, workspaceMembers } from '../../core/notify.ts'
+import { notifyPeople, workspaceMembers } from '../../domain/notify/notify.ts'
 import { statusOf } from '../../core/dependencies.ts'
 import { keyScope } from '../api-keys/scopes.ts'
-import { hostServer } from '../../core/host-machine.ts'
+import { hostServer } from '../../domain/host/host-machine.ts'
 import { hostReplicaDestination } from '../../jobs/replicate-sync.job.ts'
 
 // ─── The outpost's wire contract ───────────────────────────────────────────

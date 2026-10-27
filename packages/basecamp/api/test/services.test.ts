@@ -31,15 +31,15 @@ import { grantsFor, grantsWithin } from '../src/core/capabilities.ts'
 import { refuseGrantAboveOwn }    from '../src/core/hooks.ts'
 import { keyAllows, narrowForAgent } from '../src/services/api-keys/scopes.ts'
 import { MEMBERSHIP }             from '@frontierjs/junction'
-import { SERVER_READINGS, readingOf } from '../src/core/server-metrics.ts'
-import { NOTIFICATION_KINDS }     from '../src/services/notification-preferences/kinds.ts'
-import { notifyPeople }           from '../src/core/notify.ts'
+import { SERVER_READINGS, readingOf } from '../src/domain/host/server-metrics.ts'
+import { NOTIFICATION_KINDS }     from '../src/domain/notify/kinds.ts'
+import { notifyPeople }           from '../src/domain/notify/notify.ts'
 import { createJunctionClient }   from '@frontierjs/junction/client'
-import { snapshotVariables, releaseEnv } from '../src/core/variables.ts'
+import { snapshotVariables, releaseEnv } from '../src/domain/release/variables.ts'
 import { BACKUP_SCHEDULE, appBackupSchedule, appDrillSchedule, fireBackup, restoreSchedules } from '../src/services/jobs/job-schedule.ts'
 import { mintDownload } from '../src/jobs/app-backup-run.job.ts'
 import { replicasFor, syncReplicas, hostReplicaFor } from '../src/jobs/replicate-sync.job.ts'
-import { HOST_SLUG, useHost, publicIp } from '../src/core/host-machine.ts'
+import { HOST_SLUG, useHost, publicIp } from '../src/domain/host/host-machine.ts'
 import { startS3Sink }            from '../src/providers/storage/s3-sink.ts'
 
 // The certificate a machine's command port answers with, which enrollment pins
@@ -2613,7 +2613,7 @@ describe('an app made from a blueprint', () => {
     expect(r.type).toBe('database')
     expect(r.port).toBe(6379)
     expect(r.source).toEqual({ kind: 'image', image: 'redis:7.2-alpine' })
-    // Every setting the blueprint states lands on the column `core/runtime.ts`
+    // Every setting the blueprint states lands on the column `domain/release/runtime.ts`
     // reads, which is what makes it reach `docker run` (`FJS-1605`).
     expect([r.volumePath, r.healthCheck, r.cpuLimit, r.memLimitMb]).toEqual(['/data', '/ping', 0.5, 256])
 

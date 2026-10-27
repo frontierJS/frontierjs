@@ -1,4 +1,4 @@
-// src/core/delivery.ts — how a NotificationChannel is actually reached.
+// src/domain/notify/delivery.ts — how a NotificationChannel is actually reached.
 //
 // ONE OWNER, and it has two callers: `channels.test` (a person pressing the
 // button) and the alert evaluator (a cron, at 3am, with nobody watching). The
@@ -19,7 +19,7 @@
 // part of a Slack webhook is its path and a target address is echoed by
 // `GET /conduit-targets`.
 
-import { secretRef } from './credentials.ts'
+import { secretRef } from '../../core/credentials.ts'
 
 // ─── What a caller says ──────────────────────────────────────────────────
 

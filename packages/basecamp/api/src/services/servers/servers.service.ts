@@ -46,12 +46,12 @@ import { LEVELS }                from '@frontierjs/litestone'
 import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor, findScoped, getScoped, deriveSlug, narrowPatch, changesNothing, slugify } from '../../core/resource.ts'
 import { secretRef }             from '../../core/credentials.ts'
-import { recordHealth, SERVER_SERIES, SERVER_READINGS } from '../../core/server-metrics.ts'
+import { recordHealth, SERVER_SERIES, SERVER_READINGS } from '../../domain/host/server-metrics.ts'
 import { connectorFor, targetFor, computeProviders, markFor, fleetMark, priceIn, sizeRegions } from '../../providers/compute/index.ts'
 import { sendVia }               from '../../providers/compute/accounts.ts'
 import { DEPLOY_TIMEOUT_MS }     from '../../providers/executor.ts'
 import { mintEnrollToken, cloudInit, OUTPOST_PORT } from '../../providers/compute/enrollment.ts'
-import { issueEnrollmentFor, useHost, findHost } from '../../core/host-machine.ts'
+import { issueEnrollmentFor, useHost, findHost } from '../../domain/host/host-machine.ts'
 import { env, localMachineRefusal } from '../../core/env.ts'
 import { listSshHosts, probeSshHost } from '../../core/local-ssh.ts'
 import { outbound, outpostFor } from '../../providers/outpost.ts'
@@ -817,7 +817,7 @@ export default createService({
 
   // ── host / useHost — the box this Basecamp runs on ──
   //
-  // `core/host-machine.ts` owns the row; `fli deploy` reaches the same one from
+  // `domain/host/host-machine.ts` owns the row; `fli deploy` reaches the same one from
   // inside the container (FJS-D1191). `useHost` answers `enrolled` for a box
   // that has checked in and mints nothing.
   async host() {

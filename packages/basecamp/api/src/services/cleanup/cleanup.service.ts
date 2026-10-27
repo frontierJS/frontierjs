@@ -36,7 +36,7 @@ import {
 import type { ReclaimFigures } from './targets.ts'
 
 import { applyDiskReport } from './disk-report.ts'
-import { DISK_READINGS, readingOf } from '../../core/server-metrics.ts'
+import { DISK_READINGS, readingOf } from '../../domain/host/server-metrics.ts'
 import type { DiskReport } from './disk-report.ts'
 import cleanupRun from '../../jobs/cleanup-run.job.ts'
 import { announce } from '../../core/channels.ts'

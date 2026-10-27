@@ -386,7 +386,6 @@ ${useDb ? '├── db/\n│   └── schema.lite             # Single sourc
     │   └── sierra.config.js    # Routes dir, target${useApi ? ', junction url' : ''}
     └── src/
         ├── main.js             # Side-effect imports; virtual:sierra mounts App
-        ├── datetime.js         # The app's clock and zone — at(), ago()
 ${useApi ? '        ├── controls.js         # Form controls the app contributes (registerControl)\n' : ''}        ├── App.mesa            # Root: <RouterView />
         ├── lib/nav.js          # The nav table — the Shell draws it, make:scaffold adds to it
         ├── routes/             # Sierra file-based routes (.mesa)

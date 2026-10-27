@@ -18,6 +18,7 @@ title: Subscriptions
   import Subscription, { subscriptions } from '@/resources/Subscription.mesa'
   import { prefs } from '@/stores/prefs.js'
   import { day } from '@/lib/datetime.js'
+  import { toneFor } from '@/lib/status-tone.js'
   import { session } from '@frontierjs/sierra/resource'
   import { money } from '../../lib/money.js'
 
@@ -39,11 +40,6 @@ title: Subscriptions
     { name: 'renews',     label: 'Renews' },
     { name: 'actions',    label: '' },
   ]
-
-  // The tone a state reads in. A UI decision — the STATES are the schema's,
-  // and a value added to the enum lands here as the default rather than
-  // vanishing.
-  const TONE = { trialing: 'info', active: 'success', pastDue: 'warning', cancelled: 'muted' }
 
   const list = subscriptions.tethered({ directives: { orderBy: '-createdAt' } })
   const rows = () => list.rows
@@ -98,7 +94,7 @@ title: Subscriptions
     <tr data-subscription={s.id} data-reference={s.reference}>
       <td><a href={'/subscriptions/' + s.id + '/'} data-open><Mono size="xs">{s.reference}</Mono></a></td>
       <td class="text-muted">#{s.customerId}</td>
-      <td><Pill tone={TONE[s.status] ?? 'muted'} data-status={s.status}>{s.status}</Pill></td>
+      <td><Pill tone={toneFor(s.status)} data-status={s.status}>{s.status}</Pill></td>
       <td class="text-right" data-quantity={s.quantity}>{s.quantity}</td>
       <td data-renews={s.currentPeriodEnd ?? ''} data-stopping={s.cancelAtPeriodEnd ? '1' : ''}>
         {day(s.currentPeriodEnd)}

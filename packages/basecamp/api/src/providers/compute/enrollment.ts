@@ -233,7 +233,7 @@ apt_install curl ca-certificates openssl chrony nftables unattended-upgrades
 # posture: time.synced
 systemctl enable --now chrony.service
 
-# Each step below is graded by the control its marker names (core/posture.ts),
+# Each step below is graded by the control its marker names (domain/host/posture.ts),
 # so the box this builds is the box the posture tab expects.
 
 # Security updates apply themselves and never reboot the machine: a reboot

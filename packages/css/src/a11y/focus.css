@@ -100,6 +100,7 @@
   .switch,
   .tab,
   .navlink,
+  summary.navlist-label,
   .disclosure-summary,
   .pill-close
 ):focus-visible,
@@ -139,10 +140,11 @@
  *
  *   .tab                 the tablist scrolls horizontally
  *   .navlink             flush to the sidebar's edge
+ *   summary.navlist-label  a folding group's label, flush the same way
  *   .disclosure-summary  fills its bordered box edge to edge
  *   .pill-close          would spill outside the pill it sits in
  */
-:where(.tab, .navlink, .disclosure-summary, .pill-close):focus-visible {
+:where(.tab, .navlink, summary.navlist-label, .disclosure-summary, .pill-close):focus-visible {
   outline-offset: calc(var(--ring-offset) * -1);
 }
 

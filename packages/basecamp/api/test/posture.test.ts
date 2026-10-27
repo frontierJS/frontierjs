@@ -20,9 +20,9 @@ import { GatePlugin }  from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor }         from '../src/core/capabilities.ts'
-import { declaredFor, gradeHub, gradePosture, gradeReplication, HUB_CONTROL_IDS, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/core/posture.ts'
-import { HOST_SLUG } from '../src/core/host-machine.ts'
-import type { HostDeclared, PostureReadings } from '../src/core/posture.ts'
+import { declaredFor, gradeHub, gradePosture, gradeReplication, HUB_CONTROL_IDS, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/domain/host/posture.ts'
+import { HOST_SLUG } from '../src/domain/host/host-machine.ts'
+import type { HostDeclared, PostureReadings } from '../src/domain/host/posture.ts'
 import { prunePosture } from '../src/jobs/retention.job.ts'
 
 const NOW = Date.parse('2026-10-13T12:00:00Z')

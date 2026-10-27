@@ -80,7 +80,7 @@
   // Json document another process writes, and `Number(null)` is 0 — a disk bar
   // at 0% reads as an empty disk, which is the opposite of what a machine that
   // sent no figure means. The API's own rule is `readingOf` in
-  // `core/server-metrics.ts`; a browser cannot import it, so the shape is
+  // `domain/host/server-metrics.ts`; a browser cannot import it, so the shape is
   // stated twice on purpose and this is the second one.
   $: bars = readings
     .map(r => ({ ...r, value: server?.health?.[r.key], line: trend[r.name] }))

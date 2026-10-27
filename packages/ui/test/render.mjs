@@ -67,6 +67,10 @@ const CASES = [
                                                                  ['fjs-chart', 'fjs-chart-bar', 'fjs-chart-hit', 'fjs-chart-grid']],
   ['components/display/Chart.mesa',     { rows: [{ m: 'Jan', v: 3 }, { m: 'Feb', v: 5 }], x: 'm', y: 'v', type: 'line', tone: 'success' },
                                                                  ['fjs-chart', 'success', 'fjs-chart-line', 'fjs-chart-area', 'fjs-chart-dot']],
+  ['components/display/Chart.mesa',     { rows: [{ m: 'Acme', v: 3 }, { m: 'Bolt', v: 5 }], x: 'm', y: 'v', orientation: 'horizontal' },
+                                                                 ['fjs-chart', 'fjs-chart-bar', 'fjs-chart-name', 'fjs-chart-zero', 'fjs-chart-value']],
+  ['components/display/Chart.mesa',     { rows: [{ m: 'Jan', v: 3, p: 2 }, { m: 'Feb', v: 5, p: 4 }], x: 'm', y: 'v', compare: 'p', reference: 4, type: 'line' },
+                                                                 ['fjs-chart', 'fjs-chart-compare', 'fjs-chart-key', 'fjs-chart-key-compare', 'fjs-chart-reference', 'fjs-chart-reference-text']],
   // The heading TAG is the assertion: it comes from <mesa:element this={'h'+level}>,
   // and a level that stopped reaching the DOM would render something that looks
   // identical and carries a different document outline.

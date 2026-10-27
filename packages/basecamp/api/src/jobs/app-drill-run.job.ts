@@ -23,7 +23,7 @@ import { runsAsApp }                       from './context.ts'
 import { resolveExecutor, isExecutor }     from '../providers/executor.ts'
 import type { Executor }                   from '../providers/executor.ts'
 import { replicaOf, replicaDatabases }     from './replicate-sync.job.ts'
-import { releaseEnv }                      from '../core/variables.ts'
+import { releaseEnv }                      from '../domain/release/variables.ts'
 import type { App }                        from '@frontierjs/junction'
 import type { App as AppRow, AppDrill, DrillKind } from '../../../db/schema.d.ts'
 

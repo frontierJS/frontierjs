@@ -213,7 +213,7 @@ export interface MonitorChannelRef {
 
 /**
  * What `alerts.snooze` accepts. The 1..MAX_SNOOZE_MINUTES bound is the
- * method's, since the ceiling lives in core/alerting.ts.
+ * method's, since the ceiling lives in domain/alert/alerting.ts.
  */
 export interface AlertSnooze {
   minutes: number

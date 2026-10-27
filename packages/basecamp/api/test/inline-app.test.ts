@@ -28,7 +28,7 @@ import { GatePlugin }             from '@frontierjs/litestone'
 import { basecampGateLevel }      from '../src/core/gate.ts'
 import { buildBasecampApp }       from '../src/app.ts'
 import { grantsFor }              from '../src/core/capabilities.ts'
-import { parseAppSource, describeSource, INLINE_LIMITS } from '../src/core/app-source.ts'
+import { parseAppSource, describeSource, INLINE_LIMITS } from '../src/domain/release/app-source.ts'
 
 process.env.BASECAMP_STUB_OUTPOST = '1'
 
@@ -250,7 +250,7 @@ describe('the release pipeline an inline app runs', () => {
   })
 
   // A site built from git is built and deployed by the machine in one call
-  // (core/site-publish.ts), and records the commit an owner's publish measures from.
+  // (domain/site/site-publish.ts), and records the commit an owner's publish measures from.
   test('a static git app is a site: Validate, then one Build and deploy', async () => {
     const target = await aContainerApp({ kind: 'git', repo: 'git@host:a/site.git' }, 'static')
     const release: any = await deployments().create({ appId: target.id, workspaceId: ws.id })

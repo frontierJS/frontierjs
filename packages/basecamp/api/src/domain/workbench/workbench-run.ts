@@ -1,4 +1,4 @@
-// src/core/workbench-run.ts — what a pinned checkout can START, and reading one back.
+// src/domain/workbench/workbench-run.ts — what a pinned checkout can START, and reading one back.
 //
 // The Run tab of a workbench card: `fli dev` for each app in the checkout, and
 // the package.json scripts of the checkout and its apps. The inventory is fli's
@@ -14,7 +14,7 @@
 // chat is editing: a restart would leave the dev server up with nothing left
 // that can stop it. A run is a record on the pin (`pins.json`) and a log file
 // of its own — the shape `claude -p` runs already have — and whether it is up
-// is its pid, alive (`core/workbench.ts` owns both).
+// is its pid, alive (`domain/workbench/workbench.ts` owns both).
 
 import { existsSync, openSync, readFileSync, readSync, closeSync, statSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'

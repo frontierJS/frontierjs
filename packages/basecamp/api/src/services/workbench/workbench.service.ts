@@ -1,5 +1,5 @@
 // src/services/workbench/workbench.service.ts
-// The workbench — a Claude Code chat per pinned checkout (`core/workbench.ts`).
+// The workbench — a Claude Code chat per pinned checkout (`domain/workbench/workbench.ts`).
 //
 // No model and nothing in the database: a pin names a folder on the machine
 // this API runs on. Offered only where `git.localRepos` is (LOCAL_MACHINE=1,
@@ -11,7 +11,7 @@
 //   POST /workbench               status      every pin's run status — the grid's poll, no git
 //   POST /workbench/:id           transcript  { chat? } — one chat, the shown one by default, folded from its log, with the checkout's checks and review
 //   POST /workbench/:id           diff        the checkout's working tree against HEAD, a branch's against its base
-//   POST /workbench/:id           runnables   `fli dev` per app and every package.json script (`core/workbench-run.ts`)
+//   POST /workbench/:id           runnables   `fli dev` per app and every package.json script (`domain/workbench/workbench-run.ts`)
 //   POST /workbench/:id           output      { row } — the tail of what a started row wrote
 //   POST /workbench/:id           plan        the shown plan — its path, the steps Go started with what each cost, and the file parsed now (null until written)
 //   POST /workbench               pin         { path }
@@ -55,7 +55,7 @@ import { dirname, join }           from 'node:path'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { localMachineRefusal }     from '../../core/env.ts'
 import { describeRepo }            from '../../core/local-git.ts'
-import { doneScript }              from '../../core/workbench.ts'
+import { doneScript }              from '../../domain/workbench/workbench.ts'
 import { openPreview, freezePreview, thawPreview, retirePreview, type Opened, type PreviewSettings } from '../../core/preview.ts'
 import { db, ws }                  from '../../core/resource.ts'
 

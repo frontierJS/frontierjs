@@ -8,7 +8,7 @@ dated: 2026-10-09
 
 **Status: PARTIAL.** Item 6 of [`workbench.md`](workbench.md). The owner took every
 recommendation below on 2026-10-09; the port scheme is ruled in `FJS-D841`. **Slices A
-and B are built** (2026-10-09) — `core/workbench-branch.ts` in basecamp, `fork` in
+and B are built** (2026-10-09) — `domain/workbench/workbench-branch.ts` in basecamp, `fork` in
 `askArgv`, the branch block in `claimSession`; `FJS-2277` is not. Verified against a
 stand-in claude only.
 
@@ -103,7 +103,7 @@ branches; the header's today already sums every pin.
 
 **Out:** best-of-N (`workbench.md` #12, which builds on this), push/PR, automatic
 cleanup. ~~A Run button that starts a branch's dev server~~ — built as the card's
-Run tab, for every pin rather than only a branch (`core/workbench-run.ts`).
+Run tab, for every pin rather than only a branch (`domain/workbench/workbench-run.ts`).
 
 ## Slices
 

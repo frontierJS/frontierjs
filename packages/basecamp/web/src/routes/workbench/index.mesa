@@ -5,7 +5,7 @@ title: Workbench
   // A Claude Code chat per pinned checkout, all on one screen.
   //
   // Each message is a `claude -p` run in that checkout with every permission,
-  // resumed from the last one (api core/workbench.ts). The run belongs to the
+  // resumed from the last one (api domain/workbench/workbench.ts). The run belongs to the
   // API, not to this tab: closing the tab does not stop it, and every open tab
   // reads the same status.
   //
@@ -22,7 +22,7 @@ title: Workbench
   // a time and the others wait -- Fork is how two run at once.
   //
   // The Run tab starts what the checkout declares -- `fli dev` per app and its
-  // package.json scripts (api core/workbench-run.ts) -- and leaves it running
+  // package.json scripts (api domain/workbench/workbench-run.ts) -- and leaves it running
   // on the API's machine; what is up comes on the same poll.
   //
   // The Plan tab is one of the pin's Phases-of-Steps files in the checkout
@@ -33,7 +33,7 @@ title: Workbench
   // row into the checkout's ISSUES.md (fli's core/file.js); a letter on a
   // plan question rules it (fli's core/decide.js) and lifts Next's hold.
   //
-  // A BRANCH is a pin forked from another (api core/workbench-branch.ts): a
+  // A BRANCH is a pin forked from another (api domain/workbench/workbench-branch.ts): a
   // worktree of its own, drawn right after its parent, with Land and Archive
   // where the parent has Fork.
   //

@@ -8,32 +8,32 @@ db/       schema.lite (43 models declared, 50 with the two imported fragments;
           litestone.config.js · test/ · README.md (the depth doc)
 api/      index.ts (the entry — start() and nothing else) · config/
 api/src/  app.ts (builds the app, never starts it) · services/ ·
-          jobs/ (*.job.ts) · notifications/ · providers/ · plugins/ · core/
+          jobs/ (*.job.ts) · notifications/ · providers/ · plugins/ · core/ · domain/
           notifications/ is one file per NotificationKind and the FILE NAME is
           the persisted type — so the directory, the enum and kinds.ts are
           three spellings of one vocabulary, held together by api/test/notify.test.ts
-          core/notify.ts is the one owner of *does this person want it*
-          core/server-metrics.ts decides WHICH of a check-in is kept and what
+          domain/notify/notify.ts is the one owner of *does this person want it*
+          domain/host/server-metrics.ts decides WHICH of a check-in is kept and what
           each reading is called; the heartbeat pushes through app.metrics.record
-          core/alerting.ts is the alert comparison, pure — no db, no clock, no app
-          core/probe.ts is the monitor's two judgments, pure: `gradeProbe` (did
+          domain/alert/alerting.ts is the alert comparison, pure — no db, no clock, no app
+          domain/monitor/probe.ts is the monitor's two judgments, pure: `gradeProbe` (did
           this request count — accepted codes, invert) and `nextState` (what a
           failure does: down only past `retries`, page once, `resendEvery`).
           jobs/monitor-sweep.job.ts probes every due `Monitor` from this process,
           an outside view, and is the only writer of its `@system` columns; a
           monitor is `pending` until graded, and paused ones are never picked
           (`FJS-1557`)
-          core/delivery.ts is the ONE owner of how a NotificationChannel is
+          domain/notify/delivery.ts is the ONE owner of how a NotificationChannel is
           reached; `channels.test`, the alert evaluator and the `basecamp.page`
           flow node are its callers
           plugins/automations.ts is what this app contributes to orion — one node,
           `basecamp.page`, which reads the channel as the FLOW'S OWNER and hands
-          it to core/delivery.ts. A dry run answers which channel it would have
+          it to domain/notify/delivery.ts. A dry run answers which channel it would have
           reached and moves no `lastDeliveryAt`
-          core/app-source.ts is the ONE reader of `App.source` — `git`, `image`,
+          domain/release/app-source.ts is the ONE reader of `App.source` — `git`, `image`,
           `inline`, parsed and normalized, and the paste box's limits (the
           machine's are outpost's, and they win)
-          core/site-checkout.ts is basecamp's bare clone of each static site an
+          domain/site/site-checkout.ts is basecamp's bare clone of each static site an
           owner edits, under SITES_DIR: a draft is `draft/<slug>` ON THE REMOTE,
           and a save is a commit built through a temporary index and pushed, so
           the push is the lock (`FJS-D1246`). services/drafts/ is its surface and
@@ -48,12 +48,12 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           collection item, whose `arrangeCollection` writes may touch every
           item, so `saveDraftFiles` commits them as ONE commit.
           `drafts.photo` is a front-matter photo (`FJS-D1406`–`FJS-D1408`):
-          the upload is DECODED AND RE-ENCODED by core/site-photo.ts (what
+          the upload is DECODED AND RE-ENCODED by domain/site/site-photo.ts (what
           does not decode is refused, EXIF is dropped) and committed beside
           the old one with the key's line; `http.maxBodySize` is 10 MB in
           app.ts for it, since the config file has no key for the bound.
           `drafts.ask` is an owner's request to a model (`FJS-D1242`): the
-          `site:ask` job runs core/site-ask.ts, which writes the draft's
+          `site:ask` job runs domain/site/site-ask.ts, which writes the draft's
           `content/**.md` to a temp folder, runs the cli's `runAsk` in EDIT
           mode scoped to it, grades every file it added, changed or removed
           with site-kit's `changeRefusal` (`gradeAsk`; one refusal drops the
@@ -65,13 +65,13 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           site (`FJS-D1424`), handed to that child only; the limit is the
           argv's $2 a run (`FJS-D1425`). Each draft's last ask is a file beside
           the clone, on `list` as its preview is.
-          core/site-preview.ts is a draft's preview: it BUILDS NOTHING — the
+          domain/site/site-preview.ts is a draft's preview: it BUILDS NOTHING — the
           `site:preview` job sends `/site/preview` to the App's placement,
           where Outpost builds in throwaway containers (`FJS-D1251`), with
           the workspace's Cloudflare account and the account id off its zone
           (`FJS-D1252`); each draft's last preview is a file beside the clone,
           and a save during a build is the same run's next round
-          core/site-publish.ts is a site's LIVE release: `releaseSite` sends
+          domain/site/site-publish.ts is a site's LIVE release: `releaseSite` sends
           `/site/publish` for a developer's Deploy of a static git App and for
           an owner's Publish alike, and the commit it answers is recorded on the
           release. A publish (`drafts.publish`, the `site:publish` job, as the
@@ -87,7 +87,7 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           redeemed for an 8-hour `drafts`-scoped key with an `ApiKey` row.
           CORS admits that origin because app.ts asks `isPreviewOrigin`, the
           set `markPreview` keeps; a preview recorded nowhere is refused.
-          core/release-record.ts is the ONE writer of a release's run (start,
+          domain/release/release-record.ts is the ONE writer of a release's run (start,
           step, finish), called by `deployments` at the caller's standing and
           by a publish as the app
           core/credentials.ts owns both conduit ref forms — `secret:<id>` and
@@ -97,10 +97,10 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           the droplet, and Basecamp's own A record under the fleet's mark,
           each through this app's connector over core/bearer-send.ts, since
           no app is booted to hold a conduit registry
-          core/runtime.ts is the ONE reader of how a container starts —
+          domain/release/runtime.ts is the ONE reader of how a container starts —
           App's port, volume, health path and limits, each a `docker run` flag;
           a column added there and not applied by outpost is `FJS-1605` again
-          core/variables.ts is what a container's environment IS — the
+          domain/release/variables.ts is what a container's environment IS — the
           environment's `Variable` rows with the app's own on top, snapshotted
           when a release is made and a secret read only when it is sent
           core/session-auth.ts projects this app's OWN User columns onto the
@@ -114,7 +114,7 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           always handed `-F` with the file that was listed, because ssh finds ~
           through passwd and Bun through $HOME; git is always handed
           `core.fsmonitor=false`, because a status runs that command
-          core/workbench.ts is Claude Code chats per PINNED checkout — tabs
+          domain/workbench/workbench.ts is Claude Code chats per PINNED checkout — tabs
           under the message box, one running at a time since they share the
           tree (`workbench` service, /workbench/), behind the same refusal: each
           message is a detached `claude -p` with permissions bypassed, writing
@@ -122,11 +122,11 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           `bun --watch` restart neither kills a run nor loses its status. Not in
           the database — a pin is a folder on this machine. A run ending with
           nothing queued starts the checkout's OWN `fli done` as its own process
-          (core/workbench-check.ts, only where the checkout carries done.js) and,
+          (domain/workbench/workbench-check.ts, only where the checkout carries done.js) and,
           where the pin asks, a read-only reviewer; each is stamped with when it
-          started and hidden once a newer message is sent. core/workbench-diff.ts
+          started and hidden once a newer message is sent. domain/workbench/workbench-diff.ts
           is the diff panel — the TREE against HEAD, so another session's edits
-          show there too. core/workbench-run.ts is the Run tab: `fli dev` per app
+          show there too. domain/workbench/workbench-run.ts is the Run tab: `fli dev` per app
           and every package.json script, read off fli's `findApps`/`tasks` and
           started by ROW ID, detached, its pid on the pin and its output in its
           own log — never `children.js`, whose in-memory table a `bun --watch`
@@ -140,7 +140,7 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           Bun's own PTY in the pin's folder, xterm.js in web/src/components/
           Terminal.mesa. Same refusal and ADMINISTRATOR as the service, a key
           refused, and an Origin that is not this machine refused at the
-          upgrade. core/workbench-shell.ts names the shell: a tmux session on
+          upgrade. domain/workbench/workbench-shell.ts names the shell: a tmux session on
           basecamp's OWN tmux server (`-L basecamp`), so a closed socket
           detaches rather than ends it; Unpin and Archive end it.
           A pin may carry PLANS (`plans: [{ path, steps }]`, IDEAS/shipped/workbench-plans.md),
@@ -174,11 +174,11 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           while a run is live, since the strike rewrites the plan file.
           `commit` is the Diff tab's: the files the owner ticked, each sent
           with the `blob` the diff read, committed through `git commit --only`
-          (core/workbench-diff.ts's `commitFiles`) — so another session's
+          (domain/workbench/workbench-diff.ts's `commitFiles`) — so another session's
           staged files stay staged, the checkout's hooks run, and a file
           written since the diff was read is refused by name. A step never
           commits (`FJS-D968`); a branch lands, then commits on its checkout.
-          core/workbench-branch.ts is a BRANCH: Fork snapshots the parent's tree through a temporary index (its real index and HEAD
+          domain/workbench/workbench-branch.ts is a BRANCH: Fork snapshots the parent's tree through a temporary index (its real index and HEAD
           are only read), cuts wb/<slug> into a worktree under WORKBENCH_DIR/trees
           and pins it, then sets it up before it answers — the parent's copy
           list (gitignored globs, default **/.env) copied across and
@@ -241,7 +241,7 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           a Server crossing `online` dispatch (the last through the one tap in
           app.ts, as the app), and skips what cannot be pushed YET — an App on
           no online machine keeps its record (`FJS-D567`); the ingress addresses are
-          `servingAddresses` in core/runtime.ts, which only the deploy job's
+          `servingAddresses` in domain/release/runtime.ts, which only the deploy job's
           `running` mark feeds. Reads at `Domain`'s read gate — the account
           lookup is `asSystem()` confined to the workspace, since a developer
           is below `Secret`'s 5; the portal's `edge` entry reads the same lookup

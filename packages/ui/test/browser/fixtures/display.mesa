@@ -53,6 +53,11 @@
 <button id="grow-chart" onclick={() => months = [...months, { m: 'Apr', v: 20 }]}>grow chart</button>
 <div id="probe-chart-gap"><Chart rows={[{ m: 'Jan', v: 10 }, { m: 'Feb' }, { m: 'Mar', v: 12 }]} x="m" y="v" label="With a gap" /></div>
 <div id="probe-chart-gap-line"><Chart rows={[{ m: 'Jan', v: 10 }, { m: 'Feb', v: 11 }, { m: 'Mar', v: null }, { m: 'Apr', v: 12 }]} x="m" y="v" type="line" label="Line with a gap" /></div>
+<div id="probe-chart-h"><Chart rows={[{ c: 'Acme Valve Supply', v: 40 }, { c: 'Bolt', v: 25 }, { c: 'Corrigan Industrial', v: -5 }]} x="c" y="v" orientation="horizontal" label="Sales by customer" format={v => `${v} u`} /></div>
+<div id="probe-chart-cmp"><Chart rows={[{ m: 'Jan', v: 10, p: 30 }, { m: 'Feb', v: 20, p: 15 }]} x="m" y="v" compare="p" compareLabel="Last year" label="This year" /></div>
+<div id="probe-chart-cmp-line"><Chart rows={[{ m: 'Jan', v: 10, p: 30 }, { m: 'Feb', v: 20, p: 15 }, { m: 'Mar', v: 25, p: 18 }]} x="m" y="v" type="line" compare="p" compareLabel="Last year" label="This year" /></div>
+<div id="probe-chart-ref"><Chart rows={[{ m: 'Jan', v: 10 }, { m: 'Feb', v: 12 }]} x="m" y="v" reference={50} referenceLabel="Target" label="Under target" /></div>
+<div id="probe-chart-ref-h"><Chart rows={[{ c: 'Ball valve', v: 10 }, { c: 'Hose barb', v: 12 }]} x="c" y="v" orientation="horizontal" reference={50} referenceLabel="Reorder at" label="Stock" /></div>
 <div id="probe-sparkline-undef"><Sparkline data={[2, undefined, 40, 78]} label="With undefined" /></div>
 <div id="probe-sparkline-null"><Sparkline data={[20, null, 40, 78]} label="With null" /></div>
 <div id="probe-bar"><Bar value={74} max={100} label="Disk" unit="%" /></div>

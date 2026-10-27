@@ -8,18 +8,14 @@
 // fixed rather than `toLocale*String()`, which orders a date however the
 // browser's locale does — one date column reads `9/14/2026` for one operator
 // and `14/09/2026` for the next, and `3/4` is either month. The words are
-// `@frontierjs/toolbelt/datetime`'s; what stays here is this app's clock, its
-// three patterns, and what a row with no time says.
+// `@frontierjs/toolbelt/datetime`'s; what stays here is this app's three
+// patterns, and what a row with no time says.
 //
-// Every instant is read in the VIEWER's zone: a fleet has no calendar of its
-// own, and a heartbeat is a moment rather than a day somebody is billed for.
+// Every instant is read in the VIEWER's zone, the kit's `dt`: a fleet has no
+// calendar of its own, and a heartbeat is a moment rather than a day somebody
+// is billed for.
 
-import { createDatetime } from '@frontierjs/toolbelt/datetime'
-
-export const dt = createDatetime({
-  timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-  now:      Date.now,
-})
+import { dt } from '@frontierjs/mesa/browser'
 
 /**
  * `'5m ago'`, `'now'` under a minute, and `none` for a row with no time — `never`

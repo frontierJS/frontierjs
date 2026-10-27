@@ -32,7 +32,7 @@ question asked of a machine instead of a lockfile.
 | The one place a command runs on the box, injectable runner | `outpost/src/docker.js` `createInspector` | **where the readings go**, beside `disk()` and `volumes()` |
 | Outbound reports on their own clocks, one signed POST | `outpost/src/report.js` | a fourth report, `posture`, on a slow clock |
 | A report becoming a row and a screen | `/cleanup report` → `DiskUsage` → `CleanupRun` | **the shape to copy**: reading, then a run that acts and records what it did |
-| A pure grader, no db and no clock, `no-data` ≠ fine | `basecamp/api/src/core/alerting.ts` | **the shape of `gradePosture`** |
+| A pure grader, no db and no clock, `no-data` ≠ fine | `basecamp/api/src/domain/alert/alerting.ts` | **the shape of `gradePosture`** |
 | Drain / undrain on a server | `ServerStatus.draining`, `servers` service | the step before a patch that restarts docker |
 | Delivery | `NotificationChannel`, `notifyPeople`, the metric store + `AlertRule` | posture failures, unchanged |
 | The outside view | `IDEAS/uptime-monitoring.md` probes from the Basecamp process | the same vantage for the port probe |
@@ -108,7 +108,7 @@ A reading whose command fails is **`unknown`**, not absent and not passing. That
 (6h, plus once at start) and on demand through a signed `POST /posture` for the
 screen's *check now*.
 
-### `core/posture.ts` — the one grader
+### `domain/host/posture.ts` — the one grader
 
 `gradePosture(readings, declared) → Control[]`, each
 `{ id, group, ok: true|false|'unknown', severity, message }`. It is pure and
@@ -287,7 +287,7 @@ findings before and after, and is never automatic. Basecamp did not build that b
    purity. Nothing here behaves unlike its sibling.
 5. **Derived.** The listening set, the allowed source and the known keys are derived.
    The controls are code, not a table, because each one is a reading plus a rule.
-6. **Owner.** Commands → `createInspector` (exists). Grading → `core/posture.ts`
+6. **Owner.** Commands → `createInspector` (exists). Grading → `domain/host/posture.ts`
    (new, beside `alerting.ts`). Delivery, metrics, events → existing owners.
 7. **Boundary.** One signed report and two signed routes, snake_case on the wire like
    the others. The upgrade argv is the Outpost's, so no caller text reaches a shell.
@@ -369,7 +369,7 @@ ships it that way — that is worth knowing too), and it sorts to the top of
   an argv array, a failing command `unknown`; tested against the 0.1 fixtures.
 - [x] 1.3 The `posture` report in `report.js` (6h, plus once at start) and the
   signed `POST /posture` for *check now*.
-- [x] 1.4 `core/posture.ts`: `gradePosture` and the derived `declared`, with the
+- [x] 1.4 `domain/host/posture.ts`: `gradePosture` and the derived `declared`, with the
   test that a report older than twice its interval grades every control `unknown`.
 - [x] 1.5 `ServerPosture`, the report endpoint, `posture_failed`/`posture_restored`
   `ServerEvent`s, the `server.posture.failing` metric and its retention.

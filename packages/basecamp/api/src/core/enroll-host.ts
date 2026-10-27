@@ -20,7 +20,7 @@
 //   { error: '<what>' }                  and the exit is non-zero
 
 import { createBasecampDb } from './db.ts'
-import { hostServer, useHost, publicIp } from './host-machine.ts'
+import { hostServer, useHost, publicIp } from '../domain/host/host-machine.ts'
 
 const answer = (o: Record<string, unknown>) => console.log(JSON.stringify(o))
 

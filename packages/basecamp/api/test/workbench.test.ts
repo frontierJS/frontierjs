@@ -1,6 +1,6 @@
 // api/test/workbench.test.ts — pins, runs and their logs, against a FAKE claude.
 //
-// The real CLI costs money and needs a login; what `core/workbench.ts` owns is
+// The real CLI costs money and needs a login; what `domain/workbench/workbench.ts` owns is
 // the pin file, the detached run writing its own log, and the fold of that log
 // into a transcript and a status. The fake records its argv and stdin and
 // answers in stream-json, so every one of those is exercised as a process.
@@ -10,9 +10,9 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createWorkbench, pinId, shownPlan } from '../src/core/workbench.ts'
-import { treeOf } from '../src/core/workbench-branch.ts'
-import { parseUnifiedDiff, readDiff } from '../src/core/workbench-diff.ts'
+import { createWorkbench, pinId, shownPlan } from '../src/domain/workbench/workbench.ts'
+import { treeOf } from '../src/domain/workbench/workbench-branch.ts'
+import { parseUnifiedDiff, readDiff } from '../src/domain/workbench/workbench-diff.ts'
 
 const SESSION = '5acea7bb-3850-44cf-81dc-97688510acda'
 const tmp = mkdtempSync(join(tmpdir(), 'basecamp-workbench-'))

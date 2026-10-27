@@ -36,7 +36,7 @@
 import { createService, NotFound, BadRequest, Conflict, Forbidden, Unauthorized, Gone, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, requireWorkspaceRole, refuseGrantAboveOwn, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { notifyPeople, workspaceMembers } from '../../core/notify.ts'
+import { notifyPeople, workspaceMembers } from '../../domain/notify/notify.ts'
 import { grantsFor } from '../../core/capabilities.ts'
 import { ws, actor, findScoped, getScoped } from '../../core/resource.ts'
 import { env } from '../../core/env.ts'

@@ -2,7 +2,7 @@
 // and deployed on the App's placement, then the site's branch moved
 // (`IDEAS/owner-editing.md` 1.4). Dispatched as `site:publish` by
 // `drafts.publish`, which wrote the release row; the work is
-// `core/site-publish.ts`.
+// `domain/site/site-publish.ts`.
 //
 // The app's own work, dispatched `actor: null`, as `site:preview` is: the
 // publisher holds a grant and need hold no membership. One attempt, because
@@ -11,7 +11,7 @@
 
 import { defineJob }        from '@frontierjs/caravan'
 import { runsAsApp }        from './context.ts'
-import { runPublish }       from '../core/site-publish.ts'
+import { runPublish }       from '../domain/site/site-publish.ts'
 import { BUILD_TIMEOUT_MS } from '../providers/executor.ts'
 
 const sitePublish = defineJob<{ deploymentId: string }>({

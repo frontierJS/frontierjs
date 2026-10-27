@@ -15,7 +15,7 @@
 // (web/config/vite.config.js, deploy/caddyfile.mjs) and no other.
 //
 // With tmux on PATH the shell is a tmux session named for the pin
-// (core/workbench-shell.ts), so a closed socket — a tab switch, a reload, a
+// (domain/workbench/workbench-shell.ts), so a closed socket — a tab switch, a reload, a
 // `bun --watch` restart — kills only the tmux CLIENT and the next socket
 // reattaches to the same shell. Without tmux the shell dies with its socket.
 //
@@ -26,7 +26,7 @@
 import { LEVELS }                from '@frontierjs/litestone'
 import { localMachineRefusal }   from '../core/env.ts'
 import { basecampGateLevel }     from '../core/gate.ts'
-import { shellArgv }             from '../core/workbench-shell.ts'
+import { shellArgv }             from '../domain/workbench/workbench-shell.ts'
 import type { App }              from '@frontierjs/junction'
 
 const ORIGIN_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', 'tauri.localhost'])

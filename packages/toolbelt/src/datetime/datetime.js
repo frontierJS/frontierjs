@@ -637,7 +637,7 @@ export function dayHeader(instant, now, { locale = 'en-US', timeZone } = {}) {
 /**
  * The locale, zone and clock an app states once, bound into every function.
  *
- *   // web/src/lib/datetime.js
+ *   // @frontierjs/mesa/browser binds the viewer's once, as dt
  *   export const dt = createDatetime({ timeZone: viewerZone, now: Date.now })
  *
  *   dt.relativeToNow(order.createdAt)      // '2 hours ago'

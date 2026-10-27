@@ -9,7 +9,7 @@
 import { createService, BadRequest, NotFound, $ } from '@frontierjs/junction'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing } from '../../core/resource.ts'
-import { isGit } from '../../core/app-source.ts'
+import { isGit } from '../../domain/release/app-source.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 /**

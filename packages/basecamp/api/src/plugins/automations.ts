@@ -2,7 +2,7 @@
 //
 // Orion runs a workspace's flows as the member who owns them. What it cannot do
 // on its own is reach a `NotificationChannel`: the credential is in a `Secret`,
-// and how each kind is spoken to is `core/delivery.ts`'s, which has two callers
+// and how each kind is spoken to is `domain/notify/delivery.ts`'s, which has two callers
 // already. A flow node that rendered its own Slack body would be the third copy
 // of that table, so `basecamp.page` is a thin door onto `deliverToChannel`.
 //
@@ -17,7 +17,7 @@
 
 import type { JunctionActor, INodeImplementation, NodeContext, NodeResult, PluginManifest } from '@frontierjs/orion'
 import type { App }         from '@frontierjs/junction'
-import { deliverToChannel, type Message } from '../core/delivery.ts'
+import { deliverToChannel, type Message } from '../domain/notify/delivery.ts'
 
 const SEVERITIES = ['info', 'warning', 'critical'] as const
 

@@ -26,6 +26,7 @@ title: Payroll
   import { payRates } from '@/resources/PayRate.mesa'
   import { prefs } from '@/stores/prefs.js'
   import { day, span } from '@/lib/datetime.js'
+  import { toneFor } from '@/lib/status-tone.js'
   import { session } from '@frontierjs/sierra/resource'
   import { money } from '../../lib/money.js'
 
@@ -53,10 +54,6 @@ title: Payroll
     { name: 'percent', label: 'Rate', align: 'right' },
     { name: 'from',    label: 'In force from' },
   ]
-
-  // A UI decision, and a value added to the enum lands here as the default
-  // rather than vanishing.
-  const TONE = { draft: 'muted', calculated: 'info', approved: 'warning', paid: 'success' }
 
   const list = payRuns.tethered({ directives: { orderBy: '-periodEnd' } })
   const rows = () => list.rows
@@ -138,7 +135,7 @@ title: Payroll
     <tr data-run={r.id} data-reference={r.reference}>
       <td><a href={'/payroll/' + r.id + '/'} data-open><Mono size="xs">{r.reference}</Mono></a></td>
       <td>{span(r.periodStart, r.periodEnd)}</td>
-      <td data-run-status={r.status}><Pill tone={TONE[r.status] ?? 'muted'} data-status={r.status}>{r.status}</Pill></td>
+      <td data-run-status={r.status}><Pill tone={toneFor(r.status)} data-status={r.status}>{r.status}</Pill></td>
       <td class="text-right" data-headcount={r.headcount ?? ''}>{r.headcount ?? '—'}</td>
       <td>
         <div class="cluster">

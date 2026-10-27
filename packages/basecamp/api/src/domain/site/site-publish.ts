@@ -1,4 +1,4 @@
-// src/core/site-publish.ts — a static site's live release, and an owner's
+// src/domain/site/site-publish.ts — a static site's live release, and an owner's
 // Publish of a draft into it (`IDEAS/owner-editing.md` 1.4).
 //
 // **`releaseSite` is the one way a site goes live.** A developer's Deploy of a
@@ -29,10 +29,10 @@
 import type { App } from '@frontierjs/junction'
 import { cloudflareFor } from './site-preview.ts'
 import { advanceBase, mergeDraft, unreleased, type Author, type GitSite } from './site-checkout.ts'
-import { finishRelease, recordStep, startRelease } from './release-record.ts'
-import { notifyPeople, workspaceMembers } from './notify.ts'
-import { isGit } from './app-source.ts'
-import { resolveExecutor, isExecutor, BUILD_TIMEOUT_MS } from '../providers/executor.ts'
+import { finishRelease, recordStep, startRelease } from '../release/release-record.ts'
+import { notifyPeople, workspaceMembers } from '../notify/notify.ts'
+import { isGit } from '../release/app-source.ts'
+import { resolveExecutor, isExecutor, BUILD_TIMEOUT_MS } from '../../providers/executor.ts'
 
 /** The steps of a publish, in order. */
 export const PUBLISH_STEPS = ['Validate', 'Merge', 'Build and deploy', 'Advance branch']

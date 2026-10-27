@@ -21,7 +21,7 @@ import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/ju
 import { LEVELS }                  from '@frontierjs/litestone'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { env, localMachineRefusal } from '../../core/env.ts'
-import { branchName }              from '../../core/workbench-branch.ts'
+import { branchName }              from '../../domain/workbench/workbench-branch.ts'
 import {
   loadFli, registerRoot, readAtlas, forgetAtlas, recordsFor, composePrompt, branchSlug,
   readQueue, explain, explanationOf,

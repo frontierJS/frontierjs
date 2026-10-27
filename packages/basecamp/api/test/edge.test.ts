@@ -512,7 +512,7 @@ describe('sync', () => {
   })
 
   test('a release landing on a second machine is drift until synced, and then it is not', async () => {
-    const { markRunning } = await import('../src/core/runtime.ts')
+    const { markRunning } = await import('../src/domain/release/runtime.ts')
     await markRunning(app.db, web.id, online2.id)
 
     const name = `${web.id}.shop.test`
@@ -676,7 +676,7 @@ describe('sync', () => {
 
   test('a path route pushes both Apps, the prefix to the one holding it and the host to the Domain\'s own (FJS-2647)', async () => {
     const { routeDomainApp } = await import('../src/jobs/domain-dns.job.ts')
-    const { routedPaths }    = await import('../src/core/runtime.ts')
+    const { routedPaths }    = await import('../src/domain/release/runtime.ts')
     const sys    = env.system as any
     const front  = await sys.app.create({ data: { workspaceId: site.id, environmentId: web.environmentId, name: 'front', slug: 'front',
       source: { kind: 'inline', files: [] } } })

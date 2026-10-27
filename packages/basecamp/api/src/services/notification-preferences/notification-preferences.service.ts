@@ -19,7 +19,7 @@
 
 import { createService, BadRequest, Unauthorized, $ } from '@frontierjs/junction'
 import { db, shapedByCaller }                         from '../../core/resource.ts'
-import { NOTIFICATION_KINDS, NOTIFICATION_KIND_NAMES, notificationKind } from './kinds.ts'
+import { NOTIFICATION_KINDS, NOTIFICATION_KIND_NAMES, notificationKind } from '../../domain/notify/kinds.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 /** The caller, or a refusal. The Data boundary would refuse a stranger anyway —

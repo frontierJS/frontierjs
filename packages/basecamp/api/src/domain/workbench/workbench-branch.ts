@@ -1,4 +1,4 @@
-// src/core/workbench-branch.ts — the git half of a workbench branch: a pinned
+// src/domain/workbench/workbench-branch.ts — the git half of a workbench branch: a pinned
 // checkout's tree snapshotted, a linked worktree cut from the snapshot, the
 // branch's work applied back, the worktree removed (IDEAS/workbench-branches.md).
 //
@@ -14,7 +14,7 @@
 // a running app has no `.env` and no dev database. `copyIgnored` carries the
 // ignored paths the pin's copy list names across from the parent.
 //
-// Git is called as `core/workbench-diff.ts` calls it, every path one argv
+// Git is called as `domain/workbench/workbench-diff.ts` calls it, every path one argv
 // element, never a shell string.
 
 import { execFileSync }                       from 'node:child_process'
@@ -23,7 +23,7 @@ import { copyFileSync, existsSync, mkdtempSync, rmSync, statSync, utimesSync } f
 import { cp, mkdir }                          from 'node:fs/promises'
 import { tmpdir }                             from 'node:os'
 import { dirname, join }                      from 'node:path'
-import { env }                                from './env.ts'
+import { env }                                from '../../core/env.ts'
 
 /** A snapshot names at most this many of the files it carried beyond HEAD. */
 export const MAX_CARRIED = 50
