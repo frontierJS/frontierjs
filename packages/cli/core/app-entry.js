@@ -156,6 +156,7 @@ export function readAppSnapshot(root) {
         svc = {
           name:          head[1],
           model:         head[2] ?? head[1],
+          aliases:       [],
           methods:       [],
           customMethods: [],
           channel:       null,
@@ -169,6 +170,7 @@ export function readAppSnapshot(root) {
       const bullet = line.match(/^-\s*\*\*([^*]+)\*\*\s*—\s*(.*)$/)
       if (bullet) {
         const values = backticked(bullet[2])
+        if (bullet[1] === 'also answers to') svc.aliases      = values
         if (bullet[1] === 'methods')        svc.methods       = values
         if (bullet[1] === 'custom methods') svc.customMethods = values
         if (bullet[1] === 'broadcasts on')  svc.channel       = values[0] ?? null

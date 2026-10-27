@@ -46,8 +46,10 @@ where the workspace is — so this builds HERE, exactly as `fli deploy:local`
 does: `deploy/generated/` vendored, then `docker build -f` the app's Dockerfile.
 
 The image goes to each machine by `docker save | ssh <machine> docker load` —
-no registry, and a save/load round trip keeps the image id, so the digest the
-release names is the digest that starts. The machines are the App's placements
+no registry. The release names the id the MACHINE's daemon gives the tag after
+the load, not this one's: a daemon on the containerd image store ids an image
+by its manifest digest and the classic store by its config digest, so one
+round trip can change the id. The machines are the App's placements
 on online servers, reached as `sshUser@ipAddress` (and `sshPort` when it is not
 22) off each Server row; `--server` names the destination instead, for an App on
 one machine reached by an ssh alias. A machine named `localhost` is this
@@ -431,17 +433,29 @@ if (inline) {
 
   const machineFor = (host, transport = null) => createMachine({ host, exec: $.exec, transport })
   const here = machineFor('localhost', 'local')
+  // A daemon on the containerd image store names an image by its manifest
+  // digest and the classic store by its config digest, so the same bytes
+  // loaded there carry another id. Released under this daemon's id, Outpost
+  // holds no such image and pulls the tag, which no registry has.
+  const landed = new Map()
   for (const d of destinations) {
     log.info(`Loading ${tag} onto ${d.name} (${d.host})...`)
-    const shipped = here.shipTo(machineFor(d.host), tag)
+    const there = machineFor(d.host)
+    const shipped = here.shipTo(there, tag)
     if (!shipped) log.info(`${d.name} is this machine's daemon — the image is already there`)
+    landed.set(d.name, shipped ? there.capture(`docker image inspect --format '{{.Id}}' ${tag}`) : imageId)
   }
+  const ids = new Set(landed.values())
+  if (ids.size > 1)
+    throw new Error(`the machines name ${tag} by different ids (${[...landed].map(([n, id]) => `${n}: ${id.slice(0, 19)}`).join(', ')}) — one release names one digest, so give them one Docker image store`)
+  const releasedId = ids.size ? [...ids][0] : imageId
+  if (!/^sha256:[0-9a-f]{64}$/.test(releasedId)) throw new Error(`the machine named no image id for ${tag} — got '${releasedId}'`)
 
   release = await basecamp(origin, key, '/deployments', {
     method: 'POST',
-    body:   { appId: app.id, toImage: tag, builtImage: imageId, ...commit },
+    body:   { appId: app.id, toImage: tag, builtImage: releasedId, ...commit },
   })
-  named = `${tag} — ${imageId.slice(0, 19)}`
+  named = `${tag} — ${releasedId.slice(0, 19)}`
 }
 
 // ─── The release ──────────────────────────────────────────────────────────────

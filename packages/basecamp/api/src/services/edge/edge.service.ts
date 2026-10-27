@@ -132,19 +132,26 @@ const sendFor = (a: EdgeAccount) => {
   return { connector, send: sendVia($.app, targetFor(connector.kind, a.id)) }
 }
 
-/** This workspace's ingress zone, or null when none is set. The pair is read
+/** The workspace's ingress pair as stored, or null when none is set. Read
  *  `asSystem()` confined to the workspace, for `edgeAccounts`' reason: a
  *  developer reads the drift, and the Workspace row is not what they guard. */
-async function ingressZone(accounts: EdgeAccount[]): Promise<ZoneAt | null> {
+async function ingressPair(): Promise<{ accountId: string; zoneId: string } | null> {
   const row = await db().asSystem().workspace.findFirst({
     where: { id: ws() }, select: { ingressAccountId: true, ingressZoneId: true },
   }) as { ingressAccountId: string | null; ingressZoneId: string | null } | null
   if (!row?.ingressAccountId || !row.ingressZoneId) return null
-  const account = accounts.find(a => a.id === row.ingressAccountId)
+  return { accountId: row.ingressAccountId, zoneId: row.ingressZoneId }
+}
+
+/** This workspace's ingress zone, or null when none is set. */
+async function ingressZone(accounts: EdgeAccount[]): Promise<ZoneAt | null> {
+  const pair = await ingressPair()
+  if (!pair) return null
+  const account = accounts.find(a => a.id === pair.accountId)
   if (!account)
-    throw new Conflict(`The ingress zone names edge account '${row.ingressAccountId}', which this workspace no longer holds — set it again`)
+    throw new Conflict(`The ingress zone names edge account '${pair.accountId}', which this workspace no longer holds — set it again`)
   const { connector, send } = sendFor(account)
-  return { account, connector, send, zone: await connector.zone(send, row.ingressZoneId) }
+  return { account, connector, send, zone: await connector.zone(send, pair.zoneId) }
 }
 
 /** The connected zone a hostname lives in — the LONGEST zone name it ends
@@ -264,9 +271,10 @@ export default createService({
   //
   // An account with no zones and an account whose vendor refused are two
   // different screens, so each carries `zones` OR `error`, never an empty
-  // list standing in for a failure.
+  // list standing in for a failure. `ingress` is the stored pair, so the
+  // screen can mark the zone every App's ingress record is written to.
   async zones() {
-    const accounts = await edgeAccounts()
+    const [accounts, ingress] = await Promise.all([edgeAccounts(), ingressPair()])
     const out = await Promise.all(accounts.map(async a => {
       const { connector, send } = sendFor(a)
       try {
@@ -275,7 +283,7 @@ export default createService({
         return { ...a, label: connector.label, zones: null, error: why(err) }
       }
     }))
-    return { accounts: out }
+    return { accounts: out, ingress }
   },
 
   // ── records ────────────────────────────────────────────────────────
@@ -285,7 +293,11 @@ export default createService({
   //
   //   domainId   on a serving record whose name is a Domain's hostname
   //   missing    a Domain inside this zone with no serving record at all —
-  //              a hostname this app means to answer on that resolves nowhere
+  //              a hostname this app means to answer on that resolves nowhere,
+  //              with `why` a push would refuse it: `no-ingress` (no ingress
+  //              zone, or one naming an account that is gone), `no-machine`
+  //              (its App runs on no online server), or null when a push
+  //              would write it
   //   conflicts  a Domain whose name holds a serving record this app did not
   //              mark — `sync` refuses it (`FJS-D560`), so it is named here
   //   orphans    a record this app marked for a Domain or App that is gone
@@ -343,6 +355,17 @@ export default createService({
       if (have.join() !== want.join()) stale.push({ appId, name: recs[0].name, have, want, down: !want.length })
     }
 
+    // In `push`'s order, so the cause named is the refusal a push would make.
+    const pair      = await ingressPair()
+    const noIngress = !pair || !(await edgeAccounts()).some(x => x.id === pair.accountId)
+    const missing   = []
+    for (const d of inZone.filter(d => !served.has(fqdn(d.hostname)))) {
+      const why = noIngress ? 'no-ingress'
+        : !(await servingAddresses($.app.db!, d.appId)).length ? 'no-machine'
+        : null
+      missing.push({ ...d, why })
+    }
+
     return {
       account: { id: a.id, name: a.name, providerKind: a.providerKind },
       zone,
@@ -350,7 +373,7 @@ export default createService({
         ...r,
         domainId: SERVING.has(r.type) ? byHost.get(fqdn(r.name))?.id ?? null : null,
       })),
-      missing:   inZone.filter(d => !served.has(fqdn(d.hostname))),
+      missing,
       conflicts: inZone.filter(d => foreign.has(fqdn(d.hostname))),
       orphans:   records.filter(r =>
         (r.mark?.domainId && !liveDomain.has(r.mark.domainId)) || (r.mark?.appId && !liveApp.has(r.mark.appId))),

@@ -19,6 +19,7 @@ title: DNS & edge
   import { apps } from '../../resources/App.mesa'
   import { portal } from '../../resources/Portal.mesa'
   import { edge } from '../../resources/Edge.mesa'
+  import { workspaces } from '../../resources/Workspace.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -37,6 +38,7 @@ title: DNS & edge
   let appById  = new Map()
   let adapter  = null
   let accounts = []
+  let ingress  = null         // { accountId, zoneId } — where every App's ingress record goes
   let error    = null
   let loading  = true
 
@@ -71,9 +73,11 @@ title: DNS & edge
       adapter = entry
       // Asked only once the portal says an account exists — an empty answer
       // from a workspace with none would read as a zone with nothing in it.
-      accounts = adapter?.configured
-        ? (await edge.service.invoke('zones', null).catch(e => { zoneError = e.message; return { accounts: [] } })).accounts
-        : []
+      const answer = adapter?.configured
+        ? await edge.service.invoke('zones', null).catch(e => { zoneError = e.message; return { accounts: [], ingress: null } })
+        : { accounts: [], ingress: null }
+      accounts = answer.accounts
+      ingress  = answer.ingress
       const first = accounts.find(a => a.zones?.length)
       if (!picked && first) readZone(first.id, first.zones[0].id)
     } catch (e) {
@@ -91,6 +95,41 @@ title: DNS & edge
       zone = null; zoneError = e.message
     } finally {
       zoneBusy = false
+    }
+  }
+
+  // The pair is written together, the schema's `@@check`; the Workspace's
+  // `@version` is read fresh so a rename elsewhere is not overwritten.
+  let ingressBusy  = false
+  let ingressError = null
+  async function useForIngress(accountId, zoneId) {
+    ingressBusy = true; ingressError = null
+    try {
+      const ws = await workspaces.service.get(session.workspaceId)
+      await workspaces.service.patch(ws.id, { ingressAccountId: accountId, ingressZoneId: zoneId, version: ws.version })
+      ingress = { accountId, zoneId }
+      toasts.success('Ingress zone set')
+      readZone(accountId, zoneId)
+    } catch (e) {
+      ingressError = e.message
+    } finally {
+      ingressBusy = false
+    }
+  }
+
+  // A hostname a push would write (`why` null) is pushed from here, since
+  // nothing else pushes it until its Domain or its App's machines change.
+  let pushingId = null
+  async function push(d) {
+    pushingId = d.id; zoneError = null
+    try {
+      await edge.service.invoke('sync', d.id)
+      toasts.success(`${d.hostname} pushed`)
+      readZone(picked.accountId, picked.zoneId)
+    } catch (e) {
+      zoneError = e.message
+    } finally {
+      pushingId = null
     }
   }
 
@@ -119,6 +158,8 @@ title: DNS & edge
   // An ingress record naming the wrong machines. `down` is an app on no online
   // machine at all, whose record is kept where it last ran (FJS-D567) — the
   // one a push cannot fix, so it is the red one.
+  $: isIngress = !!picked && ingress?.accountId === picked.accountId && ingress?.zoneId === picked.zoneId
+
   $: down       = zone?.stale.filter(s => s.down) ?? []
   $: staleTitle = down.length
     ? `${down.length === 1 ? 'An app runs' : `${down.length} apps run`} on no online machine`
@@ -348,7 +389,7 @@ title: DNS & edge
                   treatment={picked?.zoneId === z.id ? 'outlined' : 'ghost'}
                   aria-pressed={picked?.zoneId === z.id ? 'true' : 'false'}
                   onclick={() => readZone(account.id, z.id)}
-                >{z.name} <Pill tone={ZONE_TONE[z.status] ?? 'muted'}>{z.status}</Pill></Button>
+                >{z.name} <Pill tone={ZONE_TONE[z.status] ?? 'muted'}>{z.status}</Pill>{#if ingress?.accountId === account.id && ingress?.zoneId === z.id} <Badge tone="success">ingress</Badge>{/if}</Button>
               {/each}
             </div>
           {/if}
@@ -369,7 +410,18 @@ title: DNS & edge
           <Callout tone="warning" title={missingTitle}>
             <ul id="zone-missing">
               {#each zone.missing as d}
-                <li><code>{d.hostname}</code> — resolves nowhere in <code>{zone.zone.name}</code></li>
+                <li>
+                  <code>{d.hostname}</code> — resolves nowhere in <code>{zone.zone.name}</code>:
+                  {#if d.why === 'no-ingress'}
+                    this workspace has no ingress zone; choose the zone its apps' records go in with <em>Use for ingress</em> below
+                  {:else if d.why === 'no-machine'}
+                    {appById.get(d.appId)?.name ?? 'its app'} runs on no online server — deploy it
+                  {:else}
+                    not pushed yet
+                    <Button treatment="ghost" disabled={pushingId === d.id} aria-label={`Push ${d.hostname}`}
+                            onclick={() => push(d)}>{pushingId === d.id ? 'Pushing…' : 'Push'}</Button>
+                  {/if}
+                </li>
               {/each}
             </ul>
           </Callout>
@@ -392,7 +444,22 @@ title: DNS & edge
           </Callout>
         {/if}
 
-        <h3 class="h5">Records in <code>{zone.zone.name}</code></h3>
+        <div class="section-header">
+          <h3 class="h5">Records in <code>{zone.zone.name}</code></h3>
+          {#if isIngress}
+            <Badge tone="success" id="ingress-badge">ingress zone</Badge>
+          {:else}
+            <Button treatment="outlined" id="ingress-use" disabled={ingressBusy}
+                    data-confirm={`Every app's ingress record is written to ${zone.zone.name}${ingress ? ', and the zone set now stops receiving them' : ''}.`}
+                    data-confirm-title="Use this zone for ingress?" data-confirm-label="Use for ingress"
+                    onclick={() => useForIngress(picked.accountId, picked.zoneId)}>Use for ingress</Button>
+          {/if}
+        </div>
+        {#if ingressError}
+          <article class="alert danger" id="ingress-error">
+            <div class="alert-content">{ingressError}</div>
+          </article>
+        {/if}
         {#if zone.records.length === 0}
           <p class="text-sm text-muted">This zone holds no records.</p>
         {:else}

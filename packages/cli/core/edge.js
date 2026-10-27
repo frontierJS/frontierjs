@@ -242,15 +242,18 @@ const apiRoute = (apiPort, paths = null) => ({
 /**
  * The paths the API mounted, as first segments, off `readAppSnapshot`'s parse:
  * `{ prefix, roots }`, or null with no snapshot. `/{service}` is every service
- * at once and is expanded to their names; `/` (static routes) and `/*` (the
- * CORS preflight) would take the whole origin and are left out.
+ * at once and is expanded to their names AND the spellings junction also
+ * answers (`domain-routes` beside `domainRoutes`) — a spelling left out here
+ * reaches the SPA's file server, which refuses a write with a bare 405.
+ * `/` (static routes) and `/*` (the CORS preflight) would take the whole
+ * origin and are left out.
  */
 export function apiPaths(snapshot) {
   if (!snapshot) return null
   const roots = new Set()
   for (const { path } of snapshot.routes) {
     if (path === '/' || path === '/*') continue
-    if (path.startsWith('/{')) for (const s of snapshot.services) roots.add(`/${s.name}`)
+    if (path.startsWith('/{')) for (const s of snapshot.services) for (const n of [s.name, ...(s.aliases ?? [])]) roots.add(`/${n}`)
     else roots.add('/' + path.split('/')[1])
   }
   return roots.size ? { prefix: snapshot.prefix, roots: [...roots].sort() } : null

@@ -268,6 +268,8 @@ describe('the edge service', () => {
     expect(byType.MX.domainId).toBeNull()
     // www has a Domain and no record; elsewhere.test is not in this zone at all.
     expect(answer.missing.map((d: any) => d.hostname)).toEqual(['www.example.test'])
+    // …and why: no ingress zone is set, so no push could write it.
+    expect(answer.missing[0].why).toBe('no-ingress')
   })
 
   test('a vendor refusal is a 502 with the vendor\'s message', async () => {
@@ -487,7 +489,15 @@ describe('sync', () => {
     const workspaces = env.as(admin).service('workspaces')
     await expect(workspaces.patch(site.id, { ingressZoneId: 'zone-shop', version: await version() }))
       .rejects.toThrow(/an ingress zone names its account and its zone together/)
+    const before = await edge(developer).call('records', null, { accountId: good.id, zoneId: 'zone-example' }) as any
+    expect(before.missing.find((d: any) => d.id === api.id).why).toBe('no-ingress')
     await workspaces.patch(site.id, { ingressAccountId: good.id, ingressZoneId: 'zone-shop', version: await version() })
+  })
+
+  test('zones names the ingress zone, and a missing hostname a push would write carries no cause', async () => {
+    expect((await edge(developer).call('zones', null, {}) as any).ingress).toEqual({ accountId: good.id, zoneId: 'zone-shop' })
+    const { missing } = await edge(developer).call('records', null, { accountId: good.id, zoneId: 'zone-example' }) as any
+    expect(missing.find((d: any) => d.id === api.id).why).toBeNull()
   })
 
   test('pushes the ingress record, then the CNAME to it, each marked, carrying proxied', async () => {
@@ -545,6 +555,8 @@ describe('sync', () => {
     const quiet = await (env.system as any).domain.create({ data: { workspaceId: site.id, appId: idle.id, hostname: 'idle.example.test' } })
     await expect(edge(admin).call('sync', quiet.id, {}))
       .rejects.toMatchObject({ code: 409, message: expect.stringContaining('runs on no online server') })
+    const { missing } = await edge(developer).call('records', null, { accountId: good.id, zoneId: 'zone-example' }) as any
+    expect(missing.find((d: any) => d.id === quiet.id).why).toBe('no-machine')
 
     await expect(edge(developer).call('sync', api.id, {})).rejects.toMatchObject({ code: 403 })
   })

@@ -874,6 +874,18 @@ try {
     ['CNAME', 'MX', 'TXT', 'ingress-1.fleet.test'].every(t => recText.includes(t)), recText.slice(0, 200))
   check('a hostname with no record is named as resolving nowhere',
     (await text('#zone-missing')).includes('drive.example.test'), await text('#zone-missing'))
+  // FJS-3532: no screen set the ingress zone, so a push was refused and the
+  // warning said only that the name resolved nowhere.
+  check('and says the cause is no ingress zone', (await text('#zone-missing')).includes('no ingress zone'),
+    await text('#zone-missing'))
+  await click('#ingress-use')
+  await until(`!!document.querySelector('[role=dialog][aria-modal=false]')`, v => v, 'Use for ingress asked no confirmation')
+  await evaluate(`document.querySelector('[role=dialog][aria-modal=false] .cluster button:last-child').click()`)
+  await until(`!!document.getElementById('ingress-badge')`, v => v, 'the zone never read as the ingress zone')
+  await until(`document.querySelector('#zone-missing')?.textContent ?? ''`, t => t.includes('drive.example.test') && !t.includes('no ingress zone'),
+    'the missing hostname still blamed no ingress zone once one was set')
+  ok('Use for ingress sets the zone, and the missing hostname stops blaming it')
+  check('and the zone list marks it', (await text('#edge-zones')).includes('ingress'), await text('#edge-zones'))
 
   // An ingress record marked as the app's and naming an address it runs at
   // nowhere, written at the stand-in directly: `stale` drift. Red when the app
