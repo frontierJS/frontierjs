@@ -14,7 +14,7 @@
   --tone-l-max: 1;
 
   /* ── Accents: field markers, brass, and surveyor's inks ──────────── */
-  --color-primary:   #a8b58a; /* sage */
+  --color-primary:   #9db39f; /* pine sage */
   --color-secondary: #d0ad6f; /* aged brass */
   --color-muted:     #a0a18f; /* weathered stone */
   --color-info:      #8faeb5; /* dusty slate */
@@ -22,15 +22,15 @@
   --color-warning:   #e0b36c; /* ochre */
   --color-danger:    #d98270; /* faded vermilion */
 
-  /* ── Grounds: charcoal with a green-brown undertone ──────────────── */
-  --app-bg:          #151815;
-  --surface:         #1d211d;
-  --surface-raised:  #292e28;
-  --surface-sunken:  #111410;
+  /* ── Grounds: near-black charcoal, a faint warm undertone ──────── */
+  --app-bg:          #0f0f0e;
+  --surface:         #181715;
+  --surface-raised:  #23211f;
+  --surface-sunken:  #0a0a09;
 
-  --topbar-bg:       #171a16;
-  --sidebar-bg:      #171a16;
-  --dialog-bg:       #232821;
+  --topbar-bg:       #121211;
+  --sidebar-bg:      #121211;
+  --dialog-bg:       #1d1c1a;
 
   /* ── Ink: parchment, not white ───────────────────────────────────── */
   --ink:             #e2ddca;
@@ -38,8 +38,8 @@
   --ink-mute:        #a19e8d;
 
   /* ── Rules: quiet at rest, clear when emphasized ─────────────────── */
-  --rule:            #3a4037;
-  --rule-strong:     #50594b;
+  --rule:            #34322e;
+  --rule-strong:     #4b4842;
 
   /* ── Elevation: subtle lift, no glossy glow ──────────────────────── */
   --surface-shadow:  0 1px 2px rgba(0, 0, 0, 0.24);
