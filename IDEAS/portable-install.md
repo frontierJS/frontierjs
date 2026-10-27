@@ -32,19 +32,40 @@ path to (`app-cli.md` compiles `cli/` only; `site:build --compile` a site only;
 | `ubuntu:24.04` container, non-root, no bun/node/Chrome | `create-owner`, login, SPA page, deep-link refresh, fixed report, custom report (worker), PDF (20 KB, `%PDF-1.4`) all pass, `mode: production` |
 | `ubuntu:20.04` (glibc 2.31) | boots and answers |
 | Headless screenshot of `/admin/items` | the SPA renders from the folder, calls `/api`, live dot green |
+| Host, both kinds (§ Two kinds) built by the one `make-drive.ts` | `smoke.sh` passes on each: fixed report, custom report (worker), PDF |
+| `ubuntu:24.04`, non-root, bun 1.4.4 only, plain bundle, no Chromium, `printer()` off | `create-owner`, login, SPA page, deep link, asset, fixed report, custom report (worker) all pass, `mode: production` |
 
 The container got only the shared libraries a stock Ubuntu desktop already has
 (NSS, ATK-bridge, GBM, X11 family, ALSA, DejaVu/Liberation fonts) — those are
 what the bundled Chromium links against; the binary itself needs only libc.
+For the last row, the drive's copy of `app.ts` had its `app.configure(printer())`
+line commented out to stand in for an app without print-kit; print-kit refuses
+to boot with no Chrome (wall 7).
 
-**Size: 379 MB** — the binary 115 MB (Bun + every `@frontierjs` package), the
-app's own files under 1 MB, the built SPA, and a headless Chromium at 262 MB.
+**Size.** The first container drive is 379 MB on disk. Where it goes:
+
+| Drive | Raw | `zip -9` | `tar.xz -9` |
+| --- | --- | --- | --- |
+| compiled, with Chromium | 379 MB | — | — |
+| compiled, no Chromium | 119 MB | 55 MB | 39 MB |
+| plain bundle for an installed bun, no Chromium | 8.8 MB | 2.6 MB | 1.1 MB |
+| for scale: `bun build --compile` of one `console.log` | 109 MB | 52 MB | — |
+
+**The compiled binary is Bun.** Of its 115 MB, 109 MB is the runtime any compiled
+program carries; the app and every `@frontierjs` package are about 6 MB. Leaving
+print-kit out saves its Chromium (262 MB) and almost nothing in the binary, so
+about 52 MB zipped is the floor for the compiled kind. The plain bundle has no
+such floor: `launcher.js` and `worker-boot.js` each carry the same 3 MB of
+packages, so one file serving both would roughly halve it.
+`--splitting` shares them (1.5 MB gzipped, measured) but was not run after the
+worker fix in wall 5.
 
 ## How the prototype works
 
 ```
 drive/
   thod          bun build --compile: launcher + every @frontierjs package the app imports
+                (--plain: a sh script running launcher.js, worker-boot.js, runtime.js beside it)
   app/          the app's OWN files, on disk: api/ (minus test, scripts), db/schema.lite
     node_modules/@frontierjs/*   generated stubs + the packages' data files (.lite, .css)
     db/         app.db, audit.db, jobs.db, encryption.key — made on first run
@@ -76,6 +97,20 @@ the drive's Chromium, `FRONTIER_APP_URL` at its own port, `create-owner` (sign-u
 is closed in thod), `open` (server, then `xdg-open`), and a `Bun.serve` wrapper
 serving `web/` with an `index.html` fallback beside the API.
 
+### Two kinds from the same files
+
+`make-drive.ts` builds the **compiled** kind by default: `bun build --compile`,
+Bun inside, nothing required on the target. With `--plain` it builds the same
+three entries with `bun build --target=bun` into JS files beside `app/`, and
+`thod` becomes `exec bun …/launcher.js "$@"`: the target needs bun, and the drive
+loses the 109 MB runtime. The launcher tells them apart by
+`import.meta.dir.startsWith('/$bunfs')` — compiled, the drive is
+`dirname(execPath)` and the worker boot is the compiled entry `./worker-boot.ts`;
+plain, `execPath` is the installed bun, so the drive is the launcher's own folder
+and the worker boot is `worker-boot.js` beside it. The stubs, the `runtime.js`
+entry and the `NODE_ENV` define are needed by both (walls 4 and 6); only wall 3
+is compile-only.
+
 ## The walls, each with where a real fix belongs
 
 1. **`import.meta.url` is `/$bunfs/root/…` in a compiled binary** — the reason the
@@ -99,13 +134,21 @@ serving `web/` with an `index.html` fallback beside the API.
    binary is `/$bunfs/root/runtime.js`. Workaround: a third compile entry named
    `runtime.js` re-exporting the bundled copy. A real fix is an option or env
    naming the runtime module, kept to one copy as that function's comment demands.
+   Any bundle has it, not only a binary: the plain kind with `runtime.js` removed
+   fails on `<drive>/runtime.js`.
 5. **A `Worker` is a fresh global**, so the report sandbox's
    `sandbox.worker.ts` found no `__thodBundled`. Workaround: the launcher wraps
-   `globalThis.Worker` to start every worker on a compiled-in `worker-boot.ts`
+   `globalThis.Worker` to start every worker on a bundled `worker-boot.ts`
    that fills the global and then imports the requested file
-   (`THOD_WORKER_ENTRY`).
+   (`THOD_WORKER_ENTRY`). **The boot must hold early messages.** A message posted
+   while the requested file is still loading reaches no `onmessage` and is
+   dropped without an error; the plain kind loads slowly enough that the sandbox's
+   first run was always lost and timed out at 20 s, and the compiled kind only
+   happened to win the race. `worker-boot.ts` queues messages until the file has
+   set its handler, then hands them over.
 6. **`bun build` inlines `process.env.NODE_ENV` as `"development"`** into
-   compiled code whatever the environment says. Workaround:
+   bundled code whatever the environment says, compiled or plain, minified or
+   not. Workaround:
    `--define process.env.NODE_ENV="production"`; the app's on-disk files read the
    real env, which the launcher sets.
 7. **What a deploy supplies is missing.** print-kit refuses to boot with no Chrome
@@ -148,38 +191,44 @@ Done when: the container run in § What was proved passes.
 - [x] 0.3 Print templates and the report worker (walls 4–5)
 - [x] 0.4 Launcher: key, production mode (wall 6), Chromium, SPA serving, `create-owner`, `open`
 - [x] 0.5 Clean `ubuntu:24.04` and `ubuntu:20.04` runs
+- [x] 0.6 The plain kind for an installed bun (`--plain`), and the worker's early-message race it exposed
 
 **Done 2026-10-27.** Every wall had a workaround outside the packages; walls 3, 4,
-6 and the print-kit hang are worth fixing on their own.
+6 and the print-kit hang are worth fixing on their own. The plain kind came the
+same day: 2.6 MB zipped against 55 MB, the same smoke passing, at the cost of
+bun on the target (Q5).
 
 ### Phase 1 — upstream the fixes the workarounds stand in for
 
 Goal: the prototype loses its hacks one by one.
 Done when: `make-drive.ts` has no literal-subpath copy and no `runtime.js` entry.
 
-- [ ] 1.1 print-kit refuses a PDF by name when Chromium cannot launch, instead of hanging
-- [ ] 1.2 mesa: the runtime module a compiled template imports is nameable
-- [ ] 1.3 Bun: minimal repro of wall 3 filed upstream
-- [ ] 1.4 Junction: an SPA fallback on `http.static`, so a launcher passes config instead of wrapping `Bun.serve`
+- [ ] 1.1 print-kit refuses a PDF by name when Chromium cannot launch, instead of hanging (`FJS-3541`)
+  - The cause is mesa's `openChrome`: its wait for the DevTools port ignores the process exiting.
+- [ ] 1.2 mesa: the runtime module a compiled template imports is nameable (`FJS-3542`)
+- [ ] 1.3 Bun: minimal repro of wall 3 filed upstream (`FJS-3544`)
+- [ ] 1.4 Junction: an SPA fallback on `http.static`, so a launcher passes config instead of wrapping `Bun.serve` (`FJS-3543`)
+- [ ] 1.5 `NODE_ENV` defined at compile time by every FJS compile, `cli:build` included (`FJS-3545`)
 
 ### Phase 2 — `fli release:portable`
 
 Goal: any scaffolded app, one command, the folder above.
 Done when: `example/` builds one and a drive runs it in `ubuntu:24.04`.
 
-- [ ] 2.1 Rule Q1–Q4
+- [ ] 2.1 Rule Q1–Q5
 - [ ] 2.2 Derive the bundled specifier list from the app's imports
 - [ ] 2.3 Names from `junction.config.js`'s `app.name`, not `thod`
 - [ ] 2.4 Chromium fetched from Chrome for Testing, pinned, cached
 - [ ] 2.5 Bind `127.0.0.1`; a config file for SMTP and friends
 - [ ] 2.6 `install.sh` + XDG entry; `uninstall`
+- [ ] 2.7 The plain kind refuses to start on a bun outside the range it was built and tested on, by name
 
 ### Phase 3 — a drive
 
 Goal: it stays working.
 Done when: `verify:portable` runs in CI.
 
-- [ ] 3.1 `verify:portable`: build, stream into `ubuntu:24.04`, owner, login, report, worker report, PDF
+- [ ] 3.1 `verify:portable`: build, stream into `ubuntu:24.04`, owner, login, report, worker report, PDF — for each kind Q5 keeps
 
 ## Open questions
 
@@ -192,6 +241,14 @@ Done when: `verify:portable` runs in CI.
   started beside it is the same folder plus WebKitGTK and Rust at build time.
 - **Q4 — Where the data lives.** Beside the binary (the prototype) or
   `~/.local/share/<app>` with the binary elsewhere.
+- **Q5 — Bun inside, or bun required.** The compiled kind is 55 MB zipped and
+  needs nothing on the target; the plain kind is 2.6 MB and needs bun. Installing
+  bun is `curl -fsSL https://bun.sh/install | bash`, which needs the internet,
+  or bun's own release zip carried on the drive, which gives back most of the
+  saving. The plain kind also ties the drive to a bun version it was not built
+  inside (2.7); only 1.4.4 was run. Both kinds, one flag apart, is a third
+  answer: plain for a machine that has bun, compiled for one that does not.
+  Either way print-kit's Chromium is the larger half until Q2 is ruled.
 
 ## Reproduce it
 
@@ -206,13 +263,18 @@ ln -s <app>/node_modules node_modules         # bun build resolves the packages 
 grep -rhoE "from +['\"]@frontierjs/[^'\"]+['\"]" <app>/api/src <app>/api/config | sort -u
 (cd <app> && bun run build:web)
 bun make-drive.ts <app> ../drive <chrome-headless-shell-linux64 dir>
+# or the plain kind for an installed bun:  bun make-drive.ts <app> ../drive <chrome dir> --plain
 ../drive/thod create-owner owner@example.test 'correct horse battery staple'
 ../drive/thod open                            # or: PORT=8199 ../drive/thod
 ```
 
 Build the drive into a directory with no `node_modules` above it, or a missing
 stub resolves from the symlink and the test lies. Docker as a snap cannot see
-`/tmp`; stream instead: `tar -C <parent> -c drive | docker run --rm -i ubuntu:24.04 bash -c '…'`.
+`/tmp`; stream instead: `tar -C <parent> -c drive | docker run --rm -i ubuntu:24.04 bash -c '…'`,
+or stage under `~/.cache` and mount that. For the plain kind, mount the host's
+bun read-only at `/usr/local/bin/bun` and nothing else. A curl without
+`accept: text/html` gets 405 on a page path, by design: the fallback answers
+browsers only.
 
 ## The prototype, verbatim
 
@@ -261,15 +323,23 @@ import './bundled.ts'
 
 const entry = process.env.THOD_WORKER_ENTRY
 if (!entry) throw new Error('worker-boot.ts started without THOD_WORKER_ENTRY')
+
+// A message posted while the app's worker file is still loading reaches no
+// handler and is dropped; hold them and hand them over once it has set one.
+declare var self: Worker
+const early: MessageEvent[] = []
+self.onmessage = ev => { early.push(ev) }
 await import(entry)
+for (const ev of early) self.onmessage?.(ev)
 ```
 
 ### `launcher.ts`
 
 ```ts
-// Portable launcher: every package the app imports is compiled in; the app's
-// own files sit on disk in ./app beside the binary and are loaded by bun's
-// runtime, with @frontierjs/* answered by stubs over the copies inside this binary.
+// Portable launcher: every package the app imports is bundled in; the app's
+// own files sit on disk in ./app beside it and are loaded by bun's runtime,
+// with @frontierjs/* answered by stubs over the bundled copies. Built either as
+// a compiled binary (bun inside) or a plain bundle run by an installed bun.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { dirname, join, normalize } from 'node:path'
@@ -277,17 +347,22 @@ import { bundled } from './bundled.ts'
 
 void bundled
 
-// A worker is a fresh global, so it starts on worker-boot.ts (compiled in
-// beside this file), which fills __thodBundled there and then loads the file
-// the app asked for.
+// Compiled, every module sits under /$bunfs/root and the drive is the binary's
+// folder; as a plain bundle, execPath is the installed bun and the drive is
+// this file's folder.
+const compiled = import.meta.dir.startsWith('/$bunfs')
+const drive = compiled ? dirname(process.execPath) : import.meta.dir
+
+// A worker is a fresh global, so it starts on worker-boot (bundled beside this
+// file), which fills __thodBundled there and then loads the file the app asked for.
 const BunWorker = globalThis.Worker
 globalThis.Worker = class extends BunWorker {
   constructor(url: string | URL, opts: WorkerOptions & { env?: Record<string, string> } = {}) {
-    super('./worker-boot.ts', { ...opts, env: { ...process.env, ...opts.env, THOD_WORKER_ENTRY: String(url) } })
+    super(compiled ? './worker-boot.ts' : join(drive, 'worker-boot.js'), { ...opts, env: { ...process.env, ...opts.env, THOD_WORKER_ENTRY: String(url) } })
   }
 } as typeof Worker
 
-const appDir = process.env.THOD_HOME ?? join(dirname(process.execPath), 'app')
+const appDir = process.env.THOD_HOME ?? join(drive, 'app')
 process.chdir(appDir)
 
 // The key every encrypted column and session is signed with. Made on the first
@@ -297,8 +372,8 @@ if (!process.env.ENCRYPTION_KEY) {
   if (!existsSync(keyFile)) writeFileSync(keyFile, randomBytes(32).toString('hex') + '\n', { mode: 0o600 })
   process.env.ENCRYPTION_KEY = readFileSync(keyFile, 'utf8').trim()
 }
-// The packages inside the binary were built with NODE_ENV inlined as
-// production; the app's own files read it here.
+// The bundled packages were built with NODE_ENV inlined as production; the
+// app's own files read it here.
 process.env['NODE_ENV'] ??= 'production'
 
 // print-kit refuses to boot with no Chrome, and a stock Ubuntu desktop has only
@@ -347,13 +422,16 @@ if (process.argv[2] === 'open') Bun.spawn(['xdg-open', `http://localhost:${port}
 ### `make-drive.ts`
 
 ```ts
-// Stage the thumb-drive folder: the compiled launcher, the app's own files, and
-// stub packages under app/node_modules that re-export the compiled-in copies.
-// Usage: bun make-drive.ts <project> <out> [chrome-headless-shell dir]
+// Stage the thumb-drive folder: the launcher with every package bundled in, the
+// app's own files, and stub packages under app/node_modules that re-export the
+// bundled copies. --plain writes a JS bundle for an installed bun instead of a
+// compiled binary: about 2.6 MB zipped rather than 55.
+// Usage: bun make-drive.ts <project> <out> [chrome-headless-shell dir] [--plain]
 import { cpSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 
-const [project, out, chrome] = process.argv.slice(2)
+const plain = process.argv.includes('--plain')
+const [project, out, chrome] = process.argv.slice(2).filter(a => a !== '--plain')
 const src = readFileSync(join(import.meta.dir, 'bundled.ts'), 'utf8')
 const specs = [...src.matchAll(/import \* as \w+ from '(@frontierjs\/[^']+)'/g)].map(m => m[1])
 
@@ -409,8 +487,12 @@ const runtime = await import('@frontierjs/mesa/runtime')
 writeFileSync(join(import.meta.dir, 'runtime.js'),
   `const m = globalThis.__thodBundled['@frontierjs/mesa/runtime']\nexport const { ${Object.keys(runtime).filter(k => k !== 'default').join(', ')} } = m\n`)
 
-const build = Bun.spawnSync(['bun', 'build', '--compile', '--target=bun-linux-x64', '--define', 'process.env.NODE_ENV="production"',
-  join(import.meta.dir, 'launcher.ts'), join(import.meta.dir, 'worker-boot.ts'), join(import.meta.dir, 'runtime.js'), '--outfile', join(out, 'thod')], { stdout: 'inherit', stderr: 'inherit' })
+const entries = ['launcher.ts', 'worker-boot.ts', 'runtime.js'].map(f => join(import.meta.dir, f))
+const define = ['--define', 'process.env.NODE_ENV="production"']
+const build = Bun.spawnSync(plain
+  ? ['bun', 'build', '--target=bun', '--minify', ...define, ...entries, '--outdir', out]
+  : ['bun', 'build', '--compile', '--target=bun-linux-x64', ...define, ...entries, '--outfile', join(out, 'thod')], { stdout: 'inherit', stderr: 'inherit' })
+if (plain) writeFileSync(join(out, 'thod'), '#!/bin/sh\nexec bun "$(dirname "$(readlink -f "$0")")/launcher.js" "$@"\n', { mode: 0o755 })
 process.exit(build.exitCode ?? 1)
 ```
 

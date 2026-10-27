@@ -18,8 +18,8 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | --- | --- | --- | --- | --- |
 | V1.1.1 | 2 | covered | `packages/junction/src/transport/static.ts`, `packages/junction/test/fixtures/served-path-vectors.json`, `packages/junction/test/static-root.test.ts` | Served paths decode once; `%2e%2e`, `%5c`, malformed escapes refused. Query values have one decoder (`toolbelt/query`) |
 | V1.1.2 | 2 | covered | `packages/mesa/src/runtime.js:1385`, `packages/mesa/src/render.js:179`, `packages/litestone/src/core/query.js:491` | Mesa writes via DOM text nodes/setAttribute; SQL values bound; the interpreter does the encoding |
-| V1.2.1 | 1 | covered | `packages/mesa/src/render.js:179`, `packages/mesa/test/render-ssr.test.js:94` | Text and attribute escaping proved, SSR included; header values go through `Headers`, mail CRLF refused |
-| V1.2.2 | 1 | partial | `packages/mesa/src/runtime.js:1385`, `packages/mesa/test/url-scheme.test.js`, `packages/junction/src/client/index.ts:509` | `javascript:`/`data:text/html` refused on href/src/action. Client puts ids into URL paths unencoded (see Findings) · [FJS-3188](../ISSUES.md#fjs-3188) |
+| V1.2.1 | 1 | covered | `packages/mesa/src/render.js:179`, `packages/mesa/test/render-ssr.test.js:94` | Text and attribute escaping proved, SSR included; header values go through `Headers`, mail CRLF refused · THREATS B21 |
+| V1.2.2 | 1 | partial | `packages/mesa/src/runtime.js:1385`, `packages/mesa/test/url-scheme.test.js`, `packages/junction/src/client/index.ts:509` | `javascript:`/`data:text/html` refused on href/src/action. Client puts ids into URL paths unencoded (see Findings) · [FJS-3188](../ISSUES.md#fjs-3188) · THREATS B21 |
 | V1.2.3 | 1 | covered | `packages/sierra/src/build/prerender.js:331`, `packages/sierra/src/build/mcp-build.js:266` | JSON-LD escapes `<`; inlined script/style escape closing tags; wire is `JSON.stringify` |
 | V1.2.4 | 1 | covered | `packages/litestone/test/identifier-refusals.test.ts`, `packages/litestone/test/unknown-args.test.ts` | THREATS B3. Bound params; names refused; `db.sql` throws once access rules exist |
 | V1.2.5 | 1 | covered | `packages/cli/core/machine.js`, `packages/cli/test/machine.test.js`, `packages/litestone/src/tools/replicate.js:333` | App runtime makes no shell calls; tooling spawns argv arrays or script on stdin |
@@ -33,7 +33,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V1.3.4 | 2 | partial | `packages/toolbelt/src/mime/mime.js:253`, `packages/junction/src/transport/static.ts:261` | SVG never sanitized. It is sniffed and served as attachment only under `static: { untrusted: true }`; an S3 bucket serves it inline |
 | V1.3.5 | 2 | covered | `packages/toolbelt/src/markdown/markdown.js:10`, `packages/toolbelt/test/specs/markdown.spec.js` | Raw HTML never passed; link schemes allowlisted; entities in URLs not decoded |
 | V1.3.6 | 2 | covered | `packages/junction/src/core/public-url.ts`, `packages/junction/test/webhook-targets.test.ts` | THREATS B13. Webhooks and conduit's per-send address graded before every attempt and connected at the graded address; helper exported for apps. Basecamp's monitor sweep pins each redirect hop the same way ([FJS-3357](../ISSUES.md#fjs-3357)) |
-| V1.3.7 | 2 | covered | `packages/litestone/test/untrusted-schema.test.ts` | Templates compile from app files at build. Untrusted `.lite` text refuses dangerous words (FJS-1633) |
+| V1.3.7 | 2 | covered | `packages/litestone/test/untrusted-schema.test.ts` | Templates compile from app files at build. Untrusted `.lite` text refuses dangerous words (FJS-1633) · THREATS B22 |
 | V1.3.8 | 2 | n.a. | — | No Java/JNDI |
 | V1.3.9 | 2 | n.a. | — | No memcache; cache drivers are an in-process Map and SQLite with bound values |
 | V1.3.10 | 2 | n.a. | — | No format-string interpreter on input; logger writes JSON via `process.stdout.write` |
@@ -65,7 +65,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | ID | L | Grade | Where | Note |
 | --- | --- | --- | --- | --- |
 | V3.2.1 | 1 | partial | `packages/junction/src/transport/static.ts:261`, `packages/junction/test/static-root.test.ts`, `packages/cli/core/checks.js:1152` | Upload attachment disposition needs `untrusted: true` (fli check warns); S3 objects get none |
-| V3.2.2 | 1 | covered | `packages/mesa/src/compiler.js:1809`, `packages/mesa/test/render-ssr.test.js:108` | Interpolation is a text node; `innerHTML=` attribute inert, refused in spreads |
+| V3.2.2 | 1 | covered | `packages/mesa/src/compiler.js:1809`, `packages/mesa/test/render-ssr.test.js:108` | Interpolation is a text node; `innerHTML=` attribute inert, refused in spreads · THREATS B21 |
 | V3.3.1 | 1 | partial | `packages/auth/plugin.ts:748` | Secure only when `NODE_ENV=production`; no `__Host-`/`__Secure-` prefix on `session` |
 | V3.3.2 | 2 | covered | `packages/auth/plugin.ts:748`, `packages/auth/test/routes.test.ts:309` | Session Lax, login challenge Strict, OAuth state Lax (callback is cross-site) |
 | V3.3.3 | 2 | none | `packages/auth/plugin.ts:748` | Cookies named `session`, `login_challenge`, `fjs_oauth_state`; no `__Host-` |

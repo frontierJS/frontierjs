@@ -766,3 +766,41 @@ export async function createNetwork(browser) {
     },
   }
 }
+
+// ─── what a rendered page owes ─────────────────────────
+
+/**
+ * The page-level accessibility facts a machine can settle, as an expression a
+ * drive evaluates on a rendered page: an array of findings, empty when the
+ * page is in order. Sierra writes `lang` and the skip link (`FJS-D836`) and the
+ * layout renders the landmarks; this is the one reader of both, so a screen
+ * that drops its `<main>` or skips from `h1` to `h3` fails here by name
+ * rather than passing in every drive that never asked. Component-level facts
+ * (a control with no name, a `<th>` with no scope) are an app's own audit,
+ * beside this one.
+ */
+export const PAGE_AUDIT = `(() => {
+  const out = []
+  if (!document.documentElement.getAttribute('lang')) out.push('no lang on <html>')
+  const mains = document.querySelectorAll('main')
+  if (mains.length !== 1) out.push('<main> count = ' + mains.length)
+  const skips = document.querySelectorAll('.skip-link')
+  if (skips.length !== 1) out.push('skip link count = ' + skips.length)
+  else {
+    const first = document.body.querySelector('a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])')
+    if (first !== skips[0]) out.push('skip link is not the first focusable: ' + (first ? first.outerHTML.slice(0, 40) : 'none'))
+    const id = (skips[0].getAttribute('href') || '').replace(/^#/, '')
+    const target = id && document.getElementById(id)
+    if (!target) out.push('skip link target #' + id + ' is not on the page')
+    else if (!target.hasAttribute('tabindex')) out.push('skip link target #' + id + ' cannot take focus: no tabindex')
+  }
+  const navs = [...document.querySelectorAll('nav')]
+  if (navs.length > 1) for (const n of navs)
+    if (!n.getAttribute('aria-label') && !n.getAttribute('aria-labelledby')) out.push('one of ' + navs.length + ' navs has no name')
+  const hs = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].map(h => +h.tagName[1])
+  const h1s = hs.filter(n => n === 1).length
+  if (h1s !== 1) out.push('h1 count = ' + h1s)
+  for (let i = 1; i < hs.length; i++)
+    if (hs[i] - hs[i - 1] > 1) out.push('heading jumps h' + hs[i - 1] + ' to h' + hs[i])
+  return out
+})()`

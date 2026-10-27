@@ -9,7 +9,7 @@
  * Only a real browser has inert and a top layer, so only a drive can see it.
  */
 export const name   = 'CopyButton fallback'
-export const covers = ['display/CopyButton']
+export const covers = ['display/CopyButton', 'overlay/Modal']
 
 // Refuse the async clipboard so the fallback runs, and record what each
 // `execCommand('copy')` saw selected and what it answered.
@@ -61,6 +61,11 @@ async function drive(t) {
 
   await t.clickAt('#stage #open-modal')
   await t.evaluate(`await waitFor(() => document.querySelector('dialog[open]')); return true;`)
+  t.is(await t.evaluate(`
+    const d = document.querySelector('dialog[open]');
+    const title = document.getElementById(d.getAttribute('aria-labelledby') ?? '');
+    return title && d.contains(title) ? title.textContent : null;
+  `), 'Key', 'the dialog is labelled by the title it rendered, derived from the title prop and nothing else')
   await t.evaluate(`return await waitVisible('#in-modal button');`)
 
   await t.clickAt('#in-modal button')

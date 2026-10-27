@@ -347,6 +347,10 @@ Asked in [`IDEAS/accessibility.md`](IDEAS/accessibility.md) § Open questions. *
 
 The paper's recommendation, taken as written: WAI-ARIA is the field's existing name for exactly what one entry holds (role, required owned and labelling elements, state attributes), so the noun is discovered rather than coined. B stretches it over the page-level kind the first question gives to sierra, and C is the home § *Why not `css/vocabulary.js`* already rules out.
 
+**Amended 2026-10-27:** an entry may carry `parts: { <anatomy class>: { role, requires, tracks } }` for a child that holds the role or the state — `Tabs` is the strip and the buttons, and `role=tab` with its `aria-selected` was stated by hand in `vocabulary.js` and `Tab.mesa` with no origin. The part key is a class `vocabulary.js` already names, so the shape spends no new word (`decision-rules`, 2026-10-27).
+
+**Amended 2026-10-27 (2.3):** `tracks` means reported ON OR WITHIN the carrier, and a state on a child that carries no class — Breadcrumb's current page, which css styles by `[aria-current]` alone — sits on the term's own row rather than under a part naming a class nothing renders. `NATIVE` beside `RELATIONSHIPS` says which native attribute reports a tracked state by itself (`disabled` for `aria-disabled`), so the table stays per term and the drive invents no second list (`decision-rules`, 2026-10-27).
+
 ### <a id="fjs-d823"></a>2026-10-09 · `FJS-D823` — The remaining nouns — The `template` key takes the Layout helper's own word (`stack`, `split`, `grid`), and roles get no author-facing names, since position is the only way an author states one.
 
 Asked in [`IDEAS/site-kit-structure.md`](IDEAS/site-kit-structure.md) § Open questions. **B** was picked over **A** (the names in § *The proposed shape*: templates `content`, `media`, `columns`, `grid`, and roles `header`, `body`, `media`, `card`), **C** (adopt ksite's six `block-with-*` names unchanged).
@@ -12667,6 +12671,10 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d1551"></a>2026-10-27 · `FJS-D1551` — A server render writes a literal `style=` as its bytes; only a browser takes the CSSOM path `FJS-D1464` chose. `set_attribute` gates the `style.cssText` branch on `_isClient`.
+
+Asked in chat, through the question tool, after full CI failed seven email-kit tests. **Keep the bytes under SSR** (recommended) was picked over **update the tests to happy-dom's form**. happy-dom re-serializes `cssText`, which split an email's hand-written `outline` shorthand and reordered declarations a mail client reads as written. A CSP gates only what a browser applies, so `FJS-D1464`'s strict policy loses nothing. Costs 7 bytes gzip on mesa's rows bench (`bench/baseline.json` adopted). **Narrows** [`FJS-D1464`](#fjs-d1464).
+
 ### <a id="fjs-d1543"></a>2026-10-27 · `FJS-D1543` — The viewer's date binding is `@frontierjs/mesa/browser`'s: the kit exports `dt`, `at` and `ago` on every host, and the scaffold stops writing `web/src/lib/datetime.js`.
 
 Asked over [`FJS-3519`](ISSUES.md#fjs-3519). 28 of 32 prototype copies of `lib/datetime.js` were byte-identical to `makeDatetimeJs()`, which made them framework code living in app trees. The owner picked the home, `mesa/browser` over sierra and toolbelt. Toolbelt is refused by `FJS-D26`: it reads no clock, and its `createDatetime` doc gives the reason a bound default is not toolbelt's, which is that one server renders for many zones. The nine ran before ruling and passed on the three conditions below, put through the question tool as three questions. As recommended, all three.
@@ -15298,6 +15306,18 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1554"></a>2026-10-27 · `FJS-D1554` — `fli tutor:tools` gives a reused app the migration its pushed model lacks — `fli db:migrate add_note --create-only`, then `fli db:baseline` — and lesson 1 keeps teaching `db:push`.
+
+Asked in chat, through the question tool, after full CI failed *does anything fail a check*. Lesson 1 pushes `Note`, lesson 2 reuses that app, and the `migration-history` rule (2026-10-22) graded a schema the history does not build. **Tools catches up** (recommended) was picked over **lesson 1 migrates**, which would lose *the schema is the migration*. Both commands are no-ops over an app that migrated; app → tools → tools replay exits 0.
+
+### <a id="fjs-d1553"></a>2026-10-27 · `FJS-D1553` — `make:desktop` writes the app's own config/api-origin.js when absent and its `desktop.config.js` calls `pinApiOrigin`, as `example/` does; the module's text is `API_ORIGIN_MODULE` in `packages/cli/core/app-config.js`, byte-identical to `example/config/api-origin.js`.
+
+Asked in chat, through the question tool, after full CI failed *example/desktop is this generator's output*. **The generator follows the example** (recommended) was picked over **revert the example** and **exempt the file**. A second checkout gets its API port only as `FRONTIER_PORT_BE`, so a surface left to read `FRONTIER_PUBLIC_API_URL` builds against the parent's API.
+
+### <a id="fjs-d1552"></a>2026-10-27 · `FJS-D1552` — `fli ask`'s recipe corpus is each package's CLAUDE.md and its docs/hazards.md; the three recipe questions that moved cite `packages/litestone/docs/hazards.md`, `packages/caravan/docs/hazards.md` and `packages/ui/docs/hazards.md`.
+
+Asked in chat, through the question tool, after full CI failed the graded set. The CLAUDE.md trims moved the computed-field, `defineJob` and `registerControl` answers behind a pointer. **The corpus follows the pointer** (recommended) was picked over **re-key the questions** and **restore the CLAUDE.md lines**, so a trim never costs `ask` an answer. The graded set scores 24, its baseline.
 
 ### <a id="fjs-d1546"></a>2026-10-27 · `FJS-D1546` — Q10 — Where Docker's advisories come from — GitHub's repository advisories for `moby/moby`, graded from each advisory's Docker Engine row.
 

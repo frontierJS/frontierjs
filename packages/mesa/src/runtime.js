@@ -6252,8 +6252,10 @@ export function set_attribute(el, name, value) {
   }
 
   // CSSOM, which a CSP does not gate: `setAttribute('style', …)` is refused
-  // under any `style-src` without 'unsafe-inline' (FJS-D1464).
-  if (name === 'style' && el.style) {
+  // under any `style-src` without 'unsafe-inline' (FJS-D1464). A server render
+  // writes the bytes: happy-dom re-serializes cssText, which split an email's
+  // hand-written shorthand, and a CSP gates only what a browser applies.
+  if (name === 'style' && el.style && _isClient) {
     if (value == null || value === false) el.removeAttribute('style')
     else el.style.cssText = '' + value
     return

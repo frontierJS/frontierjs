@@ -1,6 +1,7 @@
 ---
 title: frontier:invite
 description: Mint a one-use invite to the post — the next person walks in with fli frontier:stake
+alias: invite
 effects: mints an invite at the post, spent by its first join or gone in a day
 examples:
   - fli frontier:invite

@@ -66,7 +66,7 @@ import { serveSite } from '@frontierjs/sierra/site/serve'
 // column is `@money(USD)`, so what the database holds and what `data-baked`
 // carries is a whole number of CENTS, and what the page prints is dollars.
 import { formatMoney, fromMinor, toMinor } from '@frontierjs/toolbelt/units'
-import { openChrome } from '../../../packages/mesa/src/drive.js'
+import { openChrome, PAGE_AUDIT } from '../../../packages/mesa/src/drive.js'
 import { portFor } from '@frontierjs/cli/core/ports.js'
 import { PORTS } from '../../web/test/lib/preflight.mjs'
 
@@ -252,6 +252,14 @@ const HARNESS = `
 // The variant whose price the drive will move, and its original. Restored in
 // the finally below — a drive that leaves a shop's prices edited is a drive
 // nobody runs twice.
+// The page-level accessibility facts, on every prerendered page the drive
+// opens (`FJS-D836`): Sierra wrote lang and the skip link into the file, and
+// the layout wrote the landmarks; one grader reads both.
+const a11y = []
+const audit = async (path) => {
+  for (const issue of await evaluate(PAGE_AUDIT)) a11y.push(`${path}: ${issue}`)
+}
+
 const victim = (await sys.productVariant.findMany({ where: { productId: sample.id }, limit: 1 }))[0]
 const originalPrice = victim.price
 let priceMoved = false
@@ -272,6 +280,7 @@ try {
   // ── the product page, as built ───────────────────────────────────────────
   await cmd('Page.navigate', { url: `${ORIGIN}/products/${sample.slug}/` })
   await evaluate(HARNESS)
+  await audit(`/products/${sample.slug}/`)
 
   // The static half is on screen before anything runs, and it stays.
   t('page.name', await evaluate(`return document.getElementById('product-name').textContent.trim()`))
@@ -356,6 +365,7 @@ try {
   //   retires a plan without deleting the versions past subscriptions name.
   await cmd('Page.navigate', { url: `${ORIGIN}/pricing/` })
   await evaluate(HARNESS)
+  await audit('/pricing/')
 
   t('pricing.retiredAbsent', {
     inFile:   !pricingHTML.includes('data-plan="LEGACY"'),
@@ -421,6 +431,7 @@ try {
   // ── the catalog, and its two islands ───────────────────────────────────
   await cmd('Page.navigate', { url: `${ORIGIN}/catalog/` })
   await evaluate(HARNESS)
+  await audit('/catalog/')
 
   // The search box is in the PRERENDERED markup, and so are all twelve rows —
   // so "the box exists" and "there are twelve rows" are both true before the
@@ -537,9 +548,11 @@ try {
   // ── the home page, and the 404 ───────────────────────────────────────────
   await cmd('Page.navigate', { url: `${ORIGIN}/` })
   await evaluate(HARNESS)
+  await audit('/')
   t('home.featured', await evaluate(`
     return [...document.querySelectorAll('#home-featured [data-slug]')].length;
   `))
+  t('a11y', a11y)
   t('home.noJavaScriptNeeded', await evaluate(`
     // The home page carries no island at all, so its only <script> should be
     // the island loader every prerendered page links — and nothing should have
@@ -646,6 +659,7 @@ const expected = {
   'lazy.afterScroll':      ['CatalogList', 'LiveStock'],
 
   'home.featured':         6,
+  'a11y':                  [],
   'home.noJavaScriptNeeded': { apiCalls: 0, headings: 1 },
   'consoleErrors':         [],
 }

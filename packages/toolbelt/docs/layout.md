@@ -62,6 +62,14 @@ src/units/           a magnitude with a unit, as a person reads it. Bytes:
                      declare; `mo` and `yr` carry `factor: null`, because a
                      month has no fixed length and a factor would be a lie a
                      caller could not see — `convertUnit` refuses them by name
+src/aria/            what a css VOCAB term OWES the accessibility tree — the
+                     role its element does not carry by itself, the
+                     relationships that must exist (`label`, `controls`),
+                     the state → attribute it reports; a child carrying one
+                     sits under `parts`, keyed by its anatomy class. The
+                     origin `vocabulary.js` ANATOMY blocks and `Tab.mesa`
+                     each restated by hand (`FJS-D837`, `FJS-D806`). `owes`
+                     flattens a term to rows a drive walks
 src/gate/            the access LADDER — the 0-9 scale, `levelPasses` (8 and 9
                      are SENTINELS, so it is not `>=`), and `gradeStanding`,
                      the session shape -> level. Four hand copies across three

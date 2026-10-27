@@ -50,7 +50,7 @@ function go(name) {
    * parked on the link they just followed while the page changes under
    * them. This is why .screen carries tabindex="-1".
    */
-  const screen = $('#screen');
+  const screen = $('#main');
   screen.focus({ preventScroll: true });
   screen.scrollTop = 0;
 

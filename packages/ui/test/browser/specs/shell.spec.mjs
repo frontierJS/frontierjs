@@ -43,7 +43,7 @@ export async function run(t) {
     'and no nav is drawn')
 
   await t.clickAt('#stage #sign-in')
-  await t.eventually(`!!document.querySelector('#stage .shell.sidebar-first > main.screen#screen #page')`, 'true',
+  await t.eventually(`!!document.querySelector('#stage .shell.sidebar-first > main.screen#main #page')`, 'true',
     'signing in draws the frame around the same page')
 
   /* ── the table, at 1280 ─────────────────────────────────────────────── */
@@ -64,8 +64,8 @@ export async function run(t) {
     'the brand and the foot are drawn, and the foot is told it is in the sidebar')
   t.ok(await t.evaluate(`return !!document.querySelector('#stage .topbar #top-right');`),
     'the topbar snippet lands in the topbar')
-  t.ok(await t.evaluate(`return document.querySelector('#stage .skip-link')?.getAttribute('href') === '#screen' && !!document.querySelector('#stage #screen[tabindex="-1"]');`),
-    'the skip link targets the Screen, which can take focus')
+  t.ok(await t.evaluate(`return !document.querySelector('#stage .skip-link') && !!document.querySelector('#stage main#main[tabindex="-1"]');`),
+    'the Screen is the #main the document\'s skip link lands on, and can take focus; the link itself is Sierra\'s (FJS-D836)')
 
   t.is(await t.evaluate(`return ${current};`), 'Leads', 'the current page is marked, and an exact / is not')
 
@@ -171,10 +171,12 @@ export async function run(t) {
   t.ok(await t.evaluate(`return !document.querySelector('#stage .sidebar button') && document.querySelector('#stage .topbar button.btn:not(.sidebar-toggle)')?.textContent === 'Sign out';`),
     'Sign out is in the topbar, not the rail')
 
-  await t.evaluate(`document.querySelector('#stage .skip-link').focus(); return true;`)
+  // In an app the document's skip link stands before the shell (FJS-D836); the
+  // kit page has none, so a sentinel stands where it would, and Tab leaves it.
+  await t.evaluate(`const s = document.createElement('button'); s.id = 'before-shell'; document.querySelector('#stage .shell').before(s); s.focus(); return true;`)
   await t.press('Tab')
-  t.ok(await t.evaluate(`return document.activeElement.matches('#stage .sidebar [data-brand]:focus-visible');`),
-    'Tab from the skip link lands in the rail')
+  t.ok(await t.evaluate(`document.getElementById('before-shell').remove(); return document.activeElement.matches('#stage .sidebar [data-brand]:focus-visible');`),
+    'Tab from before the shell lands in the rail')
   await t.eventually(railWidth, String(15 * rem), 'with the keyboard in it the rail opens to --sidebar-width')
   await t.eventually(leadsOpacity, '1', 'and shows its labels')
   t.is(await t.evaluate(`return ${screenLeft};`), 3.5 * rem, 'the page does not move as the rail opens over it')

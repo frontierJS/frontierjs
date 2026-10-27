@@ -69,7 +69,10 @@ Seven, from the css package, and they work on everything:
 
 Fill and text color are both derived from the tone's luminance, verified at
 zero WCAG AA failures across all 42 tone × theme combinations — so there is
-never a text color to pick.
+never a text color to pick. The browser drive also walks every term of
+`@frontierjs/toolbelt/aria` over the rendered component — the role on its
+carrier, each required relationship resolving to an element, each tracked
+state reported where it holds (`test/browser/specs/aria.spec.mjs`).
 
 `utils.js` exports `tone(name)`, which answers one of the seven or `''`
 (untoned). A hue (`red`) or another kit's word (`error`) is not a tone, so a

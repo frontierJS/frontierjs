@@ -131,6 +131,10 @@
 
   const words = el => (el.textContent || '').replace(/\s+/g, ' ').trim()
 
+  // Over an open modal dialog the panel mounts inside it, or it is drawn
+  // beneath the top layer, inert, and a press on it closes the dialog.
+  const host = () => window.__fjsInspect?.host?.() || document.body
+
   const css = (el, s) => { el.style.cssText = s; return el }
   const make = (tag, s, text) => { const el = css(document.createElement(tag), s || ''); if (text) el.textContent = text; return el }
   const BTN = 'font:13px/1 ui-sans-serif,system-ui;padding:6px 11px;border-radius:4px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer'
@@ -554,7 +558,11 @@
     tab.type = 'button'
     tab.title = 'Open the Ask Claude panel'
     tab.onclick = () => fit(false)
-    document.body.append(panel, tab)
+    for (const el of [panel, tab]) window.__fjsInspect?.ignore?.(el)
+    // A modal opening covers the panel and one closing hides it; showModal()
+    // fires no event, but it sets `open`.
+    new MutationObserver(() => { if (panel.parentNode !== host()) layout() })
+      .observe(document.documentElement, { subtree: true, attributeFilter: ['open'] })
     drawTab()
     layout()
     // The rail is drawn in fractions of the log, which a resize of the
@@ -626,6 +634,9 @@
   }
 
   function layout() {
+    const h = host()
+    // A move drops the log's scroll position.
+    if (panel.parentNode !== h) { const top = log.scrollTop; h.append(panel, tab); log.scrollTop = top }
     panel.style.display = closed || shrunk ? 'none' : 'flex'
     tab.style.display = !closed && shrunk ? 'flex' : 'none'
   }
@@ -785,11 +796,14 @@
     if (!el) return line(`${p.loc} is gone from the page — pick it again`, 'error')
     const old = words(el)
     const r = el.getBoundingClientRect(), cs = getComputedStyle(el)
-    const box = make('textarea', `position:absolute;z-index:2147483646;box-sizing:border-box;margin:0;padding:2px 4px;resize:none;outline:none;border:2px solid #38bdf8;border-radius:3px;background:#020617;color:#e2e8f0;top:${r.top + scrollY}px;left:${r.left + scrollX}px;width:${Math.max(r.width, 160)}px`)
+    // A modal dialog does not scroll with the page, so over one the box is fixed.
+    const h = host(), page = h === document.body
+    const box = make('textarea', `position:${page ? 'absolute' : 'fixed'};z-index:2147483646;box-sizing:border-box;margin:0;padding:2px 4px;resize:none;outline:none;border:2px solid #38bdf8;border-radius:3px;background:#020617;color:#e2e8f0;top:${r.top + (page ? scrollY : 0)}px;left:${r.left + (page ? scrollX : 0)}px;width:${Math.max(r.width, 160)}px`)
     for (const k of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'letterSpacing', 'textAlign']) box.style[k] = cs[k]
     box.dataset.fjsTextEdit = p.loc
     box.value = old
-    document.body.appendChild(box)
+    const unignore = window.__fjsInspect?.ignore?.(box)
+    h.appendChild(box)
     box.style.height = Math.max(r.height, box.scrollHeight) + 'px'
     box.focus()
     box.select()
@@ -799,6 +813,7 @@
       over = true
       const next = box.value.replace(/\s+/g, ' ').trim()
       box.remove()
+      unignore?.()
       if (commit && next && next !== old) direct(p, el, old, next)
     }
     box.onkeydown = (e) => {
@@ -1037,6 +1052,8 @@
   ;(function attach() {
     if (window.__fjsInspect && window.__fjsInspect.onPick) {
       window.__fjsInspect.onPick(open)
+      // A reload with the panel open built it before the inspector loaded.
+      if (panel) for (const el of [panel, tab]) window.__fjsInspect.ignore?.(el)
       if (window.__fjsInspect.onPickMode) window.__fjsInspect.onPickMode(drawLatch)
       drawLatch()
       console.log('%c[fli] ask ready — hold shift+alt and click an element to ask Claude to change it', 'color:#38bdf8')

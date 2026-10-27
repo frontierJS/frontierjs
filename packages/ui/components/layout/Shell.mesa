@@ -268,8 +268,6 @@
        {#each} row's effect, so it reads (path, query) first or it is set once
        at mount. -->
   <div class="shell" {class} {...$attributes}>
-    <a class="skip-link" href="#screen">Skip to content</a>
-
     <header class="topbar">
       <div class="cluster">
         {@render drawerToggle()}
@@ -303,7 +301,7 @@
       </div>
     </header>
 
-    <main class="screen" id="screen" tabindex="-1">
+    <main class="screen" id="main" tabindex="-1">
       {#if title || section?.tabs?.length || section?.action}
         <div class="cluster">{@render sectionBar()}</div>
       {/if}
@@ -314,8 +312,6 @@
   {@render drawer()}
 {:else if framed}
   <div class="shell sidebar-first" {class} {...$attributes}>
-    <a class="skip-link" href="#screen">Skip to content</a>
-
     <nav class="sidebar stack" class:rail={railed} class:peek={shape === 'rail'} aria-label="Main">
       {@render navigation(railed ? 'rail' : 'sidebar')}
     </nav>
@@ -333,14 +329,14 @@
       {/if}
     </header>
 
-    <main class="screen" id="screen" tabindex="-1">
+    <main class="screen" id="main" tabindex="-1">
       <slot />
     </main>
   </div>
 
   {@render drawer()}
 {:else}
-  <main class="screen" id="screen" {class} {...$attributes}>
+  <main class="screen" id="main" {class} {...$attributes}>
     <div class="container narrow">
       <slot />
     </div>

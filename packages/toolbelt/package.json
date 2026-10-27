@@ -9,6 +9,7 @@
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "exports": {
+    "./aria": "./src/aria/aria.js",
     "./bearer": {
       "types": "./src/bearer/bearer.d.ts",
       "default": "./src/bearer/bearer.js"

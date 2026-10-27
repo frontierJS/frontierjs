@@ -242,12 +242,8 @@ siteName: Basecamp
   the vocabulary has no word for. No color,
   no utility classes (repo invariant 13).
 -->
-<!-- The skip link is the first focusable thing on the page and is invisible
-     until focused. Without it, a keyboard user tabs through the nav, the
-     workspace switcher and sign-out on EVERY navigation before reaching the
-     content — the design system's frame documents it as part of the shell
-     anatomy (css components/frame.css) and it was simply missing. -->
-<a class="skip-link" href="#screen">Skip to content</a>
+<!-- No skip link here: Sierra writes it first in <body> for every shell
+     (FJS-D836), and its target is the <main id="main"> below. -->
 
 <!-- One definition of the destination list, rendered in the sidebar and again
      in the small-screen drawer.
@@ -445,7 +441,7 @@ siteName: Basecamp
     </nav>
   {/if}
 
-  <main class="screen" id="screen" tabindex="-1">
+  <main class="screen" id="main" tabindex="-1">
     <div class="screen-grid">
       <!-- The condensed attention view rides beside every screen — in the
            right rail when there is room for one, above the content when there

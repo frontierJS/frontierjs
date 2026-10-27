@@ -16,6 +16,7 @@ import { glow } from '@frontierjs/toolbelt/glow'
 | `/inflect` | how a name is spelled — number and shape | shipping |
 | `/directives` | the `$` convention — filters vs directives | shipping |
 | `/gate` | the access ladder — levels, `levelPasses`, `gradeStanding`, `canAtLevel` | shipping |
+| `/aria` | what a css VOCAB term owes the accessibility tree — role, required relationships, tracked state | shipping |
 | `/history` | the key naming one occurrence of change | shipping |
 | `/frontier` | a Frontier member's chain of machines, and the post's signed row for it | shipping |
 | `/hooks` | the four-phase resource pipeline | shipping |

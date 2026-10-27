@@ -1,6 +1,6 @@
 ---
 id: accessibility
-status: proposed
+status: partial
 dated: 2026-09-07
 ---
 
@@ -154,6 +154,128 @@ and pretending otherwise would be a check that fails open.
     package owns its own drive, so the claim sits with its evidence. B states a
     level for packages that test nothing, and C is a key nothing can keep true
     from a static read.
+
+## Plan
+
+Every § Open question is ruled (`FJS-D836`, `FJS-D837`, `FJS-D806`, `FJS-D701`), so the
+order below is theirs. A compiler reader — Svelte's `a11y-*` warnings — is a reopen
+once the kit exists, by amending `FJS-D837`'s reader list, never a second table in
+`compiler.js`: what a component *should* carry is not recoverable from what it does
+(§ The shape), and `fli check` is the one static check surface (`decision-rules`,
+2026-10-27).
+
+### Phase 0 — What is held today
+
+Goal: the five kinds graded and the four questions ruled.
+Done when: every § Open question carries a ruling.
+
+- [x] 0.1 Probe the tree (`VERIFYING.md`, 2026-09-07)
+- [x] 0.2 Q1–Q4 ruled (2026-10-09)
+
+**Done 2026-10-09.** Two kinds derive (schema, tokens); three are held by hand.
+
+### Phase 1 — Modal the `<Form>` way (`FJS-D806`)
+
+Goal: one behavioral component whose aria derives from its one declaration, asserted
+by the drive, and the leftover priced for the kit.
+Done when: `packages/ui`'s browser drive asserts `<dialog aria-labelledby>` names the
+rendered title, and 1.2 states what Modal still owes.
+
+- [x] 1.1 The drive asserts the labelled title — `copy-button.spec.mjs`, where a
+  `<Modal title>` is already mounted; no new spec file
+  - Red with `aria-labelledby={null}` in Modal, green restored (2026-10-27).
+- [x] 1.2 Price what Modal leaves for the kit: `role=dialog` and `aria-modal` are the
+  native `<dialog>`'s, the title derives from the `title` prop, so the entry is what
+  is left after those
+  - One fact: a dialog REQUIRES a label. Modal derives it while `title` is set and
+    writes none when it is empty, so a title-less `<Modal>` owes an `aria-label`
+    from its caller and nothing today says so. That is the kit's whole Modal
+    entry: `{ requires: ['label'] }`; `role` and modality are the element's.
+
+**Done 2026-10-27.** The `<Form>` way covers the dialog: everything but the label is
+the platform's, and the label derives. The kit entry for it is one requirement, which
+is the measurement `FJS-D806` asked for before tabulating.
+
+### Phase 2 — `@frontierjs/toolbelt/aria` (`FJS-D837`), sized by 1.2
+
+Goal: the table of what no context can answer, read by `css` and `ui`.
+Done when: `ANATOMY`'s roles come from the kit and the ui drive asserts what the kit
+says each term owes.
+
+- [x] 2.1 The table: term → `{ role, requires, tracks }`, only for the terms 1.2 leaves
+  - `packages/toolbelt/src/aria/aria.js`, 15 terms (2026-10-27). Each is what the
+    VOCAB element string or ANATOMY block already states, minus what the element
+    is by itself: Dialog and Drawer carry no role, Field and Switch no label. A
+    role or state on a child sits under `parts`, keyed by its anatomy class
+    (`FJS-D837` amended). `aria-hidden` on Icon, Spinner and Skeleton has no
+    slot in the shape and stays in the anatomy; Popover is left out until the
+    css `<article>` and the ui `role=dialog` agree.
+- [x] 2.2 `css` `ANATOMY` reads its roles from the kit
+  - `test/run.js` hands the page `roles()`; `anatomy.spec.js` grades both ways
+    (2026-10-27): a kit role is written where a reader meets it (own role in
+    the VOCAB element string, a part's role on that class in the ANATOMY
+    block) and a `role=` css writes is the kit's for the class that carries
+    it. `vocabulary.js` is a classic script the guide shares and cannot
+    import the kit, so the spec is what makes a role READ rather than
+    restated. Each direction proved red by mutation.
+- [x] 2.3 The ui drive asserts each kit entry against the rendered component
+  - `packages/ui/test/browser/specs/aria.spec.mjs` (2026-10-27): a WHERE table places
+    each kit term on the fixture that already mounts its component and walks
+    `owes(term)` over the rendered tree — role on the carrier, each `requires`
+    written and resolving, each `tracks` reported where the state holds. Pane,
+    Toolbar, Aside and Lane are named as rendered by nothing, and an unplaced kit
+    term fails by name. Found one kit error: Breadcrumb's `.navlink` part named a
+    class css never styles (`[aria-current]` alone), so the state moved to the
+    term's own row and `tracks` means on or within the carrier. Four mutations red
+    (Tab's role, Breadcrumbs' current, Modal's label, a kit attribute). Popover
+    is `FJS-3555`.
+
+**Done 2026-10-27.** One table, two readers: css grades what the vocabulary WRITES,
+ui grades what a component RENDERS, and a role, relationship or state stated in
+either without the kit fails by name. `tracks` is proved by the ui half alone.
+
+### Phase 3 — The shell facts sierra writes (`FJS-D836`)
+
+Goal: `lang` and the skip link written, landmarks and heading order asserted.
+Done when: a sierra drive reads both on a rendered page.
+
+- [x] 3.1 `lang` on `<html>` for the SPA document as for the prerendered one
+  (2026-10-27) — one `DEFAULT_LANG` in `prerender.js`, read by `wrapDocument()`,
+  `prerenderRoutes()`, the MCP view and `applyDocument()`, which now runs for
+  every target: an `<html>` with no `lang` gets the default, a shell with no
+  `<html>` tag is given one, and `document.lang` beside a shell `lang` stays
+  refused (`FJS-D971`).
+- [x] 3.2 The skip link to `<main>` (2026-10-27) — one `SKIP_LINK` beside it,
+  written first in `<body>` by both serializers where the shell or layout
+  wrote no `.skip-link`. The target is `#main`, a11y.css's spelling; ui
+  `Shell`, basecamp, example/site, the css demo and guide, studio and the
+  linear/notion/sstime prototypes moved off `#screen` and dropped their own
+  link. An SPA layout that still writes one is `FJS-3556`.
+- [x] 3.3 The browser drive asserts landmarks and heading order on rendered
+  pages (2026-10-27) — `PAGE_AUDIT` in `@frontierjs/mesa/drive`, one grader:
+  `example: verify` re-opens every screen it visited, `verify:site` grades
+  each prerendered page it opens, basecamp's audit reads it beside its own
+  control checks. `DRIVES.md` names all three.
+
+**Done 2026-10-27.** Sierra writes the two shell facts and nothing else does;
+what the layout renders is read by one grader in three drives.
+
+### Phase 4 — The check
+
+Goal: a component that renders a term without the role the kit names fails review.
+Done when: the `fli check` rule has a red fixture.
+
+- [ ] 4.1 The `fli check` rule over an app's `.mesa` files, the kit as authority
+
+### Phase 5 — The claim (`FJS-D701`)
+
+Goal: each package's README names the level its own drives assert.
+Done when: the sentence matches the drive.
+
+- [x] 5.1 `css` and `ui` READMEs name WCAG AA for the contrast their drives assert
+- [x] 5.2 Widen each sentence as 2.3 and 3.3 add what they assert (2026-10-27)
+  — ui's README names the kit walk, sierra's names the shell facts and
+  `PAGE_AUDIT`; css's drive asserts nothing new
 
 ## See also
 

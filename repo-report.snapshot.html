@@ -2744,7 +2744,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
   </tr></tbody></table></div>
 </section>
 <section id="proofs">
-  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">172 rows · 282 targets · 0 not found</span></div>
+  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">174 rows · 288 targets · 0 not found</span></div>
   <p class="note">Parsed from <code>DRIVES.md</code>, never restated. The third column is each target resolved against the tree — <code>not found</code> is a row naming a drive that has been renamed, which in the markdown reads exactly like a row that is right. Half these rows are not import edges: <em>a gate on a model a screen reads</em> is a statement about what a drive can SEE, so this is a parse and not a build graph.</p><div class="panel scroll"><table><thead><tr><th>Changed</th><th>Run</th><th>Resolved</th></tr></thead><tbody><tr data-row>
       <td>the app prompt — junction/tools/call.ts, litestone/src/tools/repl.js, fli app:repl / deploy:repl, runAs(null, { operator }), or what an app declares as createApp({ system })</td>
       <td>example: verify:repl — the only thing that runs the prompt over a real app's gate; junction's call-tool.test.ts asks a fixture</td>
@@ -3373,6 +3373,14 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td>toolbelt (glow)</td>
       <td>css: bun run test code — the theme is asserted against real glow output</td>
       <td><span class="tally"><b>css</b>bun run test code</span></td>
+    </tr><tr data-row>
+      <td>toolbelt (aria) — a role, a part, a requires or tracks entry</td>
+      <td>css: bun run test anatomy — VOCAB and every ANATOMY block are graded against roles() in BOTH directions, so a kit role nobody writes and a role= the kit does not hold are different failures with different names. A mutation on either side was proved red before the row was added. And ui: bun run test:browser aria — the same table walked over RENDERED components, owes(term) per term on the fixture that already mounts it: the role on the carrier, each required relationship written and resolving to an element, each tracked state reported in a fixture where it holds. The css half grades a markup string, so a component that drops a role compiles and passes it; this is the half that catches Tab.mesa. A kit term no component renders is named absent in the spec, so a new term fails there until it is placed. The css half grades roles only: an ANATOMY sample that drops an aria-current passes it, so a tracks entry is proved by the ui drive alone</td>
+      <td><span class="tally"><b>css</b>bun run test anatomy</span><span class="tally"><b>ui</b>bun run test:browser aria</span></td>
+    </tr><tr data-row>
+      <td>sierra's shell facts — DEFAULTLANG, SKIPLINK, applyDocument() on every target, wrapDocument() — and PAGEAUDIT in mesa/src/drive.js</td>
+      <td>packages/sierra: test/document-shell.test.js for what is WRITTEN (the default, a shell that states its own, a shell with no &lt;html&gt;, the prerendered page once). What is RENDERED is example: verify + verify:site; basecamp: verify, each grading every page it opens with PAGEAUDIT; the grader has no unit test of its own, so a rule it stops finding is found by those three only (FJS-3556).</td>
+      <td><span class="tally"><b>packages/sierra</b>test/document-shell.test.js</span><span class="tally"><b>example</b>verify</span><span class="tally"><b>example</b>verify:site</span><span class="tally"><b>basecamp</b>verify</span></td>
     </tr><tr data-row>
       <td>a File column · FileStorage · the multipart write path</td>
       <td>example: verify:catalog — the only place in the repo where multipart is sent by a BROWSER, which is the whole of why it found FJS-542: curl, undici and Bun's own new Request({ body: form }) all generate a lowercase boundary and every hand-rolled probe passed</td>

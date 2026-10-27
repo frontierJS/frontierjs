@@ -29,7 +29,7 @@ export const holds = ['ports', 'db']
 import { PORTS } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
 import { watchReloads } from './lib/reload.mjs'
-import { openChrome } from '../../../packages/mesa/src/drive.js'
+import { openChrome, PAGE_AUDIT } from '../../../packages/mesa/src/drive.js'
 import { spawn, execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
@@ -153,7 +153,12 @@ browser.on('Runtime.consoleAPICalled', (p) => {
   if (['error', 'warning'].includes(p.type)) consoleErrors.push(p.type + ': ' + p.args.map(a => a.value ?? a.description ?? '').join(' '))
 })
 
+// Every screen this drive opened, graded once more at the end: the list is
+// what the drive did, so a screen added above is audited without being named.
+const visited = new Set()
+
 async function goto(path) {
+  visited.add(path.replace(/[?#].*$/, ''))
   await cmd('Page.navigate', { url: UI + path })
   await evaluate(`
     if (document.readyState !== 'complete')
@@ -1434,6 +1439,19 @@ try {
     return ${readMoves};
   `))
 
+  // ── Accessibility, on every screen the drive opened ─────────────────────
+  // The page-level facts Sierra writes and the layout renders (`FJS-D836`):
+  // lang, the skip link and where it lands, one <main>, named navs, one h1
+  // and no skipped heading level. Graded after the heading has rendered, so
+  // a screen whose title arrives with its data is read with it.
+  const a11y = []
+  for (const path of visited) {
+    await goto(path)
+    await evaluate(`return await waitFor(() => document.querySelector('h1'), 4000).catch(() => null)`)
+    for (const issue of await evaluate(PAGE_AUDIT)) a11y.push(`${path}: ${issue}`)
+  }
+  t('a11y', a11y)
+
   // Signing out takes the ledger with it. This used to wait for every delete
   // button to be DISABLED, which a table with no rows in it satisfies without
   // deciding anything — `every()` over an empty list is true. What it says now
@@ -1650,6 +1668,7 @@ const expected = {
   'invoicesList.sortNavigates': { navigated: true, sorted: ['Number:ascending'], ascending: true, moved: true },
   'invoicesList.backRestores':  { url: '', sorted: ['Issued At:descending'] },
 
+  'a11y':                    [],
   'signOut.ledgerGoes':      true,
   'consoleErrors':           [],
 }

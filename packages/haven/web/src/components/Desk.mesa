@@ -38,7 +38,6 @@
   const REACH = 4
   const PANE  = { x: 2, y: 1, w: 93, h: 24 }
   const INNER = PANE.w - 4
-  const ROOM  = PANE.h - 3
   const HOT   = '#334155'
   const SAID  = '#cbd5e1'
   const MARK  = '#fde68a'
@@ -50,6 +49,8 @@
   let board  = null
   let dark   = ''
   let view   = scene.view
+  // A screen taller than the room lends the pane its spare rows (`Scene.mesa`).
+  const slack = $context.slack
   let reply  = null   // null, { asking, at } while the model works, { question, answer, cost, ms }, or { question, failed }
   let offset = 0
   let now    = Date.now()
@@ -93,16 +94,18 @@
   $: filters = seen ? filtersOf(seen.answer) : []
   $: answer  = seen ? filterAnswer(seen.answer, filter) : null
   $: links   = answer ? linksOf(answer) : []
+  $: tall  = PANE.h + (slack ?? 0)
+  $: fits  = tall - 3
   $: drawn = answer ? answerRows(answer, INNER, { urls: !hyper, picked: filter, numbered: links.length > 0 }) : []
   $: body  = peek ? withPeek(drawn, peek) : drawn
-  $: last  = Math.max(0, body.length - ROOM)
+  $: last  = Math.max(0, body.length - fits)
   $: spots = body.flatMap((row, r) => row.some((s) => s.link != null) ? [r] : [])   // the row of each linked item
   $: hot   = links.length ? spots[Math.min(cursor, links.length - 1)] : -1
   $: marks = new Set(links.flatMap((l, n) => marked[l.url] ? [spots[n]] : []))
 
   const scroll = (by) => (e) => { e.preventDefault?.(); offset = Math.min(last, Math.max(0, offset + by)) }
 
-  const reveal = (r) => { if (r < offset) offset = r; else if (r >= offset + ROOM) offset = Math.min(last, r - ROOM + 1) }
+  const reveal = (r) => { if (r < offset) offset = r; else if (r >= offset + fits) offset = Math.min(last, r - fits + 1) }
 
   // Past the first or last item the pane scrolls to its end, so the counts
   // above the first list are not left out of reach.
@@ -118,7 +121,7 @@
   /** A page scrolled, and the cursor brought along when it went off the screen. */
   const page = (by) => (e) => {
     scroll(by)(e)
-    const shown = spots.map((r, n) => [r, n]).filter(([r]) => r >= offset && r < offset + ROOM)
+    const shown = spots.map((r, n) => [r, n]).filter(([r]) => r >= offset && r < offset + fits)
     if (shown.length && !shown.some(([, n]) => n === cursor)) cursor = (by > 0 ? shown[0] : shown.at(-1))[1]
   }
 
@@ -177,8 +180,8 @@
       keys: {
         ArrowUp:   move(-1),
         ArrowDown: move(1),
-        PageUp:    page(-ROOM),
-        PageDown:  page(ROOM),
+        PageUp:    (e) => page(-fits)(e),
+        PageDown:  (e) => page(fits)(e),
         Tab:       step,
       },
       take,
@@ -427,7 +430,7 @@
   $: rows  = !reply ? []
     : reply.asking ? [muted(`"${clip(reply.asking, INNER - 40)}" -- reading Basecamp… ${Math.round((now - reply.at) / 1000)}s`)]
     : reply.failed ? wrap(`the desk could not answer: ${reply.failed}`, INNER).map((t) => [{ x: 0, text: t, color: DANGER }])
-    : body.slice(offset, offset + ROOM)
+    : body.slice(offset, offset + fits)
   $: picked = filters.find((f) => f.key === filter)
   $: listed = answer?.blocks.reduce((n, b) => n + (b.kind === 'list' ? b.items.length : 0), 0) ?? 0
   $: sieve  = picked ? `${picked.label}: ${listed}${String(listed) === picked.value ? '' : ` of ${picked.value} listed`} · Tab next` : filters.length ? 'Tab filters' : null
@@ -436,7 +439,7 @@
     : many ? `${many} marked · ${reply?.asleep ? 'u wakes them' : 's/S snooze them'} · x unmarks`
     : `␣ peek · x mark · ${reply?.asleep ? 'u wakes' : 's/S snooze'} · o open · y copy · b brief`
   $: when  = picking ? `snooze until? ${Object.entries(PICKS).map(([k, w]) => `${k} ${dayLabel(untilOf(w))}`).join(' · ')} · 2-9 days · Esc` : ''
-  $: span  = `${offset + 1}–${Math.min(body.length, offset + ROOM)}`
+  $: span  = `${offset + 1}–${Math.min(body.length, offset + fits)}`
   // The time and the cost are let go first when the keys need the width.
   $: foot  = picking ? when : told ? told
     : !reply || reply.asking || reply.failed ? (reply?.back ? 'Esc back' : 'Esc puts it away')
@@ -452,7 +455,7 @@
 </script>
 
 {#if reply}
-  <div class="surface desk" {@attach at(PANE.x - view.x, PANE.y - view.y, 14, [PANE.w, PANE.h])} {@attach (el) => { pane = el }}>
+  <div class="surface desk" {@attach at(PANE.x - view.x, PANE.y - view.y, 14, [PANE.w, tall])} {@attach (el) => { pane = el }}>
     <pre class="line" {@attach at(1, 0, 1)} {@attach tint('#fde68a')}>{title}</pre>
     {#key frame}
       {#each rows as row, r (r)}
@@ -464,7 +467,7 @@
         {/each}
       {/each}
     {/key}
-    <pre class="line" {@attach at(1, PANE.h - 1, 1)} {@attach tint(TONES.muted)}>{foot}</pre>
+    <pre class="line" {@attach at(1, tall - 1, 1)} {@attach tint(TONES.muted)}>{foot}</pre>
   </div>
 {/if}
 

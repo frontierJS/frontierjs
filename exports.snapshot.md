@@ -358,6 +358,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
+| exports | `./aria` | `src/aria/aria.js` | yes |
 | exports | `./bearer (types)` | `src/bearer/bearer.d.ts` | yes |
 | exports | `./bearer (default)` | `src/bearer/bearer.js` | yes |
 | exports | `./cells (types)` | `src/cells/cells.d.ts` | yes |

@@ -78,9 +78,41 @@ describe('applyDocument', () => {
   })
 
   test('a key document does not state leaves the shell alone', () => {
-    expect(applyDocument(SHELL, {})).toBe(SHELL)
-    const own = '<html lang="en"><body class="x"></body></html>'
-    expect(applyDocument(own, { bodyAttrs: { id: 'app' } })).toBe('<html lang="en"><body class="x" id="app"></body></html>')
+    const own = '<html lang="en"><body class="x"><a class="skip-link" href="#top">Skip</a></body></html>'
+    expect(applyDocument(own, {})).toBe(own)
+    expect(applyDocument(own, { bodyAttrs: { id: 'app' } }))
+      .toBe('<html lang="en"><body class="x" id="app"><a class="skip-link" href="#top">Skip</a></body></html>')
+  })
+})
+
+// The two facts every shell carries (`FJS-D836`): a page a screen reader picks
+// a voice for, and a link a keyboard user leaves the navigation by.
+describe('the shell facts', () => {
+  test('lang defaults to the prerendered page\'s, and the skip link comes first in body', () => {
+    const out = applyDocument(SHELL, {})
+    expect(out).toContain('<html lang="en">')
+    expect(out).toMatch(/<body>\s*<a class="skip-link" href="#main">Skip to content<\/a>/)
+    expect(out.match(/skip-link/g)).toHaveLength(1)
+  })
+
+  test('a shell that states either keeps its own', () => {
+    const own = '<!DOCTYPE html>\n<html lang="fr"><body><a class="skip-link" href="#x">Aller au contenu</a></body></html>'
+    expect(applyDocument(own, {})).toBe(own)
+  })
+
+  test('a shell with no <html> tag is given one', () => {
+    const bare = '<!doctype html>\n<meta charset="utf-8">\n<body class="app"><div id="app"></div></body>'
+    const out = applyDocument(bare, {})
+    expect(out.startsWith('<!doctype html>\n<html lang="en">\n<meta')).toBe(true)
+    expect(applyDocument('<body></body>', {}).startsWith('<html lang="en">\n<body>')).toBe(true)
+  })
+
+  test('the prerendered page writes the same link, once', () => {
+    expect(wrapDocument('<main id="main">x</main>', { title: 'x' }))
+      .toMatch(/<body>\n<a class="skip-link" href="#main">Skip to content<\/a>\n<main/)
+    const own = wrapDocument('<a class="skip-link" href="#top">Skip</a><main>x</main>', { title: 'x' })
+    expect(own.match(/skip-link/g)).toHaveLength(1)
+    expect(wrapDocument('', { title: 'x' })).toContain('<html lang="en">')
   })
 })
 
@@ -130,6 +162,12 @@ describe('the dev server', () => {
   test('an spa\'s shell is its index.html: document is a static-target key', async () => {
     const html = await devShell('spa', { bodyClass: 'app theme-default' })
     expect(html).not.toContain('theme-default')
+  })
+
+  test('an spa\'s shell still carries lang and the skip link', async () => {
+    const html = await devShell('spa', undefined)
+    expect(html).toContain('<html lang="en">')
+    expect(html).toMatch(/<body>\s*<a class="skip-link" href="#main">/)
   })
 })
 

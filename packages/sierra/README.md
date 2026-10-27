@@ -1004,7 +1004,7 @@ Everything in `sierra.config.js`:
 | `outDir` | `'dist/client'` | build output |
 | `base` | `'/'` | public base path |
 | `trailingSlash` | `'always'` | `'always'` \| `'never'` \| `'preserve'` |
-| `document` | — | `static` only — the document a prerendered page is wrapped in: `{ bodyClass, bodyAttrs, htmlClass, lang, head, bodyEnd, meta, links, jsonLd }`. The build's own CSS assets are linked automatically |
+| `document` | — | `static` only — the document a prerendered page is wrapped in: `{ bodyClass, bodyAttrs, htmlClass, lang, head, bodyEnd, meta, links, jsonLd }`. The build's own CSS assets are linked automatically. Every target's `index.html` gets `lang="en"` on `<html>` and the skip link to `#main` first in `<body>` where it wrote neither (`FJS-D836`) |
 | `routeTable.output` | `'config/routes.js'` | where the generated route table is written. A build writes `routes.build.js` beside it, so it never overwrites the table a running dev server serves |
 | `schema` | auto-detect | path to the `.lite` file, or `false` |
 | `junction` | — | `{ url, apiPrefix, authPrefix, tokenKey, cookieAuth, auth, services, debug, … }` — data only, since it reaches the browser as JSON |
@@ -1195,6 +1195,14 @@ what every built page does. An attribute stated in both — a body class in
   `@frontierjs/css` is one class on an ancestor, so `bodyClass: 'app
   theme-default'` is what makes a prerendered page look like the app. `lang`
   defaults to `en`, and a route may override it with `lang:` in its frontmatter.
+  Every page, and every target's `index.html`, also opens `<body>` with
+  `<a class="skip-link" href="#main">Skip to content</a>` unless the layout or
+  the shell wrote a `.skip-link` of its own (`FJS-D836`); the layout renders
+  the `<main id="main" tabindex="-1">` it lands on. What a rendered page then
+  owes — `lang`, that one link first in body and landing on a focusable
+  `#main`, one `<main>`, a name on each of several `<nav>`s, one `h1` and no
+  skipped heading level — is `PAGE_AUDIT` in `@frontierjs/mesa/drive`, which
+  `example`'s drives and basecamp's evaluate on every page they open.
 - **`document: { head, bodyEnd, bodyAttrs }`** is what is the same on every page: `head` and
   `bodyEnd` are HTML strings written verbatim at the end of `<head>` and `<body>` (a
   site-wide third-party loader), and `bodyAttrs`

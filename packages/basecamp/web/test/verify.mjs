@@ -46,7 +46,7 @@ import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { openChrome } from '../../../mesa/src/drive.js'
+import { openChrome, PAGE_AUDIT } from '../../../mesa/src/drive.js'
 import { portFor } from '@frontierjs/cli/core/ports.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -3155,11 +3155,9 @@ check('the owner is back, in the workspace this section started in',
 // path after the static loop rather than being left out of the pass.
 // Not a substitute for using the thing with a keyboard and a screen reader —
 // it is the subset a machine can settle, run everywhere so a new screen cannot
-// quietly drop a label or a table header.
-//
-// The skip link is here because it was missing from every page: without it a
-// keyboard user tabs through the nav, the workspace switcher and sign-out on
-// EVERY navigation before reaching the content.
+// quietly drop a label or a table header. The page-level half — lang, the
+// skip link, the landmarks, the heading order — is the driver's `PAGE_AUDIT`,
+// read beside this one; what is left here is the app's own controls.
 const AUDIT = `(() => {
   const out = []
   for (const el of document.querySelectorAll('input, select, textarea')) {
@@ -3169,15 +3167,9 @@ const AUDIT = `(() => {
   }
   for (const th of document.querySelectorAll('th'))
     if (!th.getAttribute('scope')) out.push('th without scope: ' + th.textContent.trim().slice(0, 20))
-  const hs = [...document.querySelectorAll('h1,h2,h3,h4')].map(h => +h.tagName[1])
-  if (hs.filter(n => n === 1).length !== 1) out.push('h1 count = ' + hs.filter(n => n === 1).length)
-  for (let i = 1; i < hs.length; i++)
-    if (hs[i] - hs[i - 1] > 1) out.push('heading jumps h' + hs[i - 1] + ' to h' + hs[i])
   for (const el of document.querySelectorAll('button, a'))
     if (!el.textContent.trim() && !el.getAttribute('aria-label'))
       out.push('control with no text: ' + el.outerHTML.slice(0, 40))
-  if (!document.querySelector('.skip-link')) out.push('no skip link')
-  if (!document.querySelector('main'))       out.push('no <main> landmark')
   return out
 })()`
 
@@ -3188,8 +3180,8 @@ for (const route of [appDetailPath, boardPath, '/', '/dashboards/', '/projects/'
                      '/admin/', '/admin/audit/', '/admin/adapters/',
                      '/hub/', '/hub/workspaces/', '/hub/users/', '/hub/flags/']) {
   await goto(route)
-  const issues = await evaluate(AUDIT)
-  check(`a11y: ${route}`, Array.isArray(issues) ? issues.join(' | ') : String(issues), '')
+  const issues = [...await evaluate(PAGE_AUDIT), ...await evaluate(AUDIT)]
+  check(`a11y: ${route}`, issues.join(' | '), '')
 }
 
 check('no uncaught page errors', await evaluate('JSON.stringify(window.__errs ?? [])'), '[]')

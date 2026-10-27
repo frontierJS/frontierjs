@@ -85,24 +85,37 @@ export function screen(stream, rows = 30, cols = 100) {
 }
 
 /**
- * What is drawn on stage cells `x`..`x+width-1` of row `y` in a frame that
- * shows `view` of the stage — the drawn slice's own corner is the origin.
- * A cell outside the view is null, and so is a frame with no room on it.
+ * Where the art is on a frame `h` rows of it tall: `top` the line its first
+ * row is drawn on, `left` its first column. Null with no room drawn.
  *
  * The art is fogged (`stage.js`, 6.3), so no row of it is sure to be drawn;
- * the room's status line under it is, `view.h` rows below the art's top and
- * at its left. A cell the frame leaves blank reads as a space, or as '' past
- * the trimmed end of its line.
+ * the room's status line is, at the art's left. A screen taller than the page
+ * puts its spare rows between the art and that line (`fill` in `cell.js`), so
+ * the art starts under the shell's header, or on the first line of a
+ * `--frame`, which has none. A page taller than the screen has no spare and
+ * scrolls the header off, and the art ends right above the status line.
  */
-export function cellOf(frame, x, y, width = 1, stage, view = stage.view) {
-  const lines  = frame.split('\n')
+export function artOf(lines, h) {
   const status = lines.findIndex((l) => / · \d+ here\b/.test(l))
   if (status === -1) return null
+  const header = lines.findIndex((l) => l.includes(' · Esc goes back'))
+  return { top: Math.min(header + 1, status - h), left: lines[status].search(/\S/) }
+}
+
+/**
+ * What is drawn on stage cells `x`..`x+width-1` of row `y` in a frame that
+ * shows `view` of the stage — the drawn slice's own corner is the origin.
+ * A cell outside the view is null, and so is a frame with no room on it. A
+ * cell the frame leaves blank reads as a space, or as '' past the trimmed
+ * end of its line.
+ */
+export function cellOf(frame, x, y, width = 1, stage, view = stage.view) {
+  const lines = frame.split('\n')
+  const art   = artOf(lines, view.h)
+  if (!art) return null
   const col = x - view.x, row = y - view.y
   if (col < 0 || row < 0 || col >= view.w || row >= view.h) return null
-  const top  = status - view.h
-  const left = lines[status].search(/\S/)
-  return (lines[top + row] ?? '').slice(left + col, left + col + width)
+  return (lines[art.top + row] ?? '').slice(art.left + col, art.left + col + width)
 }
 
 /** Whether `cellOf` read a cell the frame left blank — not one outside it. */

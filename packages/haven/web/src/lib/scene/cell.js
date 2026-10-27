@@ -28,6 +28,18 @@ export const at = (col, row, layer = 10, size = null) => (el) => {
   }
 }
 
+// A box that takes the rows the page has left, telling `told(rows)` each time
+// they change. The page's content is at least the screen tall, so every line
+// after this box sits on the bottom rows; a page taller than the screen leaves
+// it none.
+export const fill = (told) => (el) => {
+  el.flexGrow   = 1
+  el.flexShrink = 1
+  el.flexBasis  = 0
+  el.onSizeChange = () => told(el.height)
+  return () => { el.onSizeChange = undefined }
+}
+
 // A text that is a terminal hyperlink (OSC 8): the words stay, underlined, and
 // the terminal opens `url` when they are clicked. The URL is never printed, so
 // a ticket's row is as short as its title. A factory for the reason `at` is;

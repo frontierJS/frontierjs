@@ -47,6 +47,7 @@ import { encodePng }                            from './png.js'
 import { frontmatterValue }                     from './compiler.js'
 import { portAnswering }                        from './probe.js'
 import { appPorts, describeProcess, pidsOnPort, processCwd } from './ports.js'
+import { API_ORIGIN_MODULE }                    from './app-config.js'
 
 // ─── names ────────────────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ export function desktopSurfaceDirs({ wraps = null } = {}) {
 
 export function desktopConfig({ wraps = null, hasApi = true, apiPort = 8100 } = {}) {
   const api = hasApi
-    ? `process.env.FRONTIER_PUBLIC_API_URL ?? 'http://localhost:${apiPort}'`
+    ? `pinApiOrigin(process.env, process.env) ?? 'http://localhost:${apiPort}'`
     : 'null'
   return `// desktop/config/desktop.config.js
 //
@@ -103,6 +104,7 @@ export function desktopConfig({ wraps = null, hasApi = true, apiPort = 8100 } = 
 // a build that does not say. The page is served from tauri://localhost, so a
 // same-origin default would send every call to the shell. \`null\` is the answer
 // for an app with no API. FRONTIER_PUBLIC_API_URL is the name every surface's build reads.
+${hasApi ? "import { pinApiOrigin } from '../../config/api-origin.js'\n" : ''}
 export default {
 ${wraps ? `  wraps: '${wraps}',\n` : ''}  api:${wraps ? '  ' : ''} ${api},
 }
@@ -537,6 +539,17 @@ export function scaffoldDesktopSurface({
     mkdirSync(dirname(abs), { recursive: true })
     writeFileSync(abs, body)
     written.push(`${dir}/${rel}`)
+  }
+  // The app's, not this surface's: every surface's config reads the API port
+  // through it, so a second checkout's FRONTIER_PORT_BE reaches the build.
+  if (hasApi) {
+    const abs = resolve(root, 'config', 'api-origin.js')
+    if (existsSync(abs)) skipped.push('config/api-origin.js')
+    else {
+      mkdirSync(dirname(abs), { recursive: true })
+      writeFileSync(abs, API_ORIGIN_MODULE)
+      written.push('config/api-origin.js')
+    }
   }
   return { written, skipped }
 }

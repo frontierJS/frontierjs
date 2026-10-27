@@ -56,6 +56,18 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
   //
   const up = (el) => el.parentElement || (el.getRootNode && el.getRootNode().host) || null
 
+  // A picker's own UI, which never picks. Inside a modal dialog the walk out
+  // of it reaches the line that placed the dialog, so pick mode would swallow
+  // every press on the picker as a pick of the dialog.
+  const ignored = []
+  const skip = (node) => ignored.some((root) => root.contains(node))
+
+  // The topmost open modal dialog, else the body: showModal() draws the dialog
+  // in the top layer over any z-index and makes the rest of the page inert, so
+  // an overlay on the body paints beneath it. The kit's overlayHost() rule (FJS-D904).
+  const host = () => { const open = document.querySelectorAll('dialog:modal'); return open[open.length - 1] || document.body }
+  const lift = (el) => { const h = host(); if (el && el.parentNode !== h) h.appendChild(el) }
+
   // What a pointer over a node edits: { el, loc, via }, or null when nothing
   // can be opened, so nothing is painted and the click goes to the page.
   //
@@ -68,6 +80,7 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
   // package's stamp kept as via. An installed copy under the root opens only
   // when no app line placed it.
   function locatedFrom(node) {
+    if (!node || skip(node)) return null
     let el = node, first = null
     for (; el; el = up(el)) {
       if (el.nodeType !== 1 || !el.hasAttribute(ATTR)) continue
@@ -155,8 +168,9 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
       label = document.createElement('div')
       label.style.cssText = 'position:absolute;left:0;bottom:100%;margin-bottom:2px;padding:1px 5px;border-radius:3px;background:#0f172a;color:#e2e8f0;font:11px/1.6 ui-monospace,monospace;white-space:nowrap'
       box.appendChild(label)
-      document.body.appendChild(box)
     }
+    lift(box)
+    lift(badge)
     const r = el.getBoundingClientRect()
     box.style.display = 'block'
     box.style.top    = r.top + 'px'
@@ -173,7 +187,7 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
   }
 
   function drawBadge() {
-    if (!mode) { if (badge) badge.remove(); badge = null; return }
+    if (!mode) { if (badge) { badge.remove(); ignored.splice(ignored.indexOf(badge), 1) } badge = null; return }
     if (badge || !document.body) return
     badge = document.createElement('button')
     badge.type = 'button'
@@ -181,7 +195,8 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
     badge.title = 'Leave pick mode'
     badge.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:2147483647;padding:5px 10px;border-radius:999px;border:1px solid #0369a1;background:#0f172a;color:#e2e8f0;font:12px/1.4 ui-sans-serif,system-ui;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3)'
     badge.onclick = () => setMode(false)
-    document.body.appendChild(badge)
+    ignored.push(badge)
+    lift(badge)
   }
 
   function setMode(on) {
@@ -247,6 +262,10 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
     // No argument reads the mode; a boolean sets it. Either way, the mode is returned.
     pickMode: (on) => on === undefined ? mode : setMode(on),
     onPickMode: (fn) => { modeWatchers.push(fn); return () => { const i = modeWatchers.indexOf(fn); if (i !== -1) modeWatchers.splice(i, 1) } },
+    // A picker's panel: never painted, never picked, its presses its own.
+    ignore: (el) => { ignored.push(el); return () => { const i = ignored.indexOf(el); if (i !== -1) ignored.splice(i, 1) } },
+    // Where an overlay mounts so a modal dialog does not cover it.
+    host,
   }
 
   try { if (sessionStorage.getItem(MODE_KEY)) mode = true } catch {}

@@ -365,3 +365,128 @@ test('anatomy: every part actually does something where the markup puts it', fun
   cleanup();
   assert.equal(inert.length, 0, inert.join('\n        '));
 });
+
+/* ── The roles are the kit's, not this file's ──────────────────────── */
+
+/*
+ * `@frontierjs/toolbelt/aria` is the origin of every ARIA role a term owes
+ * (`FJS-D837`), handed in by run.js as rows of { term, part, role }. A row
+ * with no part is the term's own element; a row with a part is one of the
+ * anatomy classes this file already names. Both directions below, so a
+ * role written here is one the kit holds, and a role the kit holds is
+ * written here where a reader will meet it.
+ */
+
+/* The kit's roles for one term: own role under '', each part under its class. */
+function kitRoles(term) {
+  var out = {};
+  (window.__FJS_ARIA_ROLES__ || []).forEach(function (r) {
+    if (r.term === term) out[r.part || ''] = r.role;
+  });
+  return out;
+}
+
+/* The VOCAB element column for a term, as written: '<div role="toolbar">'. */
+function vocabElement(term) {
+  var found = null;
+  VOCAB.forEach(function (tier) {
+    tier[2].forEach(function (row) {
+      if (row[0] === term) found = String(row[1]);
+    });
+  });
+  return found;
+}
+
+function rolesWritten(s) {
+  return (s.match(/role="([a-z]+)"/g) || []).map(function (m) { return m.slice(6, -1); });
+}
+
+test('anatomy: every role the kit names is written where a reader meets it', function () {
+  /*
+   * The kit is data nobody reads by itself. A term whose role lives only
+   * in the kit is a term the guide teaches without it, and the markup a
+   * reader copies is the markup that ships. A term's own role belongs in
+   * its VOCAB element string; a part's role belongs on that part in the
+   * term's ANATOMY block.
+   */
+  var missing = [];
+
+  (window.__FJS_ARIA_ROLES__ || []).forEach(function (r) {
+    if (!r.part) {
+      var element = vocabElement(r.term);
+      if (element === null) missing.push(r.term + ': the kit names it, VOCAB does not');
+      else if (rolesWritten(element).indexOf(r.role) === -1) {
+        missing.push(r.term + ': kit says role="' + r.role + '", VOCAB element is ' + element);
+      }
+      return;
+    }
+
+    var entry = ANATOMY[r.term];
+    if (!entry) {
+      missing.push(r.term + ': kit puts role="' + r.role + '" on .' + r.part + ', and the term has no ANATOMY block');
+      return;
+    }
+    var box = el('<div>' + entry.markup + '</div>');
+    var node = box.querySelector('.' + r.part);
+    if (!node) missing.push(r.term + ': kit names .' + r.part + ', the markup never writes it');
+    else if (node.getAttribute('role') !== r.role) {
+      missing.push(r.term + ': .' + r.part + ' should carry role="' + r.role + '", markup has ' + JSON.stringify(node.getAttribute('role')));
+    }
+  });
+
+  cleanup();
+  assert.equal(missing.length, 0, missing.join('\n        '));
+});
+
+test('anatomy: every role written here is the one the kit holds', function () {
+  /*
+   * The reverse direction, and the one that stops a second origin growing
+   * back. A `role=` in a VOCAB element string must be a role the kit holds
+   * for that term; a `role=` on a node in an ANATOMY block must be the
+   * kit's role for the class that node carries — the term's own class, or
+   * a part some term owns. A role on a node this file cannot name is a
+   * role nothing can grade, which is how Tab.mesa and vocabulary.js came
+   * to disagree in the first place.
+   */
+  var termByClass = anatomyTermClass();
+  var partOwner = {};
+  anatomyParts().forEach(function (p) { if (p.cls) partOwner[p.cls] = p.term; });
+
+  var wrong = [];
+
+  VOCAB.forEach(function (tier) {
+    tier[2].forEach(function (row) {
+      var held = kitRoles(row[0]);
+      var heldList = Object.keys(held).map(function (k) { return held[k]; });
+      rolesWritten(String(row[1])).forEach(function (role) {
+        if (heldList.indexOf(role) === -1) {
+          wrong.push(row[0] + ': VOCAB writes role="' + role + '", the kit holds ' + (heldList.length ? heldList.join(', ') : 'no role for it'));
+        }
+      });
+    });
+  });
+
+  Object.keys(ANATOMY).forEach(function (term) {
+    var box = el('<div>' + ANATOMY[term].markup + '</div>');
+    Array.prototype.slice.call(box.querySelectorAll('[role]')).forEach(function (node) {
+      var role = node.getAttribute('role');
+      var classes = Array.prototype.slice.call(node.classList);
+      var expected;
+      var who = null;
+
+      classes.forEach(function (c) {
+        if (who) return;
+        if (termByClass[c]) { who = termByClass[c]; expected = kitRoles(who)['']; }
+        else if (partOwner[c]) { who = partOwner[c] + ' .' + c; expected = kitRoles(partOwner[c])[c]; }
+      });
+
+      if (!who) wrong.push(term + ': <' + node.tagName.toLowerCase() + ' role="' + role + '"> carries no term or part class, so nothing can grade it');
+      else if (expected !== role) {
+        wrong.push(term + ': ' + who + ' writes role="' + role + '", the kit says ' + (expected ? 'role="' + expected + '"' : 'none'));
+      }
+    });
+  });
+
+  cleanup();
+  assert.equal(wrong.length, 0, wrong.join('\n        '));
+});

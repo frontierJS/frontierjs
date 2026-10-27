@@ -157,9 +157,10 @@ export function createSierraViteConfig(config = {}) {
     // and in dev this process IS the Node — so the page can be seen with its
     // data instead of correctly empty.
     if (config.dev?.staticData ?? true) sierraPlugins.push(staticDataPlugin(config, sierraContext))
-    // index.html carries what every prerendered page does, so a static app
-    // states `document` once rather than again in the shell.
-    if (target === 'static') sierraPlugins.push(documentShellPlugin(config))
+    // index.html carries what every prerendered page does: a static app
+    // states `document` once rather than again in the shell, and every target's
+    // shell gets `lang` and the skip link where it wrote neither (`FJS-D836`).
+    sierraPlugins.push(documentShellPlugin(config, target))
     sierraPlugins.push(virtualSierraPlugin(config, sierraContext))
     // The island bundle is a second Vite build, so it needs its own plugin
     // instances — a factory, not the array. Reusing the live instances would

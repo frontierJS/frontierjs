@@ -24,7 +24,9 @@ devDependency moves; one `Bun.build` with splitting, because a second copy of
 `@codemirror/state` fails on an `instanceof` that no message explains.
 
 **`test` ends with `bench/run.mjs --gate`** — bytes and DOM mutations, and a
-rise in either fails it (`FJS-D532`). The timed `bun run bench` is by hand: run
+rise in either fails it (`FJS-D532`); heap kept after five create/clear cycles
+over 5% of one 1k-row mount fails it too, and that one fails open, never
+falsely (`FJS-3550`). The timed `bun run bench` is by hand: run
 it when a change touches `{#each}`, the flush or anything that writes the DOM. A
 time never fails it; it is printed as a ratio to the hand-written floor measured
 in the same browser.
@@ -45,7 +47,7 @@ this list does not name. The owners that matter on most turns:
 - `src/compiler.js` is the compiler, one file: parse → analyze → emit · `src/ir.js` is `lower(ctx)`, the target-free tree every compile builds · `src/runtime.js` is the signal runtime the emitted code calls.
 - Host targets: `src/host/emit.js` emits `ctx.ir` as `$$host` calls for every profile in `src/host/targets.js`; `src/terminal/tags.js` and `src/native/tags.js` are what each target paints; `src/runtime-terminal.js` (over `@opentui/core`) and `src/runtime-native.js` (Lynx, the one file that names it) are their runtimes; `src/native/{css,sheet,tokens,values}.js` lower a stylesheet for a phone.
 - Server half: `src/render.js` (SSR entry), `src/render-component.js`, `src/compiler-md.js` (`.md` only), `src/css-inliner.js`, `src/optional-peer.js` (`missingPeer`).
-- `src/drive.js` is Chrome over CDP, published — every in-repo drive and an app's drive import it · `src/browser/` is the browser kit (`host.js` answers per host; `persisted.js` on `subscribe()`) · `src/keys.js` is the one attachment a tab and a terminal both run.
+- `src/drive.js` is Chrome over CDP, published — every in-repo drive and an app's drive import it, and `PAGE_AUDIT` there is what a rendered page owes (`FJS-D836`) · `src/browser/` is the browser kit (`host.js` answers per host; `persisted.js` on `subscribe()`) · `src/keys.js` is the one attachment a tab and a terminal both run.
 - `mesa-vite/index.js` is the Vite plugin; `client.js` + `swap.js` joined by `client-source.js`; `hmr.js` the boundary Sierra shares · `scripts/corpus.mjs`, `scripts/host-tree.js`, `scripts/tui.mjs` · `bench/run.mjs` + `bench/baseline.json`.
 - `docs/VISION.md` is the language (cite by RULE); `docs/STATIC_RENDERING.md` is server rendering.
 

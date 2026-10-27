@@ -327,9 +327,11 @@ const WALKS = {
     return { ...best([...covers, ...needs], tk), scanned: bytes(text) }
   },
 
-  // A recipe is a package's own CLAUDE.md, and which package is the whole
-  // question. The candidate list is the directory listing, so a new package
-  // needs no edit here.
+  // A recipe is a package's own CLAUDE.md and the docs/hazards.md it points
+  // at for the full catalog, and which package is the whole question. The
+  // candidate list is the directory listing, so a new package needs no edit
+  // here. A CLAUDE.md cut to a pointer otherwise loses every answer it moved.
+  //
   // A package's own map, down to the PARAGRAPH.
   //
   // The citation stays the document — a line number in an answer key breaks the
@@ -340,8 +342,8 @@ const WALKS = {
   recipe: (root, tk) => {
     let scanned = 0
     const rows = []
-    for (const name of packages(root)) {
-      const f    = `packages/${name}/CLAUDE.md`
+    for (const name of packages(root)) for (const doc of ['CLAUDE.md', 'docs/hazards.md']) {
+      const f    = `packages/${name}/${doc}`
       const text = read(join(root, f))
       if (text === null) continue
       scanned += bytes(text)

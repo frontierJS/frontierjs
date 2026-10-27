@@ -286,6 +286,21 @@ const attrs = (obj) => Object.entries(obj ?? {})
   }).join('')
 
 /**
+ * The two shell facts every page carries whether or not the app stated them
+ * (`FJS-D836`). `lang` is what a screen reader picks a voice by, and a page
+ * without one is read in the user's locale whatever language it is written in.
+ * The skip link is the first focusable thing in the body, so a keyboard user
+ * jumps past the navigation instead of tabbing through it on every page; its
+ * target is the `<main id="main" tabindex="-1">` the layout renders, which is
+ * the one spelling `css/src/a11y/a11y.css` documents. An app that writes its
+ * own `.skip-link` -- other words, another language -- keeps it, and the
+ * default is written only where nothing is.
+ */
+export const DEFAULT_LANG = 'en'
+export const SKIP_LINK = '<a class="skip-link" href="#main">Skip to content</a>'
+export const hasSkipLink = (html) => /class="[^"]*\bskip-link\b[^"]*"/.test(html)
+
+/**
  * The `document` keys as HTML. One serializer for the prerendered page and for
  * the `index.html` shell (`document-shell.js`), so the two cannot escape differently.
  */
@@ -330,11 +345,12 @@ export function documentParts({
  * standing between HTML and first paint.
  */
 export function wrapDocument(bodyHTML, {
-  title, description, css, styles, lang = 'en', stylesheets = [],
+  title, description, css, styles, lang = DEFAULT_LANG, stylesheets = [],
   bodyClass = '', htmlClass = '',
   meta = [], links = [], jsonLd = [], bodyAttrs = {}, head = '', bodyEnd = '',
 } = {}) {
   const parts = documentParts({ lang, htmlClass, meta, links, jsonLd, bodyClass, bodyAttrs, head, bodyEnd })
+  const skipLink = hasSkipLink(bodyHTML) ? '' : `${SKIP_LINK}\n`
 
   // One <style id="mHASH"> per component when the renderer supplies the split,
   // rather than one anonymous blob.
@@ -378,7 +394,7 @@ export function wrapDocument(bodyHTML, {
   <title>${esc(title ?? '')}</title>${descTag}${parts.tags}${linkTags}${styleTag}${parts.head}
 </head>
 <body${parts.bodyAttr}>
-${bodyHTML}${parts.bodyEnd}
+${skipLink}${bodyHTML}${parts.bodyEnd}
 </body>
 </html>
 `
@@ -405,7 +421,7 @@ export async function prerenderRoutes(opts) {
     // The document around every page this run emits: the app's own stylesheets
     // (asset URLs from the main build) and the <body> class its index.html
     // carries. Both are per-BUILD, not per-route.
-    stylesheets = [], bodyClass = '', htmlClass = '', lang = 'en',
+    stylesheets = [], bodyClass = '', htmlClass = '', lang = DEFAULT_LANG,
     // The app's own HTML for every page: `head` and `bodyEnd` verbatim, and
     // `bodyAttrs` (an object) beside the body class. `docMeta`, `docLinks`
     // and `docJsonLd` are head()'s keys for every page, escaped by the same

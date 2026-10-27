@@ -30,6 +30,7 @@ import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { glow } from '@frontierjs/toolbelt/glow';
+import { roles } from '@frontierjs/toolbelt/aria';
 import { findChrome } from '../../mesa/src/drive.js';
 import { THEMES } from '../themes.js';
 
@@ -278,6 +279,19 @@ const glowSamples = {
   numbered: glow('one\ntwo\nthree', { language: 'js', numbered: true }),
 };
 
+/*
+ * The roles the accessibility kit names, handed to the page as data.
+ *
+ * `role="tab"` used to be written in vocabulary.js and again in the ui
+ * package's Tab.mesa, with nothing failing when one forgot the other
+ * (`FJS-D837`). `@frontierjs/toolbelt/aria` is the one origin now, and
+ * anatomy.spec.js grades VOCAB and every ANATOMY block against it in both
+ * directions. vocabulary.js itself cannot import the kit — it is a classic
+ * script shared with the guide — so the spec is what makes its roles READ
+ * from the kit rather than restated beside it.
+ */
+const ariaRoles = roles();
+
 const specBlocks = specFiles
   .map((f) => {
     const src = readFileSync(join(specDir, f), 'utf8');
@@ -328,6 +342,7 @@ const page = `<!doctype html>
 <body>
 <script>window.__FJS_SHIPPED_CSS__ = ${JSON.stringify(shippedCss)};</script>
 <script>window.__FJS_VOCAB_JSON__ = ${JSON.stringify(vocabularyJsonState)};</script>
+<script>window.__FJS_ARIA_ROLES__ = ${JSON.stringify(ariaRoles)};</script>
 <script>window.__FJS_THEMES__ = ${JSON.stringify(THEMES)};</script>
 <script>window.__FJS_GLOW__ = ${JSON.stringify(glowSamples)};</script>
 <script>window.__FJS_DEMO_HTML__ = ${escapeForInlineScript(JSON.stringify(demoHtml))};</script>

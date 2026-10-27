@@ -29,6 +29,10 @@ export const at = (col, row, layer = 10, size = null) => (el) => {
   }
 }
 
+// A page has no rows under the art to fill (`FOOT` in `#paint`), so the box
+// stays empty and `told` is never asked.
+export const fill = () => () => {}
+
 // A text in a color, in a browser: the element's own `color`, and `ground` its
 // `background`, over the surface's own.
 export const tint = (color, ground) => (el) => {

@@ -7927,13 +7927,13 @@ function framePage() {
           grid area, so Topbar, Sidebar and Screen stay usable on their own.
         </p>
         ${code(`<body class="app">
-  <a class="skip-link" href="#screen">Skip to content</a>
+  <a class="skip-link" href="#main">Skip to content</a>
 
   <div class="shell">
     <header class="topbar"> … </header>
     <nav class="sidebar" aria-label="Main"> … </nav>
 
-    <main class="screen" id="screen" tabindex="-1">
+    <main class="screen" id="main" tabindex="-1">
       <section class="pane" aria-labelledby="billing-h">
         <div class="section-header">
           <h2 id="billing-h">Billing</h2>
@@ -12693,7 +12693,7 @@ function boot() {
     <div class="shell">
       ${topbar()}
       ${sidebar()}
-      <main class="screen" id="screen">
+      <main class="screen" id="main">
         <div class="container narrow" id="sg-page"></div>
       </main>
     </div>`

@@ -121,7 +121,7 @@
   import Emotes          from '@/components/Emotes.mesa'
   import Pets            from '@/components/Pets.mesa'
   import Work            from '@/components/Work.mesa'
-  import { at, copyBox, tint } from '#cell'
+  import { at, copyBox, fill, tint } from '#cell'
   import { paint }       from '#paint'
   import { keys }        from '@frontierjs/mesa/keys'
   import { flushSync }   from '@frontierjs/mesa/runtime'
@@ -181,6 +181,12 @@
 
   // A pane sits inside the frame's walls; its last row is the footer.
   const PANE = { x: 1, y: 1, w: 94, h: 24 }
+
+  // The rows a screen taller than the room has spare, between the art and the
+  // lines under it: those lines and the foot sit on the screen's last rows, and
+  // a pane slot content opens (`Desk.mesa`) may grow down over the spare.
+  let slack = 0
+  $context.slack = slack
 
   // Seeded from the spawn and never from `x` and `y`, and a `var`: a
   // top-level const that reads a prop or a `let` is derived — made when it is
@@ -556,6 +562,7 @@
   {/if}
 </div>
 {#if here}
+  <div {@attach fill((rows) => { slack = rows })}></div>
   <p>{room.name} · {here.get().count} here{#each here.get().others as m (m.connectionId)} · {nicks[m.userId] ?? '…'}{/each}</p>
   {#if note}<p>{note}</p>{/if}
   {#if hints.length && partial(draft) !== null}<p>{hints.map((c) => `/${c}`).join('  ')} · {hints.length === 1 ? 'Tab completes, Enter runs' : 'Tab completes'}</p>{/if}

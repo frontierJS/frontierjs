@@ -45,7 +45,7 @@ import { ROOMS } from '../../api/src/rooms.ts'
 import { POST_KEY, signIn } from '../../api/test/sign-in.ts'
 import { COLUMN } from '../src/lib/games/booth.js'
 import { cells } from '../src/lib/scene/cells.js'
-import { cellOf, terminal, until } from './terminal.mjs'
+import { artOf, cellOf, terminal, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
 
 const WEB    = join(import.meta.dir, '..')
@@ -108,11 +108,10 @@ const at   = (x, y, stage = square) => cellOf(term.screen(), x, y, 1, stage)
 
 /** Row `y` of the scene's view on Sam's screen, from the art's left edge, or null with no room drawn. */
 function termRow(y, stage = square) {
-  const lines  = term.screen().split('\n')
-  const status = lines.findIndex((l) => / · \d+ here\b/.test(l))
-  if (status === -1) return null
-  const left = lines[status].search(/\S/)
-  return (lines[status - stage.view.h + y - stage.view.y] ?? '').slice(left)
+  const lines = term.screen().split('\n')
+  const art   = artOf(lines, stage.view.h)
+  if (!art) return null
+  return (lines[art.top + y - stage.view.y] ?? '').slice(art.left)
 }
 
 /**

@@ -29,7 +29,7 @@ import { createTestEnv } from '@frontierjs/testing'
 import { buildHavenApp } from '../../api/src/app.ts'
 import { ROOMS } from '../../api/src/rooms.ts'
 import { POST_KEY, signIn } from '../../api/test/sign-in.ts'
-import { terminal, until } from './terminal.mjs'
+import { artOf, terminal, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
 import { SCALE, coarse, layoutOf } from '../src/lib/scene/map.js'
 
@@ -63,11 +63,9 @@ const MAP = '— the map · @ you'
 function mapOf(screen) {
   const lines  = screen.split('\n')
   const footer = lines.findIndex((l) => l.includes(MAP))
-  const status = lines.findIndex((l) => / · \d+ here\b/.test(l))
-  if (footer === -1 || status === -1) return null
-  const left = lines[status].search(/\S/)
-  const top  = status - Math.min(26, square.height)
-  return { lines, left: left + 1, top: top + 1, footer }
+  const art    = artOf(lines, Math.min(26, square.height))
+  if (footer === -1 || !art) return null
+  return { lines, left: art.left + 1, top: art.top + 1, footer }
 }
 /** Where an `@` stands in the map's rows, as a map cell; the footer's own is not one. */
 function marked(screen) {

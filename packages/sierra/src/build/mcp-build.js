@@ -64,6 +64,7 @@ import { findMesaFile } from './mesa-plugin.js'
 // so the stub is applied unconditionally, whatever the app's own `offline` says.
 import { localDbPlugin } from './local-db-plugin.js'
 import { createSierraViteConfig, resolveHtmlClass } from './index.js'
+import { DEFAULT_LANG } from './prerender.js'
 import { resolveSchemaPath, clientSchemas }         from './schema-plugin.js'
 
 /** The runtime a generated entry imports — `src/mcp/index.js`. */
@@ -268,7 +269,7 @@ export function viewDocument({ name, htmlClass = '', css = '', script = '' }) {
   const safeCss    = css.replace(/<\/style/gi, '<\\/style')
   const cls        = htmlClass ? ` class="${htmlClass}"` : ''
   return `<!doctype html>
-<html lang="en"${cls}>
+<html lang="${DEFAULT_LANG}"${cls}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

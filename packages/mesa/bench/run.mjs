@@ -30,6 +30,14 @@
  *
  * RECORDED — heap after mount, after 1k rows, and after five create/clear
  * cycles. The last one should come back to the first; growth there is a leak.
+ * Mesa's growth is also GATED, as a ratio: five cycles may keep at most
+ * `LEAK_CEILING` of what one 1k-row mount costs. A ratio is the only heap
+ * number that repeats across machines, and it fails open and never falsely:
+ * Chrome releases ~3.5 MB of its own at a moment no `collectGarbage` controls
+ * (measured 2026-10-27, one run in three, either fixture), so a small leak
+ * can hide behind that release once in a while and a gross one never can.
+ * The idle read comes after one warm create/clear, which is what made the
+ * +1k-rows number repeat to the kilobyte.
  *
  * ── What a time here includes ──────────────────────────────────────────
  *
@@ -68,6 +76,7 @@ const flag    = (f) => argv.includes(f)
 const option  = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined }
 const gate    = flag('--gate')
 const runs    = gate ? 1 : Number(option('--runs') ?? 10)
+const LEAK_CEILING = 0.05   // five cycles may keep 5% of one 1k-row mount
 const only    = option('--only')?.split(',')
 
 // ─── operations ──────────────────────────────────────────────────────────────
@@ -293,7 +302,7 @@ if (flag('--serve')) {
       }
       process.stdout.write('\r\x1b[K')
     }
-    if (!gate) for (const f of TABLES) heaps[f] = await memory(page, server.origin, f)
+    for (const f of TABLES) heaps[f] = await memory(page, server.origin, f)
     if (page.errors.length) failures.push(...page.errors.map((e) => `page: ${e}`))
   } finally {
     await page.close()
@@ -331,6 +340,10 @@ if (flag('--serve')) {
     console.log(`\n${pad('heap', 16)}${lpad('idle', 10)}${lpad('+1k rows', 11)}${lpad('5 cycles', 11)}`)
     for (const f of TABLES) console.log(`  ${pad(f, 14)}${kb(heaps[f].idle)}${kb(heaps[f].rows)}${kb(heaps[f].cycled)}`)
   }
+
+  // ── the leak ceiling ──
+  const leak = heaps.rows.cycled / heaps.rows.rows
+  if (leak > LEAK_CEILING) failures.push(`leak: five create/clear cycles kept ${kb(heaps.rows.cycled).trim()}, ${(leak * 100).toFixed(1)}% of a 1k-row mount — the ceiling is ${LEAK_CEILING * 100}%`)
 
   // ── the ratchet ──
   const current  = { bytes: Object.fromEntries(['floor', 'rows'].map((n) => [n, bytes[n].js])), dom }
