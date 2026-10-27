@@ -44,7 +44,9 @@ enum StepStatus       { pending running succeeded failed skipped }
 /// is a refusal to design rather than a surprise to discover.
 ///
 /// `app` and `host` are here so that pointing `fli` at the wrong `deploy.db`
-/// is a refusal rather than a history of somebody else's machine.
+/// is a refusal rather than a history of somebody else's machine. `host` is the
+/// machine's ssh host-key fingerprint from format 4 (`machineIdentity` in
+/// `core/journal.js`); below it, the ssh destination, which named one box twice.
 ///
 /// The single-row rule is DECLARED, and it takes two constraints to say it: the
 /// `@check` refuses any other id and the primary key refuses a second row of

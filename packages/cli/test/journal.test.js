@@ -25,12 +25,13 @@ import {
   openJournal, journalVerdict, readState, readAttempts, attemptDecision,
   recordRelease, recordConfiguration, openTransition, claimStep, finishStep,
   settleTransition, resumeDecision, preconditionVerdict, formatDrift,
-  readHistory, readSteps, readLiveTransition,
+  readHistory, readSteps, readLiveTransition, machineIdentity,
 } from '../core/journal.js'
 
 const ROOT   = resolve(import.meta.dir, '..')
 const RUNNER = `${ROOT}/core/journal-runner.mjs`
 const DDL    = readFileSync(`${ROOT}/db/ddl.snapshot.sql`, 'utf8')
+const MACHINE = 'SHA256:prodBoxKey'
 
 // ─── the schema this module binds to ─────────────────────────────────────────
 
@@ -111,6 +112,27 @@ describe('whose journal is this', () => {
 
   test('an OLDER format is readable — that is what the version is for', () => {
     expect(journalVerdict({ app: 'shop', host: 'deploy@prod', formatVersion: 0 }, at).ok).toBe(true)
+  })
+
+  // From format 4 the row holds the machine, so the destination may change.
+  test('at format 4 the machine is graded, not the destination', () => {
+    const row = { app: 'shop', host: MACHINE, formatVersion: 4 }
+    expect(journalVerdict(row, { app: 'shop', host: 'prod-alias', machine: MACHINE }).ok).toBe(true)
+    const v = journalVerdict(row, { app: 'shop', host: 'deploy@prod', machine: 'SHA256:otherBoxKey' })
+    expect(v).toMatchObject({ ok: false, kind: 'host' })
+    expect(v.reason).toContain('SHA256:otherBoxKey')
+  })
+})
+
+describe('machineIdentity', () => {
+  test('reads the fingerprint ssh-keygen prints, and a bare machine-id', () => {
+    expect(machineIdentity('256 SHA256:Q2xH0w+abc/9= root@yuma (ED25519)\n')).toBe('SHA256:Q2xH0w+abc/9=')
+    expect(machineIdentity('B4811351EF1640ED89B95B27888487A8\n')).toBe('machine-id:b4811351ef1640ed89b95b27888487a8')
+  })
+
+  test('anything else is no identity, never a guess', () => {
+    expect(machineIdentity('')).toBeNull()
+    expect(machineIdentity('cat: /etc/machine-id: No such file or directory')).toBeNull()
   })
 })
 
@@ -246,7 +268,7 @@ describe('the journal, through the runner that ships to the target', () => {
     dir = mkdtempSync(`${tmpdir()}/fjs-journal-`)
     db  = `${dir}/deploy.db`
     j   = journalClient({
-      db, ddl: DDL,
+      db, ddl: DDL, machine: MACHINE,
       exec: (stdin) => spawnSync('bun', [RUNNER], { input: stdin, encoding: 'utf8' }).stdout,
     })
   })
@@ -341,7 +363,7 @@ describe('the journal, through the runner that ships to the target', () => {
 
   test('opening a journal that does not exist creates one and stamps it', async () => {
     const { journal } = await j.open({ app: 'shop', host: 'deploy@prod' })
-    expect(journal).toMatchObject({ app: 'shop', host: 'deploy@prod', formatVersion: JOURNAL_FORMAT })
+    expect(journal).toMatchObject({ app: 'shop', host: MACHINE, formatVersion: JOURNAL_FORMAT })
   })
 
   test('opening it twice keeps the first row', async () => {
@@ -357,7 +379,7 @@ describe('the journal, through the runner that ships to the target', () => {
     const holder = new Database(db)
     holder.exec('BEGIN IMMEDIATE')
     const waiting = journalClient({
-      db, ddl: DDL,
+      db, ddl: DDL, machine: MACHINE,
       exec: async (stdin) => {
         const child = Bun.spawn(['bun', RUNNER], { stdin: new Blob([stdin]), stdout: 'pipe' })
         return await new Response(child.stdout).text()
@@ -511,8 +533,25 @@ describe('the journal, through the runner that ships to the target', () => {
       .rejects.toThrow(/no such table/i)
   })
 
+  // An alias, a reserved IP and the box's own address are three destinations for
+  // one machine, and the second name was refused as a copied disk.
+  test('another name for the same machine opens it; another machine is refused', async () => {
+    await j.open({ app: 'shop', host: 'deploy@prod' })
+    await expect(j.open({ app: 'shop', host: 'prod-alias' })).resolves.toMatchObject({ verdict: { kind: 'open' } })
+    const copy = journalClient({
+      db, ddl: DDL, machine: 'SHA256:otherBoxKey',
+      exec: (stdin) => spawnSync('bun', [RUNNER], { input: stdin, encoding: 'utf8' }).stdout,
+    })
+    await expect(copy.open({ app: 'shop', host: 'deploy@prod' })).rejects.toThrow(/SHA256:prodBoxKey/)
+  })
+
+  test('a target that names no machine is refused before anything is claimed', async () => {
+    const anon = journalClient({ db, ddl: DDL, exec: () => { throw new Error('reached the runner') } })
+    await expect(anon.open({ app: 'shop', host: 'deploy@prod' })).rejects.toThrow(/copied disk/)
+  })
+
   test('a transport that answers nothing is named as a transport failure', async () => {
-    const mute = journalClient({ db, ddl: DDL, exec: () => '' })
+    const mute = journalClient({ db, ddl: DDL, machine: MACHINE, exec: () => '' })
     await expect(mute.open({ app: 'shop', host: 'h' })).rejects.toThrow(/not JSON/)
   })
 })

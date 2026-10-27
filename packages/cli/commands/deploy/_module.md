@@ -926,7 +926,7 @@ const writeEdge = async (machine, { appId, routes, plain = [], ifPresent = false
 // is built in, so there is nothing to resolve on a checkout that has no
 // node_modules — which a deploy target does not, since the build is in Docker.
 const connectJournal = async ($, { host, serverPath, deployConf }) => {
-  const { journalClient } = await import(new URL('file://' + global.fliRoot + '/core/journal.js'))
+  const { journalClient, machineIdentity, MACHINE_IDENTITY } = await import(new URL('file://' + global.fliRoot + '/core/journal.js'))
   const { readFileSync }  = await import('fs')
 
   const runnerLocal  = new URL('file://' + global.fliRoot + '/core/journal-runner.mjs').pathname
@@ -937,13 +937,18 @@ const connectJournal = async ($, { host, serverPath, deployConf }) => {
   machine.run(`mkdir -p ${serverPath}/.fli`)
   machine.send(runnerLocal, runnerRemote)
 
+  // The journal is claimed by the machine, not by `host`: an ssh alias and the
+  // box's reserved IP are two destinations, and one of them read as a copied disk.
+  // A target that prints neither is refused by `open()`, inside each caller's catch.
+  const identity = machineIdentity(machine.capture(MACHINE_IDENTITY))
+
   // The runner reads one JSON object on stdin, so it cannot go through
   // `machine.run` — that channel is already carrying the script. `machine.pipe`
   // is the verb for it, which is what keeps the local backend working here.
   const ddl = readFileSync(new URL('file://' + global.fliRoot + '/db/ddl.snapshot.sql').pathname, 'utf8')
 
   return journalClient({
-    db: dbRemote, ddl,
+    db: dbRemote, ddl, machine: identity,
     exec: (stdin) => machine.pipe(`bun ${runnerRemote}`, stdin),
   })
 }

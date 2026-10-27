@@ -32,6 +32,7 @@ export default {
     // This box joins the fleet this Basecamp runs: after the web release, `fli
     // deploy` runs api/src/core/enroll-host.ts in the container and the install it
     // answers on the host (FJS-D1191). `--no-outpost` skips it for one run.
+    journal: false,
     outpost: true,
 
     api: {

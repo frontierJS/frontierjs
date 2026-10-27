@@ -60,7 +60,8 @@ const atFormat1 = (db) => {
 
 const open = (db) => new Database(db, { readonly: true })
 const rows = (db, sql) => { const d = open(db); const r = d.query(sql).all(); d.close(); return r }
-const clientFor = (db, ddl = DDL) => journalClient({ db, ddl, exec })
+const MACHINE   = 'SHA256:prodBoxKey'
+const clientFor = (db, ddl = DDL) => journalClient({ db, ddl, machine: MACHINE, exec })
 
 // ─── the fixture is the format it claims to be ───────────────────────────────
 
@@ -86,13 +87,17 @@ describe('migrationPlan', () => {
   })
 
   test('every step ends by moving the format, guarded on the one it came from', () => {
-    const plan = migrationPlan(1)
+    const plan = migrationPlan(1, { machine: MACHINE })
     const ends = plan.statements.filter(st => st.name.endsWith(':format'))
-    expect(ends.map(st => st.name)).toEqual(['1→2:format', '2→3:format'])
+    expect(ends.map(st => st.name)).toEqual(['1→2:format', '2→3:format', '3→4:format'])
     expect(plan.statements.at(-1)).toBe(ends.at(-1))
     for (const st of ends)
       expect(st.sql).toMatch(/UPDATE .* SET "formatVersion" = \? WHERE "id" = 'journal' AND "formatVersion" = \?/)
-    expect(ends.map(st => st.params)).toEqual([[2, 1], [3, 2]])
+    expect(ends.map(st => st.params)).toEqual([[2, 1], [3, 2], [4, 3]])
+  })
+
+  test('3 → 4 needs the machine it records, and refuses without one', () => {
+    expect(migrationPlan(3)).toMatchObject({ ok: false, reason: expect.stringContaining('machine') })
   })
 
   test('a format with no way forward refuses rather than skipping it', () => {
@@ -103,7 +108,7 @@ describe('migrationPlan', () => {
 
   // Invariant 8, and it costs nothing to keep asking.
   test('no statement interpolates a value', () => {
-    for (const s of migrationPlan(1).statements)
+    for (const s of migrationPlan(1, { machine: MACHINE }).statements)
       expect(s.sql).not.toMatch(/'\s*\|\|/)
   })
 })
@@ -116,6 +121,7 @@ describe('opening a journal that is behind', () => {
     const opened = await clientFor(db).open({ app: 'shop', host: 'deploy@prod' })
     expect(opened.migrated).toMatchObject({ from: 1, to: JOURNAL_FORMAT })
     expect(rows(db, `SELECT "formatVersion" AS v FROM "${TABLE.journal}"`)[0].v).toBe(JOURNAL_FORMAT)
+    expect(rows(db, `SELECT "host" AS h FROM "${TABLE.journal}"`)[0].h).toBe(MACHINE)
   })
 
   test('and a pause is then a row it accepts', async () => {
@@ -144,7 +150,7 @@ describe('opening a journal that is behind', () => {
   test('with foreign keys ON the same rebuild deletes every step', async () => {
     const db = atFormat1(`${dir}/d.db`)
     const j  = clientFor(db)
-    await j.send(migrationPlan(1).statements, { foreignKeys: true })
+    await j.send(migrationPlan(1, { machine: MACHINE }).statements, { foreignKeys: true })
     expect(rows(db, `SELECT * FROM "${TABLE.transition}"`)).toHaveLength(1)
     expect(rows(db, `SELECT * FROM "${TABLE.step}"`)).toHaveLength(0)
   })
@@ -270,6 +276,14 @@ describe('what a migration does not make readable', () => {
 
   // Order: the app and host verdicts come first, so a path pointed at somebody
   // else's journal is refused rather than upgraded.
+  // Below format 4 the row names a destination, so a different one is still a
+  // different host — the migration only records a machine the old check passed.
+  test('an old journal from another destination is refused, not adopted', async () => {
+    const db = atFormat1(`${dir}/moved.db`)
+    await expect(clientFor(db).open({ app: 'shop', host: 'deploy@stage' })).rejects.toThrow(/deploy@prod/)
+    expect(rows(db, `SELECT "host" AS h FROM "${TABLE.journal}"`)[0].h).toBe('deploy@prod')
+  })
+
   test("another app's journal is refused before it is migrated", async () => {
     const db = atFormat1(`${dir}/other.db`)
     await expect(clientFor(db).open({ app: 'other', host: 'deploy@prod' })).rejects.toThrow(/belongs to "shop"/)

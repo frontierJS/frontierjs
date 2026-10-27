@@ -778,7 +778,7 @@ describe('a machine claims its own credential', () => {
   test('the image runs the Bun every Outpost is installed with', async () => {
     const { BUN_VERSION } = await import('../src/providers/compute/enrollment.ts')
     const dockerfile = await Bun.file(new URL('../../deploy/Dockerfile', import.meta.url)).text()
-    const tags = [...dockerfile.matchAll(/^FROM oven\/bun:(\S+)/gm)].map(m => m[1])
+    const tags = [...dockerfile.matchAll(/^FROM oven\/bun:([^\s@]+)/gm)].map(m => m[1])
     expect(tags.length).toBeGreaterThan(0)
     for (const tag of tags) expect(tag.replace(/-slim$/, '')).toBe(BUN_VERSION)
   })

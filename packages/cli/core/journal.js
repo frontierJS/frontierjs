@@ -40,7 +40,7 @@
  * A resumed transition replays rows an earlier version wrote, so a reader has to
  * be able to ask what wrote them before it parses any of them.
  */
-export const JOURNAL_FORMAT = 3
+export const JOURNAL_FORMAT = 4
 
 /**
  * The table names the DDL emits.
@@ -75,13 +75,15 @@ const json  = (v) => JSON.stringify(v ?? null)
 // ─── the file's own header row ───────────────────────────────────────────────
 
 /**
- * Claim the journal for this app and host, and read back whatever is there.
+ * Claim the journal for this app and machine, and read back whatever is there.
  *
  * `INSERT OR IGNORE`: the row is written once and every later deploy reads it.
  * The read is what matters — `app` and `host` are on the row so that pointing
  * `fli` at the wrong `deploy.db` is a refusal rather than a history of somebody
  * else's machine, and `formatVersion` is what a future reader asks before it
- * parses anything.
+ * parses anything. `host` is the machine's identity (`machineIdentity`), not the
+ * ssh destination: an alias, a reserved IP and the box's own address are three
+ * names for one machine.
  */
 export function openJournal({ app, host, now } = {}) {
   return [
@@ -96,13 +98,37 @@ export function openJournal({ app, host, now } = {}) {
 }
 
 /**
+ * The machine a deploy target IS, from what `MACHINE_IDENTITY` printed there.
+ *
+ * The ed25519 host key's fingerprint, which is what ssh itself asks to know a
+ * machine by, and which cloud-init regenerates on a box made from a snapshot. A
+ * target with no sshd (the local backend) falls back to `/etc/machine-id`.
+ *
+ * @returns {string|null} `SHA256:…` or `machine-id:…`
+ */
+export function machineIdentity(printed) {
+  const text = String(printed ?? '').trim()
+  const fingerprint = text.match(/\bSHA256:[A-Za-z0-9+/=]+/)
+  if (fingerprint) return fingerprint[0]
+  return /^[0-9a-f]{32}$/i.test(text) ? `machine-id:${text.toLowerCase()}` : null
+}
+
+/** The script that prints it, on the target. */
+export const MACHINE_IDENTITY =
+  'ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub 2>/dev/null || cat /etc/machine-id'
+
+/**
  * Is this journal one this deploy may write to?
  *
  * Three refusals rather than one boolean, because the ways out differ: a wrong
  * app is a wrong path, a moved host is a restored backup or a copied disk, and a
  * newer format is a `fli` too old to understand what it is looking at.
+ *
+ * `host` is the ssh destination and `machine` the identity it answered with.
+ * Below format 4 the row holds a destination, so that is what it is graded
+ * against — the migration only rewrites a row the old check would have passed.
  */
-export function journalVerdict(row, { app, host }) {
+export function journalVerdict(row, { app, host, machine }) {
   if (!row) return { ok: true, reason: null, kind: 'new' }
   if (row.formatVersion > JOURNAL_FORMAT)
     return {
@@ -111,10 +137,12 @@ export function journalVerdict(row, { app, host }) {
     }
   if (row.app !== app)
     return { ok: false, kind: 'app', reason: `this journal belongs to "${row.app}" and this deploy is "${app}" — the path names another app's history` }
-  if (row.host !== host)
+  if (row.formatVersion < 4 ? row.host !== host : row.host !== machine)
     return {
       ok: false, kind: 'host',
-      reason: `this journal was written on "${row.host}" and this deploy targets "${host}" — a copied disk or a restored backup carries a history that is not this machine's`,
+      reason: row.formatVersion < 4
+        ? `this journal was written on "${row.host}" and this deploy targets "${host}" — a copied disk or a restored backup carries a history that is not this machine's`
+        : `this journal was written on the machine ${row.host} and "${host}" is ${machine} — a copied disk or a restored backup carries a history that is not this machine's`,
     }
   if (row.formatVersion < JOURNAL_FORMAT)
     return { ok: true, reason: null, kind: 'behind', from: row.formatVersion }
@@ -218,6 +246,12 @@ const MIGRATIONS = {
     { name: 'drop',   sql: `DROP TABLE "binding_set"`, params: [] },
     { name: 'column', sql: `ALTER TABLE "release" RENAME COLUMN "bindingsHash" TO "configurationHash"`, params: [] },
   ],
+  // `host` held the ssh destination, so the same box reached by a new alias was
+  // refused as a copied disk. Reached only past a verdict that graded the old
+  // value, so the identity written here is the machine that history belongs to.
+  3: ({ machine }) => [
+    { name: 'host', sql: `UPDATE "${TABLE.journal}" SET "host" = ? WHERE "id" = 'journal'`, params: [machine] },
+  ],
 }
 
 /**
@@ -228,13 +262,14 @@ const MIGRATIONS = {
  * The `formatVersion` write is the last statement of each step, which is what
  * makes an interrupted migration a no-op rather than a half-migrated file.
  */
-export function migrationPlan(from, { to = JOURNAL_FORMAT } = {}) {
+export function migrationPlan(from, { to = JOURNAL_FORMAT, machine = null } = {}) {
   const steps = []
   for (let v = from; v < to; v++) {
     const build = MIGRATIONS[v]
     if (!build) return { ok: false, from, to, reason: `no migration from journal format ${v} — this fli cannot upgrade it`, statements: [] }
+    if (v === 3 && !machine) return { ok: false, from, to, reason: 'journal format 3 → 4 records the machine, and none was given', statements: [] }
     steps.push(
-      ...build().map(st => ({ ...st, name: `${v}→${v + 1}:${st.name}` })),
+      ...build({ machine }).map(st => ({ ...st, name: `${v}→${v + 1}:${st.name}` })),
       {
         name: `${v}→${v + 1}:format`,
         sql: `UPDATE "${TABLE.journal}" SET "formatVersion" = ? WHERE "id" = 'journal' AND "formatVersion" = ?`,
@@ -625,7 +660,7 @@ export class JournalError extends Error {
  * @param db    the journal's path ON the machine `exec` reaches
  * @param ddl   `db/ddl.snapshot.sql`, sent every call (CREATE TABLE IF NOT EXISTS)
  */
-export function journalClient({ exec, db, ddl, now = null } = {}) {
+export function journalClient({ exec, db, ddl, machine = null, now = null } = {}) {
   // `foreignKeys` is a connection setting the caller states, never a decision the
   // runner makes: the table rebuild in `migrationPlan` drops `transition`, which
   // cascades away every step of every transition ever recorded if they are on.
@@ -651,9 +686,10 @@ export function journalClient({ exec, db, ddl, now = null } = {}) {
      * somebody else's journal is refused rather than upgraded.
      */
     async open({ app, host, migrate = true }) {
-      const r = await send(openJournal({ app, host, now }))
+      if (!machine) throw new JournalError(`${host} printed no ssh host key fingerprint and no /etc/machine-id, so this journal cannot tell it from a copied disk`, 'host')
+      const r = await send(openJournal({ app, host: machine, now }))
       const row = one(r, 'journal')
-      const verdict = journalVerdict(row, { app, host })
+      const verdict = journalVerdict(row, { app, host, machine })
       if (!verdict.ok) throw new JournalError(verdict.reason, verdict.kind)
       // `migrate: false` is for a reader. `fli deploy:status` asks what is
       // recorded and must not write a schema change to answer — it reports the
@@ -661,7 +697,7 @@ export function journalClient({ exec, db, ddl, now = null } = {}) {
       if (verdict.kind === 'behind' && !migrate) return { journal: row, verdict, migrated: null }
       if (verdict.kind !== 'behind') return { journal: row, verdict, migrated: null }
 
-      const plan = migrationPlan(verdict.from)
+      const plan = migrationPlan(verdict.from, { machine })
       if (!plan.ok) throw new JournalError(plan.reason, 'format')
       await send(plan.statements, { foreignKeys: false })
       return { journal: { ...row, formatVersion: plan.to }, verdict, migrated: plan }
