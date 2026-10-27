@@ -90,7 +90,10 @@ database path moved onto it, its health check, `NODE_ENV=production`, each
 external URL recorded at its default, and `ENCRYPTION_KEY` minted as a secret
 and never printed. One question is asked, the hostname — `--domain` answers
 it, and both `FRONTIER_*_URL`s derive from it. An app with `web/` gets a
-static App for it beside this one, placed on the same machines, and the
+static App for it beside this one, placed on the same machines and named
+`app`, and this one is renamed `api` — the front door is the one called the
+app. A slug never changes, so the static App's is `app`, or `web` where this
+one already holds `app`. The
 Domain goes on that App with the API's prefixes and `/ws` routed back here —
 `fli deploy`'s shape, `FJS-D1040`'s rows (`FJS-D1547`); an app without one
 gets the Domain itself. The plan is shown, applied on a yes (`--yes` skips
@@ -191,17 +194,22 @@ const PLACEHOLDER = (name, id) => `<!doctype html>
 <body><p>web/ of ${name} is not released yet — <code>fli basecamp:deploy --app ${id}</code> releases it.</p></body></html>
 `
 
+/** An app split in two: the image is `api`, and the static App the Domain sits on is `app`. */
+const API_NAME = 'api'
+const WEB_NAME = 'app'
+
 /** The lines a plan prints, each a write it would make; empty when there is nothing to do. */
 function planLines(plan, app, servers) {
   const lines = []
+  const apiName  = plan.app.name ?? app.name
   const settings = Object.entries(plan.app).map(([k, v]) => `${k} ${v}`)
   if (settings.length) lines.push(`App '${app.name}': ${settings.join(', ')}`)
   if (plan.variables.length)
     lines.push(`Variables: ${plan.variables.map(v => v.generate ? `${v.key} (a generated secret)` : `${v.key}=${v.value}`).join(', ')}`)
-  if (plan.web) lines.push(`Static App '${app.name} web' for web/${servers.length ? `, placed on ${servers.join(', ')}` : ''}`)
+  if (plan.web) lines.push(`Static App '${WEB_NAME}' for web/${servers.length ? `, placed on ${servers.join(', ')}` : ''}`)
   if (plan.domain)
-    lines.push(`Domain ${plan.domain.hostname} on '${plan.domain.on === 'web' ? `${app.name} web` : app.name}'` +
-      (plan.domain.routes.length ? `, ${plan.domain.routes.join(' and ')} → '${app.name}'` : ''))
+    lines.push(`Domain ${plan.domain.hostname} on '${plan.domain.on === 'web' ? WEB_NAME : apiName}'` +
+      (plan.domain.routes.length ? `, ${plan.domain.routes.join(' and ')} → '${apiName}'` : ''))
   return lines
 }
 
@@ -219,7 +227,7 @@ async function applyPlan({ origin, key, app, plan }) {
   if (plan.web) {
     const page = (id) => ({ kind: 'inline', files: [{ path: 'index.html', content: PLACEHOLDER(app.name, id) }] })
     web = await basecamp(origin, key, '/apps', { method: 'POST', body: {
-      environmentId: app.environmentId, name: `${app.name} web`, slug: `${app.slug ?? app.id}-web`, type: 'static', source: page('<its id>'),
+      environmentId: app.environmentId, name: WEB_NAME, slug: app.slug === WEB_NAME ? 'web' : WEB_NAME, type: 'static', source: page('<its id>'),
     } })
     // The page names the command that replaces it, and that needs the id just issued.
     await basecamp(origin, key, `/apps/${encodeURIComponent(web.id)}`, { method: 'PATCH', body: { source: page(web.id) } })
@@ -389,6 +397,7 @@ if (inline) {
       hostname = await ask('Its hostname', 'e.g. app.example.com — Enter: none yet, the URLs and the Domain stay unset')
     }
     const plan    = releasePlan(findings, { hostname, prefixes })
+    if (plan.web && app.name !== API_NAME) plan.app = { name: API_NAME, ...plan.app }
     const servers = (app.placement ?? []).map(p => p.server?.name).filter(Boolean)
     const lines   = planLines(plan, app, servers)
     if (lines.length) {

@@ -8373,7 +8373,7 @@ Found closing `FJS-3477`: basecamp's `backup-destinations.service.ts` said `name
 
 ### <a id="fjs-d1515"></a>2026-10-25 · `FJS-D1515` — Methods on the built-in types are `@frontierjs/toolbelt/sugar`: pure factories answering `{ proto, statics }` tables, installed by the app's own `web/src/lib/sugar.js`, which `fli new` writes and `main.js` imports first. Two money names: `toMoney` is minor units, `toCurrency` major.
 
-Legacy frontier's `packages/web/src/preload.js` patched the prototypes from inside the framework, and the owner wanted the set standardized and on by default. The tables are in toolbelt and the installing is not, because mutating a global breaks the purity `FJS-D26` admits toolbelt on; the app file holds the one loop, and deleting a line drops a group. Timers, the network and the statics that mutate their argument (`Array.upsert`, `Object.put`) are app-file extras: a pure copy of a mutating call silently does nothing where the legacy one wrote. **Sugar** was picked over *natives* (mesa's native backend has the word), *builtins*, *coreExt* and *preload* (`<link rel=preload>`); Sugar.js is the same split, tables plus an explicit `extend()`.
+Legacy frontier's packages/web/src/preload.js patched the prototypes from inside the framework, and the owner wanted the set standardized and on by default. The tables are in toolbelt and the installing is not, because mutating a global breaks the purity `FJS-D26` admits toolbelt on; the app file holds the one loop, and deleting a line drops a group. Timers, the network and the statics that mutate their argument (`Array.upsert`, `Object.put`) are app-file extras: a pure copy of a mutating call silently does nothing where the legacy one wrote. **Sugar** was picked over *natives* (mesa's native backend has the word), *builtins*, *coreExt* and *preload* (`<link rel=preload>`); Sugar.js is the same split, tables plus an explicit `extend()`.
 
 `toCurrency` keeps the legacy meaning, MAJOR units, so a ported call shows the amount it did; `toMoney` takes the schema's `@money` word and its MINOR units. The two differ a hundredfold and only the name says which, so every in-tree cents caller moved to `toMoney` in this change. A currency comes from `number({ currency })` at install or from the call, and a call with neither THROWS rather than guessing USD (`FJS-D1512`): basecamp installs `number()`, since it prices in EUR and USD. The installer refuses a name the platform already has (SmooshGate) and accepts its own on a second install (HMR). The legacy set was cut where the language now answers (`Object.groupBy`, `.at(-1)`, `?.`, `===`) and fixed where it was wrong — see the spec. No artefact yet stops `.toCurrency()` on a `@money` value (`FJS-3494`); a prerender loads the file before its first render (`FJS-3493`).
 
@@ -8395,7 +8395,7 @@ The image's default command, `weed mini`, serves S3 on 8333 and answers `/health
 
 *Lives in:* `packages/basecamp/db/blueprints.js`.
 
-### <a id="fjs-d1510"></a>2026-10-24 · `FJS-D1510` — Q4 — Where the third-party register lives once ruled — `docs/THIRD-PARTY.md` beside `PORTS.md`, moved when its rows cite rulings, with the Pin column replaced by a pointer to the file that holds each pin.
+### <a id="fjs-d1510"></a>2026-10-24 · `FJS-D1510` — Q4 — Where the third-party register lives once ruled — docs/THIRD-PARTY.md beside `PORTS.md`, moved when its rows cite rulings, with the Pin column replaced by a pointer to the file that holds each pin.
 
 Asked in [`IDEAS/third-party.md`](IDEAS/third-party.md) § Open questions. **A** was picked over **B** (move it with the pins copied in, kept by hand) and **C** (stay in `IDEAS/`). A register that names where each thing is used describes the tree, and `IDEAS/` is never cited as behavior. A copied pin (`S3_IMAGE`, the Litestream version, the Blueprint images) drifts from the code the moment one is bumped, and nothing would flag it.
 
@@ -15289,6 +15289,24 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1546"></a>2026-10-27 · `FJS-D1546` — Q10 — Where Docker's advisories come from — GitHub's repository advisories for `moby/moby`, graded from each advisory's Docker Engine row.
+
+Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions (Phase 7, step 7.1). **A** was picked over **B** (OSV for Docker 28 and below, the moby repository from 29) and **C** (OSV `github.com/docker/docker` and `github.com/moby/moby`, as the plan first said, accepting the false positives or keeping a list of ids to ignore).
+
+The `github.com/docker/docker` Go module froze at 28.x and the engine moved to `github.com/moby/moby/v2`, whose versions are `2.0.0-beta.N` and not the engine's. Probed 2026-10-27, OSV answered 6 advisories against `docker/docker` at 29.0.0 and the same 6 at 29.2.1, each fixed only in the new module, so every Docker 29 box would read as vulnerable forever. moby's repository advisories carry a `Docker Engine` row ranged in engine versions: at 29.8.0 they name GHSA-7cfq-22r6-qp73 and GHSA-6m9p-4h64-m6vh, both fixed in 29.8.2. Advisories filed before moby wrote that row are read from their other engine labels (`Moby (aka Docker CE, Docker Engine)`, `docker-ce`, `docker`, a blank name, `github.com/docker/docker`), which are ranged in engine versions too. An advisory whose only rows are on the skip list (`docs.docker.com`) is skipped; one whose runtime row cannot be read, or whose rows carry a label in neither list, grades the component `unknown`, so moby relabeling the Engine row reads as unknown rather than clean. Same source kind as `FJS-D1548`; OSV keeps runc, containerd, Caddy and Litestream.
+
+### <a id="fjs-d1545"></a>2026-10-27 · `FJS-D1545` — Q9 — SQLite: show the version, or grade it — Show only: the Posture tab prints each Bun's SQLite version, and no control grades it.
+
+Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions (Phase 7). **A** was picked over **B** (grade against NVD's CPE `sqlite:sqlite`, a new provider at 5 requests per 30s without a key).
+
+SQLite reaches an app as `bun:sqlite`, statically linked into Bun, so the remedy for any SQLite advisory is a Bun upgrade, which `FJS-D1548` already grades. Upstream SQLite has no OSV ecosystem, NVD's backlog leaves recent CVEs without CPE data, and most SQLite CVEs hit the CLI or extensions. Reopen when a SQLite CVE reaches `bun:sqlite` before Bun ships the fix.
+
+### <a id="fjs-d1548"></a>2026-10-27 · `FJS-D1548` — Q8 — Where Bun's advisories come from — GitHub's repository advisories for `oven-sh/bun`, through a conduit target.
+
+Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions (Phase 7). **A** was picked over **B** (OSV npm `bun`).
+
+The owner asked for advisories against every component the stack depends on (Bun, Docker, runc, containerd, Caddy, Litestream), with app runtimes such as Node and PHP out of scope. npm `bun` is the installer wrapper, not the runtime. Probed 2026-10-27, it held 2 advisories against the repository's 3, so a runtime advisory filed only against the repo would read as clean. That is the silence Phase 7's `unknown` grade exists to refuse. Every other component goes through OSV via a widened `checkNames`. Adjudication: *one owner vs. the right source*. The second target is a different source, not a second owner of the lookup.
+
 ### <a id="fjs-d1547"></a>2026-10-27 · `FJS-D1547` — A never-released App with `web/` beside it is set up as two Apps by `fli basecamp:deploy`: the walkthrough creates the static App for `web/` on the API App's machines, puts the Domain on it, and routes the API's prefixes and `/ws` back to the API App.
 
 The one hostname question (`FJS-3525`) is answered as `FJS-D1040`'s rows — a `Domain` on the page's App, `DomainRoute`s for the API — because `fli deploy`'s Caddy already serves an FJS app that way and a developer who knows one predicts the other. The route list is `routePrefixes(apiPaths(snapshot))` in `core/edge.js`, the Caddy routes' own derivation, never a literal `['/api', '/ws']`. The static App is placed where the API App is, since one Caddy cannot route a prefix between machines.
@@ -15966,24 +15984,6 @@ Every legacy ksite client keeps its redirects in `content/settings/_redirects`, 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (`fli check` owns the reader AND the run: a package declares `test/doc-prelude.{js,ts}` (default export `(block) => { imports, head }`), `fli check` writes each unmarked fence as a module under that prelude and runs it. One runner for 20 packages, no per-package test file; the cost is a new file convention plus a process fleet inside `fli check`, and the prelude for a drive-needing package (mesa served page, sierra build) is not a head string), **C** (Reader in `packages/cli/core`, package runners import it by relative path from the workspace, the way `@frontierjs/ui` reads mesa's CDP harness. No new package surface, but it makes every package's suite depend on cli, a reverse edge).
 
 The paper's recommendation, taken as written: it is the only choice with one reader and no reverse edge, it keeps `FJS-D860`'s "the package owns its words" (the prelude), and the 19 runners then each become a small test over a shared reader instead of 19 copies of litestone's 226 lines.
-
-### <a id="fjs-d1546"></a>2026-10-27 · `FJS-D1546` — Q10 — Where Docker's advisories come from — GitHub's repository advisories for `moby/moby`, graded from each advisory's Docker Engine row.
-
-Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions (Phase 7, step 7.1). **A** was picked over **B** (OSV for Docker 28 and below, the moby repository from 29) and **C** (OSV `github.com/docker/docker` and `github.com/moby/moby`, as the plan first said, accepting the false positives or keeping a list of ids to ignore).
-
-The `github.com/docker/docker` Go module froze at 28.x and the engine moved to `github.com/moby/moby/v2`, whose versions are `2.0.0-beta.N` and not the engine's. Probed 2026-10-27, OSV answered 6 advisories against `docker/docker` at 29.0.0 and the same 6 at 29.2.1, each fixed only in the new module, so every Docker 29 box would read as vulnerable forever. moby's repository advisories carry a `Docker Engine` row ranged in engine versions: at 29.8.0 they name GHSA-7cfq-22r6-qp73 and GHSA-6m9p-4h64-m6vh, both fixed in 29.8.2. Advisories filed before moby wrote that row are read from their other engine labels (`Moby (aka Docker CE, Docker Engine)`, `docker-ce`, `docker`, a blank name, `github.com/docker/docker`), which are ranged in engine versions too. An advisory whose only rows are on the skip list (`docs.docker.com`) is skipped; one whose runtime row cannot be read, or whose rows carry a label in neither list, grades the component `unknown`, so moby relabeling the Engine row reads as unknown rather than clean. Same source kind as `FJS-D1548`; OSV keeps runc, containerd, Caddy and Litestream.
-
-### <a id="fjs-d1545"></a>2026-10-27 · `FJS-D1545` — Q9 — SQLite: show the version, or grade it — Show only: the Posture tab prints each Bun's SQLite version, and no control grades it.
-
-Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions (Phase 7). **A** was picked over **B** (grade against NVD's CPE `sqlite:sqlite`, a new provider at 5 requests per 30s without a key).
-
-SQLite reaches an app as `bun:sqlite`, statically linked into Bun, so the remedy for any SQLite advisory is a Bun upgrade, which `FJS-D1548` already grades. Upstream SQLite has no OSV ecosystem, NVD's backlog leaves recent CVEs without CPE data, and most SQLite CVEs hit the CLI or extensions. Reopen when a SQLite CVE reaches `bun:sqlite` before Bun ships the fix.
-
-### <a id="fjs-d1548"></a>2026-10-27 · `FJS-D1548` — Q8 — Where Bun's advisories come from — GitHub's repository advisories for `oven-sh/bun`, through a conduit target.
-
-Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions (Phase 7). **A** was picked over **B** (OSV npm `bun`).
-
-The owner asked for advisories against every component the stack depends on (Bun, Docker, runc, containerd, Caddy, Litestream), with app runtimes such as Node and PHP out of scope. npm `bun` is the installer wrapper, not the runtime. Probed 2026-10-27, it held 2 advisories against the repository's 3, so a runtime advisory filed only against the repo would read as clean. That is the silence Phase 7's `unknown` grade exists to refuse. Every other component goes through OSV via a widened `checkNames`. Adjudication: *one owner vs. the right source*. The second target is a different source, not a second owner of the lookup.
 
 ### <a id="fjs-d931"></a>2026-10-12 · `FJS-D931` — Q5 — Pin the installs — Also pin a major for Docker and Caddy with an apt preference, keep every version beside `BUN_VERSION`, and report the installed versions in the heartbeat.
 

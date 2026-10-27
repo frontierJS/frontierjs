@@ -36,7 +36,7 @@ import { litestreamInstall } from '@frontierjs/litestone/replicate'
  *  workspace carries (a test holds the two together); Docker and Caddy come
  *  from signed apt repositories. */
 export const BUN_VERSION     = '1.4.4'
-export const OUTPOST_VERSION = '0.1.6'
+export const OUTPOST_VERSION = '0.1.7'
 
 /** How long a machine has to enroll. A cloud-init run is seconds; fifteen
  *  minutes is room for a slow image pull and nothing like room for a leaked

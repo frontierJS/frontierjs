@@ -515,6 +515,7 @@ function codeOf(body) {
 // A preset may render a value through {@html} or into an href (ksite's PageHero
 // does the first with `title`), so a value is graded as a body is (FJS-D1508).
 // A browser drops tabs and newlines from a URL, so `java\tscript:` runs too.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: the control characters are what this pattern removes or refuses
 const SCRIPT_URL = /^[\s\0-\x1f]*(?:java|vb)script:/i
 
 /** Why `next` may not replace `was` as a front-matter value, or null. */
