@@ -60,7 +60,9 @@ export function buildTree(paths) {
 
 /**
  * A directory whose only child is a directory is drawn as one row,
- * `cli/src/routes` — VS Code's compact folders. The root itself never folds.
+ * `cli/src/routes` — VS Code's compact folders — and one whose only child is a
+ * file is drawn as that file's row, `alerts/alerts.service.ts`. The root
+ * itself never folds.
  */
 export function compactTree(dir) {
   for (const [key, child] of dir.dirs) {
@@ -69,6 +71,7 @@ export function compactTree(dir) {
       const [only] = c.dirs.values()
       c = { ...only, name: `${c.name}/${only.name}` }
     }
+    if (c.dirs.size === 0 && c.files.length === 1) c.inline = true
     dir.dirs.set(key, compactTree(c))
   }
   return dir
@@ -173,6 +176,20 @@ const dirLabel = (d, open, { icons, link }) => {
   return `${icon}${link(chalk.bold(paint(folderColor(d.name), d.name)), d.path)}${hidden}`
 }
 
+const fileLabel = (f, { icons, link }) => {
+  const [emoji, hex] = fileIcon(f.name)
+  const name = kindOf(f.path) === 'generated' ? chalk.dim(paint(hex, f.name)) : paint(hex, f.name)
+  return `${icons ? `${emoji} ` : ''}${link(name, f.path)}`
+}
+
+// A folder holding one file, as the file's row with the folder before it.
+const inlineLabel = (d, { icons, link }) => {
+  const [file] = d.files
+  const [emoji] = fileIcon(file.name)
+  const folder = link(chalk.bold(paint(folderColor(d.name), `${d.name}/`)), d.path)
+  return `${icons ? `${emoji} ` : ''}${folder}${fileLabel(file, { icons: false, link })}`
+}
+
 /**
  * Rows of the tree under `dir`.
  *   icons   — emoji before each name
@@ -192,6 +209,11 @@ export function renderTree(dir, { icons = true, depth = 0, dirsOnly = false, lin
       const branch = chalk.dim(last ? '└── ' : '├── ')
       if (it.dir) {
         counts.dirs += it.dir.name.split('/').length
+        if (it.dir.inline && !dirsOnly) {
+          counts.files++
+          rows.push(`${prefix}${branch}${inlineLabel(it.dir, { icons, link })}`)
+          return
+        }
         const open = !depth || level < depth
         rows.push(`${prefix}${branch}${dirLabel(it.dir, open, { icons, link })}`)
         if (open) walk(it.dir, prefix + chalk.dim(last ? '    ' : '│   '), level + 1)
@@ -199,9 +221,7 @@ export function renderTree(dir, { icons = true, depth = 0, dirsOnly = false, lin
         return
       }
       counts.files++
-      const [emoji, hex] = fileIcon(it.file.name)
-      const name = kindOf(it.file.path) === 'generated' ? chalk.dim(paint(hex, it.file.name)) : paint(hex, it.file.name)
-      rows.push(`${prefix}${branch}${icons ? `${emoji} ` : ''}${link(name, it.file.path)}`)
+      rows.push(`${prefix}${branch}${fileLabel(it.file, { icons, link })}`)
     })
   }
 
@@ -212,9 +232,10 @@ export function renderTree(dir, { icons = true, depth = 0, dirsOnly = false, lin
 
 /** Levels below `dir`, a compacted row counting as one — the largest `depth` that changes anything. */
 export function treeDepth(dir) {
+  const dirs = [...dir.dirs.values()].filter(d => !d.inline)
   let deepest = 0
-  for (const d of dir.dirs.values()) deepest = Math.max(deepest, treeDepth(d))
-  return dir.dirs.size ? deepest + 1 : (dir.files.length ? 1 : 0)
+  for (const d of dirs) deepest = Math.max(deepest, treeDepth(d))
+  return dirs.length ? deepest + 1 : (dir.files.length || dir.dirs.size ? 1 : 0)
 }
 
 /** The root row — the directory's own name. */
@@ -243,6 +264,10 @@ export function visibleWidth(s) {
 export function buildLanes(tree, { icons = true, depth = 0, dirsOnly = false, link = t => t } = {}) {
   const lanes = []
   for (const d of [...tree.dirs.values()].sort(byName)) {
+    if (d.inline && !dirsOnly) {
+      lanes.push({ rows: [inlineLabel(d, { icons, link })], cont: '' })
+      continue
+    }
     const open = !depth || depth > 1
     const body = open ? renderTree(d, { icons, depth: depth ? depth - 1 : 0, dirsOnly, link }).rows : []
     lanes.push({

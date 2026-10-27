@@ -584,10 +584,17 @@ title: App
   $: rollbackIt  = latest ? deployments.transitions(latest, session.level).find(m => m.name === 'rollback') : null
   $: canRetry    = latest && (latest.status === 'failed' || latest.status === 'cancelled')
   $: primaryHost = app?.domains?.find(d => d.isPrimary)?.hostname ?? null
-  // Deploy ships the Source tab, so over a sent build the site goes back to those files.
-  $: overBuild   = app?.liveBuild
-    ?'The live site is a build sent from outside this page — a Freeze or fli basecamp:deploy. Deploy replaces it with the files on the Source tab.'
-    : null
+  // Deploy ships the Source tab, so over a sent build the app goes back to
+  // what that tab names. The live row's trigger says which door it came
+  // through; nothing else on the row tells a laptop build from a push.
+  $: live        = app?.recent_deployments?.find(d => d.status === 'success') ?? null
+  $: overBuild   = live?.trigger === 'laptop'
+    ? (app?.source?.kind === 'git'
+        ? 'A laptop build is live — fli basecamp:deploy sent it. Deploy, and the next push, replaces it with a build of the branch on the Source tab.'
+        : 'A laptop build is live — fli basecamp:deploy sent it. Deploy replaces it with the files on the Source tab.')
+    : live?.trigger === 'freeze'
+      ? 'The live site is a frozen preview. Deploy replaces it with the files on the Source tab.'
+      : null
 
   function whoShipped(d) {
     return d.author ? ` by ${d.author}` : ''
@@ -726,6 +733,9 @@ title: App
         {/if}
       </Card>
 
+      {#if overBuild}
+        <Callout tone="info" id="app-live-build">{overBuild}</Callout>
+      {/if}
       {#if !latest}<LaptopRelease app={app} />{/if}
 
       {#if app.source?.kind === 'git'}
@@ -1103,6 +1113,9 @@ title: App
   {/if}
 
   {#if tab === 'releases'}
+    {#if overBuild}
+      <Callout tone="info">{overBuild}</Callout>
+    {/if}
     <LaptopRelease app={app} />
     {#if !app.recent_deployments?.length}
       <EmptyState title="Never released">This app has no deployment history.</EmptyState>

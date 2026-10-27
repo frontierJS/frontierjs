@@ -87,6 +87,10 @@ the upload was refused. A refused upload still finishes `success`, with the
 reason in `error`: the archive exists, it is only on the disk it was meant to
 leave. Read the row, not the status, before trusting that a machine can burn.
 
+*Download* on `/hub/backups/` fetches either kind as
+`basecamp-<stamp>.tar.gz`: a remote one by a pre-signed GET straight from the
+bucket, a local one through the hub by a link that lasts five minutes.
+
 The hub holds a whole archive in memory to send it; above 1 GiB the job refuses
 rather than discovering the limit in the heap.
 

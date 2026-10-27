@@ -88,12 +88,18 @@ describe('a push releases the App', () => {
     expect(on.secret).toBeTruthy()
     expect(on.url).toContain(`/hooks/git/${app.id}`)
 
-    const res = await forge(app.id, on.secret, push())
+    const sha = uniq().padEnd(40, '0')
+    const res = await forge(app.id, on.secret, {
+      ...push('refs/heads/main', sha),
+      head_commit: { id: sha, message: 'Cache the manifest', author: { name: 'Kim', email: 'kim@example.test' } },
+    })
     expect(res.status).toBe(200)
 
     const made = await releases(app.id)
     expect(made).toHaveLength(1)
     expect(made[0].triggeredBy).toBe(userId)
+    // The door and the payload's commit, as the Releases tab reads them back.
+    expect(made[0]).toMatchObject({ trigger: 'push', commitSha: sha, branch: 'main', author: 'Kim', commitMessage: 'Cache the manifest' })
   })
 
   test('the per-App token URL reaches the same apply, for a sender that signs nothing', async () => {

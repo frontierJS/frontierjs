@@ -212,6 +212,10 @@ export default createService({
     // registry. Only a git container is built, here on the machine; a
     // database is an image or nothing.
     const builds = isGit(target.source) && target.type !== 'database'
+    // The branch a git release builds is the App's unless the caller named
+    // one; the button has no payload, so the row would otherwise say nothing.
+    if (isGit(target.source) && data.branch == null && (target.source as { branch?: string }).branch)
+      data.branch = (target.source as { branch?: string }).branch
     if ((target.type === 'container' || target.type === 'function' || target.type === 'database')
         && !isInline(target.source) && !builds && !imageOf(target.source) && !data.toImage)
       throw new BadRequest(

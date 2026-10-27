@@ -30,8 +30,8 @@
 // What `fli prove` queues on: this checkout's ports.
 export const holds = ['ports']
 
-import { spawn } from 'node:child_process'
-import { rm } from 'node:fs/promises'
+import { spawn, spawnSync } from 'node:child_process'
+import { readdir, rm } from 'node:fs/promises'
 import { randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -498,6 +498,26 @@ try {
     t => /success/.test(t) && /manual/.test(t), 'the new backup never succeeded', 30_000)
   check('and it finishes with a size the machine reported',
     /\d(\.\d)?\s?(B|kB|MB|GB)/.test(newest), newest.trim().slice(0, 120))
+
+  // Download is a NAVIGATION to a link the API signed (IDEAS/backups.md 4.2):
+  // through the dev proxy's navigated paths, which hand any other API path
+  // asked for as a document the shell. So the file Chrome saves is read back
+  // and listed — a shell saved as .tar.gz would be the same click.
+  const saved = join(SCRATCH, 'downloads')
+  await send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: saved })
+  await evaluate(`document.querySelector('#backup-history tbody tr [aria-label^="Download "]').click()`)
+  const tarball = await (async () => {
+    for (let i = 0; i < 60; i++) {
+      const done = (await readdir(saved).catch(() => [])).find(f => /^basecamp-.*\.tar\.gz$/.test(f))
+      if (done) return join(saved, done)
+      await sleep(250)
+    }
+    return null
+  })()
+  const listed = tarball ? spawnSync('tar', ['-tzf', tarball], { encoding: 'utf8' }) : null
+  check('Download saves the archive as a tarball of its databases',
+    listed?.status === 0 && /\/[^/]+\.db$/m.test(listed.stdout),
+    tarball ? (listed.stdout || listed.stderr).trim().slice(0, 160) : `nothing saved; ${await text('#screen-error')}`)
 
   // ─── Your settings ─────────────────────────────────────────────────────
   console.log('\n  /settings/ — the caller\'s own account')

@@ -181,7 +181,7 @@ class DeploymentFactory extends Factory {
     const sha = (rng ? rng.str(7) : 'abc1234')
     return {
       status,
-      trigger:       rng && rng.bool(0.3) ? 'webhook' : 'manual',
+      trigger:       rng && rng.bool(0.3) ? 'push' : 'button',
       commitSha:     sha,
       commitMessage: ['Bump dependencies', 'Fix null check on login', 'Add health endpoint',
                       'Cache the manifest', 'Revert "Cache the manifest"'][seq % 5],

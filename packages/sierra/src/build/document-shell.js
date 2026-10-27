@@ -20,7 +20,7 @@
  * given one so `lang` has somewhere to sit.
  */
 
-import { documentParts, DEFAULT_LANG, SKIP_LINK, hasSkipLink } from './prerender.js'
+import { documentParts, DEFAULT_LANG, SKIP_LINK, SKIP_LINK_GUARD, hasSkipLink } from './prerender.js'
 
 // The opening tag's attribute names. A value never matters: stating the
 // attribute at all is the second statement.
@@ -69,9 +69,14 @@ export function applyDocument(html, doc = {}) {
     : /<!doctype\b[^>]*>/i.test(html)
       ? html.replace(/<!doctype\b[^>]*>/i, (d) => `${d}\n${opened}`)
       : `${opened}\n${html}`
+  // The guard goes first in <head>, ahead of every stylesheet, so its layer is
+  // the lowest; a shell with no <head> carries it just before the link.
+  const writesSkip = !hasSkipLink(html)
+  const hasHead = /<head\b[^>]*>/i.test(out)
+  if (writesSkip && hasHead) out = out.replace(/<head\b[^>]*>/i, (tag) => `${tag}\n  ${SKIP_LINK_GUARD}`)
   out = out.replace(/<body\b[^>]*>/i, (tag) => {
     refuseRestated(tag, 'body', bodyStated)
-    const skip = hasSkipLink(html) ? '' : `\n  ${SKIP_LINK}`
+    const skip = !writesSkip ? '' : hasHead ? `\n  ${SKIP_LINK}` : `\n  ${SKIP_LINK_GUARD}\n  ${SKIP_LINK}`
     return tag.replace(/>$/, `${parts.bodyAttr}>${skip}`)
   })
 

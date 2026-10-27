@@ -26,7 +26,11 @@ export const PUSH_TOKEN_PATH = '/hooks/git/{appId}/{token}'
 const TOKEN_PREFIX = 'bcpt_'
 
 export interface PushEvent extends ReceivedEvent {
-  payload: { ref: string | null, after: string | null, deleted: boolean, defaultBranch: string | null }
+  payload: {
+    ref: string | null, after: string | null, deleted: boolean, defaultBranch: string | null,
+    // What the Releases tab reads back: the three forges all send `head_commit`.
+    author: string | null, message: string | null,
+  }
 }
 
 // ─── Minting ───────────────────────────────────────────────────────────
@@ -61,17 +65,25 @@ function parsePush(d: Delivery): PushEvent | null {
   if (kind && kind !== 'push') return null
   const body = (d.body && typeof d.body === 'object' ? d.body : {}) as Record<string, any>
   const after = typeof body.after === 'string' ? body.after : null
+  const head  = body.head_commit && typeof body.head_commit === 'object' ? body.head_commit : {}
+  const str   = (v: unknown) => typeof v === 'string' && v ? v : null
   return {
     id:   header(d, 'x-github-delivery', 'x-forgejo-delivery', 'x-gitea-delivery') ?? randomUUID(),
     type: 'push',
     payload: {
-      ref:           typeof body.ref === 'string' ? body.ref : null,
+      ref:           str(body.ref),
       after,
       deleted:       body.deleted === true || (after != null && /^0+$/.test(after)),
-      defaultBranch: typeof body.repository?.default_branch === 'string' ? body.repository.default_branch : null,
+      defaultBranch: str(body.repository?.default_branch),
+      author:        str(head.author?.name) ?? str(head.author?.username) ?? str(head.author?.email) ?? str(body.pusher?.name),
+      message:       str(head.message),
     },
   }
 }
+
+/** The branch a push names, as the Releases tab shows it: `main`, not `refs/heads/main`. */
+const branchOf = (ev: PushEvent, source: { branch?: string }) =>
+  ev.payload.ref?.replace(/^refs\/heads\//, '') ?? source.branch ?? ev.payload.defaultBranch ?? null
 
 // One delivery id per App: the same id could never name two Apps' pushes, but a
 // sha pushed to two Apps' repos should release both.
@@ -131,13 +143,22 @@ function receiver(app: App, path: string, dialect: Dialect<string, PushEvent>, c
       const sys = (app.db as any).asSystem()
       const row = await sys.app.findFirst({ where: { id: delivery.route.appId, deletedAt: null } })
       if (!row?.deployOnPush || !row.pushActorId) return 'ignored'
-      if (!pushesBranch(ev, (row.source ?? {}) as { branch?: string })) return 'ignored'
+      const source = (row.source ?? {}) as { branch?: string }
+      if (!pushesBranch(ev, source)) return 'ignored'
 
       // The release is made at the standing of whoever enabled push, read
       // again now. A throw is a 500, so the forge's delivery shows red and its
-      // retry gets a clean run.
+      // retry gets a clean run. The row names its door and the payload's
+      // commit: the build step reports the sha it built, and these are what
+      // the history says until it does.
+      const { after, author, message } = ev.payload
       await app.runAs(row.pushActorId, { tenant: row.workspaceId }, () =>
-        (app.service('deployments') as any).create({ appId: row.id }))
+        (app.service('deployments') as any).create({
+          appId: row.id, trigger: 'push', branch: branchOf(ev, source),
+          ...(after && !/^0+$/.test(after) ? { commitSha: after } : {}),
+          ...(author  ? { author } : {}),
+          ...(message ? { commitMessage: message } : {}),
+        }))
       return 'applied'
     },
   }

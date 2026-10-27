@@ -92,7 +92,21 @@ describe('the shell facts', () => {
     const out = applyDocument(SHELL, {})
     expect(out).toContain('<html lang="en">')
     expect(out).toMatch(/<body>\s*<a class="skip-link" href="#main">Skip to content<\/a>/)
-    expect(out.match(/skip-link/g)).toHaveLength(1)
+    expect(out.match(/class="skip-link"/g)).toHaveLength(1)
+  })
+
+  // An SPA's stylesheet arrives with its JS, so until then the link is bare
+  // text at the top of the page. The guard is first in <head> so its layer
+  // ranks below every one the design system declares.
+  test('the link it writes is off-screen before any stylesheet loads', () => {
+    const out = applyDocument(SHELL, {})
+    expect(out).toMatch(/<head>\n {2}<style id="sierra-skip-link">@layer sierra-shell\{/)
+    expect(out.indexOf('sierra-skip-link')).toBeLessThan(out.indexOf('<title>'))
+    expect(out).toContain(':where(.skip-link:not(:focus))')
+
+    const bare = applyDocument('<body><div id="app"></div></body>', {})
+    expect(bare).toMatch(/<body>\n {2}<style id="sierra-skip-link">[^\n]*\n {2}<a class="skip-link"/)
+    expect(bare.match(/sierra-skip-link/g)).toHaveLength(1)
   })
 
   test('a shell that states either keeps its own', () => {

@@ -1,7 +1,7 @@
 /*
  * expedition.css
- * Expedition — field equipment and trail infrastructure: charcoal, sage,
- * brass, slate, and parchment. Rugged, restrained, built for long sessions.
+ * Expedition — black rock and chalk-white type, lit by a southwest sunset:
+ * rose, gold, turquoise, red rock. Rugged, vivid, built for long sessions.
  * Tokens only; no selectors beyond the theme scope.
  */
 
@@ -13,33 +13,33 @@
   --tone-l-min: 0.72;
   --tone-l-max: 1;
 
-  /* ── Accents: field markers, brass, and surveyor's inks ──────────── */
-  --color-primary:   #9db39f; /* pine sage */
-  --color-secondary: #d0ad6f; /* aged brass */
-  --color-muted:     #a0a18f; /* weathered stone */
-  --color-info:      #8faeb5; /* dusty slate */
-  --color-success:   #a3b58c; /* evergreen */
-  --color-warning:   #e0b36c; /* ochre */
-  --color-danger:    #d98270; /* faded vermilion */
+  /* ── Accents: a southwest sunset over black rock ─────────────────── */
+  --color-primary:   #ededed; /* chalk */
+  --color-secondary: #ff6fa3; /* desert rose sky */
+  --color-muted:     #9a9a9a; /* graphite */
+  --color-info:      #36cfc9; /* turquoise */
+  --color-success:   #8fd16a; /* prickly pear */
+  --color-warning:   #ffc23d; /* last light gold */
+  --color-danger:    #ff4d5e; /* red rock */
 
-  /* ── Grounds: near-black charcoal, a faint warm undertone ──────── */
-  --app-bg:          #0f0f0e;
-  --surface:         #181715;
-  --surface-raised:  #23211f;
-  --surface-sunken:  #0a0a09;
+  /* ── Grounds: neutral black, no hue ──────────────────────────────── */
+  --app-bg:          #0f0f0f;
+  --surface:         #171717;
+  --surface-raised:  #222222;
+  --surface-sunken:  #0a0a0a;
 
-  --topbar-bg:       #121211;
-  --sidebar-bg:      #121211;
-  --dialog-bg:       #1d1c1a;
+  --topbar-bg:       #121212;
+  --sidebar-bg:      #121212;
+  --dialog-bg:       #1c1c1c;
 
-  /* ── Ink: parchment, not white ───────────────────────────────────── */
-  --ink:             #e2ddca;
-  --ink-soft:        #c0bba7;
-  --ink-mute:        #a19e8d;
+  /* ── Ink: white, stepped down in gray ────────────────────────────── */
+  --ink:             #f2f2f2;
+  --ink-soft:        #c4c4c4;
+  --ink-mute:        #9c9c9c;
 
   /* ── Rules: quiet at rest, clear when emphasized ─────────────────── */
-  --rule:            #34322e;
-  --rule-strong:     #4b4842;
+  --rule:            #2e2e2e;
+  --rule-strong:     #454545;
 
   /* ── Elevation: subtle lift, no glossy glow ──────────────────────── */
   --surface-shadow:  0 1px 2px rgba(0, 0, 0, 0.24);

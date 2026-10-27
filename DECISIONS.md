@@ -15317,6 +15317,14 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1557"></a>2026-10-27 · `FJS-D1557` — Q1 — Who picks an App's host port — Basecamp does: `placeApp`, the one place a replica lands on a server, allocates the next free port from the Apps already placed there and refuses a duplicate per server, and `apps.update` patching `port` on a placed App runs the same check per `AppServer`. The form shows the number it got; a person changes it only for an App with no hostname, where the number is the address (`FJS-D930`).
+
+Asked in [`IDEAS/git-deploy.md`](IDEAS/git-deploy.md) § Open questions, through the question tool. **A** (recommended) was picked over **B** (keep the typed field, add the per-server refusal only) and **C** (as built: a required field, no check). The number is plumbing between Caddy and the container that a person has no way to know, so a typed field is a guess the machine grades late: two Apps on one server with one port fail at `docker run`, after the old container is gone. Dokku assigns the host port and Coolify has none. `checkRuntime` holds no server and stays out of it (Invariant 4). What must stay true: no two Apps placed on one server share a port, proved by a `from-repo.test.ts` case; the Outpost's own run-config check is not asked.
+
+### <a id="fjs-d1558"></a>2026-10-27 · `FJS-D1558` — Q3 — Is deploy-on-push on by default when a project is created from a repository — On when a server is picked, off otherwise: `projects.fromRepo` calls `mintPush` (what `apps.enablePush` calls, never a mint beside it) and its answer carries the deploy public key and the push URL, secret and token URL together, shown once on the create page's *Connect your repository* panel.
+
+Asked in [`IDEAS/git-deploy.md`](IDEAS/git-deploy.md) § Open questions, through the question tool. **A** (recommended) was picked over **B** (off, a switch pressed on the App page after creation, Forge's *Quick Deploy*). A git-sourced App with a server and no push is an App waiting for a button, and `fromRepo` already makes a Domain only when a hostname is given, the same conditional shape. What must stay true: an App with no server is never `deployOnPush`, since a push would make a release no executor can resolve (`placeableServer`); proved by a `push.test.ts` case.
+
 ### <a id="fjs-d1554"></a>2026-10-27 · `FJS-D1554` — `fli tutor:tools` gives a reused app the migration its pushed model lacks — `fli db:migrate add_note --create-only`, then `fli db:baseline` — and lesson 1 keeps teaching `db:push`.
 
 Asked in chat, through the question tool, after full CI failed *does anything fail a check*. Lesson 1 pushes `Note`, lesson 2 reuses that app, and the `migration-history` rule (2026-10-22) graded a schema the history does not build. **Tools catches up** (recommended) was picked over **lesson 1 migrates**, which would lose *the schema is the migration*. Both commands are no-ops over an app that migrated; app → tools → tools replay exits 0.
@@ -18736,6 +18744,12 @@ the file puts the judgement where judgement lives.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d1559"></a>2026-10-27 · `FJS-D1559` — Q2 — Where the connectors live, and when they move — Rule now that `packages/conduits/conduit-<x>/` is the home, and move in a later session. Supersedes `FJS-D1185`. Conditions on the move: (a) `vendor.js` resolves more than one packages directory; (b) workspace membership is read from the root `workspaces` globs through one owner, with a test that every walker reaches every member; (c) the prototype `link:` callers move in the same change; (d) the sibling's uncommitted work is committed first. The directory keeps the `conduit-` prefix, so the folder is the package name minus its scope (aws-sdk-js-v3 `clients/client-s3`, Airbyte `connectors/source-postgres`). `CONTRACT.md` moves to `packages/conduit/docs/`.
+
+Asked in [`IDEAS/conduit-connectors.md`](IDEAS/conduit-connectors.md) § Open questions. **C** was picked over **A** (all 27 move to `packages/conduits/conduit-<x>/` now, in one change), **B** (only the connectors whose drives are green and whose work is committed move now, and the rest follow, so there are two homes for a while).
+
+Against the recommendation (**A**): the owner wants the home settled now and the move as its own session, after the sibling's uncommitted work is committed.
+
 ### <a id="fjs-d1508"></a>2026-10-24 · `FJS-D1508` — What code an owner's front-matter value may carry (`FJS-3416`) — `FJS-D1250`'s grade, applied to the value: a value may hold only the tags, `{…}` and script blocks the old value held, and may not become a `javascript:`/`vbscript:` address or link.
 
 Asked through AskUserQuestion. **A** was picked over **B** (a preset key naming which values it renders as HTML, graded alone), **C** (ksite's PageHero stops rendering `title`, `hero_preheading` and its paragraphs through `{@html}`) and **D** (A, with attribute-less inline tags such as `<br>` and `<em>` let through, as WordPress's kses lets them into a post title).
@@ -19077,6 +19091,8 @@ The nine, answered before the edit: 1 origin — *does this image need a Chrome*
 *Lives in:* `packages/cli/core/deploy-image.js` · `packages/cli/core/checks.js` (`deploy-image-needs`). *Resolves:* `FJS-3113`. *Enforced by:* `deploy-image-needs`, on an app with a Dockerfile.
 
 ### <a id="fjs-d1185"></a>2026-10-17 · `FJS-D1185` — Q1 — Whether conduit-digitalocean and conduit-hetzner enter `packages/` and basecamp moves onto them — Every connector stays in the sibling workspace for now, and basecamp keeps its own copy. A `link:` dependency on the sibling is not a third option: `vendor.js` packs workspace dependencies only, so the image build cannot reach it.
+
+**Status:** superseded-by [`FJS-D1559`](#fjs-d1559) — the connectors' home is `packages/conduits/conduit-<x>/`, and the move is its own session.
 
 Asked in [`IDEAS/conduit-connectors.md`](IDEAS/conduit-connectors.md) § Open questions. **B** was picked over **A** (promote both, then Phase 3 moves basecamp onto them. One `sendVia` split serves both, where DO alone leaves `AccountSend` half-migrated). Against the recommendation (**A**).
 

@@ -589,7 +589,7 @@ describe('publishing a draft', () => {
   const released = async (commit: string) => {
     const sys = env.system as any
     const row = await sys.deployment.create({ data: {
-      workspaceId: site.workspaceId, appId: site.id, environmentId: site.environmentId, trigger: 'manual', commitSha: commit } })
+      workspaceId: site.workspaceId, appId: site.id, environmentId: site.environmentId, trigger: 'button', commitSha: commit } })
     await sys.deployment.update({ where: { id: row.id }, data: { status: 'building' } })
     await sys.deployment.update({ where: { id: row.id }, data: { status: 'success', finishedAt: new Date().toISOString() } })
   }
@@ -681,7 +681,7 @@ describe('publishing a draft', () => {
 
     const { releases } = await drafts(editor).call('history', undefined, { appId: site.id })
     expect(releases[0]).toMatchObject({ id: row.id, draft: 'hours', by: 'Kim', files: ['content/routes/index.md'], authors: ['Owner'], revertable: true })
-    expect(releases[1]).toMatchObject({ trigger: 'manual', revertable: false })
+    expect(releases[1]).toMatchObject({ trigger: 'button', revertable: false })
 
     expect((await refusal(drafts(admin).call('revert', undefined, { appId: site.id, release: row.id }))).code).toBe(404)
     const manual = await refusal(drafts(editor).call('revert', undefined, { appId: site.id, release: releases[1].id }))

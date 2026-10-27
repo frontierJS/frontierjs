@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-57 services · 42 routes · 21 plugins · prefix (none)
+57 services · 43 routes · 22 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -26,6 +26,7 @@ text, so a body that elevates through a helper is not listed.
 | `apps.unplace` | standing 4 or above — declared `gate: 4` |
 | `apps.enablePush` | standing 5 or above — declared `gate: 5` |
 | `apps.disablePush` | standing 5 or above — declared `gate: 5` |
+| `backups.download` | standing 7 or above — declared `gate: 7` |
 | `channels.test` | standing 5 or above — declared `gate: 5` |
 | `edge.syncStep` | anyone, a stranger included — declared `gate: 0` |
 | `hubConfig.save` | **any signed-in caller** — floor, read gate 7; standing not graded |
@@ -412,11 +413,12 @@ name when it declares none.
 
 ### `backups` · model `Backup`
 
-- **methods** — `find`, `get`, `create`, `remove`, `rescan`
-- **custom methods** — `rescan`
+- **methods** — `find`, `get`, `create`, `remove`, `rescan`, `download`
+- **custom methods** — `rescan`, `download`
 - **input** — `rescan` takes `BackupRescan`
 - **who may call** —
   - `rescan` — standing 7 or above — declared `gate: 7`
+  - `download` — standing 7 or above — declared `gate: 7`; body writes as the app
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -1524,6 +1526,7 @@ once; everything else was registered by hand or by a plugin.
 | POST | `/auth/support/end` | raw |
 | POST | `/auth/support/start` | raw |
 | GET | `/auth/workspace` | raw |
+| GET | `/backup-archive/{id}` | raw |
 | GET | `/health` | raw |
 | GET | `/health/live` | raw |
 | GET | `/health/ready` | raw |
@@ -1561,10 +1564,11 @@ In configure order, which is what `requires:` is checked against.
 12. `installRoute`
 13. `terminalRoute`
 14. `machineStreamRoute`
-15. `staticRoutes`
-16. `basecamp-cloud-accounts`
-17. `basecamp-backup-destinations`
-18. `basecamp-push`
-19. `basecamp-dns-follows-fleet`
-20. `basecamp-cleanup`
-21. `corsPlugin`
+15. `backupArchiveRoute`
+16. `staticRoutes`
+17. `basecamp-cloud-accounts`
+18. `basecamp-backup-destinations`
+19. `basecamp-push`
+20. `basecamp-dns-follows-fleet`
+21. `basecamp-cleanup`
+22. `corsPlugin`

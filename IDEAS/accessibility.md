@@ -265,7 +265,27 @@ what the layout renders is read by one grader in three drives.
 Goal: a component that renders a term without the role the kit names fails review.
 Done when: the `fli check` rule has a red fixture.
 
-- [ ] 4.1 The `fli check` rule over an app's `.mesa` files, the kit as authority
+- [x] 4.1 The `fli check` rule over an app's `.mesa` files, the kit as authority
+  (2026-10-27) — `aria-owed` in `packages/cli/core/checks/ui.js`, `warn` like
+  its two kit-reading siblings, so a finding is named and never blocks; raising
+  it to `error` is one field in the row, with `FJS-D837` as the authority. An
+  element whose literal `class` names a term's
+  class, or a part's anatomy class, is graded against `ARIA`: the role the kit
+  names is written and is that one, and each `requires` has one of its
+  `RELATIONSHIPS` attributes on the element. A role written as an expression
+  counts; a `{...spread}`, a class built at runtime and a `class="a {b}"`
+  token are left to `PAGE_AUDIT`, since what they render is decided at
+  runtime. `tracks` is the ui drive's. Six red fixtures in `checks.test.js`
+  (no role, wrong role, a part with no role, a name and a control owed), and
+  the clean tree writes a `.toolbar` with its role so the rule RUNS there.
+  Measured first over example, basecamp, studio and 22 prototypes: zero
+  findings in this repo; in the prototypes six hand-written `.toolbar`s with
+  no role or `role="status"`, one `.tab` with no role, four `.lane`s with no
+  name — each a defect the vocabulary's own meaning names.
+
+**Done 2026-10-27.** A term rendered without what the kit says it owes is a
+`fli check` finding at its line, and the kit is the one authority the rule
+reads.
 
 ### Phase 5 — The claim (`FJS-D701`)
 

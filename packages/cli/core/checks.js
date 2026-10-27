@@ -193,6 +193,8 @@ export const RULES = [
     title: 'a .mesa <style> names no class the kit already owns' },
   { id: 'kit-prop-unknown',    scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a kit component is passed only props it declares or attributes HTML has' },
+  { id: 'aria-owed',           scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'an element written with a kit term\'s class carries the role and names the kit says it owes' },
   { id: 'preview-ui-only',      scope: 'app',  severity: 'error', invariant: null,
     title: 'a preview branch changes web/ and nothing else' },
   { id: 'plan-size',            scope: 'app',  severity: 'warn',  invariant: null,

@@ -1240,8 +1240,9 @@ row deletes nothing.
 **Restore is absent from the backups screen.** Restoring means replacing the
 database this process is reading from, in place, while it serves — an operator's
 job with the process stopped, and the most dangerous control this app could
-have. There is no download either: the archive is a path on the machine and
-nothing serves it.
+have. *Download* is there: `backups.download` answers the bucket's pre-signed
+GET, or a five-minute link this process signed to a route that tars the local
+directory as it sends it (`api/src/plugins/backup-archive.ts`).
 
 **The backups screen says an archive without its key cannot be read**, and
 whether a copy of `ENCRYPTION_KEY` is kept off the box is `hub.key-escrowed`,

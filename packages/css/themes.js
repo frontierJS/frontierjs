@@ -27,6 +27,6 @@ export const THEMES = {
   'theme-field':      { label: 'Field',      blurb: 'Ink ground, sand type',            scheme: 'dark'  },
   'theme-dracula':    { label: 'Dracula',    blurb: 'Violet and pink on dark',          scheme: 'dark'  },
   'theme-twilight':   { label: 'Twilight',   blurb: 'Sand on warm black',               scheme: 'dark'  },
-  'theme-expedition': { label: 'Expedition', blurb: 'Charcoal, sage and brass',         scheme: 'dark'  },
+  'theme-expedition': { label: 'Expedition', blurb: 'Sunset colors on black and white', scheme: 'dark'  },
   'theme-catppuccin': { label: 'Catppuccin', blurb: 'Pastels on blue-violet charcoal',  scheme: 'dark'  },
 }

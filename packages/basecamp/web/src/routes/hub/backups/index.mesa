@@ -10,14 +10,12 @@ title: Hub backups
   // own `VACUUM INTO` — the only way to take a consistent copy of a live WAL
   // database, since a file copy silently omits whatever is still in the -wal.
   //
-  // ─── Three of the mock's controls are absent, each for its own reason ───
+  // ─── Two of the mock's controls are absent, each for its own reason ───
   //
   //   RESTORE. Restoring is replacing the database this process is reading
   //   from, in place, while it serves. That is an operator's job with the
   //   process stopped, and a button that appears to do it from inside the
   //   running app is the most dangerous control this app could have.
-  //   DOWNLOAD. The archive is a path on the machine, not a route — nothing
-  //   serves it, and a link that 404s is worse than no link.
   //   S3 CREDENTIALS. A bucket is a `BackupDestination`, declared once in
   //   settings with its key lifted into a Secret; this screen names the one
   //   the schedule points at and asks for nothing.
@@ -150,6 +148,21 @@ title: Hub backups
     }
   }
 
+  // The server answers a link and the browser follows it: a bucket's pre-signed
+  // GET, or a five-minute link to this disk's copy. Both answer as an
+  // attachment, so the screen stays where it is.
+  async function download(b) {
+    error = null; busy = b.id
+    try {
+      const { url } = await backups.service.invoke('download', b.id, {})
+      location.assign(url)
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
   // `remove` deletes the archive — its directory here or its object in the
   // bucket — and then the row (`FJS-D1494`); a refused delete is a 409 that
   // keeps both, and arrives as the screen error.
@@ -221,7 +234,7 @@ title: Hub backups
   and the job queue. Each SQLite file is <code>VACUUM INTO</code>, SQLite's own consistent copy of
   a live database, taken without locking out writers. Restoring means replacing the files this
   process is reading from while it serves, which is an operator's job with the process stopped.
-  There is no download either: the archive is a path on the machine and nothing serves it.
+  <em>Download</em> fetches one as <code>basecamp-&lt;stamp&gt;.tar.gz</code>, from the bucket or this disk.
 </Callout>
 
 {#if escrow}
@@ -316,6 +329,10 @@ title: Hub backups
         <td class="text-sm">{b.sizeBytes ? size(b.sizeBytes) : '—'}</td>
         <td class="text-sm text-muted"><code>{b.location ?? '—'}</code></td>
         <td>
+          {#if b.status === 'success' && b.location}
+            <Button treatment="ghost" disabled={busy === b.id} aria-label={`Download the backup taken ${ago(b.finishedAt ?? b.startedAt ?? b.createdAt)}`}
+                    onclick={() => download(b)}>Download</Button>
+          {/if}
           {#if SETTLED.has(b.status)}
             <Button treatment="ghost" disabled={busy === b.id} aria-label={`Delete the backup taken ${ago(b.finishedAt ?? b.startedAt ?? b.createdAt)}`}
                     data-confirm={b.location

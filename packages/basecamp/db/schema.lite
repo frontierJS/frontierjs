@@ -510,6 +510,13 @@ enum EnvironmentTier { development test preview staging production }
 enum AppType        { container worker database daemon cron static function }
 enum AppStatus      { unknown stopped starting running stopping deploying error }
 enum DeployStatus   { pending building success failed cancelled rolled_back }
+// The door a release came through. It cannot be read back off the row — a
+// laptop build and a push both end in a digest — so the writer states it:
+// `button` is `deployments.create` by hand (the App page, bcamp), `push` the
+// git Receiver, `laptop` `fli basecamp:deploy`, `rollback` and `rebind` the
+// service's own, `publish` an owner's draft, `freeze` a workbench preview.
+// `Job.trigger` is another noun (manual/scheduled) and stays a String.
+enum DeployTrigger  { button push laptop rollback rebind publish freeze }
 enum StepStatus     { pending running success failed skipped }
 enum JobKind        { one_shot scheduled triggered workflow }
 enum JobStatus      { pending running failed cancelled }
@@ -2120,7 +2127,7 @@ model Deployment {
   workspaceId          String
 
   status               DeployStatus @default(pending)
-  trigger              String       @default("manual") @immutable
+  trigger              DeployTrigger @default(button) @immutable
   fromImage            String?      @immutable
   toImage              String?      @immutable
   commitSha            String?

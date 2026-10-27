@@ -309,15 +309,6 @@ async function detail(id: string) {
   ])
   const drills = await lastDrills(row.id)
 
-  // A Freeze or `fli basecamp:deploy` serves a build the app's own files are
-  // not, and its release snapshots no files. Every inline release records a
-  // digest once it runs, so `builtImage` cannot tell the two apart — the
-  // screen warns before Deploy ships the Source tab over the build.
-  const live = isInline(row.source) ? deployments.find((d: { status: string }) => d.status === 'success') : null
-  const liveSnapshot = live
-    ? (await db().deployment.findFirst({ where: { id: live.id }, select: { configSnapshot: true } }))?.configSnapshot as { source?: { files?: unknown[] } } | undefined
-    : undefined
-
   return {
     ...row,
     domains: (row.domains ?? []).map((d: Record<string, unknown>) => ({ ...d, ...certStatusOf(d as never) })),
@@ -331,7 +322,6 @@ async function detail(id: string) {
         drill: drills.get(p.serverId) ?? null }
     }),
     recent_deployments: deployments,
-    liveBuild: !!liveSnapshot && !liveSnapshot.source?.files?.length,
     jobs,
   }
 }

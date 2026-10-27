@@ -9,6 +9,7 @@ import { readdirSync, statSync, readFileSync, existsSync } from 'fs'
 import { join, extname, basename, relative, dirname }      from 'path'
 import { spawnSync }                                       from 'child_process'
 import { modelName }                                       from '@frontierjs/toolbelt/inflect'
+import { ARIA, RELATIONSHIPS }                             from '@frontierjs/toolbelt/aria'
 import { appSchemaViews }                                  from '../app-schema.js'
 import {
   schemaFile, models, looksPlural, stripComments, walk, safeRead, readCode,
@@ -1297,6 +1298,30 @@ export const CHECKS = {
     if (!importers) return { skipped: 'no screen imports a kit component' }
     return { findings }
   },
+
+  'aria-owed': ({ root }) => {
+    // `vocabulary.js` writes `<div role="toolbar">` and a screen writes
+    // `<div class="toolbar">`: the class takes the kit's rules, the role stays
+    // behind, and a strip meant as one tab stop is read as a div. The page
+    // renders and a drive asserting its text passes. What a term owes is
+    // `@frontierjs/toolbelt/aria` (FJS-D837); a class is read where it is a
+    // literal, and one built at runtime is the page audit's to grade.
+    let doc
+    try { doc = JSON.parse(readFileSync(join(root, 'node_modules/@frontierjs/css/vocabulary.json'), 'utf8')) }
+    catch { return { skipped: '@frontierjs/css is not installed' } }
+    const files = sources(root, ['.mesa'], ...CLIENT_SURFACES)
+    if (!files.length) return { skipped: 'no client surface' }
+
+    const owed = ariaByClass(doc)
+    const findings = []
+    for (const file of files) {
+      const text = readFileSync(file, 'utf8')
+      for (const f of ariaOwed(markupOnly(text), owed)) {
+        findings.push({ file, line: lineOf(text, f.index), message: f.message })
+      }
+    }
+    return { findings }
+  },
 }
 
 // The CSS named colors; transparent and currentColor are not, since no theme owns them.
@@ -1418,30 +1443,117 @@ function kitUnknownProps(text, dir) {
   for (const open of markup.matchAll(/<([A-Z]\w*)(?=[\s/>])/g)) {
     const declared = declaredBy.get(open[1])
     if (!declared) continue
-    let i = open.index + open[0].length
-    while (i < markup.length) {
-      while (/\s/.test(markup[i] ?? '')) i++
-      const c = markup[i]
-      if (c === undefined || c === '>' || (c === '/' && markup[i + 1] === '>')) break
-      if (c === '{') { i = skipBraces(markup, i); continue }
-      const start = i
-      while (i < markup.length && !/[\s=/>{]/.test(markup[i])) i++
-      const name = markup.slice(start, i)
-      if (!name) { i++; continue }
-      while (/\s/.test(markup[i] ?? '')) i++
-      if (markup[i] === '=') {
-        i++
-        while (/\s/.test(markup[i] ?? '')) i++
-        const q = markup[i]
-        if (q === '"' || q === "'") i = markup.indexOf(q, i + 1) + 1 || markup.length
-        else if (q === '{') i = skipBraces(markup, i)
-        else while (i < markup.length && !/[\s>]/.test(markup[i])) i++
-      }
+    for (const { name, index } of readAttributes(markup, open.index + open[0].length).attrs) {
       // Only a plain lowercase word: `data-*`, `aria-*`, `bind:`, `on:` and
       // `onclick` are the transport's, and a camelCase name is a prop's.
       if (!/^[a-z]+$/.test(name) || name.startsWith('on')) continue
       if (declared.includes(name) || HTML_ATTRS.has(name)) continue
-      found.push({ tag: open[1], name, index: start, declared })
+      found.push({ tag: open[1], name, index, declared })
+    }
+  }
+  return found
+}
+
+/**
+ * The attributes of the tag whose name ends at `i`, each `{ name, index,
+ * literal }` — `literal` is a quoted value's text, `null` for a bare attribute,
+ * and `undefined` where the value is an expression. A `{...rest}` sets `spread`
+ * and names nothing, since what it carries is decided at runtime.
+ */
+function readAttributes(markup, i) {
+  const attrs = []
+  let spread = false
+  while (i < markup.length) {
+    while (/\s/.test(markup[i] ?? '')) i++
+    const c = markup[i]
+    if (c === undefined || c === '>' || (c === '/' && markup[i + 1] === '>')) break
+    if (c === '{') {
+      if (markup.startsWith('{...', i)) spread = true
+      i = skipBraces(markup, i)
+      continue
+    }
+    const start = i
+    while (i < markup.length && !/[\s=/>{]/.test(markup[i])) i++
+    const name = markup.slice(start, i)
+    if (!name) { i++; continue }
+    while (/\s/.test(markup[i] ?? '')) i++
+    let literal = null
+    if (markup[i] === '=') {
+      i++
+      while (/\s/.test(markup[i] ?? '')) i++
+      const q = markup[i]
+      if (q === '"' || q === "'") {
+        const close = markup.indexOf(q, i + 1)
+        literal = markup.slice(i + 1, close === -1 ? markup.length : close)
+        i = close === -1 ? markup.length : close + 1
+      } else if (q === '{') {
+        literal = undefined
+        i = skipBraces(markup, i)
+      } else {
+        const from = i
+        while (i < markup.length && !/[\s>]/.test(markup[i])) i++
+        literal = markup.slice(from, i)
+      }
+    }
+    attrs.push({ name, index: start, literal })
+  }
+  return { attrs, spread, end: i }
+}
+
+/**
+ * The aria kit keyed by the class a screen writes: a term's own row under the
+ * class the vocabulary gives it, each part under the anatomy class that names
+ * it. A term the installed vocabulary does not hold is left out with its parts,
+ * so the rule grades only what the app's css can style.
+ */
+function ariaByClass(doc) {
+  const classOf = new Map((doc.terms ?? []).filter(t => t.class).map(t => [t.term, t.class]))
+  const out = new Map()
+  for (const [term, entry] of Object.entries(ARIA)) {
+    const cls = classOf.get(term)
+    if (!cls) continue
+    if (entry.role || entry.requires) out.set(cls, { term, part: null, role: entry.role ?? null, requires: entry.requires ?? [] })
+    for (const [part, sub] of Object.entries(entry.parts ?? {})) {
+      if (!sub.role && !sub.requires) continue
+      out.set(part, { term, part, role: sub.role ?? null, requires: sub.requires ?? [] })
+    }
+  }
+  return out
+}
+
+/**
+ * Every element whose literal `class` names a kit row and whose attributes do
+ * not satisfy it, as `{ index, message }`. A role written as an expression is
+ * taken as the kit's; a `{...rest}` on the element is left alone, since the
+ * spread may carry what the row asks for.
+ */
+function ariaOwed(markup, owed) {
+  const found = []
+  for (const open of markup.matchAll(/<([a-z][\w-]*)(?=[\s/>])/g)) {
+    const { attrs, spread } = readAttributes(markup, open.index + open[0].length)
+    if (spread) continue
+    const cls = attrs.find(a => a.name === 'class')
+    if (!cls || typeof cls.literal !== 'string') continue
+    const has = name => attrs.some(a => a.name === name)
+    for (const token of cls.literal.split(/\s+/)) {
+      const row = token.includes('{') ? null : owed.get(token)
+      if (!row) continue
+      const who  = row.part ? `${row.term}'s .${row.part}` : `a ${row.term}`
+      const self = `<${open[1]} class="${token}">`
+      if (row.role) {
+        const role = attrs.find(a => a.name === 'role')
+        if (!role) {
+          found.push({ index: open.index, message: `${self} — ${who} is role="${row.role}" (@frontierjs/toolbelt/aria) and this element writes none. ` +
+                                                   `Write the role and own what it promises, or use a class the kit does not read as one.` })
+        } else if (typeof role.literal === 'string' && role.literal !== row.role) {
+          found.push({ index: role.index, message: `${self} — ${who} is role="${row.role}" (@frontierjs/toolbelt/aria) and this element writes role="${role.literal}".` })
+        }
+      }
+      for (const rel of row.requires) {
+        if (RELATIONSHIPS[rel].some(has)) continue
+        const want = rel === 'label' ? `an accessible name (${RELATIONSHIPS[rel].join(' or ')})` : RELATIONSHIPS[rel].join(' or ')
+        found.push({ index: open.index, message: `${self} — ${who} owes ${want} (@frontierjs/toolbelt/aria) and this element carries none.` })
+      }
     }
   }
   return found

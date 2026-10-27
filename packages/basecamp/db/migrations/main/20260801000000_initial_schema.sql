@@ -1193,7 +1193,7 @@ CREATE TABLE IF NOT EXISTS "deployment" (
   "environmentId" TEXT,
   "workspaceId" TEXT NOT NULL,
   "status" TEXT NOT NULL DEFAULT 'pending',
-  "trigger" TEXT NOT NULL DEFAULT 'manual',
+  "trigger" TEXT NOT NULL DEFAULT 'button',
   "fromImage" TEXT,
   "toImage" TEXT,
   "commitSha" TEXT,
@@ -1211,6 +1211,7 @@ CREATE TABLE IF NOT EXISTS "deployment" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   CHECK ("status" IN ('pending', 'building', 'success', 'failed', 'cancelled', 'rolled_back')),
+  CHECK ("trigger" IN ('button', 'push', 'laptop', 'rollback', 'rebind', 'publish', 'freeze')),
   FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE,
   FOREIGN KEY ("environmentId") REFERENCES "environment" ("id"),
   FOREIGN KEY ("triggeredBy") REFERENCES "user" ("id")

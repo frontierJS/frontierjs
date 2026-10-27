@@ -70,6 +70,8 @@ export type AppStatus = 'unknown' | 'stopped' | 'starting' | 'running' | 'stoppi
 
 export type DeployStatus = 'pending' | 'building' | 'success' | 'failed' | 'cancelled' | 'rolled_back'
 
+export type DeployTrigger = 'button' | 'push' | 'laptop' | 'rollback' | 'rebind' | 'publish' | 'freeze'
+
 export type StepStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped'
 
 export type JobKind = 'one_shot' | 'scheduled' | 'triggered' | 'workflow'
@@ -3600,7 +3602,7 @@ export interface Deployment {
   environmentId?: string | null
   workspaceId: string
   status: DeployStatus
-  trigger: string
+  trigger: DeployTrigger
   fromImage?: string | null
   toImage?: string | null
   commitSha?: string | null
@@ -3625,7 +3627,7 @@ export interface DeploymentCreate {
   environmentId?: string | null
   workspaceId: string
   status?: DeployStatus
-  trigger?: string
+  trigger?: DeployTrigger
   fromImage?: string | null
   toImage?: string | null
   commitSha?: string | null
@@ -3648,7 +3650,7 @@ export interface DeploymentUpdate {
   environmentId?: string | null
   workspaceId?: string
   status?: DeployStatus
-  trigger?: string
+  trigger?: DeployTrigger
   fromImage?: string | null
   toImage?: string | null
   commitSha?: string | null
@@ -3671,7 +3673,7 @@ export interface DeploymentWhere extends WhereBase {
   environmentId?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
   status?: DeployStatus | WhereOp<DeployStatus> | null
-  trigger?: string | WhereOp<string> | null
+  trigger?: DeployTrigger | WhereOp<DeployTrigger> | null
   fromImage?: string | WhereOp<string> | null
   toImage?: string | WhereOp<string> | null
   commitSha?: string | WhereOp<string> | null

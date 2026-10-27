@@ -395,6 +395,30 @@ const waitForSsh = async (dest, { identity, timeoutMs = 240_000, everyMs = 5_000
   }
   return false
 }
+
+// ─── Basecamp's API ───────────────────────────────────────────────────────────
+// `basecamp:app` and `basecamp:deploy` talk to a running Basecamp as the key's
+// owner, never to a box.
+
+// The dev API's port in basecamp's own CLAUDE.md, as `fli ws:deps --push` has it.
+const LOCAL_BASECAMP = 'http://localhost:8120'
+
+/** One call to Basecamp's API, answering the body, or throwing with what Basecamp said. */
+async function basecamp(origin, key, path, { method = 'GET', body, headers = {} } = {}) {
+  let res
+  try {
+    res = await fetch(`${origin}${path}`, {
+      method,
+      headers: { accept: 'application/json', authorization: `Bearer ${key}`, ...(body ? { 'content-type': 'application/json' } : {}), ...headers },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  } catch (err) {
+    throw new Error(`could not reach Basecamp at ${origin}: ${err.message}`)
+  }
+  const answer = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(`Basecamp refused ${method} ${path} (${res.status}): ${answer?.message ?? answer?.error ?? res.statusText}`)
+  return answer?.data ?? answer
+}
 </script>
 
 ## Setup
@@ -445,6 +469,11 @@ Both ask whether the box is also an Outpost, and enroll it with `fli
 deploy:outpost` once the first admin is made.
 
 ## Releasing through it
+
+`fli basecamp:app`, run in an app's directory, makes it an App in Basecamp —
+a project, its `production` environment and a bare container App placed on a
+server — and writes `BASECAMP_APP_ID` to the app's `.env`, so `fli deploy`
+releases through Basecamp from then on.
 
 `fli basecamp:deploy --app <id>` builds an app's image here, loads it onto
 every machine Basecamp runs that app on, and asks Basecamp to release it. It

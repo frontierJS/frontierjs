@@ -30,6 +30,7 @@ import { buildProviders }            from './providers/index.ts'
 import { createWorkbench }           from './domain/workbench/workbench.ts'
 import { workbenchTerminal }         from './plugins/workbench-terminal.ts'
 import { machineStream }             from './plugins/machine-stream.ts'
+import { backupArchive }             from './plugins/backup-archive.ts'
 import { LEVELS }                                from '@frontierjs/litestone'
 import { apply }                                 from '@frontierjs/litestone/migrations'
 import type { WriteEvent }                       from '@frontierjs/litestone'
@@ -945,6 +946,10 @@ export async function buildBasecampApp(
   // A machine's output as it is written — a container's log today
   // (plugins/machine-stream.ts).
   app.configure(function machineStreamRoute() { machineStream(app) })
+
+  // A local hub archive behind a link `backups.download` signed
+  // (plugins/backup-archive.ts).
+  app.configure(function backupArchiveRoute() { backupArchive(app) })
 
   app.configure(function staticRoutes(a) {
     a.get('/', () => Bun.file(new URL('../../web/index.html', import.meta.url).pathname))

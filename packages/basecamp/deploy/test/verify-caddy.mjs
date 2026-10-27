@@ -114,6 +114,10 @@ try {
   const back = await get('/auth/oauth/oidc/callback?error=access_denied&state=s', HTML)
   check('GET /auth/oauth/<provider>/callback as a document reaches the API', back.headers.get('x-upstream') === 'api' && back.status === 302, `status ${back.status}`)
 
+  console.log('\n— a hub archive download is a navigation to a file')
+  const archive = await get('/backup-archive/b1?expires=1&sig=x', HTML)
+  check('GET /backup-archive/<id> as a document reaches the API', archive.headers.get('x-upstream') === 'api', `status ${archive.status}`)
+
   console.log('\n— the exclusion is narrow')
   for (const path of ['/projects', '/projects/', '/servers/', '/auth/login']) {
     const r = await get(path, HTML)

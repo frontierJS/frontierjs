@@ -126,9 +126,10 @@ export const API_PATHS = derive(readSnapshot())
  * `/auth/oauth/<provider>/callback`: both are redirects the API answers, and
  * neither has a page of the same name. Always proxied, whatever `Accept` says.
  * The provider routes are mounted only when a provider is configured, so the
- * snapshot above never names them.
+ * snapshot above never names them. `/backup-archive/` is a hub archive's
+ * download (`api/src/plugins/backup-archive.ts`), a file and not a page.
  */
-export const NAVIGATED_API_PATHS = ['/auth/oauth/']
+export const NAVIGATED_API_PATHS = ['/auth/oauth/', '/backup-archive/']
 
 /** The WebSocket. No HTML ambiguity to resolve — always proxied, never served. */
 export const WS_PATH = '/ws'

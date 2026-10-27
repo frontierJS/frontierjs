@@ -256,10 +256,21 @@ boot restores.
     bodies moved; each question keeps its answered line here. The root
     `docs/plan-done.md`, not basecamp's, because that is where
     `server-posture.md`'s went. 3.1's *Open* bullet stays: it is unfiled work.
-- [ ] 4.2 Download. `backups.download` (gate 7): a local archive streams from the
+- [x] 4.2 Download. `backups.download` (gate 7): a local archive streams from the
       path, a remote one answers a pre-signed GET minted by `mintDownload`
       (3.2's). A *Download* button on `/hub/backups/`; the "no download"
       sentences in that screen's comment and `BACKUPS.md` § 5 go.
+  - Done 2026-10-27. `backups.download` answers `{ url, name }`; either URL
+    yields `basecamp-<stamp>.tar.gz`. A browser download is a navigation, and
+    a navigation carries no bearer (the cookie is on only with a sign-in
+    provider), so the local URL carries its own credential:
+    `/backup-archive/{id}?expires=&sig=`, HMAC'd with a per-process key and
+    good for five minutes. `plugins/backup-archive.ts` streams `tar -cz` of
+    the directory; `/backup-archive/` joined `NAVIGATED_API_PATHS`.
+    Proved by `services.test.ts`, `verify:screens` (Chrome saves the file and
+    `tar -tzf` lists its `.db` files) and `verify:caddy`. `verify:build` was not
+    run: it insists on 8120, which a dev server held. `verify:sso` fails one
+    check whether or not this change is applied (`FJS-3562`).
 - [ ] 4.3 A `manifest.json` in the archive directory, written by `backup:run`:
       basecamp version, schema hash, `encryptionKeyFingerprint`, `baseUrl`, the
       database list with each file's sha256. `litestone restore --from-backup`

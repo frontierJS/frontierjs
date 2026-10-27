@@ -102,7 +102,7 @@ const release = await probe.httpJson({
   url:      hubUrl($, '/deployments'),
   method:   'POST',
   headers:  as,
-  body:     JSON.stringify({ appId, trigger: 'manual' }),
+  body:     JSON.stringify({ appId }),
   expect:   (j) => Boolean(j.id),
   describe: 'a Deployment row, and a job on the queue',
   name:     'a release is created',

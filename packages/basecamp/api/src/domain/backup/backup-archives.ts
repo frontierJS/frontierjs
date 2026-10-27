@@ -61,6 +61,14 @@ type ArchiveRow = {
 
 export const isRemote = (r: ArchiveRow) => r.status === 'success' && !!r.destinationId && !r.error && !!r.location
 
+/** The directory a local archive is, or null when this disk holds none for the
+ *  row: a remote one, one that never finished, or one pruned or moved away. */
+export function localArchive(app: App, row: ArchiveRow): string | null {
+  if (row.status !== 'success' || !row.location || isRemote(row)) return null
+  const dir = localDir(app, row.location)
+  return dir && existsSync(dir) ? dir : null
+}
+
 /**
  * Delete the archive a row names, then the row. Answers why not when it could
  * not; the row is kept then, so nothing that still exists loses its index.

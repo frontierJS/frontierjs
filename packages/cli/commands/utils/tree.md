@@ -42,7 +42,7 @@ flags:
     defaultValue: true
   compact:
     type: boolean
-    description: Draw a folder whose only child is a folder as one row, a/b/c
+    description: Draw a folder with one child, a folder or a file, on its parent's row — a/b/c, a/b.ts
     defaultValue: true
   pager:
     type: boolean
@@ -167,7 +167,8 @@ underlines. `--no-links` prints plain names.
 ## Compact folders
 
 A folder whose only child is a folder is drawn as one row, `cli/src/routes`, the
-way VS Code draws it. `--no-compact` draws every level.
+way VS Code draws it, and a folder whose only child is a file is drawn as that
+file's row, `alerts/alerts.service.ts`. `--no-compact` draws every level.
 
 ## Paging
 

@@ -160,7 +160,7 @@ title: Deployment
         <span class="pill {DEPLOY_TONE[deployment.status] ?? ''}" id="deploy-status">{deployment.status}</span>
       </div>
       <p class="text-muted">
-        {words(deployment.trigger) ?? 'Manual'} deploy{#if env} to {env.name}{/if}
+        {words(deployment.trigger)} release{#if env} to {env.name}{/if}
         · <span title={at(deployment.startedAt ?? deployment.queuedAt)}>{ago(deployment.startedAt ?? deployment.queuedAt)}</span>
       </p>
     </div>

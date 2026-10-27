@@ -55,10 +55,24 @@ describe('renderTree', () => {
   })
 
   test('a compacted chain is one row and still counts every folder in it', () => {
+    const { rows, counts } = renderTree(compactTree(buildTree([...PATHS, 'db/seeds/a.sql', 'db/seeds/b.sql'])), { icons: false })
+    expect(rows).toContain('│   ├── seeds')
+    expect(counts).toEqual({ dirs: 10, files: 11 })
+  })
+
+  test('a folder holding one file is that file\'s row, the folders before it', () => {
     const { rows, counts } = renderTree(compactTree(buildTree(PATHS)), { icons: false })
-    expect(rows).toContain('│   ├── migrations/main')
-    expect(rows).toContain('├── web/src/resources')
+    expect(rows.slice(0, 7)).toEqual([
+      '├── api',
+      '│   ├── src/app.ts',
+      '│   └── test/app.test.ts',
+      '├── db',
+      '│   ├── migrations/main/001.sql',
+      '│   └── schema.lite',
+      '├── web/src/resources/Lead.mesa',
+    ])
     expect(counts).toEqual({ dirs: 9, files: 9 })
+    expect(renderTree(compactTree(buildTree(PATHS)), { icons: false, dirsOnly: true }).rows).toContain('└── web/src/resources')
   })
 
   test('a folder past the depth is closed, shows its file count, and its files are still counted', () => {
@@ -124,6 +138,11 @@ describe('lanes', () => {
     expect(buildLanes(buildTree(PATHS), { icons: false, dirsOnly: true }).map(l => l.rows[0])).toEqual(['api', 'db', 'web'])
   })
 
+  test('a top-level folder holding one file is a one-row lane', () => {
+    const lanes = buildLanes(compactTree(buildTree(PATHS)), { icons: false })
+    expect(lanes.find(l => l.rows[0].startsWith('web')).rows).toEqual(['web/src/resources/Lead.mesa'])
+  })
+
   test('at depth 1 every lane is one closed row with its count', () => {
     const lanes = buildLanes(buildTree(PATHS), { icons: false, depth: 1 })
     expect(lanes.slice(0, 3).map(l => l.rows)).toEqual([['api (2)'], ['db (2)'], ['web (1)']])
@@ -167,7 +186,7 @@ describe('lanes', () => {
 
   test('treeDepth counts a compacted chain as one level', () => {
     expect(treeDepth(buildTree(PATHS))).toBe(4)
-    expect(treeDepth(compactTree(buildTree(PATHS)))).toBe(3)
+    expect(treeDepth(compactTree(buildTree(PATHS)))).toBe(2)
   })
 })
 
@@ -207,7 +226,7 @@ describe('fli tree', () => {
     const run = spawnSync(process.execPath, [FLI, 'tree', root], { encoding: 'utf8', env: { ...process.env, NO_COLOR: '1' } })
     rmSync(root, { recursive: true, force: true })
     expect(run.status).toBe(0)
-    expect(run.stdout).toContain('├── db\n│   └── schema.lite\n└── README.md\n')
+    expect(run.stdout).toContain('├── db/schema.lite\n└── README.md\n')
     expect(run.stdout).toContain('1 folder, 2 files')
   })
 })

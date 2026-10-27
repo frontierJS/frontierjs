@@ -124,29 +124,9 @@ const { routePrefixes, apiPaths }    = await import(new URL('file://' + global.f
 const { readAppSnapshot }            = await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
 const { inspectBuild, inspectIgnored, gatherLocal, gatherIgnored } = await import(new URL('file://' + global.fliRoot + '/core/build-check.js'))
 
-// The dev API's port in basecamp's own CLAUDE.md, as `fli ws:deps --push` has it.
-const LOCAL_BASECAMP = 'http://localhost:8120'
-
 // Basecamp's own bound on a release that pulls nothing and starts and health
 // checks once, with room for a put-back.
 const WAIT_MS = 15 * 60_000
-
-/** One call to Basecamp's API, answering the body, or throwing with what Basecamp said. */
-async function basecamp(origin, key, path, { method = 'GET', body, headers = {} } = {}) {
-  let res
-  try {
-    res = await fetch(`${origin}${path}`, {
-      method,
-      headers: { accept: 'application/json', authorization: `Bearer ${key}`, ...(body ? { 'content-type': 'application/json' } : {}), ...headers },
-      body: body ? JSON.stringify(body) : undefined,
-    })
-  } catch (err) {
-    throw new Error(`could not reach Basecamp at ${origin}: ${err.message}`)
-  }
-  const answer = await res.json().catch(() => null)
-  if (!res.ok) throw new Error(`Basecamp refused ${method} ${path} (${res.status}): ${answer?.message ?? answer?.error ?? res.statusText}`)
-  return answer?.data ?? answer
-}
 
 /** Where ssh reaches a Server row. The URI form carries a port with no `-p`, which machine.js cannot pass. */
 function sshDestination(server) {
@@ -290,7 +270,7 @@ const key  = process.env.BASECAMP_API_KEY
 if (!key) throw new Error('needs BASECAMP_API_KEY — a key issued at /api-keys/ in the Basecamp workspace the app is in')
 const origin = (flag.url || process.env.BASECAMP_URL || LOCAL_BASECAMP).replace(/\/+$/, '')
 const appId  = flag.app || process.env.BASECAMP_APP_ID
-if (!appId) throw new Error("needs --app or BASECAMP_APP_ID — the App's id, from its page in Basecamp")
+if (!appId) throw new Error("needs --app or BASECAMP_APP_ID — the App's id, from its page in Basecamp, or fli basecamp:app to make one and store it")
 
 let   app    = await basecamp(origin, key, `/apps/${encodeURIComponent(appId)}`)
 const inline = app?.source?.kind === 'inline'
@@ -302,7 +282,7 @@ if (flag.server && inline)
 const git    = (args) => { try { return String($.exec({ command: `git -C ${root} ${args}`, stdio: ['ignore', 'pipe', 'ignore'] }) ?? '').trim() } catch { return '' } }
 const sha    = git('rev-parse HEAD')
 const branch = git('rev-parse --abbrev-ref HEAD')
-const commit = { ...(sha ? { commitSha: sha } : {}), ...(branch && branch !== 'HEAD' ? { branch } : {}) }
+const commit = { trigger: 'laptop', ...(sha ? { commitSha: sha } : {}), ...(branch && branch !== 'HEAD' ? { branch } : {}) }
 
 let release, named
 if (inline) {

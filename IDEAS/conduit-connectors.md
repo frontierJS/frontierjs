@@ -489,6 +489,26 @@ and one refresh with two sends in flight.
     build cannot reach it.
   - **Recommend A** — two copies of one vendor dialect drift with nothing
     failing, and the move is mostly the adapter.
+- ~~**Q2 — Where the connectors live, and when they move.**~~ **Answered 2026-10-27 (`FJS-D1559`): C — rule now that `packages/conduits/conduit-<x>/` is the home, and move in a later session. Supersedes `FJS-D1185`. Conditions on the move: (a) `vendor.js` resolves more than one packages directory; (b) workspace membership is read from the root `workspaces` globs through one owner, with a test that every walker reaches every member; (c) the prototype `link:` callers move in the same change; (d) the sibling's uncommitted work is committed first. The directory keeps the `conduit-` prefix, so the folder is the package name minus its scope (aws-sdk-js-v3 `clients/client-s3`, Airbyte `connectors/source-postgres`). `CONTRACT.md` moves to `packages/conduit/docs/`.** The 27 sit in
+  `../conduit-connectors/`, a repo with no remote. `packages/*` is flat, and
+  about 30 walkers in `packages/cli/core/` and `scripts/` read it one level
+  deep, so a nested member is skipped in silence.
+  - **A** — all 27 move to `packages/conduits/conduit-<x>/` now, in one change.
+  - **B** — only the connectors whose drives are green and whose work is
+    committed move now, and the rest follow, so there are two homes for a while.
+  - **C** — rule now that `packages/conduits/conduit-<x>/` is the home, and
+    move in a later session. Supersedes `FJS-D1185`. Conditions on the move:
+    (a) `vendor.js` resolves more than one packages directory; (b) workspace
+    membership is read from the root `workspaces` globs through one owner, with
+    a test that every walker reaches every member; (c) the prototype `link:`
+    callers move in the same change; (d) the sibling's uncommitted work is
+    committed first. The directory keeps the `conduit-` prefix, so the folder
+    is the package name minus its scope (aws-sdk-js-v3 `clients/client-s3`,
+    Airbyte `connectors/source-postgres`). `CONTRACT.md` moves to
+    `packages/conduit/docs/`.
+  - **Recommend A** — one home without a migration window, and Basecamp's own
+    DO and Hetzner copies become removable once `vendor.js` reaches the
+    connectors.
 
 ---
 

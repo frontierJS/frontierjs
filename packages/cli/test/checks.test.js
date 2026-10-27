@@ -150,7 +150,7 @@ const CLEAN = {
     ':root { --gap: 1rem; --rule: #ddd; }\n',
   // The vocabulary `css-raw-utility` counts semantic classes against.
   'node_modules/@frontierjs/css/vocabulary.json':
-    JSON.stringify({ terms: [{ term: 'Button', class: 'btn' }], notATerm: { tone: ['danger'] } }),
+    JSON.stringify({ terms: [{ term: 'Button', class: 'btn' }, { term: 'Toolbar', class: 'toolbar' }], notATerm: { tone: ['danger'] } }),
   'node_modules/@acme/kit/package.json':
     JSON.stringify({ name: '@acme/kit', exports: { './schema.lite': './db/kit.lite' } }),
   'node_modules/@acme/kit/db/kit.lite':
@@ -185,9 +185,12 @@ const CLEAN = {
   // catch — and finds nothing, because a one-shot read is not the defect.
   // The style block reads a token the dependency above declares and one the file
   // declares itself, which is the shape `css-token-undefined` must stay quiet on.
+  // The markup writes a Toolbar with the role the aria kit names for it, so
+  // `aria-owed` RUNS over the clean tree and finds nothing.
   'web/src/components/lead.mesa':       "<script>\n  async function label(id) {\n" +
                                         "    const row = await leads.service.get(id)\n" +
                                         "    return row.name\n  }\n</script>\n" +
+                                        '<div class="toolbar" role="toolbar"><button>Save</button></div>\n' +
                                         "<style>\n  .card { --pad: 4px; gap: var(--gap); padding: var(--pad) }\n</style>\n",
   // A co-located part whose prefix matches its folder, so `route-part-prefix`
   // RUNS over the clean tree rather than skipping — a rule that only ever skips
@@ -5860,6 +5863,73 @@ describe('a kit component is passed only props it declares or attributes HTML ha
 
   test('an app importing no kit component is skipped', () => {
     expect(only(tree('kpu-skip', CLEAN), 'kit-prop-unknown').skipped).toBeTruthy()
+  })
+})
+
+// A kit term's class takes the kit's css and leaves the role behind; the page
+// renders and a drive asserting its text passes. The kit is the authority.
+describe('an element written with a kit term\'s class carries what the aria kit says it owes', () => {
+  const VOCAB = {
+    'node_modules/@frontierjs/css/vocabulary.json': JSON.stringify({ terms: [
+      { term: 'Toolbar', class: 'toolbar' }, { term: 'Lane', class: 'lane' }, { term: 'Tabs', class: 'tabs' },
+      { term: 'Nav', class: 'navlist' }, { term: 'Switch', class: 'switch' },
+    ] }),
+  }
+  const screen = (name, markup) => tree(name, { ...CLEAN, ...VOCAB, 'web/src/pages/panel.mesa': markup })
+  const heads  = findings => findings.map(f => [f.line, f.message.split(' — ')[0]])
+
+  test('a term class with no role, a wrong role, and a part class with no role are each reported at their line', () => {
+    const root = screen('ao-role', [
+      '<div class="toolbar">',
+      '  <span class="toolbar" role="status"></span>',
+      '</div>',
+      '<div class="tabs"><div class="tablist" role="tablist" aria-label="Views"><button class="tab active" aria-controls="v1">One</button></div></div>',
+    ].join('\n') + '\n')
+    const { findings } = only(root, 'aria-owed')
+    expect(heads(findings)).toEqual([[1, '<div class="toolbar">'], [2, '<span class="toolbar">'], [4, '<button class="tab">']])
+    expect(findings[0].message).toMatch(/a Toolbar is role="toolbar" .* writes none/)
+    expect(findings[1].message).toMatch(/writes role="status"/)
+    expect(findings[2].message).toMatch(/Tabs's \.tab is role="tab"/)
+  })
+
+  test('a term that owes a name or a control and names none is reported, and one that does is not', () => {
+    const root = screen('ao-requires', [
+      '<section class="lane"><h2>Todo</h2></section>',
+      '<section class="lane" aria-labelledby={id}><h2>Done</h2></section>',
+      '<div class="tablist" role="tablist"><button class="tab" role="tab">One</button></div>',
+    ].join('\n') + '\n')
+    const { findings } = only(root, 'aria-owed')
+    expect(heads(findings)).toEqual([[1, '<section class="lane">'], [3, '<div class="tablist">'], [3, '<button class="tab">']])
+    expect(findings[0].message).toMatch(/owes an accessible name \(aria-labelledby or aria-label\)/)
+    expect(findings[2].message).toMatch(/owes aria-controls/)
+  })
+
+  test('a role written as an expression, a spread, a class built at runtime and a part that only tracks state are left alone', () => {
+    const root = screen('ao-ok', [
+      '<div class="toolbar" role={role}></div>',
+      '<div class="toolbar" {...rest}></div>',
+      '<div class={`toolbar ${tone}`}></div>',
+      '<ul class="navlist"><li><a class="navlink" href="/">Home</a></li></ul>',
+      '<input class="switch" type="checkbox" role="switch">',
+      '<div class="toolbar {tone}" role="toolbar"></div>',
+    ].join('\n') + '\n')
+    expect(only(root, 'aria-owed').findings).toEqual([])
+  })
+
+  test('a term the installed vocabulary does not hold owes nothing here', () => {
+    const root = tree('ao-vocab', { ...CLEAN, 'web/src/pages/panel.mesa': '<section class="lane"></section>\n' })
+    expect(only(root, 'aria-owed').findings).toEqual([])
+  })
+
+  test('a tag in a comment, a script or a style is not an element', () => {
+    const root = screen('ao-blank', '<!-- <div class="toolbar"></div> -->\n<script>\n  const s = \'<div class="toolbar">\'\n</script>\n')
+    expect(only(root, 'aria-owed').findings).toEqual([])
+  })
+
+  test('an app without @frontierjs/css is skipped', () => {
+    const files = { ...CLEAN }
+    delete files['node_modules/@frontierjs/css/vocabulary.json']
+    expect(only(tree('ao-skip', files), 'aria-owed').skipped).toBeTruthy()
   })
 })
 

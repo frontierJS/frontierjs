@@ -19,7 +19,7 @@
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { dirname, join } from 'node:path'
 import { ensureCert }  from '@frontierjs/outpost/cert'
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir }      from 'node:os'
 import { createTestEnv, session } from '@frontierjs/testing'
 import { signRequest } from '@frontierjs/toolbelt/signature'
@@ -38,6 +38,7 @@ import { createJunctionClient }   from '@frontierjs/junction/client'
 import { snapshotVariables, releaseEnv } from '../src/domain/release/variables.ts'
 import { BACKUP_SCHEDULE, appBackupSchedule, appDrillSchedule, fireBackup, restoreSchedules } from '../src/domain/job/job-schedule.ts'
 import { mintDownload } from '../src/jobs/app-backup-run.job.ts'
+import { mintArchiveUrl } from '../src/plugins/backup-archive.ts'
 import { replicasFor, syncReplicas, hostReplicaFor } from '../src/jobs/replicate-sync.job.ts'
 import { HOST_SLUG, useHost, publicIp } from '../src/domain/host/host-machine.ts'
 import { startS3Sink }            from '../src/providers/storage/s3-sink.ts'
@@ -1805,6 +1806,37 @@ describe('a backup is asked for by a person and run by the app', () => {
     await sys.backup.deleteMany({ where: {} })
   })
 
+  // IDEAS/backups.md 4.2: a local archive downloads by a link this process
+  // signed, which is the whole credential — a navigation carries no bearer.
+  test('download answers a signed link to a local archive, and the link is the credential', async () => {
+    const sys = env.system as any
+    await sys.backup.deleteMany({ where: {} })
+    const dir = join(dirname(env.app.sqlite.filename), 'backups', 'basecamp-2026-01-02T03-04-05-007Z')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'main.db'), 'x')
+    const row = await sys.backup.create({ data: { status: 'success', location: dir } })
+
+    await expect(env.as(owner).service('backups').call('download', row.id)).rejects.toThrow()
+    const { url, name } = await env.as(sysadmin).service('backups').call('download', row.id) as any
+    expect(name).toBe('basecamp-2026-01-02T03-04-05-007Z.tar.gz')
+    expect(url).toMatch(new RegExp(`^/backup-archive/${row.id}\\?expires=\\d+&sig=[0-9a-f]{64}$`))
+
+    const res = await env.http.get(url)
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toBe('application/gzip')
+    expect(res.headers['content-disposition']).toContain(name)
+    expect((await env.http.get(url.replace(/sig=\w+/, `sig=${'0'.repeat(64)}`))).status).toBe(403)
+    expect((await env.http.get(`/backup-archive/${row.id}`)).status).toBe(403)
+    expect((await env.http.get(mintArchiveUrl(row.id, Date.now() - 6 * 60_000))).status).toBe(403)
+
+    const failed = await sys.backup.create({ data: { status: 'failed', location: null } })
+    await expect(env.as(sysadmin).service('backups').call('download', failed.id)).rejects.toThrow(/is failed/)
+    const gone = await sys.backup.create({ data: { status: 'success', location: `${dir}-gone` } })
+    await expect(env.as(sysadmin).service('backups').call('download', gone.id)).rejects.toThrow(/no longer on this disk/)
+    rmSync(dir, { recursive: true, force: true })
+    await sys.backup.deleteMany({ where: {} })
+  })
+
   test('rescan is the sysadmin\'s, and names an unknown destination', async () => {
     await expect(env.as(owner).service('backups').call('rescan', null, { destinationId: 'x' })).rejects.toThrow()
     await expect(env.as(sysadmin).service('backups').call('rescan', null, { destinationId: 'no-such-bucket' }))
@@ -2803,7 +2835,7 @@ describe('infra.summary counts the fleet Home opens on', () => {
     const WALK: Record<string, string[]> = { success: ['build', 'succeed'], failed: ['fail'] }
     const release = async (status: string, hoursAgo: number, workspaceId = w.id, a = running) => {
       const d = await sys.deployment.create({ data: {
-        workspaceId, appId: a.id, environmentId: a.environmentId, trigger: 'manual',
+        workspaceId, appId: a.id, environmentId: a.environmentId, trigger: 'button',
         queuedAt: new Date(Date.now() - hoursAgo * 3_600_000).toISOString() } })
       for (const move of WALK[status]!) await sys.deployment.transition(d.id, move)
     }
@@ -3792,7 +3824,7 @@ describe('infra.launch walks to the screen each step happens on', () => {
     expect(half.steps.find((s: any) => s.id === 'place')).toMatchObject({ done: false, href: `/apps/${a.id}/` })
 
     await sys.appServer.create({ data: { appId: a.id, serverId: srv.id } })
-    const d = await sys.deployment.create({ data: { workspaceId: w.id, appId: a.id, environmentId: e.id, trigger: 'manual' } })
+    const d = await sys.deployment.create({ data: { workspaceId: w.id, appId: a.id, environmentId: e.id, trigger: 'button' } })
     await sys.deployment.transition(d.id, 'build')
     await sys.deployment.transition(d.id, 'succeed')
 
@@ -4024,8 +4056,8 @@ describe('a list honors every filter it admits', () => {
     elsewhere = await sys.app.create({ data: { workspaceId: ws.id, environmentId: env2.id, name: `elsewhere-${uniq}`, slug: 'elsewhere', type: 'static' } })
     box = await serverAt('online', { workspaceId: ws.id, name: `box-${uniq}`, slug: `box-${uniq}` })
     await sys.appServer.create({ data: { appId: placed.id, serverId: box.id } })
-    d1 = await sys.deployment.create({ data: { workspaceId: ws.id, appId: placed.id,    environmentId: env1.id, trigger: 'manual', branch: `main-${uniq}` } })
-    d2 = await sys.deployment.create({ data: { workspaceId: ws.id, appId: elsewhere.id, environmentId: env2.id, trigger: 'manual', branch: `feat-${uniq}` } })
+    d1 = await sys.deployment.create({ data: { workspaceId: ws.id, appId: placed.id,    environmentId: env1.id, trigger: 'button', branch: `main-${uniq}` } })
+    d2 = await sys.deployment.create({ data: { workspaceId: ws.id, appId: elsewhere.id, environmentId: env2.id, trigger: 'button', branch: `feat-${uniq}` } })
     job = await sys.job.create({ data: { workspaceId: ws.id, appId: placed.id, name: `nightly-${uniq}`, kind: 'one_shot', command: 'true' } })
     await sys.job.create({ data: { workspaceId: ws.id, appId: placed.id, name: `weekly-${uniq}`, kind: 'one_shot', command: 'true' } })
   })
@@ -4053,7 +4085,7 @@ describe('a list honors every filter it admits', () => {
   test('a hand patch of a release writes its run columns and drops its set-once ones', async () => {
     const patched = await env.as(owner).service('deployments').patch(d1.id, { trigger: 'rollback', author: 'someone else', durationMs: 42 })
     expect(patched.durationMs).toBe(42)
-    expect(patched.trigger).toBe('manual')
+    expect(patched.trigger).toBe('button')
     expect(patched.author).toBeNull()
   })
 
@@ -4708,7 +4740,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       expect(await sys.appDrill.count({ where: { appId: app.id } })).toBe(0)
 
       const release = await sys.deployment.create({ data: {
-        workspaceId: ws.id, appId: app.id, environmentId: app.environmentId, trigger: 'manual', toImage: 'registry.test/bk:1',
+        workspaceId: ws.id, appId: app.id, environmentId: app.environmentId, trigger: 'button', toImage: 'registry.test/bk:1',
       } })
       for (const move of ['build', 'succeed']) await sys.deployment.transition(release.id, move)
       const row = await run(owner, { at: '2026-10-25T03:00:00Z' }) as any

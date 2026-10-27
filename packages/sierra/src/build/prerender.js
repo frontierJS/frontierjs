@@ -301,6 +301,19 @@ export const SKIP_LINK = '<a class="skip-link" href="#main">Skip to content</a>'
 export const hasSkipLink = (html) => /class="[^"]*\bskip-link\b[^"]*"/.test(html)
 
 /**
+ * The link off-screen before any stylesheet is. An SPA's CSS arrives with its
+ * JS — in `vite dev`, only once the whole module graph has loaded — and until
+ * then the link sits at the top of the page as bare text. The rule is in a
+ * layer of its own, written first in `<head>`, so it is the lowest-ranked
+ * statement on the page: `css/src/a11y/a11y.css` and any rule the app writes
+ * outrank it as soon as they load. `a11y` is not reused as the name, because a
+ * layer named first here would become the package's lowest. It never matches a
+ * focused link, so a keyboard user who tabs to it before the CSS sees it.
+ */
+export const SKIP_LINK_GUARD =
+  '<style id="sierra-skip-link">@layer sierra-shell{:where(.skip-link:not(:focus)){position:fixed;top:0;left:0;transform:translateY(-200%)}}</style>'
+
+/**
  * The `document` keys as HTML. One serializer for the prerendered page and for
  * the `index.html` shell (`document-shell.js`), so the two cannot escape differently.
  */

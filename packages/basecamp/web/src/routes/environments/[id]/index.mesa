@@ -106,7 +106,7 @@ title: Environment
   async function deploy(app) {
     error = null; deploying = app.id
     try {
-      const deployment = await deployments.service.create({ appId: app.id, trigger: 'manual' })
+      const deployment = await deployments.service.create({ appId: app.id })
       goto(`/deployments/${deployment.id}/`)
     } catch (e) {
       error = e.message

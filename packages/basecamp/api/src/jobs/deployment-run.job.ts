@@ -306,11 +306,13 @@ function runner(app: App) {
       // A built image that cannot be named by its bytes cannot be started by
       // them, and /deploy would build a second time.
       if (!built && !reply.data?.stubbed) throw new Error('Build failed: the machine reported no image digest')
-      const sha = typeof reply.data?.commit_sha === 'string' ? reply.data.commit_sha.slice(0, 7) : null
+      // The full sha goes on the row (`FJS-3559`); the output line cuts it.
+      const commit = typeof reply.data?.commit_sha === 'string' && reply.data.commit_sha ? reply.data.commit_sha : undefined
+      const sha = commit?.slice(0, 7)
       // Which file it built with, since the App's own copy and the repository's
       // are both candidates and a release is read back to say which shipped.
       const file = typeof reply.data?.dockerfile === 'string' && reply.data.dockerfile ? ` with ${reply.data.dockerfile}` : ''
-      return { output: note(reply) ?? (sha ? `built ${sha}${file}` : file ? `built${file}` : undefined), digest: built ?? digest }
+      return { output: note(reply) ?? (sha ? `built ${sha}${file}` : file ? `built${file}` : undefined), digest: built ?? digest, commit }
 
     } else if (name.includes('pull')) {
       const reply = await executor.call('/pull', { image, digest }, { timeoutMs: PULL_TIMEOUT_MS })

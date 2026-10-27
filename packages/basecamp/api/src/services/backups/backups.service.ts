@@ -27,7 +27,9 @@ import { createService, BadRequest, Conflict, NotFound, $ } from '@frontierjs/ju
 import { requireSystemAdmin, getPagination }                from '../../core/hooks.ts'
 import { db, actor, callerOrder, callerSelect }               from '../../core/resource.ts'
 import { queueBackup, SETTLED }                             from '../../jobs/backup-run.job.ts'
-import { deleteArchive, rescanDestination }                 from '../../domain/backup/backup-archives.ts'
+import { deleteArchive, rescanDestination, isRemote, localArchive } from '../../domain/backup/backup-archives.ts'
+import { mintDownload }                                   from '../../jobs/app-backup-run.job.ts'
+import { mintArchiveUrl }                                 from '../../plugins/backup-archive.ts'
 import { LEVELS }                                           from '@frontierjs/litestone'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 
@@ -36,7 +38,8 @@ export default createService({
   scope: keyScope('backups'),
   model: 'Backup',
 
-  methods: ['find', 'get', 'create', 'remove', { method: 'rescan', gate: LEVELS.SYSADMIN, input: 'BackupRescan' }],
+  methods: ['find', 'get', 'create', 'remove', { method: 'rescan', gate: LEVELS.SYSADMIN, input: 'BackupRescan' },
+            { method: 'download', gate: LEVELS.SYSADMIN, read: true }],
 
   async find() {
     const { limit, offset } = getPagination()
@@ -105,6 +108,28 @@ export default createService({
     const result = await rescanDestination($.app, destinationId)
     if ('error' in result) throw new BadRequest(result.error)
     return result
+  },
+
+  // ── download — POST /backups/{id}  X-Service-Method: download ──
+  /** The URL one archive is fetched by (`IDEAS/backups.md` 4.2): the bucket's
+   *  pre-signed GET for a remote one, a five-minute link this process signed
+   *  for a local one (`plugins/backup-archive.ts`). Either is the same
+   *  `basecamp-<stamp>.tar.gz`. */
+  async download() {
+    const row = await db().backup.findFirst({ where: { id: $.id as string } })
+    if (!row) throw new NotFound(`Backup '${$.id}' not found`)
+    if (row.status !== 'success') throw new BadRequest(`That backup is ${row.status}, so there is no archive to download`)
+    const name = `${(row.location ?? '').split('/').pop()!.replace(/\.tar\.gz$/, '')}.tar.gz`
+
+    if (isRemote(row)) {
+      const dest = await db().asSystem().backupDestination.findFirst({ where: { id: row.destinationId! } })
+      if (!dest) throw new NotFound(`Destination '${row.destinationId}' is gone, so ${row.location} cannot be reached`)
+      return { url: await mintDownload($.app, dest, row.location!), name }
+    }
+    if (!localArchive($.app, row)) throw new NotFound(`${row.location ?? 'That backup'} is no longer on this disk`)
+    // The route cannot know who follows the link, so who minted it is logged here.
+    $.app.logger.info('backup archive link minted', { backup_id: row.id, by: actor() })
+    return { url: mintArchiveUrl(row.id), name }
   },
 
   hooks: {
