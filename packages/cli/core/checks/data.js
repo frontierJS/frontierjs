@@ -330,24 +330,31 @@ export const CHECKS = {
     const untenanted = !block
     if (block && !/\bstrategy\s+row\b/.test(block[0])) return { skipped: 'strategy database — one client is one tenant' }
 
-    // Everything under `services/`, not just `*.service.*`. A helper module
-    // beside a service runs in the same call scope and carries the identical
-    // hazard — basecamp's `api-keys/scopes.ts` reaches for the app client from
-    // inside a hook — so a filename filter made two real sites invisible. The
-    // directory is the principled boundary: a job handler lives in `jobs/`,
-    // is NOT inside a call, and is where the app client is the right reach.
-    const files = scripts(root, 'api').filter(p => /[/\\]services[/\\]/.test(p))
-    if (!files.length) return { skipped: 'no api/**/services/** source' }
+    // Everything under `services/`, not just `*.service.*`: a helper beside a
+    // service runs in the same call scope. A job handler in `jobs/` is NOT
+    // inside a call, and is where the app client is the right reach.
+    //
+    // `domain/` is called from both, and its helpers take the client as a
+    // parameter — `mergeTasks($.db, …)` — so a bare parameter there names
+    // whatever the caller passed, and grading one flags every request client
+    // handed in. In `domain/` only a client the file names itself is graded:
+    // `app.db`, a module-scope `db`, a call's answer. basecamp's
+    // `api-key/scopes.ts` reaches for `app.db` from inside a hook (FJS-3527).
+    const files = scripts(root, 'api').filter(p => /[/\\](services|domain)[/\\]/.test(p))
+    if (!files.length) return { skipped: 'no api/**/services/** or api/**/domain/** source' }
 
     const REQUEST = /^\$\.db$/
     const BOUND   = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*\$\.db\b/g
     const WITH_DB = /\.withDb\s*\(\s*(?:async\s+)?(?:(?:function\s*[\w$]*\s*)?\(\s*([A-Za-z_$][\w$]*)|([A-Za-z_$][\w$]*)\s*=>)/g
 
-    // The receiver of a `.asSystem()`, read backwards so a cast survives:
-    // `(app.data as any).asSystem()` is the spelling three of basecamp's use.
+    // The receiver of a `.asSystem()`, read backwards so a cast and a non-null
+    // assertion survive: `(app.data as any).asSystem()` and `app.db!.asSystem()`
+    // are both basecamp's, and an unread `!` answers no receiver, so the call
+    // was skipped rather than graded.
     const receiverAt = (code, dot) => {
       let i = dot - 1
       while (i >= 0 && /\s/.test(code[i])) i--
+      while (code[i] === '!') i--
       if (code[i] === ')') {
         let depth = 1
         i--
@@ -356,17 +363,27 @@ export const CHECKS = {
           else if (code[i] === '(') depth--
           i--
         }
-        return code.slice(i + 2, dot).replace(/\)\s*$/, '').replace(/\s+as\s+[\w<>\[\]|]+\s*$/, '').trim()
+        return code.slice(i + 2, dot).replace(/\)\s*$/, '').replace(/\s+as\s+[\w<>\[\]|]+\s*$/, '').replace(/!\s*$/, '').trim()
       }
       let j = i
       while (j >= 0 && /[\w$.]/.test(code[j])) j--
-      return code.slice(j + 1, dot).trim()
+      return code.slice(j + 1, i + 1).trim()
+    }
+
+    // An import, or a const at column 0. An indented binding is a function's,
+    // and a parameter is not bound by the file at all. The import match stops
+    // at the quote, or `db` in '../core/db.ts' reads as a binding.
+    const moduleScope = (code, name) => {
+      const id = name.replace(/\$/g, '\\$')
+      return new RegExp(`^import\\b[^'"\\n]*\\b${id}\\b`, 'm').test(code) ||
+             new RegExp(`^(?:export\\s+)?(?:const|let|var)\\s+${id}\\b`, 'm').test(code)
     }
 
     const findings = []
     for (const path of files) {
       const code = readCode(path)
       if (!code.includes('.asSystem')) continue
+      const domain = /[/\\]domain[/\\]/.test(path)
 
       // Names this file binds to the request's client — `const db = $.db`.
       const local = new Set()
@@ -380,6 +397,7 @@ export const CHECKS = {
       for (const m of code.matchAll(/\.asSystem\s*\(/g)) {
         const recv = receiverAt(code, m.index)
         if (!recv) continue
+        if (domain && /^[\w$]+$/.test(recv) && !moduleScope(code, recv)) continue
         if (!untenanted && (REQUEST.test(recv) || local.has(recv))) continue
 
         const line = lineOf(code, m.index)

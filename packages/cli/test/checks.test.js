@@ -3178,6 +3178,18 @@ describe('service-as-system', () => {
     expect(findings[0].message).toMatch(/^\$\.app\.data\.asSystem/)
   })
 
+  // FJS-3528. An unread `!` answered no receiver, and the call was skipped.
+  test('a non-null assertion does not hide the receiver', () => {
+    const root = tree('sas-bang', svc('export default createService({\n' +
+      '  find: () => $.app.data!.asSystem().lead.findMany({ where: {} }),\n' +
+      '  get:  () => ($.app.data! as any).asSystem().lead.findFirst({ where: {} }),\n' +
+      '  own:  () => $.db!.asSystem().lead.findFirst({ where: {} }),\n})\n'))
+    const { findings } = only(root, 'service-as-system')
+    expect(findings.map(f => f.line)).toEqual([3, 4])
+    expect(findings[0].message).toMatch(/^\$\.app\.data\.asSystem/)
+    expect(findings[1].message).toMatch(/^\$\.app\.data\.asSystem/)
+  })
+
   test('the request client, either spelling, is the correct shape', () => {
     const root = tree('sas-scoped', svc('export default createService({\n' +
       '  find: () => $.db.asSystem().lead.findMany({ where: {} }),\n' +
@@ -3255,6 +3267,32 @@ describe('service-as-system', () => {
       'api/src/jobs/sweep.job.ts': 'export default (app) => app.data.asSystem().lead.findMany({ where: {} })\n',
     })
     expect(only(root, 'service-as-system').findings).toEqual([])
+  })
+
+  // FJS-3527. A domain helper runs in whatever scope called it, and takes the
+  // client as a parameter, so only a client the file names itself is graded.
+  test('a domain helper reaching for the app client is graded', () => {
+    const root = tree('sas-domain-app', {
+      ...svc('export default createService({})\n'),
+      'api/src/domain/keys/scopes.ts': 'const sysOf = (app) => app.db!.asSystem()\n',
+      'api/src/domain/keys/lines.ts':  "import { db } from '../../core/db.ts'\n" +
+                                       'export const system = () => db.asSystem()\n',
+    })
+    const { findings } = only(root, 'service-as-system')
+    expect(findings.map(f => f.message.split(' ')[0]).sort()).toEqual(['app.db.asSystem()', 'db.asSystem()'])
+  })
+
+  test('a client a domain helper is handed is the caller\'s, in either tenancy', () => {
+    const helper = 'export async function merge(db, tx) {\n' +
+                   '  await db.asSystem().lead.update({ where: { id: 1 }, data: {} })\n' +
+                   '  await tx.asSystem().lead.findFirst({ where: {} })\n}\n'
+    for (const tenancy of [null, '']) {
+      const root = tree(`sas-domain-param-${tenancy === null ? 'row' : 'none'}`, {
+        ...svc('export default createService({})\n', tenancy),
+        'api/src/domain/leads/merge.ts': "import type { Db } from '../../core/db.ts'\n" + helper,
+      })
+      expect(only(root, 'service-as-system').findings).toEqual([])
+    }
   })
 
   test('no tenancy block and no elevation is quiet', () => {
