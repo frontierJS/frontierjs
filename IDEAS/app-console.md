@@ -306,6 +306,10 @@ Done when: `fli app:repl` opens on `example`, and `fli deploy:repl --as dev@knig
   - 2026-10-27: `FJS-3517` closed by Basecamp declaring `createApp({ system })`
     (owner chose B). `sys(fn)` now runs as SYSADMIN: `servers.find` under
     `--tenant` answers through it, and is refused with the declaration out.
+  - 2026-10-27, on yuma after the second deploy, `deploy:repl --as
+    vlad@kobami.com --force`: `sys.featureFlag.create` then `.delete` filed
+    trail rows 523 and 524, each `actorId root`, `actorType repl`,
+    `subjectId basecamp`. The operator is the ssh login, never the `--as`.
 
 ### Phase 3 — Docs, drive, ruling
 
