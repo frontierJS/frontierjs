@@ -8,6 +8,7 @@
 //   <KIND>_TOKEN=… bun api/src/core/provision-host.ts '{"cloud":"<kind>","action":"off","id":"123"}'
 //   <KIND>_TOKEN=… bun api/src/core/provision-host.ts '{"cloud":"<kind>","action":"destroy","id":"123"}'
 //   <KIND>_TOKEN=… bun api/src/core/provision-host.ts '{"cloud":"<kind>","action":"list"}'
+//   <KIND>_TOKEN=… bun api/src/core/provision-host.ts '{"cloud":"<kind>","action":"host","id":"123"}'
 //   <KIND>_TOKEN=… bun api/src/core/provision-host.ts '{"cloud":"<kind>","action":"release","ip":"203.0.113.9"}'
 //
 // Each vendor's dialect is its connector under providers/compute/ and nothing
@@ -25,7 +26,9 @@
 //
 // It carries the fleet mark and no server id. Reconcile reports it as an orphan
 // until a Server row names it, which is the truth: a box billing at this
-// account that no row describes.
+// account that no row describes. `host` adds the host mark once `fli
+// basecamp:install` has Basecamp running on it, which is what tells a working
+// Basecamp from a box an earlier create left behind.
 //
 // The last line of stdout is one JSON object, which is fli's whole contract:
 //   { id, name, ip, region, size, image, monthly }   created and up
@@ -33,14 +36,15 @@
 //   { id, name, pending: true, … }                    created, not up before the deadline
 //   { off: '<id>' }  { off: '<id>', pending: true }   powered off, or asked and not off yet
 //   { destroyed: '<id>', reservedIp }                 the address it held, unassigned now
-//   { machines: [{ id, name, status, ip, region, serverId, reservedIp }] }   every fleet-marked box
+//   { machines: [{ id, name, status, ip, region, serverId, basecampHost, reservedIp }] }   every fleet-marked box
+//   { host: '<id>' }                                  carries the host mark now
 //   { released: '<ip>' }
 //   { error: '<what>' }                               and the exit is non-zero
 //
 // stderr is what the minute is spent on, for the person watching: fli lets it
 // through to the terminal untouched.
 
-import { connectorFor, fleetMark, priceIn, sizeRegions } from '../providers/compute/index.ts'
+import { connectorFor, fleetMark, hostMark, priceIn, sizeRegions } from '../providers/compute/index.ts'
 import type { ComputeSize, ReservedIp } from '../providers/compute/index.ts'
 import type { ProviderKind }  from '../../../db/schema.d.ts'
 import { bearerSend }         from './bearer-send.ts'
@@ -140,9 +144,10 @@ async function create() {
   const price  = priceIn(picked, region)
 
   // A second run must not buy a second box. A fleet-marked box with no
-  // server id is one this script made and nothing has claimed.
+  // server id and no host mark is one this script made that nothing installed
+  // on or claimed.
   step('Checking the account for a box an earlier run left behind')
-  const prior = (await connector.marked(send, fleetMark())).filter(m => !m.serverId)
+  const prior = (await connector.marked(send, fleetMark())).filter(m => !m.serverId && !m.basecampHost)
   if (prior.length)
     fail(`a machine provisioned earlier is still at this account: `
       + prior.map(m => `${m.providerServerId} (${m.ipAddress ?? 'no address yet'})`).join(', ')
@@ -267,10 +272,17 @@ async function powerOff() {
 async function list() {
   const held = await heldBy()
   const machines = (await connector.marked(send, fleetMark())).map(m => ({
-    id: m.providerServerId, name: m.name, status: m.status, ip: m.ipAddress, region: m.region, serverId: m.serverId, createdAt: m.createdAt,
+    id: m.providerServerId, name: m.name, status: m.status, ip: m.ipAddress, region: m.region, serverId: m.serverId,
+    basecampHost: m.basecampHost, createdAt: m.createdAt,
     reservedIp: held.get(m.providerServerId) ?? null,
   }))
   answer({ machines })
+}
+
+async function host() {
+  const ours = await ownBox('it runs apps, not Basecamp; manage it')
+  if (!ours.basecampHost) await connector.addMark(send, ours.providerServerId, hostMark())
+  answer({ host: ours.providerServerId })
 }
 
 /** Box id → the reserved IP it holds. */
@@ -296,6 +308,7 @@ try {
   else if (input.action === 'destroy') await destroy()
   else if (input.action === 'off')     await powerOff()
   else if (input.action === 'list')    await list()
+  else if (input.action === 'host')    await host()
   else if (input.action === 'release') await release()
   else fail(`unknown action '${input.action}'`)
   process.exit(0)

@@ -119,6 +119,10 @@ export interface ComputeMachine {
    *  orphan carrying a server id is a row that was deleted on this side, and
    *  one carrying none was never ours. */
   serverId:         string | null
+  /** Basecamp itself is installed on it — the mark `fli basecamp:install` adds.
+   *  Without it a fleet-marked box with no server id reads as one an earlier
+   *  `fli basecamp:create` left behind, and the next create refuses. */
+  basecampHost:     boolean
   /** When the vendor made it, ISO 8601. Not when it last booted: neither
    *  vendor says that, so a box powered off and on keeps its first date. */
   createdAt:        string | null
@@ -277,6 +281,13 @@ export interface ComputeConnector {
    * asks about the whole fleet, which is what a sweep has to be able to ask.
    */
   marked(send: AccountSend, mark: MachineMark): Promise<ComputeMachine[]>
+
+  /**
+   * Add a mark to a machine that exists, keeping the marks it has. A create
+   * marks in the same call; the host mark arrives only once an install has
+   * worked, which is after the box was bought.
+   */
+  addMark(send: AccountSend, providerServerId: string, mark: MachineMark): Promise<void>
 }
 
 // ─── The registry ────────────────────────────────────────────────────────
@@ -334,6 +345,8 @@ export interface MachineMark {
   fleet:     string
   /** Which `Server` this is. Absent on a sweep, which asks about all of them. */
   serverId?: string
+  /** Basecamp itself runs on it. */
+  basecampHost?: boolean
 }
 
 /** The fleet every machine here belongs to. One word, so a connector's spelling
@@ -348,4 +361,9 @@ export function markFor(serverId: string): MachineMark {
 /** The mark a sweep asks by — the fleet, and no machine in particular. */
 export function fleetMark(): MachineMark {
   return { fleet: FLEET }
+}
+
+/** The mark a box carries once Basecamp is installed on it. */
+export function hostMark(): MachineMark {
+  return { fleet: FLEET, basecampHost: true }
 }

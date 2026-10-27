@@ -153,11 +153,15 @@ const fleetKey = (mark: MachineMark) => mark.fleet
 /** The key the machine's identity is written under, holding the `Server` id. */
 const serverKey = (mark: MachineMark) => `${mark.fleet}.server`
 
+/** Present, with an empty value, on a box Basecamp itself is installed on. */
+const hostKey = (fleet: string) => `${fleet}.host`
+
 /** What a create applies. */
-const markLabels = (mark: MachineMark): Record<string, string> =>
-  mark.serverId
-    ? { [fleetKey(mark)]: '', [serverKey(mark)]: mark.serverId }
-    : { [fleetKey(mark)]: '' }
+const markLabels = (mark: MachineMark): Record<string, string> => ({
+  [fleetKey(mark)]: '',
+  ...(mark.serverId ? { [serverKey(mark)]: mark.serverId } : {}),
+  ...(mark.basecampHost ? { [hostKey(mark.fleet)]: '' } : {}),
+})
 
 /**
  * The selector this mark asks by.
@@ -166,7 +170,9 @@ const markLabels = (mark: MachineMark): Record<string, string> =>
  * grammar, and the reason the fleet mark needs no value at all.
  */
 const markSelector = (mark: MachineMark): string =>
-  mark.serverId ? `${serverKey(mark)}==${mark.serverId}` : fleetKey(mark)
+  mark.serverId ? `${serverKey(mark)}==${mark.serverId}`
+  : mark.basecampHost ? hostKey(mark.fleet)
+  : fleetKey(mark)
 
 /** The `Server` a machine says it is, read back off its labels. */
 function markedServer(server: Row): string | null {
@@ -196,6 +202,7 @@ function toMachine(server: Row, fallbackId = ''): ComputeMachine {
     region:           locationOf(server),
     name:             str(server.name) || null,
     serverId:         markedServer(server),
+    basecampHost:     hostKey(FLEET) in ((server.labels ?? {}) as Record<string, unknown>),
     createdAt:        str(server.created) || null,
   }
 }
@@ -412,6 +419,16 @@ export const hetzner: ComputeConnector = {
     if (res.error) throw new Error(said(res))
 
     return rows(res.data, 'servers').map(s => toMachine(s)).filter(m => m.providerServerId)
+  },
+
+  async addMark(send, providerServerId, mark): Promise<void> {
+    // An update's `labels` REPLACES the set, so the ones it has are read first.
+    const path = `/v1/servers/${encodeURIComponent(providerServerId)}`
+    const got  = await send({ method: 'GET', path })
+    if (got.error) throw new Error(said(got))
+    const labels = (((got.data as Row | null)?.server as Row | undefined)?.labels ?? {}) as Record<string, string>
+    const res = await send({ method: 'PUT', path, body: { labels: { ...labels, ...markLabels(mark) } } })
+    if (res.error) throw new Error(`Hetzner refused the label — ${said(res)}`)
   },
 
   async verify(send): Promise<boolean> {

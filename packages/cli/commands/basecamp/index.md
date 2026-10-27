@@ -13,7 +13,8 @@ examples:
 ---
 
 Every box carrying the `basecamp` mark, at every cloud whose token is stored.
-The one `fli basecamp:create` made reads `Basecamp host`; one Basecamp made as
+One Basecamp is installed on reads `Basecamp host`, one `fli basecamp:create`
+made that nothing was installed on reads `nothing installed`; one Basecamp made as
 a fleet machine names its server, because `fli basecamp:destroy` refuses it —
 as it refuses any box whose status is not `off`.
 

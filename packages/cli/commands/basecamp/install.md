@@ -46,6 +46,11 @@ one that opens no zone holding the hostname refuses before anything is
 installed. With no `CLOUDFLARE_TOKEN` a terminal takes the paste, and a run with
 no terminal warns, installs, and prints the `fli basecamp:dns` line instead.
 
+Once Basecamp answers, the box is marked as Basecamp's host at its cloud,
+found by its address among the boxes every stored cloud token reaches, so a
+later `fli basecamp:create` does not read it as one an earlier run left behind.
+A box made by hand is at no such cloud and is left unmarked.
+
 A rerun on the same box is a redeploy: `deploy:setup` installs only what is
 missing, the record is moved to the box's address if it changed, and
 `POST /setup` refuses a second admin.
@@ -126,8 +131,10 @@ if (failed) {
   return
 }
 log.success(`Basecamp is on ${dest}`)
+const ip = await boxAddress(dest)
+await markHost({ ip, log })
 
-const record = await pointHost({ host: domain, ip: await boxAddress(dest), configured, log })
+const record = await pointHost({ host: domain, ip, configured, log })
 if (!record || !await offerProxy({ record, configured, log, yes: asking && yes })) process.exitCode = 1
 
 const named = domain === configured ? '' : ` --domain ${domain}`

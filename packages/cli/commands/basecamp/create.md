@@ -122,7 +122,9 @@ generated. The summary still prints. A missing
 token is still asked for, since it has no default.
 
 A second run refuses while a box made by an earlier one is still at the
-account, so a retry never buys two. `fli basecamp` shows it, and `fli basecamp:stop <id>` then `fli basecamp:destroy <id>` removes it.
+account with nothing installed on it, so a retry never buys two. Once Basecamp
+answers, the install marks the box as Basecamp's host, which a later create
+passes over. `fli basecamp` shows it, and `fli basecamp:stop <id>` then `fli basecamp:destroy <id>` removes it.
 
 ```js
 const { existsSync, readFileSync } = await import('node:fs')
@@ -362,6 +364,7 @@ if (failed) {
   return
 }
 log.success(`Basecamp is on ${made.name} (${made.ip})`)
+await markHost({ cloud, id: made.id, log })
 
 const record = await pointHost({ host: domain, ip: made.ip, configured, log })
 if (!record || !await offerProxy({ record, configured, log, yes: asking && yes })) process.exitCode = 1

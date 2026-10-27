@@ -110,22 +110,28 @@ const STATES: Record<string, MachineState> = {
 // spelling.
 
 const identityTag = (mark: MachineMark) => `${mark.fleet}:server:${mark.serverId}`
+const hostTag     = (fleet: string) => `${fleet}:host`
 
-/** What a create applies. Both, since a sweep selects on the fleet tag and a
- *  lookup on the identity one, and DO's filter is a single exact value. */
-const markTags = (mark: MachineMark): string[] =>
-  mark.serverId ? [mark.fleet, identityTag(mark)] : [mark.fleet]
+/** What a create applies. The fleet tag always, since a sweep selects on it
+ *  and a lookup on the narrower one, and DO's filter is a single exact value. */
+const markTags = (mark: MachineMark): string[] => [
+  mark.fleet,
+  ...(mark.serverId ? [identityTag(mark)] : []),
+  ...(mark.basecampHost ? [hostTag(mark.fleet)] : []),
+]
 
 /** Which single tag answers this mark. */
 const selectorTag = (mark: MachineMark): string =>
-  mark.serverId ? identityTag(mark) : mark.fleet
+  mark.serverId ? identityTag(mark) : mark.basecampHost ? hostTag(mark.fleet) : mark.fleet
+
+const tagsOf = (droplet: Row): string[] =>
+  Array.isArray(droplet.tags) ? (droplet.tags as unknown[]).map(str) : []
 
 /** The `Server` a droplet says it is, read back off its tags. Null where
  *  nothing marked it — a droplet somebody made in their own console. */
 function markedServer(droplet: Row): string | null {
   const prefix = `${FLEET}:server:`
-  const tags   = Array.isArray(droplet.tags) ? (droplet.tags as unknown[]).map(str) : []
-  const hit    = tags.find(t => t.startsWith(prefix))
+  const hit    = tagsOf(droplet).find(t => t.startsWith(prefix))
   return hit ? hit.slice(prefix.length) || null : null
 }
 
@@ -329,6 +335,7 @@ export const digitalOcean: ComputeConnector = {
       region:           str((droplet.region as Row | undefined)?.slug) || null,
       name:             str(droplet.name) || null,
       serverId:         markedServer(droplet),
+      basecampHost:     tagsOf(droplet).includes(hostTag(FLEET)),
       createdAt:        str(droplet.created_at) || null,
     }
   },
@@ -421,8 +428,23 @@ export const digitalOcean: ComputeConnector = {
       region:           str((d.region as Row | undefined)?.slug) || null,
       name:             str(d.name) || null,
       serverId:         markedServer(d),
+      basecampHost:     tagsOf(d).includes(hostTag(FLEET)),
       createdAt:        str(d.created_at) || null,
     })).filter(m => m.providerServerId)
+  },
+
+  async addMark(send, providerServerId, mark): Promise<void> {
+    // A droplet create makes the tags it names; tagging one that exists does
+    // not, and DO answers a tag it has never seen with a 404.
+    for (const name of markTags(mark)) {
+      const made = await send({ method: 'POST', path: '/v2/tags', body: { name } })
+      if (made.error && made.status !== 422) throw new Error(`DigitalOcean: ${said(made)}`)
+      const res = await send({
+        method: 'POST', path: `/v2/tags/${encodeURIComponent(name)}/resources`,
+        body:   { resources: [{ resource_id: String(providerServerId), resource_type: 'droplet' }] },
+      })
+      if (res.error) throw new Error(`DigitalOcean: ${said(res)}`)
+    }
   },
 
   async verify(send): Promise<boolean> {

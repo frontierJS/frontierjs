@@ -101,6 +101,23 @@ const listBoxes = async (clouds) => {
   return { machines }
 }
 
+// The host mark, once Basecamp answers on the box. Without it the box reads as
+// one an earlier create left behind, and the next basecamp:create refuses. A
+// box no stored cloud token reaches was made by hand and has nothing to mark.
+const markHost = async ({ ip, cloud, id, log }) => {
+  const unmarked = (why) => log.warn(`  Not marked as Basecamp's host: ${why}. A rerun of fli basecamp:install marks it`)
+  if (!id) {
+    const read = await listBoxes(Object.keys(CLOUDS).filter(k => process.env[CLOUDS[k].key]))
+    if (read.error) return unmarked(read.error)
+    const box = ip && read.machines.find(m => m.ip === ip || m.reservedIp === ip)
+    if (!box) return
+    cloud = box.cloud
+    id    = box.id
+  }
+  const done = await runProvision({ cloud, action: 'host', id: String(id) })
+  if (done.error) unmarked(done.error)
+}
+
 // The cloud a typed id is at. Ids are per cloud and may collide, so an id at
 // two of them is refused rather than guessed.
 const cloudOf = (id, machines, clouds) => {
@@ -251,9 +268,9 @@ const machineLine = (m, chalk) => {
   const status = paint(`● ${m.status.padEnd(8)}`)
   const age    = chalk.dim(`⏱ ${ageOf(m.createdAt).padEnd(5)}`)
   const ip     = m.ip ? chalk.cyan(m.ip.padEnd(15)) : chalk.dim('no address yet')
-  const role   = m.serverId
-    ? chalk`📡 {magenta fleet machine} {dim · server ${m.serverId} · destroy it in Basecamp}`
-    : chalk`⛺ {bold.green Basecamp host}`
+  const role   = m.serverId ? chalk`📡 {magenta fleet machine} {dim · server ${m.serverId} · destroy it in Basecamp}`
+    : m.basecampHost ? chalk`⛺ {bold.green Basecamp host}`
+    : chalk`📦 {yellow nothing installed} {dim · fli basecamp:install, or stop then destroy it}`
   const host   = m.host ? chalk`  {cyan https://${m.host}}` : ''
   const name   = chalk.bold((m.name ?? '-').padEnd(14))
   const where  = `${cloudLabel(m.cloud).padEnd(12)} ${(m.region ?? '-').padEnd(5)}`
