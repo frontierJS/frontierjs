@@ -919,7 +919,9 @@ try {
   // the row, and a `row.querySelector` for it finds nothing.
   t('afterDelete.gone', await evaluate(`
     const row = byText('tbody tr', 'ORD-CDP-1');
-    row.querySelector('button.danger').click();
+    // By its text: a terminal move (cancel) is a danger button too, and it
+    // comes first in the row, so the first danger button confirms a MOVE.
+    [...row.querySelectorAll('button.danger')].find(b => b.textContent.trim() === 'Delete').click();
     await waitFor(() => document.querySelector('.popover button.danger'));
     document.querySelector('.popover button.danger').click();
     await waitFor(() => !byText('tbody tr', 'ORD-CDP-1'));
@@ -1448,7 +1450,7 @@ try {
   for (const path of visited) {
     await goto(path)
     await evaluate(`return await waitFor(() => document.querySelector('h1'), 4000).catch(() => null)`)
-    for (const issue of await evaluate(PAGE_AUDIT)) a11y.push(`${path}: ${issue}`)
+    for (const issue of await evaluate(`return ${PAGE_AUDIT}`)) a11y.push(`${path}: ${issue}`)
   }
   t('a11y', a11y)
 

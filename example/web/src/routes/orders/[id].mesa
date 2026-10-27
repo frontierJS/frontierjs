@@ -144,6 +144,9 @@ title: Order
     error = null
     try {
       await watchOrder()
+      // A record view's ready resolves null on a miss rather than rejecting,
+      // so without this a deleted order shows its skeleton for good.
+      if (!order) { error = 'Order not found'; return }
       await loadDetails()
     } catch (e) {
       error = e.message
@@ -311,6 +314,7 @@ title: Order
 ]} />
 
 {#if error && !order}
+  <SectionHeader title={'Order #' + page.params.id} level={1} />
   <Alert tone="danger">{error}</Alert>
 {:else if !order}
   <div class="stack">

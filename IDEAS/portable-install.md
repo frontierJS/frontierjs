@@ -34,6 +34,7 @@ path to (`app-cli.md` compiles `cli/` only; `site:build --compile` a site only;
 | Headless screenshot of `/admin/items` | the SPA renders from the folder, calls `/api`, live dot green |
 | Host, both kinds (§ Two kinds) built by the one `make-drive.ts` | `smoke.sh` passes on each: fixed report, custom report (worker), PDF |
 | `ubuntu:24.04`, non-root, bun 1.4.4 only, plain bundle, no Chromium, `printer()` off | `create-owner`, login, SPA page, deep link, asset, fixed report, custom report (worker) all pass, `mode: production` |
+| `ubuntu:24.04`, non-root, the installable kind (§ The installable kind), `verify-installer.sh` | refused with no bun; bun from its own installer found off PATH in `~/.bun/bin`; refused with no Chrome; after Google Chrome's `.deb`: install, menu entry, login, deep link, fixed and worker reports, PDF (20 KB), listening on 127.0.0.1 only, a second `open` answered in 360 ms; the upgrade kept the data, uninstall kept it, a reinstall logged straight in, `--purge` removed it |
 
 The container got only the shared libraries a stock Ubuntu desktop already has
 (NSS, ATK-bridge, GBM, X11 family, ALSA, DejaVu/Liberation fonts) — those are
@@ -111,6 +112,51 @@ and the worker boot is `worker-boot.js` beside it. The stubs, the `runtime.js`
 entry and the `NODE_ENV` define are needed by both (walls 4 and 6); only wall 3
 is compile-only.
 
+### The installable kind
+
+`make-installer.sh` wraps the plain kind as a **2.5 MB zip that carries neither
+bun nor Chrome and requires both**:
+
+```
+thod/
+  install.sh  README.txt
+  payload/    the plain drive, plus uninstall.sh and BUN_VERSION
+```
+
+`sh install.sh` needs no sudo and writes nothing outside `~/.local`:
+
+- **It refuses by name, with the command that fixes it**, when there is no bun
+  (on PATH, or in `~/.bun/bin` where bun's own installer puts it and where a
+  desktop entry's PATH never looks), when bun is another minor than
+  `BUN_VERSION`, and when there is no Chrome (the four names mesa's `findChrome`
+  tries, in its order, or `$FJS_CHROME`, written to `thod.env` when it is a path).
+- It copies `payload/` to `~/.local/share/thod`, links `~/.local/bin/thod`, and
+  writes `~/.local/share/applications/thod.desktop` running `thod open`.
+- A first install makes the owner account: prompted, or `THOD_OWNER_EMAIL` and
+  `THOD_OWNER_PASSWORD` unattended.
+- **Run again it upgrades**: stops the running copy, carries `app/db/*.db*`,
+  `encryption.key`, `app/storage` and `thod.env` into the new copy, and swaps
+  it in. `uninstall.sh` keeps the same files; `--purge` deletes them.
+
+The launcher gained what a desktop needs. It listens on `127.0.0.1` (`THOD_HOST`
+widens it). It reads `thod.env` beside it into the environment, the real
+environment winning; that happens after the bundled packages have loaded, so a
+package that reads a variable at import misses it. `open` finds a server already
+up and only opens the browser, and prints the address when there is no
+`xdg-open`. The plain kind refuses a bun of another minor (`THOD_ANY_BUN=1` runs
+it anyway). `thod stop` is the wrapper's `pkill -f <dir>/launcher.js`.
+
+**Found by the run:** a fresh user has no `~/.local/share`, so the first copy
+failed; `install.sh` makes it. **Not run:** a real desktop session (the menu
+entry, `xdg-open`); snap Chromium, which is what `apt install chromium` gives on
+Ubuntu and whose confinement may disagree with a profile under `/tmp`; Ubuntu
+20.04 with this kind; the interactive owner prompt.
+
+**The living copy is `fjs-prototypes/thod/deploy/portable/`**: `bun run
+build:portable` writes `dist/thod-linux.zip`, and
+`sh deploy/portable/verify-installer.sh dist/thod-linux.zip` runs the container
+test above.
+
 ## The walls, each with where a real fix belongs
 
 1. **`import.meta.url` is `/$bunfs/root/…` in a compiled binary** — the reason the
@@ -166,10 +212,11 @@ is compile-only.
   `showexec`, so `./thod` is not executable there (not probed), and SQLite's WAL
   on FAT is a risk. An `install.sh` copies the folder to `~/.local/share/<app>`
   and writes an XDG entry running `<app> open` — `fli desktop:install` writes the
-  same entry for a checkout.
-- **Bind `127.0.0.1`.** The prototype listens on `0.0.0.0`, which on a desktop is
-  every machine on the network.
+  same entry for a checkout. Prototyped: § The installable kind.
+- **Bind `127.0.0.1`.** `0.0.0.0` on a desktop is every machine on the network.
+  Prototyped, `THOD_HOST` to widen it.
 - **A config file instead of `.env`**: SMTP and the rest, read by the launcher.
+  Prototyped as `thod.env`, read too late for a package that reads at import.
 - **Backups name both halves**: `db/` and `encryption.key` together.
 - **Upgrades** replace `thod`, `app/`, `web/` and keep `db/`; after an app leaves
   Alpha that means migration files applied on start.
@@ -192,6 +239,7 @@ Done when: the container run in § What was proved passes.
 - [x] 0.4 Launcher: key, production mode (wall 6), Chromium, SPA serving, `create-owner`, `open`
 - [x] 0.5 Clean `ubuntu:24.04` and `ubuntu:20.04` runs
 - [x] 0.6 The plain kind for an installed bun (`--plain`), and the worker's early-message race it exposed
+- [x] 0.7 The installable kind: `install.sh`, upgrade, uninstall, no bun or Chrome inside (`thod/deploy/portable/`)
 
 **Done 2026-10-27.** Every wall had a workaround outside the packages; walls 3, 4,
 6 and the print-kit hang are worth fixing on their own. The plain kind came the
@@ -220,8 +268,11 @@ Done when: `example/` builds one and a drive runs it in `ubuntu:24.04`.
 - [ ] 2.3 Names from `junction.config.js`'s `app.name`, not `thod`
 - [ ] 2.4 Chromium fetched from Chrome for Testing, pinned, cached
 - [ ] 2.5 Bind `127.0.0.1`; a config file for SMTP and friends
+  - Prototyped in thod's launcher; the config file loads after the bundled packages, too late for one that reads at import.
 - [ ] 2.6 `install.sh` + XDG entry; `uninstall`
+  - Prototyped in `thod/deploy/portable/installer/`; written for thod's names, untested on a real desktop.
 - [ ] 2.7 The plain kind refuses to start on a bun outside the range it was built and tested on, by name
+  - Prototyped at both ends: `install.sh` and the launcher refuse another minor than the build's.
 
 ### Phase 3 — a drive
 
@@ -236,7 +287,8 @@ Done when: `verify:portable` runs in CI.
   generated manifest of services, routes and jobs; the folder needs neither.
 - **Q2 — Ship Chromium or require one.** 262 MB on the drive, or
   `apt install chromium`, which is a snap on Ubuntu; `FJS_CHROME` already lets
-  either work.
+  either work. The installable kind requires one and refuses by name at install;
+  Google Chrome's `.deb` is tested there, snap Chromium is not.
 - **Q3 — A browser tab or the `desktop/` shell.** `FJS-D263`'s shell with its API
   started beside it is the same folder plus WebKitGTK and Rust at build time.
 - **Q4 — Where the data lives.** Beside the binary (the prototype) or
@@ -252,14 +304,20 @@ Done when: `verify:portable` runs in CI.
 
 ## Reproduce it
 
-Needs a scaffolded app with `web/dist` built, bun 1.4.4, and a
+**From thod**, where every file below lives in `deploy/portable/`:
+`bun run build:portable`, then `sh deploy/portable/verify-installer.sh
+dist/thod-linux.zip` (Docker, and internet for bun and Chrome). For another app,
+copy that folder, set `bundled.ts` to the app's specifiers (the `grep` below) and
+replace the names `thod`, `__thodBundled`, `THOD_*`, and `smoke.sh`'s endpoints.
+
+**From nothing**, outside any app: needs a scaffolded app with `web/dist` built, bun 1.4.4, and a
 `chrome-headless-shell-linux64` directory (Playwright's
 `~/.cache/ms-playwright/chromium_headless_shell-*` or Chrome for Testing).
 
 ```bash
 mkdir portable && cd portable                 # outside the app, and NOT under any node_modules parent
 ln -s <app>/node_modules node_modules         # bun build resolves the packages from here
-# write the four files below; edit bundled.ts to the app's specifiers:
+# write the files below; edit bundled.ts to the app's specifiers:
 grep -rhoE "from +['\"]@frontierjs/[^'\"]+['\"]" <app>/api/src <app>/api/config | sort -u
 (cd <app> && bun run build:web)
 bun make-drive.ts <app> ../drive <chrome-headless-shell-linux64 dir>
@@ -311,6 +369,7 @@ export const bundled: Record<string, object> = {
   '@frontierjs/toolbelt/datetime': datetime,
 }
 
+
 ;(globalThis as Record<string, unknown>).__thodBundled = bundled
 ```
 
@@ -353,6 +412,24 @@ void bundled
 const compiled = import.meta.dir.startsWith('/$bunfs')
 const drive = compiled ? dirname(process.execPath) : import.meta.dir
 
+// A plain bundle runs on whatever bun the machine has. One of another minor
+// than it was built on is refused by name rather than failing somewhere inside;
+// THOD_ANY_BUN=1 runs it anyway.
+declare const THOD_BUILT_BUN: string
+const builtMinor = THOD_BUILT_BUN.split('.').slice(0, 2).join('.')
+if (!compiled && !Bun.version.startsWith(builtMinor + '.') && process.env.THOD_ANY_BUN !== '1') {
+  console.error(`thod was built and tested on bun ${THOD_BUILT_BUN}; this is bun ${Bun.version}. Install bun ${builtMinor}.x, or set THOD_ANY_BUN=1 to try anyway.`)
+  process.exit(1)
+}
+
+// thod.env beside the app holds what a deploy's environment would: SMTP, a
+// Chrome somewhere unusual (FJS_CHROME), a port. The real environment wins.
+const envFile = join(drive, 'thod.env')
+if (existsSync(envFile)) for (const line of readFileSync(envFile, 'utf8').split('\n')) {
+  const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/)
+  if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^(["'])(.*)\1$/, '$2')
+}
+
 // A worker is a fresh global, so it starts on worker-boot (bundled beside this
 // file), which fills __thodBundled there and then loads the file the app asked for.
 const BunWorker = globalThis.Worker
@@ -383,15 +460,30 @@ if (!process.env.FJS_CHROME && existsSync(bundledChrome)) process.env.FJS_CHROME
 const port = Number(process.env.PORT ?? 8100)
 process.env.PORT = String(port)
 process.env.FRONTIER_APP_URL ??= `http://localhost:${port}`
+const url = `http://localhost:${port}/`
+const openBrowser = async () => {
+  console.log(`thod: ${url}`)
+  try { await Bun.spawn(['xdg-open', url], { stdout: 'ignore', stderr: 'ignore' }).exited } catch { /* no desktop: the line above is the way in */ }
+}
+
+// `thod open` is what the launcher icon runs. A second click finds the server
+// already up and only opens the browser.
+if (process.argv[2] === 'open' && await fetch(url + 'api/health').then(r => r.ok, () => false)) {
+  await openBrowser()
+  process.exit(0)
+}
 
 // One origin for the screens and the API, as the SPA expects (it calls /api and
 // /ws on its own origin). A built file answers as itself; any other page GET
 // that is not the API gets index.html, so a refresh on /admin/items lands.
+// It listens on this machine only (THOD_HOST to widen it): on a desktop,
+// 0.0.0.0 is every machine on the network.
 const web = join(appDir, '..', 'web')
 const API = /^\/(api|ws)(\/|$)/
 const serve = Bun.serve
 Bun.serve = ((opts: Parameters<typeof Bun.serve>[0] & { fetch: (req: Request, server: unknown) => Response | Promise<Response> }) => serve({
   ...opts,
+  hostname: process.env.THOD_HOST ?? '127.0.0.1',
   async fetch(req, server) {
     const path = decodeURIComponent(new URL(req.url, 'http://localhost').pathname)
     if ((req.method === 'GET' || req.method === 'HEAD') && !API.test(path)) {
@@ -415,8 +507,7 @@ if (process.argv[2] === 'create-owner') {
 
 await import(join(appDir, 'api/index.ts'))
 
-// `thod open` is what the launcher icon runs: the server, then a browser on it.
-if (process.argv[2] === 'open') Bun.spawn(['xdg-open', `http://localhost:${port}/`], { stdout: 'ignore', stderr: 'ignore' })
+if (process.argv[2] === 'open') void openBrowser()
 ```
 
 ### `make-drive.ts`
@@ -488,11 +579,14 @@ writeFileSync(join(import.meta.dir, 'runtime.js'),
   `const m = globalThis.__thodBundled['@frontierjs/mesa/runtime']\nexport const { ${Object.keys(runtime).filter(k => k !== 'default').join(', ')} } = m\n`)
 
 const entries = ['launcher.ts', 'worker-boot.ts', 'runtime.js'].map(f => join(import.meta.dir, f))
-const define = ['--define', 'process.env.NODE_ENV="production"']
+const define = ['--define', 'process.env.NODE_ENV="production"', '--define', `THOD_BUILT_BUN="${Bun.version}"`]
 const build = Bun.spawnSync(plain
   ? ['bun', 'build', '--target=bun', '--minify', ...define, ...entries, '--outdir', out]
   : ['bun', 'build', '--compile', '--target=bun-linux-x64', ...define, ...entries, '--outfile', join(out, 'thod')], { stdout: 'inherit', stderr: 'inherit' })
-if (plain) writeFileSync(join(out, 'thod'), '#!/bin/sh\nexec bun "$(dirname "$(readlink -f "$0")")/launcher.js" "$@"\n', { mode: 0o755 })
+if (plain) {
+  cpSync(join(import.meta.dir, 'thod.sh'), join(out, 'thod'))
+  writeFileSync(join(out, 'BUN_VERSION'), Bun.version + '\n')
+}
 process.exit(build.exitCode ?? 1)
 ```
 
@@ -516,6 +610,236 @@ ID=$(curl -s localhost:8199/api/reports -H "$H" -H "$J" -d '{"name":"Parts","gro
 curl -s localhost:8199/api/reports/$ID -H "$H" -H "$J" -H 'x-service-method: run' -d '{}' | say "custom report (worker)"
 curl -s -o "$D/../smoke.pdf" -w '%{http_code} %{content_type}' localhost:8199/api/reports/trial-balance/pdf -H "$H" | say "report pdf"
 kill $PID; wait $PID 2>/dev/null
+```
+
+### `thod.sh` — the drive's `thod` in the plain kind
+
+```sh
+#!/bin/sh
+# thod — runs the app on this machine's bun. A desktop entry starts without
+# ~/.bashrc, so bun's own install folder is looked in as well as PATH.
+HERE=$(dirname "$(readlink -f "$0")")
+case "$1" in
+  stop) pkill -f "$HERE/launcher.js" && echo "thod stopped" || echo "thod was not running"; exit 0 ;;
+  help|-h|--help) echo "usage: thod [open | stop | create-owner <email> <password> [name]]   (no argument: run the server)"; exit 0 ;;
+esac
+BUN=$(command -v bun || { [ -x "$HOME/.bun/bin/bun" ] && echo "$HOME/.bun/bin/bun"; })
+if [ -z "$BUN" ]; then echo "thod needs bun: curl -fsSL https://bun.sh/install | bash" >&2; exit 1; fi
+exec "$BUN" "$HERE/launcher.js" "$@"
+```
+
+### `make-installer.sh`
+
+```sh
+#!/bin/sh
+# The installable zip: the plain kind (no bun, no Chrome inside) with install.sh.
+# Usage: sh make-installer.sh <project> <out.zip>
+set -eu
+HERE=$(dirname "$(readlink -f "$0")")
+PROJECT=$(readlink -f "$1"); OUT=$(readlink -f "$(dirname "$2")")/$(basename "$2")
+STAGE=$(mktemp -d); trap 'rm -rf "$STAGE"' EXIT
+(cd "$PROJECT" && bun run build:web >/dev/null)
+(cd "$HERE" && bun make-drive.ts "$PROJECT" "$STAGE/thod/payload" --plain >/dev/null)
+cp "$HERE/installer/install.sh" "$HERE/installer/README.txt" "$STAGE/thod/"
+cp "$HERE/installer/uninstall.sh" "$STAGE/thod/payload/"
+chmod +x "$STAGE/thod/install.sh" "$STAGE/thod/payload/uninstall.sh" "$STAGE/thod/payload/thod"
+rm -f "$OUT"; (cd "$STAGE" && zip -qr9 "$OUT" thod)
+ls -l "$OUT" | awk '{printf "%s  %.1f MB\n", $9, $5/1048576}'
+```
+
+### `installer/install.sh`
+
+```sh
+#!/bin/sh
+# Install thod for this user: no sudo, nothing outside ~/.local.
+#   sh install.sh          install, or upgrade keeping the data
+# Needs bun and Chrome or Chromium already on the machine; refuses by name if not.
+# Unattended: THOD_OWNER_EMAIL and THOD_OWNER_PASSWORD make the owner account.
+set -eu
+SRC=$(dirname "$(readlink -f "$0")")/payload
+DEST=${THOD_INSTALL_DIR:-$HOME/.local/share/thod}
+BIN=$HOME/.local/bin
+APPS=$HOME/.local/share/applications
+say() { printf '%s\n' "$*"; }
+die() { printf 'thod: %s\n' "$*" >&2; exit 1; }
+
+[ "$(uname -s)" = Linux ] || die "this build is for Linux"
+[ -d "$SRC" ] || die "no payload/ beside install.sh; unzip the whole folder first"
+
+# bun: on PATH, or where bun's installer puts it.
+BUN=$(command -v bun || { [ -x "$HOME/.bun/bin/bun" ] && echo "$HOME/.bun/bin/bun"; } || true)
+[ -n "$BUN" ] || die "bun is not installed. Install it with:
+    curl -fsSL https://bun.sh/install | bash
+then run this again."
+WANT=$(cat "$SRC/BUN_VERSION")
+HAVE=$("$BUN" --version)
+case "$HAVE" in "${WANT%.*}".*) ;; *) die "this build was tested on bun $WANT and this machine has $HAVE. Install bun ${WANT%.*}.x:
+    curl -fsSL https://bun.sh/install | bash -s bun-v$WANT" ;; esac
+
+# Chrome prints the PDFs; the app refuses to start without one. The same names
+# the printer looks for, in the same order, unless FJS_CHROME names one.
+CHROME=${FJS_CHROME:-}
+if [ -z "$CHROME" ]; then
+  for c in google-chrome google-chrome-stable chromium chromium-browser; do
+    if command -v "$c" >/dev/null 2>&1; then CHROME=$c; break; fi
+  done
+fi
+[ -n "$CHROME" ] || die "no Chrome or Chromium on this machine; thod prints its documents with it. Install one:
+    Google Chrome: https://www.google.com/chrome/  (the .deb, then: sudo apt install ./google-chrome-stable_current_amd64.deb)
+    or Chromium:   sudo snap install chromium
+then run this again. One somewhere else: FJS_CHROME=/path/to/chrome sh install.sh"
+
+# An upgrade: stop the running copy, keep the data and settings, replace the rest.
+UPGRADE=no
+if [ -d "$DEST" ]; then
+  UPGRADE=yes
+  "$DEST/thod" stop >/dev/null 2>&1 || true
+fi
+NEW="$DEST.new.$$"
+mkdir -p "$(dirname "$DEST")"
+rm -rf "$NEW"; cp -r "$SRC" "$NEW"
+if [ "$UPGRADE" = yes ]; then
+  for f in "$DEST"/app/db/*.db "$DEST"/app/db/*.db-wal "$DEST"/app/db/*.db-shm "$DEST"/app/db/encryption.key; do
+    [ -e "$f" ] && mv "$f" "$NEW/app/db/"
+  done
+  [ -d "$DEST/app/storage" ] && mv "$DEST/app/storage" "$NEW/app/storage"
+  [ -f "$DEST/thod.env" ] && mv "$DEST/thod.env" "$NEW/thod.env"
+  rm -rf "$DEST"
+fi
+mv "$NEW" "$DEST"
+case "$CHROME" in */*) grep -q '^FJS_CHROME=' "$DEST/thod.env" 2>/dev/null || echo "FJS_CHROME=$CHROME" >> "$DEST/thod.env" ;; esac
+
+mkdir -p "$BIN" "$APPS"
+ln -sf "$DEST/thod" "$BIN/thod"
+cat > "$APPS/thod.desktop" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=thod
+Comment=Orders, inventory and documents
+Exec="$DEST/thod" open
+Icon=$DEST/web/icon.svg
+Terminal=false
+Categories=Office;
+DESKTOP
+command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPS" >/dev/null 2>&1 || true
+
+# The one account. Sign-up is closed, so a first install makes it here.
+if [ "$UPGRADE" = no ]; then
+  EMAIL=${THOD_OWNER_EMAIL:-}; PASSWORD=${THOD_OWNER_PASSWORD:-}
+  if [ -z "$EMAIL" ] && [ -t 0 ]; then
+    say "Create the owner account."
+    printf 'Email: '; read -r EMAIL
+    printf 'Password: '; stty -echo; read -r PASSWORD; stty echo; printf '\n'
+  fi
+  if [ -n "$EMAIL" ] && [ -n "$PASSWORD" ]; then
+    "$DEST/thod" create-owner "$EMAIL" "$PASSWORD" || die "the owner account was not created; run: thod create-owner <email> <password>"
+  else
+    say "No owner account yet. Make one with: thod create-owner <email> <password>"
+  fi
+fi
+
+say ""
+say "thod is installed in $DEST ($([ "$UPGRADE" = yes ] && echo "upgraded, data kept" || echo "new"))."
+say "Open it from the applications menu, or run: thod open"
+case ":$PATH:" in *":$BIN:"*) ;; *) say "($BIN is not on PATH yet; it is after you next log in, or run $DEST/thod open)" ;; esac
+say "Back up $DEST/app/db (the databases and encryption.key, together) and $DEST/app/storage."
+```
+
+### `installer/uninstall.sh` — copied into `payload/`
+
+```sh
+#!/bin/sh
+# Remove thod for this user. The data stays unless --purge is given.
+set -eu
+DEST=$(dirname "$(readlink -f "$0")")
+"$DEST/thod" stop >/dev/null 2>&1 || true
+rm -f "$HOME/.local/share/applications/thod.desktop"
+[ "$(readlink -f "$HOME/.local/bin/thod" 2>/dev/null)" = "$DEST/thod" ] && rm -f "$HOME/.local/bin/thod"
+if [ "${1:-}" = --purge ]; then
+  rm -rf "$DEST"; echo "thod and its data are removed."
+else
+  find "$DEST" -mindepth 1 -maxdepth 1 ! -name app ! -name thod.env -exec rm -rf {} +
+  find "$DEST/app" -mindepth 1 -maxdepth 1 ! -name db ! -name storage -exec rm -rf {} +
+  find "$DEST/app/db" -mindepth 1 -maxdepth 1 ! -name '*.db' ! -name '*.db-wal' ! -name '*.db-shm' ! -name encryption.key -exec rm -rf {} +
+  echo "thod is removed; its data is kept in $DEST (sh uninstall.sh --purge to delete it too)."
+fi
+```
+
+### `installer/README.txt`
+
+```text
+thod — install on Linux (Ubuntu 20.04 or later, x86-64)
+
+Needs, already on the machine:
+  bun 1.4      curl -fsSL https://bun.sh/install | bash
+  Chrome or Chromium, to print documents (the app will not start without one)
+
+Install, or upgrade keeping your data:
+  sh install.sh
+
+Then open "thod" from the applications menu, or run: thod open
+It runs at http://localhost:8100 on this machine only.
+
+  thod stop                 stop the server
+  ~/.local/share/thod/thod.env   settings (PORT=, SMTP, FJS_CHROME=); restart to apply
+  sh ~/.local/share/thod/uninstall.sh [--purge]
+
+Back up ~/.local/share/thod/app/db and app/storage together: the
+databases are unreadable without the encryption.key beside them.
+```
+
+### `verify-installer.sh`
+
+```sh
+#!/bin/sh
+# Install the zip on a clean ubuntu:24.04 as a normal user and run
+# installer-test.sh's steps: refused with no bun, bun from its own installer
+# (off PATH), refused with no Chrome, Google Chrome's .deb, install, every
+# feature, upgrade keeping data, uninstall, reinstall, purge.
+# Usage: sh deploy/portable/verify-installer.sh dist/thod-linux.zip
+set -eu
+HERE=$(dirname "$(readlink -f "$0")")
+# Docker as a snap cannot see /tmp, so the mount is staged under ~/.cache.
+M=$HOME/.cache/thod-verify-installer; rm -rf "$M"; mkdir -p "$M"; trap 'rm -rf "$M"' EXIT
+cp "$1" "$M/thod-linux.zip"; cp "$HERE/installer-test.sh" "$M/"
+docker run --rm -v "$M:/media/z:ro" ubuntu:24.04 bash -c '
+apt-get -qq update >/dev/null && apt-get -qq install -y curl unzip ca-certificates procps >/dev/null 2>&1
+useradd -m -s /bin/bash pat
+r() { echo "===== step $1"; su pat -c "bash /media/z/installer-test.sh $1" 2>&1; }
+r 1; r 2
+echo "===== root: installing Google Chrome"
+curl -fsSL -o /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && apt-get -qq install -y /tmp/chrome.deb >/dev/null 2>&1; google-chrome --version
+r 3; r 4; r 5'
+```
+
+### `installer-test.sh` — thod's own endpoints, like `smoke.sh`
+
+```bash
+# Steps run inside the container by verify-installer.sh, as the user pat.
+# Usage (in the container): bash installer-test.sh <1-5>
+step=$1; P='correct horse battery staple'
+api() { curl -s "localhost:8100$1" -H "authorization: Bearer $T" -H content-type:application/json "${@:2}"; }
+login() { T=$(curl -s localhost:8100/api/auth/login -H content-type:application/json -d "{\"email\":\"o@t.test\",\"password\":\"$P\"}" | sed -E 's/.*"token":"([^"]+)".*/\1/'); echo "login: token ${#T} chars"; }
+up() { (~/.local/bin/thod open > ~/run.log 2>&1 &); for i in $(seq 60); do curl -s -o /dev/null localhost:8100/api/health && break; sleep 0.25; done; curl -s -o /dev/null -w "health %{http_code}\n" localhost:8100/api/health; }
+case $step in
+1) cd ~ && unzip -q /media/z/thod-linux.zip && sh thod/install.sh; echo "exit $?" ;;
+2) curl -fsSL https://bun.sh/install | bash -s bun-v1.4.4 >/dev/null 2>&1; ls ~/.bun/bin/bun; command -v bun || echo "bun not on PATH"; sh ~/thod/install.sh; echo "exit $?" ;;
+3) THOD_OWNER_EMAIL=o@t.test THOD_OWNER_PASSWORD="$P" sh ~/thod/install.sh; echo "exit $?"
+   ls ~/.local/share/applications/; grep Exec ~/.local/share/applications/thod.desktop
+   up; grep -o '"mode":"[a-z]*"' ~/run.log | head -1
+   awk 'NR>1 && $4=="0A" && $2 ~ /:1FA4$/ {print "listening on", $2}' /proc/net/tcp
+   curl -s -H accept:text/html localhost:8100/admin/items | grep -o '<title>[^<]*'
+   login; api /api/reports -H x-service-method:run -d '{"report":"trial-balance"}' | cut -c1-50; echo
+   api /api/reports -d '{"name":"Kept","group":"S","sql":"select partNumber from item","params":[],"columns":[]}' | cut -c1-40; echo
+   api /api/reports/1 -H x-service-method:run -d '{}' | cut -c1-50; echo
+   api /api/reports/trial-balance/pdf -o ~/t.pdf -w "pdf %{http_code} %{size_download} bytes "; head -c 8 ~/t.pdf; echo
+   s=$(date +%s%N); ~/.local/bin/thod open; echo "second open exit $? in $(( ($(date +%s%N)-s)/1000000 )) ms" ;;
+4) sh ~/thod/install.sh; echo "exit $?"; sleep 0.5; curl -s -o /dev/null -w "after upgrade, old server: %{http_code}\n" localhost:8100/api/health
+   up; login; api /api/reports/1 -H x-service-method:run -d '{}' | cut -c1-50; echo ;;
+5) ~/.local/bin/thod stop; sh ~/.local/share/thod/uninstall.sh; echo "apps: $(ls ~/.local/share/applications/) bin: $(ls ~/.local/bin/)"; echo "kept: $(ls ~/.local/share/thod) / $(ls ~/.local/share/thod/app) / $(ls ~/.local/share/thod/app/db)"
+   sh ~/thod/install.sh | tail -3; up; login; ~/.local/bin/thod stop
+   sh ~/.local/share/thod/uninstall.sh --purge; echo "share now: $(ls ~/.local/share/)" ;;
+esac
 ```
 
 ## See also

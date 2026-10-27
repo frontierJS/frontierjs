@@ -39,7 +39,7 @@
   </div>
 </header>
 
-<main id="main" class="site-main">
+<main id="main" class="site-main" tabindex="-1">
   <slot />
 </main>
 

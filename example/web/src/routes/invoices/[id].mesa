@@ -70,7 +70,7 @@ title: Invoice
 
   function boot() {
     error = null
-    watch().catch(e => { error = e.message })
+    watch().then(() => { if (!invoice) error = 'Invoice not found' }, e => { error = e.message })
   }
   boot()
   $: page.params.id, () => boot()
@@ -145,6 +145,7 @@ title: Invoice
 ]} />
 
 {#if error && !invoice}
+  <SectionHeader title={'Invoice #' + page.params.id} level={1} />
   <Alert tone="danger" id="id-error">{error}</Alert>
 {:else if !invoice}
   <div class="stack">

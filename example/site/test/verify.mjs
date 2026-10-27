@@ -257,7 +257,7 @@ const HARNESS = `
 // the layout wrote the landmarks; one grader reads both.
 const a11y = []
 const audit = async (path) => {
-  for (const issue of await evaluate(PAGE_AUDIT)) a11y.push(`${path}: ${issue}`)
+  for (const issue of await evaluate(`return ${PAGE_AUDIT}`)) a11y.push(`${path}: ${issue}`)
 }
 
 const victim = (await sys.productVariant.findMany({ where: { productId: sample.id }, limit: 1 }))[0]
