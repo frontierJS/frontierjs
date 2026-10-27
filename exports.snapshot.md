@@ -203,6 +203,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./storage (types)` | `src/storage/index.d.ts` | yes |
 | exports | `./replicate (import)` | `src/tools/replicate.js` | yes |
 | exports | `./replicate (types)` | `src/tools/replicate.d.ts` | yes |
+| exports | `./repl (import)` | `src/tools/repl.js` | yes |
+| exports | `./repl (types)` | `src/tools/repl.d.ts` | yes |
 | exports | `./transform (import)` | `src/transform/framework.js` | yes |
 | exports | `./transform (types)` | `src/transform/framework.d.ts` | yes |
 | exports | `./external-ref (import)` | `src/plugins/external-ref.js` | yes |

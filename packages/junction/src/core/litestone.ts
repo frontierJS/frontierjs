@@ -3960,7 +3960,8 @@ async function resolveAppClaims(ctx: ServiceContext, db: unknown, principal: Pri
   return claims
 }
 
-const WRITE_VERBS = new Set([
+/** The client verbs that write — what `read: true` refuses, and what a production `sys` asks `--force` for. */
+export const WRITE_VERBS = new Set([
   'create', 'createMany', 'update', 'updateMany', 'upsert', 'upsertMany',
   'remove', 'removeMany', 'delete', 'deleteMany', 'restore', 'transition',
 ])
@@ -4614,10 +4615,12 @@ export function installLogContext(db: unknown): (() => void) | null {
       // this line knows an operator exists — the trail would file every
       // impersonated write under the person it was done to, which is the
       // failure the feature exists to prevent.
-      operatorId:    meta?.user?.support?.operatorId ?? meta?.attestedBy?.id ?? null,
+      // An attester and a console's operator name themselves the same way;
+      // `runAs` holds them apart, since one needs a person and the other none.
+      operatorId:    meta?.user?.support?.operatorId ?? meta?.attestedBy?.id ?? meta?.operator?.id ?? null,
       episodeId:     meta?.user?.support?.episodeId  ?? null,
-      // Only an attester names its kind; an operator is `support` to litestone.
-      operatorType:  meta?.user?.support ? null : (meta?.attestedBy?.type ?? null),
+      // An attester and a console name their kind; support mode is `support` to litestone.
+      operatorType:  meta?.user?.support ? null : (meta?.attestedBy?.type ?? meta?.operator?.type ?? null),
       // A bearer. `ctx.user` is null for one — that is what keeps the gate
       // at STRANGER(0) — so the principal carries no id and the trail would
       // record the write as a caller with no name. The GRANT is the actor

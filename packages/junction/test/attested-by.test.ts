@@ -140,3 +140,31 @@ describe('a write a device attested files the device as the actor', () => {
     } finally { h.cleanup() }
   })
 })
+
+// `FJS-D1534`: the same pair for an operator at a prompt, where the work runs as
+// the app's own principal and nobody is vouched for.
+describe('an operator behind the app\'s own principal is the actor', () => {
+  const OPERATOR = { id: 'jordan', type: 'repl' }
+
+  test('a write under runAs(null, { operator }) files the operator; the same write without it files no operator', async () => {
+    const h = await harness()
+    try {
+      await h.app.runAs(null, { operator: OPERATOR }, () => h.app.service('orders').create({ id: 1, status: 'in' }))
+      await h.app.runAs(null, () => h.app.service('orders').create({ id: 2, status: 'in' }))
+      const [byHand, own] = await h.rows()
+      expect(byHand.actorId).toBe('jordan')
+      expect(byHand.actorType).toBe('repl')
+      expect(own.actorId).not.toBe('jordan')
+      expect(own.actorType).not.toBe('repl')
+    } finally { h.cleanup() }
+  })
+
+  test('it stands behind the app alone, and needs a named operator', async () => {
+    const h = await harness()
+    try {
+      await expect(h.app.runAs('emp-1', { operator: OPERATOR }, () => 1)).rejects.toThrow(/operator/)
+      await expect(h.app.runAs(null, { operator: { id: '', type: 'repl' } }, () => 1)).rejects.toThrow(/operator/)
+      await expect(h.app.runAs(null, { operator: { id: 'j', type: '' } }, () => 1)).rejects.toThrow(/operator/)
+    } finally { h.cleanup() }
+  })
+})

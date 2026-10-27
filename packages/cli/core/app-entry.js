@@ -26,7 +26,7 @@
 // is not the same trust level as a string somebody typed.
 
 import { existsSync, readFileSync } from 'node:fs'
-import { resolve, dirname }         from 'node:path'
+import { resolve, dirname, relative } from 'node:path'
 import { spawnSync }                from 'node:child_process'
 
 import { resolveGenerator, expectedSnapshots } from './snapshots.js'
@@ -275,17 +275,26 @@ export function readAppAtlas(root, { run: runner = spawnSync } = {}) {
 // FROM WHERE is tested without bun or a boot.
 
 /**
- * `{ cwd, argv }` for `bun <junction's bin> call …`, or `{ error }`.
+ * `{ cwd, argv }` for `bun <junction's bin> call …`, or `{ error }`. No method
+ * word is `app:repl`'s prompt, and `code` its `-e` line.
  *
  * `app` resolves against `cwd` and runs from the app `root`, where a scaffolded
  * app's own scripts run; without it the header's flags run from the header's
  * directory, as the `snapshots` phase reruns them. Junction is resolved from
  * that directory the way the app's own imports resolve it, never with `bunx`,
  * which on a machine with no install fetches a stranger's `junction`.
+ *
+ * `inContainer` is `deploy:repl`'s: the argv runs inside the app's image, from
+ * its WORKDIR, which is the app root. `--app` is a path in the container and
+ * is passed as typed; the header's is made relative to the root. Junction is
+ * the image's own install, by scoped name and `--no-install`: npm's `junction`
+ * is somebody else's package, and the container holds the production env.
  */
-export function callArgv(root, { app, exportName, words = [], as, tenant, cwd = process.cwd() }) {
+export function callArgv(root, { app, exportName, words = [], as, tenant, code, force, inContainer = false, cwd = process.cwd() }) {
   let base
-  if (app) {
+  if (app && inContainer) {
+    base = { dir: root, args: ['--app', app, ...(exportName ? ['--export', exportName] : [])] }
+  } else if (app) {
     const module = resolve(cwd, app)
     if (!existsSync(module)) return { error: `no module at ${module}` }
     base = { dir: root, args: ['--app', module, ...(exportName ? ['--export', exportName] : [])] }
@@ -298,16 +307,23 @@ export function callArgv(root, { app, exportName, words = [], as, tenant, cwd = 
     base = entry
   }
 
-  const junction = resolveGenerator('junction', base.dir)
-  if (!junction) return { error: `@frontierjs/junction is not installed where ${base.dir} can reach it` }
+  if (inContainer) {
+    const at = base.args.indexOf('--app')
+    if (at >= 0) base = { dir: root, args: base.args.with(at + 1, relative(root, resolve(base.dir, base.args[at + 1]))) }
+  }
+
+  const junction = inContainer ? ['bunx', '--no-install', '@frontierjs/junction'] : [resolveGenerator('junction', base.dir)]
+  if (!junction[0]) return { error: `@frontierjs/junction is not installed where ${base.dir} can reach it` }
 
   return {
     cwd:  base.dir,
     argv: [
-      junction, 'call', ...base.args,
+      ...junction, 'call', ...base.args,
       ...words.filter(w => w !== undefined && w !== '').map(String),
       ...(as     ? ['--as', as]         : []),
       ...(tenant ? ['--tenant', tenant] : []),
+      ...(code   ? ['--eval', code]     : []),
+      ...(force  ? ['--force']          : []),
     ],
   }
 }

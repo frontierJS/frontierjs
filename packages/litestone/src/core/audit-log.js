@@ -198,10 +198,14 @@ export function buildLogEntry({ operation, model, field, transition, records, be
   // A throw here must not take the write with it. The audit row is a side
   // effect of a write that already succeeded, and a provider that fails should
   // cost the provenance columns and nothing else.
+  //
+  // Told whether the write runs as the system, because a console's operator is
+  // the actor of its `sys` writes only — its `db` writes are the standing's
+  // (`FJS-D1534`) — and the provider cannot see which client wrote.
   /** @type {LogRequestContext | null} */
   let from = null
   const provide = ctx._logContext?.fn
-  if (provide) { try { from = provide() ?? null } catch { from = null } }
+  if (provide) { try { from = provide({ isSystem: !!ctx.isSystem }) ?? null } catch { from = null } }
 
   const entry = {
     operation,

@@ -552,6 +552,17 @@ export interface RequestMeta {
   attestedBy?:     Attester
 
   /**
+   * WHO is at the keyboard, where the work runs as the app's own principal
+   * from an operator's prompt — `junction call`'s `sys` (`FJS-D1534`). Set by
+   * `app.runAs(null, { operator })` and nothing else.
+   *
+   * Request-wide, unlike `attestedBy`: `reenterAs` keeps it, because a service
+   * the operator's `sys` write calls as bob was still the operator's doing. The
+   * audit trail reads it through `installLogContext` as the actor.
+   */
+  operator?:       { id: string; type: string }
+
+  /**
    * WHERE the request came from — `ip`, `userAgent`, `headers`.
    *
    * Request-wide for the same reason `user` is, and it propagates the same
@@ -642,6 +653,9 @@ export interface RequestSource {
 
   /** WHO vouched for `user`. Dropped by `reenterAs`. */
   attestedBy?: RequestMeta['attestedBy']
+
+  /** WHO is at the keyboard. Kept by `reenterAs`. */
+  operator?: RequestMeta['operator']
 
   /** WHICH TENANT, for work that has no request to resolve one from. */
   tenant?: RequestMeta['tenant']
@@ -737,6 +751,7 @@ export function enterRequest<T>(src: RequestSource, fn: () => T): T {
     user:           src.user,
     caller:         src.caller,
     attestedBy:     src.attestedBy,
+    operator:       src.operator,
     tenant:         src.tenant,
     ...(madeAt ? { madeAt } : {}),
   }, fn)

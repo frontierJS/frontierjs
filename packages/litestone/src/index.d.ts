@@ -384,7 +384,7 @@ export interface CreateClientOptions {
    * built, not read once — the answer changes per request. Junction installs
    * one through `db.$logContext(fn)`; an app without it may pass its own.
    */
-  logContext?: () => LogRequestContext | null | undefined
+  logContext?: (write: { isSystem: boolean }) => LogRequestContext | null | undefined
   /** ':memory:' forces all SQLite databases to in-memory, jsonl/trail to tmpdir */
   databases?:  ':memory:' | Record<string, { path?: string }>
   /** Per-database access control */

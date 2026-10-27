@@ -79,6 +79,8 @@ $ fli call orders.find '{"status":"paid","$limit":2}' --as alex@shop.test --tena
 { "object": "orders", "data": [ … ], "total": 2, "limit": 2, "offset": 0, "hasMore": false, … }
 ```
 
+Kept open as a prompt over the same booted app, it is `fli app:repl`.
+
 It replaces the loop of starting a dev server, logging in by curl, copying a
 token, sleeping and killing the server — and `sqlite3` against the file, which
 answers with every gate off.

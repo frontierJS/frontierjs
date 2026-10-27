@@ -31,6 +31,11 @@ title: Server
   // and how it is reached. The rest of the row is the machine's own report or
   // the provider's, and a box for it would be overwritten by the next
   // heartbeat or Sync. `sshKeyId` is out because nothing reads it.
+  // `ipAddress` is offered only where no vendor reports it: Sync overwrites it
+  // on a provider machine, and on Basecamp's own box or an imported one nothing
+  // else ever writes it, so without the box a Domain there is never pushed (FJS-3516).
+  $: editable = ['name', 'role', 'region', 'sshUser', 'sshPort', 'labels',
+                 ...(server?.providerServerId ? [] : ['ipAddress'])]
 
   function saved() {
     editing = false
@@ -361,7 +366,7 @@ title: Server
 
   <Drawer open={editing} title={`Edit ${server.name}`} onclose={() => editing = false}>
     {#if editing}
-      <Server record={server} only={['name', 'role', 'region', 'sshUser', 'sshPort', 'labels']} oncancel={() => editing = false} ondone={saved} submitId="server-edit-save" />
+      <Server record={server} only={editable} oncancel={() => editing = false} ondone={saved} submitId="server-edit-save" />
     {/if}
   </Drawer>
 

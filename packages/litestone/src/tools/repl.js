@@ -20,15 +20,38 @@
 // `sys` is reachable on purpose. Refusing it means people run a one-off script
 // instead, which is the same power with none of this in front of it.
 //
+// The loop is junction's too: `junction call` with no method word opens it over
+// the booted app, with names of its own in `binds` (`FJS-D1532`). Junction may
+// import this and not the reverse (Invariant 1), which is why it lives here.
+//
 // Never imported by application code.
 
 import { createInterface }        from 'node:readline'
 import { appendFileSync, readFileSync, existsSync } from 'node:fs'
-import { homedir }                from 'node:os'
+import { homedir, userInfo }      from 'node:os'
 import { join }                   from 'node:path'
 
 const HISTORY  = join(homedir(), '.litestone_repl_history')
 const MAX_KEPT = 500
+
+const NAMES = {
+  db:  'the standing this session booted at',
+  sys: 'asSystem() — bypasses every gate, policy and field lock',
+}
+
+// ─── the operator ─────────────────────────────────────────────────────────────
+//
+// Who is at the keyboard, for the trail's `actorId` on a `sys` write — never the
+// standing, because `--as customer@x` is whose view you read, and a system write
+// filed under the customer names the wrong person (`FJS-D1534`). `$USER` before
+// the passwd entry: in a container the account is `root` for everyone, and
+// `fli deploy:repl` hands the box's ssh login in as `USER`.
+
+export function replOperator() {
+  let id = process.env.USER || process.env.LOGNAME || ''
+  if (!id) { try { id = userInfo().username } catch {} }
+  return { id: id || 'unknown', type: 'repl' }
+}
 
 // ─── the standing ─────────────────────────────────────────────────────────────
 //
@@ -75,20 +98,31 @@ export function replCommands(mod, file = 'db/repl.js') {
 
 // ─── startRepl ────────────────────────────────────────────────────────────────
 //
-//   startRepl({ db, sys, standing, accessors, commands, tenant, hints, out })  → Promise<void>
+//   startRepl({ binds, names, standing, prompt, accessors, commands, tenant, hints, history, commandsFrom, out })  → Promise<void>
+//
+// `binds` is every name an expression can read — `{ db, sys }` here — and
+// `.help` lists exactly those, each with its line from `names` or this file's
+// own. `standing` may be a function, read before every prompt, for a session
+// whose standing a statement can change; `prompt`, read the same way, is the
+// line's shorter form of it, and `.standing` still prints the whole.
+// `commandsFrom` is the file `.help` says adds commands, `null` for none.
 //
 // Resolves when the session ends. `out` is injectable so a test can read what a
 // session printed without a terminal.
 
-export function startRepl({ db, sys, standing, accessors = [], commands = {}, tenant = null, hints = [], out = console.log } = {}) {
-  const prompt = `${standing} > `
+export function startRepl({
+  binds, names = {}, standing, prompt = standing, accessors = [], commands = {}, tenant = null,
+  hints = [], history = HISTORY, commandsFrom = 'db/repl.js', out = console.log,
+} = {}) {
+  const standingNow = typeof standing === 'function' ? standing : () => standing
+  const promptNow   = typeof prompt === 'function' ? prompt : () => prompt
 
   const rl = createInterface({
     input:     process.stdin,
     output:    process.stdout,
-    prompt,
-    completer: completerFor(accessors, Object.keys(commands)),
-    history:   loadHistory(),
+    prompt:    `${promptNow()} > `,
+    completer: completerFor(accessors, Object.keys(commands), Object.keys(binds)),
+    history:   loadHistory(history),
     terminal:  process.stdin.isTTY,
   })
 
@@ -115,7 +149,7 @@ export function startRepl({ db, sys, standing, accessors = [], commands = {}, te
     // interface, because whether one is exposed, and whether resuming a closed
     // one throws at all, is a runtime's choice and has changed under us.
     let closed = false
-    const showPrompt = () => { if (!closed) rl.prompt() }
+    const showPrompt = () => { if (!closed) { rl.setPrompt(`${promptNow()} > `); rl.prompt() } }
 
     showPrompt()
 
@@ -135,10 +169,10 @@ export function startRepl({ db, sys, standing, accessors = [], commands = {}, te
 
       if (!line)                 return showPrompt()
       if (line === '.exit')      return rl.close()
-      if (line === '.help')      { for (const l of helpLines(accessors, commands)) out(l); return showPrompt() }
-      if (line === '.standing')  { out(`  ${standing}`); return showPrompt() }
+      if (line === '.help')      { for (const l of helpLines(binds, names, accessors, commands, commandsFrom)) out(l); return showPrompt() }
+      if (line === '.standing')  { out(`  ${standingNow()}`); return showPrompt() }
 
-      remember(line)
+      remember(history, line)
 
       // No JavaScript statement starts with a dot, so a dotted line that names
       // no command is a typo — evaluating it would print a SyntaxError about
@@ -150,7 +184,7 @@ export function startRepl({ db, sys, standing, accessors = [], commands = {}, te
           return showPrompt()
         }
         try {
-          await commands[name].run({ db, sys, args, out, tenant })
+          await commands[name].run({ ...binds, args, out, tenant })
         } catch (err) {
           out(`  ${err.name}: ${err.message}`)
         }
@@ -158,7 +192,7 @@ export function startRepl({ db, sys, standing, accessors = [], commands = {}, te
       }
 
       try {
-        out(format(await evaluate(line, db, sys)))
+        out(format(await evaluate(line, binds)))
       } catch (err) {
         // The message alone. A stack from inside the client names our files and
         // says nothing about the expression that asked, which is what a person
@@ -172,7 +206,7 @@ export function startRepl({ db, sys, standing, accessors = [], commands = {}, te
 
 // ─── evalOnce ─────────────────────────────────────────────────────────────────
 //
-//   evalOnce({ code, db, sys, commands, tenant, out, err })  → Promise<0 | 1>
+//   evalOnce({ code, binds, commands, tenant, commandsFrom, out, err })  → Promise<0 | 1>
 //
 // `fli db:repl -e`: one line, the same evaluator and the same dot commands as the
 // prompt, then out. Without it an agent reaches for `sqlite3` against the app's
@@ -182,7 +216,7 @@ export function startRepl({ db, sys, standing, accessors = [], commands = {}, te
 // `err` with the exit code — a caller running this once has no next prompt to
 // read an error off, and an exit of 0 after a refusal reads as the answer.
 
-export async function evalOnce({ code, db, sys, commands = {}, tenant = null, out = console.log, err = console.error } = {}) {
+export async function evalOnce({ code, binds, commands = {}, tenant = null, commandsFrom = 'db/repl.js', out = console.log, err = console.error } = {}) {
   const line = String(code ?? '').trim()
   if (!line) { err('  Nothing to evaluate.'); return 1 }
 
@@ -190,13 +224,13 @@ export async function evalOnce({ code, db, sys, commands = {}, tenant = null, ou
     if (line.startsWith('.')) {
       const [name, ...args] = line.slice(1).split(/\s+/)
       if (!Object.hasOwn(commands, name)) {
-        err(`  No command .${name}. ${Object.keys(commands).length ? `Known: ${Object.keys(commands).map(n => '.' + n).join(' ')}` : 'db/repl.js declares none.'}`)
+        err(`  No command .${name}. ${Object.keys(commands).length ? `Known: ${Object.keys(commands).map(n => '.' + n).join(' ')}` : commandsFrom ? `${commandsFrom} declares none.` : 'There are none here.'}`)
         return 1
       }
-      await commands[name].run({ db, sys, args, out, tenant })
+      await commands[name].run({ ...binds, args, out, tenant })
       return 0
     }
-    out(format(await evaluate(line, db, sys), ''))
+    out(format(await evaluate(line, binds), ''))
     return 0
   } catch (e) {
     err(`  ${e.name}: ${e.message}`)
@@ -213,11 +247,11 @@ export async function evalOnce({ code, db, sys, commands = {}, tenant = null, ou
 
 const BODY = /^(const|let|var|if|for|while|function|class|try|switch|do|return|import|throw)\b/
 
-function evaluate(code, db, sys) {
+function evaluate(code, binds) {
   const body = code.includes('\n') || code.includes(';') || BODY.test(code)
   const src  = body ? `return (async () => { ${code} })()`
                     : `return (async () => (${code}))()`
-  return new Function('db', 'sys', src)(db, sys)
+  return new Function(...Object.keys(binds), src)(...Object.values(binds))
 }
 
 // A row is the thing being looked at, so it is printed whole. `JSON.stringify`
@@ -255,10 +289,11 @@ const METHODS = [
   'remove', 'removeMany', 'delete', 'deleteMany', 'restore', 'transitions', 'due',
 ]
 
-function completerFor(accessors, commandNames = []) {
+function completerFor(accessors, commandNames = [], bindNames = []) {
   const roots = [
     ...accessors.flatMap(a => [`db.${a}.`, `sys.${a}.`]),
-    'db.', 'sys.', '.help', '.standing', '.exit',
+    ...bindNames,
+    '.help', '.standing', '.exit',
     ...commandNames.map(n => `.${n}`),
   ]
 
@@ -283,36 +318,34 @@ function completerFor(accessors, commandNames = []) {
 // Appended rather than rewritten, so two sessions open at once do not truncate
 // each other's. readline wants it newest-first.
 
-function loadHistory() {
-  if (!existsSync(HISTORY)) return []
+function loadHistory(file) {
+  if (!existsSync(file)) return []
   try {
-    return readFileSync(HISTORY, 'utf8').split('\n').filter(Boolean).slice(-MAX_KEPT).reverse()
+    return readFileSync(file, 'utf8').split('\n').filter(Boolean).slice(-MAX_KEPT).reverse()
   } catch { return [] }
 }
 
-function remember(line) {
-  try { appendFileSync(HISTORY, `${line}\n`) } catch { /* a read-only home is not a reason to refuse a session */ }
+function remember(file, line) {
+  try { appendFileSync(file, `${line}\n`) } catch { /* a read-only home is not a reason to refuse a session */ }
 }
 
 // ─── help ─────────────────────────────────────────────────────────────────────
 
-function helpLines(accessors, commands = {}) {
+function helpLines(binds, names, accessors, commands = {}, commandsFrom = null) {
   const own   = Object.entries(commands)
   const width = Math.max(10, ...own.map(([n]) => n.length + 2))
   return [
     '',
-    '  db          the standing this session booted at',
-    '  sys         asSystem() — bypasses every gate, policy and field lock',
+    ...Object.keys(binds).map(n => `  ${n.padEnd(10)}  ${names[n] ?? NAMES[n] ?? ''}`.trimEnd()),
     '',
-    `  accessors   ${accessors.join(', ') || '(none)'}`,
-    '',
+    ...(accessors.length ? [`  accessors   ${accessors.join(', ')}`, ''] : []),
     '  .standing   what this session is running as',
     '  .help       this',
     '  .exit       leave (Ctrl-D also works)',
     '',
     ...(own.length
       ? [...own.map(([n, c]) => `  ${`.${n}`.padEnd(width)}  ${c.help ?? ''}`.trimEnd()), '']
-      : ['  db/repl.js beside the schema adds commands of your own', '']),
+      : commandsFrom ? [`  ${commandsFrom} beside the schema adds commands of your own`, ''] : []),
   ]
 }
 

@@ -55,7 +55,7 @@ const ROW_FREE_EXPRS = new WeakMap()
  *   computedFns?:   any,
  *   enc?:           any,  scopedBy?:      any,  hookRunner?: any,  _flavor?:       any,
  *   _fieldReadHoist?: any,
- *   _logContext?:   { fn?: () => any } | null,
+ *   _logContext?:   { fn?: (write: { isSystem: boolean }) => any } | null,
  *   onQuery?:       ((e: unknown) => any) | null,
  *   _queryListeners: Set<(e: unknown) => any>,
  *   result?:        unknown, args?: unknown, operation?: string,

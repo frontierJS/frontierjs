@@ -11,6 +11,10 @@
 
 import { describe, it, expect } from 'bun:test'
 import { PassThrough }          from 'node:stream'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync }            from 'node:child_process'
+import { tmpdir }               from 'node:os'
+import { join, resolve }        from 'node:path'
 import { startRepl, evalOnce, describeStanding, replCommands } from '../src/tools/repl.js'
 
 /** Drive a session: feed lines, collect what it printed. */
@@ -28,8 +32,10 @@ async function session(lines: string[], binds: any = {}) {
 
   try {
     const done = startRepl({
-      db:        binds.db  ?? {},
-      sys:       binds.sys ?? {},
+      binds:     binds.binds ?? { db: binds.db ?? {}, sys: binds.sys ?? {} },
+      names:     binds.names,
+      history:   binds.history ?? join(tmpdir(), `litestone-repl-test-${process.pid}`),
+      commandsFrom: binds.commandsFrom,
       standing:  binds.standing ?? 'anonymous(0)',
       accessors: binds.accessors ?? ['order'],
       commands:  binds.commands ?? {},
@@ -241,7 +247,7 @@ describe('replCommands — what the file must look like', () => {
 describe('evalOnce — fli db:repl -e', () => {
   const run = async (code: string, binds: any = {}) => {
     const out: string[] = [], err: string[] = []
-    const exit = await evalOnce({ code, db: {}, sys: {}, ...binds, out: (l: string) => out.push(l), err: (l: string) => err.push(l) })
+    const exit = await evalOnce({ code, binds: { db: {}, sys: {}, ...binds.binds }, ...binds, out: (l: string) => out.push(l), err: (l: string) => err.push(l) })
     return { exit, out: out.join('\n'), err: err.join('\n') }
   }
 
@@ -272,4 +278,75 @@ describe('evalOnce — fli db:repl -e', () => {
     expect(r.exit).toBe(1)
     expect(r.err).toContain('TypeError: bad')
   })
+})
+
+// Junction's app prompt opens this loop over names of its own (`FJS-D1532`).
+// What it reads off a session must be what that caller bound — a `.help`
+// naming `db` in a session that has no `db` sends the operator after a name
+// that throws.
+describe('a session over names of its own — junction call', () => {
+  it('evaluates against the binds and nothing else', async () => {
+    const said = await session(['app.name', 'typeof db'], { binds: { app: { name: 'shop' } } })
+    expect(said).toContain('"shop"')
+    expect(said).toContain('"undefined"')
+  })
+
+  it('.help lists exactly the binds, each with the caller\'s line', async () => {
+    const said = await session(['.help'], { binds: { app: {} }, names: { app: 'the booted app' }, commandsFrom: null })
+    expect(said).toContain('app         the booted app')
+    expect(said).not.toContain('asSystem()')
+    expect(said).not.toContain('db/repl.js')
+  })
+
+  it('reads a standing function before every prompt, so .standing follows it', async () => {
+    let who = 'alice(4)'
+    const said = await session(['.standing', 'switchTo()', '.standing'], {
+      binds: { switchTo: () => { who = 'ops(5)' } }, standing: () => who,
+    })
+    expect(said).toContain('alice(4)')
+    expect(said).toContain('ops(5)')
+  })
+
+  it('writes history to the file it was handed', async () => {
+    const file = join(tmpdir(), `litestone-repl-history-${process.pid}`)
+    rmSync(file, { force: true })
+    await session(['1 + 1'], { history: file })
+    expect(readFileSync(file, 'utf8')).toBe('1 + 1\n')
+    rmSync(file, { force: true })
+  })
+})
+
+// `FJS-D1534`, through the real command: a `sys` write is filed under whoever is
+// at the keyboard, a `db` write under the standing. PAIRED — a swap that fired
+// on every write from the console passes the first row and fails the second,
+// and one that read `--as` as the operator fails the third.
+describe('litestone repl files a sys write under the operator', () => {
+  const CLI = resolve(import.meta.dir, '..', 'src', 'tools', 'cli.js')
+  const SCHEMA = `
+    database main  { path "./main.db" }
+    database audit { path "./audit/" driver trail }
+    model User  { id Int @id  email String @unique  @@auth  @@gate(0)  @@trail(audit) }
+    model Thing { id Int @id  name String  @@gate(0)  @@trail(audit) }
+  `
+  let dir = ''
+  const repl = (code: string, ...args: string[]) => spawnSync('bun', [CLI, 'repl', '--schema', 'schema.lite', '--eval', code, ...args],
+    { cwd: dir, encoding: 'utf8', env: { ...process.env, USER: 'op-test' } })
+  const last = () => readFileSync(join(dir, 'audit', 'AuditTrail.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l)).at(-1)
+
+  it('sys files the operator, typed repl; db at --as files the standing; sys under --as still the operator', () => {
+    dir = mkdtempSync(join(tmpdir(), 'litestone-repl-actor-'))
+    try {
+      writeFileSync(join(dir, 'schema.lite'), SCHEMA)
+      expect(spawnSync('bun', [CLI, 'migrate', 'dev', '--schema', 'schema.lite'], { cwd: dir }).status).toBe(0)
+
+      expect(repl(`sys.user.create({ data: { email: 'a@x.test' } })`).status).toBe(0)
+      expect(last()).toMatchObject({ model: 'User', actorId: 'op-test', actorType: 'repl' })
+
+      expect(repl(`db.thing.create({ data: { name: 'mine' } })`, '--as', 'a@x.test').status).toBe(0)
+      expect(last()).toMatchObject({ model: 'Thing', actorId: 1, actorType: 'user' })
+
+      expect(repl(`sys.thing.create({ data: { name: 'by hand' } })`, '--as', 'a@x.test').status).toBe(0)
+      expect(last()).toMatchObject({ model: 'Thing', actorId: 'op-test', actorType: 'repl' })
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  }, 30_000)
 })

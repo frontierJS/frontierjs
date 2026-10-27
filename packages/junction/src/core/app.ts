@@ -7,7 +7,7 @@ import { HttpTransport }            from '../transport/http.ts'
 import type { WsRouteOptions }       from '../transport/http.ts'
 import { resolveTrustProxy }        from '../transport/forwarded.ts'
 import { bridge, errorResponse, readTransportFlags, refuseBadDirectives } from '../transport/bridge.ts'
-import { freezeUser, enterRequest, requestMeta, currentCall, enterCall, callDb, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type Attester } from './context.ts'
+import { freezeUser, enterRequest, requestMeta, currentCall, enterCall, callDb, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type Attester, type RequestMeta } from './context.ts'
 import { hookContext } from '@frontierjs/toolbelt/hooks'
 import { DEV_ENV, formatDevLine } from '@frontierjs/toolbelt/devline'
 import { ServiceRegistry, callService } from './service.ts'
@@ -271,6 +271,15 @@ export interface RunAsOptions {
    * be vouched for.
    */
   attestedBy?: Attester
+
+  /**
+   * WHO is at the keyboard, where an operator's prompt runs work as the app's
+   * own principal — `junction call`'s `sys`. The trail files it as `actorId`
+   * and `type` as `actorType`, so a console write reads apart from the app's
+   * own (`FJS-D1534`). Only beside `runAs(null, …)`: with a person in scope the
+   * person is the actor, and an attester already names who stood behind them.
+   */
+  operator?: RequestMeta['operator']
 }
 
 /**
@@ -1502,6 +1511,18 @@ export function createApp(opts: AppOptions = {}): App {
         )
       }
 
+      const operator = runOpts.operator
+      if (operator) {
+        if (userId !== null) throw new Error(
+          `[Junction] app.runAs('${userId}', { operator }) — an operator stands behind the app's own principal only. ` +
+          'With a person in scope the person is the actor; run the work as runAs(null, { operator }).'
+        )
+        if (!operator.id || !operator.type) throw new Error(
+          '[Junction] app.runAs — operator needs an `id` and a `type`: the trail files the id as the actor ' +
+          'and the type as its kind, and a blank of either is a row nobody can read.'
+        )
+      }
+
       let user: import('../auth/types.ts').SessionContext | null = null
 
       if (userId !== null) {
@@ -1567,7 +1588,7 @@ export function createApp(opts: AppOptions = {}): App {
         // An absent tenant INHERITS the one in scope, on the same rule `auth`
         // follows: saying nothing means say nothing, and `{ tenant: null }`
         // means this work belongs to no tenant deliberately.
-        { origin: 'internal', user: frozen, tenant, attestedBy: attester },
+        { origin: 'internal', user: frozen, tenant, attestedBy: attester, operator },
         () => Promise.resolve(fn(frozen)),
       )
     },

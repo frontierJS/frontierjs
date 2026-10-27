@@ -117,9 +117,12 @@ export const pipeCommand = (host, transport, command) =>
  * the terminal, so the script cannot travel on it and the command has to be an
  * argument. Single-quoted rather than double, so the local shell expands nothing
  * — a command the operator typed reaches the target as they typed it.
+ *
+ * `pty: false` is the same command for a one-liner: a remote pty merges stderr
+ * into stdout, where `-e` puts the answer alone.
  */
-export const ttyCommand = (host, transport, command) =>
-  transport === 'local' ? command : `ssh -t ${SSH_MUX} ${host} ${shQuote(command)}`
+export const ttyCommand = (host, transport, command, { pty = true } = {}) =>
+  transport === 'local' ? command : `ssh${pty ? ' -t' : ''} ${SSH_MUX} ${host} ${shQuote(command)}`
 
 /**
  * Move an image from one machine to another, by content.
@@ -299,8 +302,8 @@ export function createMachine({ host, exec, transport = null, path = null, verbo
     },
 
     /** Run an interactive program there, with the operator's terminal attached. */
-    tty: (command, opts) =>
-      exec({ command: ttyCommand(host, kind, command), ...opts }),
+    tty: (command, { pty, ...opts } = {}) =>
+      exec({ command: ttyCommand(host, kind, command, { pty }), ...opts }),
 
     /** Run a named program there, with `input` on its stdin. Answers stdout. */
     pipe: (command, input) =>

@@ -36,6 +36,9 @@ if (!target) {
   console.log('  notifications --app <m>  write the notifications snapshot — what this app can tell somebody (--check in CI)')
   console.log('  atlas --app <m>   print the whole app model as JSON — nothing committed, no --check')
   console.log('  call --app <m> <service>.<method> [id] [json] --as <who>  call one method as somebody, print the answer as JSON')
+  console.log('  call --app <m> --as <who>  the same, as a prompt over the booted app (a terminal only)')
+  console.log("  call --app <m> -e '<expr>' --as <who>  the prompt run once: the answer as JSON, exit 1 on a throw")
+  console.log('  call ... --force   lets a sys write run under NODE_ENV=production')
   process.exit(cmd ? 1 : 0)
 }
 

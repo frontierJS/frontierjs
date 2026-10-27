@@ -110,6 +110,11 @@ never asks which tenant — name one with `--tenant`.
 `sys` is reachable on purpose. Refusing it means people run a one-off script
 instead, which is the same power with none of this in front of it.
 
+**A `sys` write is filed under you.** The audit trail names `$USER` as
+`actorId`, `actorType: 'repl'`, so a console write reads apart from the app's
+own. Never the `--as` standing, which is whose view you read; a `db` write is
+the standing's (`FJS-D1534`).
+
 ## Three standings, and two of them are not the same thing
 
 | | What it does |
@@ -195,9 +200,6 @@ without one, and refuses under `NODE_ENV=production` unless given `--force`.
 ## What it is not, yet
 
 `db` and nothing above it. One call to a **service** — hooks, the result
-envelope, custom methods — is `fli call`; a console over them is
-`@frontierjs/testing`'s `as(user).service(name)` handed to this prompt, and it
-needs the app booted rather than the schema read.
-`asSystem()` is also not attributed to the operator here; that is the same
-question `IDEAS/compliance-from-the-seed.md` asks about support mode, and it
-should be answered once for both.
+envelope, custom methods — is `fli call`; a prompt over them is `fli
+app:repl`, which boots the app rather than reading the schema, and on the box
+`fli deploy:repl`.

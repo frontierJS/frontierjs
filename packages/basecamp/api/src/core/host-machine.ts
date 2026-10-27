@@ -52,6 +52,20 @@ export async function issueEnrollmentFor(client: any, serverId: string, actor: s
   }
 }
 
+const IPV4    = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/
+const PRIVATE = /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/
+
+/**
+ * `ip` when it is a public IPv4 address, else undefined. A private one is a
+ * tunnel or a LAN, which no ingress record can send the public to.
+ */
+export function publicIp(ip: unknown): string | undefined {
+  if (typeof ip !== 'string') return undefined
+  const m = IPV4.exec(ip)
+  if (!m || m.slice(1).some(o => Number(o) > 255)) return undefined
+  return PRIVATE.test(ip) ? undefined : ip
+}
+
 /** The row the hub points at, or null. `sys` is a system client. */
 export async function hostServer(sys: any) {
   const hub = await sys.hubConfig.findFirst({ where: { id: HUB }, select: { hostServerId: true } })
@@ -70,12 +84,19 @@ export async function findHost(client: any) {
  * A row that has heartbeated is answered `enrolled` and NOT re-issued: its
  * Outpost holds a secret of its own, and a fresh token beside it is a live
  * credential for a machine that needs none.
+ *
+ * `ipAddress` is where the caller reached the box, and only `fli deploy` knows
+ * it. A self box has no vendor to report one, and a row with none is a machine
+ * no ingress record can name, so a Domain on an App it serves is never pushed
+ * (`FJS-3515`). It fills an empty address and never replaces one.
  */
-export async function useHost(client: any, { workspaceId, actor }: { workspaceId?: string; actor: string }) {
+export async function useHost(client: any, { workspaceId, actor, ipAddress }: { workspaceId?: string; actor: string; ipAddress?: string }) {
   const sys = client.asSystem()
   if (await hostServer(sys)) {
-    const server = await findHost(client)
+    let server = await findHost(client)
     if (!server) throw new Conflict('This Basecamp\'s box is a machine in another workspace; enroll it from there')
+    if (ipAddress && !server.ipAddress)
+      server = await client.server.update({ where: { id: server.id }, data: { ipAddress } })
     if (server.lastHeartbeatAt) return { server, enrolled: true as const }
     return { server, enrolled: false as const, ...(await issueEnrollmentFor(client, server.id, actor)) }
   }
@@ -88,7 +109,7 @@ export async function useHost(client: any, { workspaceId, actor }: { workspaceId
   const server = await client.server.create({ data: {
     ...(workspaceId ? { workspaceId } : {}),
     name: 'Basecamp host', slug: taken ? `${HOST_SLUG}-${randomUUID().slice(0, 6)}` : HOST_SLUG,
-    role: 'general', region: 'self',
+    role: 'general', region: 'self', ...(ipAddress ? { ipAddress } : {}),
   } })
   await sys.hubConfig.update({ where: { id: HUB }, data: { hostServerId: server.id } })
   await client.serverEvent.create({ data: {

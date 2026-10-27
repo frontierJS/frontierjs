@@ -96,6 +96,10 @@
       "import": "./src/tools/replicate.js",
       "types": "./src/tools/replicate.d.ts"
     },
+    "./repl": {
+      "import": "./src/tools/repl.js",
+      "types": "./src/tools/repl.d.ts"
+    },
     "./transform": {
       "import": "./src/transform/framework.js",
       "types": "./src/transform/framework.d.ts"

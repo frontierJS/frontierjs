@@ -39,7 +39,7 @@ import { snapshotVariables, releaseEnv } from '../src/core/variables.ts'
 import { BACKUP_SCHEDULE, appBackupSchedule, appDrillSchedule, fireBackup, restoreSchedules } from '../src/services/jobs/job-schedule.ts'
 import { mintDownload } from '../src/jobs/app-backup-run.job.ts'
 import { replicasFor, syncReplicas, hostReplicaFor } from '../src/jobs/replicate-sync.job.ts'
-import { HOST_SLUG }              from '../src/core/host-machine.ts'
+import { HOST_SLUG, useHost, publicIp } from '../src/core/host-machine.ts'
 import { startS3Sink }            from '../src/providers/storage/s3-sink.ts'
 
 // The certificate a machine's command port answers with, which enrollment pins
@@ -4821,6 +4821,31 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       expect((await env.as(owner).service('servers').call('host', null, {}))?.id).toBe(used.server.id)
       await sys.hubConfig.update({ where: { id: 'hub' }, data: { hostServerId: null } })
       await sys.user.update({ where: { id: owner.id }, data: { isSystemAdmin: false } })
+    })
+
+    test('the host row takes the address fli reached it at when it has none, and keeps one it has (FJS-3515)', async () => {
+      const sys = env.system as any
+      await hubRow()
+      await sys.hubConfig.update({ where: { id: 'hub' }, data: { hostServerId: null } })
+
+      const made = await useHost(sys, { workspaceId: ws.id, actor: 'test', ipAddress: '174.138.116.80' })
+      expect(made.server.ipAddress).toBe('174.138.116.80')
+
+      // A box enrolled before the address was passed is backfilled, heartbeat or not.
+      await sys.server.update({ where: { id: made.server.id }, data: { ipAddress: null, lastHeartbeatAt: new Date().toISOString() } })
+      const back = await useHost(sys, { workspaceId: ws.id, actor: 'test', ipAddress: '174.138.116.80' })
+      expect(back.enrolled).toBe(true)
+      expect(back.server.ipAddress).toBe('174.138.116.80')
+
+      await useHost(sys, { workspaceId: ws.id, actor: 'test', ipAddress: '203.0.113.9' })
+      expect((await sys.server.findFirst({ where: { id: made.server.id } })).ipAddress).toBe('174.138.116.80')
+      await sys.hubConfig.update({ where: { id: 'hub' }, data: { hostServerId: null } })
+    })
+
+    test('publicIp keeps a public IPv4 address and drops a private, malformed or absent one', () => {
+      expect(publicIp('174.138.116.80')).toBe('174.138.116.80')
+      for (const ip of ['10.0.0.4', '192.168.1.2', '172.20.0.1', '100.100.1.1', '127.0.0.1', '169.254.1.1', '1.2.3.256', '::1', '', undefined, 7])
+        expect(publicIp(ip)).toBeUndefined()
     })
 
     test('another workspace\'s destination is refused, and a removed one drops off the list', async () => {

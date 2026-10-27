@@ -1362,7 +1362,7 @@ async function cmdRepl(cfg) {
   const parseResult = loadSchema(cfg.schema)
   const { isSoftDelete } = await import('../core/ddl.js')
   const { createClient } = await import('../core/client.js')
-  const { startRepl, evalOnce, describeStanding, replCommands } = await import('./repl.js')
+  const { startRepl, evalOnce, describeStanding, replCommands, replOperator } = await import('./repl.js')
 
   // Loaded before any database opens: a broken commands file is a refusal
   // naming the file, not a session that starts and lacks the command.
@@ -1445,6 +1445,11 @@ async function cmdRepl(cfg) {
 
   const sys = base.asSystem()
 
+  // A `sys` write is filed under whoever is at the keyboard, not as the app
+  // acting alone; a `db` write stays the standing's (`FJS-D1534`).
+  const operator = replOperator()
+  base.$logContext(({ isSystem } = {}) => isSystem ? { operatorId: operator.id, operatorType: operator.type } : null)
+
   // Read through the system client. You are an operator looking somebody up —
   // finding the row must not depend on the standing you are about to adopt.
   const found = asWho ? await findPrincipal(sys, base.$schema, asWho) : { row: null, model: null }
@@ -1510,7 +1515,7 @@ async function cmdRepl(cfg) {
   if (once) {
     console.error(`  ${dim('Standing:')} ${cyan(standing)} ${dim(levelLabel(graded))} ${dim('· graded by')} ${gradedBy}`)
     for (const h of hints) console.error(h.trimEnd())
-    const exit = await evalOnce({ code, db, sys, commands, tenant: tenantId })
+    const exit = await evalOnce({ code, binds: { db, sys }, commands, tenant: tenantId })
     try { tenants ? tenants.close() : base.$close() } catch {}
     process.exit(exit)
   }
@@ -1530,7 +1535,7 @@ async function cmdRepl(cfg) {
     hints.push(`  ${green('✓')}  ${rel(commandsFile)}: ${names.map(n => cyan('.' + n)).join(' ')}`)
   hints.push('')
 
-  await startRepl({ db, sys, standing, accessors, commands, tenant: tenantId, hints })
+  await startRepl({ binds: { db, sys }, standing, accessors, commands, tenant: tenantId, hints })
 
   try { tenants ? tenants.close() : base.$close() } catch {}
 }

@@ -8287,6 +8287,70 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d1542"></a>2026-10-27 · `FJS-D1542` — Q6 — After 24 hours — Gone, with a "keep it" link that is `frontier-cloud.md`'s conversion.
+
+Asked in [`IDEAS/demo-box.md`](IDEAS/demo-box.md) § Open questions. **A** was picked over **B** (extendable once).
+
+The paper's recommendation, taken as written: the clock is the honest part of the pitch, and the keep link is the product.
+
+### <a id="fjs-d1541"></a>2026-10-27 · `FJS-D1541` — Q5 — The sign-up gate — GitHub sign-in (Basecamp's OIDC path, `verify:sso`).
+
+Asked in [`IDEAS/demo-box.md`](IDEAS/demo-box.md) § Open questions. **A** was picked over **B** (email verification), **C** (invite code from the site).
+
+The paper's recommendation, taken as written: one account per demo, and the audience is developers.
+
+### <a id="fjs-d1540"></a>2026-10-27 · `FJS-D1540` — Q4 — Who builds — The visitor is a developer with `fli` and the laptop builds; the box only runs, and halves.
+
+Asked in [`IDEAS/demo-box.md`](IDEAS/demo-box.md) § Open questions. **A** was picked over **B** (the box builds git sources, so a browser-only visitor can deploy (`prompt-to-app.md` is the far end of this)).
+
+The paper's recommendation, taken as written: it is what ships today, and B's seat count follows from Phase 4's numbers; B reopens as its own question then.
+
+### <a id="fjs-d1539"></a>2026-10-27 · `FJS-D1539` — Q3 — The subdomain — Caddy wildcard to the one SPA; the shell reads the first host label and opens that Workspace (`/w/<slug>`), so the Data realm is untouched.
+
+Asked in [`IDEAS/demo-box.md`](IDEAS/demo-box.md) § Open questions. **A** was picked over **B** (junction's `subdomain` tenant resolution, making Host the claim), **C** (a path, `demo.<domain>/<name>`).
+
+The paper's recommendation, taken as written: cosmetic, one wildcard certificate, and B changes how every Basecamp resolves a tenant for a demo's sake.
+
+### <a id="fjs-d1538"></a>2026-10-27 · `FJS-D1538` — Q2 — The terminal — `fli basecamp:demo <name>`, a real command whose job the page streams.
+
+Asked in [`IDEAS/demo-box.md`](IDEAS/demo-box.md) § Open questions. **A** was picked over **B** (a sign-up form, no prompt shown), **C** (the animation of `basecamp:create` as pictured, with a box bought by nobody).
+
+The paper's recommendation, taken as written: C is the one thing a developer tests first; B drops the idea's charm for nothing A does not keep.
+
+### <a id="fjs-d1537"></a>2026-10-27 · `FJS-D1537` — Q1 — The per-visitor noun — `WorkspaceType` gains `demo`; `expiresAt DateTime?` with a check that it is set exactly when the type is `demo`.
+
+Asked in [`IDEAS/demo-box.md`](IDEAS/demo-box.md) § Open questions. **A** was picked over **B** (a `Demo` model pointing at a Workspace).
+
+The paper's recommendation, taken as written: expiry precedent (`ApiKey`, `Invitation`) puts the date on the row it governs, and `demo` is a type the hook already reads.
+
+### <a id="fjs-d1532"></a>2026-10-26 · `FJS-D1532` — What the app prompt is called and what it spawns — `fli app:repl`, which spawns `junction call --app <m>` with no `<service>.<method>` word; that opens the prompt. No new junction subcommand.
+
+Asked through the question tool (`IDEAS/app-console.md` Q1). The owner first agreed to `app:console` in session; `decision-rules` found `FJS-D1389` already gave "console" to `fli gui`'s screens, so the noun was refused and the sibling `db:repl` named it. **B** was picked as recommended, over **A** (a new subcommand: `junction repl` is the HTTP client, so a third name or a rename). `app:call` and `app:repl` are the one-shot and the prompt over one tool, and `callArgv` already builds both argvs. The prompt opens only on a TTY or with `-e`; otherwise the refusal `call.ts` gives a missing method word stands, so a script that drops the word fails rather than hangs. A word without a dot is still refused. A `call-argv` test row is owed. The loop is litestone's, exported as `@frontierjs/litestone/repl` with the names it binds passed in, so the promise-chain and closed-interface fixes in `repl.js` hold for both prompts (built 1.1, `decision-rules` passed it).
+
+### <a id="fjs-d1533"></a>2026-10-26 · `FJS-D1533` — Whether the app prompt opens in production — It opens, `--as` graded by the app's own resolver; a `sys` WRITE under `NODE_ENV=production` asks for `--force`.
+
+Agreed in session (`IDEAS/app-console.md` Q2). **A** over **B** (refuse `--as` in production as `FJS-D1426` does for devtools): that refusal guards a network surface behind a key, and `docker exec` over ssh is the operator's own shell; refusing it leaves a one-off script with nothing in front. The `--force` on the production `sys` write matches `db:repl`'s `resetPasswords` and `deploy:retire`.
+
+### <a id="fjs-d1534"></a>2026-10-26 · `FJS-D1534` — Who the audit trail names on a `sys` write from a prompt — Whoever is at the keyboard (`$USER`, else the passwd name), typed `repl`; never the `--as` standing. One ruling for the app prompt and `db:repl`'s `sys`.
+
+Agreed in session (`IDEAS/app-console.md` Q3), answering what `db:repl.md` § *What it is not, yet* left open on purpose. **A** over **B** (`system`, as `actorTypeOf` in `audit-log.js` answers today whenever `ctx.isSystem`). Precedent: support mode files the operator as `actorId` and the subject apart (§ Actor). What must stay true: a console write and the app's own are told apart in the trail; a drive asserting `actorId` on the row is owed. The operator rides the provenance seam support mode uses (`from.operatorId` / `operatorType`, `audit-log.js`), and `actorTypeOf` is unchanged; `operatorType` defaults to `'support'`, so the build passes its own type, named when Phase 1 lands.
+
+**Amended and built 2026-10-26** (`IDEAS/app-console.md` 2.3). The owner chose the machine user over `--as`: `--as customer@x` is whose view the operator reads, and a system write filed under the customer names the wrong person. `decision-rules` settled the build:
+- **Junction carries it as `operator: { id, type }`** on `RequestMeta`, set only by `app.runAs(null, { operator })` — refused beside a userId, and blank either half refused. `installLogContext` reads it after `attestedBy`. Not `attestedBy` with a null user: that one means *who vouched for this person*, and nobody is vouched for. `reenterAs` keeps it, since a service the `sys` write calls as bob was still the operator's doing.
+- **The type is `'repl'`**, after `app:repl` and `db:repl`. `'console'` is `fli gui`'s screens (`FJS-D1389`).
+- **Litestone tells the provider whether the write is a system one**: `buildLogEntry` calls it with `{ isSystem }`, and `db:repl`'s closure answers the operator only then. Derived from `ctx.isSystem` rather than tracked by a proxy around `sys`, which a `$transaction` callback would have slipped.
+- **`deploy:repl` runs `docker exec -e USER`**, so the box's ssh login reaches a container where everyone is `root`.
+
+The subject on a `sys` write is the principal it ran as — the app's — not the `--as` standing. Proved by rows in `junction/test/call-tool.test.ts`, `junction/test/attested-by.test.ts` and `litestone/test/repl.test.ts`, each paired with a write that must not file the operator.
+
+### <a id="fjs-d1535"></a>2026-10-26 · `FJS-D1535` — Whether the app prompt boots a second app or attaches to the serving one — A second boot, as `junction call` does: `_startOnce()`, no port, no work phase.
+
+Agreed in session (`IDEAS/app-console.md` Q4). **A** over **B** (attach, Phoenix's `--remsh`: a wire protocol the app would grow). An announcement from the prompt reaches no socket of the serving process; an ops prompt does not need `:live`. Known gap: such a write is invisible to open screens until they refetch; the prompt prints one line saying so after a write. Proved on yuma the same day: `junction call` booted Basecamp in its container against the production database and exited clean.
+
+### <a id="fjs-d1536"></a>2026-10-26 · `FJS-D1536` — Where the app prompt's gate comes from — The booted app; the prompt takes no `--gate`.
+
+Agreed in session (`IDEAS/app-console.md` Q5). `db:repl` takes the flag only because it reads the schema and not the app. Phase 0.1 on yuma showed why it should not travel: the first run passed the example's `api/gate.ts`, and Basecamp's resolver is `api/src/core/gate.ts#basecampGateLevel`. A wrong path grades approximately, which `db:repl.md` calls worse than no console.
+
 ### <a id="fjs-d1528"></a>2026-10-26 · `FJS-D1528` — `conduit-zapier` — Built, Tier B, in the connectors workspace: the owner's override of `IDEAS/conduit-connectors.md`'s *Zapier is not a connector* row, on slack's incoming-webhook shape and not a host-pinned one.
 
 Asked in session when the owner asked for a `conduit-zapier`. `decision-rules` ran first against **A** as proposed (one target with `https://hooks.zapier.com` pinned as its address, the pasted URL's path riding as `path`, a `parseHookUrl` restating Zapier's path grammar), **B** (keep the row: outbound is `plugins/webhooks`, inbound is `inbound-integrations.md` half B) and **C** (an app-owned `providers/zapier.ts` in the maidtech prototype first, the Stripe shape). It recommended **A reshaped** — slack's `webhook` target: `address_from: 'request'`, `auth: none`, `destinations` off in production, any https public URL carried — and that was built. As recommended. Confidence 2.

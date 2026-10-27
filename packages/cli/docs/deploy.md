@@ -78,6 +78,8 @@ export default {
 
 `fli deploy` (the full pipeline), `fli deploy:doctor`, `fli deploy:local`,
 `fli deploy:setup`, `fli deploy:status`, `fli deploy:logs`, `fli deploy:run`,
+`fli deploy:repl` (`fli app:repl` in the serving container — the app booted
+as `--as`, `-e` for one line),
 `fli deploy:rollback`, `fli deploy:revert`, `fli deploy:pause`,
 `fli deploy:unpause`, `fli deploy:unlock`, `fli deploy:retire` (the app off
 its server — routes, Outpost, container, images and the deploy root with its

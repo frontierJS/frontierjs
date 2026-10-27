@@ -126,9 +126,17 @@ const enrollOutpost = (machine, { appId, deployConf, path, host, log }) => {
     try { return JSON.parse(String(out ?? '').trim().split('\n').pop()) } catch { return null }
   }
 
+  // The address this ssh session reached the box at is the third field sshd
+  // sets, and the only one a self box has: no vendor reports it, and a Server
+  // row with none is a machine no ingress record can name (`FJS-3515`).
+  const enroll = [
+    `IP=$(printf '%s' "$SSH_CONNECTION" | cut -d' ' -f3)`,
+    `docker exec ${apiContainer(appId, deployConf)} bun api/src/core/enroll-host.ts "{\\"ip\\":\\"$IP\\"}"`,
+  ].join('\n')
+
   let answer
   try {
-    answer = lastJson(machine.capture(`docker exec ${apiContainer(appId, deployConf)} bun api/src/core/enroll-host.ts`))
+    answer = lastJson(machine.capture(enroll))
   } catch (err) {
     answer = lastJson(err.stdout) ?? { error: err.message.split('\n')[0] }
   }
