@@ -486,13 +486,16 @@ if [ -z "$OUTPOST_SECRET" ]; then
 fi
 
 # publicUrl is null for a row Basecamp holds no address for — its own box,
-# enrolled by fli deploy or the Use this Basecamp server button. This box
-# answers on its default route's source address, and a Basecamp running on it
-# reaches it there.
+# enrolled by fli deploy or the Use this Basecamp server button. docker0's
+# address comes first: a Basecamp container reaches it without leaving the box.
+# The default route's source is the fallback only, because under a DigitalOcean
+# reserved IP it is the anchor address, and a policy rule sends its replies out
+# eth0 instead of back to the container (FJS-3513).
 if [ -z "$OUTPOST_PUBLIC_URL" ]; then
-  SELF_IP=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit } }' || true)
+  SELF_IP=$(ip -4 -o addr show docker0 2>/dev/null | awk '{ split($4, a, "/"); print a[1]; exit }' || true)
+  [ -n "$SELF_IP" ] || SELF_IP=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit } }' || true)
   if [ -z "$SELF_IP" ]; then
-    echo "enrollment named no address for this machine, and it has no default route to take one from" >&2
+    echo "enrollment named no address for this machine: no docker0, and no default route to take one from" >&2
     exit 1
   fi
   OUTPOST_PUBLIC_URL="https://$SELF_IP:$OUTPOST_PORT"
