@@ -25,7 +25,7 @@
 
 export default {
   deploy: {
-    server: 'basecamp', // ← set this
+    server: 'yuma', // ← set this
     path: '/apps/basecamp', // deploy root on the server
     app_id: 'basecamp',
 

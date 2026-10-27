@@ -109,8 +109,12 @@ export function edgeNames(deployConf) {
   const side = (name) => {
     const conf   = deployConf?.[name] ?? {}
     const domain = conf.domain ?? null
-    if (domain !== null && !HOSTNAME.test(String(domain)))
-      throw new EdgeError(`deploy.${name}.domain is ${JSON.stringify(domain)}, which is not a hostname. It is written into a Caddy route and a shell line, so it is refused rather than quoted.`)
+    if (domain !== null && !HOSTNAME.test(String(domain))) {
+      const fix = name === 'web'
+        ? `Set it in frontier.config.js, or pass --domain <host> for this run.`
+        : `Set it in frontier.config.js, or remove the key to serve the API on the web domain.`
+      throw new EdgeError(`deploy.${name}.domain is ${JSON.stringify(domain)}, which is not a hostname. It is written into a Caddy route and a shell line, so it is refused rather than quoted. ${fix}`)
+    }
     if (conf.ssl !== undefined)
       throw new EdgeError(`deploy.${name}.ssl is set. Caddy fetches the certificate for every domain it routes, so there is nothing to point it at. Remove the key.`)
     return { domain: domain === null ? null : String(domain).toLowerCase() }
