@@ -23,7 +23,7 @@
 import { createService, Unauthorized, $ } from '@frontierjs/junction'
 import type { ServiceContext }            from '@frontierjs/junction'
 import { db }                             from '../../core/resource.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /** The Data boundary would answer a stranger with an empty list — read is
  *  open and the policy scopes it — which reads as *you have no notifications*

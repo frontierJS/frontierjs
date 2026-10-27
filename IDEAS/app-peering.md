@@ -109,7 +109,7 @@ friction it hit is listed under 0.3.
   deploy reaches people only. The glue is on the dialer: chat stays unchanged,
   so the call is graded by chat's gate like any principal's.
 - [x] 0.2 Built 2026-10-16. Basecamp: a `chat` value on `ChannelKind` and its
-  row in `domain/notify/delivery.ts` `KINDS`. It sends `POST <config.url>` with
+  row in `domain/notification/delivery.ts` `KINDS`. It sends `POST <config.url>` with
   `{ channelExternalId, message }` and a bearer read from the channel's Secret.
   Chat: a `basecamp` user linked to the Provider's bot account, holding an API
   key. Proof: a scratch probe (not kept) ran chat from a copy on its stand-in

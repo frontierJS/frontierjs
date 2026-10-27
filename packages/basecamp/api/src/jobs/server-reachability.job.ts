@@ -23,7 +23,7 @@
 import { defineJob }      from '@frontierjs/caravan'
 import { runsAsApp }      from './context.ts'
 import { gradeReachability, heartbeatGraceMs } from '../domain/host/reachability.ts'
-import { notifyPeople, workspaceMembers }        from '../domain/notify/notify.ts'
+import { notifyPeople, workspaceMembers }        from '../domain/notification/notify.ts'
 import type { App }         from '@frontierjs/junction'
 
 export interface SweepOptions {

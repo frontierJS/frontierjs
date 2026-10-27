@@ -17,7 +17,7 @@ import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/ju
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 // A /8 through /30. Deliberately shape-only: whether the range overlaps another
 // network is the provider's judgement, not ours, and guessing it here would be

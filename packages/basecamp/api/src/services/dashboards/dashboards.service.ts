@@ -31,7 +31,7 @@ import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, s
   from '../../core/resource.ts'
 import { WIDGET_KINDS, WIDGET_KIND_BY_NAME, STAT_SOURCES } from './kinds.ts'
 import { PORTAL_SERVICE_IDS } from '../portal/portal.service.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 interface WidgetInput {
   widgetId?: string

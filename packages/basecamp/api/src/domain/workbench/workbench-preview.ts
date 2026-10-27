@@ -1,4 +1,4 @@
-// src/core/preview.ts — Open: a Workbench branch made a client's preview
+// src/domain/workbench/workbench-preview.ts — Open: a Workbench branch made a client's preview
 // (IDEAS/preview-branch.md, slice 3).
 //
 // A preview is an Environment whose Release is the branch's `web/`. While
@@ -27,14 +27,14 @@ import { execFileSync, spawn }     from 'node:child_process'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir }                   from 'node:os'
 import { isAbsolute, join, normalize, relative } from 'node:path'
-import { executorOn, isExecutor } from '../providers/executor.ts'
-import { snapshotVariables }        from '../domain/release/variables.ts'
-import { db }                       from './resource.ts'
-import { routedHosts, routedPaths, routedRedirects } from '../domain/release/runtime.ts'
+import { executorOn, isExecutor } from '../../providers/executor.ts'
+import { snapshotVariables }        from '../release/variables.ts'
+import { db }                       from '../../core/resource.ts'
+import { routedHosts, routedPaths, routedRedirects } from '../release/runtime.ts'
 import { childEnv }                 from '@frontierjs/junction'
 import type { App }                 from '@frontierjs/junction'
-import { env }                      from './env.ts'
-import type { MachineAnswer }       from '../services/apps/apps.service.ts'
+import { env }                      from '../../core/env.ts'
+import type { MachineAnswer }       from '../../services/apps/apps.service.ts'
 
 export type PreviewSettings = {
   projectId: string

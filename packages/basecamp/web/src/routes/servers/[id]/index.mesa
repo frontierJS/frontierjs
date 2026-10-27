@@ -388,6 +388,17 @@ title: Server
     </article>
   {/if}
 
+  {#if !server.ipAddress && !server.providerServerId}
+    <!-- No vendor will ever report this box's address, and a Domain on an App
+         it serves is skipped by the edge sync without a word (FJS-3515). -->
+    <article class="alert warning" id="needs-address">
+      <div class="alert-content">
+        <strong>No address.</strong> A Domain on an App served here is never pushed to DNS.
+        <Button treatment="ghost" onclick={() => editing = true}>Add one</Button>
+      </div>
+    </article>
+  {/if}
+
   {#if server.outpostSecretId === null}
     <!-- A machine with no credential of its own. Provisioned machines get one
          from cloud-init, which nobody types; an imported machine has no install

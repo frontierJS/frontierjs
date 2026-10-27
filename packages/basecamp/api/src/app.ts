@@ -50,11 +50,11 @@ import { notifications }  from '@frontierjs/notifications'
 import { basecampAuditLog, basecampAuditPreImage, outpostCredential, outpostScope, workspaceOrKeys } from './core/hooks.ts'
 import { grantsFor } from './core/capabilities.ts'
 import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
-import { agentGuard, apiKeyGuard, apiKeyUsage, narrowForAgent } from './services/api-keys/scopes.ts'
+import { agentGuard, apiKeyGuard, apiKeyUsage, narrowForAgent } from './domain/api-key/scopes.ts'
 import { slugify }                        from './core/resource.ts'
 import { basecampGateLevel, roleForLevel, SYSTEM } from './core/gate.ts'
 import { basecampNodes }                  from './plugins/automations.ts'
-import { restoreSchedules }          from './services/jobs/job-schedule.ts'
+import { restoreSchedules }          from './domain/job/job-schedule.ts'
 import { pushAppsOn }                from './jobs/domain-dns.job.ts'
 import { syncReplicasOn }            from './jobs/replicate-sync.job.ts'
 import { workspaceChannelName, workspaceIdFromChannel, notificationChannelName } from './core/channels.ts'
@@ -400,7 +400,7 @@ export async function buildBasecampApp(
   // ── Orion — a workspace's automations ─────────────────────────────────
   // AFTER Caravan: a run is one job, and its handler has to be registered
   // before the queue starts. `basecamp.page` is how a flow reaches a
-  // NotificationChannel — through `domain/notify/delivery.ts`, not a copy of it.
+  // NotificationChannel — through `domain/notification/delivery.ts`, not a copy of it.
   app.configure(orion({ plugins: [basecampNodes(app)] }))
 
   // ── Mail ──────────────────────────────────────────────────────────────
@@ -419,7 +419,7 @@ export async function buildBasecampApp(
   // AFTER the mailer, because the email transport resolves `app.mail` at
   // registration and junction checks plugin order at startup rather than at the
   // first send. Where there is NO provider the transport is not declared at all
-  // and `domain/notify/notify.ts` drops `email` per recipient — a person who asked for it
+  // and `domain/notification/notify.ts` drops `email` per recipient — a person who asked for it
   // on an app that cannot mail must still get their in-app copy, and `notify()`
   // throws on an undeliverable transport before delivering any of them.
   app.configure(notifications({

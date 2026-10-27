@@ -179,7 +179,7 @@ tenant's `appId` in directly.
 that look a row up **by id with no workspace in the query**: the conduit
 resolver reading `secret:<id>` (`core/credentials.ts`), the channels service
 writing a channel's credential, and the API-key guard asking whether a key may
-act at all (`services/api-keys/scopes.ts`). All three are `asSystem()`, which is
+act at all (`domain/api-key/scopes.ts`). All three are `asSystem()`, which is
 what makes the declaration safe — and a test says so, because a policy applied to
 any of them would fail every send and refuse every key with nothing to
 distinguish it from a bad token.

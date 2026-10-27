@@ -44,10 +44,10 @@ import { resolveExecutor, executorOn, isExecutor } from '../../providers/executo
 import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, isInline } from '../../domain/release/app-source.ts'
 import { runtimeOf } from '../../domain/release/runtime.ts'
 import { mintDownload } from '../../jobs/app-backup-run.job.ts'
-import { cronProblem, syncAppBackupSchedule, syncAppDrillSchedule } from '../jobs/job-schedule.ts'
+import { cronProblem, syncAppBackupSchedule, syncAppDrillSchedule } from '../../domain/job/job-schedule.ts'
 import { syncReplicasOn, syncReplicasOf, replicaHolder, replicaOf, replicaDatabases } from '../../jobs/replicate-sync.job.ts'
 import type { App }            from '@frontierjs/junction'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 import { replicaLag } from '../../domain/host/posture.ts'
 
 const _WITH_ENV = { environment: true }

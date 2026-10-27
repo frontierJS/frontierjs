@@ -35,13 +35,13 @@ import {
 } from './targets.ts'
 import type { ReclaimFigures } from './targets.ts'
 
-import { applyDiskReport } from './disk-report.ts'
+import { applyDiskReport } from '../../domain/cleanup/disk-report.ts'
 import { DISK_READINGS, readingOf } from '../../domain/host/server-metrics.ts'
-import type { DiskReport } from './disk-report.ts'
+import type { DiskReport } from '../../domain/cleanup/disk-report.ts'
 import cleanupRun from '../../jobs/cleanup-run.job.ts'
 import { announce } from '../../core/channels.ts'
 import type { ServerEventKind } from '../../../../db/schema.d.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /** The system client, typed once — the accessors have no generated types yet. */
 const sys = (): any => $.db.asSystem()

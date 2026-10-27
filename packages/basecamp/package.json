@@ -39,6 +39,7 @@
     "verify:registers": "bun web/test/verify-registers.mjs",
     "verify:outpost": "bun api/test/verify-outpost.mjs",
     "verify:dns": "bun api/test/verify-dns.mjs",
+    "verify:advisories": "bun api/test/verify-advisories.mjs",
     "verify:mcp": "bun api/test/verify-mcp.mjs",
     "verify:cli": "bun cli/test/verify-cli.mjs",
     "verify:desktop": "bun desktop/test/verify.mjs",

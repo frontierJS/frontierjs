@@ -18,7 +18,7 @@
 
 import { defineJob }  from '@frontierjs/caravan'
 import { runsAsApp }  from './context.ts'
-import { notifyPeople, workspaceMembers } from '../domain/notify/notify.ts'
+import { notifyPeople, workspaceMembers } from '../domain/notification/notify.ts'
 
 const WEEK_MS = 7 * 24 * 60 * 60_000
 

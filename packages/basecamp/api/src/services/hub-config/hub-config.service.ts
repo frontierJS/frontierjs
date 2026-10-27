@@ -26,8 +26,8 @@ import { createService, BadRequest, Conflict, NotFound, $ } from '@frontierjs/ju
 import { requireSystemAdmin }         from '../../core/hooks.ts'
 import { db, narrowPatch, changesNothing } from '../../core/resource.ts'
 import { encryptionKeyFingerprint }   from '../../core/db.ts'
-import { keyScope } from '../api-keys/scopes.ts'
-import { cronProblem, syncBackupSchedule } from '../jobs/job-schedule.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
+import { cronProblem, syncBackupSchedule } from '../../domain/job/job-schedule.ts'
 import { replicaHolder, syncHostReplica } from '../../jobs/replicate-sync.job.ts'
 
 /** The primary key, which is a constant. `HubConfig.id` defaults to it, so this

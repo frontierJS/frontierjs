@@ -63,7 +63,7 @@ function badPath(path: unknown): string | null {
   if (path.length > 200)                        return `'${path}' is too long to be a file name`
   for (const segment of path.split('/')) {
     if (!segment || segment === '.' || segment === '..') return `'${path}' is not a path inside the app`
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment))   return `'${path}' has a segment that is not a plain file name`
+    if (!/^[A-Za-z0-9_][A-Za-z0-9._-]*$/.test(segment))  return `'${path}' has a segment that is not a plain file name`
   }
   return null
 }

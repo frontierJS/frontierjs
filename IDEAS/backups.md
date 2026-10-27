@@ -198,7 +198,7 @@ with a warning — against `conduit-s3`'s sink in `verify:outpost` and
     with a sink row, green on the B2 fixture too, and is lifted byte for byte
     into `providers/storage/s3.ts`. `HubConfig` carries
     `backupKeep{Local,Remote}{Count,Days}` (count 7, no age by default) and
-    the settings screen four fields. `jobs/backup-archives.ts` owns the
+    the settings screen four fields. `domain/backup/backup-archives.ts` owns the
     archive once it exists: `pruneBackups` runs after each success, groups
     `local` and `remote:<destination>`, and never takes the newest;
     `deleteArchive` is the one delete — retention's and `backups.remove`'s

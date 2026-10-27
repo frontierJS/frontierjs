@@ -41,7 +41,7 @@ import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor, callerOrder }  from '../../core/resource.ts'
 import type { ServerEventKind } from '../../../../db/schema.d.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 // ─── The outpost's wire contract ───────────────────────────────────────────
 // snake_case, like the heartbeat payload and unlike every other call into this

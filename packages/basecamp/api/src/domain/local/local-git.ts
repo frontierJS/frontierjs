@@ -1,6 +1,6 @@
-// src/core/local-git.ts — the git repositories under a folder on the operator's own machine.
+// src/domain/local/local-git.ts — the git repositories under a folder on the operator's own machine.
 //
-// A development affordance, the sibling of `core/local-ssh.ts`: Basecamp
+// A development affordance, the sibling of `domain/local/local-ssh.ts`: Basecamp
 // running locally lists the projects its operator already has checked out —
 // where each one is, which branch it is on, whether it has uncommitted work,
 // and the remote an App's `git` source would name.
@@ -27,7 +27,7 @@ import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, isAbsolute, join, relative } from 'node:path'
 import { childEnv } from '@frontierjs/junction'
-import { env } from './env.ts'
+import { env } from '../../core/env.ts'
 
 export type LocalRepo = {
   path:          string

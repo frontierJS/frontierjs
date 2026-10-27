@@ -4,7 +4,7 @@
 // in the workbench to be discussed, filed, framed or fixed.
 //
 // No model and nothing in the database: the records are fli's own readers over
-// the workspace this API runs in (`core/registers.ts`). Offered where the
+// the workspace this API runs in (`domain/register/registers.ts`). Offered where the
 // workbench is (LOCAL_MACHINE=1, never under NODE_ENV=production) and at
 // ADMINISTRATOR like it — `decide` writes two tracked files and `discuss` runs
 // Claude Code with every permission in that checkout.
@@ -25,7 +25,7 @@ import { branchName }              from '../../domain/workbench/workbench-branch
 import {
   loadFli, registerRoot, readAtlas, forgetAtlas, recordsFor, composePrompt, branchSlug,
   readQueue, explain, explanationOf,
-} from '../../core/registers.ts'
+} from '../../domain/register/registers.ts'
 
 const READS  = ['overview', 'record', 'queue', 'explanation']
 const WRITES = ['discuss', 'decide', 'explain']

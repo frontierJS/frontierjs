@@ -15,7 +15,7 @@
 import type { Recipient } from '@frontierjs/notifications'
 
 /** Every definition's `via`. The answer was resolved per person by
- *  `domain/notify/notify.ts` against `NotificationPreference` and stamped on the
+ *  `domain/notification/notify.ts` against `NotificationPreference` and stamped on the
  *  recipient — a `via` cannot read a row, and a preference is per PERSON, so
  *  two recipients of one send legitimately differ. */
 export const declaredTransports = (_: unknown, r: Recipient): string[] =>

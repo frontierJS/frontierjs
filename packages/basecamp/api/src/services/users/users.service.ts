@@ -22,7 +22,7 @@
 
 import { createService, NotFound, Unauthorized, $ } from '@frontierjs/junction'
 import type { ServiceContext }                       from '@frontierjs/junction'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /** `me` is the address, and the caller's own id is accepted as its second
  *  spelling. Any other id is a 404, not a 403: whether it exists is not this

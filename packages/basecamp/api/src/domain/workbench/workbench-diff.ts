@@ -6,7 +6,7 @@
 // run changed and what the tree holds are not separable from git alone. The
 // panel says so rather than claiming the lines as the run's.
 //
-// Git is called the way `core/local-git.ts` calls it — `core.fsmonitor` pinned
+// Git is called the way `domain/local/local-git.ts` calls it — `core.fsmonitor` pinned
 // off, `--no-optional-locks`, the path one argv element after `-C`. An
 // untracked file has no diff, so it is read and drawn as all added.
 //

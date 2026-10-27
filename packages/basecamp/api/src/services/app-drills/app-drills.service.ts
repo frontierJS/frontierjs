@@ -16,7 +16,7 @@ import { sessionScope, getPagination, WORKSPACE_QUERY }       from '../../core/h
 import { db, getScoped, actor, callerOrder, callerSelect }   from '../../core/resource.ts'
 import { executorOn, isExecutor }                            from '../../providers/executor.ts'
 import { drillApp }                                          from '../../jobs/app-drill-run.job.ts'
-import { keyScope }                                          from '../api-keys/scopes.ts'
+import { keyScope }                                          from '../../domain/api-key/scopes.ts'
 
 export default createService({
   name:  'appDrills',

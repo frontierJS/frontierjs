@@ -1,4 +1,4 @@
-// src/domain/notify/notify.ts — who gets told, and on which transports.
+// src/domain/notification/notify.ts — who gets told, and on which transports.
 //
 // `@frontierjs/notifications` answers *what a notification looks like* and
 // *how it is delivered*. What it cannot answer is **whether this person wants

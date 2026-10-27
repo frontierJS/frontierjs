@@ -37,7 +37,7 @@ Framer's and Webflow Editor's case, with the layout locked and a publish step.
 | `compileMd` has no Node dependency | `mesa/src/compiler-md.js` | a changed markdown route can compile in the page before anything builds (0.2 measured it) |
 | A preview per branch | `site-kit deploy --preview` (`site-hosting.md` step 5) | each draft gets its own review link, with no extra work |
 | A deploy that ships the last build | `site-kit deploy` (step 4) | Publish ships the build it checked |
-| Real git in basecamp | `api/src/core/local-git.ts`, the `git` App source | basecamp already runs git and parses its output |
+| Real git in basecamp | `api/src/domain/local/local-git.ts`, the `git` App source | basecamp already runs git and parses its output |
 | The look is six keys, each one an `@frontierjs/css` word | site-kit README (`tone`, `treatment`, `template`, `density`, `align`, `background`) | which front-matter keys are design and which are content is already a fixed list |
 
 **One gap matters.** A front-matter value (a block's `title:`, a review's

@@ -12,7 +12,7 @@
 
 import { defineJob } from '@frontierjs/caravan'
 import { outbound, outpostFor } from '../providers/outpost.ts'
-import type { DiskReport } from '../services/cleanup/disk-report.ts'
+import type { DiskReport } from '../domain/cleanup/disk-report.ts'
 import { recordServerEvent } from './outpost-run.ts'
 import { runsAsCaller } from './context.ts'
 import type { App }         from '@frontierjs/junction'

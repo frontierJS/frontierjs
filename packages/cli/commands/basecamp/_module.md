@@ -18,7 +18,7 @@ const runProvision = async (input, file = 'provision-host.ts', env = {}) => {
   const { spawnSync }  = await import('node:child_process')
   const { existsSync } = await import('node:fs')
   const { root } = provisionScript()
-  const script = root + 'api/src/core/' + file
+  const script = root + 'api/src/domain/host/' + file
   if (!existsSync(script))
     return { error: `no Basecamp checkout at ${root}: the basecamp commands run from the framework repository` }
 

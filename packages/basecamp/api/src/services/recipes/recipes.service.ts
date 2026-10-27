@@ -38,7 +38,7 @@ import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_
 import { db, ws, actor, slugify, findScoped, getScoped, removeScoped, narrowPatch, changesNothing } from '../../core/resource.ts'
 import recipeRun from '../../jobs/recipe-run.job.ts'
 import { announce } from '../../core/channels.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /** How many runs a screen is handed at once. A fleet run writes one row per
  *  machine, so a recipe on fifty servers is fifty rows from a single click. */

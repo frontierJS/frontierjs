@@ -15,7 +15,7 @@ import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, chang
   from '../../core/resource.ts'
 import { retireAppsIn }         from '../apps/apps.service.ts'
 import { syncReplicasOf }       from '../../jobs/replicate-sync.job.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 export default createService({
   name:  'projects',

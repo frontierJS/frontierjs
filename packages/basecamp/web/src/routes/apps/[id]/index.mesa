@@ -23,6 +23,7 @@ title: App
   import { session } from '../../../lib/session.js'
   import { at, ago } from '../../../lib/datetime.js'
 
+  import NavIcon from '../../../components/NavIcon.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
   import LaptopRelease from '../../../components/LaptopRelease.mesa'
   import VariablesEditor from '../../../components/VariablesEditor.mesa'
@@ -694,7 +695,9 @@ title: App
         {#each app.domains as d}
           <Card>
             <div class="section-header">
-              <h3 class="h4"><code>{d.hostname}</code></h3>
+              <h3 class="h4"><code>{d.hostname}</code>
+                <a href={`https://${d.hostname}`} target="_blank" rel="noopener"
+                   aria-label={`Open ${d.hostname} in a new tab`}><NavIcon name="external" /></a></h3>
               <span class="cluster">
                 {#if d.isPrimary}<Badge tone="success">primary</Badge>{/if}
                 <Pill tone={CERT_TONE[d.cert_status] ?? 'muted'}>{d.cert_status ?? 'none'}</Pill>

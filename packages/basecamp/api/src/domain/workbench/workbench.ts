@@ -1,6 +1,6 @@
 // src/domain/workbench/workbench.ts — Claude Code sessions in the checkouts the operator pinned.
 //
-// The sibling of `core/local-git.ts`, behind the same refusal: a pinned checkout
+// The sibling of `domain/local/local-git.ts`, behind the same refusal: a pinned checkout
 // is a folder on the operator's own machine, and a run is `claude -p` started in
 // it with EVERY permission. The argv and the reading of its stream are the cli's
 // (`askArgv({ work })` and `readAskEvent` in `@frontierjs/cli/core/ask-claude.js`),
@@ -43,7 +43,7 @@
 // branch's worktree is marked (`markPreview`, the cli's) so `fli check` and the
 // ask panel's Submit hold it to `web/`, and its web port is claimed at the cut
 // so the route Open sends names the port `fli dev` will bind there. The rows
-// are `core/preview.ts`'s, written by the service as the caller.
+// are `workbench-preview.ts`'s, written by the service as the caller.
 //
 // The Run tab starts what the checkout declares — `fli dev` per app, and its
 // package.json scripts (`domain/workbench/workbench-run.ts`) — detached, each with a log
@@ -95,10 +95,10 @@ import {
 import { homedir }                     from 'node:os'
 import { basename, join, posix }       from 'node:path'
 import { fileURLToPath }               from 'node:url'
-import { resolveRoot }                 from '../../core/local-git.ts'
+import { resolveRoot }                 from '../local/local-git.ts'
 import { commitFiles, readDiff }       from './workbench-diff.ts'
 import { addWorktree, branchName, copyIgnored, land as landBranch, pendingFiles, removeWorktree, snapshot } from './workbench-branch.ts'
-import { previewLabelRefusal, previewSettings, type Opened, type PreviewSettings } from '../../core/preview.ts'
+import { previewLabelRefusal, previewSettings, type Opened, type PreviewSettings } from './workbench-preview.ts'
 import { inventory, resolveArgv, servedBy, tail, type RunRecord, type Served } from './workbench-run.ts'
 import { endShell }                    from './workbench-shell.ts'
 

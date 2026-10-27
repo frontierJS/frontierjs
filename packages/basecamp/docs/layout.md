@@ -12,7 +12,7 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           notifications/ is one file per NotificationKind and the FILE NAME is
           the persisted type — so the directory, the enum and kinds.ts are
           three spellings of one vocabulary, held together by api/test/notify.test.ts
-          domain/notify/notify.ts is the one owner of *does this person want it*
+          domain/notification/notify.ts is the one owner of *does this person want it*
           domain/host/server-metrics.ts decides WHICH of a check-in is kept and what
           each reading is called; the heartbeat pushes through app.metrics.record
           domain/alert/alerting.ts is the alert comparison, pure — no db, no clock, no app
@@ -23,12 +23,12 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           an outside view, and is the only writer of its `@system` columns; a
           monitor is `pending` until graded, and paused ones are never picked
           (`FJS-1557`)
-          domain/notify/delivery.ts is the ONE owner of how a NotificationChannel is
+          domain/notification/delivery.ts is the ONE owner of how a NotificationChannel is
           reached; `channels.test`, the alert evaluator and the `basecamp.page`
           flow node are its callers
           plugins/automations.ts is what this app contributes to orion — one node,
           `basecamp.page`, which reads the channel as the FLOW'S OWNER and hands
-          it to domain/notify/delivery.ts. A dry run answers which channel it would have
+          it to domain/notification/delivery.ts. A dry run answers which channel it would have
           reached and moves no `lastDeliveryAt`
           domain/release/app-source.ts is the ONE reader of `App.source` — `git`, `image`,
           `inline`, parsed and normalized, and the paste box's limits (the
@@ -92,10 +92,10 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           by a publish as the app
           core/credentials.ts owns both conduit ref forms — `secret:<id>` and
           `env:<NAME>`; a target carries the ref, never the material
-          core/provision-host.ts and core/host-record.ts are run by `fli
+          domain/host/provision-host.ts and domain/host/host-record.ts are run by `fli
           basecamp:create` and `fli basecamp:dns` on a LAPTOP, never by the app:
           the droplet, and Basecamp's own A record under the fleet's mark,
-          each through this app's connector over core/bearer-send.ts, since
+          each through this app's connector over domain/host/bearer-send.ts, since
           no app is booted to hold a conduit registry
           domain/release/runtime.ts is the ONE reader of how a container starts —
           App's port, volume, health path and limits, each a `docker run` flag;
@@ -105,9 +105,12 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           when a release is made and a secret read only when it is sent
           core/session-auth.ts projects this app's OWN User columns onto the
           session and owns both doors suspension is refused at
-          core/local-ssh.ts is the operator's own ~/.ssh/config, read on THEIR
+          domain/local/ is the operator's own machine read as a source, and
+          nothing in it runs unless the CALLER asked `localMachineRefusal` first —
+          no check grades a new file there for the gate.
+          domain/local/local-ssh.ts is the operator's own ~/.ssh/config, read on THEIR
           laptop for the import form (`servers.localSshHosts`/`localSshProbe`),
-          and core/local-git.ts the git checkouts under a folder there
+          and domain/local/local-git.ts the git checkouts under a folder there
           (`git.localRepos`, /git-activity/local/). Both are off unless
           LOCAL_MACHINE=1 (`bun run api` sets it) and refused under
           NODE_ENV=production whatever it says (`localMachineRefusal`). ssh is
@@ -187,7 +190,7 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           (FJS-D841, +N×10000), which is why the API and SPA read FRONTIER_PORT_BE/FE;
           Archive releases them. A checkout pinned with `preview` settings forks
           a PREVIEW: the worktree marked (fli's `markPreview`), its web port
-          claimed at the cut, and core/preview.ts's Open — an Environment
+          claimed at the cut, and domain/workbench/workbench-preview.ts's Open — an Environment
           (tier preview, slug wb-<slug>), a static inline App on that port, its
           FRONTIER_PUBLIC_API_URL, the Domain <slug>.<domain>, the placement, and `/route`
           with the port — written through each row's own service as the
@@ -199,12 +202,12 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           RETIRES it first, before the port it routed to is released. verify:provision
           drives it against a stand-in claude (CLAUDE_BIN). Never an agent's
           or a key's: `NOT_FOR_AGENTS` and `OFF_LIMITS` in
-          services/api-keys/scopes.ts, proved by verify:mcp
+          domain/api-key/scopes.ts, proved by verify:mcp
           jobs/ is what runs unattended — a file per job, autoloaded by
           caravan from beside the app root, and the default export is the dispatch handle
           jobs/{recipe,cleanup}-run are both ways this app acts on a MACHINE —
           one shape, opposite safeguards; jobs/outpost-run.ts is their half
-          jobs/backup-archives.ts is an archive once it exists — the one
+          domain/backup/backup-archives.ts is an archive once it exists — the one
           delete (retention's and backups.remove's, FJS-D1494), the prune
           backup-run calls after a success, and the rescan that writes
           `found` rows (FJS-D1493); not a job, so caravan loads nothing from it
@@ -252,13 +255,13 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           refusal and off-limits to agents and keys. /pages/ opens a page as a
           blob, and a link between two pages is posted back to that tab
           services/registers/ is the workspace's ISSUES.md, DECISIONS.md and
-          IDEAS/ through fli's `collectRegisterAtlas` (core/registers.ts caches
+          IDEAS/ through fli's `collectRegisterAtlas` (domain/register/registers.ts caches
           it on the files' mtimes), behind the same refusal. It writes one
           thing itself — a ruling, through fli's `decide` under the register
           guard; everything else is `discuss`, a send to `app.workbench`
           (owned in app.ts, ONE instance, because a queued message lives in
           the instance that started the run) with the prompt
-          core/registers.ts composes per intent — `fix` and `frame` are the
+          domain/register/registers.ts composes per intent — `fix` and `frame` are the
           repo's `/fix-next` and `/frame-next`, never a restatement of them.
           /registers/decide/ is `fli decide`'s walk on a phone — `queue` is
           fli's `openDecisions` (the walk's order, with each question's prose),

@@ -8,7 +8,7 @@ skip: "!$.config.doApi || !$.flag.outpost || $.config.deployConf.outpost !== tru
 The box a Basecamp runs on is the first place an app can go, and `fli deploy`
 already left it the Caddy Outpost writes routes into (`FJS-D598`). What it
 lacks is the Outpost, and this step installs it (`FJS-D1191`): the app's own
-`api/src/core/enroll-host.ts`, run in the new container, finds or makes the host's
+`api/src/domain/host/enroll-host.ts`, run in the new container, finds or makes the host's
 Server row and mints its token, and the install command it answers runs on the
 host. `--no-outpost` skips it for one run.
 

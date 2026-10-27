@@ -26,7 +26,7 @@
 // evidence. Email is the one kind that cannot be tested: it needs a mailer this
 // app has not configured, and it says so rather than pretending.
 //
-// **HOW a channel is reached lives in `domain/notify/delivery.ts`, not here.** The alert
+// **HOW a channel is reached lives in `domain/notification/delivery.ts`, not here.** The alert
 // evaluator is its second caller, and a per-kind table in two places is a kind
 // added to one of them — tests green, never delivers.
 
@@ -35,8 +35,8 @@ import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, actor }
   from '../../core/resource.ts'
-import { KINDS, deliverToChannel, testMessage } from '../../domain/notify/delivery.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { KINDS, deliverToChannel, testMessage } from '../../domain/notification/delivery.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /** A channel plus how many rules deliver through it. The count is what makes
  *  a channel legible — an unused channel and one carrying every page-out look

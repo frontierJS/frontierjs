@@ -27,7 +27,7 @@
 //   POST /workbench/:id           file        { severity, area, title, detail } — a row in the checkout's ISSUES.md through fli's `fileIssue`; severity decision is a question
 //   POST /workbench/:id           decide      { question, pick, why?, section } — a letter on a plan Q through fli's `decide`, the plan named as its file; refused while a run is live
 //   POST /workbench/:id           fork        { slug?, preview? } — a branch: the tree snapshotted into a worktree, pinned, its copy list and install run;
-//                                             with preview, Open: a preview Environment and its rows (`core/preview.ts`), routed to the branch's web port
+//                                             with preview, Open: a preview Environment and its rows (`domain/workbench/workbench-preview.ts`), routed to the branch's web port
 //   POST /workbench/:id           freeze      a preview's web/ built and released by digest; the hostname serves the build
 //   POST /workbench/:id           thaw        a preview's hostname routed back to the branch's dev server
 //   POST /workbench/:id           land        a branch's work into its parent's tree, uncommitted
@@ -54,9 +54,9 @@ import { existsSync }              from 'node:fs'
 import { dirname, join }           from 'node:path'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { localMachineRefusal }     from '../../core/env.ts'
-import { describeRepo }            from '../../core/local-git.ts'
+import { describeRepo }            from '../../domain/local/local-git.ts'
 import { doneScript }              from '../../domain/workbench/workbench.ts'
-import { openPreview, freezePreview, thawPreview, retirePreview, type Opened, type PreviewSettings } from '../../core/preview.ts'
+import { openPreview, freezePreview, thawPreview, retirePreview, type Opened, type PreviewSettings } from '../../domain/workbench/workbench-preview.ts'
 import { db, ws }                  from '../../core/resource.ts'
 
 const READS  = ['pins', 'status', 'transcript', 'diff', 'runnables', 'output', 'plan']

@@ -9,7 +9,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { resolveRoot, findRepoDirs, redactRemote, parseStatus, pickRemote, listLocalRepos } from '../src/core/local-git.ts'
+import { resolveRoot, findRepoDirs, redactRemote, parseStatus, pickRemote, listLocalRepos } from '../src/domain/local/local-git.ts'
 
 describe('redactRemote', () => {
   test('a credential in an https remote is cut out, a bare username too', () => {

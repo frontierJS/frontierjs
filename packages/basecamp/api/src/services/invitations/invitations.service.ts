@@ -36,12 +36,12 @@
 import { createService, NotFound, BadRequest, Conflict, Forbidden, Unauthorized, Gone, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, requireWorkspaceRole, refuseGrantAboveOwn, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { notifyPeople, workspaceMembers } from '../../domain/notify/notify.ts'
+import { notifyPeople, workspaceMembers } from '../../domain/notification/notify.ts'
 import { grantsFor } from '../../core/capabilities.ts'
 import { ws, actor, findScoped, getScoped } from '../../core/resource.ts'
 import { env } from '../../core/env.ts'
 import type { ServiceContext } from '@frontierjs/junction'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /** How long a link is good for. Long enough to survive a weekend, short enough
  *  that a forwarded mail from six months ago is not a way in. */

@@ -17,7 +17,7 @@ import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { takeBackup }        from '../src/jobs/backup-run.job.ts'
 import { registerDestination } from '../src/providers/storage/index.ts'
-import { pruneBackups, rescanDestination } from '../src/jobs/backup-archives.ts'
+import { pruneBackups, rescanDestination } from '../src/domain/backup/backup-archives.ts'
 
 let env: any
 

@@ -10,7 +10,7 @@
  * Nothing here stands in for the app. The release fails through the real job —
  * created by the service, refused by `resolveExecutor` because its only machine
  * started draining between the click and the job, finished by `finishRun` —
- * and the page leaves through `domain/notify/delivery.ts` and conduit to a receiver on a
+ * and the page leaves through `domain/notification/delivery.ts` and conduit to a receiver on a
  * real port. So a flow that says `completed` over a page nobody received is the
  * failure this is shaped to catch: the receiver's own log is the assertion.
  *

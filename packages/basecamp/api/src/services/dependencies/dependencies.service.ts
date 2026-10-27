@@ -16,7 +16,7 @@ import { sessionScope, getPagination, WORKSPACE_QUERY } from '../../core/hooks.t
 import { db, findScoped, getScoped, ws }          from '../../core/resource.ts'
 import { statusOf, admits, STATUS_ORDER, type Status } from '../../core/dependencies.ts'
 import dependencyCheck                            from '../../jobs/dependency-check.job.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 const KINDS = new Set(['dependency', 'dev', 'peer', 'optional'])
 

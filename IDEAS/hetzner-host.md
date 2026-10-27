@@ -25,7 +25,7 @@ second cloud to ring 0 and proves both rings on it.
 | Piece | State |
 | --- | --- |
 | Ring 1 on Hetzner | `providers/compute/hetzner.ts` implements every method of `ComputeConnector`: `catalog`, `create` (with `user_data`, `ssh_keys` and `labels`), `sshKey`, `powerOff`, `destroy`, `marked` and `verify`. The provision wizard already offers Hetzner, and `verify:provision` drives the Hetzner stand-in on 8124. **It has never run against the real Hetzner API.** |
-| Ring 0 | **Works with DigitalOcean only.** `api/src/core/provision-host.ts` reads `DIGITALOCEAN_TOKEN`, calls `connectorFor('digitalocean')`, imports `reservedIps` and `RESERVED_EGRESS` from `digitalocean.ts`, and has DigitalOcean's name in its progress lines (`BOOTING`). |
+| Ring 0 | **Works with DigitalOcean only.** `api/src/domain/host/provision-host.ts` reads `DIGITALOCEAN_TOKEN`, calls `connectorFor('digitalocean')`, imports `reservedIps` and `RESERVED_EGRESS` from `digitalocean.ts`, and has DigitalOcean's name in its progress lines (`BOOTING`). |
 | fli commands | `basecamp:create`, bare `basecamp`, `basecamp:stop` and `basecamp:destroy` each declare `requires: DIGITALOCEAN_TOKEN` in their frontmatter. `create` defaults to `--region nyc3` and `--image ubuntu-24-04-x64`, and its `--size` help names a DigitalOcean slug. `_module.md` describes them as working on "droplets". |
 | Enrollment cloud-init | Reads the distro from `$ID`, but the unattended-upgrades origin is hard-coded to `origin=Ubuntu`, so it supports Ubuntu only. Hetzner's `ubuntu-24.04` image is enough for it. |
 | Tests | No test runs `provision-host.ts`. It was checked by hand against the 8122 stand-in. |

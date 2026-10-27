@@ -1,11 +1,11 @@
-// api/src/core/bearer-send.ts — an AccountSend over a plain fetch, for the scripts
+// api/src/domain/host/bearer-send.ts — an AccountSend over a plain fetch, for the scripts
 // `fli basecamp:create` runs from a laptop.
 //
 // Not conduit: conduit's send needs a registered target, and those scripts
 // boot no app to hold a registry. The vendor's envelope stays the connector's
 // to read, so the body is handed back whole on a refusal.
 
-import type { AccountSend } from '../providers/compute/index.ts'
+import type { AccountSend } from '../../providers/compute/index.ts'
 
 export function bearerSend(address: string, token: string): AccountSend {
   return async ({ method, path, body }) => {

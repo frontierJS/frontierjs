@@ -10,11 +10,11 @@ import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
-import { syncSchedule, unscheduleJob, nextRunAt } from './job-schedule.ts'
+import { syncSchedule, unscheduleJob, nextRunAt } from '../../domain/job/job-schedule.ts'
 import jobRun from '../../jobs/job-run.job.ts'
 import { announce } from '../../core/channels.ts'
 import { actsAsApp } from '../../core/gate.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /** Five fields: min hour dom month dow. */
 function isValidCron(expr: string): boolean {

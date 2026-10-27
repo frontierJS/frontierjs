@@ -1937,6 +1937,19 @@ try {
       'x-workspace-id': localStorage.getItem('basecamp_workspace') } }).then(r => r.json())`)
   check('an SSH user edited in the drawer is the one stored', readBack?.sshUser === 'deploy', JSON.stringify(readBack?.sshUser))
 
+  // A self or imported box with no address has its Domains skipped by the edge
+  // sync in silence, so the screen is the only place that can say so (FJS-3515).
+  check('a machine with an address carries no address warning', await evaluate(`!document.getElementById('needs-address')`))
+  await click('#server-edit')
+  await until(`!!document.querySelector('dialog[open] [name=ipAddress]')`, v => v, 'the edit drawer never reopened')
+  await evaluate(`(() => { const el = document.querySelector('dialog[open] [name=ipAddress]')
+                           el.value = ''
+                           el.dispatchEvent(new Event('input', { bubbles: true }))
+                           el.dispatchEvent(new Event('change', { bubbles: true })) })()`)
+  await click('#server-edit-save')
+  await until(`!!document.getElementById('needs-address')`, v => v, 'clearing the address never raised the warning')
+  check('clearing the address in the drawer warns that its Domains are never pushed', true)
+
   // The script the command fetches is public and carries nothing. Asserted from
   // the browser because that is the origin a person's machine would fetch it
   // from, and a route that only answered in a unit test would pass there.

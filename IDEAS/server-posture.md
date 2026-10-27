@@ -402,16 +402,15 @@ with no backup (`api/test/posture.test.ts`), and a `fli deploy` with
   install, `/hub/security/` grades that row with the `hub.*` controls, and 2.1's
   report-only mode, `hostReportKey`, the `outpost-host` principal and 2.3's
   nullable `serverId` are deleted.
-  - The paths are written into `/etc/basecamp/outpost.env` after the install AND
-    on a box enrolled before, since an enrolled box never reruns `install.sh`.
-  - The real-box half of *Done when* waits on `@frontierjs/outpost` 0.1.3 being
-    published and `OUTPOST_VERSION` in `enrollment.ts` moving to it: until then a
-    host runs 0.1.2, which reads no `host_files`, and the two file controls stay
-    `unknown`.
 - [x] 2.3 ~~`ServerPosture` rows with `serverId` null~~ — built, then deleted by 2.2.
 - [x] 2.4 `hub.backup-recent`, `hub.db-mode` and `hub.env-mode`.
 - [x] 2.5 `/hub/security/` behind `isSystemAdmin` (`FJS-D924`), refusing *Harden*
   and the patch run and showing the `fli deploy` command instead.
+
+The 2.2 detail and Phase 2's four answered questions moved verbatim to
+[`docs/plan-done.md`](../docs/plan-done.md#ideasserver-posturemd). The real-box half of
+*Done when* is not recorded as run; its blocker cleared when `OUTPOST_VERSION` in
+`enrollment.ts` reached 0.1.6.
 
 ### Phase 3 — The outside view
 
@@ -483,6 +482,53 @@ posture report.
 - [ ] 6.3 Trivy over the images in use.
 - [ ] 6.4 An authorized Vigil engagement against Basecamp itself, run by hand.
 
+### Phase 7 — Advisories against the stack's own components
+
+Goal: a published advisory against Bun, Docker, runc, containerd, Caddy or
+Litestream at the version a machine runs fails a posture control on that machine.
+Done when: a box held at an old Bun and an old Caddy grades
+`patch.component-advisories` false and names the advisory ids, and a lookup that
+did not answer grades `unknown`.
+
+Scope is the stack, not app runtimes: no Node, no PHP. A Bun inside an app
+container counts, because that Bun is what the app runs, its `bun:sqlite`
+included. Host findings stay posture: `Dependency` and the Code card remain
+codebase npm only (§ Where it is seen). Trivy (6.3) answers the same question
+with a scanner per box; this phase hand-maps four names to OSV and two to GitHub
+repository advisories instead, and the mapping table is the part that has to
+stay true.
+
+Probed 2026-10-27 against `api.osv.dev/v1/query`: Go `caddyserver/caddy/v2`@2.6.0
+24, `docker/docker`@24.0.0+incompatible 16, `opencontainers/runc`@1.1.0 20,
+`benbjohnson/litestream` 0. npm `bun` 2, but that package is the installer
+wrapper and not the runtime; GitHub's `oven-sh/bun` repo advisories returned 3
+(Q8). SQLite has no upstream OSV ecosystem; NVD's CPE `sqlite:sqlite`@3.45.1
+returned 7 (Q9).
+
+- [x] 7.1 The component table, one typed module: component → (source, package,
+  which `versions` key carries it), in `domain/host/components.ts`. Docker comes
+  from moby's repository advisories (Q10), not OSV. `verify:advisories` asks each
+  row of its live source at a known-old version; `posture.test.ts` holds the
+  range reading.
+  - **Repository advisory ranges are hand-written.** Comma is AND or OR, a list
+    of `<=` bounds is one per release line, and `>= 1.12` closes only in
+    `patched_versions`, so the reading uses both fields. At 29.8.0 moby names
+    GHSA-7cfq-22r6-qp73 and GHSA-6m9p-4h64-m6vh, fixed in 29.8.2; this dev host
+    runs 29.8.0.
+- [ ] 7.2 Outpost readings: `versions` gains `runc` and `containerd` from
+  `docker version`'s `Server.Components` (no new command), `litestream` from
+  `litestreamBin`, and `sqlite` per distinct Bun from `select sqlite_version()`.
+  Each app container's Bun is read from the binary, not the `oven/bun` tag,
+  because a tag can float.
+- [ ] 7.3 Widen `checkNames` in `core/dependencies.ts` to take an ecosystem, so
+  OSV has one caller. The lookup runs at ingest, keyed by (component, version),
+  so fifty machines on one Bun ask once.
+- [ ] 7.4 `patch.component-advisories` in `posture.ts`, beside
+  `patch.security-pending`: false names the ids; an unanswered or unmapped lookup
+  is `unknown`, never ok. It fires through `posture_failed`, not a new kind.
+- [ ] 7.5 The Posture tab lists each component's version with its advisory ids,
+  and the `/security/` machine row counts them.
+
 ## Open questions (owner)
 
 - ~~**Q1 — Host firewall: nftables directly, or ufw?**~~ **Answered 2026-10-12 (`FJS-D928`): A — nftables directly: one ruleset written by `installScript()`, read by the Outpost as `nft -j list ruleset`.** **Recommend nftables**: one ruleset
@@ -552,102 +598,29 @@ posture report.
     audiences on one page, and a workspace admin who is not a system admin would get a
     section that is present for one person and absent for the next. A matches the ask
     word for word. B is two routes for the same reason the hub is a tier.
-- ~~**Q7 — How does the host's readings leave the box?**~~ **Answered 2026-10-12 (`FJS-D925`): A — The Outpost, installed by `fli deploy` with its command listener off, reporting over loopback.**
-  - **A** — The Outpost, installed by `fli deploy` with its command listener off,
-    reporting over loopback.
-  - **B** — A full Outpost, enrolled as an ordinary server row with a hub flag.
-  - **C** — Bind-mount `/etc`, `/proc` and `docker.sock` into the API container and
-    read in process.
-  - **Recommend A** — one implementation of the readings and nothing listening. B puts
-    a signed command port on the box that holds the fleet's command key, and a server
-    row invites the deploy and drain this record refuses on the host. C gives the
-    control plane's own container root on its host to read a config file.
-- ~~**FJS-D944 — What does the report-only host Outpost sign its posture report with?**~~ **Answered 2026-10-15 (`FJS-D944`): B — Derived from `ENCRYPTION_KEY` as an HMAC over a fixed label: `fli deploy` writes only the derived value into the host Outpost's config, and the API derives the same value at boot. There is no new variable to generate, lose or rotate.**
-  `report.js` signs every POST with `config.secret`, and `outpostCredential`
-  (`api/src/core/hooks.ts`) finds the key through `outpostSecretFor(serverId)` —
-  `Server.outpostSecretId`, with *no second key that also works*. The host has no
-  `Server` row (`FJS-D925`), so a host report today is refused 401 whatever it signs
-  with. Whichever is picked, `keyFor` admits the host key for `posture.report` with
-  no `server_id` alone, as a principal carrying no workspace, and a test refuses
-  the same signature on `servers.heartbeat`.
-  - **A** — A host key of its own, `HOST_REPORT_SECRET`, generated once beside
-    `ENCRYPTION_KEY` in the stack's `.env` by `deploy/build.mjs` and `fli deploy`,
-    and written into the host Outpost's config.
-  - **B** — Derived from `ENCRYPTION_KEY` as an HMAC over a fixed label: `fli deploy`
-    writes only the derived value into the host Outpost's config, and the API derives
-    the same value at boot. There is no new variable to generate, lose or rotate.
-  - **C** — The fleet's own enrollment: a hub method mints a `Secret` and the host
-    Outpost exchanges a one-time token for it, with the row named on the hub's
-    config. This is the same door every machine uses. It needs a system admin's
-    session at install time, though, and a fresh box has no admin yet.
-  - **Recommend B** — the key is derived, not restated, so it has one origin and
-    nothing new to back up. `ENCRYPTION_KEY` already cannot rotate without
-    orphaning every `@encrypted` column, and the HMAC is one-way, so the Outpost's
-    config never holds anything that decrypts a `Secret`.
-
-- ~~**FJS-D1023 — How does `fli deploy` know to install the report-only host Outpost, and what does it install from?**~~ **Answered 2026-10-16 (`FJS-D1023`): A — A deploy config key the app states, `deploy.hostOutpost: true` in basecamp's `frontier.config.js`. `deploy:setup` installs the Outpost from the pushed checkout's `packages/outpost` (it is in the build context already) as `outpost-host.service`, sandboxed like the fleet unit, and writes the key it derives from the server's `.env.production`, the loopback API URL and the two paths fli itself laid out (the deploy root's env file and the `/db` volume's host directory).**
-  Step 2.2. Everything on the Basecamp side of it is built: the Outpost runs
-  report-only when `OUTPOST_HOST_KEY` is set (with `BASECAMP_URL`,
-  `OUTPOST_HOST_DB_PATH`, `OUTPOST_HOST_ENV_PATH`), the API verifies a
-  `posture.report` naming no machine against `hostReportKey(ENCRYPTION_KEY)`
-  (`api/src/core/hooks.ts`, label `basecamp.host-posture.v1`), and
-  `/hub/security/` reads the rows. But `fli deploy` is the generic app deployer
-  and nothing in an app's config says *this app is a control plane, put a host
-  Outpost beside it*, and a deploy target has bun but no `node_modules`
-  (`packages/cli/CLAUDE.md`). Whichever is picked, fli derives the key with the
-  same label, so the label moves to one owner both import (toolbelt) in the same
-  change.
-  - **A** — A deploy config key the app states, `deploy.hostOutpost: true` in
-    basecamp's `frontier.config.js`. `deploy:setup` installs the Outpost from the
-    pushed checkout's `packages/outpost` (it is in the build context already) as
-    `outpost-host.service`, sandboxed like the fleet unit, and writes the key it
-    derives from the server's `.env.production`, the loopback API URL and the two
-    paths fli itself laid out (the deploy root's env file and the `/db` volume's
-    host directory).
-  - **B** — No fli option: basecamp ships its own extra step file under `deploy/`,
-    and `fli deploy` gains a generic *the app's own steps* hook that runs it. The
-    knowledge stays in the app that needs it, at the cost of a second step
-    mechanism in fli.
-  - **C** — The fleet install script (`providers/compute/enrollment.ts`
-    `installScript()`) grows a report-only mode, and `fli deploy` pipes it to the
-    box. One installer for every Outpost, but fli would fetch an install script
-    from the app it is installing, before that app is up.
-  - **Recommend A** — fli already owns the layout both paths come from and holds
-    the `.env.production` the key derives from, so it is the one place that can
-    state all three without a copy; one boolean in the one app that wants it.
-
-- ~~**FJS-D1241 — Now that `fli deploy` enrolls Basecamp's host as a fleet machine, does it still install the second, report-only host Outpost?**~~ **Answered 2026-10-18 (`FJS-D1241`): B — Fold the host readings into the fleet Outpost. `08b-outpost` passes `OUTPOST_HOST_DB_PATH`/`OUTPOST_HOST_ENV_PATH` into the `basecamp-host` install, and `/hub/security/` grades the `basecamp-host` row (`HOST_SLUG`) with the `hub.*` controls. Report-only mode, `hostReportKey`, the `outpost-host` principal and the nullable `serverId` are deleted. One reader per box, but the hub tier's reading depends on a workspace's Server row and goes dark under `--no-outpost`. `FJS-D924`/`FJS-D925`/`FJS-D944` are struck in part.**
-  Step 2.2 again. `FJS-D1023` was ruled on the premise that no Outpost runs on
-  the host. A day later `FJS-D1191`/`FJS-D1202` made `deploy.outpost: true`
-  install the full fleet Outpost there by default (`outpost.service`, Server row
-  `basecamp-host`, `08b-outpost`). Built as ruled, one box runs two Outposts that
-  both read its sshd, ruleset and pending updates. That gives two
-  `ServerPosture` rows for one machine, one on a workspace's `/security/` and one
-  on `/hub/security/`, and nothing compares them (§ V questions 1, 5, 6 and 9).
-  Nothing clashes in the plumbing: the units, state and listeners are separate,
-  since report-only opens no port.
-  - **A** — Build `FJS-D1023` as written, beside the fleet Outpost. A new
-    `deploy.hostOutpost` key and a `_steps-setup` step install
-    `outpost-host.service` with `hostReportKey` (its label moving to toolbelt so
-    fli derives the same value). The hub tier keeps its own reading, which stays
-    true under `--no-outpost` and in a workspace-free install, where
-    `enroll-host.ts` answers `skip`. The cost is a duplicated reading.
-  - **B** — Fold the host readings into the fleet Outpost. `08b-outpost` passes
-    `OUTPOST_HOST_DB_PATH`/`OUTPOST_HOST_ENV_PATH` into the `basecamp-host`
-    install, and `/hub/security/` grades the `basecamp-host` row (`HOST_SLUG`)
-    with the `hub.*` controls. Report-only mode, `hostReportKey`, the
-    `outpost-host` principal and the nullable `serverId` are deleted. One reader
-    per box, but the hub tier's reading depends on a workspace's Server row and
-    goes dark under `--no-outpost`. `FJS-D924`/`FJS-D925`/`FJS-D944` are struck
-    in part.
-  - **C** — Keep report-only mode only for `--no-outpost`. `08b-outpost`
-    installs the report-only unit when it skips the fleet enrollment, and
-    `/hub/security/` reads whichever exists. There is always exactly one reader,
-    at the price of two paths to keep correct.
-  - **Recommend B** — `FJS-D1191` already put an Outpost on the key's box with
-    its listener on, which was `FJS-D925`'s whole reason for report-only. One
-    reader per box is § V's ninth answer, and the hub screen grading
-    `basecamp-host` derives rather than restates.
+- ~~**Q7 — How does the host's readings leave the box?**~~ **Answered 2026-10-12 (`FJS-D925`): A — The Outpost, installed by `fli deploy` with its command listener off, reporting over loopback.** Full text in [`docs/plan-done.md`](../docs/plan-done.md#ideasserver-posturemd).
+- ~~**FJS-D944 — What does the report-only host Outpost sign its posture report with?**~~ **Answered 2026-10-15 (`FJS-D944`): B — Derived from `ENCRYPTION_KEY` as an HMAC over a fixed label: `fli deploy` writes only the derived value into the host Outpost's config, and the API derives the same value at boot. There is no new variable to generate, lose or rotate.** Full text in [`docs/plan-done.md`](../docs/plan-done.md#ideasserver-posturemd).
+- ~~**FJS-D1023 — How does `fli deploy` know to install the report-only host Outpost, and what does it install from?**~~ **Answered 2026-10-16 (`FJS-D1023`): A — A deploy config key the app states, `deploy.hostOutpost: true` in basecamp's `frontier.config.js`. `deploy:setup` installs the Outpost from the pushed checkout's `packages/outpost` (it is in the build context already) as `outpost-host.service`, sandboxed like the fleet unit, and writes the key it derives from the server's `.env.production`, the loopback API URL and the two paths fli itself laid out (the deploy root's env file and the `/db` volume's host directory).** Full text in [`docs/plan-done.md`](../docs/plan-done.md#ideasserver-posturemd).
+- ~~**FJS-D1241 — Now that `fli deploy` enrolls Basecamp's host as a fleet machine, does it still install the second, report-only host Outpost?**~~ **Answered 2026-10-18 (`FJS-D1241`): B — Fold the host readings into the fleet Outpost. `08b-outpost` passes `OUTPOST_HOST_DB_PATH`/`OUTPOST_HOST_ENV_PATH` into the `basecamp-host` install, and `/hub/security/` grades the `basecamp-host` row (`HOST_SLUG`) with the `hub.*` controls. Report-only mode, `hostReportKey`, the `outpost-host` principal and the nullable `serverId` are deleted. One reader per box, but the hub tier's reading depends on a workspace's Server row and goes dark under `--no-outpost`. `FJS-D924`/`FJS-D925`/`FJS-D944` are struck in part.** Full text in [`docs/plan-done.md`](../docs/plan-done.md#ideasserver-posturemd).
+- ~~**Q8 — Where do Bun's advisories come from?**~~ **Answered 2026-10-27 (`FJS-D1548`): A — GitHub's `oven-sh/bun` repository advisories.** (Phase 7)
+  - **A** — GitHub's repository advisories for `oven-sh/bun`, through a new
+    conduit target. Keyless at 60 requests an hour, which one lookup per Bun
+    version fits. These are the runtime's own advisories.
+  - **B** — OSV npm `bun`. Same path as everything else, but that package is the
+    installer wrapper, so a runtime advisory filed only against the repo is
+    missed and reads as clean.
+  - **Recommend A** — B's silence is exactly the "no answer read as no advisory"
+    that 7.4 refuses.
+- ~~**Q9 — SQLite: show the version, or grade it?**~~ **Answered 2026-10-27 (`FJS-D1545`): A — Show only.** (Phase 7)
+  - **A** — Show only. The Posture tab prints each Bun's SQLite version and no
+    control grades it. NVD's backlog leaves recent CVEs without CPE data, and
+    most SQLite CVEs hit the CLI or extensions, not `bun:sqlite`.
+  - **B** — Grade against NVD's CPE `sqlite:sqlite`, a new provider at 5
+    requests per 30s without a key.
+  - **Recommend A** — SQLite moves with Bun, so a Bun upgrade is the remedy
+    either way. NVD is the reopen path if a SQLite CVE ever reaches
+    `bun:sqlite` before Bun ships the fix.
+- ~~**Q10 — Where do Docker's advisories come from?**~~ **Answered 2026-10-27 (`FJS-D1546`): A — GitHub's `moby/moby` repository advisories, graded from each advisory's Docker Engine row.** (Phase 7, 7.1.) OSV's `github.com/docker/docker` froze at 28.x and read 6 never-fixed advisories against every 29.x.
 
 ## See also
 

@@ -53,12 +53,12 @@ import { DEPLOY_TIMEOUT_MS }     from '../../providers/executor.ts'
 import { mintEnrollToken, cloudInit, OUTPOST_PORT } from '../../providers/compute/enrollment.ts'
 import { issueEnrollmentFor, useHost, findHost } from '../../domain/host/host-machine.ts'
 import { env, localMachineRefusal } from '../../core/env.ts'
-import { listSshHosts, probeSshHost } from '../../core/local-ssh.ts'
+import { listSshHosts, probeSshHost } from '../../domain/local/local-ssh.ts'
 import { outbound, outpostFor } from '../../providers/outpost.ts'
 
 import type { TargetDescriptor } from '@frontierjs/conduit'
 import type { ProviderKind, ServerEventKind } from '../../../../db/schema.d.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -191,7 +191,7 @@ export default createService({
     { method: 'useHost', gate: LEVELS.SYSADMIN },
     { method: 'host', read: true },
     // The operator's own ~/.ssh/config, on a Basecamp running on their
-    // machine and nowhere else (`core/local-ssh.ts`). Reads, so a keyed
+    // machine and nowhere else (`domain/local/local-ssh.ts`). Reads, so a keyed
     // retry runs them again rather than replaying a stale listing. At
     // ADMINISTRATOR, the weight of enrolling a machine: the listing is the
     // operator's own ssh config and the probe dials with their agent.

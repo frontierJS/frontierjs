@@ -32,7 +32,7 @@
 import { createService, findWindow, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, callerOrder } from '../../core/resource.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 export default createService({
   name:    'audit',

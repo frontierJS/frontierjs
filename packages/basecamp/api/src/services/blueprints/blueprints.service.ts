@@ -33,7 +33,7 @@
 import { createService, BadRequest, Conflict, NotFound, $ } from '@frontierjs/junction'
 import { requireSystemAdmin, getPagination } from '../../core/hooks.ts'
 import { db, slugify, callerOrder }          from '../../core/resource.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /**
  * A blueprint always travels with the form it implies, IN ORDER.

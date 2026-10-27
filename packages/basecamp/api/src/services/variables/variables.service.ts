@@ -14,7 +14,7 @@ import { sessionScope, workspaceChannel, getPagination, refuseProtectedForDevelo
   from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws } from '../../core/resource.ts'
 import type { ServiceContext } from '@frontierjs/junction'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /**
  * before/create hook: the environment a write lands in, found through the

@@ -1,4 +1,4 @@
-// src/services/cleanup/disk-report.ts
+// src/domain/cleanup/disk-report.ts
 // What an outpost says about one machine's disk, and the one place it is
 // written down.
 //
@@ -31,7 +31,7 @@ export interface DiskReport {
   build_cache?: { size_bytes?: number; reclaimable_bytes?: number }
 }
 
-import { recordDiskUsage } from '../../domain/host/server-metrics.ts'
+import { recordDiskUsage } from '../host/server-metrics.ts'
 import type { App }         from '@frontierjs/junction'
 
 const int = (n: unknown): number => Math.max(0, Math.round(Number(n) || 0))

@@ -18,6 +18,7 @@ import {
   traceToFinalImage, compileGlob, joinPath, isEnvFile, isStateFile,
   refuses, summarize, gather, walkContextFiles,
   STATE_EXTENSIONS, CONTEXT_FIND, classifyContextFile,
+  inspectIgnored, gatherIgnored, HEAVY_CONTEXT,
 } from '../core/build-check.js'
 
 const findingsFor = (opts) => inspectBuild(opts).map(f => `${f.level}:${f.rule}`)
@@ -526,5 +527,62 @@ describe('example/.dockerignore', () => {
       })
       expect(found.filter(f => f.rule === 'build-stage-config')).toEqual([])
     }
+  })
+})
+
+// ─── what git ignores (FJS-3524) ─────────────────────────────────────────────
+//
+// ela's tree as measured: `**/*.db` in the ignore file, and the audit trail
+// (a directory of jsonl), the move report and the desktop build all copied.
+
+describe('a file git ignores, in the build', () => {
+  const DF     = 'FROM oven/bun:1-slim\nWORKDIR /app\nCOPY deploy/generated/ ./deploy/generated/\nCOPY api ./api\nCOPY db ./db\n'
+  const IGNORE = '.git\nnode_modules\nweb/\n**/*.db\n'
+  const GROUPS = [
+    { path: 'db/audit-prod/',      files: [{ path: 'db/audit-prod/auditTrail.jsonl', bytes: 660_000 }, { path: 'db/audit-prod/auditTrail.jsonl.index.db', bytes: 8_000 }] },
+    { path: 'db/move-report.json', files: [{ path: 'db/move-report.json', bytes: 18_000 }] },
+    { path: 'desktop/shell/target/', files: [{ path: 'desktop/shell/target/debug/app', bytes: 2e9 }] },
+    { path: 'deploy/generated/',   files: [{ path: 'deploy/generated/app-manifest.json', bytes: 2_000 }] },
+    { path: 'web/dist/',           files: [{ path: 'web/dist/index.html', bytes: 1_000 }] },
+  ]
+  const run = (over = {}) => inspectIgnored({ dockerfile: DF, dockerignore: IGNORE, groups: GROUPS, expected: ['deploy/generated'], ...over })
+
+  test('what the image would carry is a warning per unit git ignores', () => {
+    const found = run().filter(f => f.rule === 'ignored-in-image')
+    expect(found.map(f => f.title)).toEqual([
+      'db/audit-prod/ would be in the image — git ignores it',
+      'db/move-report.json would be in the image — git ignores it',
+    ])
+    expect(found.every(f => f.level === 'warn')).toBe(true)
+  })
+
+  test('a file the state rule names is left to it, and an expected path is not reported', () => {
+    const audit = run().find(f => f.title.startsWith('db/audit-prod/'))
+    expect(audit.detail).toMatch(/^1 file/)
+    expect(run().some(f => f.title.startsWith('deploy/generated'))).toBe(false)
+  })
+
+  test('what the context sends and the image never copies is named only when heavy', () => {
+    const heavy = run().find(f => f.rule === 'ignored-in-context')
+    expect(heavy.title).toBe('the build context sends 2.0 GB git ignores')
+    const light = run({ groups: [{ path: 'tmp/', files: [{ path: 'tmp/x', bytes: HEAVY_CONTEXT - 1 }] }] })
+    expect(light).toEqual([])
+  })
+
+  test('an ignore file that excludes them answers every finding', () => {
+    expect(run({ dockerignore: IGNORE + '**/*.jsonl\ndb/move-report.json\ndesktop/\n' })).toEqual([])
+  })
+
+  test('gatherIgnored groups git\'s answer by the unit git names', () => {
+    const answers = {
+      '--directory': 'db/audit-prod/\ndb/move-report.json\n',
+      '':            'db/audit-prod/a.jsonl\ndb/audit-prod/b.jsonl\ndb/move-report.json\n',
+    }
+    const spawnSync = (_git, args) => ({ status: 0, stdout: answers[args.at(-1) === '--directory' ? '--directory' : ''] })
+    const fs = { statSync: () => ({ size: 10 }) }
+    expect(gatherIgnored({ root: '/r', fs, spawnSync })).toEqual([
+      { path: 'db/audit-prod/', files: [{ path: 'db/audit-prod/a.jsonl', bytes: 10 }, { path: 'db/audit-prod/b.jsonl', bytes: 10 }] },
+      { path: 'db/move-report.json', files: [{ path: 'db/move-report.json', bytes: 10 }] },
+    ])
   })
 })

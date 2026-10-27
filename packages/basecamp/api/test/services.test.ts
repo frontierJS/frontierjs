@@ -29,14 +29,14 @@ import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor, grantsWithin } from '../src/core/capabilities.ts'
 import { refuseGrantAboveOwn }    from '../src/core/hooks.ts'
-import { keyAllows, narrowForAgent } from '../src/services/api-keys/scopes.ts'
+import { keyAllows, narrowForAgent } from '../src/domain/api-key/scopes.ts'
 import { MEMBERSHIP }             from '@frontierjs/junction'
 import { SERVER_READINGS, readingOf } from '../src/domain/host/server-metrics.ts'
-import { NOTIFICATION_KINDS }     from '../src/domain/notify/kinds.ts'
-import { notifyPeople }           from '../src/domain/notify/notify.ts'
+import { NOTIFICATION_KINDS }     from '../src/domain/notification/kinds.ts'
+import { notifyPeople }           from '../src/domain/notification/notify.ts'
 import { createJunctionClient }   from '@frontierjs/junction/client'
 import { snapshotVariables, releaseEnv } from '../src/domain/release/variables.ts'
-import { BACKUP_SCHEDULE, appBackupSchedule, appDrillSchedule, fireBackup, restoreSchedules } from '../src/services/jobs/job-schedule.ts'
+import { BACKUP_SCHEDULE, appBackupSchedule, appDrillSchedule, fireBackup, restoreSchedules } from '../src/domain/job/job-schedule.ts'
 import { mintDownload } from '../src/jobs/app-backup-run.job.ts'
 import { replicasFor, syncReplicas, hostReplicaFor } from '../src/jobs/replicate-sync.job.ts'
 import { HOST_SLUG, useHost, publicIp } from '../src/domain/host/host-machine.ts'
@@ -4088,7 +4088,7 @@ describe('removing a server that is not online', () => {
 })
 
 // ─── The local ssh listing ───────────────────────────────────────────────────
-// A development affordance on the servers service (`core/local-ssh.ts`). Off
+// A development affordance on the servers service (`domain/local/local-ssh.ts`). Off
 // unless LOCAL_MACHINE=1, which this process does not set, so the owner hears it
 // is not offered — and a developer is refused before that is even asked, by
 // the ADMINISTRATOR gate the method declares.

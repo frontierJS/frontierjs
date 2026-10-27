@@ -1,4 +1,4 @@
-// src/domain/notify/kinds.ts
+// src/domain/notification/kinds.ts
 // What a person can be told about, what it means, and what happens when they
 // have never said.
 //

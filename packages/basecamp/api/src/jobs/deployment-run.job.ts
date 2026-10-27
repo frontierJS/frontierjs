@@ -16,7 +16,7 @@
 //                      a release that fails puts the previous container back (FJS-1765)
 //   POST /stop         { app_id }                          → container and route gone (sent by apps.remove, never by a release)
 //   POST /route        { app_id, hosts, paths?, port? }            → Caddy re-routed, no restart (sent by domain:dns;
-//                                                            `port` only by a preview's Open, core/preview.ts)
+//                                                            `port` only by a preview's Open, domain/workbench/workbench-preview.ts)
 //   POST /health-check { app_id, digest }                  → { healthy }
 //   POST /exec         { step, deployment_id }             → run the step
 //   POST /backup       { app_id, upload_url? }             → the volume archived before the swap; sent by jobs/app-backup-run.job.ts, never from here
@@ -49,7 +49,7 @@
 import { defineJob }       from '@frontierjs/caravan'
 import { resolveExecutor, isExecutor, PULL_TIMEOUT_MS, BUILD_TIMEOUT_MS, DEPLOY_TIMEOUT_MS } from '../providers/executor.ts'
 import type { Executor }    from '../providers/executor.ts'
-import { notifyPeople, workspaceMembers } from '../domain/notify/notify.ts'
+import { notifyPeople, workspaceMembers } from '../domain/notification/notify.ts'
 import { runsAsCaller }         from './context.ts'
 import domainDns                from './domain-dns.job.ts'
 import { syncReplicasOn }       from './replicate-sync.job.ts'

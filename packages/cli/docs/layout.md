@@ -555,6 +555,15 @@ core/
                 ships what a subtree copy does not, and grading on the context
                 copy alone refuses every multi-stage build here. Pure — the
                 caller reads the files, so the suite needs no daemon
+                — and `inspectIgnored` grades the context against what GIT
+                ignores, the app's own list of what is not source (`FJS-3524`)
+  release-preflight.js  will a Basecamp App start, keep its data and be
+                reached — its settings (Variables, volume, port, health,
+                Domains) against what the app declares (defineEnv's spec, the
+                schema's databases, the health route, the Dockerfile's final
+                stage). `basecamp:deploy` asks before it builds. The spec is read
+                by running the env module with junction's `defineEnv` swapped for
+                a recorder, since the real one throws on every required key
   docker-context.js  can the BUILDER's docker read the build context at all —
                 asked with `docker build --check`, which parses and builds
                 nothing, because the answer is a property of that machine's

@@ -1,4 +1,4 @@
-// src/core/registers.ts
+// src/domain/register/registers.ts
 // The workspace's registers — `ISSUES.md`, `DECISIONS.md`, `IDEAS/` — as the
 // /registers/ screen reads and writes them, and what is handed to Claude Code
 // when a person brings one of them to the workbench.

@@ -34,7 +34,7 @@
 import { createService, $, BadRequest } from '@frontierjs/junction'
 import { isStale }                      from '@frontierjs/junction'
 import { LEVELS }                     from '@frontierjs/litestone'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 import { callerOrder, pickedByCaller } from '../../core/resource.ts'
 
 const HOUR = 3_600_000

@@ -66,7 +66,7 @@ own lift of `conduit-s3`). `HubConfig.backupDestinationId` and `Backup.destinati
 point at one, null meaning the local disk, and `/hub/settings/` has the picker
 and the inline form. `backup:run` uploads one tarball per archive (1.2),
 `HubConfig.backupCron` is on the clock (1.3), and retention prunes after each
-success, local and remote apart, through `jobs/backup-archives.ts` — the one
+success, local and remote apart, through `domain/backup/backup-archives.ts` — the one
 delete `backups.remove` shares, and `backups.rescan`'s `found` rows (1.4).
 An app's archive leaves its machine by a pre-signed PUT `app-backups.take`
 mints for a destination of the app's own workspace and Outpost streams to

@@ -16,7 +16,7 @@ import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, chang
 import { retireAppsIn }         from '../apps/apps.service.ts'
 import { syncReplicasOf }       from '../../jobs/replicate-sync.job.ts'
 import type { ServiceContext } from '@frontierjs/junction'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /**
  * An environment's project must be in the caller's workspace.

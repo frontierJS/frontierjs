@@ -27,7 +27,7 @@ import { targetFor } from '../../providers/compute/index.ts'
 import { registerAccount, unregisterAccount, sendVia, tokenDocument, TOKEN_FIELD, accountConnectorFor }
   from '../../providers/compute/accounts.ts'
 import type { ProviderKind }   from '../../../../db/schema.d.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /** Secret has no `slug` column, so the shared deriveSlug — which derives
  *  one from `name` — would add a key autoValidate then strips. Stamping what

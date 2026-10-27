@@ -179,8 +179,8 @@ export const env = defineEnv({
   ANTHROPIC_API_KEY: {},
 
   // `1` says this Basecamp runs on its operator's own machine, so it may read
-  // that machine: the Host aliases in ~/.ssh/config (`core/local-ssh.ts`) and
-  // the git repositories under a folder (`core/local-git.ts`). Refused under
+  // that machine: the Host aliases in ~/.ssh/config (`domain/local/local-ssh.ts`) and
+  // the git repositories under a folder (`domain/local/local-git.ts`). Refused under
   // `NODE_ENV=production` whatever it says: a deployed control plane would be
   // reading ITS server's files, and dialing with its agent. `bun run api`
   // sets it.

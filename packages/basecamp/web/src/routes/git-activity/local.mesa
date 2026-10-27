@@ -5,7 +5,7 @@ title: Local repositories
   // The git checkouts under a folder on the machine this Basecamp runs on.
   //
   // Offered only by a Basecamp running on the operator's machine with
-  // LOCAL_MACHINE=1 (api core/local-git.ts); anywhere else the call is a 404
+  // LOCAL_MACHINE=1 (api domain/local/local-git.ts); anywhere else the call is a 404
   // and the screen says so rather than drawing an empty list that reads like a
   // folder with no repositories in it.
   import { comparatorFor } from '@frontierjs/toolbelt/query'

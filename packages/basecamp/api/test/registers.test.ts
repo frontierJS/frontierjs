@@ -1,9 +1,9 @@
-// What the Registers screen hands Claude (api core/registers.ts) — the prompt
+// What the Registers screen hands Claude (api domain/register/registers.ts) — the prompt
 // per intent, and the refusals that keep `fix` and `frame` to one id of the
 // kind their skill works on. Pure: the atlas is a literal, no fli, no disk.
 
 import { describe, expect, test } from 'bun:test'
-import { composePrompt, namedIds, branchSlug, explainPrompt, type Atlas, type Queued } from '../src/core/registers.ts'
+import { composePrompt, namedIds, branchSlug, explainPrompt, type Atlas, type Queued } from '../src/domain/register/registers.ts'
 
 const at = (file: string, line: number) => ({ file, line, href: file, edit: '' })
 

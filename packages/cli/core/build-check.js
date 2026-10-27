@@ -529,6 +529,84 @@ export function inspectBuild({
   return findings.sort((a, b) => (a.line ?? 0) - (b.line ?? 0))
 }
 
+// ─── what git ignores ────────────────────────────────────────────────────────
+//
+// `classifyContextFile` knows two kinds of state by name, and an app writes a
+// third it cannot name: a logger database is a DIRECTORY of jsonl, a backup is
+// `app.db.pre-move`, a move report names the production file it read. Each is
+// in the app's `.gitignore` and none is in its `.dockerignore`, so the image
+// carried production's audit trail with the ignore file looking complete
+// (`FJS-3524`). Git already holds the app's own list of what is not source, so
+// that list is graded rather than a third extension list kept beside it.
+//
+// A warning, never a refusal: `deploy/generated/` is ignored by git and is the
+// whole of what the Dockerfile installs from, and an app may build into an
+// ignored directory before the image does. Only the app knows which ignored
+// file the image is meant to have.
+
+/** Bytes, as a person reads a size. */
+export const formatBytes = (n) =>
+  n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.ceil(n / 1e3)} KB`
+
+/** A context this size or more is named even when nothing in it ships. */
+export const HEAVY_CONTEXT = 50e6
+
+/**
+ * @param dockerfile    the Dockerfile's text
+ * @param dockerignore  the context root's .dockerignore, or null
+ * @param groups        `[{ path, files: [{ path, bytes }] }]` — each a unit git
+ *                      ignores (a file, or a directory ending in `/`) with the
+ *                      files under it
+ * @param expected      ignored paths the image is built from on purpose
+ */
+export function inspectIgnored({ dockerfile = '', dockerignore = null, groups = [], expected = [] } = {}) {
+  const df       = parseDockerfile(dockerfile)
+  const patterns = parseDockerignore(dockerignore)
+  const findings = []
+  const sent     = []
+
+  for (const group of groups) {
+    if (expected.some(e => under(e, group.path.replace(/\/$/, '')))) continue
+    // A file the context rule above names by kind is graded there, as an error.
+    const files = group.files.filter(f =>
+      !classifyContextFile(f.path) && ignoreDecision(f.path, patterns) === 'included')
+    if (!files.length) continue
+
+    const shipping = files.filter(f => traceToFinalImage(df, f.path).ships === true)
+    const bytes    = files.reduce((n, f) => n + f.bytes, 0)
+    if (shipping.length) {
+      const first = traceToFinalImage(df, shipping[0].path)
+      findings.push({
+        rule:   'ignored-in-image',
+        level:  'warn',
+        title:  `${group.path} would be in the image — git ignores it`,
+        detail: `${shipping.length} file${shipping.length === 1 ? '' : 's'} (${formatBytes(shipping.reduce((n, f) => n + f.bytes, 0))}) ` +
+                `the app keeps out of its repo, landing at ${first.at}. What git ignores is usually one machine's ` +
+                'state — a database, its audit trail, a backup, a report — and the image then carries it to every server.',
+        hint:   `Add \`${group.path}\` to .dockerignore, or leave it if the image is built from it on purpose.`,
+        line:   first.line,
+      })
+    } else {
+      sent.push({ path: group.path, bytes })
+    }
+  }
+
+  const total = sent.reduce((n, s) => n + s.bytes, 0)
+  if (total >= HEAVY_CONTEXT) {
+    const largest = sent.sort((a, b) => b.bytes - a.bytes).slice(0, 3)
+    findings.push({
+      rule:   'ignored-in-context',
+      level:  'info',
+      title:  `the build context sends ${formatBytes(total)} git ignores`,
+      detail: `${largest.map(s => `${s.path} ${formatBytes(s.bytes)}`).join(', ')}. The image never copies it, and docker ` +
+              'still uploads it to the daemon on every build.',
+      hint:   `Add ${largest.map(s => `\`${s.path}\``).join(', ')} to .dockerignore.`,
+      line:   null,
+    })
+  }
+  return findings
+}
+
 /** Would this refuse a deploy? */
 export const refuses = (findings) => findings.some(f => f.level === 'error')
 
@@ -613,6 +691,33 @@ export function walkContextFiles(root, { fs, limit = 200 } = {}) {
   // Sorted, so two runs over one tree report in the same order — readdir order
   // is the filesystem's business and a report that reshuffles reads as churn.
   return out.sort()
+}
+
+/**
+ * What git ignores under `root`, as the groups `inspectIgnored` takes: one per
+ * path git names with `--directory`, each holding the files under it. Empty
+ * outside a git checkout — nothing to ask is not the same as nothing ignored,
+ * and the caller has no other list to fall back on.
+ */
+export function gatherIgnored({ root, fs, spawnSync }) {
+  const git = (...args) => {
+    const r = spawnSync('git', ['-C', root, 'ls-files', '--others', '--ignored', '--exclude-standard', ...args],
+      { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
+    return r.status === 0 ? r.stdout.split('\n').filter(Boolean) : null
+  }
+  const units = git('--directory')
+  if (!units) return []
+  const groups = new Map(units.map(path => [path, { path, files: [] }]))
+  for (const path of git() ?? []) {
+    const parts = path.split('/')
+    const group = groups.get(path) ?? parts.slice(0, -1)
+      .map((_, i) => groups.get(parts.slice(0, i + 1).join('/') + '/')).find(Boolean)
+    if (!group) continue
+    let bytes = 0
+    try { bytes = fs.statSync(`${root}/${path}`).size } catch {}
+    group.files.push({ path, bytes })
+  }
+  return [...groups.values()]
 }
 
 /** The local half of `gather`, for a caller that has the tree in front of it. */

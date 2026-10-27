@@ -20,7 +20,7 @@ import { caravan } from '@frontierjs/caravan'
 import type { CaravanInstance } from '@frontierjs/caravan'
 
 import { basecampGateLevel } from '../src/core/gate.ts'
-import { scheduleName, restoreSchedules } from '../src/services/jobs/job-schedule.ts'
+import { scheduleName, restoreSchedules } from '../src/domain/job/job-schedule.ts'
 import type { App }          from '@frontierjs/junction'
 
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')

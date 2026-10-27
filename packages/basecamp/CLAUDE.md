@@ -95,8 +95,8 @@ this list does not name. The owners that matter on most turns:
 
 - `db/schema.lite` (every model declares `@@gate`) · `db/schema.d.ts` is generated and committed — the client's types · `db/migrations/main/` · `db/seed.js`.
 - `api/index.ts` starts; `api/src/app.ts` builds the app and never starts it — `createApp({ principal: membershipClaim(…) })` is where the per-workspace level is resolved · `api/src/core/gate.ts` is the ladder.
-- `api/src/core/` sets up what the framework ships (`FJS-D625`): `db`, `env`, `gate`, `capabilities`, `hooks`, `session-auth`, `mailer`, `credentials` (both conduit ref forms), `channels`, `resource`. A new domain module goes in `api/src/domain/<area>/`. The domain modules still in `core/` move there under `FJS-3518`. Moved: `domain/release/` (`app-source.ts` the one reader of `App.source`, `runtime.ts` how a container starts, `variables.ts` what a container's environment is, `release-record.ts` a release's run), `domain/site/` (an owner's drafts), `domain/workbench/` (Claude Code chats per pinned checkout), `domain/notify/` (`notify.ts` does this person want it, `delivery.ts` how a NotificationChannel is reached, `kinds.ts` the NotificationKind list), `domain/alert/` (`alerting.ts`, the pure breach evaluator), `domain/host/` (`posture.ts`, `reachability.ts`, `server-metrics.ts`, `host-machine.ts`: a fleet machine's grade, contact, readings and Basecamp's own box), `domain/monitor/` (`probe.ts`, a Monitor's grade).
-- `api/src/services/` one folder per service · `jobs/*.job.ts` autoloaded by caravan, `job-schedule.ts` the one clock · `notifications/` one file per kind, the FILE NAME is the type · `providers/` is who the app speaks to (`compute/`, `edge/`, `outpost.ts`, `executor.ts`) · `plugins/`.
+- `api/src/core/` sets up what the framework ships (`FJS-D625`): `db`, `env`, `gate`, `capabilities`, `hooks`, `session-auth`, `mailer`, `credentials` (both conduit ref forms), `channels`, `resource`. Domain logic goes in `api/src/domain/<area>/` (`FJS-3518` emptied `core/` of it): `domain/release/` (`app-source.ts` the one reader of `App.source`, `runtime.ts` how a container starts, `variables.ts` what a container's environment is, `release-record.ts` a release's run), `domain/site/` (an owner's drafts), `domain/workbench/` (Claude Code chats per pinned checkout), `domain/notification/` (`notify.ts` does this person want it, `delivery.ts` how a NotificationChannel is reached, `kinds.ts` the NotificationKind list), `domain/alert/` (`alerting.ts`, the pure breach evaluator), `domain/host/` (`posture.ts`, `reachability.ts`, `server-metrics.ts`, `host-machine.ts`: a fleet machine's grade, contact, readings and Basecamp's own box; `components.ts`, where each stack component's advisories are published; and the operator scripts `fli` runs by path, `enroll-host.ts`, `provision-host.ts`, `host-record.ts` over `bearer-send.ts`), `domain/monitor/` (`probe.ts`, a Monitor's grade), `domain/local/` (`local-ssh.ts`, `local-git.ts`: the operator's own machine read as a source, behind `localMachineRefusal`), `domain/register/` (`registers.ts`), `domain/api-key/` (`scopes.ts`), `domain/job/` (`job-schedule.ts`, the one clock), `domain/cleanup/` (`disk-report.ts`), `domain/backup/` (`backup-archives.ts`).
+- `api/src/services/` one folder per service · `jobs/*.job.ts` autoloaded by caravan · `notifications/` one file per kind, the FILE NAME is the type · `providers/` is who the app speaks to (`compute/`, `edge/`, `outpost.ts`, `executor.ts`) · `plugins/`.
 - `web/src/` — `App.mesa`, `routes/`, `components/` (`NoRecord.mesa` ends every detail screen), `resources/` (one Resource per file) · `web/config/api-paths.js` is DERIVED from `app.snapshot.md` · `web/test/verify.mjs` + `verify-build.mjs` are the drives.
 - `cli/` is `bcamp` — `src/routes/<service>/<method>.js` hand-written, everything else is `/mcp`'s tool list · `deploy/build.mjs` builds the image · `docs/` is the depth (`SCREENS`, `ADAPTERS`, `PROVISIONING`, `VISION`).
 
@@ -118,7 +118,7 @@ touching a gate, tenancy, a deploy, a channel or a notification.
 - **Nothing in the browser names the workspace** — it is the header, and a model whose required columns are server-written cannot be created from the form.
 - **A deploy resolves an EXECUTOR before it does anything**; a release that names a digest uploads and builds nothing; a tag is not an identity, a digest is.
 - **A service DECLARES its channel and runs no announce hook**; a connection carries no workspace, so `channels({ claims })` says which one it hears.
-- **Only `recovered` resolves an alert**, and a rule's condition is COLUMNS with one delivery owner (`domain/notify/delivery.ts`).
+- **Only `recovered` resolves an alert**, and a rule's condition is COLUMNS with one delivery owner (`domain/notification/delivery.ts`).
 - **Zero raw SQL, on purpose** — `db.asSystem().sql` is the only bypass and it enforces nothing.
 
 ---
@@ -137,9 +137,9 @@ bearer-send.ts build.mjs capabilities.ts cli.config.js credentials.ts db.ts deli
 dependencies.ts domain-dns.job.ts executor.ts gate.ts generate.js hooks.ts host-record.ts index.ts 
 job-run.job.ts job-schedule.ts kinds.ts litestone.config.js local-git.ts local-ssh.ts mailer.ts 
 main.js monitor-sweep.job.ts NoRecord.mesa notices.js notify.ts outpost-dev.ts outpost-run.ts 
-outpost.ts package.json preview.ts probe.ts provision-host.ts PROVISIONING.md push.ts README.md 
+outpost.ts package.json probe.ts provision-host.ts PROVISIONING.md push.ts README.md 
 registers.ts release-record.ts runtime.ts schema.d.ts schema.lite scopes.ts SCREENS.md seed.js 
 server-metrics.ts session-auth.ts session.js site-ask.ts site-checkout.ts site-photo.ts 
 site-preview.ts site-publish.ts Terminal.mesa variables.ts VISION.md workbench-branch.ts 
-workbench-check.ts workbench-diff.ts workbench-run.ts workbench-shell.ts workbench-terminal.ts 
+workbench-check.ts workbench-diff.ts workbench-preview.ts workbench-run.ts workbench-shell.ts workbench-terminal.ts 
 workbench.ts -->

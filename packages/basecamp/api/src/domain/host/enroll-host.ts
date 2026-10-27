@@ -1,9 +1,9 @@
-// api/src/core/enroll-host.ts — the box this container runs on, enrolled as a fleet machine.
+// api/src/domain/host/enroll-host.ts — the box this container runs on, enrolled as a fleet machine.
 //
 // `fli deploy` and `fli deploy:outpost` run it in the API container over the operator's SSH, for an app
 // whose deploy block says `outpost: true` (FJS-D1191):
 //
-//   docker exec <api container> bun api/src/core/enroll-host.ts '{"ip":"203.0.113.7"}'
+//   docker exec <api container> bun api/src/domain/host/enroll-host.ts '{"ip":"203.0.113.7"}'
 //
 // `ip` is the address the operator's ssh reached the box at, and becomes the
 // row's `ipAddress` when it has none and is public (`FJS-3515`).
@@ -19,8 +19,8 @@
 //   { skip: '<why>' }                    nothing to enroll into yet, or no one place to
 //   { error: '<what>' }                  and the exit is non-zero
 
-import { createBasecampDb } from './db.ts'
-import { hostServer, useHost, publicIp } from '../domain/host/host-machine.ts'
+import { createBasecampDb } from '../../core/db.ts'
+import { hostServer, useHost, publicIp } from './host-machine.ts'
 
 const answer = (o: Record<string, unknown>) => console.log(JSON.stringify(o))
 

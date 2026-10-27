@@ -1,15 +1,15 @@
-// api/src/core/provision-host.ts — the machine Basecamp itself will run on, made at a cloud.
+// api/src/domain/host/provision-host.ts — the machine Basecamp itself will run on, made at a cloud.
 //
 // `fli basecamp:create` runs it from this checkout (`FJS-D1253`), with the
 // cloud's token in the environment so it never sits in a process listing. The
 // key is the cloud's kind upper-cased, then _TOKEN:
 //
-//   <KIND>_TOKEN=… bun api/src/core/provision-host.ts '{"cloud":"<kind>","action":"create","size":"4gb",…}'
-//   <KIND>_TOKEN=… bun api/src/core/provision-host.ts '{"cloud":"<kind>","action":"off","id":"123"}'
-//   <KIND>_TOKEN=… bun api/src/core/provision-host.ts '{"cloud":"<kind>","action":"destroy","id":"123"}'
-//   <KIND>_TOKEN=… bun api/src/core/provision-host.ts '{"cloud":"<kind>","action":"list"}'
-//   <KIND>_TOKEN=… bun api/src/core/provision-host.ts '{"cloud":"<kind>","action":"host","id":"123"}'
-//   <KIND>_TOKEN=… bun api/src/core/provision-host.ts '{"cloud":"<kind>","action":"release","ip":"203.0.113.9"}'
+//   <KIND>_TOKEN=… bun api/src/domain/host/provision-host.ts '{"cloud":"<kind>","action":"create","size":"4gb",…}'
+//   <KIND>_TOKEN=… bun api/src/domain/host/provision-host.ts '{"cloud":"<kind>","action":"off","id":"123"}'
+//   <KIND>_TOKEN=… bun api/src/domain/host/provision-host.ts '{"cloud":"<kind>","action":"destroy","id":"123"}'
+//   <KIND>_TOKEN=… bun api/src/domain/host/provision-host.ts '{"cloud":"<kind>","action":"list"}'
+//   <KIND>_TOKEN=… bun api/src/domain/host/provision-host.ts '{"cloud":"<kind>","action":"host","id":"123"}'
+//   <KIND>_TOKEN=… bun api/src/domain/host/provision-host.ts '{"cloud":"<kind>","action":"release","ip":"203.0.113.9"}'
 //
 // Each vendor's dialect is its connector under providers/compute/ and nothing
 // here restates one. The box boots with no install in its user_data: install.sh
@@ -44,9 +44,9 @@
 // stderr is what the minute is spent on, for the person watching: fli lets it
 // through to the terminal untouched.
 
-import { connectorFor, fleetMark, hostMark, priceIn, sizeRegions } from '../providers/compute/index.ts'
-import type { ComputeSize, ReservedIp } from '../providers/compute/index.ts'
-import type { ProviderKind }  from '../../../db/schema.d.ts'
+import { connectorFor, fleetMark, hostMark, priceIn, sizeRegions } from '../../providers/compute/index.ts'
+import type { ComputeSize, ReservedIp } from '../../providers/compute/index.ts'
+import type { ProviderKind }  from '../../../../db/schema.d.ts'
 import { bearerSend }         from './bearer-send.ts'
 
 const answer = (o: Record<string, unknown>) => console.log(JSON.stringify(o))

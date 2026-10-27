@@ -77,7 +77,7 @@ are many cards.
 ## Before any of it
 
 V1 runs with every permission. `/mcp` offers no agent the workbench, and
-`agentGuard` refuses a key that calls it anyway (`api-keys/scopes.ts`), so an
+`agentGuard` refuses a key that calls it anyway (`domain/api-key/scopes.ts`), so an
 admin key cannot start such a run. Real `claude -p` has run through the ask
 panel's argv (`verify:ask --real`, the plan probes of
 [`shipped/workbench-plans.md`](shipped/workbench-plans.md) 5.4); a full Build

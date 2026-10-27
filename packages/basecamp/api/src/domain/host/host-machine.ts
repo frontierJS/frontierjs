@@ -1,7 +1,7 @@
 // src/domain/host/host-machine.ts — the box this Basecamp runs on, as a fleet machine.
 //
 // Two callers make it one: the *Use this Basecamp server* button
-// (`servers.useHost`, as the person) and `fli deploy` (`api/src/core/enroll-host.ts`,
+// (`servers.useHost`, as the person) and `fli deploy` (`api/src/domain/host/enroll-host.ts`,
 // run in the container over the operator's SSH, as the application —
 // FJS-D1191). Both find the row through `HubConfig.hostServerId` and both mint
 // the token here, so a box enrolled from one is the same row the other finds,

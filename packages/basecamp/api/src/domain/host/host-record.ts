@@ -1,9 +1,9 @@
-// api/src/core/host-record.ts — Basecamp's own hostname, pointed at its box at Cloudflare.
+// api/src/domain/host/host-record.ts — Basecamp's own hostname, pointed at its box at Cloudflare.
 //
 // `fli basecamp:dns` runs it from this checkout, with the token in the
 // environment so it never sits in a process listing:
 //
-//   CLOUDFLARE_TOKEN=… bun api/src/core/host-record.ts '{"host":"ops.example.com","ip":"203.0.113.7"}'
+//   CLOUDFLARE_TOKEN=… bun api/src/domain/host/host-record.ts '{"host":"ops.example.com","ip":"203.0.113.7"}'
 //
 // `{"host":…,"check":true}` finds the zone and writes nothing: `fli basecamp:create`
 // asks it before buying a box, so a token that cannot reach the name is found
@@ -28,8 +28,8 @@
 //   { records: [{ zone, name, id, proxied, marked }] }  under find
 //   { error: '<what>' }                 and the exit is non-zero
 
-import { cloudflare }  from '../providers/edge/cloudflare.ts'
-import { FLEET }       from '../providers/compute/index.ts'
+import { cloudflare }  from '../../providers/edge/cloudflare.ts'
+import { FLEET }       from '../../providers/compute/index.ts'
 import { bearerSend }  from './bearer-send.ts'
 
 const answer = (o: Record<string, unknown>) => console.log(JSON.stringify(o))

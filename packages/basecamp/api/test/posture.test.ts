@@ -23,6 +23,7 @@ import { grantsFor }         from '../src/core/capabilities.ts'
 import { declaredFor, gradeHub, gradePosture, gradeReplication, HUB_CONTROL_IDS, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/domain/host/posture.ts'
 import { HOST_SLUG } from '../src/domain/host/host-machine.ts'
 import type { HostDeclared, PostureReadings } from '../src/domain/host/posture.ts'
+import { componentById, matchGithub, rangeOf, versionOf } from '../src/domain/host/components.ts'
 import { prunePosture } from '../src/jobs/retention.job.ts'
 
 const NOW = Date.parse('2026-10-13T12:00:00Z')
@@ -433,5 +434,71 @@ describe('the host row on /hub/security/', () => {
     })
     for (const [k, v] of Object.entries(head)) req.set(k, v)
     expect((await req.send(body)).status).toBe(401)
+  })
+})
+
+// ─── Component advisories (Phase 7) ──────────────────────────────────────────
+// The range strings are moby's and Bun's own, as GitHub serves them. The table's
+// names are proved against the live sources by verify-advisories.mjs.
+
+describe('component advisories', () => {
+  const advisory = (ghsa_id: string, rows: [string, string, string][]) => ({
+    ghsa_id, state: 'published', withdrawn_at: null,
+    vulnerabilities: rows.map(([name, vulnerable_version_range, patched_versions]) =>
+      ({ package: { name }, vulnerable_version_range, patched_versions })),
+  })
+  const docker = componentById('docker')!.source as any
+  const bun    = componentById('bun')!.source as any
+  const ids    = (src: any, list: any[], v: string) => matchGithub(src, list, v).ids
+
+  test('a version is read out of each component\'s own output', () => {
+    expect(versionOf('v2.8.4 h1:abc=')).toBe('2.8.4')
+    expect(versionOf('v0.3.13')).toBe('0.3.13')
+    expect(versionOf('1.7.27')).toBe('1.7.27')
+    expect(versionOf('')).toBe(null)
+    expect(versionOf(null)).toBe(null)
+  })
+
+  test('comma is AND for a lower bound then an upper one, OR otherwise', () => {
+    expect(rangeOf('>= 1.3.14, < 1.4.4')).toBe('>= 1.3.14 < 1.4.4')
+    expect(rangeOf('<= 25.0.18, 26.0.0 - 29.8.1')).toBe('<= 25.0.18 || 26.0.0 - 29.8.1')
+    expect(rangeOf('28.2.x, 28.3.0')).toBe('28.2.x || 28.3.0')
+    expect(rangeOf('N/A')).toBe(null)
+  })
+
+  test('a list of upper bounds applies the one on the version\'s own line', () => {
+    const list = [advisory('GHSA-v23v-6jw2-98fq', [['docker-ce', '<= v24.0.9, <= v25.0.5, <= v26.0.2', '> v26.1.4']])]
+    expect(ids(docker, list, '25.0.4')).toEqual(['GHSA-v23v-6jw2-98fq'])
+    expect(ids(docker, list, '25.0.19')).toEqual([])
+  })
+
+  test('a range that never closes is fixed by a patched release on the line, or above them all', () => {
+    const list = [advisory('GHSA-6wrf-mxfj-pf5p', [['github.com/docker/docker', '>= 1.12', '>= 23.0.3, >= 20.10.24']])]
+    expect(ids(docker, list, '20.10.20')).toEqual(['GHSA-6wrf-mxfj-pf5p'])
+    expect(ids(docker, list, '20.10.25')).toEqual([])
+    expect(ids(docker, list, '29.8.0')).toEqual([])
+  })
+
+  test('an Engine row outranks the frozen Go module, which would never read as fixed', () => {
+    const list = [advisory('GHSA-rg2x-37c3-w2rh', [
+      ['Docker Engine', '< 29.5.1', '29.5.1'],
+      ['github.com/docker/docker/daemon', '<= v28.5.2', 'None'],
+    ])]
+    expect(ids(docker, list, '29.2.0')).toEqual(['GHSA-rg2x-37c3-w2rh'])
+    expect(ids(docker, list, '29.8.0')).toEqual([])
+  })
+
+  test('an advisory about something else is skipped; an unreadable or relabeled runtime row is unread, never clean', () => {
+    const docs = [advisory('GHSA-vwm3-crmr-xfxw', [['docs.docker.com', 'N/A', '']])]
+    expect(matchGithub(docker, docs, '29.8.0')).toEqual({ ids: [], unread: [] })
+    const renamed = [advisory('GHSA-yyyy-yyyy-yyyy', [['Moby Engine', '< 30.0.0', '30.0.0']])]
+    expect(matchGithub(docker, renamed, '29.8.0')).toEqual({ ids: [], unread: ['GHSA-yyyy-yyyy-yyyy'] })
+    const bad = [advisory('GHSA-zzzz-zzzz-zzzz', [['bun', 'all of them', '']])]
+    expect(matchGithub(bun, bad, '1.4.0')).toEqual({ ids: [], unread: ['GHSA-zzzz-zzzz-zzzz'] })
+  })
+
+  test('a withdrawn advisory affects nothing', () => {
+    const list = [{ ...advisory('GHSA-663w-cv8g-jj2p', [['bun', '< 1.4.4', '1.4.4']]), withdrawn_at: '2026-10-01T00:00:00Z' }]
+    expect(ids(bun, list, '1.4.0')).toEqual([])
   })
 })

@@ -96,7 +96,7 @@ import { ASK_MAX_REQUEST, NO_KEY, askBusy, askStatuses, dropAsk, markAsk, queueA
 import { env } from '../../core/env.ts'
 import { dispatchPublish } from '../../jobs/site-publish.job.ts'
 import { PUBLISH_STEPS, type PublishSnapshot } from '../../domain/site/site-publish.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 import { maskToken } from '../api-keys/api-keys.service.ts'
 
 const sys = (): any => $.db.asSystem()

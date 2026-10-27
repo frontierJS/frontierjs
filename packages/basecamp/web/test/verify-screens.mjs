@@ -39,7 +39,7 @@ import { openChrome } from '../../../mesa/src/drive.js'
 import { tempDir } from '../../../litestone/src/tmp-dirs.js'
 import { portFor } from '@frontierjs/cli/core/ports.js'
 // The count is the enum's; `db/test/schema.test.ts` holds this list equal to it.
-import { NOTIFICATION_KIND_NAMES } from '../../api/src/domain/notify/kinds.ts'
+import { NOTIFICATION_KIND_NAMES } from '../../api/src/domain/notification/kinds.ts'
 import { totp } from '../../../auth/totp.ts'
 
 const KINDS = NOTIFICATION_KIND_NAMES.length

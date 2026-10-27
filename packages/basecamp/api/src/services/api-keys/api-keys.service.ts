@@ -22,7 +22,7 @@ import { createService, BadRequest, Conflict, Forbidden, $ } from '@frontierjs/j
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, roleOf, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor } from '../../core/resource.ts'
-import { scopeVocabulary, WHOLE_KEY } from './scopes.ts'
+import { scopeVocabulary, WHOLE_KEY } from '../../domain/api-key/scopes.ts'
 import { WORKSPACE_ROLE_LEVEL } from '../../core/gate.ts'
 import type { IAuth } from '@frontierjs/junction'
 

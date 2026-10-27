@@ -30,7 +30,7 @@ import type { App } from '@frontierjs/junction'
 import { cloudflareFor } from './site-preview.ts'
 import { advanceBase, mergeDraft, unreleased, type Author, type GitSite } from './site-checkout.ts'
 import { finishRelease, recordStep, startRelease } from '../release/release-record.ts'
-import { notifyPeople, workspaceMembers } from '../notify/notify.ts'
+import { notifyPeople, workspaceMembers } from '../notification/notify.ts'
 import { isGit } from '../release/app-source.ts'
 import { resolveExecutor, isExecutor, BUILD_TIMEOUT_MS } from '../../providers/executor.ts'
 

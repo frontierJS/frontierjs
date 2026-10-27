@@ -28,7 +28,7 @@ import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /**
  * What a flag is set to in one environment.

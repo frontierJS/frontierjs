@@ -1,4 +1,4 @@
-// src/core/local-ssh.ts — the operator's own ~/.ssh/config, read on THEIR laptop.
+// src/domain/local/local-ssh.ts — the operator's own ~/.ssh/config, read on THEIR laptop.
 //
 // A development affordance and nothing more: Basecamp running locally lists the
 // Host aliases its operator already has, so importing a machine is a pick
@@ -22,7 +22,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, isAbsolute, dirname } from 'node:path'
 import { childEnv } from '@frontierjs/junction'
-import { env } from './env.ts'
+import { env } from '../../core/env.ts'
 
 export type SshHost = {
   alias:    string

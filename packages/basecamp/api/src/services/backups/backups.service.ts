@@ -27,9 +27,9 @@ import { createService, BadRequest, Conflict, NotFound, $ } from '@frontierjs/ju
 import { requireSystemAdmin, getPagination }                from '../../core/hooks.ts'
 import { db, actor, callerOrder, callerSelect }               from '../../core/resource.ts'
 import { queueBackup, SETTLED }                             from '../../jobs/backup-run.job.ts'
-import { deleteArchive, rescanDestination }                 from '../../jobs/backup-archives.ts'
+import { deleteArchive, rescanDestination }                 from '../../domain/backup/backup-archives.ts'
 import { LEVELS }                                           from '@frontierjs/litestone'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 export default createService({
   name:  'backups',

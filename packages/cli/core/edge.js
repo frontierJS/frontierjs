@@ -144,6 +144,17 @@ export const routeId = (appId, side = 'web', plain = false) =>
 export const accessLogPath = (id) => `/var/log/caddy/${id}.access.log`
 
 /**
+ * The path prefixes of one origin that the API answers and the page does not:
+ * the API's roots from `apiPaths`, and `/ws`. One list, read by the Caddy
+ * routes here and by a Basecamp `DomainRoute` set — a second spelling of it
+ * is wrong the day an app mounts under another `apiPrefix`.
+ */
+export function routePrefixes(paths = null) {
+  const { roots = ['/api'] } = paths ?? {}
+  return [...roots, '/ws']
+}
+
+/**
  * The routes `deploy:setup` writes: one, or two.
  *
  * The pause guard is the FIRST handler in every route — a paused app whose API
@@ -158,9 +169,9 @@ export function edgeRoutes({ appId, serverPath, apiPort, web, api, paths = null,
   if (!web?.domain && !split)
     throw new EdgeError('deploy.web.domain is not set. Caddy routes by hostname and fetches a certificate for it, so the edge needs one.')
 
-  const { prefix = '/api', roots = ['/api'] } = paths ?? {}
-  const matched = [...roots.flatMap(p => [p, `${p}/*`]), '/ws', '/ws/*']
-  const proxy = split ? [] : [...(prefix ? [] : [navigation(roots)]), apiRoute(apiPort, matched)]
+  const { prefix = '/api', roots } = paths ?? {}
+  const matched = routePrefixes(paths).flatMap(p => [p, `${p}/*`])
+  const proxy = split ? [] : [...(prefix ? [] : [navigation(roots ?? ['/api'])]), apiRoute(apiPort, matched)]
 
   const routes = []
   if (web?.domain) routes.push(route({
@@ -186,7 +197,7 @@ export function edgeRoutes({ appId, serverPath, apiPort, web, api, paths = null,
  * path on the API host and nothing on the web host.
  */
 export function plainRoutes({ appId, web, api, paths = null }) {
-  const { prefix = '/api', roots = ['/api'] } = paths ?? {}
+  const { prefix = '/api' } = paths ?? {}
   const refuse = (match) => ({
     ...(match ? { match: [match] } : {}),
     handle: [{
@@ -201,7 +212,7 @@ export function plainRoutes({ appId, web, api, paths = null }) {
   if (api?.domain) return [wrap(routeId(appId, 'api', true), api.domain, refuse(null))]
   if (!web?.domain) return []
 
-  const matcher = { path: [...roots.flatMap(p => [p, `${p}/*`]), '/ws', '/ws/*'] }
+  const matcher = { path: routePrefixes(paths).flatMap(p => [p, `${p}/*`]) }
   // Unprefixed, an HTML navigation is a page (see `navigation`) and redirects.
   if (!prefix) matcher.not = [{ header: { Accept: ['*text/html*'] }, not: [{ path: NAVIGATED }] }]
   return [wrap(routeId(appId, 'web', true), web.domain, refuse(matcher))]

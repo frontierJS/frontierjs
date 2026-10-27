@@ -32,7 +32,7 @@ import { LEVELS }            from '@frontierjs/litestone'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws } from '../../core/resource.ts'
 import { isSnoozed } from '../../domain/alert/alerting.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /** The ceiling on any one kind of node. A fleet past this is a graph nobody
  *  can read anyway, and the answer says it was cut rather than looking whole. */

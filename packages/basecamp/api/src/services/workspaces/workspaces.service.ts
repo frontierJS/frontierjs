@@ -22,7 +22,7 @@ import type { WorkspaceRole }  from '../../../../db/schema.d.ts'
 // five names is what keeps a role added tomorrow from being accepted by an API
 // that cannot grade it.
 import { WORKSPACE_ROLE_LEVEL } from '../../core/gate.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /**
  * Point the role hooks at the workspace being addressed.

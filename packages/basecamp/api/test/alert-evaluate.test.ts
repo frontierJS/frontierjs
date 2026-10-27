@@ -24,7 +24,7 @@ import { createConduit } from '@frontierjs/conduit'
 
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { evaluateWindow, breaches, describeBreach } from '../src/domain/alert/alerting.ts'
-import { KINDS, testMessage }  from '../src/domain/notify/delivery.ts'
+import { KINDS, testMessage }  from '../src/domain/notification/delivery.ts'
 import evaluate              from '../src/jobs/alert-evaluate.job.ts'
 import type { App }          from '@frontierjs/junction'
 

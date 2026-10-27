@@ -1,4 +1,4 @@
-// src/services/jobs/job-schedule.ts
+// src/domain/job/job-schedule.ts
 // The one place this app binds a Job row to a clock.
 //
 // A scheduled Job is a database ROW, so its schedule has the row's lifetime: it

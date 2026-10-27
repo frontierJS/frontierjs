@@ -17,7 +17,7 @@ import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import { MAX_SNOOZE_MINUTES } from '../../domain/alert/alerting.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /** The metric models are `@@gate(8)` and `@@tenant(none)` — a reading is
  *  about this process and belongs to nobody's workspace. So a scoped client

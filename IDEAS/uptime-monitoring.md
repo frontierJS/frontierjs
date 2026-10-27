@@ -23,7 +23,7 @@ replace it. What that takes is below, and most of it already exists.
 | --- | --- | --- |
 | Machine liveness: `lastHeartbeatAt`, sweep to `unreachable`, `server_unreachable` notification | `basecamp/api/src/jobs/server-reachability.job.ts` | **the shape of the probe job**: a cron, `@@transitions`-guarded state change, an event row, `notifyPeople` after the move |
 | Threshold alerting over a metric series, with `no-data` ≠ resolved | `jobs/alert-evaluate.job.ts`, `metrics` (`FJS-956`) | latency alerts, unchanged — a probe writes `monitor.latencyMs{monitorId}` |
-| Delivery: `NotificationChannel` (`slack pagerduty email webhook`) + per-person `NotificationPreference` | schema + `domain/notify/kinds.ts` | down/up delivery, via a `MonitorChannel` join shaped like `AlertRuleChannel` |
+| Delivery: `NotificationChannel` (`slack pagerduty email webhook`) + per-person `NotificationPreference` | schema + `domain/notification/kinds.ts` | down/up delivery, via a `MonitorChannel` join shaped like `AlertRuleChannel` |
 | A one-shot app health probe | Outpost `POST /health-check`, called once by `deployment-run.job.ts:278` | nothing: that path is for deciding whether a deploy succeeded, and it asks from inside the box |
 | `service_health` widget | `services/dashboards/kinds.ts` | superseded for URLs by an `uptime` widget |
 
@@ -144,7 +144,7 @@ carries Kuma's `monitor_tag` over by name.
 
 ### Delivery
 
-Two new kinds in `domain/notify/kinds.ts`, `monitor_down` and
+Two new kinds in `domain/notification/kinds.ts`, `monitor_down` and
 `monitor_up`. The same two-addressee split as `alert-evaluate`: the monitor's
 channels page the workspace, and members get a `Notification` they can mute.
 `resendEvery > 0` re-sends while down.

@@ -378,7 +378,7 @@ The plan as written:
   behind `localMachineRefusal`. The rows are written through each row's own
   service as the caller — `environments`, `apps`, `variables`, `domains`,
   `apps.place` — so a preview meets every check a person's create meets.
-  `core/preview.ts` is the owner.
+  `domain/workbench/workbench-preview.ts` is the owner.
 - **The port is claimed at the cut**, through fli's `portFor` on the pin's
   sessions lock, so the route names the port `fli dev` will bind in that
   worktree; Archive gives it back. The marker is written there too, by fli's
@@ -419,7 +419,7 @@ The plan as written:
   none; `opened` is a field. Complexity — one function writing through five
   existing services. Predictability — a preview's rows are the rows a person
   would make. Derived — the port is `fli dev`'s, the hostname the slug's.
-  Owner — `core/preview.ts`; the marker's name stays fli's. Boundary — the
+  Owner — `domain/workbench/workbench-preview.ts`; the marker's name stays fli's. Boundary — the
   caller's workspace, read twice. Failure — refused before the cut, rolled
   back after it; the route reported. Silence — *stays true:* a preview's
   hostname is routed only to its branch's port; *what fails:* the `/route`
@@ -527,7 +527,7 @@ The plan as written:
   one build, one publish, one ordinary release. Predictability — Activate takes
   `hosts` as `/deploy` does. Derived — `VITE_` variables from the App's rows,
   the hostname set from Domain rows. Owner — the release is the deploy job's,
-  the machine retire `apps.remove`'s, the build `core/preview.ts`'s, the route
+  the machine retire `apps.remove`'s, the build `domain/workbench/workbench-preview.ts`'s, the route
   outpost's. Boundary — every read and write as the caller. Failure — the
   build and the bundle check refuse before the machine is touched; a machine
   refusing the publish refuses Freeze; an unreachable machine at Retire is
@@ -540,7 +540,7 @@ The plan as written:
   second-app-same-slug test. Adjudications: *preservation vs. evolution*
   (`/static/activate`'s body grew `hosts` and every inline release sends it,
   no old shape kept); *batteries vs. smallness* (the preview stays in
-  `core/preview.ts` and the workbench; what reached the release path is
+  `domain/workbench/workbench-preview.ts` and the workbench; what reached the release path is
   `FJS-1615`'s fix, which every inline app needed); *ergonomics vs.
   strictness* (Retire's unreachable machine, above). Tier: Assessment.
 

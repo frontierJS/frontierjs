@@ -23,7 +23,7 @@ import { createService } from '@frontierjs/junction'
 import { AccessDeniedError, LEVELS } from '@frontierjs/litestone'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, shapedByCaller } from '../../core/resource.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /** Per kind. A workspace that deleted more than this of one kind sees the newest. */
 const PER_KIND = 100

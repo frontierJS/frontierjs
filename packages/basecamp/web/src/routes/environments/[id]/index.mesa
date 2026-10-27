@@ -17,6 +17,7 @@ title: Environment
   import Select   from '@frontierjs/ui/components/forms/Select.mesa'
   import Input    from '@frontierjs/ui/components/forms/Input.mesa'
   import Table    from '@frontierjs/ui/components/display/Table.mesa'
+  import NavIcon  from '../../../components/NavIcon.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
   import VariablesEditor from '../../../components/VariablesEditor.mesa'
   import { offerUndo } from '../../../resources/Trash.mesa'
@@ -29,6 +30,8 @@ title: Environment
   let error       = null
   let loadError   = null
   let loading     = true
+
+  const primaryHost = (app) => app.domains?.find(d => d.isPrimary)?.hostname ?? null
 
   // The environment itself is WATCHED, not read. `service.get(id)` answers a
   // plain object and nothing reaches a plain object — not a push, not a job,
@@ -301,10 +304,13 @@ title: Environment
             <span class="pill" class:success={app.status === 'running'}
                                class:danger={app.status === 'error'}>{app.status}</span>
           </td>
-          <!-- The primary hostname, from the app's `domains`. `App.domain`
-               was one nullable string and is gone — an apex and a www is
-               the ordinary case, and one column could not hold both. -->
-          <td><code>{app.domains?.find(d => d.isPrimary)?.hostname ?? '—'}</code></td>
+          <td>
+            {#if primaryHost(app)}
+              <code>{primaryHost(app)}</code>
+              <a href={`https://${primaryHost(app)}`} target="_blank" rel="noopener"
+                 aria-label={`Open ${primaryHost(app)} in a new tab`}><NavIcon name="external" /></a>
+            {:else}<code>—</code>{/if}
+          </td>
           <td class="cluster">
             <Button treatment="outlined" disabled={deploying === app.id} onclick={() => deploy(app)}>
               {deploying === app.id ? 'Starting…' : 'Deploy'}

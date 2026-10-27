@@ -20,7 +20,7 @@ import { startRelease, recordStep, finishRelease, pushRow as pushReleaseRow } fr
 import { isInline, isGit, imageOf, inlineFilesFor } from '../../domain/release/app-source.ts'
 import { snapshotVariables } from '../../domain/release/variables.ts'
 import { runtimeOf, type Runtime } from '../../domain/release/runtime.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 // `environment` is the DEPLOYMENT's own, which is not the app's: an app has a
 // current environment and a deployment records the one it went to, and those

@@ -649,7 +649,7 @@ describe('sync', () => {
   })
 
   test('a preview\'s thaw sends the redirects and paths beside the hosts, or Outpost removes them (FJS-2562)', async () => {
-    const { thawPreview } = await import('../src/core/preview.ts')
+    const { thawPreview } = await import('../src/domain/workbench/workbench-preview.ts')
     const sys    = env.system as any
     const prev   = await sys.app.create({ data: { workspaceId: site.id, environmentId: web.environmentId, name: 'prev', slug: 'prev', port: 5173 } })
     const other  = await sys.app.create({ data: { workspaceId: site.id, environmentId: web.environmentId, name: 'other', slug: 'other' } })

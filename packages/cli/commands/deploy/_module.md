@@ -105,7 +105,7 @@ const machineFor = ($, host, path = null, transport = null) => createMachine({
 // made the workspace — the deploy step meets an empty database on a fresh box
 // and answers `skip`.
 //
-// The app's `api/src/core/enroll-host.ts`, run in the serving container, finds or
+// The app's `api/src/domain/host/enroll-host.ts`, run in the serving container, finds or
 // makes the host's Server row and mints its token; the install command it
 // answers runs on the host. Then, installed now or enrolled before, the box's
 // `outpost.env` names the database directory, the env file and the
@@ -131,7 +131,7 @@ const enrollOutpost = (machine, { appId, deployConf, path, host, log }) => {
   // row with none is a machine no ingress record can name (`FJS-3515`).
   const enroll = [
     `IP=$(printf '%s' "$SSH_CONNECTION" | cut -d' ' -f3)`,
-    `docker exec ${apiContainer(appId, deployConf)} bun api/src/core/enroll-host.ts "{\\"ip\\":\\"$IP\\"}"`,
+    `docker exec ${apiContainer(appId, deployConf)} bun api/src/domain/host/enroll-host.ts "{\\"ip\\":\\"$IP\\"}"`,
   ].join('\n')
 
   let answer
@@ -143,7 +143,7 @@ const enrollOutpost = (machine, { appId, deployConf, path, host, log }) => {
 
   let result
   if (!answer) {
-    log.warn('Outpost not enrolled: api/src/core/enroll-host.ts answered nothing — pass --no-outpost to stop trying')
+    log.warn('Outpost not enrolled: api/src/domain/host/enroll-host.ts answered nothing — pass --no-outpost to stop trying')
     return { outcome: 'failed', reason: 'enroll-host.ts answered nothing' }
   }
   if (answer.error) { log.warn(`Outpost not enrolled: ${answer.error}`); return { outcome: 'failed', reason: answer.error } }

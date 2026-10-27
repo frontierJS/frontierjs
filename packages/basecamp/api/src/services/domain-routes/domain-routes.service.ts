@@ -14,7 +14,7 @@ import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws } from '../../core/resource.ts'
 import domainDns from '../../jobs/domain-dns.job.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /** Outpost's `PREFIX`, lowercased with no trailing slash: segments of URL-safe characters. */
 const PREFIX = /^(?:\/[a-z0-9._~-]+)+$/

@@ -24,7 +24,7 @@ import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { edgeAccounts, edgeHealth } from '../edge/edge.service.ts'
 import { edgeProviders }           from '../../providers/edge/index.ts'
 import type { App, ServiceContext } from '@frontierjs/junction'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 import { shapedByCaller } from '../../core/resource.ts'
 
 export type ServiceStatus = 'healthy' | 'degraded' | 'unreachable' | 'unconfigured'

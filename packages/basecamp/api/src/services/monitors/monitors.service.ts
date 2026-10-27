@@ -14,7 +14,7 @@ import { createService, NotFound, Conflict, $ } from '@frontierjs/junction'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
-import { keyScope }         from '../api-keys/scopes.ts'
+import { keyScope }         from '../../domain/api-key/scopes.ts'
 
 /** The heartbeat bar's length: the newest checks `get` carries. */
 const RECENT_CHECKS = 50

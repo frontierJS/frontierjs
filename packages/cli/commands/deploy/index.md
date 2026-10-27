@@ -50,9 +50,35 @@ Deploys via SSH. Environment resolved in order:
 3. Falls back to dev
 
 Needs a `deploy` block in `frontier.config.js` (Docker/SSH/Caddy); without one
-it refuses.
+it refuses — unless `BASECAMP_APP_ID` is set (the app's `.env`, the shell, or
+`~/.config/fli/.env`), which makes the app one Basecamp runs: the run is then
+`fli basecamp:deploy` for that App, preflight and all, and `--dry` is passed
+through. The target flags are refused there, because the App IS the
+environment — a second environment is a second App id.
 
 ```js
+// ─── An App Basecamp runs ─────────────────────────────────────────────────────
+// Ahead of the deploy block, which such an app may still carry as the
+// scaffold's placeholder. The command is run as a child of THIS checkout's
+// fli, never a bare `fli`, which would be the global install.
+if (process.env.BASECAMP_APP_ID) {
+  const refused = ['production', 'stage', 'api', 'web', 'plan', 'resume'].filter(f => flag[f])
+  if (refused.length) {
+    log.error(`--${refused.join(', --')} ${refused.length === 1 ? 'is' : 'are'} for the ssh deploy — BASECAMP_APP_ID names one Basecamp App, ` +
+      'and another environment is another App: run `BASECAMP_APP_ID=<id> fli deploy`')
+    $.config.abort = true
+    return
+  }
+  const { spawnSync } = await import('child_process')
+  const { join }      = await import('path')
+  log.info(`BASECAMP_APP_ID is set — releasing App ${process.env.BASECAMP_APP_ID} through Basecamp`)
+  const run = spawnSync(process.execPath, [join(global.fliRoot, 'bin/fli.js'), 'basecamp:deploy', ...(flag.dry ? ['--dry'] : [])],
+    { cwd: $.paths.root, stdio: 'inherit', env: process.env })
+  if (run.status !== 0) $.config.abort = true
+  else                  $.config.stop  = true
+  return
+}
+
 const target    = resolveTarget(flag, $.git)
 const branch    = $.git.branch()
 const branchStr = branch ? ` (branch: ${branch})` : ''

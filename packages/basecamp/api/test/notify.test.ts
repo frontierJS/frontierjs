@@ -29,8 +29,8 @@ import { GatePlugin }       from '@frontierjs/litestone'
 import { notifications } from '@frontierjs/notifications'
 
 import { basecampGateLevel }   from '../src/core/gate.ts'
-import { NOTIFICATION_KINDS }  from '../src/domain/notify/kinds.ts'
-import { transportsFor, notifyPeople, workspaceMembers } from '../src/domain/notify/notify.ts'
+import { NOTIFICATION_KINDS }  from '../src/domain/notification/kinds.ts'
+import { transportsFor, notifyPeople, workspaceMembers } from '../src/domain/notification/notify.ts'
 import type { App }            from '@frontierjs/junction'
 
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')

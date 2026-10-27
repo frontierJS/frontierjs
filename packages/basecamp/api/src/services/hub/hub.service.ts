@@ -51,7 +51,7 @@ import { LEVELS }                  from '@frontierjs/litestone'
 import { getPagination }           from '../../core/hooks.ts'
 import { grantsFor } from '../../core/capabilities.ts'
 import { slugify } from '../../core/resource.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 /** A bot's address. `.invalid` is reserved by RFC 2606 and resolves nowhere,
  *  which is the point: `User.email` is required and unique, a bot has no

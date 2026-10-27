@@ -1,4 +1,4 @@
-// src/jobs/backup-archives.ts
+// src/domain/backup/backup-archives.ts
 // An archive once it exists: where its local copy is, the one way it is
 // deleted, which ones retention lets go, and the rescan that gives a row to
 // one found in the bucket with none (`FJS-D1493`).
@@ -24,8 +24,8 @@
 
 import { existsSync, rmSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import { keyUnder, sendFor }  from '../providers/storage/index.ts'
-import { deleteObject, listObjects } from '../providers/storage/s3.ts'
+import { keyUnder, sendFor }  from '../../providers/storage/index.ts'
+import { deleteObject, listObjects } from '../../providers/storage/s3.ts'
 import type { App }           from '@frontierjs/junction'
 
 /** `basecamp-` and the start time with `:` and `.` flattened to `-`. */

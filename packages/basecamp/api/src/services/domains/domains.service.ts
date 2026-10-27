@@ -26,7 +26,7 @@ import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import domainDns from '../../jobs/domain-dns.job.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 const DAY = 86_400_000
 

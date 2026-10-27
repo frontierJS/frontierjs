@@ -251,7 +251,7 @@ The full hazard catalog for `@frontierjs/basecamp`, moved out of `CLAUDE.md`. Th
 - **The audit trail must cover custom methods.** It recorded `create`/`patch`/
   `remove` only, so drain, deploy, cancel and trigger were in no trail at all. It
   now runs on `all` minus reads, with `servers.heartbeat` excluded by name.
-- **A scheduled Job's clock is Caravan's, and `services/jobs/job-schedule.ts` is the one
+- **A scheduled Job's clock is Caravan's, and `domain/job/job-schedule.ts` is the one
   place a row is bound to it.** `app.scheduler` is junction's in-process timer —
   no persistence, no retry, no principal — and this app used it to fire
   `app.jobs.dispatch(…)`, which is a clock with none of the queue's durability
@@ -406,7 +406,7 @@ The full hazard catalog for `@frontierjs/basecamp`, moved out of `CLAUDE.md`. Th
   WORKSPACE is paged.** Both go out when an alert fires and collapsing them
   gives you either a pager anybody can silence for everyone or a bell menu
   nobody can turn down. The preference lives in `NotificationPreference` and is
-  resolved in ONE place, `domain/notify/notify.ts` — a sender that decided for itself is
+  resolved in ONE place, `domain/notification/notify.ts` — a sender that decided for itself is
   a screen honoured by some callers and ignored by others (`FJS-967`). Three
   things about it bite:
   **the absence of a row is the kind's DEFAULT, never silence** (`kinds.ts`
@@ -430,7 +430,7 @@ The full hazard catalog for `@frontierjs/basecamp`, moved out of `CLAUDE.md`. Th
   (`FJS-D227`). It is `operator`/`threshold`/`forMinutes` now. The rule the
   ruling generalizes: **`Json` is right where nothing joins, queries or
   interprets the value; the moment something reads INTO it to decide, it is a
-  language and belongs in the schema.** Beside it, `domain/notify/delivery.ts` is the only
+  language and belongs in the schema.** Beside it, `domain/notification/delivery.ts` is the only
   place that knows how a `NotificationChannel` is reached — it takes its client
   and its conduit as arguments rather than reading `$`, because a cron has no
   ambient call context, and a per-kind table in two places is a kind added to one

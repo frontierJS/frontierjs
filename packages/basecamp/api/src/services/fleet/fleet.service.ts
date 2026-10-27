@@ -29,7 +29,7 @@
 import { createService } from '@frontierjs/junction'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, callerOrder, callerSelect } from '../../core/resource.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 export default createService({
   name:    'fleet',

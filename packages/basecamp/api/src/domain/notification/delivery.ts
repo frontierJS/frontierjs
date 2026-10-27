@@ -1,4 +1,4 @@
-// src/domain/notify/delivery.ts — how a NotificationChannel is actually reached.
+// src/domain/notification/delivery.ts — how a NotificationChannel is actually reached.
 //
 // ONE OWNER, and it has two callers: `channels.test` (a person pressing the
 // button) and the alert evaluator (a cron, at 3am, with nobody watching). The

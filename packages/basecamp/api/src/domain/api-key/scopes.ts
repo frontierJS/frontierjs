@@ -1,4 +1,4 @@
-// src/services/api-keys/scopes.ts
+// src/domain/api-key/scopes.ts
 // What an API key and an agent are allowed to do, and the hooks that hold them
 // to it.
 //

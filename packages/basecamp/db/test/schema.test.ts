@@ -34,7 +34,7 @@ import { RECLAIM_TARGET_NAMES } from '../../api/src/services/cleanup/targets.ts'
 // The hub's copy of the two status vocabularies. It exists so a bad value is
 // refused by name at the API rather than by a CHECK constraint message; this
 // import is what keeps it a copy of the schema rather than a second opinion.
-import { NOTIFICATION_KIND_NAMES } from '../../api/src/domain/notify/kinds.ts'
+import { NOTIFICATION_KIND_NAMES } from '../../api/src/domain/notification/kinds.ts'
 import { grantsFor } from '../../api/src/core/capabilities.ts'
 
 const SCHEMA     = join(import.meta.dir, '..', 'schema.lite')
@@ -1473,7 +1473,7 @@ describe('Secret · ApiKey — the tenancy declared over credential material', (
   test('the three system readers still reach across — they are asSystem()', async () => {
     // The conduit resolver looks a Secret up BY ID with no workspace in the
     // query (core/credentials.ts), and the API-key guard looks a key up by its
-    // credential id (services/api-keys/scopes.ts). Both are the caller's
+    // credential id (domain/api-key/scopes.ts). Both are the caller's
     // workspace only by coincidence of who is asking; a policy applied to them
     // would fail every send and refuse every key, silently.
     const db  = await client()

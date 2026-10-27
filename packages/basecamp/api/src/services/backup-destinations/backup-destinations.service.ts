@@ -33,7 +33,7 @@ import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, ch
 import { registerDestination, unregisterDestination, keyUnder, sendFor } from '../../providers/storage/index.ts'
 import { splitCredential, putObject, deleteObject } from '../../providers/storage/s3.ts'
 import type { S3Failure } from '../../providers/storage/s3.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 import { syncReplicasHeldBy } from '../../jobs/replicate-sync.job.ts'
 import type { App } from '@frontierjs/junction'
 

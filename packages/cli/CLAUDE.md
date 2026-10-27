@@ -116,7 +116,7 @@ journal-runner.mjs junction.config.js latency.js lib.js live-view.js lock.js mac
 map-model.js map-reference.js map-view.js _module.md new.md next.js one-console.md open-url.js 
 outline-hint.mjs outline.js package.json parser.js pause.js pgp-words.js plan.js PLAN.md png.js 
 ports.js preflight.js preview.js proofs.js prose.js prove.js proxy.js publish-view.js 
-register-atlas.js register-check.js registers.js registry.js release.js release-view.js repo.js 
+register-atlas.js register-check.js registers.js registry.js release.js release-preflight.js release-view.js repo.js 
 repo-map.js repo-rings.js repo-terms.html repo-work.js repro.js requires.js revert.js runnables.js 
 runtime.js scaffold-build.mjs schema-apply.js schema.lite scope.js scope.test.js seams.js server.js 
 shell.js shortcuts.js signatures.js site-surface.js stand-in.mjs tell.js tell-worker.js terms.js 

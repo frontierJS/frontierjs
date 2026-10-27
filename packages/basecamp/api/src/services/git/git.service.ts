@@ -3,7 +3,7 @@
 //
 // GET /git dispatches on X-Service-Method, collection-level:
 //   localRepos  the repositories under a folder on the machine this API runs
-//               on (`core/local-git.ts`) — a development affordance, offered
+//               on (`domain/local/local-git.ts`) — a development affordance, offered
 //               only with LOCAL_MACHINE=1 and never under NODE_ENV=production
 //
 // No model and nothing stored: a branch and a dirty count are the working
@@ -16,8 +16,8 @@ import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { LEVELS }                  from '@frontierjs/litestone'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { localMachineRefusal }     from '../../core/env.ts'
-import { resolveRoot, listLocalRepos } from '../../core/local-git.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { resolveRoot, listLocalRepos } from '../../domain/local/local-git.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 export default createService({
   name: 'git',

@@ -9,7 +9,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { hostAliases, parseSshG, listSshHosts, probeSshHost } from '../src/core/local-ssh.ts'
+import { hostAliases, parseSshG, listSshHosts, probeSshHost } from '../src/domain/local/local-ssh.ts'
 import { localMachineRefusal } from '../src/core/env.ts'
 
 const files = (map: Record<string, string>) => (p: string) => map[p] ?? null

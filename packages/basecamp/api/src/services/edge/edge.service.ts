@@ -45,7 +45,7 @@ import type { EdgeConnector, EdgeRecord, EdgeZone } from '../../providers/edge/i
 import type { AccountSend }      from '../../providers/compute/index.ts'
 import type { App }               from '@frontierjs/junction'
 import type { ProviderKind }      from '../../../../db/schema.d.ts'
-import { keyScope } from '../api-keys/scopes.ts'
+import { keyScope } from '../../domain/api-key/scopes.ts'
 
 export interface EdgeAccount {
   id:           string

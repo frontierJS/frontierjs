@@ -25,7 +25,7 @@ import { sessionScope, getPagination, WORKSPACE_QUERY }       from '../../core/h
 import { db, getScoped, actor, callerOrder, callerSelect }   from '../../core/resource.ts'
 import { executorOn, isExecutor }                            from '../../providers/executor.ts'
 import { takeAppBackup }                                     from '../../jobs/app-backup-run.job.ts'
-import { keyScope }                                          from '../api-keys/scopes.ts'
+import { keyScope }                                          from '../../domain/api-key/scopes.ts'
 
 export default createService({
   name:  'appBackups',

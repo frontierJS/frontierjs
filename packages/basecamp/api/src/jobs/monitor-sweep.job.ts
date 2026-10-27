@@ -16,8 +16,8 @@ import { defineJob }      from '@frontierjs/caravan'
 import { gradePublicUrl, pinTo, type PublicUrlOptions } from '@frontierjs/junction/public-url'
 import { runsAsApp }      from './context.ts'
 import { gradeProbe, nextState, type ProbeOutcome } from '../domain/monitor/probe.ts'
-import { fanOutToChannels } from '../domain/notify/delivery.ts'
-import { notifyPeople, workspaceMembers } from '../domain/notify/notify.ts'
+import { fanOutToChannels } from '../domain/notification/delivery.ts'
+import { notifyPeople, workspaceMembers } from '../domain/notification/notify.ts'
 import type { App }         from '@frontierjs/junction'
 
 /** Probes in flight at once. A sweep of a hundred slow URLs is bounded by the
