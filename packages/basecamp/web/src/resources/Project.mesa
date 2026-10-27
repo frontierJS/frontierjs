@@ -13,4 +13,9 @@
   import { createResource } from '@frontierjs/sierra/resource'
 
   export const projects = createResource('projects')
+
+  /** One call that makes the project, its environment and a git app (FJS-D1555).
+   *  `dockerfile` is sent only when a person filled it; absent lets the server seed.
+   *  Answers `{ id, project, environment, app, dockerfile: { seeded }, note? }`. */
+  export const fromRepo = (input) => projects.service.invoke('fromRepo', null, input)
 </script>

@@ -74,7 +74,7 @@ export function validRelativePath(path) {
 
 /** An app id or a host label, as a single directory name. Same reasoning as
  *  above: these arrive over the wire and they become path segments. */
-function validName(value, what) {
+export function validName(value, what) {
   if (typeof value !== 'string' || !value.length) return `${what} is required`
   if (value.length > 63)                          return `${what} is longer than 63 characters`
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(value)) return `${what} '${value}' is not a plain name`

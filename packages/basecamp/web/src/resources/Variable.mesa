@@ -10,6 +10,9 @@
   import { createResource } from '@frontierjs/sierra/resource'
 
   export const variables = createResource('variables')
+
+  /** A secret's value, once, for an administrator; the server files it in the trail. */
+  export const revealVariable = (id) => variables.service.invoke('reveal', id, {})
 </script>
 
 <script>

@@ -664,6 +664,7 @@ rather than refusing the row.
 | `App` | `pushSecret` | `@encrypted` |
 | `App` | `pushTokenHash` | `@guarded @system` |
 | `App` | `pushActorId` | `@system` |
+| `App` | `deployPublicKey` | `@system` |
 | `App` | `blueprintId` | `@system` |
 | `BackupDestination` | `secretId` | `@system` |
 | `BackupDestination` | `lastTestAt` | `@system` |

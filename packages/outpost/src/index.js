@@ -21,7 +21,7 @@ import { createReplicator }           from './replicate.js'
 const config    = readConfig()
 
 function serveMachine(config) {
-  const docker    = createDocker({ workDir: config.workDir, restoreDir: config.restoreDir, backupDir: config.backupDir, uidFile: config.uidFile })
+  const docker    = createDocker({ workDir: config.workDir, restoreDir: config.restoreDir, backupDir: config.backupDir, uidFile: config.uidFile, deployKeyDir: config.deployKeyDir })
   const inspector = createInspector({ hostFiles: config.hostFiles })
   const replicator = createReplicator({ configPath: config.litestreamConfig, metaDir: config.litestreamMetaDir, litestream: config.litestreamBin, stageDir: config.replicaStageDir, socketPath: config.litestreamSocket, hostDb: config.hostFiles?.db ?? null })
   const outpost   = createOutpostServer(config, { docker, inspector, replicator })

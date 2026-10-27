@@ -83,7 +83,7 @@ async function demoteSiblings(appId: string, keepId: string) {
 
 /** Tell the zone. The id is the row's version, so a replayed write is one
  *  push; the job decides whether this workspace pushes at all. */
-const toZone = (domainId: string, version: number | string) =>
+export const toZone = (domainId: string, version: number | string) =>
   $.app.jobs.dispatch(domainDns, { domainId }, { id: `dns:${domainId}:${version}` })
 
 export default createService({

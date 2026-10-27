@@ -23,7 +23,6 @@ text, so a body that elevates through a helper is not listed.
 | Method | Who may call it |
 | --- | --- |
 | `apiKeys.owners` | standing 5 or above — declared `gate: 5` |
-| `apps.place` | standing 4 or above — declared `gate: 4` |
 | `apps.unplace` | standing 4 or above — declared `gate: 4` |
 | `apps.enablePush` | standing 5 or above — declared `gate: 5` |
 | `apps.disablePush` | standing 5 or above — declared `gate: 5` |
@@ -34,6 +33,7 @@ text, so a body that elevates through a helper is not listed.
 | `servers.metrics` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `servers.provision` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `servers.heartbeat` | anyone, a stranger included — declared `gate: 0` |
+| `variables.reveal` | standing 5 or above — declared `gate: 5` |
 | `workspaces.leave` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `workspaces.transferOwnership` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
@@ -330,11 +330,12 @@ name when it declares none.
 
 ### `apps` · model `App`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `publish`, `enablePush`, `disablePush`
-- **custom methods** — `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `publish`, `enablePush`, `disablePush`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`
+- **custom methods** — `logs`, `fromBlueprint`, `place`, `unplace`, `restoreVolume`, `restoreReplica`, `publish`, `enablePush`, `disablePush`, `mintDeployKey`, `importDockerfile`, `readRepoDockerfile`, `dockerfileTemplate`
 - **input** — `fromBlueprint` takes `AppFromBlueprint`
 - **input** — `place` takes `AppPlace`
 - **input** — `publish` takes `AppPublish`
+- **input** — `readRepoDockerfile` takes `AppRepoDockerfile`
 - **input** — `restoreReplica` takes `AppReplicaRestore`
 - **input** — `restoreVolume` takes `AppVolumeRestore`
 - **input** — `unplace` takes `AppUnplace`
@@ -342,13 +343,17 @@ name when it declares none.
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `logs` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `fromBlueprint` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `place` — standing 4 or above — declared `gate: 4`; body writes as the app
+  - `place` — standing 4 or above — declared `gate: 4`
   - `unplace` — standing 4 or above — declared `gate: 4`; body writes as the app
   - `restoreVolume` — standing 5 or above — declared `gate: 5`
   - `restoreReplica` — standing 5 or above — declared `gate: 5`
   - `publish` — standing 4 or above — declared `gate: 4`
   - `enablePush` — standing 5 or above — declared `gate: 5`; body writes as the app
   - `disablePush` — standing 5 or above — declared `gate: 5`; body writes as the app
+  - `mintDeployKey` — standing 4 or above — declared `gate: 4`
+  - `importDockerfile` — standing 4 or above — declared `gate: 4`
+  - `readRepoDockerfile` — standing 4 or above — declared `gate: 4`
+  - `dockerfileTemplate` — standing 4 or above — declared `gate: 4`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -367,6 +372,7 @@ name when it declares none.
 | before | `restoreVolume` | `validateInput` |
 | before | `restoreReplica` | `validateInput` |
 | before | `publish` | `validateInput` |
+| before | `readRepoDockerfile` | `validateInput` |
 
 ### `audit` · model `AuditEvent`
 
@@ -1142,9 +1148,12 @@ name when it declares none.
 
 ### `projects` · model `Project`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `fromRepo`
+- **custom methods** — `fromRepo`
+- **input** — `fromRepo` takes `ProjectFromRepo`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `fromRepo` — standing 4 or above — declared `gate: 4`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -1157,6 +1166,7 @@ name when it declares none.
 | before | `aggregate` | `autoFilter` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
+| before | `fromRepo` | `validateInput` |
 
 ### `recipes` · model `Recipe`
 
@@ -1359,7 +1369,10 @@ name when it declares none.
 
 ### `variables` · model `Variable`
 
-- **methods** — `find`, `get`, `create`, `patch`, `remove`
+- **methods** — `find`, `get`, `create`, `patch`, `remove`, `reveal`
+- **custom methods** — `reveal`
+- **who may call** —
+  - `reveal` — standing 5 or above — declared `gate: 5`; body writes as the app
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |

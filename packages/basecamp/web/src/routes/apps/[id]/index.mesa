@@ -17,7 +17,7 @@ title: App
   // and its jobs. The alternative was five round trips for one question.
   import { page, goto } from '@frontierjs/sierra/router'
   import { getClient } from '@frontierjs/sierra/resource'
-  import App, { apps } from '../../../resources/App.mesa'
+  import App, { apps, importDockerfile, dockerfileTemplate, mintDeployKey } from '../../../resources/App.mesa'
   import { domains } from '../../../resources/Domain.mesa'
   import { servers } from '../../../resources/Server.mesa'
   import { deployments, DEPLOY_TONE } from '../../../resources/Deployment.mesa'
@@ -32,6 +32,7 @@ title: App
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
   import Card       from '@frontierjs/ui/components/layout/Card.mesa'
   import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
@@ -80,6 +81,11 @@ title: App
   let files       = []
   let sourceDirty = false
   let imageDraft  = ''
+  // A git app's own Dockerfile copy (FJS-D1555). Declared with the state above
+  // for the same reason: the watch callback seeds it before the module body ends.
+  let dockerfileDraft = ''
+  let dockerfileDirty = false
+  let dockerfileSays  = ''
 
   // `late` is the API's: past the lag `backup.replica-lag` fails at.
   const bucketTone = (r) => r.error || (r.late && r.lagMs !== null) ? 'danger' : r.late ? 'warning' : 'success'
@@ -104,7 +110,7 @@ title: App
     if (appRow && String(appRow.id) === String(id)) return appRow.refresh()
     unwatch?.(); appRow?.release()
     appRow = apps.record(id, { composed: true })
-    unwatch = appRow.subscribe(v => { app = v; seedFiles(v) })
+    unwatch = appRow.subscribe(v => { app = v; seedFiles(v); seedDockerfile(v) })
     return appRow.ready
   }
 
@@ -357,6 +363,76 @@ title: App
     if (sourceDirty) return
     files = (row?.source?.files ?? []).map(f => ({ path: f.path, content: f.content ?? '' }))
   }
+
+  /** Same rule as seedFiles: a push never empties the box under the person typing. */
+  function seedDockerfile(row) {
+    if (dockerfileDirty) return
+    dockerfileDraft = row?.source?.dockerfile ?? ''
+  }
+
+  function typeDockerfile(text) { dockerfileDraft = text; dockerfileDirty = true }
+
+  async function saveDockerfile() {
+    error = null; busy = 'dockerfile'
+    try {
+      // Blank is "no copy, build the repository's own". The server drops an
+      // empty string to an absent key, and this omits it, so both say one thing.
+      const { dockerfile: _copy, dockerfileBytes: _size, ...rest } = app.source
+      const text = dockerfileDraft.trim()
+      await apps.service.patch(app.id, { source: { ...rest, ...(text ? { dockerfile: dockerfileDraft } : {}) } })
+      dockerfileDirty = false
+      await appRow.refresh()
+      toasts.success(text ? 'Dockerfile saved' : 'Dockerfile copy removed')
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function importFromRepo() {
+    error = null; dockerfileSays = ''; busy = 'dockerfile-import'
+    try {
+      const r = await importDockerfile(app.id)
+      if (r.path) { typeDockerfile(r.content); dockerfileSays = `Filled from ${r.path}. Save to keep it.` }
+      else dockerfileSays = r.note ?? 'The machine found no Dockerfile in the clone.'
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function useTemplate() {
+    error = null; dockerfileSays = ''; busy = 'dockerfile-template'
+    try {
+      typeDockerfile((await dockerfileTemplate()).content)
+      dockerfileSays = 'Filled with the FrontierJS template. Save to keep it.'
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  let keySays = ''
+  async function mintKey() {
+    error = null; keySays = ''; busy = 'deploy-key'
+    try {
+      const r = await mintDeployKey(app.id)
+      if (r.note) keySays = r.note
+      await appRow.refresh()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // A key is made on the machine the app runs on, so with no online machine
+  // there is nothing to ask. The reason is said beside the button.
+  $: onlinePlaced = (app?.placement ?? []).some(p =>
+    (p.server?.status ?? fleet.find(s => s.id === p.serverId)?.status) === 'online')
 
   function editFile(i, key, value) {
     files = files.map((f, n) => (n === i ? { ...f, [key]: value } : f))
@@ -651,6 +727,50 @@ title: App
       </Card>
 
       {#if !latest}<LaptopRelease app={app} />{/if}
+
+      {#if app.source?.kind === 'git'}
+        <Card id="app-deploy-key">
+          <h2 class="h4">Deploy key</h2>
+          {#if app.deployPublicKey}
+            <pre class="text-sm" style:white-space="pre-wrap" style:overflow-wrap="anywhere"><code id="app-deploy-key-public">{app.deployPublicKey}</code></pre>
+            <div class="cluster">
+              <CopyButton text={app.deployPublicKey} label="Copy" treatment="outlined" id="app-deploy-key-copy" />
+            </div>
+          {:else}
+            <p class="text-sm text-muted" id="app-deploy-key-none">No key yet.</p>
+            <div class="cluster">
+              <Button tone="primary" id="app-deploy-key-mint" disabled={!onlinePlaced || busy === 'deploy-key'}
+                      onclick={mintKey}>Mint key</Button>
+              {#if !onlinePlaced}
+                <span class="text-sm text-muted">Place this app on an online server first — the key is made on the machine.</span>
+              {/if}
+            </div>
+          {/if}
+          {#if keySays}<p class="text-sm text-muted" id="app-deploy-key-says" role="status">{keySays}</p>{/if}
+          <p class="text-sm text-muted">Add it as a read-only deploy key on the repository (GitHub: Settings → Deploy keys).</p>
+        </Card>
+
+        <Card id="app-dockerfile">
+          <h2 class="h4">Dockerfile</h2>
+          <Textarea label="Dockerfile" rows={14} id="app-dockerfile-body" value={dockerfileDraft}
+                    oninput={(e) => typeDockerfile(e.target.value)} />
+          <p class="text-sm text-muted" id="app-dockerfile-builds">
+            The machine builds with
+            {#if dockerfileDraft.trim()}this copy.{:else}the repository's <code>deploy/Dockerfile</code> or <code>Dockerfile</code>.{/if}
+          </p>
+          {#if dockerfileSays}<p class="text-sm text-muted" id="app-dockerfile-says" role="status">{dockerfileSays}</p>{/if}
+          <div class="cluster">
+            <Button tone="primary" id="app-dockerfile-save" disabled={!dockerfileDirty || busy === 'dockerfile'}
+                    onclick={saveDockerfile}>Save</Button>
+            <Button treatment="outlined" id="app-dockerfile-import" disabled={!!busy}
+                    onclick={importFromRepo}>Import from repository</Button>
+            <Button treatment="outlined" id="app-dockerfile-template" disabled={!!busy}
+                    onclick={useTemplate}>Use the FrontierJS template</Button>
+            {#if dockerfileDirty}<Badge tone="warning">unsaved</Badge>{/if}
+          </div>
+          <p class="text-sm text-muted">The template clones frontierjs from GitHub at build — for an app whose deps are <code>link:</code>.</p>
+        </Card>
+      {/if}
 
       <Card>
         <h2 class="h4">Placement</h2>

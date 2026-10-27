@@ -307,7 +307,10 @@ function runner(app: App) {
       // them, and /deploy would build a second time.
       if (!built && !reply.data?.stubbed) throw new Error('Build failed: the machine reported no image digest')
       const sha = typeof reply.data?.commit_sha === 'string' ? reply.data.commit_sha.slice(0, 7) : null
-      return { output: note(reply) ?? (sha ? `built ${sha}` : undefined), digest: built ?? digest }
+      // Which file it built with, since the App's own copy and the repository's
+      // are both candidates and a release is read back to say which shipped.
+      const file = typeof reply.data?.dockerfile === 'string' && reply.data.dockerfile ? ` with ${reply.data.dockerfile}` : ''
+      return { output: note(reply) ?? (sha ? `built ${sha}${file}` : file ? `built${file}` : undefined), digest: built ?? digest }
 
     } else if (name.includes('pull')) {
       const reply = await executor.call('/pull', { image, digest }, { timeoutMs: PULL_TIMEOUT_MS })

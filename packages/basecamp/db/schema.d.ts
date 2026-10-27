@@ -286,6 +286,32 @@ export interface AppFromBlueprint {
   values?: unknown | null
 }
 
+/**
+ * What `projects.fromRepo` accepts: a project, its production environment
+ * and one App built from a repository, made together (`FJS-D1555`). `port` is
+ * the host port the App is published on; `dockerfile` is the App's own copy,
+ * blank for the repository's.
+ */
+export interface ProjectFromRepo {
+  name: string
+  slug?: string | null
+  repo: string
+  branch?: string | null
+  dockerfile?: string | null
+  serverId?: string | null
+  hostname?: string | null
+  port: number
+}
+
+/**
+ * What `apps.readRepoDockerfile` accepts: a public repository and the branch
+ * whose Dockerfile the create form offers as a seed.
+ */
+export interface AppRepoDockerfile {
+  repo: string
+  branch?: string | null
+}
+
 export interface AppPlace {
   serverId: string
   replicaIndex?: number | null
@@ -2905,6 +2931,7 @@ export interface App {
   /** @guarded */
   pushTokenHash?: string | null
   pushActorId?: string | null
+  deployPublicKey?: string | null
   blueprintId?: string | null
   backupCron?: string | null
   backupDestinationId?: string | null
@@ -2963,6 +2990,7 @@ export interface AppSystem {
   pushSecret?: string | null
   pushTokenHash?: string | null
   pushActorId?: string | null
+  deployPublicKey?: string | null
   blueprintId?: string | null
 }
 
@@ -2986,6 +3014,7 @@ export interface AppWhere extends WhereBase {
   pushSecret?: string | WhereOp<string> | null
   pushTokenHash?: string | WhereOp<string> | null
   pushActorId?: string | WhereOp<string> | null
+  deployPublicKey?: string | WhereOp<string> | null
   blueprintId?: string | WhereOp<string> | null
   backupCron?: string | WhereOp<string> | null
   backupDestinationId?: string | WhereOp<string> | null
@@ -6053,6 +6082,8 @@ export interface SeedTypes {
   NotificationPreferenceReset: NotificationPreferenceReset
   WorkspaceTransfer: WorkspaceTransfer
   AppFromBlueprint: AppFromBlueprint
+  ProjectFromRepo: ProjectFromRepo
+  AppRepoDockerfile: AppRepoDockerfile
   AppPlace: AppPlace
   AppUnplace: AppUnplace
   AppVolumeRestore: AppVolumeRestore
@@ -6254,7 +6285,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly serverNetwork: TableClient<ServerNetwork, ServerNetworkCreate, ServerNetworkUpdate, ServerNetworkWhere, ServerNetworkRelations, never, '@@gate'>
   readonly project: TableClient<Project, ProjectCreate, ProjectUpdate, ProjectWhere, ProjectRelations, never, '@@gate'>
   readonly environment: TableClient<Environment, EnvironmentCreate, EnvironmentUpdate, EnvironmentWhere, EnvironmentRelations, never, '@@gate'>
-  readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'status' | 'deployOnPush' | 'pushSecret' | 'pushTokenHash' | 'pushActorId' | 'blueprintId' | '@@gate', AppSystem>
+  readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'status' | 'deployOnPush' | 'pushSecret' | 'pushTokenHash' | 'pushActorId' | 'deployPublicKey' | 'blueprintId' | '@@gate', AppSystem>
   readonly variable: TableClient<Variable, VariableCreate, VariableUpdate, VariableWhere, VariableRelations, never, '@@gate'>
   readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere, DomainRelations, never, 'certSecretId' | 'certKind' | 'certIssuedAt' | 'certExpiresAt' | '@@gate', DomainSystem>
   readonly domainRoute: TableClient<DomainRoute, DomainRouteCreate, DomainRouteUpdate, DomainRouteWhere, DomainRouteRelations, never, '@@gate'>

@@ -22,6 +22,7 @@ import { createStatic }           from '../src/static.js'
 import { createStaticServer }     from '../src/serve.js'
 import { readConfig }             from '../src/config.js'
 import { ensureCert }             from '../src/cert.js'
+import { ensureDeployKey, listDeployKeys } from '../src/deploy-key.js'
 import { createReplicator }       from '../src/replicate.js'
 import pkg                        from '../package.json' with { type: 'json' }
 import { existsSync, mkdtempSync, statSync, writeFileSync, mkdirSync, symlinkSync, realpathSync, readFileSync, readdirSync, rmSync } from 'node:fs'
@@ -35,6 +36,7 @@ const CONFIG = {
   heartbeatMs: 30_000, reportMs: 300_000, postureMs: 21_600_000, workDir: '/tmp/outpost-test',
   // Nothing listens on port 1: a machine with no Caddy, refused at once.
   caddyAdmin: 'http://127.0.0.1:1',
+  deployKeyDir: mkdtempSync(join(tmpdir(), 'outpost-keys-')),
 }
 
 const DIGEST = 'sha256:' + 'ab'.repeat(32)
@@ -43,8 +45,17 @@ const DIGEST = 'sha256:' + 'ab'.repeat(32)
  *  what the MACHINE was asked to do rather than what the route returned. */
 function fakeRunner(answers = {}) {
   const calls = []
-  const run = async (argv) => {
+  const run = async (argv, opts) => {
     calls.push(argv)
+    calls.opts = [...(calls.opts ?? []), opts]
+    // ssh-keygen writes the pair it is asked for; the private half says
+    // PRIVATE, as a real one does, so a body carrying it is caught.
+    if (argv[0] === 'ssh-keygen' && argv.includes('-t')) {
+      const at = argv[argv.indexOf('-f') + 1]
+      writeFileSync(at, '-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n-----END OPENSSH PRIVATE KEY-----\n', { mode: 0o600 })
+      writeFileSync(`${at}.pub`, `ssh-ed25519 AAAAC3fake ${argv[argv.indexOf('-C') + 1]}\n`)
+      return { exitCode: 0, stdout: '', stderr: '' }
+    }
     // The running query has its own key, `running`: a deploy waits on it, and
     // a test canning `docker inspect` for port bindings would otherwise read as
     // a container that never came up.
@@ -141,7 +152,7 @@ describe('what the machine is asked to do', () => {
       'test -d':              { exitCode: 1 },
     })
     const server = createOutpostServer(CONFIG, {
-      docker: createDocker({ run: fake.run, workDir: CONFIG.workDir }),
+      docker: createDocker({ run: fake.run, workDir: CONFIG.workDir, deployKeyDir: CONFIG.deployKeyDir }),
       inspector: createInspector({ run: fake.run }),
     })
 
@@ -390,10 +401,10 @@ describe('what the machine is asked to do', () => {
   // live container is never touched (FJS-1496).
   describe('a build on its own', () => {
     const GIT = { kind: 'git', repo: 'https://git.test/acme/web.git', branch: 'main' }
-    const serverFor = (answers) => {
+    const serverFor = (answers, { workDir = CONFIG.workDir } = {}) => {
       const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'test -d': { exitCode: 1 }, ...answers })
       const server = createOutpostServer(CONFIG, {
-        docker: createDocker({ run: fake.run, workDir: CONFIG.workDir }), inspector: createInspector({ run: fake.run }),
+        docker: createDocker({ run: fake.run, workDir, deployKeyDir: CONFIG.deployKeyDir }), inspector: createInspector({ run: fake.run }),
         log: { warn() {}, error() {} },
       })
       return { fake, server, argv: () => fake.calls.map(c => c.join(' ')) }
@@ -2277,6 +2288,241 @@ describe('it refuses to start half-configured', () => {
   test('a public URL that is not https is refused', () => {
     expect(() => readConfig({ ...required, OUTPOST_PUBLIC_URL: 'http://203.0.113.7:8180' }))
       .toThrow(/OUTPOST_PUBLIC_URL must be https/)
+  })
+})
+
+describe('a deploy key per app (FJS-D1555)', () => {
+  const freshDir = () => mkdtempSync(join(tmpdir(), 'outpost-keys-'))
+  const GIT = { kind: 'git', repo: 'git@github.com:acme/private.git', branch: 'main' }
+  const keygens = (fake) => fake.calls.filter(c => c[0] === 'ssh-keygen')
+
+  test('is made once, 0600, and read on every ask after', async () => {
+    // A regenerated key fails every clone of a repository that trusted it.
+    const dir  = freshDir()
+    const fake = fakeRunner()
+    const first  = await ensureDeployKey(dir, 'app-1', { run: fake.run })
+    const second = await ensureDeployKey(dir, 'app-1', { run: fake.run })
+
+    expect(keygens(fake)).toEqual([['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'fjs-app-1', '-f', join(dir, 'app-1')]])
+    expect(first).toEqual({ keyPath: join(dir, 'app-1'), publicKey: 'ssh-ed25519 AAAAC3fake fjs-app-1' })
+    expect(second).toEqual(first)
+    expect(statSync(join(dir, 'app-1')).mode & 0o777).toBe(0o600)
+  })
+
+  test('a private half with no public half is read, never replaced', async () => {
+    const dir = freshDir()
+    writeFileSync(join(dir, 'app-1'), 'kept\n', { mode: 0o600 })
+    const fake = fakeRunner({ 'ssh-keygen -y -f': { stdout: 'ssh-ed25519 AAAAderived fjs-app-1\n' } })
+    const key  = await ensureDeployKey(dir, 'app-1', { run: fake.run })
+
+    expect(keygens(fake)).toEqual([['ssh-keygen', '-y', '-f', join(dir, 'app-1')]])
+    expect(key.publicKey).toBe('ssh-ed25519 AAAAderived fjs-app-1')
+    expect(readFileSync(join(dir, 'app-1'), 'utf8')).toBe('kept\n')
+  })
+
+  test('listDeployKeys answers the public halves and nothing else', async () => {
+    const dir  = freshDir()
+    const fake = fakeRunner()
+    await ensureDeployKey(dir, 'b-app', { run: fake.run })
+    await ensureDeployKey(dir, 'a-app', { run: fake.run })
+
+    expect(listDeployKeys(dir)).toEqual([
+      { app_id: 'a-app', public_key: 'ssh-ed25519 AAAAC3fake fjs-a-app' },
+      { app_id: 'b-app', public_key: 'ssh-ed25519 AAAAC3fake fjs-b-app' },
+    ])
+    expect(listDeployKeys(join(dir, 'nothing-here'))).toEqual([])
+  })
+
+  test('the heartbeat carries deploy_keys, and never a private half', async () => {
+    const dir = freshDir()
+    await ensureDeployKey(dir, 'app-1', { run: fakeRunner().run })
+    const sent = []
+    const reporter = createReporter({ ...CONFIG, deployKeyDir: dir }, {
+      inspector: createInspector({ run: fakeRunner().run }), log: { warn() {} },
+      fetch: async (url, init) => { sent.push(init.body); return new Response('{}', { status: 200 }) },
+    })
+    await reporter.heartbeat()
+
+    expect(JSON.parse(sent[0]).deploy_keys).toEqual([{ app_id: 'app-1', public_key: 'ssh-ed25519 AAAAC3fake fjs-app-1' }])
+    // The private half sits in the same directory the heartbeat lists.
+    expect(readFileSync(join(dir, 'app-1'), 'utf8')).toContain('PRIVATE')
+    expect(sent[0]).not.toContain('PRIVATE')
+  })
+
+  describe('POST /deploy-key', () => {
+    const serverFor = () => {
+      const fake   = fakeRunner()
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ run: fake.run, deployKeyDir: freshDir() }), inspector: createInspector({ run: fake.run }),
+        log: { warn() {}, error() {} },
+      })
+      return { fake, server }
+    }
+
+    test('answers the public half, made on the first ask', async () => {
+      const { fake, server } = serverFor()
+      const res = await send(server, 'POST', '/deploy-key', { app_id: 'app-9' })
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ app_id: 'app-9', public_key: 'ssh-ed25519 AAAAC3fake fjs-app-9' })
+      await send(server, 'POST', '/deploy-key', { app_id: 'app-9' })
+      expect(keygens(fake)).toHaveLength(1)
+    })
+
+    test.each(['../etc', 'a/b', '.hidden', '', 'a b', undefined])('refuses an app_id of %j before anything runs', async (appId) => {
+      const { fake, server } = serverFor()
+      const res = await send(server, 'POST', '/deploy-key', { app_id: appId })
+
+      expect(res.status).toBe(500)
+      expect(fake.calls).toHaveLength(0)
+    })
+
+    test('is signed like every other route', async () => {
+      const { server } = serverFor()
+      expect((await send(server, 'POST', '/deploy-key', { app_id: 'app-9' }, { secret: null })).status).toBe(401)
+    })
+  })
+
+  describe('a build clones with the key and builds with the App\'s Dockerfile', () => {
+    const buildWith = async (source, { layout = [] } = {}) => {
+      const workDir = mkdtempSync(join(tmpdir(), 'outpost-build-'))
+      const keyDir  = freshDir()
+      for (const path of layout) mkdirSync(join(workDir, 'app-1', path), { recursive: true })
+      if (layout.includes('deploy')) writeFileSync(join(workDir, 'app-1', 'deploy', 'Dockerfile'), 'FROM oven/bun\n')
+      mkdirSync(join(workDir, 'app-1', source.path ?? ''), { recursive: true })
+      const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'test -d': { exitCode: 1 }, 'git -C': { stdout: 'c0ffee\n' } })
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ run: fake.run, workDir, deployKeyDir: keyDir }), inspector: createInspector({ run: fake.run }),
+        log: { warn() {}, error() {} },
+      })
+      const res = await send(server, 'POST', '/build', { app_id: 'app-1', source, image: 'x' })
+      const argv  = fake.calls.map(c => c.join(' '))
+      const build = argv.find(c => c.startsWith('docker build'))
+      return { res, body: await res.json(), argv, build, fake, workDir, keyDir }
+    }
+
+    test('every git names the app\'s key and cannot prompt', async () => {
+      const { res, fake, keyDir } = await buildWith(GIT)
+      expect(res.status).toBe(200)
+
+      const gits = fake.calls.map((c, i) => [c, fake.calls.opts[i]]).filter(([c]) => c[0] === 'git')
+      expect(gits.length).toBeGreaterThan(1)
+      for (const [, opts] of gits) {
+        expect(opts.env.GIT_SSH_COMMAND).toBe(`ssh -i '${join(keyDir, 'app-1')}' -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new`)
+        expect(opts.env.GIT_TERMINAL_PROMPT).toBe('0')
+      }
+      // Made before the clone, or a first build of a private repository fails.
+      const at = (pred) => fake.calls.findIndex(pred)
+      expect(at(c => c[0] === 'ssh-keygen')).toBeLessThan(at(c => c[1] === 'clone'))
+    })
+
+    test('a stored Dockerfile is written into the context and built with -f', async () => {
+      const content = 'FROM oven/bun:1\nRUN echo stored\n'
+      const { res, body, build, workDir } = await buildWith({ ...GIT, path: 'web', dockerfile: content }, { layout: ['web/deploy'] })
+
+      expect(res.status).toBe(200)
+      expect(body.dockerfile).toBe('Dockerfile.basecamp')
+      expect(readFileSync(join(workDir, 'app-1', 'web', 'Dockerfile.basecamp'), 'utf8')).toBe(content)
+      expect(build).toBe(`docker build -t x -f ${workDir}/app-1/web/Dockerfile.basecamp ${workDir}/app-1/web`)
+    })
+
+    test('with none stored, deploy/Dockerfile is used when the checkout has one', async () => {
+      const { res, body, build, workDir } = await buildWith({ ...GIT, dockerfile: '  \n' }, { layout: ['deploy', 'deploy/generated'] })
+
+      expect(res.status).toBe(200)
+      expect(body.dockerfile).toBe('deploy/Dockerfile')
+      expect(build).toBe(`docker build -t x -f ${workDir}/app-1/deploy/Dockerfile ${workDir}/app-1`)
+    })
+
+    test('with neither, the root Dockerfile, named by no -f', async () => {
+      const { body, build, workDir } = await buildWith(GIT)
+      expect(body.dockerfile).toBe('Dockerfile')
+      expect(build).toBe(`docker build -t x ${workDir}/app-1`)
+    })
+
+    test('deploy/Dockerfile with no deploy/generated/ is refused before docker build, naming the two ways out', async () => {
+      // FJS-D942: its dependencies are link:, and nothing on this machine holds them.
+      const { res, body, build } = await buildWith(GIT, { layout: ['deploy'] })
+
+      expect(res.status).toBe(500)
+      expect(body.error).toContain('fli deploy:vendor')
+      expect(body.error).toContain('fli basecamp:deploy --app')
+      expect(build).toBeUndefined()
+    })
+
+    test('a stored Dockerfile is built even where deploy/generated/ is missing', async () => {
+      const { res, body } = await buildWith({ ...GIT, dockerfile: 'FROM oven/bun\n' }, { layout: ['deploy'] })
+      expect(res.status).toBe(200)
+      expect(body.dockerfile).toBe('Dockerfile.basecamp')
+    })
+
+    test('an app_id that is not a plain name builds nothing', async () => {
+      const fake   = fakeRunner()
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ run: fake.run, deployKeyDir: freshDir() }), inspector: createInspector({ run: fake.run }),
+        log: { warn() {}, error() {} },
+      })
+      const res = await send(server, 'POST', '/build', { app_id: '../x', source: GIT, image: 'x' })
+      expect(res.status).toBe(500)
+      expect(fake.calls).toHaveLength(0)
+    })
+  })
+  describe('POST /source/file reads one file off the clone', () => {
+    const cloneFor = () => {
+      const workDir = mkdtempSync(join(tmpdir(), 'outpost-src-'))
+      mkdirSync(join(workDir, 'app-1', '.git'), { recursive: true })
+      mkdirSync(join(workDir, 'app-1', 'deploy'))
+      writeFileSync(join(workDir, 'app-1', 'deploy', 'Dockerfile'), 'FROM oven/bun\n')
+      const fake   = fakeRunner()
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ run: fake.run, workDir, deployKeyDir: freshDir() }), inspector: createInspector({ run: fake.run }),
+        log: { warn() {}, error() {} },
+      })
+      return { workDir, server, fake }
+    }
+
+    test('answers the file, and null for one the clone lacks', async () => {
+      const { server } = cloneFor()
+      const res = await send(server, 'POST', '/source/file', { app_id: 'app-1', path: 'deploy/Dockerfile' })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ path: 'deploy/Dockerfile', content: 'FROM oven/bun\n' })
+      expect(await (await send(server, 'POST', '/source/file', { app_id: 'app-1', path: 'Dockerfile' })).json())
+        .toEqual({ path: 'Dockerfile', content: null })
+    })
+
+    test.each(['../app-2/Dockerfile', '/etc/passwd', 'deploy/../../x', '.git/config'])('refuses a path of %j', async (path) => {
+      const { server } = cloneFor()
+      const res = await send(server, 'POST', '/source/file', { app_id: 'app-1', path })
+      expect(res.status).toBe(500)
+      expect((await res.json()).error).toContain('source path')
+    })
+
+    test('refuses a symlink in the checkout that leads outside it', async () => {
+      // The repository's own code planted it; the path names a plain file.
+      const { workDir, server } = cloneFor()
+      writeFileSync(join(workDir, 'secret'), 'ENCRYPTION_KEY=x\n')
+      symlinkSync(join(workDir, 'secret'), join(workDir, 'app-1', 'Dockerfile'))
+      const res  = await send(server, 'POST', '/source/file', { app_id: 'app-1', path: 'Dockerfile' })
+      const body = await res.json()
+      expect(res.status).toBe(500)
+      expect(body.error).toContain('outside the clone')
+      expect(JSON.stringify(body)).not.toContain('ENCRYPTION_KEY')
+    })
+
+    test('an app with no clone here says it has not been built on this machine', async () => {
+      const { server } = cloneFor()
+      const res = await send(server, 'POST', '/source/file', { app_id: 'app-2', path: 'Dockerfile' })
+      expect(res.status).toBe(500)
+      expect((await res.json()).error).toContain('has not been built on this machine')
+    })
+
+    test('refuses a file over 64 KB', async () => {
+      const { workDir, server } = cloneFor()
+      writeFileSync(join(workDir, 'app-1', 'Dockerfile'), 'x'.repeat(64 * 1024 + 1))
+      const res = await send(server, 'POST', '/source/file', { app_id: 'app-1', path: 'Dockerfile' })
+      expect(res.status).toBe(500)
+      expect((await res.json()).error).toContain('limit')
+    })
   })
 })
 

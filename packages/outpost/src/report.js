@@ -20,6 +20,7 @@
 
 import { signRequest } from '@frontierjs/toolbelt/signature'
 import { createVitals } from './vitals.js'
+import { listDeployKeys } from './deploy-key.js'
 
 export function createReporter(config, {
   inspector,
@@ -66,12 +67,23 @@ export function createReporter(config, {
    *  to live as long as the process does. */
   const health = () => vitals.read()
 
+  /** The public halves only, for the App's screen (`FJS-D1555`). An unreadable
+   *  directory leaves the key out rather than the heartbeat, which is also the
+   *  machine's registration. */
+  function deployKeys() {
+    try { return { deploy_keys: listDeployKeys(config.deployKeyDir) } } catch (err) {
+      log.warn?.(`outpost: deploy keys not reported — ${err.message}`)
+      return {}
+    }
+  }
+
   return {
     async heartbeat() {
       return post(`/servers/${config.serverId}`, 'heartbeat', {
         outpost_version: config.version,
         outpost_url:     config.publicUrl,
         health:          await health(),
+        ...deployKeys(),
         // Every heartbeat, so a stopped unit or a stalled bucket shows as lag
         // within one interval rather than at the next posture report.
         ...(replicator ? { replication: await replicator.status() } : {}),

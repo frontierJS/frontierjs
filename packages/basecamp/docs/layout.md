@@ -33,6 +33,10 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           domain/release/app-source.ts is the ONE reader of `App.source` — `git`, `image`,
           `inline`, parsed and normalized, and the paste box's limits (the
           machine's are outpost's, and they win)
+          domain/release/dockerfile-template.ts is the two seeds a git App's own
+          Dockerfile starts from (`FJS-D1555`): the FrontierJS template that
+          clones the framework and links its packages, and the repository's
+          file read raw off a public GitHub or Bitbucket
           domain/site/site-checkout.ts is basecamp's bare clone of each static site an
           owner edits, under SITES_DIR: a draft is `draft/<slug>` ON THE REMOTE,
           and a save is a commit built through a temporary index and pushed, so

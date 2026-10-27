@@ -55,6 +55,7 @@ import { issueEnrollmentFor, useHost, findHost } from '../../domain/host/host-ma
 import { env, localMachineRefusal } from '../../core/env.ts'
 import { listSshHosts, probeSshHost } from '../../domain/local/local-ssh.ts'
 import { outbound, outpostFor } from '../../providers/outpost.ts'
+import { asPublicKey }           from '../apps/apps.service.ts'
 
 import type { TargetDescriptor } from '@frontierjs/conduit'
 import type { ProviderKind, ServerEventKind } from '../../../../db/schema.d.ts'
@@ -69,6 +70,28 @@ export interface HeartbeatData {
   docker?:       Record<string, unknown>
   outpost_url?:    string
   replication?:  { apps?: { app_id: string; status: string | null; last_sync_at: string | null; databases: number }[]; error?: string }
+  /** The public half of each App's deploy key the machine holds (`FJS-D1555`). */
+  deploy_keys?:  { app_id: string; public_key: string }[]
+}
+
+/**
+ * The deploy keys a heartbeat reports, onto `App.deployPublicKey`. Only an App
+ * placed on THIS server: the machine is trusted to name its own keys and no
+ * other App's, or one enrolled machine could put its key on every App's screen
+ * and be added at forges it was never meant to clone from.
+ */
+async function recordDeployKeys(sys: any, serverId: string, reported: unknown): Promise<void> {
+  if (!Array.isArray(reported) || !reported.length) return
+  const placed = new Set((await sys.appServer.findMany({ where: { serverId }, select: { appId: true } }))
+    .map((p: { appId: string }) => p.appId))
+  for (const entry of reported as Record<string, unknown>[]) {
+    const appId = entry?.app_id
+    const key   = asPublicKey(entry?.public_key)
+    if (typeof appId !== 'string' || !placed.has(appId) || !key) continue
+    const app = await sys.app.findUnique({ where: { id: appId }, select: { id: true, deployPublicKey: true } })
+    if (!app || app.deployPublicKey === key) continue
+    await sys.app.update({ where: { id: appId }, data: { deployPublicKey: key }, system: ['deployPublicKey'] })
+  }
 }
 
 // What a provider's own word for a state means here, as a NAMED MOVE rather
@@ -1108,6 +1131,7 @@ export default createService({
     // the branch that would make them optional, and a failure here should be
     // as visible as any other part of a check-in.
     await recordHealth($.app, server.id, data.health, now)
+    await recordDeployKeys(sys, id, data.deploy_keys)
 
     if (newStatus !== server.status) {
       await sys.serverEvent.create({

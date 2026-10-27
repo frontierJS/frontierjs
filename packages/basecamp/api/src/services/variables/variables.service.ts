@@ -7,9 +7,11 @@
 // `domain/release/variables.ts`.
 //
 // A secret's value is written to `secretValue`, which is `@encrypted` and so
-// absent from every read here. A secret is replaced, never read back.
+// absent from every read here. A secret is replaced, and read back only by
+// `reveal` — `POST /variables/:id`, an administrator's, filed in the trail.
 
 import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
+import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, refuseProtectedForDeveloper, WORKSPACE_QUERY }
   from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws } from '../../core/resource.ts'
@@ -63,7 +65,12 @@ export default createService({
   reservedQuery: WORKSPACE_QUERY,
   // No `restore`: a variable comes back with the app or environment that
   // cascaded it, and one removed on its own is gone so its key can be set again.
-  methods: ['find', 'get', 'create', 'patch', 'remove'],
+  methods: [
+    'find', 'get', 'create', 'patch', 'remove',
+    // Not `read: true`: a reveal is answered once and filed in the trail
+    // under who asked, which is what a read is not.
+    { method: 'reveal', gate: LEVELS.ADMINISTRATOR },
+  ],
 
   async find() {
     const { limit, offset } = getPagination()
@@ -98,6 +105,21 @@ export default createService({
     // and setting it again is a 409.
     await db().variable.delete({ where: { id: row.id }, withDeleted: true })
     return row
+  },
+
+  // ── reveal — POST /variables/:id  X-Service-Method: reveal ──────
+  //
+  // A secret's value, for the person who needs it off the machine: the
+  // ENCRYPTION_KEY `projects.fromRepo` mints is the one a laptop opening a copy
+  // of that database needs (FJS-D1555). Scoped read first, so the row is one
+  // the caller may see; the value is `@encrypted` and only a system read has it.
+  async reveal() {
+    const row = await getScoped('variable', 'Variable')
+    if (!row.secret) throw new BadRequest(`${row.key} is not a secret — its value is on every read`)
+    const held = await $.db.asSystem().variable.findFirst({ where: { id: row.id }, select: { secretValue: true } })
+    // The announcement states the row, so the workspace's other tabs never see the value.
+    $.dispatch = row
+    return { id: row.id, key: row.key, value: held?.secretValue ?? null }
   },
 
   hooks: {

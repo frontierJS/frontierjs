@@ -233,6 +233,7 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `deletedAt` | `DateTime` | yes | — | — |
 | `deployments` | `Deployment[]` | — | — | relation |
 | `deployOnPush` | `Boolean` | no | `0` | @system |
+| `deployPublicKey` | `String` | yes | — | @system |
 | `domainRoutes` | `DomainRoute[]` | — | — | relation |
 | `domains` | `Domain[]` | — | — | relation |
 | `drillCron` | `String` | yes | — | — |
