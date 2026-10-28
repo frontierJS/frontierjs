@@ -12,11 +12,12 @@ import { modelName }                                       from '@frontierjs/too
 import { ARIA, RELATIONSHIPS }                             from '@frontierjs/toolbelt/aria'
 import { appSchemaViews }                                  from '../app-schema.js'
 import {
-  schemaFile, models, looksPlural, stripComments, walk, safeRead, readCode,
+  schemaFile, models, looksPlural, stripComments, readCode,
   lineOf, isAppRoot, SURFACES, sources, SCRIPT_EXT, CLIENT_SURFACES,
   modelResolver, spanFrom, closingParen, staticSurfaces, scripts,
   servingServices, withoutComments, bodyOf,
 } from './lib.js'
+import { walk, safeRead }                                  from '../fs.js'
 
 export const CHECKS = {
 

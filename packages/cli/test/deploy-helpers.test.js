@@ -46,12 +46,12 @@ async function loadModuleHelpers() {
   const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
   const fn = new AsyncFunction(`
     ${scriptMatch[1]}
-    return { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, sshHost, swapContainer, healthOrRestore, litestreamInstall, aptIdle }
+    return { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, deployTargetFor, appIdOf, sshHost, swapContainer, healthOrRestore, litestreamInstall, aptIdle }
   `)
   return fn()
 }
 
-const { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, swapContainer, healthOrRestore, aptIdle } = await loadModuleHelpers()
+const { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, deployTargetFor, swapContainer, healthOrRestore, aptIdle } = await loadModuleHelpers()
 
 // ─── loadFrontierConfig ───────────────────────────────────────────────────────
 
@@ -253,6 +253,36 @@ describe('resolveDeployConf', () => {
 })
 
 // ─── deployConfFor — --server and the placeholder ─────────────────────────────
+
+// ─── deployTargetFor ──────────────────────────────────────────────────────────
+
+describe('deployTargetFor', () => {
+
+  const ctx = () => ({ paths: { get root() { return TMP } }, git: { branch: () => '' }, config: {} })
+  const sink = () => { const errors = []; return { errors, log: { error: (m) => errors.push(m) } } }
+
+  test('no app_id refuses by name before anything resolves', async () => {
+    writeConfig({ deploy: { server: 'a.com', path: '/apps/x' } })
+    const $ = ctx(), { errors, log } = sink()
+    expect(await deployTargetFor($, {}, log)).toBeNull()
+    expect($.config.abort).toBe(true)
+    expect(errors.join('\n')).toContain('deploy.app_id')
+  })
+
+  test('a per-target path leaves the app id where the deploy put it', async () => {
+    writeConfig({ deploy: { server: 'a.com', path: '/apps/x', app_id: 'x', production: { path: '/apps/x-prod' } } })
+    const head = await deployTargetFor(ctx(), { production: true }, sink().log, { side: 'api' })
+    expect(head.target).toBe('production')
+    expect(head.resolved.path).toBe('/apps/x-prod')
+    expect(head.appId).toBe('x')
+  })
+
+  test('a side list takes the first that resolves', async () => {
+    writeConfig({ deploy: { server: 'a.com', app_id: 'x', web: { path: '/srv/web' } } })
+    const head = await deployTargetFor(ctx(), {}, sink().log, { side: ['api', 'web'] })
+    expect(head.resolved.path).toBe('/srv/web')
+  })
+})
 
 describe('deployConfFor', () => {
 
@@ -709,4 +739,48 @@ describe('aptIdle', () => {
     expect(r.stderr.toString()).toContain('apt is still busy after 2s')
     expect(Bun.spawnSync(['ls', resolve(TMP, 'conf')]).stdout.toString().trim()).toBe('')
   })
+})
+
+// ─── deploy:rollback — a box that does not answer ─────────────────────────────
+
+// Every rollback step read an ssh failure as "nothing to roll back", so an
+// unreachable box printed "Rollback complete" and exited 0 (FJS-3572). The ssh
+// on PATH answers its first `answers` calls and refuses the rest.
+describe('deploy:rollback against a box that does not answer', () => {
+
+  const rollback = (answers, ...flags) => {
+    mkdirSync(resolve(TMP, 'db'))
+    mkdirSync(resolve(TMP, 'bin'))
+    writeFileSync(resolve(TMP, 'db/schema.lite'), '')
+    writeFileSync(resolve(TMP, 'package.json'), '{"name":"rb"}')
+    writeConfig({ deploy: { app_id: 'rb', server: 'box.invalid', user: 'deploy', path: '/srv/rb' } })
+    writeFileSync(resolve(TMP, 'bin/ssh'),
+      `#!/bin/sh\nn=$(cat ${TMP}/n 2>/dev/null || echo 0)\necho $((n+1)) > ${TMP}/n\n[ "$n" -lt ${answers} ] || exit 255\n`,
+      { mode: 0o755 })
+    Bun.spawnSync(['git', 'init', '-q'], { cwd: TMP })
+    const r = Bun.spawnSync(['bun', resolve(ROOT, 'bin/fli.js'), 'deploy:rollback', '--production', ...flags],
+      { cwd: TMP, env: { ...process.env, PATH: `${TMP}/bin:${process.env.PATH}` } })
+    return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }
+  }
+
+  test('unreachable before it starts refuses', () => {
+    const { code, out } = rollback(0)
+    expect(code).toBe(1)
+    expect(out).toContain('nothing was rolled back')
+    expect(out).not.toContain('Rollback complete')
+  }, 30000)
+
+  test('lost after the probe refuses in the web step', () => {
+    const { code, out } = rollback(1, '--web')
+    expect(code).toBe(1)
+    expect(out).toContain('web was not rolled back')
+    expect(out).not.toContain('Rollback complete')
+  }, 30000)
+
+  test('lost after the probe refuses in the API step', () => {
+    const { code, out } = rollback(1, '--api')
+    expect(code).toBe(1)
+    expect(out).toContain('API was not rolled back')
+    expect(out).not.toContain('Rollback complete')
+  }, 30000)
 })

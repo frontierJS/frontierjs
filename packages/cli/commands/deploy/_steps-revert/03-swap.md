@@ -4,8 +4,6 @@ description: Put the container back onto the release being restored
 ---
 
 ```js
-if ($.config.abort) return
-
 const { host, serverPath, deployConf, appId, apiPort, revertImage } = $.config
 
 // The same function `_steps-docker/06-swap` calls. One owner, because the

@@ -25,25 +25,13 @@
 // rule as `checks.js`, because a caller may run before install and the
 // substrate is the one import that is always there.
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync }                                     from 'node:fs'
 import { join, relative, basename }                        from 'node:path'
+import { SKIP, safeRead, isDir, readJson, read, walk }     from './fs.js'
 import { findSnapshots }                                   from './snapshots.js'
 import { GLOBAL, guiPort, appPorts, hostFor, toolHost, toolBaseHost } from './ports.js'
 import { preambleIndex, resolveNeeds }                     from './preflight.js'
 import { parseFrontmatter }                                from '@frontierjs/toolbelt/frontmatter'
-
-// ─── shared tree helpers ──────────────────────────────────────────────────────
-//
-// Exported because `repo-map.js` reads the same tree the same way, and two
-// answers to *where could an app be* is how one of them starts missing a
-// directory nobody notices.
-
-export const SKIP = new Set(['node_modules', 'dist', 'build', '.git', 'coverage', '.output', '.vite'])
-
-export function safeRead(dir) { try { return readdirSync(dir).sort() } catch { return [] } }
-export function isDir(path)   { try { return statSync(path).isDirectory() } catch { return false } }
-export function readJson(path) { try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return null } }
-export function read(path)     { try { return readFileSync(path, 'utf8') } catch { return null } }
 
 /**
  * `packages/*` members by folder, each with the siblings it depends on — a
@@ -81,22 +69,6 @@ export function appDirs(root) {
     }
   }
   return dirs
-}
-
-/**
- * A directory and everything under it, to a depth.
- *
- * Came here with `findApps`, which is its only caller — `checks.js` keeps its
- * own copy for the rules, which walk with different depths and different skips.
- */
-function walk(dir, depth, fn) {
-  if (depth < 0 || !existsSync(dir)) return
-  try { fn(dir) } catch { /* an unreadable directory is not a finding */ }
-  for (const name of safeRead(dir)) {
-    if (SKIP.has(name) || name.startsWith('.')) continue
-    const child = join(dir, name)
-    try { if (statSync(child).isDirectory()) walk(child, depth - 1, fn) } catch { /* dangling link */ }
-  }
 }
 
 /** Every directory under `root` that looks like an FJS app — one `db/schema.lite`. */

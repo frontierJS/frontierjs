@@ -6,8 +6,6 @@ skip: "!$.config.doApi || $.config.deployConf.db?.backup === false"
 ---
 
 ```js
-if ($.config.abort) return
-
 const { appId, deployConf } = $.config
 const { host, path: serverPath } = $.config.api
 const dbPath    = apiFiles(deployConf, serverPath).dbDir

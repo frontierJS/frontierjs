@@ -39,10 +39,10 @@
 // normally around it. So the services directory is READ, and a model with no
 // service is reported by name rather than given an invented one.
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync }             from 'node:fs'
 import { join, basename }                        from 'node:path'
+import { safeRead }                             from './fs.js'
 
-const safeRead = (dir) => { try { return readdirSync(dir) } catch { return [] } }
 
 /**
  * The READ level a model's `@@gate` requires, or null where it declares none.

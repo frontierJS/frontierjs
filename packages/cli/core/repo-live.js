@@ -22,6 +22,7 @@
 // a page that renders without the registry is worth more than no page.
 
 import { spawnSync } from 'node:child_process'
+import { gitOut }    from './git.js'
 
 const GIT_TIMEOUT = 10_000
 const NPM_TIMEOUT = 20_000
@@ -46,10 +47,10 @@ export function collectLive({ root, packages, registry = true, now = new Date() 
       published,
       ahead:     pkg.version && published ? compareVersions(pkg.version, published) > 0 : false,
       behind:    pkg.version && published ? compareVersions(pkg.version, published) < 0 : false,
-      lastCommit: gitOut(root, ['log', '-1', '--format=%cs', '--', dir]),
-      lastSubject: gitOut(root, ['log', '-1', '--format=%s', '--', dir]),
-      commits90: countLines(gitOut(root, ['log', '--since=90.days', '--format=%h', '--', dir])),
-      dirty:     countLines(gitOut(root, ['status', '--porcelain', '--', dir])),
+      lastCommit: gitText(root, ['log', '-1', '--format=%cs', '--', dir]),
+      lastSubject: gitText(root, ['log', '-1', '--format=%s', '--', dir]),
+      commits90: countLines(gitText(root, ['log', '--since=90.days', '--format=%h', '--', dir])),
+      dirty:     countLines(gitText(root, ['status', '--porcelain', '--', dir])),
       // What an app INSTALLS, which is a different fact from what the repo
       // holds: litestone is 269 tracked files and ships 52. Registry data, so
       // it can only live here.
@@ -61,9 +62,9 @@ export function collectLive({ root, packages, registry = true, now = new Date() 
   return {
     at:  now.toISOString().replace('T', ' ').slice(0, 16),
     git: {
-      branch: gitOut(root, ['rev-parse', '--abbrev-ref', 'HEAD']),
-      head:   gitOut(root, ['rev-parse', '--short', 'HEAD']),
-      dirty:  countLines(gitOut(root, ['status', '--porcelain'])),
+      branch: gitText(root, ['rev-parse', '--abbrev-ref', 'HEAD']),
+      head:   gitText(root, ['rev-parse', '--short', 'HEAD']),
+      dirty:  countLines(gitText(root, ['status', '--porcelain'])),
     },
     rows,
   }
@@ -75,14 +76,8 @@ export function collectLive({ root, packages, registry = true, now = new Date() 
 // question asked without one answers for the whole repo — which is how sixteen
 // packages once reported each other's state.
 
-function gitOut(root, argv) {
-  const run = spawnSync('git', argv, {
-    cwd: root, encoding: 'utf8', shell: false, timeout: GIT_TIMEOUT,
-    env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
-  })
-  if (run.error || run.status !== 0) return null
-  const out = (run.stdout ?? '').trim()
-  return out === '' ? null : out
+function gitText(root, argv) {
+  return gitOut(root, argv, { timeout: GIT_TIMEOUT })?.trim() || null
 }
 
 function countLines(text) {

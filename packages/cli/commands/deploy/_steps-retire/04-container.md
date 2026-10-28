@@ -4,8 +4,6 @@ description: Remove the API container, the one a deploy left _replaced, and ever
 ---
 
 ```js
-if ($.config.abort) return
-
 const { appId, deployConf } = $.config
 const { host, path } = $.config.api
 const container = apiContainer(appId, deployConf)

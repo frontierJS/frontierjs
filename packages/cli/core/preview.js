@@ -21,19 +21,13 @@
 //
 // Zero dependencies, plain ESM: `checks.js` runs on node.
 
-import { spawnSync }                     from 'node:child_process'
+import { gitOut }                        from './git.js'
 import { existsSync, writeFileSync }     from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 
 export const MARKER = 'fjs-preview'
 
-function git(cwd, argv) {
-  const r = spawnSync('git', ['-c', 'core.quotePath=false', ...argv], {
-    cwd, encoding: 'utf8', timeout: 20_000, maxBuffer: 1 << 28,
-    env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
-  })
-  return r.error || r.status !== 0 ? null : r.stdout
-}
+const git = (cwd, argv) => gitOut(cwd, ['-c', 'core.quotePath=false', ...argv])
 
 const paths = out => out.split('\0').filter(Boolean)
 

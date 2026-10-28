@@ -6,25 +6,22 @@
 // literals closes the literal — plain words or -- quoting.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { scaffoldPort, surfaceIndexHtml, surfaceViteConfig } from './surface.js'
+
 export function makeIndexHtml(appName) {
-  return `<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>${appName}</title>
-    <link rel="manifest" href="/manifest.webmanifest" />
+  return surfaceIndexHtml({
+    title: appName,
+    head:  `    <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-  </head>
-  <!-- class="app" is what gives the page @frontierjs/css's font and ground; the
-       package has no bare body rule, so without it text outside a component
-       falls back to the browser's serif. -->
-  <body class="app">
-    <div id="app"></div>
+`,
+    // class="app" is what gives the page @frontierjs/css's font and ground; the
+    // package has no bare body rule, so without it text outside a component
+    // falls back to the browser's serif.
+    bodyClass: 'app',
+    body:  `    <div id="app"></div>
     <script type="module" src="virtual:sierra"></script>
-  </body>
-</html>
-`
+`,
+  })
 }
 
 // What makes the built app one a browser offers to install, and the build
@@ -53,73 +50,14 @@ export function makeIconSvg(appName) {
 }
 
 export function makeViteConfig(useApi = true) {
-  if (!useApi) return `// web/config/vite.config.js
-// Sierra produces the route table from sierra.config.js. This app has no API,
-// so there is no dev proxy to add.
-
-import { defineConfig } from 'vite'
-import { createSierraViteConfig } from '@frontierjs/sierra/build'
-import sierraConfig from './sierra.config.js'
-
-const base = createSierraViteConfig(sierraConfig)
-
-export default defineConfig({
-  ...base,
-  server: {
-    // Spread, never replace: Sierra's own server block carries the HMR overlay
-    // and the port. Its port default is 3000, which is nobody's slot in the
-    // FJS scheme, so the web port is stated here rather than inherited.
-    // 8000 = dev / frontend / project 0. See ports.js.
-    ...base.server,
-    port:       parseInt(process.env.WEB_PORT ?? process.env.FRONTIER_PORT_FE ?? '8000', 10),
-    strictPort: true,
-  },
-})
-`
-
-  return `// web/config/vite.config.js
-// Sierra produces the route table and the schema seed from sierra.config.js;
-// the dev proxy is this file's job, because only the app knows where its own
-// API listens.
-
-import { defineConfig } from 'vite'
-import { createSierraViteConfig } from '@frontierjs/sierra/build'
-import sierraConfig from './sierra.config.js'
-
-// sierra.config.js points the client at the page's own origin, so every one of
-// these paths has to reach the API from here. Without the proxy they hit Vite's
-// SPA fallback instead: 200, an HTML body, and a client that reports the API
-// answered nonsense.
-// FRONTIER_PORT_BE is set by the port broker when the app is started through fli,
-// which probes before it assigns; the literal is the static slot for project 0.
-const API = process.env.FRONTIER_API_URL || 'http://localhost:' + (process.env.FRONTIER_PORT_BE ?? 8100)
-
-const base = createSierraViteConfig(sierraConfig)
-
-export default defineConfig({
-  ...base,
-  // The app's one .env sits at its root, one level above this surface. Vite
-  // reads the Vite root by default, so a FRONTIER_PUBLIC_ variable written there reaches
-  // nothing and the client falls back to its default without a word.
-  envDir: '..',
-  server: {
-    // Spread, never replace: Sierra's own server block carries the HMR overlay
-    // and the port. Its port default is 3000, which is nobody's slot in the
-    // FJS scheme, so the web port is stated here rather than inherited.
-    // 8000 = dev / frontend / project 0; the API is 8100. See ports.js.
-    ...base.server,
-    port:       parseInt(process.env.WEB_PORT ?? process.env.FRONTIER_PORT_FE ?? '8000', 10),
-    strictPort: true,
-    proxy: {
-      // One entry: apiPrefix moves every route the app registers, raw ones
-      // and the auth plugin's included, so they are all under it. /ws is
-      // the socket, which is not a route.
-      [sierraConfig.junction.apiPrefix]: { target: API, changeOrigin: true },
-      '/ws':      { target: API, ws: true },
-    },
-  },
-})
-`
+  return surfaceViteConfig({ surface: 'web', port: scaffoldPort('fe'), proxy: useApi, about: useApi ? `
+Sierra produces the route table and the schema seed from sierra.config.js;
+the dev proxy is this file's job, because only the app knows where its own
+API listens.
+` : `
+Sierra produces the route table from sierra.config.js. This app has no API,
+so there is no dev proxy to add.
+` })
 }
 
 export function makeSierraConfig(appName, useApi = true) {

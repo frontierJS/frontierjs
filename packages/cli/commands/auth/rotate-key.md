@@ -13,21 +13,20 @@ flags:
 ---
 
 <script>
-import { existsSync, readFileSync, writeFileSync } from 'fs'
-import { resolve }                                  from 'path'
-
-// Inline Bun script that calls db.$rotateKey(newKey)
-const makeScript = (schemaPath, oldKey, newKey) => `
+// Both keys reach the script through its environment, never its source: the
+// source is a file on disk for as long as the rotation runs.
+const SCRIPT = `
 import { createClient } from '@frontierjs/litestone'
 
+const input = JSON.parse(process.env.FLI_INPUT)
+
 const db = await createClient({
-  path:          '${schemaPath}',
+  path:          input.schemaPath,
   resolveFrom:   'schema',
-  encryptionKey: '${oldKey}'
+  encryptionKey: process.env.ENCRYPTION_KEY,
 })
 
-console.log('Rotating encryption key...')
-const stats = await db.$rotateKey('${newKey}')
+const stats = await db.$rotateKey(process.env.ENCRYPTION_KEY_NEW)
 console.log(JSON.stringify(stats))
 await db.$close()
 `
@@ -58,111 +57,38 @@ Then run `fli auth:rotate-key`. On success, `ENCRYPTION_KEY` is updated
 to the new value and `ENCRYPTION_KEY_NEW` is removed from `.env`.
 
 ```js
-const schemaPath = resolve($.paths.db, 'schema.lite')
-const envPath    = resolve($.paths.root, '.env')
+const schemaPath = requireSchema($)
+if (!schemaPath || !requireEncryptionKey($)) return
 
-// ─── Preflight ────────────────────────────────────────────────────────────────
+const envPath = path.resolve($.paths.root, '.env')
+if (!fs.existsSync(envPath)) return refuse($, `.env not found at ${envPath}`)
 
-if (!existsSync(schemaPath)) {
-  log.error(`schema.lite not found at ${schemaPath}`)
-  return
-}
-
-if (!existsSync(envPath)) {
-  log.error('.env not found')
-  return
-}
-
-// `.env` is already loaded — bootstrap.js reads the project's before any
-// command runs, and overrides the global one with it.
-
-const oldKey = process.env.ENCRYPTION_KEY
 const newKey = process.env.ENCRYPTION_KEY_NEW
-
-if (!oldKey) {
-  log.error('ENCRYPTION_KEY not set in .env')
-  return
-}
-
 if (!newKey) {
-  log.error('ENCRYPTION_KEY_NEW not set in .env')
-  log.info('Generate one first:')
-  log.info('  fli keygen aes --name ENCRYPTION_KEY_NEW --env --format hex')
-  return
+  return refuse($, 'ENCRYPTION_KEY_NEW not set in .env',
+    'Generate one first: fli keygen aes --name ENCRYPTION_KEY_NEW --env --format hex')
 }
-
-if (oldKey === newKey) {
-  log.error('ENCRYPTION_KEY_NEW is the same as ENCRYPTION_KEY — nothing to rotate')
-  return
+if (newKey === process.env.ENCRYPTION_KEY) {
+  return refuse($, 'ENCRYPTION_KEY_NEW is the same as ENCRYPTION_KEY — nothing to rotate')
 }
-
-// ─── Dry run ──────────────────────────────────────────────────────────────────
 
 if (flag.dry) {
-  log.dry('Would call db.$rotateKey(ENCRYPTION_KEY_NEW)')
-  log.dry('Would update ENCRYPTION_KEY in .env to new value')
-  log.dry('Would remove ENCRYPTION_KEY_NEW from .env')
-  return
+  return log.dry('Would re-encrypt every @secret and @encrypted field under ENCRYPTION_KEY_NEW, then make it ENCRYPTION_KEY in .env')
 }
 
-// ─── Confirm ──────────────────────────────────────────────────────────────────
-
-echo('')
-log.warn('This will re-encrypt all @secret fields in the database.')
+log.warn('This re-encrypts every @secret and @encrypted field in the database.')
 log.warn('Make a backup first: fli db:backup')
-echo('')
+if (!await confirm($)) return log.info('Aborted')
 
-const confirmed = await tty.line('Continue? (y/n) › ')
-if (confirmed.toLowerCase() !== 'y' && confirmed.toLowerCase() !== 'yes') {
-  log.info('Aborted')
-  return
-}
+log.info('Rotating — this may take a moment on a large database')
+const stats = runAppScript($, 'rotate-key', SCRIPT, { schemaPath })
+if (!stats) return refuse($, 'Rotation failed — the reason is above', 'ENCRYPTION_KEY in .env is unchanged')
 
-// ─── Write + run rotation script ─────────────────────────────────────────────
+fs.writeFileSync(envPath, updateEnvKey(fs.readFileSync(envPath, 'utf8'), newKey), 'utf8')
 
-const { unlinkSync } = await import('fs')
-const tmpPath = resolve($.paths.root, `.fli-rotate-key-${Date.now()}.ts`)
-
-try {
-  writeFileSync(tmpPath, makeScript(
-    schemaPath.replace(/\\/g, '/'),
-    oldKey,
-    newKey
-  ), 'utf8')
-
-  log.info('Rotating key — this may take a moment on large databases...')
-
-  const result = $.exec({ command: `bun run "${tmpPath}"`, stdio: ['ignore', 'pipe', 'inherit'] })
-  const output = (result?.stdout ?? result ?? '').toString().trim()
-  const last   = output.split('\n').find(l => l.startsWith('{'))
-
-  if (last) {
-    const stats = JSON.parse(last)
-    const models = Object.entries(stats)
-    echo('')
-    log.success('Key rotation complete')
-    for (const [model, count] of models) {
-      echo(`  ${model.padEnd(20)} ${count} row${count !== 1 ? 's' : ''} re-encrypted`)
-    }
-  } else {
-    log.success('Key rotation complete')
-  }
-
-  // ─── Update .env ────────────────────────────────────────────────────────────
-  const envContent = readFileSync(envPath, 'utf8')
-  writeFileSync(envPath, updateEnvKey(envContent, newKey), 'utf8')
-
-  echo('')
-  log.success('Updated ENCRYPTION_KEY in .env')
-  log.success('Removed ENCRYPTION_KEY_NEW from .env')
-  echo('')
-  log.info('Restart your API server to pick up the new key')
-  echo('')
-
-} catch (err) {
-  log.error(`Rotation failed: ${err.message}`)
-  log.warn('Your database has not been modified — ENCRYPTION_KEY unchanged')
-} finally {
-  if (existsSync(tmpPath)) unlinkSync(tmpPath)
-}
+log.success('Key rotated')
+echo.lines(Object.entries(stats).map(([model, { rows, fields }]) =>
+  chalk`${model.padEnd(20)} {dim ${plural(rows, 'row')}, ${plural(fields, 'column')} re-encrypted}`), { indent: 2 })
+log.success('.env: ENCRYPTION_KEY is the new key, ENCRYPTION_KEY_NEW removed')
+log.info('Restart the API server to pick up the new key')
 ```

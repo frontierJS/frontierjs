@@ -428,7 +428,7 @@ describe('the open register', () => {
 
 | Id | Pkg | Title | Status | Verified | Detail |
 | --- | --- | --- | --- | --- | --- |
-| FJS-101 | litestone | **A gate refuses and a policy filters.** Measured on six rows, with \`a | b\` in the evidence | open | 2026-08-14 | [x](y) |
+| FJS-101 | litestone | **A gate refuses and a policy filters.** Measured on six rows, with \`a \\| b\` in the evidence | open | 2026-08-14 | [x](y) |
 
 ## Needs a decision
 
@@ -791,8 +791,10 @@ describe('ports', () => {
     expect(model.ports).toBeNull()
 
     const html = renderHtml(model)
-    expect(html).not.toContain('8010')
-    expect(html).not.toContain('basecamp')
+    // The body only: `basecamp` is also a theme, named in the head.
+    const body = html.slice(html.indexOf('<body'))
+    expect(body).not.toContain('8010')
+    expect(body).not.toContain('basecamp')
   })
 
   test('the workspace the registry belongs to still gets it', () => {

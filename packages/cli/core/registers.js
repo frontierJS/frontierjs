@@ -187,6 +187,24 @@ export function withRegisterGuard(root, fn) {
   return withGuard(join(homedir(), '.fli', `register-${key}.guard`), fn, 60_000)
 }
 
+/**
+ * Why no record can be read or minted at `root`, or null when one can — `so`
+ * finishes the sentence. Every verb asks before it reads a row: the reader is
+ * keyed to the prefix, and without one each lookup misses and reports the id
+ * as absent.
+ */
+export function requirePrefix(root, so = 'no row can be read') {
+  const { prefix, declared } = registerLayout(root)
+  if (prefix) return null
+  return `package.json declares no usable registers.prefix${declared ? ` (${JSON.stringify(declared)} is not [A-Z][A-Z0-9]*)` : ''}, so ${so}`
+}
+
+/** The issue record `id` names, by its own id or an alias, or null. */
+export function findIssue(doc, id) {
+  const want = String(id ?? '').trim().toUpperCase()
+  return doc.issues.find(r => r.id.toUpperCase() === want || (r.aliases ?? []).some(a => a.toUpperCase() === want)) ?? null
+}
+
 export function readRegisters(root) {
   const layout    = registerLayout(root)
   const issues    = readIssues(layout)
@@ -441,7 +459,8 @@ function readIssues({ root, dir, ids }) {
         pkg:      splitPkg(plain(area)),
         title:    firstClaim(claim),
         status:   closed ? 'closed' : wide ? plain(cells[3]) : ruled ? 'ruled' : 'needs a ruling',
-        severity: severityOf(section ?? ""),
+        severity: severityOf(section ?? ''),
+        section:  section ?? null,
         verified: wide ? plain(cells[4]) : '',
         closed,
         body:     plain(body),
@@ -678,7 +697,8 @@ const RANK = /^\d+\.\d+[a-z]?$/
  *
  * `rank` is null when the first cell is not one — such a row is invisible to
  * every reader, which is what the grader reports. `headWidth` is the cell
- * count of the `| # |` header the row sits under, null when it sits under none.
+ * count of the `| # |` header the row sits under, null when it sits under none;
+ * `section` is the `## ` heading above it, which is where a wave is named.
  */
 export function readOverviewRows(dir) {
   const file = join(dir, 'overview.md')
@@ -686,8 +706,11 @@ export function readOverviewRows(dir) {
 
   const out = []
   let headWidth = null
+  let section   = null
 
   readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+    const heading = line.match(/^##\s+(.+?)\s*$/)
+    if (heading) section = heading[1]
     if (!/^\s*\|/.test(line)) { headWidth = null; return }
 
     const cells = splitRow(line)
@@ -703,6 +726,7 @@ export function readOverviewRows(dir) {
       rank,
       cells,
       headWidth,
+      section,
       file: join('IDEAS', 'overview.md'),
       line: i + 1,
     })
@@ -717,7 +741,7 @@ export function readOverviewRows(dir) {
  * A table row's cells. Splits on unescaped pipes only — a `\|` inside a cell is
  * content, and an inline code span may legitimately hold one.
  */
-function splitRow(line) {
+export function splitRow(line) {
   return line
     .replace(/^\s*\|/, '')
     .replace(/\|\s*$/, '')
@@ -738,7 +762,7 @@ function headingTitle(body) {
  * The claim a record opens with: the first bold run, which is how every row and
  * every ruling is written — a claim in bold, then the measurement.
  */
-function firstClaim(text = '') {
+export function firstClaim(text = '') {
   const bold = text.match(/\*\*([\s\S]+?)\*\*/)
   const claim = bold ? bold[1] : text
   return plain(claim).replace(/\s+/g, ' ').trim()
@@ -761,7 +785,7 @@ function refsIn(text = '', ids) {
  * cross-reference to another record, an `http` link is somebody else's tree,
  * and a `#L134` fragment is a line inside a file that is still the same file.
  */
-function linkedFiles(text = '') {
+export function linkedFiles(text = '') {
   const out = new Set()
 
   for (const [, target] of text.matchAll(/\]\(([^)]+)\)/g)) {
@@ -805,7 +829,7 @@ function splitPkg(text = '') {
   return text.split(/\s*·\s*/).map(s => s.trim()).filter(Boolean)
 }
 
-function severityOf(section = '') {
+export function severityOf(section = '') {
   const m = section.match(/^(S[1-4])/)
   if (m) return m[1]
   if (/decision/i.test(section)) return 'decision'
@@ -825,13 +849,15 @@ function slug(text = '') {
 }
 
 /** Markdown stripped to its text, for a title, a search corpus or a diff. */
-function plain(md = '') {
+export function plain(md = '') {
   return md
     .replace(/<a\s[^>]*>\s*<\/a>/g, '')
     .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/\[\[([^\]]*)\]\]/g, '$1')
-    .replace(/[*_`~]/g, '')
+    // A lone tilde is `~12k`, approximately; only a pair is markup.
+    .replace(/~~/g, '')
+    .replace(/[*_`]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
 }

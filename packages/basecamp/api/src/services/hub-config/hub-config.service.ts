@@ -19,7 +19,7 @@
 // `autoValidate` derives from the model for `create`/`patch`, and neither is
 // mounted. Litestone validates the same rules on the write itself and throws
 // with an `errors` array, which junction's error boundary adopts ahead of its
-// `data` — so a bad `baseUrl` still lands under the right box in a form. One
+// `data` — so a bad `backupCron` still lands under the right box in a form. One
 // validator, reached by a different door.
 
 import { createService, BadRequest, Conflict, NotFound, $ } from '@frontierjs/junction'
@@ -61,16 +61,14 @@ export default createService({
   /**
    * The settings, or a 404 saying they have never been written.
    *
-   * NOT an invented row of defaults. `baseUrl` and `adminEmail` are required
-   * with no default because nothing can guess them, and answering a
-   * synthesized object would let a screen show settings that are not stored —
-   * every reader would then have to know which of them were real.
+   * NOT an invented row of defaults: answering a synthesized object would let
+   * a screen show settings that are not stored — every reader would then have
+   * to know which of them were real.
    */
   async current() {
     const row = await db().hubConfig.findFirst({ where: { id: HUB } })
     if (!row) throw new NotFound(
-      'This installation has no settings yet. Save them once to create them — ' +
-      'a base URL and an admin email are required and nothing can infer either.'
+      'This installation has no settings yet. Save them once to create them.'
     )
     return row
   },

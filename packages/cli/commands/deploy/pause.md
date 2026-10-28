@@ -18,21 +18,9 @@ steps: _steps-pause
 ---
 
 ```js
-const target         = resolveTarget(flag, $.git)
-const deployConf     = await deployConfFor($, flag, log)
-
-if (!deployConf?.server) {
-  log.error('No deploy block in frontier.config.js — there is no journal to record a pause in')
-  $.config.abort = true
-  return
-}
-
-const api = resolveSide(deployConf, target, 'api')
-if (!api) {
-  log.error(`Cannot resolve a server and path for the api side on target: ${target}`)
-  $.config.abort = true
-  return
-}
+const head = await deployTargetFor($, flag, log, { side: 'api', why: 'there is no journal to record a pause in' })
+if (!head) return
+const { target, deployConf, appId, resolved: api } = head
 
 $.config.stepsDir   = '_steps-pause'
 $.config.pauseKind  = 'pause'
@@ -42,7 +30,7 @@ $.config.api        = api
 $.config.hosts      = distinctHosts([api])
 $.config.host       = api.host
 $.config.serverPath = api.path
-$.config.appId      = deployConf.app_id ?? deployConf.path.split('/').pop()
+$.config.appId      = appId
 $.config.apiPort    = deployConf.api?.port ?? 3000
 $.config.healthPath = deployConf.api?.health ?? '/health'
 // The name the route is written for, which is what `03-verify` has to ask

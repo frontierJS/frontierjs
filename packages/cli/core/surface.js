@@ -41,13 +41,13 @@
 // Zero dependencies, plain ESM, node or bun — the rule `seams.js` and
 // `snapshots.js` follow.
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs'
+import { readdirSync, existsSync }              from 'node:fs'
 import { join, posix }                           from 'node:path'
+import { read }                                     from './fs.js'
 
 import { stripComments, importGraph, packageIndex } from './codegraph.js'
 import { treePaths }                                from './tree.js'
 
-const read = p => { try { return readFileSync(p, 'utf8') } catch { return null } }
 
 /** A file that can hold an import or a reference. `.lite`, `.css`, `.md` cannot. */
 export const SOURCE = /\.(?:[cm]?[jt]sx?|mesa)$/

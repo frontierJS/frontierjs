@@ -37,7 +37,9 @@ Rolls back to the previous release. Defaults to full rollback (web + API).
 Use --web or --api to roll back only one part.
 
 ```js
-const target = resolveTarget(flag, $.git)
+const head = await deployTargetFor($, flag, log, { why: 'add one with server, user and path to roll back' })
+if (!head) return
+const { target, deployConf, resolved, appId } = head
 
 // ─── Resolve scope ────────────────────────────────────────────────────────────
 // --web and --api are additive filters. Neither flag = full rollback.
@@ -46,25 +48,15 @@ const both   = !flag.web && !flag.api
 const doWeb  = both || flag.web
 const doApi  = both || flag.api
 
-// ─── Load config ──────────────────────────────────────────────────────────────
-const deployConf     = await deployConfFor($, flag, log)
+const { path, host } = resolved
 
-if (!deployConf?.server) {
-  log.error('No deploy block found in frontier.config.js')
-  log.info('Add a deploy block with server, user, and path to enable rollback')
+// Every step below reads an ssh failure as "nothing to roll back", so an
+// unreachable box would report a rollback that never happened (FJS-3572).
+if (!machineFor($, host, path, deployConf.transport).reach()) {
+  log.error(`Cannot reach ${host} — nothing was rolled back`)
   $.config.abort = true
   return
 }
-
-const resolved = resolveDeployConf(deployConf, target)
-if (!resolved) {
-  log.error(`deploy.server or deploy.path is not set for target: ${target}`)
-  $.config.abort = true
-  return
-}
-const { server, user, path } = resolved
-const appId      = deployConf.app_id ?? path.split('/').pop()
-const host       = resolved.host
 
 const scopeLabel = both ? 'web + API' : doWeb ? 'web only' : 'API only'
 log.info(`Rolling back ${appId} on ${target} → ${host} (${scopeLabel})`)

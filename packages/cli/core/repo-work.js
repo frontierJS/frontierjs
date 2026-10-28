@@ -33,7 +33,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join }    from 'node:path'
 import { homedir } from 'node:os'
 
-import { stylesheet }    from './repo-atlas.js'
+import { htmlPage, embedJson } from './html-page.js'
 import { rankNext }      from './next.js'
 import { openDecisions } from './decisions.js'
 
@@ -112,26 +112,16 @@ function loopOf(log) {
 // ─── the page ─────────────────────────────────────────────────────────────────
 
 export function renderWork(model, work, { back = 'repo-rings.html' } = {}) {
-  const data = JSON.stringify({ ...work, back }).replace(/</g, '\\u003c')
-  return [
-    '<!doctype html>',
-    '<!-- fli ws:atlas --as=rings · not a snapshot -->',
-    '<html lang="en"><head><meta charset="utf-8">',
-    '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    `<title>${esc(model.root)} — how work moves</title>`,
-    model.css
-      ? `<style id="fjs-css">${model.css}</style>`
-      : `<link rel="stylesheet" href="${esc(stylesheet())}">`,
-    `<style id="work">${STYLE}</style>`,
-    `</head><body class="app theme-${model.css ? 'field' : 'press'}">`,
-    MARKUP,
-    `<script>(${client.toString()})(${data})</script>`,
-    '</body></html>',
-    '',
-  ].join('\n')
+  const data = embedJson({ ...work, back })
+  return htmlPage({
+    banner: 'fli ws:atlas --as=rings · not a snapshot',
+    title:  `${model.root} — how work moves`,
+    css:    model.css,
+    styles: { work: STYLE },
+    body:   MARKUP,
+    script: `(${client.toString()})(${data})`,
+  })
 }
-
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 
 const MARKUP = `<div class="wk">
   <header>
@@ -297,7 +287,7 @@ function client(D) {
   const P   = D.prefix
   const el  = (tag, a = {}, p = svg) => { const e = document.createElementNS(NS, tag); for (const k in a) e.setAttribute(k, a[k]); p.appendChild(e); return e }
   const txt = (p, a, s) => { const t = el('text', a, p); t.textContent = s; return t }
-  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
   const num = n => Number(n).toLocaleString('en-US')
   const q   = D.q
   const L   = D.loop

@@ -27,12 +27,11 @@
 //
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
-import { readFileSync, writeFileSync } from 'node:fs'
-import { join }                        from 'node:path'
+import { readFileSync } from 'node:fs'
+import { join }         from 'node:path'
 
-import { readRegisters, withRegisterGuard }                 from './registers.js'
-import { errorKeys, newErrors, describeNewErrors } from './register-check.js'
-import { oneCell, isoDate, splitRow }    from './close.js'
+import { readRegisters, withRegisterGuard, requirePrefix, findIssue, splitRow } from './registers.js'
+import { checkedEdit, oneCell, isoDate } from './register-edit.js'
 
 /**
  * Amend one open issue row.
@@ -45,20 +44,18 @@ export function amendIssue(opts) {
 }
 
 function amendUnguarded({ root, id, detail, drop = null, dry = false, today = new Date() }) {
-  const doc = readRegisters(root)
-  if (!doc.prefix) return refuse('package.json declares no usable registers.prefix, so no row can be read')
+  const noPrefix = requirePrefix(root)
+  if (noPrefix) return refuse(noPrefix)
 
-  const want   = String(id ?? '').trim().toUpperCase()
-  const record = doc.issues.find(r => r.id.toUpperCase() === want || (r.aliases ?? []).some(a => a.toUpperCase() === want))
-  if (!record)       return refuse(`no issue row has the id ${want || '(none)'}`)
+  const record = findIssue(readRegisters(root), id)
+  if (!record)       return refuse(`no issue row has the id ${String(id ?? '').trim().toUpperCase() || '(none)'}`)
   if (record.closed) return refuse(`${record.id} is closed (${record.file}:${record.line}) — a defect that came back is a new row citing it: fli file`)
 
   const added = oneCell(detail)
   if (!added) return refuse('--detail is required: what was found, and where')
 
   const abs    = join(root, record.file)
-  const before = readFileSync(abs, 'utf8')
-  const lines  = before.split('\n')
+  const lines  = readFileSync(abs, 'utf8').split('\n')
   const at     = record.line - 1
   const cells  = splitRow(lines[at] ?? '')
   if (!lines[at]?.includes(record.id) || cells.length < 4) {
@@ -74,14 +71,8 @@ function amendUnguarded({ root, id, detail, drop = null, dry = false, today = ne
 
   if (dry) return { ok: true, dry: true, id: record.id, file: record.file, line: record.line, dropped: kept.dropped }
 
-  const baseline = errorKeys(root)
-  writeFileSync(abs, lines.join('\n'))
-
-  const found = newErrors(baseline, root)
-  if (found.length) {
-    writeFileSync(abs, before)
-    return refuse(`the amend was put back: register:check found ${describeNewErrors(found)}`)
-  }
+  const done = checkedEdit(root, 'amend', write => write(abs, lines.join('\n')))
+  if (!done.ok) return done
 
   return { ok: true, id: record.id, file: record.file, line: record.line, dropped: kept.dropped }
 }

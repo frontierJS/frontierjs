@@ -8,10 +8,10 @@ dated: 2026-10-05
 
 **Status: IDEA.** Probed against the tree 2026-10-05, the Security route and
 Basecamp's own host 2026-10-12 (`VERIFYING.md`). Do not cite this file as behavior.
-Filed: [`FJS-2712`](../ISSUES.md#fjs-2712) (harden at install) ·
-[`FJS-2713`](../ISSUES.md#fjs-2713) (readings, grader, screens) ·
-[`FJS-2714`](../ISSUES.md#fjs-2714) (Basecamp's own host) ·
-[`FJS-2715`](../ISSUES.md#fjs-2715) (a vulnerable dependency notifies nobody).
+Filed: [`FJS-2712`](../ISSUES_ARCHIVE.md#fjs-2712) (harden at install) ·
+[`FJS-2713`](../ISSUES_ARCHIVE.md#fjs-2713) (readings, grader, screens) ·
+[`FJS-2714`](../ISSUES_ARCHIVE.md#fjs-2714) (Basecamp's own host) ·
+[`FJS-2715`](../ISSUES_ARCHIVE.md#fjs-2715) (a vulnerable dependency notifies nobody).
 
 Prompted by the owner: *creating an app is no big deal; it is once it is live —
 updates to the server, db pushes, backups — that it gets tricky.* This record is
@@ -51,7 +51,7 @@ carries `outpost_version` and nothing about the OS.
 - **`outpost.service` runs as root with no sandboxing**: no `User=`, no
   `ProtectSystem`, no `NoNewPrivileges`. Docker access is root-equivalent anyway,
   so the gain is in narrowing what a compromised Outpost can write, not in the user.
-  [`FJS-1761`](../ISSUES.md#fjs-1761).
+  [`FJS-1761`](../ISSUES_ARCHIVE.md#fjs-1761).
 - ~~**The install is unpinned**~~ — closed, [`FJS-1762`](../ISSUES_ARCHIVE.md#fjs-1762).
 - ~~**Nothing installs or checks time sync**~~ — closed: the install sets up
   `chrony`, [`FJS-1763`](../ISSUES_ARCHIVE.md#fjs-1763). `time.synced` still grades it.
@@ -181,7 +181,7 @@ and its code together, because an operator asking whether they are exposed means
   filtered to it. The advisories are already there, and the push is the
   `dependency_vulnerable` notification kind, sent when an installed version
   first gains an advisory and not again each day
-  ([`FJS-2715`](../ISSUES.md#fjs-2715)).
+  ([`FJS-2715`](../ISSUES_ARCHIVE.md#fjs-2715)).
 
 The route reads `ServerPosture` and `Dependency` at the caller's level. Both are
 workspace-scoped, so the tenancy block keeps a workspace to its own rows without
@@ -191,7 +191,7 @@ the screen doing anything.
 
 **The box most worth grading is the one this design never reaches.** Ring 0
 (`fli deploy`) installs Basecamp, and no Outpost runs there, so nothing ever
-reads that box ([`FJS-2714`](../ISSUES.md#fjs-2714)). It is also the box with
+reads that box ([`FJS-2714`](../ISSUES_ARCHIVE.md#fjs-2714)). It is also the box with
 `ENCRYPTION_KEY`, every workspace's `Secret` rows and the command key for the whole
 fleet. The API runs in a container, which cannot see the host's `sshd -T` or its
 nftables ruleset, so the readings must come from outside the container.
@@ -210,7 +210,10 @@ row, graded on age, in process) · `hub.key-escrowed` (a person's attestation
 that a copy of `ENCRYPTION_KEY` is kept off the box, bound to the key by
 digest, in process — `FJS-D1497`) · `hub.db-mode` and `hub.env-mode` (the database
 volume and the file holding `ENCRYPTION_KEY` are not world-readable, from the
-reading). A setting that already refuses itself under production is not graded
+reading) · `hub.app-url`, `hub.api-url` and `hub.mailer` (the env the install
+is reached at and mails through: a localhost URL under production, an http API
+URL enrollment refuses, no mailer or a `MAIL_FROM` at `@localhost`, in process).
+A setting that already refuses itself under production is not graded
 again: `localMachineRefusal`, devtools with no gate, and a missing `ENCRYPTION_KEY`
 each stop the boot, so a control for them could never fail.
 
@@ -356,7 +359,7 @@ root or fail marked.
 ### Phase 1 — Readings, grader and screens, read-only
 
 Goal: every fleet machine reports posture and `/security/` ranks the workspace's
-machines and code ([`FJS-2713`](../ISSUES.md#fjs-2713), [`FJS-2715`](../ISSUES.md#fjs-2715)).
+machines and code ([`FJS-2713`](../ISSUES_ARCHIVE.md#fjs-2713), [`FJS-2715`](../ISSUES_ARCHIVE.md#fjs-2715)).
 Done when: a fresh DigitalOcean box enrolled today shows `net.firewall-default-deny`
 and `ssh.password-off` failing (or `ssh.password-off` passing, if the image already
 ships it that way — that is worth knowing too), and it sorts to the top of
@@ -389,7 +392,7 @@ ships it that way — that is worth knowing too), and it sorts to the top of
 
 ### Phase 2 — Basecamp's own host
 
-Goal: the box holding `ENCRYPTION_KEY` is graded ([`FJS-2714`](../ISSUES.md#fjs-2714)).
+Goal: the box holding `ENCRYPTION_KEY` is graded ([`FJS-2714`](../ISSUES_ARCHIVE.md#fjs-2714)).
 Done when: `/hub/security/` draws the `basecamp-host` row's report with the `hub.*`
 controls beside its fleet ones and `hub.backup-recent` fails on an installation
 with no backup (`api/test/posture.test.ts`), and a `fli deploy` with
@@ -431,7 +434,7 @@ fleet Outpost rather than from itself.
 ### Phase 4 — Harden at install, and the Harden action
 
 Goal: a box Basecamp builds grades clean, and one it did not can be brought there
-on a click ([`FJS-2712`](../ISSUES.md#fjs-2712)).
+on a click ([`FJS-2712`](../ISSUES_ARCHIVE.md#fjs-2712)).
 Done when: the phase-1 box after *Harden* grades clean, and the outside probe agrees.
 
 - [x] 4.1 `unattended-upgrades`, security origin only, no automatic reboot.
@@ -447,7 +450,7 @@ Done when: the phase-1 box after *Harden* grades clean, and the outside probe ag
     `fjs.exposed-port`, and every `/deploy`, `/stop` and Outpost start refills
     the set from the labels. A firewall unit restarted alone empties the set
     until the next of those.
-- [ ] 4.4 The `outpost.service` sandbox ([`FJS-1761`](../ISSUES.md#fjs-1761)).
+- [ ] 4.4 The `outpost.service` sandbox ([`FJS-1761`](../ISSUES_ARCHIVE.md#fjs-1761)).
 - [ ] 4.5 Docker and Caddy pinned to a major, the versions in `enrollment.ts`,
   installed versions in the heartbeat (`FJS-D931`).
 - [ ] 4.6 The provider cloud firewall, created by `server-provision.job.ts`.

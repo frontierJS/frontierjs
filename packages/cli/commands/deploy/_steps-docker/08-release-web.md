@@ -6,8 +6,6 @@ skip: "!$.config.doWeb"
 ---
 
 ```js
-if ($.config.abort) return
-
 const { releaseDir } = $.config
 const { host, path: serverPath } = $.config.web
 const currentLink = `${serverPath}/current`

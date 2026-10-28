@@ -16,9 +16,11 @@ title: Hub overview
   // here would be a second answer to one question. "Event subscribers" was the
   // other until the bus grew `stats()` (`FJS-143`).
   import { hub } from '../../resources/Hub.mesa'
+  import { postures } from '../../resources/ServerPosture.mesa'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
 
-  import Badge from '@frontierjs/ui/components/display/Badge.mesa'
+  import Badge   from '@frontierjs/ui/components/display/Badge.mesa'
+  import Callout from '@frontierjs/ui/components/display/Callout.mesa'
   import Card  from '@frontierjs/ui/components/layout/Card.mesa'
   import Pill  from '@frontierjs/ui/components/display/Pill.mesa'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
@@ -26,6 +28,9 @@ title: Hub overview
   let info    = null
   let error   = null
   let loading = true
+  // The failing controls /hub/security/ grades, so what is owed is on the
+  // screen a sysadmin lands on. A failed read leaves the rest of this screen up.
+  let owed    = []
 
   async function load() {
     error = null; loading = true
@@ -43,6 +48,9 @@ title: Hub overview
   }
 
   load()
+  postures.service.invoke('host', null, {})
+    .then(host => { owed = host.controls.filter(c => c.ok === false) })
+    .catch(() => {})
 
 
   function uptime(seconds) {
@@ -86,6 +94,17 @@ title: Hub overview
   </div>
 
   <div class="stack">
+    {#if owed.length}
+      <Callout tone="danger" title={`${owed.length} need${owed.length === 1 ? 's' : ''} attention`} id="hub-owed">
+        <ul class="stack">
+          {#each owed as c}
+            <li data-control={c.id}><code>{c.id}</code> {c.message}</li>
+          {/each}
+        </ul>
+        <p class="text-sm">Graded on <a href="/hub/security/">Host security</a>.</p>
+      </Callout>
+    {/if}
+
     <Card>
       <div class="section-header">
         <h2 class="h4">Runtime</h2>

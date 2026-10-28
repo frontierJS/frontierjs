@@ -18,12 +18,12 @@
 // reds zero or two, so rewording a bullet out from under its rule is a red
 // rather than a row that quietly turned `none`.
 
-import { readFileSync, readdirSync } from 'node:fs'
+import { readdirSync }              from 'node:fs'
 import { join }                      from 'node:path'
+import { read }                     from './fs.js'
 
 export const REALMS = ['data', 'api', 'ui']
 
-const read = p => { try { return readFileSync(p, 'utf8') } catch { return null } }
 
 // ─── the hazards themselves ──────────────────────────────────────────────────
 //

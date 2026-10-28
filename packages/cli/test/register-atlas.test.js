@@ -105,7 +105,7 @@ describe('the page', () => {
     try {
       const html    = renderRegisterAtlas(collect(root))
       const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(x => x[1])
-      expect(scripts.length).toBe(2)
+      expect(scripts.length).toBe(3)
       for (const s of scripts) expect(() => new Function(s)).not.toThrow()
     } finally { cleanup() }
   })

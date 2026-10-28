@@ -152,9 +152,13 @@
 
   The label is a .navlink-text, which a .sidebar.rail fades rather than
   removes, so it stays the link's name.
+
+  `prefetch="hover"` is read by Sierra's router through a document-level
+  listener, so this kit sets it without importing Sierra; outside a Sierra
+  app it is an inert attribute.
 -->
 {#snippet entryLink(entry)}
-  <a class="navlink" href={entry.href}
+  <a class="navlink" href={entry.href} prefetch="hover"
      aria-current={current(entry) ? 'page' : null}
   >{#if entry.icon}{@render icon?.(entry.icon)}{/if}<span class="navlink-text">{entry.label}</span>{@render badge?.(entry)}</a>
 {/snippet}
@@ -245,11 +249,11 @@
   {#if section?.tabs?.length || section?.action}
     <nav class="cluster" aria-label="Section">
       {#each section.tabs ?? [] as tab}
-        <a class="navlink" href={tab.href}
+        <a class="navlink" href={tab.href} prefetch="hover"
            aria-current={current(tab) ? 'page' : null}>{tab.label}</a>
       {/each}
       {#if section.action}
-        <a class="btn primary" href={section.action.href}>{section.action.label}</a>
+        <a class="btn primary" href={section.action.href} prefetch="hover">{section.action.label}</a>
       {/if}
     </nav>
   {/if}
@@ -282,7 +286,7 @@
                   >{group.label} ▾</button>
                 {/snippet}
                 {#each group.entries as entry}
-                  <DropdownItem href={entry.href} aria-current={current(entry) ? 'page' : null}>
+                  <DropdownItem href={entry.href} prefetch="hover" aria-current={current(entry) ? 'page' : null}>
                     {entry.label}
                     {#snippet trailing()}{@render badge?.(entry)}{/snippet}
                   </DropdownItem>

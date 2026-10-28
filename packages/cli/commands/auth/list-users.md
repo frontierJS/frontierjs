@@ -31,15 +31,10 @@ flags:
 ---
 
 <script>
-import { existsSync, writeFileSync } from 'fs'
-import { resolve }                    from 'path'
-
-// The input arrives as JSON in FLI_LIST_USERS — interpolating it into the
-// source let a quote in --role end the string literal.
 const SCRIPT = `
 import { createClient } from '@frontierjs/litestone'
 
-const input = JSON.parse(process.env.FLI_LIST_USERS)
+const input = JSON.parse(process.env.FLI_INPUT)
 
 const db  = await createClient({ path: input.schemaPath, resolveFrom: 'schema', encryptionKey: process.env.ENCRYPTION_KEY })
 const sys = db.asSystem()
@@ -74,114 +69,53 @@ for (const u of users) {
 console.log(JSON.stringify(result))
 await db.$close()
 `
+
+// Each column as wide as its longest value, capped. Padded before it is
+// colored, since an escape code counts toward padEnd's width.
+const userTable = (users, { sessions, chalk }) => {
+  const email = Math.min(36, Math.max(20, ...users.map(u => u.email.length)) + 2)
+  const name  = Math.min(24, Math.max(8,  ...users.map(u => u.name.length)) + 2)
+  const row   = (cells) => cells.filter(c => c != null).join('')
+  const head  = row(['email'.padEnd(email), 'name'.padEnd(name), 'role'.padEnd(12), 'verified'.padEnd(10), sessions ? 'sessions' : null])
+  return [
+    chalk.dim(head),
+    chalk.dim('─'.repeat(head.length)),
+    ...users.map(u => row([
+      u.email.padEnd(email),
+      u.name.padEnd(name),
+      u.role.padEnd(12),
+      u.emailVerified ? chalk.green('✓'.padEnd(10)) : chalk.dim('✗'.padEnd(10)),
+      sessions ? String(u.activeSessions ?? 0) : null,
+    ])),
+  ]
+}
 </script>
 
 Lists users directly from the database. No running server required.
 
 ```js
-const schemaPath = resolve($.paths.db, 'schema.lite')
+const schemaPath = requireSchema($)
+if (!schemaPath || !requireEncryptionKey($)) return
 
-// ─── Preflight ────────────────────────────────────────────────────────────────
+const users = runAppScript($, 'list-users', SCRIPT, {
+  schemaPath,
+  role:     flag.role,
+  limit:    Number(flag.limit),
+  sessions: flag.sessions,
+})
+if (!users) return refuse($, 'Listing users failed — the reason is above')
 
-if (!existsSync(schemaPath)) {
-  log.error(`schema.lite not found at ${schemaPath}`)
-  log.info('Run fli auth:install first')
-  return
+if (flag.json) return echo(JSON.stringify(users, null, 2))
+
+if (users.length === 0) {
+  log.info(flag.role ? `No users with role '${flag.role}'` : 'No users found')
+  return log.info('Run fli auth:create-user to add one')
 }
 
-// `.env` is already loaded — bootstrap.js reads the project's before any
-// command runs, and overrides the global one with it.
-const encKey = process.env.ENCRYPTION_KEY
+const scope = [flag.role && `role ${flag.role}`, users.length === Number(flag.limit) && `limit ${flag.limit}`]
+  .filter(Boolean).join(', ')
 
-if (!encKey) {
-  log.error('ENCRYPTION_KEY not set in .env')
-  return
-}
-
-// ─── Run ──────────────────────────────────────────────────────────────────────
-
-const { unlinkSync } = await import('fs')
-const tmpPath = resolve($.paths.root, `.fli-list-users-${Date.now()}.ts`)
-
-try {
-  writeFileSync(tmpPath, SCRIPT, 'utf8')
-
-  const result = $.exec({
-    command: `bun run "${tmpPath}"`,
-    cwd:     $.paths.root,
-    stdio:   ['ignore', 'pipe', 'inherit'],
-    env:     {
-      ...process.env,
-      FLI_LIST_USERS: JSON.stringify({
-        schemaPath,
-        role:     flag.role,
-        limit:    Number(flag.limit),
-        sessions: flag.sessions,
-      }),
-    },
-  })
-  const output = (result?.stdout ?? result ?? '').toString().trim()
-  const last   = output.split('\n').find(l => l.startsWith('['))
-
-  if (!last) {
-    log.error('Failed — check output above')
-    return
-  }
-
-  const users = JSON.parse(last)
-
-  if (users.length === 0) {
-    log.info(flag.role ? `No users with role '${flag.role}'` : 'No users found')
-    log.info('Run fli auth:create-user to add one')
-    return
-  }
-
-  // ─── JSON output ──────────────────────────────────────────────────────────
-
-  if (flag.json) {
-    echo(JSON.stringify(users, null, 2))
-    return
-  }
-
-  // ─── Table output ─────────────────────────────────────────────────────────
-
-  const roleFilter = flag.role ? ` (role: ${flag.role})` : ''
-  echo('')
-  echo(`  Users${roleFilter}  ·  showing ${users.length}${users.length === flag.limit ? ` (limit ${flag.limit})` : ''}`)
-  echo('')
-
-  const colEmail    = Math.min(36, Math.max(20, ...users.map(u => u.email.length)) + 2)
-  const colName     = Math.min(24, Math.max(8,  ...users.map(u => (u.name ?? '').length)) + 2)
-
-  // Header
-  const header = [
-    'email'.padEnd(colEmail),
-    'name'.padEnd(colName),
-    'role'.padEnd(12),
-    'verified'.padEnd(10),
-    flag.sessions ? 'sessions' : '',
-  ].filter(Boolean).join('')
-
-  echo(`  ${header}`)
-  echo(`  ${'─'.repeat(header.length)}`)
-
-  for (const u of users) {
-    const verified = u.emailVerified ? '✓' : '✗'
-    const row = [
-      u.email.padEnd(colEmail),
-      (u.name ?? '').padEnd(colName),
-      u.role.padEnd(12),
-      verified.padEnd(10),
-      flag.sessions ? String(u.activeSessions ?? 0) : '',
-    ].filter(Boolean).join('')
-    echo(`  ${row}`)
-  }
-
-  echo('')
-
-} catch (err) {
-  log.error(`Failed: ${err.message}`)
-} finally {
-  if (existsSync(tmpPath)) unlinkSync(tmpPath)
-}
+echo(chalk`\n  {bold Users} {dim · ${plural(users.length, 'user')} shown${scope ? ` (${scope})` : ''}}\n`)
+echo.lines(userTable(users, { sessions: flag.sessions, chalk }), { indent: 2 })
+echo('')
 ```

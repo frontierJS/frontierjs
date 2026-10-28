@@ -26,29 +26,17 @@ A box already in the fleet is answered as such and only its `outpost.env` paths
 are brought up to date. Exits 0 on a skip, which says why; 1 on a failure.
 
 ```js
-const target     = resolveTarget(flag, $.git)
-const deployConf = await deployConfFor($, flag, log)
+const head = await deployTargetFor($, flag, log, { side: 'api' })
+if (!head) return
+const { target, deployConf, appId, resolved: api } = head
 
-if (!deployConf?.server) {
-  log.error('No deploy block found in frontier.config.js')
-  $.config.abort = true
-  return
-}
 if (deployConf.outpost !== true) {
   log.error(`The deploy block does not say outpost: true, so this app's box is not one of its fleet's`)
   $.config.abort = true
   return
 }
 
-const api = resolveSide(deployConf, target, 'api')
-if (!api) {
-  log.error(`Cannot resolve a server and path for the api side on target: ${target}`)
-  $.config.abort = true
-  return
-}
-
 const { host, path } = api
-const appId   = deployConf.app_id ?? path.split('/').pop()
 const machine = machineFor($, host, path, deployConf.transport)
 
 if (!machine.reach()) {

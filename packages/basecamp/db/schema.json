@@ -2038,7 +2038,7 @@
               "type": "null"
             }
           ],
-          "description": "WHICH cloud a `provider_key` opens. Null for every other kind.  It is a column rather than a field inside `data` because a vendor name is not a secret: `data` is `@encrypted`, so the key is absent from every read, and *which DigitalOcean accounts does this workspace have* would mean decrypting every secret in the workspace to answer. Here it filters, it indexes, and it reaches a picker as a set.  It reuses `ProviderKind` rather than growing a second vendor vocabulary on `SecretKind`. Two enums listing clouds is two lists to keep in step, and the one that drifts is the one nothing reads."
+          "description": "WHICH vendor a `provider_key` opens — a cloud, an edge or a forge. Null for every other kind.  It is a column rather than a field inside `data` because a vendor name is not a secret: `data` is `@encrypted`, so the key is absent from every read, and *which DigitalOcean accounts does this workspace have* would mean decrypting every secret in the workspace to answer. Here it filters, it indexes, and it reaches a picker as a set.  It reuses `ProviderKind` rather than growing a second vendor vocabulary on `SecretKind`. Two enums listing clouds is two lists to keep in step, and the one that drifts is the one nothing reads."
         }
       },
       "additionalProperties": false,
@@ -2083,7 +2083,8 @@
           "x-litestone-kind": "tenancy"
         },
         "userId": {
-          "type": "string"
+          "type": "string",
+          "x-litestone-kind": "stamped"
         },
         "credentialId": {
           "type": [
@@ -2181,7 +2182,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "userId",
         "name"
       ],
       "x-litestone-policies": true,
@@ -3611,7 +3611,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "environmentId",
         "key"
       ],
       "x-litestone-policies": true,
@@ -4025,7 +4024,10 @@
           "type": "string"
         },
         "serverId": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "destinationId": {
           "type": [
@@ -4135,8 +4137,7 @@
       },
       "additionalProperties": false,
       "required": [
-        "appId",
-        "serverId"
+        "appId"
       ],
       "x-litestone-policies": true,
       "x-gate": {
@@ -4170,7 +4171,7 @@
             "id"
           ],
           "onDelete": "Cascade",
-          "optional": false
+          "optional": true
         },
         {
           "field": "destination",
@@ -8335,7 +8336,8 @@
         "custom",
         "hetzner",
         "digitalocean",
-        "cloudflare"
+        "cloudflare",
+        "github"
       ],
       "title": "ProviderKind"
     },
@@ -9412,6 +9414,20 @@
       "additionalProperties": false,
       "required": [
         "destinationId"
+      ]
+    },
+    "AppBackupRescan": {
+      "type": "object",
+      "title": "AppBackupRescan",
+      "x-litestone-kind": "type",
+      "properties": {
+        "appId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "appId"
       ]
     },
     "FlagOverrideSet": {

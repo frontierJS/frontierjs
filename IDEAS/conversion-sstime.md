@@ -106,7 +106,7 @@ Phase 3.
 `litestone import --from=sql` reads Postgres DDL only. The dump's DDL reads as
 *found no models*; with backticks, `ENGINE=`, `unsigned`, `COLLATE`,
 `AUTO_INCREMENT` and `KEY` lines stripped by sed, it reads 20 models but every
-`datetime`/`timestamp` and `tinyint(1)` lands as `String`. Filed as [`FJS-2054`](../ISSUES.md#fjs-2054).
+`datetime`/`timestamp` and `tinyint(1)` lands as `String`. Filed as [`FJS-2054`](../ISSUES_ARCHIVE.md#fjs-2054).
 The schema is small enough to write by hand from the migrations; the importer
 gap is the finding.
 

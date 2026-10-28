@@ -103,7 +103,7 @@ if (!schema.missing) {
 
 // ─── the Release ─────────────────────────────────────────────────────────────
 const release = mintRelease({
-  app:           deployConf.app_id ?? deployConf.appId,
+  app:           deployConf.app_id,
   environment:   target,
   digest:        flag.digest || null,
   configurationHash: configuration.hash,

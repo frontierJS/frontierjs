@@ -18,6 +18,9 @@ const appArchiveRescan = defineJob<{ appId: string }>({
   queue:       'fleet',
   maxAttempts: 3,
   retryDelay:  [30_000, 120_000],
+  // A read that hangs would hold the fleet queue. A retry loses nothing: a
+  // row already hashed is not read again.
+  timeout:     2 * 3600_000,
   handler: async (ctx) => {
     const { app } = runsAsApp(ctx, 'app-archive:rescan')
     const log     = app.logger.child('app-archive-rescan')

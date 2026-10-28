@@ -13,6 +13,7 @@ import { effectsProblem, approvalRefusal, APPROVED } from './effects.js'
 import { createTty, settleTtys, ttyAside } from './tty.js'
 import { chalk as colorChalk } from './color.js'
 import { lines, untag } from './text.js'
+import { gitOut } from './git.js'
 import { commandContext } from './shell.js'
 import { binCommand, SNAPSHOT_BINS } from './snapshots.js'
 import { shQuote } from './machine.js'
@@ -645,9 +646,9 @@ export async function Command({ file, arg, flag, emit }) {
         const stepMeta = extractFrontmatter(stepTemplate, stepFile)
 
         // Honor an early stop signaled by the orchestrator or a previous step.
-        // The step body's own `if (context.config.abort) return` would still
-        // catch this, but checking here means we skip the header log too —
-        // a stuck "[1/N] step-name" line below an error message is confusing.
+        // This is the only guard: a step body does not open with its own
+        // `if ($.config.abort) return`, and checking before the header keeps a
+        // stuck "[1/N] step-name" line from printing below an error message.
         // Cleanup steps that intentionally run on abort can opt in via
         // `runOnAbort: true` in their frontmatter (e.g. deploy's 09-cleanup).
         //
@@ -1156,61 +1157,26 @@ export function getConfig(metadata, rawArg, flag) {
 }
 
 // ─── Git utilities ────────────────────────────────────────────────────────────
-// Returns a git helper object scoped to a default directory.
-// All methods accept an optional `dir` override.
+// `$.git`, scoped to the project root; every method takes an optional `dir`.
+// A failed question answers '' (or 0, or null for `user`), so a command outside
+// a checkout reads as clean rather than throwing.
 function buildGitUtils(defaultDir) {
-  const run = (cmd, dir) => {
-    try {
-      return execSync(cmd, {
-        cwd: dir || defaultDir,
-        encoding: 'utf8',
-        stdio: ['pipe', 'pipe', 'ignore']
-      }).trim()
-    } catch { return '' }
-  }
+  const run   = (argv, dir) => (gitOut(dir || defaultDir, argv) ?? '').trim()
+  const list  = (argv, dir) => run(argv, dir).split('\n').filter(Boolean)
 
   return {
     // Current branch name — empty string if not in a git repo
-    branch: (dir) => run('git branch --show-current', dir),
+    branch: (dir) => run(['branch', '--show-current'], dir),
 
     // Porcelain status — returns array of changed file lines
-    status: (dir) => run('git status --porcelain', dir).split('\n').filter(Boolean),
+    status: (dir) => list(['status', '--porcelain'], dir),
 
-    // true if there are any uncommitted changes
-    isDirty: (dir) => run('git status --porcelain', dir).trim().length > 0,
-
-    // Most recent tag — empty string if no tags
-    lastTag: (dir) => run('git describe --tags --abbrev=0', dir),
-
-    // true if there are commits/changes since a given tag (or any changes if no tag)
-    hasChangesSince: (tag, dir) => {
-      const ref = tag ? `${tag}..HEAD` : 'HEAD'
-      return run(`git diff --name-only ${ref}`, dir).trim().length > 0
-    },
-
-    // Convenience: true if this package has changes since its last tag
-    // Combines lastTag + hasChangesSince — use for --affected logic
-    isAffected: (dir) => {
-      const tag = run('git describe --tags --abbrev=0', dir)
-      const ref = tag ? `${tag}..HEAD` : 'HEAD'
-      return run(`git diff --name-only ${ref}`, dir).trim().length > 0
-    },
-
-    // Short log of commits since a tag (or all commits if no tag)
-    // Returns array of { hash, subject, author }
-    log: (tag, dir) => {
-      const range = tag ? `${tag}..HEAD` : ''
-      const out   = run(`git log ${range} --format="%h|%s|%an" --no-merges`.trim(), dir)
-      return out.split('\n').filter(Boolean).map(line => {
-        const [hash, subject, author] = line.split('|')
-        return { hash, subject, author }
-      })
-    },
+    isDirty: (dir) => run(['status', '--porcelain'], dir).length > 0,
 
     // Absolute path of the git repo containing `dir` — empty if not in one.
     // Workspace commands compare this across members: one distinct root means
     // a single-repo monorepo, where a per-package commit/tag/push is wrong.
-    repoRoot: (dir) => run('git rev-parse --show-toplevel', dir),
+    repoRoot: (dir) => run(['rev-parse', '--show-toplevel'], dir),
 
     // ── pkgState — release state of ONE package ─────────────────────────────
     // The one definition of "has this package changed since its last release".
@@ -1218,11 +1184,10 @@ function buildGitUtils(defaultDir) {
     // Asking git per DIRECTORY answers repo-wide in a single-repo monorepo:
     // `git status --porcelain` and `git describe --tags` run from packages/mesa
     // describe the whole repo, so every member reported the same tag and the
-    // same dirty flag and `--affected` selected all of them or none. Both
-    // questions are therefore asked with a pathspec, and the tag is looked up
-    // by the `<name>@<version>` scheme ws:version writes rather than by
-    // `git describe`, which finds whichever tag is nearest regardless of who
-    // it belongs to.
+    // same dirty flag. Both questions are therefore asked with a pathspec, and
+    // the tag is looked up by the `<name>@<version>` scheme ws:version writes
+    // rather than by `git describe`, which finds whichever tag is nearest
+    // regardless of who it belongs to.
     //
     // `name` is the package name and `dir` its own directory. The pathspec is
     // `.` rather than the package path because a pathspec is resolved against
@@ -1233,17 +1198,13 @@ function buildGitUtils(defaultDir) {
     //
     // No tag yet means never released, so every commit touching the path counts.
     pkgState: (name, dir) => {
-      const q       = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`
-      const lastTag = run(`git tag --list ${q(`${name}@*`)} --sort=-v:refname`, dir)
-        .split('\n').filter(Boolean)[0] || ''
-      const range   = lastTag ? `${lastTag}..HEAD` : ''
-      const commits = run(`git log ${range ? range + ' ' : ''}--format="%h|%s|%an" --no-merges -- .`, dir)
-        .split('\n').filter(Boolean)
+      const lastTag = list(['tag', '--list', `${name}@*`, '--sort=-v:refname'], dir)[0] || ''
+      const commits = list(['log', ...(lastTag ? [`${lastTag}..HEAD`] : []), '--format=%h|%s|%an', '--no-merges', '--', '.'], dir)
         .map(line => {
           const [hash, subject, author] = line.split('|')
           return { hash, subject, author }
         })
-      const files = run(`git status --porcelain -- .`, dir).split('\n').filter(Boolean)
+      const files = list(['status', '--porcelain', '--', '.'], dir)
       return {
         lastTag,
         commits,
@@ -1254,11 +1215,15 @@ function buildGitUtils(defaultDir) {
     },
 
     // Remote URL for origin
-    remote: (dir) => run('git remote get-url origin', dir),
+    remote: (dir) => run(['remote', 'get-url', 'origin'], dir),
+
+    // Who is running this — the journal's actor and a release's createdBy.
+    // null, not '', when unset: callers write `user() ?? null`.
+    user: (dir) => run(['config', 'user.name'], dir) || null,
 
     // Commits ahead/behind the upstream tracking branch
-    ahead:  (dir) => parseInt(run('git rev-list --count @{u}..HEAD', dir), 10) || 0,
-    behind: (dir) => parseInt(run('git rev-list --count HEAD..@{u}', dir), 10) || 0,
+    ahead:  (dir) => parseInt(run(['rev-list', '--count', '@{u}..HEAD'], dir), 10) || 0,
+    behind: (dir) => parseInt(run(['rev-list', '--count', 'HEAD..@{u}'], dir), 10) || 0,
   }
 }
 

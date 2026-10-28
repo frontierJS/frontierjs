@@ -309,7 +309,7 @@ script** (`FJS-D532`, 2026-10-15); the timed run stays by hand. The first read f
    kind, the total against the 500-entry cache, the shapes the second pass adds
    (*churn*), evictions, and three workload-size guards (requests failed, models
    unseeded, requests unasked) so a shrinking workload cannot read as an improvement.
-   Its first run found [FJS-2930](../ISSUES.md#fjs-2930): `LIMIT`/`OFFSET` written into
+   Its first run found [FJS-2930](../ISSUES_ARCHIVE.md#fjs-2930): `LIMIT`/`OFFSET` written into
    the text, 115 of 159 churned shapes and all 67 evictions. Seen red on a counter
    stamped into `pageSql`. The churn left over is the IN-list arities `IN_INLINE` allows.
 3. **The runner and the reported phase.** `bench:core`-sized, since the full file is
@@ -333,8 +333,8 @@ script** (`FJS-D532`, 2026-10-15); the timed run stays by hand. The first read f
    against plain closures. The browser half stays in `run.mjs` on its own
    trigger (§Mesa's slice). Both packages' ceilings are measured with headroom,
    and the first measurements found two costs:
-   [FJS-2992](../ISSUES.md#fjs-2992), a service call at 14–39× a raw handler, and
-   [FJS-2993](../ISSUES.md#fjs-2993), server rendering at 180–265× a string
+   [FJS-2992](../ISSUES_ARCHIVE.md#fjs-2992), a service call at 14–39× a raw handler, and
+   [FJS-2993](../ISSUES_ARCHIVE.md#fjs-2993), server rendering at 180–265× a string
    join. The phase now takes under two minutes.
 4. **The first recorded entry**, at the alpha release.
 

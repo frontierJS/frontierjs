@@ -317,7 +317,7 @@ awaits that dynamic import and rejects; and `goto` is async with no caller
 awaiting it. What a person sees is a Provision button that does nothing —
 no console error, no failed request, the write already committed in the
 database. [`FJS-1025`](../../../ISSUES_ARCHIVE.md#fjs-1025) and
-[`FJS-1026`](../../../ISSUES.md#fjs-1026); the second is the one that cost the
+[`FJS-1026`](../../../ISSUES_ARCHIVE.md#fjs-1026); the second is the one that cost the
 hour.
 
 **The seed already holds DigitalOcean provider keys**, so a drive taking the

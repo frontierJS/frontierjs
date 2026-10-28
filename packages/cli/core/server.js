@@ -57,7 +57,7 @@
 import { createServer }  from 'http'
 import { requiresOf }                    from './requires.js'
 import { globalEnvPath, GLOBAL_ENV_HEADER } from './global-env.js'
-import { execFileSync }  from 'child_process'
+import { gitOut }        from './git.js'
 import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { basename } from 'path'
 import { resolve, dirname, relative } from 'path'
@@ -719,12 +719,7 @@ async function handleLiveAct(req, res, rest) {
 async function handleStatus(req, res) {
   try {
     const root = global.projectRoot
-    // `execFileSync`, not a shell — nothing here is caller-supplied and it
-    // stays that way by construction rather than by a validator.
-    const git = (argv) => {
-      try { return execFileSync('git', ['-C', root, ...argv], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }) }
-      catch { return '' }
-    }
+    const git = argv => gitOut(root, argv) ?? ''
 
     const { buildStatus } = await import('./git-status.js')
     const { usedByIndex, blastReader } = await import('./blast.js')

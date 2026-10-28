@@ -28,7 +28,7 @@
  */
 export const holds = ['ports']
 
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, readFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -88,8 +88,10 @@ const blobs = () => {
 }
 const sha = bytes => createHash('sha256').update(bytes).digest('hex')
 /** One `fli` run from this checkout, as the owner under the drive's HOME: `{ code, out }`. */
-const fli = (home, cwd, ...args) => new Promise(resolve => {
+const fli = (home, cwd, ...args) => fliPiped(null, home, cwd, ...args)
+const fliPiped = (input, home, cwd, ...args) => new Promise(resolve => {
   const child = spawn('bun', [fliBin, ...args], { cwd, env: { ...process.env, HOME: home, FLI_FRONTIER_POST: ORIGIN, NO_COLOR: '1' } })
+  if (input) child.stdin.end(input)
   let out = ''
   child.stdout.on('data', d => { out += d })
   child.stderr.on('data', d => { out += d })
@@ -203,6 +205,25 @@ try {
   check(down.code === 0 && saved && sha(saved) === sha(plain), 'fli tell:download saves it under its own name, same sha256', down.out)
   check(/1 download left/.test(down.out), 'and says what is left on the link', down.out)
 
+  const linkIn = out => out.match(/http:\/\/127\.0\.0\.1:\d+\/file\/[A-Za-z0-9_-]{22}#[A-Za-z0-9_-]+/)?.[0]
+  mkdirSync(join(sent, 'pack', 'sub'), { recursive: true })
+  writeFileSync(join(sent, 'pack', 'top.txt'), MARK)
+  writeFileSync(join(sent, 'pack', 'sub', 'deep.bin'), plain)
+  const packed = await fli(home, sent, 'tell:upload', 'pack', '--qr')
+  check(packed.code === 0 && !!linkIn(packed.out), 'a folder uploads', packed.out)
+  check(/[█▀▄]{8}/.test(packed.out), '--qr prints the link as a QR code', packed.out.slice(0, 400))
+  const unpacked = await fli(home, got, 'tell:download', linkIn(packed.out))
+  const zip = join(got, 'pack.zip')
+  const zipped = existsSync(zip) && spawnSync('unzip', ['-p', zip, 'sub/deep.bin'], { maxBuffer: 1 << 26 }).stdout
+  check(unpacked.code === 0 && zipped && sha(zipped) === sha(plain), 'and arrives as <folder>.zip that unzip opens, same sha256', unpacked.out)
+
+  const dump = Buffer.concat([plain, plain])
+  const fromStdin = await fliPiped(dump, home, sent, 'tell:upload', '-', '--name', 'dump.sql')
+  check(fromStdin.code === 0 && !!linkIn(fromStdin.out), '`-` uploads stdin', fromStdin.out)
+  const dumped = await fli(home, got, 'tell:download', linkIn(fromStdin.out))
+  const dumpFile = join(got, 'dump.sql')
+  check(dumped.code === 0 && existsSync(dumpFile) && sha(readFileSync(dumpFile)) === sha(dump), 'and arrives under --name, same sha256', dumped.out)
+
   const chromeDir = join(dir, 'chrome')
   mkdirSync(chromeDir)
   const browser = await openChrome()
@@ -214,6 +235,8 @@ try {
     await browser.navigate(link)
     const page = await browser.evaluate(`return document.querySelector('main').textContent`)
     check(/1 download, expires in/.test(page), 'the page says the limits before the click', page)
+    const crest = await browser.evaluate(`return document.querySelector('main .from svg')?.getBoundingClientRect().width ?? 0`)
+    check(crest >= 48, "the page shows the sender's crest", `width ${crest}`)
     await browser.evaluate(`document.getElementById('get').click(); return true`)
     const said = await browser.waitFor(`/Saved|refused|does not open/.test(document.getElementById('said').textContent) && document.getElementById('said').textContent`)
       .catch(async () => `no answer on the page: ${await browser.evaluate(`return document.getElementById('said').textContent`)} [${browser.errors.join(' | ')}]`)
@@ -229,7 +252,7 @@ try {
     await browser.close()
   }
   const spent = await fli(home, got, 'tell:download', link)
-  check(spent.code !== 0 && readdirSync(got).length === 1, 'a spent link is refused and writes nothing', spent.out)
+  check(spent.code !== 0 && readdirSync(got).length === 3, 'a spent link is refused and writes nothing', spent.out)
 
   console.log('expiry, checked last')
   const gone = brief.json.expires * 1000 - Date.now()

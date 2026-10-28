@@ -48,7 +48,7 @@ export default {
     server: 'myapp.com',
     user: 'deploy',          // default
     path: '/apps/myapp',
-    app_id: 'myapp',         // defaults to last segment of path
+    app_id: 'myapp',         // required: names the container and the Release
 
     api: {
       port: 3000,

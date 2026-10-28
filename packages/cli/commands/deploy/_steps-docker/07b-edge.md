@@ -4,8 +4,6 @@ description: Rewrite this app's Caddy routes when the API's paths have moved
 ---
 
 ```js
-if ($.config.abort) return
-
 const { host, serverPath, appId, apiPort, deployConf } = $.config
 
 // After health, so a path the new API mounts reaches it only once it answers.

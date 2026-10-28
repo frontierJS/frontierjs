@@ -6,9 +6,10 @@
 // uses stays in that slice; a second slice reaching for it moves it here. Plain
 // ESM on node, `@frontierjs/toolbelt` and this package only.
 
-import { existsSync, statSync, readFileSync, readdirSync } from 'fs'
+import { existsSync, statSync, readFileSync }             from 'fs'
 import { join, relative, extname, basename }               from 'path'
 import { singularize, camel }                              from '@frontierjs/toolbelt/inflect'
+import { safeRead, walk }                                  from '../fs.js'
 import { appSchemaModels, appSchemaViews }                 from '../app-schema.js'
 
 export const SCRIPT_EXT = new Set(['.ts', '.js', '.mjs', '.mts', '.cjs', '.cts'])
@@ -341,24 +342,6 @@ export function servingServices(root, files, code, schema) {
 // the failure this rule exists to prevent.
 export function looksPlural(name) {
   return singularize(name) !== name
-}
-
-// ─── walking ──────────────────────────────────────────────────────────────────
-
-export const SKIP = new Set(['node_modules', 'dist', 'build', '.git', 'coverage', '.output', '.vite'])
-
-export function walk(dir, depth, fn) {
-  if (depth < 0 || !existsSync(dir)) return
-  try { fn(dir) } catch { /* an unreadable directory is not a finding */ }
-  for (const name of safeRead(dir)) {
-    if (SKIP.has(name) || name.startsWith('.')) continue
-    const child = join(dir, name)
-    try { if (statSync(child).isDirectory()) walk(child, depth - 1, fn) } catch { /* dangling link */ }
-  }
-}
-
-export function safeRead(dir) {
-  try { return readdirSync(dir) } catch { return [] }
 }
 
 export const lineOf = (text, index) => text.slice(0, index).split('\n').length

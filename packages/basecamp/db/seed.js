@@ -1016,16 +1016,9 @@ async function seedInstallation(sys, owner, users) {
     data: {
       id:         'hub',
       name:       'Acme Platform Hub',
-      // A real hostname rather than localhost: this is what webhook callbacks
-      // and every link in an email are built from, and the one setting whose
-      // wrongness nothing local can detect.
-      baseUrl:    'https://hub.acme.example',
-      adminEmail: 'sam@example.com',
       backupEnabled:   true,
       backupCron:      '0 2 * * *',
       backupDestinationId: offBox.id,
-      mailFromAddress: 'hub@acme.example',
-      mailFromName:    'Acme Platform Hub',
     },
   })
 

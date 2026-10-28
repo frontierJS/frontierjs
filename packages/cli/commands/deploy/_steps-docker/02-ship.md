@@ -4,8 +4,6 @@ description: Ship the app's committed tree and its vendored dependencies to ever
 ---
 
 ```js
-if ($.config.abort) return
-
 const { hosts } = $.config
 
 // ─── Pushed from here, never pulled there ─────────────────────────────────────

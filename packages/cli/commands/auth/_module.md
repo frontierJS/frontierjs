@@ -4,16 +4,60 @@ description: FJS native authentication — install, users, sessions, key rotatio
 ---
 
 <script>
-// ─── requireEncryptionKey ─────────────────────────────────────────────────────
-// Checks ENCRYPTION_KEY is set in .env.
+// `path` and `fs` are the shim's, not imports: this block is pasted above
+// every command's own <script>, and a name imported in both is a SyntaxError.
+const { plural } = await import(new URL('file://' + global.fliRoot + '/core/text.js'))
 
+// A refusal exits 1 — the reason, then the ways out.
+const refuse = ($, reason, ...ways) => {
+  $.log.error(reason)
+  for (const way of ways) $.log.info(way)
+  $.config.abort = true
+}
+
+const requireSchema = ($) => {
+  const schemaPath = path.resolve($.paths.db, 'schema.lite')
+  if (fs.existsSync(schemaPath)) return schemaPath
+  refuse($, `schema.lite not found at ${schemaPath}`, 'Run fli auth:install first')
+}
+
+// `.env` is already loaded — bootstrap.js reads the project's before any
+// command runs, and overrides the global one with it.
 const requireEncryptionKey = ($) => {
-  if (!process.env.ENCRYPTION_KEY) {
-    $.log.error('ENCRYPTION_KEY not set in .env')
-    $.log.info('Run fli auth:install to generate it, or: fli keygen aes --name ENCRYPTION_KEY --env --format hex')
-    return false
+  if (process.env.ENCRYPTION_KEY) return true
+  refuse($, 'ENCRYPTION_KEY not set in .env',
+    'Run fli auth:install to generate it, or: fli keygen aes --name ENCRYPTION_KEY --env --format hex')
+  return false
+}
+
+const confirm = async ($, question = 'Continue?') =>
+  /^y(es)?$/i.test((await $.tty.line(`${question} (y/n) › `)).trim())
+
+// Runs `script` against the app's database and answers the last JSON line it
+// printed, or null when it failed — its stderr is the terminal's, so the
+// reason is already on screen. The file sits in the project root because that
+// is where `@frontierjs/litestone` resolves from the app's own node_modules.
+// The input travels as JSON in FLI_INPUT: interpolated into the source, a
+// quote in a password or an email ended the string literal.
+const runAppScript = ($, name, script, input) => {
+  const file = path.resolve($.paths.root, `.fli-${name}-${Date.now()}.ts`)
+  fs.writeFileSync(file, script, 'utf8')
+  try {
+    const out = $.exec({
+      command: `bun run "${file}"`,
+      cwd:     $.paths.root,
+      stdio:   ['ignore', 'pipe', 'inherit'],
+      env:     { ...process.env, FLI_INPUT: JSON.stringify(input) },
+      dry:     false,
+    })
+    const line = String(out ?? '').trim().split('\n').findLast(l => /^[[{]/.test(l))
+    return line ? JSON.parse(line) : null
+  } catch (err) {
+    if (err.interrupt) throw err
+    return null
+  } finally {
+    fs.rmSync(file, { force: true })
   }
-  return true
 }
 </script>
 

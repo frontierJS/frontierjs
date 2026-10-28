@@ -40,18 +40,13 @@ flags:
 ---
 
 <script>
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
-import { resolve }                                            from 'path'
-
 const DEFAULT_EMAIL    = 'dev@knight.works'
 const DEFAULT_PASSWORD = 'test1234'
 
-// The input arrives as JSON in FLI_DEV_ADMIN — interpolating it into the
-// source let a quote in a password end the string literal.
 const SCRIPT = `
 import { createClient } from '@frontierjs/litestone'
 
-const input = JSON.parse(process.env.FLI_DEV_ADMIN)
+const input = JSON.parse(process.env.FLI_INPUT)
 
 const db = await createClient({
   path:          input.schemaPath,
@@ -107,13 +102,13 @@ db.$close()
 // generic upsert cannot: basecamp needs a WorkspaceMember row, chatwoot an
 // org and every inbox, or the login signs in to an empty shell.
 const appSeeder = (root) => {
-  const pkgPath = resolve(root, 'package.json')
-  if (existsSync(pkgPath)) {
-    const scripts = JSON.parse(readFileSync(pkgPath, 'utf8')).scripts ?? {}
+  const pkgPath = path.resolve(root, 'package.json')
+  if (fs.existsSync(pkgPath)) {
+    const scripts = JSON.parse(fs.readFileSync(pkgPath, 'utf8')).scripts ?? {}
     if (scripts['db:seed:admin']) return { command: 'bun run db:seed:admin', describe: '`db:seed:admin` in package.json' }
   }
   for (const rel of ['db/seed-dev-admin.ts', 'db/seed-dev-admin.js']) {
-    if (existsSync(resolve(root, rel))) return { command: `bun ${rel}`, describe: rel }
+    if (fs.existsSync(path.resolve(root, rel))) return { command: `bun ${rel}`, describe: rel }
   }
   return null
 }
@@ -130,8 +125,7 @@ or membership link.
 
 ```js
 if (process.env.NODE_ENV === 'production' || /prod/i.test(process.env.DATABASE_URL ?? '')) {
-  log.error('Refused: this environment points at production')
-  return
+  return refuse($, 'Refused: this environment points at production')
 }
 
 const custom = flag.email !== DEFAULT_EMAIL || flag.password !== DEFAULT_PASSWORD
@@ -145,47 +139,22 @@ if (seeder && !custom) {
 }
 if (seeder) log.info(`The app's ${seeder.describe} seeds only its own login — using the generic upsert for ${flag.email}`)
 
-const schemaPath = resolve($.paths.db, 'schema.lite')
-if (!existsSync(schemaPath)) {
-  log.error(`schema.lite not found at ${schemaPath}`)
-  return
-}
-if (!process.env.ENCRYPTION_KEY) {
-  log.error('ENCRYPTION_KEY not set in .env')
-  return
-}
+const schemaPath = requireSchema($)
+if (!schemaPath || !requireEncryptionKey($)) return
 
-if (flag.dry) {
-  log.dry(`Would upsert ${flag.email} (name ${flag.name}, role ${flag.role}, isSystemAdmin where declared)`)
-  return
-}
+if (flag.dry) return log.dry(`Would upsert ${flag.email} (name ${flag.name}, role ${flag.role}, isSystemAdmin where declared)`)
 
-const tmpPath = resolve($.paths.root, `.fli-dev-admin-${Date.now()}.ts`)
+const out = runAppScript($, 'dev-admin', SCRIPT, {
+  schemaPath,
+  email:    flag.email,
+  password: flag.password,
+  name:     flag.name,
+  role:     flag.role,
+})
+if (!out) return refuse($, `Upserting ${flag.email} failed — the reason is above`)
 
-try {
-  writeFileSync(tmpPath, SCRIPT, 'utf8')
-  const result = $.exec({
-    command: `bun run "${tmpPath}"`,
-    cwd:     $.paths.root,
-    stdio:   ['ignore', 'pipe', 'inherit'],
-    env:     {
-      ...process.env,
-      FLI_DEV_ADMIN: JSON.stringify({ schemaPath, email: flag.email, password: flag.password, name: flag.name, role: flag.role }),
-    },
-  })
-  const line = (result ?? '').toString().trim().split('\n').find(l => l.startsWith('{'))
-  if (!line) {
-    log.error('Upsert failed — check output above')
-    return
-  }
-  const out = JSON.parse(line)
-  log.success(`${out.email} / ${flag.password}`)
-  echo(`  ${out.done.length ? out.done.join(', ') : 'password already current'} · set ${out.set.join(', ')}`)
-  if (!out.set.includes('isSystemAdmin')) log.info('User has no isSystemAdmin column — standing comes from role alone')
-  log.info('No tenant or membership link made — add a db:seed:admin script if the app needs one')
-} catch (err) {
-  log.error(`Failed: ${err.message}`)
-} finally {
-  if (existsSync(tmpPath)) unlinkSync(tmpPath)
-}
+log.success(`${out.email} / ${flag.password}`)
+echo(chalk`  {dim ${out.done.length ? out.done.join(', ') : 'password already current'} · set ${out.set.join(', ')}}`)
+if (!out.set.includes('isSystemAdmin')) log.info('User has no isSystemAdmin column — standing comes from role alone')
+log.info('No tenant or membership link made — add a db:seed:admin script if the app needs one')
 ```

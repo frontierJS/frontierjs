@@ -21,6 +21,8 @@
 // a hand copy of `packages/config/editorconfig`, and `packages/config/test`
 // asserts the two are byte-identical rather than trusting anyone to remember.
 
+import { viteScript } from './scaffold/surface.js'
+
 // ─── config/api-origin.js ─────────────────────────────────────────────────────
 // Byte-identical to example/config/api-origin.js, which make:desktop's test
 // compares against. Only make:desktop writes it; the other surface scaffolds
@@ -210,11 +212,8 @@ export function appSurfaceScripts({ api = false, web = false, surfaces = [] } = 
     devs.push('api')
   }
   if (web) {
-    // `--configLoader native`: the default loader bundles the config and the
-    // whole sierra build tree it imports on every start, 190 ms before vite
-    // reads a byte of the app; the runtime imports the same files in 110.
-    scripts.web          = 'cd web && vite -c config/vite.config.js --configLoader native'
-    scripts['build:web'] = 'cd web && vite build -c config/vite.config.js'
+    scripts.web          = viteScript('web')
+    scripts['build:web'] = viteScript('web', { build: true })
     devs.push('web')
     builds.push('build:web')
   }

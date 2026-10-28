@@ -6,8 +6,6 @@ skip: "!$.config.doWeb"
 ---
 
 ```js
-if ($.config.abort) return
-
 const { commit, deployConf } = $.config
 const { host, path: serverPath } = $.config.web
 const src          = `${serverPath}/src`

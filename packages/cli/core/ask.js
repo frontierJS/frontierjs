@@ -42,12 +42,12 @@
 //
 // Zero dependencies beyond `@frontierjs/toolbelt/inflect`, plain ESM, node or bun.
 
-import { readFileSync, existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync }               from 'node:fs'
 import { join }                                  from 'node:path'
+import { read }                                  from './fs.js'
 
 import { terms }                                 from './intent.js'
 
-const read = p => { try { return readFileSync(p, 'utf8') } catch { return null } }
 const bytes = s => Buffer.byteLength(s ?? '', 'utf8')
 
 // ─── classification ──────────────────────────────────────────────────────────

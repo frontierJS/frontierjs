@@ -22,12 +22,15 @@ gates, the island chunks and the one-file-per-route output are all
 `fli site:build`. A page that works here and fails there is the normal case,
 not a surprise.
 
+<script>
+import { resolve } from 'path'
+</script>
+
 ```js
 const port = flag.port ? `SITE_PORT=${flag.port} ` : ''
+const { viteCommand } = await import(resolve(global.fliRoot, 'core/scaffold/surface.js'))
 $.exec({
-  // `bun --bun` and the app's own `.env` — same reasons as site:build, and the
-  // dev server needs the first one too because it RUNS a static route's loader.
-  command: `${port}bun --bun --env-file=../.env vite -c config/vite.config.js --configLoader native`,
+  command: `${port}${viteCommand()}`,
   cwd:     $.paths.site,
   dry:     flag.dry,
 })

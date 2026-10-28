@@ -26,6 +26,8 @@ import { db, ws }   from '../../core/resource.ts'
 import { declaredFor, gradeHub, gradePosture, gradeReplication, postureChanges, postureRank, POSTURE_INTERVAL_MS } from '../../domain/host/posture.ts'
 import type { Control, HostDeclared, PostureReadings } from '../../domain/host/posture.ts'
 import { encryptionKeyFingerprint } from '../../core/db.ts'
+import { env }          from '../../core/env.ts'
+import { mailProvider } from '../../core/mailer.ts'
 import { notifyPeople, workspaceMembers } from '../../domain/notification/notify.ts'
 import { statusOf } from '../../core/dependencies.ts'
 import { keyScope } from '../../domain/api-key/scopes.ts'
@@ -157,6 +159,13 @@ async function hostDeclared(): Promise<HostDeclared> {
     keyEscrow:      config?.encryptionKeyEscrowedAt && config.encryptionKeyFingerprint
       ? { at: config.encryptionKeyEscrowedAt, fingerprint: config.encryptionKeyFingerprint }
       : null,
+    install: {
+      production: env.NODE_ENV === 'production',
+      appUrl:     env.FRONTIER_APP_URL,
+      apiUrl:     env.FRONTIER_API_URL,
+      mailer:     mailProvider()?.address ?? null,
+      mailFrom:   env.MAIL_FROM,
+    },
   }
 }
 

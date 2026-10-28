@@ -31,8 +31,8 @@
 //
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
-import { readFileSync } from 'node:fs'
 import { join }         from 'node:path'
+import { read }         from './fs.js'
 
 import { DRIVES_FILE, resolveWhere, splitRow } from './proofs.js'
 
@@ -148,7 +148,6 @@ export function resolveNeeds(needs, dir, rows) {
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-function read(path) { try { return readFileSync(path, 'utf8') } catch { return null } }
 
 // Kept for a caller that wants to know whether the table is there at all before
 // grading anything against it.

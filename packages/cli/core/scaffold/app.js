@@ -199,7 +199,7 @@ export function makeEnvExample(useAuth) {
     '# FRONTIER_API_URL=http://localhost:8100',
     '# FRONTIER_APP_URL=http://localhost:8000',
     '',
-    '# Read by web/ and site/ at BUILD time (their envDir is this folder), and the',
+    '# Read by every vite surface (its envDir is this folder), and the',
     '# one FRONTIER_ name a bundle can see: FRONTIER_PUBLIC_ is the browser door. The',
     '# API origin when it is not the page\'s own; empty means same origin behind one proxy.',
     '# A site/ island never reaches /api by a relative path -- it is its own origin.',

@@ -26,8 +26,9 @@
  * `api/` + `widgets/` is its layout.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { resolve, dirname } from 'node:path'
+import {
+  scaffoldPort, writeAbsent, viteScript, surfaceViteConfig, surfaceIndexHtml, surfaceServe, surfaceDockerfile,
+} from './scaffold/surface.js'
 
 /** The six, minus the ones a build writes. `dist/` is output, never scaffolded. */
 export const WIDGET_SURFACE_DIRS = [
@@ -97,61 +98,24 @@ export default {
 `
 }
 
-export function widgetViteConfig({ port = 8200 } = {}) {
-  return `// widgets/config/vite.config.js
-// \`vite dev\` here is how a widget is WRITTEN — index.html hosts them live.
-// \`fli widgets:build\` (sierra widgets) is what emits the embeddable scripts,
-// because each one is its own library build. See sierra build/widget-build.js.
-
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { defineConfig } from 'vite'
-import { createSierraViteConfig } from '@frontierjs/sierra/build'
-import sierraConfig from './sierra.config.js'
-
-// The Vite root is the surface root, one level up from config/ — the same
-// relationship web/config/vite.config.js has to web/.
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-
-const base = createSierraViteConfig(sierraConfig)
-
-export default defineConfig({
-  ...base,
-  root: ROOT,
-  server: {
-    ...base.server,
-    // dev / widgetDev / this app's project id — derived, never chosen. A widget
-    // surface is a THIRD server while one is being written and a fourth origin
-    // once it is served, and neither is the SPA's. See packages/cli/core/ports.js.
-    port:       parseInt(process.env.WIDGET_PORT ?? process.env.FRONTIER_PORT_WIDGET ?? '${port}', 10),
-    // Vite hops to the next free port without a word, and the drive pointed at
-    // the port it hopped from then tests whatever else is listening.
-    strictPort: true,
-  },
-})
-`
+export function widgetViteConfig({ port = scaffoldPort('widgetDev') } = {}) {
+  return surfaceViteConfig({ surface: 'widgets', port, about: `
+vite dev here is how a widget is WRITTEN -- index.html hosts them live.
+fli widgets:build (sierra widgets) is what emits the embeddable scripts,
+because each one is its own library build. See sierra build/widget-build.js.
+` })
 }
 
 // ─── the dev harness page ─────────────────────────────────────────────────────
 
-export function widgetIndexHtml({ appName = 'app', name, tag } = {}) {
-  return `<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${appName} widgets</title>
-  </head>
-  <body>
-    <!-- The dev harness: what a widget looks like while it is being written.
+export function widgetIndexHtml({ appName = 'app', tag } = {}) {
+  return surfaceIndexHtml({ title: `${appName} widgets`, body: `    <!-- The dev harness: what a widget looks like while it is being written.
          The pages that PROVE one live in test/, where each has the host CSS
          and the script tag a real embed has. -->
     <h1>${appName} widgets</h1>
     <${tag}></${tag}>
     <script type="module" src="/src/dev.js"></script>
-  </body>
-</html>
-`
+` })
 }
 
 export function widgetDevEntry() {
@@ -205,7 +169,7 @@ export function widgetStarter({ name, prefix = '' }) {
 `
 }
 
-export function widgetHostPage({ name, prefix = '', appName = 'app', servePort = 8300 }) {
+export function widgetHostPage({ name, prefix = '', appName = 'app', servePort = scaffoldPort('widgetServe') }) {
   const tag = widgetTag(name, prefix)
   return `<!DOCTYPE html>
 <html lang="en">
@@ -234,68 +198,41 @@ export function widgetHostPage({ name, prefix = '', appName = 'app', servePort =
 
 // ─── deployment ───────────────────────────────────────────────────────────────
 
-export function widgetServeEntry({ servePort = 8300 } = {}) {
-  return `// widgets/deploy/serve.js — the widget origin.
-//
-// Static files and nothing else, with the two headers an embed depends on: CORS
-// (the host page is on another origin by definition) and a cache answer per file
-// kind (the entry's URL was pasted into a CMS a year ago and cannot change, so
-// only content-addressed assets may be immutable).
-//
-// The server itself is Sierra's, so what is tested locally is what runs here.
-
-import { serveWidgets } from '@frontierjs/sierra/widget/serve'
-
-const { url } = await serveWidgets({
-  dir:  new URL('../dist/embeds', import.meta.url).pathname,
-  port: Number(process.env.PORT ?? ${servePort}),
-})
-
-console.log(\`widgets serving at \${url}\`)
-`
+export function widgetServeEntry({ servePort = scaffoldPort('widgetServe') } = {}) {
+  return surfaceServe({
+    surface: 'widgets', dist: 'dist/embeds', label: 'widgets', servePort,
+    serve: 'serveWidgets', from: '@frontierjs/sierra/widget/serve',
+    about: `
+Static files and nothing else, with the two headers an embed depends on: CORS
+(the host page is on another origin by definition) and a cache answer per file
+kind (the entry's URL was pasted into a CMS a year ago and cannot change, so
+only content-addressed assets may be immutable).
+`,
+  })
 }
 
-export function widgetDockerfile({ servePort = 8300 } = {}) {
-  return `# widgets/deploy/Dockerfile — the widget surface ships on its own.
-#
-# It is not in the API's image: a widget is released when the pages embedding it
-# are ready, which is not when the API is, and a static origin is a different
-# thing to run from an application server.
-
-# Bun is the version fli ran under when this file was written, so the image
-# runs what the app was developed on. Move both FROM lines together.
-FROM oven/bun:${Bun.version} AS build
-WORKDIR /app
-COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile || bun install
-COPY . .
-RUN cd widgets && bunx sierra widgets --config config/sierra.config.js
-
-FROM oven/bun:${Bun.version}-slim
-WORKDIR /app
-COPY --from=build /app/widgets/dist/embeds ./widgets/dist/embeds
-COPY --from=build /app/widgets/deploy ./widgets/deploy
-COPY --from=build /app/node_modules ./node_modules
-ENV PORT=${servePort}
-EXPOSE ${servePort}
-CMD ["bun", "run", "widgets/deploy/serve.js"]
-`
+export function widgetDockerfile({ servePort = scaffoldPort('widgetServe') } = {}) {
+  return surfaceDockerfile({
+    surface: 'widgets', dist: 'dist/embeds', servePort,
+    script: 'build:widgets',
+    about: `
+It is not in the API's image: a widget is released when the pages embedding it
+are ready, which is not when the API is, and a static origin is a different
+thing to run from an application server.
+`,
+  })
 }
 
 // ─── writing it ───────────────────────────────────────────────────────────────
 
 /**
- * Create the surface, and the widget named in it.
- *
- * Every file is written only when it is absent — this is called to ADD a widget
- * to a surface that already exists as often as it is called to create one, and
- * a scaffold that overwrites a config is a scaffold nobody runs twice.
- *
- * @returns {{ written: string[], skipped: string[] }} paths relative to `root`
+ * Create the surface, and the widget named in it, writing only what is absent
+ * (`writeAbsent`) — this is called to ADD a widget to a surface that exists as
+ * often as to create one.
  */
 export function scaffoldWidgetSurface({
   root, dir = 'widgets', name = 'HelloWidget', prefix = '', appName = 'app',
-  devPort = 8200, servePort = 8300,
+  devPort = scaffoldPort('widgetDev'), servePort = scaffoldPort('widgetServe'),
 } = {}) {
   if (!isWidgetName(name)) {
     throw new Error(
@@ -320,30 +257,16 @@ export function scaffoldWidgetSurface({
     )
   }
 
-  const base = resolve(root, dir)
-  for (const d of WIDGET_SURFACE_DIRS) mkdirSync(resolve(base, d), { recursive: true })
-
-  const files = [
-    ['config/sierra.config.js',       widgetSierraConfig({ prefix })],
-    ['config/vite.config.js',         widgetViteConfig({ port: devPort })],
-    ['index.html',                    widgetIndexHtml({ appName, name, tag: widgetTag(name, prefix) })],
-    ['src/dev.js',                    widgetDevEntry()],
-    [`src/Embeds/${name}.mesa`,       widgetStarter({ name, prefix })],
-    [`test/${widgetTag(name, prefix)}.html`, widgetHostPage({ name, prefix, appName, servePort })],
-    ['deploy/serve.js',               widgetServeEntry({ servePort })],
-    ['deploy/Dockerfile',             widgetDockerfile({ servePort })],
-  ]
-
-  const written = []
-  const skipped = []
-  for (const [rel, body] of files) {
-    const abs = resolve(base, rel)
-    if (existsSync(abs)) { skipped.push(`${dir}/${rel}`); continue }
-    mkdirSync(dirname(abs), { recursive: true })
-    writeFileSync(abs, body, 'utf8')
-    written.push(`${dir}/${rel}`)
-  }
-  return { written, skipped }
+  return writeAbsent(root, dir, { dirs: WIDGET_SURFACE_DIRS, files: [
+    ['config/sierra.config.js',      widgetSierraConfig({ prefix })],
+    ['config/vite.config.js',        widgetViteConfig({ port: devPort })],
+    ['index.html',                   widgetIndexHtml({ appName, tag: scaffoldTag })],
+    ['src/dev.js',                   widgetDevEntry()],
+    [`src/Embeds/${name}.mesa`,      widgetStarter({ name, prefix })],
+    [`test/${scaffoldTag}.html`,     widgetHostPage({ name, prefix, appName, servePort })],
+    ['deploy/serve.js',              widgetServeEntry({ servePort })],
+    ['deploy/Dockerfile',            widgetDockerfile({ servePort })],
+  ] })
 }
 
 /**
@@ -351,9 +274,9 @@ export function scaffoldWidgetSurface({
  * caller, because `fli new` writes that file once and `make:widget` edits one
  * that exists.
  */
-export function widgetScripts({ dir = 'widgets', servePort = 8300 } = {}) {
+export function widgetScripts({ dir = 'widgets', servePort = scaffoldPort('widgetServe') } = {}) {
   return {
-    'dev:widgets':   `cd ${dir} && vite -c config/vite.config.js --configLoader native`,
+    'dev:widgets':   viteScript(dir),
     'build:widgets': `cd ${dir} && sierra widgets --config config/sierra.config.js`,
     'serve:widgets': `cd ${dir} && sierra widgets --config config/sierra.config.js --serve --port ${servePort}`,
   }

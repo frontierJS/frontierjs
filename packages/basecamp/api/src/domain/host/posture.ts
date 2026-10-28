@@ -476,7 +476,42 @@ const HUB_CONTROLS: { id: string; group: string; severity: Severity; grade: (r: 
   } },
   { id: 'hub.db-mode',  group: 'hub', severity: 'high', grade: (r) => fileControl('database volume', r?.host_files?.db) },
   { id: 'hub.env-mode', group: 'hub', severity: 'high', grade: (r) => envControl(r?.host_files) },
+  // The two URLs boot on their localhost defaults and nothing refuses that in
+  // production: every invitation, reset link and sign-in redirect points at the
+  // reader's own machine, and a provisioned box is told to enroll with itself.
+  { id: 'hub.app-url', group: 'hub', severity: 'high', grade: (_r, host) => {
+    const { production, appUrl } = host.install
+    if (!loopback(appUrl)) return { ok: true, message: `Emailed links point at ${appUrl}` }
+    return production
+      ? { ok: false, message: `FRONTIER_APP_URL is ${appUrl} — every emailed link points at the reader's own machine` }
+      : { ok: true,  message: `FRONTIER_APP_URL is ${appUrl}, the development default` }
+  } },
+  // Enrollment refuses plain http off loopback (FJS-1603), so that one fails in
+  // any environment: no machine can join until it changes.
+  { id: 'hub.api-url', group: 'hub', severity: 'high', grade: (_r, host) => {
+    const { production, apiUrl } = host.install
+    if (loopback(apiUrl)) return production
+      ? { ok: false, message: `FRONTIER_API_URL is ${apiUrl} — a provisioned machine is told to enroll with itself` }
+      : { ok: true,  message: `FRONTIER_API_URL is ${apiUrl}, the development default` }
+    return apiUrl.startsWith('https://')
+      ? { ok: true,  message: `Machines enroll with ${apiUrl}` }
+      : { ok: false, message: `FRONTIER_API_URL is ${apiUrl} — enrollment carries a machine's key and refuses anything but https` }
+  } },
+  // No mailer is a supported state (core/mailer.ts), and the one place an
+  // operator learned of it was a log line per unsent invitation.
+  { id: 'hub.mailer', group: 'hub', severity: 'medium', grade: (_r, host) => {
+    const { mailer, mailFrom } = host.install
+    if (!mailer) return { ok: false, message: 'No mailer — MAIL_URL and RESEND_API_KEY are both unset, so invitations and password resets are never sent' }
+    return mailFrom.endsWith('@localhost')
+      ? { ok: false, message: `Mail goes through ${mailer} from ${mailFrom}, which receivers reject — set MAIL_FROM` }
+      : { ok: true,  message: `Mail goes through ${mailer} from ${mailFrom}` }
+  } },
 ]
+
+function loopback(url: string): boolean {
+  try { return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname) }
+  catch { return false }
+}
 
 // ENCRYPTION_KEY is in the env file until it moves to its own file in the
 // secrets directory (FJS-3359), and the env file still holds every other secret
@@ -495,7 +530,7 @@ function envControl(files: PostureReadings['host_files']): Grade {
 export const HUB_CONTROL_IDS = HUB_CONTROLS.map(c => c.id)
 
 /** Graded from Basecamp's own rows, so a missing or stale report does not hide them. */
-const IN_PROCESS = new Set(['hub.backup-recent', 'hub.key-escrowed'])
+const IN_PROCESS = new Set(['hub.backup-recent', 'hub.key-escrowed', 'hub.app-url', 'hub.api-url', 'hub.mailer'])
 
 /** What the box a Basecamp runs on should look like, beyond any fleet machine. */
 export interface HostDeclared {
@@ -505,6 +540,15 @@ export interface HostDeclared {
   keyFingerprint: string | null
   /** The standing attestation — when, and the sha256 of the key it was made for; null when none. */
   keyEscrow:      { at: string; fingerprint: string } | null
+  /** What the env says this installation is reached at and mails through. */
+  install: {
+    production: boolean
+    appUrl:     string
+    apiUrl:     string
+    /** The address mail is posted to; null when no mailer is configured. */
+    mailer:     string | null
+    mailFrom:   string
+  }
 }
 
 /**

@@ -38,7 +38,8 @@
  * module and may close over nothing in it. Everything it needs arrives as `D`.
  */
 
-import { severityTone, stylesheet } from './repo-atlas.js'
+import { severityTone }        from './repo-atlas.js'
+import { htmlPage, embedJson, esc } from './html-page.js'
 
 // ─── the rings ────────────────────────────────────────────────────────────────
 //
@@ -259,29 +260,19 @@ function fieldOf(f) {
 // ─── the page ─────────────────────────────────────────────────────────────────
 
 export function renderRings(model, opts = {}) {
-  const data = JSON.stringify(dataOf(model, opts)).replace(/</g, '\\u003c')
-  return [
-    '<!doctype html>',
+  const data = embedJson(dataOf(model, opts))
+  return htmlPage({
     // No generator line: the snapshot walker reads one out of the first 4KB, and
     // this page counts registers that move on every commit.
-    '<!-- fli ws:atlas --as=rings · not a snapshot -->',
-    '<html lang="en"><head><meta charset="utf-8">',
-    '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    `<title>${esc(model.root)} — rings</title>`,
-    model.css
-      ? `<style id="fjs-css">${model.css}</style>`
-      : `<link rel="stylesheet" href="${esc(stylesheet())}">`,
-    `<style id="rings">${STYLE}</style>`,
-    // The fallback is the published bundle, which may not carry the field theme.
-    `</head><body class="app theme-${model.css ? 'field' : 'press'}">`,
-    markup(model.root),
-    `<script>(${client.toString()})(${data})</script>`,
-    '</body></html>',
-    '',
-  ].join('\n')
+    banner: 'fli ws:atlas --as=rings · not a snapshot',
+    title:  `${model.root} — rings`,
+    css:    model.css,
+    styles: { rings: STYLE },
+    body:   markup(model.root),
+    script: `(${client.toString()})(${data})`,
+  })
 }
 
-const esc     = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 const capital = s => s ? s[0].toUpperCase() + s.slice(1) : s
 
 function clip(s, n) {
@@ -692,7 +683,7 @@ function client(D) {
   const PK = Object.fromEntries(D.packages.map(p => [p.id, p]))
   const issuesFor = id => D.issues.filter(i => i[1].split(/\s*[·/]\s*/).includes(id))
 
-  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
   const md = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\*\*/g, '').replace(/`/g, '')
   const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`
   const fileHref = (f, scheme) => D.base ? `${scheme}${encodeURI(`${D.base}/${f}`)}` : encodeURI(f)

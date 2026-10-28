@@ -34,21 +34,24 @@
 // Zero dependencies, plain ESM, node or bun — same rule as `snapshots.js` and
 // `checks.js`, because the callers include a script that runs before install.
 
-import { existsSync, readFileSync } from 'node:fs'
-import { spawnSync }                                       from 'node:child_process'
-import { join, relative }                                  from 'node:path'
+import { existsSync }              from 'node:fs'
+import { gitOut }                                          from './git.js'
+import { basename, join, relative }                        from 'node:path'
 import { findSnapshots }        from './snapshots.js'
+import { htmlPage, esc }        from './html-page.js'
 // The tree readers both this and `core/runnables.js` use. One answer to *where
 // could an app be*, *what is a drive* and *what is a command*: two would drift,
 // and the one that drifted would be the one nobody reads the output of.
-import { SKIP, safeRead, isDir, readJson, driveRows, readCommands, runnables, workspaceDeps } from './runnables.js'
+import { SKIP, safeRead, isDir, readJson, read }                    from './fs.js'
+import { driveRows, readCommands, runnables, workspaceDeps }      from './runnables.js'
 import { readProofs, resolveRun } from './proofs.js'
 // The one owner of *what does a register record look like*. This module used
 // to carry a regex per register, and a row it failed to match rendered a
 // SMALLER register rather than an error — which is what happened: every ruling
 // migrated to the `###` heading form and the hand reader here, keyed to the
 // legacy bold lead, went to zero and took the section with it.
-import { readRegisters, registerLayout } from './registers.js'
+import { readRegisters, registerLayout, readOverviewRows,
+         plain, firstClaim, severityOf, splitRow } from './registers.js'
 import { RULES }                from './checks.js'
 import { styleBundle }          from './assets.js'    
 import { PROJECTS, GLOBAL, ENV, CAT } from './ports.js'
@@ -67,6 +70,7 @@ const REALM_BY_BIN = { litestone: 'data', junction: 'api', sierra: 'ui', fli: 'r
 export function collect({ root }) {
   const members = packages(root)
   const notes   = packageNotes(root)
+  const doc     = readRegisters(root)
 
   for (const m of members) {
     const note = notes[m.name] ?? notes[m.folder]
@@ -86,8 +90,8 @@ export function collect({ root }) {
     checks:    checkRules(root),
     drives:    drives(root),
     ports:     ports(root),
-    issues:    issues(root),
-    decisions: decisions(root),
+    issues:    issues(root, doc),
+    decisions: decisions(root, doc),
     ideas:     ideas(root),
     field:     field(root),
     specs:     specs(root),
@@ -143,14 +147,11 @@ export function structureOf(model) {
 // on this page is omitted rather than faked.
 
 function trackedFileCounts(root) {
-  const run = spawnSync('git', ['ls-files', '-z'], {
-    cwd: root, encoding: 'utf8', shell: false, timeout: 20_000,
-    env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
-  })
-  if (run.error || run.status !== 0) return null
+  const out = gitOut(root, ['ls-files', '-z'])
+  if (out === null) return null
 
   const counts = new Map()
-  for (const path of (run.stdout ?? '').split('\0')) {
+  for (const path of out.split('\0')) {
     if (!path) continue
     const parts = path.split('/')
     // `packages/<folder>/…` is a member; anything else is the workspace's own.
@@ -711,56 +712,28 @@ function ports(root) {
 // decision is the answer that lost, and reading it whole publishes a retired
 // name as a live question.
 
-function issues(root) {
-  const { dir, ids } = registerLayout(root)
-  const file = join(dir, 'ISSUES.md')
+function issues(root, doc) {
+  const file = join(registerLayout(root).dir, 'ISSUES.md')
   if (!existsSync(file)) return null
-
-  const src = read(file)
-  if (!src) return null
 
   const rows   = []
   const labels = {}
-  let section  = null
   let closed   = 0
 
-  for (const line of src.split('\n')) {
-    const heading = line.match(/^##\s+(.+?)\s*$/)
-    if (heading) {
-      section = heading[1]
-      // `## S2 — high` names its severity in the register's own words.
-      const sev = severityOf(section)
-      if (sev !== 'other') labels[sev] ??= plain(section.replace(/^S[1-4]\s*[—–-]\s*/, ''))
-      continue
-    }
-    // A row may lead with its own link anchor — `| <a id="fjs-282"></a>FJS-282 |`
-    // — which half the register does so a ruling can cite a row by id. Matching
-    // on a bare `| FJS-` skipped every one of them, and the miss is invisible:
-    // the page renders a smaller register rather than an error.
-    if (!ids.issueRow.test(line)) continue
-
-    const cells = splitRow(line)
-    if (cells.length < 4) continue
-
-    const id = cells[0].replace(/<a\s[^>]*>\s*<\/a>/g, '').replace(/`/g, '').trim()
-    if (/^Closed/i.test(section ?? '')) { closed++; continue }
-
-    // Struck text is what the row no longer claims. A decision table carries no
-    // Status column, so the strikethrough — or the ruling that follows it — is
-    // the only mark that separates a settled question from an open one.
-    const live  = cells[2].replace(/~~[\s\S]*?~~/g, ' ')
-    const ruled = live !== cells[2] || /\*\*Ruled\b/i.test(cells[2])
+  for (const r of doc.issues) {
+    if (basename(r.file) !== 'ISSUES.md') continue
+    // `## S2 — high` names its severity in the register's own words.
+    if (r.severity !== 'other') labels[r.severity] ??= plain(r.section.replace(/^S[1-4]\s*[—–-]\s*/, ''))
+    if (r.closed) { closed++; continue }
 
     rows.push({
-      id,
-      pkg:      plain(cells[1]),
-      title:    firstClaim(live.trim() ? live : cells[2]),
-      status:   cells.length >= 6 ? plain(cells[3]) : ruled ? 'ruled' : 'needs a ruling',
-      verified: cells.length >= 6 ? plain(cells[4]) : '',
-      severity: severityOf(section),
-      // The Detail column links the evidence, and those links are paths into
-      // this tree — the one place the register says WHERE a defect lives.
-      files:    linkedFiles(cells[cells.length - 1]),
+      id:       r.id,
+      pkg:      r.pkg.join(' · '),
+      title:    firstSentence(r.title, 190),
+      status:   r.status,
+      verified: r.verified,
+      severity: r.severity,
+      files:    r.files,
     })
   }
 
@@ -779,48 +752,6 @@ function issues(root) {
     byPackage: Object.entries(byPackage).map(([pkg, count]) => ({ pkg, count }))
       .sort((a, b) => b.count - a.count || a.pkg.localeCompare(b.pkg)),
   }
-}
-
-/**
- * Repo-relative paths out of a markdown cell's links. A `#fjs-d04` anchor is a
- * cross-reference to another row, an `http` link is somebody else's tree, and a
- * `#L134` fragment is a line inside a file that is still the same file.
- */
-function linkedFiles(cell = '') {
-  const out = new Set()
-
-  for (const [, target] of cell.matchAll(/\]\(([^)]+)\)/g)) {
-    const path = target.split('#')[0].trim()
-    if (!path || /^[a-z]+:/i.test(path)) continue
-    out.add(path)
-  }
-
-  return [...out].sort()
-}
-
-function severityOf(section = '') {
-  const m = section.match(/^(S[1-4])/)
-  if (m) return m[1]
-  if (/decision/i.test(section)) return 'decision'
-  return 'other'
-}
-
-/**
- * A row's cells. A prose cell carrying a `|` inside code over-splits and shifts every
- * column right of it — `docker save | docker load` put half a paragraph in the effort
- * column — so the surplus is folded back into the prose cell. The tail columns are
- * short and fixed, which is what makes counting from the end safe.
- */
-function splitRow(line, want = 6, foldAt = 2) {
-  const cells = line.trim().replace(/^\|/, '').replace(/\|$/, '')
-    .split(/(?<!\\)\|/).map(c => c.trim().replace(/\\\|/g, '|'))
-  if (cells.length <= want) return cells
-  const tail = want - foldAt - 1
-  return [
-    ...cells.slice(0, foldAt),
-    cells.slice(foldAt, cells.length - tail).join(' | '),
-    ...cells.slice(-tail),
-  ]
 }
 
 // ─── commands ─────────────────────────────────────────────────────────────────
@@ -856,7 +787,7 @@ function commands(root) {
 // id, and the claim, bolded, leading a paragraph. The claim is quoted whole and
 // nothing else about the ruling is read; this is an index into the file.
 
-function decisions(root) {
+function decisions(root, doc) {
   const file = join(registerLayout(root).dir, 'DECISIONS.md')
   if (!existsSync(file)) return null
 
@@ -865,7 +796,7 @@ function decisions(root) {
   const sections = []
   const byTitle  = new Map()
 
-  for (const r of readRegisters(root).decisions) {
+  for (const r of doc.decisions) {
     const title = r.section ?? ''
     if (!byTitle.has(title)) {
       const sec = { title, rulings: [] }
@@ -928,33 +859,30 @@ function ideas(root) {
   }
 
   const waves = []
-  const src = read(join(dir, 'overview.md'))
+  let wave    = null
+  let section = null
 
-  if (src !== null) {
-    let wave = null
-    for (const line of src.split('\n')) {
-      const heading = line.match(/^##\s+(Wave\s+\S+)\s*[—-]\s*(.+?)\s*$/)
-      if (heading) { wave = { title: heading[1], blurb: heading[2], rows: [] }; waves.push(wave); continue }
-      if (line.startsWith('## ')) { wave = null; continue }
-      if (!wave || !/^\|\s*\d/.test(line)) continue
+  for (const row of readOverviewRows(dir)) {
+    const heading = row.section?.match(/^(Wave\s+\S+)\s*[—-]\s*(.+)$/)
+    if (!heading) continue
+    if (section !== row.section) waves.push(wave = { title: heading[1], blurb: heading[2], rows: [] })
+    section = row.section
+    if (!row.rank || row.cells.length < 8) continue
 
-      const cells = splitRow(line, 8, 1)
-      if (cells.length < 8) continue
-
-      wave.rows.push({
-        n:      cells[0],
-        title:  firstClaim(cells[1]),
-        effort: plain(cells[2]),
-        payoff: (cells[3].match(/●/g) ?? []).length,
-        edge:   plain(cells[4]),
-        realms: plain(cells[5]),
-        status: statusOf(cells[6]),
-        note:   plain(cells[6]),
-        // The cell is a filename and sometimes a section number after it —
-        // `` `framework-shape.md` 4 `` — and only the file is a link.
-        source: cells[7].match(/[\w.-]+\.md/)?.[0] ?? null,
-      })
-    }
+    const cells = row.cells
+    wave.rows.push({
+      n:      cells[0],
+      title:  firstSentence(firstClaim(cells[1]), 190),
+      effort: plain(cells[2]),
+      payoff: (cells[3].match(/●/g) ?? []).length,
+      edge:   plain(cells[4]),
+      realms: plain(cells[5]),
+      status: statusOf(cells[6]),
+      note:   plain(cells[6]),
+      // The cell is a filename and sometimes a section number after it —
+      // `` `framework-shape.md` 4 `` — and only the file is a link.
+      source: cells[7].match(/[\w.-]+\.md/)?.[0] ?? null,
+    })
   }
 
   const byStatus = {}
@@ -1099,21 +1027,6 @@ function openingClaim(src) {
 
 // ─── text ─────────────────────────────────────────────────────────────────────
 
-/** Markdown to plain text — links to their label, emphasis and code marks away. */
-function plain(md = '') {
-  return md
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/[*`_]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-/** The bold run a register row opens with, which is the claim; the rest is evidence. */
-function firstClaim(cell = '') {
-  const bold = cell.match(/\*\*([\s\S]+?)\*\*/)
-  return firstSentence(plain(bold ? bold[1] : cell), 190)
-}
-
 function firstSentence(text, max) {
   const stop = text.search(/\.\s|\.$/)
   const one  = stop > 30 ? text.slice(0, stop + 1) : text
@@ -1125,49 +1038,42 @@ function _kebab(s) { return s.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase() 
 
 // ─── the tree ─────────────────────────────────────────────────────────────────
 
-function read(path)    { try { return readFileSync(path, 'utf8') } catch { return null } }
 
 function byName(a, b) { return a.name.localeCompare(b.name) }
 function byFile(a, b) { return a.file.localeCompare(b.file) }
 
 // ═══ rendering ════════════════════════════════════════════════════════════════
 //
-// One self-contained HTML file — no stylesheet, no script, no font to fetch,
-// because the thing it is most often opened from is a `file://` path with no
-// server in front of it.
+// One self-contained HTML file — the bundle inlined, no script or font to
+// fetch, because the thing it is most often opened from is a `file://` path
+// with no server in front of it.
 
 export function renderHtml(model) {
-  const parts = [
-    '<!doctype html>',
-    // The machine half: a snapshot names the command that regenerates it, and
-    // the walker reads this out of the first 4KB. It sits BELOW the doctype —
-    // anything above one puts the browser in quirks mode.
-    '<!-- generated by: fli ws:atlas --as=report -->',
-    '<html lang="en"><head><meta charset="utf-8">',
-    '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    `<title>${esc(model.root)} — repo map</title>`,
-    `<style>${STYLE}</style>`,
-    '</head><body>',
-    bar(model),
-    '<div class="wrap">',
-    masthead(model),
-    runSection(model),
-    snapshotSection(model),
-    ciSection(model),
-    packageSection(model),
-    featureSection(model),
-    driveSection(model),
-    proofSection(model),
-    portSection(model),
-    commandSection(model),
-    rootDocSection(model),
-    footer(),
-    '</div>',
-    `<script>${SCRIPT}</script>`,
-    '</body></html>',
-    '',
-  ]
-  return parts.filter(Boolean).join('\n')
+  return htmlPage({
+    // The machine half: a snapshot names the command that regenerates it.
+    banner: 'generated by: fli ws:atlas --as=report',
+    title:  `${model.root} — repo map`,
+    css:    model.css,
+    styles: { map: STYLE },
+    script: SCRIPT,
+    body: [
+      bar(model),
+      '<div class="wrap">',
+      masthead(model),
+      runSection(model),
+      snapshotSection(model),
+      ciSection(model),
+      packageSection(model),
+      featureSection(model),
+      driveSection(model),
+      proofSection(model),
+      portSection(model),
+      commandSection(model),
+      rootDocSection(model),
+      footer(),
+      '</div>',
+    ].filter(Boolean),
+  })
 }
 
 export function renderJson(model) {
@@ -1417,33 +1323,21 @@ function table(headers, rows) {
   }</tr></thead><tbody>${rows}</tbody></table></div>`
 }
 
-function esc(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
-
 // ─── style ────────────────────────────────────────────────────────────────────
 //
-// Three theme states, not two: an explicit choice stamps the root element, and
-// the default setting stamps nothing — so a color defined only inside a media
-// query renders one theme's text on the other theme's ground.
+// The page's names for the theme's tokens. Realm accents match the atlas's, so one realm is one
+// color across the pages; no hex is written here (Invariant 13).
 
 const STYLE = `
-:root{--ground:#EEF1F2;--surface:#fff;--sunk:#E4E8EA;--ink:#12171B;--muted:#5B676F;--faint:#8A959C;--line:#D5DBDE;--line-soft:#E6EAEC;
---data:#245F9E;--data-bg:#E3ECF6;--api:#0B6E5A;--api-bg:#DDEEE9;--ui:#9C3D62;--ui-bg:#F5E3EA;--tool:#5A4E97;--tool-bg:#E8E5F3;
---ok:#226B4C;--ok-bg:#DDEDE4;--warn:#8E6210;--warn-bg:#F4EAD5;--stop:#A63535;--stop-bg:#F6E1E1;
---shadow:0 1px 2px rgba(18,23,27,.06),0 8px 24px -18px rgba(18,23,27,.35);
---mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
---sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--ground:#0E1216;--surface:#161B21;--sunk:#1B2229;--ink:#E2E8EC;--muted:#939FA7;--faint:#6E7A82;--line:#2A333B;--line-soft:#212930;
---data:#7FB2E8;--data-bg:#17293C;--api:#57C3A8;--api-bg:#12302A;--ui:#E48CAC;--ui-bg:#38202A;--tool:#A79AE4;--tool-bg:#262244;
---ok:#5CC08D;--ok-bg:#14301F;--warn:#DCAE55;--warn-bg:#34290F;--stop:#E8807F;--stop-bg:#391B1B;
---shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -20px rgba(0,0,0,.8)}}
-:root[data-theme="dark"]{--ground:#0E1216;--surface:#161B21;--sunk:#1B2229;--ink:#E2E8EC;--muted:#939FA7;--faint:#6E7A82;--line:#2A333B;--line-soft:#212930;
---data:#7FB2E8;--data-bg:#17293C;--api:#57C3A8;--api-bg:#12302A;--ui:#E48CAC;--ui-bg:#38202A;--tool:#A79AE4;--tool-bg:#262244;
---ok:#5CC08D;--ok-bg:#14301F;--warn:#DCAE55;--warn-bg:#34290F;--stop:#E8807F;--stop-bg:#391B1B;
---shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -20px rgba(0,0,0,.8)}
+body{--ground:var(--app-bg,var(--surface-sunken));--sunk:var(--surface-raised);--muted:var(--ink-soft);--faint:var(--ink-mute);
+--line:var(--rule-strong);--line-soft:var(--rule);
+--data:var(--color-primary);--api:var(--color-success);--ui:var(--color-warning);--tool:var(--color-info);
+--ok:var(--color-success);--warn:var(--color-warning);--stop:var(--color-danger);
+--data-bg:color-mix(in oklab,var(--data) 16%,var(--surface));--api-bg:color-mix(in oklab,var(--api) 16%,var(--surface));
+--ui-bg:color-mix(in oklab,var(--ui) 16%,var(--surface));--tool-bg:color-mix(in oklab,var(--tool) 16%,var(--surface));
+--ok-bg:color-mix(in oklab,var(--ok) 16%,var(--surface));--warn-bg:color-mix(in oklab,var(--warn) 16%,var(--surface));
+--stop-bg:color-mix(in oklab,var(--stop) 16%,var(--surface));
+--shadow:var(--shadow-sm);--mono:var(--font-mono);--sans:var(--font-primary)}
 *{box-sizing:border-box}
 body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1120px;margin:0 auto;padding:0 24px 96px}

@@ -38,8 +38,7 @@
  *     src/islands/*.js               content scripts, FLAT — a subfolder throws
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { resolve, dirname } from 'node:path'
+import { scaffoldPort, writeAbsent } from './scaffold/surface.js'
 
 /** The six, minus `dist/`, which a build writes as `dist/chrome` + `dist/firefox`. */
 export const EXTENSION_SURFACE_DIRS = [
@@ -54,7 +53,7 @@ export const EXTENSION_SURFACE_DIRS = [
 
 // ─── config ───────────────────────────────────────────────────────────────────
 
-export function jettyConfig({ appName = 'app', tokenKey = 'app_token', port = 8400 } = {}) {
+export function jettyConfig({ appName = 'app', tokenKey = 'app_token', port = scaffoldPort('ext'), apiPort = scaffoldPort('be') } = {}) {
   return `// extension/config/jetty.config.js
 // One config, both browsers. \`--browser=chrome|firefox|both\` decides which
 // manifest jetty emits; the fields that differ between them are the two blocks
@@ -79,7 +78,7 @@ export default {
   },
   hostPermissions: [],
 
-  // 8400 = dev / ext / project 0 / service 0. The dev server pushes reloads to
+  // dev / ext / this app's project id. The dev server pushes reloads to
   // the loaded-unpacked extension over this port; see docs/PORTS.md.
   dev: { port: ${port} },
 
@@ -102,7 +101,7 @@ export default {
     // The harbor holds the only connection — a dock, an options page and every
     // island talk to Junction THROUGH it, over the port protocol, so a service
     // worker that sleeps does not leave four half-open sockets behind.
-    url:      'ws://localhost:8100',
+    url:      'ws://localhost:${apiPort}',
     tokenKey: '${tokenKey}',
   },
 }
@@ -243,30 +242,16 @@ refuses an upload that does not raise it.
  * @returns {{ written: string[], skipped: string[] }} paths relative to `root`
  */
 export function scaffoldExtensionSurface({
-  root, dir = 'extension', appName = 'app', devPort = 8400,
+  root, dir = 'extension', appName = 'app', devPort = scaffoldPort('ext'), apiPort = scaffoldPort('be'),
 } = {}) {
-  const base = resolve(root, dir)
-  for (const d of EXTENSION_SURFACE_DIRS) mkdirSync(resolve(base, d), { recursive: true })
-
-  const files = [
+  return writeAbsent(root, dir, { dirs: EXTENSION_SURFACE_DIRS, files: [
     ['.gitignore',             extensionGitignore()],
-    ['config/jetty.config.js', jettyConfig({ appName, tokenKey: `${appName}_token`, port: devPort })],
+    ['config/jetty.config.js', jettyConfig({ appName, tokenKey: `${appName}_token`, port: devPort, apiPort })],
     ['src/harbor/index.js',    harborEntry()],
     ['src/dock/App.mesa',      dockApp({ appName })],
     ['test/README.md',         extensionTestReadme({ appName })],
     ['deploy/README.md',       extensionDeployReadme({ appName })],
-  ]
-
-  const written = []
-  const skipped = []
-  for (const [rel, body] of files) {
-    const abs = resolve(base, rel)
-    if (existsSync(abs)) { skipped.push(`${dir}/${rel}`); continue }
-    mkdirSync(dirname(abs), { recursive: true })
-    writeFileSync(abs, body, 'utf8')
-    written.push(`${dir}/${rel}`)
-  }
-  return { written, skipped }
+  ] })
 }
 
 /**

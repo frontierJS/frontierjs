@@ -5,8 +5,6 @@ skip: "!$.config.outpostPresent"
 ---
 
 ```js
-if ($.config.abort) return
-
 const { host, path } = $.config.api
 const machine = machineFor($, host, path)
 

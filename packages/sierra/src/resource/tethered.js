@@ -308,20 +308,23 @@ export function createTethered(resource, tetheredQuery, opts = {}) {
    * holds and clears a value by leaving its key out — a merge would keep the
    * search a person just deleted. A half left `undefined` keeps what is there.
    *
-   * A change to `search` alone waits for the typing to stop and replaces the
-   * history entry, so a search box does not refetch or push an entry per
+   * A change made only of typing — `search`, or a `contains` filter, which is
+   * a box typed into the same way — waits for the typing to stop and replaces
+   * the history entry, so a box does not refetch or push an entry per
    * keystroke; any other change goes at once.
    */
   function apply(query, directives) {
     const nextQuery      = query      ?? currentQuery()
     const nextDirectives = directives ?? currentDirectives()
+    const was            = currentQuery()
     clearTimeout(timer)
 
-    const searchOnly = sameBag(nextQuery, currentQuery())
-      && sameBag(omit(nextDirectives, 'search'), omit(currentDirectives(), 'search'))
-      && nextDirectives.search !== currentDirectives().search
+    const moved  = movedKeys(nextQuery, was)
+    const typing = sameBag(omit(nextDirectives, 'search'), omit(currentDirectives(), 'search'))
+      && moved.every(k => typed(nextQuery[k]) && typed(was[k]))
+      && (moved.length > 0 || nextDirectives.search !== currentDirectives().search)
 
-    if (searchOnly && debounce > 0) {
+    if (typing && debounce > 0) {
       timer = setTimeout(() => commit(nextQuery, nextDirectives, { replace: state === 'url' }), debounce)
       return
     }
@@ -398,6 +401,17 @@ function changedFrom(start, directives) {
 function omit(o, key) {
   const { [key]: _, ...rest } = o
   return rest
+}
+
+function movedKeys(a, b) {
+  return [...new Set([...Object.keys(a), ...Object.keys(b)])]
+    .filter(k => JSON.stringify(a[k]) !== JSON.stringify(b[k]))
+}
+
+/** Absent, or `{ contains: text }` — what a typed-into filter box writes. */
+function typed(v) {
+  if (v === undefined) return true
+  return v !== null && typeof v === 'object' && Object.keys(v).length === 1 && typeof v.contains === 'string'
 }
 
 function sameBag(a, b) {

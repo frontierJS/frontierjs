@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-155 definitions · 73 models · 1 view · 36 types · 45 enums · 0 other
+156 definitions · 73 models · 1 view · 37 types · 45 enums · 0 other
 ```
 
 ## Definitions
@@ -176,6 +176,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `AppPublish` | type |
 | `AppBackupTake` | type |
 | `BackupRescan` | type |
+| `AppBackupRescan` | type |
 | `FlagOverrideSet` | type |
 | `FlagOverrideClear` | type |
 | `ServerProvision` | type |
@@ -203,7 +204,7 @@ validates, and a select that silently drops an option.
 - `ServerStatus` — `pending`, `provisioning`, `installing`, `online`, `unreachable`, `draining`, `stopped`, `destroying`, `destroyed`
 - `ServerRole` — `general`, `build`, `database`, `gateway`, `worker`
 - `ServerEventKind` — `created`, `removed`, `reboot_requested`, `drain_started`, `drain_cancelled`, `provision_requested`, `provision_created`, `provision_ready`, `provision_timeout`, `destroy_requested`, `destroy_finished`, `enrollment_issued`, `sync_requested`, `status_synced`, `status_sync_ignored`, `sync_failed`, `sync_no_account`, `sync_unsupported`, `sync_unrecognized`, `came_online`, `unreachable`, `recipe_ran`, `recipe_failed`, `cleanup_queued`, `cleanup_ran`, `cleanup_failed`, `volume_removed`, `volumes_pruned`, `posture_failed`, `posture_restored`
-- `ProviderKind` — `custom`, `hetzner`, `digitalocean`, `cloudflare`
+- `ProviderKind` — `custom`, `hetzner`, `digitalocean`, `cloudflare`, `github`
 - `EnvironmentTier` — `development`, `test`, `preview`, `staging`, `production`
 - `AppType` — `container`, `worker`, `database`, `daemon`, `cron`, `static`, `function`
 - `AppStatus` — `unknown`, `stopped`, `starting`, `running`, `stopping`, `deploying`, `error`
@@ -1018,7 +1019,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 - gate `read:5 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
 - relation `app` — belongsTo `App` via `appId` · on delete Cascade
-- relation `server` — belongsTo `Server` via `serverId` · on delete Cascade
+- relation `server` — belongsTo `Server` via `serverId` · on delete Cascade · optional
 - relation `destination` — belongsTo `BackupDestination` via `destinationId` · on delete Restrict · optional
 - relation `deployment` — belongsTo `Deployment` via `deploymentId` · on delete SetNull · optional
 
@@ -1026,7 +1027,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `appId` | `string` | yes | — | — | — |
-| `serverId` | `string` | yes | — | — | — |
+| `serverId` | `string`? | — | — | — | — |
 | `destinationId` | `string`? | — | — | — | — |
 | `kind` | `BackupKind` = `"manual"` | — | — | — | — |
 | `deploymentId` | `string`? | — | — | — | — |
@@ -1041,7 +1042,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `finishedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `durationMs` | `integer`? | — | — | — | — |
 
-**On create**: required — `appId`, `serverId` · not accepted — `id`
+**On create**: required — `appId` · not accepted — `id`
 
 ### `AppDrill`
 
@@ -2072,6 +2073,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `serverId` | `string`? | — | — | — | — |
 | `hostname` | `string`? | — | — | — | — |
 | `deployOnPush` | `boolean`? | — | — | — | — |
+| `connect` | `boolean`? | — | — | — | — |
 
 **On create**: required — `name`, `repo`
 
@@ -2179,6 +2181,16 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `destinationId` | `string` | yes | — | — | — |
 
 **On create**: required — `destinationId`
+
+### `AppBackupRescan`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `appId` | `string` | yes | — | — | — |
+
+**On create**: required — `appId`
 
 ### `FlagOverrideSet`
 

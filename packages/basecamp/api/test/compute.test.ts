@@ -329,14 +329,14 @@ describe('an account is an address', () => {
   })
 })
 
-describe('the schema refuses an account that names no cloud', () => {
+describe('the schema refuses an account that names no vendor', () => {
   test('a provider key without a providerKind is refused at the Data boundary', async () => {
     // Not a service check — the table itself. `asSystem()` cannot get past it
     // either, which is what makes it a rule rather than a convention.
     await expect((env.system as any).secret.create({ data: {
       workspaceId: ws.id, name: `nameless-${Math.random()}`, kind: 'provider_key',
       data: JSON.stringify({ token: 'x' }),
-    }})).rejects.toThrow(/names the cloud/)
+    }})).rejects.toThrow(/names the vendor/)
   })
 
   test('every other kind may leave it null', async () => {

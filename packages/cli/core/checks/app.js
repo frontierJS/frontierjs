@@ -15,8 +15,9 @@ import { parseCommands, resolveCommands }                          from '../comm
 import { typeScriptIn }                                            from '../scope.js'
 import {
   lineOf, readCode, isAppRoot, SURFACES, sources, SCRIPT_EXT, stripComments,
-  safeRead, rel, scripts, stem, staticSurfaces, SKIP,
+  rel, scripts, stem, staticSurfaces,
 } from './lib.js'
+import { safeRead, SKIP }                                          from '../fs.js'
 
 export const CHECKS = {
 

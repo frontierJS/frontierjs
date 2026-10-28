@@ -222,8 +222,10 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           one shape, opposite safeguards; jobs/outpost-run.ts is their half
           domain/backup/backup-archives.ts is an archive once it exists — the one
           delete (retention's and backups.remove's, FJS-D1494), the prune
-          backup-run calls after a success, and the rescan that writes
-          `found` rows (FJS-D1493); not a job, so caravan loads nothing from it
+          backup-run calls after a success, and the rescans that write
+          `found` rows — the hub's (FJS-D1493) and an app's, hashed before it
+          restores (FJS-D1572, jobs/app-archive-rescan.job.ts); not a job, so
+          caravan loads nothing from it
           domain/backup/archive-manifest.ts is an archive's `manifest.json` —
           the key fingerprint and each file's sha256 — and `archiveRefusals`, the
           check a restore runs on the staged directory, schema graded by litestone's
@@ -251,10 +253,14 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           sense Hetzner is. `hosted` on the portal entry is what separates the
           two kinds, and it is there because *unconfigured* means different
           work for each: install it and set a URL, or open an account and hold
-          a key. compute/ and edge/ are the vendors held as a workspace
+          a key. compute/, edge/ and source/ are the vendors held as a workspace
           ACCOUNT — a `provider_key` Secret that compute/accounts.ts registers
           as `provider:<kind>:<secretId>` through `accountConnectorFor`
           (`FJS-D558`); a *-sink.ts beside each connector is its stand-in.
+          source/github.ts writes an App's deploy key and push hook to its
+          repository with a fine-grained token (`FJS-D1571`), each write
+          repeatable, and reads its Dockerfile (`FJS-D1573`) — the token is
+          used at connect and at that read, never at a push.
           storage/ is a bucket held as a workspace `BackupDestination` row —
           s3.ts is basecamp's own lift of conduit-s3 over toolbelt's sigv4
           (`FJS-D1490`, no `link:` on the sibling repo survives the image

@@ -156,12 +156,12 @@ if (!resolved) {
     `${resolved.host}:${resolved.path}`)
 }
 
-const appId = deployConf.app_id ?? deployConf.path?.split('/').pop()
+const appId = appIdOf(deployConf)
 if (appId) {
   renderCheck('app_id', 'pass', appId)
 } else {
-  renderCheck('app_id', 'warn', 'no app_id and no path to derive from — set deploy.app_id')
-  warn()
+  renderCheck('app_id', 'fail', 'fix: set deploy.app_id — it names the container and the Release')
+  fail()
 }
 
 // ─── Dockerfile ───────────────────────────────────────────────────────────

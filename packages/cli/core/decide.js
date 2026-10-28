@@ -39,14 +39,14 @@
 //
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync }                from 'node:fs'
 import { basename, join, relative, resolve, sep }              from 'node:path'
 
 import { paperQuestions, readDecisions, rulingSections, QUESTION_ID } from './decisions.js'
 import { extractFrontmatter }        from './compiler.js'
 import { moveToClosed }                from './close.js'
-import { errorKeys, newErrors, describeNewErrors } from './register-check.js'
-import { readRegisters, registerLayout, withRegisterGuard } from './registers.js'
+import { checkedEdit, isoDate }    from './register-edit.js'
+import { readRegisters, registerLayout, withRegisterGuard, requirePrefix } from './registers.js'
 
 const WHY_MAX = 2000
 
@@ -94,8 +94,9 @@ function decideUnguarded({ root, id, pick, why = '', section, file, dry = false,
   }
   if (reason.length > WHY_MAX) return refuse(`the reason is ${reason.length} characters; ${WHY_MAX} is the limit`)
 
-  const { dir, prefix, declared } = registerLayout(root)
-  if (!prefix) return refuse(`package.json declares no usable registers.prefix${declared ? ` (${JSON.stringify(declared)} is not [A-Z][A-Z0-9]*)` : ''}, so there is no id to issue`)
+  const noPrefix = requirePrefix(root, 'there is no id to issue')
+  if (noPrefix) return refuse(noPrefix)
+  const { dir, prefix } = registerLayout(root)
 
   const date     = isoDate(today)
   const row      = heldRow(root, q)
@@ -118,18 +119,12 @@ function decideUnguarded({ root, id, pick, why = '', section, file, dry = false,
   const files = ['DECISIONS.md', q.file, ...(row ? [row.file] : [])]
   if (dry) return { ok: true, dry: true, ruling, date, question: q.question, pick: letter, closed: row?.id ?? null, files }
 
-  const baseline = errorKeys(root)
-  writeFileSync(decPath, dec)
-  writeFileSync(paperAbs, struck)
-  close?.write()
-
-  const added = newErrors(baseline, root)
-  if (added.length) {
-    writeFileSync(decPath, before.dec)
-    writeFileSync(paperAbs, before.paper)
-    close?.undo()
-    return refuse(`the ruling was put back: register:check found ${describeNewErrors(added)}`)
-  }
+  const done = checkedEdit(root, 'ruling', write => {
+    write(decPath, dec)
+    write(paperAbs, struck)
+    if (close) write(close.abs, close.text)
+  })
+  if (!done.ok) return done
 
   return { ok: true, ruling, date, question: q.question, pick: letter, closed: row?.id ?? null, files }
 }
@@ -182,15 +177,11 @@ function settleUnguarded({ root, id, by, why = '', file, dry = false, today = ne
   const files = [q.file, ...(row ? [row.file] : [])]
   if (dry) return { ok: true, dry: true, ruling: found.id, question: q.question, closed: row?.id ?? null, files }
 
-  const baseline = errorKeys(root)
-  writeFileSync(paperAbs, struck)
-  close?.write()
-  const added = newErrors(baseline, root)
-  if (added.length) {
-    writeFileSync(paperAbs, before)
-    close?.undo()
-    return refuse(`the strike was put back: register:check found ${describeNewErrors(added)}`)
-  }
+  const done = checkedEdit(root, 'strike', write => {
+    write(paperAbs, struck)
+    if (close) write(close.abs, close.text)
+  })
+  if (!done.ok) return done
 
   return { ok: true, ruling: found.id, question: q.question, closed: row?.id ?? null, files }
 }
@@ -224,11 +215,10 @@ function heldRow(root, q) {
 // The row's move to § Closed, computed now and written by the caller alongside
 // its other files, so one register:check grades them together.
 function closeRow(root, row, how, today) {
-  const abs    = join(root, row.file)
-  const before = readFileSync(abs, 'utf8')
-  const moved  = moveToClosed(before, row, how, today)
+  const abs   = join(root, row.file)
+  const moved = moveToClosed(readFileSync(abs, 'utf8'), row, how, today)
   if (moved.reason) return { reason: moved.reason }
-  return { write: () => writeFileSync(abs, moved.text), undo: () => writeFileSync(abs, before) }
+  return { abs, text: moved.text }
 }
 
 // ─── the two edits ────────────────────────────────────────────────────────────
@@ -320,12 +310,3 @@ function oneParagraph(text) { return String(text ?? '').replace(/\s+/g, ' ').tri
 function trimStop(text) { return String(text).trim().replace(/[.?!;:,]+$/, '') }
 
 function capitalize(text) { return text.charAt(0).toUpperCase() + text.slice(1) }
-
-// UTC, because this date is WRITTEN INTO a register row and read by everybody
-// afterwards: a decision recorded at 23:30 in Auckland and one recorded twenty
-// minutes later in Los Angeles would otherwise be dated two days apart, in a
-// file whose whole job is to say when something was settled.
-function isoDate(d) {
-  const p = n => String(n).padStart(2, '0')
-  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`
-}

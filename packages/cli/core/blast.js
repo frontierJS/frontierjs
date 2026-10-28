@@ -22,7 +22,7 @@
 // through `exports` to `src/inflect/index.js`, and the importing text contains
 // `inflect` and never `index.js`, so the filter drops real edges in silence.
 
-import { execFileSync } from 'node:child_process'
+import { gitOut }       from './git.js'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 // Statically, because importing THIS module is already the decision to pay for
@@ -48,7 +48,7 @@ const TEXT_LIMIT = 2_000_000
 export function usedByIndex(root) {
   const empty = { usedBy: new Map(), code: new Set() }
   try {
-    const git = (...a) => execFileSync('git', ['-C', root, ...a], { encoding: 'utf8', maxBuffer: 1 << 29 })
+    const git = (...a) => gitOut(root, a, { maxBuffer: 1 << 29 }) ?? ''
     const paths = git('ls-files', '-z').split('\0').filter(Boolean).sort()
     if (!paths.length) return empty
 

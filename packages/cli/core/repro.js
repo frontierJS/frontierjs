@@ -46,7 +46,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { availableParallelism, loadavg, tmpdir }        from 'node:os'
 import { dirname, join, relative, resolve }              from 'node:path'
 
-import { readRegisters } from './registers.js'
+import { readRegisters, requirePrefix, findIssue } from './registers.js'
 
 // One junction typecheck holds about 1.8 cores; N fills the machine, because a
 // timeout under load is starvation and nothing starves at half load.
@@ -83,12 +83,11 @@ export function linkedTest(record, root) {
 }
 
 export function reproTarget({ root, id }) {
-  const doc = readRegisters(root)
-  if (!doc.prefix) return refuse('package.json declares no usable registers.prefix, so no row can be read')
+  const noPrefix = requirePrefix(root)
+  if (noPrefix) return refuse(noPrefix)
 
-  const want   = String(id ?? '').trim().toUpperCase()
-  const record = doc.issues.find(r => r.id.toUpperCase() === want || (r.aliases ?? []).some(a => a.toUpperCase() === want))
-  if (!record)       return refuse(`no issue row has the id ${want || '(none)'}`)
+  const record = findIssue(readRegisters(root), id)
+  if (!record)       return refuse(`no issue row has the id ${String(id ?? '').trim().toUpperCase() || '(none)'}`)
   if (record.closed) return refuse(`${record.id} is closed (${record.file}:${record.line})`)
 
   const { test, reason } = linkedTest(record, root)

@@ -20,9 +20,10 @@
 //
 // Zero dependencies beyond its neighbors, plain ESM, node or bun.
 
-import { execFileSync }                                   from 'node:child_process'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { gitOut }                                         from './git.js'
+import { existsSync, readFileSync, statSync }             from 'node:fs'
 import { basename, dirname, extname, join, resolve, sep }  from 'node:path'
+import { safeRead }                         from './fs.js'
 
 import { runChecks, findApps, readBaseline } from './checks.js'
 import { checkSnapshots }                   from './snapshots.js'
@@ -41,10 +42,7 @@ const SIBLING_MIN = 3
  * `changedTree`'s, so the drives listed here are the ones `fli proves` names.
  */
 export function collectChanges(root) {
-  const git = argv => {
-    try { return execFileSync('git', ['-C', root, ...argv], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }) }
-    catch { return '' }
-  }
+  const git = argv => gitOut(root, argv) ?? ''
   const lines     = text => text.split('\n').map(l => l.trim()).filter(Boolean)
   const untracked = lines(git(['ls-files', '--others', '--exclude-standard']))
   const changed   = [...new Set([...lines(git(['diff', '--name-only', 'HEAD'])), ...untracked])].sort()
@@ -98,7 +96,7 @@ export function moduleNamed({ root, added }) {
 
 function siblingVerdict({ root, file, added, nameOf, filter, named }) {
   const dir      = dirname(file)
-  const siblings = safeList(join(root, dir))
+  const siblings = safeRead(join(root, dir))
     .map(n => join(dir, n))
     .filter(f => f !== file && !added.includes(f) && filter(f) && isFile(join(root, f)))
   if (siblings.length < SIBLING_MIN) return null
@@ -150,10 +148,7 @@ export function checkItems({ root, changed }) {
  * a build directory hides an untracked source file just as quietly.
  */
 export function ignoreHides({ root, changed }) {
-  const git = argv => {
-    try { return execFileSync('git', ['-C', root, ...argv], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }) }
-    catch { return '' }
-  }
+  const git = argv => gitOut(root, argv) ?? ''
   const out = []
   for (const file of changed.filter(f => basename(f) === '.gitignore')) {
     const diff    = git(['diff', '--no-color', '-U0', 'HEAD', '--', file])
@@ -166,12 +161,8 @@ export function ignoreHides({ root, changed }) {
     if (!ignored.length) continue
 
     const hidden = new Map()
-    let verdict = ''
-    try {
-      verdict = execFileSync('git', ['-C', root, 'check-ignore', '-v', '-z', '--stdin'], {
-        encoding: 'utf8', input: ignored.join('\0'), maxBuffer: 64 * 1024 * 1024, stdio: ['pipe', 'pipe', 'ignore'],
-      })
-    } catch { continue }
+    const verdict = gitOut(root, ['check-ignore', '-v', '-z', '--stdin'], { input: ignored.join('\0') })
+    if (verdict === null) continue
     const cells = verdict.split('\0')
     for (let i = 0; i + 3 < cells.length; i += 4) {
       const [source, , pattern, path] = cells.slice(i, i + 4)
@@ -341,6 +332,5 @@ function titleOf(path) {
   catch { return null }
 }
 
-function safeList(dir) { try { return readdirSync(dir) } catch { return [] } }
 function isFile(path)  { try { return statSync(path).isFile() } catch { return false } }
 function rel(root, file) { return file?.startsWith(root) ? file.slice(root.length + 1) : file }

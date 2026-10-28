@@ -4,8 +4,6 @@ description: Create the app directory structure on the server
 ---
 
 ```js
-if ($.config.abort) return
-
 const { host, serverPath } = $.config
 const machine = machineFor($, host, serverPath)
 const { dbDir, envFile, secretsDir } = apiFiles($.config.deployConf, serverPath)

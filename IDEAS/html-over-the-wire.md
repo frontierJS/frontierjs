@@ -134,7 +134,7 @@ reads the page as the caller.
   page reads 200 for every member, and its target reads 200 for a member and 404
   for a guest, so `↗ <target title>` is two renderings. The roster's user ids
   resolve to names for 4 of 4 people as the owner and 1 of 4 as a guest
-  ([`FJS-1744`](../ISSUES.md#fjs-1744)).
+  ([`FJS-1744`](../ISSUES_ARCHIVE.md#fjs-1744)).
 - **The two options above leave out the condition that decided the measurement:
   membership.** A uniform channel is exactly as safe as who is in it, and today
   nothing keeps that true. Nothing grades a join, and nothing re-grades one when a

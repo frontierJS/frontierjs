@@ -6,9 +6,9 @@
   // @frontierjs/ui, so there is no color in this file and none in the rules
   // that produced the notice (repo invariant 13).
   //
-  // Dismissal is local and deliberately not persisted: a notice is a statement
-  // about the fleet right now, so it comes back when the condition does. The
-  // mock behaves the same way, for the same reason.
+  // Dismissal is remembered per browser, keyed by notice id, and an id is
+  // forgotten once its condition has cleared -- so a notice comes back when the
+  // condition does, but not on every refresh while it is still true.
 
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
@@ -18,8 +18,30 @@
   export let notices  = []
   export let max      = 3     // the shell shows the top few; the full list is the queue
   export let heading  = ''    // '' renders no landmark label
+  export let loading  = false  // the rows behind `notices` are being read
 
-  let dismissed = []
+  const KEY = 'basecamp.notices.dismissed'
+
+  function recall() {
+    try {
+      const v = JSON.parse(localStorage.getItem(KEY) ?? '[]')
+      return Array.isArray(v) ? v : []
+    } catch { return [] }
+  }
+  function remember(ids) { try { localStorage.setItem(KEY, JSON.stringify(ids)) } catch {} }
+
+  let dismissed = recall()
+
+  // Pruning on an empty or half-loaded list would forget every dismissal, so
+  // it waits for a load that has started and finished.
+  let sawLoading = false
+  $: loading, () => { if (loading) sawLoading = true }
+  $: settled = sawLoading && !loading
+  $: settled, notices, () => {
+    if (!settled) return
+    const kept = dismissed.filter(id => notices.some(n => n.id === id))
+    if (kept.length !== dismissed.length) { dismissed = kept; remember(kept) }
+  }
 
   // Derived, so a new notice arriving over the WebSocket re-renders the bar
   // without anything here being told about it.
@@ -34,11 +56,13 @@
   function dismiss(id) {
     // A new array, not a push: Mesa re-derives from the assignment.
     dismissed = [...dismissed, id]
+    remember(dismissed)
   }
 
   // Every live notice, not just the few shown: "all" means all.
   function dismissAll() {
     dismissed = [...dismissed, ...live.map(n => n.id)]
+    remember(dismissed)
   }
 </script>
 

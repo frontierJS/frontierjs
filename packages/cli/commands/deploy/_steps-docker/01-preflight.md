@@ -4,14 +4,12 @@ description: Validate config, check SSH, acquire deploy lock
 ---
 
 ```js
-if ($.config.abort) return
-
 const { server, serverPath, target, hosts } = $.config
 const host = $.config.api?.host ?? $.config.web.host
 
 // ─── Validate required config ─────────────────────────────────────────────────
 const deployConf = $.config.deployConf
-const appId      = deployConf.app_id ?? deployConf.path.split('/').pop()
+const appId      = appIdOf(deployConf)
 const apiPort    = deployConf.api?.port ?? 3000
 const healthPath = deployConf.api?.health ?? '/health'
 

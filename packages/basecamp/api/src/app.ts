@@ -847,12 +847,10 @@ export async function buildBasecampApp(
           data: { workspaceId: workspace.id, userId: user.id, role: 'owner',
                   capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString() },
         })
-        // The hub's settings, from the two facts this request holds: the URL
-        // this API was started to answer on and the person setting it up.
         // `fli deploy` enrolls the box into a pointer on this row, so an
         // install that saved no settings would enroll nothing (`FJS-3488`).
         if (!await tx.hubConfig.exists({ where: { id: 'hub' } }))
-          await tx.hubConfig.create({ data: { id: 'hub', baseUrl: env.FRONTIER_API_URL, adminEmail: email.trim() } })
+          await tx.hubConfig.create({ data: { id: 'hub' } })
         return { account, workspace }
       })
 

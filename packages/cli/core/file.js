@@ -29,12 +29,12 @@
 //
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
-import { readFileSync, writeFileSync } from 'node:fs'
-import { join }                        from 'node:path'
+import { readFileSync } from 'node:fs'
+import { join }         from 'node:path'
 
-import { readRegisters, withRegisterGuard }        from './registers.js'
-import { errorKeys, newErrors, envSmells, describeNewErrors } from './register-check.js'
-import { oneCell, isoDate }     from './close.js'
+import { readRegisters, withRegisterGuard, requirePrefix, findIssue } from './registers.js'
+import { envSmells }                     from './register-check.js'
+import { checkedEdit, oneCell, isoDate } from './register-edit.js'
 import { nextDecisionNumber }   from './decide.js'
 import { envCause }             from './next.js'
 
@@ -54,8 +54,9 @@ export function fileIssue(opts) {
 }
 
 function fileUnguarded({ root, severity, area, title, detail, blocks, dry = false, today = new Date() }) {
+  const noPrefix = requirePrefix(root, 'no id can be minted')
+  if (noPrefix) return refuse(noPrefix)
   const doc = readRegisters(root)
-  if (!doc.prefix) return refuse('package.json declares no usable registers.prefix, so no id can be minted')
 
   const sev = String(severity ?? '').trim().toUpperCase()
   if (!SEVERITIES.includes(sev)) return refuse(`--sev must be one of S1, S2, S3, S4, decision`)
@@ -84,9 +85,8 @@ function fileUnguarded({ root, severity, area, title, detail, blocks, dry = fals
 
   // Before the new row goes in, so the held row's line number is still its own.
   if (blocks) {
-    const want = String(blocks).trim().toUpperCase()
-    const held = doc.issues.find(r => r.id.toUpperCase() === want || (r.aliases ?? []).some(a => a.toUpperCase() === want))
-    if (!held)       return refuse(`--blocks: no issue row has the id ${want}`)
+    const held = findIssue(doc, blocks)
+    if (!held)       return refuse(`--blocks: no issue row has the id ${String(blocks).trim().toUpperCase()}`)
     if (held.closed) return refuse(`--blocks: ${held.id} is closed, so nothing waits on the new row`)
     if (join(root, held.file) !== abs) return refuse(`--blocks: ${held.id} is not in ISSUES.md`)
     const at = held.line - 1
@@ -106,14 +106,8 @@ function fileUnguarded({ root, severity, area, title, detail, blocks, dry = fals
   // the file on disk, and writing it to grade it is the write being refused.
   if (dry) return { ok: true, dry: true, ...filed }
 
-  const baseline = errorKeys(root)
-  writeFileSync(abs, lines.join('\n'))
-
-  const added = newErrors(baseline, root)
-  if (added.length) {
-    writeFileSync(abs, before)
-    return refuse(`the row was put back: register:check found ${describeNewErrors(added)}`)
-  }
+  const done = checkedEdit(root, 'row', write => write(abs, lines.join('\n')))
+  if (!done.ok) return done
 
   return { ok: true, ...filed }
 }

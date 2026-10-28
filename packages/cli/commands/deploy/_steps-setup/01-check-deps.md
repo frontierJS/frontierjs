@@ -4,8 +4,6 @@ description: Check SSH connectivity and audit required server dependencies
 ---
 
 ```js
-if ($.config.abort) return
-
 const { host } = $.config
 const machine  = machineFor($, host, $.config.serverPath)
 

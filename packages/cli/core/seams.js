@@ -45,13 +45,13 @@
 // Zero dependencies, plain ESM, node or bun — the rule `snapshots.js`,
 // `checks.js` and `repo-map.js` follow, because a caller runs before install.
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync }              from 'node:fs'
 import { join, relative }                                  from 'node:path'
+import { read }                                            from './fs.js'
 
 import { stripComments }                                   from './codegraph.js'
 import { treePaths }                                       from './tree.js'
 
-const read = p => { try { return readFileSync(p, 'utf8') } catch { return null } }
 
 export const SKILL = '.claude/skills/bridge-index/SKILL.md'
 

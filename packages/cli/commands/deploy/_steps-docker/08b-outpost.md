@@ -17,8 +17,6 @@ public URL. The work is `enrollOutpost` in `_module.md`, which `fli
 deploy:outpost` runs alone.
 
 ```js
-if ($.config.abort) return
-
 const { appId, deployConf } = $.config
 const { host, path }        = $.config.api
 enrollOutpost(machineFor($, host, path), { appId, deployConf, path, host, log })

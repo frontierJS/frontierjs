@@ -58,11 +58,11 @@ Accordion.mesa Alert.mesa alertStore.js Avatar.mesa Badge.mesa Bar.mesa Breadcru
 BulkBar.mesa Button.mesa Callout.mesa Card.mesa Cell.mesa Checkbox.mesa CLAUDE.md
 CodeInput.mesa Combobox.mesa CommandPalette.mesa commandPaletteStore.js Composer.mesa
 ConfirmationPopover.mesa ConfirmPanel.mesa ConfirmProvider.mesa controls.js DatePicker.mesa
-DateTimeInput.mesa dnd.js drag.js Drawer.mesa DropdownMenu.mesa EmptyState.mesa Field.mesa
+DateTimeInput.mesa DayRangeFilter.mesa dnd.js drag.js Drawer.mesa DropdownMenu.mesa EmptyState.mesa Field.mesa
 Fieldset.mesa FileField.mesa FileUpload.mesa FilterBar.mesa FormField.mesa Form.mesa
 GeoField.mesa HoverCard.mesa HtmlFrame.mesa Input.mesa JsonInput.mesa Json.mesa Label.mesa
 Markdown.mesa Message.mesa Modal.mesa MoneyInput.mesa MultiSelect.mesa nav.js
-NumberInput.mesa Pagination.mesa Pill.mesa Popover.mesa Progress.mesa RadioGroup.mesa
+NumberInput.mesa Pagination.mesa Pill.mesa Popover.mesa Progress.mesa RadioGroup.mesa RangeInput.mesa
 rowlist.js selection.js Select.mesa Shell.mesa SignaturePad.mesa SignatureView.mesa
 Skeleton.mesa Slider.mesa Sparkline.mesa Spinner.mesa StatCard.mesa Stat.mesa Steps.mesa
 Switch.mesa Table.mesa TabList.mesa Tab.mesa TabPanel.mesa Tabs.mesa Tag.mesa

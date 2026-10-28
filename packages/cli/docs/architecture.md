@@ -76,7 +76,7 @@ tty.line()   // one typed line; tty.keys() one key
 $``          // the shell — Bun's, captured by default, --dry aware
 ```
 
-`$.git` provides: `branch()`, `status()`, `isDirty()`, `lastTag()`, `hasChangesSince()`, `isAffected()`, `log()`, `remote()`, `ahead()`, `behind()`, `repoRoot()`, `pkgState()`. Defaults to `paths.root` for the dir but accepts an override.
+`$.git` provides: `branch()`, `status()`, `isDirty()`, `remote()`, `ahead()`, `behind()`, `repoRoot()`, `pkgState()`, `user()`. Defaults to `paths.root` for the dir but accepts an override.
 
 `$.paths` exposes: `root`, `wiki`, `tests`, `cli`, `api`, `db`, `web`, `webPages`, `webComponents`, `webResources`, `site`, `mobile`, `extension`.
 

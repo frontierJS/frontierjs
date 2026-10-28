@@ -18,6 +18,9 @@ const base = createSierraViteConfig(sierraConfig)
 export default defineConfig({
   ...base,
   root: ROOT,
+  // An app has ONE .env, at its root; vite reads the Vite root's otherwise and a
+  // FRONTIER_PUBLIC_ variable there reaches nothing.
+  envDir: resolve(ROOT, '..'),
   server: {
     ...base.server,
     // dev / widgetDev / this app's project id — derived, never chosen. A widget

@@ -4,8 +4,6 @@ description: Check SSH and take the deploy lock — a revert is a deploy going t
 ---
 
 ```js
-if ($.config.abort) return
-
 const { hosts, target } = $.config
 
 for (const h of hosts) {

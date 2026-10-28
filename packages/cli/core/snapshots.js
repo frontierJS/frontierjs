@@ -36,6 +36,7 @@ import { execFile }                               from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { availableParallelism }                   from 'node:os'
 import { join, dirname, relative }                from 'node:path'
+import { safeRead, walk }                         from './fs.js'
 
 /**
  * Binaries a snapshot header may name, and the package that ships each one. A
@@ -66,7 +67,6 @@ const ARG = /^[A-Za-z0-9._/@=,:-]+$/
 /** A snapshot is `<anything>.snapshot.<ext>` — the extension is the renderer's choice. */
 const SNAPSHOT = /\.snapshot\.[^./]+$/
 
-const SKIP = new Set(['node_modules', 'dist', 'build', '.git', 'coverage', '.output', '.vite'])
 
 // The header lives near the top by convention; reading a slice keeps a large
 // generated file from being parsed in full.
@@ -440,18 +440,3 @@ export function formatSnapshotResults(results) {
   return out
 }
 
-// ─── reading the tree ─────────────────────────────────────────────────────────
-
-function safeRead(dir) {
-  try { return readdirSync(dir).sort() } catch { return [] }
-}
-
-function walk(dir, depth, fn) {
-  if (depth < 0 || !existsSync(dir)) return
-  try { fn(dir) } catch { /* an unreadable directory is not a finding */ }
-  for (const name of safeRead(dir)) {
-    if (SKIP.has(name) || name.startsWith('.')) continue
-    const child = join(dir, name)
-    try { if (statSync(child).isDirectory()) walk(child, depth - 1, fn) } catch { /* dangling link */ }
-  }
-}

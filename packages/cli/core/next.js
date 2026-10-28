@@ -61,7 +61,7 @@
 //
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
-import { execFileSync } from 'node:child_process'
+import { gitOut }       from './git.js'
 
 import { readRegisters } from './registers.js'
 import { workspaceDeps } from './runnables.js'
@@ -289,14 +289,10 @@ export function dependentCounts(root) {
 
 // ─── recent ───────────────────────────────────────────────────────────────────
 //
-// The working tree and the last few commits. `execFileSync` with a fixed argv:
-// nothing a caller supplies reaches git.
+// The working tree and the last few commits.
 
 export function recentPaths(root) {
-  const git = argv => {
-    try { return execFileSync('git', ['-C', root, ...argv], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }) }
-    catch { return '' }
-  }
+  const git = argv => gitOut(root, argv) ?? ''
   const lines = text => text.split('\n').map(l => l.trim()).filter(Boolean)
   const out = new Set(lines(git(['diff', '--name-only', 'HEAD'])))
   // NUL opens each commit, so a commit's files can be counted before any is kept.

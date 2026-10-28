@@ -55,6 +55,8 @@
   import Select      from '../forms/Select.mesa'
   import MultiSelect from '../forms/MultiSelect.mesa'
   import Button      from '../forms/Button.mesa'
+  import DayRangeFilter from './DayRangeFilter.mesa'
+  import RangeInput     from './RangeInput.mesa'
   import { readMoney, showMoney } from '../forms/MoneyInput.mesa'
   import { directiveParams, splitParams } from '@frontierjs/toolbelt/directives'
 
@@ -121,21 +123,14 @@
   // ── A money range is typed in major units ────────────────────────────────
   //
   // The column holds minor units, so a box handing its text straight to the
-  // query filtered "from 10" as from ten cents. The bounds convert through
-  // `MoneyInput`'s own two functions, and commit on `change` rather than on
-  // every keystroke: the box is re-derived from the query, and `12.` shown
-  // back as `12.00` mid-typing takes the point away.
+  // query filtered "from 10" as from ten cents. `RangeInput` reads and shows
+  // each bound through `MoneyInput`'s own two functions.
   //
   // A `@money(field: …)` column holds amounts in several currencies and is
   // offered no range (`FJS-D556`), so a money filter here has its currency.
   const moneyCode = (f) => f.currency
-
-  /** One bound's text → the query, or nothing while the text is not an amount. */
-  function writeMoneyBound(f, key, text) {
-    const { value: minor } = readMoney(text, moneyCode(f), f.places ?? 0)
-    if (minor === undefined) return
-    write(f, { ...current(f), [key]: minor ?? undefined })
-  }
+  const showMinor = (f) => (v) => showMoney(v, moneyCode(f), f.places ?? 0)
+  const readMinor = (f) => (text) => readMoney(text, moneyCode(f), f.places ?? 0).value
 
   // ── A day range over an INSTANT ──────────────────────────────────────────
   //
@@ -171,6 +166,16 @@
   const showBound  = (f, key) => isInstant(f) ? instantToDay(current(f)?.[key]) : (current(f)?.[key] ?? '')
   const writeBound = (f, key, text) =>
     write(f, { ...current(f), [key]: isInstant(f) ? dayToInstant(text, key) : text })
+
+  /** A day range's bounds as `DayRangeFilter` holds them — days, or nothing. */
+  function days(f) {
+    const gte = showBound(f, 'gte') || undefined
+    const lte = showBound(f, 'lte') || undefined
+    return gte || lte ? { gte, lte } : undefined
+  }
+  const toBound   = (f, key, day) => day === undefined || !isInstant(f) ? day : dayToInstant(day, key)
+  const writeDays = (f, next) =>
+    write(f, next && { gte: toBound(f, 'gte', next.gte), lte: toBound(f, 'lte', next.lte) })
 
   /** Is anything filtered at all? Drives the clear-all affordance. */
   const active = searching !== '' || offered.some(f => current(f) !== undefined)
@@ -289,43 +294,33 @@
         oninput={(e) => write(f, e.target.value === '' ? undefined : e.target.value === 'true')}
       />
     {:else if f.kind === 'range' && f.display === 'money'}
-      <span class="filter-range">
-        <Input
-          type="text"
-          inputmode="decimal"
-          value={showMoney(current(f)?.gte, moneyCode(f), f.places ?? 0)}
-          placeholder={f.label + ' from'}
-          aria-label={f.label + ' from'}
-          data-currency={moneyCode(f)}
-          onchange={(e) => writeMoneyBound(f, 'gte', e.target.value)}
-        />
-        <Input
-          type="text"
-          inputmode="decimal"
-          value={showMoney(current(f)?.lte, moneyCode(f), f.places ?? 0)}
-          placeholder={f.label + ' to'}
-          aria-label={f.label + ' to'}
-          data-currency={moneyCode(f)}
-          onchange={(e) => writeMoneyBound(f, 'lte', e.target.value)}
-        />
-      </span>
+      <RangeInput
+        label={f.label}
+        value={current(f)}
+        show={showMinor(f)}
+        read={readMinor(f)}
+        data-currency={moneyCode(f)}
+        onvalue={(next) => write(f, next)}
+      />
+    {:else if f.kind === 'range' && rangeType(f) === 'number'}
+      <RangeInput label={f.label} value={current(f)} onvalue={(next) => write(f, next)} />
+    {:else if f.kind === 'range' && rangeType(f) === 'date'}
+      <DayRangeFilter label={f.label} value={days(f)} onvalue={(next) => writeDays(f, next)} />
     {:else if f.kind === 'range'}
       <span class="filter-range">
-        <!-- A date or time box draws its own format where a placeholder would
-             be, so the column's name has to be on screen beside it. Hidden
-             from a reader, which has the aria-label on each box already. -->
-        {#if rangeType(f) !== 'number'}
-          <span class="text-muted" aria-hidden="true">{f.label}</span>
-        {/if}
+        <!-- A time box draws its own format where a placeholder would be, so
+             the column's name has to be on screen beside it. Hidden from a
+             reader, which has the aria-label on each box already. -->
+        <span class="text-muted" aria-hidden="true">{f.label}</span>
         <Input
-          type={rangeType(f)}
+          type="time"
           value={showBound(f, 'gte')}
           placeholder={f.label + ' from'}
           aria-label={f.label + ' from'}
           oninput={(e) => writeBound(f, 'gte', e.target.value)}
         />
         <Input
-          type={rangeType(f)}
+          type="time"
           value={showBound(f, 'lte')}
           placeholder={f.label + ' to'}
           aria-label={f.label + ' to'}

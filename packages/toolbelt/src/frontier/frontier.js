@@ -217,8 +217,10 @@ export const rowBindsChain = (row, chain) =>
 // sender's machine under a key that travels only in the link's fragment
 // (FJS-D1564), so the post holds neither the content nor the name. Sealed is
 // a 12-byte IV, then AES-256-GCM over a 2-byte header length, the header
-// `{ name, type }` as JSON, and the bytes. The Worker inlines `openFile`'s
-// source into its download page, so the page and the cli read with one function.
+// `{ name, type, encoding? }` as JSON, and the bytes — deflated, and the header
+// saying `deflate-raw`, only when that is smaller, since deflate grows a jpg
+// past the envelope's room. The Worker inlines `openFile`'s source into its
+// download page, so the page and the cli read with one function.
 
 const MiB = 1024 * 1024
 /** Room for the IV, the GCM tag, the header's length and the header. */
@@ -231,13 +233,16 @@ export const FILE_MAX = FILE_PLAIN_MAX + FILE_ENVELOPE
 
 /** `{ sealed, key }` — the bytes to put and the base64url key for the link's fragment. Throws on a file or a name past its room. */
 export async function sealFile({ name, type = '', bytes }) {
-  const header = new TextEncoder().encode(JSON.stringify({ name: String(name), type: String(type) }))
-  if (header.length > FILE_HEADER_MAX) throw new Error(`A file's name and type are sealed in ${FILE_HEADER_MAX} bytes, and ${name} takes ${header.length}. Rename it shorter.`)
   if (bytes.length > FILE_PLAIN_MAX) throw new Error(`A file is at most ${FILE_PLAIN_MAX} bytes, and this one is ${bytes.length}.`)
-  const plain = new Uint8Array(2 + header.length + bytes.length)
+  const deflated = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer())
+  const smaller  = deflated.length < bytes.length
+  const header = new TextEncoder().encode(JSON.stringify({ name: String(name), type: String(type), ...smaller && { encoding: 'deflate-raw' } }))
+  if (header.length > FILE_HEADER_MAX) throw new Error(`A file's name and type are sealed in ${FILE_HEADER_MAX} bytes, and ${name} takes ${header.length}. Rename it shorter.`)
+  const body  = smaller ? deflated : bytes
+  const plain = new Uint8Array(2 + header.length + body.length)
   new DataView(plain.buffer).setUint16(0, header.length)
   plain.set(header, 2)
-  plain.set(bytes, 2 + header.length)
+  plain.set(body, 2 + header.length)
   const raw = crypto.getRandomValues(new Uint8Array(32))
   const iv  = crypto.getRandomValues(new Uint8Array(12))
   const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt'])
@@ -260,7 +265,24 @@ export async function openFile(sealed, key) {
     const plain = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: sealed.subarray(0, 12) }, k, sealed.subarray(12)))
     const length = (plain[0] << 8) | plain[1]
     const header = JSON.parse(new TextDecoder().decode(plain.subarray(2, 2 + length)))
-    return { name: String(header.name ?? ''), type: String(header.type ?? ''), bytes: plain.subarray(2 + length) }
+    let bytes = plain.subarray(2 + length)
+    if (header.encoding === 'deflate-raw') {
+      // A sender's own tool can seal 24 MiB of zeros that inflate a
+      // thousandfold, and the post cannot see inside to refuse it. The cap is
+      // FILE_PLAIN_MAX written out, since the page inlines this body alone.
+      const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader()
+      const parts = []
+      let total = 0
+      for (let read; !(read = await reader.read()).done;) {
+        total += read.value.length
+        if (total > 24 * 1024 * 1024) { await reader.cancel(); return null }
+        parts.push(read.value)
+      }
+      bytes = new Uint8Array(total)
+      let at = 0
+      for (const part of parts) { bytes.set(part, at); at += part.length }
+    } else if (header.encoding !== undefined) return null
+    return { name: String(header.name ?? ''), type: String(header.type ?? ''), bytes }
   } catch {
     return null
   }

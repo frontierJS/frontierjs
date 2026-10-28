@@ -377,6 +377,33 @@ describe('apply and sort', () => {
     expect(sent.length).toBe(before + 2)
   })
 
+  test('a `contains` box typed into waits like the search does; a cleared one too', async () => {
+    await boot('/invoices/')
+    const list = track(invoicesResource().tethered({ state: 'local', debounce: 40 }))
+    await settle()
+    const before = sent.length
+
+    list.apply({ number: { contains: 'I' } }, list.directives)
+    list.apply({ number: { contains: 'IN' } }, list.directives)
+    await settle()
+    expect(sent.length).toBe(before)
+
+    await new Promise(r => setTimeout(r, 60))
+    await settle()
+    expect(sent.length).toBe(before + 1)
+
+    list.apply({}, list.directives)
+    await settle()
+    expect(sent.length).toBe(before + 1)
+    await new Promise(r => setTimeout(r, 60))
+    await settle()
+    expect(sent.length).toBe(before + 2)
+
+    list.apply({ number: { contains: 'IN' }, status: 'open' }, list.directives)
+    await settle()
+    expect(sent.length).toBe(before + 3)
+  })
+
   test('in the URL, a debounced search REPLACES the entry; a filter pushes one', async () => {
     await boot('/invoices/')
     const list = track(invoicesResource().tethered({ debounce: 10 }))

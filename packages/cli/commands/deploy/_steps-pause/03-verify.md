@@ -4,8 +4,6 @@ description: Ask the edge what it now answers, rather than trusting the write
 ---
 
 ```js
-if ($.config.abort) return
-
 const { host, serverPath, apiPort, healthPath, pauseKind, edgeHost } = $.config
 const machine = machineFor($, host, serverPath)
 

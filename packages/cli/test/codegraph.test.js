@@ -14,13 +14,13 @@ import { inflateSync }             from 'node:zlib'
 import {
   gilbert, parseGitLog, indentSum, band, parseLcov, collectCodegraph, heatOf, exposureOf, scoreOf, LEVEL,
   tileBands, badgeCells, renderBadge, renderMap, regionReader, gridFor, AGE_DAYS, HALF_LIFE_DAYS, SCORE_RAMP, SCORE_WARN,
-  themesIn, themeTokens, mixOklab, turnOklch, deltaOklab, scoreRamp, paletteFrom, paletteCss, isHotspot, bandLabels, MIX, TONES, STRONG, QUADRANTS, MORE,
+  themeTokens, mixOklab, turnOklch, deltaOklab, scoreRamp, paletteFrom, paletteCss, isHotspot, bandLabels, MIX, TONES, STRONG, QUADRANTS, MORE,
   exportTarget, packageIndex, referenceGraph, coreRegions, coreLayout, packageGrid, depthLayout, unpublishedDirs, isCode,
   importGraph, layerGraph, stripComments, CYCLE_SIZE, COGNITIVE,
 } from '../core/codegraph.js'
 import { renderPage } from '../core/codegraph-page.js'
 import { typeScriptAt, measureFunctions, worstFunction, PARSABLE } from '../core/functions.js'
-import { ownStyleBundle } from '../core/assets.js'
+import { ownStyleBundle, themesIn } from '../core/assets.js'
 import { encodePng } from '../core/png.js'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -431,11 +431,11 @@ describe('page', () => {
   test('its own stylesheet writes no hex; the theme decides every color', () => {
     for (const m of [...QUADRANTS, ...MORE, 'score']) expect(local).toContain(`--tile-${m}-0`)
     expect(local).not.toMatch(/#[0-9a-f]{3,6}\b/i)
-    expect(page).toContain('<body class="app theme-light">')
+    expect(page).toContain('<html lang="en" class="theme-light">')
   })
 
   test('offers every theme the stylesheet declares', () => {
-    expect(page).toContain('<option value="light" selected>light</option>')
+    expect(page).toContain('<option value="light">light</option>')
     expect(page).toContain('<option value="night">night</option>')
   })
 

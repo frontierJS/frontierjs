@@ -8,7 +8,7 @@ dated: 2026-10-13
 
 **Status: PARTIAL. Built 2026-10-12 as `packages/site-kit/config/images.js`
 (`FJS-D926`, `FJS-D932`); § Left's *Still open* is what remains. Do not cite as behavior.** The
-gap is [`FJS-2737`](../ISSUES.md#fjs-2737). `site-kit-parity.md` § 4 listed it,
+gap is [`FJS-2737`](../ISSUES_ARCHIVE.md#fjs-2737). `site-kit-parity.md` § 4 listed it,
 `FJS-D608` placed it in site-kit until a second consumer needs it, and
 `site-kit-plan.md` Phase 3 step 6 sequences it.
 

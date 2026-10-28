@@ -4,8 +4,6 @@ description: Health check the restored container — puts the current one back i
 ---
 
 ```js
-if ($.config.abort) return
-
 const { apiPort, healthPath, container, replaced, revertImage, host } = $.config
 
 // The same function the deploy's health step calls, so a revert's safety net is

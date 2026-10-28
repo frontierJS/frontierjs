@@ -41,6 +41,7 @@ import { mintDownload } from '../src/jobs/app-backup-run.job.ts'
 import { mintArchiveUrl } from '../src/plugins/backup-archive.ts'
 import { replicasFor, syncReplicas, hostReplicaFor } from '../src/jobs/replicate-sync.job.ts'
 import { reconcileFound } from '../src/domain/backup/found-replicas.ts'
+import { rescanAppArchives, hashFoundArchives } from '../src/domain/backup/backup-archives.ts'
 import { HOST_SLUG, useHost, publicIp } from '../src/domain/host/host-machine.ts'
 import { startS3Sink }            from '../src/providers/storage/s3-sink.ts'
 
@@ -1598,10 +1599,10 @@ describe('the installation settings are one row, behind the hub tier', () => {
     await expect(hub.call('attestEscrow', null, {})).rejects.toThrow(/no settings yet/)
     // `@system`: a save naming either column is refused by name, never dropped in silence.
     await expect(hub.call('save', null, {
-      name: 'Keyed', baseUrl: 'https://hub.keyed.test', adminEmail: 'ops@keyed.test',
+      name: 'Keyed',
       encryptionKeyEscrowedAt: '2026-01-01T00:00:00.000Z', encryptionKeyFingerprint: 'f'.repeat(64),
     })).rejects.toThrow(/@system/)
-    const made = await hub.call('save', null, { name: 'Keyed', baseUrl: 'https://hub.keyed.test', adminEmail: 'ops@keyed.test' })
+    const made = await hub.call('save', null, { name: 'Keyed' })
     expect([made.encryptionKeyEscrowedAt, made.encryptionKeyFingerprint]).toEqual([null, null])
     const grade = async () => (await env.as(sysadmin).service('posture').call('host', undefined, {}))
       .controls.find((c: any) => c.id === 'hub.key-escrowed')
@@ -1623,7 +1624,7 @@ describe('the installation settings are one row, behind the hub tier', () => {
 
   test('save creates it, then updates it', async () => {
     const made = await env.as(sysadmin).service('hubConfig').call('save', null, {
-      name: 'Acme Fleet', baseUrl: 'https://hub.acme.test', adminEmail: 'ops@acme.test',
+      name: 'Acme Fleet',
     })
     expect(made.id).toBe('hub')
     expect(made.name).toBe('Acme Fleet')
@@ -1906,7 +1907,7 @@ describe('a backup destination is an address, and its key is a Secret', () => {
 
   test('the hub schedule may point only at a destination that exists', async () => {
     await expect(env.as(sysadmin).service('hubConfig').call('save', null, {
-      name: 'Hub', baseUrl: 'https://hub.example', adminEmail: 'a@b.co', backupDestinationId: 'nope',
+      name: 'Hub', backupDestinationId: 'nope',
     })).rejects.toThrow(/No backup destination 'nope'/)
   })
 
@@ -4819,6 +4820,64 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
       }
     })
 
+    // IDEAS/backups.md 4.9 (FJS-D1572): an app's archive in its bucket that no
+    // row names is found with no machine, and is restorable only once the hub
+    // has read it through and recorded its sha256.
+    test('an app-archive rescan finds what no row names, and a found row restores only once hashed', async () => {
+      const sys   = env.system as any
+      const stamp = '2026-10-27T01-00-00-000Z'
+      const bytes = 'not really a tarball'
+      const objects: Record<string, string> = {
+        [`apps/${app.id}-${stamp}.tar.gz`]: bytes,
+        [`apps/${app.id}-notastamp.tar.gz`]: 'neighbor',
+      }
+      const bucket = Bun.serve({ port: 0, fetch(req) {
+        const url = new URL(req.url)
+        const key = decodeURIComponent(url.pathname.split('/').slice(2).join('/'))
+        if (key) return key in objects ? new Response(objects[key]) : new Response('', { status: 404 })
+        const prefix = url.searchParams.get('prefix') ?? ''
+        const body = Object.entries(objects).filter(([k]) => k.startsWith(prefix))
+          .map(([k, v]) => `<Contents><Key>${k}</Key><Size>${v.length}</Size><LastModified>2026-10-27T01:00:01.000Z</LastModified></Contents>`).join('')
+        return new Response(`<ListBucketResult><IsTruncated>false</IsTruncated>${body}</ListBucketResult>`,
+          { headers: { 'content-type': 'application/xml' } })
+      } })
+      try {
+        const dest = await env.as(owner).service('backupDestinations').create({
+          name: `Archives ${tag()}`, endpoint: `http://127.0.0.1:${bucket.port}`, region: 'auto',
+          bucket: `archives-${tag()}`, prefix: 'apps', secret: 'AKID:secret',
+        }) as any
+        await env.as(owner).service('apps').patch(app.id, { backupDestinationId: dest.id })
+
+        await expect(env.as(developer).service('appBackups').call('rescan', null, { appId: app.id })).rejects.toThrow()
+        expect(await env.as(owner).service('appBackups').call('rescan', null, { appId: app.id })).toEqual({ queued: true })
+
+        expect(await rescanAppArchives(env.app, app.id)).toEqual({ listed: 2, found: 1 })
+        const row = await sys.appBackup.findFirst({ where: { appId: app.id, kind: 'found' } })
+        expect(row).toMatchObject({
+          serverId: null, destinationId: dest.id, status: 'pending', sha256: null,
+          location: `apps/${app.id}-${stamp}.tar.gz`, startedAt: '2026-10-27T01:00:00.000Z',
+        })
+        await expect(env.as(owner).service('apps').call('restoreVolume', app.id, { serverId: server.id, backupId: row.id }))
+          .rejects.toThrow(/pending/)
+
+        expect(await hashFoundArchives(env.app, app.id)).toEqual({ hashed: 1, failed: 0 })
+        const hashed = await sys.appBackup.findFirst({ where: { id: row.id } })
+        expect(hashed).toMatchObject({ status: 'success', sizeBytes: bytes.length, error: null })
+        expect(hashed.sha256).toBe(new Bun.CryptoHasher('sha256').update(bytes).digest('hex'))
+
+        // A second rescan finds nothing new; an object that vanished is a failed read, kept for the next.
+        expect(await rescanAppArchives(env.app, app.id)).toEqual({ listed: 2, found: 0 })
+        objects[`apps/${app.id}-2026-10-27T02-00-00-000Z.tar.gz`] = 'later'
+        expect(await rescanAppArchives(env.app, app.id)).toEqual({ listed: 3, found: 1 })
+        delete objects[`apps/${app.id}-2026-10-27T02-00-00-000Z.tar.gz`]
+        expect(await hashFoundArchives(env.app, app.id)).toEqual({ hashed: 0, failed: 1 })
+      } finally {
+        bucket.stop(true)
+        await sys.appBackup.deleteMany({ where: { appId: app.id, kind: 'found' } })
+        await env.as(owner).service('apps').patch(app.id, { backupDestinationId: null })
+      }
+    })
+
     test('drillCron puts the app on the clock, a restart restores it, and null or a delete takes it off', async () => {
       const apps    = env.as(owner).service('apps')
       const onClock = () => env.app.jobs.nextRuns().find((r: any) => r.name === appDrillSchedule(app.id))?.cron ?? null
@@ -4848,7 +4907,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
     const hubRow = async () => {
       const sys = env.system as any
       return await sys.hubConfig.findFirst({ where: { id: 'hub' } })
-        ?? await sys.hubConfig.create({ data: { id: 'hub', name: 'Hub', baseUrl: 'https://hub.replica.test', adminEmail: 'ops@replica.test' } })
+        ?? await sys.hubConfig.create({ data: { id: 'hub', name: 'Hub' } })
     }
     const pointHub = async (replicaDestinationId: string | null) =>
       env.as(sysadmin).service('hubConfig').call('save', null, { replicaDestinationId, version: (await hubRow()).version })

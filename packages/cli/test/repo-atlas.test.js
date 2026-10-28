@@ -740,9 +740,8 @@ describe('the page', () => {
 
     expect(html).toContain('unpkg.com/@frontierjs/css/dist/frontier.min.css')
     expect(html).not.toContain('<style id="fjs-css">')
-    // field.css lives in the workspace copy, so the published bundle may not
-    // carry the theme yet and the page must not offer it.
-    expect(html).not.toContain('<option value="field"')
+    // The themes offered are the published bundle's, not the workspace's.
+    expect(html).toContain('<option value="dracula"')
   })
 
   test('links the styling language with no version range at all', () => {

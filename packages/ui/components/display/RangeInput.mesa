@@ -1,0 +1,69 @@
+<script>
+  // RangeInput.mesa
+  // One filter over a number range, drawn as one control: `Label [min] – [max]`
+  // welded into a single `.field-row`, the way `DayRangeFilter` is one control
+  // over a day range. Two loose boxes read as two filters.
+  //
+  // It commits on `change`, never on `input`. The boxes are re-derived from the
+  // query, so a bound written per keystroke navigates per keystroke, and a
+  // formatted bound shown back mid-typing (`12.` as `12.00`) takes the point
+  // away.
+  //
+  // What a bound's text MEANS is the caller's: `read(text)` answers the value,
+  // `null` for an emptied box, or `undefined` for text that is not one — which
+  // is not written, so the filter already held stays rather than being replaced
+  // by a guess. A money range hands `readMoney`/`showMoney` through these two.
+
+  export let label   = ''
+  // `{ gte?, lte? }` in the column's own units, or undefined.
+  export let value   = undefined
+  // (next) => void — `{ gte?, lte? }`, a cleared bound absent, or undefined.
+  export let onvalue = undefined
+  // bound → the text a box shows.
+  export let show    = (v) => (v === undefined || v === null ? '' : String(v))
+  // text → the bound; `null` when emptied, `undefined` when not a value.
+  export let read    = (text) => {
+    const t = String(text ?? '').trim()
+    if (t === '') return null
+    return Number.isFinite(Number(t)) ? t : undefined
+  }
+  export let inputmode = 'decimal'
+
+  function commit(key, text) {
+    const v = read(text)
+    if (v === undefined) return
+    const next = { ...value }
+    if (v === null) delete next[key]
+    else next[key] = v
+    onvalue?.(next.gte === undefined && next.lte === undefined ? undefined : next)
+  }
+</script>
+
+<span class="field-row filter-range-input" {...$attributes}>
+  <!-- Decoration: each box carries its own name for a reader. -->
+  <span class="field-addon" aria-hidden="true">{label}</span>
+  <input
+    class="field filter-bound"
+    type="text"
+    {inputmode}
+    value={show(value?.gte)}
+    placeholder="min"
+    aria-label={label + ' from'}
+    onchange={(e) => commit('gte', e.target.value)}
+  />
+  <span class="field-addon" aria-hidden="true">–</span>
+  <input
+    class="field filter-bound"
+    type="text"
+    {inputmode}
+    value={show(value?.lte)}
+    placeholder="max"
+    aria-label={label + ' to'}
+    onchange={(e) => commit('lte', e.target.value)}
+  />
+</span>
+
+<style>
+  .filter-range-input { display: inline-flex; }
+  .filter-bound       { --field-inline-size: 6rem; inline-size: 6rem; flex: 0 1 auto; }
+</style>

@@ -17,10 +17,10 @@
 // deployed database and this command has no target; `app.backfills.status()` and
 // `/metrics` are where that is asked.
 
-import { readFileSync, readdirSync, statSync, existsSync } from 'fs'
+import { readFileSync, statSync, existsSync }             from 'fs'
 import { join, relative }                                  from 'path'
+import { SKIP, safeRead }                                 from './fs.js'
 
-const SKIP = new Set(['node_modules', 'dist', 'build', '.git', 'coverage', '.output', '.vite'])
 const CODE = /\.(ts|tsx|js|mjs|cjs|jsx)$/
 
 /** Every `defineBackfill({...})` under `dir`, with where it was found. */
@@ -171,7 +171,6 @@ function walk(dir, depth, fn) {
   }
 }
 
-const safeRead = (dir) => { try { return readdirSync(dir) } catch { return [] } }
 const safeText = (f)   => { try { return readFileSync(f, 'utf8') } catch { return '' } }
 const lineOf   = (text, index) => text.slice(0, index).split('\n').length
 

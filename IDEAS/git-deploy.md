@@ -414,8 +414,10 @@ the connection buys, and the hand-run flow has to be right first.
     Administration write, Webhooks write and Contents read. Phase 1's live
     private-repository drive is still owed (the deferral above); the ruling
     is paper and does not wait for it.
-- [ ] 2.2 A `conduit-github` connector in the sibling repository
-      (`FJS-D1185`): `POST /repos/{o}/{r}/keys` and `POST /repos/{o}/{r}/hooks`,
+- [x] 2.2 A GitHub connector, basecamp's own as Cloudflare's is
+      (`api/src/providers/source/`; it moves with the rest at `FJS-D1559`'s
+      session, since a `link:` on the sibling repository does not survive the
+      image build): `POST /repos/{o}/{r}/keys` and `POST /repos/{o}/{r}/hooks`,
       the credential a `Secret` with `kind: provider_key, providerKind: github`
       (`FJS-D1571`), which already says which connection it is (no second ref
       on the Workspace). `github` joins `ProviderKind`, `Server` gains
@@ -423,10 +425,59 @@ the connection buys, and the hand-run flow has to be right first.
       (`FJS-D559`), `Secret.providerKind`'s comment says vendor rather than
       cloud, and `accountConnectorFor` names the source connector beside
       compute and edge. A revoked token refuses `connect: true` by name.
-- [ ] 2.3 `fromRepo` gains `connect: true`: after the App exists it writes both
+    *Built:* `source/index.ts` (`SourceConnector`, `sourceConnectorFor`),
+    `source/github.ts` and `source/github-sink.ts` (8126, `GITHUB_URL`).
+    The two writes are `setDeployKey` and `setPushHook`, each repeatable: a
+    key already on the repository (compared without its comment) is answered,
+    and a hook at the same URL is PATCHed so its secret is current. Each
+    refusal names its cause — 401 *revoked or has expired*, 403 the grant to
+    add, 404 *not found, or the token was not given it*, 422 a deploy key
+    already on another repository (GitHub allows one). `verify` reads
+    `/user`, so a token given no repository verifies and is refused at the
+    connect that names one. The descriptor pins `X-GitHub-Api-Version` and
+    sends a `User-Agent`. Writes meet `sendVia`'s spend guard. The secrets
+    form's *Cloud* label reads *Vendor*. Drives: `api/test/source.test.ts`
+    14/14 (dialect against a hand-written send, the seam through the sink,
+    the `Server` check); `edge`, `compute`, `servers` 283/283; typecheck at
+    baseline. Left for 2.3: one parser from a remote URL to `{owner, name}`,
+    shared with `dockerfile-template.ts`'s `GITHUB` pattern.
+- [x] 2.3 `fromRepo` gains `connect: true`: after the App exists it writes both
       at GitHub and the panel from 1.4 says *done* instead of *add these*.
-- [ ] 2.4 `apps.importDockerfile` reads a private repository through the
+    *Built:* `ProjectFromRepo.connect Boolean?`. Before any row: no server,
+    a remote that is not GitHub, no GitHub account the caller can read
+    (`Secret` is `@@gate(5)`, so a member below administrator finds none), or
+    every token refused by `verify` refuses by name (`connectableAccounts` in
+    `apps.service.ts`; an unreachable forge is a 502). After placement,
+    `connectRepository` writes the key and the hook with the first account the
+    repository is visible to, in name order — a 404 (`RepoUnseen`) moves to the
+    next (owner's call, 2026-10-27: *first that sees it*, no account field).
+    A refusal after the App exists never throws: it is the answer's `note` and
+    `connected: { account, key, hook }` says which half landed. One parse of a
+    remote, `forgeRepo` in `dockerfile-template.ts`, feeds the raw read and the
+    connect. The create page shows *Connect at GitHub* (on) when a server is
+    picked, the workspace holds a GitHub token and the remote looks like
+    GitHub; the panel says *Done* per half and drops the shown-once callout
+    when the hook landed. Drives: `from-repo.test.ts` 31/31 (eight connect
+    rows against the sink), `source`/`push` 28/28, `verify:screens` 300/300
+    with the GitHub sink on the slot's `3` (the hook at the sink, the panel's
+    done state); typecheck at baseline. The live half (a real token, a real
+    repository) is the owner's, with Phase 1's private-repository drive.
+- [x] 2.4 `apps.importDockerfile` reads a private repository through the
       connection before the first build, closing `FJS-D1555`'s left-open item.
+    *Ruled* `FJS-D1573` (`decision-rules`): the forge first, the clone after.
+    *Built:* `readFile` on `SourceConnector` (`GET /repos/{o}/{r}` first, so a
+    missing file is never an unseen repository, then each path's contents;
+    Contents › Read-only named on a 403), and `readForgeDockerfile` in
+    `apps.service.ts` — the public raw read, then each GitHub account in name
+    order, read as the caller and never refusing, a refused token passed over.
+    `importDockerfile` asks it before the machine's clone and answers `from`;
+    `fromRepo`'s seed asks it too, so a private repository an account sees
+    seeds `repo` with its port. The editor says *in the repository at
+    <branch>* or *in the machine's clone*. Drives: `source.test.ts` 17/17,
+    `from-repo.test.ts` 35/35 (seed through the account, import before any
+    build, unseen falls to the machine with both reasons, a developer not
+    refused), `push` 14/14, `verify:screens` 301/301 (Import on an App no build
+    has run); typecheck at baseline. The live half is the owner's, with 2.3's.
 
 ---
 

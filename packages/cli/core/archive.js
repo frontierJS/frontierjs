@@ -32,10 +32,10 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join, resolve, dirname, relative }                  from 'node:path'
-import { execFileSync }                                      from 'node:child_process'
+import { gitOut }                                            from './git.js'
 
-import { registerLayout }         from './registers.js'
-import { errorKeys, newErrors, describeNewErrors } from './register-check.js'
+import { registerLayout, withRegisterGuard, requirePrefix, splitRow } from './registers.js'
+import { checkedEdit }            from './register-edit.js'
 
 export const KEEP = 40
 export const KEEP_SESSIONS = 2
@@ -55,9 +55,14 @@ const ARCHIVE_HEAD = [
  * Answers `{ ok: true, moved, kept, archived, relinked }` or
  * `{ ok: false, reason }`. `moved: 0` is a success: there was nothing to trim.
  */
-export function archiveClosed({ root, keep = KEEP, dry = false }) {
-  const { dir, prefix } = registerLayout(root)
-  if (!prefix) return refuse('package.json declares no usable registers.prefix, so no row can be read')
+export function archiveClosed(opts) {
+  return withRegisterGuard(opts.root, () => archiveUnguarded(opts))
+}
+
+function archiveUnguarded({ root, keep = KEEP, dry = false }) {
+  const noPrefix = requirePrefix(root)
+  if (noPrefix) return refuse(noPrefix)
+  const { dir } = registerLayout(root)
   if (!Number.isInteger(keep) || keep < 0) return refuse(`--keep must be a whole number, not ${keep}`)
 
   const issuesAbs  = join(dir, 'ISSUES.md')
@@ -94,20 +99,14 @@ export function archiveClosed({ root, keep = KEEP, dry = false }) {
   archive.splice(into.start, 0, ...movingRows)
   const archiveText = recount(archive).join('\n')
 
-  const baseline = errorKeys(root)
-  const written  = new Map([[issuesAbs, issuesBefore], [archiveAbs, archiveBefore]])
-  writeFileSync(issuesAbs, issuesText)
-  writeFileSync(archiveAbs, archiveText)
+  const done = checkedEdit(root, 'trim', write => {
+    write(issuesAbs, issuesText)
+    write(archiveAbs, archiveText)
+    return relink({ root, issuesAbs, moved, write })
+  })
+  if (!done.ok) return done
 
-  const relinked = relink({ root, issuesAbs, moved, written })
-
-  const added = newErrors(baseline, root)
-  if (added.length) {
-    putBack(written)
-    return refuse(`the trim was put back: register:check found ${describeNewErrors(added)}`)
-  }
-
-  return { ok: true, moved: moving.length, kept: keep, archived: countRows(archive), relinked }
+  return { ok: true, moved: moving.length, kept: keep, archived: countRows(archive), relinked: done.value }
 }
 
 // ─── HANDOFF.md ───────────────────────────────────────────────────────────────
@@ -247,13 +246,11 @@ function countRows(lines) {
 // Every markdown file git sees (tracked or not, ignored excluded). A tree that
 // is not a repository relinks nothing and says so through `files: 0`.
 function markdownFiles(root) {
-  try {
-    return execFileSync('git', ['ls-files', '-co', '--exclude-standard', '-z', '--', '*.md'], { cwd: root, encoding: 'utf8', maxBuffer: 64 << 20 })
-      .split('\0').filter(Boolean).map(f => join(root, f))
-  } catch { return [] }
+  return (gitOut(root, ['ls-files', '-co', '--exclude-standard', '-z', '--', '*.md']) ?? '')
+    .split('\0').filter(Boolean).map(f => join(root, f))
 }
 
-function relink({ root, issuesAbs, moved, written }) {
+function relink({ root, issuesAbs, moved, write }) {
   let files = 0, links = 0
   for (const abs of markdownFiles(root)) {
     if (!existsSync(abs)) continue
@@ -268,8 +265,7 @@ function relink({ root, issuesAbs, moved, written }) {
     })
     if (!n) continue
 
-    if (!written.has(abs)) written.set(abs, src)
-    writeFileSync(abs, out)
+    write(abs, out)
     files++
     links += n
   }
@@ -280,19 +276,6 @@ function relink({ root, issuesAbs, moved, written }) {
 
 function refuse(reason) { return { ok: false, reason } }
 
-function putBack(written) {
-  for (const [abs, text] of written) if (text !== null) writeFileSync(abs, text)
-}
-
 function anchorsIn(line) {
   return [...line.matchAll(/<a\s+id="([^"]+)"/g)].map(m => m[1])
-}
-
-// Unescaped pipes only, the same split `registers.js` reads the row with.
-function splitRow(line) {
-  return line
-    .replace(/^\s*\|/, '')
-    .replace(/\|\s*$/, '')
-    .split(/(?<!\\)\|/)
-    .map(c => c.trim())
 }

@@ -18,7 +18,7 @@
 //
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
-import { readRegisters } from './registers.js'
+import { readRegisters, requirePrefix } from './registers.js'
 
 /**
  * Search the registers.
@@ -28,8 +28,9 @@ import { readRegisters } from './registers.js'
  * hit also carries its `body`, the row's source text as written.
  */
 export function findRows({ root, terms, limit = 20, show = false }) {
+  const noPrefix = requirePrefix(root)
+  if (noPrefix) return refuse(noPrefix)
   const doc = readRegisters(root)
-  if (!doc.prefix) return refuse('package.json declares no usable registers.prefix, so no row can be read')
 
   const want = String(terms ?? '').toLowerCase().split(/\s+/).filter(Boolean)
   if (!want.length) return refuse('name at least one term — an id, a word from the title, a package')

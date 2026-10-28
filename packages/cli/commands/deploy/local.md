@@ -36,7 +36,8 @@ if (!deployConf) {
   throw new Error('No deploy block found in frontier.config.js')
 }
 
-const appId      = deployConf.app_id ?? $.paths.root.split('/').pop()
+const appId      = appIdOf(deployConf)
+if (!appId) throw new Error('deploy.app_id is not set in frontier.config.js')
 const dockerfile = deployConf.api?.dockerfile ?? 'deploy/Dockerfile'
 const healthPath = deployConf.api?.health ?? '/health'
 const port       = flag.port

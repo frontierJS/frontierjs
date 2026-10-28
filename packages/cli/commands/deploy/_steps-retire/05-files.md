@@ -4,8 +4,6 @@ description: Delete the deploy root on every machine — with the database and e
 ---
 
 ```js
-if ($.config.abort) return
-
 const { sides, dbDir, envFile, api } = $.config
 const { shQuote } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
 const { appUser } = await import(new URL('file://' + global.fliRoot + '/core/deploy-image.js'))

@@ -11,19 +11,16 @@
 //
 // Zero dependencies, plain ESM, node or bun — a caller runs before install.
 
-import { spawnSync }  from 'node:child_process'
+import { gitOut }     from './git.js'
 import { posix }      from 'node:path'
 
 export function treePaths(root) {
-  const run = spawnSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
-    cwd: root, encoding: 'utf8', shell: false, timeout: 20_000, maxBuffer: 1 << 28,
-    env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
-  })
-  if (run.error || run.status !== 0) return null
+  const out = gitOut(root, ['ls-files', '-z', '--cached', '--others', '--exclude-standard'])
+  if (out === null) return null
 
   const files = new Set()
   const dirs  = new Set()
-  for (const p of (run.stdout ?? '').split('\0')) {
+  for (const p of out.split('\0')) {
     if (!p) continue
     files.add(p)
     for (let d = posix.dirname(p); d !== '.'; d = posix.dirname(d)) {

@@ -3,9 +3,10 @@
 //
 // The token is a fine-grained personal access token (`FJS-D1571`), and each
 // call needs one grant on the repository: a deploy key is Administration
-// write, a webhook is Webhooks write. GitHub answers a repository the token
-// was not given as 404, the same as one that does not exist, so a 404 here
-// names both.
+// write, a webhook is Webhooks write, a file is Contents read. GitHub answers a
+// repository the token was not given as 404, the same as one that does not
+// exist, so a 404 here names both — and a missing FILE is a 404 too, which is
+// why `readFile` asks for the repository before its paths.
 //
 // ─── A deploy key is unique across GitHub ────────────────────────────────
 //
@@ -18,6 +19,7 @@ import { env }                    from '../../core/env.ts'
 import { targetFor }              from '../compute/index.ts'
 import type { TargetDescriptor }  from '@frontierjs/conduit'
 import type { AccountSend }       from '../compute/index.ts'
+import { RepoUnseen }             from './index.ts'
 import type { SourceConnector, SourceRepo, DeployKey, PushHook } from './index.ts'
 
 /** Where GitHub is. Overridden by `GITHUB_URL` for the dev sink. */
@@ -42,8 +44,10 @@ const repoPath = (r: SourceRepo) => `/repos/${encodeURIComponent(r.owner)}/${enc
  *  spellings of one key compare equal only without it. */
 const material = (key: string) => key.trim().split(/\s+/).slice(0, 2).join(' ')
 
-/** What the grant a call needs is called on the token's settings page. */
-type Grant = 'Administration' | 'Webhooks'
+/** What the grant a call needs is called on the token's settings page, and
+ *  the level it is set to there. */
+type Grant = 'Administration' | 'Webhooks' | 'Contents'
+const LEVEL: Record<Grant, string> = { Administration: 'Read and write', Webhooks: 'Read and write', Contents: 'Read-only' }
 
 /**
  * The answer's body, or a throw saying in GitHub's terms why there is none.
@@ -61,10 +65,10 @@ function unwrap(res: Awaited<ReturnType<AccountSend>>, repo: SourceRepo, grant: 
   if (res.status === 401)
     throw new Error('GitHub refused the token — it was revoked or has expired; paste a new one on the account')
   if (res.status === 403)
-    throw new Error(`GitHub: the token may not do this on ${where} — give it ${grant} › Read and write`
+    throw new Error(`GitHub: the token may not do this on ${where} — give it ${grant} › ${LEVEL[grant]}`
       + `${said ? ` (${said})` : ''}`)
   if (res.status === 404)
-    throw new Error(`GitHub: ${where} was not found, or the token was not given it`)
+    throw new RepoUnseen(`GitHub: ${where} was not found, or the token was not given it`)
   if (res.status === 422 && /already in use/i.test(detail))
     throw new Error(`GitHub: this App's deploy key is already on another repository — GitHub allows one; remove it there`)
   throw new Error(`GitHub: ${res.error.kind}${res.status ? ` (HTTP ${res.status})` : ''}`
@@ -144,6 +148,20 @@ export const github: SourceConnector = {
     if (have) return have
     const made = unwrap(await send({ method: 'POST', path, body: { title, key: want, read_only: true } }), repo, 'Administration')
     return toKey((made ?? {}) as Row)
+  },
+
+  async readFile(send, repo, { paths, ref }): Promise<{ path: string; content: string } | null> {
+    unwrap(await send({ method: 'GET', path: repoPath(repo) }), repo, 'Contents')
+    const at = ref ? `?ref=${encodeURIComponent(ref)}` : ''
+    for (const path of paths) {
+      const res = await send({ method: 'GET', path: `${repoPath(repo)}/contents/${path.split('/').map(encodeURIComponent).join('/')}${at}` })
+      if (res.status === 404) continue
+      // A directory answers a list, and a file over 1 MB answers no content.
+      const file = unwrap(res, repo, 'Contents') as Row | null
+      if (file?.type !== 'file' || file.encoding !== 'base64') continue
+      return { path, content: Buffer.from(str(file.content), 'base64').toString('utf8') }
+    }
+    return null
   },
 
   async setPushHook(send, repo, { url, secret }): Promise<PushHook> {

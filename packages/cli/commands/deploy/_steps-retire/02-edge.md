@@ -4,8 +4,6 @@ description: Drop this app's routes from Caddy on every machine a side lives on
 ---
 
 ```js
-if ($.config.abort) return
-
 const { appId, sides } = $.config
 
 // First, so nothing is routed into a container about to stop. An empty route

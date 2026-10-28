@@ -4,8 +4,6 @@ description: Reach the machine, find the guard, take the lock, and open the tran
 ---
 
 ```js
-if ($.config.abort) return
-
 const { host, serverPath, appId, target, deployConf, pauseKind } = $.config
 const { guardProbeScript, pausedFile } =
   await import(new URL('file://' + global.fliRoot + '/core/pause.js'))

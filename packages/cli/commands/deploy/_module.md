@@ -340,6 +340,46 @@ const resolveSide = (deployConf, target, side) => {
   return { server, user, path, host: sshHost(user, server) }
 }
 
+// ─── appIdOf ──────────────────────────────────────────────────────────────────
+// `deploy.app_id`, and nothing derived. It names the container and the Release
+// the journal records, so a reading taken from `path` named a different
+// container than the deploy made as soon as a target overrode `path`.
+const appIdOf = (deployConf) => deployConf?.app_id ?? null
+
+// ─── deployTargetFor ──────────────────────────────────────────────────────────
+// The head every deploy command opens with: the target, the deploy block as
+// this run sees it, its app id, and where one side lives. `side` is 'api',
+// 'web', a list tried in order, or null for the unsplit resolution.
+//
+// Returns null after naming the refusal and setting `$.config.abort`, so a
+// caller's whole head is:
+//
+//   const head = await deployTargetFor($, flag, log, { side: 'api' })
+//   if (!head) return
+//
+// `why` finishes the no-block sentence with what this command needed it for.
+const deployTargetFor = async ($, flag, log, { side = null, why = '' } = {}) => {
+  const refuse = (msg) => { log.error(msg); $.config.abort = true; return null }
+
+  const target     = resolveTarget(flag, $.git)
+  const deployConf = await deployConfFor($, flag, log)
+  if (!deployConf?.server)
+    return refuse(`No deploy block in frontier.config.js${why ? ` — ${why}` : ''}`)
+
+  const appId = appIdOf(deployConf)
+  if (!appId) return refuse('deploy.app_id is not set in frontier.config.js')
+
+  const sides    = side == null ? [null] : [].concat(side)
+  const resolved = sides.map(s => s ? resolveSide(deployConf, target, s) : resolveDeployConf(deployConf, target))
+                        .find(Boolean)
+  if (!resolved)
+    return refuse(side == null
+      ? `deploy.server or deploy.path is not set for target: ${target}`
+      : `Cannot resolve a server and path for the ${sides.join(' or ')} side on target: ${target}`)
+
+  return { target, deployConf, resolved, appId }
+}
+
 // ─── litestreamStatus ─────────────────────────────────────────────────────────
 // `pgrep -x litestream` answers *is a process by that name alive*, which is not
 // *is a supported version replicating anything*. Three commands asked the first
@@ -467,7 +507,7 @@ const deployPlan = async ($, flag, { target, deployConf, doApi, doWeb, digest = 
   }
 
   const release = mintRelease({
-    app:           deployConf.app_id ?? deployConf.appId,
+    app:           appIdOf(deployConf),
     environment:   target,
     // The bytes, where they exist. `--plan` runs no build and has none, so the
     // id it prints is provisional and says so; the deploy passes what step 04
@@ -1196,7 +1236,7 @@ const openPauseJournal = async ($, flag, opts) => {
   const { kind, host, serverPath, deployConf, target, stepsDir, log,
           edgeHasGuard, filePresent } = opts
   const { pauseRefusals } = await core('pause.js')
-  const app = deployConf.app_id ?? deployConf.appId
+  const app = appIdOf(deployConf)
 
   const j = await connectJournal($, opts)
 
@@ -1404,7 +1444,7 @@ export default {
     server: 'myapp.com',
     user:   'deploy',          // absent: the bare server, so ~/.ssh/config's User applies
     path:   '/apps/myapp',
-    app_id: 'myapp',           // default: last segment of path
+    app_id: 'myapp',           // required: names the container and the Release
 
     api: {
       port:       3000,        // default: 3000

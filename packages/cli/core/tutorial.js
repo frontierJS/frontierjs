@@ -18,12 +18,10 @@
 // A reader, not a rule: `checks.js` renders the findings, the same split
 // `proofs.js` and `preflight.js` make.
 
-import { readFileSync, readdirSync, existsSync, statSync } from 'fs'
+import { existsSync }                                     from 'fs'
 import { join }                                            from 'path'
+import { read, safeRead, isDir }                          from './fs.js'
 
-const read = (p) => { try { return readFileSync(p, 'utf8') } catch { return null } }
-const dirs = (p) => { try { return readdirSync(p).sort() } catch { return [] } }
-const isDir = (p) => { try { return statSync(p).isDirectory() } catch { return false } }
 
 // The line a match is on, for a finding that can be clicked.
 const lineOf = (text, index) => text.slice(0, index).split('\n').length
@@ -32,7 +30,7 @@ const lineOf = (text, index) => text.slice(0, index).split('\n').length
  *  on a hard-coded path reports a workspace that moved it as having none. */
 export function tutorDir(root) {
   const pkgs = join(root, 'packages')
-  for (const name of dirs(pkgs)) {
+  for (const name of safeRead(pkgs)) {
     const dir = join(pkgs, name, 'commands', 'tutor')
     if (existsSync(join(dir, 'index.md'))) return dir
   }
@@ -64,7 +62,7 @@ function readLesson(dir, file) {
   const heading = text.match(/^##\s+Lesson\s+(\d+)\s*—/m)
 
   const stepsDir = join(dir, steps[1])
-  const finish   = dirs(stepsDir).find(f => /-finish\.md$/.test(f)) ?? null
+  const finish   = safeRead(stepsDir).find(f => /-finish\.md$/.test(f)) ?? null
   const fText    = finish ? read(join(stepsDir, finish)) : null
 
   // The pointer. Matched on the shape every finish step writes — the command,
@@ -97,13 +95,13 @@ export function readCourse(root) {
   if (!dir) return null
 
   const order   = readOrder(dir)
-  const lessons = dirs(dir)
+  const lessons = safeRead(dir)
     .filter(f => f.endsWith('.md') && f !== 'index.md' && !f.startsWith('_'))
     .map(f => readLesson(dir, f))
     .filter(Boolean)
 
   const claimed    = new Set(lessons.map(l => l.stepsName))
-  const orphanSteps = dirs(dir).filter(f => f.startsWith('_steps-') && isDir(join(dir, f)) && !claimed.has(f))
+  const orphanSteps = safeRead(dir).filter(f => f.startsWith('_steps-') && isDir(join(dir, f)) && !claimed.has(f))
 
   return { dir, order, lessons, orphanSteps }
 }

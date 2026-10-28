@@ -3092,7 +3092,7 @@ nobody is signed in*.
 **A note about running it.** `tutor:ui` defaults to the dev slot for project 0
 (8000 / 8100) and ADOPTS whatever already answers there, so with an app of your
 own running it grades that app and reports the lesson broken —
-[FJS-1061](../../ISSUES.md#fjs-1061). Pass `--api-port 7100 --web-port 7000`,
+[FJS-1061](../../ISSUES_ARCHIVE.md#fjs-1061). Pass `--api-port 7100 --web-port 7000`,
 which is what CI does.
 
 ## 2026-09-09 — `ws:pub --interactive`
@@ -3865,7 +3865,7 @@ test asking only about the refusal.
 everything it publishes — so a package that needs a different tag has to be held
 back from the run rather than tagged differently inside it. `@frontierjs/outpost`
 is the case: a fleet agent whose `/exec` runs shell and whose secret is shared
-across the fleet ([`FJS-257`](../../ISSUES.md#fjs-257)) should not be reachable
+across the fleet ([`FJS-257`](../../ISSUES_ARCHIVE.md#fjs-257)) should not be reachable
 by a bare `npm i`, so it goes out under `next` in a run of its own.
 
 An `--except` that matched nothing WARNS by name. Silently publishing the
@@ -5605,7 +5605,7 @@ that against the commit the deploy built.
 `fli` writes no `.env` on a target, the operator owns that file, and the
 container is started with `--env-file` against it. `formatRelease` prints
 `(declared)`, `release:mint`'s term table says *as declared*, and
-`core/release.js` carries the reason. Half of [`FJS-585`](../../ISSUES.md#fjs-585);
+`core/release.js` carries the reason. Half of [`FJS-585`](../../ISSUES_ARCHIVE.md#fjs-585);
 the values half is still open and is two different features.
 
 **The keys are now graded against the target.** `01b-env-check` reads the

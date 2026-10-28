@@ -15,6 +15,7 @@ import { collect }                       from '../core/repo-map.js'
 import { renderWork, workOf, WORK_FILE } from '../core/repo-work.js'
 import { rankNext }                      from '../core/next.js'
 import { openDecisions }                 from '../core/decisions.js'
+import { esc }                           from '../core/html-page.js'
 
 const REPO = new URL('../../..', import.meta.url).pathname
 
@@ -103,7 +104,6 @@ describe('the page', () => {
   })
 })
 
-const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
 
 // Enough of a document for the page to draw itself and answer a click: every
 // element it creates is kept, so a read of something never created fails.

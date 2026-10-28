@@ -6,8 +6,6 @@ skip: "!$.config.doApi || (!$.config.deployConf.api?.envCheck && !Object.keys({ 
 ---
 
 ```js
-if ($.config.abort) return
-
 const { target, deployConf } = $.config
 const { host, path: serverPath } = $.config.api
 const { existsSync, readFileSync } = await import('fs')

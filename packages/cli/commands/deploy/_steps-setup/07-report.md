@@ -4,8 +4,6 @@ description: Final setup health report and next steps
 ---
 
 ```js
-if ($.config.abort) return
-
 const { host, serverPath, appId, edge, edgeWritten } = $.config
 
 log.success(`\nSetup complete for ${appId}`)

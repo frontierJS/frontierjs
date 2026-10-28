@@ -5,8 +5,6 @@ skip: "!$.config.doApi"
 ---
 
 ```js
-if ($.config.abort) return
-
 const { apiPort, healthPath, container, replaced, imageTag } = $.config
 const { host } = $.config.api
 

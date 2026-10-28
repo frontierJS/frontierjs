@@ -33,7 +33,7 @@ flags:
     defaultValue: false
   theme:
     type: string
-    description: A @frontierjs/css theme to draw in — default for a PNG, field for the page, which can switch
+    description: A @frontierjs/css theme to draw in — default for a PNG; the page follows light/dark preference and can switch
     defaultValue: ''
   scale:
     type: number
@@ -46,7 +46,7 @@ pages:
 ---
 
 ```js
-const { collectCodegraph, renderMap, renderBadge, codegraphJson, paletteFrom, themesIn, scoreOf, SCORE_WARN, SCORE_STEPS } = await import(resolve(global.fliRoot, 'core/codegraph.js'))
+const { collectCodegraph, renderMap, renderBadge, codegraphJson, paletteFrom, scoreOf, SCORE_WARN, SCORE_STEPS } = await import(resolve(global.fliRoot, 'core/codegraph.js'))
 const { renderPage } = await import(resolve(global.fliRoot, 'core/codegraph-page.js'))
 
 // `--as` picks the picture a person reads and `--json` is the model a program
@@ -89,16 +89,17 @@ if (as === 'json' && !flag.out) { echo(codegraphJson(model)); return }
 
 // Colors are the tones of @frontierjs/css, which fli depends on, so its own copy
 // is always there; a theme the stylesheet does not declare is refused by name.
-const { ownStyleBundle } = await import(resolve(global.fliRoot, 'core/assets.js'))
+const { ownStyleBundle, themesIn } = await import(resolve(global.fliRoot, 'core/assets.js'))
 const css    = as === 'json' ? null : ownStyleBundle()
 const themes = css ? themesIn(css) : []
-const theme  = String(flag.theme || (as === 'page' ? 'field' : 'default'))
+// Unflagged, the page follows the reader's light/dark preference, as every generated page does.
+const theme  = flag.theme ? String(flag.theme) : as === 'page' ? null : 'default'
 if (as !== 'json' && !css) {
   log.error('No @frontierjs/css found beside fli — the codegraph takes its colors from its tones. Reinstall @frontierjs/cli.')
   process.exitCode = 1
   return
 }
-if (as !== 'json' && !themes.includes(theme)) {
+if (theme && as !== 'json' && !themes.includes(theme)) {
   log.error(`--theme=${theme} is not a @frontierjs/css theme. One of: ${themes.join(' · ')}`)
   process.exitCode = 1
   return

@@ -92,12 +92,11 @@ title: Hub settings
         unset  = true
         config = null
         draft  = {
-          name: 'Basecamp', baseUrl: '', adminEmail: '',
+          name: 'Basecamp',
           heartbeatTimeoutSeconds: 120, sessionTtlHours: 168,
           requireTwoFactorForOwners: false, allowApiKeyAuth: true, allowBotUsers: true,
           backupEnabled: false, backupCron: '0 2 * * *', backupDestinationId: null, replicaDestinationId: null,
           backupKeepLocalCount: 7, backupKeepLocalDays: null, backupKeepRemoteCount: 7, backupKeepRemoteDays: null,
-          mailFromAddress: '', mailFromName: '',
         }
       } else {
         error = e.message
@@ -232,9 +231,7 @@ title: Hub settings
 {:else}
   {#if unset}
     <Callout tone="info" title="This installation has no settings yet">
-      A base URL and an admin email are required and nothing can infer either — the base URL is
-      what webhook callbacks, outpost registration and every link in an email are built from.
-      Saving once creates the row.
+      Every field below has a default. Saving once creates the row.
     </Callout>
   {/if}
 
@@ -244,14 +241,6 @@ title: Hub settings
            error={fieldErrs.name}
            hint="Shown in the browser tab and in email"
            oninput={(e) => write('name', e.target.value)} />
-    <Input name="baseUrl" id="cfg-base-url" label="Base URL" value={draft.baseUrl}
-           error={fieldErrs.baseUrl}
-           hint="https://hub.example.com — webhook callbacks, outpost registration and every link in an email. The one setting whose wrongness nothing local can detect."
-           oninput={(e) => write('baseUrl', e.target.value)} />
-    <Input name="adminEmail" id="cfg-admin-email" label="Admin email" type="email"
-           value={draft.adminEmail} error={fieldErrs.adminEmail}
-           hint="Receives system alerts"
-           oninput={(e) => write('adminEmail', e.target.value)} />
   </Card>
 
   <Card id="hub-settings-limits">
@@ -383,16 +372,13 @@ title: Hub settings
   </Card>
 
   <Card id="hub-settings-mail">
-    <h3 class="h5">Outgoing mail</h3>
-    <Input name="mailFromAddress" id="cfg-mail-from" label="From address" type="email"
-           value={draft.mailFromAddress} error={fieldErrs.mailFromAddress}
-           oninput={(e) => write('mailFromAddress', e.target.value)} />
-    <Input name="mailFromName" id="cfg-mail-name" label="From name"
-           value={draft.mailFromName} error={fieldErrs.mailFromName}
-           oninput={(e) => write('mailFromName', e.target.value)} />
+    <h3 class="h5">Addresses and mail</h3>
     <p class="text-sm text-muted">
-      The provider's credential is not here and cannot be. It is read at boot, before any
-      database — a value stored in this row would never reach the process that sends the mail.
+      Where this installation is reached and how it mails are environment settings, read at boot
+      before any database: <code>FRONTIER_APP_URL</code> (every emailed link),
+      <code>FRONTIER_API_URL</code> (what a machine enrolls with), <code>MAIL_URL</code> or
+      <code>RESEND_API_KEY</code>, and <code>MAIL_FROM</code>. A row here would never reach the
+      process that uses them, so their state is graded on <a href="/hub/security/">Host security</a>.
     </p>
   </Card>
 

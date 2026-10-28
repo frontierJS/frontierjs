@@ -25,7 +25,7 @@ import { hazardCoverage }                                                       
 import { seamOwnership, SKILL as SEAM_SKILL, keyLiteral, unlisted }                                                                                           from '../seams.js'
 import { readRegisters }                                                                                                                                      from '../registers.js'
 import { kindOf }                                                                                                                                             from '../file-kind.js'
-import { safeRead, walk }                                                                                                                                     from './lib.js'
+import { safeRead, walk }                                                                                                                                     from '../fs.js'
 
 export const CHECKS = {
 

@@ -88,24 +88,24 @@ export async function run(t) {
 
   // `total` is a `money` column: typed in dollars, filtered in cents, and
   // committed when the box is left rather than on each keystroke.
-  await t.clickAt(`${BAR} input[placeholder="Total from"]`)
+  await t.clickAt(`${BAR} input[aria-label="Total from"]`)
   await t.type('5')
   await t.press('Tab')
   await t.eventually(held(`q.total?.gte ?? null`), '500',
     'a money range writes through the low Input, in minor units')
 
-  await t.clickAt(`${BAR} input[placeholder="Total to"]`)
+  await t.clickAt(`${BAR} input[aria-label="Total to"]`)
   await t.type('9.5')
   await t.press('Tab')
   await t.eventually(held(`q.total?.lte ?? null`), '950',
     'and the high one, which is a second binding on the same branch')
-  t.is(await t.evaluate(`return document.querySelector('${BAR} input[placeholder="Total to"]').value;`),
+  t.is(await t.evaluate(`return document.querySelector('${BAR} input[aria-label="Total to"]').value;`),
     '9.50', 'and the box shows the bound back in dollars')
 
   // Three decimals of a dollar is not an amount, and the filter already held
   // stays rather than being replaced by a guess.
   await t.evaluate(`
-    const el = document.querySelector('${BAR} input[placeholder="Total from"]');
+    const el = document.querySelector('${BAR} input[aria-label="Total from"]');
     el.value = '5.125';
     el.dispatchEvent(new Event('change', { bubbles: true }));
     return true;
@@ -128,17 +128,23 @@ export async function run(t) {
   await t.eventually(held(`JSON.stringify(q.tags ?? null)`), '{"some":{"tagId":{"in":[1]}}}',
     'a to-many writes its set under some and the join key')
 
-  await t.clickAt(`${BAR} input[placeholder="Rate from"]`)
+  // A plain number commits on change too, so a bound typed is one navigation.
+  await t.clickAt(`${BAR} input[aria-label="Rate from"]`)
   await t.type('5')
+  t.is(await t.evaluate(`return String(${held(`q.rate?.gte ?? null`)})`), 'null',
+    'a number bound is not written while it is being typed')
+  await t.press('Tab')
   await t.eventually(held(`q.rate?.gte ?? null`), '5',
-    'a plain number range still writes through the Input as it is typed')
+    'a plain number range writes when the box is left')
+  t.is(await t.evaluate(`return document.querySelector('${BAR} input[aria-label="Rate from"]').closest('.field-row')?.querySelectorAll('input').length ?? 0`),
+    2, 'a range is one control: both bounds sit in a single field-row')
 
   // FJS-2610: clearing the last bound removes the key. It wrote an empty range,
   // {rate: {}}, a filter on nothing that kept Clear lit.
   await t.evaluate(`
-    const el = document.querySelector('${BAR} input[placeholder="Rate from"]');
+    const el = document.querySelector('${BAR} input[aria-label="Rate from"]');
     el.value = '';
-    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
     return true;
   `)
   await t.eventually(held(`'rate' in q`), 'false',
@@ -158,39 +164,61 @@ export async function run(t) {
 
   /* ── a day range over an instant ──────────────────────────────────────── */
   //
-  // The box holds a day and the column an instant. Written through bare, *to
+  // The picker holds a day and the column an instant. Written through bare, *to
   // the 7th* was midnight at the START of the 7th and excluded all of it. The
   // spec's page runs in whatever zone the host is in, so the expected bounds
   // are built in the page the same way: the day's first and last local moment.
-  const setDate = (ph, v) => t.evaluate(`
-    const el = document.querySelector('${BAR} input[aria-label="${ph}"]');
-    el.value = '${v}';
-    el.dispatchEvent(new Event('input', { bubbles: true }));
+  //
+  // Days are clicked in the month the picker opens on, the current one, so the
+  // expected bounds are built from the current month too.
+  const daysOf = (label) => `[...document.querySelectorAll('${BAR} .filter-days')]
+    .find(s => s.querySelector('select')?.getAttribute('aria-label')?.startsWith('${label}:'))`
+  const pickOp = (label, op) => t.evaluate(`
+    const sel = ${daysOf(label)}.querySelector('select');
+    sel.value = '${op}';
+    sel.dispatchEvent(new Event('input', { bubbles: true }));
     return true;
   `)
-  await setDate('Seen from', '2026-10-07')
-  await t.eventually(held(`q.seenAt?.gte ?? null`),
-    await t.evaluate(`return new Date(2026, 9, 7).toISOString()`),
-    'a day\'s lower bound over an instant is that day\'s first local moment')
-  await setDate('Seen to', '2026-10-07')
-  await t.eventually(held(`q.seenAt?.lte ?? null`),
-    await t.evaluate(`return new Date(new Date(2026, 9, 8).getTime() - 1).toISOString()`),
-    'and its upper bound is the day\'s LAST moment, so the day is included')
-  await t.eventually(`document.querySelector('${BAR} input[aria-label="Seen to"]').value`, '2026-10-07',
-    'and the box shows the day back, not the instant')
+  const pickDay = (label, n) => t.evaluate(`
+    const box = ${daysOf(label)};
+    box.querySelector('button.filter-day').click();
+    [...box.querySelectorAll('button.fjs-dp-day')]
+      .find(b => b.querySelector('.fjs-dp-square')?.textContent.trim() === '${n}').click();
+    return true;
+  `)
+  const onDay = (n, end) => t.evaluate(`
+    const now = new Date();
+    const d = new Date(now.getFullYear(), now.getMonth(), ${n} + (${end} ? 1 : 0));
+    return ${end} ? new Date(d.getTime() - 1).toISOString() : d.toISOString();
+  `)
 
-  await setDate('Due to', '2026-10-07')
-  await t.eventually(held(`q.dueOn?.lte ?? null`), '2026-10-07',
-    'a Date column is a day on both sides and goes across as it is')
+  await pickDay('Seen', 7)
+  await pickDay('Seen', 9)
+  await t.eventually(held(`q.seenAt?.gte ?? null`), await onDay(7, false),
+    'a day\'s lower bound over an instant is that day\'s first local moment')
+  await t.eventually(held(`q.seenAt?.lte ?? null`), await onDay(9, true),
+    'and its upper bound is the day\'s LAST moment, so the day is included')
+  await t.eventually(`${daysOf('Seen')}.querySelector('button.filter-day').textContent.includes('–')`, true,
+    'and the trigger shows the span picked, not the instants')
+
+  // FJS-D1576: the open end is an operator. Switching keeps the day picked.
+  await pickOp('Seen', 'after')
+  await t.eventually(held(`[q.seenAt?.gte ?? '-', q.seenAt?.lte ?? '-'].join('|')`), `${await onDay(7, false)}|-`,
+    'after keeps the lower bound and drops the upper one')
+
+  await pickOp('Due', 'before')
+  await pickDay('Due', 7)
+  await t.eventually(held(`[q.dueOn?.gte ?? '-', q.dueOn?.lte ?? '-'].join('|')`),
+    '-|' + await t.evaluate(`const n = new Date(); return [n.getFullYear(), String(n.getMonth() + 1).padStart(2, '0'), '07'].join('-')`),
+    'before is an upper bound alone, and a Date column is a day that goes across as it is')
 
   t.is(await t.evaluate(`return document.querySelector('${BAR} input[aria-label="Opens from"]').type`), 'time',
     'an @time column is a wall clock and gets a time box, not a date')
 
-  // A date box draws mm/dd/yyyy where the placeholder would be, so the name
-  // has to be on screen some other way.
-  t.is(await t.evaluate(`
-    return document.querySelector('${BAR} input[aria-label="Seen from"]').closest('.filter-range')?.textContent.trim();
-  `), 'Seen', 'a date range shows its column name, which its boxes cannot')
+  // The picker's trigger shows a day or "Any day", so the column's name is on
+  // screen in the operator's option.
+  t.match(await t.evaluate(`const s = ${daysOf('Seen')}.querySelector('select'); return s.options[s.selectedIndex].text`),
+    /^Seen /, 'a day range shows its column name beside the picker')
 
   // A `<select>` cannot be typed into, so this one is set and told to report —
   // the value has to move through the element's own change path or the adapter

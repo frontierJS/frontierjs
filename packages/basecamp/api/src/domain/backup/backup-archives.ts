@@ -30,6 +30,7 @@ import { deleteObject, listObjects } from '../../providers/storage/s3.ts'
 import type { ListedObject }  from '../../providers/storage/s3.ts'
 import { destinationFor, mintDownload } from '../../jobs/app-backup-run.job.ts'
 import type { App }           from '@frontierjs/junction'
+import type { BackupDestination } from '../../../../db/schema.d.ts'
 
 /** The start time with `:` and `.` flattened to `-`, as both archive names carry it. */
 const STAMP = String.raw`(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z`
@@ -185,7 +186,7 @@ export async function rescanDestination(app: App, destinationId: string): Promis
 /** Every `<prefix>/<owner>-<stamp>.tar.gz` no `known` key names, handed to
  *  `add` once each. Any other key under the prefix is a neighbor's. */
 async function eachUnknown(
-  app: App, dest: { id: string; name: string; bucket: string; prefix?: string | null }, owner: string,
+  app: App, dest: Pick<BackupDestination, 'id' | 'name' | 'bucket' | 'prefix'>, owner: string,
   known: Set<string | null>, add: (o: ListedObject, stamp: string) => Promise<unknown>,
 ): Promise<{ listed: number; found: number } | { error: string }> {
   const send = sendFor(app, dest.id)
@@ -270,6 +271,7 @@ async function hashObject(app: App, row: { destinationId: string | null; locatio
   if (!res.ok || !res.body) return { error: `'${dest.name}' answered ${res.status} for ${row.location}` }
   const hasher = new Bun.CryptoHasher('sha256')
   let bytes = 0
-  for await (const chunk of res.body) { hasher.update(chunk); bytes += chunk.byteLength }
+  const reader = res.body.getReader()
+  for (let r = await reader.read(); !r.done; r = await reader.read()) { hasher.update(r.value); bytes += r.value.byteLength }
   return { sha256: hasher.digest('hex'), bytes }
 }

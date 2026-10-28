@@ -4,8 +4,6 @@ description: Reach each machine, take the deploy lock, say what will go, and hav
 ---
 
 ```js
-if ($.config.abort) return
-
 const { appId, target, sides, dbDir, envFile, deployConf } = $.config
 const container = apiContainer(appId, deployConf)
 const keep      = $.flag['keep-data']

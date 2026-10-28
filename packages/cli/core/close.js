@@ -22,11 +22,11 @@
 //
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
-import { readFileSync, writeFileSync } from 'node:fs'
-import { join }                        from 'node:path'
+import { readFileSync } from 'node:fs'
+import { join }         from 'node:path'
 
-import { readRegisters, withRegisterGuard }          from './registers.js'
-import { errorKeys, newErrors, describeNewErrors } from './register-check.js'
+import { readRegisters, withRegisterGuard, requirePrefix, findIssue, splitRow } from './registers.js'
+import { checkedEdit, oneCell, isoDate } from './register-edit.js'
 
 /**
  * Close one open issue.
@@ -39,12 +39,11 @@ export function closeIssue(opts) {
 }
 
 function closeUnguarded({ root, id, how, dry = false, today = new Date() }) {
-  const doc = readRegisters(root)
-  if (!doc.prefix) return refuse('package.json declares no usable registers.prefix, so no row can be read')
+  const noPrefix = requirePrefix(root)
+  if (noPrefix) return refuse(noPrefix)
 
-  const want   = String(id ?? '').trim().toUpperCase()
-  const record = doc.issues.find(r => r.id.toUpperCase() === want || (r.aliases ?? []).some(a => a.toUpperCase() === want))
-  if (!record)       return refuse(`no issue row has the id ${want || '(none)'}`)
+  const record = findIssue(readRegisters(root), id)
+  if (!record)       return refuse(`no issue row has the id ${String(id ?? '').trim().toUpperCase() || '(none)'}`)
   if (record.closed) return refuse(`${record.id} is already closed (${record.file}:${record.line})`)
 
   const reason = oneCell(how)
@@ -58,14 +57,8 @@ function closeUnguarded({ root, id, how, dry = false, today = new Date() }) {
   // register:check grades the file on disk, so a preview skips it, as `fli file` does.
   if (dry) return { ok: true, dry: true, id: record.id, file: record.file, line: moved.line }
 
-  const baseline = errorKeys(root)
-  writeFileSync(abs, moved.text)
-
-  const added = newErrors(baseline, root)
-  if (added.length) {
-    writeFileSync(abs, before)
-    return refuse(`the close was put back: register:check found ${describeNewErrors(added)}`)
-  }
+  const done = checkedEdit(root, 'close', write => write(abs, moved.text))
+  if (!done.ok) return done
 
   return { ok: true, id: record.id, file: record.file, line: moved.line }
 }
@@ -116,27 +109,6 @@ function closedTableBody(lines) {
 
 function refuse(reason) { return { ok: false, reason } }
 
-// Unescaped pipes only, the same split `registers.js` reads the row with.
-export function splitRow(line) {
-  return line
-    .replace(/^\s*\|/, '')
-    .replace(/\|\s*$/, '')
-    .split(/(?<!\\)\|/)
-    .map(c => c.trim())
-}
-
-// A cell is one line, and a bare `|` would end it.
-export function oneCell(text) {
-  return String(text ?? '').replace(/\s+/g, ' ').trim().replace(/(?<!\\)\|/g, '\\|')
-}
-
 function* linksIn(cell = '') {
   for (const m of cell.matchAll(/\[[^\]]*\]\([^)]+\)/g)) yield m[0]
-}
-
-// UTC, for the reason `decide.js` gives: the date is written into a register
-// and read by everybody afterwards.
-export function isoDate(d) {
-  const p = n => String(n).padStart(2, '0')
-  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`
 }

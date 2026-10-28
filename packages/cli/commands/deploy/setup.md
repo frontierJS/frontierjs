@@ -35,25 +35,11 @@ installing what's missing. Writes this app's Caddy routes and creates the
 directory structure needed for fli deploy.
 
 ```js
-const target = resolveTarget(flag, $.git)
+const head = await deployTargetFor($, flag, log, { why: 'add one with server, user and path before running setup' })
+if (!head) return
+const { target, deployConf, resolved, appId } = head
 
-const deployConf     = await deployConfFor($, flag, log)
-
-if (!deployConf?.server) {
-  log.error('No deploy block found in frontier.config.js')
-  log.info('Add a deploy block with server, user, and path before running setup')
-  $.config.abort = true
-  return
-}
-
-const resolved = resolveDeployConf(deployConf, target)
-if (!resolved) {
-  log.error(`deploy.server or deploy.path is not set in frontier.config.js for target: ${target}`)
-  $.config.abort = true
-  return
-}
-const { server, user, path } = resolved
-const appId      = deployConf.app_id ?? path.split('/').pop()
+const { server, path } = resolved
 const apiPort    = deployConf.api?.port ?? 3000
 
 const { edgeNames, EdgeError } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))

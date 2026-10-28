@@ -19,17 +19,19 @@ import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, slugify }
   from '../../core/resource.ts'
-import { retireAppsIn, placeableServer, placeApp, mintDeployKey, enablePushOn } from '../apps/apps.service.ts'
+import { retireAppsIn, placeableServer, placeApp, mintDeployKey, enablePushOn, connectableAccounts, connectRepository,
+         readForgeDockerfile }
+  from '../apps/apps.service.ts'
 import { toZone }               from '../domains/domains.service.ts'
 import { syncReplicasOf }       from '../../jobs/replicate-sync.job.ts'
 import { parseAppSource }       from '../../domain/release/app-source.ts'
-import { readRepoDockerfile } from '../../domain/release/dockerfile-template.ts'
+import { forgeRepo }            from '../../domain/release/dockerfile-template.ts'
 import { keyScope }             from '../../domain/api-key/scopes.ts'
 import { exposedPort }          from '@frontierjs/outpost/dockerfile'
 
 type FromRepo = {
   name: string, slug?: string, repo: string, branch?: string, dockerfile?: string,
-  serverId?: string, hostname?: string, deployOnPush?: boolean,
+  serverId?: string, hostname?: string, deployOnPush?: boolean, connect?: boolean,
 }
 
 export default createService({
@@ -104,19 +106,30 @@ export default createService({
     if (hostname && await db().domain.exists({ where: { hostname } }))
       throw new Conflict(`'${hostname}' is already an App's hostname in this workspace`)
 
+    // Everything a connect can be refused for is asked before a row exists:
+    // the deploy key is the machine's, so it needs a server, and a token the
+    // forge no longer accepts is refused here rather than after the App is made.
+    const at = data.connect ? forgeRepo(data.repo) : null
+    let accounts: Awaited<ReturnType<typeof connectableAccounts>> = []
+    if (data.connect) {
+      if (!server) throw new BadRequest('connect needs a server — the deploy key is the machine\'s')
+      if (at?.forge !== 'github') throw new BadRequest(`connect writes to GitHub, and '${data.repo}' is not a GitHub repository`)
+      accounts = await connectableAccounts($.app, 'github')
+    }
+
     // Absent is "seed it"; blank is the repository's own file, said by the
     // App carrying none. A file the caller sends is theirs and seeded nothing.
     // A forge that shows no file seeds blank too (`FJS-D1570`): a private
-    // repository and a public one with no Dockerfile read the same over HTTP,
-    // so the template, right for a link: app alone, is never guessed here —
-    // the form's button is how a person asks for it.
+    // repository no account here sees reads as one with no Dockerfile, so the
+    // template, right for a link: app alone, is never guessed here — the
+    // form's button is how a person asks for it.
     let dockerfile: string | undefined
     let seeded: 'repo' | 'none' = 'none'
     if (typeof data.dockerfile === 'string') dockerfile = data.dockerfile
     else {
-      const found = await readRepoDockerfile({ repo: data.repo, branch: data.branch })
-      dockerfile = found?.content ?? ''
-      seeded     = found ? 'repo' : 'none'
+      const found = await readForgeDockerfile($.app, { repo: data.repo, branch: data.branch })
+      dockerfile = 'content' in found ? found.content : ''
+      seeded     = 'content' in found ? 'repo' : 'none'
     }
     const source = parseAppSource({ kind: 'git', repo: data.repo, branch: data.branch, dockerfile })
     // What the image listens on is the seed's last EXPOSE, the same read the
@@ -169,11 +182,19 @@ export default createService({
     // so one panel shows both once.
     const notes: string[] = []
     let push: Awaited<ReturnType<typeof enablePushOn>> | null = null
+    let connected: Awaited<ReturnType<typeof connectRepository>> | null = null
     if (server) {
       await placeApp($.app, made.app, server)
       const minted = await mintDeployKey($.app, made.app.id, server.id)
       if (minted.note) notes.push(minted.note)
       if (data.deployOnPush !== false) push = await enablePushOn(made.app.id)
+      if (at && accounts.length && (minted.deployPublicKey || push)) {
+        connected = await connectRepository($.app, 'github', accounts, at, {
+          key:  minted.deployPublicKey ? { title: `Basecamp ${made.app.slug}`, key: minted.deployPublicKey } : null,
+          hook: push ? { url: push.url, secret: push.secret } : null,
+        })
+        if (connected.note) notes.push(connected.note)
+      }
     }
 
     const app = await db().app.findFirst({ where: { id: made.app.id }, include: { domains: true, environment: true } })
@@ -181,7 +202,7 @@ export default createService({
       // The project's id, so the trail files this call under the project.
       id: made.project.id,
       project: made.project, environment: made.environment, app,
-      dockerfile: { seeded }, push,
+      dockerfile: { seeded }, push, connected,
       ...(notes.length ? { note: notes.join('; ') } : {}),
     }
   },

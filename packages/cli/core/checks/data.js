@@ -16,9 +16,10 @@ import { declaredLogDatabases, declaredDatabasePaths } from '../db-preflight.js'
 import { ignoredByGit }                                from '../gitignore.js'
 import { shippedSchemas }                              from '../app-schema.js'
 import {
-  schemaFile, models, looksPlural, walk, sources, readCode, scripts,
+  schemaFile, models, looksPlural, sources, readCode, scripts,
   CLIENT_SURFACES, lineOf, servingServices, spanFrom, bodyOf, withoutComments,
 } from './lib.js'
+import { walk }                                        from '../fs.js'
 
 export const CHECKS = {
 

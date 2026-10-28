@@ -17,10 +17,15 @@ flags:
 is a host page in `widgets/test/` loading the built script — this server is the
 writing loop, not the proof.
 
+<script>
+import { resolve } from 'path'
+</script>
+
 ```js
 const port = flag.port ? `WIDGET_PORT=${flag.port} ` : ''
+const { viteCommand } = await import(resolve(global.fliRoot, 'core/scaffold/surface.js'))
 $.exec({
-  command: `${port}bunx vite -c config/vite.config.js --configLoader native`,
+  command: `${port}${viteCommand()}`,
   cwd:     $.paths.widgets,
   dry:     flag.dry,
 })

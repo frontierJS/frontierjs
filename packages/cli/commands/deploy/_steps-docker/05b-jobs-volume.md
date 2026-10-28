@@ -5,8 +5,6 @@ skip: "!$.config.doApi"
 ---
 
 ```js
-if ($.config.abort) return
-
 const { appId, deployConf } = $.config
 const { host, path: serverPath } = $.config.api
 const { queueScript, jobsVolumeVerdict } = await import(new URL('file://' + global.fliRoot + '/core/pause.js'))

@@ -644,6 +644,8 @@ downloads it, member or not (`FJS-D1566`).
 ```bash
 fli tell:upload report.pdf                      # prints the link and its limits
 fli tell:upload build.zip --downloads 3 --hours 72 --to sam
+fli tell:upload ./dist --qr                     # a folder goes as dist.zip; --qr for a phone
+pg_dump app | fli tell:upload - --name app.sql  # - reads stdin
 fli tell:download 'https://network.frontierjs.com/file/<id>#<key>'
 ```
 
@@ -651,10 +653,14 @@ fli tell:download 'https://network.frontierjs.com/file/<id>#<key>'
   on the sender's machine. The key is the part of the link after `#`, which a
   browser never sends, so the post holds neither the content nor the name
   (`FJS-D1564`). Quote the link in a shell, which reads `#` as a comment.
+  A file that compresses is compressed first, so a log or a CSV is stored at a
+  fraction of its size; the 24 MiB limit counts the file as it is on disk
+  (`FJS-D1574`).
 - **The link is the file.** Whoever holds it can download it, so `--to`
   sends it only sealed, to a member with a sealing key. The same link opens in
   a browser, where a page decrypts it; opening the page spends nothing until
-  its Download button is pressed.
+  its Download button is pressed. The page shows the sender's crest, so a
+  link is traced to a member at a glance.
 - **Limits** (`FJS-D1565`): 24 MiB a file. A link allows 1 download unless
   `--downloads` asks for up to 10, and lasts 24 hours unless `--hours` asks
   for up to a week. The post deletes the file after its last download or when

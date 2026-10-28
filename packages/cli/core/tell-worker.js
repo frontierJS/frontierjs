@@ -739,10 +739,10 @@ export class TellPost {
 
   /** What the download page says before a click spends a download. */
   peekFile(id) {
-    const row = this.sql.exec('SELECT state, expires, downloadsLeft FROM files WHERE id = ?', id).toArray()[0]
+    const row = this.sql.exec('SELECT state, expires, downloadsLeft, root FROM files LEFT JOIN members USING (nick) WHERE id = ?', id).toArray()[0]
     if (!row || row.downloadsLeft === 0 || row.expires <= now()) return refuse(404, 'No file is held under that link: it was downloaded as often as it allowed, it expired, or it never was.')
     if (row.state !== 'held') return refuse(409, 'That file is still being uploaded.')
-    return answer({ expires: row.expires, downloads: row.downloadsLeft })
+    return answer({ expires: row.expires, downloads: row.downloadsLeft, root: row.root })
   }
 
   async drainFile(id) {
@@ -846,6 +846,7 @@ async function getBytes(env, ctx, id) {
 // that script by hash.
 const PAGE_STYLE = 'body{font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 16px;color:#1b1b1f;background:#fff}'
   + 'button{font:inherit;padding:.5rem 1.25rem;cursor:pointer}'
+  + '.from svg{width:96px;height:96px;display:block}'
   + '@media (prefers-color-scheme:dark){body{color:#e8e8ec;background:#151518}}'
 
 const PAGE_SCRIPT = `${openFile}
@@ -905,9 +906,12 @@ async function pageResponse(status, main, script = '') {
 
 async function filePage(env, id) {
   const peeked = await step(env, id, 'peek')
-  const { message, ...held } = await peeked.json()
+  const { message, root, ...held } = await peeked.json()
   if (!peeked.ok) return pageResponse(peeked.status, `<p>${message}</p>`)
-  return pageResponse(200, `<p>A sealed file: ${fileLimits(held, now())}.</p><button id="get" type="button">Download</button><p id="said" role="status"></p>`, PAGE_SCRIPT)
+  // The sender's crest, so a link is traced to a member at a glance: the
+  // name a post vouches for is what made Firefox Send a phishing host.
+  const from = root ? `<div class="from">${crestSvg(root)}</div>` : ''
+  return pageResponse(200, `${from}<p>A sealed file: ${fileLimits(held, now())}.</p><button id="get" type="button">Download</button><p id="said" role="status"></p>`, PAGE_SCRIPT)
 }
 
 // The Worker handles the bytes of `/file/` and forwards only the routes a

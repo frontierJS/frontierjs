@@ -5,14 +5,20 @@ skip: "!$.config.doApi"
 ---
 
 ```js
-if ($.config.abort) return
-
 const { host, serverPath, appId, deployConf } = $.config
 const apiPort  = deployConf.api?.port ?? 3000
 const { dbDir: dbPath, envFile, secretsDir } = apiFiles(deployConf, serverPath)
 const container = apiContainer(appId, deployConf)
 const replaced  = `${container}_replaced`
 const machine   = machineFor($, host, serverPath)
+
+// An absent container and an unreachable box both fail the probes below.
+const lost = () => {
+  if (machine.reach()) return false
+  log.error(`Lost ${host} — API was not rolled back`)
+  $.config.abort = true
+  return true
+}
 
 // ─── Check for _replaced container first ─────────────────────────────────────
 // Present if the last deploy failed health check or was manually interrupted.
@@ -21,6 +27,7 @@ try {
   machine.run(`docker inspect ${replaced} > /dev/null 2>&1`)
   hasReplaced = true
 } catch {
+  if (lost()) return
   hasReplaced = false
 }
 
@@ -50,6 +57,7 @@ docker start  ${container}`, { dry: flag.dry })
     imageOutput = machine.capture(
       `docker images --format '{{.Repository}}:{{.Tag}} {{.ID}} {{.CreatedAt}}' | grep '^${appId}:' | head -10`)
   } catch {
+    if (lost()) return
     imageOutput = ''
   }
 

@@ -294,7 +294,9 @@ export interface AppFromBlueprint {
  * port: placing on `serverId` picks one (`FJS-D1557`). `dockerfile` is the
  * App's own copy, blank for the repository's. `deployOnPush` is on when a
  * server is named and `false` turns it off (`FJS-D1558`); without a server it
- * is never on.
+ * is never on. `connect` writes the deploy key and the push hook at GitHub
+ * with the workspace's token (`FJS-D1571`); it needs a server and a GitHub
+ * repository.
  */
 export interface ProjectFromRepo {
   name: string
@@ -305,6 +307,7 @@ export interface ProjectFromRepo {
   serverId?: string | null
   hostname?: string | null
   deployOnPush?: boolean | null
+  connect?: boolean | null
 }
 
 /**
@@ -5722,8 +5725,6 @@ export interface BackupRelations {
 export interface HubConfig {
   id: string
   name: string
-  baseUrl: string
-  adminEmail: string
   heartbeatTimeoutSeconds: number
   sessionTtlHours: number
   requireTwoFactorForOwners: boolean
@@ -5742,8 +5743,6 @@ export interface HubConfig {
   encryptionKeyEscrowedAt?: string | null
   encryptionKeyFingerprint?: string | null
   hostServerId?: string | null
-  mailFromAddress?: string | null
-  mailFromName?: string | null
   updatedAt: string
   /** @version */
   version: number
@@ -5752,8 +5751,6 @@ export interface HubConfig {
 export interface HubConfigCreate {
   id?: string
   name?: string
-  baseUrl: string
-  adminEmail: string
   heartbeatTimeoutSeconds?: number
   sessionTtlHours?: number
   requireTwoFactorForOwners?: boolean
@@ -5767,15 +5764,11 @@ export interface HubConfigCreate {
   backupKeepLocalDays?: number | null
   backupKeepRemoteCount?: number
   backupKeepRemoteDays?: number | null
-  mailFromAddress?: string | null
-  mailFromName?: string | null
 }
 
 export interface HubConfigUpdate {
   id?: string
   name?: string
-  baseUrl?: string
-  adminEmail?: string
   heartbeatTimeoutSeconds?: number
   sessionTtlHours?: number
   requireTwoFactorForOwners?: boolean
@@ -5789,8 +5782,6 @@ export interface HubConfigUpdate {
   backupKeepLocalDays?: number | null
   backupKeepRemoteCount?: number
   backupKeepRemoteDays?: number | null
-  mailFromAddress?: string | null
-  mailFromName?: string | null
   version: number
 }
 
@@ -5805,8 +5796,6 @@ export interface HubConfigSystem {
 export interface HubConfigWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   name?: string | WhereOp<string> | null
-  baseUrl?: string | WhereOp<string> | null
-  adminEmail?: string | WhereOp<string> | null
   heartbeatTimeoutSeconds?: number | WhereOp<number> | null
   sessionTtlHours?: number | WhereOp<number> | null
   requireTwoFactorForOwners?: boolean | WhereOp<boolean> | null
@@ -5825,8 +5814,6 @@ export interface HubConfigWhere extends WhereBase {
   encryptionKeyEscrowedAt?: string | Date | WhereOp<string | Date> | null
   encryptionKeyFingerprint?: string | WhereOp<string> | null
   hostServerId?: string | WhereOp<string> | null
-  mailFromAddress?: string | WhereOp<string> | null
-  mailFromName?: string | WhereOp<string> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   version?: number | WhereOp<number> | null
   AND?: HubConfigWhere[]

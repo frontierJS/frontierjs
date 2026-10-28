@@ -273,12 +273,14 @@ name when it declares none.
 
 ### `appBackups` · model `AppBackup`
 
-- **methods** — `find`, `get`, `take`
-- **custom methods** — `take`
+- **methods** — `find`, `get`, `take`, `rescan`
+- **custom methods** — `take`, `rescan`
 - **also answers to** — `app-backups`
+- **input** — `rescan` takes `AppBackupRescan`
 - **input** — `take` takes `AppBackupTake`
 - **who may call** —
   - `take` — standing 5 or above — declared `gate: 5`
+  - `rescan` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -291,6 +293,7 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 | before | `take` | `validateInput` |
+| before | `rescan` | `validateInput` |
 
 ### `appDrills` · model `AppDrill`
 

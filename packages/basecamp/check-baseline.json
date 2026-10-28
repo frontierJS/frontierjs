@@ -31,10 +31,9 @@
     "test-port-literal:api/test/compute.test.ts": "outpostPort 8180 and the basecampUrl 'http://localhost:8120' are inputs to the pure cloudInit and installCommand; nothing connects to either.",
     "test-port-literal:api/test/workbench.test.ts": "PORT: 8120 is the value the test hands a run and then asserts never reaches the child (call.port is null).",
     "test-port-literal:api/test/verify-dns.mjs": "7129 is the App.port of an nginx container the drive records and never starts.",
-    "test-port-literal:api/test/reachability.test.ts": "baseUrl on a HubConfig row; the sweep under test reads heartbeats and never connects to it.",
     "test-port-literal:api/test/edge.test.ts": "8443 is a Domain.port patched on a row; nothing binds it.",
     "test-port-literal:api/test/rollback.test.ts": "8080 is the App.port snapshotted into a Release and compared back; nothing binds it.",
     "test-port-literal:web/test/verify-hub-restore.mjs": "8333 is the port INSIDE the SeaweedFS container, mapped from the drive's own S3_PORT; nothing on the host binds it.",
-    "test-port-literal:api/test/posture.test.ts": "8180 and 8090 are a fleet machine's listening sockets and a container's published port in a posture report the pure grader reads; nothing binds or reaches either."
+    "test-port-literal:api/test/posture.test.ts": "8180 and 8090 are a fleet machine's listening sockets and a container's published port in a posture report the pure grader reads, and 8020 and 8120 are the localhost URL defaults the hub grader is handed as text; nothing binds or reaches any of them."
   }
 }

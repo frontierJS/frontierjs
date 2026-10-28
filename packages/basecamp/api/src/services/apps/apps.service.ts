@@ -14,6 +14,8 @@
 //   publish        — a static build handed in, sent to the machine and released
 //   mintDeployKey · importDockerfile — the machine's deploy key, and its clone's Dockerfile (FJS-D1555)
 //   enablePushOn — deploy on push turned on, the one mint `enablePush` and `projects.fromRepo` share (FJS-D1558)
+//   connectableAccounts · connectRepository — the key and the hook written at the forge (FJS-D1571)
+//   readForgeDockerfile — the repository's Dockerfile now, public or through an account
 //   readRepoDockerfile · dockerfileTemplate — the two seeds the create form offers
 //
 // The table is `app`, not `service`. The old header here said "table name in
@@ -27,7 +29,7 @@
 // `environment_name` / `environment_tier` columns.
 
 import { randomBytes } from 'node:crypto'
-import { createService, NotFound, BadRequest, Conflict, parseWhere, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, BadGateway, Conflict, parseWhere, $ } from '@frontierjs/junction'
 import { normalizeOrderBy, type SortParam } from '@frontierjs/toolbelt/query'
 import { LEVELS, AccessDeniedError } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
@@ -42,10 +44,16 @@ import { mintPush } from '../../plugins/push.ts'
 // them rendered as "no certificate" — including the expired ones.
 import { certStatusOf } from '../domains/domains.service.ts'
 import { resolveExecutor, executorOn, isExecutor } from '../../providers/executor.ts'
+import { sourceConnectorFor, RepoUnseen } from '../../providers/source/index.ts'
+import type { SourceRepo } from '../../providers/source/index.ts'
+import { sendVia }   from '../../providers/compute/accounts.ts'
+import { targetFor } from '../../providers/compute/index.ts'
+import type { ProviderKind } from '../../../../db/schema.d.ts'
 // The one reader of `App.source`. A service that parsed the blob itself would
 // be the second, and the two would disagree the first time a kind was added.
-import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, isInline } from '../../domain/release/app-source.ts'
-import { fjsDockerfileTemplate, readRepoDockerfile, DOCKERFILE_PATHS } from '../../domain/release/dockerfile-template.ts'
+import { parseAppSource, sourceKindOf, summarizeSource, describeSource, isGit, isInline, byteLength, DOCKERFILE_BYTES }
+  from '../../domain/release/app-source.ts'
+import { fjsDockerfileTemplate, readRepoDockerfile, forgeRepo, DOCKERFILE_PATHS } from '../../domain/release/dockerfile-template.ts'
 import { runtimeOf, CONTAINER_TYPES } from '../../domain/release/runtime.ts'
 import { portHolders, serversOf, assertPortFree, allocatePort } from '../../domain/release/host-port.ts'
 import { mintDownload } from '../../jobs/app-backup-run.job.ts'
@@ -155,6 +163,111 @@ export async function enablePushOn(appId: string): Promise<{ url: string, tokenU
   })
   const base = `${env.FRONTIER_API_URL.replace(/\/$/, '')}/hooks/git/${appId}`
   return { url: base, tokenUrl: `${base}/${token}`, secret, token }
+}
+
+type SourceAccount = { id: string, name: string }
+
+/** The workspace's accounts at a forge, in name order, read as the CALLER:
+ *  `Secret` is `@@gate(5)`, so a member below administrator finds none rather
+ *  than using a token they cannot see. */
+async function workspaceAccounts(kind: ProviderKind): Promise<SourceAccount[]> {
+  try {
+    return await db().secret.findMany({
+      where:   { kind: 'provider_key', providerKind: kind },
+      select:  { id: true, name: true },
+      orderBy: { name: 'asc' },
+    })
+  } catch (err) {
+    if (!(err instanceof AccessDeniedError)) throw err
+    return []
+  }
+}
+
+/**
+ * The workspace's accounts at a forge that still answer it. None refuses: a
+ * revoked token is found before a row is written, not after the App exists.
+ */
+export async function connectableAccounts(app: App, kind: ProviderKind): Promise<SourceAccount[]> {
+  const connector = sourceConnectorFor(kind)!
+  const rows = await workspaceAccounts(kind)
+  if (!rows.length)
+    throw new BadRequest(`No ${connector.label} account to connect with — an administrator adds a token under Secrets`)
+
+  const live: SourceAccount[] = []
+  for (const a of rows) {
+    try {
+      if (await connector.verify(sendVia(app, targetFor(kind, a.id)))) live.push(a)
+    } catch (err) {
+      throw new BadGateway(`${connector.label} could not be asked: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+  if (!live.length)
+    throw new BadRequest(`${connector.label} refused ${rows.map(a => `'${a.name}'`).join(', ')} — revoked or expired; paste a new token on the account`)
+  return live
+}
+
+/**
+ * Write the deploy key and the push hook at the forge, with the first account
+ * the repository is visible to (a fine-grained token sees only the
+ * repositories it was given). Never throws: the App already exists, so a
+ * refusal is the answer's note and the panel falls back to the values a person
+ * adds by hand.
+ */
+export async function connectRepository(
+  app: App, kind: ProviderKind, accounts: SourceAccount[], repo: SourceRepo,
+  want: { key?: { title: string, key: string } | null, hook?: { url: string, secret: string } | null },
+): Promise<{ account: string | null, key: boolean, hook: boolean, note?: string }> {
+  const connector = sourceConnectorFor(kind)!
+  let unseen = ''
+  for (const a of accounts) {
+    const send = sendVia(app, targetFor(kind, a.id))
+    const done = { account: a.name, key: false, hook: false }
+    try {
+      if (want.key)  { await connector.setDeployKey(send, repo, want.key); done.key = true }
+      if (want.hook) { await connector.setPushHook(send, repo, want.hook); done.hook = true }
+      return done
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (err instanceof RepoUnseen && !done.key) { unseen = message; continue }
+      return { ...done, note: message }
+    }
+  }
+  return { account: null, key: false, hook: false, note: accounts.length > 1 ? `${unseen} (asked ${accounts.length} accounts)` : unseen }
+}
+
+/**
+ * The repository's Dockerfile at its branch as the forge holds it now: the
+ * public raw read, then each account in name order until one sees the
+ * repository (`connectRepository`'s rule). `fromRepo`'s seed and
+ * `importDockerfile` both ask here, so the create form and the editor read one
+ * repository one way. Never throws: a token refused or a forge unreachable is
+ * the note, and the caller falls back to blank or to the machine's clone.
+ */
+export async function readForgeDockerfile(
+  app: App, { repo, branch }: { repo: string, branch?: string | null },
+): Promise<{ path: string, content: string } | { note: string | null }> {
+  const open = await readRepoDockerfile({ repo, branch })
+  if (open) return open
+  const at = forgeRepo(repo)
+  const connector = sourceConnectorFor(at?.forge as ProviderKind)
+  if (!at || !connector) return { note: null }
+
+  const accounts = await workspaceAccounts(connector.kind)
+  let note: string | null = null
+  for (const a of accounts) {
+    try {
+      const found = await connector.readFile(sendVia(app, targetFor(connector.kind, a.id)), at, { paths: DOCKERFILE_PATHS, ref: branch })
+      if (!found) return { note: `${connector.label} holds no ${DOCKERFILE_PATHS.join(' or ')} in ${at.owner}/${at.name}${branch ? ` at ${branch}` : ''}` }
+      if (!found.content.trim()) return { note: `${found.path} in ${at.owner}/${at.name} is empty` }
+      if (byteLength(found.content) > DOCKERFILE_BYTES) return { note: `${found.path} is over the ${DOCKERFILE_BYTES}-byte limit` }
+      return found
+    } catch (err) {
+      // A token refused here is passed over as an unseen repository is: a
+      // workspace's other account may hold the grant this one lacks.
+      note = err instanceof Error ? err.message : String(err)
+    }
+  }
+  return { note: note && accounts.length > 1 ? `${note} (asked ${accounts.length} accounts)` : note }
 }
 
 /**
@@ -823,23 +936,30 @@ export default createService({
     return { deployPublicKey: minted.deployPublicKey ?? target.deployPublicKey ?? null, ...(minted.note ? { note: minted.note } : {}) }
   },
 
-  // The App's machine reads its own clone, which is how a PRIVATE repository's
-  // file is reached: Basecamp holds no key to it. Answers the file for the
-  // editor and writes nothing; saving it is `patch` with `source.dockerfile`.
+  // The forge first — the branch's file now, before any build — and the App's
+  // machine's clone after, which reaches a repository no account here sees
+  // and a forge with no connector. The two are different commits, so `from`
+  // says which answered. Writes nothing; saving is `patch` with
+  // `source.dockerfile`.
   async importDockerfile() {
     const target = await getScoped('app', 'App')
-    if (!isGit(target.source))
+    const source = parseAppSource(target.source)
+    if (source?.kind !== 'git')
       throw new BadRequest(`App '${target.name}' is not built from a git repository`)
+    const forge = await readForgeDockerfile($.app, source)
+    if ('content' in forge) return { ...forge, from: 'forge' }
+    const said = (reason: string) => ({ path: null, content: null, note: [forge.note, reason].filter(Boolean).join('; ') })
+
     const executor = await resolveExecutor($.app, target.id)
-    if (!isExecutor(executor)) return { path: null, content: null, note: executor.reason }
+    if (!isExecutor(executor)) return said(executor.reason)
     // A machine that has never built this app holds no clone and refuses the
     // route by name; that reason is the note, not a 500.
     for (const path of DOCKERFILE_PATHS) {
       const reply = await executor.call('/source/file', { app_id: target.id, path })
       const content = reply.data?.content
-      if (!reply.error && typeof content === 'string' && content.trim()) return { path, content }
+      if (!reply.error && typeof content === 'string' && content.trim()) return { path, content, from: 'machine' }
     }
-    return { path: null, content: null, note: 'The machine has no Dockerfile in its clone of this app, or cannot read one yet' }
+    return said('The machine has no Dockerfile in its clone of this app, or cannot read one yet')
   },
 
   async readRepoDockerfile() {

@@ -353,7 +353,9 @@ type AppFromBlueprint {
 /// port: placing on `serverId` picks one (`FJS-D1557`). `dockerfile` is the
 /// App's own copy, blank for the repository's. `deployOnPush` is on when a
 /// server is named and `false` turns it off (`FJS-D1558`); without a server it
-/// is never on.
+/// is never on. `connect` writes the deploy key and the push hook at GitHub
+/// with the workspace's token (`FJS-D1571`); it needs a server and a GitHub
+/// repository.
 type ProjectFromRepo {
   name         String
   slug         String?
@@ -363,6 +365,7 @@ type ProjectFromRepo {
   serverId     String?
   hostname     String?
   deployOnPush Boolean?
+  connect      Boolean?
 }
 
 /// What `apps.readRepoDockerfile` accepts: a public repository and the branch
@@ -3473,17 +3476,10 @@ model HubConfig {
 
   name                      String   @trim @length(1, 80) @default("Basecamp")
 
-  // Used for webhook callbacks, outpost registration and every link in an
-  // email — so it is the one setting that is wrong in a way nothing local can
-  // detect: mail goes out with a hostname nobody can reach.
-  //
-  // `@url` and no `@length`. A bound alongside it cannot be ISOLATED — every
-  // 301-character string that would exercise it is refused by `@url` first, so
-  // `verifyConstraints` reports the length rule as unchecked rather than
-  // passing it on the wrong refusal (`FJS-351`). A rule nothing can test is a
-  // rule nobody should declare.
-  baseUrl                   String   @trim @url
-  adminEmail                String   @email @lower
+  // No base URL and no mail sender: FRONTIER_APP_URL, FRONTIER_API_URL and
+  // MAIL_FROM are read at boot, before any row is, and a column beside them
+  // was a second answer nothing read (FJS-3573). `hub.app-url`, `hub.api-url`
+  // and `hub.mailer` grade the env on /hub/security/.
 
   // A server goes `unreachable` after this long without a check-in. Bounded
   // below by the outpost's own heartbeat interval — anything under it marks
@@ -3551,10 +3547,7 @@ model HubConfig {
   hostServerId              String?   @unique @system
   hostServer                Server?   @relation("HubHost", fields: [hostServerId], references: [id], onDelete: SetNull)
 
-  mailFromAddress           String?  @email @lower
-  mailFromName              String?  @trim @length(0, 80)
-
-  updatedAt                 DateTime @default(now()) @updatedAt
+  updatedAt                DateTime @default(now()) @updatedAt
   version                   Int      @version
 
   // Nothing below the hub tier reads or writes this — it is the installation,

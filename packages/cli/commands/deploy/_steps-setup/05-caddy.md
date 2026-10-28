@@ -4,8 +4,6 @@ description: Write this app's routes into the machine's Caddy
 ---
 
 ```js
-if ($.config.abort) return
-
 const { host, serverPath, appId, edge, apiPort } = $.config
 
 // The pause guard and the page it serves come from `core/pause.js`, which is

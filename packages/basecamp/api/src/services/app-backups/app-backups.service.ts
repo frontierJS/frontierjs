@@ -91,6 +91,7 @@ export default createService({
     const app = await getScoped('app', 'App', (($.data ?? {}) as Record<string, unknown>).appId as string)
     if (!app.backupDestinationId) throw new BadRequest(`App '${app.name}' names no backup destination`)
     await queueAppArchiveRescan($.app, app.id)
+    $.dispatch = false   // nothing written yet; the job writes the rows
     return { queued: true }
   },
 

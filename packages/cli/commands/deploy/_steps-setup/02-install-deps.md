@@ -5,8 +5,6 @@ skip: "$.config.missingDeps?.length === 0"
 ---
 
 ```js
-if ($.config.abort) return
-
 const { host, missingDeps } = $.config
 const machine = machineFor($, host, $.config.serverPath)
 

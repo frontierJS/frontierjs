@@ -6,8 +6,6 @@ skip: "!$.config.doWeb || $.config.deployConf.web === false"
 ---
 
 ```js
-if ($.config.abort) return
-
 const { host, serverPath } = $.config
 const machine = machineFor($, host, serverPath)
 
@@ -16,7 +14,10 @@ let releases = ''
 try {
   releases = machine.capture(`ls -1dt ${serverPath}/releases/* 2>/dev/null | head -2`)
 } catch {
-  releases = ''
+  // The pipeline ends in head, so only ssh itself fails here.
+  log.error(`Lost ${host} — web was not rolled back`)
+  $.config.abort = true
+  return
 }
 
 const releaseList = releases.split('\n').filter(Boolean)

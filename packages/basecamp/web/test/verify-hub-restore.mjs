@@ -10,7 +10,8 @@
 // the bucket and stages A's archive; the API restarts, the open page notices by
 // itself, A's owner signs in, and the reconcile the restored boot queued finds
 // both replicas: the App's card and `/hub/backups/`'s card, each graded against
-// the BUCKET's own listing (`IDEAS/backups.md` 4.8).
+// the BUCKET's own listing (`IDEAS/backups.md` 4.8). An App archive put in the
+// bucket after A's backup comes back as a found row the hub hashed (4.9).
 //
 // **bun + docker + Chrome + litestream v0.5 or newer.** `LITESTREAM_BIN` names
 // the binary when the one on PATH is older; `litestone`'s `litestreamInstall`
@@ -31,7 +32,7 @@ export const holds = ['ports']
 
 import { spawn, spawnSync }       from 'node:child_process'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { randomBytes }            from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { createConnection }       from 'node:net'
 import { dirname, join }          from 'node:path'
 import { fileURLToPath }          from 'node:url'
@@ -220,7 +221,8 @@ try {
   const archives = await destination('Hub archives', 'hub')
   const appDest  = await destination('App replica', 'apps')
   const hubDest  = await destination('Hub replica', 'hubrep')
-  check('three destinations on SeaweedFS', [archives, appDest, hubDest].every(d => d?.id), JSON.stringify([archives, appDest, hubDest]))
+  const appArch  = await destination('App archives', 'apparch')
+  check('four destinations on SeaweedFS', [archives, appDest, hubDest, appArch].every(d => d?.id), JSON.stringify([archives, appDest, hubDest, appArch]))
 
   const current = (await call('/hub-config', { serviceMethod: 'current', body: {} })).body
   const saved   = await call('/hub-config', { serviceMethod: 'save',
@@ -236,8 +238,9 @@ try {
   }
   if (!target) throw new Error('the seed left no placed app to replicate')
   const patched = await call(`/apps/${target.id}`, { method: 'PATCH',
-    body: { replicaDestinationId: appDest.id, version: target.version } })
-  check(`app '${target.slug}' replicates to its own destination`, patched.body?.replicaDestinationId === appDest.id,
+    body: { replicaDestinationId: appDest.id, backupDestinationId: appArch.id, version: target.version } })
+  check(`app '${target.slug}' replicates to its own destination`,
+    patched.body?.replicaDestinationId === appDest.id && patched.body?.backupDestinationId === appArch.id,
     JSON.stringify(patched))
 
   // Litestream, from the YAML Outpost writes: one directory target per
@@ -293,6 +296,13 @@ try {
   check('…and the bucket holds the archive it names', archived.length === 1 && archived[0].key === row?.location,
     JSON.stringify({ archived, location: row?.location }))
   await stop(api)
+
+  // An App archive taken after A's backup, so no row B restores names it. The
+  // gateway runs without auth, so the drive writes it as Outpost's PUT would.
+  const appArchive    = randomBytes(4096)
+  const appArchiveKey = `apparch/${target.id}-2026-10-27T03-00-00-000Z.tar.gz`
+  const put = await fetch(`${S3}/${BUCKET}/${appArchiveKey}`, { method: 'PUT', body: appArchive })
+  if (!put.ok) throw new Error(`PUT ${appArchiveKey}: ${put.status}`)
 
   // ── Hub B: a new box, A's key, the bucket named by its env ──
   const restoreEnv = { HUB_RESTORE_ENDPOINT: S3, HUB_RESTORE_BUCKET: BUCKET, HUB_RESTORE_PREFIX: 'hub', HUB_RESTORE_KEY: S3_KEY }
@@ -357,6 +367,13 @@ try {
   const hubNewest = newest(await bucketObjects('hubrep/basecamp/'))
   check('…and Basecamp\'s own replica on HubConfig', !!hub?.replicaFoundAt && hub?.replicaSyncedAt === hubNewest,
     JSON.stringify({ hub: hub?.replicaSyncedAt, hubNewest }))
+  let foundArchive = null
+  await until(async () => (foundArchive = ((await call(`/app-backups?appId=${target.id}`)).body?.data ?? [])
+    .find(r => r.kind === 'found'))?.status === 'success', 30_000)
+  check('…and the App archive newer than the hub\'s, found with no machine and hashed by the hub',
+    foundArchive?.location === appArchiveKey && foundArchive?.serverId == null
+      && foundArchive?.sha256 === createHash('sha256').update(appArchive).digest('hex'),
+    JSON.stringify(foundArchive) + '\n' + api.out.split('\n').filter(l => /app-archive/i.test(l)).slice(-6).join('\n'))
   const told = (await call('/notifications?$limit=50')).body?.data ?? []
   check('the owner is told which apps were found', told.some(n => n.type === 'ReplicaFound' && n.data?.apps?.some(a => a.id === target.id)),
     JSON.stringify(told.map(n => n.type)))

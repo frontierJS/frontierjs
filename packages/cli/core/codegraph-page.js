@@ -25,11 +25,12 @@
  */
 
 import {
-  gilbert, gridFor, coreLayout, packageGrid, depthLayout, coreRegions, tileBands, scoreOf, isHotspot, bandLabels, paletteCss, themesIn,
+  gilbert, gridFor, coreLayout, packageGrid, depthLayout, coreRegions, tileBands, scoreOf, isHotspot, bandLabels, paletteCss,
   KINDS, TONES, QUADRANTS, MORE, STRONG, TESTED_BAND, COGNITIVE, HALF_LIFE_DAYS, SCORE_RAMP, SCORE_STEPS, SCORE_WARN, SCORE_MAX,
 } from './codegraph.js'
 
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+import { htmlPage, themePicker, themesFor, embedJson, esc, CLIENT_ESC } from './html-page.js'
+
 const round1 = x => x == null ? null : Math.round(x * 10) / 10
 
 // Only the pulls toward the core reach the page; the rest of the matrix decides nothing there.
@@ -53,7 +54,6 @@ const MORE_KEY = {
 }
 
 export function renderPage(model, { css, theme, all = false, name }) {
-  const themes = themesIn(css)
   const core   = coreRegions(model.files)
   const data = {
     name, head: model.head, builtAt: model.builtAt, halfLife: HALF_LIFE_DAYS,
@@ -77,25 +77,20 @@ export function renderPage(model, { css, theme, all = false, name }) {
               ...MORE.map(m => b[m])]
     }),
   }
-  // `<` escaped so a path holding `</script>` cannot close the block it sits in.
-  const json = JSON.stringify(data).replace(/</g, '\\u003c')
 
-  return [
-    '<!doctype html>',
-    '<!-- fli project:codegraph --as=page · not a snapshot -->',
-    '<html lang="en"><head><meta charset="utf-8">',
-    '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    `<title>${esc(name)} codegraph</title>`,
-    `<style id="fjs-css">${css}</style>`,
-    `<style id="codegraph">body {\n  ${paletteCss()}\n}\n${STYLE}</style>`,
-    `</head><body class="app theme-${esc(theme)}">`,
+  return htmlPage({
+    banner: 'fli project:codegraph --as=page · not a snapshot',
+    title:  `${name} codegraph`,
+    css,
+    theme,
+    styles: { codegraph: `body {\n  ${paletteCss()}\n}\n${STYLE}` },
+    script: `const D = ${embedJson(data)}\n${gilbert.toString()}\n${gridFor.toString()}\n${coreLayout.toString()}\n${packageGrid.toString()}\n${depthLayout.toString()}\n${SCRIPT}`,
+    body: [
     `<header class="topbar">
       <strong>${esc(name)}</strong>
       <span class="text-xs text-muted">codegraph @ ${esc(model.head)}</span>
       <span class="cg-grow"></span>
-      <label class="cluster gap-2xs"><span class="text-xs text-muted">theme</span>
-        <select class="field" id="theme" aria-label="Theme">${themes.map(t => `<option value="${esc(t)}"${t === theme ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>
-      </label>
+      ${themePicker(themesFor(css))}
     </header>`,
     '<main class="screen">',
     `<section class="pane"><div class="cg-facts" id="facts"></div></section>`,
@@ -183,10 +178,8 @@ export function renderPage(model, { css, theme, all = false, name }) {
     </section>`,
     `<section class="pane"><dl class="facts divided" id="method"></dl></section>`,
     '</main>',
-    `<script>const D = ${json}\n${gilbert.toString()}\n${gridFor.toString()}\n${coreLayout.toString()}\n${packageGrid.toString()}\n${depthLayout.toString()}\n${SCRIPT}</script>`,
-    '</body></html>',
-    '',
-  ].join('\n')
+    ],
+  })
 }
 
 // ─── style ────────────────────────────────────────────────────────────────────
@@ -265,7 +258,7 @@ const STEPS = Array.from({ length: D.scoreSteps }, (_, s) => s)
 const BAND_KEY = { heat: 'bHeat', blast: 'bBlast', complexity: 'bCx', exposure: 'bExp', score: 'bScore', age: 'bAge', churn: 'bChurn', tested: 'bTested', cycle: 'bCycle', cognitive: 'bCognitive' }
 const NAME = { heat: 'Heat', blast: 'Blast radius', complexity: 'Complexity', exposure: 'Exposure', score: 'Score', age: 'Age', churn: 'Churn', tested: 'Tested', cycle: 'Import cycle', cognitive: 'Hardest function' }
 const $ = id => document.getElementById(id)
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+${CLIENT_ESC}
 const n = x => x.toLocaleString()
 const fmtBytes = b => b == null ? '–' : b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' kB' : (b / 1048576).toFixed(1) + ' MB'
 const fmtDays = a => a == null ? 'never committed' : a < 1 ? 'today' : a < 2 ? 'yesterday' : a < 60 ? Math.round(a) + ' days ago' : Math.round(a / 30.4) + ' months ago'
@@ -811,13 +804,8 @@ $('growth-scale').addEventListener('click', () => {
 })
 syncGrowth()
 
-function setTheme(theme) {
-  document.body.className = document.body.className.replace(/\btheme-[\w-]+/, 'theme-' + theme)
-  readColors(); draw(); renderReadout()
-}
-$('theme').addEventListener('change', ev => { store.set('fli-codegraph-theme', ev.target.value); setTheme(ev.target.value) })
-const saved = store.get('fli-codegraph-theme')
-if (saved && [...$('theme').options].some(o => o.value === saved)) { $('theme').value = saved; document.body.className = document.body.className.replace(/\btheme-[\w-]+/, 'theme-' + saved) }
+// The canvas paints from computed colors, so a theme change repaints it.
+document.addEventListener('themechange', () => { readColors(); draw(); renderReadout() })
 
 new ResizeObserver(() => { if (L) { size(); draw() } }).observe(stage)
 

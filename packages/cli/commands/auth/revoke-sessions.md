@@ -22,28 +22,26 @@ flags:
 ---
 
 <script>
-import { existsSync, writeFileSync } from 'fs'
-import { resolve }                    from 'path'
-
-const makeScript = (schemaPath, encKey, email, revokeAll) => `
+const SCRIPT = `
 import { createClient } from '@frontierjs/litestone'
 
-const db  = await createClient({ path: '${schemaPath}', resolveFrom: 'schema', encryptionKey: '${encKey}' })
+const input = JSON.parse(process.env.FLI_INPUT)
+
+const db  = await createClient({ path: input.schemaPath, resolveFrom: 'schema', encryptionKey: process.env.ENCRYPTION_KEY })
 const sys = db.asSystem()
 
-${revokeAll ? `
-const result = await sys.session.deleteMany({ where: {} })
-console.log(JSON.stringify({ revoked: result?.count ?? 0, target: 'all' }))
-` : `
-const user = await sys.user.findFirst({ where: { email: '${email}' } })
-if (!user) {
-  console.error('ERROR: User not found: ${email}')
-  process.exit(1)
+let where = {}
+if (!input.all) {
+  const user = await sys.user.findFirst({ where: { email: input.email } })
+  if (!user) {
+    console.error('ERROR: User not found: ' + input.email)
+    process.exit(1)
+  }
+  where = { userId: user.id }
 }
-const result = await sys.session.deleteMany({ where: { userId: user.id } })
-console.log(JSON.stringify({ revoked: result?.count ?? 0, target: '${email}' }))
-`}
 
+const result = await sys.session.deleteMany({ where })
+console.log(JSON.stringify({ revoked: result?.count ?? 0 }))
 await db.$close()
 `
 </script>
@@ -52,94 +50,26 @@ Revokes active sessions by deleting them from the database.
 The user will be required to log in again on all devices.
 
 ```js
-const schemaPath = resolve($.paths.db, 'schema.lite')
-
-// ─── Preflight ────────────────────────────────────────────────────────────────
-
 if (!flag.all && !arg.email) {
-  log.error('Provide an email address or use --all to revoke all sessions')
-  log.info('Usage:')
-  log.info('  fli auth:revoke-sessions alice@acme.com')
-  log.info('  fli auth:revoke-sessions --all')
-  return
+  return refuse($, 'Name a user, or pass --all to revoke every session',
+    'fli auth:revoke-sessions alice@acme.com',
+    'fli auth:revoke-sessions --all')
 }
 
-if (!existsSync(schemaPath)) {
-  log.error(`schema.lite not found at ${schemaPath}`)
-  return
-}
+const schemaPath = requireSchema($)
+if (!schemaPath || !requireEncryptionKey($)) return
 
-// `.env` is already loaded — bootstrap.js reads the project's before any
-// command runs, and overrides the global one with it.
-const encKey = process.env.ENCRYPTION_KEY
-
-if (!encKey) {
-  log.error('ENCRYPTION_KEY not set in .env')
-  return
-}
-
-// ─── Dry run ──────────────────────────────────────────────────────────────────
-
-if (flag.dry) {
-  if (flag.all) {
-    log.dry('Would revoke ALL sessions for ALL users')
-  } else {
-    log.dry(`Would revoke all sessions for: ${arg.email}`)
-  }
-  return
-}
-
-// ─── Confirm --all ────────────────────────────────────────────────────────────
+const target = flag.all ? 'every user' : arg.email
+if (flag.dry) return log.dry(`Would revoke every session for ${target}`)
 
 if (flag.all) {
-  echo('')
-  log.warn('This will revoke ALL sessions for ALL users.')
-  const confirmed = await tty.line('Continue? (y/n) › ')
-  if (confirmed.toLowerCase() !== 'y' && confirmed.toLowerCase() !== 'yes') {
-    log.info('Aborted')
-    return
-  }
+  log.warn('This revokes every session for every user.')
+  if (!await confirm($)) return log.info('Aborted')
 }
 
-// ─── Run ──────────────────────────────────────────────────────────────────────
+const out = runAppScript($, 'revoke-sessions', SCRIPT, { schemaPath, email: arg.email, all: flag.all })
+if (!out) return refuse($, `Revoking sessions for ${target} failed — the reason is above`)
 
-const { unlinkSync } = await import('fs')
-const tmpPath = resolve($.paths.root, `.fli-revoke-sessions-${Date.now()}.ts`)
-
-try {
-  writeFileSync(tmpPath, makeScript(
-    schemaPath.replace(/\\/g, '/'),
-    encKey,
-    arg.email ?? '',
-    flag.all
-  ), 'utf8')
-
-  const result = $.exec({ command: `bun run "${tmpPath}"`, stdio: ['ignore', 'pipe', 'inherit'] })
-  const output = (result?.stdout ?? result ?? '').toString().trim()
-  const last   = output.split('\n').find(l => l.startsWith('{'))
-
-  if (!last) {
-    log.error('Failed — check output above')
-    return
-  }
-
-  const { revoked, target } = JSON.parse(last)
-
-  echo('')
-  if (revoked === 0) {
-    log.info(`No active sessions found for ${target}`)
-  } else {
-    log.success(`Revoked ${revoked} session${revoked !== 1 ? 's' : ''} for ${target}`)
-  }
-  echo('')
-
-} catch (err) {
-  if (err.message?.includes('User not found')) {
-    log.error(`User not found: ${arg.email}`)
-  } else {
-    log.error(`Failed: ${err.message}`)
-  }
-} finally {
-  if (existsSync(tmpPath)) unlinkSync(tmpPath)
-}
+if (out.revoked === 0) log.info(`No active sessions for ${target}`)
+else log.success(`Revoked ${plural(out.revoked, 'session')} for ${target}`)
 ```

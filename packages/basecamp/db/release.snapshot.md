@@ -50,7 +50,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `NotificationContext` | `AlertEvent` · `Deployment` · `JobRun` · `Monitor` · `Server` · `Workspace` |
 | `NotificationKind` | `AlertFiring` · `AlertResolved` · `DependencyVulnerable` · `DeployFailed` · `DeploySuccess` · `JobFailed` · `MemberJoined` · `MonitorDown` · `MonitorUp` · `PostureFailed` · `ReplicaFound` · `ServerUnreachable` · `WeeklyDigest` |
 | `ParamGenerator` | `random_hex_16` · `random_hex_32` · `random_hex_64` |
-| `ProviderKind` | `cloudflare` · `custom` · `digitalocean` · `hetzner` |
+| `ProviderKind` | `cloudflare` · `custom` · `digitalocean` · `github` · `hetzner` |
 | `ProvisionStepName` | `create` · `poll` · `start` · `timeout` |
 | `RunStatus` | `failed` · `pending` · `running` · `success` · `timeout` |
 | `SecretKind` | `backup` · `generic` · `notification` · `provider_key` · `registry_auth` · `ssh_key` · `tls_cert` |
@@ -298,7 +298,7 @@ table `app_backup` · db `main` · gate `5.8.8.8`
 | `location` | `String` | yes | — | — |
 | `requestedBy` | `String` | yes | — | — |
 | `server` | `Server` | — | — | relation |
-| `serverId` | `String` | no | — | **required on write** |
+| `serverId` | `String` | yes | — | — |
 | `sha256` | `String` | yes | — | — |
 | `sizeBytes` | `Int` | yes | — | — |
 | `startedAt` | `DateTime` | yes | — | — |
@@ -2002,6 +2002,7 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 @@index(status)
 @@index(workspaceId)
 @@check(providerKind != 'cloudflare')
+@@check(providerKind != 'github')
 @@deny(create, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
 @@deny(delete, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
 @@deny(postUpdate, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)

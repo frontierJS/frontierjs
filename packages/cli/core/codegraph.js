@@ -36,13 +36,14 @@
  * marked stale rather than trusted quietly.
  */
 
-import { execFileSync }                                     from 'node:child_process'
+import { gitOut }                                           from './git.js'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, posix, resolve, relative, isAbsolute, sep } from 'node:path'
 import { allocate }                                         from '@frontierjs/toolbelt/units'
 import { PARSABLE, measureFunctions, worstFunction }        from './functions.js'
 import { encodePng }                                        from './png.js'
 import { ASSET, kindOf }                                    from './file-kind.js'
+import { themesIn }                                          from './assets.js'
 
 // ─── the rules ────────────────────────────────────────────────────────────────
 
@@ -493,7 +494,11 @@ export function regionReader(paths) {
 }
 
 export function collectCodegraph({ root, now = Date.now(), ts = null }) {
-  const git   = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', maxBuffer: 1 << 29 })
+  const git   = (...args) => {
+    const out = gitOut(root, args, { maxBuffer: 1 << 29 })
+    if (out === null) throw new Error(`git ${args[0]} failed in ${root}`)
+    return out
+  }
   const paths = git('ls-files', '-z').split('\0').filter(Boolean).sort()
   const known = new Set(paths)
   const regionOf   = regionReader(paths)
@@ -943,9 +948,6 @@ if (SCORE_RAMP.length !== SCORE_STEPS.length + 1) throw new Error(`SCORE_STEPS h
 // What is not a band: the ground, a slot at the end of the curve, a region's
 // edge, and a quadrant the metric does not apply to.
 export const GROUND = { surface: 'surface', empty: 'rule-strong', boundary: 'ink-mute', na: 'surface-sunken' }
-
-/** Every `.theme-<name>` the stylesheet declares. */
-export const themesIn = css => [...new Set([...css.matchAll(/\.theme-([a-z0-9-]+)\s*\{/g)].map(m => m[1]))].sort()
 
 /**
  * The custom properties a theme resolves to: every `:root` block, then the

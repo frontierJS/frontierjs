@@ -926,8 +926,6 @@ CREATE INDEX IF NOT EXISTS "idx_backup_destinationId" ON "backup" ("destinationI
 CREATE TABLE IF NOT EXISTS "hub_config" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'hub',
   "name" TEXT NOT NULL DEFAULT 'Basecamp',
-  "baseUrl" TEXT NOT NULL,
-  "adminEmail" TEXT NOT NULL,
   "heartbeatTimeoutSeconds" INTEGER NOT NULL DEFAULT 120,
   "sessionTtlHours" INTEGER NOT NULL DEFAULT 168,
   "requireTwoFactorForOwners" INTEGER NOT NULL DEFAULT 0,
@@ -946,8 +944,6 @@ CREATE TABLE IF NOT EXISTS "hub_config" (
   "encryptionKeyEscrowedAt" TEXT,
   "encryptionKeyFingerprint" TEXT,
   "hostServerId" TEXT UNIQUE,
-  "mailFromAddress" TEXT,
-  "mailFromName" TEXT,
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "version" INTEGER NOT NULL DEFAULT 1,
   FOREIGN KEY ("backupDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL,

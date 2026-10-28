@@ -32,12 +32,12 @@ Read 2026-10-12.
   `dist/` with Sierra's `serveSite`, never with wrangler, and so does the
   `site/deploy/` container.
 - **`serveSite` answers `_redirects` as the host does** and never serves it or
-  `_headers` ([`FJS-2717`](../ISSUES.md#fjs-2717), closed). It answers the
+  `_headers` ([`FJS-2717`](../ISSUES_ARCHIVE.md#fjs-2717), closed). It answers the
   exact-path rules Sierra emits and refuses any other shape at start.
 - **The cache rule lives only in `serveSite`'s `cacheFor`.** Nothing tells a
   host that HTML revalidates and a hashed asset is immutable. (Step 2 since.)
 - **Host functions are what still holds ksite on Pages**
-  ([`FJS-1540`](../ISSUES.md#fjs-1540)): a same-origin Plausible proxy and a
+  ([`FJS-1540`](../ISSUES_ARCHIVE.md#fjs-1540)): a same-origin Plausible proxy and a
   `sendBeacon` lead fallback written to Cloudflare KV.
 
 ## The shape — four layers, and only one knows Cloudflare

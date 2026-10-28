@@ -13,8 +13,9 @@
 //
 // Both questions read the same two places, so they are one module.
 
-import { existsSync, readFileSync } from 'fs'
+import { existsSync }              from 'fs'
 import { resolve }                  from 'path'
+import { read }                     from './fs.js'
 import { importedAs }               from './utils.js'
 
 // The composition root first: `fli new` configures plugins in `api/src/app.ts`
@@ -38,7 +39,6 @@ const present = (root, names) => names
   .map(rel => ({ rel, abs: resolve(root, rel) }))
   .filter(c => existsSync(c.abs))
 
-const read = (abs) => { try { return readFileSync(abs, 'utf8') } catch { return '' } }
 
 // ─── resolveHealthPath ───────────────────────────────────────────────────────
 //
@@ -56,7 +56,7 @@ export function resolveHealthPath(root) {
   ]
   for (const file of sources) {
     if (!existsSync(file)) continue
-    const found = read(file).match(/apiPrefix\s*:\s*['"`]([^'"`]*)['"`]/)
+    const found = (read(file) ?? '').match(/apiPrefix\s*:\s*['"`]([^'"`]*)['"`]/)
     if (found) return { path: `${found[1]}/health`, from: file, prefix: found[1] }
   }
   return { path: '/health', from: null, prefix: '' }
@@ -86,7 +86,7 @@ export function declaresHealth(root, healthPath = '/health') {
   const servesPlugin = healthPath.endsWith('/health')
 
   for (const c of present(root, CODE_FILES)) {
-    const src = read(c.abs)
+    const src = read(c.abs) ?? ''
     const plugin = importedAs(src, 'health', '@frontierjs/junction')
     if (servesPlugin && plugin && new RegExp(`\\b${plugin}\\s*\\(`).test(src)) sources.push({ how: 'plugin-call', file: c.rel })
     else if (literal.test(src))                                                    sources.push({ how: 'route-literal', file: c.rel })
@@ -94,7 +94,7 @@ export function declaresHealth(root, healthPath = '/health') {
 
   if (servesPlugin) {
     for (const c of present(root, CONFIG_FILES)) {
-      if (configDeclaresHealth(read(c.abs))) sources.push({ how: 'config', file: c.rel })
+      if (configDeclaresHealth(read(c.abs) ?? '')) sources.push({ how: 'config', file: c.rel })
     }
   }
 

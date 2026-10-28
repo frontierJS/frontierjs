@@ -88,6 +88,11 @@ core/
                 `repo.js` for the workspace's own, each exporting its slice of
                 `CHECKS`; `lib.js` is the readers two slices share. A reader
                 one slice uses stays in that slice
+  fs.js         reading the tree, one spelling — `safeRead` (sorted), `read` and
+                `readJson` (null, never ''), `isDir`, `walk`, `SKIP`. A listing in
+                filesystem order reorders on another machine and reads as a change
+  git.js        `gitOut(root, argv)`, every git read core makes and `$.git`'s
+                too: argv, `GIT_OPTIONAL_LOCKS=0`, a timeout, null on failure
   tree.js       what a clone of this root holds — tracked plus unignored
                 untracked. A check that asks the disk instead is green here and
                 red on a runner; `null` without git, and the caller uses the disk
@@ -525,7 +530,10 @@ core/
                 README, .gitignore, fli.json, the empty schema), `api.js` the
                 `api/` surface (index, app, core/*, the access test, the retention
                 job, junction.config), `web.js` the `web/` surface (index.html,
-                vite + sierra configs, App.mesa, nav, controls, every route).
+                vite + sierra configs, App.mesa, nav, controls, every route),
+                `surface.js` what every UI surface's scaffold shares — the vite
+                config and runner, index.html, serve.js + Dockerfile, the
+                write-if-absent loop, the port defaults (`FJS-D1577`).
                 `project/new.md` keeps the questions, the spec and the file list;
                 the text of what is written lives here so a test can import a
                 builder instead of slicing the command with a regex
@@ -800,6 +808,10 @@ core/
                 beside the words in `frontier:who`, and `crestSvg`, the
                 Worker's `GET /badge/<number>.svg`. Recognition, never proof; a
                 bit moved here redraws every member's crest
+  qr.js         a QR code for `tell:upload --qr`, byte mode at level L, painted
+                black on white so a dark theme does not invert it
+  zip.js        a folder as one stored zip for `tell:upload <folder>`; the seal
+                deflates, and symlinks are left out
   (the chain and the member row are `@frontierjs/toolbelt/frontier`, read by
                 the Worker and by Haven as well — `FJS-D1416`…`FJS-D1421`)
   tell-worker.js  the Cloudflare Worker `fli tell` speaks to — one Durable

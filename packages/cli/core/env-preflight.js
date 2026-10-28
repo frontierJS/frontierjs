@@ -16,8 +16,9 @@
 // `fli new` app does; an app whose example never mentions it is not asked.
 
 import { randomBytes } from 'node:crypto'
-import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { read }    from './fs.js'
 
 export const KEY = 'ENCRYPTION_KEY'
 
@@ -77,6 +78,3 @@ function declares(text, name) {
   return new RegExp(`^[ \\t]*${name}[ \\t]*=`, 'm').test(text)
 }
 
-function read(path) {
-  return existsSync(path) ? readFileSync(path, 'utf8') : null
-}

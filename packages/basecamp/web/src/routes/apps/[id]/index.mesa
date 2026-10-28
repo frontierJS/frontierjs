@@ -418,8 +418,12 @@ title: App
     error = null; dockerfileSays = ''; busy = 'dockerfile-import'
     try {
       const r = await importDockerfile(app.id)
-      if (r.path) { typeDockerfile(r.content); dockerfileSays = `Filled from ${r.path}. Save to keep it.` }
-      else dockerfileSays = r.note ?? 'The machine found no Dockerfile in the clone.'
+      // The forge answers the branch now and the clone the last build, so the
+      // line says which one filled the editor.
+      const branch = app.source?.branch
+      const where = r.from === 'forge' ? `the repository${branch ? ` at ${branch}` : ''}` : 'the machine\'s clone'
+      if (r.path) { typeDockerfile(r.content); dockerfileSays = `Filled from ${r.path} in ${where}. Save to keep it.` }
+      else dockerfileSays = r.note || 'Neither the repository nor the machine\'s clone holds a Dockerfile.'
     } catch (e) {
       error = e.message
     } finally {

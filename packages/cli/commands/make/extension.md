@@ -74,13 +74,14 @@ const appPkgName = existsSync(join(root, 'package.json'))
   : appName
 const projectId  = projectIdFor(appPkgName, appName)
 const devPort    = portFor('ext', { env: 'dev', projectId })
+const apiPort    = portFor('be',  { env: 'dev', projectId })
 
 if (flag.dry) {
   log.dry(`Would ${fresh ? 'create' : 'top up'} the ${dir}/ surface`)
   return
 }
 
-const { written, skipped } = scaffoldExtensionSurface({ root, dir, appName, devPort })
+const { written, skipped } = scaffoldExtensionSurface({ root, dir, appName, devPort, apiPort })
 
 for (const f of written) log.success(`Created ${f}`)
 if (skipped.length) log.info(`Kept ${skipped.length} existing file(s) — a scaffold never overwrites your config.`)

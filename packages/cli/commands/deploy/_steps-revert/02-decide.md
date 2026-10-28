@@ -4,8 +4,6 @@ description: Read the journal, choose the release to restore, and refuse by name
 ---
 
 ```js
-if ($.config.abort) return
-
 const { host, serverPath, deployConf, target, appId } = $.config
 
 const core = (name) => import(new URL('file://' + global.fliRoot + '/core/' + name))

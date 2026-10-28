@@ -250,7 +250,6 @@
 summary.navlist-label {
   display:         flex;
   align-items:     center;
-  justify-content: space-between;
   gap:             var(--space-sm);
   border-radius:   var(--btn-radius);
   cursor:          pointer;
@@ -264,15 +263,18 @@ summary.navlist-label::-webkit-details-marker {
 summary.navlist-label:hover {
   color: var(--ink);
 }
+/* An auto margin, not space-between: a label with an icon in front would
+   have its words pushed to the middle of the row. */
 summary.navlist-label::after {
-  content:       "";
-  inline-size:   0.35rem;
-  block-size:    0.35rem;
-  border-right:  2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  transform:     rotate(-45deg);
-  transition:    transform var(--motion-base) var(--motion-ease);
-  flex-shrink:   0;
+  content:             "";
+  margin-inline-start: auto;
+  inline-size:         0.35rem;
+  block-size:          0.35rem;
+  border-right:        2px solid currentColor;
+  border-bottom:       2px solid currentColor;
+  transform:           rotate(-45deg);
+  transition:          transform var(--motion-base) var(--motion-ease);
+  flex-shrink:         0;
 }
 details[open] > summary.navlist-label::after {
   transform: rotate(45deg);
@@ -314,6 +316,9 @@ details[open]:has(> summary.navlist-label)::details-content {
   overflow:      hidden;
   text-overflow: ellipsis;
   white-space:   nowrap;
+}
+.sidebar.rail summary.navlist-label::after {
+  display: none;
 }
 .sidebar :is(.navlink-text, .navlist-label) {
   transition: opacity var(--motion-base);

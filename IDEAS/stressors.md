@@ -72,7 +72,7 @@ than started.
 | 26 | **serpgrid** — local SEO for agencies: a rank grid scanned on a schedule, beside the client's CRM and Google profile | an outbound call that costs money; one agency's Google grant spent by many client tenants; one scan fanned into N vendor tasks that finish out of order; a webhook signed by a JWT checked against published keys | `third-party-credentials.md` · `conduit-batteries.md` · `geo.md` · `bearer-access.md` · #21 · #23 · #24 |
 | 27 | **maid.tech** — the live legacy-FJS cleaning-business CRM the trunk came from, 148 accounts, being ported | a role a tenant wrote, read by the gate; a report that is a stored query, stored SQL and stored code on one row; a client who signs in but is not a user; a page a tenant authored, served on a domain the app does not own | `conversion-maid-tech.md` · `tenant-authored-queries.md` · `tenant-declared-fields.md` · `tables-from-the-seed.md` · #14 · #24 |
 | 28 | **Darkroom** — a browser photo editor: adjustments, curves, selective color, layers, crop, draw, export, batch, a social-card composer, ported from a React mockup | a bitmap as the record, with undo as thirty PNG snapshots of every layer; a slider at drag rate driving full-resolution pixel work on the main thread; a pointer drag owned twenty-eight times and never on touch; a color that IS the data under Invariant 13; one outbound call from an app with no `api/` | `@frontierjs/ui` `Slider.mesa` · `FileUpload.mesa` · `CommandPalette.mesa` · `static-safety.md` · `third-party-credentials.md` · #20 · #16 |
-| 42 | **page-performer** — a WebPageTest-shaped page-load tester: a URL in, headless Chromium, a waterfall, Core Web Vitals and a HAR out; a live Kobami tool, ported | one service call holding a browser for up to a minute, cancelled only by the caller hanging up; a stranger's URL whose subresources and redirects are the browser's requests, past any grader; a multi-MB document as one row; a second headless-Chromium owner beside print-kit, which the deploy image does not see ([`FJS-3113`](../ISSUES.md#fjs-3113)) | `print-kit` · `@frontierjs/junction/public-url` (`FJS-681`) · #8 |
+| 42 | **page-performer** — a WebPageTest-shaped page-load tester: a URL in, headless Chromium, a waterfall, Core Web Vitals and a HAR out; a live Kobami tool, ported | one service call holding a browser for up to a minute, cancelled only by the caller hanging up; a stranger's URL whose subresources and redirects are the browser's requests, past any grader; a multi-MB document as one row; a second headless-Chromium owner beside print-kit, which the deploy image does not see ([`FJS-3113`](../ISSUES_ARCHIVE.md#fjs-3113)) | `print-kit` · `@frontierjs/junction/public-url` (`FJS-681`) · #8 |
 | 43 | **Intake** (codename, provisional) — a browser extension that clips a highlighted selection or a picked element with its tab's context, hands it to an AI clarify step, and files the result in 37signals Basecamp as a to-do, card, message or document | the extension surface carrying a product, at first with no `api/` behind it; a clip that must outlive the worker that captured it; a webhook secret in an extension store anyone on the machine can read; a kind decided by a model and never by the capturer; a flow that starts in n8n and is ported to orion | `jetty` · `orion` · `conduit-anthropic` · `conduit-37signals` · `third-party-credentials.md` · #37 · #28 |
 
 **#29–#40 are Phase 2** — a gap scan, none started, in § Phase 2 below the
@@ -1398,12 +1398,12 @@ in `mockup/`.
 
 **Measured on the port:** cancellation reaches the hook only through
 `ctx.$raw.$raw.$req.signal`, so only over HTTP and with no `ctx` field of its
-own ([`FJS-3117`](../ISSUES.md#fjs-3117)); a run therefore posts through
+own ([`FJS-3117`](../ISSUES_ARCHIVE.md#fjs-3117)); a run therefore posts through
 `client.fetch`, because a `tests.service.create` over the socket carries no
 signal and gives up at the client's 30s timeout while a five-run test is still
-loading. A fresh `--no-auth` scaffold has the [`FJS-3073`](../ISSUES.md#fjs-3073)
+loading. A fresh `--no-auth` scaffold has the [`FJS-3073`](../ISSUES_ARCHIVE.md#fjs-3073)
 prefix bug; `deploy-image-needs` passes an app that needs Chromium
-([`FJS-3113`](../ISSUES.md#fjs-3113)). A pixel-exact chart design met
+([`FJS-3113`](../ISSUES_ARCHIVE.md#fjs-3113)). A pixel-exact chart design met
 `css-raw-literal` 43 times, and only in `<style>` blocks: the same literals
 written as `style:` directives pass unchecked. They are tokens now, as
 `calc()` over a `--space-*` step so the default-density look is unchanged.

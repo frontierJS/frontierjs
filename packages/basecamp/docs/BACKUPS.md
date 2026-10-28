@@ -147,6 +147,11 @@ After it:
   for a machine that is not online; each workspace gets one notification
   naming its apps. Basecamp's own replica shows the same card on
   `/hub/backups/` — the next section.
+- It also lists each app's backup destination for archives taken after the
+  hub's, so no restored row names them. Each becomes a `found` `AppBackup`
+  with no machine, `pending` until the hub has read it through once and
+  recorded its sha256, then restorable as below. `app-backups.rescan
+  { appId }` runs the same listing by hand.
 
 ### The hub, from its own replica
 
@@ -250,7 +255,7 @@ stop the app first.
 
 **From an archive.** `apps.restoreVolume { serverId, backupId }`: the machine
 fetches the `AppBackup` from the bucket and refuses one whose sha256 is not the
-one recorded when it was taken. `path` instead of `backupId` names a file you
+one recorded when it was taken, or, for a found one, when the hub first read it. `path` instead of `backupId` names a file you
 copied into Outpost's restore directory. Stop the app first, and state
 `overwrite: true` if the volume is not empty.
 

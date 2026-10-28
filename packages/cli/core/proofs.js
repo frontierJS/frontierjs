@@ -28,8 +28,10 @@
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
 import { execFileSync }                          from 'node:child_process'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { gitOut }                                from './git.js'
+import { existsSync, readdirSync, statSync }              from 'node:fs'
 import { join }                                  from 'node:path'
+import { read, readJson }                        from './fs.js'
 
 import { kindOf }                                from './file-kind.js'
 
@@ -467,10 +469,7 @@ export function provesFor(root, { files, diff = null, rows = [] } = {}) {
 export function changedTree(root, { from = null, paths = [] } = {}) {
   const against = from ? `${from}...` : 'HEAD'
   const only    = paths.length ? ['--', ...paths] : []
-  const git = (argv) => {
-    try { return execFileSync('git', argv, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }) }
-    catch { return '' }
-  }
+  const git = argv => gitOut(root, argv) ?? ''
   const lines = text => text.trim().split('\n').filter(Boolean)
   const fresh = from ? [] : lines(git(['ls-files', '--others', '--exclude-standard', ...only]))
   const files = [...new Set([...lines(git(['diff', '--relative', '--name-only', against, ...only])), ...fresh])].sort()
@@ -525,13 +524,13 @@ function listDirs(dir) {
   } catch { return [] }
 }
 
-function read(path)     { try { return readFileSync(path, 'utf8') } catch { return null } }
-function readJson(path) { try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return null } }
 function escapeRe(s)    { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
 
-/** A markdown row's cells, respecting an escaped pipe inside one. */
+/** A markdown row's cells, respecting an escaped pipe inside one. The outer
+ *  pipes are optional in markdown, so a row without the trailing one keeps
+ *  its last cell. */
 export function splitRow(line) {
   const ESC = '\x00'
-  return line.replace(/\\\|/g, ESC).split('|').slice(1, -1)
+  return line.replace(/\\\|/g, ESC).trim().replace(/^\|/, '').replace(/\|$/, '').split('|')
     .map(c => c.split(ESC).join('|'))
 }

@@ -38,23 +38,10 @@ flags:
 ---
 
 ```js
-const target         = resolveTarget(flag, $.git)
-const deployConf     = await deployConfFor($, flag, log)
+const head = await deployTargetFor($, flag, log, { side: ['api', 'web'], why: 'there is no target to read a journal from' })
+if (!head) return
+const { target, deployConf, appId: app, resolved: side } = head
 
-if (!deployConf?.server) {
-  log.error('No deploy block in frontier.config.js — there is no target to read a journal from')
-  $.config.abort = true
-  return
-}
-
-const side = resolveSide(deployConf, target, 'api') ?? resolveSide(deployConf, target, 'web')
-if (!side) {
-  log.error(`Cannot resolve a server and path for target: ${target}`)
-  $.config.abort = true
-  return
-}
-
-const app = deployConf.app_id ?? deployConf.appId ?? deployConf.path?.split('/').pop()
 const j   = await connectJournal($, { host: side.host, serverPath: side.path, deployConf })
 
 // No `open()` here, and that is deliberate: opening REFUSES a journal belonging

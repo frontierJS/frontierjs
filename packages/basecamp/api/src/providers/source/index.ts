@@ -5,13 +5,15 @@
 // workspace ACCOUNT, a `Secret` of kind `provider_key`, registered as the
 // conduit target `provider:<kind>:<accountId>` by `compute/accounts.ts`. What
 // lives here is what a target cannot carry — the two things an App's
-// repository is told at connect, and what the forge's answer means.
+// repository is told at connect, the one file read from it, and what the
+// forge's answer means.
 //
-// The token is used at setup only. A push arrives on the webhook's HMAC
-// (`plugins/push.ts`) and the machine clones with the deploy key, so neither
-// path reads the token and a revoked one is found at the next connect, never
-// at a push. A write goes through `sendVia` and so meets its guard: a process
-// pointed at the real forge by mistake rewrites a real repository's hooks.
+// The token is used at setup and to read a file a person asks for, never on
+// a release: a push arrives on the webhook's HMAC (`plugins/push.ts`) and the
+// machine clones with the deploy key, so a revoked token is found at the next
+// connect or read, never at a push. A write goes through `sendVia` and so
+// meets its guard: a process pointed at the real forge by mistake rewrites a
+// real repository's hooks.
 
 import type { TargetDescriptor }  from '@frontierjs/conduit'
 import type { ProviderKind }      from '../../../../db/schema.d.ts'
@@ -23,6 +25,11 @@ export interface SourceRepo {
   owner: string
   name:  string
 }
+
+/** The forge answered as though the repository were not there. A forge says
+ *  this for a repository the token was not given too, so a workspace holding
+ *  several tokens asks the next one. */
+export class RepoUnseen extends Error {}
 
 /** A key the forge lets clone the repository. */
 export interface DeployKey {
@@ -59,6 +66,10 @@ export interface SourceConnector {
   /** Make the repository send its pushes to this URL, signed with this secret.
    *  A hook already at the URL is updated rather than a second one added. */
   setPushHook(send: AccountSend, repo: SourceRepo, hook: { url: string; secret: string }): Promise<PushHook>
+  /** The first of `paths` the repository holds at `ref` (no ref is the default
+   *  branch), or null for none. A repository the token does not see throws
+   *  `RepoUnseen`, so a missing file is never read as a missing repository. */
+  readFile(send: AccountSend, repo: SourceRepo, at: { paths: string[]; ref?: string | null }): Promise<{ path: string; content: string } | null>
 }
 
 const CONNECTORS: Partial<Record<ProviderKind, SourceConnector>> = {

@@ -5,8 +5,6 @@ skip: "!$.config.doApi"
 ---
 
 ```js
-if ($.config.abort) return
-
 const { imageTag, deployConf } = $.config
 const { host, path: serverPath } = $.config.api
 

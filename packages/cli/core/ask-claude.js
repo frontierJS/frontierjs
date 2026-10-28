@@ -43,7 +43,8 @@
 // one stream-json user message instead — the prompt as its text block, each
 // image a base64 block after it. Measured on 2.1.296, a resume included.
 
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn }            from 'node:child_process'
+import { gitOut }           from './git.js'
 
 export const ASK_TOOLS = ['Read', 'Grep', 'Glob', 'Bash']
 export const ASK_BASH  = ['git status:*', 'git diff:*', 'git log:*', 'git show:*', 'rg:*', 'ls:*']
@@ -388,9 +389,9 @@ export function askInput(prompt, images = []) {
 const shellWord = s => /^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`
 
 export function gitContext(root) {
-  const r = spawnSync('git', ['status', '--short', '--branch'], { cwd: root, encoding: 'utf8' })
-  if (r.status !== 0) return null
-  const lines = r.stdout.trimEnd().split('\n')
+  const out = gitOut(root, ['status', '--short', '--branch'])
+  if (out === null) return null
+  const lines = out.trimEnd().split('\n')
   return lines.length > 60 ? [...lines.slice(0, 60), `… ${lines.length - 60} more`].join('\n') : lines.join('\n')
 }
 

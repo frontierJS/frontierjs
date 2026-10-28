@@ -65,7 +65,10 @@ the person they give it to downloads it. **24 MiB at most**, and **free**.
   We take its shape and close the anonymous-upload gap with the chain.
 - *Memory:* magic-wormhole and croc, which pass files between two machines
   that are both online. The post stores the file instead, so the recipient
-  need not be online when it is sent.
+  need not be online when it is sent. Both send a folder as one archive,
+  which 4.3 takes.
+- **uqr** (unjs) and **Nayuki's QR Code generator**, which uqr ports: the
+  encoder 4.2 follows, byte mode at level M only.
 
 ## Rejected
 
@@ -213,6 +216,11 @@ file name.
   too.
   - README § The Frontier network › Files. `test:post-files` is 35 checks,
     green on 2026-10-27, Chrome included.
+- [x] 2.5 Deflate before sealing, kept only when smaller; the cap counts the
+  original bytes and `openFile` refuses an inflate past it (`FJS-D1574`).
+  - 2026-10-28: built; `test:post-files` 35 green, Chrome included. The
+    bomb and an unknown encoding were probed by hand, not by a row. The live
+    post's page predates it until the next `ws:post`.
 
 ### Phase 3 — Live
 
@@ -226,6 +234,30 @@ from the link in a browser.
     `frontier-files`. A 300 KB `tell:upload` came back through
     `tell:download` with the same sha256, the page answered 200, and the
     spent link answered 404. The browser half of *Done when* is the owner's.
+
+### Phase 4 — Everyday sending
+
+Goal: a link is traceable to its sender at a glance, reaches a phone from the
+screen, and takes a pipe or a folder as easily as a file.
+Done when: `test:post-files` drives each, and the owner scans a `--qr` code
+with a phone.
+
+- [x] 4.1 The file's page shows the sender's crest, and nothing else of them
+  (owner's call: no number, nick or inviter). `peek` answers the uploader's
+  root, `crestSvg` draws without a label, and `tell:upload` publishes the
+  chain as every other `tell` verb does, so a member who has only uploaded
+  still has a crest.
+- [x] 4.2 `--qr` prints the link as a QR code, black on white whatever the
+  terminal's theme. `core/qr.js` has no dependency (owner's call); it matched
+  the `qrcode` package bit for bit, mask included, on 14 texts from v1 to v40,
+  and jsQR decoded 28. Level L and a two-module margin (owner's call, after
+  the first scan read as too big): a post link is 41 columns by 21 lines.
+- [ ] 4.2.1 The owner scans one from a phone.
+- [x] 4.3 A folder goes as `<folder>.zip` (`core/zip.js`, stored, since the seal
+  deflates; symlinks left out), and `-` reads stdin up to the cap, named by
+  `--name`.
+- [ ] 4.4 Redeploy with `fli ws:post` so the live page shows the crest. This
+  needs the owner's go.
 
 ---
 

@@ -225,7 +225,7 @@ to its run before the phase. FJS-1554 is moot, confirmed: `fli check` reports
      `document`: Vite dev runs what the static build ships. Host functions
      (ksite's lead loader posts to one) and `_redirects` in dev are built
      when a site first needs one there.
-6. Responsive images ([`FJS-2737`](../ISSUES.md#fjs-2737)), the first client's
+6. Responsive images ([`FJS-2737`](../ISSUES_ARCHIVE.md#fjs-2737)), the first client's
    largest gap: the Luminous Heart port ships 20 MB of photos at source size.
    `site-kit-images.md` holds the measurement, the prior art and the design: a
    postbuild step over the prerendered pages, a content-addressed cache, and
@@ -336,7 +336,7 @@ registry is picked at the real publish, and `ksite:fetch` becomes site-kit's.
    site-kit 0.1.1 and ksite 0.7.1 are published, `bun update` takes both,
    the build carries both changes, and nothing but `package.json` and
    `bun.lock` changed. ksite declared site-kit as a peer and installed. The
-   first run found [`FJS-2842`](../ISSUES.md#fjs-2842): a registry install
+   first run found [`FJS-2842`](../ISSUES_ARCHIVE.md#fjs-2842): a registry install
    could not compile Markdown or prerender, because mesa's optional peers had
    only ever come from the workspace. site-kit now depends on them.
 4. [ ] The real publish, behind the owner's go: the framework peers through

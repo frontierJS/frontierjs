@@ -24,6 +24,7 @@
 import { readdirSync, statSync, existsSync } from 'node:fs'
 import { join, dirname, sep, extname }        from 'node:path'
 import { execFileSync }                       from 'node:child_process'
+import { gitOut }                             from './git.js'
 import { tmpdir }                             from 'node:os'
 
 import { archiveClosed, rotateHandoff } from './archive.js'
@@ -31,10 +32,7 @@ import { crateName }                    from './desktop-surface.js'
 
 export const BULKY = 500 * 1024 * 1024
 
-const git = (root, args) => {
-  try { return execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 << 20 }) }
-  catch { return '' }
-}
+const git = (root, args) => gitOut(root, args) ?? ''
 const z = text => text.split('\0').filter(Boolean)
 
 export function tidy({ root, registerRoot = root, apply = false }) {

@@ -5,8 +5,6 @@ skip: "!$.config.doApi || $.config.deployConf.api?.buildCheck === false"
 ---
 
 ```js
-if ($.config.abort) return
-
 // The BUILDER's context, not the target's — that is the tree `docker build`
 // reads, and under a declared `deploy.builder` they are different machines.
 const { host, path: deployRoot } = $.config.builder ?? $.config.api

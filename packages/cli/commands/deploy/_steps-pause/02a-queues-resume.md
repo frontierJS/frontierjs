@@ -5,8 +5,6 @@ skip: "$.config.pauseKind !== 'unpause'"
 ---
 
 ```js
-if ($.config.abort) return
-
 const { host, serverPath, appId, deployConf } = $.config
 const { queueScript, queueVerdict } = await import(new URL('file://' + global.fliRoot + '/core/pause.js'))
 

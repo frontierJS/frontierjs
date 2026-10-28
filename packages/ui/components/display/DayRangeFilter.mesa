@@ -1,0 +1,109 @@
+<script>
+  // DayRangeFilter.mesa
+  // One filter over a day range: an operator — after, before, between — and
+  // one DatePicker. A click-start, click-end picker has no spelling for *until
+  // the 7th*, so the open end is asked as an operator (`FJS-D1576`).
+  //
+  // It works in DAYS, `YYYY-MM-DD`, in both directions. What a day means as a
+  // bound — a `Date` column's day, or an instant's first or last moment — is
+  // `FilterBar`'s to convert, where the column is known.
+  //
+  // Its own component rather than a branch of `FilterBar` because the picker
+  // closes itself: `isOpen` has to be BOUND, and `bind:` takes a top-level
+  // `let`, which a branch inside the bar's `{#each}` does not have one of.
+
+  import DatePicker from '../forms/DatePicker.mesa'
+  import Select     from '../forms/Select.mesa'
+  import Button     from '../forms/Button.mesa'
+
+  export let label   = ''
+  // `{ gte?, lte? }` in days, or undefined.
+  export let value   = undefined
+  // (next) => void — `{ gte?, lte? }` in days, or undefined when cleared.
+  export let onvalue = undefined
+
+  const OPS = ['after', 'before', 'between']
+
+  // The operator is read off the bounds the query holds. One chosen before a
+  // day is picked has nothing in the query to be read from, so it is held
+  // here; and *between* with one end picked so far stays *between*.
+  let chosen = undefined
+  let open   = false
+
+  function opFor(v, pick) {
+    if (v?.gte && v?.lte) return 'between'
+    if (pick === 'between') return 'between'
+    if (v?.lte) return 'before'
+    if (v?.gte) return 'after'
+    return pick ?? 'between'
+  }
+
+  const op = opFor(value, chosen)
+
+  /** A switch keeps the day already picked, moved to the bound the new operator asks. */
+  function setOp(next) {
+    chosen = next
+    if (next === 'after'  && (value?.gte || value?.lte)) onvalue?.({ gte: value.gte ?? value.lte })
+    if (next === 'before' && (value?.gte || value?.lte)) onvalue?.({ lte: value.lte ?? value.gte })
+  }
+
+  const pad   = (n) => String(n).padStart(2, '0')
+  const toDay = (ts) => {
+    if (ts === undefined || ts === null) return undefined
+    const d = new Date(ts)
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  }
+
+  // The picker's times are its own (`startDateTime` defaults to 08:00), so a
+  // pick is cut to its day before it leaves.
+  function picked({ startDate, endDate }) {
+    if (op === 'between') onvalue?.({ gte: toDay(startDate), lte: toDay(endDate) })
+    else onvalue?.({ [op === 'after' ? 'gte' : 'lte']: toDay(startDate) })
+  }
+
+  const show = (day) => {
+    const [y, m, d] = String(day ?? '').split('-').map(Number)
+    if (!y || !m || !d) return '…'
+    return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  }
+
+  const shown = !value ? 'Any day'
+    : op === 'between' ? `${show(value.gte)} – ${show(value.lte)}`
+    : show(op === 'after' ? value.gte : value.lte)
+</script>
+
+<span class="filter-days" {...$attributes}>
+  <Select
+    value={op}
+    options={OPS.map(o => ({ value: o, label: label + ' ' + o }))}
+    placeholder=""
+    aria-label={label + ': after, before or between'}
+    style="--field-inline-size: auto"
+    oninput={(e) => setOp(e.target.value)}
+  />
+  <DatePicker
+    isRange={op === 'between'}
+    enableFutureDates
+    bind:isOpen={open}
+    startDate={op === 'before' ? value?.lte : value?.gte}
+    endDate={op === 'between' ? value?.lte : undefined}
+    onDateChange={picked}
+  >
+    <button
+      type="button"
+      class="field filter-day"
+      aria-haspopup="dialog"
+      aria-expanded={open ? 'true' : 'false'}
+      aria-label={label + ' ' + op + ': ' + shown}
+      onclick={() => open = !open}
+    >{shown}</button>
+  </DatePicker>
+  {#if value}
+    <Button treatment="ghost" size="sm" aria-label={'Clear ' + label} onclick={() => onvalue?.(undefined)}>×</Button>
+  {/if}
+</span>
+
+<style>
+  .filter-days { display: inline-flex; gap: var(--space-xs); align-items: center; }
+  .filter-day  { --field-inline-size: auto; min-inline-size: 10rem; text-align: start; cursor: pointer; }
+</style>

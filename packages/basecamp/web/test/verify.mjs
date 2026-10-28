@@ -642,8 +642,8 @@ async function apiCall(path, { method = 'GET', body, workspace, header, outpost 
 // The hub row is where `fli deploy` points the host machine (FJS-D1514), so an
 // install that skipped /hub/settings/ must still have one.
 const hubAfterSetup = await apiCall('/hub-config', { method: 'POST', header: { 'x-service-method': 'current' } })
-  .catch(e => ({ adminEmail: e.message }))
-check('setup wrote the hub settings', hubAfterSetup?.adminEmail, ACCOUNT.email.toLowerCase())
+  .catch(e => ({ id: e.message }))
+check('setup wrote the hub settings', hubAfterSetup?.id, 'hub')
 
 const firstWs = (await apiCall('/workspaces')).data[0]
 await apiCall('/projects', { method: 'POST', workspace: firstWs.id, body: { name: 'Website', slug: 'website' } })

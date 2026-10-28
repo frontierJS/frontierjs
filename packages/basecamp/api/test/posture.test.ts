@@ -319,8 +319,23 @@ describe('the hub grader', () => {
   const FILES = { db: { path: '/srv/basecamp/db', mode: '700', owner: 'root', group: 'root' },
                   env: { path: '/srv/basecamp/.env', mode: '600', owner: 'root', group: 'root' } }
   const KEY  = 'a'.repeat(64)
+  const INSTALL = { production: true, appUrl: 'https://hub.test', apiUrl: 'https://api.hub.test',
+                    mailer: 'https://api.resend.com', mailFrom: 'ops@hub.test' }
   const hub  = (r: PostureReadings | null, lastBackupAt: string | null, at: number = NOW, host: Partial<HostDeclared> = {}) =>
-    Object.fromEntries(gradeHub(r, { lastBackupAt, keyFingerprint: KEY, keyEscrow: null, ...host }, { at, now: NOW }).map(c => [c.id, c]))
+    Object.fromEntries(gradeHub(r, { lastBackupAt, keyFingerprint: KEY, keyEscrow: null, install: INSTALL, ...host }, { at, now: NOW }).map(c => [c.id, c]))
+
+  test('the URLs and the mailer are graded from the env, report or none', () => {
+    const grade = (install: Partial<HostDeclared['install']>) => hub(null, null, NOW, { install: { ...INSTALL, ...install } })
+    expect([grade({})['hub.app-url'].ok, grade({})['hub.api-url'].ok, grade({})['hub.mailer'].ok]).toEqual([true, true, true])
+    // The localhost defaults are right in development and wrong in production.
+    const local = { appUrl: 'http://localhost:8020', apiUrl: 'http://localhost:8120' }
+    expect([grade(local)['hub.app-url'].ok, grade(local)['hub.api-url'].ok]).toEqual([false, false])
+    expect([grade({ ...local, production: false })['hub.app-url'].ok, grade({ ...local, production: false })['hub.api-url'].ok]).toEqual([true, true])
+    // Enrollment refuses plain http off loopback in any environment.
+    expect(grade({ production: false, apiUrl: 'http://hub.lan:8120' })['hub.api-url'].ok).toBe(false)
+    expect(grade({ mailer: null })['hub.mailer']).toMatchObject({ ok: false, message: expect.stringContaining('No mailer') })
+    expect(grade({ mailFrom: 'basecamp@localhost' })['hub.mailer']).toMatchObject({ ok: false, message: expect.stringContaining('MAIL_FROM') })
+  })
 
   test('no backup ever is failing, and a recent one passes', () => {
     expect(hub({ ...CLEAN, host_files: FILES }, null)['hub.backup-recent'].ok).toBe(false)
@@ -400,7 +415,7 @@ describe('the host row on /hub/security/', () => {
     expect((await env.as(admin).service('posture').call('host', undefined, {})).enrolled).toBe(false)
     const sys = env.system as any
     if (!await sys.hubConfig.exists({ where: { id: 'hub' } }))
-      await sys.hubConfig.create({ data: { id: 'hub', baseUrl: 'https://hub.posture.test', adminEmail: 'ops@posture.test' } })
+      await sys.hubConfig.create({ data: { id: 'hub' } })
     await sys.hubConfig.update({ where: { id: 'hub' }, data: { hostServerId: machine.id } })
     const { mintEnrollToken, hashEnrollToken } = await import('../src/providers/compute/enrollment.ts')
     const token = mintEnrollToken().token

@@ -461,7 +461,7 @@ describe('retention prunes by count and age, local and remote apart, and a resca
     } })
     await registerDestination(env.app, dest)
     if (!await sys.hubConfig.findFirst({ where: { id: 'hub' } }))
-      await sys.hubConfig.create({ data: { id: 'hub', baseUrl: 'https://hub.example.test', adminEmail: 'admin@x.co' } })
+      await sys.hubConfig.create({ data: { id: 'hub' } })
   })
 
   afterAll(() => server?.stop(true))

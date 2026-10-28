@@ -36,6 +36,7 @@
 import net from 'net'
 import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, unlinkSync, readdirSync, readlinkSync } from 'fs'
 import { execSync, execFileSync } from 'child_process'
+import { gitOut }                 from './git.js'
 import { homedir } from 'os'
 import { basename, dirname, join, relative } from 'path'
 import { fileURLToPath } from 'url'
@@ -211,6 +212,11 @@ const SURFACE_PORTS = [
   { dir: 'extension', category: 'ext',        env: null,               scripts: ['dev:extension', 'extension'], label: 'extension' },
   { dir: 'desktop',   category: 'desktopDev', env: 'FRONTIER_PORT_DESKTOP', scripts: ['dev:desktop', 'desktop'],    label: 'desktop' },
 ]
+
+/** One surface's row: its category and the variable `fli dev` moves its port with. */
+export function surfacePort(dir) {
+  return SURFACE_PORTS.find(s => s.dir === dir) ?? null
+}
 
 /** The categories a dev slot moves — those whose surface reads a variable. */
 const SLOTTED = new Set(SURFACE_PORTS.filter(s => s.env).map(s => s.category))
@@ -906,12 +912,9 @@ export const MAX_BRANCH  = 5
  * checkout, a directory git does not know, or no git at all.
  */
 export function worktreeOf(appRoot) {
-  let out
-  try {
-    out = execFileSync('git', ['-C', appRoot, 'rev-parse', '--path-format=absolute', '--git-common-dir', '--git-dir', '--show-toplevel'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().split('\n')
-  } catch { return null }
-  const [repo, gitDir, top] = out
+  const out = gitOut(appRoot, ['rev-parse', '--path-format=absolute', '--git-common-dir', '--git-dir', '--show-toplevel'])
+  if (out === null) return null
+  const [repo, gitDir, top] = out.trim().split('\n')
   if (!repo || !top || repo === gitDir) return null
   return { repo, top, main: dirname(repo) }
 }

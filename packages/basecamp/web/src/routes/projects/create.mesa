@@ -7,6 +7,7 @@ title: New project
   import { readRepoDockerfile, dockerfileTemplate } from '../../resources/App.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore'
   import { servers } from '../../resources/Server.mesa'
+  import { secrets } from '../../resources/Secret.mesa'
   import { ResourceValidationError } from '@frontierjs/sierra/resource'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
@@ -58,6 +59,16 @@ title: New project
   // On by default once a server is picked (FJS-D1558); `false` is sent only
   // when somebody turned it off, so the server's own default stays the rule.
   let deployOnPush = true
+  // Basecamp writes the key and the hook itself when the workspace holds a
+  // GitHub token (FJS-D1571). Secrets are an administrator's to read, so a
+  // member below that finds none and is shown no switch, as the server refuses.
+  let connectOn = true
+  let githubAccounts = []
+  secrets.service.find({ kind: 'provider_key' })
+    .then(r => { githubAccounts = (r.data ?? []).filter(a => a.providerKind === 'github') })
+    .catch(() => { githubAccounts = [] })
+  // A hint for showing the switch; the server's parse of the remote decides.
+  $: canConnect = !!serverId && githubAccounts.length > 0 && /github\.com[/:]/i.test(repo)
   // The answer's credentials are shown here once and read back as nothing, so
   // the form gives way to the panel rather than leaving for the App page.
   let connect = null
@@ -101,6 +112,7 @@ title: New project
       ...(hostname.trim() ? { hostname: hostname.trim() } : {}),
       ...(dockerfile.trim() ? { dockerfile } : {}),
       ...(serverId && !deployOnPush ? { deployOnPush: false } : {}),
+      ...(canConnect && connectOn ? { connect: true } : {}),
     }
     const r = await fromRepo(input)
     // The app's toasts are the flash store, and it outlives the navigation.
@@ -108,6 +120,9 @@ title: New project
     if (r.push || r.app.deployPublicKey) { connect = r; return }
     goto(`/apps/${r.app.id}/`)
   }
+
+  $: keyDone  = !!connect?.connected?.key
+  $: hookDone = !!connect?.connected?.hook
 
   const problem = (field) => errors.find(e => e.field === field)?.message
 
@@ -146,17 +161,21 @@ title: New project
 <div class="container narrow">
   {#if connect}
     <section class="card stack" id="connect-repo" aria-labelledby="connect-repo-title">
-      <h2 class="h4" id="connect-repo-title">Connect your repository</h2>
+      <h2 class="h4" id="connect-repo-title">{keyDone && (hookDone || !connect.push) ? 'Repository connected' : 'Connect your repository'}</h2>
       <p class="text-sm text-muted">
         {connect.app.name} is placed and ready to build. Two things go to your git host: the deploy key that
         lets the machine clone, and the webhook that turns a push into a release.
       </p>
-      <Callout tone="warning" id="connect-once">
-        Copy these now. The secret and the token are shown once; the App page can rotate them, not show them.
-      </Callout>
+      {#if connect.push && !hookDone}
+        <Callout tone="warning" id="connect-once">
+          Copy these now. The secret and the token are shown once; the App page can rotate them, not show them.
+        </Callout>
+      {/if}
 
       <h3 class="h5">Deploy key</h3>
-      {#if connect.app.deployPublicKey}
+      {#if keyDone}
+        <p class="text-sm" id="connect-deploy-key-done">Done — added at GitHub as a read-only deploy key, with {connect.connected.account}.</p>
+      {:else if connect.app.deployPublicKey}
         <pre class="text-sm" style:white-space="pre-wrap" style:overflow-wrap="anywhere"><code id="connect-deploy-key">{connect.app.deployPublicKey}</code></pre>
         <div class="cluster">
           <CopyButton text={connect.app.deployPublicKey} label="Copy key" treatment="outlined" id="connect-deploy-key-copy" />
@@ -166,7 +185,13 @@ title: New project
         <p class="text-sm text-muted" id="connect-deploy-key-note">{connect.note ?? 'No deploy key yet — the App page can ask the machine again.'}</p>
       {/if}
 
-      {#if connect.push}
+      {#if connect.push && hookDone}
+        <h3 class="h5">Deploy on push</h3>
+        <p class="text-sm" id="connect-push-done">
+          Done — the webhook is on the repository at GitHub, with {connect.connected.account}.
+          A push to {connect.app.source?.branch ?? 'the default branch'} releases the app, as you.
+        </p>
+      {:else if connect.push}
         <h3 class="h5">Deploy on push</h3>
         <dl class="facts">
           <dt>Webhook URL</dt><dd><code id="connect-push-url">{connect.push.url}</code></dd>
@@ -223,6 +248,11 @@ title: New project
           <Switch id="deploy-on-push" label="Deploy on push"
                   description="A push to the branch releases the app. The webhook address and secret are shown once, after Create."
                   checked={deployOnPush} onchange={(on) => deployOnPush = on} />
+        {/if}
+        {#if canConnect}
+          <Switch id="connect-github" label="Connect at GitHub"
+                  description="Basecamp adds the deploy key and the webhook to the repository with the workspace's GitHub token."
+                  checked={connectOn} onchange={(on) => connectOn = on} />
         {/if}
         <Input label="Hostname" name="hostname" id="hostname" value={hostname}
                hint="Optional. Needs an administrator and a server with Caddy. Left blank, the app answers on the port the server picks."

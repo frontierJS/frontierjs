@@ -2370,7 +2370,7 @@ by reading the emitter.
 `seeAlso` gained a `<level>:<word>` spelling with it, because the bare one could not reach this: a
 name is matched against the first row carrying it, and `unique` is a word at both levels, so pointing
 `@@index` at `@@unique` linked to `@unique` with nothing saying so. 36 existing links are ambiguous
-the same way and are unchanged — [FJS-1185](../../ISSUES.md#fjs-1185). The synonym `query plan` came
+the same way and are unchanged — [FJS-1185](../../ISSUES_ARCHIVE.md#fjs-1185). The synonym `query plan` came
 off `@@index`: the entry's own text now says *query planner*, so the search already finds it.
 
 **Five backlog entries described work that had shipped**, across three files that each kept their own

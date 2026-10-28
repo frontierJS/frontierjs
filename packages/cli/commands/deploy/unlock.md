@@ -26,27 +26,14 @@ way out and the one to reach for first, because it continues that transition
 rather than opening a second.
 
 ```js
-const target = resolveTarget(flag, $.git)
-
-const deployConf     = await deployConfFor($, flag, log)
-
-if (!deployConf?.server) {
-  log.error('No deploy block found in frontier.config.js')
-  $.config.abort = true
-  return
-}
+const head = await deployTargetFor($, flag, log)
+if (!head) return
+const { deployConf, resolved } = head
 
 const { lockPath, parseLock, describeLock, releaseScript } =
   await import(new URL('file://' + global.fliRoot + '/core/lock.js'))
 
-const resolved = resolveDeployConf(deployConf, target)
-if (!resolved) {
-  log.error(`deploy.server or deploy.path is not set for target: ${target}`)
-  $.config.abort = true
-  return
-}
-const { server, user, path } = resolved
-const host   = resolved.host
+const { path, host } = resolved
 
 const machine  = machineFor($, host, path, deployConf.transport)
 const lockFile = lockPath(path)

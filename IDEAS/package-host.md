@@ -96,21 +96,26 @@ Done when: each probe's answer is written under its step.
   `http`→`https` both followed. The Cloudflare half was not run — the DNS write
   on `awe.dev` is refused to this session — and is not needed for the question;
   2.1 is where the rule gets written and 1.3 is where it is proved.
-- [ ] 0.3 `gh release create '@frontierjs/litestone@1.1.11' <tgz> --latest=false`
+- [x] 0.3 `gh release create '@frontierjs/litestone@1.1.11' <tgz> --latest=false`
   against the existing tag: the asset URL GitHub answers with, whether a `/` in
   the tag survives the `releases/download/<tag>/<file>` path, and whether an
   asset can be re-uploaded over itself (if it can, write-once lives in the
   command, as it does for npm).
-  **Owner-run.** Two facts found on the way: the tag `@frontierjs/litestone@1.1.11`
-  was local only — `ws:publish`'s `push HEAD --tags` after-step had not run, and
-  pushing it now is blocked by pre-push `ci --fast` on an unrelated dirty tree;
-  and `gh release create --target <sha>` writes the tag on GitHub without a
-  push, so 1.2 can make the tag and the release one call. The command to run,
-  with npm's own tarball as the asset so the release is byte-equal by
-  construction (`sha512-ld+C…`, fetched to the session scratchpad):
-  `gh release create '@frontierjs/litestone@1.1.11' frontierjs-litestone-1.1.11.tgz --target 9a353511 --latest=false --title '@frontierjs/litestone@1.1.11' --notes '…'`.
-  Then `curl -sIL` the asset URL for the `/`-in-tag answer and `gh release
-  upload <tag> <tgz>` without `--clobber` for the re-upload answer.
+  **Answer (owner-run; `gh release create` is a public-surface write a session
+  is refused):** the release exists, its asset is npm's own tarball, and
+  `https://github.com/frontierJS/frontierjs/releases/download/@frontierjs/litestone@1.1.11/frontierjs-litestone-1.1.11.tgz`
+  with the `/` and `@` LITERAL answers 302 to a signed
+  `release-assets.githubusercontent.com` URL that expires in an hour, then
+  200; `bun install` from the literal URL lands with npm's `ld+C…` hash. A
+  second `gh release upload` without `--clobber` is refused: `asset under the
+  same name already exists` — write-once is GitHub's, not the command's, and
+  1.2 need only not pass `--clobber`. `--target` takes a FULL sha; a short one
+  is `Release.target_commitish is invalid`. The tag `@frontierjs/litestone@1.1.11`
+  was local only (`ws:publish`'s `push HEAD --tags` after-step had not run) and
+  `--target` wrote it on GitHub without a push, so 1.2 makes tag and release in
+  one call. The release page URL encodes both characters
+  (`/releases/tag/%40frontierjs/litestone%401.1.11`); the download URL does not
+  need to.
 - [x] 0.4 Measure what this deletes: the clone-and-link Dockerfile's build time
   against a plain `bun install` of five URL specs, on the same machine.
   **Answer:** same scaffold (`fli new --auth`, ten `@frontierjs/*` deps),

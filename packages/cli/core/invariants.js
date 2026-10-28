@@ -27,10 +27,10 @@
 // Recording it as `none` is what separates *nothing checks this* from *something
 // checks this and I could not find it*, and those two look identical in prose.
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync }              from 'node:fs'
 import { join }                     from 'node:path'
+import { read }                    from './fs.js'
 
-const read = p => { try { return readFileSync(p, 'utf8') } catch { return null } }
 
 // ─── the invariants themselves ───────────────────────────────────────────────
 //

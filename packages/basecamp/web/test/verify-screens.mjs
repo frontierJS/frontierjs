@@ -59,6 +59,10 @@ const CF_SINK  = `http://localhost:${CF_PORT}/client/v4`
 // the test one. A SigV4 verifier, so the destination `test` below is real.
 const S3_PORT  = API_PORT + 5
 const S3_SINK  = `http://127.0.0.1:${S3_PORT}`
+// GitHub's stand-in, on the slot's `3`: 7126 is the container app
+// `verify:outpost` releases, and 8126 is the dev stand-in this runs beside.
+const GH_PORT  = API_PORT + 3
+const GH_SINK  = `http://localhost:${GH_PORT}`
 const EMAIL    = 'sam@example.com'      // the seeded owner, and a sysadmin
 const PASSWORD = 'hunter2hunter2'
 
@@ -108,7 +112,7 @@ if (seedCode !== 0) fail(`db/seed.js exited ${seedCode}\n${seedErr}`)
 // A stale dev server means this drive would assert against the OTHER app's
 // build and report a pass. Vite sets strictPort, so it would die anyway; the
 // API would not.
-for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT], ['Cloudflare sink', CF_PORT], ['S3 sink', S3_PORT]]) {
+for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT], ['Cloudflare sink', CF_PORT], ['S3 sink', S3_PORT], ['GitHub sink', GH_PORT]]) {
   const answered = await fetch(`http://localhost:${port}/`).then(() => true).catch(() => false)
   if (answered) fail(`Something already answers on :${port} (${name}). Stop it — this drive would test it instead.`)
 }
@@ -123,7 +127,7 @@ let apiLog = ''
 const api = spawn('bun', ['api/index.ts'], {
   cwd: PKG, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
   env: { ...process.env, DATABASE_URL: DB, FRONTIER_APP_URL: BASE, AUDIT_PATH: AUDIT, FRONTIER_PORT_BE: String(API_PORT),
-    CLOUDFLARE_URL: CF_SINK },
+    CLOUDFLARE_URL: CF_SINK, GITHUB_URL: GH_SINK },
 })
 api.stdout.on('data', d => { apiLog += d })
 api.stderr.on('data', d => { apiLog += d })
@@ -135,6 +139,10 @@ children.push(spawn('bun', ['api/src/providers/edge/cloudflare-sink.ts'], {
 children.push(spawn('bun', ['api/src/providers/storage/s3-sink.ts'], {
   cwd: PKG, stdio: 'ignore', detached: true,
   env: { ...process.env, S3_SINK_PORT: String(S3_PORT) },
+}))
+children.push(spawn('bun', ['api/src/providers/source/github-sink.ts'], {
+  cwd: PKG, stdio: 'ignore', detached: true,
+  env: { ...process.env, GH_SINK_PORT: String(GH_PORT) },
 }))
 children.push(spawn('bun', ['run', 'web'], {
   cwd: PKG, stdio: 'ignore', detached: true,
@@ -152,6 +160,7 @@ await waitFor(`http://localhost:${API_PORT}/health`, 'the API')
 await waitFor(BASE, 'the web server')
 await waitFor(`${CF_SINK}/zones`, 'the Cloudflare stand-in')
 await waitFor(`${S3_SINK}/_sink/seen`, 'the S3 stand-in')
+await waitFor(`${GH_SINK}/user`, 'the GitHub stand-in')
 
 // ─── Chrome ──────────────────────────────────────────────────────────────
 // Headless Chrome answers (hover: none) and (pointer: none), so every rule
@@ -2223,6 +2232,43 @@ try {
   await until(`document.getElementById('app-status') !== null`, v => v, 'the App page never rendered')
   check('Open the app lands on the App page, and nothing there shows the secret',
     !(await body()).includes(connectSecret.trim()))
+
+  // ─── Basecamp makes the GitHub trip (FJS-D1571) ────────────────────────
+  // With a GitHub token in the workspace the form offers Connect, and the
+  // panel says done where it said add these. The seed's machine makes no key,
+  // so the hook is the half written, and the sink holds what was sent.
+  console.log('\n  /projects/create/ — connected at GitHub')
+  const gh = await apiPost('/secrets', { name: 'gh-drive', kind: 'provider_key', providerKind: 'github', data: 'github_pat_devtoken' })
+  check('a GitHub token is accepted as a provider key', gh.status === 201 || gh.status === 200, JSON.stringify(gh.body).slice(0, 160))
+  await goto('/projects/create/')
+  await until(`document.getElementById('from-repo') !== null`, v => v, 'the create page never offered From a repository')
+  await click('#from-repo')
+  await until(`document.getElementById('serverId') !== null`, v => v, 'the repository fields never showed')
+  const linkedTag = String(Math.floor(Math.random() * 9000) + 1000)
+  await fill({ name: `Linked ${linkedTag}`, repo: 'git@github.com:sink-owner/app.git',
+               dockerfile: 'FROM oven/bun:1\n', serverId: onlineBox.id })
+  check('Connect at GitHub appears for a GitHub repository, and starts on',
+    await until(`document.getElementById('connect-github')?.checked ?? null`, v => v !== null, 'the switch never appeared'))
+  await click('#create-submit')
+  await until(`!!document.getElementById('connect-push-done')`, v => v, 'the panel never said the webhook was added')
+  check('the webhook half says done, and no secret is left to copy',
+    await evaluate(`!document.getElementById('connect-push-secret') && !document.getElementById('connect-once')`))
+  const linkedApp = ((await apiGet('/apps?$limit=200')).body?.data ?? []).find(a => a.name === `Linked ${linkedTag}`)
+  const ghHooks = await fetch(`${GH_SINK}/repos/sink-owner/app/hooks`, {
+    headers: { authorization: 'Bearer github_pat_devtoken', 'user-agent': 'verify-screens' },
+  }).then(r => r.json())
+  check('the hook is on the repository at GitHub, pointed at the new app',
+    !!linkedApp && ghHooks.some(h => h.config?.url?.endsWith(`/hooks/git/${linkedApp.id}`)), JSON.stringify(ghHooks).slice(0, 200))
+  // No build has run, so no clone exists: only the token can answer the import.
+  await goto(`/apps/${linkedApp?.id}/`)
+  await until(`document.getElementById('app-dockerfile-import') !== null`, v => v, 'the App page offered no Import from repository')
+  await click('#app-dockerfile-import')
+  const importSays = await until(`document.getElementById('app-dockerfile-says')?.textContent ?? ''`, t => t.length > 0,
+    'Import from repository never answered')
+  check('Import from repository reads GitHub through the token before any build, and says so',
+    /Filled from Dockerfile in the repository/.test(importSays)
+      && (await evaluate(`document.querySelector('#app-dockerfile-body textarea, textarea#app-dockerfile-body')?.value ?? ''`)).includes('EXPOSE 3000'),
+    importSays)
 
   // ─── The door each release came through ────────────────────────────────
   // Nothing else on a row tells a laptop build from a push, so the overview's

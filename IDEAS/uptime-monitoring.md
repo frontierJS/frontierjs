@@ -7,7 +7,7 @@ dated: 2026-09-29
 # Idea — Uptime monitoring: Basecamp watches the URL, not only the machine
 
 **Status: IDEA.** Probed against the tree 2026-09-29 (`VERIFYING.md`). Open item:
-[`FJS-1557`](../ISSUES.md#fjs-1557).
+[`FJS-1557`](../ISSUES_ARCHIVE.md#fjs-1557).
 
 Prompted by the owner's own practice: Kobami runs
 [Uptime Kuma](https://github.com/louislam/uptime-kuma) beside Basecamp,

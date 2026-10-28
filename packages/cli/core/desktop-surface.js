@@ -41,13 +41,14 @@
  */
 
 import { spawn }                                from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
-import { resolve, dirname, basename, isAbsolute, relative, sep } from 'node:path'
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
+import { resolve, basename, isAbsolute, relative, sep } from 'node:path'
 import { encodePng }                            from './png.js'
 import { frontmatterValue }                     from './compiler.js'
 import { portAnswering }                        from './probe.js'
 import { appPorts, describeProcess, pidsOnPort, processCwd } from './ports.js'
 import { API_ORIGIN_MODULE }                    from './app-config.js'
+import { scaffoldPort, writeAbsent, viteScript, surfaceViteConfig, surfaceIndexHtml } from './scaffold/surface.js'
 
 // ─── names ────────────────────────────────────────────────────────────────────
 
@@ -86,7 +87,7 @@ export function desktopSurfaceDirs({ wraps = null } = {}) {
 
 // ─── config ───────────────────────────────────────────────────────────────────
 
-export function desktopConfig({ wraps = null, hasApi = true, apiPort = 8100 } = {}) {
+export function desktopConfig({ wraps = null, hasApi = true, apiPort = scaffoldPort('be') } = {}) {
   const api = hasApi
     ? `pinApiOrigin(process.env, process.env) ?? 'http://localhost:${apiPort}'`
     : 'null'
@@ -113,7 +114,7 @@ ${wraps ? `  wraps: '${wraps}',\n` : ''}  api:${wraps ? '  ' : ''} ${api},
 
 // ─── the screens, when this surface owns them ─────────────────────────────────
 
-export function desktopSierraConfig({ slug = 'app', hasApi = true, devPort = 8800 } = {}) {
+export function desktopSierraConfig({ slug = 'app', hasApi = true, devPort = scaffoldPort('desktopDev') } = {}) {
   const junction = hasApi
     ? `
   junction: {
@@ -123,14 +124,17 @@ export function desktopSierraConfig({ slug = 'app', hasApi = true, devPort = 880
     // browser, where the page calls its own origin and Vite proxies /api.
     url:       'http://localhost:${devPort}',
     tokenKey:  '${slug}_token',
-    // Must match the API's config.apiPrefix.
-    apiPrefix: '/api',
+    // Read from the API's config, which states it once: a client that guessed
+    // would request paths the server never registered.
+    apiPrefix: api.app.apiPrefix,
   },
 `
     : ''
   return `// desktop/config/sierra.config.js
 // Paths are relative to the Vite root, desktop/.
-
+${hasApi ? `
+import api from '../../api/config/junction.config.js'
+` : ''}
 export default {
   target:        'spa',
   routesDir:     'src/routes',
@@ -139,63 +143,17 @@ ${junction}}
 `
 }
 
-export function desktopViteConfig({ hasApi = true, devPort = 8800, apiPort = 8100 } = {}) {
-  const proxy = hasApi
-    ? `
-    // The browser half of the writing loop has no FRONTIER_PUBLIC_API_URL, so the page
-    // calls its own origin and this sends it on. A built shell never uses it.
-    proxy: {
-      '/api': { target: API, changeOrigin: true },
-      '/ws':  { target: API, ws: true },
-    },`
-    : ''
-  const apiConst = hasApi
-    ? `const API  = process.env.FRONTIER_API_URL || 'http://localhost:' + (process.env.FRONTIER_PORT_BE ?? ${apiPort})\n`
-    : ''
-  return `// desktop/config/vite.config.js
-//
-// \`bun run dev:desktop\` writes the screens in a browser. \`bun run build:desktop\`
-// builds them with this file into desktop/dist and compiles that INTO the shell.
-
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath }    from 'node:url'
-import { defineConfig }     from 'vite'
-import { createSierraViteConfig } from '@frontierjs/sierra/build'
-import sierraConfig from './sierra.config.js'
-
-// The Vite root is the surface root, one level up from config/.
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-${apiConst}
-const base = createSierraViteConfig(sierraConfig)
-
-export default defineConfig({
-  ...base,
-  root: ROOT,
-  server: {
-    ...base.server,
-    // dev / desktopDev / this app's project id. See packages/cli/core/ports.js.
-    port:       parseInt(process.env.DESKTOP_PORT ?? process.env.FRONTIER_PORT_DESKTOP ?? '${devPort}', 10),
-    // Vite hops to the next free port without a word.
-    strictPort: true,${proxy}
-  },
-})
-`
+export function desktopViteConfig({ hasApi = true, devPort = scaffoldPort('desktopDev'), apiPort = scaffoldPort('be') } = {}) {
+  return surfaceViteConfig({ surface: 'desktop', port: devPort, proxy: hasApi, apiPort, about: `
+bun run dev:desktop writes the screens in a browser. bun run build:desktop
+builds them with this file into desktop/dist and compiles that INTO the shell.
+` })
 }
 
 export function desktopIndexHtml({ productName = 'app' } = {}) {
-  return `<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${productName}</title>
-  </head>
-  <body class="app theme-default">
-    <div id="app"></div>
+  return surfaceIndexHtml({ title: productName, bodyClass: 'app theme-default', body: `    <div id="app"></div>
     <script type="module" src="virtual:sierra"></script>
-  </body>
-</html>
-`
+` })
 }
 
 export function desktopMainEntry() {
@@ -502,13 +460,9 @@ export function desktopIcon() {
  */
 export function scaffoldDesktopSurface({
   root, appName = 'app', wraps = null, hasApi = true,
-  apiPort = 8100, devPort = 8800,
+  apiPort = scaffoldPort('be'), devPort = scaffoldPort('desktopDev'),
 } = {}) {
-  const dir   = 'desktop'
-  const base  = resolve(root, dir)
   const names = desktopNames(appName)
-  for (const d of desktopSurfaceDirs({ wraps })) mkdirSync(resolve(base, d), { recursive: true })
-
   const files = [
     ['config/desktop.config.js', desktopConfig({ wraps, hasApi, apiPort })],
     ...(wraps ? [] : [
@@ -531,27 +485,12 @@ export function scaffoldDesktopSurface({
     ['shell/capabilities/.gitkeep', ''],
   ]
 
-  const written = []
-  const skipped = []
-  for (const [rel, body] of files) {
-    const abs = resolve(base, rel)
-    if (existsSync(abs)) { skipped.push(`${dir}/${rel}`); continue }
-    mkdirSync(dirname(abs), { recursive: true })
-    writeFileSync(abs, body)
-    written.push(`${dir}/${rel}`)
-  }
+  const surface = writeAbsent(root, 'desktop', { dirs: desktopSurfaceDirs({ wraps }), files })
   // The app's, not this surface's: every surface's config reads the API port
   // through it, so a second checkout's FRONTIER_PORT_BE reaches the build.
-  if (hasApi) {
-    const abs = resolve(root, 'config', 'api-origin.js')
-    if (existsSync(abs)) skipped.push('config/api-origin.js')
-    else {
-      mkdirSync(dirname(abs), { recursive: true })
-      writeFileSync(abs, API_ORIGIN_MODULE)
-      written.push('config/api-origin.js')
-    }
-  }
-  return { written, skipped }
+  if (!hasApi) return surface
+  const app = writeAbsent(root, '', { files: [['config/api-origin.js', API_ORIGIN_MODULE]] })
+  return { written: [...surface.written, ...app.written], skipped: [...surface.skipped, ...app.skipped] }
 }
 
 // ─── running it ───────────────────────────────────────────────────────────────
@@ -784,7 +723,7 @@ function entryValue(value) {
  */
 export function desktopScripts({ wraps = null } = {}) {
   return {
-    ...(wraps ? {} : { 'dev:desktop': 'cd desktop && bun --bun vite -c config/vite.config.js' }),
+    ...(wraps ? {} : { 'dev:desktop': viteScript('desktop') }),
     'build:desktop': 'bun desktop/deploy/build.mjs',
   }
 }

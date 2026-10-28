@@ -19,7 +19,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V1.1.1 | 2 | covered | `packages/junction/src/transport/static.ts`, `packages/junction/test/fixtures/served-path-vectors.json`, `packages/junction/test/static-root.test.ts` | Served paths decode once; `%2e%2e`, `%5c`, malformed escapes refused. Query values have one decoder (`toolbelt/query`) |
 | V1.1.2 | 2 | covered | `packages/mesa/src/runtime.js:1385`, `packages/mesa/src/render.js:179`, `packages/litestone/src/core/query.js:491` | Mesa writes via DOM text nodes/setAttribute; SQL values bound; the interpreter does the encoding |
 | V1.2.1 | 1 | covered | `packages/mesa/src/render.js:179`, `packages/mesa/test/render-ssr.test.js:94` | Text and attribute escaping proved, SSR included; header values go through `Headers`, mail CRLF refused · THREATS B21 |
-| V1.2.2 | 1 | partial | `packages/mesa/src/runtime.js:1385`, `packages/mesa/test/url-scheme.test.js`, `packages/junction/src/client/index.ts:509` | `javascript:`/`data:text/html` refused on href/src/action. Client puts ids into URL paths unencoded (see Findings) · [FJS-3188](../ISSUES.md#fjs-3188) · THREATS B21 |
+| V1.2.2 | 1 | partial | `packages/mesa/src/runtime.js:1385`, `packages/mesa/test/url-scheme.test.js`, `packages/junction/src/client/index.ts:509` | `javascript:`/`data:text/html` refused on href/src/action. Client puts ids into URL paths unencoded (see Findings) · [FJS-3188](../ISSUES_ARCHIVE.md#fjs-3188) · THREATS B21 |
 | V1.2.3 | 1 | covered | `packages/sierra/src/build/prerender.js:331`, `packages/sierra/src/build/mcp-build.js:266` | JSON-LD escapes `<`; inlined script/style escape closing tags; wire is `JSON.stringify` |
 | V1.2.4 | 1 | covered | `packages/litestone/test/identifier-refusals.test.ts`, `packages/litestone/test/unknown-args.test.ts` | THREATS B3. Bound params; names refused; `db.sql` throws once access rules exist |
 | V1.2.5 | 1 | covered | `packages/cli/core/machine.js`, `packages/cli/test/machine.test.js`, `packages/litestone/src/tools/replicate.js:333` | App runtime makes no shell calls; tooling spawns argv arrays or script on stdin |
@@ -32,7 +32,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V1.3.3 | 2 | covered | `packages/junction/test/mail-injection.test.ts`, `packages/litestone/test/identifier-refusals.test.ts` | Dangerous sinks refuse rather than strip: CRLF in mail, names in SQL, URL schemes in Mesa |
 | V1.3.4 | 2 | partial | `packages/toolbelt/src/mime/mime.js:253`, `packages/junction/src/transport/static.ts:261` | SVG never sanitized. It is sniffed and served as attachment only under `static: { untrusted: true }`; an S3 bucket serves it inline |
 | V1.3.5 | 2 | covered | `packages/toolbelt/src/markdown/markdown.js:10`, `packages/toolbelt/test/specs/markdown.spec.js` | Raw HTML never passed; link schemes allowlisted; entities in URLs not decoded |
-| V1.3.6 | 2 | covered | `packages/junction/src/core/public-url.ts`, `packages/junction/test/webhook-targets.test.ts` | THREATS B13. Webhooks and conduit's per-send address graded before every attempt and connected at the graded address; helper exported for apps. Basecamp's monitor sweep pins each redirect hop the same way ([FJS-3357](../ISSUES.md#fjs-3357)) |
+| V1.3.6 | 2 | covered | `packages/junction/src/core/public-url.ts`, `packages/junction/test/webhook-targets.test.ts` | THREATS B13. Webhooks and conduit's per-send address graded before every attempt and connected at the graded address; helper exported for apps. Basecamp's monitor sweep pins each redirect hop the same way ([FJS-3357](../ISSUES_ARCHIVE.md#fjs-3357)) |
 | V1.3.7 | 2 | covered | `packages/litestone/test/untrusted-schema.test.ts` | Templates compile from app files at build. Untrusted `.lite` text refuses dangerous words (FJS-1633) · THREATS B22 |
 | V1.3.8 | 2 | n.a. | — | No Java/JNDI |
 | V1.3.9 | 2 | n.a. | — | No memcache; cache drivers are an in-process Map and SQLite with bound values |
@@ -73,12 +73,12 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V3.4.1 | 1 | covered | `packages/junction/src/transport/middleware.ts:248`, `packages/cli/core/edge.js:278`, `packages/junction/test/index.test.ts`, `packages/cli/test/edge.test.js` | 1y on every response outside development, and on the SPA document. No `includeSubDomains` (L2 asks for it): a bare domain would pin a client's other sites |
 | V3.4.2 | 1 | covered | `packages/junction/src/transport/middleware.ts:130`, `packages/junction/test/index.test.ts` | Allowlist; `*` with credentials refused at construction (FJS-689). Scaffold `*` is credential-less |
 | V3.4.3 | 2 | partial | `packages/junction/src/transport/middleware.ts:240`, `packages/junction/test/index.test.ts`, `packages/cli/core/edge.js:301`, `packages/cli/test/edge.test.js`, `packages/mesa/test/emission.test.js` | API responses: `default-src 'self'` with `object-src`, `base-uri`, `form-action`, `frame-ancestors` on by default (FJS-D1192); a handler's own CSP stands. The SPA document `fli deploy` serves carries the same policy, with inline scripts and prerendered `style=` values allowed by hash (FJS-D1205, FJS-D1464); Mesa writes a component's styles through CSSOM. Driven in Chromium and Firefox over example's built routes, 0 refusals (pen-testing 2.6). Partial: `base-uri 'self'` where ASVS asks `'none'`, and WebKit not run |
-| V3.4.4 | 2 | partial | `packages/junction/test/index.test.ts:4763`, `packages/cli/core/edge.js:230` | API routes, static and the SPA document (Caddy) set nosniff. An unrouted 404/405 does not · [FJS-3231](../ISSUES.md#fjs-3231) |
+| V3.4.4 | 2 | partial | `packages/junction/test/index.test.ts:4763`, `packages/cli/core/edge.js:230` | API routes, static and the SPA document (Caddy) set nosniff. An unrouted 404/405 does not · [FJS-3231](../ISSUES_ARCHIVE.md#fjs-3231) |
 | V3.4.5 | 2 | covered | `packages/junction/src/transport/middleware.ts:247`, `packages/cli/core/edge.js:230`, `packages/cli/test/edge.test.js` | `no-referrer` on API responses; `strict-origin-when-cross-origin` on the SPA document, since `no-referrer` sends `Origin: null` on a POST |
 | V3.4.6 | 2 | covered | `packages/cli/core/edge.js:230`, `packages/cli/test/edge.test.js` | SPA document: `frame-ancestors 'none'` plus X-Frame-Options DENY; API responses DENY |
 | V3.5.1 | 1 | covered | `packages/junction/src/core/app.ts:2444`, `packages/junction/test/index.test.ts:3103` | THREATS B4. Bearer default needs preflight; cookie mode installs csrf (Origin/Sec-Fetch-Site) |
 | V3.5.2 | 1 | covered | `packages/junction/src/transport/middleware.ts:520`, `packages/junction/test/index.test.ts:3416` | Cookie mode checks Origin/Referer/Sec-Fetch-Site on mutating verbs regardless of Content-Type |
-| V3.5.3 | 1 | partial | `packages/junction/src/transport/bridge.ts:86` | Auth routes are POST. A GET carrying `X-Service-Method` runs any custom method (probed); csrf skips GET · [FJS-3203](../ISSUES.md#fjs-3203) |
+| V3.5.3 | 1 | partial | `packages/junction/src/transport/bridge.ts:86` | Auth routes are POST. A GET carrying `X-Service-Method` runs any custom method (probed); csrf skips GET · [FJS-3203](../ISSUES_ARCHIVE.md#fjs-3203) |
 | V3.5.4 | 2 | covered | `packages/outpost/test/static.test.js`, `packages/cli/core/edge.js` | Each app gets its own hostname; a hostname another route holds is refused; inline apps on own origin |
 | V3.5.5 | 2 | covered | `packages/sierra/src/mcp/host.js:66`, `packages/sierra/test/mcp-relay.test.js:173` | Only `event.source === host` and `jsonrpc: '2.0'` read; forged source ignored |
 | V3.7.1 | 2 | n.a. | — | No plugin technologies; plain JS/HTML/CSS output |
@@ -88,14 +88,14 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 
 | ID | L | Grade | Where | Note |
 | --- | --- | --- | --- | --- |
-| V4.1.1 | 1 | partial | `packages/junction/src/transport/http.ts:103`, `packages/junction/src/transport/static.ts:153`, `packages/junction/src/transport/http.ts:792` | ctx.text/html carry utf-8; junction static server and 413/400 text/plain omit charset (sierra/outpost pass `charset: true`) · [FJS-3211](../ISSUES.md#fjs-3211) |
-| V4.1.2 | 2 | none | `packages/cli/core/edge.js:47` | Caddy auto-redirects every path to https, API paths and /ws included · [FJS-3210](../ISSUES.md#fjs-3210) |
+| V4.1.1 | 1 | partial | `packages/junction/src/transport/http.ts:103`, `packages/junction/src/transport/static.ts:153`, `packages/junction/src/transport/http.ts:792` | ctx.text/html carry utf-8; junction static server and 413/400 text/plain omit charset (sierra/outpost pass `charset: true`) · [FJS-3211](../ISSUES_ARCHIVE.md#fjs-3211) |
+| V4.1.2 | 2 | none | `packages/cli/core/edge.js:47` | Caddy auto-redirects every path to https, API paths and /ws included · [FJS-3210](../ISSUES_ARCHIVE.md#fjs-3210) |
 | V4.1.3 | 2 | covered | `packages/junction/src/transport/forwarded.ts:60`, `packages/junction/test/forwarded.test.ts` | socket address by default; XFF read right-to-left by declared hops; deploy states one hop |
 | V4.2.1 | 2 | covered | `packages/junction/src/transport/http.ts:690`, `packages/cli/core/edge.js:149` | Bun 1.4.2 answers 400 to CL+TE and duplicate CL (probed); Caddy in front; no repo test |
 | V4.3.1 | 2 | partial | `packages/toolbelt/src/query/query.js:77`, `packages/junction/src/core/service.ts:2062` | no GraphQL; URL filter depth/keys/items capped, page max 100; WS-frame JSON query not bounded by LIMITS |
 | V4.3.2 | 2 | n.a. | — | no GraphQL surface |
 | V4.4.1 | 1 | covered | `packages/junction/src/client/index.ts:2461`, `packages/cli/core/edge.js:127` | client picks wss from an https origin; Caddy terminates TLS for /ws |
-| V4.4.2 | 2 | none | `packages/junction/src/transport/http.ts:1241`, `packages/junction/src/transport/channels.ts:1572` | upgrade bypasses csrf and checks no Origin; per-route `upgrade` hook exists, /ws sets none · [FJS-3189](../ISSUES.md#fjs-3189) |
+| V4.4.2 | 2 | none | `packages/junction/src/transport/http.ts:1241`, `packages/junction/src/transport/channels.ts:1572` | upgrade bypasses csrf and checks no Origin; per-route `upgrade` hook exists, /ws sets none · [FJS-3189](../ISSUES_ARCHIVE.md#fjs-3189) |
 | V4.4.3 | 2 | covered | `packages/junction/src/transport/http.ts:1274`, `packages/junction/test/realtime-grading.test.ts` | socket reuses the standard session via subprotocol; bad token closes 4001 |
 | V4.4.4 | 2 | covered | `packages/junction/src/transport/http.ts:1691`, `packages/junction/test/credentials-ws.test.ts` | token minted by HTTPS login, verified through verifySession at socket open |
 
@@ -110,7 +110,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V5.3.1 | 1 | covered | `packages/junction/src/transport/static.ts`, `packages/junction/test/static-root.test.ts` | Static servers only read bytes; key extension follows sniffed type, not the upload name |
 | V5.3.2 | 1 | covered | `packages/litestone/test/file-key.test.ts`, `packages/litestone/test/file-from-path.test.ts`, `packages/junction/test/static-root.test.ts` | Key is uuid plus sanitized name; a string never read as a path (FJS-2061); served path held in root |
 | V5.4.1 | 2 | partial | `packages/junction/src/transport/static.ts:261` | Disposition filename from stored key, not caller; only under `untrusted: true` and only for non-inline types |
-| V5.4.2 | 2 | partial | `packages/junction/src/transport/http.ts:1104`, `packages/junction/src/mail/smtp.ts:682` | HTTP names sanitized or RFC 5987. Mail attachment filename refuses CRLF but not `"`, and non-ASCII is not RFC 2231 · [FJS-3204](../ISSUES.md#fjs-3204) |
+| V5.4.2 | 2 | partial | `packages/junction/src/transport/http.ts:1104`, `packages/junction/src/mail/smtp.ts:682` | HTTP names sanitized or RFC 5987. Mail attachment filename refuses CRLF but not `"`, and non-ASCII is not RFC 2231 · [FJS-3204](../ISSUES_ARCHIVE.md#fjs-3204) |
 | V5.4.3 | 2 | none | `packages/litestone/src/storage/file-storage.js` (`serialize`) | No antivirus scan or scan hook before `provider.put` |
 
 ## V6 Authentication
@@ -132,13 +132,13 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V6.2.10 | 2 | covered | `packages/auth/auth.ts:337` | Passwords never expire and are never forced to rotate |
 | V6.2.11 | 2 | none | `packages/auth/auth.ts:337` | There is no word list to apply |
 | V6.2.12 | 2 | none | `packages/auth/auth.ts:337` | No breached-password check |
-| V6.3.1 | 1 | partial | `packages/auth/plugin.ts:50`, `packages/junction/src/core/hooks-resilience.ts:150`, `packages/auth/test/audit-routes-ratelimit.test.ts:23` | THREATS B12. 10 per 15 min per IP only, per process (FJS-D1193). No per-account budget. Lockout is left to `onLoginFailed` · [FJS-3198](../ISSUES.md#fjs-3198) |
+| V6.3.1 | 1 | partial | `packages/auth/plugin.ts:50`, `packages/junction/src/core/hooks-resilience.ts:150`, `packages/auth/test/audit-routes-ratelimit.test.ts:23` | THREATS B12. 10 per 15 min per IP only, per process (FJS-D1193). No per-account budget. Lockout is left to `onLoginFailed` · [FJS-3198](../ISSUES_ARCHIVE.md#fjs-3198) |
 | V6.3.2 | 1 | covered | `packages/cli/commands/auth/dev-admin.md:132`, `packages/cli/core/scaffold/app.js:301` | A fresh app seeds no user. `dev-admin` refuses production |
 | V6.3.3 | 2 | partial | `packages/auth/auth.ts:415`, `packages/auth/test/totp-login.test.ts:160` | TOTP is opt-in per person, with no switch to require it. No FIDO or passkey for L3 |
 | V6.3.4 | 2 | covered | `packages/auth/auth.ts:415`, `packages/auth/test/magic-link.test.ts:187`, `packages/auth/test/oauth-routes.test.ts:339` | Password, magic link and OAuth all end at `firstFactorProven`, so TOTP is owed on each |
 | V6.3.5 | 3 | none | `packages/auth/auth.ts:433` | `login.challenged` and `login.failed` go to the trail. Nobody is notified |
 | V6.3.6 | 3 | partial | `packages/auth/auth.ts:754`, `packages/auth/README.md:200` | Off by default. Turning on magic link makes the mailbox the only factor |
-| V6.3.7 | 3 | partial | `packages/auth/auth.ts:180`, `packages/auth/test/credential-events.test.ts:68` | `onCredentialChanged` is built, but the scaffold never wires it, so a fresh app tells nobody · [FJS-3200](../ISSUES.md#fjs-3200) |
+| V6.3.7 | 3 | partial | `packages/auth/auth.ts:180`, `packages/auth/test/credential-events.test.ts:68` | `onCredentialChanged` is built, but the scaffold never wires it, so a fresh app tells nobody · [FJS-3200](../ISSUES_ARCHIVE.md#fjs-3200) |
 | V6.3.8 | 3 | partial | `packages/auth/auth.ts:994`, `packages/auth/test/flows.test.ts:79`, `packages/auth/test/audit-routes-reset-timing.test.ts:50`, `packages/auth/test/routes.test.ts` (register where the app mails a verification) | THREATS B12. Login, reset and register are equalized where `onEmailVerificationRequested` is set (`FJS-D1310`): register answers 202 `{ ok: true }` for every address. An app with no verification mail has no mailbox to equalize with and keeps 201/409. |
 | V6.4.1 | 1 | covered | `packages/auth/auth.ts:1834`, `packages/auth/test/audit-data-token-lifecycle.test.ts:60` | No generated passwords. An invitation is a 256-bit token, single-use, 1 hour |
 | V6.4.2 | 1 | covered | `packages/auth/db/user.lite` | No hint or secret-question column or flow exists |
@@ -146,17 +146,17 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V6.4.4 | 2 | partial | `packages/auth/services.ts:631`, `packages/auth/test/account-recovery.test.ts` | `resetTotp` is SYSADMIN-only. Identity proofing is neither defined nor documented |
 | V6.4.5 | 3 | none | `packages/auth/auth.ts:2091` | No reminder before an API key expires. Nothing else expires |
 | V6.4.6 | 3 | partial | `packages/auth/services.ts:741` | No admin-started reset for an existing person. `people.invite` gives the operator the token that sets the first password |
-| V6.5.1 | 2 | covered | `packages/auth/auth.ts:1090`, `packages/auth/test/totp-login.test.ts` § concurrent attempts | THREATS B12. The step is spent by a conditional update, so of two concurrent requests with one code only one signs in. `verifyTotp` inside a session does not consume, by design (`packages/auth/CLAUDE.md`) · [FJS-3185](../ISSUES.md#fjs-3185) |
+| V6.5.1 | 2 | covered | `packages/auth/auth.ts:1090`, `packages/auth/test/totp-login.test.ts` § concurrent attempts | THREATS B12. The step is spent by a conditional update, so of two concurrent requests with one code only one signs in. `verifyTotp` inside a session does not consume, by design (`packages/auth/CLAUDE.md`) · [FJS-3185](../ISSUES_ARCHIVE.md#fjs-3185) |
 | V6.5.2 | 2 | partial | `packages/auth/auth.ts:379` | Recovery codes (~49 bits) are stored as keyed HMAC-SHA256, not a salted password hash |
 | V6.5.3 | 2 | covered | `packages/auth/totp.ts:68`, `packages/auth/test/audit-data-token-lifecycle.test.ts:129` | `randomBytes` / `randomInt` for every secret, seed and code |
 | V6.5.4 | 2 | covered | `packages/auth/totp.ts:191`, `packages/auth/crypto.ts:104` | Recovery codes ~49 bits. Magic-link code is 6 digits |
-| V6.5.5 | 2 | covered | `packages/auth/auth.ts:105`, `packages/auth/test/magic-link.test.ts:58` | Magic link defaults to 10 min. `totpDrift: 1` accepts a code for about 90s · [FJS-3209](../ISSUES.md#fjs-3209) |
+| V6.5.5 | 2 | covered | `packages/auth/auth.ts:105`, `packages/auth/test/magic-link.test.ts:58` | Magic link defaults to 10 min. `totpDrift: 1` accepts a code for about 90s · [FJS-3209](../ISSUES_ARCHIVE.md#fjs-3209) |
 | V6.5.6 | 3 | covered | `packages/auth/auth.ts:1204`, `packages/auth/test/totp-login.test.ts:393`, `packages/auth/test/account-recovery.test.ts` | TOTP disable and reset, API-key revoke, OAuth unlink and session revoke all exist |
 | V6.5.7 | 3 | n.a. | — | No biometric mechanism |
 | V6.5.8 | 3 | covered | `packages/auth/auth.ts:1083`, `packages/auth/CLAUDE.md:85` | Uses the server clock `sys.$now()`. A caller-supplied `at` is refused by rule |
 | V6.6.1 | 2 | n.a. | — | No SMS or phone OTP, so the L3 absence holds |
 | V6.6.2 | 2 | covered | `packages/auth/auth.ts:669`, `packages/auth/test/magic-link.test.ts:128` | One live link per address. The code is checked against the row its address names |
-| V6.6.3 | 2 | covered | `packages/auth/plugin.ts:354`, `packages/auth/auth.ts:708`, `packages/auth/test/magic-link.test.ts` § concurrent codes | THREATS B12. Per-IP limiter plus a 5-miss ceiling, each guess claimed by a conditional update before the code is compared, so a burst cannot pass it · [FJS-3185](../ISSUES.md#fjs-3185) |
+| V6.6.3 | 2 | covered | `packages/auth/plugin.ts:354`, `packages/auth/auth.ts:708`, `packages/auth/test/magic-link.test.ts` § concurrent codes | THREATS B12. Per-IP limiter plus a 5-miss ceiling, each guess claimed by a conditional update before the code is compared, so a burst cannot pass it · [FJS-3185](../ISSUES_ARCHIVE.md#fjs-3185) |
 | V6.6.4 | 3 | n.a. | — | No push MFA |
 | V6.7.1 | 3 | n.a. | `packages/auth/PROJECT_STATE.md:129` | No certificate or WebAuthn authenticator. Passkeys are listed as open |
 | V6.7.2 | 3 | n.a. | — | No challenge-response authenticator |
@@ -174,16 +174,16 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V7.1.3 | 2 | none | `packages/auth/README.md:381` | App session is independent of the IdP session, and nothing documents it |
 | V7.2.1 | 1 | covered | `packages/auth/auth.ts:771`, `packages/auth/test/audit-data-token-lifecycle.test.ts:32` | Every token is looked up against its Session row on the server |
 | V7.2.2 | 1 | covered | `packages/auth/auth.ts:312`, `packages/auth/test/audit-data-token-lifecycle.test.ts:50` | A fresh reference token per login. API keys are machine credentials, not sessions |
-| V7.2.3 | 1 | partial | `packages/auth/crypto.ts:133`, `packages/auth/test/flows.test.ts:242` | `randomUUID`: CSPRNG and unique, but 122 bits, under the 128 required. A test pins the shape · [FJS-3199](../ISSUES.md#fjs-3199) |
-| V7.2.4 | 1 | covered | `packages/auth/plugin.ts` `endArrivingSession`, `packages/auth/test/audit-routes-session-lifecycle.test.ts` § session fixation | New token on every login, and the session the request arrived with, cookie or Bearer, is ended. No re-authentication raises a session in place today; FJS-D1209's sudo mode would, and owes a new token when it lands · [FJS-3196](../ISSUES.md#fjs-3196), [FJS-3468](../ISSUES.md#fjs-3468) |
+| V7.2.3 | 1 | partial | `packages/auth/crypto.ts:133`, `packages/auth/test/flows.test.ts:242` | `randomUUID`: CSPRNG and unique, but 122 bits, under the 128 required. A test pins the shape · [FJS-3199](../ISSUES_ARCHIVE.md#fjs-3199) |
+| V7.2.4 | 1 | covered | `packages/auth/plugin.ts` `endArrivingSession`, `packages/auth/test/audit-routes-session-lifecycle.test.ts` § session fixation | New token on every login, and the session the request arrived with, cookie or Bearer, is ended. No re-authentication raises a session in place today; FJS-D1209's sudo mode would, and owes a new token when it lands · [FJS-3196](../ISSUES_ARCHIVE.md#fjs-3196), [FJS-3468](../ISSUES_ARCHIVE.md#fjs-3468) |
 | V7.3.1 | 2 | none | `packages/auth/auth.ts:768` | No idle timeout. No sliding expiry, by design |
 | V7.3.2 | 2 | covered | `packages/auth/auth.ts:318`, `packages/auth/test/expiry.test.ts:55` | `sessionTtl` of 30 days, checked at verify through `@@expires` |
 | V7.4.1 | 1 | covered | `packages/auth/auth.ts:1769`, `packages/auth/test/audit-routes-session-lifecycle.test.ts:93` | Logout deletes the row. A lapsed row cannot be read |
 | V7.4.2 | 1 | partial | `packages/auth/auth.ts:1861`, `packages/auth/test/people.test.ts:106` | Deleting an account revokes its sessions. There is no disabled state, so a suspended person keeps live sessions |
-| V7.4.3 | 2 | covered | `packages/auth/auth.ts` `endOtherSessions`, `packages/auth/test/reauthenticate.test.ts` § a change to how the account signs in, `packages/auth/test/audit-services-password-change.test.ts:45` | A password change, enabling or disabling TOTP, new recovery codes and a confirmed email change each end every other session and keep the one that asked; a reset ends all of them (FJS-D1208) · [FJS-3468](../ISSUES.md#fjs-3468) |
+| V7.4.3 | 2 | covered | `packages/auth/auth.ts` `endOtherSessions`, `packages/auth/test/reauthenticate.test.ts` § a change to how the account signs in, `packages/auth/test/audit-services-password-change.test.ts:45` | A password change, enabling or disabling TOTP, new recovery codes and a confirmed email change each end every other session and keep the one that asked; a reset ends all of them (FJS-D1208) · [FJS-3468](../ISSUES_ARCHIVE.md#fjs-3468) |
 | V7.4.4 | 2 | covered | `packages/cli/core/scaffold/web.js:295` | The scaffold Shell puts a sign-out on every page |
 | V7.4.5 | 2 | covered | `packages/auth/services.ts:717`, `packages/cli/commands/auth/revoke-sessions.md`, `packages/auth/test/people.test.ts:106` | `people.signOut` for one person. `fli auth:revoke-sessions --all` for everyone |
-| V7.5.1 | 2 | covered | `packages/auth/services.ts` `fresh`, `packages/auth/auth.ts` `reauthenticate`, `packages/auth/test/reauthenticate.test.ts` § over HTTP | Sudo mode (FJS-D1209): the password, email, TOTP, recovery codes, an OAuth unlink and a new API key each refuse a session that has not proved the password, and the code where TOTP is on, within `reauthenticationWindow` (1 hour). A sign-in counts as that proof · [FJS-3468](../ISSUES.md#fjs-3468) |
+| V7.5.1 | 2 | covered | `packages/auth/services.ts` `fresh`, `packages/auth/auth.ts` `reauthenticate`, `packages/auth/test/reauthenticate.test.ts` § over HTTP | Sudo mode (FJS-D1209): the password, email, TOTP, recovery codes, an OAuth unlink and a new API key each refuse a session that has not proved the password, and the code where TOTP is on, within `reauthenticationWindow` (1 hour). A sign-in counts as that proof · [FJS-3468](../ISSUES_ARCHIVE.md#fjs-3468) |
 | V7.5.2 | 2 | partial | `packages/auth/services.ts:495`, `packages/cli/core/scaffold/web.js:984` | Listing and revoking sessions is built and scaffolded. No re-authentication before ending one |
 | V7.6.1 | 2 | none | `packages/auth/auth.ts:1447` | No maximum time since the IdP sign-in. The session lasts `sessionTtl` regardless |
 | V7.6.2 | 2 | partial | `packages/auth/plugin.ts:519`, `packages/auth/plugin.ts:352` | Magic-link and email links are spent only by POST. The OAuth begin route is a GET any page can start |
@@ -196,12 +196,12 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V8.1.2 | 2 | covered | `packages/litestone/src/access.js:413`, `packages/litestone/src/access.js:435` | snapshot lists field `@allow`, protection attributes and gated state transitions per model |
 | V8.1.3 | 3 | none | `packages/junction/src/core/app.ts` (`principal`) | no doc names time, IP, location or device as decision inputs; claim resolver is the seam |
 | V8.1.4 | 3 | none | `packages/junction/src/core/app.ts` (`principal`) | no risk thresholds or allow/challenge/step-up actions documented |
-| V8.2.1 | 1 | partial | `packages/junction/src/core/litestone.ts:3209`, `packages/junction/test/custom-method-gate.test.ts`, `packages/litestone/src/plugins/gate.js:145` | enforced where declared; a model with no `@@gate` or a modelless custom method is open to everyone · [FJS-3193](../ISSUES.md#fjs-3193) |
-| V8.2.2 | 1 | partial | `packages/litestone/src/core/policy.js`, `packages/litestone/test/verbs-rules.test.ts`, `packages/cli/commands/make/model.md:64` | row policies enforced on every path; `make:model` default has no ownership policy, any user may delete any row · [FJS-3194](../ISSUES.md#fjs-3194) |
+| V8.2.1 | 1 | partial | `packages/junction/src/core/litestone.ts:3209`, `packages/junction/test/custom-method-gate.test.ts`, `packages/litestone/src/plugins/gate.js:145` | enforced where declared; a model with no `@@gate` or a modelless custom method is open to everyone · [FJS-3193](../ISSUES_ARCHIVE.md#fjs-3193) |
+| V8.2.2 | 1 | partial | `packages/litestone/src/core/policy.js`, `packages/litestone/test/verbs-rules.test.ts`, `packages/cli/commands/make/model.md:64` | row policies enforced on every path; `make:model` default has no ownership policy, any user may delete any row · [FJS-3194](../ISSUES_ARCHIVE.md#fjs-3194) |
 | V8.2.3 | 2 | covered | `packages/litestone/src/core/field-policy.js`, `packages/litestone/test/field-policy-compose.test.ts`, `packages/litestone/test/guarded-disclosure.test.ts` | field `@allow` strips reads/declines writes; `@guarded` refused by name, also in where/orderBy |
 | V8.2.4 | 3 | none | `packages/junction/src/core/app.ts` (`principal`) | no adaptive controls; IP is used only for rate limiting |
 | V8.3.1 | 1 | covered | `packages/litestone/src/plugins/gate.js`, `packages/litestone/test/gate-per-client.test.ts`, `packages/sierra/test/static-safety-real.mjs` | Invariant 6: Data boundary enforces, client `x-gate` is affordance only |
-| V8.3.2 | 3 | covered | `packages/auth/auth.ts` `verifySession`, `packages/auth/test/audit-routes-session-lifecycle.test.ts` § a level change on a live session, `packages/junction/src/transport/http.ts` `_wsReverify`, `packages/junction/test/ws-revoked-session.test.ts` | HTTP re-reads the user per request and a socket re-asks per frame, so a call is never made as a stale principal. A socket that only receives is re-asked every `http.ws.reverifySeconds` (60), the window a broadcast can still reach it (`FJS-D1201`) · [FJS-3187](../ISSUES.md#fjs-3187) |
+| V8.3.2 | 3 | covered | `packages/auth/auth.ts` `verifySession`, `packages/auth/test/audit-routes-session-lifecycle.test.ts` § a level change on a live session, `packages/junction/src/transport/http.ts` `_wsReverify`, `packages/junction/test/ws-revoked-session.test.ts` | HTTP re-reads the user per request and a socket re-asks per frame, so a call is never made as a stale principal. A socket that only receives is re-asked every `http.ws.reverifySeconds` (60), the window a broadcast can still reach it (`FJS-D1201`) · [FJS-3187](../ISSUES_ARCHIVE.md#fjs-3187) |
 | V8.3.3 | 3 | covered | `packages/auth/auth.ts:848`, `packages/junction/test/request-scope.test.ts`, `packages/mcp/test/principal-standing.test.ts` | internal calls carry the caller's frozen principal; jobs re-read the user; agent graded as its person |
 | V8.4.1 | 2 | covered | `packages/litestone/src/tenant.js`, `packages/litestone/test/tenant-isolation.test.ts`, `packages/mcp/test/audit-withhold-tenant.test.ts` | one database or row scope per tenant; cache key carries tenant segment too |
 | V8.4.2 | 3 | partial | `packages/junction/src/plugins/devtools/index.ts:37`, `packages/auth/CLAUDE.md` (reauthenticate) | devtools loopback by default with optional key check; no device posture or continuous verification |
@@ -268,7 +268,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V11.4.2 | 2 | covered | `packages/auth/crypto.ts:11`, `packages/auth/test/flows.test.ts:105` | THREATS B12. bcrypt cost 12, rehashed at login when cost differs |
 | V11.4.3 | 2 | covered | `packages/toolbelt/src/signature/signature.js:77` | SHA-256 for body hash, HMAC and Ed25519; truncated token MAC graded under V11.2.3 |
 | V11.4.4 | 2 | n.a. | — | no key is derived from a password; keys are random hex |
-| V11.5.1 | 2 | partial | `packages/auth/crypto.ts:133`, `packages/junction/src/core/litestone.ts:4478` | state, API keys, reset tokens 256-bit; session token UUIDv4 122 bits, grant cuid about 124 · [FJS-3199](../ISSUES.md#fjs-3199) |
+| V11.5.1 | 2 | partial | `packages/auth/crypto.ts:133`, `packages/junction/src/core/litestone.ts:4478` | state, API keys, reset tokens 256-bit; session token UUIDv4 122 bits, grant cuid about 124 · [FJS-3199](../ISSUES_ARCHIVE.md#fjs-3199) |
 | V11.6.1 | 2 | covered | `packages/toolbelt/src/signature/signature.js:414`, `packages/outpost/src/cert.js:21` | Ed25519 via WebCrypto, P-256 via openssl; no RSA key generation |
 
 ## V12 Secure Communication
@@ -280,7 +280,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V12.1.3 | 2 | n.a. | — | no mTLS client-certificate authentication |
 | V12.2.1 | 1 | covered | `packages/cli/core/edge.js:46`, `packages/cli/commands/deploy/_module.md:537`, `packages/cli/test/edge.test.js` | Caddy auto-HTTPS plus redirect; API container bound to loopback; HSTS 1y on the document and the API |
 | V12.2.2 | 1 | covered | `packages/cli/core/edge.js:87`, `packages/cli/test/edge.test.js:51` | Caddy ACME certificates; a stated ssl key is refused |
-| V12.3.1 | 2 | partial | `packages/junction/src/mail/smtp.ts:382`, `packages/junction/src/core/public-url.ts:171` | request-addressed and webhook URLs https-only; SMTP STARTTLS opportunistic; fixed targets, OIDC endpoints may be http · [FJS-3195](../ISSUES.md#fjs-3195), [FJS-3202](../ISSUES.md#fjs-3202) |
+| V12.3.1 | 2 | partial | `packages/junction/src/mail/smtp.ts:382`, `packages/junction/src/core/public-url.ts:171` | request-addressed and webhook URLs https-only; SMTP STARTTLS opportunistic; fixed targets, OIDC endpoints may be http · [FJS-3195](../ISSUES_ARCHIVE.md#fjs-3195), [FJS-3202](../ISSUES_ARCHIVE.md#fjs-3202) |
 | V12.3.2 | 2 | covered | `packages/conduit/src/transports/http.ts:170` | Bun default certificate validation; no `rejectUnauthorized: false` in framework src |
 | V12.3.3 | 2 | partial | `packages/cli/core/edge.js:154`, `packages/outpost/src/index.js:41` | Basecamp to outpost is TLS; Caddy to API plaintext over loopback; conduit targets not forced https |
 | V12.3.4 | 2 | covered | `packages/conduit/src/transports/http.ts:177`, `packages/conduit/conduit.test.ts` | outpost self-signed cert pinned by SHA-256 fingerprint |
@@ -292,29 +292,29 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V13.1.1 | 2 | partial | `packages/conduit/src/transports/http.ts:310` | conduit targets declare third parties in one config; no generated inventory, raw `fetch` unlisted |
 | V13.2.1 | 2 | partial | `packages/junction/src/auth/credentials.ts`, `packages/junction/test/credentials.test.ts` | signed requests for inbound services; SQLite in-process; API keys are long-lived static secrets |
 | V13.2.2 | 2 | partial | `packages/junction/src/core/litestone.ts`, `packages/junction/test/method-scopes.test.ts` | scoped clients and key scopes exist; auth and jobs write via `asSystem()` by design |
-| V13.2.3 | 2 | covered | `packages/cli/commands/project/new.md:574`, `packages/junction/src/core/env.ts:228` | scaffold ships no default account; ENCRYPTION_KEY generated random into gitignored `.env` · [FJS-3206](../ISSUES.md#fjs-3206) |
+| V13.2.3 | 2 | covered | `packages/cli/commands/project/new.md:574`, `packages/junction/src/core/env.ts:228` | scaffold ships no default account; ENCRYPTION_KEY generated random into gitignored `.env` · [FJS-3206](../ISSUES_ARCHIVE.md#fjs-3206) |
 | V13.2.4 | 2 | partial | `packages/conduit/src/transports/http.ts:314`, `packages/junction/src/core/public-url.ts`, `packages/junction/test/webhook-targets.test.ts` | THREATS B13. conduit binds each target to declared origins; stranger URLs get a private-range denylist, not an allowlist |
 | V13.2.5 | 2 | partial | `packages/conduit/src/transports/http.ts:314` | same seam; no process-wide egress allowlist |
 | V13.3.1 | 2 | partial | `packages/junction/src/core/env.ts`, `packages/cli/core/checks.js` (`battery-raw-secret`) | `.env` plus `defineEnv`, kept out of git and image; no vault or HSM seam |
 | V13.3.2 | 2 | none | `packages/junction/src/core/env.ts` | one `.env` read whole by every process; no per-secret access control |
 | V13.4.1 | 1 | covered | `packages/cli/commands/make/deploy.md:261` | generated `.dockerignore` drops `.git`; Dockerfile copies `api/` and `db/` only |
-| V13.4.2 | 2 | covered | `packages/junction/src/core/errors.ts:275`, `packages/cli/commands/deploy/_module.md:545`, `packages/junction/test/wire-safety.test.ts` | THREATS B15. deploy sets NODE_ENV=production; debug fails open whenever NODE_ENV is anything else · [FJS-3207](../ISSUES.md#fjs-3207) |
+| V13.4.2 | 2 | covered | `packages/junction/src/core/errors.ts:275`, `packages/cli/commands/deploy/_module.md:545`, `packages/junction/test/wire-safety.test.ts` | THREATS B15. deploy sets NODE_ENV=production; debug fails open whenever NODE_ENV is anything else · [FJS-3207](../ISSUES_ARCHIVE.md#fjs-3207) |
 | V13.4.3 | 2 | covered | `packages/junction/src/transport/static.ts:135`, `packages/junction/test/static-root.test.ts` | a directory answers its index file or 404; no listing exists |
 | V13.4.4 | 2 | covered | `packages/junction/src/transport/http.ts:757` | no route answers TRACE; it gets 405 or 404 |
-| V13.4.5 | 2 | covered | `packages/junction/src/transport/health.ts:468`, `packages/junction/test/health-probes.test.ts`, `packages/junction/src/plugins/manifest/index.ts:93` | manifest dev-only; `/metrics` is not mounted in production without a `token` or `authFn`, while `/health` stays public for the deploy's health check · [FJS-3191](../ISSUES.md#fjs-3191) |
+| V13.4.5 | 2 | covered | `packages/junction/src/transport/health.ts:468`, `packages/junction/test/health-probes.test.ts`, `packages/junction/src/plugins/manifest/index.ts:93` | manifest dev-only; `/metrics` is not mounted in production without a `token` or `authFn`, while `/health` stays public for the deploy's health check · [FJS-3191](../ISSUES_ARCHIVE.md#fjs-3191) |
 
 ## V14 Data Protection
 
 | ID | L | Grade | Where | Note |
 | --- | --- | --- | --- | --- |
-| V14.1.1 | 2 | partial | `packages/litestone/src/core/personal.js`, `packages/litestone/src/access.js:413` | closed `@personal` categories and protection attributes; parse warns on unmarked personal names; no data map generator · [FJS-3213](../ISSUES.md#fjs-3213) |
+| V14.1.1 | 2 | partial | `packages/litestone/src/core/personal.js`, `packages/litestone/src/access.js:413` | closed `@personal` categories and protection attributes; parse warns on unmarked personal names; no data map generator · [FJS-3213](../ISSUES_ARCHIVE.md#fjs-3213) |
 | V14.1.2 | 2 | partial | `packages/litestone/docs/encryption.md`, `packages/litestone/docs/trail.md`, `packages/litestone/src/core/catalog.js` | each attribute's regime documented; no per-level requirement set (integrity, retention, logging) |
 | V14.2.1 | 1 | partial | `packages/junction/src/client/index.ts:181`, `packages/cli/core/scaffold/api.js:574` | session rides header or WS subprotocol; reset, verify and magic-link tokens ride the query string |
 | V14.2.2 | 2 | covered | `packages/junction/src/core/service.ts:37`, `packages/junction/src/transport/http.ts:1014`, `packages/junction/test/cache-conformance.test.ts` | service cache opt-in, keyed per user and tenant; authenticated reads `private` |
-| V14.2.3 | 2 | partial | `packages/sierra/src/analytics/index.js:112`, `packages/sierra/src/analytics/tag.js:25` | analytics opt-in, pathname only from `track`; vendor tag's own auto-pageview still reads the full URL · [FJS-3205](../ISSUES.md#fjs-3205) |
+| V14.2.3 | 2 | partial | `packages/sierra/src/analytics/index.js:112`, `packages/sierra/src/analytics/tag.js:25` | analytics opt-in, pathname only from `track`; vendor tag's own auto-pageview still reads the full URL · [FJS-3205](../ISSUES_ARCHIVE.md#fjs-3205) |
 | V14.2.4 | 2 | partial | `packages/litestone/src/core/audit-log.js`, `packages/litestone/src/core/encryption.js`, `packages/litestone/test/unique-redaction.test.ts` | encryption, audit redaction and declared retention built; no documented level to grade against |
 | V14.3.1 | 1 | covered | `packages/sierra/src/resource/index.js:166`, `packages/sierra/test/resource-identity.test.js` | sign-out clears token, prefetch, live stores and OPFS tables, even offline; no Clear-Site-Data |
-| V14.3.2 | 2 | partial | `packages/junction/src/transport/http.ts:1017` | authenticated reads get `private, no-cache`, not `no-store`; Vary Authorization misses cookie mode · [FJS-3208](../ISSUES.md#fjs-3208) |
+| V14.3.2 | 2 | partial | `packages/junction/src/transport/http.ts:1017` | authenticated reads get `private, no-cache`, not `no-store`; Vary Authorization misses cookie mode · [FJS-3208](../ISSUES_ARCHIVE.md#fjs-3208) |
 | V14.3.3 | 2 | partial | `packages/junction/src/client/index.ts:212`, `packages/litestone/src/device-schema.js` | bearer in localStorage (allowed); device OPFS tables hold app rows until sign-out |
 
 ## V15 Secure Coding and Architecture
@@ -326,7 +326,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V15.1.3 | 2 | partial | `packages/junction/README.md`, `packages/junction/src/config/index.ts:239` | limits documented per feature; no list of expensive functions with their defenses |
 | V15.2.1 | 1 | partial | `packages/cli/core/advisories.js`, `packages/cli/test/advisories.test.js`, `packages/cli/core/app-config.js` | THREATS B16. repo CI fails a shipping advisory; a scaffolded app's workflow runs `bun run audit` (`bun audit --audit-level=high`). Only what is advised is caught. |
 | V15.2.2 | 2 | partial | `packages/junction/src/config/index.ts:239`, `packages/junction/src/core/litestone.ts:228`, `packages/conduit/src/resilience.ts:17` | THREATS B14. Body cap, list max 100, bulkMax, WS bounds on; rate limiter and DDoS gate off by default |
-| V15.2.3 | 2 | partial | `packages/cli/commands/make/deploy.md:278`, `packages/junction/src/plugins/manifest/index.ts:80` | dev tools dev-only; `.dockerignore` `*.test.ts` is root-only, so `api/test/` ships in the image · [FJS-3212](../ISSUES.md#fjs-3212) |
+| V15.2.3 | 2 | partial | `packages/cli/commands/make/deploy.md:278`, `packages/junction/src/plugins/manifest/index.ts:80` | dev tools dev-only; `.dockerignore` `*.test.ts` is root-only, so `api/test/` ships in the image · [FJS-3212](../ISSUES_ARCHIVE.md#fjs-3212) |
 | V15.3.1 | 1 | covered | `packages/litestone/src/core/client.js` (`read()`), `packages/litestone/test/guarded-disclosure.test.ts`, `packages/mcp/test/projection.test.ts` | one row shaper strips protected and field-policied columns; `$select` narrows further |
 | V15.3.2 | 2 | covered | `packages/junction/src/plugins/webhooks/index.ts:603`, `packages/conduit/src/transports/http.ts:533`, `packages/junction/test/webhook-targets.test.ts` | THREATS B13. webhooks refuse redirects; conduit follows only when a target opts in, bounded |
 | V15.3.3 | 2 | covered | `packages/junction/src/core/litestone.ts:2197`, `packages/junction/test/unknown-keys.test.ts`, `packages/litestone/test/system-column.test.ts` | unknown keys refused; `@system`, `@guarded`, `@immutable`, field `@allow` bound writes |
@@ -351,7 +351,7 @@ A gap with a defect behind it links its `FJS-###`. When that row closes, regrade
 | V16.3.4 | 2 | covered | `packages/junction/src/core/errors.ts:297`, `packages/junction/test/wire-safety.test.ts` | 500s logged with stack and correlation id; conduit reports transport failures |
 | V16.4.1 | 2 | covered | `packages/junction/src/core/logger.ts:118`, `packages/junction/test/logger-pretty.test.ts` | JSON encoding in production; pretty mode quotes values carrying CR/LF |
 | V16.4.2 | 2 | partial | `packages/litestone/src/core/audit-log.js` (`@@gate(8)`) | trail is system-only to callers; operator can rewrite it, no hash chain (B11 by ruling) |
-| V16.4.3 | 2 | partial | `packages/junction/src/core/logger.ts` (`addWriter`) | writer seam exists; only a console writer ships, trail stays on the app's disk · [FJS-3213](../ISSUES.md#fjs-3213) |
+| V16.4.3 | 2 | partial | `packages/junction/src/core/logger.ts` (`addWriter`) | writer seam exists; only a console writer ships, trail stays on the app's disk · [FJS-3213](../ISSUES_ARCHIVE.md#fjs-3213) |
 | V16.5.1 | 2 | covered | `packages/junction/src/core/errors.ts:283`, `packages/junction/test/wire-safety.test.ts` | THREATS B15. 5xx becomes generic message with correlation id in production |
 | V16.5.2 | 2 | covered | `packages/conduit/src/resilience.ts`, `packages/conduit/conduit.test.ts` | per-target circuit breaker and concurrency gate on by default; `circuitBreaker` hook for services |
 | V16.5.3 | 2 | covered | `packages/junction/test/around-forgot-next.test.ts`, `packages/litestone/test/policy-interpreters.test.ts` | `@@deny` fires on UNKNOWN, missing result is 500, validation halts the write |
@@ -375,7 +375,7 @@ These read as gaps against the standard, but a ruling chose them. Reopening one 
 - **V8.2.3: any signed-in user reads every `User` row, email included.** `FJS-D47` set `User` to `@@gate("4.4.4.5")` so that member lists stay off `asSystem()`, and the scaffold's test asserts it (`packages/cli/commands/project/new.md`).
 - **V10.5.1: the OIDC client sends no nonce.** `FJS-D796`: v1 reads identity from userinfo and never accepts an `id_token`.
 - **V6.4.6: `people.invite` hands the operator the first-password token** (`packages/auth/services.ts`), for an app with no mailer. An admin can therefore pick the invitee's password.
-- **V8.2.1 in part: a model with no `@@gate` reads at level 0.** `FJS-D516` rules this for reads. Writes are not covered by it, and [FJS-3193](../ISSUES.md#fjs-3193) is filed for them.
+- **V8.2.1 in part: a model with no `@@gate` reads at level 0.** `FJS-D516` rules this for reads. Writes are not covered by it, and [FJS-3193](../ISSUES_ARCHIVE.md#fjs-3193) is filed for them.
 
 ## Judgment calls
 
@@ -391,7 +391,7 @@ A line where a reasonable grader could pick the neighboring grade. Each says wha
 - **V12.1.1, V12.1.2 (covered)** rest on Caddy's documented TLS defaults, unprobed on a live box. Outpost's 8180 listener uses Bun's.
 - **V8.2.2 (partial)** is graded on the `make:model` default. The row-policy mechanism itself is complete and tested.
 - **V8.3.2 (partial)** rests on the comment at `packages/junction/src/transport/channels.ts:1075` and a call-site search, not on a running probe.
-- **V13.4.2 (covered)** holds only where `fli deploy` sets `NODE_ENV=production` ([FJS-3207](../ISSUES.md#fjs-3207)). V16.5.2 (covered) holds only when the call goes through conduit.
+- **V13.4.2 (covered)** holds only where `fli deploy` sets `NODE_ENV=production` ([FJS-3207](../ISSUES_ARCHIVE.md#fjs-3207)). V16.5.2 (covered) holds only when the call goes through conduit.
 - **V14.2.3 (partial)** depends on Plausible's and GTM's scripts reading the full `location.href`. That is recalled, not measured.
 - **V6.3.6 (partial).** The magic link is off by default but ships as a sole email factor.
 - **V6.5.5 (covered)** is graded on the magic-link TTL. TOTP's ±1 step is accepted by most readers.

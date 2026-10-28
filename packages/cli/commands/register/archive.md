@@ -21,16 +21,16 @@ const root = findRegisterRoot(process.cwd()) ?? $.paths.root
 
 // Before the trim: the trim relinks `ISSUES.md#` only where a link resolves,
 // and a session's links resolve from the archive only once rotated.
-const handoff = rotateHandoff({ root })
+const handoff = rotateHandoff({ root, dry: flag.dry })
 echo('')
 if (!handoff.ok) {
   echo(`  ✗ ${handoff.reason}`)
   process.exitCode = 1
 } else if (handoff.moved) {
-  echo(`  ✓ ${handoff.moved} HANDOFF.md sessions rotated into docs/handoff-archive/ (${handoff.months.join(', ')}) — ${handoff.kept} stay`)
+  echo(`  ✓ ${handoff.moved} HANDOFF.md sessions ${flag.dry ? 'would be ' : ''}rotated into docs/handoff-archive/ (${handoff.months.join(', ')}) — ${handoff.kept} stay`)
 }
 
-const out = archiveClosed({ root, keep: flag.keep ?? KEEP })
+const out = archiveClosed({ root, keep: flag.keep ?? KEEP, dry: flag.dry })
 
 if (!out.ok) {
   echo(`  ✗ ${out.reason}`)
@@ -41,6 +41,12 @@ if (!out.ok) {
 
 if (!out.moved) {
   echo(`  ✓ nothing to archive — § Closed holds ${out.kept} rows`)
+  echo('')
+  return
+}
+
+if (out.dry) {
+  echo(`  ✓ ${out.moved} rows would be archived — § Closed keeps ${out.kept} (--dry: nothing written, register:check not run)`)
   echo('')
   return
 }

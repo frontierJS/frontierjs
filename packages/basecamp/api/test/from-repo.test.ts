@@ -7,10 +7,12 @@
  * variable holding its own value (FJS-1599) and revealed only to an admin,
  * with the reveal in the trail.
  *
- * The forge is never reached: a repository on a forge `rawDockerfileUrls`
+ * The forge is never read: a repository on a forge `rawDockerfileUrls`
  * does not read seeds blank with no request (FJS-D1570), and the raw-URL tests
- * hand `readRepoDockerfile` a fetch of their own. The machine is the stub
- * executor, which is also the "no deploy key yet" answer.
+ * hand `readRepoDockerfile` a fetch of their own. `connect` writes to the
+ * GitHub sink, each account registered at its address (source.test.ts's
+ * reason). The machine is the stub executor, which is also the "no deploy key
+ * yet" answer, so a connect here writes the hook and no key.
  */
 
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
@@ -21,7 +23,10 @@ import { basecampGateLevel }      from '../src/core/gate.ts'
 import { buildBasecampApp }       from '../src/app.ts'
 import { grantsFor }              from '../src/core/capabilities.ts'
 import { parseAppSource, summarizeSource, DOCKERFILE_BYTES } from '../src/domain/release/app-source.ts'
-import { readRepoDockerfile, rawDockerfileUrls } from '../src/domain/release/dockerfile-template.ts'
+import { readRepoDockerfile, rawDockerfileUrls, forgeRepo } from '../src/domain/release/dockerfile-template.ts'
+import { startGhSink, NO_HOOKS_TOKEN } from '../src/providers/source/github-sink.ts'
+import { registerAccount }    from '../src/providers/compute/accounts.ts'
+import { connectRepository }  from '../src/services/apps/apps.service.ts'
 
 process.env.BASECAMP_STUB_OUTPOST = '1'
 
@@ -279,5 +284,112 @@ describe('readRepoDockerfile', () => {
   test('a sign-in page is not a Dockerfile', async () => {
     const fetch = (async () => new Response('<!doctype html><title>Log in</title>')) as unknown as typeof globalThis.fetch
     expect(await readRepoDockerfile({ repo: 'https://bitbucket.org/team/shop' }, { fetch })).toBeNull()
+  })
+})
+
+describe('fromRepo `connect` writes at GitHub (FJS-D1571)', () => {
+  const sink = startGhSink(0)
+  const repo = 'git@github.com:sink-owner/app.git'
+  const made: any[] = []
+  afterAll(async () => {
+    sink.stop()
+    for (const s of made) await (env.system as any).secret.delete({ where: { id: s.id } })
+  })
+
+  const account = async (name: string, token: string) => {
+    const s = await (env.system as any).secret.create({ data: {
+      workspaceId: ws.id, name, kind: 'provider_key', providerKind: 'github', data: JSON.stringify({ token }),
+    } })
+    made.push(s)
+    await registerAccount(env.app, s, { address: `http://localhost:${sink.port}` })
+    return s
+  }
+  const connect = (who: any, extra: Record<string, unknown> = {}) => {
+    const name = `Linked ${uniq()}`
+    return { name, call: fromRepo(who, { name, repo, dockerfile: 'FROM oven/bun:1', serverId: box.id, connect: true, ...extra }) }
+  }
+  const projects = (name: string) => (env.system as any).project.count({ where: { name } })
+
+  test('no GitHub account refuses before any row is written', async () => {
+    const { name, call } = connect(admin)
+    await expect(call).rejects.toThrow(/No GitHub account/)
+    expect(await projects(name)).toBe(0)
+  })
+
+  test('a revoked token refuses by name before any row is written', async () => {
+    await account('gh-a-revoked', 'github_pat_revoked')
+    const { name, call } = connect(admin)
+    await expect(call).rejects.toThrow(/refused 'gh-a-revoked'/)
+    expect(await projects(name)).toBe(0)
+  })
+
+  test('the hook lands at GitHub with the push secret, the revoked token passed over', async () => {
+    await account('gh-b-live', 'github_pat_devtoken')
+    const r = await connect(admin).call
+    expect(r.connected).toEqual({ account: 'gh-b-live', key: false, hook: true })
+    const hook = sink.hooksOf('sink-owner/app').find((h: any) => h.config.url === r.push.url)
+    expect(hook?.config).toMatchObject({ url: r.push.url, secret: r.push.secret, content_type: 'json' })
+  })
+
+  test('a refused write after the App exists is the note, and the App stands', async () => {
+    await account('gh-a-nohooks', NO_HOOKS_TOKEN)
+    const { name, call } = connect(admin)
+    const r = await call
+    expect(r.connected).toMatchObject({ account: 'gh-a-nohooks', hook: false })
+    expect(r.note).toMatch(/Webhooks/)
+    expect(await projects(name)).toBe(1)
+    await (env.system as any).secret.delete({ where: { id: made.pop().id } })
+  })
+
+  test('a repository no token sees moves through every account and says so', async () => {
+    await account('gh-c-live', 'github_pat_devtoken')
+    const accounts = made.filter((s: any) => s.name.endsWith('-live')).map((s: any) => ({ id: s.id, name: s.name }))
+    const r = await connectRepository(env.app, 'github', accounts, { owner: 'sink-owner', name: 'missing' },
+      { hook: { url: 'http://x/hooks/git/1', secret: 's' } })
+    expect(r).toMatchObject({ account: null, key: false, hook: false })
+    expect(r.note).toMatch(/not found, or the token was not given it \(asked 2 accounts\)/)
+  })
+
+  test('a private repository seeds through the account that sees it, port and all', async () => {
+    const r = await connect(admin, { dockerfile: undefined }).call
+    expect(r.dockerfile).toEqual({ seeded: 'repo' })
+    expect(r.app.source.dockerfile).toBe('FROM oven/bun:1\nEXPOSE 3000')
+    expect(r.app.containerPort).toBe(3000)
+  })
+
+  const importDockerfile = (who: any, id: string) => env.as(who).service('apps').call('importDockerfile', id, {})
+
+  test('importDockerfile reads the forge before any build, the refused token passed over', async () => {
+    const r = await connect(admin, { dockerfile: '' }).call
+    expect(await importDockerfile(admin, r.app.id)).toEqual({ path: 'Dockerfile', content: 'FROM oven/bun:1\nEXPOSE 3000\n', from: 'forge' })
+  })
+
+  test('a repository no account sees falls to the machine, and the note says both', async () => {
+    const r = await fromRepo(admin, { name: `Unseen ${uniq()}`, repo: 'git@github.com:sink-owner/private.git', dockerfile: '', serverId: box.id })
+    const answer = await importDockerfile(admin, r.app.id)
+    expect(answer).toMatchObject({ path: null, content: null })
+    expect(answer.note).toMatch(/sink-owner\/private was not found.*\(asked 3 accounts\); /)
+  })
+
+  test('a member below administrator reads through no token, and is not refused for it', async () => {
+    const r = await connect(admin, { dockerfile: '' }).call
+    const answer = await importDockerfile(developer, r.app.id)
+    expect(answer).toMatchObject({ path: null, content: null })
+    expect(answer.note).not.toMatch(/GitHub/)
+  })
+
+  test('a member below administrator reads no token, and is refused', async () => {
+    await expect(connect(developer).call).rejects.toThrow(/No GitHub account/)
+  })
+
+  test('connect needs a server and a GitHub repository', async () => {
+    await expect(connect(admin, { serverId: undefined }).call).rejects.toThrow(/needs a server/)
+    await expect(connect(admin, { repo: 'https://bitbucket.org/acme/app.git' }).call).rejects.toThrow(/not a GitHub repository/)
+  })
+
+  test('one parse of a remote: owner and name, .git dropped', () => {
+    for (const remote of ['git@github.com:sink-owner/app.git', 'https://github.com/sink-owner/app', 'ssh://git@github.com/sink-owner/app.git/'])
+      expect(forgeRepo(remote)).toEqual({ forge: 'github', owner: 'sink-owner', name: 'app' })
+    expect(forgeRepo('https://gitlab.com/a/b')).toBeNull()
   })
 })

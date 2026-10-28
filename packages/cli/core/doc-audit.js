@@ -30,8 +30,9 @@
 // alone: `ISSUES_ARCHIVE.md` and the handoff and changes archives legitimately
 // name files that were deleted afterwards, and that is what a history IS.
 
-import { readFileSync, readdirSync, existsSync, statSync } from 'fs'
+import { readdirSync, existsSync, statSync }              from 'fs'
 import { join, dirname, relative, resolve, sep }           from 'path'
+import { read, safeRead } from './fs.js'
 
 import { docFences }     from '@frontierjs/toolbelt/docfences'
 import { readRegisters } from './registers.js'
@@ -90,7 +91,7 @@ export function docCorpus(root, { history = true, registers = true, proposals = 
   const dirs  = ['IDEAS', 'docs', 'packages', 'website', join('.claude', 'skills')]
   const files = []
 
-  for (const name of readdirSyncSafe(root))
+  for (const name of safeRead(root))
     if (name.endsWith('.md') && !name.endsWith('.snapshot.md')) files.push({ path: join(root, name), rel: name })
 
   for (const d of dirs) if (existsSync(join(root, d))) walkMd(join(root, d), files, root)
@@ -100,11 +101,9 @@ export function docCorpus(root, { history = true, registers = true, proposals = 
     (registers || !isRegister(f.rel)) &&
     (proposals || !isProposal(f.rel)))
 
-  return kept.map(f => ({ ...f, text: readSafe(f.path) })).filter(f => f.text !== null)
+  return kept.map(f => ({ ...f, text: read(f.path) })).filter(f => f.text !== null)
 }
 
-function readdirSyncSafe(dir) { try { return readdirSync(dir) } catch { return [] } }
-function readSafe(path)       { try { return readFileSync(path, 'utf8') } catch { return null } }
 
 const lineOf = (text, index) => text.slice(0, index).split('\n').length
 
@@ -184,11 +183,11 @@ const PLACEHOLDERS = new Set(['@x', '@y', '@n', '@name', '@@name', '@attr', '@@a
 export function npmScopes(root) {
   const out   = new Set()
   const files = [join(root, 'package.json')]
-  for (const name of readdirSyncSafe(join(root, 'packages')))
+  for (const name of safeRead(join(root, 'packages')))
     files.push(join(root, 'packages', name, 'package.json'))
 
   for (const file of files) {
-    const raw = readSafe(file)
+    const raw = read(file)
     if (raw === null) continue
     let pkg
     try { pkg = JSON.parse(raw) } catch { continue }
@@ -202,11 +201,11 @@ export function npmScopes(root) {
 export function catalogWords(root) {
   const words = new Set()
   let found   = 0
-  for (const name of readdirSyncSafe(join(root, 'packages'))) {
+  for (const name of safeRead(join(root, 'packages'))) {
     const file = join(root, 'packages', name, 'catalog.snapshot.md')
     if (!existsSync(file)) continue
     found++
-    const text = readSafe(file) ?? ''
+    const text = read(file) ?? ''
     for (const m of text.matchAll(/(@@?[a-z][A-Za-z0-9]*)/g)) words.add(m[1])
   }
   return { words, found }
@@ -348,7 +347,7 @@ export function docCitesDead({ root }) {
   const docs = docCorpus(root, { history: false })
   if (!docs.length) return { skipped: 'no documents outside history' }
 
-  const top = new Set(readdirSyncSafe(root))
+  const top = new Set(safeRead(root))
 
   // `ids.byId` is keyed lowercase and carries the archive, so a closed row is a
   // live citation. No registers at all is an app, not a repo: the half is
@@ -430,7 +429,7 @@ export function docCitesDead({ root }) {
       if (frag && /^fjs-/i.test(frag)) {
         const bare = resolve(dirname(doc.path), target)
         const at   = existsSync(bare) ? bare : resolve(root, target)
-        const text = readSafe(at) ?? ''
+        const text = read(at) ?? ''
         if (text && !text.includes(`id="${frag}"`)) if (m.index < cutoff) findings.push({
           file: doc.path, line: lineOf(doc.text, m.index),
           message: `links to \`${target}#${frag}\` and that anchor is not in the target — the row was renumbered, ` +
@@ -518,7 +517,7 @@ function countFiles(dir, ext) {
   if (!existsSync(dir)) return null
   let n = 0
   const walk = d => {
-    for (const e of readdirSyncSafe(d)) {
+    for (const e of safeRead(d)) {
       const full = join(d, e)
       let st
       try { st = statSync(full) } catch { continue }
@@ -531,7 +530,7 @@ function countFiles(dir, ext) {
 }
 
 function _countMatches(file, re) {
-  const text = readSafe(file)
+  const text = read(file)
   if (text === null) return null
   return [...text.matchAll(re)].length
 }
@@ -539,7 +538,7 @@ function _countMatches(file, re) {
 /** One catalog section's rows — the table under a `## <heading>`. */
 function catalogSection(root, heading) {
   const file = join(root, 'packages', 'litestone', 'catalog.snapshot.md')
-  const text = readSafe(file)
+  const text = read(file)
   if (text === null) return null
   const from = text.indexOf(`## ${heading}`)
   if (from < 0) return null
@@ -679,7 +678,7 @@ export function docClaimsCount({ root, countables = COUNTABLES }) {
 // when the list grows.
 
 export function invariantCount(root) {
-  const text = readSafe(join(root, 'CLAUDE.md'))
+  const text = read(join(root, 'CLAUDE.md'))
   if (text === null) return null
   const from = text.search(/^#+ Invariants\s*$/m)
   if (from < 0) return null

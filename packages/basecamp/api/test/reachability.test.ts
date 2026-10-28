@@ -205,8 +205,7 @@ describe('the fleet sweep', () => {
 
     const box = await machine('online', new Date(NOW - 200_000).toISOString())
     await sys.hubConfig.create({ data: {
-      id: 'hub', name: 'Fleet', baseUrl: 'http://localhost:8120',
-      adminEmail: 'admin@x.co', heartbeatTimeoutSeconds: 3_000 } })
+      id: 'hub', name: 'Fleet', heartbeatTimeoutSeconds: 3_000 } })
     expect(await heartbeatGraceMs(env.app)).toBe(3_000_000)
 
     let res = await sweepUnreachable(env.app, { at: NOW, serverId: box.id })

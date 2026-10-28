@@ -5,8 +5,6 @@ skip: "!$.config.doApi"
 ---
 
 ```js
-if ($.config.abort) return
-
 const { imageTag, appId, apiPort, deployConf } = $.config
 const { host, path: serverPath } = $.config.api
 const { configurationSet } = await import(new URL('file://' + global.fliRoot + '/core/release.js'))

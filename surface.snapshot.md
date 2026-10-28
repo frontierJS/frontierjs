@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-26 package(s) · 3922 source file(s) read
+26 package(s) · 3930 source file(s) read
 241 entry point(s), 35 imported by nothing outside their package, 15 emitted
-1632 value export(s), 624 reached by nothing outside, 165 emitted
+1637 value export(s), 624 reached by nothing outside, 166 emitted
 451 type export(s), 343 reached by nothing outside
 ```
 
@@ -39,9 +39,9 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `mesa` | 18 | 4 | 290 | 100 | 70 | 0 | 0 |
 | `sierra` | 25 | 6 | 197 | 81 | 21 | 0 | 0 |
 | `auth` | 6 | 1 | 52 | 37 | 3 | 15 | 13 |
-| `ui` | 9 | 0 | 53 | 34 | 3 | 0 | 0 |
 | `jetty` | 7 | 4 | 43 | 29 | 3 | 0 | 0 |
-| `toolbelt` | 62 | 0 | 295 | 28 | 11 | 0 | 0 |
+| `ui` | 9 | 0 | 53 | 33 | 3 | 0 | 0 |
+| `toolbelt` | 62 | 0 | 300 | 29 | 12 | 0 | 0 |
 | `conduit` | 4 | 2 | 26 | 15 | 1 | 59 | 40 |
 | `site-kit` | 9 | 4 | 38 | 12 | 1 | 0 | 0 |
 | `outpost` | 8 | 1 | 21 | 10 | 0 | 0 | 0 |
@@ -301,13 +301,13 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/toolbelt`
 
-`packages/toolbelt` · 62 entry point(s) · 295 value, 0 type export(s)
+`packages/toolbelt` · 62 entry point(s) · 300 value, 0 type export(s)
 
 **Entries not source (20, not graded):** `./bearer` `./cells` `./cron` `./datetime` `./devline` `./directives` `./fill` `./gate` `./geo` `./env` `./hooks` `./ids` `./mailbox` `./mime` `./query` `./rank` `./redact` `./sigv4` `./sse` `./trace`
 
-**Unreached values (28):** `assertValues` `baseUnit` `canonicalRequest` `centroid` `CONTENT_TYPES` `DIGITS` `divRound` `encodePairs` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `resolveWall` `RUNNABLE_LANGS` `SECRET_KEY_NAMES` `signMessage` `TRANSFORM_NAMES`
+**Unreached values (29):** `assertValues` `baseUnit` `canonicalRequest` `centroid` `CONTENT_TYPES` `DIGITS` `divRound` `encodePairs` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `resolveWall` `RUNNABLE_LANGS` `sealFile` `SECRET_KEY_NAMES` `signMessage` `TRANSFORM_NAMES`
 
-**Emitted (11):** `CRON_FIELDS` `dayHeader` `formatChord` `fromWall` `inBoxes` `OPERATORS` `parseRow` `pointInPolygon` `polygonArea` `renderRow` `SIGNATURE_VERSION`
+**Emitted (12):** `CRON_FIELDS` `dayHeader` `FILE_PLAIN_MAX` `formatChord` `fromWall` `inBoxes` `OPERATORS` `parseRow` `pointInPolygon` `polygonArea` `renderRow` `SIGNATURE_VERSION`
 
 ## `@frontierjs/ui`
 
@@ -315,6 +315,6 @@ Every entry is imported and every name reached.
 
 **Entries emitted (5):** `./utils` `./dnd` `./drag` `./selection` `./rowlist`
 
-**Unreached values (34):** `bandIndex` `createSelection` `defaultControlProps` `defaultDisplayProps` `defaultFilterProps` `displayComponent` `fileNameOf` `filePreviews` `filterComponent` `formControl` `lockedBy` `nativeValidationGuard` `openFile` `optionsNote` `placeAgainst` `plotRuns` `plotValue` `RECENT_GROUP` `registeredDisplayComponents` `registeredFilterComponents` `registeredFormControls` `resolveError` `resolveRule` `REST_GROUP` `ruleLabel` `sectionFor` `SHADOW_ITEM_MARKER` `SHADOW_PLACEHOLDER_ITEM_ID` `splitRecent` `truncationNote` `unregisterDisplayComponent` `unregisterFilterComponent` `unregisterFormControl` `withheldBy`
+**Unreached values (33):** `bandIndex` `createSelection` `defaultControlProps` `defaultDisplayProps` `defaultFilterProps` `displayComponent` `fileNameOf` `filePreviews` `filterComponent` `formControl` `lockedBy` `nativeValidationGuard` `optionsNote` `placeAgainst` `plotRuns` `plotValue` `RECENT_GROUP` `registeredDisplayComponents` `registeredFilterComponents` `registeredFormControls` `resolveError` `resolveRule` `REST_GROUP` `ruleLabel` `sectionFor` `SHADOW_ITEM_MARKER` `SHADOW_PLACEHOLDER_ITEM_ID` `splitRecent` `truncationNote` `unregisterDisplayComponent` `unregisterFilterComponent` `unregisterFormControl` `withheldBy`
 
 **Emitted (3):** `dndzone` `registerFilterComponent` `rowlist`

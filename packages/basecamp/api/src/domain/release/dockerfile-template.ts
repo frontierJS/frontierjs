@@ -83,20 +83,29 @@ function stripGit(name: string): string {
   return name.endsWith('.git') ? name.slice(0, -4) : name
 }
 
+/** The forge a remote is on and the repository it names there, or null for a
+ *  remote on neither. The one reading of a remote's owner and name: the raw
+ *  read below and a connect's writes address the same repository. */
+export function forgeRepo(remote: string): { forge: 'github' | 'bitbucket'; owner: string; name: string } | null {
+  const r  = remote.trim()
+  const gh = GITHUB.exec(r)
+  if (gh) return { forge: 'github', owner: gh[1], name: stripGit(gh[2]) }
+  const bb = BITBUCKET.exec(r)
+  if (bb) return { forge: 'bitbucket', owner: bb[1], name: stripGit(bb[2]) }
+  return null
+}
+
 /** The raw URLs a remote's Dockerfile is read at, in order, or `[]` for a
  *  remote that is not a public forge this reads. No branch is the default
  *  branch, which both forges answer for `HEAD`. */
 export function rawDockerfileUrls(repo: string, branch?: string | null): string[] {
   const ref = branch && REF.test(branch) && !branch.includes('..') ? branch : 'HEAD'
   const encRef = ref.split('/').map(encodeURIComponent).join('/')
-  const remote = repo.trim()
-
-  const gh = GITHUB.exec(remote)
-  if (gh) return DOCKERFILE_PATHS.map(p => `https://raw.githubusercontent.com/${gh[1]}/${stripGit(gh[2])}/${encRef}/${p}`)
-
-  const bb = BITBUCKET.exec(remote)
-  if (bb) return DOCKERFILE_PATHS.map(p => `https://bitbucket.org/${bb[1]}/${stripGit(bb[2])}/raw/${encRef}/${p}`)
-
+  const at = forgeRepo(repo)
+  if (at?.forge === 'github')
+    return DOCKERFILE_PATHS.map(p => `https://raw.githubusercontent.com/${at.owner}/${at.name}/${encRef}/${p}`)
+  if (at?.forge === 'bitbucket')
+    return DOCKERFILE_PATHS.map(p => `https://bitbucket.org/${at.owner}/${at.name}/raw/${encRef}/${p}`)
   return []
 }
 

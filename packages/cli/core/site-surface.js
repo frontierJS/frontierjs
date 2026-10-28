@@ -46,9 +46,10 @@
  * and `db/` + `api/` + `site/` is its layout.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { resolve, dirname } from 'node:path'
 import { frontmatterValue } from './compiler.js'
+import {
+  scaffoldPort, writeAbsent, viteScript, surfaceViteConfig, surfaceIndexHtml, surfaceServe, surfaceDockerfile,
+} from './scaffold/surface.js'
 
 /** The six, minus the ones a build writes. `dist/` is output, never scaffolded. */
 export const SITE_SURFACE_DIRS = [
@@ -126,7 +127,7 @@ ${dbLine}
  * answer. The origin is a build-time constant because a static page has no
  * server to ask.
  */
-export function siteApiModule({ apiPort = 8100 } = {}) {
+export function siteApiModule({ apiPort = scaffoldPort('be') } = {}) {
   return `// site/src/api.js -- where this site's islands find the API.
 //
 // Never fetch a relative '/api/...' from an island: this surface is its own
@@ -148,61 +149,22 @@ export const clientOptions = { url: API_ORIGIN, apiPrefix: '/api' }
 `
 }
 
-export function siteViteConfig({ port = 8600 } = {}) {
-  return `// site/config/vite.config.js
-// \`vite dev\` here is how the site is WRITTEN — routes served as a client-routed
-// app, so a page's markup can be iterated on without a build.
-//
-// \`fli site:build\` is what SHIPS: it emits the bundle and then prerenders every
-// route declaring \`render: static\`. The publish check, the island chunks and
-// the one-file-per-route output exist only there, so anything touching a
-// load() or frontmatter is proved by building.
+export function siteViteConfig({ port = scaffoldPort('siteDev') } = {}) {
+  return surfaceViteConfig({ surface: 'site', port, about: `
+vite dev here is how the site is WRITTEN -- routes served as a client-routed
+app, so a page's markup can be iterated on without a build.
 
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { defineConfig } from 'vite'
-import { createSierraViteConfig } from '@frontierjs/sierra/build'
-import sierraConfig from './sierra.config.js'
-
-// The Vite root is the surface root, one level up from config/ — the same
-// relationship web/config/vite.config.js has to web/.
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-
-const base = createSierraViteConfig(sierraConfig)
-
-export default defineConfig({
-  ...base,
-  root: ROOT,
-  // An app has ONE .env, at its root, and vite looks in the Vite root unless
-  // told otherwise -- so a FRONTIER_PUBLIC_ variable written beside every other setting
-  // reaches nothing and the client falls back to its default without a word.
-  envDir: resolve(ROOT, '..'),
-  server: {
-    ...base.server,
-    // dev / siteDev / this app's project id — derived, never chosen. A public
-    // site is a third server while it is being written and its own origin once
-    // it is served, and neither is the SPA's. See packages/cli/core/ports.js.
-    port:       parseInt(process.env.SITE_PORT ?? process.env.FRONTIER_PORT_SITE ?? '${port}', 10),
-    // Vite hops to the next free port without a word, and a drive pointed at
-    // the port it hopped from then tests whatever else is listening.
-    strictPort: true,
-  },
-})
-`
+fli site:build is what SHIPS: it emits the bundle and then prerenders every
+route declaring render: static. The publish check, the island chunks and
+the one-file-per-route output exist only there, so anything touching a
+load() or frontmatter is proved by building.
+` })
 }
 
 // ─── the dev shell ────────────────────────────────────────────────────────────
 
 export function siteIndexHtml({ appName = 'app' } = {}) {
-  return `<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${appName}</title>
-  </head>
-  <body>
-    <!-- The DEV shell. A built page does not use this file: each route is
+  return surfaceIndexHtml({ title: appName, body: `    <!-- The DEV shell. A built page does not use this file: each route is
          prerendered into its own HTML, wrapped in the \`document\` block from
          config/sierra.config.js. Sierra applies that block here too, so the
          body class is stated there and only there.
@@ -212,9 +174,7 @@ export function siteIndexHtml({ appName = 'app' } = {}) {
          the build succeeds and the page loads no JavaScript. -->
     <div id="app"></div>
     <script type="module" src="virtual:sierra"></script>
-  </body>
-</html>
-`
+` })
 }
 
 export function siteMainEntry() {
@@ -272,98 +232,54 @@ export function siteIslandStarter() {
 
 // ─── deployment ───────────────────────────────────────────────────────────────
 
-export function siteServeEntry({ servePort = 8700 } = {}) {
-  return `// site/deploy/serve.js — the site origin.
-//
-// Static files and nothing else, with the two answers a prerendered site
-// depends on: a directory index, so /about/ resolves to about/index.html the
-// way every static host does it, and a cache answer per file kind — HTML must
-// be revalidated (its URL is permanent and its content is a build artefact),
-// hashed assets are immutable.
-//
-// The server itself is Sierra's, so what is tested locally is what runs here.
-// Most real deployments are a bucket and a CDN and never run this file; it
-// exists so the same answers can be had locally and in a container.
+export function siteServeEntry({ servePort = scaffoldPort('siteServe') } = {}) {
+  return surfaceServe({
+    surface: 'site', dist: 'dist', label: 'site', servePort,
+    serve: 'serveSite', from: '@frontierjs/sierra/site/serve',
+    about: `
+Static files and nothing else, with the two answers a prerendered site
+depends on: a directory index, so /about/ resolves to about/index.html the
+way every static host does it, and a cache answer per file kind -- HTML must
+be revalidated (its URL is permanent and its content is a build artefact),
+hashed assets are immutable.
 
-import { serveSite } from '@frontierjs/sierra/site/serve'
-
-const { url } = await serveSite({
-  dir:  new URL('../dist', import.meta.url).pathname,
-  port: Number(process.env.PORT ?? ${servePort}),
-})
-
-console.log(\`site serving at \${url}\`)
-`
+Most real deployments are a bucket and a CDN and never run this file; it
+exists so the same answers can be had locally and in a container.
+`,
+  })
 }
 
-export function siteDockerfile({ servePort = 8700 } = {}) {
-  return `# site/deploy/Dockerfile — the site surface ships on its own.
-#
-# It is not in the API's image: a public site is released when its content
-# changes, which is not when the API is, and it stays up when the API is down.
-# A bucket and a CDN is the usual answer and needs no image at all; this is for
-# the deployments that want one process per surface.
-
-# Bun is the version fli ran under when this file was written, so the image
-# runs what the app was developed on. Move both FROM lines together.
-FROM oven/bun:${Bun.version} AS build
-WORKDIR /app
-COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile || bun install
-COPY . .
-RUN cd site && bunx vite build -c config/vite.config.js
-
-FROM oven/bun:${Bun.version}-slim
-WORKDIR /app
-COPY --from=build /app/site/dist ./site/dist
-COPY --from=build /app/site/deploy ./site/deploy
-COPY --from=build /app/node_modules ./node_modules
-ENV PORT=${servePort}
-EXPOSE ${servePort}
-CMD ["bun", "run", "site/deploy/serve.js"]
-`
+export function siteDockerfile({ servePort = scaffoldPort('siteServe') } = {}) {
+  return surfaceDockerfile({
+    surface: 'site', dist: 'dist', servePort,
+    script: 'build:site',
+    about: `
+It is not in the API's image: a public site is released when its content
+changes, which is not when the API is, and it stays up when the API is down.
+A bucket and a CDN is the usual answer and needs no image at all; this is for
+the deployments that want one process per surface.
+`,
+  })
 }
 
 // ─── writing it ───────────────────────────────────────────────────────────────
 
-/**
- * Create the surface.
- *
- * Every file is written only when it is absent — this is called to top one up
- * as often as to create one, and a scaffold that overwrites a config is a
- * scaffold nobody runs twice.
- *
- * @returns {{ written: string[], skipped: string[] }} paths relative to `root`
- */
+/** Create the surface, writing only what is absent (`writeAbsent`). */
 export function scaffoldSiteSurface({
   root, dir = 'site', appName = 'app', hasApi = true,
-  devPort = 8600, servePort = 8700, apiPort = 8100,
+  devPort = scaffoldPort('siteDev'), servePort = scaffoldPort('siteServe'), apiPort = scaffoldPort('be'),
 } = {}) {
-  const base = resolve(root, dir)
-  for (const d of SITE_SURFACE_DIRS) mkdirSync(resolve(base, d), { recursive: true })
-
-  const files = [
-    ['config/sierra.config.js', siteSierraConfig({ hasApi })],
-    ['config/vite.config.js',   siteViteConfig({ port: devPort })],
-    ['index.html',              siteIndexHtml({ appName })],
-    ['src/main.js',             siteMainEntry()],
-    ['src/api.js',              siteApiModule({ apiPort })],
-    ['src/routes/index.mesa',   siteHomePage({ appName })],
+  return writeAbsent(root, dir, { dirs: SITE_SURFACE_DIRS, files: [
+    ['config/sierra.config.js',  siteSierraConfig({ hasApi })],
+    ['config/vite.config.js',    siteViteConfig({ port: devPort })],
+    ['index.html',               siteIndexHtml({ appName })],
+    ['src/main.js',              siteMainEntry()],
+    ['src/api.js',               siteApiModule({ apiPort })],
+    ['src/routes/index.mesa',    siteHomePage({ appName })],
     ['src/islands/Counter.mesa', siteIslandStarter()],
-    ['deploy/serve.js',         siteServeEntry({ servePort })],
-    ['deploy/Dockerfile',       siteDockerfile({ servePort })],
-  ]
-
-  const written = []
-  const skipped = []
-  for (const [rel, body] of files) {
-    const abs = resolve(base, rel)
-    if (existsSync(abs)) { skipped.push(`${dir}/${rel}`); continue }
-    mkdirSync(dirname(abs), { recursive: true })
-    writeFileSync(abs, body, 'utf8')
-    written.push(`${dir}/${rel}`)
-  }
-  return { written, skipped }
+    ['deploy/serve.js',          siteServeEntry({ servePort })],
+    ['deploy/Dockerfile',        siteDockerfile({ servePort })],
+  ] })
 }
 
 /**
@@ -388,25 +304,10 @@ export function siteDevDeps() {
  * questions — the build is what CI runs and the serve is what a drive points a
  * browser at, and a combined script would rebuild on every check.
  */
-export function siteScripts({ dir = 'site', servePort = 8700 } = {}) {
+export function siteScripts({ dir = 'site', servePort = scaffoldPort('siteServe') } = {}) {
   return {
-    // `bun --bun` on BOTH, and for one reason: a `render: static` route's
-    // `load()` imports the app's own Litestone client, which is TypeScript and
-    // opens `bun:sqlite`. The build has always needed it — node's stripper
-    // refuses a parameter property, and Vite reports that as *could not load
-    // the db*, which reads like a path problem and is a runtime one.
-    //
-    // Dev needs it now too, because the dev server RUNS that loader (Sierra's
-    // static-data middleware) so the page can be seen with its data instead of
-    // correctly empty. Under node it fails as `Only URLs with a scheme in:
-    // file, data, and node are supported — received protocol 'bun:'`, which
-    // names nothing an app author did.
-    // And `--env-file=../.env`, because both commands run from the SURFACE:
-    // bun auto-loads `.env` from the working directory, so the app's own one is
-    // not read, and a client that validates a required variable refuses to load
-    // at all. A missing file here is silently fine.
-    'dev:site':   `cd ${dir} && bun --bun --env-file=../.env vite -c config/vite.config.js --configLoader native`,
-    'build:site': `cd ${dir} && bun --bun --env-file=../.env vite build -c config/vite.config.js`,
+    'dev:site':   viteScript(dir),
+    'build:site': viteScript(dir, { build: true }),
     'serve:site': `cd ${dir} && sierra site --serve --port ${servePort}`,
   }
 }

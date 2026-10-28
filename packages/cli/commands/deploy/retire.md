@@ -28,22 +28,11 @@ steps: _steps-retire
 ---
 
 ```js
-const target     = resolveTarget(flag, $.git)
-const deployConf = await deployConfFor($, flag, log)
+const head = await deployTargetFor($, flag, log, { side: 'api', why: 'there is no server to retire from' })
+if (!head) return
+const { target, deployConf, appId, resolved: api } = head
 
-if (!deployConf?.server) {
-  log.error('No deploy block found in frontier.config.js — there is no server to retire from')
-  $.config.abort = true
-  return
-}
-
-const api = resolveSide(deployConf, target, 'api')
 const web = resolveSide(deployConf, target, 'web')
-if (!api) {
-  log.error(`Cannot resolve a server and path for the api side on target: ${target}`)
-  $.config.abort = true
-  return
-}
 
 $.config.stepsDir   = '_steps-retire'
 $.config.target     = target
@@ -51,7 +40,7 @@ $.config.deployConf = deployConf
 $.config.api        = api
 $.config.sides      = distinctHosts([api, web].filter(Boolean))
 $.config.hosts      = $.config.sides
-$.config.appId      = deployConf.app_id ?? deployConf.path.split('/').pop()
+$.config.appId      = appId
 $.config.dbDir      = apiFiles(deployConf, api.path).dbDir
 $.config.envFile    = apiFiles(deployConf, api.path).envFile
 $.config.startTime  = Date.now()

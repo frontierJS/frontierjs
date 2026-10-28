@@ -33,7 +33,7 @@ row*). This paper asks for the same split for MOVES.
 | `@@transitions(stateId, …)` | refused at parse: *'stateId' is String, which is not a closed type. A from-state has to be decidable, so the field must be an enum or Boolean* |
 | `@@check` with a subquery over the team's states | refused by SQLite at DDL (*subqueries prohibited in CHECK constraints*), with no model named |
 | A copied `category StateCategory` on the issue, carrying `@@transitions` over the five categories | **parses and works**, and is wrong three ways: a second origin for the state's category, stale the moment an admin re-categorises a state, and ONE machine for every team, so the hard version (two teams disagreeing) is still not expressible |
-| `@derived(state.category)` to make that copy derived | refused, and the refusal names `@from(state, category)` as the cure, which does not parse ([`FJS-1305`](../ISSUES.md#fjs-1305)) |
+| `@derived(state.category)` to make that copy derived | refused, and the refusal names `@from(state, category)` as the cure, which does not parse ([`FJS-1305`](../ISSUES_ARCHIVE.md#fjs-1305)) |
 | `@@deny(postUpdate, state.teamId != teamId)` | **works**: *the state is one of this issue's team's* is one hop and needs nothing from before the write. The only part of Q2 the schema could say |
 | *This move is in the team's table* | not expressible. `update` sees the row before the write and `post-update` sees it after, **never both**, and a move is the pair |
 | `stateId String @default(<the team's entry state>)` | not expressible. `@default` takes a literal or a call, not a lookup |

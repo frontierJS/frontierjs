@@ -43,10 +43,38 @@ flags:
     defaultValue: false
 ---
 
-```js
+<script>
 const { callArgv } = await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
-const { shQuote }  = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
 
+// The serving API container and the machine it is on, or null once the
+// refusal has printed why. A refusal exits 1; the repl's own status does not.
+const servingContainer = async ($, flag, log) => {
+  const refuse = (reason, ...ways) => {
+    log.error(reason)
+    for (const way of ways) log.info(way)
+    $.config.abort = true
+    return null
+  }
+
+  const head = await deployTargetFor($, flag, log)
+  if (!head) return null
+
+  const { deployConf, appId, resolved: { path, host } } = head
+  const container = apiContainer(appId, deployConf)
+  const machine   = machineFor($, host, path, deployConf.transport)
+
+  if (!machine.reach()) return refuse(`Cannot reach ${host}`)
+  try {
+    machine.run(`docker inspect ${container} > /dev/null 2>&1`)
+  } catch {
+    return refuse(`Container '${container}' is not running on ${host}`,
+      `Check status with: fli deploy:status${flag.production ? ' --production' : flag.stage ? ' --stage' : ''}`)
+  }
+  return { machine, container }
+}
+</script>
+
+```js
 const plan = callArgv($.paths.root, {
   app:         flag.app,
   exportName:  flag.export,
@@ -58,44 +86,13 @@ const plan = callArgv($.paths.root, {
 })
 if (plan.error) {
   log.error(plan.error)
-  process.exitCode = 1
+  $.config.abort = true
   return
 }
 
-const target     = resolveTarget(flag, $.git)
-const deployConf = await deployConfFor($, flag, log)
-if (!deployConf?.server) {
-  log.error('No deploy block found in frontier.config.js')
-  process.exitCode = 1
-  return
-}
-
-const resolved = resolveDeployConf(deployConf, target)
-if (!resolved) {
-  log.error(`deploy.server or deploy.path is not set for target: ${target}`)
-  process.exitCode = 1
-  return
-}
-
-const { path, host } = resolved
-const appId     = deployConf.app_id ?? path.split('/').pop()
-const container = apiContainer(appId, deployConf)
-const machine   = machineFor($, host, path, deployConf.transport)
-
-if (!machine.reach()) {
-  log.error(`Cannot reach ${host}`)
-  process.exitCode = 1
-  return
-}
-
-try {
-  machine.run(`docker inspect ${container} > /dev/null 2>&1`)
-} catch {
-  log.error(`Container '${container}' is not running on ${host}`)
-  log.info(`Check status with: fli deploy:status${flag.production ? ' --production' : flag.stage ? ' --stage' : ''}`)
-  process.exitCode = 1
-  return
-}
+const serving = await servingContainer($, flag, log)
+if (!serving) return
+const { machine, container } = serving
 
 // Every word quoted for the box's shell, and the whole quoted again by
 // `machine.tty` for ssh's: an `-e` line is full of `$`, quotes and parens.

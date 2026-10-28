@@ -5,8 +5,6 @@ skip: "$.flag.dry || $.config.deployConf.journal === false"
 ---
 
 ```js
-if ($.config.abort) return
-
 const { host, path: serverPath } = $.config.api ?? $.config.web
 
 // ─── Why here, and it moved ──────────────────────────────────────────────────

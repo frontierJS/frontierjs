@@ -25,8 +25,8 @@
 // for the same reason: move the utilities import up and `.btn.text-lg` goes
 // 16px → 14px in the bundle while the source stays 16px.
 
-import { readFileSync } from 'fs'
 import { join, dirname, parse } from 'path'
+import { read }          from './fs.js'
 import { fileURLToPath } from 'url'
 import { createRequire } from 'module'
 
@@ -39,6 +39,9 @@ const __dir   = dirname(fileURLToPath(import.meta.url))
 // copy the registry has. Measured the day css went 0.15 → 0.16 in the tree:
 // `@^0.16` 404, no range 302.
 export const CDN_STYLESHEET = 'https://unpkg.com/@frontierjs/css/dist/frontier.min.css'
+
+/** Every `.theme-<name>` the stylesheet declares. */
+export const themesIn = css => [...new Set([...css.matchAll(/\.theme-([a-z0-9-]+)\s*\{/g)].map(m => m[1]))].sort()
 
 // ── Whose copy ────────────────────────────────────────────────────────────────
 //
@@ -205,4 +208,3 @@ export function glowSource() {
   return null
 }
 
-function read(path) { try { return readFileSync(path, 'utf8') } catch { return null } }

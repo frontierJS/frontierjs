@@ -264,7 +264,7 @@ siteName: Basecamp
   <ul class="navlist">
     {#each entries as link}
       <li>
-        <a class="navlink" href={link.href}
+        <a class="navlink" href={link.href} prefetch="hover"
            aria-current={(page.route, current(link)) ? 'page' : null}
            title={rail ? link.label : null}
         ><NavIcon name={link.icon} /><span class="navlink-text">{link.label}</span></a>
@@ -282,7 +282,6 @@ siteName: Basecamp
     <details class="nav-group" open={group.open || group.entries.some(current) ? true : null}>
       <summary class="navlist-label" title={rail ? group.label : null}>
         <NavIcon name={group.icon} /><span class="navlink-text">{group.label}</span>
-        <span class="nav-chevron"><NavIcon name="chevron" /></span>
       </summary>
       {@render navlinks(group.entries)}
     </details>
@@ -451,7 +450,7 @@ siteName: Basecamp
            before the content wherever it is drawn. -->
       {#if session.user && !focus}
         <aside class="notice-rail">
-          <NoticeBar notices={notices} max={2} />
+          <NoticeBar notices={notices} max={2} loading={srvList.loading || depList.loading || jbsList.loading} />
         </aside>
       {/if}
       <div class="container stack screen-body">
@@ -515,24 +514,6 @@ siteName: Basecamp
 <ConfirmProvider />
 
 <style>
-  /* A group label carries a glyph and a chevron, so the UA's list-item
-     marker would be a third thing in the row and the only one that does
-     not turn with the group. */
-  .nav-group > summary {
-    display:     flex;
-    align-items: center;
-    gap:         var(--space-sm);
-    list-style:  none;
-  }
-  .nav-group > summary::-webkit-details-marker { display: none; }
-  .nav-chevron {
-    display:             inline-flex;
-    margin-inline-start: auto;
-    transform:           rotate(-90deg);
-    transition:          transform var(--motion-fast);
-  }
-  .nav-group[open] .nav-chevron { transform: none; }
-
   /* The topbar below 767px is the drawer button, the name, search, the bell
      and the account menu. The rest is in the drawer or one search away. */
   @media (max-width: 767px) {
@@ -576,9 +557,6 @@ siteName: Basecamp
     margin-inline-start: auto;
   }
 
-  /* The rail is the kit's .sidebar.rail; what is basecamp's is the chevron,
-     which would sit in the closed rail as a second glyph, and the toggle. */
-  .sidebar.rail .nav-chevron { display: none; }
   .sidebar.rail .rail-toggle { margin-inline: auto; }
   .sidebar.rail .nav-group + .nav-group {
     margin-block-start: var(--space-sm);
